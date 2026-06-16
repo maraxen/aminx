@@ -351,7 +351,9 @@ def _prepare_ligand_context(
       dtype=jnp.float32,
       name="chain_mask_fixed",
     )
-    assert chain_mask.dtype == jnp.float32
+    if chain_mask.dtype != jnp.float32:
+      msg = f"chain_mask_fixed must be float32 after broadcast, got {chain_mask.dtype}"
+      raise TypeError(msg)
   elif spec.fixed_mask is not None:
     fixed_mask_np = _broadcast_per_structure(
       spec.fixed_mask,
@@ -361,7 +363,9 @@ def _prepare_ligand_context(
       name="fixed_mask",
     )
     chain_mask = 1.0 - fixed_mask_np
-    assert chain_mask.dtype == jnp.float32
+    if chain_mask.dtype != jnp.float32:
+      msg = f"chain_mask must be float32 after complement, got {chain_mask.dtype}"
+      raise TypeError(msg)
   else:
     chain_mask = jnp.ones((batch_size, seq_len), dtype=jnp.float32)
 
