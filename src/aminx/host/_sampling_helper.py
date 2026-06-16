@@ -341,9 +341,18 @@ def _prepare_ligand_context(
     raise ValueError(msg)
 
   # Compute chain_mask: 1=designable, 0=fixed.
-  # Default is all-ones (all residues designable) unless overridden by fixed_mask.
+  # Priority order: chain_mask_fixed > fixed_mask complement > all-ones fallback.
   # Convention: fixed_mask 1=fixed, chain_mask 1=designable → complement.
-  if spec.fixed_mask is not None:
+  if getattr(spec, "chain_mask_fixed", None) is not None:
+    chain_mask = _broadcast_per_structure(
+      spec.chain_mask_fixed,
+      batch_size=batch_size,
+      expected_len=seq_len,
+      dtype=jnp.float32,
+      name="chain_mask_fixed",
+    )
+    assert chain_mask.dtype == jnp.float32
+  elif spec.fixed_mask is not None:
     fixed_mask_np = _broadcast_per_structure(
       spec.fixed_mask,
       batch_size=batch_size,

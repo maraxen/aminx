@@ -474,6 +474,7 @@ class SamplingSpecification(RunSpecification):
   sample_count: int | None = None
   carry_specs: list[CarrySpec] | None = None
   dedup_specs: list[DedupSpec] | None = None
+  chain_mask_fixed: ArrayLike | None = None
 
   def __post_init__(self) -> None:
     """Post-initialization processing."""
