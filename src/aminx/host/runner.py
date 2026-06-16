@@ -554,6 +554,7 @@ def inspect(  # noqa: PLR0915
             backbone_noise=0.0,
             ar_mask=None,
             structure_mapping=None,
+            fixed_mask=getattr(spec, "fixed_mask", None),
             mode="score_unconditional",
             inference=True,
           )
