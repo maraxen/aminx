@@ -230,3 +230,65 @@ class TestChainMaskFromFixedMask:
 
     chain_mask = ligand_ctx["chain_mask"]
     assert chain_mask is None
+
+  def test_chain_mask_fixed_priority_over_fixed_mask(self):
+    """chain_mask_fixed should take priority over fixed_mask complement."""
+    batch_size = 1
+    seq_len = 10
+    protein = _make_fake_protein_ligandmpnn(batch_size=batch_size, seq_len=seq_len)
+
+    # chain_mask_fixed: positions 2, 5, 8 are designable (1.0)
+    chain_mask_fixed = np.array([0., 0., 1., 0., 0., 1., 0., 0., 1., 0.], dtype=np.float32)
+    # fixed_mask: positions 3, 7 are fixed (would give complement chain_mask at those positions)
+    fixed_mask = np.array([0., 0., 0., 1., 0., 0., 0., 1., 0., 0.], dtype=np.float32)
+
+    spec = SamplingSpecification(
+        inputs=[],
+        model_family="ligandmpnn",
+        sidechain_conditioning=True,
+        chain_mask_fixed=chain_mask_fixed,
+        fixed_mask=fixed_mask,
+    )
+
+    ligand_ctx = _prepare_ligand_context(
+        spec,
+        batched_ensemble=protein,
+        batch_size=batch_size,
+        seq_len=seq_len,
+    )
+
+    chain_mask = ligand_ctx["chain_mask"]
+    # Should be the verbatim chain_mask_fixed, not derived from fixed_mask
+    expected_mask = chain_mask_fixed[None, :].repeat(batch_size, axis=0)
+    np.testing.assert_array_equal(np.asarray(chain_mask), expected_mask)
+
+  def test_chain_mask_fixed_overrides_fixed_mask(self):
+    """chain_mask_fixed set; fixed_mask should be ignored."""
+    batch_size = 1
+    seq_len = 10
+    protein = _make_fake_protein_ligandmpnn(batch_size=batch_size, seq_len=seq_len)
+
+    # chain_mask_fixed: explicit designability mask
+    chain_mask_fixed = np.array([1., 1., 1., 0., 0., 0., 1., 1., 1., 1.], dtype=np.float32)
+    # fixed_mask: should be completely ignored
+    fixed_mask = np.array([1., 1., 1., 1., 1., 1., 1., 1., 1., 1.], dtype=np.float32)
+
+    spec = SamplingSpecification(
+        inputs=[],
+        model_family="ligandmpnn",
+        sidechain_conditioning=True,
+        chain_mask_fixed=chain_mask_fixed,
+        fixed_mask=fixed_mask,
+    )
+
+    ligand_ctx = _prepare_ligand_context(
+        spec,
+        batched_ensemble=protein,
+        batch_size=batch_size,
+        seq_len=seq_len,
+    )
+
+    chain_mask = ligand_ctx["chain_mask"]
+    # Should be the chain_mask_fixed verbatim
+    expected_mask = chain_mask_fixed[None, :].repeat(batch_size, axis=0)
+    np.testing.assert_array_equal(np.asarray(chain_mask), expected_mask)
