@@ -1,0 +1,26 @@
+[metadata]
+run_id = "hp_lattice_sanity_v1"
+script = "scripts/validate/hp_lattice_sanity.py"
+description = "Sanity check reproducing Lau & Dill (1989)'s own 2D-lattice HP model numbers exactly, before any continuous/off-lattice HP energy is trusted"
+
+[hypotheses]
+n10_conformation_count = "Dihedral-8-reduced enumeration of 9-bond self-avoiding walks (n=10 residues) equals exactly 2034, matching the paper's stated count (Macromolecules 22(10), 3986-3997, p. 3988)"
+figure_2_classification = "All six of Figure 2's labeled n=10 sequences (HHHHHHHHHH, HPHPPHPPHH, HPPHPPHPHH fold; PPPPPHPPHH, PPPPPHHHHH, PPPPPPPPPP do not) are correctly classified via native_m(sequence) == t_max in the epsilon -> -infinity limit (eq. 6-8)"
+
+[command]
+# Default dry-run validates args only
+default = "uv run python scripts/validate/hp_lattice_sanity.py --dry-run"
+
+# Full validation (n=10 exhaustive enumeration, ~16268 raw walks, sub-second)
+full = "uv run python scripts/validate/hp_lattice_sanity.py --n 10"
+
+[exit_codes]
+0 = "All assertions passed"
+1 = "One or more assertions failed"
+
+[tags]
+- "hp-model"
+- "lattice-model"
+- "sanity-check"
+- "lau-dill-1989"
+- "proteinebm-coarse-init"
