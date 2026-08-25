@@ -23,6 +23,10 @@ export PATH="${HOME}/.local/bin:${PATH}"
 export UV_CACHE_DIR=/orcd/scratch/orcd/011/maarxaru/.cache/uv
 export UV_PROJECT_ENVIRONMENT=/orcd/scratch/orcd/011/maarxaru/venvs/aminx
 
+# Auto-detect can be defeated by an inherited JAX_PLATFORMS=cpu from the
+# submission environment; force platform discovery inside the allocation
+# (first L40S attempt silently landed on CpuDevice despite a live GPU).
+export JAX_PLATFORMS=""
 _NODE="${SLURM_JOB_NODELIST:-$(hostname -s)}"
 if [[ "${_NODE}" == *node4007* ]] || [[ "${_NODE}" == *node4008* ]]; then
   export XLA_FLAGS="${XLA_FLAGS:+${XLA_FLAGS} }--xla_gpu_shard_autotuning=false"
