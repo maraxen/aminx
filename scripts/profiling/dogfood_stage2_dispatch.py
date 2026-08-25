@@ -4,8 +4,8 @@
 First external dogfood of xtrax.profiling (xtrax PR #99, squash 04f7557).
 Mirrors scripts/benchmarks/bench_xtrax_vs_aminx_dispatch_gpu.py's
 production-representative shape (L=208 TEV protease size, num_states sweep,
-real planner choosing Vmap-vs-SafeMap) but benchmarks ONLY the xtrax
-dispatch leg, wrapped in named scopes, under jax.profiler.trace + compiled
+real planner; heterogeneous axes make SafeMap the structurally forced
+outcome every case) but benchmarks ONLY the xtrax dispatch leg, wrapped in named scopes, under jax.profiler.trace + compiled
 HLO -- emitting one stage-2 ProbeRecord per num_states case through
 xtrax.profiling.emitters.emit_probe_record.
 
