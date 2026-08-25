@@ -29,7 +29,11 @@ if [[ "${_NODE}" == *node4007* ]] || [[ "${_NODE}" == *node4008* ]]; then
 fi
 
 echo "[dogfood] node=${_NODE} partition=${SLURM_JOB_PARTITION}"
-nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+if command -v nvidia-smi >/dev/null 2>&1; then
+  nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+else
+  echo "[dogfood] nvidia-smi not on PATH (preemptable image) -- relying on jax device check"
+fi
 
 uv run --no-sync python -c "
 import jax, xtrax.profiling
