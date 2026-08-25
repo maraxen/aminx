@@ -2,18 +2,13 @@
 # xtrax.profiling dogfood: stage-2 ProbeRecords from the real ConditionalDecode
 # path (via make_axis_dispatch_via_xtrax) on an L40S under mit_preemptable.
 #
-# Mirrors scripts/slurm/t2gate_gpu_sweep.slurm's environment handling:
-# scratch-only uv cache/venv, absolute project cd, GPU-device assertion,
-# Blackwell XLA workaround keyed on hostname (no-op on L40S).
-#
-# Usage (from repo root, after `myxcel push engaging aminx --apply`):
-#   sbatch --partition=mit_preemptable --gres=gpu:l40s:1 \
-#          --export=ALL,XTRAX_GIT_SHA=$(git rev-parse HEAD) \
-#          scripts/slurm/prof_dogfood_l40s.slurm
-#
-# Records land in outputs/profiling/stage2/**; pull with `myxcel pull`.
+# DEPENDS on prof_dogfood_envprep_quicktest (afterok) so the wheel is already
+# installed in the shared scratch venv. Mirrors t2gate_gpu_sweep.slurm's
+# environment handling (scratch uv paths, absolute cd, GPU assertion,
+# hostname-keyed Blackwell XLA workaround -- no-op on L40S).
 
 #SBATCH --job-name=prof-dogfood
+#SBATCH --partition=mit_preemptable
 #SBATCH --time=00:40:00
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=48G
@@ -37,7 +32,7 @@ echo "[dogfood] node=${_NODE} partition=${SLURM_JOB_PARTITION}"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
 
 uv run --no-sync python -c "
-import jax
+import jax, xtrax.profiling
 d = jax.devices()
 print('[dogfood] devices:', d)
 assert d and d[0].platform == 'gpu', f'expected GPU, got {d}'
