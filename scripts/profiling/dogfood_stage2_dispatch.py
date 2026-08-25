@@ -204,9 +204,22 @@ def run_case(
             run(k_dec).block_until_ready()
     total_step_seconds = time.perf_counter() - start
 
-    hlo_text = eqx.filter_jit(_decode).lower(k_dec).as_text()
+    # HLO text MUST come from the COMPILED executable: Lowered.as_text()
+    # omits op_name metadata entirely, which silently blanks scope
+    # attribution (found on the first L40S dogfood run -- every scope came
+    # back ABSENT from an otherwise healthy trace).
+    compiled_exec = eqx.filter_jit(_decode).lower(k_dec).compile()
+    hlo_src = next(
+        v for v in vars(compiled_exec).values() if type(v).__name__ == "Compiled"
+    )
+    hlo_text = hlo_src.as_text()
     hlo_path = case_dir / "hlo_as_text.txt"
     hlo_path.write_text(hlo_text)
+    if not any(label in hlo_text for label in KNOWN_LABELS):
+        raise SystemExit(
+            "scope labels absent from compiled HLO text -- attribution "
+            "would be empty; refusing to emit a degraded record"
+        )
 
     events = _load_trace_events(trace_dir)
     scope_map = scope_map_from_hlo_text(hlo_text, KNOWN_LABELS)
