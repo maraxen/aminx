@@ -45,6 +45,7 @@
 - [260716_proteinebm-parity-report](audits/260716_proteinebm-parity-report.md) — Reviews what "parity" means for the merged ProteinEBM epic: throughput parity is real+strong (11–92× vs PyTorch); numerical port parity (E3.5) freshly re-confirmed today across 20 synthetic trials (cosine similarity ≥0.999999998); real-world validation (E7 LplA, 101 real mutants) gives Spearman 0.402 (p=3.1e-5); the paper's own headline Spearman targets (0.838 decoy, 0.686 ΔΔG) remain **not measured** by deliberate scope decision. `tests/ebm/` freshly re-run: 261 passed, 4 skipped, 0 failed.
 
 ## Research
+- [260827_xtrax-engine-fit-feasibility-vs-aminx-trainer](research/260827_xtrax-engine-fit-feasibility-vs-aminx-trainer.md) — Feasibility assessment evaluating xtrax.engine.Engine.fit() as a replacement for aminx training/trainer.py, identifying 5 architectural capability gaps and recommending retaining the local trainer.
 - [260712_jax-xla-scf-if-gradient-regression-bug-report](research/260712_jax-xla-scf-if-gradient-regression-bug-report.md) — DRAFT, not yet filed: jax.grad scf.if crash, jaxlib 0.9.2→0.10.2 regression, cross-arch confirmed, repro needs an unpushed-branch fix before submission
 - [260622_1203_proxide-heterogeneous-inputs](research/260622_1203_proxide-heterogeneous-inputs.md) — Proxide Adapter Surface and Aminx CLI Integration
 - [260617_xtrax-tiling-prolix-compat](research/260617_xtrax-tiling-prolix-compat.md) — xtrax.tiling CORE — prolix 6-axis planner compatibility

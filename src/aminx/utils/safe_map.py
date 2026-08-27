@@ -1,8 +1,28 @@
-"""Utility for safe mapping over arrays, avoiding XLA loop issues.
+"""Safe mapping over arrays and PyTrees, dispatching between vmap and lax.map.
 
-In-repo implementation mirrors jaxbeans ``utils/mapping.safe_map`` semantics (roadmap §3.6 **DEPEND**).
-Swapping to an explicit ``jaxbeans`` dependency is deferred until workspace packaging stabilizes;
-behavioral parity for JIT is gated by ``tests/utils/test_safe_map.py``.
+This local fork is retained (Option 3 in
+`.praxia/docs/specs/260827_runspec-scaffolding-remediation-migration-map-re-authoring-and-xtrax-transforms-adoption.md` §4.3,
+praxia debt #1515) because ``xtrax.transforms.map.safe_map`` enforces a strict divisibility check
+(``num_elements % batch_size == 0``, ``xtrax/transforms/map.py:33-37``) that rejects non-divisible
+batch sizes and raises ``ZeroDivisionError`` on ``batch_size=0``. In contrast, ``jax.lax.map``
+natively supports non-divisible cardinality via ``_remainder_leaf`` (``jax/_src/lax/loops.py:2647``).
+
+Concrete divergences from ``xtrax.transforms.map.safe_map``:
+
++----------------------------+---------------------------------+--------------------------------------+
+| Behaviour                  | ``aminx.utils.safe_map``        | ``xtrax.transforms.map.safe_map``   |
++============================+=================================+======================================+
+| ``batch_size=0`` sentinel  | Routes to ``vmap`` (:49;        | Raises ``ZeroDivisionError``         |
+|                            | see ``plan.py:307-317``)        | (``map.py:33`` divisibility modulo)  |
++----------------------------+---------------------------------+--------------------------------------+
+| Non-divisible batch size   | Supported (``lax.map`` handles  | Raises ``ValueError``                |
+| (e.g. N=100, batch=32)     | remainder slices natively)      | (``map.py:37`` divisibility check)   |
++----------------------------+---------------------------------+--------------------------------------+
+| Empty PyTree input (``{}``)| Raises ``ValueError`` (:45)     | Raises ``IndexError`` (``map.py:26``)|
++----------------------------+---------------------------------+--------------------------------------+
+
+Adoption of upstream xtrax ``safe_map`` is deferred until xtrax relaxes its divisibility requirement
+(tracked in praxia debt #1515).
 """
 
 from __future__ import annotations
