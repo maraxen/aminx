@@ -88,7 +88,7 @@ Data flow: `spec → build_run_spec() → run_spec.planner → make_sampling_pla
 | `portable` v2 | Generic cluster slice (io/resource/multistate/precision) | Placeholder defaults — **not for campaign** |
 | `portable` v3 (optional, RS-8) | Scheduler handoff if needed | Explicit fields |
 
-**Guard (RS-8):** `run_spec_portable_to_dict` must **raise** `ValueError` when serializing a spec with `grid.grid_mode=True` or `ligand.model_family='ligandmpnn'` until v3 exists (the lossy boundary — v2 silently drops these fields today). `run_spec_portable_from_dict` must reject unknown/lossy top-level keys instead of ignoring them.
+**Guard (RS-8):** `run_spec_portable_to_dict` must **raise** `ValueError` when serializing a spec with `grid.grid_mode=True` or `ligand.model_family='ligandmpnn'` until v3 exists (the lossy boundary — v2 silently drops these fields today). `run_spec_portable_from_dict` must reject unknown/lossy top-level keys instead of ignoring them. *(Superseded 2026-08-27 by `260827_runspec-subconfig-membership-rule.md` / WS-A: `RunSpec.grid`/`.ligand` deleted as dead scaffolding; export guard retired in favor of strict unknown-key rejection on import boundary).*
 
 ---
 

@@ -3,10 +3,21 @@ task_id: 260614_potts-runspec-xtrax-gates
 backlog: RS-1 (#1620)
 blocks: RS-2 (#1621)
 date: 260614
-status: complete
+status: superseded
+superseded_by: 260827_runspec-sub-config-membership-rule-and-scaffolding-retirement.md
 ---
 
-# RunSpec Host-Field Inventory (RS-1)
+# RunSpec Host-Field Inventory (RS-1) [SUPERSEDED]
+
+> [!WARNING]
+> **SUPERSEDED on 2026-08-27** by [260827_runspec-sub-config-membership-rule-and-scaffolding-retirement.md](file:///home/marielle/projects/aminx/.claude/worktrees/wt-20260826-170332/.praxia/docs/decisions/260827_runspec-sub-config-membership-rule-and-scaffolding-retirement.md) and `.praxia/docs/specs/260827_runspec-scaffolding-remediation-migration-map-re-authoring-and-xtrax-transforms-adoption.md` (WS-B).
+>
+> This document is retained solely for historical auditability. It has drifted significantly from reality:
+> - All 22 "already migrated" rows were stale; dead sub-configs (`TiedPositionsConfig`, `BatchingConfig`, `AveragingConfig`, `GridLineageConfig`, `LigandConfig` — 29 fields total) were either never read or already deleted.
+> - Listed rows for files that do not exist (e.g. `_sampling_averaged.py`), removed fields (`use_arrayrecord`), and obsolete targets.
+> - The human-maintained table format itself was prone to immediate rot upon subsequent refactors.
+>
+> Field-level membership is now governed by the two-clause membership rule in the decision record above and enforced at import time by `src/aminx/run/_runspec_coverage.py`. Do NOT use this document for scoping or implementation.
 
 Complete map of every `spec.<field>` read in `src/aminx/host/`. Input for RS-2 PlannerTopology work.
 

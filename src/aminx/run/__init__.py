@@ -5,6 +5,10 @@
 from aminx.host.sampling_driver import SamplingDriver
 
 from ._exports import sample, score
+from ._runspec_coverage import (
+  RunSpecCoverageError,
+  assert_runspec_coverage_is_exhaustive,
+)
 from .run_spec_portable_json import (
   PORTABLE_RUN_SPEC_VERSION,
   run_spec_portable_from_dict,
@@ -32,12 +36,14 @@ __all__ = [
   "InspectionSpecification",
   "JacobianSpecification",
   "RunSpec",
+  "RunSpecCoverageError",
   "RunSpecification",
   "SamplingDriver",
   "SamplingSpecification",
   "ScoringSpecification",
   "SpecJSONDecodeError",
   "SpecJSONEncodeError",
+  "assert_runspec_coverage_is_exhaustive",
   "build_run_spec",
   "run_spec_portable_from_dict",
   "run_spec_portable_to_dict",
