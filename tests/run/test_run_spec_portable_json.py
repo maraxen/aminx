@@ -10,11 +10,6 @@ from aminx.run.run_spec_portable_json import (
     run_spec_portable_from_dict,
     run_spec_portable_to_dict,
 )
-from aminx.run.spec import (
-    GridLineageConfig,
-    LigandConfig,
-)
-import equinox as eqx
 
 
 class TestPortableJsonRoundtrip:
@@ -60,8 +55,8 @@ class TestPortableJsonRoundtrip:
         # Verify roundtrip: deserialize again and should succeed
         roundtripped = run_spec_portable_from_dict(d)
         assert roundtripped is not None
-        assert roundtripped.ligand.model_family == "proteinmpnn"
-        assert roundtripped.grid.grid_mode is False
+        assert roundtripped.multistate.mode == baseline_spec["multistate"]["mode"]
+        assert roundtripped.precision.compute == baseline_spec["precision"]["compute"]
 
 
 class TestPortableJsonGuards:
@@ -91,52 +86,50 @@ class TestPortableJsonGuards:
             "precision": {"compute": "fp32"},
         }
 
-    def test_portable_to_dict_raises_on_grid_mode(
+    def test_portable_from_dict_raises_on_grid_block(
         self, baseline_spec: dict
     ) -> None:
-        """to_dict should raise ValueError when grid_mode=True (check first)."""
-        baseline = run_spec_portable_from_dict(baseline_spec)
+        """from_dict should raise ValueError on a payload carrying a 'grid' block.
 
-        # Mutate grid to grid_mode=True
-        grid_mutated = eqx.tree_at(
-            lambda s: s.grid,
-            baseline,
-            GridLineageConfig(
-                grid_mode=True,
-                campaign_mode=False,
-                job_id=None,
-                chunk_id=None,
-                sample_start=None,
-                sample_count=None,
-            ),
-        )
+        `RunSpec.grid`/`.ligand` no longer exist (deleted as dead scaffolding --
+        see .praxia/docs/specs/260827_runspec-scaffolding-remediation-...md WS-A),
+        so `to_dict` can no longer detect a grid/ligandmpnn run at all: the guard
+        moves to the only place the information still exists, the wire payload
+        itself. This test exercises a path production can actually reach --
+        the previous `to_dict`-mutation tests could not, since `to_dict`'s one
+        production caller is always fed by `from_dict`'s own (grid/ligand-free)
+        output (see .praxia/docs/specs/260611_runspec-unification.md RS-8).
+        """
+        payload = dict(baseline_spec)
+        payload["grid"] = {"grid_mode": True}
 
-        # Should raise ValueError mentioning grid_mode
-        with pytest.raises(ValueError, match="grid_mode"):
-            run_spec_portable_to_dict(grid_mutated)
+        with pytest.raises(ValueError, match="v3"):
+            run_spec_portable_from_dict(payload)
 
-    def test_portable_to_dict_raises_on_ligandmpnn(
+    def test_portable_from_dict_raises_on_ligand_block(
         self, baseline_spec: dict
     ) -> None:
-        """to_dict should raise ValueError when model_family='ligandmpnn'."""
-        baseline = run_spec_portable_from_dict(baseline_spec)
+        """from_dict should raise ValueError on a payload carrying a 'ligand' block."""
+        payload = dict(baseline_spec)
+        payload["ligand"] = {"model_family": "ligandmpnn"}
 
-        # Mutate ligand to model_family='ligandmpnn'
-        ligand_mutated = eqx.tree_at(
-            lambda s: s.ligand,
-            baseline,
-            LigandConfig(
-                model_family="ligandmpnn",
-                use_side_chain_context=None,
-                ligand_conditioning=False,
-                sidechain_conditioning=False,
-                context_path=None,
-            ),
-        )
+        with pytest.raises(ValueError, match="v3"):
+            run_spec_portable_from_dict(payload)
 
-        # Should raise ValueError mentioning ligandmpnn
-        with pytest.raises(ValueError, match="ligandmpnn"):
-            run_spec_portable_to_dict(ligand_mutated)
+    def test_portable_from_dict_raises_on_arbitrary_unknown_key(
+        self, baseline_spec: dict
+    ) -> None:
+        """from_dict must reject ANY unknown top-level key, not just grid/ligand.
+
+        This is what actually closes the silent-data-loss gap: a v2 payload
+        carrying an unrecognized block used to be silently ignored (see the
+        module docstring's prior "unknown top-level keys are ignored" contract).
+        """
+        payload = dict(baseline_spec)
+        payload["some_future_v3_block"] = {"anything": True}
+
+        with pytest.raises(ValueError, match="unknown top-level key"):
+            run_spec_portable_from_dict(payload)
 
 
 class TestInspectionSpecificationExport:

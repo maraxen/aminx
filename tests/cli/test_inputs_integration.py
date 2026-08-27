@@ -322,7 +322,7 @@ class TestPortableJsonNoRegression:
         # Verify key properties unchanged
         assert d["version"] == 2
         assert roundtripped is not None
-        assert roundtripped.ligand.model_family == "proteinmpnn"
+        assert roundtripped.multistate.mode == baseline_v2_spec["multistate"]["mode"]
 
     def test_portable_inputs_field_absent(self, baseline_v2_spec: dict) -> None:
         """Portable JSON v2 dict has no 'inputs' field (not part of wire format)."""
@@ -334,30 +334,6 @@ class TestPortableJsonNoRegression:
 
         # Only the portable sub-configs should be present
         assert set(d.keys()) == {"version", "io", "multistate", "resource", "precision"}
-
-    def test_portable_guards_still_work(self, baseline_v2_spec: dict) -> None:
-        """Existing portable guards (grid_mode, ligandmpnn) still raise."""
-        import equinox as eqx
-        from aminx.run.spec import GridLineageConfig
-
-        baseline = run_spec_portable_from_dict(baseline_v2_spec)
-
-        # Mutate grid to grid_mode=True (should raise)
-        grid_mutated = eqx.tree_at(
-            lambda s: s.grid,
-            baseline,
-            GridLineageConfig(
-                grid_mode=True,
-                campaign_mode=False,
-                job_id=None,
-                chunk_id=None,
-                sample_start=None,
-                sample_count=None,
-            ),
-        )
-
-        with pytest.raises(ValueError, match="grid_mode"):
-            run_spec_portable_to_dict(grid_mutated)
 
 
 # ============================================================================

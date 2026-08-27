@@ -9,10 +9,10 @@ Full Equinox / PyTree serialization is out of scope. Wire format versions:
   :func:`build_run_spec` defaults for a minimal single-GPU
   :class:`~aminx.run.specs.RunSpecification`-style inference stub.
 
-:func:`run_spec_portable_to_dict` always emits **v2**. Note: :func:`run_spec_portable_to_dict`
-raises :exc:`ValueError` when serializing specs with ``grid.grid_mode=True`` or
-``ligand.model_family='ligandmpnn'`` (not representable in v2 wire format until v3 is
-defined); use the full spec_json (campaign path) for such specs.
+:func:`run_spec_portable_to_dict` always emits **v2**. :func:`run_spec_portable_from_dict`
+raises :exc:`ValueError` on a payload carrying any top-level key outside the v2 vocabulary
+(``version``, ``io``, ``multistate``, ``resource``, ``precision``) -- a v3 payload (``grid``,
+``ligand``, or any other future block) is rejected rather than silently dropped.
 """
 
 from __future__ import annotations
@@ -22,14 +22,13 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from .spec import (
-  GridLineageConfig,
   IOConfig,
-  LigandConfig,
   MultistateConfig,
   PlannerTopology,
   PrecisionConfig,
   ResourceConfig,
   RunSpec,
+  SamplingConfig,
 )
 
 PORTABLE_RUN_SPEC_VERSION = 2
@@ -37,6 +36,7 @@ PORTABLE_RUN_SPEC_LEGACY_VERSION = 1
 _SUPPORTED_PORTABLE_VERSIONS = frozenset(
   {PORTABLE_RUN_SPEC_VERSION, PORTABLE_RUN_SPEC_LEGACY_VERSION},
 )
+_PORTABLE_RUN_SPEC_V2_KEYS = frozenset({"version", "io", "multistate", "resource", "precision"})
 
 _PrecisionLabel = Literal["fp32", "fp16", "bf16"]
 
@@ -108,55 +108,33 @@ def _placeholder_run_spec(
       cache_path=None,
     )
   )
-  ligand = LigandConfig(
-    model_family="proteinmpnn",
-    use_side_chain_context=None,
-    ligand_conditioning=False,
-    sidechain_conditioning=False,
-    context_path=None,
-  )
-  grid = GridLineageConfig(
-    grid_mode=False,
-    campaign_mode=False,
-    job_id=None,
-    chunk_id=None,
-    sample_start=None,
-    sample_count=None,
-  )
   plan = PlannerTopology(use_unified_driver=True)
+  sampling = SamplingConfig(
+    num_samples=1,
+    random_seed=42,
+    return_logits=False,
+    compute_pseudo_perplexity=False,
+    return_decoding_orders=False,
+    return_logit_fingerprint=False,
+    backbone_noise=(),
+    temperature=(),
+  )
   return RunSpec(
     seed=0,
     axes=[],
-    carry_specs={},
+    carry_specs=[],
     boundaries=None,
     io=io_final,
     resource=resource,
     multistate=multistate,
-    ligand=ligand,
-    grid=grid,
     precision=precision,
     plan=plan,
+    sampling=sampling,
   )
 
 
 def run_spec_portable_to_dict(run_spec: RunSpec) -> dict[str, Any]:
   """Export JSON-native fields from ``run_spec`` (static scalar subset only)."""
-  # Guard: grid_mode runs are not representable in v2 portable format
-  if run_spec.grid.grid_mode:
-    msg = (
-      "[portable_run_spec] grid_mode runs are not representable in the v2 portable "
-      "wire format (v3 not yet defined); use the full spec_json (campaign) path instead."
-    )
-    raise ValueError(msg)
-
-  # Guard: ligandmpnn runs are not representable in v2 portable format
-  if run_spec.ligand.model_family == "ligandmpnn":
-    msg = (
-      "[portable_run_spec] ligandmpnn runs are not representable in the v2 portable "
-      "wire format (v3 not yet defined); use the full spec_json (campaign) path instead."
-    )
-    raise ValueError(msg)
-
   return {
     "version": PORTABLE_RUN_SPEC_VERSION,
     "io": {
@@ -180,12 +158,21 @@ def run_spec_portable_to_dict(run_spec: RunSpec) -> dict[str, Any]:
 
 
 def run_spec_portable_from_dict(data: Mapping[str, Any]) -> RunSpec:
-  """Parse portable dict; unknown top-level keys are ignored."""
+  """Parse portable dict; rejects any top-level key outside the v2 vocabulary."""
   raw_ver = data.get("version", None)
   if type(raw_ver) is not int or raw_ver not in _SUPPORTED_PORTABLE_VERSIONS:
     msg = f"[portable_run_spec] version: expected int in {_SUPPORTED_PORTABLE_VERSIONS!r}, got {raw_ver!r}"
     raise ValueError(msg)
   wire_ver = raw_ver
+
+  unknown_keys = set(data) - _PORTABLE_RUN_SPEC_V2_KEYS
+  if unknown_keys:
+    msg = (
+      f"[portable_run_spec] unknown top-level key(s) {sorted(unknown_keys)!r} -- "
+      f"requires wire format v3, not yet defined. Use the full spec_json (campaign) "
+      f"path instead."
+    )
+    raise ValueError(msg)
 
   for key in ("multistate", "resource", "precision"):
     if key not in data:

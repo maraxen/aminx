@@ -50,27 +50,6 @@ class MultistateConfig(eqx.Module):
   combine_strategy: str = eqx.field(static=True)
 
 
-class LigandConfig(eqx.Module):
-  """LigandMPNN-specific options layered on `RunSpecification`."""
-
-  model_family: str = eqx.field(static=True)
-  use_side_chain_context: bool | None = eqx.field(static=True)
-  ligand_conditioning: bool = eqx.field(static=True)
-  sidechain_conditioning: bool = eqx.field(static=True)
-  context_path: Path | None = eqx.field(static=True)
-
-
-class GridLineageConfig(eqx.Module):
-  """Grid / campaign lineage metadata (mostly static host fields)."""
-
-  grid_mode: bool = eqx.field(static=True)
-  campaign_mode: bool = eqx.field(static=True)
-  job_id: str | None = eqx.field(static=True)
-  chunk_id: int | None = eqx.field(static=True)
-  sample_start: int | None = eqx.field(static=True)
-  sample_count: int | None = eqx.field(static=True)
-
-
 class PrecisionConfig(eqx.Module):
   """JAX compute dtype policy for training and inference (mirrors dataclass ``precision`` when set)."""
 
@@ -141,8 +120,6 @@ class RunSpec(_XtraxRunSpec):
   io: IOConfig = field(default_factory=lambda: None)  # type: ignore
   resource: ResourceConfig = field(default_factory=lambda: None)  # type: ignore
   multistate: MultistateConfig = field(default_factory=lambda: None)  # type: ignore
-  ligand: LigandConfig = field(default_factory=lambda: None)  # type: ignore
-  grid: GridLineageConfig = field(default_factory=lambda: None)  # type: ignore
   precision: PrecisionConfig = field(default_factory=lambda: None)  # type: ignore
   plan: PlannerTopology = field(default_factory=lambda: None)  # type: ignore
   sampling: SamplingConfig = field(default_factory=lambda: None)  # type: ignore
@@ -316,24 +293,6 @@ def build_run_spec(spec: object) -> RunSpec:
     combine_strategy=str(combine),
   )
 
-  ctx_path = getattr(spec, "ligand_context_path", None)
-  ligand = LigandConfig(
-    model_family=str(getattr(spec, "model_family", "proteinmpnn")),
-    use_side_chain_context=getattr(spec, "ligand_mpnn_use_side_chain_context", None),
-    ligand_conditioning=bool(getattr(spec, "ligand_conditioning", False)),
-    sidechain_conditioning=bool(getattr(spec, "sidechain_conditioning", False)),
-    context_path=_optional_path(ctx_path),
-  )
-
-  grid = GridLineageConfig(
-    grid_mode=bool(getattr(spec, "grid_mode", False)),
-    campaign_mode=bool(getattr(spec, "campaign_mode", False)),
-    job_id=getattr(spec, "job_id", None),
-    chunk_id=getattr(spec, "chunk_id", None),
-    sample_start=getattr(spec, "sample_start", None),
-    sample_count=getattr(spec, "sample_count", None),
-  )
-
   precision = PrecisionConfig(compute=_run_spec_precision_compute(spec))
 
   plan = PlannerTopology(
@@ -378,8 +337,6 @@ def build_run_spec(spec: object) -> RunSpec:
     io=io,
     resource=resource,
     multistate=multistate,
-    ligand=ligand,
-    grid=grid,
     precision=precision,
     plan=plan,
     sampling=sampling,

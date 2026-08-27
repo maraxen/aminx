@@ -189,6 +189,18 @@
   this is a new exception type in `make_sampling_planner`'s call chain.
   (`src/aminx/host/plan.py`)
 
+- **`run_spec_portable_from_dict` now rejects any unknown top-level key** instead of silently
+  ignoring it — a v2 payload carrying an extra block (e.g. a hand-written `grid`/`ligand` block,
+  or a future v3 field used before v3 is defined) now raises `ValueError` instead of silently
+  dropping the data. **`run_spec_portable_to_dict` no longer raises on grid-mode/ligandmpnn
+  specs** — `RunSpec.grid`/`.ligand` were deleted (see Removed, below), so `to_dict` has no way
+  to detect these anymore. This retires half of the RS-8 guard pair
+  (`.praxia/docs/specs/260611_runspec-unification.md`): the export-direction guard is gone, the
+  import-direction guard (this entry) is new. In practice this doesn't weaken anything reachable
+  — `to_dict`'s one production caller (`aminx spec portable-roundtrip`) is always fed by
+  `from_dict`'s own output, which can no longer carry grid/ligand content once the import guard
+  rejects it. (`src/aminx/run/run_spec_portable_json.py`)
+
 ### Removed
 
 - **`aminx.tiling.planner`'s local `BatchPlanner`/`AxisSpec`/`AxisDecision`/`BatchPlan`**,
@@ -200,16 +212,18 @@
   `.praxia/docs/decisions/260706_bucketing-pad-stay-local-epic-1541-p3-scope-closed.md` for why
   those specifically stay.
 
-- **`RunSpec.tied`/`.batching`/`.averaging` sub-configs** (`TiedPositionsConfig`,
-  `BatchingConfig`, `AveragingConfig` — 18 fields total): write-only scaffolding from the RS-1
-  migration that was never finished. `build_run_spec()` populated these on every call but nothing
-  downstream ever read them — all consumers (`host/kernel_dispatch.py`,
-  `host/_sampling_grid_lineage.py`, etc.) read the equivalent flat `SamplingSpecification` field
-  instead. Removing them doesn't change behavior; the flat fields they duplicated are untouched.
-  Scoped in `.praxia/docs/specs/260707_xtrax-migration-gap-audit-runspec-scaffolding.md`
-  (backlog #3158); `GridLineageConfig` and `LigandConfig` were NOT removed — each has one live
-  field (`grid_mode`, `model_family`) plus existing partial-migration fallback logic worth
-  finishing rather than discarding.
+- **`RunSpec.tied`/`.batching`/`.averaging`/`.grid`/`.ligand` sub-configs** (`TiedPositionsConfig`,
+  `BatchingConfig`, `AveragingConfig`, `GridLineageConfig`, `LigandConfig` — 29 fields total across
+  5 sub-configs): write-only scaffolding from the RS-1 migration that was never finished.
+  `build_run_spec()` populated these on every call but nothing downstream ever read them — all
+  consumers (`host/kernel_dispatch.py`, `host/_sampling_grid_lineage.py`, etc.) read the
+  equivalent flat `SamplingSpecification` field instead. Removing them doesn't change behavior; the
+  flat fields they duplicated are untouched. `GridLineageConfig` and `LigandConfig` were initially
+  retained under the belief that their `grid_mode` and `model_family` fields guarded live paths, but
+  structural tracing (§0.3 of `.praxia/docs/specs/260827_runspec-scaffolding-remediation-migration-map-re-authoring-and-xtrax-transforms-adoption.md`)
+  proved both guards were dead code in production (`grid_mode` was guarded after an invariant check
+  that already rejected the same case via `not run_spec.io.single_pdb`, and `model_family` was
+  guarded after `is_ligandmpnn` which had no reachable callers). Both sub-configs are now deleted.
   (`src/aminx/run/spec.py`, `src/aminx/run/run_spec_portable_json.py`)
 
 ## 0.1.0a6 (2026-06-14)
