@@ -62,7 +62,7 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
       Stacked results, same leading shape as xs.
 
   """
-  from aminx.utils.safe_scan import safe_scan
+  from xtrax.transforms import safe_scan
 
   strategy_name = type(strategy).__name__
 
@@ -85,7 +85,7 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
       y = body(x)
       return carry, y  # carry-passthrough: carry is not updated
 
-    _, ys = safe_scan(scan_body, xs, init=init)
+    _, ys = safe_scan(scan_body, init, xs)
     return ys
   if strategy_name == "DedupGather":
     unique_idx = jnp.asarray(strategy.unique_indices, dtype=jnp.int32)  # (K_bucket,)

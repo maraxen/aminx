@@ -110,14 +110,35 @@ def test_safe_map_jit_compatibility():
 
 
 def test_batch_size_zero_routes_to_vmap():
-    """batch_size=0 must dispatch to vmap, identical output to batch_size=None."""
+    """batch_size=0 must dispatch to vmap, identical output to batch_size=None and jax.lax.map(batch_size=0)."""
     xs = jnp.arange(8)
-    result_zero = safe_map(lambda x: x * 3, xs, batch_size=0)
-    result_none = safe_map(lambda x: x * 3, xs, batch_size=None)
+    fn = lambda x: x * 3
+    result_zero = safe_map(fn, xs, batch_size=0)
+    result_none = safe_map(fn, xs, batch_size=None)
+    result_lax_map = jax.lax.map(fn, xs, batch_size=0)
+
     assert jnp.allclose(result_zero, result_none)
+    assert jnp.allclose(result_zero, result_lax_map)
+    assert result_zero.shape == result_lax_map.shape == (8,)
+    assert result_zero.dtype == result_lax_map.dtype
 
 
 def test_batch_size_zero_pytree():
     xs = {"a": jnp.ones((4, 8)), "b": jnp.zeros((4, 8))}
     result = safe_map(lambda d: d["a"] + d["b"], xs, batch_size=0)
     assert result.shape == (4, 8)
+
+
+def test_safe_map_non_divisible_cardinality():
+    """safe_map supports non-divisible batch_size (unlike xtrax map.py:33-37)."""
+    xs = jnp.arange(100)
+    res = safe_map(lambda x: x * 2, xs, batch_size=32)
+    assert jnp.allclose(res, xs * 2)
+    assert res.shape == (100,)
+
+
+def test_safe_map_empty_pytree_raises():
+    """safe_map raises ValueError on empty PyTree input."""
+    with pytest.raises(ValueError, match="empty"):
+        safe_map(lambda x: x, {}, batch_size=10)
+

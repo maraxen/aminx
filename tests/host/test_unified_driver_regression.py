@@ -72,7 +72,7 @@ def test_regression_encoder_sink_fires_per_noise_level():
 
 def test_regression_scan_strategy_carry_accumulates():
     """safe_scan carry accumulates correctly across noise steps."""
-    from aminx.utils.safe_scan import safe_scan
+    from xtrax.transforms import safe_scan
 
     running_total = jnp.zeros(8)
 
@@ -82,7 +82,7 @@ def test_regression_scan_strategy_carry_accumulates():
         return new_carry, fake_enc
 
     noises = jnp.array([0.1, 0.2, 0.3])
-    final_carry, stacked_encs = safe_scan(noise_transition, noises, init=running_total)
+    final_carry, stacked_encs = safe_scan(noise_transition, running_total, noises)
 
     # carry should be sum of all fake_encs: (0.1 + 0.2 + 0.3) * ones(8)
     assert jnp.allclose(final_carry, jnp.full(8, 0.6), atol=1e-5)

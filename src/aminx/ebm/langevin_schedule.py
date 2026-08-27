@@ -195,10 +195,10 @@ from typing import TYPE_CHECKING, cast
 import jax
 import jax.numpy as jnp
 from xtrax.tiling import CarrySpec
+from xtrax.transforms import safe_scan
 
 from aminx.ebm.diffusion import DEFAULT_COORDINATE_SCALING
 from aminx.ebm.langevin import DEFAULT_EFFECTIVE_TEMP_SCALING, run_langevin_equilibration
-from aminx.utils.safe_scan import safe_scan
 
 if TYPE_CHECKING:
   from jaxtyping import Array, Float, Int, PRNGKeyArray
@@ -352,7 +352,7 @@ def run_annealing_schedule(
   vocabulary the design authority names, and the same object type
   ``aminx.host.plan``/``aminx.run.specs`` declare carry-bearing axes with
   elsewhere in this repo) and executes it directly via
-  ``aminx.utils.safe_scan.safe_scan`` -- provably identical to what
+  ``xtrax.transforms.safe_scan`` -- provably identical to what
   ``BatchPlanner.plan()`` would have produced.
 
   PRNG discipline: ``key`` is split exactly once per scanned level
@@ -456,7 +456,7 @@ def run_annealing_schedule(
     transition=_round_transition,
   )
   xs = (noise_schedule_arr, n_steps_arr)
-  (final_coords, _final_key), _ys = safe_scan(carry_spec.transition, xs, init=carry_spec.init)
+  (final_coords, _final_key), _ys = safe_scan(carry_spec.transition, carry_spec.init, xs)
   return final_coords
 
 
