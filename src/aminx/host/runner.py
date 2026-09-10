@@ -1274,7 +1274,7 @@ def jacobian(
     raise NotImplementedError(msg)
 
   import numpy as np  # noqa: PLC0415
-  from xtrax.run import SinkSpec, ZarrStagingSink  # noqa: PLC0415
+  from xtrax.run import ZarrStagingSink, derive_sink_spec  # noqa: PLC0415
 
   from aminx.utils.apc import apc_corrected_frobenius_norm  # noqa: PLC0415
   from aminx.utils.autoregression import full_context_ar_mask  # noqa: PLC0415
@@ -1330,7 +1330,8 @@ def jacobian(
   if use_io_sink:
     assert spec.output_h5_path is not None
     zarr_sink = ZarrStagingSink(
-      SinkSpec(
+      derive_sink_spec(
+        spec.run_spec,
         output_dir=spec.output_h5_path,
         format="zarr",
         flush_every=max(1, spec.combine_batch_size or 1),

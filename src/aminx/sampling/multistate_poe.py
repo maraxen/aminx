@@ -45,7 +45,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from xtrax.run import SinkSpec, ZarrStagingSink
+from xtrax.run import ZarrStagingSink, derive_sink_spec
 from xtrax.tiling import BatchPlanner
 from xtrax.tiling import SafeMap as _XtraxSafeMap
 from xtrax.tiling import Vmap as _XtraxVmap
@@ -669,7 +669,9 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   )  # (chunk_size, num_noise, num_temperatures, L, 21)
 
   output_dir = Path(spec.run_spec.io.output_h5_path)
-  sink = ZarrStagingSink(SinkSpec(output_dir=output_dir, format="zarr", flush_every=1))
+  sink = ZarrStagingSink(
+    derive_sink_spec(spec.run_spec, output_dir=output_dir, format="zarr", flush_every=1),
+  )
 
   root_attrs: dict[str, Any] = {
     "schema_version": GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION,

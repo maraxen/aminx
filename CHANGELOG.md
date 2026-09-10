@@ -1,6 +1,113 @@
 # Changelog
 
-## Unreleased
+## 0.2.0a1 (2026-09-10)
+
+**Minor bump, not another `0.1.0a` alpha.** Two things in this release change what a run writes
+to disk, and one of them introduces new hard failures on input that previously "worked". A reader
+of an aminx store cannot assume a `0.2.0a1` store is shaped like a `0.1.0a28` one, so the version
+says so. Still an alpha — the suffix is retained deliberately; nothing here claims the project has
+left alpha.
+
+### Added
+
+- **The sink is now self-describing about logit semantics, and about what produced it**
+  (backlog #4149, PR #154). `aminx.inference.decode.autoregressive` computes two logit arrays per
+  wave — `stored_logits` (fused with a **zero** bias) and `sampling_logits` (fused with
+  `cond.bias`, and the only one that reaches `jax.random.categorical`). Every sink writes the
+  bias-free array as `"logits"`. That divergence is deliberate and correct, but nothing on disk
+  recorded it, so a consumer had to already know — and the moment a nonzero bias is introduced,
+  the stored array silently stops describing the distribution that was sampled from.
+
+  New module `aminx.io.sink_provenance`, consumed by all three writers (`host/streaming.py`,
+  `sampling/multistate_poe.py`, `io/designs.py`). New optional attrs — absent means unknown,
+  since aminx has no reader for these stores yet:
+
+  | attr | meaning |
+  |---|---|
+  | `logits_bias_semantics` | which array is stored, whether a bias was nonzero, whether it was persisted, and **which group** holds it |
+  | `prng_seed` | the run seed |
+  | `grid_job_seed_hash` | the other half of a grid-mode run's sampling key |
+  | `aminx_version` | resolved via installed-distribution metadata, never `aminx.__version__` |
+  | `sink_provenance_version` | hash-free marker letting a reader tell a store carries these fields |
+
+  The raw pre-jit bias is persisted as a `bias` array when nonzero, so `sampling_logits` can be
+  reconstructed from `stored_logits` without re-deriving it. **No `@jax.jit` signature changed** —
+  the tag is derived host-side from the raw bias.
+
+  `DesignZarrWriter` gains an opt-in `aminx_version=` override for bare-source and vendored
+  imports, which have no `.dist-info` and therefore cannot resolve a wheel version.
+  (`src/aminx/io/sink_provenance.py`, `src/aminx/host/streaming.py`,
+  `src/aminx/sampling/multistate_poe.py`, `src/aminx/io/designs.py`)
+
+### Changed
+
+- **`xtrax[io]` `0.4.0a5` → `0.4.0a9`, crossing a breaking change** (PR #153). xtrax **a7** made
+  `SinkSpec.run_id` a required constructor argument; aminx was pinned at `==0.4.0a5` and had never
+  crossed it. Four construction sites were affected — CI caught two, and `host/streaming.py` and
+  `host/runner.py` were equally broken but uncovered by tests. The three sites with a `RunSpec` in
+  scope now go through the documented canonical seam `xtrax.run.derive_sink_spec`;
+  `DesignZarrWriter`, which has no run context, takes an optional `run_id` defaulting to
+  `new_run_id()` (optional rather than minted inline because `ZarrStagingSink` **raises** when a
+  store on disk carries a different `run_id`, so a caller reopening a store must be able to supply
+  the matching id).
+
+  **This does not link provenance yet.** `derive_sink_spec`'s run-id precedence is explicit
+  `run_id=`, then `run_spec.run_id`, then a fresh `new_run_id()` — and `build_run_spec` never
+  populates `run_id`, so every call still falls through to a fresh unlinked id. Routing through the
+  seam puts the decision in one place so populating `RunSpec.run_id` later fixes all three sites at
+  once; what `run_id` should derive from is deliberately left open.
+  (`pyproject.toml`, `uv.lock`, `src/aminx/host/streaming.py`, `src/aminx/host/runner.py`,
+  `src/aminx/sampling/multistate_poe.py`, `src/aminx/io/designs.py`)
+
+- **Two new hard failures, replacing silently-wrong output.** Both refuse to write a provenance
+  claim that would be false rather than writing it:
+  - `_sample_streaming` and `sample_multistate_poe_campaign_row` raise `NotImplementedError` when
+    `return_logits=True` and `sampling_strategy != "temperature"`. Decode mode is a pure function
+    of that field (`host/plan.py::resolve_decode_mode`: `"straight_through"` → `STEMode` →
+    `decode/ste.py`), and `logits_bias_semantics` describes a split only the autoregressive path
+    produces. `SamplingSpecification.__post_init__` already rejected this combination in **grid**
+    mode, but both writers also serve non-grid runs, where it was legal.
+  - `DesignZarrWriter.write()` raises `ValueError` on a `logits_bias_semantics` dict claiming
+    `bias_persisted: True`. That writer stages no `bias` array and has no root group, so the claim
+    can never be satisfied — and `logits_bias_semantics_outputs` returns it **by default**, so a
+    caller doing the obvious thing would have written a lying attr.
+
+### Bug Fixes
+
+- **A metadata constant was load-bearing for randomness.** `_grid_job_seed_hash` hashed a payload
+  keyed on `GRID_SCHEMA_VERSION`, and that digest folds into `_base_sampling_key`'s
+  `jax.random.fold_in` chain — so bumping a *schema label* silently changed the sampled output of
+  every grid-mode run (different tokens, and different logits at later AR positions, since decoded
+  tokens feed forward). **This fired for real during development:** a bump to `grid_v2` made to
+  satisfy one acceptance criterion violated another (`stored logit values bit-identical`) in the
+  same commit, caught by audit rather than by any test. Fixed with `_SEED_HASH_SCHEMA_PIN`, a
+  dedicated constant frozen forever and decoupled from the schema label. It is retained even though
+  both values currently read `"grid_v1"` again — the point is the decoupling, not the coincidence.
+
+  `GRID_SCHEMA_VERSION` also feeds `_grid_manifest_row_hash` → a campaign manifest row's **output
+  path** → `_done_marker_path`, so bumping it makes `_read_done_marker` return `None` for every
+  already-completed row on resume: a silent full recompute of an in-progress campaign, with the old
+  store orphaned on disk. That coupling is **not** fixed here; the schema bump was withdrawn
+  instead, and the hash-free `sink_provenance_version` carries the reader-facing intent.
+  `GRID_SCHEMA_VERSION` should be treated as unbumpable without a migration plan.
+  (`src/aminx/host/_sampling_grid_lineage.py`)
+
+- **The persisted `bias` array was silently dropped in grid mode.** Both sampling writers built
+  `root_arrays` via `.update(bias_arrays)` and then, only when `grid_lineage is not None`,
+  *reassigned* `root_arrays = {...}` instead of updating it — discarding the staged array while
+  `logits_bias_semantics["bias_persisted"]` still claimed `True`. A lying attr, worse than a
+  missing one. (`src/aminx/host/streaming.py`, `src/aminx/sampling/multistate_poe.py`)
+
+## Undocumented (0.1.0a7 – 0.1.0a28)
+
+> **These entries were filed under a heading that read `Unreleased`, but they are not unreleased.**
+> The section accumulated from 0.1.0a7 onward without ever being cut into per-version sections,
+> while a7–a28 were in fact released. At least the Zarr storage migration and the `xtrax.tiling`
+> decode-path dispatch described below shipped in `0.1.0a28` (they are present at tag `v0.1.0a28`).
+> The heading is corrected here rather than renamed onto `0.2.0a1`, which would have mis-attributed
+> roughly a year of already-released work to this release. No attempt is made to retroactively
+> split these entries across a7–a28 — the per-version attribution was not recorded at the time and
+> is not reliably recoverable. Only `v0.1.0a1`–`v0.1.0a7` and `v0.1.0a28` are tagged.
 
 ### Added
 

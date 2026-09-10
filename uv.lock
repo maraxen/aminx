@@ -65,7 +65,7 @@ wheels = [
 
 [[package]]
 name = "aminx"
-version = "0.1.0a24"
+version = "0.2.0a1"
 source = { editable = "." }
 dependencies = [
     { name = "array-record", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -215,7 +215,7 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'" },
     { name = "ty", marker = "extra == 'tests'" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["io"], specifier = "==0.4.0a5" },
+    { name = "xtrax", extras = ["io"], specifier = "==0.4.0a9" },
     { name = "zstandard", specifier = ">=0.21.0" },
 ]
 provides-extras = ["benchmark", "docs", "tests", "dev", "foldcomp", "cpu", "cuda12"]
@@ -3934,7 +3934,7 @@ wheels = [
 
 [[package]]
 name = "xtrax"
-version = "0.4.0a5"
+version = "0.4.0a9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "equinox", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -3946,9 +3946,9 @@ dependencies = [
     { name = "orbax-checkpoint", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pytest-asyncio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/fb/2a/db1f77d3b68d68fd171ecfc7096a12b82bce5b38c2c91bbde9abbb94b7ab/xtrax-0.4.0a5.tar.gz", hash = "sha256:b1a36258836b10049b3637c110cb03b20412b974bfab93026bb7a81ffce3d8cf", size = 998632, upload-time = "2026-07-08T14:35:48.63Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7a/66/9c38188b5eb0a3116fff06666a3aeb91953f7c93f97d00a2aae48d7a3d77/xtrax-0.4.0a9.tar.gz", hash = "sha256:6293bc95a0dec3478c68202bd6c12652f0085dc06c0692ee7117908908b92c63", size = 2348380, upload-time = "2026-09-07T19:46:36.191Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/c1/5569fb8debe16da08b90f0e52c4f6167a78b27957c9dd12312fb01e8024c/xtrax-0.4.0a5-py3-none-any.whl", hash = "sha256:8206480b54f82c933175f0c24cf6b82fcf32a369b4094f0a90e518496788aa20", size = 125561, upload-time = "2026-07-08T14:35:47.135Z" },
+    { url = "https://files.pythonhosted.org/packages/f3/30/ca606df7c1ae9576e3b5959df1159b4b74a9870e499a89d94b9fd4bb5bed/xtrax-0.4.0a9-py3-none-any.whl", hash = "sha256:d780c7795ca847779c93412dc606e0c359db5125ee5bd3f6ff71362bddfc7dae", size = 384987, upload-time = "2026-09-07T19:46:34.05Z" },
 ]
 
 [package.optional-dependencies]

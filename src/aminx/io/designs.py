@@ -8,7 +8,7 @@ from typing import Any, Literal, Self, TypedDict
 import jax
 import jax.numpy as jnp
 import numpy as np
-from xtrax.run import SinkSpec, ZarrStagingSink
+from xtrax.run import SinkSpec, ZarrStagingSink, new_run_id
 
 from aminx.io.sink_provenance import SINK_PROVENANCE_VERSION, resolve_aminx_version
 
@@ -66,6 +66,7 @@ class DesignZarrWriter:
     n_canonical: int = 214,
     n_states: int = 9,
     flush_every: int = 1,
+    run_id: str | None = None,
     *,
     aminx_version: str | None = None,
   ):
@@ -76,6 +77,17 @@ class DesignZarrWriter:
       n_canonical: Number of canonical residues (for shape validation).
       n_states: Number of states (for shape validation).
       flush_every: Stage calls to buffer before an automatic drain to disk.
+      run_id: Provenance join key stamped on the store, linking everything
+        written here to the run that produced it. Defaults to a fresh
+        ``xtrax.run.new_run_id()``.
+
+        Pass it explicitly to **reopen an existing store**:
+        ``ZarrStagingSink`` raises if the store on disk already carries a
+        different ``run_id``, so a defaulted writer can only ever create a
+        new store or reopen one it happens to match. There is no run context
+        at this layer to derive it from -- unlike the sampling/streaming/runner
+        sinks, which have a ``RunSpec`` in scope and go through
+        ``xtrax.run.derive_sink_spec``.
       aminx_version: OPTIONAL explicit override for the ``aminx_version`` provenance attr,
         bypassing ``resolve_aminx_version()`` entirely (audit finding E, task_id
         `260910_aminx-sink-provenance-schema`). Construction otherwise HARD-FAILS on a
@@ -91,8 +103,9 @@ class DesignZarrWriter:
     self.path = path
     self.n_canonical = n_canonical
     self.n_states = n_states
+    self.run_id = run_id or new_run_id()
     self._sink = ZarrStagingSink(
-      SinkSpec(output_dir=Path(path), format="zarr", flush_every=flush_every),
+      SinkSpec(run_id=self.run_id, output_dir=Path(path), format="zarr", flush_every=flush_every),
     )
     # Resolved HERE, at construction -- before any `write()` call, i.e. before any
     # caller-side compute this writer will ever be handed the result of. A
@@ -110,12 +123,16 @@ class DesignZarrWriter:
     n_canonical: int,
     n_states: int,
     flush_every: int = 1,
+    run_id: str | None = None,
     aminx_version: str | None = None,
   ) -> Self:
     """Writer sized like :class:`aminx.bundles.ProteinBundle` static axes.
 
     ``n_canonical`` and ``n_states`` match the stack payload's ``n_canonical`` /
     ``n_states`` (roadmap §3.2) so Zarr groups align with multistate campaigns.
+
+    ``run_id`` is forwarded to :meth:`__init__`; see there for why a caller
+    reopening an existing store has to supply it.
 
     ``aminx_version`` forwards to :meth:`__init__`'s same-named explicit opt-in override
     (audit finding E, task_id `260910_aminx-sink-provenance-schema`) -- see that
@@ -126,6 +143,7 @@ class DesignZarrWriter:
       n_canonical=n_canonical,
       n_states=n_states,
       flush_every=flush_every,
+      run_id=run_id,
       aminx_version=aminx_version,
     )
 

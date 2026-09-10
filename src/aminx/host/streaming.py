@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from xtrax.run import SinkSpec, ZarrStagingSink
+from xtrax.run import ZarrStagingSink, derive_sink_spec
 
 from aminx.host._sampling_grid_lineage import (
   GRID_SCHEMA_VERSION,
@@ -99,7 +99,9 @@ def _sample_streaming(
   structure_batch_count_stream = StreamingBatchHost.structure_batch_count(protein_iterator)
 
   output_dir = Path(spec.run_spec.io.output_h5_path)
-  sink = ZarrStagingSink(SinkSpec(output_dir=output_dir, format="zarr", flush_every=1))
+  sink = ZarrStagingSink(
+    derive_sink_spec(spec.run_spec, output_dir=output_dir, format="zarr", flush_every=1),
+  )
   # Resolved HERE, at sink construction -- before any sampling compute below -- so a
   # PackageNotFoundError (resolve_aminx_version raises rather than swallowing it) fails
   # this run before any work is done, never after, so it cannot discard a completed run.
