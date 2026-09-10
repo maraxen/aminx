@@ -7,7 +7,17 @@ import numpy as np
 
 from aminx.run.specs import SamplingSpecification
 
-GRID_SCHEMA_VERSION = "grid_v1"
+# Bumped v1 -> v2 for task_id `260910_aminx-sink-provenance-schema`: new OPTIONAL attrs
+# (logits_bias_semantics, prng_seed, aminx_version) added to sinks that key off this
+# constant. Absent on a v1 store means "written before these fields existed", not
+# "unknown" in any stronger sense -- aminx has no reader for these stores yet.
+#
+# This is the single source of truth for GRID_SCHEMA_VERSION. `host/streaming.py`
+# previously carried an independent, coincidentally-identical duplicate definition of
+# this same constant (a filed defect); it now imports this one instead of redefining it,
+# which is what actually prevents the two from silently diverging again -- see
+# `host/streaming.py`'s import of `GRID_SCHEMA_VERSION` from this module.
+GRID_SCHEMA_VERSION = "grid_v2"
 
 
 def _resolve_grid_lineage(spec: SamplingSpecification) -> dict[str, int | str] | None:

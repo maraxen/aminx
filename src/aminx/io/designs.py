@@ -10,6 +10,8 @@ import jax.numpy as jnp
 import numpy as np
 from xtrax.run import SinkSpec, ZarrStagingSink
 
+from aminx.io.sink_provenance import resolve_aminx_version
+
 
 def _to_numpy_uint8(x: jnp.ndarray | np.ndarray) -> np.ndarray:
   """Host-side snapshot to uint8; skips ``device_get`` when ``x`` is already NumPy."""
@@ -80,6 +82,11 @@ class DesignZarrWriter:
     self._sink = ZarrStagingSink(
       SinkSpec(output_dir=Path(path), format="zarr", flush_every=flush_every),
     )
+    # Resolved HERE, at construction -- before any `write()` call, i.e. before any
+    # caller-side compute this writer will ever be handed the result of. A
+    # PackageNotFoundError therefore fails a run before it starts, not after a design has
+    # already been computed and is only now being staged.
+    self._aminx_version = resolve_aminx_version()
 
   @classmethod
   def from_multistate_shapes(
@@ -97,13 +104,28 @@ class DesignZarrWriter:
     """
     return cls(path, n_canonical=n_canonical, n_states=n_states, flush_every=flush_every)
 
-  def write(self, key: tuple[int, ...], payload: DesignPayload) -> None:
+  def write(
+    self,
+    key: tuple[int, ...],
+    payload: DesignPayload,
+    *,
+    logits_bias_semantics: dict[str, Any] | None = None,
+  ) -> None:
     """Stage a design payload under ``key`` for drain into the Zarr store.
 
     Args:
       key: Design address, e.g. ``(structure_idx, sample_idx, noise_idx, temp_idx)``.
         Becomes the nested Zarr group path for this design.
       payload: Sequence/logits/scores/state_weights arrays plus JSON-safe metadata.
+      logits_bias_semantics: OPTIONAL ``logits_bias_semantics`` attrs value (see
+        ``aminx.io.sink_provenance.logits_bias_semantics_outputs``), for callers whose
+        ``payload["logits"]`` actually went through the stored-vs-sampling AR bias split
+        that schema describes. Left unset (absent, per the schema's own optionality) when
+        a caller has no such split to report -- e.g. this writer's current caller,
+        ``inference/optimize_ste.py``, produces ``logits`` via straight-through-estimator
+        optimization against a hard per-position ``fixed_bias`` constraint, which is a
+        different mechanism from ``cond.bias``/the AR decode's stored/sampling split, so
+        fabricating a value here would misdescribe that path's actual provenance.
     """
     seq = _to_numpy_uint8(payload["sequence"])
     assert seq.shape == (self.n_canonical,), f"sequence shape {seq.shape} != {(self.n_canonical,)}"
@@ -123,13 +145,18 @@ class DesignZarrWriter:
     weights = _to_numpy_float32(payload["state_weights"])
     assert weights.shape == (self.n_states,), f"weights shape {weights.shape} != {(self.n_states,)}"
 
+    attrs: dict[str, Any] = dict(payload["metadata"])
+    attrs["aminx_version"] = self._aminx_version
+    if logits_bias_semantics is not None:
+      attrs["logits_bias_semantics"] = logits_bias_semantics
+
     self._sink.stage(
       key,
       sequence=seq,
       logits=logits,
       scores=scores,
       state_weights=weights,
-      attrs=dict(payload["metadata"]),
+      attrs=attrs,
     )
 
   def close(self) -> None:

@@ -75,6 +75,12 @@ from aminx.host.streaming import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION, _
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.logits import make_stage_set
 from aminx.inference.sample_autoregressive import kernel as _sample_autoregressive_kernel
+from aminx.io.sink_provenance import (
+  assert_uniform_group_attr,
+  logits_bias_semantics_outputs,
+  prng_seed_attrs,
+  resolve_aminx_version,
+)
 from aminx.sampling.conditional_logits import _plan_axis_strategy
 from aminx.tiling.axes import N_SAMPLES, N_STATES
 from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
@@ -538,6 +544,12 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     )
     raise ValueError(msg)
 
+  # Resolved at RUN ENTRY, before the (expensive) AR sampling loop below -- not at sink
+  # construction further down, which in this function happens AFTER that loop runs. A
+  # PackageNotFoundError here fails before any compute happens, so it can never discard
+  # already-completed sampling work the way resolving it post-loop would.
+  resolved_aminx_version = resolve_aminx_version()
+
   grid_lineage = _resolve_grid_lineage(spec)
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   total_num_samples = resolve_target_samples(spec, grid_lineage=grid_lineage)
@@ -573,6 +585,13 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
 
   sequence_rows: list[list[np.ndarray]] = []
   logits_rows: list[list[np.ndarray]] = []
+  # AC1b: this loop is exactly the "sample/noise/temperature axes fused into one group"
+  # case -- every cell below contributes to the SAME staged key ("poe_fused") below, so a
+  # per-cell bias_attrs value that diverged across cells would silently resolve via
+  # last-write-wins if not caught here. `cell_spec` never touches `bias` (only
+  # `backbone_noise`/`temperature` are replaced per cell), so this is expected to always
+  # be uniform -- the assertion after the loop is the drift detector for that invariant.
+  cell_bias_attrs: list[dict[str, Any]] = []
   seq_len: int | None = None
   for noise_idx, noise in enumerate(noises):
     sequence_row: list[np.ndarray] = []
@@ -591,8 +610,18 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
         seq_len = cell_sequences_np.shape[-1]
       sequence_row.append(cell_sequences_np)
       logits_row.append(cell_logits_np)
+      if return_logits:
+        _, cell_attrs = logits_bias_semantics_outputs(cell_spec.run_spec.sampling.bias)
+        cell_bias_attrs.append(cell_attrs["logits_bias_semantics"])
     sequence_rows.append(sequence_row)
     logits_rows.append(logits_row)
+
+  if cell_bias_attrs:
+    assert_uniform_group_attr(
+      cell_bias_attrs,
+      attr_name="logits_bias_semantics",
+      group_key=("poe_fused",),
+    )
 
   # sequence_rows[noise_idx][temp_idx] has shape (chunk_size, L) -- stack into the
   # (chunk_size, num_noise, num_temperatures, L) convention _sample_streaming's campaign-mode
@@ -617,8 +646,15 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     "sidechain_conditioning": int(spec.sidechain_conditioning),
     "samples_chunk_size": chunk_size,
     "multistate_poe_fused": 1,
+    "aminx_version": resolved_aminx_version,
+    **prng_seed_attrs(spec.run_spec.sampling.random_seed),
   }
   root_arrays: dict[str, np.ndarray] = {}
+  bias_attrs: dict[str, Any] = {}
+  if return_logits:
+    bias_arrays, bias_attrs = logits_bias_semantics_outputs(spec.run_spec.sampling.bias)
+    root_arrays.update(bias_arrays)
+    root_attrs.update(bias_attrs)
   if grid_lineage is not None:
     manifest_row_hash = _grid_manifest_row_hash(spec, grid_lineage)
     root_attrs.update(_grid_lineage_attrs(grid_lineage))
@@ -649,6 +685,8 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   }
   if grid_lineage is not None:
     attrs.update(_grid_lineage_attrs(grid_lineage))
+  if logits_arr is not None:
+    attrs.update(bias_attrs)
   # Same provenance as the single-structure branch. These two writers share no write function
   # -- they only share the sink primitive -- so anything added to one and not the other leaves
   # exactly the arm that matters here (the necklace's PoE beads) with no evidence at all.

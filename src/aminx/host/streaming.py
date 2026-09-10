@@ -10,6 +10,7 @@ import numpy as np
 from xtrax.run import SinkSpec, ZarrStagingSink
 
 from aminx.host._sampling_grid_lineage import (
+  GRID_SCHEMA_VERSION,
   _grid_iteration_arrays,
   _grid_manifest_row_hash,
   _grid_sample_indices,
@@ -30,6 +31,11 @@ from aminx.host.plan import (
   resolve_target_samples,
 )
 from aminx.host.streaming_host import StreamingBatchHost
+from aminx.io.sink_provenance import (
+  logits_bias_semantics_outputs,
+  prng_seed_attrs,
+  resolve_aminx_version,
+)
 
 if TYPE_CHECKING:
   from grain.python import IterDataset
@@ -37,8 +43,14 @@ if TYPE_CHECKING:
   from aminx.run.specs import SamplingSpecification
 
 
-SAMPLING_SCHEMA_VERSION = "sampling_v1"
-GRID_SCHEMA_VERSION = "grid_v1"
+# Bumped v1 -> v2 alongside GRID_SCHEMA_VERSION for task_id
+# `260910_aminx-sink-provenance-schema`: new OPTIONAL root attrs (logits_bias_semantics,
+# prng_seed, aminx_version). Absent on a v1 store just means "written before these fields
+# existed" -- aminx has no reader for these stores yet, so this makes no claim about
+# reader behavior.
+SAMPLING_SCHEMA_VERSION = "sampling_v2"
+# GRID_SCHEMA_VERSION is re-exported (not redefined) from `_sampling_grid_lineage` --
+# that module is now the single source of truth; see the comment on its own definition.
 
 
 def _grid_lineage_attrs(grid_lineage: dict[str, int | str]) -> dict[str, Any]:
@@ -78,6 +90,10 @@ def _sample_streaming(
 
   output_dir = Path(spec.run_spec.io.output_h5_path)
   sink = ZarrStagingSink(SinkSpec(output_dir=output_dir, format="zarr", flush_every=1))
+  # Resolved HERE, at sink construction -- before any sampling compute below -- so a
+  # PackageNotFoundError (resolve_aminx_version raises rather than swallowing it) fails
+  # this run before any work is done, never after, so it cannot discard a completed run.
+  resolved_aminx_version = resolve_aminx_version()
 
   root_attrs: dict[str, Any] = {
     "schema_version": GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION,
@@ -85,8 +101,21 @@ def _sample_streaming(
     "ligand_conditioning": int(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
     "samples_chunk_size": chunk_size,
+    "aminx_version": resolved_aminx_version,
+    **prng_seed_attrs(spec.run_spec.sampling.random_seed),
   }
   root_arrays: dict[str, np.ndarray] = {}
+  # Computed ONCE from `spec` (constant for the whole call: neither branch below ever
+  # builds a per-structure or per-chunk bias) and reused for every group below that
+  # stages a "logits" array. This is what makes AC1b's uniformity requirement hold by
+  # construction here -- there is no code path left that could compute a second, diverging
+  # value -- unlike `multistate_poe.py`'s per-(noise, temperature)-cell loop, which
+  # recomputes per cell and therefore uses `assert_uniform_group_attr` explicitly.
+  bias_attrs: dict[str, Any] = {}
+  if spec.run_spec.sampling.return_logits:
+    bias_arrays, bias_attrs = logits_bias_semantics_outputs(spec.run_spec.sampling.bias)
+    root_arrays.update(bias_arrays)
+    root_attrs.update(bias_attrs)
   if grid_lineage is not None:
     manifest_row_hash = _grid_manifest_row_hash(spec, grid_lineage)
     root_attrs.update(_grid_lineage_attrs(grid_lineage))
@@ -150,6 +179,8 @@ def _sample_streaming(
           }
           if grid_lineage is not None:
             attrs.update(_grid_lineage_attrs(grid_lineage))
+          if spec.run_spec.sampling.return_logits:
+            attrs.update(bias_attrs)
           sink.stage(key, attrs=attrs, **arrays)
           resolved_structure_ids.append(batch_structure_ids[i])
           structure_idx += 1
@@ -216,6 +247,7 @@ def _sample_streaming(
           concat_arrays.update(fixed_arrays)
           if logits_parts[key]:
             concat_arrays["logits"] = np.concatenate(logits_parts[key], axis=0)
+            fixed_attrs.update(bias_attrs)
           if perplexity_parts[key]:
             concat_arrays["pseudo_perplexity"] = np.concatenate(perplexity_parts[key], axis=0)
           sink.stage(key, attrs=fixed_attrs, **concat_arrays)
