@@ -657,6 +657,30 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   root_arrays: dict[str, np.ndarray] = {}
   bias_attrs: dict[str, Any] = {}
   if return_logits:
+    # AUDIT FINDING B (code-review round 2 on PR #154) -- the SAME explicit guard
+    # `host/streaming.py` carries, for the same reason, stated EXPLICITLY here rather than
+    # left to incidental protection. Two other checks happen to reject "straight_through"
+    # before this line today: `sample_multistate_poe_bead`'s `isinstance(decode_mode,
+    # AutoregressiveMode)` assertion, and `SamplingSpecification.__post_init__`'s
+    # grid_mode-implies-temperature rule. Neither is scoped to THIS concern -- the first
+    # exists to stop a silently-ignored decode-mode request (aminx#110), the second to
+    # constrain grid campaigns -- so a future third `sampling_strategy` value that resolved
+    # to AutoregressiveMode WITHOUT following autoregressive.py:353-397's exact
+    # stored/sampling split would slip past both and get AR semantics stamped on logits
+    # that do not have them. Relying on a guard that exists for another reason is how this
+    # defect class returns, so this one names its own reason and fails closed.
+    if spec.run_spec.sampling.sampling_strategy != "temperature":
+      msg = (
+        "Refusing to stage 'logits_bias_semantics' for sampling_strategy="
+        f"{spec.run_spec.sampling.sampling_strategy!r}. Those attrs describe the "
+        "bias-free/bias-applied logits split in inference/decode/autoregressive.py, which "
+        "only the autoregressive decode path produces; this strategy resolves to a "
+        "different decoder (see host/plan.py::resolve_decode_mode), so the staged 'logits' "
+        "array would not have the semantics the attrs claim. Either run with "
+        "sampling_strategy='temperature', or set return_logits=False, or extend "
+        "aminx.io.sink_provenance with semantics for this decoder before staging them."
+      )
+      raise NotImplementedError(msg)
     bias_arrays, bias_attrs = logits_bias_semantics_outputs(spec.run_spec.sampling.bias)
     root_arrays.update(bias_arrays)
     root_attrs.update(bias_attrs)
@@ -668,6 +692,15 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     # `_base_sampling_key(spec, grid_lineage=grid_lineage)` directly (see its use above), so
     # it folds the SAME `_grid_job_seed_hash` into the key and has the identical gap:
     # `prng_seed` alone under-determines the key that actually drove sampling.
+    #
+    # SCOPE, for a reader attempting exact reconstruction (code-review round 2): this pair
+    # (`prng_seed` + `grid_job_seed_hash`) reproduces `_base_sampling_key`'s OWN four
+    # fold_ins. THIS writer then applies three more on top, which are NOT captured by these
+    # two attrs alone: `sample_start` (folded into base_key above), then `noise_idx` and
+    # `temp_idx` per cell. Nothing is lost -- `sample_start` is recorded via
+    # `_grid_lineage_attrs`, and the noise/temp indices are implicit in the documented
+    # (chunk, noise, temperature, ...) array axis order -- but full key reconstruction needs
+    # the fold-in ORDER from this source file, not the attrs in isolation.
     root_attrs["grid_job_seed_hash"] = _grid_job_seed_hash(spec, grid_lineage)
     iteration_ids, iteration_starts, iteration_counts = _grid_iteration_arrays(
       grid_lineage, chunk_size=chunk_size,

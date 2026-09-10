@@ -270,3 +270,107 @@ def test_non_autoregressive_strategy_refuses_to_stage_ar_bias_semantics() -> Non
 
     with pytest.raises(NotImplementedError, match="logits_bias_semantics"):
       _sample_streaming(spec, [], None, _fail_if_sampled)
+
+
+# ---------------------------------------------------------------------------
+# Code-review round 2 on PR #154: the four assertions above covered only
+# `_sample_streaming`. `sample_multistate_poe_campaign_row` stages the SAME three attrs
+# and needs the same guard, so it gets the same coverage rather than relying on the two
+# writers being kept in sync by inspection.
+# ---------------------------------------------------------------------------
+
+
+def _fake_bead(
+  _cell_spec: SamplingSpecification,
+  _cell_key: object,
+  n_samples: int,
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+  """Zero-tensor stand-in for the real AR sampling/model call -- keeps these CPU-only."""
+  return (
+    jnp.zeros((n_samples, _SEQ_LEN), dtype=jnp.int32),
+    jnp.zeros((n_samples, _SEQ_LEN, 21), dtype=jnp.float32),
+  )
+
+
+def _poe_spec(output_dir: Path, bias: np.ndarray | None = None) -> SamplingSpecification:
+  return SamplingSpecification(
+    inputs=["state_a.pdb", "state_b.pdb"],
+    batch_size=2,
+    grid_mode=True,
+    job_id="synthetic_poe_job_260910",
+    chunk_id=0,
+    sample_start=0,
+    sample_count=3,
+    num_samples=3,
+    return_logits=bias is not None,
+    bias=bias,
+    output_h5_path=str(output_dir),
+    multi_state_strategy="product",
+  )
+
+
+def test_poe_writer_records_seed_hash_marker_and_bias_group() -> None:
+  """The PoE writer must stage the same three provenance attrs `_sample_streaming` does.
+
+  Findings A, C and D were originally asserted only against `host/streaming.py`, leaving
+  `sampling/multistate_poe.py`'s identical root staging unverified -- the two writers are
+  separate code, so "the other one does it" is not coverage.
+  """
+  with tempfile.TemporaryDirectory() as tmpdir:
+    output_dir = Path(tmpdir) / "store"
+    bias = np.ones((_SEQ_LEN, 21), dtype=np.float32)
+    spec = _poe_spec(output_dir, bias=bias)
+
+    with patch.object(multistate_poe, "sample_multistate_poe_bead", _fake_bead):
+      multistate_poe.sample_multistate_poe_campaign_row(spec)
+
+    root = zarr.open_group(str(output_dir), mode="r")
+
+    # FINDING A -- hash-free marker staged, and the hashed label NOT re-bumped.
+    assert root.attrs.get("sink_provenance_version") == SINK_PROVENANCE_VERSION
+    assert root.attrs["schema_version"] == "grid_v1"
+
+    # FINDING C -- the seed hash is recorded, matches the function `_base_sampling_key`
+    # itself calls, and is a genuinely distinct value from the row hash.
+    lineage = _resolve_grid_lineage(spec)
+    assert lineage is not None
+    assert root.attrs["grid_job_seed_hash"] == _grid_job_seed_hash(spec, lineage)
+    assert root.attrs["grid_job_seed_hash"] != root.attrs["manifest_row_hash"]
+
+    # FINDING D -- bias_persisted says WHERE, and the named group really holds it.
+    semantics = root.attrs["logits_bias_semantics"]
+    assert semantics["bias_persisted"] is True
+    assert semantics["bias_array_group"] == "/"
+    assert "bias" in set(root.array_keys())
+
+
+def test_poe_writer_refuses_to_stage_ar_bias_semantics_for_non_ar_strategy() -> None:
+  """FINDING B, second writer: the guard must be EXPLICIT here, not incidental.
+
+  Two unrelated checks happen to reject "straight_through" before the staging block today
+  (`sample_multistate_poe_bead`'s AutoregressiveMode assertion, and
+  `SamplingSpecification.__post_init__`'s grid_mode rule). Both exist for other reasons, so
+  this test pins the dedicated guard rather than the incidental protection -- it patches
+  the bead out entirely, which removes the first of those two checks, and uses
+  grid_mode=False, which removes the second.
+  """
+  with tempfile.TemporaryDirectory() as tmpdir:
+    output_dir = Path(tmpdir) / "store"
+    spec = SamplingSpecification(
+      inputs=["state_a.pdb", "state_b.pdb"],
+      batch_size=2,
+      grid_mode=False,
+      num_samples=3,
+      return_logits=True,
+      sampling_strategy="straight_through",
+      iterations=1,
+      learning_rate=0.1,
+      output_h5_path=str(output_dir),
+      multi_state_strategy="product",
+    )
+
+    with (
+      patch.object(multistate_poe, "sample_multistate_poe_bead", _fake_bead),
+      pytest.raises(NotImplementedError, match="logits_bias_semantics"),
+    ):
+      multistate_poe.sample_multistate_poe_campaign_row(spec)

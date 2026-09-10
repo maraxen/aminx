@@ -151,6 +151,15 @@ class DesignZarrWriter:
         optimization against a hard per-position ``fixed_bias`` constraint, which is a
         different mechanism from ``cond.bias``/the AR decode's stored/sampling split, so
         fabricating a value here would misdescribe that path's actual provenance.
+
+        Must NOT claim ``bias_persisted: True`` -- see Raises.
+
+    Raises:
+      ValueError: If ``logits_bias_semantics["bias_persisted"]`` is true. This writer
+        stages only sequence/logits/scores/state_weights and has no root group, so no
+        ``"bias"`` array can exist anywhere in the store for that claim to refer to.
+        Build the dict with ``logits_bias_semantics_outputs(bias, persist_bias=False)``
+        to describe the semantics without claiming persistence.
     """
     seq = _to_numpy_uint8(payload["sequence"])
     assert seq.shape == (self.n_canonical,), f"sequence shape {seq.shape} != {(self.n_canonical,)}"
@@ -169,6 +178,26 @@ class DesignZarrWriter:
 
     weights = _to_numpy_float32(payload["state_weights"])
     assert weights.shape == (self.n_states,), f"weights shape {weights.shape} != {(self.n_states,)}"
+
+    if logits_bias_semantics is not None and logits_bias_semantics.get("bias_persisted"):
+      # This writer stages exactly four arrays (below) and has NO root group -- every design
+      # lives in its own nested `key` group. So there is nowhere a `"bias"` array could
+      # have been staged, and `bias_persisted: True` here is unconditionally false: the
+      # exact lying-attr failure mode this schema exists to prevent (code-review round 2 on
+      # PR #154). Fails closed rather than trusting the caller, because the natural way to
+      # build this dict -- `logits_bias_semantics_outputs(some_nonzero_bias)` -- returns
+      # `bias_persisted=True` and `bias_array_group="/"` by DEFAULT, so a caller doing the
+      # obvious thing would silently write the lie.
+      msg = (
+        "logits_bias_semantics['bias_persisted'] is True, but DesignZarrWriter cannot "
+        "stage a 'bias' array: it writes only sequence/logits/scores/state_weights, and "
+        "has no root group for `bias_array_group='/'` to refer to. Staging this would "
+        "record a bias array that does not exist anywhere in the store. Pass "
+        "logits_bias_semantics_outputs(bias, persist_bias=False) to describe the bias "
+        "semantics without claiming persistence, or persist the bias through a writer "
+        "that stages a root group (host/streaming.py, sampling/multistate_poe.py)."
+      )
+      raise ValueError(msg)
 
     attrs: dict[str, Any] = dict(payload["metadata"])
     attrs["aminx_version"] = self._aminx_version
