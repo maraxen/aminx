@@ -54,6 +54,7 @@ from xtrax.tiling.estimators import lowered_memory_estimate
 from aminx.host._sampling_grid_lineage import (
   _base_sampling_key,
   _grid_iteration_arrays,
+  _grid_job_seed_hash,
   _grid_manifest_row_hash,
   _grid_sample_indices,
   _resolve_grid_lineage,
@@ -75,6 +76,13 @@ from aminx.host.streaming import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION, _
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.logits import make_stage_set
 from aminx.inference.sample_autoregressive import kernel as _sample_autoregressive_kernel
+from aminx.io.sink_provenance import (
+  SINK_PROVENANCE_VERSION,
+  assert_uniform_group_attr,
+  logits_bias_semantics_outputs,
+  prng_seed_attrs,
+  resolve_aminx_version,
+)
 from aminx.sampling.conditional_logits import _plan_axis_strategy
 from aminx.tiling.axes import N_SAMPLES, N_STATES
 from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
@@ -538,6 +546,12 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     )
     raise ValueError(msg)
 
+  # Resolved at RUN ENTRY, before the (expensive) AR sampling loop below -- not at sink
+  # construction further down, which in this function happens AFTER that loop runs. A
+  # PackageNotFoundError here fails before any compute happens, so it can never discard
+  # already-completed sampling work the way resolving it post-loop would.
+  resolved_aminx_version = resolve_aminx_version()
+
   grid_lineage = _resolve_grid_lineage(spec)
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   total_num_samples = resolve_target_samples(spec, grid_lineage=grid_lineage)
@@ -571,8 +585,45 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   noises = list(noise_val) if isinstance(noise_val, (list, tuple)) else [noise_val]
   return_logits = spec.run_spec.sampling.return_logits
 
+  # AUDIT FINDING B (code-review round 2 on PR #154; hoisted here in round 3 for fail-fast).
+  # The SAME explicit guard `host/streaming.py` carries, for the same reason, stated
+  # EXPLICITLY rather than left to incidental protection. Two other checks happen to reject
+  # "straight_through" before staging today: `sample_multistate_poe_bead`'s
+  # `isinstance(decode_mode, AutoregressiveMode)` assertion, and
+  # `SamplingSpecification.__post_init__`'s grid_mode-implies-temperature rule. Neither is
+  # scoped to THIS concern -- the first exists to stop a silently-ignored decode-mode request
+  # (aminx#110), the second to constrain grid campaigns -- so a future third
+  # `sampling_strategy` value resolving to AutoregressiveMode WITHOUT following
+  # autoregressive.py:353-397's exact stored/sampling split would slip past both and get AR
+  # semantics stamped on logits that do not have them. Relying on a guard that exists for
+  # another reason is how this defect class returns, so this one names its own reason.
+  #
+  # Placed BEFORE the noise/temperature loop below, not beside the staging block it protects:
+  # correctness only requires it precede staging, but the loop calls
+  # `sample_multistate_poe_bead` per cell, so guarding at the staging site alone would pay
+  # for the full AR sampling compute of an unsupported strategy before rejecting it.
+  if return_logits and spec.run_spec.sampling.sampling_strategy != "temperature":
+    msg = (
+      "Refusing to stage 'logits_bias_semantics' for sampling_strategy="
+      f"{spec.run_spec.sampling.sampling_strategy!r}. Those attrs describe the "
+      "bias-free/bias-applied logits split in inference/decode/autoregressive.py, which "
+      "only the autoregressive decode path produces; this strategy resolves to a "
+      "different decoder (see host/plan.py::resolve_decode_mode), so the staged 'logits' "
+      "array would not have the semantics the attrs claim. Either run with "
+      "sampling_strategy='temperature', or set return_logits=False, or extend "
+      "aminx.io.sink_provenance with semantics for this decoder before staging them."
+    )
+    raise NotImplementedError(msg)
+
   sequence_rows: list[list[np.ndarray]] = []
   logits_rows: list[list[np.ndarray]] = []
+  # AC1b: this loop is exactly the "sample/noise/temperature axes fused into one group"
+  # case -- every cell below contributes to the SAME staged key ("poe_fused") below, so a
+  # per-cell bias_attrs value that diverged across cells would silently resolve via
+  # last-write-wins if not caught here. `cell_spec` never touches `bias` (only
+  # `backbone_noise`/`temperature` are replaced per cell), so this is expected to always
+  # be uniform -- the assertion after the loop is the drift detector for that invariant.
+  cell_bias_attrs: list[dict[str, Any]] = []
   seq_len: int | None = None
   for noise_idx, noise in enumerate(noises):
     sequence_row: list[np.ndarray] = []
@@ -591,8 +642,18 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
         seq_len = cell_sequences_np.shape[-1]
       sequence_row.append(cell_sequences_np)
       logits_row.append(cell_logits_np)
+      if return_logits:
+        _, cell_attrs = logits_bias_semantics_outputs(cell_spec.run_spec.sampling.bias)
+        cell_bias_attrs.append(cell_attrs["logits_bias_semantics"])
     sequence_rows.append(sequence_row)
     logits_rows.append(logits_row)
+
+  if cell_bias_attrs:
+    assert_uniform_group_attr(
+      cell_bias_attrs,
+      attr_name="logits_bias_semantics",
+      group_key=("poe_fused",),
+    )
 
   # sequence_rows[noise_idx][temp_idx] has shape (chunk_size, L) -- stack into the
   # (chunk_size, num_noise, num_temperatures, L) convention _sample_streaming's campaign-mode
@@ -614,26 +675,58 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
 
   root_attrs: dict[str, Any] = {
     "schema_version": GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION,
+    # Hash-free marker (audit finding A) -- participates in NO hash, so unlike
+    # `schema_version` it can be added without moving any manifest row hash or output path.
+    "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
     "ligand_conditioning": int(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
     "samples_chunk_size": chunk_size,
     "multistate_poe_fused": 1,
+    "aminx_version": resolved_aminx_version,
+    **prng_seed_attrs(spec.run_spec.sampling.random_seed),
   }
   root_arrays: dict[str, np.ndarray] = {}
+  bias_attrs: dict[str, Any] = {}
+  if return_logits:
+    # The AUDIT FINDING B guard that protects this staging block lives near the top of this
+    # function (search "AUDIT FINDING B"), hoisted there so an unsupported `sampling_strategy`
+    # is rejected BEFORE the per-cell AR sampling loop rather than after paying for it. It is
+    # unconditional for `return_logits`, so by here the strategy is known to be "temperature".
+    bias_arrays, bias_attrs = logits_bias_semantics_outputs(spec.run_spec.sampling.bias)
+    root_arrays.update(bias_arrays)
+    root_attrs.update(bias_attrs)
   if grid_lineage is not None:
     manifest_row_hash = _grid_manifest_row_hash(spec, grid_lineage)
     root_attrs.update(_grid_lineage_attrs(grid_lineage))
     root_attrs["manifest_row_hash"] = manifest_row_hash
+    # AUDIT FINDING C -- see the matching comment in `host/streaming.py`. This writer calls
+    # `_base_sampling_key(spec, grid_lineage=grid_lineage)` directly (see its use above), so
+    # it folds the SAME `_grid_job_seed_hash` into the key and has the identical gap:
+    # `prng_seed` alone under-determines the key that actually drove sampling.
+    #
+    # SCOPE, for a reader attempting exact reconstruction (code-review round 2): this pair
+    # (`prng_seed` + `grid_job_seed_hash`) reproduces `_base_sampling_key`'s OWN four
+    # fold_ins. THIS writer then applies three more on top, which are NOT captured by these
+    # two attrs alone: `sample_start` (folded into base_key above), then `noise_idx` and
+    # `temp_idx` per cell. Nothing is lost -- `sample_start` is recorded via
+    # `_grid_lineage_attrs`, and the noise/temp indices are implicit in the documented
+    # (chunk, noise, temperature, ...) array axis order -- but full key reconstruction needs
+    # the fold-in ORDER from this source file, not the attrs in isolation.
+    root_attrs["grid_job_seed_hash"] = _grid_job_seed_hash(spec, grid_lineage)
     iteration_ids, iteration_starts, iteration_counts = _grid_iteration_arrays(
       grid_lineage, chunk_size=chunk_size,
     )
-    root_arrays = {
+    # `.update(...)`, NOT reassignment -- a bare `root_arrays = {...}` here silently
+    # discarded whatever `bias_arrays` staged above (audit finding, task_id
+    # `260910_aminx-sink-provenance-schema`): `bias_persisted: true` would then be a lying
+    # attr, since the `bias` array it claims exists never reached the store in grid mode.
+    root_arrays.update({
       "sample_indices": _grid_sample_indices(grid_lineage),
       "grid_iteration_ids": iteration_ids,
       "grid_iteration_sample_start": iteration_starts,
       "grid_iteration_sample_count": iteration_counts,
-    }
+    })
   sink.stage((), attrs=root_attrs, **root_arrays)
 
   key = ("poe_fused",)
@@ -651,6 +744,8 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   }
   if grid_lineage is not None:
     attrs.update(_grid_lineage_attrs(grid_lineage))
+  if logits_arr is not None:
+    attrs.update(bias_attrs)
   # Same provenance as the single-structure branch. These two writers share no write function
   # -- they only share the sink primitive -- so anything added to one and not the other leaves
   # exactly the arm that matters here (the necklace's PoE beads) with no evidence at all.

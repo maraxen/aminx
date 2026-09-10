@@ -1,13 +1,57 @@
 import hashlib
 import json
-from typing import Any
+from typing import Any, Final
 
 import jax
 import numpy as np
 
 from aminx.run.specs import SamplingSpecification
 
+# REVERTED to "grid_v1" (audit finding A, task_id `260910_aminx-sink-provenance-schema`,
+# code-review round on PR #154): this constant is NOT only a reader-facing label. It also
+# feeds `_grid_manifest_row_hash` -> `root_attrs["manifest_row_hash"]` -> the manifest
+# row's OUTPUT PATH (`campaign.py:306`) -> `_done_marker_path`. Bumping it therefore
+# changes every future row's output directory, which makes `_read_done_marker` return
+# `None` for every already-completed row on resume (`campaign.py:989`) -- a full,
+# SILENT recompute of an in-progress campaign (e.g. the real 882-row necklace campaign),
+# with the old completed store orphaned on disk and never passed to
+# `_invalidate_stale_output`. The v1->v2 bump this comment used to describe was reverted
+# for exactly that reason: the new fields this task adds are purely additive and do not
+# justify paying a full campaign recompute. See `SinkProvenanceVersion`/
+# `sink_provenance_version` in `aminx.io.sink_provenance` for the hash-free way this task
+# now lets a reader distinguish stores instead.
+#
+# This is the single source of truth for GRID_SCHEMA_VERSION. `host/streaming.py`
+# previously carried an independent, coincidentally-identical duplicate definition of
+# this same constant (a filed defect); it now imports this one instead of redefining it,
+# which is what actually prevents the two from silently diverging again -- see
+# `host/streaming.py`'s import of `GRID_SCHEMA_VERSION` from this module.
+#
+# THIS CONSTANT MUST NEVER FEED THE PRNG SEED DERIVATION. It did until this comment was
+# written (audit finding, task_id `260910_aminx-sink-provenance-schema`, fixed same task):
+# `_grid_job_seed_hash` hashed a payload keyed on `GRID_SCHEMA_VERSION`, and that hash folds
+# directly into `_base_sampling_key`'s `jax.random.fold_in` chain -- so a schema-label bump
+# would otherwise silently change the sampled output of every grid-mode run (different
+# tokens, different logits at later AR positions) with no behavioural-change warning. See
+# `_SEED_HASH_SCHEMA_PIN` below, which is the value the seed hash actually uses (kept
+# separate from this constant and FROZEN FOREVER, regardless of how many more times this
+# constant is bumped) -- that pin is what guarantees a *future* GRID_SCHEMA_VERSION bump
+# cannot reseed sampling. Do not remove the pin on the grounds that the two values now
+# coincide again ("grid_v1" == "grid_v1") -- the whole point is that they are decoupled,
+# not that they happen to currently match.
 GRID_SCHEMA_VERSION = "grid_v1"
+
+# FROZEN FOREVER. Feeds `_grid_job_seed_hash` -> `_seed_words_from_manifest_hash` ->
+# `_base_sampling_key`'s `jax.random.fold_in` chain, i.e. it is load-bearing for every
+# grid-mode run's sampled sequences and logits. Deliberately NOT `GRID_SCHEMA_VERSION`:
+# that constant exists to label stores for readers and is expected to keep bumping over
+# time, and coupling the two means every future schema bump silently reseeds every
+# existing store's worth of designs. Changing this literal is equivalent to deliberately
+# breaking reproducibility of every stored grid-mode run to date -- do not do it as part
+# of a routine schema bump. If the seed-derivation payload genuinely must change, that is
+# its own explicit, documented, reproducibility-breaking decision, not a side effect of
+# relabelling stores.
+_SEED_HASH_SCHEMA_PIN: Final[str] = "grid_v1"
 
 
 def _resolve_grid_lineage(spec: SamplingSpecification) -> dict[str, int | str] | None:
@@ -85,6 +129,25 @@ def _grid_manifest_row_hash(
   spec: SamplingSpecification,
   lineage: dict[str, int | str],
 ) -> str:
+  """Identify/dedupe a manifest row -- NOT part of the PRNG seed derivation.
+
+  Investigated for task_id `260910_aminx-sink-provenance-schema`: this hash feeds only
+  `root_attrs["manifest_row_hash"]` (store bookkeeping) and `campaign.py`'s done-marker
+  matching (`_validate_done_marker`/`_write_done_marker`) -- it is never passed to
+  `_base_sampling_key` or any other randomness-consuming call. It is therefore safe, and
+  intentional, for it to keep tracking `GRID_SCHEMA_VERSION` (unlike `_grid_job_seed_hash`
+  below, which must NOT).
+
+  Consequence of that choice, so it isn't rediscovered as a surprise: bumping
+  `GRID_SCHEMA_VERSION` changes every future `manifest_row_hash` for an otherwise-identical
+  row. A campaign resumed after such a bump will regenerate its manifest with the new
+  hash, `_validate_done_marker` will see the stored marker's old hash disagree, and it
+  raises rather than silently reusing the old store -- so a resume across a schema bump
+  forces genuinely-completed rows to be treated as not-done and rerun. That is a resume-
+  cost/safety tradeoff (never a correctness bug: nothing mixes v1 and v2 semantics
+  silently), and it is the intended effect of bumping a *schema* version -- it should be a
+  breaking change against old resume state, not something that can quietly drift back in.
+  """
   payload = {
     "schema_version": GRID_SCHEMA_VERSION,
     "job_id": str(lineage["job_id"]),
@@ -105,8 +168,14 @@ def _grid_job_seed_hash(
   spec: SamplingSpecification,
   lineage: dict[str, int | str],
 ) -> str:
+  """PRNG-seed-feeding hash -- payload MUST use `_SEED_HASH_SCHEMA_PIN`, never `GRID_SCHEMA_VERSION`.
+
+  See the module-level comments on both constants: this hash folds directly into
+  `_base_sampling_key`, so its payload must never move for reasons unrelated to a
+  deliberate, explicit reproducibility break.
+  """
   payload = {
-    "schema_version": GRID_SCHEMA_VERSION,
+    "schema_version": _SEED_HASH_SCHEMA_PIN,
     "job_id": str(lineage["job_id"]),
     "model_family": spec.model_family,
     "ligand_conditioning": bool(spec.ligand_conditioning),

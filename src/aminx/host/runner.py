@@ -43,6 +43,7 @@ from aminx.host.streaming import (
   _sample_streaming,
 )
 from aminx.host.streaming_host import StreamingBatchHost
+from aminx.io.sink_provenance import prng_seed_attrs, resolve_aminx_version
 from aminx.run.batch_mapping import MappedBy
 from aminx.run.specs import (
   InspectionSpecification,
@@ -1325,6 +1326,7 @@ def jacobian(
   result_key = "score_gradients" if spec.jacobian_mode == "reverse" else "categorical_jacobians"
 
   zarr_sink: ZarrStagingSink | None = None
+  resolved_aminx_version: str | None = None
   if use_io_sink:
     assert spec.output_h5_path is not None
     zarr_sink = ZarrStagingSink(
@@ -1335,6 +1337,11 @@ def jacobian(
         flush_every=max(1, spec.combine_batch_size or 1),
       ),
     )
+    # Resolved HERE, at sink construction -- before `_run_structure_loop` runs any of the
+    # actual (expensive) Jacobian/gradient compute below -- so a PackageNotFoundError
+    # fails this run before it starts, never after a structure's Jacobian has already
+    # been computed and is only now being staged.
+    resolved_aminx_version = resolve_aminx_version()
 
   def _run_structure_loop(*, stage_to_sink: bool) -> None:
     nonlocal prng_key, structure_offset, n_staged
@@ -1405,7 +1412,21 @@ def jacobian(
           payload: dict[str, Any] = {result_key: np.asarray(jac)}
           if apc is not None:
             payload["apc_frobenius_norm"] = np.asarray(apc)
-          zarr_sink.stage((str(global_idx),), **payload)
+          # No root stage on this path (see task_id `260910_aminx-sink-provenance-schema`
+          # AC3) -- the wheel version and PRNG seed are stamped per-record instead. Uses
+          # the SAME `spec.run_spec.sampling.random_seed or 42` expression that built
+          # `prng_key` above, so the recorded seed matches what was actually used even
+          # when the raw field is falsy (0). This record never stages a "logits" array
+          # (result_key is "score_gradients" or "categorical_jacobians"), so
+          # `logits_bias_semantics` does not apply here.
+          zarr_sink.stage(
+            (str(global_idx),),
+            attrs={
+              "aminx_version": resolved_aminx_version,
+              **prng_seed_attrs(spec.run_spec.sampling.random_seed or 42),
+            },
+            **payload,
+          )
           n_staged += 1
           # Deliberately NOT retained: holding `jac` here would reinstate the
           # accumulate-everything behavior this streaming path exists to remove.
