@@ -585,6 +585,36 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   noises = list(noise_val) if isinstance(noise_val, (list, tuple)) else [noise_val]
   return_logits = spec.run_spec.sampling.return_logits
 
+  # AUDIT FINDING B (code-review round 2 on PR #154; hoisted here in round 3 for fail-fast).
+  # The SAME explicit guard `host/streaming.py` carries, for the same reason, stated
+  # EXPLICITLY rather than left to incidental protection. Two other checks happen to reject
+  # "straight_through" before staging today: `sample_multistate_poe_bead`'s
+  # `isinstance(decode_mode, AutoregressiveMode)` assertion, and
+  # `SamplingSpecification.__post_init__`'s grid_mode-implies-temperature rule. Neither is
+  # scoped to THIS concern -- the first exists to stop a silently-ignored decode-mode request
+  # (aminx#110), the second to constrain grid campaigns -- so a future third
+  # `sampling_strategy` value resolving to AutoregressiveMode WITHOUT following
+  # autoregressive.py:353-397's exact stored/sampling split would slip past both and get AR
+  # semantics stamped on logits that do not have them. Relying on a guard that exists for
+  # another reason is how this defect class returns, so this one names its own reason.
+  #
+  # Placed BEFORE the noise/temperature loop below, not beside the staging block it protects:
+  # correctness only requires it precede staging, but the loop calls
+  # `sample_multistate_poe_bead` per cell, so guarding at the staging site alone would pay
+  # for the full AR sampling compute of an unsupported strategy before rejecting it.
+  if return_logits and spec.run_spec.sampling.sampling_strategy != "temperature":
+    msg = (
+      "Refusing to stage 'logits_bias_semantics' for sampling_strategy="
+      f"{spec.run_spec.sampling.sampling_strategy!r}. Those attrs describe the "
+      "bias-free/bias-applied logits split in inference/decode/autoregressive.py, which "
+      "only the autoregressive decode path produces; this strategy resolves to a "
+      "different decoder (see host/plan.py::resolve_decode_mode), so the staged 'logits' "
+      "array would not have the semantics the attrs claim. Either run with "
+      "sampling_strategy='temperature', or set return_logits=False, or extend "
+      "aminx.io.sink_provenance with semantics for this decoder before staging them."
+    )
+    raise NotImplementedError(msg)
+
   sequence_rows: list[list[np.ndarray]] = []
   logits_rows: list[list[np.ndarray]] = []
   # AC1b: this loop is exactly the "sample/noise/temperature axes fused into one group"
@@ -657,30 +687,10 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   root_arrays: dict[str, np.ndarray] = {}
   bias_attrs: dict[str, Any] = {}
   if return_logits:
-    # AUDIT FINDING B (code-review round 2 on PR #154) -- the SAME explicit guard
-    # `host/streaming.py` carries, for the same reason, stated EXPLICITLY here rather than
-    # left to incidental protection. Two other checks happen to reject "straight_through"
-    # before this line today: `sample_multistate_poe_bead`'s `isinstance(decode_mode,
-    # AutoregressiveMode)` assertion, and `SamplingSpecification.__post_init__`'s
-    # grid_mode-implies-temperature rule. Neither is scoped to THIS concern -- the first
-    # exists to stop a silently-ignored decode-mode request (aminx#110), the second to
-    # constrain grid campaigns -- so a future third `sampling_strategy` value that resolved
-    # to AutoregressiveMode WITHOUT following autoregressive.py:353-397's exact
-    # stored/sampling split would slip past both and get AR semantics stamped on logits
-    # that do not have them. Relying on a guard that exists for another reason is how this
-    # defect class returns, so this one names its own reason and fails closed.
-    if spec.run_spec.sampling.sampling_strategy != "temperature":
-      msg = (
-        "Refusing to stage 'logits_bias_semantics' for sampling_strategy="
-        f"{spec.run_spec.sampling.sampling_strategy!r}. Those attrs describe the "
-        "bias-free/bias-applied logits split in inference/decode/autoregressive.py, which "
-        "only the autoregressive decode path produces; this strategy resolves to a "
-        "different decoder (see host/plan.py::resolve_decode_mode), so the staged 'logits' "
-        "array would not have the semantics the attrs claim. Either run with "
-        "sampling_strategy='temperature', or set return_logits=False, or extend "
-        "aminx.io.sink_provenance with semantics for this decoder before staging them."
-      )
-      raise NotImplementedError(msg)
+    # The AUDIT FINDING B guard that protects this staging block lives near the top of this
+    # function (search "AUDIT FINDING B"), hoisted there so an unsupported `sampling_strategy`
+    # is rejected BEFORE the per-cell AR sampling loop rather than after paying for it. It is
+    # unconditional for `return_logits`, so by here the strategy is known to be "temperature".
     bias_arrays, bias_attrs = logits_bias_semantics_outputs(spec.run_spec.sampling.bias)
     root_arrays.update(bias_arrays)
     root_attrs.update(bias_attrs)

@@ -369,8 +369,28 @@ def test_poe_writer_refuses_to_stage_ar_bias_semantics_for_non_ar_strategy() -> 
       multi_state_strategy="product",
     )
 
+    # Also pins FAIL-FAST (code-review round 3): the guard is hoisted above the per-cell
+    # sampling loop, so an unsupported strategy must be rejected WITHOUT paying for any AR
+    # sampling compute. A guard that merely sits beside the staging block would still be
+    # correct (nothing wrong reaches disk) but would burn a full noise x temperature sweep
+    # first -- so assert the bead was never entered, not just that the call raised.
+    bead_calls: list[object] = []
+
+    def _recording_bead(
+      cell_spec: SamplingSpecification,
+      cell_key: object,
+      n_samples: int,
+    ) -> tuple[jnp.ndarray, jnp.ndarray]:
+      bead_calls.append(cell_spec)
+      return _fake_bead(cell_spec, cell_key, n_samples)
+
     with (
-      patch.object(multistate_poe, "sample_multistate_poe_bead", _fake_bead),
+      patch.object(multistate_poe, "sample_multistate_poe_bead", _recording_bead),
       pytest.raises(NotImplementedError, match="logits_bias_semantics"),
     ):
       multistate_poe.sample_multistate_poe_campaign_row(spec)
+
+    assert bead_calls == [], (
+      f"guard rejected the strategy only AFTER {len(bead_calls)} sampling call(s) -- it must "
+      "be hoisted above the noise/temperature loop so no AR compute is wasted."
+    )
