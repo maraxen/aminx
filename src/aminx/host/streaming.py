@@ -10,7 +10,9 @@ import numpy as np
 from xtrax.run import SinkSpec, ZarrStagingSink
 
 from aminx.host._sampling_grid_lineage import (
+  GRID_SCHEMA_VERSION,
   _grid_iteration_arrays,
+  _grid_job_seed_hash,
   _grid_manifest_row_hash,
   _grid_sample_indices,
   _resolve_grid_lineage,
@@ -30,6 +32,12 @@ from aminx.host.plan import (
   resolve_target_samples,
 )
 from aminx.host.streaming_host import StreamingBatchHost
+from aminx.io.sink_provenance import (
+  SINK_PROVENANCE_VERSION,
+  logits_bias_semantics_outputs,
+  prng_seed_attrs,
+  resolve_aminx_version,
+)
 
 if TYPE_CHECKING:
   from grain.python import IterDataset
@@ -37,8 +45,22 @@ if TYPE_CHECKING:
   from aminx.run.specs import SamplingSpecification
 
 
+# REVERTED to "sampling_v1" (audit finding A, task_id `260910_aminx-sink-provenance-schema`,
+# code-review round on PR #154) -- see the matching revert comment on GRID_SCHEMA_VERSION
+# in `_sampling_grid_lineage.py` for why: this label change is not free even though this
+# constant itself doesn't feed the PRNG seed, because `GRID_SCHEMA_VERSION` and
+# `SAMPLING_SCHEMA_VERSION` are bumped together at every call site
+# (`GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION`), so keeping this
+# one in lockstep with the grid constant is what stops a future edit from re-introducing
+# the same schema-version/resume-safety coupling by mistake. The new fields this task adds
+# (logits_bias_semantics, prng_seed, aminx_version) are purely additive; absent on an older
+# store just means "written before these fields existed" -- aminx has no reader for these
+# stores yet, so this makes no claim about reader behavior. See
+# `aminx.io.sink_provenance.SINK_PROVENANCE_VERSION` for the hash-free way to distinguish
+# stores that carry these new fields, instead of bumping this schema label.
 SAMPLING_SCHEMA_VERSION = "sampling_v1"
-GRID_SCHEMA_VERSION = "grid_v1"
+# GRID_SCHEMA_VERSION is re-exported (not redefined) from `_sampling_grid_lineage` --
+# that module is now the single source of truth; see the comment on its own definition.
 
 
 def _grid_lineage_attrs(grid_lineage: dict[str, int | str]) -> dict[str, Any]:
@@ -78,29 +100,87 @@ def _sample_streaming(
 
   output_dir = Path(spec.run_spec.io.output_h5_path)
   sink = ZarrStagingSink(SinkSpec(output_dir=output_dir, format="zarr", flush_every=1))
+  # Resolved HERE, at sink construction -- before any sampling compute below -- so a
+  # PackageNotFoundError (resolve_aminx_version raises rather than swallowing it) fails
+  # this run before any work is done, never after, so it cannot discard a completed run.
+  resolved_aminx_version = resolve_aminx_version()
 
   root_attrs: dict[str, Any] = {
     "schema_version": GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION,
+    # Hash-free marker (audit finding A) -- participates in NO hash, so unlike
+    # `schema_version` it can be added without moving any manifest row hash or output path.
+    "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
     "ligand_conditioning": int(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
     "samples_chunk_size": chunk_size,
+    "aminx_version": resolved_aminx_version,
+    **prng_seed_attrs(spec.run_spec.sampling.random_seed),
   }
   root_arrays: dict[str, np.ndarray] = {}
+  # Computed ONCE from `spec` (constant for the whole call: neither branch below ever
+  # builds a per-structure or per-chunk bias) and reused for every group below that
+  # stages a "logits" array. This is what makes AC1b's uniformity requirement hold by
+  # construction here -- there is no code path left that could compute a second, diverging
+  # value -- unlike `multistate_poe.py`'s per-(noise, temperature)-cell loop, which
+  # recomputes per cell and therefore uses `assert_uniform_group_attr` explicitly.
+  bias_attrs: dict[str, Any] = {}
+  if spec.run_spec.sampling.return_logits:
+    # AUDIT FINDING B: `logits_bias_semantics` asserts STORED_LOGITS_BIAS_APPLIED=False /
+    # SAMPLING_LOGITS_BIAS_APPLIED=True, which is a structural invariant of
+    # `inference/decode/autoregressive.py`'s stored/sampling split ALONE. Decode mode is a
+    # pure function of this field (`host/plan.py::resolve_decode_mode`: "straight_through"
+    # -> STEMode -> `decode/ste.py`, else purpose="sample" -> AutoregressiveMode), so the
+    # sink can and must check it here rather than trusting that AR is the only producer.
+    # `SamplingSpecification.__post_init__` already rejects straight_through in GRID mode,
+    # but this function also serves non-grid runs, where the combination is permitted --
+    # so without this guard a non-grid STE run with return_logits=True would stamp AR bias
+    # semantics onto logits that never went through the AR path: a false provenance claim,
+    # the exact class of silent-mislabelling defect this whole task exists to close.
+    if spec.run_spec.sampling.sampling_strategy != "temperature":
+      msg = (
+        "Refusing to stage 'logits_bias_semantics' for sampling_strategy="
+        f"{spec.run_spec.sampling.sampling_strategy!r}. Those attrs describe the "
+        "bias-free/bias-applied logits split in inference/decode/autoregressive.py, which "
+        "only the autoregressive decode path produces; this strategy resolves to a "
+        "different decoder (see host/plan.py::resolve_decode_mode), so the staged 'logits' "
+        "array would not have the semantics the attrs claim. Either run with "
+        "sampling_strategy='temperature', or set return_logits=False, or extend "
+        "aminx.io.sink_provenance with semantics for this decoder before staging them."
+      )
+      raise NotImplementedError(msg)
+    bias_arrays, bias_attrs = logits_bias_semantics_outputs(spec.run_spec.sampling.bias)
+    root_arrays.update(bias_arrays)
+    root_attrs.update(bias_attrs)
   if grid_lineage is not None:
     manifest_row_hash = _grid_manifest_row_hash(spec, grid_lineage)
     root_attrs.update(_grid_lineage_attrs(grid_lineage))
     root_attrs["manifest_row_hash"] = manifest_row_hash
+    # AUDIT FINDING C: `prng_seed` alone does NOT reproduce a grid-mode run. In grid mode
+    # `_base_sampling_key` folds this hash into the base key -- `jax.random.key(random_seed)`
+    # then four `fold_in`s of `_seed_words_from_manifest_hash(_grid_job_seed_hash(...))` --
+    # so the key that actually drove sampling is a function of BOTH values. Recording only
+    # `random_seed` made the store's reproducibility claim unmeetable: the seed hash depends
+    # on `job_id` plus strategy/conditioning fields, so a reader holding just the seed int
+    # cannot re-derive it without also reconstructing the exact grid lineage. This is NOT
+    # `manifest_row_hash` above -- that one keys off GRID_SCHEMA_VERSION and addresses the
+    # output path; this one is pinned to `_SEED_HASH_SCHEMA_PIN` and addresses the PRNG.
+    # The two are deliberately decoupled and must both be recorded.
+    root_attrs["grid_job_seed_hash"] = _grid_job_seed_hash(spec, grid_lineage)
     iteration_ids, iteration_starts, iteration_counts = _grid_iteration_arrays(
       grid_lineage,
       chunk_size=chunk_size,
     )
-    root_arrays = {
+    # `.update(...)`, NOT reassignment -- a bare `root_arrays = {...}` here silently
+    # discarded whatever `bias_arrays` staged above (audit finding, task_id
+    # `260910_aminx-sink-provenance-schema`): `bias_persisted: true` would then be a lying
+    # attr, since the `bias` array it claims exists never reached the store in grid mode.
+    root_arrays.update({
       "sample_indices": _grid_sample_indices(grid_lineage),
       "grid_iteration_ids": iteration_ids,
       "grid_iteration_sample_start": iteration_starts,
       "grid_iteration_sample_count": iteration_counts,
-    }
+    })
   sink.stage((), attrs=root_attrs, **root_arrays)
 
   structure_idx = 0
@@ -150,6 +230,8 @@ def _sample_streaming(
           }
           if grid_lineage is not None:
             attrs.update(_grid_lineage_attrs(grid_lineage))
+          if spec.run_spec.sampling.return_logits:
+            attrs.update(bias_attrs)
           sink.stage(key, attrs=attrs, **arrays)
           resolved_structure_ids.append(batch_structure_ids[i])
           structure_idx += 1
@@ -216,6 +298,7 @@ def _sample_streaming(
           concat_arrays.update(fixed_arrays)
           if logits_parts[key]:
             concat_arrays["logits"] = np.concatenate(logits_parts[key], axis=0)
+            fixed_attrs.update(bias_attrs)
           if perplexity_parts[key]:
             concat_arrays["pseudo_perplexity"] = np.concatenate(perplexity_parts[key], axis=0)
           sink.stage(key, attrs=fixed_attrs, **concat_arrays)
