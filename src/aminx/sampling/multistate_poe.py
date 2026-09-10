@@ -662,12 +662,16 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     iteration_ids, iteration_starts, iteration_counts = _grid_iteration_arrays(
       grid_lineage, chunk_size=chunk_size,
     )
-    root_arrays = {
+    # `.update(...)`, NOT reassignment -- a bare `root_arrays = {...}` here silently
+    # discarded whatever `bias_arrays` staged above (audit finding, task_id
+    # `260910_aminx-sink-provenance-schema`): `bias_persisted: true` would then be a lying
+    # attr, since the `bias` array it claims exists never reached the store in grid mode.
+    root_arrays.update({
       "sample_indices": _grid_sample_indices(grid_lineage),
       "grid_iteration_ids": iteration_ids,
       "grid_iteration_sample_start": iteration_starts,
       "grid_iteration_sample_count": iteration_counts,
-    }
+    })
   sink.stage((), attrs=root_attrs, **root_arrays)
 
   key = ("poe_fused",)

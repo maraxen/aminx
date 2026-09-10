@@ -1,6 +1,6 @@
 import hashlib
 import json
-from typing import Any
+from typing import Any, Final
 
 import jax
 import numpy as np
@@ -17,7 +17,28 @@ from aminx.run.specs import SamplingSpecification
 # this same constant (a filed defect); it now imports this one instead of redefining it,
 # which is what actually prevents the two from silently diverging again -- see
 # `host/streaming.py`'s import of `GRID_SCHEMA_VERSION` from this module.
+#
+# THIS CONSTANT MUST NEVER FEED THE PRNG SEED DERIVATION. It did until this comment was
+# written (audit finding, task_id `260910_aminx-sink-provenance-schema`, fixed same task):
+# `_grid_job_seed_hash` hashed a payload keyed on `GRID_SCHEMA_VERSION`, and that hash folds
+# directly into `_base_sampling_key`'s `jax.random.fold_in` chain -- so the v1->v2 bump in
+# commit 7b1bc3b silently changed the sampled output of every grid-mode run (different
+# tokens, different logits at later AR positions) with no behavioural-change warning. See
+# `_SEED_HASH_SCHEMA_PIN` below, which is the value the seed hash actually uses now, and
+# which must stay frozen forever regardless of how many more times this constant is bumped.
 GRID_SCHEMA_VERSION = "grid_v2"
+
+# FROZEN FOREVER. Feeds `_grid_job_seed_hash` -> `_seed_words_from_manifest_hash` ->
+# `_base_sampling_key`'s `jax.random.fold_in` chain, i.e. it is load-bearing for every
+# grid-mode run's sampled sequences and logits. Deliberately NOT `GRID_SCHEMA_VERSION`:
+# that constant exists to label stores for readers and is expected to keep bumping over
+# time, and coupling the two means every future schema bump silently reseeds every
+# existing store's worth of designs. Changing this literal is equivalent to deliberately
+# breaking reproducibility of every stored grid-mode run to date -- do not do it as part
+# of a routine schema bump. If the seed-derivation payload genuinely must change, that is
+# its own explicit, documented, reproducibility-breaking decision, not a side effect of
+# relabelling stores.
+_SEED_HASH_SCHEMA_PIN: Final[str] = "grid_v1"
 
 
 def _resolve_grid_lineage(spec: SamplingSpecification) -> dict[str, int | str] | None:
@@ -95,6 +116,25 @@ def _grid_manifest_row_hash(
   spec: SamplingSpecification,
   lineage: dict[str, int | str],
 ) -> str:
+  """Identify/dedupe a manifest row -- NOT part of the PRNG seed derivation.
+
+  Investigated for task_id `260910_aminx-sink-provenance-schema`: this hash feeds only
+  `root_attrs["manifest_row_hash"]` (store bookkeeping) and `campaign.py`'s done-marker
+  matching (`_validate_done_marker`/`_write_done_marker`) -- it is never passed to
+  `_base_sampling_key` or any other randomness-consuming call. It is therefore safe, and
+  intentional, for it to keep tracking `GRID_SCHEMA_VERSION` (unlike `_grid_job_seed_hash`
+  below, which must NOT).
+
+  Consequence of that choice, so it isn't rediscovered as a surprise: bumping
+  `GRID_SCHEMA_VERSION` changes every future `manifest_row_hash` for an otherwise-identical
+  row. A campaign resumed after such a bump will regenerate its manifest with the new
+  hash, `_validate_done_marker` will see the stored marker's old hash disagree, and it
+  raises rather than silently reusing the old store -- so a resume across a schema bump
+  forces genuinely-completed rows to be treated as not-done and rerun. That is a resume-
+  cost/safety tradeoff (never a correctness bug: nothing mixes v1 and v2 semantics
+  silently), and it is the intended effect of bumping a *schema* version -- it should be a
+  breaking change against old resume state, not something that can quietly drift back in.
+  """
   payload = {
     "schema_version": GRID_SCHEMA_VERSION,
     "job_id": str(lineage["job_id"]),
@@ -115,8 +155,14 @@ def _grid_job_seed_hash(
   spec: SamplingSpecification,
   lineage: dict[str, int | str],
 ) -> str:
+  """PRNG-seed-feeding hash -- payload MUST use `_SEED_HASH_SCHEMA_PIN`, never `GRID_SCHEMA_VERSION`.
+
+  See the module-level comments on both constants: this hash folds directly into
+  `_base_sampling_key`, so its payload must never move for reasons unrelated to a
+  deliberate, explicit reproducibility break.
+  """
   payload = {
-    "schema_version": GRID_SCHEMA_VERSION,
+    "schema_version": _SEED_HASH_SCHEMA_PIN,
     "job_id": str(lineage["job_id"]),
     "model_family": spec.model_family,
     "ligand_conditioning": bool(spec.ligand_conditioning),

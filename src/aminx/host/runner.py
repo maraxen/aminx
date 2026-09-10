@@ -43,7 +43,7 @@ from aminx.host.streaming import (
   _sample_streaming,
 )
 from aminx.host.streaming_host import StreamingBatchHost
-from aminx.io.sink_provenance import resolve_aminx_version
+from aminx.io.sink_provenance import prng_seed_attrs, resolve_aminx_version
 from aminx.run.batch_mapping import MappedBy
 from aminx.run.specs import (
   InspectionSpecification,
@@ -142,7 +142,7 @@ def sample(
         mask : jax.Array
             Sequence validity mask (1 for valid, 0 for padding). Shape: (B*N, L).
         schema_version : str
-            Schema version for results ('grid_v1' or 'sampling_v1').
+            Schema version for results ('grid_v2' or 'sampling_v2').
         metadata : dict
             Metadata including specification, skipped_inputs, structure_ids,
             and optional lineage info (grid mode).
@@ -1412,12 +1412,18 @@ def jacobian(
           if apc is not None:
             payload["apc_frobenius_norm"] = np.asarray(apc)
           # No root stage on this path (see task_id `260910_aminx-sink-provenance-schema`
-          # AC3) -- the wheel version is stamped per-record instead. This record never
-          # stages a "logits" array (result_key is "score_gradients" or
-          # "categorical_jacobians"), so `logits_bias_semantics` does not apply here.
+          # AC3) -- the wheel version and PRNG seed are stamped per-record instead. Uses
+          # the SAME `spec.run_spec.sampling.random_seed or 42` expression that built
+          # `prng_key` above, so the recorded seed matches what was actually used even
+          # when the raw field is falsy (0). This record never stages a "logits" array
+          # (result_key is "score_gradients" or "categorical_jacobians"), so
+          # `logits_bias_semantics` does not apply here.
           zarr_sink.stage(
             (str(global_idx),),
-            attrs={"aminx_version": resolved_aminx_version},
+            attrs={
+              "aminx_version": resolved_aminx_version,
+              **prng_seed_attrs(spec.run_spec.sampling.random_seed or 42),
+            },
             **payload,
           )
           n_staged += 1
