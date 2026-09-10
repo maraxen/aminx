@@ -115,6 +115,32 @@ class TestResolveAminxVersion:
         "raising PackageNotFoundError."
       )
 
+  def test_raise_is_actionable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    """FINDING E (code-review round, PR #154): the raised message must be ACTIONABLE.
+
+    The bare `importlib.metadata.PackageNotFoundError` message ("No package metadata was
+    found for aminx") does not say why a writer needs this, that a bare-source/vendored
+    import is the likely cause, or what to do about it -- exactly the gap that made
+    constructing `DesignZarrWriter` on such an import a confusing hard failure. Still must
+    raise `PackageNotFoundError` (not a different type, not a swallowed sentinel), per the
+    two tests above.
+    """
+
+    def _raise_not_found(_name: str) -> str:
+      raise importlib.metadata.PackageNotFoundError("aminx")
+
+    monkeypatch.setattr(importlib.metadata, "version", _raise_not_found)
+
+    with pytest.raises(importlib.metadata.PackageNotFoundError) as exc_info:
+      resolve_aminx_version()
+
+    message = str(exc_info.value)
+    for keyword in ("bare-source", "vendored", "editable install", "aminx_version"):
+      assert keyword in message, (
+        f"resolve_aminx_version()'s error message is not actionable -- missing "
+        f"{keyword!r}. Got: {message!r}"
+      )
+
 
 class TestPrngSeedAttrs:
   def test_plain_int_seed(self) -> None:

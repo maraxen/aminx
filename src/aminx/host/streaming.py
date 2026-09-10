@@ -43,12 +43,20 @@ if TYPE_CHECKING:
   from aminx.run.specs import SamplingSpecification
 
 
-# Bumped v1 -> v2 alongside GRID_SCHEMA_VERSION for task_id
-# `260910_aminx-sink-provenance-schema`: new OPTIONAL root attrs (logits_bias_semantics,
-# prng_seed, aminx_version). Absent on a v1 store just means "written before these fields
-# existed" -- aminx has no reader for these stores yet, so this makes no claim about
-# reader behavior.
-SAMPLING_SCHEMA_VERSION = "sampling_v2"
+# REVERTED to "sampling_v1" (audit finding A, task_id `260910_aminx-sink-provenance-schema`,
+# code-review round on PR #154) -- see the matching revert comment on GRID_SCHEMA_VERSION
+# in `_sampling_grid_lineage.py` for why: this label change is not free even though this
+# constant itself doesn't feed the PRNG seed, because `GRID_SCHEMA_VERSION` and
+# `SAMPLING_SCHEMA_VERSION` are bumped together at every call site
+# (`GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION`), so keeping this
+# one in lockstep with the grid constant is what stops a future edit from re-introducing
+# the same schema-version/resume-safety coupling by mistake. The new fields this task adds
+# (logits_bias_semantics, prng_seed, aminx_version) are purely additive; absent on an older
+# store just means "written before these fields existed" -- aminx has no reader for these
+# stores yet, so this makes no claim about reader behavior. See
+# `aminx.io.sink_provenance.SINK_PROVENANCE_VERSION` for the hash-free way to distinguish
+# stores that carry these new fields, instead of bumping this schema label.
+SAMPLING_SCHEMA_VERSION = "sampling_v1"
 # GRID_SCHEMA_VERSION is re-exported (not redefined) from `_sampling_grid_lineage` --
 # that module is now the single source of truth; see the comment on its own definition.
 

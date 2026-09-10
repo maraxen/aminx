@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 from pathlib import Path
 
 import numpy as np
 import pytest
 import zarr
 
+from aminx.io import designs as designs_module
 from aminx.io.designs import DesignMetadata, DesignPayload, DesignZarrWriter
 
 N_CANONICAL = 4
@@ -96,3 +98,64 @@ def test_nested_structure_key_becomes_zarr_group_path(tmp_path: Path) -> None:
 
   root = zarr.open_group(str(tmp_path / "designs.zarr"), mode="r")
   assert "sequence" in root["structure_3"]["sample_0"]
+
+
+class TestAminxVersionResolutionFindingE:
+  """FINDING E (code-review round, PR #154): construction must fail ACTIONABLY on a
+
+  bare-source/vendored aminx import, and support an explicit opt-in override instead of
+  a silent `except Exception: return "unknown"` fallback.
+  """
+
+  def test_construction_raises_actionable_error_without_distribution_metadata(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+  ) -> None:
+    """Simulates a bare-source/vendored aminx import: no `.dist-info` to resolve.
+
+    Patches the underlying `importlib.metadata.version` (NOT `resolve_aminx_version`
+    itself) so this exercises the REAL `resolve_aminx_version` -- including its
+    actionable-message wrapping -- as actually called from `DesignZarrWriter.__init__`,
+    rather than substituting a stand-in that bypasses the code under test.
+    """
+
+    def _raise_not_found(_name: str) -> str:
+      raise importlib.metadata.PackageNotFoundError("aminx")
+
+    monkeypatch.setattr(importlib.metadata, "version", _raise_not_found)
+
+    with pytest.raises(importlib.metadata.PackageNotFoundError) as exc_info:
+      DesignZarrWriter.from_multistate_shapes(
+        str(tmp_path / "designs.zarr"), n_canonical=N_CANONICAL, n_states=N_STATES,
+      )
+
+    message = str(exc_info.value)
+    assert "bare-source" in message or "vendored" in message, (
+      f"DesignZarrWriter construction raised a non-actionable message: {message!r}"
+    )
+
+  def test_explicit_aminx_version_override_bypasses_resolution(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+  ) -> None:
+    """The explicit opt-in: passing `aminx_version=` must skip `resolve_aminx_version()`
+
+    entirely (construction must not raise even though resolution would), and the writer
+    must stamp exactly the caller-supplied value, unmodified.
+    """
+
+    def _fail_if_called() -> str:
+      msg = "resolve_aminx_version() must not be called when aminx_version= is supplied"
+      raise AssertionError(msg)
+
+    monkeypatch.setattr(designs_module, "resolve_aminx_version", _fail_if_called)
+
+    writer = DesignZarrWriter.from_multistate_shapes(
+      str(tmp_path / "designs.zarr"),
+      n_canonical=N_CANONICAL,
+      n_states=N_STATES,
+      aminx_version="0.1.0a999-vendored-override",
+    )
+    writer.write((0,), _payload())
+    writer.close()
+
+    root = zarr.open_group(str(tmp_path / "designs.zarr"), mode="r")
+    assert root["0"].attrs["aminx_version"] == "0.1.0a999-vendored-override"

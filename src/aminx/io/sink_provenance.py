@@ -27,6 +27,22 @@ import numpy as np
 
 LOGITS_BIAS_SEMANTICS_SCHEMA = "logits_bias_semantics_v1"
 
+# Hash-free provenance marker (audit finding A, task_id `260910_aminx-sink-provenance-schema`,
+# code-review round on PR #154). AC4/D6's actual intent -- letting a reader distinguish a
+# store that carries `logits_bias_semantics`/`prng_seed`/`aminx_version` from one that
+# predates them -- was originally implemented by bumping `GRID_SCHEMA_VERSION`/
+# `SAMPLING_SCHEMA_VERSION`. That was reverted: those two constants are NOT purely
+# reader-facing labels -- `GRID_SCHEMA_VERSION` feeds `_grid_manifest_row_hash`, which feeds
+# a campaign manifest row's output path and done-marker matching
+# (`_sampling_grid_lineage.py`'s own revert comment has the full chain), so bumping them
+# forces a full, silent recompute of any resumed campaign. This constant is the alternative:
+# it participates in NO hash -- not `_grid_manifest_row_hash`, not `_grid_job_seed_hash`,
+# not any sink's output path -- so staging it costs nothing beyond the one root attr.
+# Present ⇒ this store was written by code new enough to also stage the three new fields
+# above (still individually optional per their own docstrings). Absent ⇒ unknown, exactly
+# like every other attr in this module.
+SINK_PROVENANCE_VERSION = "sink_provenance_v1"
+
 # Structural invariant of aminx.inference.decode.autoregressive's per-wave sampling
 # closure (see autoregressive.py:353-397, specifically the `stored_logits`/
 # `sampling_logits` split at 363-383): every AR sampling sink stages `stored_logits`
@@ -149,8 +165,41 @@ def resolve_aminx_version() -> str:
   invoking it at a point where a raise is safe (run entry / sink construction), not while
   assembling result metadata after compute has already finished -- see callers of this
   function for the pattern.
+
+  Raises:
+    importlib.metadata.PackageNotFoundError: with an ACTIONABLE message (audit finding E,
+      task_id `260910_aminx-sink-provenance-schema`, code-review round on PR #154) -- the
+      bare ``importlib.metadata`` exception says only "No package metadata was found for
+      aminx", which does not explain why a writer needs this at all or what to do about
+      it. This is the exact failure mode a bare-source checkout or a vendored/``sys.path``-
+      prepended copy hits (documented live pattern -- see tev_design's CLAUDE.md aminx
+      section on the ``importlib.metadata`` vs. ``aminx.__version__`` trap): such an import
+      has no ``.dist-info``, so distribution metadata genuinely cannot be resolved, and this
+      now fails BEFORE the caller's expensive compute (sink construction), not silently
+      after it, and not with a hardcoded ``"unknown"``/``"0.1.0"`` sentinel either. Re-raises
+      the SAME exception type (via ``raise ... from e``) so callers catching
+      ``PackageNotFoundError`` specifically still see it.
   """
-  return importlib.metadata.version("aminx")
+  try:
+    return importlib.metadata.version("aminx")
+  except importlib.metadata.PackageNotFoundError as e:
+    msg = (
+      "Could not resolve the aminx wheel version via installed-distribution metadata "
+      "(importlib.metadata.version('aminx')). This writer stamps 'aminx_version' as "
+      "provenance on every design/sampling store so a later reader can tell which "
+      "checkpoint/wheel produced it -- see tev_design's CLAUDE.md for why silently "
+      "falling back to aminx.__version__'s hardcoded '0.1.0' sentinel is unacceptable "
+      "here. The usual cause is that the CURRENTLY IMPORTED 'aminx' module has no "
+      "associated distribution metadata -- a bare-source checkout, or a vendored copy "
+      "reached by prepending it to sys.path, neither of which produces a .dist-info "
+      "directory. An editable install (`pip install -e .` / `uv pip install -e .`) DOES "
+      "produce .dist-info and resolves normally; that is the fix in the common case. "
+      "If you are deliberately running from such a copy and understand you are giving up "
+      "wheel-version provenance, pass an explicit override where the call site supports "
+      "one (e.g. DesignZarrWriter(..., aminx_version=<value>)) rather than working around "
+      "this function."
+    )
+    raise importlib.metadata.PackageNotFoundError(msg) from e
 
 
 def prng_seed_attrs(seed: Any) -> dict[str, Any]:

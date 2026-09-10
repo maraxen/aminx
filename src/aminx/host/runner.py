@@ -142,7 +142,7 @@ def sample(
         mask : jax.Array
             Sequence validity mask (1 for valid, 0 for padding). Shape: (B*N, L).
         schema_version : str
-            Schema version for results ('grid_v2' or 'sampling_v2').
+            Schema version for results ('grid_v1' or 'sampling_v1').
         metadata : dict
             Metadata including specification, skipped_inputs, structure_ids,
             and optional lineage info (grid mode).

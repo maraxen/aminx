@@ -22,6 +22,7 @@ from __future__ import annotations
 import jax
 
 from aminx.host import _sampling_grid_lineage as gl
+from aminx.host import streaming
 from aminx.run.specs import SamplingSpecification
 
 # Fixed synthetic spec+lineage, chosen arbitrarily but held constant. If this hash ever
@@ -102,6 +103,38 @@ def test_grid_schema_version_bump_does_not_move_seed_hash_or_base_key() -> None:
     )
   finally:
     gl.GRID_SCHEMA_VERSION = original_schema_version
+
+
+def test_schema_version_labels_are_reverted_to_base_commit_values() -> None:
+  """FINDING A (code-review round, PR #154): the reader-facing schema labels must stay
+  at their base-commit (039d149c) values, "grid_v1" / "sampling_v1" -- NOT bumped to
+  "grid_v2" / "sampling_v2" as commit 7b1bc3b did.
+
+  This is not purely cosmetic. `GRID_SCHEMA_VERSION` feeds `_grid_manifest_row_hash`,
+  which feeds a manifest row's OUTPUT PATH (`campaign.py`'s `{row_hash}.h5` convention)
+  and therefore its done-marker matching. Bumping either label changes every future
+  row's hash/path for an otherwise-identical row, so resuming an in-progress campaign
+  (e.g. the real 882-row necklace campaign) across such a bump makes
+  `_read_done_marker` return `None` for every already-completed row -- a SILENT full
+  recompute, with the old completed store orphaned on disk. A schema-label bump must
+  therefore be its own deliberate, migration-planned decision, never a side effect of
+  adding new optional attrs (which is what 7b1bc3b's bump was). See the revert comments
+  on `GRID_SCHEMA_VERSION` (`_sampling_grid_lineage.py`) and `SAMPLING_SCHEMA_VERSION`
+  (`streaming.py`) for the full explanation.
+  """
+  assert gl.GRID_SCHEMA_VERSION == "grid_v1", (
+    f"GRID_SCHEMA_VERSION={gl.GRID_SCHEMA_VERSION!r} has drifted from its base-commit "
+    "value 'grid_v1' -- this changes every future manifest_row_hash/output path and "
+    "silently orphans completed campaign rows on resume. A bump requires an explicit "
+    "migration plan, not a routine schema addition."
+  )
+  assert streaming.SAMPLING_SCHEMA_VERSION == "sampling_v1", (
+    f"SAMPLING_SCHEMA_VERSION={streaming.SAMPLING_SCHEMA_VERSION!r} has drifted from its "
+    "base-commit value 'sampling_v1'. It is bumped in lockstep with GRID_SCHEMA_VERSION "
+    "at every call site (`GRID_SCHEMA_VERSION if spec.grid_mode else "
+    "SAMPLING_SCHEMA_VERSION`) -- keeping it pinned here is what stops a future edit "
+    "from re-introducing the resume-safety coupling documented above."
+  )
 
 
 def test_grid_schema_version_bump_still_moves_manifest_row_hash() -> None:

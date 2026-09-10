@@ -7,10 +7,19 @@ import numpy as np
 
 from aminx.run.specs import SamplingSpecification
 
-# Bumped v1 -> v2 for task_id `260910_aminx-sink-provenance-schema`: new OPTIONAL attrs
-# (logits_bias_semantics, prng_seed, aminx_version) added to sinks that key off this
-# constant. Absent on a v1 store means "written before these fields existed", not
-# "unknown" in any stronger sense -- aminx has no reader for these stores yet.
+# REVERTED to "grid_v1" (audit finding A, task_id `260910_aminx-sink-provenance-schema`,
+# code-review round on PR #154): this constant is NOT only a reader-facing label. It also
+# feeds `_grid_manifest_row_hash` -> `root_attrs["manifest_row_hash"]` -> the manifest
+# row's OUTPUT PATH (`campaign.py:306`) -> `_done_marker_path`. Bumping it therefore
+# changes every future row's output directory, which makes `_read_done_marker` return
+# `None` for every already-completed row on resume (`campaign.py:989`) -- a full,
+# SILENT recompute of an in-progress campaign (e.g. the real 882-row necklace campaign),
+# with the old completed store orphaned on disk and never passed to
+# `_invalidate_stale_output`. The v1->v2 bump this comment used to describe was reverted
+# for exactly that reason: the new fields this task adds are purely additive and do not
+# justify paying a full campaign recompute. See `SinkProvenanceVersion`/
+# `sink_provenance_version` in `aminx.io.sink_provenance` for the hash-free way this task
+# now lets a reader distinguish stores instead.
 #
 # This is the single source of truth for GRID_SCHEMA_VERSION. `host/streaming.py`
 # previously carried an independent, coincidentally-identical duplicate definition of
@@ -21,12 +30,16 @@ from aminx.run.specs import SamplingSpecification
 # THIS CONSTANT MUST NEVER FEED THE PRNG SEED DERIVATION. It did until this comment was
 # written (audit finding, task_id `260910_aminx-sink-provenance-schema`, fixed same task):
 # `_grid_job_seed_hash` hashed a payload keyed on `GRID_SCHEMA_VERSION`, and that hash folds
-# directly into `_base_sampling_key`'s `jax.random.fold_in` chain -- so the v1->v2 bump in
-# commit 7b1bc3b silently changed the sampled output of every grid-mode run (different
+# directly into `_base_sampling_key`'s `jax.random.fold_in` chain -- so a schema-label bump
+# would otherwise silently change the sampled output of every grid-mode run (different
 # tokens, different logits at later AR positions) with no behavioural-change warning. See
-# `_SEED_HASH_SCHEMA_PIN` below, which is the value the seed hash actually uses now, and
-# which must stay frozen forever regardless of how many more times this constant is bumped.
-GRID_SCHEMA_VERSION = "grid_v2"
+# `_SEED_HASH_SCHEMA_PIN` below, which is the value the seed hash actually uses (kept
+# separate from this constant and FROZEN FOREVER, regardless of how many more times this
+# constant is bumped) -- that pin is what guarantees a *future* GRID_SCHEMA_VERSION bump
+# cannot reseed sampling. Do not remove the pin on the grounds that the two values now
+# coincide again ("grid_v1" == "grid_v1") -- the whole point is that they are decoupled,
+# not that they happen to currently match.
+GRID_SCHEMA_VERSION = "grid_v1"
 
 # FROZEN FOREVER. Feeds `_grid_job_seed_hash` -> `_seed_words_from_manifest_hash` ->
 # `_base_sampling_key`'s `jax.random.fold_in` chain, i.e. it is load-bearing for every

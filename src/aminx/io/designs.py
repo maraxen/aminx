@@ -66,6 +66,8 @@ class DesignZarrWriter:
     n_canonical: int = 214,
     n_states: int = 9,
     flush_every: int = 1,
+    *,
+    aminx_version: str | None = None,
   ):
     """Initialize the writer.
 
@@ -74,6 +76,16 @@ class DesignZarrWriter:
       n_canonical: Number of canonical residues (for shape validation).
       n_states: Number of states (for shape validation).
       flush_every: Stage calls to buffer before an automatic drain to disk.
+      aminx_version: OPTIONAL explicit override for the ``aminx_version`` provenance attr,
+        bypassing ``resolve_aminx_version()`` entirely (audit finding E, task_id
+        `260910_aminx-sink-provenance-schema`). Construction otherwise HARD-FAILS on a
+        bare-source checkout or a vendored/``sys.path``-prepended aminx import -- neither
+        produces the ``.dist-info`` metadata ``resolve_aminx_version()`` requires (see that
+        function's docstring), a usage pattern tev_design's CLAUDE.md documents as live.
+        This is an explicit, caller-must-opt-in escape hatch, never a silent default: pass
+        it only when you have independently verified which aminx you are actually running
+        (e.g. via ``aminx.__file__``) and accept vouching for that string yourself, since it
+        is stamped verbatim with no further validation.
 
     """
     self.path = path
@@ -85,8 +97,10 @@ class DesignZarrWriter:
     # Resolved HERE, at construction -- before any `write()` call, i.e. before any
     # caller-side compute this writer will ever be handed the result of. A
     # PackageNotFoundError therefore fails a run before it starts, not after a design has
-    # already been computed and is only now being staged.
-    self._aminx_version = resolve_aminx_version()
+    # already been computed and is only now being staged. Skipped entirely when the caller
+    # passed an explicit `aminx_version` override (see the Args docstring above) -- that is
+    # the one supported way to bypass resolution, never a bare `except: "unknown"`.
+    self._aminx_version = aminx_version if aminx_version is not None else resolve_aminx_version()
 
   @classmethod
   def from_multistate_shapes(
@@ -96,13 +110,24 @@ class DesignZarrWriter:
     n_canonical: int,
     n_states: int,
     flush_every: int = 1,
+    aminx_version: str | None = None,
   ) -> Self:
     """Writer sized like :class:`aminx.bundles.ProteinBundle` static axes.
 
     ``n_canonical`` and ``n_states`` match the stack payload's ``n_canonical`` /
     ``n_states`` (roadmap §3.2) so Zarr groups align with multistate campaigns.
+
+    ``aminx_version`` forwards to :meth:`__init__`'s same-named explicit opt-in override
+    (audit finding E, task_id `260910_aminx-sink-provenance-schema`) -- see that
+    docstring.
     """
-    return cls(path, n_canonical=n_canonical, n_states=n_states, flush_every=flush_every)
+    return cls(
+      path,
+      n_canonical=n_canonical,
+      n_states=n_states,
+      flush_every=flush_every,
+      aminx_version=aminx_version,
+    )
 
   def write(
     self,
