@@ -22,9 +22,12 @@ from unittest.mock import patch
 
 import jax.numpy as jnp
 import numpy as np
+import pytest
 import zarr
 
+from aminx.host._sampling_grid_lineage import _grid_job_seed_hash, _resolve_grid_lineage
 from aminx.host.streaming import _sample_streaming
+from aminx.io.sink_provenance import SINK_PROVENANCE_VERSION
 from aminx.run.specs import SamplingSpecification
 from aminx.sampling import multistate_poe
 
@@ -128,3 +131,142 @@ def test_multistate_poe_campaign_row_grid_mode_persists_bias_array() -> None:
     semantics = root.attrs["logits_bias_semantics"]
     assert semantics["bias_persisted"] is True
     assert semantics["bias_persisted"] == ("bias" in array_keys)
+
+
+# ---------------------------------------------------------------------------
+# Code-review round on PR #154: findings A (hash-free marker actually staged),
+# B (non-AR decoder must not get AR bias semantics), C (grid seed hash recorded),
+# D (bias_array_group makes bias_persisted honest).
+#
+# Same empty-protein-iterator harness as above -- the root-level staging under test runs
+# unconditionally before the batch loop, so no model is ever loaded.
+# ---------------------------------------------------------------------------
+
+
+def _grid_spec(output_dir: Path, bias: np.ndarray | None = None) -> SamplingSpecification:
+  """The shared grid-mode spec for the tests below."""
+  return SamplingSpecification(
+    inputs=[],
+    grid_mode=True,
+    job_id="synthetic_job_260910",
+    chunk_id=0,
+    sample_start=0,
+    sample_count=3,
+    num_samples=3,
+    return_logits=bias is not None,
+    bias=bias,
+    output_h5_path=str(output_dir),
+  )
+
+
+def _fail_if_sampled(*_args: object, **_kwargs: object) -> None:
+  msg = "sample_batch_fn must not be called with an empty protein_iterator"
+  raise AssertionError(msg)
+
+
+def test_grid_mode_records_grid_job_seed_hash() -> None:
+  """FINDING C: `prng_seed` alone under-determines the key that drove a grid-mode run.
+
+  `_base_sampling_key` starts at `jax.random.key(random_seed)` then folds in four words
+  derived from `_grid_job_seed_hash(spec, lineage)`. That hash keys off `job_id` plus
+  strategy/conditioning fields, so a reader holding only `prng_seed` cannot re-derive the
+  actual sampling key without reconstructing the exact grid lineage. Recording it is what
+  makes the store's reproducibility claim meetable.
+  """
+  with tempfile.TemporaryDirectory() as tmpdir:
+    output_dir = Path(tmpdir) / "store"
+    spec = _grid_spec(output_dir)
+    _sample_streaming(spec, [], None, _fail_if_sampled)
+
+    root = zarr.open_group(str(output_dir), mode="r")
+    assert "grid_job_seed_hash" in root.attrs, (
+      f"grid-mode store records prng_seed={root.attrs.get('prng_seed')!r} but no "
+      "'grid_job_seed_hash' -- the seed int alone does not reproduce the sampling key. "
+      f"Got attrs {sorted(root.attrs.keys())}."
+    )
+
+    lineage = _resolve_grid_lineage(spec)
+    assert lineage is not None
+    assert root.attrs["grid_job_seed_hash"] == _grid_job_seed_hash(spec, lineage)
+
+    # Non-vacuousness: prove this is a DISTINCT value, not an alias of the hash already
+    # stored. `manifest_row_hash` keys off GRID_SCHEMA_VERSION and addresses the output
+    # path; the seed hash is pinned to `_SEED_HASH_SCHEMA_PIN` and addresses the PRNG. If
+    # the two ever became equal, the deliberate decoupling of the schema constants that
+    # finding A's revert exists to preserve would have been undone.
+    assert root.attrs["grid_job_seed_hash"] != root.attrs["manifest_row_hash"], (
+      "grid_job_seed_hash equals manifest_row_hash -- the seed-hash/row-hash decoupling "
+      "(the whole point of _SEED_HASH_SCHEMA_PIN) has been undone."
+    )
+
+
+def test_root_store_stages_hash_free_sink_provenance_version() -> None:
+  """FINDING A: the hash-free marker must actually be STAGED, not merely defined.
+
+  Reverting the `GRID_SCHEMA_VERSION` bump left `SINK_PROVENANCE_VERSION` as the only way
+  a reader can distinguish a store carrying the new optional attrs from one predating
+  them. A constant no writer stamps provides exactly none of that.
+  """
+  with tempfile.TemporaryDirectory() as tmpdir:
+    output_dir = Path(tmpdir) / "store"
+    _sample_streaming(_grid_spec(output_dir), [], None, _fail_if_sampled)
+
+    root = zarr.open_group(str(output_dir), mode="r")
+    assert root.attrs.get("sink_provenance_version") == SINK_PROVENANCE_VERSION, (
+      "root store does not stamp 'sink_provenance_version'; a reader cannot tell this "
+      f"store carries the new provenance attrs. Got attrs {sorted(root.attrs.keys())}."
+    )
+    # It must not have come at the cost of re-bumping the HASHED label (finding A's
+    # original defect). Pin both here so a future edit cannot trade one for the other.
+    assert root.attrs["schema_version"] == "grid_v1"
+
+
+def test_bias_array_group_locates_the_persisted_bias_array() -> None:
+  """FINDING D: `bias_persisted: true` must say WHERE the array is.
+
+  The same `logits_bias_semantics` dict is merged into the root group AND every
+  per-structure group, but the `bias` array is staged ONCE, at the root. Without
+  `bias_array_group` a reader of `structure_3` sees `bias_persisted: true` and looks for a
+  `bias` array in that group, where none exists -- true about the store, false-reading
+  about the group.
+  """
+  with tempfile.TemporaryDirectory() as tmpdir:
+    output_dir = Path(tmpdir) / "store"
+    bias = np.ones((_SEQ_LEN, 21), dtype=np.float32)
+    _sample_streaming(_grid_spec(output_dir, bias=bias), [], None, _fail_if_sampled)
+
+    root = zarr.open_group(str(output_dir), mode="r")
+    semantics = root.attrs["logits_bias_semantics"]
+    assert semantics["bias_persisted"] is True
+    assert semantics["bias_array_group"] == "/", (
+      "bias_persisted=True but bias_array_group="
+      f"{semantics.get('bias_array_group')!r} -- a reader cannot locate the array."
+    )
+    assert "bias" in set(root.array_keys())
+
+
+def test_non_autoregressive_strategy_refuses_to_stage_ar_bias_semantics() -> None:
+  """FINDING B: AR bias semantics must not be stamped on non-AR logits.
+
+  `logits_bias_semantics` asserts the stored/sampling bias split from
+  `inference/decode/autoregressive.py`. Decode mode is a pure function of
+  `sampling_strategy` (`host/plan.py::resolve_decode_mode`: "straight_through" -> STEMode
+  -> `decode/ste.py`). `SamplingSpecification.__post_init__` already rejects
+  straight_through in GRID mode -- so this test necessarily uses grid_mode=False, which is
+  precisely the reachable hole the guard closes.
+  """
+  with tempfile.TemporaryDirectory() as tmpdir:
+    output_dir = Path(tmpdir) / "store"
+    spec = SamplingSpecification(
+      inputs=[],
+      grid_mode=False,
+      num_samples=3,
+      return_logits=True,
+      sampling_strategy="straight_through",
+      iterations=1,
+      learning_rate=0.1,
+      output_h5_path=str(output_dir),
+    )
+
+    with pytest.raises(NotImplementedError, match="logits_bias_semantics"):
+      _sample_streaming(spec, [], None, _fail_if_sampled)

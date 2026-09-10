@@ -10,7 +10,7 @@ import jax.numpy as jnp
 import numpy as np
 from xtrax.run import SinkSpec, ZarrStagingSink
 
-from aminx.io.sink_provenance import resolve_aminx_version
+from aminx.io.sink_provenance import SINK_PROVENANCE_VERSION, resolve_aminx_version
 
 
 def _to_numpy_uint8(x: jnp.ndarray | np.ndarray) -> np.ndarray:
@@ -172,6 +172,11 @@ class DesignZarrWriter:
 
     attrs: dict[str, Any] = dict(payload["metadata"])
     attrs["aminx_version"] = self._aminx_version
+    # Hash-free marker (audit finding A) -- present ⇒ this group was written by code new
+    # enough to also stamp `aminx_version` (and `logits_bias_semantics`, when the caller
+    # supplies one). Staged per-group here rather than at a root group because this writer
+    # has no root-level stage call; it participates in no hash either way.
+    attrs["sink_provenance_version"] = SINK_PROVENANCE_VERSION
     if logits_bias_semantics is not None:
       attrs["logits_bias_semantics"] = logits_bias_semantics
 

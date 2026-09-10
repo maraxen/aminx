@@ -54,6 +54,7 @@ from xtrax.tiling.estimators import lowered_memory_estimate
 from aminx.host._sampling_grid_lineage import (
   _base_sampling_key,
   _grid_iteration_arrays,
+  _grid_job_seed_hash,
   _grid_manifest_row_hash,
   _grid_sample_indices,
   _resolve_grid_lineage,
@@ -76,6 +77,7 @@ from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.logits import make_stage_set
 from aminx.inference.sample_autoregressive import kernel as _sample_autoregressive_kernel
 from aminx.io.sink_provenance import (
+  SINK_PROVENANCE_VERSION,
   assert_uniform_group_attr,
   logits_bias_semantics_outputs,
   prng_seed_attrs,
@@ -641,6 +643,9 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
 
   root_attrs: dict[str, Any] = {
     "schema_version": GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION,
+    # Hash-free marker (audit finding A) -- participates in NO hash, so unlike
+    # `schema_version` it can be added without moving any manifest row hash or output path.
+    "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
     "ligand_conditioning": int(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
@@ -659,6 +664,11 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     manifest_row_hash = _grid_manifest_row_hash(spec, grid_lineage)
     root_attrs.update(_grid_lineage_attrs(grid_lineage))
     root_attrs["manifest_row_hash"] = manifest_row_hash
+    # AUDIT FINDING C -- see the matching comment in `host/streaming.py`. This writer calls
+    # `_base_sampling_key(spec, grid_lineage=grid_lineage)` directly (see its use above), so
+    # it folds the SAME `_grid_job_seed_hash` into the key and has the identical gap:
+    # `prng_seed` alone under-determines the key that actually drove sampling.
+    root_attrs["grid_job_seed_hash"] = _grid_job_seed_hash(spec, grid_lineage)
     iteration_ids, iteration_starts, iteration_counts = _grid_iteration_arrays(
       grid_lineage, chunk_size=chunk_size,
     )

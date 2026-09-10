@@ -60,6 +60,7 @@ def logits_bias_semantics_outputs(
   bias: Any | None,
   *,
   persist_bias: bool = True,
+  bias_array_group: str = "/",
 ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
   """Build the ``(arrays, attrs)`` pair recording bias semantics for one AR sampling run.
 
@@ -81,11 +82,26 @@ def logits_bias_semantics_outputs(
       ``"bias"``, once per run, so a reader can reconstruct ``sampling_logits`` from
       ``stored_logits`` without re-deriving the bias from elsewhere. Skipped when the
       bias is all-zero (nothing to reconstruct) or ``persist_bias=False``.
+    bias_array_group: Zarr group path at which the ``"bias"`` array in the returned
+      ``arrays`` will ACTUALLY be staged, recorded verbatim as the
+      ``bias_array_group`` semantics field (audit finding D, code-review round on
+      PR #154). Defaults to ``"/"`` because every current caller stages the bias ONCE, at
+      the store root, while merging the returned ``attrs`` into per-structure groups too.
+      Without this field a reader of ``structure_3`` sees ``bias_persisted: true`` and
+      looks for a ``"bias"`` array *in that group*, where none exists -- the attr is true
+      about the STORE but reads as a claim about the GROUP. Only meaningful when
+      ``bias_persisted`` is true; recorded as ``None`` otherwise, so a reader never gets a
+      path that resolves to nothing.
 
   Returns:
     ``(arrays, attrs)`` -- ``arrays`` contains ``{"bias": ...}`` only when a nonzero bias
     is being persisted, else empty. ``attrs`` always contains the ``logits_bias_semantics``
     group-level attr.
+
+    The SAME ``attrs`` is safe to merge into both the root group and every per-structure
+    group: ``bias_array_group`` is what makes it honest in both places, so callers do NOT
+    need to build a second, diverging variant for group-level staging (which would defeat
+    ``assert_uniform_group_attr``'s uniformity check).
   """
   bias_array = None if bias is None else np.asarray(bias, dtype=np.float32)
   bias_is_nonzero = bool(bias_array is not None and np.any(bias_array != 0))
@@ -102,6 +118,7 @@ def logits_bias_semantics_outputs(
       "sampling_logits_bias_applied": SAMPLING_LOGITS_BIAS_APPLIED,
       "bias_is_nonzero": bias_is_nonzero,
       "bias_persisted": bias_persisted,
+      "bias_array_group": bias_array_group if bias_persisted else None,
     },
   }
   return arrays, attrs
