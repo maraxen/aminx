@@ -44,8 +44,26 @@ POS_EMBED_DIM = 16
 
 
 def top_k(x: jax.Array, k: int) -> tuple[jax.Array, jax.Array]:
-  """Wrap jax.lax.top_k."""
-  return jax.lax.top_k(x, k)
+  """Select the ``k`` largest entries along the last axis, descending.
+
+  Deliberately NOT ``jax.lax.top_k``: JAX lowers that to a ``stablehlo.composite``
+  wrapping ``chlo.top_k``, and IREE's StableHLO importer marks that composite
+  explicitly illegal, so an otherwise-clean export dies at ``iree-compile`` with
+  ``failed to legalize operation 'stablehlo.composite'``. Measured 260911 against
+  ``iree-base-compiler 3.11.0rc20260316`` on every ``input_type`` IREE offers
+  (``stablehlo``, ``stablehlo_xla``, ``auto``) -- a gap in the importer, not a
+  flag we are missing. This is the package's only kNN selection site, so routing
+  around it here is what makes the whole model compilable.
+
+  ``stable=True`` is load-bearing: ``jax.lax.top_k`` breaks ties toward the lower
+  index, and only a stable sort reproduces that. The unstable form happened to
+  agree on the inputs measured, which is not the same as being correct.
+
+  Returns:
+    ``(values, indices)``, matching ``jax.lax.top_k``'s contract.
+  """
+  order = jnp.argsort(-x, axis=-1, stable=True)[..., :k]
+  return jnp.take_along_axis(x, order, axis=-1), order.astype(jnp.int32)
 
 
 class ProteinEdgeStageTensors(NamedTuple):
