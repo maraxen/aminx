@@ -52,18 +52,44 @@ def top_k(x: jax.Array, k: int) -> tuple[jax.Array, jax.Array]:
   ``failed to legalize operation 'stablehlo.composite'``. Measured 260911 against
   ``iree-base-compiler 3.11.0rc20260316`` on every ``input_type`` IREE offers
   (``stablehlo``, ``stablehlo_xla``, ``auto``) -- a gap in the importer, not a
-  flag we are missing. This is the package's only kNN selection site, so routing
-  around it here is what makes the whole model compilable.
+  flag we are missing.
 
-  ``stable=True`` is load-bearing: ``jax.lax.top_k`` breaks ties toward the lower
-  index, and only a stable sort reproduces that. The unstable form happened to
-  agree on the inputs measured, which is not the same as being correct.
+  Every kNN selection under ``aminx.model`` routes here, which is what makes the
+  model compilable; ``tests/export/test_top_k_export.py`` enforces that rather
+  than asserting it, because it was briefly untrue. When this function was first
+  introduced it was described as the package's only selection site while three
+  more ``jax.lax.top_k`` calls were live in ``ligand_features`` and ``packer``,
+  so the ligand and sidechain paths stayed uncompilable while the export tests
+  reported green.
+
+  Tie-breaking is stated here rather than inherited from the backend.
+  ``jax.lax.top_k`` breaks ties toward the lower index, and the obvious
+  replacement -- ``jnp.argsort(-x, stable=True)`` -- reproduces that only for as
+  long as whoever runs the artifact honours stable-sort tie order. IREE does not.
+  Measured 260911: an integer ``lax.sort_key_val`` over 64 slots holding 4
+  distinct keys disagreed with XLA at 45 of its 64 positions. Nothing in the
+  export pipeline catches that, because the divergence is carried entirely by the
+  integer indices while the gathered values stay bit-identical, so a float parity
+  check reports ``max_abs_diff 0.0`` and passes.
+
+  So the index is folded into the sort key: sorting lexicographically on
+  ``(-x, index)`` with ``num_keys=2`` is a strict total order -- no two entries
+  ever compare equal, because no two indices are equal -- and every correct sort
+  must then return the same permutation whether or not it is stable. That removes
+  the dependency rather than restating it, which is why ``is_stable`` is passed
+  ``False`` here: it is genuinely irrelevant, and asking for it would imply
+  otherwise.
 
   Returns:
-    ``(values, indices)``, matching ``jax.lax.top_k``'s contract.
+    ``(values, indices)``, matching ``jax.lax.top_k``'s contract on finite input.
+    Non-finite input keeps the ordering ``jnp.argsort(-x)`` gave: NaNs sort last
+    rather than first, and signed zeros compare equal. That differs from
+    ``jax.lax.top_k`` and is unchanged from the previous implementation.
   """
-  order = jnp.argsort(-x, axis=-1, stable=True)[..., :k]
-  return jnp.take_along_axis(x, order, axis=-1), order.astype(jnp.int32)
+  index = jax.lax.broadcasted_iota(jnp.int32, x.shape, x.ndim - 1)
+  _, order = jax.lax.sort((-x, index), dimension=-1, is_stable=False, num_keys=2)
+  order = order[..., :k]
+  return jnp.take_along_axis(x, order, axis=-1), order
 
 
 class ProteinEdgeStageTensors(NamedTuple):

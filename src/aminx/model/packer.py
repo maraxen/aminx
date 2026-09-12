@@ -11,6 +11,7 @@ import jax.numpy as jnp
 from aminx.model.decoder import DecoderLayer, DecoderLayerJ
 from aminx.model.dropout import Dropout
 from aminx.model.encoder import EncoderLayer
+from aminx.model.features import top_k
 from aminx.types.bundles import PackerBundle, PackerResult
 from aminx.types.configs import InferenceConfig
 from aminx.utils.concatenate import concatenate_neighbor_nodes
@@ -415,8 +416,14 @@ class PackerProteinFeatures(eqx.Module):
     mask_2d = mask[:, None] * mask[None, :]
     dist_sq = jnp.where(mask_2d > 0, dist_sq, 1e8)  # Use larger value for inf
 
-    k = jnp.minimum(self.top_k, x.shape[0])
-    dist, idx = jax.lax.top_k(-dist_sq, k)
+    # Python min, not jnp.minimum: both operands are static (``top_k`` is a
+    # static eqx field, ``x.shape[0]`` an int), and the slice width inside
+    # ``features.top_k`` has to be a Python int rather than a staged array.
+    k = min(self.top_k, x.shape[0])
+    # features.top_k, not jax.lax.top_k -- the latter lowers to a
+    # stablehlo.composite IREE marks illegal, and leaves tie order to the
+    # backend's sort stability. See that function's docstring.
+    dist, idx = top_k(-dist_sq, k)
     return -dist, idx
 
   def _make_angle_features(
