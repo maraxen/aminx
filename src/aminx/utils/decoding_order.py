@@ -77,9 +77,32 @@ def random_decoding_order(
   # Map groups to decoding steps
   decoding_step_map = get_decoding_step_map(tie_group_map, group_order, num_groups)
 
-  # Create decoding order: sort by step, then by position within step
-  # This ensures positions in the same group are adjacent
-  decoding_order = jnp.argsort(decoding_step_map)
+  # Sort by step, then by position within step, so positions in the same group
+  # are adjacent and in ascending position order.
+  #
+  # Both keys are stated explicitly rather than leaning on sort stability.
+  # `decoding_step_map` maps tie GROUPS to steps, so every position in a group
+  # shares a step value EXACTLY -- ties by construction, not near-ties -- and a
+  # single-key `jnp.argsort(decoding_step_map)` delivers "then by position" only
+  # if the backend happens to sort stably. IREE does not: measured 260911
+  # against iree-base-compiler 3.11, an argsort over 64 slots holding 4 shuffled
+  # tie groups disagreed with eager JAX at 44 of 64 positions once compiled.
+  # IREE's answer is a valid sort every time -- it is the tie order, not the
+  # sort, that differs -- so the failure is silent, and an eager-vs-eager test
+  # cannot see it because JAX's own sort IS stable.
+  #
+  # Sorting on (step, index) with `num_keys=2` is a strict total order: no two
+  # entries compare equal, because no two indices are equal, so every correct
+  # sort must return this permutation whether or not it is stable. `is_stable`
+  # is passed False deliberately -- it is genuinely irrelevant now, and asking
+  # for it would imply otherwise. Same fix as `model.features.top_k` (PR #156).
+  index = jax.lax.broadcasted_iota(jnp.int32, decoding_step_map.shape, 0)
+  _, decoding_order = jax.lax.sort(
+    (decoding_step_map, index),
+    dimension=0,
+    is_stable=False,
+    num_keys=2,
+  )
 
   return jnp.asarray(decoding_order, dtype=jnp.int32), next_key
 
