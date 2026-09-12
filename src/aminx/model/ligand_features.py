@@ -12,6 +12,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
+from aminx.model.features import top_k
 from aminx.model.ligand_tiling import map_chunks_axis0
 from aminx.utils.coordinates import apply_noise_to_coordinates
 
@@ -301,7 +302,10 @@ class ProteinFeaturesLigand(eqx.Module):
       dist_ca = jnp.where(same_structure, dist_ca, 1e4)
 
     k = min(self.k_neighbors, Ca.shape[0])
-    _, E_idx = jax.lax.top_k(-dist_ca, k)
+    # aminx.model.features.top_k, not jax.lax.top_k: the latter lowers to a
+    # stablehlo.composite IREE refuses to legalize, and its tie order would come
+    # from the backend's sort stability. See that function's docstring.
+    _, E_idx = top_k(-dist_ca, k)
 
     RBF_all = []
     # CA-CA RBF
@@ -389,7 +393,8 @@ class ProteinFeaturesLigand(eqx.Module):
     mask_y = mask[:, None] * ligand_mask
     cb_y_distances_adjusted = cb_y_distances * mask_y + (1.0 - mask_y) * 10000.0
     k_y = min(self.atom_context_num, ligand_coords.shape[1])
-    _, e_idx_y = jax.lax.top_k(-cb_y_distances_adjusted, k_y)
+    # See the note at the CA-CA selection above: aminx's top_k, not jax.lax's.
+    _, e_idx_y = top_k(-cb_y_distances_adjusted, k_y)
 
     ligand_coords = jnp.take_along_axis(ligand_coords, e_idx_y[:, :, None], axis=1)
     ligand_atom_types = jnp.take_along_axis(ligand_atom_types, e_idx_y, axis=1)
