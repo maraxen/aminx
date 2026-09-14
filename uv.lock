@@ -82,7 +82,7 @@ dependencies = [
     { name = "proxide", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "xtrax", extra = ["io"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "xtrax", extra = ["export", "io"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -215,7 +215,7 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'" },
     { name = "ty", marker = "extra == 'tests'" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["io"], specifier = "==0.4.0a9" },
+    { name = "xtrax", extras = ["io", "export"], specifier = "==0.4.0a10" },
     { name = "zstandard", specifier = ">=0.21.0" },
 ]
 provides-extras = ["benchmark", "docs", "tests", "dev", "foldcomp", "cpu", "cuda12"]
@@ -1350,6 +1350,38 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ef/4c/5dd1d8af08107f88c7f741ead7a40854b8ac24ddf9ae850afbcf698aa552/ipython_pygments_lexers-1.1.1.tar.gz", hash = "sha256:09c0138009e56b6854f9535736f4171d855c8c08a563a0dcd8022f78355c7e81", size = 8393, upload-time = "2025-01-17T11:24:34.505Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d9/33/1f075bf72b0b747cb3288d011319aaf64083cf2efef8354174e3ed4540e2/ipython_pygments_lexers-1.1.1-py3-none-any.whl", hash = "sha256:a9462224a505ade19a605f71f8fa63c2048833ce50abc86768a0d81d876dc81c", size = 8074, upload-time = "2025-01-17T11:24:33.271Z" },
+]
+
+[[package]]
+name = "iree-base-compiler"
+version = "3.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "sympy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/1f/ae45ccb7edef9eead14eacb0e8b472ce3d72ee3863a0f9eb6c916e09e6e3/iree_base_compiler-3.11.0-cp312-abi3-macosx_13_0_universal2.whl", hash = "sha256:2e9fc888b9044662a14eeba01b6302d75a6118f68874699dcf8f9c7e991a4ee2", size = 71963066, upload-time = "2026-03-19T23:20:15.961Z" },
+    { url = "https://files.pythonhosted.org/packages/24/a3/67dda13e131479d17a5f8c63c0e43bd6674ddc5ff84d49f77b9155a917f8/iree_base_compiler-3.11.0-cp312-abi3-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:1aea934fdc2ebe1dd64e5f2063a96de675a35f0b4856f9ddb76b2df58dfefb87", size = 82753538, upload-time = "2026-03-19T23:20:20.781Z" },
+    { url = "https://files.pythonhosted.org/packages/47/9c/f7cd82016c869ceb37b787b628608b68225c9e7bc46e0de9f18a9932ef3c/iree_base_compiler-3.11.0-cp312-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:99fc3369375405485f11da541a75ef2b153d529fa3712c1d9771c98a35e2669e", size = 83137835, upload-time = "2026-03-19T23:20:26.161Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/65/a3de9aef2cdc64fcde2fb13f1e3f56d874973dafecb0aa5751e52c60b05b/iree_base_compiler-3.11.0-cp313-cp313t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:3c99a4484d3e56ae9e83bc2d079e5f3d8329cd7836568b60c39cf9ff8847dd6c", size = 82806062, upload-time = "2026-03-19T23:20:35.266Z" },
+    { url = "https://files.pythonhosted.org/packages/86/1c/0d0fabfeff79b1f0b53b190dea6f5e65546f74d821693ebe200ffd195ca6/iree_base_compiler-3.11.0-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:5be5421f6a447f04188a571d7e7668430b2fe1ec413fb2a3ab997fb7e4e46671", size = 83171193, upload-time = "2026-03-19T23:20:40.594Z" },
+]
+
+[[package]]
+name = "iree-base-runtime"
+version = "3.11.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "ml-dtypes", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/57/9f/123ed3bc84f3a390ac7594a5219a70ae2ae35ac0b58ed54c0c0711c6d881/iree_base_runtime-3.11.0-cp312-abi3-macosx_13_0_universal2.whl", hash = "sha256:5f30d5666b6d007a781d9f7b6094664c64e3c30a379d1c1011b8ee299422c61e", size = 4101155, upload-time = "2026-03-19T23:20:54.707Z" },
+    { url = "https://files.pythonhosted.org/packages/10/21/4e7907106c2ebef71f607ed9b6250b6337c4fedec3a230d84b1912d04e70/iree_base_runtime-3.11.0-cp312-abi3-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:7b428bebe14ba5f16f838c6651c3d3ed8ff36c1933c0ec212c2dc8d212a0e919", size = 8432745, upload-time = "2026-03-19T23:20:56.369Z" },
+    { url = "https://files.pythonhosted.org/packages/20/dc/c1db63d258ff5e484f1c739aa5cafd9ad9fcc7e8ffd914869937b6fc28ca/iree_base_runtime-3.11.0-cp312-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:b3ff2b214780871d5677994b82332f9d1bae365a2e115c928464bd15ab5a5098", size = 8308112, upload-time = "2026-03-19T23:20:58.799Z" },
+    { url = "https://files.pythonhosted.org/packages/ce/0f/9a6c9d0987c0aad5186c81df2555e997f60505b876f523fd4bb3ef983da5/iree_base_runtime-3.11.0-cp313-cp313t-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:bca18e87a606dbfa09585a5a5b86f9fa46b10b1ccbf1dec6fc0a7fdd73b0c85f", size = 8448426, upload-time = "2026-03-19T23:21:02.558Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/03/3f7714c7fc09632bd79667f7b4a5cd401ee504cf8209a49c949e10fac4ae/iree_base_runtime-3.11.0-cp313-cp313t-manylinux_2_28_x86_64.whl", hash = "sha256:57c2b92a283e9d84c84f377aeea4549b7f1d3db3b5d93ca3ea984730b24e99bb", size = 8319903, upload-time = "2026-03-19T23:21:04.876Z" },
 ]
 
 [[package]]
@@ -2896,18 +2928,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pytest-asyncio"
-version = "1.4.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "pytest", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/43/7c/d36d04db312ecf4298932ef77e6e4a9e8ad017906e24e34f0b0c361a2473/pytest_asyncio-1.4.0.tar.gz", hash = "sha256:c6c0d2259945122819f171a32ecea2c349ead889ee28176caaf492143424be42", size = 58514, upload-time = "2026-05-26T09:56:04.083Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/03/e2/08a497ef684b88559c9cc5f4ad53a37e7b99e727094a86d6ea32536d5d3c/pytest_asyncio-1.4.0-py3-none-any.whl", hash = "sha256:933ca923a23075a87fb7070c0ec272a6848489824d887c85c812670932835aa1", size = 16930, upload-time = "2026-05-26T09:56:02.576Z" },
-]
-
-[[package]]
 name = "pytest-cov"
 version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3166,6 +3186,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/90/17/334d3ad9de4d40f9dd58fdd09e35ce64553bb501e2f19a839e2fb6be14fc/ruff-0.15.16-py3-none-musllinux_1_2_armv7l.whl", hash = "sha256:7ed55c58950df60589a9a7a5d2f8fa5f54ebd287163be805adfe6ee95a9de123", size = 10521910, upload-time = "2026-06-04T16:32:32.54Z" },
     { url = "https://files.pythonhosted.org/packages/4d/bd/3ac7c6ae77a885c1004b3dda2446ea401768d24f851c14b4ad4b24f6639c/ruff-0.15.16-py3-none-musllinux_1_2_i686.whl", hash = "sha256:d482feaf51512b50f9790ceb417a56a61dd1e9d9bf967662b9ed27c01b34f53a", size = 10979190, upload-time = "2026-06-04T16:32:57.492Z" },
     { url = "https://files.pythonhosted.org/packages/33/d7/609546e6a413c3f216fbf2a50c928f97c80939154f6a0503114094a86191/ruff-0.15.16-py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:1e15bc8c94513dae2a40cc9ef07c94fdd4ecc9e29dabebeebe170f952322c9e3", size = 11477014, upload-time = "2026-06-04T16:32:44.687Z" },
+]
+
+[[package]]
+name = "safetensors"
+version = "0.8.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/45/06/f955dbbb1859e3bd23c8ac6141af5106e7ad5fedec4a3a6e3d60f94b7001/safetensors-0.8.0.tar.gz", hash = "sha256:fabaf3e0f18a6618d9b36560682562157f77c2b71fcffc7b432be2baed9d753d", size = 325846, upload-time = "2026-06-09T07:52:25.563Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/39/a0/f718cda65b05407d228f97602cf60dca269c979867aa5beb25410de26cd3/safetensors-0.8.0-cp310-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c554f85858e05226d3c2828e32395e677434685d6d94594a41643361c5e837f0", size = 473568, upload-time = "2026-06-09T07:52:18.829Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/b1/fa7c600e7dceae12e9606c7578cbc9ff1e1ed55844883ee5c92205e86226/safetensors-0.8.0-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:c80201d22cbf405b80647a60ada77bba06c8fba2da2743ba1e89cdcc39a81f25", size = 484562, upload-time = "2026-06-09T07:52:17.518Z" },
+    { url = "https://files.pythonhosted.org/packages/09/7d/65a7de0af421317bb36a067241e4235fff194eed60b961ed6d3f59a3fc60/safetensors-0.8.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:7a46e5ff292c356d6991e60942ba7f79817682d3a2cef0702136448cb9c4d235", size = 502844, upload-time = "2026-06-09T07:52:07.624Z" },
+    { url = "https://files.pythonhosted.org/packages/91/4f/3175c9d75634e0e0dda0082794193521035edd7c70a6f212bf33ca06ddf4/safetensors-0.8.0-cp310-abi3-manylinux_2_17_armv7l.manylinux2014_armv7l.whl", hash = "sha256:4124502b78f03534117c848f87a39b8f31e577b15eff423bf8bfb95f2a8c30d0", size = 511823, upload-time = "2026-06-09T07:52:09.565Z" },
+    { url = "https://files.pythonhosted.org/packages/20/87/846c289e7aa2299eff406335717cf43ce8777194ece8aad75772e0411615/safetensors-0.8.0-cp310-abi3-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:7bc0a787ba8a35be368ee3574edfa2b1ad389eebd0a72e482ae275490e3f6c98", size = 633461, upload-time = "2026-06-09T07:52:11.128Z" },
+    { url = "https://files.pythonhosted.org/packages/76/22/8d64d9df2c45d5ded401df889d0ad90882804ca172d79ec4f0df8f727fe0/safetensors-0.8.0-cp310-abi3-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:040070828e36dc8e122178bbbd5830ff9e97920affb84cbe0f46442497bed358", size = 545148, upload-time = "2026-06-09T07:52:13.603Z" },
+    { url = "https://files.pythonhosted.org/packages/28/50/f203ff3a3ddfe19308efc83c5a3a29ed02bf786732ec35e68bf9162f3365/safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fd6f3f93c9a0a7cc2788ee63fb763353d4bd2e89b0751bc78fcf7dda00bea774", size = 516040, upload-time = "2026-06-09T07:52:16.29Z" },
+    { url = "https://files.pythonhosted.org/packages/46/fb/cdaed17ceb2948784fd9c36b6fd3e951b608547cea81a48e8ee6f8cfdfcb/safetensors-0.8.0-cp310-abi3-manylinux_2_31_riscv64.whl", hash = "sha256:fcdd41ec4628fee5799f807c73c353629130fbd942aa23d83c623dd6c9d52d78", size = 513832, upload-time = "2026-06-09T07:52:12.37Z" },
+    { url = "https://files.pythonhosted.org/packages/0d/49/1e15de264dcc3b77943d2d0c56a95809956883b1c2d6d585c792523f180b/safetensors-0.8.0-cp310-abi3-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:8e9f537aa183a38ace122d27303dcd986b26bd2a7591f9181d7f0c396f4677ca", size = 559930, upload-time = "2026-06-09T07:52:14.743Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/43/bf38443278eab4b1be1fce2931e2b012ad9cb7df52ada751d0aab8f7659a/safetensors-0.8.0-cp310-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:87eec7ffed2b809f05a398a8becb7d013f19f7837cd15d9748580d6cf30dbaf4", size = 678670, upload-time = "2026-06-09T07:52:20.032Z" },
+    { url = "https://files.pythonhosted.org/packages/72/e3/68cd3fa5b48488e84add63e04cb12f3bc28ae4638c06d4508c6e88823d0e/safetensors-0.8.0-cp310-abi3-musllinux_1_2_armv7l.whl", hash = "sha256:4a95ae2b05d7726d751da4ebf626a2ca782b706e101bd894c95bc2450b1cffcc", size = 786679, upload-time = "2026-06-09T07:52:21.322Z" },
+    { url = "https://files.pythonhosted.org/packages/29/4b/1c19c509d56e01f4fbb3d0a2e597450f6cc04d1d56cf52defb0a62dfd715/safetensors-0.8.0-cp310-abi3-musllinux_1_2_i686.whl", hash = "sha256:3ae091f16662658bdc019a4ff6cb4c085bb7d725eb5978b183ffd265863b6d2d", size = 765683, upload-time = "2026-06-09T07:52:22.594Z" },
+    { url = "https://files.pythonhosted.org/packages/27/43/41c1621732edd934d868a00d1b891584c892a7b62a9aab82ea5a0a5623ee/safetensors-0.8.0-cp310-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:8e080062fcde23be189565e1c3305d16751a218ecf9412c8601e64204eb6f846", size = 722361, upload-time = "2026-06-09T07:52:23.924Z" },
 ]
 
 [[package]]
@@ -3934,24 +3975,28 @@ wheels = [
 
 [[package]]
 name = "xtrax"
-version = "0.4.0a9"
+version = "0.4.0a10"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "equinox", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "grain", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "jax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "jaxlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "optax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "orbax-checkpoint", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "pytest-asyncio", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7a/66/9c38188b5eb0a3116fff06666a3aeb91953f7c93f97d00a2aae48d7a3d77/xtrax-0.4.0a9.tar.gz", hash = "sha256:6293bc95a0dec3478c68202bd6c12652f0085dc06c0692ee7117908908b92c63", size = 2348380, upload-time = "2026-09-07T19:46:36.191Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7d/61/daf6e5178375c655d2c441f40d653db8b4261ad6d452254cac0277c0aafc/xtrax-0.4.0a10.tar.gz", hash = "sha256:8d936f7cd5890ebd83b93bbb70420a910251a3bc2d681caaa15455a4c5bf4be5", size = 2549858, upload-time = "2026-09-14T19:18:04.091Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/30/ca606df7c1ae9576e3b5959df1159b4b74a9870e499a89d94b9fd4bb5bed/xtrax-0.4.0a9-py3-none-any.whl", hash = "sha256:d780c7795ca847779c93412dc606e0c359db5125ee5bd3f6ff71362bddfc7dae", size = 384987, upload-time = "2026-09-07T19:46:34.05Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/9b/fcb25aacc1c07c4a3295bf8b5fcd8f7d031a3166b68fc064a289e3add936/xtrax-0.4.0a10-py3-none-any.whl", hash = "sha256:f2a9f721c8b0c790c1e11fc1723496361c13b1e01e0a725caadc0c6014826e35", size = 394388, upload-time = "2026-09-14T19:18:02.082Z" },
 ]
 
 [package.optional-dependencies]
+export = [
+    { name = "huggingface-hub", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "iree-base-compiler", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "iree-base-runtime", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "safetensors", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
 io = [
     { name = "zarr", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
