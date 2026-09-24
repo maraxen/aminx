@@ -1,0 +1,57 @@
+[metadata]
+title = "Phase 0: ORT Web (wasm EP) headless-Chromium smoke (AC-3)"
+created = "260924"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "ONNX Runtime Web's wasm execution provider, run inside headless Chromium with numThreads=1, reproduces the T2 ORT-CPU/JAX comparison (P05 max-abs, EXACT neighbor indices, the perturbed-weight control) and the tie-lattice top_k index order -- genuine in-browser evidence, distinct from T2's ORT Python CPU EP (which is explicitly NOT browser evidence)."
+stage_name = "exploration"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["blocked", "fail"]
+
+# Declaration ORDER is load-bearing (bathos picks the FIRST matching branch,
+# sidecar.py:679-695): `blocked` must precede `pass`/`fail` so a BLOCKED run
+# (no node/no installable Playwright Chromium, or a T2-artifact sha256
+# mismatch caught upstream by the script's own exit-3 precondition) is never
+# reclassified by a coincidentally-matching numeric condition on null fields.
+# `pass` precedes `fail` per T3 step 4 ("blocked; pass; fail (residual)");
+# `fail` is the catch-all for every other case (converted-but-inaccurate,
+# harness ran but a model errored, etc.).
+
+[outcomes.blocked]
+condition = "status = 'BLOCKED'"
+decision = "No headless-Chromium ORT Web run was produced -- node/npx-playwright were unavailable and could not be installed into $WT/browser/smoke, or T2's own artifacts are absent/mismatched (T2 outcome not_converted, or a tampered/stale artifact). Per AC-3, BLOCKED produces no compatibility statement; `tie_indices_identical_browser` is still recorded when the topk_lattice.onnx artifact exists and the browser harness itself could run."
+reasoning = "A structurally missing precondition (browser toolchain or upstream T2 artifacts) must be distinguished from a browser run that executed and produced inaccurate results (fail) -- conflating them would misreport an environment gap as a numerical parity failure."
+is_residual = true
+
+[outcomes.pass]
+condition = "status = 'OK' AND max_abs <= 1e-4 AND idx_exact = true AND control_detected = true"
+decision = "The wasm EP reproduces JAX's P05 log-probs within bar, with exact neighbor indices and a detected perturbed-weight control, inside real headless Chromium. This is the browser-evidence bar T2's ORT-CPU result explicitly could not clear on its own."
+reasoning = "All three independent checks (accuracy, neighbor exactness, control sensitivity) passing together, in-browser, is the minimum evidence needed to trust the ORT Web wasm route for Phase 1+ browser-side comparisons; `tie_indices_identical_browser` is recorded alongside but does not gate this outcome (T3 step 4)."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (status = 'BLOCKED') AND NOT (status = 'OK' AND max_abs <= 1e-4 AND idx_exact = true AND control_detected = true)"
+decision = "The browser harness ran (or attempted to run) but did not clear the pass bar -- e.g. P05 is unavailable this run (T2 not_converted, so max_abs/idx_exact/control_detected are null/false), a model errored inside the page, or the wasm-EP result diverges from JAX beyond bar. The converted artifact (when one exists) is not trustworthy in-browser evidence."
+reasoning = "Residual catch-all: any case that is neither a clean precondition BLOCKED nor a full pass is treated as a browser-evidence failure, so a silent null-vs-false substitution can never masquerade as a pass."
+is_residual = true
+
+[result_schema]
+status = "str"
+reason = "str"
+browser = "str"
+browser_version = "str"
+ort_web_version = "str"
+cross_origin_isolated = "bool"
+threads = "int"
+execution_provider = "str"
+node = "str"
+max_abs = "float"
+idx_exact = "bool"
+control_detected = "bool"
+tie_indices_identical_browser = "bool"
+versions = "dict"
+models = "dict"
