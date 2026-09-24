@@ -68,6 +68,13 @@ scripts/scratch/
 # accidentally committed 2026-05-14 onward before this rule existed).
 .claude/worktrees/
 
+# Browser validation (Phase 0 T3+): npm deps and the local Playwright
+# Chromium download (PLAYWRIGHT_BROWSERS_PATH is pinned inside browser/**
+# because the shared ~/.cache/ms-playwright is not writable under this
+# project's sandbox policy) -- never commit either.
+browser/**/node_modules/
+browser/**/.cache/
+
 # Claude Code background-job scratch space (per-job tmp dirs; should never
 # land under the repo, but a relative path can resolve here by mistake).
 .claude/jobs/
