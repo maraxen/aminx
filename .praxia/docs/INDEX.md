@@ -3,6 +3,7 @@
 ## Daily
 
 ## Handoffs
+- [260924_aminx-browser-validation-execute-pickup](handoffs/260924_aminx-browser-validation-execute-pickup.md) — Pickup for a new session in this worktree: approved spec + plan, gates passed, titanix/bathos facts, how to start EXECUTE
 - [260601_benchmark-staging-handoff](handoffs/260601_benchmark-staging-handoff.md) — Wave 0 done; Waves 1-5 implementation ready; spec oracle-approved
 - [260601_benchmark-wave2-complete](handoffs/260601_benchmark-wave2-complete.md)
 - [260601_benchmark-wave2-ready](handoffs/260601_benchmark-wave2-ready.md)
