@@ -1,0 +1,41 @@
+[metadata]
+title = "Phase 0: Export-safety census of real aminx callables"
+created = "260924"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Real aminx AC-1 callables trace successfully through xtrax.export.check_export_safety for both NATIVE and WASM32 targets, and both positive controls (random_decoding_order and lax.top_k) are detected."
+stage_name = "exploration"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["ctrl_blind", "untraceable"]
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "Instrument insensitive at the claimed resolution; controls must be detected."
+reasoning = "Control detection failure indicates the measurement pipeline cannot reliably detect export-safety issues."
+is_residual = true
+
+[outcomes.untraceable]
+condition = "n_untraceable > 0"
+decision = "One or more callables failed to trace; export safety cannot be assessed."
+reasoning = "Callables that fail to trace cannot be checked for export safety; this blocks phase 0 de-risking."
+is_residual = true
+
+[outcomes.pass]
+condition = "n_untraceable = 0 AND controls_detected = controls_total"
+decision = "All callables traced successfully and both controls detected."
+reasoning = "All AC-1 callables are traceable and the export-safety instrument is sensitive."
+is_residual = false
+
+[result_schema]
+n_callables = "int"
+n_untraceable = "int"
+n_with_blockers = "int"
+controls_total = "int"
+controls_detected = "int"
+xtrax_file = "str"
+rules_present = "bool"
+callables = "list"
