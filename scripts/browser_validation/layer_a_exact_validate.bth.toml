@@ -62,6 +62,7 @@ is_residual = true
 n_comparisons = "int"
 n_over_bar = "int"
 n_not_advanced = "int"
+n_not_advanced_over_bar = "int"
 n_near_tie_excluded = "int"
 n_skipped = "int"
 prereq_ok = "bool"

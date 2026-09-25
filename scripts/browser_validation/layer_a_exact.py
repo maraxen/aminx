@@ -13,7 +13,8 @@ exposes the API those two scripts (and this task's own gate) call:
       "rows": [ {path, metric, value, bar, ratio, status, weight_source, fixture}, ... ],
       "controls": [ {name, metric, off, on, effect, ratio_to_bar, detected}, ... ],
       "n_comparisons": int,   # len(rows)
-      "n_over_bar": int,      # rows with ratio > 1.0 (independent of status label)
+      "n_over_bar": int,      # ADVANCED rows (status != "not_advanced") with ratio > 1.0
+      "n_not_advanced_over_bar": int,  # not_advanced rows with ratio > 1.0 (reported only)
       "n_not_advanced": int,  # rows FORCED to status="not_advanced" by params headroom
       "n_near_tie_excluded": int,
       "n_skipped": int,       # pytest.skip.Exception absorbed via layer_a_common.reference_call
@@ -1737,7 +1738,20 @@ def run_rows(
     if row.get("status") == "not_implemented":
       not_implemented.append({"path": row["path"], "reason": row.get("reason", "")})
 
-  n_over_bar = sum(1 for row in all_rows if row.get("ratio") is not None and row["ratio"] > 1.0)
+  # Spec "Pre-registered layer-(a) bars" + the partial_headroom outcome ("Advanced paths
+  # within bar; not_advanced paths are listed and do not advance"): n_over_bar counts only
+  # ADVANCED rows. A path calibration already flagged not_advanced is still measured and
+  # reported, and its over-bar count is surfaced separately so the magnitude stays visible.
+  n_over_bar = sum(
+    1
+    for row in all_rows
+    if row.get("ratio") is not None and row["ratio"] > 1.0 and row.get("status") != "not_advanced"
+  )
+  n_not_advanced_over_bar = sum(
+    1
+    for row in all_rows
+    if row.get("ratio") is not None and row["ratio"] > 1.0 and row.get("status") == "not_advanced"
+  )
 
   control_list: list[dict[str, Any]] = []
   if controls and first_fixture is not None:
@@ -1789,6 +1803,7 @@ def run_rows(
     "controls": control_list,
     "n_comparisons": len(all_rows),
     "n_over_bar": n_over_bar,
+    "n_not_advanced_over_bar": n_not_advanced_over_bar,
     "n_not_advanced": n_not_advanced,
     "n_near_tie_excluded": n_near_tie_excluded,
     "n_skipped": skip_counter.n,
