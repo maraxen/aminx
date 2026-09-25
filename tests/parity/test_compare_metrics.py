@@ -40,6 +40,7 @@ from aminx.parity.compare import (
   ratio_to_bar,
   reference_nll,
   required_n,
+  token_counts,
   tost_mean_diff,
 )
 
@@ -280,6 +281,11 @@ def _draw_position_counts(
   return rng.multinomial(n, p, size=n_positions).astype(np.float64)
 
 
+def _draw_tokens(p: np.ndarray, n: int, n_positions: int, rng: np.random.Generator) -> np.ndarray:
+  """Draw an ``(n, n_positions)`` token array with every position i.i.d. categorical(p)."""
+  return rng.choice(p.size, size=(n, n_positions), p=p)
+
+
 def test_excess_js_null_centered_at_zero() -> None:
   """Under the null (all four draws from one source), mean(E) is 0 within 3 SE over 200 reps."""
   master = np.random.default_rng(20260924)
@@ -321,46 +327,42 @@ def test_excess_js_iut_power_and_type_i_at_formula_n() -> None:
   effect size. Each replicate's decision is ``excess_js_upper(...) < margin``, routed through
   ``iut_equivalent`` (a single-lane list) to exercise that function too.
 
-  Positions are independent in this synthetic (see ``_draw_position_counts``), so
-  ``excess_js_upper``'s multinomial-from-empirical-frequencies resample is exactly the
-  sequence bootstrap in distribution here, at a fraction of the cost of materializing
-  per-sequence arrays -- what makes 200+200 replicates at n=1754 finish in under two minutes.
-  ``n_boot`` is reduced from the spec's 1000 to 100 purely for unit-test runtime: this adds
-  Monte Carlo noise to the upper-bound quantile itself, not to the underlying E estimate, and
-  the measured pass rates below have wide enough margins (>=0.90 required; measured 0.935
-  identical-source equivalence and 0.995 T x 1.05 rejection) that it does not change the
-  outcome.
+  Each arm is a real ``(n, n_positions)`` token array fed to the library's sequence
+  bootstrap (whole rows resampled). ``n_boot`` is reduced from the spec's 1000 to 100 purely
+  for unit-test runtime: this adds Monte Carlo noise to the upper-bound quantile itself, not
+  to the underlying E estimate, and the measured pass rates below have wide enough margins
+  (>=0.90 required) that it does not change the outcome.
   """
   master = np.random.default_rng(2026091701)
 
-  def _replicate_counts(p_r: np.ndarray, rng: np.random.Generator) -> tuple[np.ndarray, ...]:
-    a1 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
-    a2 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
-    r1 = _draw_position_counts(p_r, _N_REQUIRED, _N_POSITIONS, rng)
-    r2 = _draw_position_counts(p_r, _N_REQUIRED, _N_POSITIONS, rng)
+  def _replicate_tokens(
+    p_r: np.ndarray, rng: np.random.Generator
+  ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    a1 = _draw_tokens(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    a2 = _draw_tokens(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    r1 = _draw_tokens(p_r, _N_REQUIRED, _N_POSITIONS, rng)
+    r2 = _draw_tokens(p_r, _N_REQUIRED, _N_POSITIONS, rng)
     return a1, a2, r1, r2
 
   # Margin = mean E between "aminx at T" (P0) and "aminx at 1.05*T" (P1), independent batch.
   calibration_values = np.empty(50)
   for rep in range(50):
     rng = np.random.default_rng(int(master.integers(0, 2**31 - 1)))
-    a1, a2, r1, r2 = _replicate_counts(_P1, rng)
-    calibration_values[rep] = excess_js(a1, a2, r1, r2)
+    arms = _replicate_tokens(_P1, rng)
+    calibration_values[rep] = excess_js(*(token_counts(arm) for arm in arms))
   margin = float(calibration_values.mean())
 
   identical_pass = 0
   for _rep in range(200):
     rng = np.random.default_rng(int(master.integers(0, 2**31 - 1)))
-    a1, a2, r1, r2 = _replicate_counts(_P0, rng)
-    upper = excess_js_upper(a1, a2, r1, r2, _N_BOOT, _ALPHA, rng)
+    upper = excess_js_upper(*_replicate_tokens(_P0, rng), _N_BOOT, _ALPHA, rng=rng)
     if iut_equivalent([upper < margin]):
       identical_pass += 1
 
   shifted_pass = 0
   for _rep in range(200):
     rng = np.random.default_rng(int(master.integers(0, 2**31 - 1)))
-    a1, a2, r1, r2 = _replicate_counts(_P1, rng)
-    upper = excess_js_upper(a1, a2, r1, r2, _N_BOOT, _ALPHA, rng)
+    upper = excess_js_upper(*_replicate_tokens(_P1, rng), _N_BOOT, _ALPHA, rng=rng)
     if iut_equivalent([upper < margin]):
       shifted_pass += 1
 
@@ -374,6 +376,100 @@ def test_excess_js_iut_power_and_type_i_at_formula_n() -> None:
     f"T x 1.05 rejection rate {shifted_reject_rate:.3f} at n={_N_REQUIRED}, "
     f"margin={margin:.6g} did not clear 0.90"
   )
+
+
+def _counts_level_bootstrap(
+  arms: tuple[np.ndarray, ...], n_boot: int, rng: np.random.Generator
+) -> np.ndarray:
+  """Per-position multinomial bootstrap of E on count tables (independent-positions oracle).
+
+  Resampling ``n`` sequences and recounting ONE position is exactly ``Multinomial(n, p_hat)``
+  at that position; if positions are independent, resampling each position separately has the
+  same distribution as resampling whole sequences. It is the right answer only then.
+  """
+  boots = []
+  for arm in arms:
+    counts = token_counts(arm)
+    totals = counts.sum(axis=-1).astype(np.int64)
+    probs = counts / totals[:, None]
+    boots.append(
+      rng.multinomial(
+        np.broadcast_to(totals, (n_boot, totals.size)),
+        np.broadcast_to(probs, (n_boot, *probs.shape)),
+      ).astype(np.float64)
+    )
+  return np.asarray(excess_js(*boots))
+
+
+def test_excess_js_upper_matches_counts_bootstrap_on_independent_positions() -> None:
+  """With independent positions the sequence bootstrap equals the per-position one in law.
+
+  Tolerance is derived, not tuned: the Monte Carlo SE of a ``1 - alpha`` bootstrap quantile at
+  ``n_boot`` resamples is ``sd * sqrt(alpha * (1 - alpha) / n_boot) / phi(z_{1-alpha})`` under
+  a normal approximation; the two independent estimates differ with SE ``sqrt(2)`` times that,
+  and we allow 4 of those SEs.
+  """
+  rng = np.random.default_rng(20260925)
+  n_seq, length, n_boot = 300, 30, 2000
+  arms = tuple(_draw_tokens(_P0, n_seq, length, rng) for _ in range(4))
+  oracle = _counts_level_bootstrap(arms, n_boot, rng)
+  oracle_upper = float(np.quantile(oracle, 1.0 - _ALPHA))
+  upper = excess_js_upper(*arms, n_boot=n_boot, alpha=_ALPHA, rng=rng)
+
+  z = stats.norm.ppf(1.0 - _ALPHA)
+  quantile_se = float(oracle.std(ddof=1)) * math.sqrt(_ALPHA * (1 - _ALPHA) / n_boot)
+  quantile_se /= float(stats.norm.pdf(z))
+  assert abs(upper - oracle_upper) < 4.0 * math.sqrt(2.0) * quantile_se
+
+
+def test_excess_js_upper_widens_for_correlated_positions() -> None:
+  """Whole-sequence resampling must see cross-position correlation.
+
+  Every sequence repeats one token across all ``L`` positions, so the pooled E is really a
+  single-position estimate and its true sampling SD is ~sqrt(L) larger than a
+  positions-are-independent bootstrap assumes. The bound's half-width ``upper - E_hat`` is
+  compared against ``z * sd_true`` (``sd_true`` from 400 independent replicates): a per-position
+  bootstrap lands near ``1/sqrt(30) ~ 0.18`` of it (measured 0.24 on the prior implementation);
+  the sequence bootstrap lands at or above 1 (percentile bounds run conservative here).
+  """
+  master = np.random.default_rng(2026092502)
+  n_seq, length = 300, 30
+
+  def _correlated(rng: np.random.Generator) -> np.ndarray:
+    column = rng.choice(_K, size=n_seq, p=_P0)
+    return np.repeat(column[:, None], length, axis=1)
+
+  null_values = np.array(
+    [excess_js(*(token_counts(_correlated(master)) for _ in range(4))) for _ in range(400)]
+  )
+  sd_true = float(null_values.std(ddof=1))
+  z = float(stats.norm.ppf(1.0 - _ALPHA))
+
+  ratios = []
+  for _ in range(20):
+    arms = tuple(_correlated(master) for _ in range(4))
+    point = float(excess_js(*(token_counts(arm) for arm in arms)))
+    upper = excess_js_upper(*arms, n_boot=500, alpha=_ALPHA, rng=master)
+    ratios.append((upper - point) / (z * sd_true))
+  median_ratio = float(np.median(ratios))
+  assert 0.7 < median_ratio < 3.0, f"half-width / (z * sd_true) = {median_ratio:.3f}"
+
+
+def test_excess_js_upper_stratifies_by_fixture() -> None:
+  """Fixture strata pool along positions, and mismatched strata are rejected."""
+  rng = np.random.default_rng(7)
+  fixture_a = [_draw_tokens(_P0, 50, 12, rng) for _ in range(4)]
+  fixture_b = [_draw_tokens(_P0, 80, 5, rng) for _ in range(4)]
+  arms = [[a, b] for a, b in zip(fixture_a, fixture_b, strict=True)]
+  pooled = token_counts(arms[0])
+  assert pooled.shape == (17, _K)
+  assert np.all(pooled[:12].sum(axis=-1) == 50)
+  assert np.all(pooled[12:].sum(axis=-1) == 80)
+  assert math.isfinite(excess_js_upper(*arms, n_boot=50, rng=rng))
+  with pytest.raises(ValueError, match="same fixtures"):
+    excess_js_upper(arms[0], arms[1], arms[2], [fixture_a[3]], n_boot=10, rng=rng)
+  with pytest.raises(ValueError, match="token ids"):
+    excess_js_upper(*[np.full((5, 3), _K)] * 4, n_boot=10, rng=rng)
 
 
 def test_iut_equivalent() -> None:

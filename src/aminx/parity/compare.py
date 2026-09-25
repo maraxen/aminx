@@ -8,7 +8,7 @@ Three families of primitive live here:
 - **Pointwise/exact comparisons**: ``max_abs``, ``pearson``, ``ratio_to_bar``, ``reference_nll``,
   ``argmax_agreement``, ``neighbor_set_equality``, ``no_tie_mask``.
 - **Distributional comparisons for sampled sequences**: ``js_divergence``, ``mean_positional_js``,
-  ``excess_js``, ``excess_js_upper`` -- the excess-JS equivalence machinery described in the
+  ``excess_js``, ``token_counts``, ``excess_js_upper`` -- the excess-JS equivalence machinery described in the
   browser-validation spec's "Sampling statistics" section.
 - **Equivalence-test plumbing**: ``iut_equivalent``, ``tost_mean_diff``, ``required_n``.
 
@@ -24,7 +24,7 @@ import math
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from scipy import stats
+from scipy import sparse, stats
 
 if TYPE_CHECKING:
   from collections.abc import Callable, Sequence
@@ -280,40 +280,96 @@ def excess_js(
   return d_a1_r1 - 0.5 * (d_a1_a2 + d_r1_r2)
 
 
-def _bootstrap_counts(counts: np.ndarray, n_boot: int, rng: np.random.Generator) -> np.ndarray:
-  """Multinomial-resample a ``(n_positions, k)`` count table ``n_boot`` times.
+def _as_strata(arm: np.ndarray | Sequence[np.ndarray], k: int) -> list[np.ndarray]:
+  """Normalize one arm to a list of per-fixture ``(n_seq, L_f)`` integer token arrays.
 
-  Resampling ``n`` items with replacement from an empirical ``k``-category sample and
-  recounting is exactly a ``Multinomial(n, p_hat)`` draw, so this reproduces a per-position
-  sequence bootstrap without needing the underlying per-sequence draws.
+  A single 2-D array is one stratum; a sequence of 2-D arrays is one stratum per fixture
+  (R2-C11: the bootstrap resamples sequences WITHIN each fixture). Every token must lie in
+  ``[0, k)`` -- callers pass only designable columns, so there is no mask sentinel.
   """
-  counts_arr = np.asarray(counts, dtype=np.float64)
-  if counts_arr.ndim != 2:
-    msg = "_bootstrap_counts expects a (n_positions, k) count table"
+  strata = [arm] if isinstance(arm, np.ndarray) else list(arm)
+  if not strata:
+    msg = "each arm needs at least one fixture stratum"
     raise ValueError(msg)
-  totals = counts_arr.sum(axis=-1)
-  probabilities = counts_arr / totals[..., None]
-  n_positions, k = counts_arr.shape
-  totals_batched = np.broadcast_to(totals.astype(np.int64), (n_boot, n_positions))
-  probabilities_batched = np.broadcast_to(probabilities, (n_boot, n_positions, k))
-  return rng.multinomial(totals_batched, probabilities_batched).astype(np.float64)
+  out: list[np.ndarray] = []
+  for stratum in strata:
+    tokens = np.asarray(stratum)
+    if tokens.ndim != 2 or tokens.shape[0] == 0 or not np.issubdtype(tokens.dtype, np.integer):
+      msg = "each fixture stratum must be a non-empty (n_seq, L) integer token array"
+      raise ValueError(msg)
+    if tokens.size and (tokens.min() < 0 or tokens.max() >= k):
+      msg = f"token ids must lie in [0, {k})"
+      raise ValueError(msg)
+    out.append(tokens)
+  return out
+
+
+def _onehot_rows(tokens: np.ndarray, k: int) -> sparse.csr_matrix:
+  """Sparse ``(n_seq, L * k)`` one-hot of a token array, so ``w @ onehot`` gives counts."""
+  n_seq, length = tokens.shape
+  cols = (np.arange(length) * k + tokens).ravel()
+  rows = np.repeat(np.arange(n_seq), length)
+  data = np.ones(n_seq * length, dtype=np.float64)
+  return sparse.csr_matrix((data, (rows, cols)), shape=(n_seq, length * k))
+
+
+def token_counts(arm: np.ndarray | Sequence[np.ndarray], k: int = 20) -> np.ndarray:
+  """Pool an arm's per-fixture token arrays into one ``(sum L_f, k)`` count table."""
+  strata = _as_strata(arm, k)
+  return np.concatenate(
+    [np.asarray(_onehot_rows(t, k).sum(axis=0)).reshape(t.shape[1], k) for t in strata],
+  )
+
+
+def _bootstrap_arm_counts(
+  strata: Sequence[np.ndarray],
+  onehots: Sequence[sparse.csr_matrix],
+  n_boot: int,
+  k: int,
+  rng: np.random.Generator,
+) -> np.ndarray:
+  """Sequence-bootstrap one arm ``n_boot`` times: ``(n_boot, sum L_f, k)`` pooled counts.
+
+  Each fixture's sequences (whole rows, so within-sequence correlation across positions is
+  preserved) are resampled with replacement at that fixture's own ``n_seq``; resample ``b``
+  of a fixture is the multinomial row-weight vector ``w_b``, and its counts are ``w_b @
+  onehot``. Fixtures are resampled independently and concatenated along positions.
+  """
+  blocks = []
+  for tokens, onehot in zip(strata, onehots, strict=True):
+    n_seq, length = tokens.shape
+    weights = rng.multinomial(n_seq, np.full(n_seq, 1.0 / n_seq), size=n_boot).astype(np.float64)
+    blocks.append(np.asarray(onehot.T @ weights.T).T.reshape(n_boot, length, k))
+  return np.concatenate(blocks, axis=1)
+
+
+# Upper bound on the float64 bytes held by one chunk of bootstrap count tables (4 arms).
+_BOOT_CHUNK_BYTES = 1 << 30
 
 
 def excess_js_upper(
-  a1: np.ndarray,
-  a2: np.ndarray,
-  r1: np.ndarray,
-  r2: np.ndarray,
-  n_boot: int,
-  alpha: float,
+  a1: np.ndarray | Sequence[np.ndarray],
+  a2: np.ndarray | Sequence[np.ndarray],
+  r1: np.ndarray | Sequence[np.ndarray],
+  r2: np.ndarray | Sequence[np.ndarray],
+  n_boot: int = 1000,
+  alpha: float = 0.05,
+  *,
   rng: np.random.Generator,
+  k: int = 20,
 ) -> float:
-  """Compute a one-sided bootstrap upper bound on ``excess_js(a1, a2, r1, r2)``.
+  """One-sided ``(1 - alpha)`` sequence-bootstrap percentile upper bound on excess JS.
 
-  Each arm's ``(n_positions, k)`` count table is multinomial-resampled ``n_boot`` times at its
-  own observed per-position totals (see ``_bootstrap_counts``), ``excess_js`` is recomputed on
-  every resample, and the ``(1 - alpha)`` quantile of the resulting distribution is returned
-  as the one-sided upper confidence bound.
+  Each arm is the SEQUENCES themselves, not a count table: an ``(n_seq, L)`` integer token
+  array for one fixture, or a sequence of such arrays, one per fixture of the pooled set
+  (fixture-stratified, spec "Pooling, bootstrap and compute budget"). Fixture ``f`` must have
+  the same ``L_f`` in all four arms. Per resample, every arm's sequences are resampled with
+  replacement within each fixture, pooled into ``(sum L_f, k)`` counts, and ``excess_js`` is
+  recomputed; the ``(1 - alpha)`` quantile of the ``n_boot`` values is returned.
+
+  Resampling whole sequences (rather than each position's counts independently) keeps the
+  cross-position correlation that real designed sequences carry, so the bound widens when
+  positions co-vary instead of being anti-conservatively narrow.
   """
   if n_boot <= 0:
     msg = "n_boot must be positive"
@@ -322,9 +378,24 @@ def excess_js_upper(
     msg = "alpha must be in (0, 1)"
     raise ValueError(msg)
 
-  boots = [_bootstrap_counts(arr, n_boot, rng) for arr in (a1, a2, r1, r2)]
-  values = excess_js(*boots)
-  return float(np.quantile(np.asarray(values), 1.0 - alpha))
+  arms = [_as_strata(arm, k) for arm in (a1, a2, r1, r2)]
+  lengths = [tuple(t.shape[1] for t in strata) for strata in arms]
+  if len(set(lengths)) != 1:
+    msg = "all four arms must have the same fixtures with the same per-fixture lengths"
+    raise ValueError(msg)
+  onehots = [[_onehot_rows(t, k) for t in strata] for strata in arms]
+
+  n_positions = sum(lengths[0])
+  chunk = max(1, _BOOT_CHUNK_BYTES // (4 * n_positions * k * 8))
+  values = []
+  for start in range(0, n_boot, chunk):
+    size = min(chunk, n_boot - start)
+    boots = [
+      _bootstrap_arm_counts(strata, arm_onehots, size, k, rng)
+      for strata, arm_onehots in zip(arms, onehots, strict=True)
+    ]
+    values.append(np.atleast_1d(excess_js(*boots)))
+  return float(np.quantile(np.concatenate(values), 1.0 - alpha))
 
 
 def iut_equivalent(lane_results: Sequence[bool]) -> bool:
