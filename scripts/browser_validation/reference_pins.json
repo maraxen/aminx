@@ -15,7 +15,12 @@
       "ligandmpnn": "/home/solab/bv/ref/LigandMPNN",
       "proteinmpnn": "/home/solab/bv/ref/ProteinMPNN"
     },
-    "uv_path": "/home/solab/.local/bin/uv"
+    "uv_path": "/home/solab/.local/bin/uv",
+    "provenance_impl": "bathos.git.capture_git_state (live git channel; --with overlay kept: locked_versions_match=true)",
+    "systemd_scope_ok": true,
+    "weights_sha256_verified_on_node": true,
+    "ligandmpnn_clone_head": "26ec57ac976ade5379920dbd43c7f97a91cf82de",
+    "proteinmpnn_clone_head": "8907e6671bfbfc92303b5f79c4b5e6ce47cdef57"
   },
   "weights_sha256": {
     "eqx_zst/global_label_membrane_mpnn_v_48_020": "fe386867170e20d34ade86eaaa74fc7cc8c11b2f5263d5a407fc9a48041bc9d5",
@@ -44,5 +49,16 @@
     "proteinmpnn_pt/v_48_010.pt": "db866fae956a28661f926053d630610c55e9fc4bc03922f2aeeb98a37435ccce",
     "proteinmpnn_pt/v_48_020.pt": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
     "proteinmpnn_pt/v_48_030.pt": "c34b7bfb38418ea30989fda3314f4781ac4e3920f9825731cf555f1fed44ac66"
+  },
+  "node_provenance": {
+    "source": "git",
+    "git_hash": "34c56d0bc586bd70a9d0b93ecf64b9b579a59f6c",
+    "smoke_head": "34c56d0bc586bd70a9d0b93ecf64b9b579a59f6c",
+    "dirty": false,
+    "bathos_commit": "84be544ecb45734f46e43d22f351a54d6edd6ae5",
+    "cisternal_version": "0.1.1a7",
+    "locked_versions_match": true,
+    "smoke_run_id": "084996a7-c243-4468-b8fa-dac7040adebc",
+    "note": "catalog runs.metadata is empty at bathos 84be544e (cool-tier parquet has no metadata column); fields copied from the smoke emission and bound by outcome=pass under sidecar_sha256"
   }
 }
