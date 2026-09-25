@@ -217,10 +217,14 @@ def _assert_tokens_match_reference_parser(
   ref_chain_letters = [str(c) for c in output_dict["chain_letters"]]
   ref_resnums = [int(r) for r in output_dict["R_idx"].tolist()]
   ref_s = [int(s) for s in output_dict["S"].tolist()]
-  ref_by_key = dict(zip(zip(ref_chain_letters, ref_resnums, strict=True), ref_s, strict=True))
-
-  n_checked = 0
-  mismatches: list[tuple[tuple[str, int], int, int]] = []
+  # Insertion codes (e.g. antibody loops 82, 82A, 82B in 2GFB) repeat (chain, resnum), and
+  # aminx's Protein carries no icode field. Both parsers read residues in file order, so group
+  # by (chain, resnum) and pair members by occurrence. A group whose size differs between the
+  # two parses (one parser dropped a member) is skipped and counted, never force-aligned.
+  ref_groups: dict[tuple[str, int], list[int]] = {}
+  for key, token in zip(zip(ref_chain_letters, ref_resnums, strict=True), ref_s, strict=True):
+    ref_groups.setdefault(key, []).append(token)
+  aminx_groups: dict[tuple[str, int], list[int]] = {}
   for i in range(mpnn_tokens.shape[0]):
     chain_ordinal = int(chain_index[i])
     chain_letter = (
@@ -228,12 +232,28 @@ def _assert_tokens_match_reference_parser(
       if chain_ids is not None and chain_ordinal < len(chain_ids)
       else str(chain_ordinal)
     )
-    key = (chain_letter, int(residue_index[i]))
-    if key not in ref_by_key:
+    aminx_groups.setdefault((chain_letter, int(residue_index[i])), []).append(int(mpnn_tokens[i]))
+
+  n_checked = 0
+  n_groups_size_mismatch = 0
+  mismatches: list[tuple[tuple[str, int, int], int, int]] = []
+  for key, aminx_tokens in aminx_groups.items():
+    ref_tokens = ref_groups.get(key)
+    if ref_tokens is None:
       continue
-    n_checked += 1
-    if int(mpnn_tokens[i]) != ref_by_key[key]:
-      mismatches.append((key, int(mpnn_tokens[i]), ref_by_key[key]))
+    if len(ref_tokens) != len(aminx_tokens):
+      n_groups_size_mismatch += 1
+      continue
+    for occurrence, (mine, theirs) in enumerate(zip(aminx_tokens, ref_tokens, strict=True)):
+      n_checked += 1
+      if mine != theirs:
+        mismatches.append(((key[0], key[1], occurrence), mine, theirs))
+  if n_groups_size_mismatch:
+    logger.warning(
+      "%s: %d (chain, resnum) group(s) differ in size between parses; skipped in token check",
+      fixture_name,
+      n_groups_size_mismatch,
+    )
 
   if n_checked == 0:
     msg = (
