@@ -1,0 +1,26 @@
+# parity.bth.toml  (bathos parse_parity_toml)
+[parity]
+paper_pdf      = "docs/references/proteinmpnn_2022.pdf"        # acquired in T4
+impl_paths     = ["src/aminx/model/features.py", "src/aminx/model/encoder.py", "src/aminx/model/decoder.py",
+                  "src/aminx/model/mpnn.py", "src/aminx/model/ligand_mpnn.py", "src/aminx/model/ligand_features.py",
+                  "src/aminx/model/packer.py", "src/aminx/inference/score_unconditional.py",
+                  "src/aminx/inference/score_conditional.py", "src/aminx/inference/sample_autoregressive.py",
+                  "src/aminx/inference/decode/autoregressive.py", "src/aminx/inference/logits.py",
+                  "src/aminx/scoring/score.py", "src/aminx/sampling/sample.py", "src/aminx/utils/decoding_order.py",
+                  "src/aminx/io/weights.py"]
+reference_code = "$REFERENCE_PATH (dauparas/LigandMPNN@26ec57ac); secondary: .cache/reference/ProteinMPNN@<pin from T4>"
+citation_note  = "Mode A. ProteinMPNN: Dauparas et al., Science 2022, doi:10.1126/science.add2187. LigandMPNN: paper + run.py/model_utils.py/sc_utils.py at 26ec57ac."
+recon_lenses   = ["math", "algo", "protocol"]
+attack_lenses  = ["stats", "hyper", "struct"]
+hypotheses     = [
+  "decoding-order semantics (fixed-first rule, AR visibility mask) match the reference",
+  "temperature is applied to (logits + bias), and X is hard-omitted at sampling as in the reference",
+  "k-NN neighbour selection matches for L >= k and at exact distance ties",
+  "tied-group fusion, bias and fixed-token semantics match the reference symmetric branch",
+  "membrane label channels are live and encoded as the reference encodes them",
+  "ligand context featurisation (atom context num, cutoff, side-chain context) matches",
+  "shipped .eqx.zst weights equal the reference .pt tensors",
+]
+equivalence_bound = 1e-4
+N = 3
+M = 3

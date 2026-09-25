@@ -1,0 +1,37 @@
+[metadata]
+title = "Phase 1: node-provenance smoke (local + titanix, T4)"
+created = "260924"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The execution node (local or titanix) reports live git provenance from a clean tree, has working torch/jax on CPU-only devices, is running exactly the pinned bathos commit, and its installed jax/jaxlib/numpy/torch/equinox versions equal the uv.lock entries (the --with bathos overlay shadowed nothing)."
+stage_name = "calibration"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "git_source = 'git' AND NOT git_dirty AND torch_ok AND jax_ok AND cpu_only AND locked_versions_match AND bathos_commit = '84be544ecb45734f46e43d22f351a54d6edd6ae5'"
+decision = "The node's provenance channel, dependency versions, and device topology are all verified; downstream layer-(a) runs on this node may proceed."
+reasoning = "Every field the claim's baseline-admissibility and reproducibility depend on (live-git channel, clean tree, pinned bathos commit, locked dependency versions, CPU-only devices) is directly checked rather than assumed."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (git_source = 'git' AND NOT git_dirty AND torch_ok AND jax_ok AND cpu_only AND locked_versions_match AND bathos_commit = '84be544ecb45734f46e43d22f351a54d6edd6ae5')"
+decision = "The node cannot yet be trusted for layer-(a) runs as configured; the recorded fields identify which precondition failed."
+reasoning = "A non-git provenance channel, a dirty tree, a version mismatch introduced by the --with overlay, or a visible non-CPU device would silently invalidate every downstream provenance claim."
+is_residual = true
+
+[result_schema]
+git_source = "str"
+git_hash = "str"
+git_dirty = "bool"
+bathos_commit = "str"
+cisternal_version = "str"
+torch_ok = "bool"
+jax_ok = "bool"
+cpu_only = "bool"
+locked_versions_match = "bool"
+systemd_scope_ok = "bool"

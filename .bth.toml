@@ -5,3 +5,7 @@ root = "/home/marielle/projects/aminx"
 [remotes.engaging]
 host = "engaging"
 remote_root = "~/projects/aminx"
+
+[remotes.titanix]
+host = "titanix"
+remote_root = "/home/solab/bv/catalog-aminx"
