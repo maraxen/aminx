@@ -108,10 +108,29 @@ git push "$TX_REPO_URL" "$H:refs/heads/bv/${STEM}-${H:0:12}"
 
 RD="/home/solab/bv/aminx-browser-validation-${STEM}-${H:0:12}"
 
-ssh titanix bash -s -- "$RD" "$H" <<'REMOTE'
+# Deviation D8: model weights (*.eqx.zst etc.) are Git LFS files. A push by URL carries only
+# the 132-byte pointers and titanix has no git-lfs, so the checkout would hold pointers, not
+# weights. Ship every LFS object referenced at H into a content-addressed store on titanix
+# (same aa/bb/<oid> layout as .git/lfs/objects); the remote step below materializes them.
+TX_LFS_STORE="/home/solab/bv/lfs-objects"
+LFS_DIR="$(git rev-parse --git-common-dir)/lfs/objects"
+lfs_list="$(mktemp)"
+git lfs ls-files -l "$H" | awk '{print $1}' | while read -r oid; do
+  if [ ! -f "${LFS_DIR}/${oid:0:2}/${oid:2:2}/${oid}" ]; then
+    echo "titanix_launch.sh: LFS object ${oid} referenced at ${H} is missing locally (git lfs fetch)" >&2
+    exit 1
+  fi
+  echo "${oid:0:2}/${oid:2:2}/${oid}"
+done > "$lfs_list"
+ssh titanix mkdir -p "$TX_LFS_STORE"
+rsync -a --files-from="$lfs_list" "${LFS_DIR}/" "titanix:${TX_LFS_STORE}/"
+rm -f "$lfs_list"
+
+ssh titanix bash -s -- "$RD" "$H" "$TX_LFS_STORE" <<'REMOTE'
 set -euo pipefail
 RD="$1"
 H="$2"
+STORE="$3"
 avail=$(df -B1G --output=avail /home/solab | tail -1 | tr -d ' ')
 if [ "$avail" -lt 30 ]; then
   echo "titanix_launch.sh (remote): only ${avail}G free under /home/solab (need >=30G); refusing" >&2
@@ -119,6 +138,31 @@ if [ "$avail" -lt 30 ]; then
 fi
 git -C /home/solab/bv/aminx.git worktree add --detach "$RD" "$H"
 cd "$RD"
+# D8: replace each LFS pointer with its object after checking sha256 == the committed oid
+# (exactly what the git-lfs smudge filter does), then mark it skip-worktree so the clean-tree
+# checks compare against the pointer blob git actually committed, not the smudged bytes.
+n_lfs=0
+while IFS= read -r -d '' path; do
+  [ "$(head -c 40 "$path")" = "version https://git-lfs.github.com/spec/" ] || continue
+  oid="$(sed -n 's/^oid sha256:\([0-9a-f]\{64\}\)$/\1/p' "$path")"
+  obj="${STORE}/${oid:0:2}/${oid:2:2}/${oid}"
+  if [ ! -f "$obj" ]; then
+    echo "titanix_launch.sh (remote): LFS object ${oid} for ${path} not in ${STORE}" >&2
+    exit 1
+  fi
+  if [ "$(sha256sum "$obj" | cut -d' ' -f1)" != "$oid" ]; then
+    echo "titanix_launch.sh (remote): LFS object ${oid} for ${path} fails its sha256" >&2
+    exit 1
+  fi
+  cp "$obj" "$path"
+  git update-index --skip-worktree -- "$path"
+  n_lfs=$((n_lfs + 1))
+done < <(git ls-files -z -- '*.eqx' '*.eqx.zst' '*.npz' '*.array_record' '*.tar.gz')
+echo "titanix_launch.sh (remote): materialized ${n_lfs} LFS object(s)"
+if [ -n "$(git status --porcelain)" ]; then
+  echo "titanix_launch.sh (remote): worktree dirty after LFS materialization" >&2
+  exit 1
+fi
 /home/solab/.local/bin/uv sync --frozen --extra dev --extra benchmark
 REMOTE
 
