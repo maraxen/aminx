@@ -287,6 +287,7 @@ def run_measurement(
     "controls": engine_summary["controls"],
     "n_comparisons": engine_summary["n_comparisons"],
     "n_over_bar": engine_summary["n_over_bar"],
+    "n_not_advanced_over_bar": engine_summary.get("n_not_advanced_over_bar", 0),
     "n_not_advanced": engine_summary["n_not_advanced"],
     "n_near_tie_excluded": engine_summary["n_near_tie_excluded"],
     "n_skipped": engine_summary["n_skipped"],
