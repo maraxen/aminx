@@ -43,6 +43,7 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -494,19 +495,42 @@ def differential_mode() -> dict[str, Any]:
   }
 
 
+def _finite_json(value: Any) -> Any:
+  """Replace non-finite floats so the result is strict JSON bathos can evaluate.
+
+  bathos 84be544e renders result fields as DuckDB SQL literals when evaluating
+  `[outcomes]`; a bare `inf` (Python's json writes `Infinity`) fails to bind and turns
+  a clean run's outcome into `error` (titanix calibrate run 6fd3cba2). +/-inf becomes
+  +/-sys.float_info.max (still ordered: > any bar ratio), NaN becomes null.
+  """
+  if isinstance(value, float):
+    if math.isnan(value):
+      return None
+    if math.isinf(value):
+      return sys.float_info.max if value > 0 else -sys.float_info.max
+    return value
+  if isinstance(value, dict):
+    return {k: _finite_json(v) for k, v in value.items()}
+  if isinstance(value, (list, tuple)):
+    return [_finite_json(v) for v in value]
+  return value
+
+
 def emit(result: dict[str, Any], out: str | Path | None) -> None:
   """Write `result` to `$BTH_RESULTS_PATH` always, and to `out` UNLESS a differential phase is set.
 
   Per "Differential pre-flight rules": "when `BTH_DIFFERENTIAL_PHASE` is set, a
   script computes only the differential metric ... and writes ONLY to
-  `$BTH_RESULTS_PATH`, never `--out`".
+  `$BTH_RESULTS_PATH`, never `--out`". Non-finite floats are made finite first
+  (`_finite_json`), and the dump is strict (`allow_nan=False`).
   """
+  result = _finite_json(json.loads(json.dumps(result, default=str)))
   results_path = os.environ.get("BTH_RESULTS_PATH")
   if results_path:
     results_file = Path(results_path)
     results_file.parent.mkdir(parents=True, exist_ok=True)
     with results_file.open("w") as fh:
-      json.dump(result, fh, indent=2, default=str)
+      json.dump(result, fh, indent=2, allow_nan=False)
 
   mode = differential_mode()
   if mode["active"]:
@@ -521,7 +545,7 @@ def emit(result: dict[str, Any], out: str | Path | None) -> None:
     out_path = Path(out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w") as fh:
-      json.dump(result, fh, indent=2, default=str)
+      json.dump(result, fh, indent=2, allow_nan=False)
 
 
 # --------------------------------------------------------------------------------------

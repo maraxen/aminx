@@ -364,6 +364,9 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     "sentinel_ratio_to_bar_on": on_ratio,
     "fixture_set": args.fixture_set,
     "fixture_manifest_sha256": manifest_sha256,
+    "weight_source": "eqx",
+    "budget_wall_hours": budget_wall_hours,
+    "projected_peak_rss_gib": projected_peak_rss_gib,
     "elapsed_seconds": elapsed_seconds,
     **prov,
   }
