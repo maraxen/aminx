@@ -6,3 +6,7 @@ id = "41c04f5f-d493-4ffa-a82c-2789992d0e97"
 [remotes.engaging]
 host = "engaging"
 remote_root = "~/projects/aminx"
+
+[remotes.titanix]
+host = "titanix"
+remote_root = "/home/solab/bv/catalog-aminx"

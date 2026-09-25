@@ -78,3 +78,16 @@ browser/**/.cache/
 # Claude Code background-job scratch space (per-job tmp dirs; should never
 # land under the repo, but a relative path can resolve here by mistake).
 .claude/jobs/
+
+# Browser-validation (Phase 1 T4): read-only reference clones fetched fresh by
+# pins.py, and per-run outputs (parity results, titanix rsync mirrors, run
+# ledgers). Files that must stay tracked under outputs/browser_validation/
+# (params, the run ledger, fixture manifest/raw fixtures) are `git add -f`'d
+# individually per the T4 common context -- this ignore is deliberately not
+# narrowed to a subpath so `git status --porcelain` (git_clean, R2-C13) does
+# not see them as untracked noise.
+.cache/
+outputs/browser_validation/
+node_modules/
+.bth/synthetic_recovery_ledger.json
+*.bth.lock.toml

@@ -1,0 +1,84 @@
+[claim]
+headline       = "Every in-scope deterministic aminx MPNN path matches LigandMPNN@26ec57ac within its pre-registered bar on held-out structures, and every in-scope sampling lane is statistically equivalent at its pre-registered margin."
+kill_condition = "On fixture set B with all controls detected: any in-scope path exceeds its bar (exact-validate outcome fail), OR the sampling-validate outcome is fail, OR the literature-parity run has invariant_pass = false or a confirmed core-severity defect."
+# R2-C8: keyed on invariant_pass / confirmed core defect, NOT on the global grade string -- a PARTIAL
+# grade is the documented expectation (R19) and must not fire the kill condition. This wording is
+# committed BEFORE `bth claim register` (T4 step 4); it is never edited after registration.
+regime         = "CPU f32, matmul precision highest, noise 0 (exact tier); T in {0.1, 1.0}; fixture set B; checkpoints in reference_pins.json"
+kill_condition_satisfiable_by_null = true
+
+[[hypotheses]]
+id = "H_exact_within_bar"
+label = "deterministic aminx paths reproduce the reference computation within bar"
+predicted_signature = "exact-validate outcome pass; controls detected; differential passed"
+[[hypotheses]]
+id = "H_sampling_equiv"
+label = "aminx sampled distributions are equivalent to the reference per lane"
+predicted_signature = "sampling-validate outcome pass; IUT equivalence in every lane; controls behave"
+[[hypotheses]]
+id = "H_lit_parity"
+label = "the literature-parity protocol grades aminx PARITY or PARTIAL"
+predicted_signature = "parity run outcome pass or partial with zero invariant skips"
+[[hypotheses]]
+id = "H_null_misspec"
+label = "the comparison is misspecified or the instrument cannot see the claimed resolution"
+predicted_signature = "controls undetected, skipped prerequisites, or agreement that survives a perturbation"
+
+[[assumptions]]
+id = "A_same_inputs"
+label = "both sides consume byte-identical input arrays and decoding orders"
+halt_if = "input hashes recorded per side differ"
+status = "untested"
+
+[[confounds]]
+id = "C_reference_parity"
+label = "the reference comparison is to the published code at a pinned commit, graded by the literature-parity protocol"
+control = "literature-parity run"
+isolating_run = ""
+status = "uncontrolled"
+[confounds.reference_parity]
+reference_paper   = "dauparas/LigandMPNN@26ec57ac (Mode A)"
+reference_metric  = "conditional_logprob_max_abs"
+reference_value   = 0.0
+equivalence_bound = 1e-4
+parity_run_id = ""  # NEVER hand-edit: bound by bth campaign attest-parity (T11)
+
+[[confounds]]
+id = "C_metric_soundness"
+label = "the comparison metrics recover planted differences"
+control = "synthetic-truth gate"
+isolating_run = ""
+status = "uncontrolled"
+[confounds.synthetic_recovery]
+gate_name = "mpnn_metric_synthetic_truth"
+guards = ["src/aminx/parity/compare.py", "tests/parity/test_compare_metrics.py"]
+
+[[confounds]]
+id = "C_weight_source"
+label = "results are for the SHIPPED .eqx.zst weights, not weights converted at test time"
+control = "weight_source = 'eqx' in every validation row"
+isolating_run = ""
+status = "uncontrolled"
+
+[[claim.union_gate.clauses]]
+id = "C_exact_paths"
+description = "exact-validate run covers the deterministic paths"
+hypothesis_ids = ["H_exact_within_bar", "H_null_misspec"]
+[[claim.union_gate.clauses]]
+id = "C_sampling_equiv"
+description = "sampling-validate run covers the sampling lanes"
+hypothesis_ids = ["H_sampling_equiv", "H_null_misspec"]
+[[claim.union_gate.clauses]]
+id = "C_lit_parity"
+description = "literature-parity run covers the protocol grade"
+hypothesis_ids = ["H_lit_parity", "H_null_misspec"]
+[[claim.union_gate.clauses]]
+id = "C_exact_sensitivity"
+description = "the sized weight perturbation is detected at the bar (exact-validate differential passed)"
+hypothesis_ids = ["H_exact_within_bar"]
+positive_control = true
+[[claim.union_gate.clauses]]
+id = "C_sampling_sensitivity"
+description = "the calibrated +beta bias moves main-arm JS by >= min_effect (sampling-validate differential passed)"
+hypothesis_ids = ["H_sampling_equiv"]
+positive_control = true
