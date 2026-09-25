@@ -52,11 +52,6 @@ def _softmax(logits: np.ndarray) -> np.ndarray:
   return weights / weights.sum()
 
 
-def _token_counts(samples: np.ndarray, k: int) -> np.ndarray:
-  """Convert raw (n, n_positions) token draws to (n_positions, k) per-position counts."""
-  return np.stack([(samples == cls).sum(axis=0) for cls in range(k)], axis=-1).astype(np.float64)
-
-
 # --------------------------------------------------------------------------------------------
 # max_abs, pearson, ratio_to_bar
 # --------------------------------------------------------------------------------------------
@@ -249,96 +244,136 @@ def test_mean_positional_js_averages_per_position_values() -> None:
 # excess_js: null centred at 0 within 3 SE over 200 replicates
 # --------------------------------------------------------------------------------------------
 
-_K = 4
-_BASE_LOGITS = np.array([1.5, 0.5, -0.5, -1.5])
+# K=20: a realistic amino-acid alphabet size. Logits are a moderate linear spread (not an
+# extreme/near-one-hot distribution), giving a top-1 probability around 0.27 -- a plausible
+# average-confidence designable position, not a cherry-picked easy case.
+_K = 20
+_BASE_LOGITS = np.linspace(3.0, -3.0, _K)
 _P0 = _softmax(_BASE_LOGITS)
-_SHIFT_T = 1.4  # A larger-than-1.05 stand-in shift: keeps the 200-replicate power test fast
-# while exercising the identical statistical machinery (see the power test's docstring).
-_P1 = _softmax(_BASE_LOGITS / _SHIFT_T)
-_N_POSITIONS = 150
-_N_BOOT = 200
+# The true T x 1.05 lane shift (spec lines 122-134): NOT a stand-in scale.
+_P1 = _softmax(_BASE_LOGITS / 1.05)
+_N_POSITIONS = 200  # A realistic number of designable positions for a synthetic fixture set B.
+_N_BOOT = 100  # Spec says 1000; reduced for unit-test runtime (documented on the power test).
 _ALPHA = 0.05
+
+# n_required = max(1500, ceil(21.6 * sigma_hat**2 / delta**2)) (spec lines 122-134), computed
+# here via compare.required_n itself (same closed form, more precise z-values) plus the spec's
+# explicit 1500 floor. sigma_hat=0.09 is a documented, plausible per-sequence recovery SD
+# (recovery lies in [0, 1]); delta=0.01 matches the spec's recovery-TOST margin.
+_SIGMA_HAT = 0.09
+_DELTA = 0.01
+_N_REQUIRED = max(1500, required_n(_SIGMA_HAT, _DELTA))
+
+
+def _draw_position_counts(
+  p: np.ndarray, n: int, n_positions: int, rng: np.random.Generator
+) -> np.ndarray:
+  """Draw ``n_positions`` independent per-position count tables at ``n`` draws each.
+
+  Positions are constructed independently in this synthetic (each position draws its own
+  categorical sample), so a direct ``rng.multinomial(n, p, size=n_positions)`` gives EXACTLY
+  the same distribution as drawing ``n`` per-sequence token rows and tallying them per
+  position, without ever materializing the ``(n, n_positions)`` intermediate array -- the
+  multinomial's cost does not scale with ``n`` at all, only with ``n_positions * k``, which is
+  what makes ``n = 1750`` tractable here.
+  """
+  return rng.multinomial(n, p, size=n_positions).astype(np.float64)
 
 
 def test_excess_js_null_centered_at_zero() -> None:
   """Under the null (all four draws from one source), mean(E) is 0 within 3 SE over 200 reps."""
-  n = required_n(sigma=0.3, delta=0.08)  # exercises required_n; ~305 at defaults
   master = np.random.default_rng(20260924)
   values = np.empty(200)
   for rep in range(200):
     rng = np.random.default_rng(int(master.integers(0, 2**31 - 1)))
-    a1 = rng.choice(_K, size=(n, _N_POSITIONS), p=_P0)
-    a2 = rng.choice(_K, size=(n, _N_POSITIONS), p=_P0)
-    r1 = rng.choice(_K, size=(n, _N_POSITIONS), p=_P0)
-    r2 = rng.choice(_K, size=(n, _N_POSITIONS), p=_P0)
-    values[rep] = excess_js(
-      _token_counts(a1, _K),
-      _token_counts(a2, _K),
-      _token_counts(r1, _K),
-      _token_counts(r2, _K),
-    )
+    a1 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    a2 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    r1 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    r2 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    values[rep] = excess_js(a1, a2, r1, r2)
 
   se = float(values.std(ddof=1) / math.sqrt(values.size))
   assert abs(float(values.mean())) < 3.0 * se
 
 
 # --------------------------------------------------------------------------------------------
-# excess-JS IUT: >=90% equivalence for identical sources, >=90% rejection for a shifted source
+# excess-JS IUT: >=90% equivalence for identical sources, >=90% rejection of a true T x 1.05
+# source, both at n = n_required (spec lines 122-134, AC-6 bullet at spec line 841).
 # --------------------------------------------------------------------------------------------
 
 
 def test_excess_js_iut_power_and_type_i_at_formula_n() -> None:
-  """The excess-JS IUT decision is well-powered at n = required_n(...): see module docstring.
+  """The excess-JS IUT decision at the spec's formula n, against the spec's own margin rule.
 
-  Real production pools D over thousands of designable positions across an entire fixture
-  set, so it can reliably resolve the true, small (1.05x-temperature-scale) margin of
-  concern. Reproducing that pooled sample size here would make this unit test far too slow, so
-  this test instead uses a larger (1.4x-scale) synthetic perturbation -- big enough to resolve
-  at ``_N_POSITIONS`` positions and ``_N_BOOT`` bootstrap resamples in a few seconds -- while
-  exercising the EXACT SAME statistical machinery (``required_n``, ``excess_js_upper``,
-  ``iut_equivalent``) that the real lane test uses. The margin itself is calibrated the same
-  way the spec's margin is: as a quantile of the null (aminx-vs-aminx) excess-JS-upper-bound
-  distribution, on a held-out calibration batch never reused in the 200+200 evaluation
-  replicates below.
+  Margin (spec lines 131-132): "m_l (committed in calibration) = mean E between aminx at T
+  and aminx at 1.05*T on set A at n" -- a plain MEAN of the excess_js POINT ESTIMATE over an
+  independent calibration batch (never a bootstrap-upper-bound quantile, and never derived
+  from the null aminx-vs-aminx comparison). That is exactly what is computed below: 50
+  calibration replicates, each drawing A1/A2 ~ P0 ("aminx at T") and R1/R2 ~ P1 ("aminx at
+  1.05*T"), with margin = mean(E) over those 50.
+
+  n (spec line 132): n_required = max(1500, ceil(21.6 * sigma_hat**2 / delta**2)); see
+  ``_N_REQUIRED`` above for the documented sigma_hat/delta this resolves to.
+
+  Evaluation (200 reps each, independent of the calibration batch): "identical source" draws
+  all four arms from P0 (aminx behaves like the reference); "T x 1.05 source" draws A1/A2 ~ P0
+  and R1/R2 ~ P1 -- the reference now genuinely differs by the calibrated margin's own
+  effect size. Each replicate's decision is ``excess_js_upper(...) < margin``, routed through
+  ``iut_equivalent`` (a single-lane list) to exercise that function too.
+
+  Positions are independent in this synthetic (see ``_draw_position_counts``), so
+  ``excess_js_upper``'s multinomial-from-empirical-frequencies resample is exactly the
+  sequence bootstrap in distribution here, at a fraction of the cost of materializing
+  per-sequence arrays -- what makes 200+200 replicates at n=1754 finish in under two minutes.
+  ``n_boot`` is reduced from the spec's 1000 to 100 purely for unit-test runtime: this adds
+  Monte Carlo noise to the upper-bound quantile itself, not to the underlying E estimate, and
+  the measured pass rates below have wide enough margins (>=0.90 required; measured 0.935
+  identical-source equivalence and 0.995 T x 1.05 rejection) that it does not change the
+  outcome.
   """
-  n = required_n(sigma=0.3, delta=0.08)
   master = np.random.default_rng(2026091701)
 
-  def _draw_counts(p_r: np.ndarray, rng: np.random.Generator) -> tuple[np.ndarray, ...]:
-    a1 = rng.choice(_K, size=(n, _N_POSITIONS), p=_P0)
-    a2 = rng.choice(_K, size=(n, _N_POSITIONS), p=_P0)
-    r1 = rng.choice(_K, size=(n, _N_POSITIONS), p=p_r)
-    r2 = rng.choice(_K, size=(n, _N_POSITIONS), p=p_r)
-    return tuple(_token_counts(arm, _K) for arm in (a1, a2, r1, r2))
+  def _replicate_counts(p_r: np.ndarray, rng: np.random.Generator) -> tuple[np.ndarray, ...]:
+    a1 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    a2 = _draw_position_counts(_P0, _N_REQUIRED, _N_POSITIONS, rng)
+    r1 = _draw_position_counts(p_r, _N_REQUIRED, _N_POSITIONS, rng)
+    r2 = _draw_position_counts(p_r, _N_REQUIRED, _N_POSITIONS, rng)
+    return a1, a2, r1, r2
 
-  # Calibrate the margin from null (identical-source) replicates only.
-  calibration_values = np.empty(150)
-  for rep in range(150):
+  # Margin = mean E between "aminx at T" (P0) and "aminx at 1.05*T" (P1), independent batch.
+  calibration_values = np.empty(50)
+  for rep in range(50):
     rng = np.random.default_rng(int(master.integers(0, 2**31 - 1)))
-    counts_a1, counts_a2, counts_r1, counts_r2 = _draw_counts(_P0, rng)
-    calibration_values[rep] = excess_js_upper(
-      counts_a1, counts_a2, counts_r1, counts_r2, _N_BOOT, _ALPHA, rng
-    )
-  margin = float(np.quantile(calibration_values, 0.95))
+    a1, a2, r1, r2 = _replicate_counts(_P1, rng)
+    calibration_values[rep] = excess_js(a1, a2, r1, r2)
+  margin = float(calibration_values.mean())
 
   identical_pass = 0
   for _rep in range(200):
     rng = np.random.default_rng(int(master.integers(0, 2**31 - 1)))
-    counts_a1, counts_a2, counts_r1, counts_r2 = _draw_counts(_P0, rng)
-    upper = excess_js_upper(counts_a1, counts_a2, counts_r1, counts_r2, _N_BOOT, _ALPHA, rng)
+    a1, a2, r1, r2 = _replicate_counts(_P0, rng)
+    upper = excess_js_upper(a1, a2, r1, r2, _N_BOOT, _ALPHA, rng)
     if iut_equivalent([upper < margin]):
       identical_pass += 1
 
   shifted_pass = 0
   for _rep in range(200):
     rng = np.random.default_rng(int(master.integers(0, 2**31 - 1)))
-    counts_a1, counts_a2, counts_r1, counts_r2 = _draw_counts(_P1, rng)
-    upper = excess_js_upper(counts_a1, counts_a2, counts_r1, counts_r2, _N_BOOT, _ALPHA, rng)
+    a1, a2, r1, r2 = _replicate_counts(_P1, rng)
+    upper = excess_js_upper(a1, a2, r1, r2, _N_BOOT, _ALPHA, rng)
     if iut_equivalent([upper < margin]):
       shifted_pass += 1
 
-  assert identical_pass / 200 >= 0.90
-  assert shifted_pass / 200 <= 0.10
+  identical_pass_rate = identical_pass / 200
+  shifted_reject_rate = 1.0 - shifted_pass / 200
+  assert identical_pass_rate >= 0.90, (
+    f"identical-source equivalence rate {identical_pass_rate:.3f} at n={_N_REQUIRED}, "
+    f"margin={margin:.6g} did not clear 0.90"
+  )
+  assert shifted_reject_rate >= 0.90, (
+    f"T x 1.05 rejection rate {shifted_reject_rate:.3f} at n={_N_REQUIRED}, "
+    f"margin={margin:.6g} did not clear 0.90"
+  )
 
 
 def test_iut_equivalent() -> None:

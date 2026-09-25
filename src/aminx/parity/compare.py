@@ -21,7 +21,7 @@ calling convention, so a reference implementation lifted by AST (see
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from scipy import stats
@@ -87,7 +87,7 @@ def reference_nll(
   log_probs: object,
   seq: object,
   mask: object,
-  get_score: Callable[[object, object, object], tuple[object, object]],
+  get_score: Callable[..., tuple[Any, Any]],
 ) -> float:
   """Compute the reference masked-average NLL by delegating to the caller's ``get_score``.
 
