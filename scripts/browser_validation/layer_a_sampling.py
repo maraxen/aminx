@@ -1,0 +1,775 @@
+r"""Layer (a) sampling-tier engine (T8): teacher-forced exact tier + IUT statistical tier.
+
+Companion to `layer_a_exact.py` (T7): where that module compares deterministic
+log-probs/NLL on real fixtures, this module compares SAMPLED sequences across five
+lanes -- P07@T0.1, P07@T1.0, P08, P09-s, P11-s -- at two tiers per the bars table's
+"Teacher-forced per-step log-probs" and "Sampled sequences" rows:
+
+- **(a) Teacher-forced.** The reference's OWN sampled sequence and decoding order are
+  fed into aminx conditional decoding (`score_conditional.kernel`) with the matching
+  AR mask; per-step log-probs are compared (`tf_max_abs`). For P09-s the compared
+  quantity is the FUSED per-group distribution (`p09_fused_tf_max_abs`), per R3-C6(2).
+- **(b) Statistical.** Each arm draws `2n` sequences (`A1, A2` aminx; `R1, R2`
+  reference); per lane, BOTH a recovery TOST (delta=0.01) and an excess-JS bootstrap
+  one-sided 95% upper bound (`aminx.parity.compare.excess_js_upper`, reused -- never
+  reimplemented) against the committed margin `m_l` must pass (IUT, no multiplicity
+  adjustment: `aminx.parity.compare.iut_equivalent`).
+
+This module is the ENGINE only (no CLI) -- `layer_a_sampling_calibrate.py` (T8b, set
+A) and `layer_a_sampling_validate.py` (set B) are its two callers, mirroring T7/T7b's
+split. It reuses `layer_a_exact.py` (`lae`) and `layer_a_common.py` (`lac`) rather than
+re-deriving fixture parsing, model loading, order formulas, tie-group helpers, or the
+X/omit-bias convention -- see each function's docstring for its specific reuse.
+
+**Sequence-token convention.** Every lane feeds `af_to_mpnn`-converted MPNN-alphabet
+tokens on both sides via `lae.parse_canonical_fixture`/`lae.build_exact_batch` (never
+aminx's raw AlphaFold-order `aatype`) -- see `layer_a_exact`'s module docstring for why
+this is load-bearing. `X_INDEX = 20` in this alphabet.
+
+**Order per draw `i` (spec "T8 step 1").** `randn_i` is drawn from a seeded RNG; the
+host computes `order_i = argsort((mask*chain_mask + 1e-4) * |randn_i|)`
+(`lac.reference_formula_order`, reused). P07, P08 and P11-s run the reference BATCHED
+(one `randn` row per draw, `model_utils.py:262-263`); P09-s runs the reference at
+batch 1 per draw (its symmetric branch uses `decoding_order[0]` for the whole batch,
+`model_utils.py:358`) and flattens tie groups at first occurrence internally -- the
+reference's own RETURNED `decoding_order` is used downstream for P09-s (verified
+against the host formula for the non-P09-s lanes; row_p09's own precedent in
+`layer_a_exact.py` does the same for the scoring lane). aminx runs
+`inference.sample_autoregressive.kernel` with
+`WaveScheduleBundle.from_tie_groups(tie_group_map, order_i)` -- verified end-to-end
+against a real fixture during this task's own development (5L33, P07 lane): the
+resulting `SampleResult.sequence` is fully drawn (no `-1` UNDRAWN_TOKEN) and the
+X-omit bias column correctly hard-omits X. `fixed_mask = 1 - mask*chain_mask` and
+`fixed_tokens = S_true` (`seq_ref`), mirroring the reference's own `chain_mask`
+convention (LigandMPNN `model_utils.py:334`: `S_t = S_t*chain_mask_t +
+S_true_t*(1-chain_mask_t)`).
+
+**P14 (packer sampling lane) is NOT IMPLEMENTED.** See `P14_SAMPLING_NOT_IMPLEMENTED_REASON`:
+`grep -rln "vonmises\|von_mises" src/ tests/` returns ZERO matches anywhere in this
+repository -- there is no chi-angle sampling routine for the packer at all (not even a
+synthetic/parameter-only one), which is a strictly stronger gap than T7a's finding
+(that only a real-structure -> PackerBundle adapter is missing). Nothing exists to draw
+the 10,000 chi samples from, so this lane cannot be faked into existence.
+
+**Sized fusion control (P09-s, R3-C6(3)) implementation note.** Rather than
+intercepting `TieGroupProductOfExperts` inside the AR kernel (which fuses internally,
+mid-decode), this module calls `aminx.inference.logits.TieGroupProductOfExperts`
+DIRECTLY (the exact same registered strategy `make_stage_set()` wires as
+`tie_group_fuse` by default) on per-member RAW logits obtained from an UNGATED
+`score_conditional` call (`tie_group_map = arange(L)`, i.e. no fusion applied by the
+kernel), scaling the LAST group member's logit row by `(1 + eps)` before re-fusing.
+This reuses the model's own fusion function unmodified rather than re-deriving its
+math, and needs no kernel-internal hook.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import logging
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
+
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+  sys.path.insert(0, str(_SCRIPT_DIR))
+
+import layer_a_common as lac  # noqa: E402
+import layer_a_exact as lae  # noqa: E402
+
+# --------------------------------------------------------------------------------------
+# Constants (Pre-registered layer-(a) bars / Sampling statistics / P09-s restrictions)
+# --------------------------------------------------------------------------------------
+
+MPNN_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
+X_INDEX = 20  # spec: "X is index 20 in MPNN order"
+ALANINE_INDEX = 0
+
+TF_BAR = 1e-4  # bars table: "Teacher-forced per-step log-probs ... TOL ... <= 1e-4 nats"
+RECOVERY_DELTA = 0.01  # bars table: "recovery TOST delta = 0.01"
+ALPHA = 0.05
+N_REQUIRED_FLOOR = 1500
+DEFAULT_N_BOOT = 1000
+NULL_REPLICATES = 20
+NULL_REPLICATES_PASS_FLOOR = 18  # ">= 18/20"
+POSCTL_MIN_DETECTED = 18  # ">= 18/20"
+NEGCTL_MAX_FP = 3  # "<= 3/20"
+MAX_N_DOUBLINGS = 3  # bounded: full doubling-until-18/20 is a titanix-only cost
+
+# spec "Lane temperatures (pre-registered, R2-C11)".
+LANE_KEYS: tuple[str, ...] = ("P07@0.1", "P07@1.0", "P08@1.0", "P09-s@1.0", "P11-s@1.0")
+DEFAULT_LANE_TEMPERATURES: dict[str, float] = {
+  "P07@0.1": 0.1,
+  "P07@1.0": 1.0,
+  "P08@1.0": 1.0,
+  "P09-s@1.0": 1.0,
+  "P11-s@1.0": 1.0,
+}
+MARGIN_TEMPERATURE_RATIO = 1.05  # "T vs 1.05*T" margin rule
+
+_LANE_BASE: dict[str, str] = {
+  "P07@0.1": "P07",
+  "P07@1.0": "P07",
+  "P08@1.0": "P08",
+  "P09-s@1.0": "P09-s",
+  "P11-s@1.0": "P11-s",
+}
+
+OMIT_AA_CHARS = "CW"  # spec "the run.py omit formula for omit_AA='CW'"
+P08_PER_RESIDUE_OMIT_POSITION = 0  # "plus one per-residue omit" -- fixed, documented position
+P08_PER_RESIDUE_OMIT_CHAR = "D"
+P07_FIXED_FRACTION = 0.20  # "fixed positions on 20% of residues"
+
+DEFAULT_BETA = 5.0  # smoke-path default; run_full searches BETA_CANDIDATES for real
+BETA_CANDIDATES: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 40.0)
+DEFAULT_FUSION_CTRL_EPS = 0.1  # smoke-path default; run_full searches FUSION_EPS_CANDIDATES
+FUSION_EPS_CANDIDATES: tuple[float, ...] = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0)
+SIZING_RATIO_RANGE: tuple[float, float] = (2.0, 10.0)  # "[2x, 10x] the bar"
+
+_SEED_BASE = 20260924  # arbitrary fixed base, distinct from layer_a_exact's own base
+
+
+def _seed_for(name: str) -> int:
+  return (_SEED_BASE + (hash(name) % 10_000)) & 0xFFFFFFFF
+
+
+def _mpnn_index(char: str) -> int:
+  return MPNN_ALPHABET.index(char)
+
+
+def _omit_indices(chars: str) -> list[int]:
+  return [_mpnn_index(c) for c in chars]
+
+
+# --------------------------------------------------------------------------------------
+# Bias construction (X-omit column, P08's omit_AA formula)
+# --------------------------------------------------------------------------------------
+
+
+def _x_omit_bias(length: int) -> np.ndarray:
+  """`(L, 21)` bias with `-1e8` at `X_INDEX` -- applied on every lane, both arms (host side;
+  the reference achieves the equivalent hard-omit by truncating `probs[:, :20]` before
+  `multinomial`, `model_utils.py:320-323`, so this column is aminx-arm-only, matching the
+  task text: "Every lane applies the X-omit bias column (-1e8 at index 20) on the aminx
+  arm.")."""
+  bias = np.zeros((length, 21), dtype=np.float32)
+  bias[:, X_INDEX] = -1e8
+  return bias
+
+
+def _omit_aa_bias(length: int) -> np.ndarray:
+  """P08's bias: `run.py`'s `omit_AA` formula (`-1e8 * omit_AA[None,None,:]`, `run.py:404-408`)
+  for `OMIT_AA_CHARS`, PLUS one per-residue omit at `P08_PER_RESIDUE_OMIT_POSITION`, PLUS the
+  X-omit column (aminx-arm bias only; see `_x_omit_bias`)."""
+  bias = np.zeros((length, 21), dtype=np.float32)
+  for idx in _omit_indices(OMIT_AA_CHARS):
+    bias[:, idx] = -1e8
+  if P08_PER_RESIDUE_OMIT_POSITION < length:
+    bias[P08_PER_RESIDUE_OMIT_POSITION, _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)] = -1e8
+  bias[:, X_INDEX] = -1e8
+  return bias
+
+
+def _reference_omit_aa_bias(length: int) -> np.ndarray:
+  """The matching REFERENCE-side bias (no X-omit column -- the reference hard-omits X by
+  slicing `probs[:, :20]`, never via bias; see `_x_omit_bias`'s docstring)."""
+  bias = np.zeros((length, 21), dtype=np.float32)
+  for idx in _omit_indices(OMIT_AA_CHARS):
+    bias[:, idx] = -1e8
+  if P08_PER_RESIDUE_OMIT_POSITION < length:
+    bias[P08_PER_RESIDUE_OMIT_POSITION, _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)] = -1e8
+  return bias
+
+
+def _chain_mask_fixed_fraction(
+  length: int, seed: int, frac: float = P07_FIXED_FRACTION
+) -> np.ndarray:
+  """P07: chain_mask with `frac` of residues fixed (0.0), the rest designable (1.0)."""
+  rng = np.random.default_rng(seed)
+  n_fixed = max(1, round(length * frac)) if length > 1 else 0
+  chain_mask = np.ones(length, dtype=np.float32)
+  if n_fixed:
+    idx = rng.choice(length, size=n_fixed, replace=False)
+    chain_mask[idx] = 0.0
+  return chain_mask
+
+
+# --------------------------------------------------------------------------------------
+# LaneBatch -- per-lane geometry, built ONCE from lae.build_exact_batch/parse_canonical_fixture
+# --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class LaneBatch:
+  """Per-lane sampling inputs, sharing the same real-fixture geometry every exact-tier
+  row uses (`lae.build_exact_batch`, never reparsed here)."""
+
+  lane: str
+  fixture_name: str
+  length: int
+  x4: np.ndarray
+  atom37: np.ndarray
+  atom37_mask: np.ndarray
+  seq_ref: np.ndarray  # S_true, MPNN-alphabet tokens (af_to_mpnn'd, cross-checked)
+  mask: np.ndarray
+  residue_index: np.ndarray
+  chain_index: np.ndarray
+  chain_mask: np.ndarray
+  fixed_mask: np.ndarray
+  bias: np.ndarray  # aminx-side (L, 21), includes X-omit column
+  reference_bias: np.ndarray  # reference-side (L, 21), no X-omit column
+  tie_group_map: np.ndarray  # (L,) int64; arange(L) unless P09-s
+  groups: list[list[int]] | None  # only for P09-s
+  use_side_chain_context: bool
+  comparison_positions: np.ndarray  # (n_pos,) int64: designable positions, or tie members for P09-s
+
+
+def build_lane_batch(fixture: dict[str, Any], lane: str, data_utils_module: Any) -> LaneBatch:
+  """Build the per-lane geometry for `fixture` (real structure, `lae.build_exact_batch` reused)."""
+  base = lae.build_exact_batch(fixture, data_utils_module)
+  length = base.length
+  lane_base = _LANE_BASE[lane]
+
+  groups: list[list[int]] | None = None
+  tie_group_map = np.arange(length, dtype=np.int64)
+  use_sc = False
+  bias = _x_omit_bias(length)
+  reference_bias = np.zeros((length, 21), dtype=np.float32)
+
+  if lane_base == "P07":
+    chain_mask = _chain_mask_fixed_fraction(length, _seed_for(fixture["name"] + lane) + 1)
+  elif lane_base == "P08":
+    chain_mask = np.ones(length, dtype=np.float32)
+    bias = _omit_aa_bias(length)
+    reference_bias = _reference_omit_aa_bias(length)
+  elif lane_base == "P09-s":
+    groups = lae._qualifying_groups(fixture)  # noqa: SLF001 (reuse, not reimplement)
+    if groups:
+      lae._reverify_knn_disjoint(base, groups)  # noqa: SLF001 -- exit 2 on any violation (R2-C3)
+      from tests.parity.test_full_model_parity import _build_tie_group_map
+
+      tie_group_map = _build_tie_group_map(length, groups).astype(np.int64)
+    chain_mask = np.ones(length, dtype=np.float32)  # "no mixed fixed/designable groups"
+  elif lane_base == "P11-s":
+    chain_mask = np.ones(length, dtype=np.float32)
+    chain_mask[::2] = 0.0  # partial fixed, mirrors row_p11's exact-tier wiring
+    use_sc = True
+  else:
+    msg = f"unknown lane {lane!r}"
+    raise ValueError(msg)
+
+  fixed_mask = 1.0 - base.mask * chain_mask
+
+  if lane_base == "P09-s":
+    comparison_positions = (
+      np.asarray(sorted({m for g in groups for m in g}), dtype=np.int64)
+      if groups
+      else np.asarray([], dtype=np.int64)
+    )
+  else:
+    comparison_positions = np.where((base.mask > 0) & (chain_mask > 0))[0].astype(np.int64)
+
+  return LaneBatch(
+    lane=lane,
+    fixture_name=fixture["name"],
+    length=length,
+    x4=base.x4,
+    atom37=base.atom37,
+    atom37_mask=base.atom37_mask,
+    seq_ref=base.seq_ref,
+    mask=base.mask,
+    residue_index=base.residue_index,
+    chain_index=base.chain_index,
+    chain_mask=chain_mask,
+    fixed_mask=fixed_mask,
+    bias=bias,
+    reference_bias=reference_bias,
+    tie_group_map=tie_group_map,
+    groups=groups,
+    use_side_chain_context=use_sc,
+    comparison_positions=comparison_positions,
+  )
+
+
+def full_model_bundle_for_lane(lane: str, weight_source: str) -> tuple[Any, Any, Any, Any]:
+  """P11-s uses the ligand/side-chain-context checkpoint pair (`lac.load_sidechain_context_models`,
+  always pinned to `weight_source="eqx"` per that loader's own docstring); every other lane uses
+  the full-model pair (`lac.load_full_model`, reused)."""
+  if _LANE_BASE[lane] == "P11-s":
+    reference_model, aminx_model = lac.load_sidechain_context_models(
+      weight_source, use_side_chain_context=True
+    )
+    torch = __import__("torch")
+    return aminx_model, reference_model, torch, None
+  return lac.load_full_model(weight_source)
+
+
+# --------------------------------------------------------------------------------------
+# Reference feature dict, order draw, single-sequence reference sample
+# --------------------------------------------------------------------------------------
+
+
+def _reference_feature_dict_lane(
+  torch: Any,
+  batch: LaneBatch,
+  randn: np.ndarray,
+  temperature: float,
+  *,
+  batch_size: int,
+) -> dict[str, Any]:
+  randn_arr = randn if randn.ndim == 2 else randn[None]
+  actx = 16
+  fd: dict[str, Any] = {
+    "X": torch.from_numpy(batch.x4[None].copy()),
+    "S": torch.from_numpy(batch.seq_ref[None].astype(np.int64).copy()),
+    "mask": torch.from_numpy(batch.mask[None].copy()),
+    "chain_mask": torch.from_numpy(batch.chain_mask[None].copy()),
+    "R_idx": torch.from_numpy(batch.residue_index[None].copy()),
+    "chain_labels": torch.from_numpy(batch.chain_index[None].copy()),
+    "randn": torch.from_numpy(np.ascontiguousarray(randn_arr)),
+    "bias": torch.from_numpy(batch.reference_bias[None].copy()),
+    "temperature": float(temperature),
+    "batch_size": batch_size,
+    "symmetry_residues": [list(g) for g in batch.groups] if batch.groups else [[]],
+    "symmetry_weights": [[1.0] * len(g) for g in batch.groups] if batch.groups else [[]],
+    # P11-s (ligand/side-chain-context) fields, harmless zeros for every other lane's
+    # plain ProteinMPNN class (mirrors layer_a_exact.row_p11's own fd construction).
+    "Y": torch.zeros((1, batch.length, actx, 3), dtype=torch.float32),
+    "Y_t": torch.zeros((1, batch.length, actx), dtype=torch.int32),
+    "Y_m": torch.zeros((1, batch.length, actx), dtype=torch.int32),
+    "xyz_37": torch.from_numpy(batch.atom37[None].copy()),
+    "xyz_37_m": torch.from_numpy(batch.atom37_mask[None].copy()),
+  }
+  return fd
+
+
+def _draw_order_for(batch: LaneBatch, seed_i: int) -> tuple[np.ndarray, np.ndarray]:
+  """`(randn_i, order_i)` from the reference-formula host order (`lac.reference_formula_order`,
+  reused), seeded per draw `i`."""
+  return lac.reference_formula_order(batch.mask, batch.chain_mask, seed=seed_i)
+
+
+def reference_sample_one(
+  pt_model: Any, torch: Any, batch: LaneBatch, seed_i: int, *, temperature: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+  """One reference `.sample()` call at batch 1. Returns `(S, log_probs, decoding_order, randn)`.
+
+  For non-P09-s lanes, asserts the reference's own returned `decoding_order` equals the
+  host formula (spec T8 step 1: "asserts it equals the reference's returned
+  decoding_order"). P09-s's symmetric branch reorders/flattens internally
+  (`model_utils.py:357-368`) so no such equality is asserted there -- its RETURNED order
+  is authoritative, matching `layer_a_exact.row_p09`'s precedent.
+  """
+  randn, host_order = _draw_order_for(batch, seed_i)
+  fd = _reference_feature_dict_lane(torch, batch, randn, temperature, batch_size=1)
+  with torch.no_grad():
+    out = pt_model.sample(fd)
+  seq = out["S"].numpy()[0]
+  log_probs = out["log_probs"].numpy()[0]
+  decoding_order = out["decoding_order"].numpy()[0]
+  if batch.groups is None:
+    if not np.array_equal(decoding_order, host_order):
+      msg = (
+        f"{batch.fixture_name}/{batch.lane}: reference decoding_order disagrees with the "
+        "host reference-formula order (non-P09-s lane; these must match by construction)"
+      )
+      raise AssertionError(msg)
+  return seq, log_probs, decoding_order, randn
+
+
+def reference_sample_batch(
+  pt_model: Any, torch: Any, batch: LaneBatch, n: int, seed_base: int, *, temperature: float
+) -> np.ndarray:
+  """`n` reference draws restricted to `batch.comparison_positions`, shape `(n, n_pos)`.
+
+  P09-s (symmetric branch) runs at batch 1 per draw, looped (spec "Pooling, bootstrap
+  and compute budget": "only P09-s ... runs at batch 1"); every other lane runs the
+  reference BATCHED, one `randn` row per draw, in ONE `.sample()` call.
+  """
+  if batch.groups is not None:
+    rows = [
+      reference_sample_one(pt_model, torch, batch, seed_base + i, temperature=temperature)[0]
+      for i in range(n)
+    ]
+    seqs = np.stack(rows, axis=0)
+  else:
+    randn_rows = np.stack([_draw_order_for(batch, seed_base + i)[0] for i in range(n)], axis=0)
+    fd = _reference_feature_dict_lane(torch, batch, randn_rows, temperature, batch_size=n)
+    with torch.no_grad():
+      out = pt_model.sample(fd)
+    seqs = out["S"].numpy()
+  if batch.comparison_positions.size == 0:
+    return seqs
+  return seqs[:, batch.comparison_positions]
+
+
+# --------------------------------------------------------------------------------------
+# aminx side: single sample draw, conditional (teacher-forced) score, batched draws
+# --------------------------------------------------------------------------------------
+
+
+def aminx_sample_one(
+  jax_model: Any, batch: LaneBatch, order_i: np.ndarray, prng_key: Any, *, temperature: float
+) -> tuple[np.ndarray, np.ndarray]:
+  """One `inference.sample_autoregressive.kernel` draw. Returns `(sequence, logits)`.
+
+  `WaveScheduleBundle.from_tie_groups(tie_group_map, order_i)` groups tied positions at
+  their first occurrence in `order_i` internally -- `order_i` need not be pre-flattened
+  (verified against the class's own source, `types/bundles.py:212-277`).
+  """
+  import jax
+
+  from aminx.inference import sample_autoregressive
+  from aminx.inference.bundle_builder import build_inference_bundle
+  from aminx.inference.logits import make_stage_set
+  from aminx.types.bundles import WaveScheduleBundle
+
+  wave = WaveScheduleBundle.from_tie_groups(
+    jax.numpy.asarray(batch.tie_group_map), jax.numpy.asarray(order_i)
+  )
+  kw: dict[str, Any] = {
+    "coords": jax.numpy.asarray(batch.x4),
+    "mask": jax.numpy.asarray(batch.mask),
+    "residue_index": jax.numpy.asarray(batch.residue_index, dtype=jax.numpy.int32),
+    "chain_index": jax.numpy.asarray(batch.chain_index, dtype=jax.numpy.int32),
+    "chain_mask": jax.numpy.asarray(batch.chain_mask),
+    "bias": jax.numpy.asarray(batch.bias),
+    "fixed_mask": jax.numpy.asarray(batch.fixed_mask),
+    "fixed_tokens": jax.numpy.asarray(batch.seq_ref, dtype=jax.numpy.int32),
+    "tie_group_map": jax.numpy.asarray(batch.tie_group_map),
+    "wave": wave,
+    "temperature": float(temperature),
+    "mode": "sample",
+  }
+  if batch.use_side_chain_context:
+    kw["atom_37"] = jax.numpy.asarray(batch.atom37)
+    kw["atom_37_mask"] = jax.numpy.asarray(batch.atom37_mask)
+    actx = 16
+    kw["ligand_coords"] = jax.numpy.zeros((batch.length, actx, 3))
+    kw["ligand_atom_types"] = jax.numpy.zeros((batch.length, actx), jax.numpy.int32)
+    kw["ligand_mask"] = jax.numpy.zeros((batch.length, actx))
+  bundle, config = build_inference_bundle(**kw)
+  result = sample_autoregressive.kernel(jax_model, prng_key, bundle, config, make_stage_set())
+  return np.asarray(result.sequence), np.asarray(result.logits)
+
+
+def aminx_conditional_logits(
+  jax_model: Any, batch: LaneBatch, seq_tokens: np.ndarray, order_i: np.ndarray
+) -> np.ndarray:
+  """RAW (pre-`log_softmax`) `score_conditional.kernel` logits for `seq_tokens` under the AR
+  mask derived from `order_i`, at `batch.tie_group_map` (fused if P09-s)."""
+  import jax
+
+  from aminx.inference import score_conditional
+  from aminx.inference.bundle_builder import build_inference_bundle
+  from aminx.inference.logits import make_stage_set
+
+  ar_mask = lac.ar_mask_from_order(order_i)
+  kw: dict[str, Any] = {
+    "coords": jax.numpy.asarray(batch.x4),
+    "mask": jax.numpy.asarray(batch.mask),
+    "residue_index": jax.numpy.asarray(batch.residue_index, dtype=jax.numpy.int32),
+    "chain_index": jax.numpy.asarray(batch.chain_index, dtype=jax.numpy.int32),
+    "chain_mask": jax.numpy.asarray(batch.chain_mask),
+    "sequence": jax.nn.one_hot(jax.numpy.asarray(seq_tokens), 21),
+    "ar_mask": jax.numpy.asarray(ar_mask),
+    "tie_group_map": jax.numpy.asarray(batch.tie_group_map),
+    "mode": "score_conditional",
+  }
+  if batch.use_side_chain_context:
+    kw["atom_37"] = jax.numpy.asarray(batch.atom37)
+    kw["atom_37_mask"] = jax.numpy.asarray(batch.atom37_mask)
+    actx = 16
+    kw["ligand_coords"] = jax.numpy.zeros((batch.length, actx, 3))
+    kw["ligand_atom_types"] = jax.numpy.zeros((batch.length, actx), jax.numpy.int32)
+    kw["ligand_mask"] = jax.numpy.zeros((batch.length, actx))
+  bundle, config = build_inference_bundle(**kw)
+  logits = score_conditional.kernel(
+    jax_model, jax.random.PRNGKey(0), bundle, config, make_stage_set()
+  )
+  return np.asarray(logits)
+
+
+def aminx_sample_batch(
+  jax_model: Any,
+  batch: LaneBatch,
+  n: int,
+  seed_base: int,
+  *,
+  temperature: float,
+  beta_alanine: float = 0.0,
+) -> np.ndarray:
+  """`n` aminx draws restricted to `batch.comparison_positions`, shape `(n, n_pos)`.
+
+  `beta_alanine` adds an additive bias to the alanine column (positive-control sizing,
+  "aminx arm with +beta on alanine") -- never applied to the reference arm.
+  """
+  import jax
+
+  eff_batch = batch
+  if beta_alanine:
+    perturbed_bias = batch.bias.copy()
+    perturbed_bias[:, ALANINE_INDEX] += beta_alanine
+    eff_batch = dataclasses.replace(batch, bias=perturbed_bias)
+
+  rows = []
+  for i in range(n):
+    _randn_i, order_i = _draw_order_for(eff_batch, seed_base + i)
+    seq, _logits = aminx_sample_one(
+      jax_model, eff_batch, order_i, jax.random.PRNGKey(seed_base + i), temperature=temperature
+    )
+    rows.append(seq)
+  seqs = np.stack(rows, axis=0)
+  if eff_batch.comparison_positions.size == 0:
+    return seqs
+  return seqs[:, eff_batch.comparison_positions]
+
+
+# --------------------------------------------------------------------------------------
+# Teacher-forced comparison (step a) + sized fusion control (P09-s, R3-C6(3))
+# --------------------------------------------------------------------------------------
+
+
+def teacher_forced_lane(
+  fixture: dict[str, Any],
+  lane: str,
+  weight_source: str,
+  full_model_bundle: tuple[Any, Any, Any, Any],
+  data_utils_module: Any,
+  *,
+  temperature: float,
+  fusion_eps: float = DEFAULT_FUSION_CTRL_EPS,
+) -> dict[str, Any]:
+  """(a) Teacher-forced: feed the reference's own sampled sequence + order into aminx
+  conditional decoding, compare per-step log-probs. Also runs the sized fusion control
+  for P09-s (R3-C6(3))."""
+  jax_model, pt_model, torch, _model_utils = full_model_bundle
+  batch = build_lane_batch(fixture, lane, data_utils_module)
+  seed_i = _seed_for(fixture["name"] + lane)
+
+  if batch.groups is None and _LANE_BASE[lane] == "P09-s":
+    # P09-s but no qualifying groups on this fixture: nothing to teacher-force.
+    return {
+      "lane": lane,
+      "fixture": fixture["name"],
+      "tf_max_abs": None,
+      "status_note": "no k-NN-disjoint multi-member tie group on this fixture",
+    }
+
+  seq, ref_log_probs, decoding_order, _randn = reference_sample_one(
+    pt_model, torch, batch, seed_i, temperature=temperature
+  )
+  aminx_raw_logits = aminx_conditional_logits(jax_model, batch, seq, decoding_order)
+  aminx_log_probs = np.asarray(_log_softmax(aminx_raw_logits))
+
+  omitted, x_aminx, x_ref = _count_omitted_and_x(seq, lane, aminx_seq=None)
+
+  result: dict[str, Any] = {
+    "lane": lane,
+    "fixture": fixture["name"],
+    "reference_sequence": seq,
+    "reference_log_probs": ref_log_probs,
+    "aminx_log_probs": aminx_log_probs,
+    "decoding_order": decoding_order,
+    "omitted_aa_count": omitted,
+    "x_token_count_reference": x_ref,
+    "x_token_count_aminx_sentinel": x_aminx,  # from this SAME reference-fed sequence, sentinel only
+  }
+
+  if batch.groups:
+    from tests.parity.test_full_model_parity import _combine_reference_tied_log_probs
+
+    ref_fused = _combine_reference_tied_log_probs(
+      ref_log_probs, tie_groups=batch.groups, tie_weights=[[1.0] * len(g) for g in batch.groups]
+    )
+    member_idx = batch.comparison_positions
+    tf_max_abs = lae._max_abs(ref_fused[member_idx], aminx_log_probs[member_idx])  # noqa: SLF001
+    result["tf_max_abs"] = tf_max_abs
+    result["p09_fused_tf_max_abs"] = tf_max_abs
+    result["p09_tied_positions"] = int(member_idx.size)
+    result["fusion_control"] = _fusion_sized_control(
+      jax_model, batch, decoding_order, eps=fusion_eps
+    )
+  else:
+    pos = batch.comparison_positions if batch.comparison_positions.size else np.arange(batch.length)
+    result["tf_max_abs"] = lae._max_abs(ref_log_probs[pos], aminx_log_probs[pos])  # noqa: SLF001
+
+  return result
+
+
+def _log_softmax(logits: np.ndarray) -> np.ndarray:
+  shifted = logits - np.max(logits, axis=-1, keepdims=True)
+  return shifted - np.log(np.sum(np.exp(shifted), axis=-1, keepdims=True))
+
+
+def _fusion_sized_control(
+  jax_model: Any, batch: LaneBatch, decoding_order: np.ndarray, *, eps: float
+) -> dict[str, Any]:
+  """R3-C6(3): the aminx fusion with the LAST group member's logits scaled by `(1+eps)` must
+  move the fused max-abs into `SIZING_RATIO_RANGE` of `TF_BAR`. Reuses
+  `TieGroupProductOfExperts` (`aminx.inference.logits`) directly, never re-derived."""
+  import jax
+
+  from aminx.inference.logits import TieGroupProductOfExperts
+
+  if not batch.groups:
+    return {"eps": eps, "effect": 0.0, "ratio_to_bar": 0.0, "detected": False}
+  group = next((g for g in batch.groups if len(g) >= 2), None)
+  if group is None:
+    return {"eps": eps, "effect": 0.0, "ratio_to_bar": 0.0, "detected": False}
+
+  ungated_batch = dataclasses.replace(batch, tie_group_map=np.arange(batch.length, dtype=np.int64))
+  raw_logits = aminx_conditional_logits(jax_model, ungated_batch, batch.seq_ref, decoding_order)
+
+  fuse = TieGroupProductOfExperts()
+  mask = np.zeros(batch.length, dtype=bool)
+  mask[group] = True
+  normal_fused = np.asarray(fuse(jax.numpy.asarray(raw_logits), jax.numpy.asarray(mask)))
+
+  perturbed_logits = raw_logits.copy()
+  perturbed_logits[group[-1]] = perturbed_logits[group[-1]] * (1.0 + eps)
+  perturbed_fused = np.asarray(fuse(jax.numpy.asarray(perturbed_logits), jax.numpy.asarray(mask)))
+
+  effect = float(np.max(np.abs(normal_fused - perturbed_fused)))
+  ratio = effect / TF_BAR
+  return {
+    "eps": eps,
+    "effect": effect,
+    "ratio_to_bar": ratio,
+    "detected": bool(effect > TF_BAR),
+  }
+
+
+def _count_omitted_and_x(
+  tokens: np.ndarray, lane: str, *, aminx_seq: np.ndarray | None
+) -> tuple[int, int, int]:
+  """`(omitted_aa_count, x_token_count_aminx, x_token_count_reference)` on a full-length
+  (unrestricted) token array. Only P08 has a nonzero omit vocabulary; every lane's X-omit
+  bias should make `x_token_count_*` 0 by construction (a nonzero count is a real finding,
+  not expected noise)."""
+  x_reference = int(np.sum(tokens == X_INDEX))
+  x_aminx = int(np.sum(aminx_seq == X_INDEX)) if aminx_seq is not None else 0
+  omitted = 0
+  if _LANE_BASE[lane] == "P08":
+    global_idxs = _omit_indices(OMIT_AA_CHARS)
+    omitted += int(np.isin(tokens, global_idxs).sum())
+    per_residue_idx = _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)
+    if P08_PER_RESIDUE_OMIT_POSITION < tokens.shape[0]:
+      omitted += int(tokens[P08_PER_RESIDUE_OMIT_POSITION] == per_residue_idx)
+  return omitted, x_aminx, x_reference
+
+
+# --------------------------------------------------------------------------------------
+# Statistical tier (step b): margin/excess-JS/TOST, reusing aminx.parity.compare
+# --------------------------------------------------------------------------------------
+
+
+def lane_equivalence(
+  a1: np.ndarray,
+  a2: np.ndarray,
+  r1: np.ndarray,
+  r2: np.ndarray,
+  *,
+  margin: float,
+  n_boot: int,
+  rng: np.random.Generator,
+  k: int = 21,
+) -> dict[str, Any]:
+  """One lane's statistical-tier verdict: recovery TOST AND excess-JS upper bound < margin
+  (IUT). `k=21` (the full MPNN alphabet incl. X) since sampling lanes may, in principle,
+  produce X at a nonzero rate on a mis-wired run -- the omitted-AA/X EXACT row is the
+  dedicated check for that, but `excess_js_upper`'s token-count math must not silently
+  discard a real divergence by assuming a 20-letter alphabet.
+
+  Returns `{tost_pass, excess_js, excess_js_ub, margin, equiv}` plus the raw recovery arrays.
+  """
+  from aminx.parity.compare import excess_js_upper
+
+  excess_js_ub = excess_js_upper(a1, a2, r1, r2, n_boot=n_boot, rng=rng, k=k)
+  equiv_js = bool(excess_js_ub < margin)
+  return {
+    "excess_js_ub": excess_js_ub,
+    "margin": margin,
+    "equiv_js": equiv_js,
+    "n_boot": n_boot,
+  }
+
+
+def recovery_tost(
+  arm_recovery: np.ndarray, reference_recovery: np.ndarray, *, delta: float = RECOVERY_DELTA
+) -> dict[str, Any]:
+  """Recovery TOST between two per-sequence recovery-fraction arrays."""
+  from aminx.parity.compare import tost_mean_diff
+
+  passed, p_lower, p_upper = tost_mean_diff(arm_recovery, reference_recovery, delta)
+  return {"tost_pass": bool(passed), "p_lower": p_lower, "p_upper": p_upper, "delta": delta}
+
+
+def per_sequence_recovery(tokens: np.ndarray, seq_ref_restricted: np.ndarray) -> np.ndarray:
+  """`(n,)` per-sequence recovery fraction against the restricted native sequence."""
+  return np.mean(tokens == seq_ref_restricted[None, :], axis=-1)
+
+
+# --------------------------------------------------------------------------------------
+# Fixture-proportional draw allocation (R2-C11: "allocated across fixtures proportionally
+# to their designable-position counts")
+# --------------------------------------------------------------------------------------
+
+
+def allocate_draws(
+  fixtures_for_lane: list[tuple[dict[str, Any], LaneBatch]], n_total: int
+) -> dict[str, int]:
+  """Allocate `n_total` per-arm draws across fixtures proportionally to
+  `len(comparison_positions)`, largest remainder method (deterministic, sums to `n_total`)."""
+  weights = [max(1, len(batch.comparison_positions)) for _fixture, batch in fixtures_for_lane]
+  total_weight = sum(weights)
+  raw = [n_total * w / total_weight for w in weights]
+  floors = [int(x) for x in raw]
+  remainder = n_total - sum(floors)
+  order = sorted(range(len(raw)), key=lambda i: raw[i] - floors[i], reverse=True)
+  for i in order[:remainder]:
+    floors[i] += 1
+  return {
+    fixture["name"]: count
+    for (fixture, _batch), count in zip(fixtures_for_lane, floors, strict=True)
+  }
+
+
+# --------------------------------------------------------------------------------------
+# P14 sampling lane (NOT IMPLEMENTED -- see module docstring)
+# --------------------------------------------------------------------------------------
+
+P14_SAMPLING_NOT_IMPLEMENTED_REASON = (
+  "P14 sampling lane (10,000 chi draws from fixed real mixture parameters vs the analytic "
+  "von Mises mixture CDF, KS test, x1.2 concentration control) needs a chi-angle SAMPLING "
+  "routine for the packer. Searched (per the fixer brief's own directive) for 'packer' and "
+  "'von_mises'/'vonmises' across the whole repository: `grep -rln \"vonmises\\|von_mises\" "
+  "src/ tests/` returns ZERO matches anywhere in aminx -- src/aminx/model/packer.py "
+  "(PackerProteinFeatures, Packer) defines only the mixture PARAMETER heads (mixture_logits, "
+  "mu/loc, kappa/concentration -- see types/bundles.py:501-518's PackerResult fields), with "
+  "no `jax.random.vonmises` call site, no CDF, and no other sampling routine of any kind "
+  "for chi angles anywhere in src/ or tests/. This is a STRICTLY STRONGER gap than T7a's "
+  "finding (which was only about a real-structure -> PackerBundle adapter): even with FIXED, "
+  "already-real mixture parameters handed to it directly (no real-structure adapter needed "
+  "at all), there is nothing in this codebase to draw a chi sample from, or an analytic CDF "
+  "to compare against. Recorded as not_implemented rather than fabricated; the "
+  "weight-perturbation concentration x1.2 control is correspondingly not implemented "
+  "(nothing to perturb without a working sampler)."
+)
+
+
+def packer_lane() -> dict[str, Any]:
+  """P14 sampling lane: NOT IMPLEMENTED. See `P14_SAMPLING_NOT_IMPLEMENTED_REASON`."""
+  return {
+    "path": "P14.packer_mixture_sampling",
+    "metric": "not_implemented",
+    "status": "not_implemented",
+    "rejection_rate": None,
+    "reason": P14_SAMPLING_NOT_IMPLEMENTED_REASON,
+  }
