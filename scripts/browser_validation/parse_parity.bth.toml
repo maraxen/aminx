@@ -1,0 +1,47 @@
+[metadata]
+title = "Phase 1: P02 structure-ingestion parity (T6, AC-7/AC-9)"
+created = "260924"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "aminx's structure parser (proxide-backed) reproduces the reference LigandMPNN data_utils.parse_PDB's per-residue backbone-atom-present mask, chain ordinal, and decoded amino-acid identity EXACTLY, and its backbone (N, CA, C, O) coordinates within 1e-5 Angstrom, across the Phase-1 fixture corpus's admitted protein fixtures; a deliberately injected 1e-3 Angstrom atom shift is detected by the same comparison."
+stage_name = "calibration"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["ctrl_blind", "fail"]
+
+# Declaration ORDER is load-bearing (bathos picks the FIRST matching branch): ctrl_blind
+# must precede pass/fail so an instrument that cannot detect the 1e-3 Angstrom control shift
+# is never reclassified as a coincidental pass/fail on the real (undoctored) comparison rows.
+# `fail`'s condition is the full complement of `pass` (matching `ort_web_smoke.bth.toml`'s
+# pattern) but only ever matches once ctrl_blind's prior branch has already been ruled out.
+
+[outcomes.ctrl_blind]
+condition = "NOT control_detected"
+decision = "Instrument insensitive at the claimed resolution (1e-5 Angstrom bar): the deliberately injected 1e-3 Angstrom atom shift was not detected, so no P02 parity statement is permitted from this run."
+reasoning = "A control that fails to trip means the comparison harness itself -- alignment, column selection, or the max-abs computation -- cannot be trusted to catch a real discrepancy of this or smaller magnitude."
+is_residual = true
+
+[outcomes.pass]
+condition = "control_detected AND n_exact_mismatches = 0 AND max_coord_diff <= 0.00001"
+decision = "aminx's parse matches the reference's parse exactly on mask/chain/sequence and within bar on backbone coordinates, with the control sensitivity confirmed."
+reasoning = "All three EXACT-tier fields (mask, chain ordinal, decoded sequence) agreeing with zero mismatches, backbone coordinates within the 1e-5 Angstrom bar, and a detected control together are the minimum evidence that aminx's structure ingestion is parity-equivalent to the reference for P02."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (control_detected AND n_exact_mismatches = 0 AND max_coord_diff <= 0.00001)"
+decision = "The comparison ran and the control was detected, but a genuine EXACT-tier mismatch or an over-bar coordinate difference was found; P02 does not clear parity this run."
+reasoning = "Residual catch-all: any case that is neither a clean ctrl_blind nor a full pass is a real P02 divergence, not a control-sensitivity gap."
+is_residual = true
+
+[result_schema]
+n_fixtures = "int"
+n_rows = "int"
+n_exact_mismatches = "int"
+max_coord_diff = "float"
+control_detected = "bool"
+control_shift_angstrom = "float"
+control_row = "dict"
+rows = "list"
