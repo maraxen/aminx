@@ -33,5 +33,17 @@
     "run_id": "209e328a-a04c-4533-a2b2-81e34cf04456",
     "outcome": "error",
     "note": "eqx weights were Git LFS pointers on titanix (no git-lfs; push by URL carries pointers only); fixed by deviation D8 (content-addressed LFS store + sha256-verified materialization in titanix_launch.sh)"
+  },
+  {
+    "stem": "layer_a_exact_calibrate",
+    "H_v": "93a4744e944c6c44f1daf7419c3d2b32cfea2d7b",
+    "session": "bv-layer_a_exact_calibrate-93a4744e944c",
+    "exit": 1,
+    "free_gb_before_sync": 126,
+    "prereg_sha256": "1dd7b05e5b01a36655b6ed0b44cafbe964271b77fab572e18e58573bc0a6ffc3",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "1db73123-0698-4bbc-8f24-c49eab0bd232",
+    "outcome": "error",
+    "note": "harness bug: token cross-check keyed residues by (chain,resnum), colliding on 2GFB insertion codes (82A/82B...); fixed by occurrence-paired grouping. No model rows were produced."
   }
 ]
