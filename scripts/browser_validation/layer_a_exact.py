@@ -13,14 +13,21 @@ exposes the API those two scripts (and this task's own gate) call:
       "rows": [ {path, metric, value, bar, ratio, status, weight_source, fixture}, ... ],
       "controls": [ {name, metric, off, on, effect, ratio_to_bar, detected}, ... ],
       "n_comparisons": int,   # len(rows)
-      "n_over_bar": int,      # rows with ratio > 1.0
-      "n_not_advanced": int,  # rows forced to "not_advanced" by params headroom
+      "n_over_bar": int,      # rows with ratio > 1.0 (independent of status label)
+      "n_not_advanced": int,  # rows FORCED to status="not_advanced" by params headroom
       "n_near_tie_excluded": int,
       "n_skipped": int,       # pytest.skip.Exception absorbed via layer_a_common.reference_call
       "controls_total": int,
       "controls_detected": int,
       "not_implemented": [ {path, reason}, ... ],
     }
+
+  Each row's ``status`` is one of ``{"validated", "over_bar", "not_implemented"}``,
+  plus ``"not_advanced"`` -- but ONLY when `_apply_headroom` forces it from
+  `params["exact"]["not_advanced_paths"]` (see `_row`'s docstring comment for the
+  exact spec citation). A row whose OWN measurement exceeds its bar, with no
+  calibration headroom flag in play, is `"over_bar"` -- a real validation
+  failure -- never silently relabeled `"not_advanced"`.
 
 - ``sentinel_ratio_to_bar(subset, *, weight_source, perturb) -> float`` -- the
   differential-phase entry point (spec's `sentinel_ratio_to_bar` metric): P05
@@ -42,13 +49,21 @@ or the parsed `preregistered_params.json`. This module reads, if present:
   control, T8's concern) -- documented for T7b's cross-reference only.
 
 **Rows implemented**: P00, P01, P02 (delegates to `parse_parity.compare_parse`),
-P03, P04, P05, P06, P09 (scoring lane, k-NN-disjoint groups only), P11, P12,
-P13. **Row P14 (packer) is NOT implemented** -- see `_row_p14` for the exact
-reason (AC-15/AC-16's real-structure packer bundle needs a proxide
-atom37->packer-14-atom-order adapter this task did not find an existing,
-reusable, tested source for; fabricating one under this task's remaining scope
-risks a silently wrong tolerance, which orchestrator override #6 forbids). Its
-"packer weight perturbation" control is correspondingly not implemented.
+P03 (via the aminx MODEL's OWN `.features(...)` call, not a primitives
+reimplementation), P04, P05, P06, P09 (scoring lane, k-NN-disjoint groups
+only), P11, P12, P13. **Row P14 (packer) is NOT implemented** -- see
+`P14_NOT_IMPLEMENTED_REASON` for the precise gap (searched `src/aminx` and
+proxide first; no real-structure adapter exists, and the reference's own path
+needs `openfold`, which is not a dependency here).
+
+**Sequence-token convention (load-bearing).** Every row feeds
+`aminx.utils.aa_convert.af_to_mpnn(aatype)` identically to both sides, NEVER
+aminx's raw AlphaFold-order `aatype` -- see `parse_canonical_fixture`'s
+docstring. Feeding raw AF-order tokens to both sides is a real, previously-shipped
+bug in this module: it is WRONG relative to aminx's own production convention,
+but internally CONSISTENT, so it still reproduces near-perfect log-prob
+agreement (both sides read the same, wrong, embedding row) -- only asserting
+against the reference's OWN parsed `S` catches it.
 """
 
 from __future__ import annotations
@@ -58,6 +73,7 @@ import logging
 import os
 import sys
 import types
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -106,7 +122,17 @@ def _row(
   extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
   ratio = float(value) / float(bar) if bar > 0 else (0.0 if value == 0 else float("inf"))
-  status = "validated" if value <= bar else "not_advanced"
+  # "not_advanced" is a CALIBRATION-time verdict ONLY (spec "Pre-registered layer-(a) bars":
+  # "Headroom rule: if a path's calibration measurement exceeds bar/2 it is marked
+  # not_advanced. Validation STILL measures and reports it (status = 'not_advanced')") --
+  # it is never assigned from a row's own raw measurement here. A row whose OWN value
+  # exceeds its bar, with no calibration headroom flag in play, is a genuine validation
+  # failure: "over_bar" (orchestrator-directed; the spec's row_schema literally enumerates
+  # only {validated, not_advanced}, but conflating "measured over bar" with "calibration
+  # flagged not_advanced" hides a real fail as a headroom footnote). `_apply_headroom`
+  # is the ONLY place allowed to relabel a row to "not_advanced", from
+  # `params["exact"]["not_advanced_paths"]`.
+  status = "validated" if value <= bar else "over_bar"
   row = {
     "path": path,
     "metric": metric,
@@ -152,60 +178,133 @@ def _load_reference_data_utils() -> types.ModuleType:
   return module
 
 
+@dataclass(frozen=True, slots=True)
 class ExactBatch:
   """Real-fixture inputs for both sides, sharing ONE reference-formula decoding order."""
 
-  __slots__ = (
-    "fixture_name",
-    "length",
-    "x4",
-    "atom37",
-    "atom37_mask",
-    "aatype_aminx",
-    "seq_ref",
-    "mask",
-    "chain_mask",
-    "residue_index",
-    "chain_index",
-    "randn",
-    "decoding_order",
-    "ar_mask",
-  )
-
-  def __init__(self, **kwargs: Any) -> None:
-    for key, value in kwargs.items():
-      setattr(self, key, value)
+  fixture_name: str
+  length: int
+  x4: np.ndarray
+  atom37: np.ndarray
+  atom37_mask: np.ndarray
+  aatype_aminx: np.ndarray
+  seq_ref: np.ndarray
+  mask: np.ndarray
+  chain_mask: np.ndarray
+  residue_index: np.ndarray
+  chain_index: np.ndarray
+  randn: np.ndarray
+  decoding_order: np.ndarray
+  ar_mask: np.ndarray
 
 
-def build_exact_batch(fixture: dict[str, Any], data_utils_module: types.ModuleType) -> ExactBatch:
-  """Parse `fixture`'s structure with aminx and build both sides' pinned-order inputs.
+def _assert_tokens_match_reference_parser(
+  fixture_name: str,
+  canonical_path: Path,
+  mpnn_tokens: np.ndarray,
+  chain_index: np.ndarray,
+  residue_index: np.ndarray,
+  chain_ids: list[str] | None,
+  reference_module: types.ModuleType,
+) -> int:
+  """Cross-check `mpnn_tokens` (`af_to_mpnn(aminx aatype)`) against the reference's OWN
+  `data_utils.parse_PDB` integer `S`, on residues common to both parses of the SAME
+  canonicalized file. Raises `AssertionError` on any mismatch; returns the number of
+  residues checked (never 0 -- a fixture with zero overlapping keys is itself a bug).
+  """
+  output_dict, *_ = reference_module.parse_PDB(str(canonical_path))
+  ref_chain_letters = [str(c) for c in output_dict["chain_letters"]]
+  ref_resnums = [int(r) for r in output_dict["R_idx"].tolist()]
+  ref_s = [int(s) for s in output_dict["S"].tolist()]
+  ref_by_key = dict(zip(zip(ref_chain_letters, ref_resnums, strict=True), ref_s, strict=True))
 
-  ``seq_ref`` is the SAME raw integer array as aminx's own ``aatype`` (proxide's
-  AlphaFold-order convention) -- deliberately NOT remapped through
-  `data_utils_module.restype_str_to_int` (the reference's alphabetical
-  convention). Those two orderings genuinely differ (verified: proxide's
-  ``restypes_with_x`` is ``"ARNDCQEGHILKMFPSTWYVX"``, the reference's own
-  ``restype_int_to_str`` is ``"ACDEFGHIKLMNPQRSTVWYX"``) -- but `aminx.io.weights`
-  / `scripts/convert_weights.py` copy the PT `W_s`/`w_s_embed` embedding TABLE
-  ROWS unpermuted, so integer `t` selects the identical embedding row on both
-  sides regardless of which amino acid either convention nominally assigns to
-  `t`. A numerical-parity comparison only needs both sides fed the SAME integer
-  per residue, not the "true" amino acid identity -- confirmed empirically: using
-  `restype_str_to_int` here reproducibly broke P05 to Pearson ~0.86 (a real,
-  non-tolerance-noise divergence), while the raw shared integer used here
-  reproduces the ~1e-5 max-abs agreement `test_full_model_parity.py` documents.
-  (P02's OWN comparison, in `parse_parity.py`, is different: it independently
-  DECODES each side's aatype to a letter via each side's own native convention
-  before comparing -- that decode step is exactly where the two alphabets
-  matter, and it stays untouched here.)
+  n_checked = 0
+  mismatches: list[tuple[tuple[str, int], int, int]] = []
+  for i in range(mpnn_tokens.shape[0]):
+    chain_ordinal = int(chain_index[i])
+    chain_letter = (
+      chain_ids[chain_ordinal]
+      if chain_ids is not None and chain_ordinal < len(chain_ids)
+      else str(chain_ordinal)
+    )
+    key = (chain_letter, int(residue_index[i]))
+    if key not in ref_by_key:
+      continue
+    n_checked += 1
+    if int(mpnn_tokens[i]) != ref_by_key[key]:
+      mismatches.append((key, int(mpnn_tokens[i]), ref_by_key[key]))
+
+  if n_checked == 0:
+    msg = (
+      f"{fixture_name}: zero residues in common with the reference's own parse_PDB "
+      "-- cannot cross-check tokens"
+    )
+    raise AssertionError(msg)
+  if mismatches:
+    sample = mismatches[:5]
+    msg = (
+      f"{fixture_name}: af_to_mpnn(aminx aatype) disagrees with the reference parser's own "
+      f"S on {len(mismatches)}/{n_checked} common residues (aminx production path applies "
+      "af_to_mpnn before every model call, host/runner.py:1037,1098; "
+      "host/_sampling_helper.py:575 -- this comparison enforces the SAME conversion here). "
+      f"Sample (key, mpnn_token, ref_token): {sample}"
+    )
+    raise AssertionError(msg)
+  return n_checked
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedFixture:
+  """Canonicalized-file parse shared by every exact-tier row (T7 fix, see docstring below)."""
+
+  atom37: np.ndarray
+  atom37_mask: np.ndarray
+  x4: np.ndarray
+  mpnn_tokens: np.ndarray
+  mask: np.ndarray
+  residue_index: np.ndarray
+  chain_index: np.ndarray
+  chain_ids: list[str] | None
+  length: int
+
+
+def parse_canonical_fixture(fixture: dict[str, Any]) -> ParsedFixture:
+  """Parse `fixture`'s structure ONCE, canonicalized, with MPNN-space tokens.
+
+  Every row that needs a real structure calls this (never re-implements its own
+  parse) so the two Finding F-T6-1 / token fixes below apply everywhere, not just
+  in `build_exact_batch`:
+
+  1. **Canonicalization (F-T6-1).** Parsed from the SAME altloc-canonicalized copy
+     of the fixture (`parse_parity._canonical_copy`, reused, never reimplemented)
+     that every other exact-tier comparison in this harness uses.
+  2. **Token space.** Returns `mpnn_tokens = aminx.utils.aa_convert.af_to_mpnn(aatype)`,
+     NOT aminx's raw `aatype`, and cross-checks it against the reference's OWN
+     `data_utils.parse_PDB` integer `S` on the SAME canonical file
+     (`_assert_tokens_match_reference_parser`). aminx's OWN production path always
+     applies this conversion before any model call (`host/runner.py:1037,1098`,
+     `host/_sampling_helper.py:575`) -- proxide's aatype is AlphaFold-order, but the
+     ported `W_s`/`w_s_embed` embedding table rows are in the untouched PT order,
+     i.e. the reference's own MPNN-alphabetical convention (`MPNN_ALPHABET ==
+     data_utils.restype_int_to_str` order, both `"ACDEFGHIKLMNPQRSTVWYX"`).
+     Skipping the conversion (this module's earlier bug, in BOTH `build_exact_batch`
+     and `row_p11`) feeds RAW AF-order tokens to both sides -- a WRONG but
+     internally CONSISTENT relabeling that still reproduces near-perfect log-prob
+     agreement (both sides read the same, wrong, embedding row), which is exactly
+     why it went undetected by a correlation/max-abs comparison alone: two
+     internally-consistent-but-scrambled runs still agree with each other. Only
+     asserting against the reference's OWN parsed `S` catches it.
   """
   from proxide.chem.residues import atom_order
 
   from aminx.io.parsing import parse_structure
+  from aminx.utils.aa_convert import af_to_mpnn
 
-  del data_utils_module  # kept in the signature for call-site symmetry; unused (see docstring)
   path = fixtures.resolve_fixture_path(fixture)
-  protein = parse_structure(str(path))
+  worktree_root = _SCRIPT_DIR.parents[1]
+  canonical_dir = worktree_root / "outputs" / "browser_validation" / "tmp" / "canonical"
+  canonical_path = parse_parity._canonical_copy(path, canonical_dir)  # noqa: SLF001 (reuse, not reimplement)
+  protein = parse_structure(str(canonical_path))
 
   atom37 = np.asarray(protein.coordinates, dtype=np.float32)
   atom37_mask = np.asarray(protein.atom_mask, dtype=np.float32)
@@ -213,28 +312,62 @@ def build_exact_batch(fixture: dict[str, Any], data_utils_module: types.ModuleTy
   mask = np.asarray(protein.mask, dtype=np.float32)
   chain_index = np.asarray(protein.chain_index, dtype=np.int64)
   residue_index = np.asarray(protein.residue_index, dtype=np.int64)
+  chain_ids = list(protein.chain_ids) if protein.chain_ids is not None else None
 
   n_idx, ca_idx, c_idx, o_idx = (int(atom_order[name]) for name in ("N", "CA", "C", "O"))
   x4 = atom37[:, [n_idx, ca_idx, c_idx, o_idx], :]
 
-  seq_ref = aatype.astype(np.int64)
+  import jax.numpy as jnp
 
-  chain_mask = mask.copy()
-  randn, order = lac.reference_formula_order(mask, chain_mask, seed=_seed_for(fixture["name"]))
+  mpnn_tokens = np.asarray(af_to_mpnn(jnp.asarray(aatype)), dtype=np.int64)
+  reference_module = _load_reference_data_utils()
+  _assert_tokens_match_reference_parser(
+    fixture["name"],
+    canonical_path,
+    mpnn_tokens,
+    chain_index,
+    residue_index,
+    chain_ids,
+    reference_module,
+  )
+
+  return ParsedFixture(
+    atom37=atom37,
+    atom37_mask=atom37_mask,
+    x4=x4,
+    mpnn_tokens=mpnn_tokens,
+    mask=mask,
+    residue_index=residue_index,
+    chain_index=chain_index,
+    chain_ids=chain_ids,
+    length=int(aatype.shape[0]),
+  )
+
+
+def build_exact_batch(fixture: dict[str, Any], data_utils_module: types.ModuleType) -> ExactBatch:
+  """Parse `fixture` (via `parse_canonical_fixture`) and build both sides' pinned-order inputs."""
+  del data_utils_module  # superseded by parse_canonical_fixture's own reference_module load
+  parsed = parse_canonical_fixture(fixture)
+  seq_ref = parsed.mpnn_tokens
+
+  chain_mask = parsed.mask.copy()
+  randn, order = lac.reference_formula_order(
+    parsed.mask, chain_mask, seed=_seed_for(fixture["name"])
+  )
   ar_mask = lac.ar_mask_from_order(order)
 
   return ExactBatch(
     fixture_name=fixture["name"],
-    length=int(aatype.shape[0]),
-    x4=x4,
-    atom37=atom37,
-    atom37_mask=atom37_mask,
-    aatype_aminx=aatype,
+    length=parsed.length,
+    x4=parsed.x4,
+    atom37=parsed.atom37,
+    atom37_mask=parsed.atom37_mask,
+    aatype_aminx=parsed.mpnn_tokens,  # the MPNN-space token, NOT raw AF-order aatype
     seq_ref=seq_ref,
-    mask=mask,
+    mask=parsed.mask,
     chain_mask=chain_mask,
-    residue_index=residue_index,
-    chain_index=chain_index,
+    residue_index=parsed.residue_index,
+    chain_index=parsed.chain_index,
     randn=randn,
     decoding_order=order,
     ar_mask=ar_mask,
@@ -468,9 +601,19 @@ def row_p01(
 
 
 def row_p02(fixture: dict[str, Any], weight_source: str) -> list[dict[str, Any]]:
-  """P02: delegate to `parse_parity.compare_parse` (T6), relabeled onto the bars-table rows."""
+  """P02: delegate to `parse_parity.compare_parity` (T6), relabeled onto the bars-table rows.
+
+  `parse_parity.py` (T6, out of this task's file scope -- not touched here) predates this
+  task's "not_advanced" is a calibration-only verdict rule and labels an over-bar row
+  "not_advanced" directly. Remapped here to this engine's "over_bar" for a consistent status
+  taxonomy across every row this module returns, without editing a different task's file.
+  """
   del weight_source
-  return parse_parity.compare_parse(fixture)
+  rows = parse_parity.compare_parse(fixture)
+  for row in rows:
+    if row.get("status") == "not_advanced":
+      row["status"] = "over_bar"
+  return rows
 
 
 # --------------------------------------------------------------------------------------
@@ -484,29 +627,45 @@ def row_p03(
   full_model_bundle: tuple[Any, Any, Any, Any],
   weight_source: str,
 ) -> tuple[list[dict[str, Any]], int]:
-  """P03: aminx's own k-NN vs the reference's `ProteinFeatures`, on no-tie residues.
+  """P03: the aminx MODEL's own `ProteinFeatures` E_idx vs the reference's, on no-tie residues.
 
-  Returns `(rows, n_near_tie_excluded)`.
+  Uses `jax_model.features(...)` directly -- the SAME call `Aminx.__call__`
+  itself makes (`model/mpnn.py:150`) -- rather than `fixtures._neighbor_indices`'s
+  primitives-based reimplementation, so this row cannot diverge from what the
+  model literally runs (orchestrator directive #6). Returns `(rows, n_near_tie_excluded)`.
   """
+  import jax
+
   from aminx.parity.compare import neighbor_set_equality
 
-  _jax_model, pt_model, torch, _model_utils = full_model_bundle
+  jax_model, pt_model, torch, _model_utils = full_model_bundle
   fd = _reference_feature_dict(torch, batch)
 
   rows: list[dict[str, Any]] = []
   n_near_tie_excluded_total = 0
   near_tie = fixture.get("near_tie_residues", {})
-  # `pt_model.features` is fixed at construction to k_neighbors=48; its E_idx columns are
-  # sorted nearest-first, so truncating to the first `k` columns gives the true top-k for
-  # any k <= 48 without rebuilding a second reference model per k.
+  # Both sides are fixed at construction to k_neighbors=48; both E_idx column sets are
+  # nearest-first sorted, so truncating to the first `k` columns gives the true top-k for
+  # any k <= 48 without rebuilding a second model per k.
   with torch.no_grad():
     _e, e_idx_full = pt_model.features(fd)
   reference_idx_full = e_idx_full.numpy()[0]
+
+  _edge_features, aminx_idx_full, _node_features, _key = jax_model.features(
+    jax.random.PRNGKey(0),
+    jax.numpy.asarray(batch.x4),
+    jax.numpy.asarray(batch.mask),
+    jax.numpy.asarray(batch.residue_index, dtype=jax.numpy.int32),
+    jax.numpy.asarray(batch.chain_index, dtype=jax.numpy.int32),
+    backbone_noise=0.0,
+  )
+  aminx_idx_full = np.asarray(aminx_idx_full)
+
   for k in K_VALUES:
     if k >= batch.length - 1:
       continue
     reference_idx = reference_idx_full[:, :k]
-    aminx_idx = fixtures._neighbor_indices(batch.atom37, batch.mask, k)  # noqa: SLF001 (sibling module reuse)
+    aminx_idx = aminx_idx_full[:, :k]
 
     excluded = set(near_tie.get(str(k)) or [])
     n_near_tie_excluded_total += len(excluded)
@@ -915,26 +1074,20 @@ def row_p11(
   """
   import jax
   import jax.numpy as jnp
-  from proxide.chem.residues import atom_order
 
   from aminx.inference import score_conditional
   from aminx.inference.bundle_builder import build_inference_bundle
   from aminx.inference.logits import make_stage_set
 
-  path = fixtures.resolve_fixture_path(fixture)
-  from aminx.io.parsing import parse_structure
-
-  protein = parse_structure(str(path))
-  atom37 = np.asarray(protein.coordinates, dtype=np.float32)
-  atom37_mask = np.asarray(protein.atom_mask, dtype=np.float32)
-  aatype = np.asarray(protein.aatype)
-  mask = np.asarray(protein.mask, dtype=np.float32)
-  residue_index = np.asarray(protein.residue_index, dtype=np.int64)
-  chain_index = np.asarray(protein.chain_index, dtype=np.int64)
-  length = int(aatype.shape[0])
-
-  n_idx, ca_idx, c_idx, o_idx = (int(atom_order[name]) for name in ("N", "CA", "C", "O"))
-  x4 = atom37[:, [n_idx, ca_idx, c_idx, o_idx], :]
+  parsed = parse_canonical_fixture(fixture)
+  atom37 = parsed.atom37
+  atom37_mask = parsed.atom37_mask
+  mpnn_tokens = parsed.mpnn_tokens
+  mask = parsed.mask
+  residue_index = parsed.residue_index
+  chain_index = parsed.chain_index
+  length = parsed.length
+  x4 = parsed.x4
 
   # Partial-fixed chain mask (every other residue fixed) -- the wiring only moves anything
   # when at least some residues are fixed (P11's own "noop when all-designable" invariant).
@@ -957,7 +1110,7 @@ def row_p11(
 
     fd = {
       "X": torch.from_numpy(x4[None].copy()),
-      "S": torch.from_numpy(aatype[None].astype(np.int64).copy()),
+      "S": torch.from_numpy(mpnn_tokens[None].astype(np.int64).copy()),
       "mask": torch.from_numpy(mask[None].copy()),
       "chain_mask": torch.from_numpy(chain_mask[None].copy()),
       "R_idx": torch.from_numpy(residue_index[None].copy()),
@@ -975,12 +1128,12 @@ def row_p11(
     with torch.no_grad():
       ref_log_probs = reference_model.score(fd, use_sequence=True)["log_probs"].numpy()[0]
 
-    kw = {
+    kw: dict[str, Any] = {
       "coords": jnp.asarray(x4),
       "mask": jnp.asarray(mask),
       "residue_index": jnp.asarray(residue_index, dtype=jnp.int32),
       "chain_index": jnp.asarray(chain_index, dtype=jnp.int32),
-      "sequence": jax.nn.one_hot(jnp.asarray(aatype), 21),
+      "sequence": jax.nn.one_hot(jnp.asarray(mpnn_tokens), 21),
       "ar_mask": jnp.asarray(ar_mask),
       "ligand_coords": jnp.zeros((length, actx, 3)),
       "ligand_atom_types": jnp.zeros((length, actx), jnp.int32),
@@ -1189,15 +1342,35 @@ def row_p13(
 # --------------------------------------------------------------------------------------
 
 P14_NOT_IMPLEMENTED_REASON = (
-  "P14 (packer, shipped weights, real structures) needs a proxide atom37 -> packer's "
-  "14-heavy-atom-order adapter to build a real-structure PackerBundle (backbone_coords, "
-  "ligand_coords/mask/types) from a manifest fixture. tests/parity/test_packer_parity.py's "
-  "own loaders (reused for the model construction) only exercise the packer on fully "
-  "synthetic random features, not a real structure, and this task found no existing, "
-  "tested source for that mapping to reuse. Writing one from scratch within T7a's scope "
-  "risks a silently wrong atom-order permutation feeding a numeric tolerance gate -- "
-  "exactly what orchestrator override #6 forbids fabricating. Deferred to T7b or a "
-  "follow-up task with the mapping as its own reviewed unit."
+  "P14 (packer, shipped weights, real structures) needs a real-structure -> PackerBundle "
+  "adapter. Searched (per orchestrator directive #5) for an existing one before declaring "
+  "this: `grep -rn PackerBundle src/aminx` finds only the class def "
+  "(types/bundles.py:522), an `in_axes` SPEC (not real data, host/plan.py:798), and "
+  "synthetic-feature unit/parity tests (tests/host/test_packer_integration.py, "
+  "tests/parity/test_packer_parity.py) -- no constructor from a parsed structure exists "
+  "anywhere in src/aminx or tests/. The reference's OWN real-structure path "
+  "(`run.py:524 pack_side_chains` -> `sc_utils.py:14-18,112-219`) depends on "
+  "`openfold.data.data_transforms.atom37_to_torsion_angles`/`make_atom14_masks` plus "
+  "OpenFold's `restype_atom14_*` tables to build atom14 from atom37 via rigid-group frame "
+  "reconstruction; `openfold` is not installed and is not an aminx dependency (verified: "
+  "`import openfold` fails). proxide DOES ship its own `restype_atom37_to_atom14` / "
+  "`restype_atom14_mask` / `restype_atom14_rigid_group_positions` tables "
+  "(`proxide.chem.residues`), so a simpler gather-based atom37->atom14 reindex is possible "
+  "WITHOUT openfold -- but nothing in this repo has verified that proxide's atom14 SLOT "
+  "ORDER actually matches the convention `ligandmpnn_sc_v_32_002_16`'s weights (shipped or "
+  "pt_convert) were built against; `JAXPacker`'s own `atom37_order` flag "
+  "(`test_packer_parity.py`) documents that more than one convention is live in this "
+  "codebase. Building the bundle (backbone_coords via that unverified reindex, X_m from "
+  "proxide's mask table, plus a separate real-ligand-atom-type mapping for "
+  "ligand_coords/mask/types, the same class of risk flagged for P11's `Y_t`) without first "
+  "confirming that order match would be exactly the 'silently wrong atom-order permutation "
+  "feeding a numeric tolerance gate' orchestrator override #6 forbids. What would need to "
+  "exist first: a small, INDEPENDENTLY reviewed unit test asserting proxide's atom14 order "
+  "for a few known residue types (e.g. backbone N/CA/C/O at slots 0-3, a residue with a "
+  "distinctive side chain) against the reference's own OpenFold-derived expectation -- only "
+  "after that passes is writing the adapter itself low-risk. Deferred to T7b or a follow-up "
+  "with that verification as its own reviewed step. The packer-weight-perturbation control "
+  "is correspondingly not implemented (nothing to perturb without a working row)."
 )
 
 
@@ -1594,9 +1767,19 @@ def run_rows(
         parse_parity.COORD_BAR_ANGSTROM,
       )
     )
-    tie_control = _control_tie_group_flip(first_fixture, batch0, full_model_bundle)
-    if tie_control is not None:
-      control_list.append(tie_control)
+    # AC-9: the tie-group-flip control needs a fixture with >= 2 qualifying k-NN-disjoint
+    # groups (R2-C3) -- `first_fixture` (e.g. a single-chain smoke fixture) usually has none,
+    # so search the WHOLE provided fixture list rather than silently skipping the control.
+    tie_fixture = next((f for f in protein_fixtures if len(_qualifying_groups(f)) >= 2), None)
+    if tie_fixture is not None:
+      tie_batch = (
+        batch0
+        if tie_fixture is first_fixture
+        else build_exact_batch(tie_fixture, data_utils_module)
+      )
+      tie_control = _control_tie_group_flip(tie_fixture, tie_batch, full_model_bundle)
+      if tie_control is not None:
+        control_list.append(tie_control)
 
   controls_total = len(control_list)
   controls_detected = sum(1 for c in control_list if c["detected"])
