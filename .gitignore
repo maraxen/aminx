@@ -91,3 +91,7 @@ outputs/browser_validation/
 node_modules/
 .bth/synthetic_recovery_ledger.json
 *.bth.lock.toml
+
+# bathos writes .bth/refs/manifest.jsonl into the run tree during `bth run`; it made the
+# titanix provenance smoke see git_dirty=true (T4 attempt 1).
+.bth/refs/
