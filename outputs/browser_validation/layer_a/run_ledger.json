@@ -45,5 +45,17 @@
     "run_id": "1db73123-0698-4bbc-8f24-c49eab0bd232",
     "outcome": "error",
     "note": "harness bug: token cross-check keyed residues by (chain,resnum), colliding on 2GFB insertion codes (82A/82B...); fixed by occurrence-paired grouping. No model rows were produced."
+  },
+  {
+    "stem": "layer_a_exact_calibrate",
+    "H_v": "d37f6711ea25f6c6511e2557e4daa500a8056a47",
+    "session": "bv-layer_a_exact_calibrate-d37f6711ea25",
+    "exit": 0,
+    "free_gb_before_sync": 125,
+    "prereg_sha256": "1dd7b05e5b01a36655b6ed0b44cafbe964271b77fab572e18e58573bc0a6ffc3",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "6fd3cba2-d9a3-4b10-a278-cba23baff183",
+    "outcome": "error",
+    "note": "ran clean (exit 0, git_dirty=false) but bathos outcome evaluation failed: worst_ratio_to_bar=inf rendered as bare inf in DuckDB SQL; result also lacked weight_source/budget_wall_hours/projected_peak_rss_gib. Params from this run NOT used (prereq requires outcome=pass)."
   }
 ]
