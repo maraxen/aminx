@@ -10,5 +10,16 @@
     "run_id": "3f744971-c1e9-4c87-b0f1-953ee8c45912",
     "outcome": "fail",
     "note": "script saw git_dirty=true: untracked .bth/refs/ written by bth run into the fresh titanix worktree; fixed by gitignoring .bth/refs/"
+  },
+  {
+    "stem": "provenance_smoke",
+    "H_v": "34c56d0bc586bd70a9d0b93ecf64b9b579a59f6c",
+    "session": "bv-provenance_smoke-34c56d0bc586",
+    "exit": 0,
+    "free_gb_before_sync": 126,
+    "prereg_sha256": "cea093054e1c2ff01e731a45646b1101579f1956bf4f099593ad7a20e11062de",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "084996a7-c243-4468-b8fa-dac7040adebc",
+    "outcome": "pass"
   }
 ]
