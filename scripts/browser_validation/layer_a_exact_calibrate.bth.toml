@@ -1,0 +1,67 @@
+[metadata]
+title = "Layer (a) exact tier: calibration on fixture set A (headroom, sized control, sentinel)"
+created = "260925"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On fixture set A (CPU f32, precision highest, noise 0, reference-formula order fed to both sides, SHIPPED .eqx.zst weights), the layer-(a) bars-table engine (layer_a_exact.py) runs to completion with a clean tree, finds a w_out-bias-perturbation magnitude that sizes the P05 sentinel control into [2x, 10x] its bar, tightens the headroom-flagged path list, and measures a differential sensitivity of at least min_effect=1.0 on the pre-registered reduced subset."
+stage_name = "calibration"
+novel = true
+# No [reproduction]: novel = true replaces it (Bathos staging: "The calibration twin
+# ... has stage_name = 'calibration', novel = true instead of [reproduction]").
+# No [differential] and no experiment.claim_discriminates: calibration sidecars never
+# prove sensitivity themselves -- lint_sidecars.py's calibration-no-differential check
+# fails the build otherwise.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_unsized"]
+
+# Calibration-twin outcomes (R2-C10): declared in this order -- incomplete, then
+# ctrl_unsized, then pass -- so a run that is both incomplete AND under-sized controls
+# is classified by the FIRST matching branch (incomplete), matching the spec's own
+# ordering exactly. Headroom (n_not_advanced) is a RESULT FIELD here, never an outcome:
+# a calibration run that legitimately finds not_advanced paths still declares `pass`.
+
+[outcomes.incomplete]
+condition = "n_skipped > 0 OR NOT git_clean"
+decision = "A reference prerequisite was missing or the run tree was dirty; this calibration proves nothing and must not be committed."
+reasoning = "A skipped reference call or a dirty tree means the measurements this run would tighten bars/headroom/magnitudes from did not run under the conditions the claim requires."
+is_residual = true
+
+[outcomes.ctrl_unsized]
+condition = "controls_sized < controls_total"
+decision = "Not every in-run control could be sized/detected; the committed magnitude and headroom list would rest on an insensitive instrument."
+reasoning = "If a control cannot be sized/detected during calibration itself, the same insensitivity would silently pass validation later; the run must not be treated as a clean calibration."
+is_residual = true
+
+[outcomes.pass]
+condition = "params_written AND controls_sized = controls_total"
+decision = "The exact section of preregistered_params.json was written with every control sized; eligible for the orchestrator's params commit, regardless of how many paths were flagged not_advanced."
+reasoning = "Headroom is a result field, not an outcome (spec 'Calibration-twin outcomes'): a calibration that legitimately finds not_advanced paths still wrote a usable, fully-sized params section and must still declare pass."
+is_residual = false
+
+[result_schema]
+n_comparisons = "int"
+n_over_bar = "int"
+n_not_advanced = "int"
+n_near_tie_excluded = "int"
+n_skipped = "int"
+controls_total = "int"
+controls_sized = "int"
+params_written = "bool"
+params_section_sha256 = "str"
+worst_path = "str"
+worst_ratio_to_bar = "float"
+weight_source = "str"
+fixture_set = "str"
+fixture_manifest_sha256 = "str"
+git_hash = "str"
+git_clean = "bool"
+budget_wall_hours = "float"
+projected_peak_rss_gib = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+torch_version = { type = "string", required = true }
