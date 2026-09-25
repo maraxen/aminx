@@ -143,6 +143,9 @@ cd "$RD"
 # checks compare against the pointer blob git actually committed, not the smudged bytes.
 n_lfs=0
 while IFS= read -r -d '' path; do
+  # model_params/* are tracked symlinks into src/aminx/model_params/; following one would
+  # smudge the target but flag the symlink, leaving the real file reported as modified.
+  [ -L "$path" ] && continue
   [ "$(head -c 40 "$path")" = "version https://git-lfs.github.com/spec/" ] || continue
   oid="$(sed -n 's/^oid sha256:\([0-9a-f]\{64\}\)$/\1/p' "$path")"
   obj="${STORE}/${oid:0:2}/${oid:2:2}/${oid}"
