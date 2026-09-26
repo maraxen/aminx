@@ -435,6 +435,70 @@ def _project_validate_draw_counts(n_required: int, n_lanes: int) -> tuple[int, i
   return aminx_draws_total, reference_draws_total
 
 
+FLOOR_BUDGET_FORMULA = (
+  "budget_wall_hours = sum over lanes l and set-B fixtures f of "
+  "a_lf * (162 * c_aminx(f,l) + 2 * c_ref(f,l)) / 3600, with a_lf = draw_allocation at "
+  "n = N_REQUIRED_FLOOR (per sub-arm, sums to n per lane). 162 = main arm A1+A2 (2) + "
+  "positive control 20 replicates x (A1+A2 aminx+beta, R1+R2 aminx) (80) + negative "
+  "control 20 x 4 (80) aminx draws per allocated slot; 2 = main arm R1+R2 reference draws. "
+  "c_* are measured wall seconds per draw on this run's own hardware (batched aminx path "
+  "incl. host-side wave construction; batched reference .sample()), so no core-count "
+  "division is applied. The projection is a LOWER bound on validate's cost: n_required >= "
+  "N_REQUIRED_FLOOR and cost is increasing in n."
+)
+
+
+def _budget_at_floor(
+  jax_model: Any,
+  pt_model: Any,
+  torch: Any,
+  protein_fixtures_b: list[dict[str, Any]],
+  data_utils_module: Any,
+) -> dict[str, Any]:
+  """Project validate's wall time at `n = N_REQUIRED_FLOOR` from per-draw costs measured
+  per (lane, set-B fixture) (D10). Validate cost only grows with `n`, so a floor projection
+  above `BUDGET_WALL_HOURS_CAP` proves the pre-registered protocol cannot fit, before any
+  pilot, margin or null-replicate draw is spent."""
+  n_floor = las.N_REQUIRED_FLOOR
+  per_lane_hours: dict[str, float] = {}
+  costs: dict[str, dict[str, dict[str, float]]] = {}
+  allocations: dict[str, dict[str, int]] = {}
+  for lane in las.LANE_KEYS:
+    lane_model = las.full_model_bundle_for_lane(lane, "eqx")
+    lane_jax, lane_pt = lane_model[0], lane_model[1]
+    batches = _lane_fixture_batches(protein_fixtures_b, lane, data_utils_module)
+    alloc = las.allocate_draws(batches, n_floor)
+    temp = las.DEFAULT_LANE_TEMPERATURES[lane]
+    hours = 0.0
+    costs[lane] = {}
+    for fixture, batch in batches:
+      c_a = las.measure_aminx_draw_cost_s(lane_jax, batch, temp)
+      c_r = las.measure_reference_draw_cost_s(lane_pt, torch, batch, temp, REFERENCE_COST_SAMPLE_N)
+      costs[lane][fixture["name"]] = {"aminx_s": c_a, "reference_s": c_r}
+      hours += alloc[fixture["name"]] * (162 * c_a + 2 * c_r) / 3600.0
+      logger.info(
+        "budget floor: lane %s fixture %s L=%d alloc=%d aminx %.3fs/draw ref %.3fs/draw",
+        lane,
+        fixture["name"],
+        batch.length,
+        alloc[fixture["name"]],
+        c_a,
+        c_r,
+      )
+    per_lane_hours[lane] = hours
+    allocations[lane] = alloc
+  del jax_model, pt_model  # the pilot lane's models; each lane loads its own above
+  total = sum(per_lane_hours.values())
+  return {
+    "n_floor": n_floor,
+    "budget_wall_hours": total,
+    "per_lane_hours": per_lane_hours,
+    "per_draw_costs_s": costs,
+    "draw_allocation_by_lane": allocations,
+    "budget_formula": FLOOR_BUDGET_FORMULA,
+  }
+
+
 BUDGET_FORMULA = (
   "budget_wall_hours = (aminx_draws_total * per_draw_cost_aminx_s "
   "+ reference_draws_total * per_draw_cost_reference_s) / 3600, where "
@@ -573,6 +637,50 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       f"(after excluding {MARGIN_EXCLUDE_FIXTURES!r})"
     )
     raise SystemExit(msg)
+
+  # D10: fail fast when even the n = N_REQUIRED_FLOOR projection is over budget.
+  floor = _budget_at_floor(jax_model, pt_model, torch, protein_fixtures_b, data_utils_module)
+  floor_rss = _peak_rss_gib()
+  if floor["budget_wall_hours"] > BUDGET_WALL_HOURS_CAP or floor_rss > PROJECTED_PEAK_RSS_GIB_CAP:
+    logger.error(
+      "validate budget at the n=%d floor is %.1f h (cap %.1f h), peak RSS %.2f GiB (cap %.1f) "
+      "-- the pre-registered protocol cannot fit; NOT running the pilot and NOT writing "
+      "--params-out",
+      floor["n_floor"],
+      floor["budget_wall_hours"],
+      BUDGET_WALL_HOURS_CAP,
+      floor_rss,
+      PROJECTED_PEAK_RSS_GIB_CAP,
+    )
+    p09_groups, p09_positions = _p09_set_b_counts(manifest)
+    result = {
+      "sigma_hat": 0.0,
+      "sigma_hat_computed": False,
+      "n_required": floor["n_floor"],
+      "n_required_is_floor": True,
+      "null_criterion_met": False,
+      "beta": 0.0,
+      "p09_qualifying_groups": p09_groups,
+      "p09_tied_positions": p09_positions,
+      "p09_fusion_ctrl_eps": 0.0,
+      "min_effect": 0.0,
+      "measured_half_effect": 0.0,
+      "budget_wall_hours": floor["budget_wall_hours"],
+      "budget_exceeded": True,
+      "budget_floor": floor,
+      "projected_peak_rss_gib": floor_rss,
+      "params_written": False,
+      "params_section_sha256": "",
+      "n_not_advanced": 0,
+      "n_skipped": 0,
+      "controls_total": len(las.LANE_KEYS) + 1 + 1,
+      "controls_sized": 0,
+      "fixture_set": args.fixture_set,
+      "fixture_manifest_sha256": manifest_sha256,
+      "elapsed_seconds": time.monotonic() - start,
+      **prov,
+    }
+    return result, EXIT_NOT_WRITTEN
 
   sigma_hat = _pilot_sigma(jax_model, pilot_batches, pilot_lane, PILOT_N, "pilotsigma")
   from aminx.parity.compare import required_n

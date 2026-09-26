@@ -508,6 +508,77 @@ def aminx_conditional_logits(
   return np.asarray(logits)
 
 
+def wave_from_tie_groups_np(tie_group_map: np.ndarray, order_i: np.ndarray) -> Any:
+  """`WaveScheduleBundle.from_tie_groups`, built in NumPy (D10).
+
+  Same layout as the class method (one wave per tie group, groups in order of first
+  appearance in `order_i`, each group's positions ascending and padded with -1 then
+  zeroed under `position_valid`), without its per-position JAX ops -- on a GPU backend
+  those dispatch one tiny device op each, measured at 0.5-3.3 s per wave on titanix.
+  """
+  import jax.numpy as jnp
+
+  from aminx.types.bundles import WaveScheduleBundle
+
+  tgm = np.asarray(tie_group_map)
+  order = np.asarray(order_i)
+  groups_in_order = tgm[order]
+  _uniq, first = np.unique(groups_in_order, return_index=True)
+  present = groups_in_order[np.sort(first)]
+  max_positions = int(np.bincount(tgm).max())
+  positions = np.full((present.size, max_positions), -1, dtype=np.int32)
+  for w, g in enumerate(present):
+    idx = np.flatnonzero(tgm == g)
+    positions[w, : idx.size] = idx
+  valid = positions != -1
+  return WaveScheduleBundle(
+    group_ids=jnp.asarray(present.astype(np.int32))[:, None],
+    group_positions=jnp.asarray(np.where(valid, positions, 0))[:, None, :],
+    group_valid=jnp.ones((present.size, 1), dtype=jnp.bool_),
+    position_valid=jnp.asarray(valid)[:, None, :],
+  )
+
+
+_STAGE_SET: Any = None
+_VMAPPED_SAMPLE: Any = None
+
+
+def _vmapped_sample() -> Any:
+  """One module-level jitted, vmapped kernel call (compiled once per fixture/lane shape).
+
+  `eqx.filter_jit` treats `config` and the stage set as static; both are built once per
+  call site and the stage set is a module singleton, so repeated chunks reuse the compile.
+  """
+  global _STAGE_SET, _VMAPPED_SAMPLE  # noqa: PLW0603
+  if _VMAPPED_SAMPLE is None:
+    import equinox as eqx
+    import jax
+
+    from aminx.inference import sample_autoregressive
+    from aminx.inference.logits import make_stage_set
+
+    _STAGE_SET = make_stage_set()
+
+    @eqx.filter_jit
+    def run(model: Any, keys: Any, waves: Any, bundle: Any, config: Any) -> Any:
+      def one(key: Any, wave: Any) -> Any:
+        b = eqx.tree_at(lambda x: x.wave, bundle, wave)
+        return sample_autoregressive.kernel(
+          model, key, b, config, _STAGE_SET, inference_only=True
+        ).sequence
+
+      return jax.vmap(one)(keys, waves)
+
+    _VMAPPED_SAMPLE = run
+  return _VMAPPED_SAMPLE
+
+
+def sample_chunk_size(length: int) -> int:
+  """Draws per vmapped call: bounded by device memory, which grows ~L^2 (measured on a
+  24 GiB TITAN RTX: L=693 fits 16 draws but not 64). Deterministic in `length`."""
+  return int(min(32, max(1, 1_500_000 // max(1, length * length))))
+
+
 def aminx_sample_batch(
   jax_model: Any,
   batch: LaneBatch,
@@ -522,23 +593,65 @@ def aminx_sample_batch(
 
   `beta_alanine` adds an additive bias to the alanine column (positive-control sizing,
   "aminx arm with +beta on alanine") -- never applied to the reference arm.
+
+  D10: draws run as one jitted `vmap` over `(key, wave)` per chunk of
+  `sample_chunk_size(L)` rather than one un-jitted kernel call each. Draw `i` still uses
+  order `_draw_order_for(batch, seed_base + i)` and key `PRNGKey(seed_base + i)`; the
+  fused XLA program can round differently from the eager one, so a draw may differ from
+  the per-call path at a few positions (measured 0/85, 15/85, 10/85 on 5L33) -- the two are
+  the same sampler, not bit-identical.
   """
   import jax
+  import jax.numpy as jnp
 
+  from aminx.inference.bundle_builder import build_inference_bundle
+
+  if n <= 0:
+    return np.zeros((0, batch.length), dtype=np.int32)
   eff_batch = batch
   if beta_alanine:
     perturbed_bias = batch.bias.copy()
     perturbed_bias[:, ALANINE_INDEX] += beta_alanine
     eff_batch = dataclasses.replace(batch, bias=perturbed_bias)
 
-  rows = []
-  for i in range(n):
-    _randn_i, order_i = _draw_order_for(eff_batch, seed_base + i)
-    seq, _logits = aminx_sample_one(
-      jax_model, eff_batch, order_i, jax.random.PRNGKey(seed_base + i), temperature=temperature
-    )
-    rows.append(seq)
-  return np.stack(rows, axis=0)
+  waves = [
+    wave_from_tie_groups_np(eff_batch.tie_group_map, _draw_order_for(eff_batch, seed_base + i)[1])
+    for i in range(n)
+  ]
+  kw: dict[str, Any] = {
+    "coords": jnp.asarray(eff_batch.x4),
+    "mask": jnp.asarray(eff_batch.mask),
+    "residue_index": jnp.asarray(eff_batch.residue_index, dtype=jnp.int32),
+    "chain_index": jnp.asarray(eff_batch.chain_index, dtype=jnp.int32),
+    "chain_mask": jnp.asarray(eff_batch.chain_mask),
+    "bias": jnp.asarray(eff_batch.bias),
+    "fixed_mask": jnp.asarray(eff_batch.fixed_mask),
+    "fixed_tokens": jnp.asarray(eff_batch.seq_ref, dtype=jnp.int32),
+    "tie_group_map": jnp.asarray(eff_batch.tie_group_map),
+    "wave": waves[0],
+    "temperature": float(temperature),
+    "mode": "sample",
+  }
+  if eff_batch.use_side_chain_context:
+    kw["atom_37"] = jnp.asarray(eff_batch.atom37)
+    kw["atom_37_mask"] = jnp.asarray(eff_batch.atom37_mask)
+    actx = 16
+    kw["ligand_coords"] = jnp.zeros((eff_batch.length, actx, 3))
+    kw["ligand_atom_types"] = jnp.zeros((eff_batch.length, actx), jnp.int32)
+    kw["ligand_mask"] = jnp.zeros((eff_batch.length, actx))
+  bundle, config = build_inference_bundle(**kw)
+  run = _vmapped_sample()
+  chunk = min(sample_chunk_size(eff_batch.length), n)
+  rows: list[np.ndarray] = []
+  for lo in range(0, n, chunk):
+    idx = list(range(lo, min(n, lo + chunk)))
+    # Pad a short final chunk to the full chunk width so every call reuses one compile.
+    padded = idx + [idx[-1]] * (chunk - len(idx))
+    keys = jnp.stack([jax.random.PRNGKey(seed_base + i) for i in padded])
+    stacked = jax.tree.map(lambda *xs: jnp.stack(xs), *[waves[i] for i in padded])
+    out = np.asarray(run(jax_model, keys, stacked, bundle, config))
+    rows.append(out[: len(idx)])
+  return np.concatenate(rows, axis=0)
 
 
 # --------------------------------------------------------------------------------------
@@ -888,26 +1001,18 @@ def full_arm_recovery(
 
 
 def measure_aminx_draw_cost_s(
-  jax_model: Any, batch: LaneBatch, temperature: float, *, n_warmup: int = 1, n_measure: int = 2
+  jax_model: Any, batch: LaneBatch, temperature: float, *, seed_base: int = 999_000
 ) -> float:
-  """Seconds per aminx `sample_autoregressive.kernel` draw, STEADY-STATE (excludes the first
-  call's JIT compile via `n_warmup` untimed draws first)."""
+  """Seconds per aminx draw on the batched path, STEADY-STATE: one untimed chunk first
+  (compile), then one timed chunk of `sample_chunk_size(L)` draws, host-side wave
+  construction included (it is part of every real draw's cost)."""
   import time
 
-  import jax
-
-  for i in range(n_warmup):
-    _randn, order = _draw_order_for(batch, 999_000 + i)
-    aminx_sample_one(
-      jax_model, batch, order, jax.random.PRNGKey(999_000 + i), temperature=temperature
-    )
+  chunk = sample_chunk_size(batch.length)
+  aminx_sample_batch(jax_model, batch, chunk, seed_base, temperature=temperature)
   start = time.monotonic()
-  for i in range(n_measure):
-    _randn, order = _draw_order_for(batch, 999_100 + i)
-    aminx_sample_one(
-      jax_model, batch, order, jax.random.PRNGKey(999_100 + i), temperature=temperature
-    )
-  return (time.monotonic() - start) / n_measure
+  aminx_sample_batch(jax_model, batch, chunk, seed_base + chunk, temperature=temperature)
+  return (time.monotonic() - start) / chunk
 
 
 def measure_native_x_frequency(
