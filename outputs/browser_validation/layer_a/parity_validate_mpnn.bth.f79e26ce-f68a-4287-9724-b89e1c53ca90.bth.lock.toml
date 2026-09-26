@@ -1,0 +1,9 @@
+# parity_validate_mpnn.bth.f79e26ce-f68a-4287-9724-b89e1c53ca90.bth.lock.toml — written at run time, never modified
+[manifest]
+written_at = "2026-09-26T22:42:42.620343+00:00"
+sidecar_sha256 = "95589c63feb4db38a608d6fe3321c84e3743909b0df8f77006a89f399c96c936"
+sidecar_path = "/tmp/claude-1000/pv/scripts/browser_validation/parity_validate_mpnn.bth.toml"
+git_sha = "e4b86a0c0da96313449c2c72fe212eca994b6eea"
+script_sha256 = "b2cd918e27886575de9428665f76de1b9cbc197214505351ad2810151aab9dbc"
+run_id = "f79e26ce-f68a-4287-9724-b89e1c53ca90"
+agent_id = null

@@ -9,7 +9,7 @@
 > [!WARNING]
 > **Alpha release (v0.1.0a1).** aminx is under active development. The API is functional and validated against the LigandMPNN reference, but may change between releases. You may encounter bugs or rough edges — please open an issue if something breaks.
 
-Aminx is a JAX/Equinox reimplementation of the [LigandMPNN](https://github.com/dauparas/LigandMPNN) codebase. It reproduces the PyTorch reference to ≥ 0.999 Pearson correlation across all five decoding paths, and runs 8–61× faster on a single structure (H200) by trading eager dispatch for `jit`/`vmap`/`scan` kernels.
+Aminx is a JAX/Equinox reimplementation of the [LigandMPNN](https://github.com/dauparas/LigandMPNN) codebase. A graded literature-parity audit against LigandMPNN@`26ec57ac` (2026-09-26) found several paths that match the reference to within 1e-4 nats, and confirmed defects in the ligand, membrane and conditional-scoring paths. The global grade is **FAIL** for now; see the [verdict](.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md) and the per-path table below. It runs 8–61× faster on a single structure (H200) by trading eager dispatch for `jit`/`vmap`/`scan` kernels.
 
 What you get:
 
@@ -52,20 +52,35 @@ The 8× floor holds across hardware; ceilings reach 84–91× depending on the o
 - [Parity Validation](docs/parity/parity_report.html) — numerical parity report vs the LigandMPNN reference
 
 ## Validation
-
+Aminx is audited against the upstream [LigandMPNN](https://github.com/dauparas/LigandMPNN) reference (which includes ProteinMPNN behavior):
 Aminx is validated against the upstream [LigandMPNN](https://github.com/dauparas/LigandMPNN) reference (which includes ProteinMPNN behavior):
 
-| Decoding Path | Tolerance | Status |
-|---------------|-----------|---------|
-| **Unconditional** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Conditional** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Autoregressive** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Membrane** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Side-chain packer** | atol 1e-4/1e-3, corr ≥ 0.999 | Validated |
+Latest graded audit (browser-validation Phase 1, run `e3d3ffa2`, HEAD `e4b86a0c`): **global grade FAIL**.
+Two things force it. The sampling tier could not be validated at the pre-registered protocol
+(`budget_exceeded`: 435–483 h projected). And 8 core defects were confirmed adversarially. 8/8
+reference-derived invariants pass, and each goes red on an injected defect. Pre-registered clause
+parity is 19/33 core clauses (0.576). Full details:
+[`.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md`](.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md).
 
-Full parity suite: **30/30 `parity_heavy` tests pass** on the Engaging cluster (job 14203624). 575 fast tests pass locally (575 passed, 6 skipped, 2 xfailed).
+| Path | Exact-tier worst ratio to bar (1e-4 nats) | Advances to Phase 2 | Blocking |
+|------|------------------------------------------|---------------------|----------|
+| P00 unconditional score | 0 | yes | – |
+| P01 weight conversion | 0 | no | bias-handling / topology defects |
+| P02 input parsing | 0 (exact) | no | null-bar informational row classified over_bar (harness quirk) |
+| P03 k-NN graph | 0 | yes | – |
+| P04 conditional score (ProteinMPNN) | 0.36 | yes | – |
+| P05/P06 conditional score (context) | 0.47 / 0.48 | no | 2-hop self-identity leak |
+| P07/P08 sampling | – | no | sampling tier not validated |
+| P09 tied sampling | 0.64 | no | sampling tier; fixed-position log-probs |
+| P11 LigandMPNN | 2221 (0.22 nats) | no | atom_context 16 vs 25; `v_c` bias; ligand positional bias |
+| P12 side-chain context | 0.44 | no | not-advanced rows |
+| P13 membrane | ≈ 5 × 10⁴ (≈ 5 nats) | no | random-init `physics_projection` bias |
+| P14 packer | not implemented | no | – |
 
-Canonical parity docs (source of truth):
+Earlier claim, superseded by the audit above: 30/30 `parity_heavy` tests pass on Engaging (job
+14203624). That suite never tested the defects the audit found.
+
+Older parity reports (predate the 2026-09-26 audit):
 
 - [Parity report (HTML)](docs/parity/parity_report.html)
 - [Parity report (PDF)](docs/parity/parity_report.pdf)
@@ -558,7 +573,7 @@ source .venv/bin/activate
 
 # Checkout reference implementation (pinned commit used in CI)
 git clone https://github.com/dauparas/LigandMPNN.git reference_ligandmpnn_clone
-cd reference_ligandmpnn_clone && git checkout 3870631 && cd ..
+cd reference_ligandmpnn_clone && git checkout 26ec57ac976ade5379920dbd43c7f97a91cf82de && cd ..  # pin: scripts/browser_validation/reference_pins.json (3870631 is not an upstream commit)
 
 # Optional strict preflight per parity tier
 REFERENCE_PATH=./reference_ligandmpnn_clone \
