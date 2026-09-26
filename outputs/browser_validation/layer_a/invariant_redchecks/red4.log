@@ -1,0 +1,78 @@
+[31mF[0m
+=================================== FAILURES ===================================
+[31m[1m_________________________ test_invariant_4_omit_and_x __________________________[0m
+
+    [0m[94mdef[39;49;00m[90m [39;49;00m[92mtest_invariant_4_omit_and_x[39;49;00m() -> [94mNone[39;49;00m:[90m[39;49;00m
+      las = _las()[90m[39;49;00m
+      base = las.build_lane_batch(_fixture(SMALL_FIXTURE), [33m"[39;49;00m[33mP07@1.0[39;49;00m[33m"[39;49;00m, [94mNone[39;49;00m)[90m[39;49;00m
+      omitted = [ALPHABET.index([33m"[39;49;00m[33mC[39;49;00m[33m"[39;49;00m), ALPHABET.index([33m"[39;49;00m[33mW[39;49;00m[33m"[39;49;00m)][90m[39;49;00m
+    [90m[39;49;00m
+      [90m# reference: omit via bias (run.py formula), X hard-omitted by its own probs[:, :20] slice[39;49;00m[90m[39;49;00m
+      ref_batch = dataclasses.replace(base, reference_bias=_omit_bias(base.length, x_column=[94mFalse[39;49;00m))[90m[39;49;00m
+      _jax_model, pt_model, torch, _mu = _full_model()[90m[39;49;00m
+      randn, _order = las._draw_order_for(ref_batch, [94m400[39;49;00m)  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+      fd = las._reference_feature_dict_lane(torch, ref_batch, np.stack([randn] * [94m8[39;49;00m), [94m1.0[39;49;00m, batch_size=[94m8[39;49;00m)  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+      [94mwith[39;49;00m torch.no_grad():[90m[39;49;00m
+        out = pt_model.sample(fd)[90m[39;49;00m
+      ref_tokens = out[[33m"[39;49;00m[33mS[39;49;00m[33m"[39;49;00m].numpy()[90m[39;49;00m
+      probs = out[[33m"[39;49;00m[33msampling_probs[39;49;00m[33m"[39;49;00m].numpy()  [90m# (B, L, 20), zero on fixed positions[39;49;00m[90m[39;49;00m
+      designable = (ref_batch.mask * ref_batch.chain_mask) > [94m0[39;49;00m[90m[39;49;00m
+      [94massert[39;49;00m [96mfloat[39;49;00m(probs[:, designable][..., omitted].max()) < OMIT_P_MAX, [33m"[39;49;00m[33mreference: omitted AA has p >= 1e-30[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+      [94massert[39;49;00m [95mnot[39;49;00m np.isin(ref_tokens[:, designable], [*omitted, X_INDEX]).any(), [33m"[39;49;00m[33mreference: sampled an omitted AA or X[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+    [90m[39;49;00m
+      [90m# aminx: omit via bias, X via the -1e8 X column[39;49;00m[90m[39;49;00m
+      am_batch = dataclasses.replace(base, bias=_omit_bias(base.length, x_column=[94mTrue[39;49;00m))[90m[39;49;00m
+      am_tokens = las.aminx_sample_batch(_full_model()[[94m0[39;49;00m], am_batch, [94m8[39;49;00m, [94m400[39;49;00m, temperature=[94m1.0[39;49;00m)[90m[39;49;00m
+>     [94massert[39;49;00m [95mnot[39;49;00m np.isin(am_tokens[:, designable], [*omitted, X_INDEX]).any(), [33m"[39;49;00m[33maminx: sampled an omitted AA or X[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+[1m[31mE     AssertionError: aminx: sampled an omitted AA or X[0m
+[1m[31mE     assert not np.True_[0m
+[1m[31mE      +  where np.True_ = <built-in method any of numpy.ndarray object at 0x7c464017d350>()[0m
+[1m[31mE      +    where <built-in method any of numpy.ndarray object at 0x7c464017d350> = array([[False, False, False, False, False, False, False, False, False,\n        False, False, False, False, False,  Tru...lse, False, False, False, False, False, False,\n        False, False, False, False, False, False, False, False, False]]).any[0m
+[1m[31mE      +      where array([[False, False, False, False, False, False, False, False, False,\n        False, False, False, False, False,  Tru...lse, False, False, False, False, False, False,\n        False, False, False, False, False, False, False, False, False]]) = <function isin at 0x7c488e9ca730>(array([[ 7, 11, 13,  9, 13,  0,  3, 17, 17, 14,  9, 13,  9,  6, 20,  8,\n         3,  9, 14, 16,  7,  8, 17,  2, 11,  5...\n        15, 12, 13,  9,  8,  9, 13,  9,  2,  8, 13,  0,  9,  5, 19, 16,\n        17, 16, 17, 17, 17, 19]], dtype=int32), [1, 18, 20])[0m
+[1m[31mE      +        where <function isin at 0x7c488e9ca730> = np.isin[0m
+
+[1m[31mtests/parity/test_mpnn_reference_invariants.py[0m:272: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Converting model from state dict with 118 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+------------------------------ Captured log call -------------------------------
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CG in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 68 (chain A)
+[32mINFO    [0m .prody:logger.py:123 ProDy is configured: verbosity='none'
+[33mWARNING [0m .prody:logger.py:141 WARNING prody cannot write configuration file to '/home/marielle', user does not have write access.
+[35mDEBUG   [0m .prody:logger.py:135 1227 atoms and 1 coordinate set(s) were parsed in 0.01s.
+[36m[1m=========================== short test summary info ============================[0m
+[31mFAILED[0m tests/parity/test_mpnn_reference_invariants.py::[1mtest_invariant_4_omit_and_x[0m - AssertionError: aminx: sampled an omitted AA or X
+[31m!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!![0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 23.01s[0m[0m
