@@ -32,9 +32,14 @@
       "n_over_bar": 27,
       "n_skipped": 0,
       "worst_path": "P13.per_residue.argmax",
-      "worst_ratio_to_bar": Infinity
+      "worst_ratio_to_bar": 1.7976931348623157e+308
     },
     "fixture_set": "A",
     "fixture_manifest_sha256": "8f47478bbeb077d68a5d98176cdf8f205a8e581a192a322811fb553436a1bdc5"
+  },
+  "litparity": {
+    "clauses_sha256": "fb3f17b79367dd2a64eed89f6f7c080a15a889353b2d13b3afe6e0346299f0ce",
+    "clauses_path": "outputs/browser_validation/litparity/clauses.json",
+    "written_before": "Phase 3 refutation and any parity run (O8)"
   }
 }

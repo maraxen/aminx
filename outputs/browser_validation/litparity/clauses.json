@@ -1,0 +1,366 @@
+{
+  "schema_version": 1,
+  "reference": "dauparas/LigandMPNN@26ec57ac976ade5379920dbd43c7f97a91cf82de; ProteinMPNN@8907e6671bfbfc92303b5f79c4b5e6ce47cdef57",
+  "clauses": [
+    {
+      "element": "decoding_order_default",
+      "source": "math#1, algo#1, protocol#1 (unanimous); model_utils.py:217-220 (sample), :581-584 (score); run.py:420-423 (randn per number_of_batches)",
+      "code_location": "src/aminx/inference/bundle_builder.py:100 (schedule default 'fixed_n_to_c'), :222-223 (WaveScheduleBundle.empty), :272-277 (generate_ar_mask over arange); src/aminx/inference/schedule_selector.py:365-366; src/aminx/inference/decode/autoregressive.py:240-245 (fixed tokens pre-seeded)",
+      "verdict": "DEVIATION",
+      "core": false,
+      "notes": "DESIGNED DEVIATION. Reference: decoding_order = argsort((mask*chain_mask + 1e-4) * |randn|), a fresh random permutation per number_of_batches draw with fixed (and missing) positions sorted first. The fixed-first property is probabilistic, not hard: a designed/fixed pair flips when |randn_designed| < ~1e-4*|randn_fixed| (per-pair probability of order 1e-4; recon_math is right, recon_protocol's 'always' overstates). aminx native default: deterministic N->C (arange) order; fixed tokens are pre-seeded into the carry but are only VISIBLE to a designed position if they precede it in N->C order, so a designed residue does not condition on fixed residues C-terminal to it. Consequences: (i) sampled sequences are a different conditional factorisation from the reference's, so token/marginal statistics differ even with identical weights; (ii) no order randomness across samples. Reference-compatible mode EXISTS: pass a host-built WaveScheduleBundle (build_inference_bundle(wave=...), WaveScheduleBundle.from_tie_groups) carrying the reference argsort order -- this is what the spec's exact tier does. aminx has no built-in generator of the reference fixed-first formula (see random_order_fixed_first).",
+      "paths": ["P19", "P07"]
+    },
+    {
+      "element": "temperature_on_logits_plus_bias",
+      "source": "math#2, algo#2, protocol#2 (unanimous for model_utils.py); model_utils.py:317-319 (untied), :445-447 (tied); contrast protein_mpnn_utils.py:1165-1179 (T applied before bias, omit untempered)",
+      "code_location": "src/aminx/inference/decode/autoregressive.py:364-383 (sampling_logits = logit_transform(logits, bias=cond_bias)), :395-397 (categorical(k, fused/temperature)); src/aminx/inference/logits.py:101-104 (bias added after state fusion), :434-435 (PoE log_softmax)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "For an untied position: categorical(log_softmax(logits + bias) / T) == softmax((logits + bias)/T) because log_softmax differs from its argument by a per-position constant; torch.multinomial over probs vs jax.random.categorical over logits draw from the same distribution (RNG streams differ, no token-level agreement claimed). S=1 ArithmeticMeanLogits reduces to identity (logits + log 1 - log 1). The LigandMPNN@26ec57ac formula (bias inside the temperature division) is the canonical one for this pin because run.py drives model_utils.py; the ProteinMPNN 2022 variant differs literally but not numerically at sane T.",
+      "paths": ["P07", "P08"]
+    },
+    {
+      "element": "x_omit_at_sampling",
+      "source": "math#3, algo#3, protocol#3 (unanimous for model_utils.py); model_utils.py:320-322, :448-450 ('hard omit X'); protein_mpnn_utils.py:1166-1180 samples all 21 unless 'X' is omitted",
+      "code_location": "src/aminx/inference/decode/autoregressive.py:395-397 (categorical over all 21 classes; no slice); src/aminx/inference/bundle_builder.py:323 (default bias zeros)",
+      "verdict": "DEVIATION",
+      "core": false,
+      "notes": "DESIGNED DEVIATION. Reference LigandMPNN sample() renormalises probs[:, :20] so X (index 20) can never be drawn, independent of --omit_AA; aminx native default draws from the full 21-way distribution, so X is samplable with whatever mass the network assigns it (small but nonzero). Consequence: aminx native samples can contain X; marginals over the 20 canonical AAs are rescaled by 1/(1-p_X). Reference-compatible mode EXISTS and is exact: bias[:, 20] = -1e8 makes exp(-1e8/T) == 0 in float32, identical to the reference renormalisation. Note the older ProteinMPNN utils (P00 lane) ALSO sample X unless omitted, so aminx native matches that ancestor, not LigandMPNN@26ec57ac.",
+      "paths": ["P07", "P08"]
+    },
+    {
+      "element": "omit_as_bias",
+      "source": "math#4, algo#4, protocol#4 (unanimous); run.py:404-408 (bias = -1e8*omit_AA + bias_AA + bias_AA_per_residue - 1e8*omit_AA_per_residue)",
+      "code_location": "src/aminx/run/specs.py:578 (SamplingSpecification.bias); src/aminx/inference/bundle_builder.py:310-318 (length check), :323; src/aminx/inference/decode/autoregressive.py:353-383",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "aminx exposes a single (L, 21) additive bias that enters exactly where the reference's folded bias tensor does (added to raw logits before the temperature division). An omit expressed as -1e8 in that bias reproduces the reference arithmetic exactly. aminx has NO --omit_AA / --omit_AA_per_residue / --bias_AA parser and no built-in -1e8 constant: constructing the bias is caller responsibility (spec ODQ-4 'bias configuration'). Bias length mismatches raise (BiasLengthError) rather than broadcasting.",
+      "paths": ["P08", "P07"]
+    },
+    {
+      "element": "augment_eps",
+      "source": "math#5, algo#5, protocol#5; model_utils.py:1188-1190 (X and Y), :1392-1393, :1518-1519; ProteinMPNN.__init__ augment_eps=0.0 (:20); run.py:77-88,109 never override",
+      "code_location": "src/aminx/utils/coordinates.py:21-58 (X + sigma*N(0,1), skipped when sigma<=0); src/aminx/model/features.py:200 (noise before Cb/kNN/RBF); src/aminx/model/ligand_features.py:270-281; src/aminx/model/packer.py:485-486; src/aminx/model/mpnn.py backbone_noise default 0.0",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Reference inference always runs with augment_eps = 0 (run.py/score.py never pass it); aminx backbone_noise defaults to 0.0 and is applied to raw coordinates before any derived geometry, same formula. Outside the reference-reachable configuration aminx differs: at backbone_noise > 0 the ligand path noises only protein coordinates, never ligand Y (reference ProteinFeaturesLigand noises both), and aminx adds a 'thermal' sigma mode with no analogue. Neither is reachable from the reference CLI.",
+      "paths": ["P03", "P11", "P14"]
+    },
+    {
+      "element": "knn_k_clamp",
+      "source": "math#6, algo#6, protocol#6 (unanimous); model_utils.py:1154-1156, :1361-1363; sc_utils.py:852-854; protein_mpnn_utils.py:849,943",
+      "code_location": "src/aminx/model/features.py:227-228; src/aminx/model/ligand_features.py:303,308; src/aminx/model/packer.py:422,426",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "k = min(k_neighbors, L) on Calpha distances (sqrt(sum+1e-6)) in all three feature paths, so L < k yields a fully connected graph exactly as np.minimum(top_k, L) does. How MASKED pairs are ranked differs and is recorded separately (knn_masked_pair_sentinel).",
+      "paths": ["P03", "P11", "P14"]
+    },
+    {
+      "element": "topk_tie_break",
+      "source": "math#7/amb1, algo#6/amb7, protocol#7 (unanimous: reference behaviour is unspecified); model_utils.py torch.topk(largest=False) with no stable/secondary key; data_utils.py:895 torch.argsort without stable=True",
+      "code_location": "src/aminx/model/features.py:46-92 (top_k: lexicographic sort on (-x, index), lower index wins); used at features.py:228, ligand_features.py:308,397, packer.py:426",
+      "verdict": "AMBIGUOUS",
+      "core": true,
+      "notes": "The reference delegates exact-distance ties to torch.topk/argsort, whose tie order PyTorch does not document or guarantee (CPU vs CUDA, version-dependent). The paper is silent. aminx implements ONE interpretation deterministically: ties go to the lower residue index, by construction backend-independent (strict total order). Any neighbour-set disagreement on tied distances therefore cannot be scored as parity or non-parity from the reference; spec P03 already restricts EXACT neighbour-set checks to no-tie residues with a tie-lattice fixture recorded. Load-bearing: ties are rare on real coordinates but certain on lattice/synthetic inputs and among masked (sentinel) entries.",
+      "paths": ["P03", "P11", "P14"]
+    },
+    {
+      "element": "membrane_label_encoding",
+      "source": "math#8, algo#7, protocol#8 (unanimous); run.py:270-277; model_utils.py:1475-1477 (node_embedding = Linear(3, H, bias=False)), :1572-1576; encode :168-170 (h_V = W_v(V))",
+      "code_location": "src/aminx/model/encoder.py:465-469 (physics_projection = eqx.nn.Linear(3, H) -- default use_bias=True), :539-547 (W_v(LayerNorm(projection(labels)))); scripts/convert_weights.py:736-744 (pt node_embedding has no bias -> jax random-init bias retained); src/aminx/io/weights.py:93-94 (physics_feature_dim=3)",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "Structure matches (3-class one-hot -> Linear -> LayerNorm -> W_v, node feature only, no edge membrane info), but aminx's first projection carries a bias the reference does not have (reference Linear(3, H, bias=False)). Conversion only overwrites a bias when the .pt has one, so the shipped weights keep the RANDOM INITIALISATION bias. Consequence: every membrane-model node embedding is shifted by a random vector before LayerNorm, so membrane logits diverge from the reference for all labels (consistent with a previously recorded 1-5 nat membrane divergence, unfixed as of 260925). Fix is mechanical (use_bias=False or zero the bias). The label construction itself is recorded separately (membrane_label_construction).",
+      "paths": ["P13", "P01"]
+    },
+    {
+      "element": "membrane_label_construction",
+      "source": "math#8/amb4, algo#7/amb8, protocol#8; run.py:252-277 (labels = 2*buried*(1-interface) + interface*(1-buried); global label broadcast = --global_transmembrane_label + 0*fixed_positions)",
+      "code_location": "not present: src/aminx/model/mpnn.py:160-164 accepts caller-supplied initial_node_features; src/aminx/inference/encode.py:57 reads geometry.physics_features; no buried/interface/global-label parser anywhere in src/aminx",
+      "verdict": "MISSING",
+      "core": true,
+      "notes": "aminx has no equivalent of the reference's buried/interface flags, their {0: neither, 1: interface, 2: buried} encoding (including the both-flags-collapse-to-0 quirk), or the global-label broadcast. The caller must supply the (L, 3) one-hot directly as physics_features. Parity runs must build the one-hot with the reference formula host-side; any caller that one-hots a different convention silently gets a different model input.",
+      "paths": ["P13", "P26"]
+    },
+    {
+      "element": "ligand_atom_context",
+      "source": "math#9, algo#8, protocol#9; run.py:69 (atom_context_num = checkpoint['atom_context_num']), data_utils.py:889-922 (nearest-by-count, sentinel 1000, no distance gate), :945-947; paper p.718 '25 closest ligand atoms'; checkpoint name ligandmpnn_v_32_010_25",
+      "code_location": "src/aminx/model/ligand_features.py:220 (atom_context_num default 16), :387-401 (count-based Cb top-k, sentinel 10000); src/aminx/model/ligand_mpnn.py:170-178 (ProteinFeaturesLigand built WITHOUT atom_context_num); src/aminx/io/weights.py:95-102 (parses 25 from the filename) and :413-428 (never passes it to PrxteinLigandMPNN)",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "Selection semantics match (per-residue nearest-by-count on virtual-Cb squared distance, no distance cutoff at selection). But the COUNT deviates: get_topology_for_checkpoint derives atom_context_num=25 for ligandmpnn_v_32_*_25, and load_model drops it, so ProteinFeaturesLigand keeps its default 16 (atom_context_num is a static field, not a weight, so loading cannot correct it). The reference uses checkpoint['atom_context_num'] (25 per filename and paper; the .pt value itself is not in the packet). Consequence: aminx LigandMPNN conditions on the 16 nearest ligand atoms per residue instead of 25, changing encoder context and logits whenever a residue has >16 ligand atoms in reach. Separately, aminx re-applies the nearest-atom selection unconditionally (the reference only does stage 2 under use_side_chains); with an upstream that already supplies the nearest atoms this is an order permutation only (the ligand branch is permutation-invariant over atoms). Stage-1 selection lives outside aminx (proxide / ligand_context_path).",
+      "paths": ["P11"]
+    },
+    {
+      "element": "ligand_cutoff_for_score",
+      "source": "math#9, algo#8, protocol#9 (unanimous); data_utils.py:948 (mask_XY = (cutoff_for_score > D_XY) * mask * Y_m[:,0]); run.py:432-442,842-846 (default 8.0 A, ligand-proximal loss_XY)",
+      "code_location": "not present: no cutoff_for_score / mask_XY in src/aminx (grep); scoring/score.py:29-83 averages over the residue mask only",
+      "verdict": "MISSING",
+      "core": true,
+      "notes": "The reference reports a second, ligand-proximal confidence (loss_XY) over residues within 8 A of the ligand; aminx has no such mask or output. It does not affect which atoms the network sees, only a reported number, so model logits are unaffected; any parity comparison of the ligand-proximal score must compute the mask host-side.",
+      "paths": ["P11"]
+    },
+    {
+      "element": "side_chain_context_toggle",
+      "source": "math#10, algo#9, protocol#9 (unanimous); model_utils.py:1246-1281 (xyz_37[:,:,5:] of fixed residues among E_idx[:,:,:16], concatenated then re-selected to atom_context_num with sentinel 10000); run.py:195-197, default 0",
+      "code_location": "src/aminx/model/ligand_features.py:357-385 (e_idx_sub = E_idx[:, :16], atom_37_mask * (1 - chain_mask), atoms [5:], concat), :387-401 (re-selection); src/aminx/inference/encode.py:64-70 (chain_mask = 1 - fixed_mask); src/aminx/io/weights.py:366 (use_side_chain_context=False default); src/aminx/host/_sampling_helper.py:340-356",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Same gating (fixed residues only), same 16-neighbour sub-graph, same 32 side-chain atom slots appended before the ligand atoms and competing for the same context slots, same 10000 sentinel, default off. Inherits the atom_context_num=16 vs 25 count deviation (ligand_atom_context).",
+      "paths": ["P11"]
+    },
+    {
+      "element": "ligand_context_fusion",
+      "source": "algo#8; model_utils.py:129-154 (encoder -> W_c; y_context_encoder (DecLayerJ) then context_encoder (DecLayer) per layer; h_V + V_C_norm(dropout(V_C(h_V_C))))",
+      "code_location": "src/aminx/model/ligand_mpnn.py:356-440",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Same op order: protein encoder, h_V_C = W_c(h_V), h_E_context = W_v(V), per-layer ligand-ligand message passing (DecoderLayer vmapped over residues == DecLayerJ) with Y_m_edges mask, then protein<-ligand DecLayer on cat(h_E_context, Y_nodes) with Y_m attention mask, residual add after LayerNorm with dropout disabled. Inputs to this block inherit the positional-encoding and atom-count deviations.",
+      "paths": ["P11"]
+    },
+    {
+      "element": "score_only_multi_order_average",
+      "source": "math#11, algo#10, protocol#10 (unanimous); score.py:280-315 (per number_of_batches: fresh randn -> fresh order(s); mean of exp(log_probs) and std over draws)",
+      "code_location": "not present: src/aminx/scoring/score.py:163-173 (single deterministic pass, full_context_ar_mask; decoding order drawn but unused); src/aminx/host/runner.py:480-560 (no order loop)",
+      "verdict": "MISSING",
+      "core": true,
+      "notes": "aminx has no multi-order averaging: its score is one deterministic pass under a 1-I mask, with no probability-space mean/std over randomised orders. Reference-compatible behaviour is only reachable by the caller looping over host-built ar_masks and averaging exp(log_probs) externally (spec P06 'STATISTICAL multi-order mean' must be implemented in the harness). The estimand also differs pass-by-pass (see conditional_score_context_mask).",
+      "paths": ["P06"]
+    },
+    {
+      "element": "conditional_score_context_mask",
+      "source": "algo#10/#14, math#15, protocol#10; model_utils.py:470-556 (single_aa_score: one full decoder pass PER idx, idx placed LAST (use_sequence=False) so no other position sees idx); protein_mpnn_utils.py:1292-1330 (conditional_probs, same trick)",
+      "code_location": "src/aminx/scoring/score.py:163-173 (full_context_ar_mask); src/aminx/utils/autoregression.py:304 (1 - I); src/aminx/inference/score_conditional.py:164-180; src/aminx/model/decoder.py:144-147,655-739",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "Reference conditional p(s_i | s_-i, X) runs L decoder passes, each with idx decoded last under a random order: idx sees every other true residue, but NO other position ever sees idx, at any layer. aminx computes all positions in ONE pass under ar_mask = 1 - I at every decoder layer, so neighbour j's layer-1 state contains s_i (j sees i) and i's layer-2 update reads j's layer-1 state: residue i's own identity reaches its own prediction through 2-hop paths (3 decoder layers). The direct self-edge was already removed (+0.036 nat leak fixed per scoring/score.py:150-173); this indirect leak remains. Consequence: aminx conditional log-probs of the true token are expected to be over-confident relative to single_aa_score/conditional_probs (magnitude unmeasured; static reading, not executed). Also relevant to the harness: by the reference's own einsum semantics, single_aa_score(use_sequence=True) -- the score.py CLI default -- places idx FIRST and is backbone-only (see unconditional_scoring_backbone_only); the conditional estimand is use_sequence=False. No reference-compatible mode exists in aminx short of L external passes with per-idx masks.",
+      "paths": ["P05", "P06"]
+    },
+    {
+      "element": "unconditional_scoring_backbone_only",
+      "source": "math#15/amb2, algo#10/amb6, protocol#10 (math asserts, algo/protocol hedge the use_sequence polarity); model_utils.py:501-509 (use_sequence=True -> order_mask[idx]=0 -> idx first -> mask_bw row empty); protein_mpnn_utils.py:1323-1330 (backbone_only=True uses the identical order_mask[idx]=0) and :1370-1378 (unconditional_probs, zero order mask)",
+      "code_location": "src/aminx/inference/score_unconditional.py:16-36; src/aminx/model/decoder.py:39-77 (encoder node features + zero sequence, static across layers), :594-653",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "aminx unconditional decoding uses cat(h_V_encoder, 0, h_E) for every neighbour at every layer, which equals ProteinMPNN unconditional_probs and LigandMPNN single_aa_score(use_sequence=True) (idx first => mask_fw covers all neighbours with encoder features). The reference docstring/CLI help state the opposite polarity; the literal code, cross-checked against ProteinMPNN conditional_probs(backbone_only=True) which uses the same order_mask[idx]=0 construction, settles it. Harness consequence: reference score.py defaults (--single_aa_score 1 --use_sequence 1) map to aminx P04, not P05. Note LigandMPNN model.score(use_sequence=False) is NOT this estimand (its mask_fw zeroes earlier-decoded neighbours).",
+      "paths": ["P04", "P05"]
+    },
+    {
+      "element": "score_nll_full_vocab",
+      "source": "math#3 (log_probs 21-way), protocol#3; data_utils.py:218-232 (get_score one-hots over 21)",
+      "code_location": "src/aminx/scoring/score.py:29-83 (_nll_from_logits, log_softmax over 21, masked mean)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Both report log-softmax over all 21 classes including X, masked-mean NLL. aminx masks by residue mask only; the reference's run.py confidence additionally multiplies by chain_mask (designed positions only) -- aminx score() refuses a fixed_mask with fixed positions (host/runner.py:541-550) rather than silently ignoring it.",
+      "paths": ["P06"]
+    },
+    {
+      "element": "packer_chi_sampling",
+      "source": "math#12, algo#11, protocol#11 (unanimous on code: 3-component von Mises mixture, num_samples=16 draws, per-angle argmax log-prob, num_denoising_steps=3 recycling, fixed positions keep true chi, log_prob 2.0 at fixed); sc_utils.py:56-144, run.py:908-927",
+      "code_location": "not present: src/aminx/model/packer.py:904-969 returns PackerResult(mean, concentration, mix_logits) only; host/plan.py:738-745 stores it; no draw/argmax/denoising/torsion->atom14 loop anywhere in src/aminx",
+      "verdict": "MISSING",
+      "core": true,
+      "notes": "aminx implements the packer network forward pass (mixture parameters) but not the reference's sampling procedure: no best-of-N MAP selection, no denoising/recycling loop, no torsion-to-coordinate reconstruction, no fixed-position confidence convention. Packed side chains therefore cannot be produced natively; spec P14 compares mixture parameters and 'chi draw vs analytic mixture', which a harness must supply. Paper-vs-code: the paper describes chi1->chi4 autoregression; the packet code predicts all 4 chis jointly per step -- the code is the parity target.",
+      "paths": ["P14"]
+    },
+    {
+      "element": "packer_mixture_parameterisation",
+      "source": "math#12, algo#11; sc_utils.py:383-387 (reshape (B,L,4,num_mix,3); mean=[...,0]; concentration=0.1+softplus([...,1]); mix_logits=[...,2]); run.py:112 num_mix=3",
+      "code_location": "src/aminx/model/packer.py:962-969; :749 (num_mix=3), :806 (w_torsions 4*3*num_mix)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Identical slot layout, 0.1 concentration floor, softplus, 3 mixture components.",
+      "paths": ["P14"]
+    },
+    {
+      "element": "packer_graph_and_context_size",
+      "source": "protocol#6/#9; run.py:95-110 (Packer top_k=32, atom_context_num=16, augment_eps=0, dropout=0)",
+      "code_location": "src/aminx/io/weights.py:77-85,95-102,418-428 (ligandmpnn_sc_v_32_002_16 -> k=32, atom_context_num=16); src/aminx/model/packer.py:580-582",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Filename-derived k=32 and atom_context_num=16 equal the values run.py hard-codes for the packer. The packer's masked-pair sentinel (1e8 on squared distance) is covered by knn_masked_pair_sentinel.",
+      "paths": ["P14"]
+    },
+    {
+      "element": "tied_fixed_override",
+      "source": "math#13a/amb3 (S_t aliasing), algo#12a (per-member gate; misses aliasing), protocol#12 (claims identical assignment; misses fixed override); model_utils.py:451-461",
+      "code_location": "src/aminx/inference/decode/autoregressive.py:399-412 (is_group_fixed = any(fixed & group); group_fixed_token = max(fixed tokens); every member gets it)",
+      "verdict": "DEVIATION",
+      "core": false,
+      "notes": "DESIGNED DEVIATION. Reference: after one joint draw S_t, a second loop over t_list REASSIGNS the same variable S_t = S_t*chain_mask_t + S_true_t*(1-chain_mask_t). A fixed member keeps its own native; because S_t is overwritten, every DESIGNED member listed AFTER a fixed member inherits that fixed member's native instead of the joint draw (S_t aliasing, recon_math, verified at :457-461); designed members BEFORE any fixed member get the draw. Behaviour therefore depends on --symmetry_residues input order (and, under --homo_oligomer, on list(set(chain_letters)) order, which varies with Python string-hash randomisation). aminx: if ANY member is fixed, ALL members (designed and fixed) receive max(fixed tokens over the group); the joint draw is discarded. Consequences: (i) aminx always enforces the tie; the reference can leave a fixed member differing from designed members, or alias only some designed members; (ii) with two fixed members of different natives aminx overwrites one fixed member's native with the larger token index. Identical to the reference only for groups with no fixed member, or a single fixed member listed first. No reference-compatible mode.",
+      "paths": ["P09", "P07"]
+    },
+    {
+      "element": "tied_last_member_bias",
+      "source": "math#13b, algo#12b/amb4, protocol#12 (unanimous); model_utils.py:417 (bias_t reassigned per member), :445-447 (used after loop)",
+      "code_location": "src/aminx/inference/decode/autoregressive.py:370-374 (per-position logits + per-position bias), :389-391 (PoE fuse of biased logits); src/aminx/inference/logits.py:434-435",
+      "verdict": "DEVIATION",
+      "core": false,
+      "notes": "DESIGNED DEVIATION. Reference adds only the LAST t_list member's bias row (loop-variable leak) to the fused group logits; every other member's bias_AA_per_residue / omit_AA_per_residue is discarded for that group's draw. aminx adds each member's own bias to its own logits before fusion, so under PoE the group distribution carries the SUM of all members' biases. Consequences: identical when all members share one bias row (global --bias_AA/--omit_AA only); with per-residue bias/omit on a non-last member the reference ignores it and aminx applies it; a -1e8 omit on any member forbids the AA group-wide in aminx but only on the last member in the reference. Reference behaviour is t_list-order dependent (homo_oligomer: hash-seed dependent). No reference-compatible mode.",
+      "paths": ["P09", "P08"]
+    },
+    {
+      "element": "tied_fusion_weights",
+      "source": "math#13c, algo#12c/amb3, protocol#12; model_utils.py:413,443 (total_logits += symmetry_weights[t]*logits, raw logits), :445-447; run.py:331-358 (weights required with symmetry_residues -- empty list raises IndexError at model_utils.py:352-355; homo_oligomer 1/n); contrast protein_mpnn_utils.py:1262-1263 (tied_beta*logits/T/len(t_list))",
+      "code_location": "src/aminx/inference/logits.py:396-435 (TieGroupProductOfExperts: sum(log_softmax)), :531 (always wired); src/aminx/host/plan.py:906; src/aminx/inference/decode/autoregressive.py:57-75,386-397",
+      "verdict": "DEVIATION",
+      "core": false,
+      "notes": "DESIGNED DEVIATION. Reference: softmax((sum_t w_t * logits_t + bias_last)/T), weights mandatory per member (1/n under --homo_oligomer). aminx: categorical((sum_t log_softmax(logits_t + bias_t))/T), UNWEIGHTED -- no symmetry_weights input exists. Since log_softmax subtracts a per-member constant, aminx == softmax((sum_t logits_t + sum_t bias_t)/T): equal to the reference only when every w_t = 1 and biases coincide (see tied_last_member_bias). Under the homo_oligomer 1/n weights the reference samples softmax(mean/T) while aminx samples softmax(n*mean/T), i.e. an n-fold sharper distribution (effective temperature T/n). Negative or unequal weights are unrepresentable in aminx. The paper's 'averaged logits' wording matches the reference homo_oligomer case, not aminx.",
+      "paths": ["P09", "P10", "P07"]
+    },
+    {
+      "element": "tied_intra_group_visibility",
+      "source": "math#13d, algo#12d/amb5 (both: sequential per-member decoder passes; later member sees earlier member's updated h_V_stack via mask_bw, h_S not written until after the joint draw); protocol#12 describes the joint draw only; model_utils.py:366-382 (mask from flattened grouped order), :414-433",
+      "code_location": "src/aminx/utils/autoregression.py:195-225 (tied branch: same-group mutual visibility, only self excluded), :229-300 (generate_wave_ar_mask same_group at :292); src/aminx/inference/bundle_builder.py:272-277; src/aminx/inference/decode/autoregressive.py:295-334 (one shared decoder pass per wave)",
+      "verdict": "DEVIATION",
+      "core": false,
+      "notes": "DESIGNED DEVIATION. Reference: members are decoded one after another in t_list order under a strict order mask built from the flattened grouped order, so a later member sees an earlier member through mask_bw (its freshly written decoder state, with a still-zero h_S) while an earlier member sees the later one only through the encoder branch (mask_fw). aminx: all members of a group are computed in one parallel pass and are MUTUALLY visible through mask_bw with decoder-layer states (sequence slot still UNDRAWN/zero, unless the member is fixed -- pre-seeded fixed tokens ARE visible to fellow members, which the reference never allows). Consequence: the per-member logits entering fusion differ whenever group members are k-NN neighbours of each other (directly or via a same-step path). When members are k-NN-disjoint the neighbour gathers never touch a fellow member and both schemes produce identical member logits -- the only regime in which tied sampling is validated (spec P09-s). Also note tied_group_step_placement (group timing) matches.",
+      "paths": ["P09", "P07"]
+    },
+    {
+      "element": "tied_group_step_placement",
+      "source": "protocol#1/#12, math#13d; model_utils.py:357-368 (group merged into one step at its first-encountered member in the base order)",
+      "code_location": "src/aminx/utils/autoregression.py:197-213 (group step = first occurrence in decoding order); src/aminx/inference/decode/autoregressive.py:247-262,290-293 (each real tie group sampled once, at its first (wave, slot) occurrence)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Given the same base order, both place the whole tie group at the step of its first-encountered member and decode every member in that step. (Which base order is used is the separate decoding_order_default deviation.)",
+      "paths": ["P09", "P19"]
+    },
+    {
+      "element": "tied_scoring_logit_fusion",
+      "source": "math#13 (last bullet), protocol#12; model_utils.py:600-631,638 (score(): symmetry only regroups the decoding order / visibility masks; h_S from S_true; no cross-member logit fusion)",
+      "code_location": "src/aminx/inference/decode/conditional.py:151-157; src/aminx/inference/decode/_base.py:128-173 (PoE fuse of every non-singleton tie group in scoring)",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "Reference scoring with --symmetry_residues never fuses logits across tied members; each member keeps its own log_softmax, only the order/visibility changes. aminx scoring replaces every tied member's logits with the group's PoE sum of log_softmax (unnormalised as a log-probability: sum of n log-probs), so tied-position NLL and returned logits differ from the reference for any tie_group_map with groups larger than one. Untied scoring (tie_group_map = arange) is value-preserving. Reference-compatible mode: pass no tie groups to scoring (lose the visibility grouping, which aminx's 1-I scoring mask ignores anyway).",
+      "paths": ["P09", "P05", "P06"]
+    },
+    {
+      "element": "sample_log_probs_output",
+      "source": "algo#2, math#3/#13c; model_utils.py:315,329-333 (log_probs = chain_mask * log_softmax(raw logits): unbiased, untempered, ZERO at fixed positions), :440-442 (tied: each member's own unfused log_softmax)",
+      "code_location": "src/aminx/inference/decode/autoregressive.py:363-369 (stored logits bias-free), :386-388 (stored logits PoE-fused per group), :447-474 (scattered to every member); src/aminx/inference/sample_autoregressive.py:155-186",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "Untied designed positions MATCH (aminx stores log_softmax of bias-free, untempered logits, like the reference). Differences: (i) fixed positions -- reference returns all-zero log_probs rows (masked by chain_mask), aminx returns real log-probs; (ii) tied positions -- reference returns each member's own unfused log_softmax (which is NOT the distribution sampled), aminx returns the group PoE sum of members' log_softmax replicated to every member (not normalised). Consequence: any downstream score computed from returned sampling log-probs (reference get_score / confidence) differs at fixed and tied positions; teacher-forced parity must compare untied designed positions only or recompute.",
+      "paths": ["P07", "P09"]
+    },
+    {
+      "element": "random_order_fixed_first",
+      "source": "math#1, algo#1, protocol#1; model_utils.py:217-220; protein_mpnn_utils.py:1082,1119,1205 (same argsort((chain_M+1e-4)*|randn|) formula)",
+      "code_location": "src/aminx/utils/decoding_order.py:27-107 (random_decoding_order: uniform jax.random.permutation, no fixed-first); src/aminx/inference/schedule_selector.py:365-366 (random_ar/frozen_random_sigma: uniform permutation); no 1e-4 fixed-first formula anywhere in src/aminx",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "aminx's randomised order arms draw a UNIFORM permutation over positions (or tie groups); fixed positions are not pushed to the front. Under random_ar a designed position does not see fixed residues that happen to be ordered after it, unlike the reference, whose fixed context is (with probability ~1) visible to every designed position. Consequence: random_ar sampling is not the reference's order distribution; order-marginal statistics (spec P19 layer c 'fixed-first + pairwise-precedence uniformity') cannot be matched by the native arms. Reference-compatible only via a host-computed order passed as `wave` (the spec's exact tier).",
+      "paths": ["P19", "P07"]
+    },
+    {
+      "element": "ar_visibility_mask",
+      "source": "math#15, algo#14 (unanimous); model_utils.py:223-235 (order_mask_backward via 1-triu einsum; mask_bw = mask*mask_attend; mask_fw = mask*(1-mask_attend); self always in mask_fw), :258-260 (h_EXV_encoder_fw with zero h_S)",
+      "code_location": "src/aminx/model/decoder.py:124-148 (mask_bw/mask_fw from gathered ar_mask; encoder branch with zeros_like sequence), :151-189; src/aminx/utils/autoregression.py:142-225 (strict order mask, self-excluded)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Same decomposition: already-decoded neighbours contribute cat(h_V_decoder_l, h_S, h_E); not-yet-decoded neighbours and self contribute cat(h_V_encoder, 0, h_E). aminx recomputes the full decoder over all positions each wave instead of the reference's incremental per-position h_V_stack cache; for a causal (strict) mask these are equal because every state a position reads depends only on positions decoded before it (except within tie groups -- see tied_intra_group_visibility).",
+      "paths": ["P07", "P05"]
+    },
+    {
+      "element": "undrawn_sequence_embedding",
+      "source": "math#3, algo#3/#13; model_utils.py:251-252 (h_S = zeros; S = 20*ones placeholder)",
+      "code_location": "src/aminx/inference/decode/autoregressive.py:54 (UNDRAWN_TOKEN = -1), :231-245 (carry init), :298 (one_hot(-1) = zero vector)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Undrawn positions embed as the zero vector in both. The returned placeholder differs (reference 20/X, aminx -1) only for positions never scheduled, which cannot occur for a full-length order.",
+      "paths": ["P07"]
+    },
+    {
+      "element": "message_passing_encoder",
+      "source": "math#14 (EncLayer; LigandMPNN Alg. 7); model_utils.py:1716-1739 (node: sum(mask_attend*MLP3(cat))/30 -> post-norm residual -> FFN(4H) -> post-norm -> mask_V; edge: MLP3 on updated nodes, NOT /scale, post-norm)",
+      "code_location": "src/aminx/model/encoder.py:216-249 (scale=30 at :170,:225; edge update without scale at :244-249), :374 (mask_attend = gather(mask_2d))",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Fixed divisor 30 (not the true neighbour count), post-norm residuals, exact GELU, edge update from post-update node state without /scale, masked messages via gathered mask_2D.",
+      "paths": ["P03", "P04", "P05", "P07"]
+    },
+    {
+      "element": "message_passing_decoder",
+      "source": "math#14 (DecLayer; Alg. 8); model_utils.py:1670-1691",
+      "code_location": "src/aminx/model/decoder.py:281-360 (message MLP, sum/30 in float32, post-norm, FFN, mask), :655-739 (call_conditional layer loop)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Same layer form; AR masking is applied through the edge inputs (mask_bw/mask_fw) rather than mask_attend, as in the reference sample()/score() decoder calls. aminx accumulates the message sum in float32 (no-op on the float32 exact tier).",
+      "paths": ["P04", "P05", "P07"]
+    },
+    {
+      "element": "dropout_off_at_inference",
+      "source": "math#14; model_utils.py:21 (dropout=0.0 default), run.py:77-92 (never passed; model.eval())",
+      "code_location": "src/aminx/inference/decode/_kernel.py:25,73-83 (inference flag); src/aminx/model/ligand_mpnn.py:363,440 (inference=True); src/aminx/model/decoder.py:342-347",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "aminx modules are built with dropout_rate=0.1 (matching training topology) but every inference path passes inference=True / key=None, making dropout the identity -- numerically equal to the reference's Dropout(0.0).",
+      "paths": ["P04", "P05", "P07", "P11"]
+    },
+    {
+      "element": "rbf_edge_features",
+      "source": "math (Assumptions: RBF bins [2,22], 16 centres); model_utils.py ProteinFeatures RBF / 25 atom pairs",
+      "code_location": "src/aminx/utils/radial_basis.py:16-18,54-70; src/aminx/model/ligand_features.py:183-194,311-344",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "16 Gaussian centres linspace(2, 22), sigma = 20/16, 25 backbone/virtual-Cb atom pairs, virtual Cb coefficients (-0.58273431, 0.56802827, -0.54067466) identical.",
+      "paths": ["P03", "P11"]
+    },
+    {
+      "element": "positional_encoding_protein",
+      "source": "math (Assumptions: PositionalEncodings cap 32); model_utils.py:1636-1650 (d = clip(off+32,0,64)*same_chain + (1-same_chain)*65; one_hot(66); Linear(66,16) with bias)",
+      "code_location": "src/aminx/model/features.py:148 (w_pos use_bias=True), :254-265",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Same single-hot encoding (inter-chain edges map to index 2*MAX_REL+1 with the offset discarded) and a biased 66->16 linear.",
+      "paths": ["P03"]
+    },
+    {
+      "element": "positional_encoding_ligand",
+      "source": "extends math (Assumptions) to the ligand feature class; model_utils.py:693 (ProteinFeaturesLigand.embeddings = PositionalEncodings(16) -> Linear(66,16) WITH bias), :1234-1241, :1636-1650",
+      "code_location": "src/aminx/model/ligand_features.py:95-122 (w_pos use_bias=False; one_hot(clip(off)) concatenated with a separate 'different chain' bit), :234, :348-351; scripts/convert_weights.py:25-44,289-298 (pt bias silently dropped when the jax layer has none)",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "Two differences from the reference PositionalEncodings used by the ligand model: (i) no bias -- the checkpoint's features.embeddings.linear.bias is dropped at conversion, so every ligand-model edge embedding lacks a constant 16-d offset before edge_embedding/LayerNorm (LayerNorm does not cancel a non-uniform vector shift); (ii) inter-chain edges are two-hot (clipped offset + chain bit) instead of the reference's single index 65 with the offset discarded, so inter-chain edges also depend on the residue-index offset. Consequence: all LigandMPNN edge features deviate (all inputs for (i); multi-chain inputs additionally for (ii)). Static reading, not executed; consistent with the existing ligand feature parity test only asserting Pearson > 0.995 on edges and > 0.85 on V (tests/model/test_ligandmpnn_equivalence.py:402-448). The protein-only path is correct (positional_encoding_protein).",
+      "paths": ["P11", "P01"]
+    },
+    {
+      "element": "knn_masked_pair_sentinel",
+      "source": "math#6, algo#6; model_utils.py:1148-1157, :1355-1364, :1480-1489; sc_utils.py:845-855 (D_adjust = D + (1-mask_2D)*D_max: masked pairs pushed to the ROW MAX, tying with the farthest valid neighbour)",
+      "code_location": "src/aminx/model/features.py:208-225 (masked -> +inf); src/aminx/model/ligand_features.py:299 (masked -> 1e4); src/aminx/model/packer.py:417 (squared distance masked -> 1e8)",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "Reference masked pairs get distance D_max (the row's largest valid distance), so they TIE with the farthest valid partner; aminx uses a strictly larger sentinel (inf / 1e4 / 1e8), so masked partners always rank after every valid one. Identical neighbour sets whenever a row has >= k valid partners. For rows with < k valid partners (short or gapped chains; masked residues' own rows), the reference's choice among {farthest valid, masked...} falls to torch tie-breaking and can DROP the farthest valid neighbour in favour of a masked one, while aminx always keeps all valid partners then takes masked ones by lowest index. Masked neighbours still feed the decoder's structure branch (mask_fw uses the row mask only), so this can change logits on gapped inputs. Also the ligand path's first RBF uses the sentinel distance for masked pairs (1e4 vs D_max).",
+      "paths": ["P03", "P11", "P14"]
+    },
+    {
+      "element": "checkpoint_topology_source",
+      "source": "protocol#6/#9/#14; run.py:67-90 (k_neighbors = checkpoint['num_edges']; atom_context_num = checkpoint['atom_context_num']; architecture 128/3/3 hard-coded; load_state_dict)",
+      "code_location": "src/aminx/io/weights.py:65-105 (get_topology_for_checkpoint: k, atom_context_num, positional size, model type parsed from the FILENAME; defaults k=48, atom_context_num=16), :357-466 (load_model)",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "The reference reads k and atom_context_num from metadata embedded in the checkpoint; aminx infers them from the checkpoint id string. For the shipped filenames the parsed values equal the filename convention (v_48 -> 48, v_32 -> 32, _25 -> 25), which the paper corroborates for LigandMPNN (32 residues, 25 atoms), but the .pt metadata is not in the packet, so equality with checkpoint['num_edges'] is inferred, not verified. Any renamed or local_path checkpoint without the naming hints silently gets defaults (k=48, atom_context_num=16). And the parsed atom_context_num is not wired into the ligand model at all (ligand_atom_context). The 128/3/3 architecture constants match (weights.py:40-46).",
+      "paths": ["P01", "P11"]
+    },
+    {
+      "element": "weight_conversion_bias_handling",
+      "source": "protocol#14 (load_state_dict: strict key/shape correspondence); reconciler finding from positional_encoding_ligand and membrane_label_encoding",
+      "code_location": "scripts/convert_weights.py:25-44 (convert_linear_layer: pt bias dropped if the jax layer has no bias; jax random-init bias kept if the pt layer has no bias); src/aminx/io/weights.py:282-354 (tree_deserialise_leaves of the converted .eqx.zst)",
+      "verdict": "DEVIATION",
+      "core": true,
+      "notes": "torch load_state_dict is strict (a missing or unexpected bias key raises); aminx's conversion silently reconciles bias mismatches in both directions, and the shipped .eqx.zst files inherit the result. Known instances: ligand PositionalEncodings bias dropped (positional_encoding_ligand), membrane node_embedding random bias retained (membrane_label_encoding). Consequence: spec P01's 'EXACT shipped .eqx.zst == .pt after layout map' cannot hold for those tensors; a strict leaf-by-leaf comparison (every .pt tensor mapped, every .eqx leaf sourced) is needed to find any further instances.",
+      "paths": ["P01", "P11", "P13"]
+    },
+    {
+      "element": "temperature_default",
+      "source": "protocol#2; run.py:826-830 (--temperature default 0.1)",
+      "code_location": "src/aminx/run/specs.py:576 (SamplingSpecification.temperature = 0.1)",
+      "verdict": "MATCH",
+      "core": true,
+      "notes": "Same host-level default. (Low-level build_inference_bundle defaults temperature=1.0, bundle_builder.py:96, but the sampling spec supplies 0.1.)",
+      "paths": ["P26", "P07"]
+    }
+  ]
+}
