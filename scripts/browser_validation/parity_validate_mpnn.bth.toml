@@ -1,0 +1,59 @@
+[metadata]
+title = "Literature-parity graded verdict: aminx MPNN paths vs LigandMPNN@26ec57ac"
+created = "260925"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "aminx's in-scope MPNN paths implement dauparas/LigandMPNN@26ec57ac (Mode A) at cap-lattice grade PARITY or PARTIAL, with both layer-(a) validate prerequisites pass (R1) or exact partial_headroom (R2), and orchestrator-re-derived invariant tests passing with zero skips."
+stage_name = "validation"
+claim_discriminates = ["H_lit_parity", "H_null_misspec"]
+claim_isolates = ["C_reference_parity"]
+
+[reproduction]
+reproduces_paper = "dauparas/LigandMPNN@26ec57ac976ade5379920dbd43c7f97a91cf82de; doi:10.1126/science.add2187"
+# no requires_pass_stem: it matches outcome='pass' only (prereg.py:302-336) and is enforced only by
+# `bth submit`; the prerequisite mapping lives inside the script (O1).
+
+[controls]
+positive_outcome = ["pass", "partial"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "parity_grade = 'PARITY' AND prereq_status = 'ok' AND ambiguity_load = 'none' AND n_invariant_skipped = 0 AND n_invariant_tests >= 8"
+decision = "Every in-scope path matches at full cap-lattice PARITY, both validate prerequisites pass at rung R1, zero ambiguity load, and the invariant suite passed with zero skips."
+reasoning = "This is the strictest reachable outcome: PARITY requires clause_parity_pct == 1.0, adversarial_survived, invariant_pass, rung R0/R1, and ambiguity_load != 'load_bearing' -- all five ceilings at their best value, at the strongest reproduction rung, with no ambiguity discount."
+is_residual = false
+
+[outcomes.partial]
+condition = "parity_grade = 'PARTIAL' AND prereq_status IN ('ok', 'headroom') AND n_invariant_skipped = 0 AND n_invariant_tests >= 8"
+decision = "The claim holds at PARTIAL: at least one cap-lattice ceiling (clause parity < 1.0, reproduction rung R2, or ambiguity load) capped the grade below PARITY, but no ceiling forced FAIL, and both prerequisites are at least R2/headroom."
+reasoning = "PARTIAL is the spec's documented EXPECTED global grade (R19): the exact-validate rung R2 (partial_headroom) and/or a non-none ambiguity load cap the grade without any dimension hitting its FAIL floor (invariant_pass, clause_parity_pct >= 0.5, adversarial_survived)."
+is_residual = false
+
+[outcomes.fail]
+condition = "parity_grade = 'FAIL' OR prereq_status NOT IN ('ok', 'headroom') OR n_invariant_skipped > 0 OR n_invariant_tests < 8"
+decision = "No parity statement is permitted: either a cap-lattice FAIL floor was hit, the layer-(a) validate prerequisites did not clear the O1 mapping (missing or failed), or the re-derived invariant suite skipped a test or ran fewer than 8."
+reasoning = "Residual catch-all matching the script's own `prereq_status not in ('ok', 'headroom')` branch (forced parity_grade='FAIL' without calling compute_grade), any genuine cap-lattice FAIL ceiling (invariant_pass=false, clause_parity_pct < 0.5, or a confirmed core-severity defect), and the zero-skips/>=8-tests floor on the orchestrator-owned invariant suite."
+is_residual = true
+
+[result_schema]
+parity_grade = "str"
+prereq_status = "str"        # ok | headroom | failed | missing
+exact_validate_outcome = "str"
+sampling_validate_outcome = "str"
+clause_parity_pct = "float"
+invariant_pass = "bool"
+n_invariant_tests = "int"
+n_invariant_skipped = "int"
+adversarial_survived = "bool"
+reproduction_rung = "str"
+ambiguity_load = "str"       # enum none | non_load_bearing | load_bearing (parity.py:31)
+n_ambiguous = "int"
+git_hash = "str"
+git_clean = "bool"
+prereg_sha256 = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+torch_version = { type = "string", required = true }
