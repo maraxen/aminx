@@ -132,6 +132,12 @@ DEFAULT_FUSION_CTRL_EPS = 0.1  # smoke-path default; run_full searches FUSION_EP
 FUSION_EPS_CANDIDATES: tuple[float, ...] = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0)
 SIZING_RATIO_RANGE: tuple[float, float] = (2.0, 10.0)  # "[2x, 10x] the bar"
 
+# A finite "could not compute" sentinel, never literal inf/nan -- pinned bathos
+# (0.13.0a4) renders result fields as DuckDB SQL literals and a bare `inf`/`nan` fails
+# to bind (measured on titanix, 2026-09-25: a clean run reported catalog outcome=error
+# for exactly this reason). 1e18 is comfortably outside any real margin/ratio value.
+UNCOMPUTED_SENTINEL = 1.0e18
+
 _SEED_BASE = 20260924  # arbitrary fixed base, distinct from layer_a_exact's own base
 
 
@@ -386,7 +392,9 @@ def reference_sample_one(
 def reference_sample_batch(
   pt_model: Any, torch: Any, batch: LaneBatch, n: int, seed_base: int, *, temperature: float
 ) -> np.ndarray:
-  """`n` reference draws restricted to `batch.comparison_positions`, shape `(n, n_pos)`.
+  """`n` reference draws, FULL length, shape `(n, L)` -- NOT pre-restricted to
+  `batch.comparison_positions` (callers that need the restricted view call `restrict_to_comparison`
+  themselves; token/X-omission counting needs the FULL sequence, see V4).
 
   P09-s (symmetric branch) runs at batch 1 per draw, looped (spec "Pooling, bootstrap
   and compute budget": "only P09-s ... runs at batch 1"); every other lane runs the
@@ -397,13 +405,17 @@ def reference_sample_batch(
       reference_sample_one(pt_model, torch, batch, seed_base + i, temperature=temperature)[0]
       for i in range(n)
     ]
-    seqs = np.stack(rows, axis=0)
-  else:
-    randn_rows = np.stack([_draw_order_for(batch, seed_base + i)[0] for i in range(n)], axis=0)
-    fd = _reference_feature_dict_lane(torch, batch, randn_rows, temperature, batch_size=n)
-    with torch.no_grad():
-      out = pt_model.sample(fd)
-    seqs = out["S"].numpy()
+    return np.stack(rows, axis=0)
+  randn_rows = np.stack([_draw_order_for(batch, seed_base + i)[0] for i in range(n)], axis=0)
+  fd = _reference_feature_dict_lane(torch, batch, randn_rows, temperature, batch_size=n)
+  with torch.no_grad():
+    out = pt_model.sample(fd)
+  return out["S"].numpy()
+
+
+def restrict_to_comparison(seqs: np.ndarray, batch: LaneBatch) -> np.ndarray:
+  """`(n, L)` full-length sequences -> `(n, n_pos)` restricted to `batch.comparison_positions`
+  (designable positions, or tie-group members for P09-s)."""
   if batch.comparison_positions.size == 0:
     return seqs
   return seqs[:, batch.comparison_positions]
@@ -505,7 +517,8 @@ def aminx_sample_batch(
   temperature: float,
   beta_alanine: float = 0.0,
 ) -> np.ndarray:
-  """`n` aminx draws restricted to `batch.comparison_positions`, shape `(n, n_pos)`.
+  """`n` aminx draws, FULL length, shape `(n, L)` -- NOT pre-restricted (see
+  `reference_sample_batch`'s docstring for why; use `restrict_to_comparison` at the call site).
 
   `beta_alanine` adds an additive bias to the alanine column (positive-control sizing,
   "aminx arm with +beta on alanine") -- never applied to the reference arm.
@@ -525,10 +538,7 @@ def aminx_sample_batch(
       jax_model, eff_batch, order_i, jax.random.PRNGKey(seed_base + i), temperature=temperature
     )
     rows.append(seq)
-  seqs = np.stack(rows, axis=0)
-  if eff_batch.comparison_positions.size == 0:
-    return seqs
-  return seqs[:, eff_batch.comparison_positions]
+  return np.stack(rows, axis=0)
 
 
 # --------------------------------------------------------------------------------------
@@ -655,14 +665,31 @@ def _count_omitted_and_x(
   not expected noise)."""
   x_reference = int(np.sum(tokens == X_INDEX))
   x_aminx = int(np.sum(aminx_seq == X_INDEX)) if aminx_seq is not None else 0
-  omitted = 0
-  if _LANE_BASE[lane] == "P08":
-    global_idxs = _omit_indices(OMIT_AA_CHARS)
-    omitted += int(np.isin(tokens, global_idxs).sum())
-    per_residue_idx = _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)
-    if P08_PER_RESIDUE_OMIT_POSITION < tokens.shape[0]:
-      omitted += int(tokens[P08_PER_RESIDUE_OMIT_POSITION] == per_residue_idx)
+  omitted = count_omitted(tokens, lane)
   return omitted, x_aminx, x_reference
+
+
+def count_omitted(tokens: np.ndarray, lane: str) -> int:
+  """Count P08's omitted-AA vocabulary (`OMIT_AA_CHARS` everywhere, PLUS the per-residue
+  omit char at `P08_PER_RESIDUE_OMIT_POSITION`) in `tokens` -- 1-D `(n_pos,)` or 2-D
+  `(n_draws, n_pos)`, ASSUMED to be indexed identically to the FULL sequence (true for
+  P08, whose `comparison_positions` covers every position since its `chain_mask` is
+  all-designable -- see `build_lane_batch`). Every other lane has an empty omit
+  vocabulary and always returns 0."""
+  if _LANE_BASE[lane] != "P08":
+    return 0
+  arr = np.atleast_2d(tokens)
+  omitted = int(np.isin(arr, _omit_indices(OMIT_AA_CHARS)).sum())
+  per_residue_idx = _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)
+  if P08_PER_RESIDUE_OMIT_POSITION < arr.shape[1]:
+    omitted += int(np.sum(arr[:, P08_PER_RESIDUE_OMIT_POSITION] == per_residue_idx))
+  return omitted
+
+
+def count_x(tokens: np.ndarray) -> int:
+  """Count `X_INDEX` occurrences in `tokens` (1-D or 2-D) -- should be 0 by construction
+  (the X-omit bias column) on every lane, both arms."""
+  return int(np.sum(np.asarray(tokens) == X_INDEX))
 
 
 # --------------------------------------------------------------------------------------
@@ -670,11 +697,44 @@ def _count_omitted_and_x(
 # --------------------------------------------------------------------------------------
 
 
+def pooled_excess_js(
+  a1: np.ndarray | list[np.ndarray],
+  a2: np.ndarray | list[np.ndarray],
+  r1: np.ndarray | list[np.ndarray],
+  r2: np.ndarray | list[np.ndarray],
+  *,
+  k: int = 21,
+) -> float:
+  """Point-estimate `E = D(a1,r1) - 1/2*[D(a1,a2)+D(r1,r2)]` (`aminx.parity.compare.excess_js`,
+  reused). `excess_js`/`mean_positional_js` operate on per-position token COUNT tables, not raw
+  sampled-sequence arrays -- this pools each arm's (possibly per-fixture-stratified) sequences
+  into counts via `aminx.parity.compare.token_counts` first (the same pooling
+  `excess_js_upper`'s bootstrap does internally per-resample), so the point estimate and the
+  bootstrap upper bound are computed from the SAME representation."""
+  from aminx.parity.compare import excess_js, token_counts
+
+  a1_counts = token_counts(a1, k=k)
+  a2_counts = token_counts(a2, k=k)
+  r1_counts = token_counts(r1, k=k)
+  r2_counts = token_counts(r2, k=k)
+  return float(excess_js(a1_counts, a2_counts, r1_counts, r2_counts))
+
+
+def pooled_js(
+  a: np.ndarray | list[np.ndarray], b: np.ndarray | list[np.ndarray], *, k: int = 21
+) -> float:
+  """Pooled-composition JS divergence between two arms (`main_js_vs_ref`'s own metric: no
+  excess-JS bias correction, just `mean_positional_js` on pooled token counts)."""
+  from aminx.parity.compare import mean_positional_js, token_counts
+
+  return float(mean_positional_js(token_counts(a, k=k), token_counts(b, k=k)))
+
+
 def lane_equivalence(
-  a1: np.ndarray,
-  a2: np.ndarray,
-  r1: np.ndarray,
-  r2: np.ndarray,
+  a1: np.ndarray | list[np.ndarray],
+  a2: np.ndarray | list[np.ndarray],
+  r1: np.ndarray | list[np.ndarray],
+  r2: np.ndarray | list[np.ndarray],
   *,
   margin: float,
   n_boot: int,
@@ -687,13 +747,21 @@ def lane_equivalence(
   dedicated check for that, but `excess_js_upper`'s token-count math must not silently
   discard a real divergence by assuming a 20-letter alphabet.
 
-  Returns `{tost_pass, excess_js, excess_js_ub, margin, equiv}` plus the raw recovery arrays.
+  Each of `a1, a2, r1, r2` is either one fixture's `(n_seq, L)` token array or a list of such
+  arrays (one per fixture, fixture-stratified -- `excess_js_upper`/`token_counts` both accept
+  this natively).
+
+  Returns `{tost_pass, excess_js, excess_js_ub, margin, equiv, equiv_js, n_boot}`. `tost_pass`
+  is always `False` here (callers compute recovery TOST separately, over the FULL arms per
+  V3, and merge it in) -- kept in the dict only for backward-compatible key presence.
   """
   from aminx.parity.compare import excess_js_upper
 
+  excess_js_point = pooled_excess_js(a1, a2, r1, r2, k=k)
   excess_js_ub = excess_js_upper(a1, a2, r1, r2, n_boot=n_boot, rng=rng, k=k)
   equiv_js = bool(excess_js_ub < margin)
   return {
+    "excess_js": excess_js_point,
     "excess_js_ub": excess_js_ub,
     "margin": margin,
     "equiv_js": equiv_js,
@@ -714,6 +782,158 @@ def recovery_tost(
 def per_sequence_recovery(tokens: np.ndarray, seq_ref_restricted: np.ndarray) -> np.ndarray:
   """`(n,)` per-sequence recovery fraction against the restricted native sequence."""
   return np.mean(tokens == seq_ref_restricted[None, :], axis=-1)
+
+
+# --------------------------------------------------------------------------------------
+# Shared IUT-arm draw: main lane measurement, margin computation, null-replicate check,
+# and the positive/negative controls all funnel through this ONE function so the draw
+# semantics (allocation, seeding, restriction) cannot drift between calibrate and validate.
+# --------------------------------------------------------------------------------------
+
+
+def draw_iut_arms(
+  jax_model: Any,
+  pt_model: Any,
+  torch: Any,
+  fixture_batches: list[tuple[dict[str, Any], LaneBatch]],
+  allocation: dict[str, int],
+  *,
+  temperature: float,
+  temperature_r: float | None = None,
+  beta_a: float = 0.0,
+  reference_is_aminx: bool = False,
+  seed_tag: str,
+) -> tuple[
+  list[np.ndarray], list[np.ndarray], list[np.ndarray], list[np.ndarray], list[np.ndarray]
+]:
+  """Draw `(a1_list, a2_list, r1_list, r2_list, seq_ref_list)`, each a list of one
+  `(k, n_pos)` array per fixture (fixture-stratified, restricted to `comparison_positions`),
+  `k = allocation[fixture_name]`.
+
+  - `a1`/`a2`: two INDEPENDENTLY-seeded aminx draws (the aminx arm; `+beta_a` on alanine
+    when nonzero -- positive-control sizing).
+  - `r1`/`r2`: the reference arm (`reference_is_aminx=False`, the default -- REAL LigandMPNN
+    draws) OR two more independently-seeded, UNPERTURBED aminx draws
+    (`reference_is_aminx=True` -- used for the margin rule's "aminx at T vs aminx at
+    1.05*T" (`temperature_r` overrides `temperature` for r1/r2), the null-replicate
+    criterion, and the negative control -- all three are "aminx vs aminx" by spec).
+
+  Fixtures with a zero/missing allocation entry, or whose `comparison_positions` is empty
+  (e.g. P09-s on a fixture with no qualifying tie groups), are skipped.
+  """
+  temp_r = temperature if temperature_r is None else temperature_r
+  a1_list: list[np.ndarray] = []
+  a2_list: list[np.ndarray] = []
+  r1_list: list[np.ndarray] = []
+  r2_list: list[np.ndarray] = []
+  seq_ref_list: list[np.ndarray] = []
+  for fixture, batch in fixture_batches:
+    k = allocation.get(fixture["name"], 0)
+    if k <= 0 or batch.comparison_positions.size == 0:
+      continue
+    tag = f"{fixture['name']}{batch.lane}{seed_tag}"
+    a1 = restrict_to_comparison(
+      aminx_sample_batch(
+        jax_model, batch, k, _seed_for(tag + "A1"), temperature=temperature, beta_alanine=beta_a
+      ),
+      batch,
+    )
+    a2 = restrict_to_comparison(
+      aminx_sample_batch(jax_model, batch, k, _seed_for(tag + "A2"), temperature=temperature),
+      batch,
+    )
+    if reference_is_aminx:
+      r1 = restrict_to_comparison(
+        aminx_sample_batch(jax_model, batch, k, _seed_for(tag + "R1"), temperature=temp_r), batch
+      )
+      r2 = restrict_to_comparison(
+        aminx_sample_batch(jax_model, batch, k, _seed_for(tag + "R2"), temperature=temp_r), batch
+      )
+    else:
+      r1 = restrict_to_comparison(
+        reference_sample_batch(
+          pt_model, torch, batch, k, _seed_for(tag + "R1"), temperature=temp_r
+        ),
+        batch,
+      )
+      r2 = restrict_to_comparison(
+        reference_sample_batch(
+          pt_model, torch, batch, k, _seed_for(tag + "R2"), temperature=temp_r
+        ),
+        batch,
+      )
+    a1_list.append(a1)
+    a2_list.append(a2)
+    r1_list.append(r1)
+    r2_list.append(r2)
+    seq_ref_list.append(batch.seq_ref[batch.comparison_positions])
+  return a1_list, a2_list, r1_list, r2_list, seq_ref_list
+
+
+def full_arm_recovery(
+  arm1_list: list[np.ndarray], arm2_list: list[np.ndarray], seq_ref_list: list[np.ndarray]
+) -> np.ndarray:
+  """Per-sequence recovery over the FULL arm (`arm1 UNION arm2`, spec V3: "Recovery TOST
+  over the full arms"), pooled across fixtures."""
+  parts = []
+  for a1, a2, ref in zip(arm1_list, arm2_list, seq_ref_list, strict=True):
+    parts.append(per_sequence_recovery(a1, ref))
+    parts.append(per_sequence_recovery(a2, ref))
+  return np.concatenate(parts) if parts else np.asarray([])
+
+
+# --------------------------------------------------------------------------------------
+# Per-draw wall-clock cost measurement (C4's budget formula inputs)
+# --------------------------------------------------------------------------------------
+
+
+def measure_aminx_draw_cost_s(
+  jax_model: Any, batch: LaneBatch, temperature: float, *, n_warmup: int = 1, n_measure: int = 2
+) -> float:
+  """Seconds per aminx `sample_autoregressive.kernel` draw, STEADY-STATE (excludes the first
+  call's JIT compile via `n_warmup` untimed draws first)."""
+  import time
+
+  import jax
+
+  for i in range(n_warmup):
+    _randn, order = _draw_order_for(batch, 999_000 + i)
+    aminx_sample_one(
+      jax_model, batch, order, jax.random.PRNGKey(999_000 + i), temperature=temperature
+    )
+  start = time.monotonic()
+  for i in range(n_measure):
+    _randn, order = _draw_order_for(batch, 999_100 + i)
+    aminx_sample_one(
+      jax_model, batch, order, jax.random.PRNGKey(999_100 + i), temperature=temperature
+    )
+  return (time.monotonic() - start) / n_measure
+
+
+def measure_native_x_frequency(
+  jax_model: Any, batch: LaneBatch, temperature: float, n: int = 20, seed_base: int = 777_000
+) -> float:
+  """AC-11: a small, SEPARATE, non-gating diagnostic -- aminx's own X-sampling frequency
+  WITHOUT the X-omit bias column (i.e. what the model would do if nothing hard-omitted X),
+  reported alongside `x_token_count_*` for context, never used in any pass/fail decision."""
+  no_omit_bias = batch.bias.copy()
+  no_omit_bias[:, X_INDEX] = 0.0
+  eff_batch = dataclasses.replace(batch, bias=no_omit_bias)
+  seqs = aminx_sample_batch(jax_model, eff_batch, n, seed_base, temperature=temperature)
+  restricted = restrict_to_comparison(seqs, batch)
+  return float(np.mean(restricted == X_INDEX)) if restricted.size else 0.0
+
+
+def measure_reference_draw_cost_s(
+  pt_model: Any, torch: Any, batch: LaneBatch, temperature: float, n_sample: int
+) -> float:
+  """Seconds per reference draw, amortized over one batched (or batch-1-looped, for P09-s)
+  `.sample()` call of `n_sample` draws."""
+  import time
+
+  start = time.monotonic()
+  reference_sample_batch(pt_model, torch, batch, n_sample, 999_200, temperature=temperature)
+  return (time.monotonic() - start) / n_sample
 
 
 # --------------------------------------------------------------------------------------
