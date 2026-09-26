@@ -1,0 +1,98 @@
+[31mF[0m
+=================================== FAILURES ===================================
+[31m[1m______________________ test_invariant_3_fixed_first_order ______________________[0m
+
+    [0m[94mdef[39;49;00m[90m [39;49;00m[92mtest_invariant_3_fixed_first_order[39;49;00m() -> [94mNone[39;49;00m:[90m[39;49;00m
+    [90m  [39;49;00m[33m"""Every fixed (chain_mask = 0) residue is decoded before every designable one."""[39;49;00m[90m[39;49;00m
+      las = _las()[90m[39;49;00m
+      lane_batch = las.build_lane_batch(_fixture(SMALL_FIXTURE), [33m"[39;49;00m[33mP07@1.0[39;49;00m[33m"[39;49;00m, [94mNone[39;49;00m)[90m[39;49;00m
+      fixed = (lane_batch.mask * lane_batch.chain_mask) == [94m0[39;49;00m[90m[39;49;00m
+      [94massert[39;49;00m [94m0[39;49;00m < fixed.sum() < lane_batch.length[90m[39;49;00m
+    [90m[39;49;00m
+      [90m# reference: the order its own sample() returns[39;49;00m[90m[39;49;00m
+      _jax_model, pt_model, torch, _mu = _full_model()[90m[39;49;00m
+      [94mfor[39;49;00m seed [95min[39;49;00m [96mrange[39;49;00m([94m3[39;49;00m):[90m[39;49;00m
+        _seq, _lp, ref_order, _randn = las.reference_sample_one([90m[39;49;00m
+          pt_model, torch, lane_batch, [94m100[39;49;00m + seed, temperature=[94m1.0[39;49;00m[90m[39;49;00m
+        )[90m[39;49;00m
+        rank = np.empty(lane_batch.length, dtype=np.int64)[90m[39;49;00m
+        rank[ref_order] = np.arange(lane_batch.length)[90m[39;49;00m
+        [94massert[39;49;00m rank[fixed].max() < rank[~fixed].min(), [33m"[39;49;00m[33mreference: a designable residue precedes a fixed one[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+    [90m[39;49;00m
+      [90m# aminx: its native default schedule (`fixed_n_to_c`) is a designed DEVIATION (clause[39;49;00m[90m[39;49;00m
+      [90m# decoding_order_default), so the rule is checked on the kernel path the validation[39;49;00m[90m[39;49;00m
+      [90m# harness drives (host reference-formula order -> WaveScheduleBundle). Its semantic[39;49;00m[90m[39;49;00m
+      [90m# consequence is asserted directly: the FIRST designable step already sees every fixed[39;49;00m[90m[39;49;00m
+      [90m# residue, so changing one fixed token (even one far later in sequence index) moves that[39;49;00m[90m[39;49;00m
+      [90m# step's logits, and the fixed position itself returns its fixed token.[39;49;00m[90m[39;49;00m
+      [94mimport[39;49;00m[90m [39;49;00m[04m[96mjax[39;49;00m[90m[39;49;00m
+    [90m[39;49;00m
+      _randn, order = las._draw_order_for(lane_batch, [94m300[39;49;00m)  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+      first = [96mint[39;49;00m(order[np.isin(order, np.flatnonzero(~fixed))][[94m0[39;49;00m])[90m[39;49;00m
+      jax_model = _full_model()[[94m0[39;49;00m][90m[39;49;00m
+      _ef, e_idx, _nf, _k = jax_model.features([90m[39;49;00m
+        jax.random.PRNGKey([94m0[39;49;00m),[90m[39;49;00m
+        jax.numpy.asarray(lane_batch.x4),[90m[39;49;00m
+        jax.numpy.asarray(lane_batch.mask),[90m[39;49;00m
+        jax.numpy.asarray(lane_batch.residue_index, dtype=jax.numpy.int32),[90m[39;49;00m
+        jax.numpy.asarray(lane_batch.chain_index, dtype=jax.numpy.int32),[90m[39;49;00m
+        backbone_noise=[94m0.0[39;49;00m,[90m[39;49;00m
+      )[90m[39;49;00m
+      [90m# a fixed k-NN neighbour of `first` (so an edge exists), the latest one in sequence index[39;49;00m[90m[39;49;00m
+      far_fixed = [96mmax[39;49;00m([96mint[39;49;00m(j) [94mfor[39;49;00m j [95min[39;49;00m np.asarray(e_idx)[first] [94mif[39;49;00m fixed[[96mint[39;49;00m(j)] [95mand[39;49;00m [96mint[39;49;00m(j) != first)[90m[39;49;00m
+      seq0, logits0 = las.aminx_sample_one(jax_model, lane_batch, order, jax.random.PRNGKey([94m3[39;49;00m), temperature=[94m1.0[39;49;00m)[90m[39;49;00m
+      seq_ref = lane_batch.seq_ref.copy()[90m[39;49;00m
+      seq_ref[far_fixed] = _other_token(seq_ref[far_fixed])[90m[39;49;00m
+      mutated = dataclasses.replace(lane_batch, seq_ref=seq_ref)[90m[39;49;00m
+      seq1, logits1 = las.aminx_sample_one(jax_model, mutated, order, jax.random.PRNGKey([94m3[39;49;00m), temperature=[94m1.0[39;49;00m)[90m[39;49;00m
+>     [94massert[39;49;00m [96mint[39;49;00m(seq0[far_fixed]) == [96mint[39;49;00m(lane_batch.seq_ref[far_fixed]), [33m"[39;49;00m[33maminx: fixed position not held[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+[1m[31mE     AssertionError: aminx: fixed position not held[0m
+[1m[31mE     assert 8 == 14[0m
+[1m[31mE      +  where 8 = int(np.int32(8))[0m
+[1m[31mE      +  and   14 = int(np.int64(14))[0m
+
+[1m[31mtests/parity/test_mpnn_reference_invariants.py[0m:231: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Converting model from state dict with 118 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+------------------------------ Captured log call -------------------------------
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CG in residue GLU 68 (chain A)
+[32mINFO    [0m .prody:logger.py:123 ProDy is configured: verbosity='none'
+[33mWARNING [0m .prody:logger.py:141 WARNING prody cannot write configuration file to '/home/marielle', user does not have write access.
+[35mDEBUG   [0m .prody:logger.py:135 1227 atoms and 1 coordinate set(s) were parsed in 0.01s.
+[36m[1m=========================== short test summary info ============================[0m
+[31mFAILED[0m tests/parity/test_mpnn_reference_invariants.py::[1mtest_invariant_3_fixed_first_order[0m - AssertionError: aminx: fixed position not held
+[31m!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!![0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 30.21s[0m[0m

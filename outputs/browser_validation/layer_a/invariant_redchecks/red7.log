@@ -1,0 +1,109 @@
+[31mF[0m
+=================================== FAILURES ===================================
+[31m[1m____________________ test_invariant_7_membrane_labels_live _____________________[0m
+
+    [0m[94mdef[39;49;00m[90m [39;49;00m[92mtest_invariant_7_membrane_labels_live[39;49;00m() -> [94mNone[39;49;00m:[90m[39;49;00m
+      [94mimport[39;49;00m[90m [39;49;00m[04m[96mjax[39;49;00m[90m[39;49;00m
+      [94mimport[39;49;00m[90m [39;49;00m[04m[96mjax[39;49;00m[04m[96m.[39;49;00m[04m[96mnumpy[39;49;00m[90m [39;49;00m[94mas[39;49;00m[90m [39;49;00m[04m[96mjnp[39;49;00m[90m[39;49;00m
+    [90m[39;49;00m
+      [94mfrom[39;49;00m[90m [39;49;00m[04m[96maminx[39;49;00m[04m[96m.[39;49;00m[04m[96minference[39;49;00m[90m [39;49;00m[94mimport[39;49;00m score_conditional[90m[39;49;00m
+      [94mfrom[39;49;00m[90m [39;49;00m[04m[96maminx[39;49;00m[04m[96m.[39;49;00m[04m[96minference[39;49;00m[04m[96m.[39;49;00m[04m[96mbundle_builder[39;49;00m[90m [39;49;00m[94mimport[39;49;00m build_inference_bundle[90m[39;49;00m
+      [94mfrom[39;49;00m[90m [39;49;00m[04m[96maminx[39;49;00m[04m[96m.[39;49;00m[04m[96minference[39;49;00m[04m[96m.[39;49;00m[04m[96mlogits[39;49;00m[90m [39;49;00m[94mimport[39;49;00m make_stage_set[90m[39;49;00m
+    [90m[39;49;00m
+      lac, lae = _lac(), _lae()[90m[39;49;00m
+      models = lac.load_soluble_membrane_models([33m"[39;49;00m[33meqx[39;49;00m[33m"[39;49;00m)[90m[39;49;00m
+      batch = _batch(MEMBRANE_FIXTURE)[90m[39;49;00m
+      torch = models.torch[90m[39;49;00m
+      [94mfor[39;49;00m kind, pt_model [95min[39;49;00m ([90m[39;49;00m
+        ([33m"[39;49;00m[33mmembrane_per_residue[39;49;00m[33m"[39;49;00m, models.pt_membrane_per_residue),[90m[39;49;00m
+        ([33m"[39;49;00m[33mmembrane_global[39;49;00m[33m"[39;49;00m, models.pt_membrane_global),[90m[39;49;00m
+      ):[90m[39;49;00m
+        jax_model = lac.jax_model_for_source(models, [33m"[39;49;00m[33meqx[39;49;00m[33m"[39;49;00m, kind)[90m[39;49;00m
+        ref_lp, am_lp = [], [][90m[39;49;00m
+        [94mfor[39;49;00m label [95min[39;49;00m ([94m0[39;49;00m, [94m1[39;49;00m, [94m2[39;49;00m):[90m[39;49;00m
+          labels = np.full(batch.length, label, dtype=np.int64)[90m[39;49;00m
+          fd = lae._reference_feature_dict(torch, batch)  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+          fd[[33m"[39;49;00m[33mmembrane_per_residue_labels[39;49;00m[33m"[39;49;00m] = torch.from_numpy(labels[[94mNone[39;49;00m].copy())[90m[39;49;00m
+          ref_lp.append(lae._score_reference(pt_model, torch, fd, use_sequence=[94mTrue[39;49;00m))  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+          kw = lae._aminx_bundle_kwargs(batch, sequence_one_hot=[94mTrue[39;49;00m)  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+          kw[[33m"[39;49;00m[33mphysics_features[39;49;00m[33m"[39;49;00m] = jax.nn.one_hot(jnp.asarray(labels), [94m3[39;49;00m)[90m[39;49;00m
+          bundle, config = build_inference_bundle(mode=[33m"[39;49;00m[33mscore_conditional[39;49;00m[33m"[39;49;00m, **kw)[90m[39;49;00m
+          logits = score_conditional.kernel(jax_model, jax.random.PRNGKey([94m0[39;49;00m), bundle, config, make_stage_set())[90m[39;49;00m
+          am_lp.append(np.asarray(jax.nn.log_softmax(logits, axis=-[94m1[39;49;00m)))[90m[39;49;00m
+        [94mfor[39;49;00m side, lps [95min[39;49;00m (([33m"[39;49;00m[33mreference[39;49;00m[33m"[39;49;00m, ref_lp), ([33m"[39;49;00m[33maminx[39;49;00m[33m"[39;49;00m, am_lp)):[90m[39;49;00m
+          [94mfor[39;49;00m a [95min[39;49;00m [96mrange[39;49;00m([94m3[39;49;00m):[90m[39;49;00m
+            [94mfor[39;49;00m b [95min[39;49;00m [96mrange[39;49;00m(a + [94m1[39;49;00m, [94m3[39;49;00m):[90m[39;49;00m
+              delta = [96mfloat[39;49;00m(np.abs(lps[a] - lps[b]).max())[90m[39;49;00m
+>             [94massert[39;49;00m delta > [94m10[39;49;00m * LOG_PROB_BAR, [33mf[39;49;00m[33m"[39;49;00m[33m{[39;49;00mside[33m}[39;49;00m[33m/[39;49;00m[33m{[39;49;00mkind[33m}[39;49;00m[33m: labels [39;49;00m[33m{[39;49;00ma[33m}[39;49;00m[33m vs [39;49;00m[33m{[39;49;00mb[33m}[39;49;00m[33m barely move log-probs ([39;49;00m[33m{[39;49;00mdelta[33m}[39;49;00m[33m)[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+[1m[31mE             AssertionError: aminx/membrane_per_residue: labels 0 vs 1 barely move log-probs (0.0)[0m
+[1m[31mE             assert 0.0 > (10 * 0.0001)[0m
+
+[1m[31mtests/parity/test_mpnn_reference_invariants.py[0m:464: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Converting model from state dict with 118 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+Converting model from state dict with 123 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+Converting model from state dict with 123 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+------------------------------ Captured log call -------------------------------
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CG in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 68 (chain A)
+[32mINFO    [0m .prody:logger.py:123 ProDy is configured: verbosity='none'
+[33mWARNING [0m .prody:logger.py:141 WARNING prody cannot write configuration file to '/home/marielle', user does not have write access.
+[35mDEBUG   [0m .prody:logger.py:135 1227 atoms and 1 coordinate set(s) were parsed in 0.00s.
+[36m[1m=========================== short test summary info ============================[0m
+[31mFAILED[0m tests/parity/test_mpnn_reference_invariants.py::[1mtest_invariant_7_membrane_labels_live[0m - AssertionError: aminx/membrane_per_residue: labels 0 vs 1 barely move log-p...
+[31m!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!![0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 16.77s[0m[0m

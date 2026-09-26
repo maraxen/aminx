@@ -200,7 +200,9 @@ def test_invariant_3_fixed_first_order() -> None:
     )
     rank = np.empty(lane_batch.length, dtype=np.int64)
     rank[ref_order] = np.arange(lane_batch.length)
-    assert rank[fixed].max() < rank[~fixed].min(), "reference: a designable residue precedes a fixed one"
+    assert rank[fixed].max() < rank[~fixed].min(), (
+      "reference: a designable residue precedes a fixed one"
+    )
 
   # aminx: its native default schedule (`fixed_n_to_c`) is a designed DEVIATION (clause
   # decoding_order_default), so the rule is checked on the kernel path the validation
@@ -223,15 +225,23 @@ def test_invariant_3_fixed_first_order() -> None:
   )
   # a fixed k-NN neighbour of `first` (so an edge exists), the latest one in sequence index
   far_fixed = max(int(j) for j in np.asarray(e_idx)[first] if fixed[int(j)] and int(j) != first)
-  seq0, logits0 = las.aminx_sample_one(jax_model, lane_batch, order, jax.random.PRNGKey(3), temperature=1.0)
+  seq0, logits0 = las.aminx_sample_one(
+    jax_model, lane_batch, order, jax.random.PRNGKey(3), temperature=1.0
+  )
   seq_ref = lane_batch.seq_ref.copy()
   seq_ref[far_fixed] = _other_token(seq_ref[far_fixed])
   mutated = dataclasses.replace(lane_batch, seq_ref=seq_ref)
-  seq1, logits1 = las.aminx_sample_one(jax_model, mutated, order, jax.random.PRNGKey(3), temperature=1.0)
-  assert int(seq0[far_fixed]) == int(lane_batch.seq_ref[far_fixed]), "aminx: fixed position not held"
+  seq1, logits1 = las.aminx_sample_one(
+    jax_model, mutated, order, jax.random.PRNGKey(3), temperature=1.0
+  )
+  assert int(seq0[far_fixed]) == int(lane_batch.seq_ref[far_fixed]), (
+    "aminx: fixed position not held"
+  )
   assert int(seq1[far_fixed]) == int(seq_ref[far_fixed]), "aminx: fixed position not held"
   moved = float(np.abs(logits0[first] - logits1[first]).max())
-  assert moved > MOVED_MIN, f"aminx: first designable step {first} blind to fixed residue {far_fixed} ({moved})"
+  assert moved > MOVED_MIN, (
+    f"aminx: first designable step {first} blind to fixed residue {far_fixed} ({moved})"
+  )
 
 
 # --------------------------------------------------------------------------------------
@@ -263,16 +273,26 @@ def test_invariant_4_omit_and_x() -> None:
   ref_tokens = out["S"].numpy()
   probs = out["sampling_probs"].numpy()  # (B, L, 20), zero on fixed positions
   designable = (ref_batch.mask * ref_batch.chain_mask) > 0
-  assert float(probs[:, designable][..., omitted].max()) < OMIT_P_MAX, "reference: omitted AA has p >= 1e-30"
-  assert not np.isin(ref_tokens[:, designable], [*omitted, X_INDEX]).any(), "reference: sampled an omitted AA or X"
+  assert float(probs[:, designable][..., omitted].max()) < OMIT_P_MAX, (
+    "reference: omitted AA has p >= 1e-30"
+  )
+  assert not np.isin(ref_tokens[:, designable], [*omitted, X_INDEX]).any(), (
+    "reference: sampled an omitted AA or X"
+  )
 
   # aminx: omit via bias, X via the -1e8 X column
   am_batch = dataclasses.replace(base, bias=_omit_bias(base.length, x_column=True))
   am_tokens = las.aminx_sample_batch(_full_model()[0], am_batch, 8, 400, temperature=1.0)
-  assert not np.isin(am_tokens[:, designable], [*omitted, X_INDEX]).any(), "aminx: sampled an omitted AA or X"
-  sampling = (am_batch.bias[None] + _aminx_teacher_forced(am_batch, am_tokens[0], _order)[None]) / 1.0
+  assert not np.isin(am_tokens[:, designable], [*omitted, X_INDEX]).any(), (
+    "aminx: sampled an omitted AA or X"
+  )
+  sampling = (
+    am_batch.bias[None] + _aminx_teacher_forced(am_batch, am_tokens[0], _order)[None]
+  ) / 1.0
   p = _softmax(sampling[0])
-  assert float(p[designable][:, [*omitted, X_INDEX]].max()) < OMIT_P_MAX, "aminx: omitted AA has p >= 1e-30"
+  assert float(p[designable][:, [*omitted, X_INDEX]].max()) < OMIT_P_MAX, (
+    "aminx: omitted AA has p >= 1e-30"
+  )
 
 
 def _softmax(x: np.ndarray) -> np.ndarray:
@@ -340,7 +360,9 @@ def _aminx_one_step_frequencies(
 
   las = _las()
   wave = las.wave_from_tie_groups_np(batch.tie_group_map, order)
-  keep = np.asarray([int(np.flatnonzero(np.asarray(wave.group_ids)[:, 0] == batch.tie_group_map[position])[0])])
+  keep = np.asarray(
+    [int(np.flatnonzero(np.asarray(wave.group_ids)[:, 0] == batch.tie_group_map[position])[0])]
+  )
   wave = dataclasses.replace(
     wave,
     group_ids=wave.group_ids[keep],
@@ -455,13 +477,17 @@ def test_invariant_7_membrane_labels_live() -> None:
       kw = lae._aminx_bundle_kwargs(batch, sequence_one_hot=True)  # noqa: SLF001
       kw["physics_features"] = jax.nn.one_hot(jnp.asarray(labels), 3)
       bundle, config = build_inference_bundle(mode="score_conditional", **kw)
-      logits = score_conditional.kernel(jax_model, jax.random.PRNGKey(0), bundle, config, make_stage_set())
+      logits = score_conditional.kernel(
+        jax_model, jax.random.PRNGKey(0), bundle, config, make_stage_set()
+      )
       am_lp.append(np.asarray(jax.nn.log_softmax(logits, axis=-1)))
     for side, lps in (("reference", ref_lp), ("aminx", am_lp)):
       for a in range(3):
         for b in range(a + 1, 3):
           delta = float(np.abs(lps[a] - lps[b]).max())
-          assert delta > 10 * LOG_PROB_BAR, f"{side}/{kind}: labels {a} vs {b} barely move log-probs ({delta})"
+          assert delta > 10 * LOG_PROB_BAR, (
+            f"{side}/{kind}: labels {a} vs {b} barely move log-probs ({delta})"
+          )
 
 
 # --------------------------------------------------------------------------------------
@@ -482,7 +508,9 @@ def test_invariant_8_knn_brute_force() -> None:
   fixture = _fixture(SMALL_FIXTURE)
   batch = _batch(SMALL_FIXTURE)
   k = min(48, batch.length)
-  expected = _brute_force_knn(batch.x4[:, 1, :].astype(np.float64), batch.mask.astype(np.float64), k)
+  expected = _brute_force_knn(
+    batch.x4[:, 1, :].astype(np.float64), batch.mask.astype(np.float64), k
+  )
   near_tie = set((fixture.get("near_tie_residues") or {}).get(str(k)) or [])
   rows = [i for i in range(batch.length) if batch.mask[i] > 0 and i not in near_tie]
   assert len(rows) > batch.length // 2
@@ -503,4 +531,6 @@ def test_invariant_8_knn_brute_force() -> None:
   am_idx = np.asarray(am_idx)[:, :k]
   for side, idx in (("reference", ref_idx), ("aminx", am_idx)):
     bad = [i for i in rows if set(idx[i].tolist()) != set(expected[i].tolist())]
-    assert not bad, f"{side}: neighbour set != brute force at {len(bad)} no-tie residues, e.g. {bad[:5]}"
+    assert not bad, (
+      f"{side}: neighbour set != brute force at {len(bad)} no-tie residues, e.g. {bad[:5]}"
+    )

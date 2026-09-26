@@ -41,18 +41,20 @@ check, FROZEN check, or identity query being absent/failed) -> `"missing"` or
 `"failed"`, `parity_grade` forced to `"FAIL"` WITHOUT calling
 `bathos.parity.compute_grade` (only `prereq_status in ("ok", "headroom")`
 calls it) -- and the FULL result (every `result_schema` key, `ceilings`,
-`metadata`) is still written before this script exits 6. This branch is the
-one live on `dogfood/xtrax-probing-stage2` right now: the ledger has a
+`metadata`) is still written before this script exits 0. This branch is the
+one live on `feat/browser-validation-spec` right now: the ledger has a
 `layer_a_exact_validate` entry (`partial_headroom`) but no
 `layer_a_sampling_validate` entry at all (the sampling calibrate ended
 `budget_exceeded`, so no sampling params exist to validate against) ->
 `prereq_status = "missing"`.
 
 Exit codes: 5 (`bth sync --pull`/`bth compact` failed; skippable only via
-`--no-sync`, tests only -- a real `bth run` always syncs first, R2-C1); 6
-(`prereq_status` not in `{"ok", "headroom"}`, result written); 7 (clauses
+`--no-sync`, tests only -- a real `bth run` always syncs first, R2-C1); 7 (clauses
 sha256 mismatch, `litparity_schema.py` validation failure, or a real run's
-`adjudication.json` missing). Exit 0 otherwise -- the sidecar's own
+`adjudication.json` missing). Exit 0 otherwise, INCLUDING `prereq_status` not in
+`{"ok", "headroom"}` (result written, graded FAIL): bathos 84be544e overrides any non-zero
+exit to outcome='error', so the spec's exit 6 would mask the FAIL. `EXIT_PREREQ_BAD` is kept
+only as a named constant for that history -- the sidecar's own
 `[outcomes]` conditions, not this exit code, are what bathos evaluates into
 `pass`/`partial`/`fail`.
 """
@@ -521,8 +523,11 @@ def main(argv: list[str] | None = None) -> int:
     reproduction_rung,
   )
 
-  if prereq_status not in ("ok", "headroom"):
-    return EXIT_PREREQ_BAD
+  # A missing/failed prerequisite is a graded FAIL, not a crash: the full result is written
+  # above, so exit 0 and let the sidecar's residual `[outcomes.fail]` classify it. bathos
+  # 84be544e forces outcome='error' on ANY non-zero exit before evaluating outcomes (the
+  # same trap the sampling calibrate hit, run 1a45a859 -> fix 799a1c4a), so returning
+  # EXIT_PREREQ_BAD here would record 'error' and hide the honest FAIL.
   return 0
 
 
