@@ -96,5 +96,33 @@
     "fixture_set": "B",
     "params_sha256": "0c833b70b38b94ff9a06fcf4905918ec26e8a51eab031f3c2b641c3abf295a78",
     "summary": "110 comparisons, 0 advanced over bar, 27 not_advanced over bar, controls 6/6"
+  },
+  {
+    "stem": "layer_a_sampling_calibrate",
+    "H_v": "afbbc630544f0491a7649766ee15eb674303ebb6",
+    "session": "bv-layer_a_sampling_calibrate-afbbc630544f",
+    "exit": 1,
+    "free_gb_before_sync": 96,
+    "prereg_sha256": "1a28a5ad74956354c3489c77dfa212256147b756d8e232bd3cba54380ca715ec",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "1a45a859-12e3-4221-98d4-d458470d1ee1",
+    "outcome": "error",
+    "fixture_set": "A",
+    "gpu": 2,
+    "summary": "floor budget 435.5 h > 16 h cap, RSS 4.18 GiB; result evaluates to budget_exceeded under the pinned evaluate_outcome, but the script exited 1 and bathos 84be544e forces outcome=error on any non-zero exit; superseded by 799a1c4a"
+  },
+  {
+    "stem": "layer_a_sampling_calibrate",
+    "H_v": "799a1c4a0816878abac95233c632932914582226",
+    "session": "bv-layer_a_sampling_calibrate-799a1c4a0816",
+    "exit": 0,
+    "free_gb_before_sync": 81,
+    "prereg_sha256": "1a28a5ad74956354c3489c77dfa212256147b756d8e232bd3cba54380ca715ec",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "4f07f070-45d9-46f6-ae87-6b5329711821",
+    "outcome": "budget_exceeded",
+    "fixture_set": "A",
+    "gpu": 2,
+    "summary": "validate budget at the n=1500 floor 483.0 h (cap 16 h; per lane 71-105 h), peak RSS 4.18 GiB; no pilot, no params written; sampling tier NOT validated at the pre-registered scale (D10)"
   }
 ]
