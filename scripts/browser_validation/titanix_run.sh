@@ -71,6 +71,16 @@ export OPENBLAS_NUM_THREADS=16
 export MKL_NUM_THREADS=16
 export BTH_BIN="$TX_BTH"
 
+# Deviation D10: GPU mode (set by titanix_launch.sh --gpu N). Only GPU N is visible, and JAX
+# must not preallocate: titanix's other GPUs serve vLLM. The reference (torch) stays on CPU.
+UV_EXTRAS=(--extra dev --extra benchmark)
+if [ -n "${BV_GPU:-}" ]; then
+  export CUDA_VISIBLE_DEVICES="$BV_GPU"
+  export JAX_PLATFORMS="cuda"
+  export XLA_PYTHON_CLIENT_PREALLOCATE="false"
+  UV_EXTRAS+=(--extra cuda12)
+fi
+
 # So prereq_check() sees a warm catalog (R2-C1: a local `bth run` writes only cool-tier
 # parquet; `bth sql`/prereq checks read only the warm bathos.db).
 "$TX_BTH" compact
@@ -84,7 +94,7 @@ OUT_PATH="outputs/browser_validation/layer_a/${STEM}.json"
 # `--prerelease=allow` token would swallow the following one and break the pairing);
 # without it the `--with` overlay fails to resolve (fastmcp-slim prerelease).
 taskset -c 0-15 "$TX_BTH" run --campaign-id "$CAMPAIGN_ID" --output-paths "$OUT_PATH" -- \
-  "$TX_UV" run --frozen --no-sync --extra dev --extra benchmark --with "$BATHOS_REQ" --prerelease allow python \
+  "$TX_UV" run --frozen --no-sync "${UV_EXTRAS[@]}" --with "$BATHOS_REQ" --prerelease allow python \
   "scripts/browser_validation/${STEM}.py" "${SCRIPT_ARGS[@]}" --out "$OUT_PATH"
 
 echo "=== titanix_run.sh finished $(date -u +%FT%TZ) ==="

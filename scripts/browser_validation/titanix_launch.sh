@@ -50,7 +50,7 @@ self_test() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: titanix_launch.sh <stem> <campaign-id> [SCRIPT_ARGS...]
+Usage: titanix_launch.sh [--gpu N] [--prepare-only] <stem> <campaign-id> [SCRIPT_ARGS...]
        titanix_launch.sh --self-test
 EOF
 }
@@ -59,6 +59,31 @@ if [ "${1:-}" = "--self-test" ]; then
   self_test
   exit $?
 fi
+
+# Deviation D10 (user-approved 260925): the sampling tier (T8) runs its aminx draws on ONE
+# titanix GPU -- aminx AR draws cost ~2 s each on CPU (the kernel recomputes the decoder
+# every step), which puts the pre-registered protocol far past the 16 h CPU budget.
+# `--gpu N` exposes only GPU N to the run (titanix's other GPUs serve vLLM and must stay
+# untouched) and syncs the lock's `cuda12` extra. `--prepare-only` stops after the checkout
+# is materialized and synced (no unit is started) and prints its path -- for probes.
+GPU=""
+PREPARE_ONLY=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --gpu)
+      case "${2:-}" in
+        [0-9]) GPU="$2" ;;
+        *) echo "titanix_launch.sh: --gpu needs a single GPU index" >&2; exit 2 ;;
+      esac
+      shift 2
+      ;;
+    --prepare-only)
+      PREPARE_ONLY=1
+      shift
+      ;;
+    *) break ;;
+  esac
+done
 
 if [ "$#" -lt 2 ]; then
   usage
@@ -126,11 +151,12 @@ ssh titanix mkdir -p "$TX_LFS_STORE"
 rsync -a --files-from="$lfs_list" "${LFS_DIR}/" "titanix:${TX_LFS_STORE}/"
 rm -f "$lfs_list"
 
-ssh titanix bash -s -- "$RD" "$H" "$TX_LFS_STORE" <<'REMOTE'
+ssh titanix bash -s -- "$RD" "$H" "$TX_LFS_STORE" "${GPU:-none}" <<'REMOTE'
 set -euo pipefail
 RD="$1"
 H="$2"
 STORE="$3"
+GPU="$4"
 avail=$(df -B1G --output=avail /home/solab | tail -1 | tr -d ' ')
 if [ "$avail" -lt 30 ]; then
   echo "titanix_launch.sh (remote): only ${avail}G free under /home/solab (need >=30G); refusing" >&2
@@ -166,14 +192,23 @@ if [ -n "$(git status --porcelain)" ]; then
   echo "titanix_launch.sh (remote): worktree dirty after LFS materialization" >&2
   exit 1
 fi
-/home/solab/.local/bin/uv sync --frozen --extra dev --extra benchmark
+extras=(--extra dev --extra benchmark)
+[ "$GPU" != "none" ] && extras+=(--extra cuda12)
+/home/solab/.local/bin/uv sync --frozen "${extras[@]}"
 REMOTE
+
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+  echo "$RD"
+  exit 0
+fi
 
 # A transient systemd --user unit, detached from this ssh session (F-C7: this is the
 # ODQ-13 mechanism -- tmux is NOT installed on titanix). --collect lets a finished unit
 # be garbage-collected; the orchestrator's poll (T4 common context step 5) treats that
 # as terminal via `systemctl --user is-active`, not via unit persistence.
-ssh titanix systemd-run --user "--unit=${SESSION}" --collect -p MemoryMax=64G -p MemorySwapMax=0 \
+gpu_env=()
+[ -n "$GPU" ] && gpu_env=("--setenv=BV_GPU=${GPU}")
+ssh titanix systemd-run --user "--unit=${SESSION}" --collect -p MemoryMax=64G -p MemorySwapMax=0 "${gpu_env[@]}" \
   "${RD}/scripts/browser_validation/titanix_run.sh" "$RD" "$H" "$CAMPAIGN_ID" "$STEM" "${SCRIPT_ARGS[@]}"
 
 echo "$SESSION"
