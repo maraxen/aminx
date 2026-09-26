@@ -1,0 +1,29 @@
+{
+  "parity_grade": "FAIL",
+  "prereq_status": "missing",
+  "exact_validate_outcome": "partial_headroom",
+  "sampling_validate_outcome": "missing",
+  "clause_parity_pct": 0.5757575757575758,
+  "invariant_pass": true,
+  "n_invariant_tests": 8,
+  "n_invariant_skipped": 0,
+  "adversarial_survived": false,
+  "reproduction_rung": "R4",
+  "ambiguity_load": "load_bearing",
+  "n_ambiguous": 1,
+  "ceilings": {
+    "prereq_status": "FAIL"
+  },
+  "metadata": {
+    "parity_run_type": "literature_parity"
+  },
+  "exact_reasons": [
+    "FROZEN paths differ between H_v 4c3a9c3b13e3c3b62b317045a2f0f80160796178 and HEAD"
+  ],
+  "sampling_reasons": [
+    "no ledger entry for layer_a_sampling_validate"
+  ],
+  "git_hash": "e4b86a0c0da96313449c2c72fe212eca994b6eea",
+  "git_clean": true,
+  "prereg_sha256": "2b868fc756d75a5c97313e2455f1661c3956063d6dd7919bb78a772bea384ba4"
+}
