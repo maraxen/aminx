@@ -1,0 +1,29 @@
+{
+  "rule": "confirmed on >= 2 attacker votes OR a runnable test; every entry below carries a runnable probe",
+  "defects_confirmed": [
+    {"id": "ligand_atom_context", "paths": ["P11"], "severity": "core", "votes": ["hyper", "stats"], "runnable": true, "new": false,
+     "evidence": "PrxteinLigandMPNN has no atom_context_num parameter; loaded model wires 16 vs checkpoint 25; up to 3.956 nats logit change on 5L33 (stats); orchestrator confirmed ligand_mpnn.py:171"},
+    {"id": "membrane_label_encoding", "paths": ["P13", "P01"], "severity": "core", "votes": ["hyper", "stats"], "runnable": true, "new": false,
+     "evidence": "physics_projection.bias bit-identical to random init (absmax 0.571); zeroing it moves logits up to 5.478 nats on 6MRR"},
+    {"id": "ligand_context_fusion_bias", "paths": ["P11"], "severity": "core", "votes": ["hyper"], "runnable": true, "new": true,
+     "evidence": "ligand_mpnn.py:224 v_c = eqx.nn.Linear(...) without use_bias=False; reference model_utils.py:50 V_C bias=False; shipped v_c.bias equals random-init skeleton (orchestrator confirmed both lines)"},
+    {"id": "positional_encoding_ligand", "paths": ["P11", "P01"], "severity": "core", "votes": ["hyper"], "runnable": true, "new": false,
+     "evidence": "aminx use_bias=False drops a real nonzero reference bias (mean 0.0189, std 0.0263)"},
+    {"id": "weight_conversion_bias_handling", "paths": ["P01", "P11", "P13"], "severity": "core", "votes": ["hyper"], "runnable": true, "new": false,
+     "evidence": "systematic diff of 14 reference bias=False sites vs 12 aminx use_bias=False sites: 2 invented, 1 dropped"},
+    {"id": "checkpoint_topology_source", "paths": ["P01", "P11"], "severity": "core", "votes": ["hyper"], "runnable": true, "new": false,
+     "evidence": "execution-verified correct for ligandmpnn_v_32_010_25 but misparses a membrane checkpoint's noise suffix as atom_context_num"},
+    {"id": "conditional_score_context_mask", "paths": ["P05", "P06"], "severity": "core", "votes": ["stats"], "runnable": true, "new": false,
+     "evidence": "mutating only residue i's own token moves logits[i] up to 0.839 nats (mean 0.238) under the 1-I default: 2-hop self-identity leak"},
+    {"id": "sample_log_probs_output", "paths": ["P07", "P09"], "severity": "core", "votes": ["stats"], "runnable": true, "new": false,
+     "evidence": "fixed-position sample logits are full log-softmax rows (mean abs 5.534 nats) where the reference returns 0"},
+    {"id": "ar_mask_order_rank_convention_mismatch", "paths": ["P07", "P19"], "severity": "major", "votes": ["struct"], "runnable": true, "new": true,
+     "evidence": "generate_ar_mask (utils/autoregression.py:190) compares decoding_order[i] >= decoding_order[j] i.e. expects rank[position]; sampling/sample.py:181 and inference/decode/ste.py:383 pass decoding_order_fn's order[step]=position; 24/64 mask cells differ on an 8-residue custom order; harmless for uniform-random order (inverse is also uniform), wrong for any deliberate custom order (orchestrator confirmed the lines)"}
+  ],
+  "rejected": [
+    {"id": "ar_visibility_mask", "lens": "struct", "reason": "attacker's own verdict 'accepted': full-recompute vs incremental reveal bit-exact (max_abs_diff 0.0) with controls; MATCH stands"}
+  ],
+  "adversarial_survived": false,
+  "ambiguity_load": "load_bearing",
+  "n_ambiguous": 1
+}
