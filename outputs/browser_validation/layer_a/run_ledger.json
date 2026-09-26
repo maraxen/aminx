@@ -69,5 +69,18 @@
     "run_id": "bee2a25c-f3fb-4ed2-9c1a-942ed7d3ae6d",
     "outcome": "pass",
     "params_section_sha256": "0e74e37f586e3dc18e7dbf1c8950d9c6fed038f4b323065c63ef984a58f225ca"
+  },
+  {
+    "stem": "layer_a_exact_validate",
+    "H_v": "9d8d44d88151038e29333184123d9ac3befccabd",
+    "session": "bv-layer_a_exact_validate-9d8d44d88151",
+    "exit": 0,
+    "free_gb_before_sync": 125,
+    "prereg_sha256": "dfe485cd4d35eb15a18e84d35230f7e0a49df1cb5be63f02abb227061bf59754",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "d59d8464-f75d-46ab-beef-92fbfe0e6b20",
+    "outcome": "ctrl_blind",
+    "fixture_set": "B",
+    "note": "knn_neighbor_move control vacuous on 1BC8 (masked residue 0); fixed as D9, relaunch required"
   }
 ]

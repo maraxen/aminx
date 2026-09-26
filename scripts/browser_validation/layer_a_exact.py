@@ -1569,15 +1569,27 @@ def _control_knn_neighbor_move(
     k = max(1, batch.length - 2)
   ca_idx = int(atom_order["CA"])
 
+  # Query the first UNMASKED residue (D9): a masked query row is all-inf distances, so
+  # top_k returns an arbitrary set no coordinate move can change (1BC8 residue 0 is
+  # masked, which made this control vacuous on set B, titanix validate run d59d8464).
+  valid = np.flatnonzero(np.asarray(batch.mask) > 0)
+  if valid.size < k + 2:
+    msg = f"{fixture['name']}: {valid.size} unmasked residues, too few for a k={k} control"
+    raise ValueError(msg)
+  query = int(valid[0])
+
   before = fixtures._neighbor_indices(batch.atom37, batch.mask, k)  # noqa: SLF001
-  before_set = set(before[0].tolist())
+  before_set = set(before[query].tolist())
 
   moved_atom37 = batch.atom37.copy()
-  target = before[0][-1] if before[0].size else 0
+  target = int(before[query][-1])
+  if not batch.mask[target] > 0:
+    msg = f"{fixture['name']}: k-th neighbour {target} of query {query} is masked"
+    raise ValueError(msg)
   moved_atom37[target, ca_idx, :] += _KNN_MOVE_ANGSTROM
 
   after = fixtures._neighbor_indices(moved_atom37, batch.mask, k)  # noqa: SLF001
-  after_set = set(after[0].tolist())
+  after_set = set(after[query].tolist())
 
   n_changed = len(before_set.symmetric_difference(after_set))
   return _control(
