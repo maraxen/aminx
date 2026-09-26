@@ -341,3 +341,20 @@ def test_cli_exits_one_and_prints_every_violation(tmp_path: Path, capsys: Any) -
   assert "decoding_order_default" in out
   assert "knn_k_clamp" in out
   assert "violation(s) found" in out
+
+
+def test_ambiguity_load_rule_covers_every_branch() -> None:
+  """R3-C5: none / non_load_bearing (out-of-scope, non-core) / load_bearing (in-scope)."""
+  base = [
+    {"element": "a", "verdict": "MATCH", "core": True, "paths": ["P07"]},
+  ]
+  assert compute_ambiguity(base) == (0, "none")
+  out_of_scope = [*base, {"element": "b", "verdict": "AMBIGUOUS", "core": False, "paths": ["P20"]}]
+  assert compute_ambiguity(out_of_scope) == (1, "non_load_bearing")
+  in_scope = [
+    *out_of_scope,
+    {"element": "c", "verdict": "AMBIGUOUS", "core": False, "paths": ["P09"]},
+  ]
+  assert compute_ambiguity(in_scope) == (2, "load_bearing")
+  core_only = [*base, {"element": "d", "verdict": "AMBIGUOUS", "core": True, "paths": ["P20"]}]
+  assert compute_ambiguity(core_only) == (1, "load_bearing")
