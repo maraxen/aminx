@@ -82,5 +82,19 @@
     "outcome": "ctrl_blind",
     "fixture_set": "B",
     "note": "knn_neighbor_move control vacuous on 1BC8 (masked residue 0); fixed as D9, relaunch required"
+  },
+  {
+    "stem": "layer_a_exact_validate",
+    "H_v": "4c3a9c3b13e3c3b62b317045a2f0f80160796178",
+    "session": "bv-layer_a_exact_validate-4c3a9c3b13e3",
+    "exit": 0,
+    "free_gb_before_sync": 124,
+    "prereg_sha256": "dfe485cd4d35eb15a18e84d35230f7e0a49df1cb5be63f02abb227061bf59754",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "53ba3928-b640-4c32-8e30-080f93fc43ee",
+    "outcome": "partial_headroom",
+    "fixture_set": "B",
+    "params_sha256": "0c833b70b38b94ff9a06fcf4905918ec26e8a51eab031f3c2b641c3abf295a78",
+    "summary": "110 comparisons, 0 advanced over bar, 27 not_advanced over bar, controls 6/6"
   }
 ]
