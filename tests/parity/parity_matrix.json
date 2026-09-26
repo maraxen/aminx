@@ -60,10 +60,11 @@
     {
       "id": "autoregressive-sampling",
       "tier": "parity_heavy",
-      "code_paths": ["src/aminx/sampling/sample.py", "src/aminx/host/runner.py", "src/aminx/model/mpnn.py"],
+      "code_paths": ["src/aminx/sampling/sample.py", "src/aminx/host/runner.py", "src/aminx/model/mpnn.py", "src/aminx/inference/sample_autoregressive.py"],
       "reference": "LigandMPNN autoregressive sample branch",
       "method": "stepwise deterministic sample parity",
       "metrics": ["stepwise logit drift", "token agreement", "sequence recovery"],
+      "note": "token agreement is non-discriminating under bias[...,0]=100; the discriminating gate is the teacher-forced lane (layer_a_sampling)",
       "acceptance": {
         "correlation_min": 0.95
       }
@@ -75,6 +76,7 @@
       "reference": "LigandMPNN tie-group and multi-state sampling behavior",
       "method": "group-combined branch parity with explicit apples-to-apples comparison lanes",
       "metrics": ["group correlation", "strategy invariants"],
+      "note": "token agreement is non-discriminating under bias[...,0]=100; the discriminating gate is the teacher-forced lane (layer_a_sampling)",
       "acceptance": {
         "correlation_min": 0.95,
         "comparison_lanes": [
@@ -153,7 +155,7 @@
     {
       "id": "logits-helper-branches",
       "tier": "parity_fast",
-      "code_paths": ["src/aminx/sampling/conditional_logits.py"],
+      "code_paths": ["src/aminx/sampling/conditional_logits.py", "src/aminx/inference/score_unconditional.py"],
       "reference": "Internal branch-to-helper consistency",
       "method": "helper vs direct branch parity",
       "metrics": ["allclose", "shape equality"],
@@ -226,7 +228,7 @@
     {
       "id": "end-to-end-run-apis",
       "tier": "parity_fast",
-      "code_paths": ["src/aminx/run/_exports.py", "src/aminx/host/runner.py"],
+      "code_paths": ["src/aminx/run/_exports.py", "src/aminx/host/runner.py", "src/aminx/scoring/score.py", "src/aminx/sampling/sample.py", "src/aminx/inference/sample_autoregressive.py"],
       "reference": "Internal user-facing API contract",
       "method": "fixture-driven API parity",
       "metrics": ["output shape", "score contract", "pseudo-perplexity contract"],
