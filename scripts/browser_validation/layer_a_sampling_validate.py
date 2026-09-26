@@ -2,7 +2,10 @@
 
 Bathos staging's "validation" twin for `layer_a_sampling.py`'s engine, run against
 `layer_a_sampling_calibrate.py`'s committed `preregistered_params.json` (`sampling`
-section). Mirrors `layer_a_exact_validate.py` (T7b) closely:
+section). Mirrors `layer_a_exact_validate.py` (T7b) closely. Spec refs:
+`.praxia/docs/specs/260923_aminx-browser-validation.md` lines 118-200 ("Lane
+temperatures", "Sampling statistics", "Pooling, bootstrap and compute budget", "P09-s
+lane restrictions", R3-C6).
 
 - **Anti-HARKing gate**, identical mechanics (`git ls-files --error-unmatch` +
   `git diff --quiet HEAD --` on the params file), but ALSO asserts `jq -S .exact` on
@@ -18,18 +21,52 @@ section). Mirrors `layer_a_exact_validate.py` (T7b) closely:
 - **`--dry-run`** checks imports/manifest, and that the sidecar's `[differential].min_effect`
   is `> 0` and equals the committed `sampling.min_effect` (R2-C6-style equality check,
   mirroring T7b exactly).
-- **`--smoke`** runs ONE fixture (`SMOKE_FIXTURE_NAME`, set B), ONE lane (`SMOKE_LANE`),
-  `n = SMOKE_N` (spec step 5: "one fixture, one lane, n = 50, in < 60 s") -- teacher-forced
-  comparison plus a small statistical draw (`SMOKE_N` aminx draws split A1/A2, one
-  BATCHED reference call split R1/R2 -- the reference side is cheap regardless of `n`;
-  the aminx side is the wall-clock driver). **Measured during this task's own
-  development** (CPU, `.venv` cold): a single aminx autoregressive sample draw at
-  `L=106` costs ~6.6 s the FIRST time (JIT compile) and ~1.1 s steady-state per
-  subsequent draw with the SAME shapes -- so `SMOKE_N=50` on the smallest set-B
-  fixture is expected to land close to, and possibly slightly over, the "< 60 s"
-  target on slower hardware; the fix, if titanix measurement confirms it runs over,
-  is a smaller `SMOKE_N`/`SMOKE_FIXTURE_NAME`, never touching the pre-registered
-  `n_required` machinery itself. Reported, not silently worked around.
+- **Each arm draws `2n` per lane (V1).** `n = sampling.n_required`, ALLOCATED across
+  fixtures per the committed `sampling.draw_allocation` (never `n` PER fixture -- that
+  was a real bug fixed in this revision). `A1`/`A2` (aminx) and `R1`/`R2` (reference)
+  each draw `allocation[fixture]` sequences per fixture, independently seeded, so
+  `A1` pooled == `A2` pooled == `n_required`, and the reported `n_per_arm` (V1) is the
+  AMINX ARM's total (`A1`+`A2` = `2*n_required` when fully powered) -- the field the
+  sidecar's `underpowered = n_per_arm < 2*n_required` condition actually needs to be
+  meaningful; a `--smoke` run correctly reports a SMALL `n_per_arm` and is correctly
+  classified `underpowered`, never `pass`.
+- **Bootstrap `n_boot = 1000` everywhere** (V2) -- lanes AND controls, no local
+  shortcut.
+- **Recovery TOST over the FULL arms** (V3): `A1 UNION A2` vs `R1 UNION R2`
+  (`las.full_arm_recovery`), not a same-index-only comparison.
+- **`x_token_count_aminx`/`omitted_aa_count`/`x_token_count_reference`** (V4) are
+  counted over ALL statistical draws of BOTH arms in every lane (`las.count_x`/
+  `las.count_omitted` on the pooled `A1+A2`/`R1+R2` arrays), never hardcoded and never
+  only from the teacher-forced sequence. `measure_native_x_frequency` (AC-11) reports
+  aminx's own X-sampling rate WITHOUT the hard omit, as a small, separate,
+  NON-gating diagnostic.
+- **Controls (V5)**: pooled over set B at the SAME `draw_allocation`, per-replicate
+  `n = n_required` per half (`2n` per arm), `n_boot = 1000`; positive = aminx+beta vs
+  UNPERTURBED aminx (no reference draws needed for either control, per this explicit
+  allowance).
+- **`excess_js` is the point estimate** (V6, `aminx.parity.compare.excess_js` via
+  `las.pooled_excess_js`), never `None` -- `excess_js_ub` is the SEPARATE bootstrap
+  upper bound.
+
+**Schema completeness / no inf-or-NaN (binding, titanix finding 2026-09-25).** EVERY
+key this script's sidecar declares under `[result_schema]` is present in EVERY result
+this module writes (full, `--smoke`, AND the differential-arm path), with a documented
+zero/empty default where a field genuinely was not computed on that path -- never
+omitted. No result field is ever a bare `inf`/`nan`: `las.UNCOMPUTED_SENTINEL` (a large
+finite float) stands in wherever a ratio/margin could not be computed (e.g. a missing
+committed margin, or a degenerate zero-margin division).
+
+**`--smoke`** runs ONE fixture (`SMOKE_FIXTURE_NAME`, set B), ONE lane (`SMOKE_LANE`),
+`n = SMOKE_N` (spec step 5: "one fixture, one lane, n = 50, in < 60 s") -- teacher-forced
+comparison plus a small statistical draw (`SMOKE_N` per sub-arm: `A1`/`A2` each aminx,
+`R1`/`R2` each reference). **Measured during this task's own development** (CPU,
+`.venv` cold): a single aminx autoregressive sample draw at `L=106` costs ~6.6 s the
+FIRST time (JIT compile) and ~1.1 s steady-state per subsequent draw with the SAME
+shapes -- so `SMOKE_N=50` (`2*SMOKE_N=100` total aminx draws for A1+A2) on the smallest
+set-B fixture is expected to land close to, and possibly over, the "< 60 s" target on
+slower hardware; the fix, if titanix measurement confirms it runs over, is a smaller
+`SMOKE_N`/`SMOKE_FIXTURE_NAME`, never touching the pre-registered `n_required`
+machinery itself. Reported, not silently worked around.
 """
 
 from __future__ import annotations
@@ -68,11 +105,12 @@ DIFFERENTIAL_KNOB = "AMINX_BV_SAMPLING_BIAS"
 SMOKE_FIXTURE_NAME = "6MRR"
 SMOKE_LANE = "P07@1.0"
 SMOKE_N = 50  # spec step 5: "one fixture, one lane, n = 50" -- see module docstring's timing note
+N_BOOT = las.DEFAULT_N_BOOT  # 1000, spec-mandated everywhere (V2)
+NATIVE_X_FREQ_N = 10  # AC-11: small, non-gating
 
 EXIT_ANTI_HARKING = 5
 EXIT_DIFFERENTIAL_KNOB_MISMATCH = 2
 EXIT_SKIPPED = 4
-EXIT_KNN_VIOLATION = 2
 
 
 def _relative_to_worktree(path: Path) -> str:
@@ -159,11 +197,9 @@ def _main_js_vs_ref(
   perturb: bool,
   n: int = 20,
 ) -> float:
-  """Differential-phase metric: pooled main_js_vs_ref (mean excess_js proxy: JS between the
-  main aminx arm's pooled composition and the reference arm's, off or on) over `reduced_subset`
-  at `lane_temperatures['P07@1.0']` (the reduced subset's own pre-registered lane)."""
-  from aminx.parity.compare import mean_positional_js, token_counts
-
+  """Differential-phase metric: pooled main_js_vs_ref (JS between the main aminx arm's
+  pooled composition and the reference arm's, off or on) over `reduced_subset` at
+  `lane_temperatures['P07@1.0']` (the reduced subset's own pre-registered lane)."""
   lane = "P07@1.0"
   temperature = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES).get(lane, 1.0)
   beta = sampling.get("beta", las.DEFAULT_BETA) if perturb else 0.0
@@ -174,29 +210,25 @@ def _main_js_vs_ref(
   reference_arms: list[np.ndarray] = []
   for fixture in reduced_subset:
     batch = las.build_lane_batch(fixture, lane, data_utils_module)
-    aminx_arms.append(
-      las.aminx_sample_batch(
-        jax_model,
-        batch,
-        n,
-        las._seed_for(fixture["name"] + "main_js_a"),
-        temperature=temperature,
-        beta_alanine=beta,
-      )
+    aminx_full = las.aminx_sample_batch(
+      jax_model,
+      batch,
+      n,
+      las._seed_for(fixture["name"] + "main_js_a"),
+      temperature=temperature,
+      beta_alanine=beta,
     )
-    reference_arms.append(
-      las.reference_sample_batch(
-        pt_model,
-        torch,
-        batch,
-        n,
-        las._seed_for(fixture["name"] + "main_js_r"),
-        temperature=temperature,
-      )
+    reference_full = las.reference_sample_batch(
+      pt_model,
+      torch,
+      batch,
+      n,
+      las._seed_for(fixture["name"] + "main_js_r"),
+      temperature=temperature,
     )
-  aminx_counts = token_counts(aminx_arms, k=21)
-  reference_counts = token_counts(reference_arms, k=21)
-  return float(mean_positional_js(aminx_counts, reference_counts))
+    aminx_arms.append(las.restrict_to_comparison(aminx_full, batch))
+    reference_arms.append(las.restrict_to_comparison(reference_full, batch))
+  return las.pooled_js(aminx_arms, reference_arms, k=21)
 
 
 def run_differential_arm(
@@ -263,28 +295,36 @@ def run_dry_run(params: dict[str, Any], args: argparse.Namespace) -> int:
   return 0
 
 
+def _lane_margin(sampling: dict[str, Any], lane: str) -> float:
+  margin = sampling.get("margins", {}).get(lane)
+  if margin is None or not (margin > 0) or margin >= las.UNCOMPUTED_SENTINEL:
+    return las.UNCOMPUTED_SENTINEL
+  return float(margin)
+
+
 def _run_lane_measurement(
   data_utils_module: Any,
   fixtures_for_set: list[dict[str, Any]],
   lane: str,
   sampling: dict[str, Any],
-  n_per_arm: int,
+  allocation: dict[str, int],
   *,
   full_model_bundle: tuple[Any, Any, Any, Any],
 ) -> dict[str, Any]:
-  """One lane's teacher-forced + statistical measurement, pooled over `fixtures_for_set`."""
+  """One lane's teacher-forced + statistical measurement, pooled over `fixtures_for_set`
+  per `allocation` (V1: `sampling.draw_allocation`, never `n` per fixture)."""
   from aminx.parity.compare import iut_equivalent, tost_mean_diff
 
   jax_model, pt_model, torch, _model_utils = full_model_bundle
   temperature = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES)[lane]
-  margin = sampling.get("margins", {}).get(lane, float("inf"))
+  margin = _lane_margin(sampling, lane)
 
+  fixture_batches = []
   tf_results = []
-  batches = []
   for fixture in fixtures_for_set:
     batch = las.build_lane_batch(fixture, lane, data_utils_module)
-    batches.append((fixture, batch))
-    if batch.groups is not None and not batch.groups:
+    fixture_batches.append((fixture, batch))
+    if batch.comparison_positions.size == 0:
       continue  # P09-s on a fixture with no qualifying groups: nothing to teacher-force
     tf_results.append(
       las.teacher_forced_lane(
@@ -301,69 +341,55 @@ def _run_lane_measurement(
   tf_values = [r["tf_max_abs"] for r in tf_results if r.get("tf_max_abs") is not None]
   tf_max_abs = max(tf_values) if tf_values else 0.0
 
-  a1_parts, a2_parts, r1_parts, r2_parts = [], [], [], []
-  half = max(1, n_per_arm // 2)
-  for fixture, batch in batches:
-    if batch.comparison_positions.size == 0:
-      continue
-    a = las.aminx_sample_batch(
-      jax_model,
-      batch,
-      n_per_arm,
-      las._seed_for(fixture["name"] + lane + "A"),
-      temperature=temperature,
-    )
-    r = las.reference_sample_batch(
-      pt_model,
-      torch,
-      batch,
-      n_per_arm,
-      las._seed_for(fixture["name"] + lane + "R"),
-      temperature=temperature,
-    )
-    a1_parts.append(a[:half])
-    a2_parts.append(a[half : 2 * half] if n_per_arm >= 2 * half else a[:half])
-    r1_parts.append(r[:half])
-    r2_parts.append(r[half : 2 * half] if n_per_arm >= 2 * half else r[:half])
+  a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
+    jax_model,
+    pt_model,
+    torch,
+    fixture_batches,
+    allocation,
+    temperature=temperature,
+    reference_is_aminx=False,
+    seed_tag=f"main{lane}",
+  )
+  n_arm_side = sum(x.shape[0] for x in a1)  # == sum(allocation actually used)
+  n_per_arm = 2 * n_arm_side  # A1 + A2 (V1's own definition)
 
   equiv = False
-  excess_js_ub = float("inf")
   tost_pass = False
-  if a1_parts:
+  excess_js_point = 0.0
+  excess_js_ub = las.UNCOMPUTED_SENTINEL
+  if a1:
+    recovery_a = las.full_arm_recovery(a1, a2, seq_ref_list)  # V3: FULL arms
+    recovery_r = las.full_arm_recovery(r1, r2, seq_ref_list)
+    if recovery_a.size >= 2 and recovery_r.size >= 2:
+      tost_pass, _pl, _pu = tost_mean_diff(recovery_a, recovery_r, las.RECOVERY_DELTA)
     rng = np.random.default_rng(las._seed_for(lane + "bootstrap"))
     stat = las.lane_equivalence(
-      a1_parts, a2_parts, r1_parts, r2_parts, margin=margin, n_boot=200, rng=rng
-    )
+      a1, a2, r1, r2, margin=margin, n_boot=N_BOOT, rng=rng
+    )  # V2: n_boot=1000
+    excess_js_point = stat["excess_js"]  # V6: point estimate
     excess_js_ub = stat["excess_js_ub"]
-    seq_ref_by_fixture = [
-      batch.seq_ref[batch.comparison_positions]
-      for _f, batch in batches
-      if batch.comparison_positions.size
-    ]
-    a_recovery = np.concatenate(
-      [
-        las.per_sequence_recovery(a1, ref)
-        for a1, ref in zip(a1_parts, seq_ref_by_fixture, strict=True)
-      ]
-    )
-    r_recovery = np.concatenate(
-      [
-        las.per_sequence_recovery(r1, ref)
-        for r1, ref in zip(r1_parts, seq_ref_by_fixture, strict=True)
-      ]
-    )
-    if a_recovery.size >= 2 and r_recovery.size >= 2:
-      tost_pass, _pl, _pu = tost_mean_diff(a_recovery, r_recovery, las.RECOVERY_DELTA)
-    equiv = iut_equivalent([tost_pass, stat["equiv_js"]])
+    # A missing/uncomputed committed margin (las.UNCOMPUTED_SENTINEL) must NEVER let a
+    # lane spuriously pass the excess-JS half of the IUT test just because the sentinel
+    # is astronomically larger than any real excess_js_ub.
+    equiv_js = stat["equiv_js"] and margin < las.UNCOMPUTED_SENTINEL
+    equiv = iut_equivalent([tost_pass, equiv_js])
 
-  omitted = sum(r.get("omitted_aa_count", 0) for r in tf_results)
-  x_reference = sum(r.get("x_token_count_reference", 0) for r in tf_results)
+  # V4: omitted-AA/X over ALL statistical draws of BOTH arms, not just the teacher-forced one.
+  omitted_aminx = sum(las.count_omitted(arr, lane) for arr in a1) + sum(
+    las.count_omitted(arr, lane) for arr in a2
+  )
+  omitted_reference = sum(las.count_omitted(arr, lane) for arr in r1) + sum(
+    las.count_omitted(arr, lane) for arr in r2
+  )
+  x_aminx = sum(las.count_x(arr) for arr in a1) + sum(las.count_x(arr) for arr in a2)
+  x_reference = sum(las.count_x(arr) for arr in r1) + sum(las.count_x(arr) for arr in r2)
 
   fusion_detected = all(
     r.get("fusion_control", {}).get("detected", True) for r in tf_results if "fusion_control" in r
   )
   p09_fused_tf = max(
-    (r["p09_fused_tf_max_abs"] for r in tf_results if "p09_fused_tf_max_abs" in r), default=None
+    (r["p09_fused_tf_max_abs"] for r in tf_results if "p09_fused_tf_max_abs" in r), default=0.0
   )
   p09_tied_positions = max(
     (r["p09_tied_positions"] for r in tf_results if "p09_tied_positions" in r), default=0
@@ -373,11 +399,13 @@ def _run_lane_measurement(
     "lane": lane,
     "tf_max_abs": tf_max_abs,
     "tost_pass": tost_pass,
-    "excess_js": None,
+    "excess_js": excess_js_point,
     "excess_js_ub": excess_js_ub,
     "margin": margin,
     "equiv": equiv,
-    "omitted_aa_count": omitted,
+    "n_per_arm": n_per_arm,
+    "omitted_aa_count": omitted_aminx + omitted_reference,
+    "x_token_count_aminx": x_aminx,
     "x_token_count_reference": x_reference,
     "p09_fused_tf_max_abs": p09_fused_tf,
     "p09_fusion_ctrl_detected": fusion_detected,
@@ -389,60 +417,84 @@ def run_controls(
   data_utils_module: Any,
   fixtures_for_set: list[dict[str, Any]],
   sampling: dict[str, Any],
-  n_per_arm: int,
+  allocation: dict[str, int],
   *,
   full_model_bundle: tuple[Any, Any, Any, Any],
 ) -> tuple[int, int]:
-  """20 disjoint-seed replicates each, per-replicate `n = n_per_arm` (spec "Controls"):
+  """V5: 20 disjoint-seed replicates each, pooled over set B at `allocation`, per-replicate
+  `n = n_required` per half (`2n` per arm), `n_boot = N_BOOT`:
 
-  - positive: `+beta` on alanine in the aminx arm; *detected* = the IUT test fails to
-    declare equivalence; required `>= 18/20`.
+  - positive: `+beta` on alanine in the aminx arm vs UNPERTURBED aminx (V5's explicit
+    allowance -- no reference draws needed); *detected* = the IUT test fails to declare
+    equivalence; required `>= 18/20`.
   - negative: aminx vs aminx; a *false positive* = the IUT test fails to declare
     equivalence; required `<= 3/20`.
 
-  Runs on the P07@1.0 lane's first fixture only (the cheapest lane geometry available;
-  the controls' own sensitivity is a property of the statistical machinery, not of
-  which lane/fixture supplies the draws). Returns `(posctl_detected, negctl_fp)`.
+  Runs on the P07@1.0 lane (the cheapest lane geometry available; the controls' own
+  sensitivity is a property of the statistical machinery, not of which lane supplies
+  the draws). Returns `(posctl_detected, negctl_fp)`.
   """
   from aminx.parity.compare import iut_equivalent, tost_mean_diff
 
   jax_model, _pt_model, _torch, _model_utils = full_model_bundle
   lane = "P07@1.0"
   temperature = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES)[lane]
-  margin = sampling.get("margins", {}).get(lane, float("inf"))
+  margin = _lane_margin(sampling, lane)
   beta = sampling.get("beta", las.DEFAULT_BETA)
-  fixture = fixtures_for_set[0]
-  batch = las.build_lane_batch(fixture, lane, data_utils_module)
-  seq_ref_restricted = batch.seq_ref[batch.comparison_positions]
 
-  def _equiv(a1: np.ndarray, a2: np.ndarray, r1: np.ndarray, r2: np.ndarray) -> bool:
-    rng = np.random.default_rng(las._seed_for(f"ctrl{a1.tobytes()[:8]!r}"))
-    stat = las.lane_equivalence(a1, a2, r1, r2, margin=margin, n_boot=100, rng=rng)
-    tost_pass, _pl, _pu = tost_mean_diff(
-      las.per_sequence_recovery(a1, seq_ref_restricted),
-      las.per_sequence_recovery(r1, seq_ref_restricted),
-      las.RECOVERY_DELTA,
-    )
-    return iut_equivalent([tost_pass, stat["equiv_js"]])
+  fixture_batches = [
+    (fixture, las.build_lane_batch(fixture, lane, data_utils_module))
+    for fixture in fixtures_for_set
+  ]
+  fixture_batches = [(f, b) for f, b in fixture_batches if b.comparison_positions.size > 0]
+
+  def _equiv(
+    a1: list[np.ndarray],
+    a2: list[np.ndarray],
+    r1: list[np.ndarray],
+    r2: list[np.ndarray],
+    seq_ref_list: list[np.ndarray],
+    seed_tag: str,
+  ) -> bool:
+    if not a1:
+      return True
+    recovery_a = las.full_arm_recovery(a1, a2, seq_ref_list)
+    recovery_r = las.full_arm_recovery(r1, r2, seq_ref_list)
+    tost_pass, _pl, _pu = tost_mean_diff(recovery_a, recovery_r, las.RECOVERY_DELTA)
+    rng = np.random.default_rng(las._seed_for(seed_tag))
+    stat = las.lane_equivalence(a1, a2, r1, r2, margin=margin, n_boot=N_BOOT, rng=rng)
+    equiv_js = stat["equiv_js"] and margin < las.UNCOMPUTED_SENTINEL
+    return iut_equivalent([tost_pass, equiv_js])
 
   posctl_detected = 0
   for replicate in range(las.NULL_REPLICATES):
-    seed = las._seed_for(f"posctl{replicate}")
-    a = las.aminx_sample_batch(
-      jax_model, batch, n_per_arm, seed, temperature=temperature, beta_alanine=beta
+    a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
+      jax_model,
+      None,
+      None,
+      fixture_batches,
+      allocation,
+      temperature=temperature,
+      beta_a=beta,
+      reference_is_aminx=True,
+      seed_tag=f"posctl{replicate}",
     )
-    r = las.aminx_sample_batch(jax_model, batch, n_per_arm, seed + 1, temperature=temperature)
-    half = max(1, n_per_arm // 2)
-    if not _equiv(a[:half], a[half : 2 * half], r[:half], r[half : 2 * half]):
+    if not _equiv(a1, a2, r1, r2, seq_ref_list, f"posctl{replicate}boot"):
       posctl_detected += 1
 
   negctl_fp = 0
   for replicate in range(las.NULL_REPLICATES):
-    seed = las._seed_for(f"negctl{replicate}")
-    a = las.aminx_sample_batch(jax_model, batch, n_per_arm, seed, temperature=temperature)
-    r = las.aminx_sample_batch(jax_model, batch, n_per_arm, seed + 1, temperature=temperature)
-    half = max(1, n_per_arm // 2)
-    if not _equiv(a[:half], a[half : 2 * half], r[:half], r[half : 2 * half]):
+    a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
+      jax_model,
+      None,
+      None,
+      fixture_batches,
+      allocation,
+      temperature=temperature,
+      reference_is_aminx=True,
+      seed_tag=f"negctl{replicate}",
+    )
+    if not _equiv(a1, a2, r1, r2, seq_ref_list, f"negctl{replicate}boot"):
       negctl_fp += 1
 
   return posctl_detected, negctl_fp
@@ -461,23 +513,35 @@ def run_measurement(
     fixture = _pick_fixture(fixtures_for_set, SMOKE_FIXTURE_NAME)
     data_utils_module = lae._load_reference_data_utils()  # noqa: SLF001
     full_model_bundle = las.full_model_bundle_for_lane(SMOKE_LANE, "eqx")
+    allocation = {fixture["name"]: SMOKE_N}  # spec step 5: "n = 50" on ONE fixture
     lane_result = _run_lane_measurement(
       data_utils_module,
       [fixture],
       SMOKE_LANE,
       sampling or {"lane_temperatures": las.DEFAULT_LANE_TEMPERATURES},
-      SMOKE_N,
+      allocation,
       full_model_bundle=full_model_bundle,
     )
     lanes = [lane_result]
-    n_per_arm = SMOKE_N
-    # Controls (20+20 replicates at n_per_arm each) are NOT run in --smoke -- their own
-    # cost (40 * n_per_arm additional aminx draws) dwarfs the smoke budget; mirrors
-    # layer_a_exact_validate.py --smoke's own controls_total=0 precedent.
+    n_per_arm = lane_result["n_per_arm"]
+    # Controls (20+20 replicates at n_required each) are NOT run in --smoke -- their own
+    # cost dwarfs the smoke budget; mirrors layer_a_exact_validate.py --smoke's own
+    # controls_total=0 precedent. Recorded as 0 (never omitted, never inf).
     posctl_detected, negctl_fp = 0, 0
+    native_x_frequency = 0.0
+    jax_model = full_model_bundle[0]
+    smoke_batch = las.build_lane_batch(fixture, SMOKE_LANE, data_utils_module)
+    if smoke_batch.comparison_positions.size:
+      native_x_frequency = las.measure_native_x_frequency(
+        jax_model, smoke_batch, las.DEFAULT_LANE_TEMPERATURES[SMOKE_LANE], n=5
+      )
   else:
     data_utils_module = lae._load_reference_data_utils()  # noqa: SLF001
-    n_per_arm = sampling.get("n_required", las.N_REQUIRED_FLOOR)
+    allocation = sampling.get("draw_allocation", {})
+    if not allocation:
+      allocation = {
+        f["name"]: sampling.get("n_required", las.N_REQUIRED_FLOOR) for f in fixtures_for_set[:1]
+      }
     lanes = []
     for lane in las.LANE_KEYS:
       full_model_bundle = las.full_model_bundle_for_lane(lane, "eqx")
@@ -487,32 +551,48 @@ def run_measurement(
           fixtures_for_set,
           lane,
           sampling,
-          n_per_arm,
+          allocation,
           full_model_bundle=full_model_bundle,
         )
       )
+    n_per_arm = min((lane["n_per_arm"] for lane in lanes), default=0)
     posctl_detected, negctl_fp = run_controls(
       data_utils_module,
       fixtures_for_set,
       sampling,
-      n_per_arm,
+      allocation,
       full_model_bundle=las.full_model_bundle_for_lane("P07@1.0", "eqx"),
     )
+    native_x_frequency = 0.0
+    p07_batches = [f for f in fixtures_for_set if f["name"] in allocation]
+    if p07_batches:
+      p07_full_model_bundle = las.full_model_bundle_for_lane("P07@1.0", "eqx")
+      p07_batch = las.build_lane_batch(p07_batches[0], "P07@1.0", data_utils_module)
+      if p07_batch.comparison_positions.size:
+        native_x_frequency = las.measure_native_x_frequency(
+          p07_full_model_bundle[0],
+          p07_batch,
+          las.DEFAULT_LANE_TEMPERATURES["P07@1.0"],
+          n=NATIVE_X_FREQ_N,
+        )
 
   tf_max_abs = max((lane["tf_max_abs"] for lane in lanes), default=0.0)
   n_lanes = len(lanes)
   n_lanes_equiv = sum(1 for lane in lanes if lane["equiv"])
   excess_js_ub_max_ratio = max(
-    (lane["excess_js_ub"] / lane["margin"] if lane["margin"] else float("inf") for lane in lanes),
+    (
+      (lane["excess_js_ub"] / lane["margin"] if lane["margin"] > 0 else las.UNCOMPUTED_SENTINEL)
+      for lane in lanes
+    ),
     default=0.0,
   )
   omitted_aa_count = sum(lane["omitted_aa_count"] for lane in lanes)
+  x_token_count_aminx = sum(lane["x_token_count_aminx"] for lane in lanes)
   x_token_count_reference = sum(lane["x_token_count_reference"] for lane in lanes)
   p09_fusion_ctrl_detected = all(lane["p09_fusion_ctrl_detected"] for lane in lanes)
   p09_tied_positions = max((lane["p09_tied_positions"] for lane in lanes), default=0)
-  p09_fused_tf = next(
-    (lane["p09_fused_tf_max_abs"] for lane in lanes if lane["p09_fused_tf_max_abs"]), None
-  )
+  p09_fused_tf = max((lane["p09_fused_tf_max_abs"] for lane in lanes), default=0.0)
+  main_js_vs_ref = float(np.mean([lane["excess_js"] for lane in lanes])) if lanes else 0.0
 
   result = {
     "tf_max_abs": tf_max_abs,
@@ -523,12 +603,13 @@ def run_measurement(
     "n_required": sampling.get("n_required", las.N_REQUIRED_FLOOR),
     "sigma_hat": sampling.get("sigma_hat", 0.0),
     "excess_js_ub_max_ratio": excess_js_ub_max_ratio,
-    "main_js_vs_ref": None,
+    "main_js_vs_ref": main_js_vs_ref,
     "posctl_detected": posctl_detected,
     "negctl_fp": negctl_fp,
     "omitted_aa_count": omitted_aa_count,
-    "x_token_count_aminx": 0,
+    "x_token_count_aminx": x_token_count_aminx,
     "x_token_count_reference": x_token_count_reference,
+    "native_x_frequency": native_x_frequency,
     "p09_tied_positions": p09_tied_positions,
     "p09_tied_positions_prereg": sampling.get("p09_tied_positions", 0),
     "p09_fused_tf_max_abs": p09_fused_tf,
