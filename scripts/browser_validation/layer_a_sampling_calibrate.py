@@ -680,7 +680,11 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       "elapsed_seconds": time.monotonic() - start,
       **prov,
     }
-    return result, EXIT_NOT_WRITTEN
+    # Exit 0, not EXIT_NOT_WRITTEN: the result is complete and the sidecar's
+    # budget_exceeded branch classifies it. bathos 84be544e overrides the outcome to
+    # "error" on any non-zero exit (runner.py ~703), which would hide the pre-registered
+    # branch from the record (observed on titanix run 1a45a859).
+    return result, 0
 
   sigma_hat = _pilot_sigma(jax_model, pilot_batches, pilot_lane, PILOT_N, "pilotsigma")
   from aminx.parity.compare import required_n
@@ -966,7 +970,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   }
   exit_code = 0
   if not within_budget:
-    exit_code = EXIT_NOT_WRITTEN
+    exit_code = 0  # sidecar budget_exceeded classifies it; see the floor branch above
   elif not prov["git_clean"]:
     exit_code = EXIT_SKIPPED
   return result, exit_code
