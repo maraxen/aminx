@@ -231,3 +231,67 @@ not attested. The layer-a campaign is left **open** for the future sampling vali
 4. Re-grade. PARTIAL becomes reachable once `adversarial_survived` holds and
    `clause_parity_pct ≥ 0.5`. PARITY additionally needs every core clause MATCH, zero ambiguity
    load and R0/R1.
+
+## Post-verdict finding F-S1 (260927, sprint `260927_aminx-browser-export-phase2a`, T9)
+
+**Facts, no re-grading** (the sampling tier is still absent from the clause scorecard above;
+this note only documents a harness defect found and fixed while building its Phase 2a
+budget-floor probe).
+
+- **Defect.** `layer_a_sampling.aminx_sample_batch`'s vmapped batching (`_vmapped_sample`,
+  introduced alongside the incremental sampler, `8bcb2437`/`9f800cfa`) builds ONE
+  `InferenceBundle` from `waves[0]` and, per draw `i`, swaps only `bundle.wave` via
+  `eqx.tree_at(lambda x: x.wave, bundle, wave)` before calling
+  `sample_autoregressive.kernel`. `bundle.conditioning.ar_mask` is computed ONCE by
+  `build_inference_bundle` from whichever wave built the bundle (`waves[0]`) and is never
+  recomputed for `i >= 1`. The kernel reads `cond.ar_mask` (`autoregressive.py:485`, `:631`),
+  not `bundle.wave` directly, for wave-schedule visibility -- so every draw `i >= 1` decoded
+  under draw 0's autoregressive visibility, not its own. This is the harness defect the
+  Phase 2a spec (D-F) named F-S1 and directed T9 to fix.
+- **Test evidence (pre-fix RED, quoted from this task's own red-check).**
+  `tests/parity/test_layer_a_sampling_batched.py::test_per_draw_ar_mask_structural`, run
+  against the pre-fix construction (`eqx.tree_at(lambda x: x.wave, bundle, wave)` alone, no
+  `ar_mask` recompute): 444/1024 elements of the rebuilt `ar_mask` mismatched the correct
+  per-draw value (`generate_wave_ar_mask(waves[i], tie_group_map)`) at draw `i = 1` of 3 (first
+  failing draw; the assertion loop stops at the first mismatch). Draw 0 was exact by
+  construction (its own wave built the shared bundle), matching this module's own
+  pre-existing docstring note of an empirically observed "0/85, 15/85, 10/85" per-draw
+  mismatch pattern on 5L33 (V15) -- draw 0 exact, every later draw wrong at many positions.
+- **Fix.** `layer_a_sampling._bundle_for_draw(bundle, wave)` (new) recomputes `ar_mask` from
+  the draw's OWN `wave` via `generate_wave_ar_mask` (the same function
+  `build_inference_bundle`'s own "wave" arm uses) and swaps both `.wave` and
+  `.conditioning.ar_mask` together; `_vmapped_sample`'s inner `one(key, wave)` now calls this
+  helper instead of swapping `.wave` alone. Post-fix, the same structural test is GREEN for
+  all 3 draws, and the empirical test
+  (`test_batched_vs_unbatched_empirical`, synthetic L=96, T=0.1, n=3 draws) shows <= 1
+  mismatched position per draw between the batched harness and an unbatched per-draw kernel
+  call (the residual is fused-XLA-vmap-vs-eager rounding, per this module's own documented
+  caveat, not an ar_mask defect).
+- **`incremental` plumbing (D-F).** `sample_autoregressive.kernel` gained an `incremental:
+  Literal["auto", "off", "force"] = "auto"` parameter, forwarded to `AutoregressiveConfig`
+  (previously hardcoded to its "auto" default with no caller override). Default behavior is
+  provably unchanged (`test_kernel_incremental_default_bitwise`: an unspecified call and an
+  explicit `incremental="auto"` call are bitwise identical). `layer_a_sampling.
+  incremental_predicates_host` is a host NumPy mirror of the kernel's three-way device
+  predicate (`consistent`, `identity_frame`, `fits_slab`, `autoregressive.py:591-756`),
+  checked against a from-scratch jnp re-derivation
+  (`test_host_predicates_match_device`, 6 sub-cases incl. a fixed-position lane, a planted
+  inconsistent `ar_mask`, a non-identity `state_position_map`, a wave exceeding its own
+  declared slab capacity, and a case isolating the `valid_nbr` term specifically) and against
+  live kernel behavior (`test_force_equals_off_when_host_true`,
+  `test_planted_inconsistent_mask_not_forced`).
+- **Budget-floor probe (`layer_a_sampling_budget_floor.py`, campaign `aminx-bv-layer-a`,
+  `32a520cf`).** Reuses `layer_a_sampling_calibrate._budget_at_floor` (the `n =
+  N_REQUIRED_FLOOR` validate-cost projection) unmodified against the FIXED harness, plus a
+  force-vs-off `fastpath_ratio` and a force-vs-force `aa_ratio` sanity control at the largest
+  set-B fixture (4YOW, lane P07@1.0), and a diagnostic `n_draws_forced_off` per lane over the
+  floor's own draw allocation. **Not yet run** (titanix GPU 2 dispatch and its `check_run.sh`
+  verification are orchestrator-only steps per this sprint's division of labor and this
+  worktree's own `titanix_launch.sh` header comment; `check_run.sh` itself does not exist yet
+  in this branch, being a separate track's (T2) deliverable) -- the sidecar and its
+  `.cases.json` are pre-registered and committed, and every declared outcome was independently
+  verified against `bathos.sidecar.evaluate_outcome` (7 cases, one per outcome plus one extra
+  `ctrl_blind` case for the sentinel-value path, all matching their declared `expect` label).
+  This finding is therefore facts-plus-fix-plus-test-evidence only; the actual floor numbers
+  (`fastpath_ratio`, `aa_ratio`, `budget_wall_hours` on real GPU hardware) are not yet measured
+  and are NOT claimed here.

@@ -1,0 +1,135 @@
+[
+  {
+    "expect": "incomplete",
+    "result": {
+      "git_hash": "0000000000000000000000000000000000000",
+      "git_clean": false,
+      "n_floor": 1500,
+      "aa_ratio": 1.0,
+      "fastpath_ratio": 0.1,
+      "c_force": 0.01,
+      "c_off": 0.1,
+      "c_ref": 0.02,
+      "budget_wall_hours": 1.0,
+      "projected_peak_rss_gib": 2.0,
+      "budget_cap_hours": 16.0,
+      "rss_cap_gib": 48.0,
+      "budget_includes_ref": false,
+      "device_kind": "cpu"
+    }
+  },
+  {
+    "expect": "ctrl_blind",
+    "result": {
+      "git_hash": "0000000000000000000000000000000000000",
+      "git_clean": true,
+      "n_floor": 1500,
+      "aa_ratio": 3.5,
+      "fastpath_ratio": 0.1,
+      "c_force": 0.01,
+      "c_off": 0.1,
+      "c_ref": 0.02,
+      "budget_wall_hours": 1.0,
+      "projected_peak_rss_gib": 2.0,
+      "budget_cap_hours": 16.0,
+      "rss_cap_gib": 48.0,
+      "budget_includes_ref": false,
+      "device_kind": "cpu"
+    }
+  },
+  {
+    "expect": "ctrl_blind",
+    "result": {
+      "git_hash": "0000000000000000000000000000000000000",
+      "git_clean": true,
+      "n_floor": 1500,
+      "aa_ratio": 1.0e18,
+      "fastpath_ratio": 0.1,
+      "c_force": 0.0,
+      "c_off": 0.1,
+      "c_ref": 0.02,
+      "budget_wall_hours": 1.0,
+      "projected_peak_rss_gib": 2.0,
+      "budget_cap_hours": 16.0,
+      "rss_cap_gib": 48.0,
+      "budget_includes_ref": false,
+      "device_kind": "cpu"
+    }
+  },
+  {
+    "expect": "fastpath_not_engaged",
+    "result": {
+      "git_hash": "0000000000000000000000000000000000000",
+      "git_clean": true,
+      "n_floor": 1500,
+      "aa_ratio": 1.0,
+      "fastpath_ratio": 0.9,
+      "c_force": 0.09,
+      "c_off": 0.1,
+      "c_ref": 0.02,
+      "budget_wall_hours": 1.0,
+      "projected_peak_rss_gib": 2.0,
+      "budget_cap_hours": 16.0,
+      "rss_cap_gib": 48.0,
+      "budget_includes_ref": false,
+      "device_kind": "cpu"
+    }
+  },
+  {
+    "expect": "floor_exceeded",
+    "result": {
+      "git_hash": "0000000000000000000000000000000000000",
+      "git_clean": true,
+      "n_floor": 1500,
+      "aa_ratio": 1.0,
+      "fastpath_ratio": 0.1,
+      "c_force": 0.01,
+      "c_off": 0.1,
+      "c_ref": 0.02,
+      "budget_wall_hours": 20.0,
+      "projected_peak_rss_gib": 2.0,
+      "budget_cap_hours": 16.0,
+      "rss_cap_gib": 48.0,
+      "budget_includes_ref": false,
+      "device_kind": "cpu"
+    }
+  },
+  {
+    "expect": "floor_exceeded",
+    "result": {
+      "git_hash": "0000000000000000000000000000000000000",
+      "git_clean": true,
+      "n_floor": 1500,
+      "aa_ratio": 1.0,
+      "fastpath_ratio": 0.1,
+      "c_force": 0.01,
+      "c_off": 0.1,
+      "c_ref": 0.02,
+      "budget_wall_hours": 1.0,
+      "projected_peak_rss_gib": 60.0,
+      "budget_cap_hours": 16.0,
+      "rss_cap_gib": 48.0,
+      "budget_includes_ref": false,
+      "device_kind": "cpu"
+    }
+  },
+  {
+    "expect": "pass",
+    "result": {
+      "git_hash": "0000000000000000000000000000000000000",
+      "git_clean": true,
+      "n_floor": 1500,
+      "aa_ratio": 1.02,
+      "fastpath_ratio": 0.12,
+      "c_force": 0.012,
+      "c_off": 0.1,
+      "c_ref": 0.02,
+      "budget_wall_hours": 3.5,
+      "projected_peak_rss_gib": 10.0,
+      "budget_cap_hours": 16.0,
+      "rss_cap_gib": 48.0,
+      "budget_includes_ref": false,
+      "device_kind": "cuda"
+    }
+  }
+]

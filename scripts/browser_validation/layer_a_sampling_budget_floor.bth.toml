@@ -1,0 +1,77 @@
+[metadata]
+title = "Layer (a) sampling tier: batched-harness budget-floor probe (F-S1 fix) + fastpath/AA controls"
+created = "260927"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "With the F-S1 fix (per-draw ar_mask recomputed from its own wave, layer_a_sampling._bundle_for_draw) and incremental plumbed through sample_autoregressive.kernel, the validate budget projected at n = N_REQUIRED_FLOOR (layer_a_sampling_calibrate._budget_at_floor, reused unmodified) stays within the pre-registered caps, and at the largest set-B fixture (4YOW, lane P07@1.0) the incremental fastpath measurably engages (force at most half the per-draw cost of off) while an aminx-vs-aminx (force vs force) A/A control confirms the cost measurement itself is stable (ratio in [0.8, 1.25])."
+stage_name = "calibration"
+novel = true
+# No [reproduction]: novel = true (this is a diagnostic probe of the fixed harness's
+# own cost, not a reproduction of a published number). No [differential]/
+# claim_discriminates: calibration sidecars never prove sensitivity themselves
+# (lint_sidecars.py's calibration-no-differential check).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_blind"]
+
+# Outcome declaration order is load-bearing (first match wins, spec T9 step 4):
+# incomplete, then ctrl_blind (the A/A sanity check must be inside [0.8, 1.25] or the
+# force/off cost MEASUREMENT itself is not trusted), then fastpath_not_engaged, then
+# floor_exceeded, then pass. A sentinel (las.UNCOMPUTED_SENTINEL = 1e18) stands in for
+# "could not compute" wherever a ratio's denominator was <= 0 -- CLAUDE.md/measured
+# 2026-09-25: a bare inf/nan fails to bind as a bathos SQL literal, and 1e18 is
+# comfortably outside every real ratio bound below, so the plain numeric comparisons
+# below classify a sentinel exactly like an out-of-range real measurement.
+
+[outcomes.incomplete]
+condition = "NOT git_clean"
+decision = "The run tree was dirty; this probe proves nothing about the fixed harness and must not be committed."
+reasoning = "A dirty tree means the budget/fastpath/AA measurements below did not run against the exact committed pre-registration (sidecar + F-S1 fix)."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "aa_ratio < 0.8 OR aa_ratio > 1.25"
+decision = "The force-vs-force (A/A) per-draw cost ratio at 4YOW/P07@1.0 falls outside [0.8x, 1.25x]; the cost-measurement instrument itself is not trusted, so fastpath_ratio and the budget projection below cannot be read at face value."
+reasoning = "BATHOS.md: a positive control that can only pass is not a check. aa_ratio is the sanity check that two independently-seeded force-mode draw batches cost the same -- if it drifts outside [0.8, 1.25], either the timing measurement is noisy/broken or 'force' is not actually deterministic-cost on this hardware, and fastpath_ratio (which reuses the SAME force-cost measurement) cannot be trusted either. Checked before fastpath_not_engaged/floor_exceeded, per spec T9 step 4's declared order."
+is_residual = true
+
+[outcomes.fastpath_not_engaged]
+condition = "fastpath_ratio > 0.5"
+decision = "The incremental fastpath (force) is not at least 2x cheaper per draw than the full-recompute path (off) at the largest set-B fixture; the F-S1 fix's harness rewiring did not restore the expected speedup, and the sampling track stops here (T10 does not run)."
+reasoning = "V16: under vmap, jax.lax.cond's predicate becomes batched and BOTH branches execute (select-based), so 'auto' alone cannot show the fastpath's cost advantage -- this is why 'incremental' had to be plumbed through the kernel at all (spec T9 step 2) and measured with a homogeneous force/off batch. fastpath_ratio > 0.5 (less than a 2x speedup) means either force is not actually taking the O(Lk) path here or its win is too small to matter at pre-registered scale; this is a genuine, reportable finding, not a run defect."
+is_residual = true
+
+[outcomes.floor_exceeded]
+condition = "budget_wall_hours > budget_cap_hours OR projected_peak_rss_gib > rss_cap_gib"
+decision = "The validate budget projected at n = N_REQUIRED_FLOOR (a LOWER bound on the real n_required) already exceeds the wall-time or RSS cap; the pre-registered sampling-tier protocol cannot fit even at its floor, and the sampling track stops here (T10 does not run)."
+reasoning = "layer_a_sampling_calibrate.FLOOR_BUDGET_FORMULA / _budget_at_floor (reused unmodified, never copied): cost only grows with n, so a floor projection above cap proves infeasibility before any pilot/margin/null-replicate draw is spent -- same discipline as run_full's own pre-pilot budget check."
+is_residual = true
+
+[outcomes.pass]
+condition = "aa_ratio >= 0.8 AND aa_ratio <= 1.25 AND fastpath_ratio <= 0.5 AND budget_wall_hours <= budget_cap_hours AND projected_peak_rss_gib <= rss_cap_gib"
+decision = "The cost-measurement instrument is trusted (AA control in range), the incremental fastpath measurably engages (>= 2x cheaper than off), and the floor-projected validate budget fits both caps -- T10 (the full calibrate) may be dispatched."
+reasoning = "All three gates (instrument sanity, fastpath engagement, budget floor) pass simultaneously; this is the only state in which T10's much larger real run is worth dispatching."
+is_residual = false
+
+[result_schema]
+git_hash = "str"
+git_clean = "bool"
+n_floor = "int"
+aa_ratio = "float"
+fastpath_ratio = "float"
+c_force = "float"
+c_off = "float"
+c_ref = "float"
+budget_wall_hours = "float"
+projected_peak_rss_gib = "float"
+budget_cap_hours = "float"
+rss_cap_gib = "float"
+budget_includes_ref = "bool"
+device_kind = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+torch_version = { type = "string", required = true }

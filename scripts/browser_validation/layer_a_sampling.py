@@ -69,7 +69,7 @@ import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -543,6 +543,38 @@ _STAGE_SET: Any = None
 _VMAPPED_SAMPLE: Any = None
 
 
+def _bundle_for_draw(bundle: Any, wave: Any) -> Any:
+  """Rebuild `bundle` for one draw's own `wave` (F-S1 fix).
+
+  Pre-fix, `_vmapped_sample`'s `one(key, wave)` swapped ONLY `bundle.wave` via
+  `eqx.tree_at(lambda x: x.wave, bundle, wave)`. `bundle.conditioning.ar_mask` is
+  computed ONCE, by `build_inference_bundle`, from whichever wave built the shared
+  `bundle` passed into `aminx_sample_batch` -- always `waves[0]` (see that
+  function's own construction). So every draw `i >= 1` decoded under draw 0's
+  visibility (the `ar_mask` the kernel actually reads, `cond.ar_mask` --
+  `autoregressive.py:485`, `:631`), not its own. Confirmed empirically (V15):
+  the docstring's own "0/85, 15/85, 10/85" mismatch pattern on 5L33, where draw 0
+  (whose wave DID match the frozen ar_mask) was exact and every other draw was not.
+
+  The fix: recompute `ar_mask` from THIS draw's own `wave` via the same
+  `generate_wave_ar_mask` function `build_inference_bundle` itself uses for its
+  "wave" arm (`bundle_builder.py:284`), using the (per-chunk-constant)
+  `tie_group_map` already baked into `bundle.conditioning`, and swap both `.wave`
+  and `.conditioning.ar_mask` together. Pure jnp (no data-dependent Python control
+  flow), so this traces and vmaps cleanly inside `_vmapped_sample`'s jitted `one`.
+  """
+  import equinox as eqx
+  import jax.numpy as jnp
+
+  from aminx.utils.autoregression import generate_wave_ar_mask
+
+  tie_group_map_row = bundle.conditioning.tie_group_map[0]
+  ar_mask_2d = generate_wave_ar_mask(wave, tie_group_map_row)
+  ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], bundle.conditioning.ar_mask.shape)
+  b = eqx.tree_at(lambda x: x.wave, bundle, wave)
+  return eqx.tree_at(lambda x: x.conditioning.ar_mask, b, ar_mask)
+
+
 def _vmapped_sample() -> Any:
   """One module-level jitted, vmapped kernel call (compiled once per fixture/lane shape).
 
@@ -562,7 +594,7 @@ def _vmapped_sample() -> Any:
     @eqx.filter_jit
     def run(model: Any, keys: Any, waves: Any, bundle: Any, config: Any) -> Any:
       def one(key: Any, wave: Any) -> Any:
-        b = eqx.tree_at(lambda x: x.wave, bundle, wave)
+        b = _bundle_for_draw(bundle, wave)
         return sample_autoregressive.kernel(
           model, key, b, config, _STAGE_SET, inference_only=True
         ).sequence
@@ -571,6 +603,93 @@ def _vmapped_sample() -> Any:
 
     _VMAPPED_SAMPLE = run
   return _VMAPPED_SAMPLE
+
+
+def incremental_predicates_host(
+  *,
+  wave: Any,
+  tie_group_map: np.ndarray,
+  ar_mask: np.ndarray,
+  neighbor_indices: np.ndarray,
+  valid_mask: np.ndarray,
+  state_position_map: np.ndarray,
+  max_positions_per_wave: int | None = None,
+) -> dict[str, bool]:
+  """Host NumPy mirror of `AutoregressiveDecode.__call__`'s incremental-decode
+  fastpath predicate (`src/aminx/inference/decode/autoregressive.py:591-756`, spec
+  D-F/V19), for the single-state (`S=1`) convention this sampling harness always
+  uses. Every step below is a line-for-line NumPy transliteration of that device
+  jnp code (same variable names), checked by `test_host_predicates_match_device`.
+
+  Parameters mirror `cond`/`enc`/`wave` at state row 0:
+    - `wave`: the (host or device) `WaveScheduleBundle` for THIS draw (`.group_ids`,
+      `.group_positions`, `.group_valid`, shapes `(W, G)`/`(W, G, P)`/`(W, G)`);
+    - `tie_group_map`: `(L,)` int, `cond.tie_group_map[0]`;
+    - `ar_mask`: `(L, L)` float/bool, `cond.ar_mask[0]`;
+    - `neighbor_indices`: `(L, K)` int, `enc.neighbor_indices[0]`;
+    - `valid_mask`: `(L,)`, `enc.mask[0]`;
+    - `state_position_map`: `(L,)` int, `cond.state_position_map[0]`;
+    - `max_positions_per_wave`: `AutoregressiveConfig.max_positions_per_wave` (None
+      unless the caller raised it, e.g. for a large tie group).
+
+  Returns `{"consistent": bool, "identity_frame": bool, "fits_slab": bool}`. A draw
+  is force-eligible iff all three are True (D-F).
+  """
+  group_ids = np.asarray(wave.group_ids)
+  group_positions = np.asarray(wave.group_positions)
+  group_valid = np.asarray(wave.group_valid).astype(bool)
+  n_waves, max_groups_per_wave = group_ids.shape
+  tgm = np.asarray(tie_group_map)
+  seq_len = tgm.shape[0]
+
+  # group_first_rank (autoregression.py:408-431 / autoregressive.py mirror).
+  no_occurrence_sentinel = n_waves * max_groups_per_wave
+  wave_index_grid = np.broadcast_to(np.arange(n_waves, dtype=np.int64)[:, None], group_ids.shape)
+  slot_grid = np.broadcast_to(
+    np.arange(max_groups_per_wave, dtype=np.int64)[None, :], group_ids.shape
+  )
+  combined_rank_grid = wave_index_grid * max_groups_per_wave + slot_grid
+  flat_group_id = np.where(group_valid, group_ids, 0).reshape(-1)
+  flat_rank = np.where(group_valid, combined_rank_grid, no_occurrence_sentinel).reshape(-1)
+  group_first_rank = np.full((seq_len,), no_occurrence_sentinel, dtype=np.int64)
+  np.minimum.at(group_first_rank, flat_group_id, flat_rank)
+
+  # decode_wave (autoregressive.py:616-621).
+  pos_rank = group_first_rank[tgm]
+  decode_wave = np.where(
+    pos_rank < no_occurrence_sentinel, pos_rank // max_groups_per_wave, n_waves
+  ).astype(np.int64)
+
+  # wave_start (autoregressive.py:622-627).
+  order_pos = np.argsort(decode_wave, kind="stable")
+  wave_start = np.searchsorted(
+    decode_wave[order_pos], np.arange(n_waves + 1, dtype=np.int64), side="left"
+  ).astype(np.int64)
+
+  # consistent (autoregressive.py:629-641, 751).
+  nbr = np.asarray(neighbor_indices)
+  ar = np.asarray(ar_mask)
+  ar_neighbors = np.take_along_axis(ar, nbr, axis=1)
+  vmask = np.asarray(valid_mask) > 0.5
+  valid_row = vmask
+  valid_nbr = vmask[nbr]
+  reads = valid_row[:, None] & valid_nbr & (ar_neighbors > 0.5)
+  wave_row = decode_wave[:, None]
+  wave_nbr = decode_wave[nbr]
+  consistent = bool(~np.any(reads & (wave_nbr > wave_row)))
+
+  # identity_frame (autoregressive.py:752-754).
+  spm = np.asarray(state_position_map)
+  identity_frame = bool(np.all(spm == np.arange(seq_len, dtype=spm.dtype)))
+
+  # fits_slab (autoregressive.py:609-612, 755).
+  slab = max_groups_per_wave * group_positions.shape[2]
+  if max_positions_per_wave is not None:
+    slab = max(slab, max_positions_per_wave)
+  slab = min(slab, seq_len)
+  fits_slab = bool(np.all((wave_start[1:] - wave_start[:-1]) <= slab))
+
+  return {"consistent": consistent, "identity_frame": identity_frame, "fits_slab": fits_slab}
 
 
 def sample_chunk_size(length: int) -> int:
@@ -1012,6 +1131,121 @@ def measure_aminx_draw_cost_s(
   aminx_sample_batch(jax_model, batch, chunk, seed_base, temperature=temperature)
   start = time.monotonic()
   aminx_sample_batch(jax_model, batch, chunk, seed_base + chunk, temperature=temperature)
+  return (time.monotonic() - start) / chunk
+
+
+_VMAPPED_SAMPLE_AT: dict[str, Any] = {}
+
+
+def _vmapped_sample_at(incremental: Literal["off", "force"]) -> Any:
+  """Like `_vmapped_sample`, but with a HOMOGENEOUS `incremental` mode fixed across
+  the whole vmapped batch (one jitted/compiled function per `incremental` value,
+  cached in `_VMAPPED_SAMPLE_AT`).
+
+  Under vmap, `AutoregressiveDecode.incremental` is a static (non-batched) field
+  shared by every draw in the call -- so `incremental="force"` genuinely takes only
+  the O(Lk) incremental path for every draw (no `lax.cond` running both branches,
+  V16), and `incremental="off"` genuinely takes only the O(L^2 k) full-recompute
+  path. This is what makes `layer_a_sampling_budget_floor.py`'s `c_force`/`c_off`
+  comparison a real A/B rather than a no-op ("auto" alone cannot show it, V16).
+  """
+  if incremental not in _VMAPPED_SAMPLE_AT:
+    import equinox as eqx
+    import jax
+
+    from aminx.inference import sample_autoregressive
+    from aminx.inference.logits import make_stage_set
+
+    stage_set = make_stage_set()
+
+    @eqx.filter_jit
+    def run(model: Any, keys: Any, waves: Any, bundle: Any, config: Any) -> Any:
+      def one(key: Any, wave: Any) -> Any:
+        b = _bundle_for_draw(bundle, wave)
+        return sample_autoregressive.kernel(
+          model, key, b, config, stage_set, inference_only=True, incremental=incremental
+        ).sequence
+
+      return jax.vmap(one)(keys, waves)
+
+    _VMAPPED_SAMPLE_AT[incremental] = run
+  return _VMAPPED_SAMPLE_AT[incremental]
+
+
+def aminx_sample_batch_at_incremental(
+  jax_model: Any,
+  batch: LaneBatch,
+  n: int,
+  seed_base: int,
+  *,
+  temperature: float,
+  incremental: Literal["off", "force"],
+) -> np.ndarray:
+  """`aminx_sample_batch`'s own chunking/wave-building logic, but routed through
+  `_vmapped_sample_at(incremental)` so every draw in every chunk uses the SAME
+  (caller-chosen) incremental mode. Used only by the budget-floor probe's
+  force-vs-off/A-A cost controls, never by the main sampling engine (which always
+  wants `"auto"`'s correctness-preserving fallback)."""
+  import jax
+  import jax.numpy as jnp
+
+  from aminx.inference.bundle_builder import build_inference_bundle
+
+  if n <= 0:
+    return np.zeros((0, batch.length), dtype=np.int32)
+  waves = [
+    wave_from_tie_groups_np(batch.tie_group_map, _draw_order_for(batch, seed_base + i)[1])
+    for i in range(n)
+  ]
+  kw: dict[str, Any] = {
+    "coords": jnp.asarray(batch.x4),
+    "mask": jnp.asarray(batch.mask),
+    "residue_index": jnp.asarray(batch.residue_index, dtype=jnp.int32),
+    "chain_index": jnp.asarray(batch.chain_index, dtype=jnp.int32),
+    "chain_mask": jnp.asarray(batch.chain_mask),
+    "bias": jnp.asarray(batch.bias),
+    "fixed_mask": jnp.asarray(batch.fixed_mask),
+    "fixed_tokens": jnp.asarray(batch.seq_ref, dtype=jnp.int32),
+    "tie_group_map": jnp.asarray(batch.tie_group_map),
+    "wave": waves[0],
+    "temperature": float(temperature),
+    "mode": "sample",
+  }
+  bundle, config = build_inference_bundle(**kw)
+  run = _vmapped_sample_at(incremental)
+  chunk = min(sample_chunk_size(batch.length), n)
+  rows: list[np.ndarray] = []
+  for lo in range(0, n, chunk):
+    idx = list(range(lo, min(n, lo + chunk)))
+    padded = idx + [idx[-1]] * (chunk - len(idx))
+    keys = jnp.stack([jax.random.PRNGKey(seed_base + i) for i in padded])
+    stacked = jax.tree.map(lambda *xs: jnp.stack(xs), *[waves[i] for i in padded])
+    out = np.asarray(run(jax_model, keys, stacked, bundle, config))
+    rows.append(out[: len(idx)])
+  return np.concatenate(rows, axis=0)
+
+
+def measure_aminx_draw_cost_at_incremental_s(
+  jax_model: Any,
+  batch: LaneBatch,
+  temperature: float,
+  *,
+  incremental: Literal["off", "force"],
+  seed_base: int,
+) -> float:
+  """Like `measure_aminx_draw_cost_s`, but forces every draw through `incremental`
+  (`"force"` or `"off"`) rather than `"auto"` -- STEADY-STATE: one untimed chunk
+  (compile), then one timed chunk of `sample_chunk_size(L)` draws."""
+  import time
+
+  chunk = sample_chunk_size(batch.length)
+  aminx_sample_batch_at_incremental(
+    jax_model, batch, chunk, seed_base, temperature=temperature, incremental=incremental
+  )
+  start = time.monotonic()
+  aminx_sample_batch_at_incremental(
+    jax_model, batch, chunk, seed_base + chunk, temperature=temperature, incremental=incremental
+  )
   return (time.monotonic() - start) / chunk
 
 

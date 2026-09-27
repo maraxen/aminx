@@ -6,7 +6,7 @@ It consumes a unified InferenceBundle and returns a structured SampleResult.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import equinox as eqx
 from jaxtyping import Array, Float, Int
@@ -62,6 +62,7 @@ def kernel(
   stage_set: StageSet,
   *,
   inference_only: bool = False,
+  incremental: Literal["auto", "off", "force"] = "auto",
   state_strategy: AxisStrategy | None = None,
 ) -> SampleResult:
   """Autoregressive sampling kernel.
@@ -77,6 +78,11 @@ def kernel(
       long sequences / many wave counts). Not reverse-mode differentiable --
       never set True on a path that needs gradients through the AR loop
       (training never calls this kernel, so this is safe for any sampling use).
+    incremental: {"auto", "off", "force"}, default "auto" (T9, F-S1 follow-up).
+      Forwarded verbatim to `AutoregressiveConfig.incremental` (see that class's
+      docstring). The default preserves prior behavior -- `AutoregressiveConfig`'s
+      own default is already `"auto"`, so an unspecified `incremental` here is
+      byte-for-byte the same call this kernel made before this parameter existed.
     state_strategy: State-axis (bundle.geometry.n_states) Vmap/SafeMap strategy.
       None (default) preserves prior behavior (Vmap -- correct for the
       num_states=1 single-structure campaign path in sampling/sample.py).
@@ -114,6 +120,9 @@ def kernel(
     model=model,
     mode=AutoregressiveMode(),
     strategy=state_strategy if state_strategy is not None else Vmap(),
-    autoregressive_config=AutoregressiveConfig(inference_only=inference_only),
+    autoregressive_config=AutoregressiveConfig(
+      inference_only=inference_only,
+      incremental=incremental,
+    ),
   )
   return decode_fn(k_dec, enc, bundle, config, stage_set)
