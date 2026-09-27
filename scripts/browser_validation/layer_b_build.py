@@ -12,19 +12,29 @@ Every clean converted artifact is run through BOTH RNG audits: the jaxpr walker
 Also builds, per bucket, the numeric perturbation/index-swap control artifacts T3a will
 later calibrate and grade (`p04_L{b}_perturbed.onnx`, `p03_L{b}_ebias.onnx`,
 `p03_L{b}_swap.onnx`; deltas here are BUILD-time placeholders, T3a re-sizes them), and,
-separately from those, the 5 AC-B2 RNG-audit self-check controls this run's own outcome
-gates on (`controls_total`/`controls_detected` in the sidecar): three ONNX-level RNG
-plants at increasing structural depth (`If` subgraph, `Loop` subgraph, local
-`FunctionProto`), one direct top-level ONNX RNG op, and one deliberately RNG-carrying
-("poisoned") jaxpr -- proving the jaxpr-side walker fires independently of the ONNX-side
-one. (Interpretive note, documented per the fixer's Close-out "deviations": the spec
-names "the five AC-B2 planted controls" without enumerating all five in what this task
-received verbatim; this 3-ONNX-depth + 1-direct-ONNX + 1-jaxpr split was chosen to give
-both walkers -- jaxpr AND ONNX, the task's own title -- independent, exactly-once
-coverage, reaching the stated total of 5.)
+separately from those, the exactly-5 AC-B2 RNG-audit self-check controls this run's own
+outcome gates on (`controls_total`/`controls_detected` in the sidecar; spec lines
+240-246):
 
-`--dry-run` builds and audits all 5 AC-B2 controls (self-contained; no checkpoint load,
-no jax2onnx conversion) as a wiring smoke test, and reports zero clean artifacts.
+  1. the UNMODIFIED `aminx.inference.score_unconditional.kernel` jaxpr (the native path,
+     which genuinely consumes RNG via `jax.random.split` and must be flagged);
+  2. a wrapper variant (the P04 export wrapper this ladder builds) with a planted
+     `jax.random.normal`;
+  3. RNG inside `lax.cond` inside `jit` (the shape of `features.py`'s
+     `apply_noise_to_coordinates` that blocked Phase 0);
+  4. an ONNX copy with a `RandomUniform` injected into an `If` subgraph;
+  5. an ONNX copy with a `RandomUniform` inside a local function body
+     (`model_proto.functions`) called by the main graph.
+
+Two further ONNX plants -- `RandomNormal` inside a `Loop` subgraph, and a top-level
+`Multinomial` -- are also built and audited as SUPPLEMENTARY controls
+(`_ac_b2_supplementary_detected`/`_ac_b2_supplementary_total`/`_ac_b2_supplementary_detail`,
+diagnostic only): extra coverage, never folded into `controls_total`/`controls_detected`.
+
+`--dry-run` builds and audits all 5 AC-B2 controls plus both supplementary controls
+(self-contained: controls (1)/(2) trace a tiny random-init model instead of the pinned
+checkpoint, so no checkpoint load or jax2onnx conversion is needed) as a wiring smoke
+test, and reports zero clean artifacts.
 """
 
 from __future__ import annotations
@@ -192,6 +202,7 @@ def _plant_function_rng(base: ModelProto) -> ModelProto:
 
 
 def _plant_direct_multinomial(base: ModelProto) -> ModelProto:
+  """Supplementary (uncounted) plant: a top-level ONNX `Multinomial` op."""
   m = copy.deepcopy(base)
   dummy = helper.make_tensor("audit_logits_dummy", TensorProto.FLOAT, [1, 2], [0.0, 0.0])
   node = helper.make_node(
@@ -206,47 +217,172 @@ def _plant_direct_multinomial(base: ModelProto) -> ModelProto:
   return m
 
 
-def _poisoned_jaxpr() -> Any:
-  """A deliberately RNG-carrying jaxpr (the 5th AC-B2 control): proves the jaxpr-side
-  walker (`aminx.export.rng_audit.find_rng_primitives`) fires independently of the
-  ONNX-side one -- neither walker is trusted on the strength of the OTHER's controls."""
-
-  def poisoned(x: jax.Array) -> jax.Array:
-    key = jax.random.PRNGKey(0)
-    return x + jax.random.normal(key, x.shape)
-
-  return jax.make_jaxpr(poisoned)(jnp.zeros((4,), dtype=jnp.float32))
+# ----------------------------------------------------------------------------------
+# AC-B2 controls (1)/(2)/(3): jax-side. (1)/(2) need a model + StageSet -- the real
+# pinned checkpoint in a normal run, or `_dry_run_synthetic_model` in --dry-run.
+# ----------------------------------------------------------------------------------
 
 
-def run_ac_b2_controls() -> dict[str, Any]:
-  """Build and audit all 5 AC-B2 planted RNG controls. Returns `{detected, total, detail}`."""
+def _dry_run_synthetic_model() -> Any:
+  """A tiny random-init model with `k_neighbors=48` (the pinned checkpoint's own
+  topology, `get_topology_for_checkpoint(PINNED_CHECKPOINT_ID)`), so AC-B2 controls
+  (1) and (2) can build a real native-kernel trace / wrapper self-contained in
+  `--dry-run` -- no checkpoint load needed. Mirrors
+  `tests/export/test_export_wrappers.py::test_random_init_k32`'s X1-deviation pattern;
+  `k_neighbors=48` (not that test's 32) so `make_p04_unconditional`'s topology
+  assertion (V10) passes against `PINNED_CHECKPOINT_ID`.
+  """
+  from aminx.model import Aminx
+
+  return Aminx(
+    node_features=32,
+    edge_features=32,
+    hidden_features=32,
+    num_encoder_layers=2,
+    num_decoder_layers=2,
+    k_neighbors=48,
+    dropout_rate=0.1,
+    key=jax.random.PRNGKey(11),
+  )
+
+
+def _native_kernel_control(model: Any, stage_set: Any) -> bool:
+  """AC-B2 control (1): the UNMODIFIED `aminx.inference.score_unconditional.kernel`
+  jaxpr (the native path this export ladder's wrappers replace) -- must be flagged,
+  since the kernel genuinely consumes RNG state via `jax.random.split` (D-H). Traced
+  with the default noise/key path over `model`/`stage_set` as given (the pinned
+  checkpoint model in a real run, the dry-run stand-in otherwise) -- this is the real
+  kernel, not a wrapper, so nothing here is RNG-free by construction."""
+  from aminx.export.rng_audit import find_rng_primitives
+  from aminx.inference import score_unconditional
+  from aminx.inference.bundle_builder import build_inference_bundle
+
+  coords, mask, residue_index, chain_index = (jnp.asarray(a) for a in _synthetic_inputs(64))
+  bundle, config = build_inference_bundle(
+    coords=coords,
+    mask=mask,
+    residue_index=residue_index,
+    chain_index=chain_index,
+    mode="score_unconditional",
+  )
+
+  def _traced(key: jax.Array) -> Any:
+    return score_unconditional.kernel(model, key, bundle, config, stage_set)
+
+  jaxpr = jax.make_jaxpr(_traced)(jax.random.PRNGKey(0))
+  return len(find_rng_primitives(jaxpr)) > 0
+
+
+def _wrapper_planted_normal_control(model: Any, stage_set: Any) -> bool:
+  """AC-B2 control (2): the P04 export wrapper (this ladder's own RNG-free wrapper)
+  with a `jax.random.normal` planted onto its traced output -- must be flagged,
+  distinct from control (1)'s UNMODIFIED kernel (proves the walker isn't only ever
+  exercised against the native path)."""
+  from aminx.export import make_p04_unconditional
   from aminx.export.rng_audit import find_rng_primitives
 
-  base = _placeholder_base_model()
-  onnx_plants = {
-    "if_subgraph": _plant_if_subgraph_rng(base),
-    "loop_subgraph": _plant_loop_subgraph_rng(base),
-    "local_function": _plant_function_rng(base),
-    "direct_multinomial": _plant_direct_multinomial(base),
-  }
+  wrapper = make_p04_unconditional(model, stage_set)
 
-  detail: dict[str, bool] = {}
+  def planted(coords: Any, mask: Any, residue_index: Any, chain_index: Any) -> tuple[Any, Any]:
+    logits, neighbor_indices = wrapper(coords, mask, residue_index, chain_index)
+    planted_logits = logits + jax.random.normal(jax.random.PRNGKey(0), logits.shape)
+    return planted_logits, neighbor_indices
+
+  inputs = _synthetic_inputs(64)
+  jaxpr = jax.make_jaxpr(planted)(*_specs(inputs))
+  return len(find_rng_primitives(jaxpr)) > 0
+
+
+def _rng_in_cond_in_jit_control() -> bool:
+  """AC-B2 control (3): RNG inside `lax.cond` inside `jit` -- the shape of
+  `features.py`'s `apply_noise_to_coordinates` that blocked Phase 0 (T1 spec): proves
+  the walker descends into a `cond` branch nested under a `pjit`, not just top-level
+  equations. Self-contained: no model/checkpoint needed."""
+  from aminx.export.rng_audit import find_rng_primitives
+
+  def cond_rng(pred: jax.Array, x: jax.Array) -> jax.Array:
+    def true_branch(x: jax.Array) -> jax.Array:
+      return x + jax.random.normal(jax.random.PRNGKey(0), x.shape)
+
+    def false_branch(x: jax.Array) -> jax.Array:
+      return x
+
+    return jax.lax.cond(pred, true_branch, false_branch, x)
+
+  jaxpr = jax.make_jaxpr(jax.jit(cond_rng))(jnp.array(True), jnp.zeros((4,), dtype=jnp.float32))
+  return len(find_rng_primitives(jaxpr)) > 0
+
+
+#: Supplementary (uncounted) ONNX plants: extra structural coverage, never folded into
+#: `controls_total`/`controls_detected` (AC-B2 names exactly 5).
+SUPPLEMENTARY_CONTROLS_TOTAL = 2
+
+
+def run_ac_b2_controls(model: Any, stage_set: Any) -> dict[str, Any]:
+  """Build and audit the exactly-5 AC-B2 planted RNG controls (spec lines 240-246):
+  (1) the unmodified native `score_unconditional.kernel` jaxpr, (2) a wrapper variant
+  with a planted `normal`, (3) RNG inside `lax.cond` inside `jit`, (4) an ONNX copy
+  with `RandomUniform` injected into an `If` subgraph, and (5) an ONNX copy with
+  `RandomUniform` inside a local function body (`model_proto.functions`).
+
+  `model`/`stage_set` are the pinned-checkpoint model + StageSet the wrappers close
+  over in a real run, or the tiny random-init `--dry-run` stand-in
+  (`_dry_run_synthetic_model`) -- either way, controls (1)/(2) trace the SAME model
+  this call was given.
+
+  Also builds two supplementary (uncounted) ONNX plants -- `RandomNormal` inside a
+  `Loop` subgraph, and a top-level `Multinomial` -- reported separately in
+  `supplementary_detected`/`supplementary_total`/`supplementary_detail`, never folded
+  into `detected`/`total`.
+
+  Returns `{detected, total, detail, supplementary_detected, supplementary_total,
+  supplementary_detail}`.
+  """
+  base = _placeholder_base_model()
+
+  detail: dict[str, bool] = {
+    "native_kernel": _native_kernel_control(model, stage_set),
+    "wrapper_planted_normal": _wrapper_planted_normal_control(model, stage_set),
+    "rng_in_cond_in_jit": _rng_in_cond_in_jit_control(),
+  }
+  for name in ("native_kernel", "wrapper_planted_normal", "rng_in_cond_in_jit"):
+    logger.info("AC-B2 control %r: detected=%s", name, detail[name])
+
+  onnx_plants = {
+    "onnx_if_subgraph": _plant_if_subgraph_rng(base),
+    "onnx_local_function": _plant_function_rng(base),
+  }
   for name, model_proto in onnx_plants.items():
     findings = find_onnx_rng_ops(model_proto)
     detail[name] = len(findings) > 0
     logger.info("AC-B2 control %r: findings=%s detected=%s", name, findings, detail[name])
 
-  poisoned_findings = find_rng_primitives(_poisoned_jaxpr())
-  detail["poisoned_jaxpr"] = len(poisoned_findings) > 0
-  logger.info(
-    "AC-B2 control %r: findings=%s detected=%s",
-    "poisoned_jaxpr",
-    poisoned_findings,
-    detail["poisoned_jaxpr"],
-  )
-
   detected = sum(1 for v in detail.values() if v)
-  return {"detected": detected, "total": CONTROLS_TOTAL, "detail": detail}
+
+  supplementary_plants = {
+    "onnx_loop_subgraph": _plant_loop_subgraph_rng(base),
+    "onnx_direct_multinomial": _plant_direct_multinomial(base),
+  }
+  supplementary_detail: dict[str, bool] = {}
+  for name, model_proto in supplementary_plants.items():
+    findings = find_onnx_rng_ops(model_proto)
+    supplementary_detail[name] = len(findings) > 0
+    logger.info(
+      "AC-B2 supplementary control %r (not counted toward controls_total): findings=%s detected=%s",
+      name,
+      findings,
+      supplementary_detail[name],
+    )
+  supplementary_detected = sum(1 for v in supplementary_detail.values() if v)
+
+  return {
+    "detected": detected,
+    "total": CONTROLS_TOTAL,
+    "detail": detail,
+    "supplementary_detected": supplementary_detected,
+    "supplementary_total": SUPPLEMENTARY_CONTROLS_TOTAL,
+    "supplementary_detail": supplementary_detail,
+  }
 
 
 # ----------------------------------------------------------------------------------
@@ -430,7 +566,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
   buckets = tuple(int(b) for b in args.buckets.split(","))
   artifacts_base = Path(args.artifacts_dir)
 
-  controls = run_ac_b2_controls()
+  from aminx.inference.logits import make_stage_set
+
+  if args.dry_run:
+    # AC-B2 controls (1)/(2) still need a real model to trace -- no checkpoint load,
+    # so a tiny random-init stand-in (D-C: dry-run stays self-contained).
+    model = _dry_run_synthetic_model()
+    stage_set = make_stage_set()
+  else:
+    from aminx.export import PINNED_CHECKPOINT_ID
+    from aminx.io.weights import load_model
+
+    if CHECKPOINT_ID != PINNED_CHECKPOINT_ID:
+      msg = (
+        f"CHECKPOINT_ID={CHECKPOINT_ID!r} != "
+        f"aminx.export.PINNED_CHECKPOINT_ID={PINNED_CHECKPOINT_ID!r}"
+      )
+      raise ValueError(msg)
+    lbc.assert_checkpoint_pinned(CHECKPOINT_ID)  # raises on mismatch; caller exits 3
+
+    model = load_model(checkpoint_id=CHECKPOINT_ID)
+    stage_set = make_stage_set()
+
+  controls = run_ac_b2_controls(model, stage_set)
 
   versions = {
     "jax": _pkg_version("jax"),
@@ -452,22 +610,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
       "versions": versions,
       "artifacts": {},
       "_ac_b2_detail": controls["detail"],  # extra diagnostic, not schema-required
+      "_ac_b2_supplementary_detected": controls["supplementary_detected"],
+      "_ac_b2_supplementary_total": controls["supplementary_total"],
+      "_ac_b2_supplementary_detail": controls["supplementary_detail"],
     }
-
-  from aminx.export import PINNED_CHECKPOINT_ID
-  from aminx.inference.logits import make_stage_set
-  from aminx.io.weights import load_model
-
-  if CHECKPOINT_ID != PINNED_CHECKPOINT_ID:
-    msg = (
-      f"CHECKPOINT_ID={CHECKPOINT_ID!r} != "
-      f"aminx.export.PINNED_CHECKPOINT_ID={PINNED_CHECKPOINT_ID!r}"
-    )
-    raise ValueError(msg)
-  lbc.assert_checkpoint_pinned(CHECKPOINT_ID)  # raises on mismatch; caller exits 3
-
-  model = load_model(checkpoint_id=CHECKPOINT_ID)
-  stage_set = make_stage_set()
 
   h12 = args.artifacts_subdir or "unpinned"
   artifacts_dir = artifacts_base / h12
@@ -519,6 +665,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     "versions": versions,
     "artifacts": artifacts,
     "_ac_b2_detail": controls["detail"],  # extra diagnostic, not schema-required
+    "_ac_b2_supplementary_detected": controls["supplementary_detected"],
+    "_ac_b2_supplementary_total": controls["supplementary_total"],
+    "_ac_b2_supplementary_detail": controls["supplementary_detail"],
     "_errors": errors,  # extra diagnostic, not schema-required
     "_artifact_subdir": h12,
   }

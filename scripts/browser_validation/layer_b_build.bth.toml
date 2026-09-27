@@ -4,7 +4,7 @@ created = "260927"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "The RNG-free P03/P04 export wrappers (aminx.export, T1) convert cleanly through jax2onnx across the export bucket ladder (128, 256, 512, 1024), the RNG audit (jaxpr walker + ONNX-graph walker) finds no RNG primitive/op in any clean artifact, and the same audit correctly detects every one of the 5 deliberately-planted RNG controls (AC-B2: 3 ONNX-level plants at increasing structural depth -- If-subgraph, Loop-subgraph, local FunctionProto -- plus a direct top-level ONNX RNG op, plus one poisoned jaxpr proving the jaxpr-side walker independently fires)."
+hypothesis = "The RNG-free P03/P04 export wrappers (aminx.export, T1) convert cleanly through jax2onnx across the export bucket ladder (128, 256, 512, 1024), the RNG audit (jaxpr walker + ONNX-graph walker) finds no RNG primitive/op in any clean artifact, and the same audit correctly detects every one of the exactly-5 AC-B2 planted controls (spec lines 240-246): (1) the unmodified score_unconditional.kernel jaxpr, (2) a wrapper variant with a planted normal, (3) RNG inside lax.cond inside jit, (4) an ONNX copy with RandomUniform injected into an If subgraph, and (5) an ONNX copy with RandomUniform inside a local function body (model_proto.functions). Two further ONNX plants (RandomNormal in a Loop subgraph, a top-level Multinomial) are built and audited as supplementary controls, reported separately and never folded into controls_total/controls_detected."
 stage_name = "exploration"
 novel = true
 
