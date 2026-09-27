@@ -1,0 +1,62 @@
+[
+  {
+    "name": "ctrl_blind_instrument_insensitive",
+    "expect": "ctrl_blind",
+    "result": {
+      "n_artifacts": 8,
+      "n_converted": 8,
+      "n_rng_clean": 8,
+      "controls_total": 5,
+      "controls_detected": 4,
+      "converted_by_path": {"p03": true, "p04": true},
+      "opsets": {"p03_L128": 18, "p04_L128": 18},
+      "versions": {"jax2onnx": "0.16.1", "onnx": "1.23.0", "onnxruntime": "1.30.0"},
+      "artifacts": {}
+    }
+  },
+  {
+    "name": "rng_found_in_clean_artifact",
+    "expect": "rng_found",
+    "result": {
+      "n_artifacts": 8,
+      "n_converted": 8,
+      "n_rng_clean": 6,
+      "controls_total": 5,
+      "controls_detected": 5,
+      "converted_by_path": {"p03": true, "p04": true},
+      "opsets": {"p03_L128": 18, "p04_L128": 18},
+      "versions": {"jax2onnx": "0.16.1", "onnx": "1.23.0", "onnxruntime": "1.30.0"},
+      "artifacts": {}
+    }
+  },
+  {
+    "name": "not_converted_one_clean_artifact_failed",
+    "expect": "not_converted",
+    "result": {
+      "n_artifacts": 8,
+      "n_converted": 6,
+      "n_rng_clean": 6,
+      "controls_total": 5,
+      "controls_detected": 5,
+      "converted_by_path": {"p03": false, "p04": true},
+      "opsets": {"p04_L128": 18},
+      "versions": {"jax2onnx": "0.16.1", "onnx": "1.23.0", "onnxruntime": "1.30.0"},
+      "artifacts": {}
+    }
+  },
+  {
+    "name": "pass_all_clean_converted_and_rng_free",
+    "expect": "pass",
+    "result": {
+      "n_artifacts": 8,
+      "n_converted": 8,
+      "n_rng_clean": 8,
+      "controls_total": 5,
+      "controls_detected": 5,
+      "converted_by_path": {"p03": true, "p04": true},
+      "opsets": {"p03_L128": 18, "p04_L128": 18},
+      "versions": {"jax2onnx": "0.16.1", "onnx": "1.23.0", "onnxruntime": "1.30.0"},
+      "artifacts": {}
+    }
+  }
+]
