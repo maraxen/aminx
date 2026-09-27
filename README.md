@@ -56,8 +56,11 @@ Aminx is audited against the upstream [LigandMPNN](https://github.com/dauparas/L
 Aminx is validated against the upstream [LigandMPNN](https://github.com/dauparas/LigandMPNN) reference (which includes ProteinMPNN behavior):
 
 Latest graded audit (browser-validation Phase 1, run `e3d3ffa2`, HEAD `e4b86a0c`): **global grade FAIL**.
-Two things force it. The sampling tier could not be validated at the pre-registered protocol
-(`budget_exceeded`: 435–483 h projected). And 8 core defects were confirmed adversarially. 8/8
+Two things force it. The audit's stricter distributional sampling test could not be run
+(its calibration was `budget_exceeded`: 435–483 h projected, because the sampler recomputed the
+decoder over every position at each step). Autoregressive sampling itself is validated by the
+`parity_heavy` suite (`test_autoregressive_sampling_parity`: ≥ 95% token agreement, log-prob
+corr ≥ 0.95). And 8 core defects were confirmed adversarially. 8/8
 reference-derived invariants pass, and each goes red on an injected defect. Pre-registered clause
 parity is 19/33 core clauses (0.576). Full details:
 [`.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md`](.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md).
@@ -70,8 +73,8 @@ parity is 19/33 core clauses (0.576). Full details:
 | P03 k-NN graph | 0 | yes | – |
 | P04 conditional score (ProteinMPNN) | 0.36 | yes | – |
 | P05/P06 conditional score (context) | 0.47 / 0.48 | no | 2-hop self-identity leak |
-| P07/P08 sampling | – | no | sampling tier not validated |
-| P09 tied sampling | 0.64 | no | sampling tier; fixed-position log-probs |
+| P07/P08 sampling | – | no | distributional sampling test not run (budget); AR parity test passes |
+| P09 tied sampling | 0.64 | no | distributional sampling test not run; fixed-position log-probs |
 | P11 LigandMPNN | 2221 (0.22 nats) | no | atom_context 16 vs 25; `v_c` bias; ligand positional bias |
 | P12 side-chain context | 0.44 | no | not-advanced rows |
 | P13 membrane | ≈ 5 × 10⁴ (≈ 5 nats) | no | random-init `physics_projection` bias |

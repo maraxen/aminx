@@ -16,8 +16,18 @@ campaign `aminx-bv-layer-a` / `32a520cf`). The FAIL is forced by the prerequisit
 not by a cap-lattice floor: `prereq_status = missing` because no `layer_a_sampling_validate`
 exists. The sampling calibrate ended `budget_exceeded` (run `4f07f070`, 483 h projected against a
 16 h budget even on one TITAN RTX, D10), so no sampling parameters were ever pre-registered.
-`compute_grade` was therefore never called. The spec's expected grade was PARTIAL. That grade
-depended on the sampling tier being validated, and it never was.
+`compute_grade` was therefore never called. The spec's expected grade was PARTIAL, which
+depended on this sprint's distributional sampling test running.
+
+**This is not a finding that sampling is broken.** Autoregressive sampling is already validated
+against the reference by `test_autoregressive_sampling_parity` (`tests/parity/test_full_model_parity.py:480`,
+in the 30/30 `parity_heavy` suite): with the reference's decoding order it requires at least 95%
+token agreement and log-prob Pearson correlation of at least 0.95, for both weight sources.
+Invariant 5 (below) additionally shows aminx's one-step sampling distribution equals
+softmax((logits + bias)/T) to TV < 0.06 over 4000 draws. What did not run is the stricter,
+pre-registered distributional comparison (`layer_a_sampling_validate`: 1500 draws per lane,
+T = 0.1 and 1.0, tied and ligand lanes). It could not be calibrated within budget, mostly because
+of aminx's per-draw cost (F-T6/F-T8).
 
 The grade inputs, as measured, for when a sampling validate eventually exists:
 
@@ -131,8 +141,8 @@ quirk (F-T11c), not a divergence, but it does block P02 in the advance table as 
 | P04 | **yes** | – |
 | P05 | no | not_advanced rows; defect conditional_score_context_mask |
 | P06 | no | not_advanced rows; defect conditional_score_context_mask |
-| P07 | no | no layer-(a) rows; sampling tier budget_exceeded; defects ar_mask_order_rank_convention_mismatch, sample_log_probs_output |
-| P08 | no | no layer-(a) rows; sampling tier budget_exceeded |
+| P07 | no | no layer-(a) rows; distributional sampling test not run (calibrate budget_exceeded); defects ar_mask_order_rank_convention_mismatch, sample_log_probs_output |
+| P08 | no | no layer-(a) rows; distributional sampling test not run (calibrate budget_exceeded) |
 | P09 | no | not_advanced/over-bar log_probs; sampling budget_exceeded; defect sample_log_probs_output |
 | P10 | no | no layer-(a) rows |
 | P11 | no | over bar (0.222 nats); sampling budget_exceeded; 5 defects |
@@ -159,11 +169,15 @@ not attested. The layer-a campaign is left **open** for the future sampling vali
 
 ## Findings from execution
 
-- **F-T6/F-T8 (sampler cost).** aminx's autoregressive sampler costs O(L²) per draw, 25–40× the
-  reference's per-draw cost. At the pre-registered n = 1500, the sampling calibrate projected
+- **F-T6/F-T8 (sampler cost, not correctness).** aminx's autoregressive decode ran the decoder
+  over all L positions at every step and kept one position's logits
+  (`inference/decode/autoregressive.py`), so decoder work per sequence was O(L²·k), against the
+  reference's O(L·k) incremental update. The results were identical (full recompute and incremental
+  reveal are bit-exact, struct attacker), but the cost was 25–40× the reference's per-draw cost. At the pre-registered n = 1500, the sampling calibrate projected
   435–483 h (71–105 h per lane) against a 16 h budget, even on a TITAN RTX. Reference CPU draw cost
-  also varies up to 3× between runs. **The sampling tier cannot be validated at the pre-registered
-  protocol**, and choosing a reduced protocol is the user's call.
+  also varies up to 3× between runs. **The distributional sampling test cannot be
+  calibrated at the pre-registered protocol with that sampler.** The fix is an incremental sampler
+  (tracked separately), not a reduced protocol.
 - **F-T8 (bathos exit override).** bathos 84be544e forces `outcome = error` on any non-zero exit
   before evaluating `[outcomes]`. Budget-fail and graded-FAIL scripts must write their result and
   exit 0 (fixes 799a1c4a, e4b86a0c).
@@ -201,7 +215,8 @@ not attested. The layer-a campaign is left **open** for the future sampling vali
    Titanix runs go through `scripts/browser_validation/titanix_launch.sh`, which pushes by URL to
    `titanix:/home/solab/bv/aminx.git` and materializes LFS.
 2. For the sampling tier: either choose a reduced protocol (a user decision, e.g. smaller n or
-   fewer lanes, pre-registered in a new sidecar before any run), or first fix the O(L²) sampler.
+   fewer lanes, pre-registered in a new sidecar before any run), or, preferably, first make the
+   sampler incremental (O(L·k) per sequence) and re-calibrate.
    Then run calibrate → commit params → validate.
 3. Fix the 8 confirmed core defects and the major one. Most are one-line bias/topology fixes in
    `ligand_mpnn.py`, `encoder.py` and weight conversion, plus the conditional context mask. Then
