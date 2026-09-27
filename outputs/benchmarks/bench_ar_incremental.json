@@ -1,0 +1,44 @@
+{
+  "lengths": [
+    128,
+    256,
+    512
+  ],
+  "per_length": {
+    "128": {
+      "off": 3.225937793031335,
+      "off_compile": 3.7090898280148394,
+      "force": 0.10356791398953646,
+      "force_compile": 0.8353382920031436,
+      "auto": 0.10801417601760477,
+      "auto_compile": 1.2109822680358775,
+      "tokens_equal": true
+    },
+    "256": {
+      "off": 11.736978830944281,
+      "off_compile": 12.643055145046674,
+      "force": 0.2094015700276941,
+      "force_compile": 0.90724448004039,
+      "auto": 0.2201091710012406,
+      "auto_compile": 1.2282670520362444,
+      "tokens_equal": true
+    },
+    "512": {
+      "off": 42.71101357799489,
+      "off_compile": 43.27275391801959,
+      "force": 0.49761225195834413,
+      "force_compile": 1.498633214039728,
+      "auto": 0.5333143830066547,
+      "auto_compile": 1.7862805979675613,
+      "tokens_equal": true
+    }
+  },
+  "speedup_max_len": 85.83191714011554,
+  "inc_scaling": 4.804695129889535,
+  "full_scaling": 13.239875136544526,
+  "length_ratio": 4.0,
+  "auto_overhead": 1.0717468890844337,
+  "tokens_equal": true,
+  "backend": "cpu",
+  "git_hash": "8bcb24370fe2a18a84b84b0f43dca208663c9f7f"
+}

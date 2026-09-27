@@ -1,0 +1,9 @@
+# bench_ar_incremental.bth.b5f7ade5-9ba7-48f0-a341-bde2db74ef74.bth.lock.toml — written at run time, never modified
+[manifest]
+written_at = "2026-09-27T02:11:14.109851+00:00"
+sidecar_sha256 = "c4a9718cf7bb683e2ca19999743562509bf5ae2a0bce9e07294e5c037acf442f"
+sidecar_path = "/tmp/pvb/scripts/benchmarks/bench_ar_incremental.bth.toml"
+git_sha = "8bcb24370fe2a18a84b84b0f43dca208663c9f7f"
+script_sha256 = "e73dfb16f19d23a372cbe6308bfd22165da1457df527ee5cfd7fc03815e79712"
+run_id = "b5f7ade5-9ba7-48f0-a341-bde2db74ef74"
+agent_id = null
