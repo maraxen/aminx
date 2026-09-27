@@ -1,0 +1,152 @@
+{
+  "artifacts": {
+    "p03_L1024.onnx": {
+      "bucket": 1024,
+      "export_path": "p03",
+      "path": "p03_L1024.onnx",
+      "role": "clean",
+      "sha256": "72686f76a62a00206a85e52141d2b501d7479f363a579727f9f4049b2c3ff039"
+    },
+    "p03_L1024_ebias.onnx": {
+      "bucket": 1024,
+      "delta": 0.0001,
+      "export_path": "p03",
+      "path": "p03_L1024_ebias.onnx",
+      "role": "control_ebias",
+      "sha256": "98102eab834e9f5a498b0fec39c5e6c541fdd7ef8161ee88996faaaf210d1199"
+    },
+    "p03_L1024_swap.onnx": {
+      "bucket": 1024,
+      "export_path": "p03",
+      "path": "p03_L1024_swap.onnx",
+      "role": "control_swap",
+      "sha256": "e56ed9e1a355535ed2019fb715b108b2c6b70d73dc2986360ae98850b16c9dc8"
+    },
+    "p03_L128.onnx": {
+      "bucket": 128,
+      "export_path": "p03",
+      "path": "p03_L128.onnx",
+      "role": "clean",
+      "sha256": "6f80948d6d93362fee6219f441616ddfa1260aed389c24f262fd78de3fce2de8"
+    },
+    "p03_L128_ebias.onnx": {
+      "bucket": 128,
+      "delta": 0.0001,
+      "export_path": "p03",
+      "path": "p03_L128_ebias.onnx",
+      "role": "control_ebias",
+      "sha256": "e9d5a227878235d3394e604923cb71bcd1cbc4f94450017f7ff42f320e9f9f74"
+    },
+    "p03_L128_swap.onnx": {
+      "bucket": 128,
+      "export_path": "p03",
+      "path": "p03_L128_swap.onnx",
+      "role": "control_swap",
+      "sha256": "c096acae678c91f8d0150da720c51448c6ac1eaec36250ebacd1e76ed476eb1f"
+    },
+    "p03_L256.onnx": {
+      "bucket": 256,
+      "export_path": "p03",
+      "path": "p03_L256.onnx",
+      "role": "clean",
+      "sha256": "0eceea1055a6b7590675b506cdcc830f695df35b8a34475ff820108328c79ed7"
+    },
+    "p03_L256_ebias.onnx": {
+      "bucket": 256,
+      "delta": 0.0001,
+      "export_path": "p03",
+      "path": "p03_L256_ebias.onnx",
+      "role": "control_ebias",
+      "sha256": "24db433396e249f2ebd3fb68036e5e7c169094de344d2b1602a66ff9899b2cc1"
+    },
+    "p03_L256_swap.onnx": {
+      "bucket": 256,
+      "export_path": "p03",
+      "path": "p03_L256_swap.onnx",
+      "role": "control_swap",
+      "sha256": "f90541a84408433490fa52def44e42c2cacd80ebfc5d2950aef89d22c17dfd83"
+    },
+    "p03_L512.onnx": {
+      "bucket": 512,
+      "export_path": "p03",
+      "path": "p03_L512.onnx",
+      "role": "clean",
+      "sha256": "c08f9ab49662f5a4b5ec74c413869fe621e0058249202755f60333f58ec43826"
+    },
+    "p03_L512_ebias.onnx": {
+      "bucket": 512,
+      "delta": 0.0001,
+      "export_path": "p03",
+      "path": "p03_L512_ebias.onnx",
+      "role": "control_ebias",
+      "sha256": "62a27562f7924163f957328031a133751f167382f3294dff3ea27413486a4740"
+    },
+    "p03_L512_swap.onnx": {
+      "bucket": 512,
+      "export_path": "p03",
+      "path": "p03_L512_swap.onnx",
+      "role": "control_swap",
+      "sha256": "5696fac1f69a01a44e8088a0a1adfb752476fc9e74517b3d7318608c1648214c"
+    },
+    "p04_L1024.onnx": {
+      "bucket": 1024,
+      "export_path": "p04",
+      "path": "p04_L1024.onnx",
+      "role": "clean",
+      "sha256": "080af2ed7c1418b519c5f2cc672eed5164fa25895359332fd3c77f7bfca70c94"
+    },
+    "p04_L1024_perturbed.onnx": {
+      "bucket": 1024,
+      "delta": 0.0005,
+      "export_path": "p04",
+      "path": "p04_L1024_perturbed.onnx",
+      "role": "control_perturbed_bias",
+      "sha256": "4ddf37f6dfe9870e5fdd3557c8a41799a135ecb3ed5cfbf6e0ed241df2f6797d"
+    },
+    "p04_L128.onnx": {
+      "bucket": 128,
+      "export_path": "p04",
+      "path": "p04_L128.onnx",
+      "role": "clean",
+      "sha256": "603c304c35a2f809122d98cb949a1cc1aebcf855b10a8fc8ebbfc3cc499f5156"
+    },
+    "p04_L128_perturbed.onnx": {
+      "bucket": 128,
+      "delta": 0.0005,
+      "export_path": "p04",
+      "path": "p04_L128_perturbed.onnx",
+      "role": "control_perturbed_bias",
+      "sha256": "e0e62a511d8fe2cdb6d3e8bcabc4503c47484117014f3d0631e0c8f69c19fe38"
+    },
+    "p04_L256.onnx": {
+      "bucket": 256,
+      "export_path": "p04",
+      "path": "p04_L256.onnx",
+      "role": "clean",
+      "sha256": "63dbe04f0c32d062fad943cdf44f2b65edbef8d9eb947309297415e372209c3a"
+    },
+    "p04_L256_perturbed.onnx": {
+      "bucket": 256,
+      "delta": 0.0005,
+      "export_path": "p04",
+      "path": "p04_L256_perturbed.onnx",
+      "role": "control_perturbed_bias",
+      "sha256": "bdc028280956696671c49deb26eae9150e56ec220616a2b217039d2ed3119ba5"
+    },
+    "p04_L512.onnx": {
+      "bucket": 512,
+      "export_path": "p04",
+      "path": "p04_L512.onnx",
+      "role": "clean",
+      "sha256": "7e9e10c8820155a7d2e25315d361210abf6eb8337a31c2af855556f230c3f643"
+    },
+    "p04_L512_perturbed.onnx": {
+      "bucket": 512,
+      "delta": 0.0005,
+      "export_path": "p04",
+      "path": "p04_L512_perturbed.onnx",
+      "role": "control_perturbed_bias",
+      "sha256": "b596c2a5b916f2d23a8a3eb2164d9bbb279ca5b6c62c71768f9536fb4f51bfdc"
+    }
+  }
+}
