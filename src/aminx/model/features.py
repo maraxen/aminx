@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Int
 from proxide.physics.constants import BOLTZMANN_KCAL
 
 from aminx.utils.coordinates import (
@@ -24,6 +25,7 @@ from aminx.utils.radial_basis import compute_radial_basis
 if TYPE_CHECKING:
   from aminx.types.arrays import (
     AlphaCarbonMask,
+    ArrayLike,
     BackboneNoise,
     ChainIndex,
     EdgeFeatures,
@@ -90,6 +92,58 @@ def top_k(x: jax.Array, k: int) -> tuple[jax.Array, jax.Array]:
   _, order = jax.lax.sort((-x, index), dimension=-1, is_stable=False, num_keys=2)
   order = order[..., :k]
   return jnp.take_along_axis(x, order, axis=-1), order
+
+
+def select_neighbors(
+  distances: ArrayLike,
+  mask: ArrayLike,
+  k: int,
+  structure_mapping: ArrayLike | None = None,
+) -> Int[Array, "L k"]:
+  """Select the ``k`` nearest neighbors per residue from a masked distance matrix.
+
+  Extracted verbatim (260926, T1) from ``ProteinFeatures.forward_edge_stages``, which
+  used to inline this block with ``self.k_neighbors`` and ``structure_coordinates.shape[0]``
+  in place of ``k`` and ``distances.shape[0]`` respectively -- otherwise byte-for-byte the
+  same masking, ``structure_mapping`` isolation, clamp, and ``top_k`` call. Pulled out so
+  ``aminx.export.wrappers`` can compute neighbor indices RNG-free (D-B), without going
+  through ``forward_edge_stages``'s noise-augmentation branch at all.
+
+  Args:
+    distances: ``(L, L)`` pairwise distance matrix (e.g. from
+      ``aminx.utils.coordinates.compute_backbone_distance``).
+    mask: ``(L,)`` residue validity mask. Invalid pairs are pushed to ``+inf`` before
+      selection so they never win a neighbor slot.
+    k: Requested neighbor count. Clamped to ``L`` (``distances.shape[0]``) so a structure
+      shorter than ``k`` still returns a full ``(L, L)`` selection instead of erroring.
+    structure_mapping: Optional ``(L,)`` array mapping each residue to a structure id.
+      When given, cross-structure pairs are also pushed to ``+inf`` (multi-state isolation).
+
+  Returns:
+    ``(L, k_clamped)`` int32 neighbor indices, nearest first (``aminx.model.features.top_k``'s
+    tie-break order).
+  """
+  distances_masked = jnp.array(
+    jnp.where(
+      (mask[:, None] * mask[None, :]).astype(jnp.bool_),
+      distances,
+      jnp.inf,
+    ),
+  )
+
+  if structure_mapping is not None:
+    same_structure = structure_mapping[:, jnp.newaxis] == structure_mapping[jnp.newaxis, :]
+    distances_masked = jnp.array(
+      jnp.where(
+        same_structure.astype(jnp.bool_),
+        distances_masked,
+        jnp.inf,
+      ),
+    ).squeeze()
+
+  k_clamped = min(k, distances.shape[0])
+  _, neighbor_indices = top_k(-distances_masked, k_clamped)
+  return jnp.array(neighbor_indices, dtype=jnp.int32)
 
 
 class ProteinEdgeStageTensors(NamedTuple):
@@ -206,27 +260,7 @@ class ProteinFeatures(eqx.Module):
       distances = compute_backbone_distance(backbone_atom_coordinates)
 
     if distances is not None:
-      distances_masked = jnp.array(
-        jnp.where(
-          (mask[:, None] * mask[None, :]).astype(jnp.bool_),
-          distances,
-          jnp.inf,
-        ),
-      )
-
-      if structure_mapping is not None:
-        same_structure = structure_mapping[:, jnp.newaxis] == structure_mapping[jnp.newaxis, :]
-        distances_masked = jnp.array(
-          jnp.where(
-            same_structure.astype(jnp.bool_),
-            distances_masked,
-            jnp.inf,
-          ),
-        ).squeeze()
-
-      k = min(self.k_neighbors, structure_coordinates.shape[0])
-      _, neighbor_indices = top_k(-distances_masked, k)
-      neighbor_indices = jnp.array(neighbor_indices, dtype=jnp.int32)
+      neighbor_indices = select_neighbors(distances, mask, self.k_neighbors, structure_mapping)
 
     # At this point neighbor_indices must be populated (either passed in or computed)
     if neighbor_indices is None:
