@@ -176,8 +176,14 @@ not attested. The layer-a campaign is left **open** for the future sampling vali
   reveal are bit-exact, struct attacker), but the cost was 25–40× the reference's per-draw cost. At the pre-registered n = 1500, the sampling calibrate projected
   435–483 h (71–105 h per lane) against a 16 h budget, even on a TITAN RTX. Reference CPU draw cost
   also varies up to 3× between runs. **The distributional sampling test cannot be
-  calibrated at the pre-registered protocol with that sampler.** The fix is an incremental sampler
-  (tracked separately), not a reduced protocol.
+  calibrated at the pre-registered protocol with that sampler.** The fix is an incremental sampler,
+  not a reduced protocol.
+  **Fixed (260926, branch `feat/incremental-ar-sampler`, 8bcb2437):** each wave now decodes only its
+  own positions against a per-layer cache, exact vs full recompute (identical tokens, logit gap
+  9.5e-7). Pre-registered benchmark `bench_ar_incremental` (bathos run `b5f7ade5`, outcome
+  **pass**, clean tree): 85.8× faster at L = 512 on CPU (42.7 s → 0.50 s per sequence); 4× length →
+  4.8× time (full recompute: 13.2×, the negative control); `auto` picks the incremental branch
+  (1.07× `force`). The sampling calibrate should be re-run before re-grading.
 - **F-T8 (bathos exit override).** bathos 84be544e forces `outcome = error` on any non-zero exit
   before evaluating `[outcomes]`. Budget-fail and graded-FAIL scripts must write their result and
   exit 0 (fixes 799a1c4a, e4b86a0c).
