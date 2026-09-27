@@ -1,0 +1,47 @@
+[metadata]
+title = "Incremental autoregressive decode: per-sequence cost scales O(L), full recompute O(L^2)"
+created = "260926"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "With the per-layer cache, AR decode time per sequence grows ~linearly in L (decoder work per wave independent of L), while the prior full-recompute path grows ~quadratically; at L=512 on CPU the incremental path is at least 5x faster, produces identical tokens, and incremental='auto' takes the incremental branch on a standard single-state bundle."
+stage_name = "validation"
+
+[controls]
+# Negative control: the full-recompute path MUST show superlinear growth (>= 8x over a 4x
+# length increase; quadratic is 16x). If it does not, the timer cannot see O(L^2) work and
+# the incremental result is uninterpretable -> instrument_blind, checked first.
+positive_outcome = ["pass"]
+negative_outcome = ["instrument_blind", "fail"]
+
+[outcomes.instrument_blind]
+condition = "full_scaling < 8.0"
+decision = "Do not interpret: the full-recompute control did not scale superlinearly, so the measurement cannot distinguish O(L) from O(L^2)."
+reasoning = "Pairs the positive result with a control that must fail to be linear; checked before pass."
+is_residual = false
+
+[outcomes.pass]
+condition = "tokens_equal = true AND speedup_max_len >= 5.0 AND inc_scaling <= 6.0 AND auto_overhead <= 1.5"
+decision = "Adopt incremental='auto' as the default AR decode."
+reasoning = "Identical tokens (exactness), >= 5x at L=512, near-linear growth (4x length -> <= 6x time; linear is 4x), and auto picks the incremental branch (not a silent fallback, which would cost ~speedup_max_len x)."
+is_residual = false
+
+[outcomes.fail]
+condition = "tokens_equal = false OR speedup_max_len < 5.0 OR inc_scaling > 6.0 OR auto_overhead > 1.5"
+decision = "Do not adopt; investigate the failing criterion (hidden per-wave O(L) copy, fallback taken, or non-equivalence)."
+reasoning = "Residual catch-all."
+is_residual = true
+
+[result_schema]
+speedup_max_len = "float"
+inc_scaling = "float"
+full_scaling = "float"
+length_ratio = "float"
+auto_overhead = "float"
+tokens_equal = "bool"
+backend = "str"
+git_hash = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }

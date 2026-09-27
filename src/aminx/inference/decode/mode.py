@@ -20,6 +20,7 @@ path in aminx.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -59,10 +60,25 @@ class AutoregressiveConfig:
 
       Set this to True for inference / benchmarking.  Leave False (default)
       for any path that requires gradients through the AR loop.
+  incremental : {"auto", "off", "force"}, default "auto"
+      Decoder work per wave. ``"off"`` re-runs the decoder over all L positions at every
+      wave and keeps the wave's rows: O(L^2 k) per sequence. The incremental path decodes
+      only the wave's positions against a per-layer cache of already-decoded positions
+      (the reference's ``h_V_stack``): O(L k) per sequence, with identical tokens and logits
+      whenever its preconditions hold (see ``AutoregressiveDecode``). ``"auto"`` checks
+      those preconditions on device once per sample and falls back to ``"off"`` when they
+      fail; ``"force"`` skips the check (benchmarks/tests; the caller guarantees them).
+  max_positions_per_wave : int | None, default None
+      Static capacity of the incremental path's per-wave position slab. Default
+      ``G * P`` from the wave schedule's shape. A tie group can cover more positions than
+      the schedule lists (``WaveScheduleBundle.empty()`` with ties); raise this to the
+      largest tie-group size there, otherwise ``"auto"`` falls back to ``"off"``.
 
   """
 
   inference_only: bool = False
+  incremental: Literal["auto", "off", "force"] = "auto"
+  max_positions_per_wave: int | None = None
 
 
 @dataclass(frozen=True)

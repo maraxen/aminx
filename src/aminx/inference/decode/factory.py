@@ -126,6 +126,8 @@ def make_decode_fn(
         # autoregressive_config=AutoregressiveConfig(inference_only=True) for
         # inference-only sampling to get lax.while_loop's much faster compile.
         use_while_loop=ar_config.inference_only,
+        incremental=ar_config.incremental,
+        max_positions_per_wave=ar_config.max_positions_per_wave,
       )
 
     if isinstance(mode, STEMode):
