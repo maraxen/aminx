@@ -619,7 +619,24 @@ class AutoregressiveDecode(eqx.Module):
         pos_rank // max_groups_per_wave,
         n_waves,
       ).astype(jnp.int32)
-      order_pos = jnp.argsort(decode_wave, stable=True)
+      # IREE does not honour JAX's stable-sort tie order (xtrax export safety rule
+      # `sort-stability`), so ties are broken with a tie-free key instead of
+      # `argsort(..., stable=True)`: folding the position index into the key makes
+      # every key unique while producing the identical permutation a stable sort on
+      # `decode_wave` alone would (original index order preserved among equal
+      # `decode_wave` values). Bound: decode_wave <= n_waves <= L, so
+      # key < (L + 1) * L; int32 is safe up to L ~= 46_000 (sqrt(2**31)). L is a
+      # static shape, so guard it here rather than risk a silent wraparound if a
+      # future bucket grows past that.
+      if L > 46_000:
+        msg = f"L={L} exceeds the int32-safe tie-free sort key bound (~46_000)."
+        raise ValueError(msg)
+      sort_key = decode_wave * L + jnp.arange(L, dtype=jnp.int32)
+      # `stable=False` explicitly: the export-safety check flags a sort purely by
+      # its `is_stable` param, regardless of whether the key can actually tie, so
+      # a tie-free key sorted with the default `stable=True` would still trip the
+      # blocker above.
+      order_pos = jnp.argsort(sort_key, stable=False)
       wave_start = jnp.searchsorted(
         decode_wave[order_pos],
         jnp.arange(n_waves + 1, dtype=jnp.int32),
