@@ -37,11 +37,14 @@ from aminx.host.plan import (
   resolve_chunk_size,
   resolve_target_samples,
 )
-from aminx.host.streaming import (
+from aminx.host.schema_versions import (
   GRID_SCHEMA_VERSION,
+  INSPECTION_SCHEMA_VERSION,
+  JACOBIAN_SCHEMA_VERSION,
   SAMPLING_SCHEMA_VERSION,
-  _sample_streaming,
+  SCORING_SCHEMA_VERSION,
 )
+from aminx.host.streaming import _sample_streaming
 from aminx.host.streaming_host import StreamingBatchHost
 from aminx.io.sink_provenance import prng_seed_attrs, resolve_aminx_version
 from aminx.run.batch_mapping import MappedBy
@@ -305,9 +308,7 @@ def sample(
   return results
 
 
-SCORING_SCHEMA_VERSION = "scoring_v1"
-INSPECTION_SCHEMA_VERSION = "inspection_v1"
-JACOBIAN_SCHEMA_VERSION = "jacobian_v1"
+# All schema versions are now imported from schema_versions.py (single source of truth).
 
 
 def _make_averaged_score_fn(
