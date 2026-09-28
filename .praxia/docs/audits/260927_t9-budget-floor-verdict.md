@@ -51,3 +51,27 @@ titanix against the fixed code. T9b's implementation, tests (exactness + routing
 and a CPU smoke before/after comparison are recorded in the T9b commit on this branch
 (`feat/phase2a-sampling-track`); the rerun itself is the orchestrator's responsibility, not this
 worktree's.
+
+## Rerun after T9b (2026-09-27)
+
+bathos run `27f9f25e` on titanix (GPU 2) at `f4176aaf` (T9b), git_dirty=false, sidecar sha256
+`867c05d5…` == committed file (same pre-registration as `eedd3993`). Verified from the cool-tier
+parquet record (`bth compact` is currently broken catalog-wide). **Outcome: `floor_exceeded`.**
+
+| field | eedd3993 (cb2b7264) | 27f9f25e (f4176aaf) |
+|---|---|---|
+| budget_wall_hours (cap 16) | 446.4 | **119.4** |
+| projected_peak_rss_gib (cap 48) | 4.38 | 5.67 |
+| fastpath_ratio | 0.0385 | 0.0509 |
+| aa_ratio | 0.979 | 1.019 |
+| P07@0.1 / P07@1.0 / P08 h | 105.8 / 106.1 / 106.0 | 16.0 / 16.1 / 15.8 |
+| P09-s / P11-s h | 54.5 / 74.0 | 9.2 / **62.3** |
+
+Per-draw aminx cost is now at parity with the reference on P07/P08/P09-s (e.g. 4YOW L=693:
+0.34 s vs 0.33 s). P11-s (side-chain lane) is the remaining outlier: 1.44 s vs 0.34 s at L=693.
+
+**Reading:** the cap is infeasible for this protocol independent of aminx speed -- each
+non-side-chain lane alone costs ≈ the whole 16 h cap at reference-parity per-draw cost; fixing
+P11-s to parity would still leave ≈ 73 h. Per the pre-registration the sampling track stops and
+T10 does not run. Unblocking needs a user decision (cap, lane split across GPUs, or a smaller
+protocol) and a NEW pre-registration -- not a re-grade of this one.

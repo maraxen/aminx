@@ -1,0 +1,151 @@
+{
+  "git_hash": "f4176aaf41523cd9588176278876ef0c6e55a7fa",
+  "git_clean": true,
+  "n_floor": 1500,
+  "budget_wall_hours": 119.39783783089159,
+  "budget_formula": "budget_wall_hours = sum over lanes l and set-B fixtures f of a_lf * (162 * c_aminx(f,l) + 2 * c_ref(f,l)) / 3600, with a_lf = draw_allocation at n = N_REQUIRED_FLOOR (per sub-arm, sums to n per lane). 162 = main arm A1+A2 (2) + positive control 20 replicates x (A1+A2 aminx+beta, R1+R2 aminx) (80) + negative control 20 x 4 (80) aminx draws per allocated slot; 2 = main arm R1+R2 reference draws. c_* are measured wall seconds per draw on this run's own hardware (batched aminx path incl. host-side wave construction; batched reference .sample()), so no core-count division is applied. The projection is a LOWER bound on validate's cost: n_required >= N_REQUIRED_FLOOR and cost is increasing in n.",
+  "per_lane_hours": {
+    "P07@0.1": 16.03929912132554,
+    "P07@1.0": 16.13420246872802,
+    "P08@1.0": 15.759942501677433,
+    "P09-s@1.0": 9.19048487144516,
+    "P11-s@1.0": 62.273908867715434
+  },
+  "per_draw_costs_s": {
+    "P07@0.1": {
+      "1BC8": {
+        "aminx_s": 0.04624115987098776,
+        "reference_s": 0.05276328842155635
+      },
+      "3HTN": {
+        "aminx_s": 0.12828811048530042,
+        "reference_s": 0.19492394630797208
+      },
+      "4YOW": {
+        "aminx_s": 0.34249091303596896,
+        "reference_s": 0.369181083003059
+      },
+      "6MRR": {
+        "aminx_s": 0.04315227031474933,
+        "reference_s": 0.03233003569766879
+      }
+    },
+    "P07@1.0": {
+      "1BC8": {
+        "aminx_s": 0.04627959386561997,
+        "reference_s": 0.05957341240718961
+      },
+      "3HTN": {
+        "aminx_s": 0.12878472200827673,
+        "reference_s": 0.19837445272132753
+      },
+      "4YOW": {
+        "aminx_s": 0.34620358732839424,
+        "reference_s": 0.33510783850215375
+      },
+      "6MRR": {
+        "aminx_s": 0.04314085234364029,
+        "reference_s": 0.03355913409031928
+      }
+    },
+    "P08@1.0": {
+      "1BC8": {
+        "aminx_s": 0.04514184303116053,
+        "reference_s": 0.05383950937539339
+      },
+      "3HTN": {
+        "aminx_s": 0.12837438826682046,
+        "reference_s": 0.1869467793032527
+      },
+      "4YOW": {
+        "aminx_s": 0.33689763862639666,
+        "reference_s": 0.3238938244991004
+      },
+      "6MRR": {
+        "aminx_s": 0.04293567419517785,
+        "reference_s": 0.0323549335822463
+      }
+    },
+    "P09-s@1.0": {
+      "3HTN": {
+        "aminx_s": 0.12772788963047788,
+        "reference_s": 0.907652223110199
+      },
+      "4YOW": {
+        "aminx_s": 0.1158488776224355,
+        "reference_s": 1.5601786579936743
+      }
+    },
+    "P11-s@1.0": {
+      "1BC8": {
+        "aminx_s": 0.10190806550963316,
+        "reference_s": 0.05085009508766234
+      },
+      "3HTN": {
+        "aminx_s": 0.38018480653408915,
+        "reference_s": 0.19925609468482436
+      },
+      "4YOW": {
+        "aminx_s": 1.4373784049724538,
+        "reference_s": 0.34255067268386485
+      },
+      "6MRR": {
+        "aminx_s": 0.14562071177351754,
+        "reference_s": 0.03074646941386163
+      }
+    }
+  },
+  "draw_allocation_by_lane": {
+    "P07@0.1": {
+      "1BC8": 106,
+      "3HTN": 498,
+      "4YOW": 815,
+      "6MRR": 81
+    },
+    "P07@1.0": {
+      "1BC8": 112,
+      "3HTN": 495,
+      "4YOW": 813,
+      "6MRR": 80
+    },
+    "P08@1.0": {
+      "1BC8": 111,
+      "3HTN": 496,
+      "4YOW": 812,
+      "6MRR": 81
+    },
+    "P09-s@1.0": {
+      "3HTN": 410,
+      "4YOW": 1090
+    },
+    "P11-s@1.0": {
+      "1BC8": 110,
+      "3HTN": 497,
+      "4YOW": 812,
+      "6MRR": 81
+    }
+  },
+  "n_draws_forced_off": {
+    "P07@0.1": 0,
+    "P07@1.0": 0,
+    "P08@1.0": 0,
+    "P09-s@1.0": 0,
+    "P11-s@1.0": 0
+  },
+  "budget_cap_hours": 16.0,
+  "rss_cap_gib": 48.0,
+  "projected_peak_rss_gib": 5.669002532958984,
+  "control_fixture": "4YOW",
+  "control_lane": "P07@1.0",
+  "c_force": 0.19896343955770135,
+  "c_force_replicate": 0.19534418964758515,
+  "c_off": 3.9068704289384186,
+  "c_ref": 0.3243561374023557,
+  "ref_arm_cost": 0.6487122748047114,
+  "budget_includes_ref": false,
+  "aa_ratio": 1.018527553425805,
+  "fastpath_ratio": 0.05092655187230359,
+  "device_kind": "gpu",
+  "smoke": false,
+  "prereg_sha256": ""
+}
