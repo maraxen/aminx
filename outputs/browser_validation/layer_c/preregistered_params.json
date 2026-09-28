@@ -1,0 +1,85 @@
+{
+  "ctrl_effect_c": {
+    "p03": 1.9073486328125e-05,
+    "p04": 9.965896606445314e-05
+  },
+  "delta_c03": 1.778279410038923e-05,
+  "delta_c04": 0.0001,
+  "headroom_c": {
+    "p03|edge_features|ort_wasm|1024": {
+      "calib_value": 1.52587890625e-05,
+      "inherited_from": null,
+      "state": "not_advanced"
+    },
+    "p03|edge_features|ort_wasm|128": {
+      "calib_value": 1.52587890625e-05,
+      "inherited_from": null,
+      "state": "not_advanced"
+    },
+    "p03|edge_features|ort_wasm|512": {
+      "calib_value": 1.52587890625e-05,
+      "inherited_from": null,
+      "state": "not_advanced"
+    },
+    "p03|neighbor_indices|ort_wasm|1024": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p03|neighbor_indices|ort_wasm|128": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p03|neighbor_indices|ort_wasm|512": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|argmax|ort_wasm|1024": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|argmax|ort_wasm|128": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|argmax|ort_wasm|512": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|ort_wasm|1024": {
+      "calib_value": 9.059906005859375e-06,
+      "inherited_from": null,
+      "state": "low_headroom"
+    },
+    "p04|log_probs|ort_wasm|128": {
+      "calib_value": 4.76837158203125e-06,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|ort_wasm|512": {
+      "calib_value": 6.67572021484375e-06,
+      "inherited_from": null,
+      "state": "low_headroom"
+    },
+    "p04|neighbor_indices|ort_wasm|1024": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|ort_wasm|128": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|ort_wasm|512": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    }
+  }
+}

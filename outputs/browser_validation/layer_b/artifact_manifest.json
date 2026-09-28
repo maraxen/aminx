@@ -27,6 +27,14 @@
       "role": "control_ebias_sized",
       "sha256": "fee154f0c1df876b98153c7447a523a93f11c27bc8bc8cf7a3f946ea1c438f8d"
     },
+    "p03_L1024_ebias_sized_c.onnx": {
+      "bucket": 1024,
+      "delta": 1.778279410038923e-05,
+      "export_path": "p03",
+      "path": "p03_L1024_ebias_sized_c.onnx",
+      "role": "control_ebias_sized_c",
+      "sha256": "cb0909c1604ce21faa57a6234756d12699dda426924cf4871ac11b447c09ec12"
+    },
     "p03_L1024_swap.onnx": {
       "bucket": 1024,
       "export_path": "p03",
@@ -62,6 +70,14 @@
       "path": "p03_L128_ebias_sized.onnx",
       "role": "control_ebias_sized",
       "sha256": "7f5e510222fd7a89def629bc517ece69f174733eb89f11cffe7b248036dfd3c5"
+    },
+    "p03_L128_ebias_sized_c.onnx": {
+      "bucket": 128,
+      "delta": 1.778279410038923e-05,
+      "export_path": "p03",
+      "path": "p03_L128_ebias_sized_c.onnx",
+      "role": "control_ebias_sized_c",
+      "sha256": "cf8cd3d1c810616d6a55a9172c6deab19b46fc812756f34722c693b103bc2800"
     },
     "p03_L128_swap.onnx": {
       "bucket": 128,
@@ -99,6 +115,14 @@
       "role": "control_ebias_sized",
       "sha256": "3b09dcedd6485f3ab627edae1008dd0b8b172afa057aab58a7140e2d6da54349"
     },
+    "p03_L256_ebias_sized_c.onnx": {
+      "bucket": 256,
+      "delta": 1.778279410038923e-05,
+      "export_path": "p03",
+      "path": "p03_L256_ebias_sized_c.onnx",
+      "role": "control_ebias_sized_c",
+      "sha256": "b164f3e1f8e2b78f81b828c590ecfaca851a1c68a4a7f05066e4f68372925049"
+    },
     "p03_L256_swap.onnx": {
       "bucket": 256,
       "export_path": "p03",
@@ -134,6 +158,14 @@
       "path": "p03_L512_ebias_sized.onnx",
       "role": "control_ebias_sized",
       "sha256": "bb7c91bbee2b64a40d24e83e93b25711e59d1fd9ed6bda0eaec5e4cf19976aaf"
+    },
+    "p03_L512_ebias_sized_c.onnx": {
+      "bucket": 512,
+      "delta": 1.778279410038923e-05,
+      "export_path": "p03",
+      "path": "p03_L512_ebias_sized_c.onnx",
+      "role": "control_ebias_sized_c",
+      "sha256": "37dc72c475780115e555bfbd90b02e2a62e5ae22d3192b48e9a55f1172812bed"
     },
     "p03_L512_swap.onnx": {
       "bucket": 512,
@@ -171,6 +203,14 @@
       "role": "control_perturbed_bias_sized",
       "sha256": "c24e14accceebdf2ea2b09ac67dc7525c53eaddbddc52d3cb57e85d7077ad439"
     },
+    "p04_L1024_perturbed_sized_c.onnx": {
+      "bucket": 1024,
+      "delta": 0.0001,
+      "export_path": "p04",
+      "path": "p04_L1024_perturbed_sized_c.onnx",
+      "role": "control_perturbed_bias_sized_c",
+      "sha256": "d750d5979c24677a9459fb29bf452be0abbf16f176ee3e99b05c00e2c2abed9d"
+    },
     "p04_L128.onnx": {
       "bucket": 128,
       "export_path": "p04",
@@ -197,6 +237,14 @@
       "path": "p04_L128_perturbed_sized.onnx",
       "role": "control_perturbed_bias_sized",
       "sha256": "dee3bdf330489106e869d245bf02429c4679e81dda832825d99700d33bce77bf"
+    },
+    "p04_L128_perturbed_sized_c.onnx": {
+      "bucket": 128,
+      "delta": 0.0001,
+      "export_path": "p04",
+      "path": "p04_L128_perturbed_sized_c.onnx",
+      "role": "control_perturbed_bias_sized_c",
+      "sha256": "9ecc876a42c82dd1f1a5967f9cdc487fa60635c720932f7c72fece0830c132f4"
     },
     "p04_L256.onnx": {
       "bucket": 256,
@@ -225,6 +273,14 @@
       "role": "control_perturbed_bias_sized",
       "sha256": "d51eafd06be0f7ac7d81889a8f6d0eda529c421fdebe8c659dc332e71bb8e6b3"
     },
+    "p04_L256_perturbed_sized_c.onnx": {
+      "bucket": 256,
+      "delta": 0.0001,
+      "export_path": "p04",
+      "path": "p04_L256_perturbed_sized_c.onnx",
+      "role": "control_perturbed_bias_sized_c",
+      "sha256": "286cc1e963e20163ba8a9c034075fd5410f568e9ab8ee9da84d2adc4bb372692"
+    },
     "p04_L512.onnx": {
       "bucket": 512,
       "export_path": "p04",
@@ -251,6 +307,14 @@
       "path": "p04_L512_perturbed_sized.onnx",
       "role": "control_perturbed_bias_sized",
       "sha256": "040bbab32c224b66133e56b5d38332f81b04873c190ebad77efa1cf21adf59d2"
+    },
+    "p04_L512_perturbed_sized_c.onnx": {
+      "bucket": 512,
+      "delta": 0.0001,
+      "export_path": "p04",
+      "path": "p04_L512_perturbed_sized_c.onnx",
+      "role": "control_perturbed_bias_sized_c",
+      "sha256": "e155b092de05537f0b4250c4520e1a2133dde449c9ffe098efceb0fb61057c17"
     }
   }
 }
