@@ -1,0 +1,61 @@
+[metadata]
+title = "Layer (b) loop-body structural cost report"
+created = "260927"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The AR decoder's loop body has non-trivial scaling with sequence length L. Synthetic controls (linear, reduce-to-scalar, constant) measure correctly via HLO analysis, and AR-force mode may show α > 0.35 if loop-body scaling is real."
+stage_name = "exploration"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["ctrl_blind", "loop_body_scales"]
+
+[outcomes.ctrl_blind]
+condition = "outcome = 'ctrl_blind'"
+decision = "Synthetic measurement pipeline failed; cannot trust loop-cost measurements."
+is_residual = true
+
+[outcomes.loop_body_scales]
+condition = "outcome = 'loop_body_scales'"
+decision = "Loop-body scaling detected; non-linear data flow growth with L."
+is_residual = true
+
+[outcomes.pass]
+condition = "outcome = 'pass'"
+decision = "Synthetic controls passed, AR kernel shows expected behavior."
+is_residual = false
+
+[outcomes.error]
+condition = "outcome = 'error'"
+decision = "Fatal error in execution."
+is_residual = true
+
+[result_schema]
+outcome = { type = "str", required = true }
+outcome_reason = { type = "str", required = true }
+controls = { type = "dict", required = true }
+ar_kernel = { type = "dict", required = true }
+followup_backlog_text = { type = "str", required = true }
+provenance = { type = "dict", required = true }
+
+[[cases]]
+outcome = "pass"
+outcome_reason = "All controls within range"
+expect = "pass"
+
+[[cases]]
+outcome = "ctrl_blind"
+outcome_reason = "synthetic control failed"
+expect = "ctrl_blind"
+
+[[cases]]
+outcome = "loop_body_scales"
+outcome_reason = "ar_force: alpha 0.4 > 0.35"
+expect = "loop_body_scales"
+
+[[cases]]
+outcome = "error"
+outcome_reason = "Fatal error"
+expect = "error"

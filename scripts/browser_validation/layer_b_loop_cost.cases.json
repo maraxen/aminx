@@ -1,0 +1,78 @@
+[
+  {
+    "name": "all_pass",
+    "result": {
+      "outcome": "pass",
+      "outcome_reason": "All controls within range",
+      "controls": {
+        "linear": {"alpha": 1.0},
+        "reduce": {"alpha": 1.0},
+        "constant": {"alpha": 0.0}
+      },
+      "ar_kernel": {
+        "off": {"alpha": 0.9},
+        "force": {"alpha": 0.2}
+      },
+      "followup_backlog_text": "",
+      "provenance": {}
+    },
+    "expect": "pass"
+  },
+  {
+    "name": "ctrl_blind_linear_alpha_none",
+    "result": {
+      "outcome": "ctrl_blind",
+      "outcome_reason": "linear: alpha None",
+      "controls": {
+        "linear": {"alpha": null},
+        "reduce": {"alpha": 1.0},
+        "constant": {"alpha": 0.0}
+      },
+      "ar_kernel": {
+        "off": {"alpha": 0.9},
+        "force": {"alpha": 0.2}
+      },
+      "followup_backlog_text": "",
+      "provenance": {}
+    },
+    "expect": "ctrl_blind"
+  },
+  {
+    "name": "loop_body_scales_ar_force",
+    "result": {
+      "outcome": "loop_body_scales",
+      "outcome_reason": "ar_force: alpha 0.4 > 0.35",
+      "controls": {
+        "linear": {"alpha": 1.0},
+        "reduce": {"alpha": 1.0},
+        "constant": {"alpha": 0.0}
+      },
+      "ar_kernel": {
+        "off": {"alpha": 0.9},
+        "force": {"alpha": 0.4}
+      },
+      "followup_backlog_text": "## xtrax #1983",
+      "provenance": {}
+    },
+    "expect": "loop_body_scales"
+  },
+  {
+    "name": "ctrl_blind_ar_off_low",
+    "result": {
+      "outcome": "ctrl_blind",
+      "outcome_reason": "ar_off: alpha 0.7 < 0.8",
+      "controls": {
+        "linear": {"alpha": 1.0},
+        "reduce": {"alpha": 1.0},
+        "constant": {"alpha": 0.0}
+      },
+      "ar_kernel": {
+        "off": {"alpha": 0.7},
+        "force": {"alpha": 0.2}
+      },
+      "followup_backlog_text": "",
+      "provenance": {}
+    },
+    "expect": "ctrl_blind"
+  }
+]
