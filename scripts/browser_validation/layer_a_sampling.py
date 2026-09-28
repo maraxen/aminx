@@ -556,10 +556,6 @@ def wave_from_tie_groups_np(tie_group_map: np.ndarray, order_i: np.ndarray) -> A
   )
 
 
-_STAGE_SET: Any = None
-_VMAPPED_SAMPLE: Any = None
-
-
 def _bundle_for_draw(bundle: Any, wave: Any) -> Any:
   """Rebuild `bundle` for one draw's own `wave` (F-S1 fix).
 
@@ -590,36 +586,6 @@ def _bundle_for_draw(bundle: Any, wave: Any) -> Any:
   ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], bundle.conditioning.ar_mask.shape)
   b = eqx.tree_at(lambda x: x.wave, bundle, wave)
   return eqx.tree_at(lambda x: x.conditioning.ar_mask, b, ar_mask)
-
-
-def _vmapped_sample() -> Any:
-  """One module-level jitted, vmapped kernel call (compiled once per fixture/lane shape).
-
-  `eqx.filter_jit` treats `config` and the stage set as static; both are built once per
-  call site and the stage set is a module singleton, so repeated chunks reuse the compile.
-  """
-  global _STAGE_SET, _VMAPPED_SAMPLE  # noqa: PLW0603
-  if _VMAPPED_SAMPLE is None:
-    import equinox as eqx
-    import jax
-
-    from aminx.inference import sample_autoregressive
-    from aminx.inference.logits import make_stage_set
-
-    _STAGE_SET = make_stage_set()
-
-    @eqx.filter_jit
-    def run(model: Any, keys: Any, waves: Any, bundle: Any, config: Any) -> Any:
-      def one(key: Any, wave: Any) -> Any:
-        b = _bundle_for_draw(bundle, wave)
-        return sample_autoregressive.kernel(
-          model, key, b, config, _STAGE_SET, inference_only=True
-        ).sequence
-
-      return jax.vmap(one)(keys, waves)
-
-    _VMAPPED_SAMPLE = run
-  return _VMAPPED_SAMPLE
 
 
 def incremental_predicates_host(
@@ -736,12 +702,16 @@ def aminx_sample_batch(
   fused XLA program can round differently from the eager one, so a draw may differ from
   the per-call path at a few positions (measured 0/85, 15/85, 10/85 on 5L33) -- the two are
   the same sampler, not bit-identical.
+
+  T9b (host-routed incremental): the `incremental` mode is decided ON THE HOST, once per
+  call, via `_choose_incremental_mode` (`incremental_predicates_host`, reused) -- "force"
+  iff every draw's own wave passes the three-way AND, else "off". This function never
+  reaches the kernel with `incremental="auto"` (V16: under `vmap`,
+  `AutoregressiveDecode.incremental` is a static/batch-homogeneous field, so `"auto"`
+  silently runs BOTH branches for every draw and prices every draw at the `off` cost --
+  the T9 budget-floor root cause). The actual draws are delegated to
+  `aminx_sample_batch_at_incremental` (reused, not re-derived) with the chosen mode.
   """
-  import jax
-  import jax.numpy as jnp
-
-  from aminx.inference.bundle_builder import build_inference_bundle
-
   if n <= 0:
     return np.zeros((0, batch.length), dtype=np.int32)
   eff_batch = batch
@@ -754,34 +724,10 @@ def aminx_sample_batch(
     wave_from_tie_groups_np(eff_batch.tie_group_map, _draw_order_for(eff_batch, seed_base + i)[1])
     for i in range(n)
   ]
-  kw: dict[str, Any] = {
-    "coords": jnp.asarray(eff_batch.x4),
-    "mask": jnp.asarray(eff_batch.mask),
-    "residue_index": jnp.asarray(eff_batch.residue_index, dtype=jnp.int32),
-    "chain_index": jnp.asarray(eff_batch.chain_index, dtype=jnp.int32),
-    "chain_mask": jnp.asarray(eff_batch.chain_mask),
-    "bias": jnp.asarray(eff_batch.bias),
-    "fixed_mask": jnp.asarray(eff_batch.fixed_mask),
-    "fixed_tokens": jnp.asarray(eff_batch.seq_ref, dtype=jnp.int32),
-    "tie_group_map": jnp.asarray(eff_batch.tie_group_map),
-    "wave": waves[0],
-    "temperature": float(temperature),
-    "mode": "sample",
-  }
-  kw.update(side_chain_context_kwargs(eff_batch))
-  bundle, config = build_inference_bundle(**kw)
-  run = _vmapped_sample()
-  chunk = min(sample_chunk_size(eff_batch.length), n)
-  rows: list[np.ndarray] = []
-  for lo in range(0, n, chunk):
-    idx = list(range(lo, min(n, lo + chunk)))
-    # Pad a short final chunk to the full chunk width so every call reuses one compile.
-    padded = idx + [idx[-1]] * (chunk - len(idx))
-    keys = jnp.stack([jax.random.PRNGKey(seed_base + i) for i in padded])
-    stacked = jax.tree.map(lambda *xs: jnp.stack(xs), *[waves[i] for i in padded])
-    out = np.asarray(run(jax_model, keys, stacked, bundle, config))
-    rows.append(out[: len(idx)])
-  return np.concatenate(rows, axis=0)
+  incremental = _choose_incremental_mode(jax_model, eff_batch, waves, temperature=temperature)
+  return aminx_sample_batch_at_incremental(
+    jax_model, eff_batch, n, seed_base, temperature=temperature, incremental=incremental
+  )
 
 
 # --------------------------------------------------------------------------------------
@@ -1191,12 +1137,16 @@ def aminx_sample_batch_at_incremental(
   *,
   temperature: float,
   incremental: Literal["off", "force"],
+  beta_alanine: float = 0.0,
 ) -> np.ndarray:
   """`aminx_sample_batch`'s own chunking/wave-building logic, but routed through
   `_vmapped_sample_at(incremental)` so every draw in every chunk uses the SAME
-  (caller-chosen) incremental mode. Used only by the budget-floor probe's
-  force-vs-off/A-A cost controls, never by the main sampling engine (which always
-  wants `"auto"`'s correctness-preserving fallback)."""
+  (caller-chosen) incremental mode. Used both by the budget-floor probe's
+  force-vs-off/A-A cost controls (explicit `incremental`) AND, since T9b, by
+  `aminx_sample_batch` itself (host-routed `incremental`, via `_choose_incremental_mode`)
+  -- so this function carries the SAME `beta_alanine` positive-control perturbation and
+  `side_chain_context_kwargs` (P11-s) that the production caller needs; see
+  `aminx_sample_batch`'s own docstring for why "auto" must never reach here under vmap."""
   import jax
   import jax.numpy as jnp
 
@@ -1204,10 +1154,66 @@ def aminx_sample_batch_at_incremental(
 
   if n <= 0:
     return np.zeros((0, batch.length), dtype=np.int32)
+  eff_batch = batch
+  if beta_alanine:
+    perturbed_bias = batch.bias.copy()
+    perturbed_bias[:, ALANINE_INDEX] += beta_alanine
+    eff_batch = dataclasses.replace(batch, bias=perturbed_bias)
   waves = [
-    wave_from_tie_groups_np(batch.tie_group_map, _draw_order_for(batch, seed_base + i)[1])
+    wave_from_tie_groups_np(eff_batch.tie_group_map, _draw_order_for(eff_batch, seed_base + i)[1])
     for i in range(n)
   ]
+  kw: dict[str, Any] = {
+    "coords": jnp.asarray(eff_batch.x4),
+    "mask": jnp.asarray(eff_batch.mask),
+    "residue_index": jnp.asarray(eff_batch.residue_index, dtype=jnp.int32),
+    "chain_index": jnp.asarray(eff_batch.chain_index, dtype=jnp.int32),
+    "chain_mask": jnp.asarray(eff_batch.chain_mask),
+    "bias": jnp.asarray(eff_batch.bias),
+    "fixed_mask": jnp.asarray(eff_batch.fixed_mask),
+    "fixed_tokens": jnp.asarray(eff_batch.seq_ref, dtype=jnp.int32),
+    "tie_group_map": jnp.asarray(eff_batch.tie_group_map),
+    "wave": waves[0],
+    "temperature": float(temperature),
+    "mode": "sample",
+  }
+  kw.update(side_chain_context_kwargs(eff_batch))
+  bundle, config = build_inference_bundle(**kw)
+  run = _vmapped_sample_at(incremental)
+  chunk = min(sample_chunk_size(eff_batch.length), n)
+  rows: list[np.ndarray] = []
+  for lo in range(0, n, chunk):
+    idx = list(range(lo, min(n, lo + chunk)))
+    padded = idx + [idx[-1]] * (chunk - len(idx))
+    keys = jnp.stack([jax.random.PRNGKey(seed_base + i) for i in padded])
+    stacked = jax.tree.map(lambda *xs: jnp.stack(xs), *[waves[i] for i in padded])
+    out = np.asarray(run(jax_model, keys, stacked, bundle, config))
+    rows.append(out[: len(idx)])
+  return np.concatenate(rows, axis=0)
+
+
+def _choose_incremental_mode(
+  jax_model: Any, batch: LaneBatch, waves: list[Any], *, temperature: float
+) -> Literal["off", "force"]:
+  """T9b: decide the homogeneous `incremental` mode for a chunk of `waves` ON THE HOST,
+  via `incremental_predicates_host` (reused, not re-derived) -- "force" iff EVERY draw's
+  own wave passes the three-way AND (D-F), else "off". Never returns "auto": under
+  `vmap`, `AutoregressiveDecode.incremental` is a static, batch-homogeneous field, so
+  `"auto"` silently runs BOTH branches for every draw and prices every draw at the `off`
+  cost (V16) -- the T9 budget-floor root cause this routing exists to close.
+
+  One deterministic encode pass supplies `neighbor_indices`/`valid_mask`/
+  `state_position_map` (geometry only, independent of the sampled sequence -- same
+  precedent as `layer_a_sampling_budget_floor._n_draws_forced_off`); only each draw's
+  own `ar_mask` (from its own wave) varies per iteration of the loop below.
+  """
+  import jax
+  import jax.numpy as jnp
+
+  from aminx.inference.bundle_builder import build_inference_bundle
+  from aminx.inference.encode import make_encode_fn
+  from aminx.utils.autoregression import generate_wave_ar_mask
+
   kw: dict[str, Any] = {
     "coords": jnp.asarray(batch.x4),
     "mask": jnp.asarray(batch.mask),
@@ -1222,18 +1228,26 @@ def aminx_sample_batch_at_incremental(
     "temperature": float(temperature),
     "mode": "sample",
   }
+  kw.update(side_chain_context_kwargs(batch))
   bundle, config = build_inference_bundle(**kw)
-  run = _vmapped_sample_at(incremental)
-  chunk = min(sample_chunk_size(batch.length), n)
-  rows: list[np.ndarray] = []
-  for lo in range(0, n, chunk):
-    idx = list(range(lo, min(n, lo + chunk)))
-    padded = idx + [idx[-1]] * (chunk - len(idx))
-    keys = jnp.stack([jax.random.PRNGKey(seed_base + i) for i in padded])
-    stacked = jax.tree.map(lambda *xs: jnp.stack(xs), *[waves[i] for i in padded])
-    out = np.asarray(run(jax_model, keys, stacked, bundle, config))
-    rows.append(out[: len(idx)])
-  return np.concatenate(rows, axis=0)
+  enc = make_encode_fn(jax_model, use_rolling_state=False)(bundle, jax.random.PRNGKey(0), config)
+  neighbor_indices = np.asarray(enc.neighbor_indices[0])
+  valid_mask = np.asarray(enc.mask[0])
+  state_position_map = np.asarray(bundle.conditioning.state_position_map[0])
+  tie_group_map_row = np.asarray(bundle.conditioning.tie_group_map[0])
+  for wave in waves:
+    ar_mask_2d = np.asarray(generate_wave_ar_mask(wave, bundle.conditioning.tie_group_map[0]))
+    verdict = incremental_predicates_host(
+      wave=wave,
+      tie_group_map=tie_group_map_row,
+      ar_mask=ar_mask_2d,
+      neighbor_indices=neighbor_indices,
+      valid_mask=valid_mask,
+      state_position_map=state_position_map,
+    )
+    if not (verdict["consistent"] and verdict["identity_frame"] and verdict["fits_slab"]):
+      return "off"
+  return "force"
 
 
 def measure_aminx_draw_cost_at_incremental_s(

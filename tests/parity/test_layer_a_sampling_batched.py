@@ -509,6 +509,103 @@ def test_planted_inconsistent_mask_not_forced(model: Aminx) -> None:
 
 
 # --------------------------------------------------------------------------------------
+# T9b: `aminx_sample_batch` routes `incremental` on the HOST (never "auto" under vmap)
+# --------------------------------------------------------------------------------------
+
+
+def test_choose_incremental_mode_all_true_selects_force(model: Aminx) -> None:
+  """On a normal harness-constructed batch, every draw's host verdict is all-True by
+  this harness's own invariants: `ar_mask` is always regenerated FROM the same wave
+  (`generate_wave_ar_mask`, never a stale/foreign one -- F-S1), `state_position_map` is
+  always identity (no rolling state), and `fits_slab`'s slab is sized from the SAME
+  `wave_from_tie_groups_np` construction that built the wave (one tie group per wave, by
+  that function's own docstring) -- this is the T9 budget-floor's own empirical finding
+  (`n_draws_forced_off == 0` on every real lane). Locks in that invariant at the
+  `_choose_incremental_mode` aggregation level, with the REAL (unmocked) predicate."""
+  batch = _synthetic_batch(length=24, seed=61)
+  waves = [las.wave_from_tie_groups_np(batch.tie_group_map, _order(24, s)) for s in (71, 72, 73)]
+  mode = las._choose_incremental_mode(model, batch, waves, temperature=1.0)  # noqa: SLF001
+  assert mode == "force"
+
+
+def test_choose_incremental_mode_any_false_selects_off(
+  model: Aminx, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """(T9b routing test) `_choose_incremental_mode` must return exactly what the
+  aggregation rule says: "force" iff EVERY draw's own wave verdict is all-True, else
+  "off". The real predicate is always all-True on this harness's own wave construction
+  (previous test), so a normal harness-constructed batch can never naturally exercise
+  the OFF branch -- this test controls the verdict directly via monkeypatch (the same
+  technique `test_planted_inconsistent_mask_not_forced` uses at the kernel level, here
+  applied at the aggregation level) to prove the "any draw fails -> off for the whole
+  chunk" rule, matching `_vmapped_sample_at`'s own docstring (`incremental` is a single
+  static field shared by the whole vmapped batch, so it cannot be chosen per-draw)."""
+  batch = _synthetic_batch(length=24, seed=62)
+  waves = [las.wave_from_tie_groups_np(batch.tie_group_map, _order(24, s)) for s in (81, 82, 83)]
+
+  calls = {"n": 0}
+
+  def flaky(**_kwargs: object) -> dict[str, bool]:
+    calls["n"] += 1
+    # The SECOND draw's wave fails `consistent`; every other draw's wave passes -- a
+    # single failing draw among several passing ones must still force "off" for the
+    # whole (homogeneous) chunk, not skip just that one draw.
+    return {"consistent": calls["n"] != 2, "identity_frame": True, "fits_slab": True}
+
+  monkeypatch.setattr(las, "incremental_predicates_host", flaky)
+  mode = las._choose_incremental_mode(model, batch, waves, temperature=1.0)  # noqa: SLF001
+  assert mode == "off"
+
+  monkeypatch.setattr(
+    las,
+    "incremental_predicates_host",
+    lambda **_kwargs: {"consistent": True, "identity_frame": True, "fits_slab": True},
+  )
+  mode_all_true = las._choose_incremental_mode(model, batch, waves, temperature=1.0)  # noqa: SLF001
+  assert mode_all_true == "force"
+
+
+def test_aminx_sample_batch_exact_vs_off_when_force_chosen(model: Aminx) -> None:
+  """(T9b exactness, force-chosen lane) `aminx_sample_batch`'s host-routed output is
+  TOKEN-IDENTICAL to an explicit `incremental="off"` call with the same seeds -- the
+  fastpath must be exact, not merely close, when its own preconditions genuinely hold
+  (mirrors `test_force_equals_off_when_host_true`'s kernel-level guarantee, at the full
+  `aminx_sample_batch` plumbing level, where routing is real/unmocked)."""
+  batch = _synthetic_batch(length=24, seed=63)
+  seed_base = las._seed_for("t9b_force_lane")  # noqa: SLF001
+  n = 3
+  routed = las.aminx_sample_batch(model, batch, n, seed_base, temperature=1.0)
+  forced_off = las.aminx_sample_batch_at_incremental(
+    model, batch, n, seed_base, temperature=1.0, incremental="off"
+  )
+  np.testing.assert_array_equal(routed, forced_off)
+
+
+def test_aminx_sample_batch_exact_vs_off_when_off_chosen(
+  model: Aminx, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """(T9b exactness, off-chosen lane) With the host predicate monkeypatched to fail (the
+  only way to exercise this branch on a harness-constructed batch, see
+  `test_choose_incremental_mode_any_false_selects_off`), `aminx_sample_batch`'s routed
+  output is STILL token-identical to an explicit `incremental="off"` call with the same
+  seeds -- the delegation to `aminx_sample_batch_at_incremental` reproduces the exact
+  same waves/keys/chunking, never drifting the draw sequence."""
+  batch = _synthetic_batch(length=24, seed=64)
+  seed_base = las._seed_for("t9b_off_lane")  # noqa: SLF001
+  n = 3
+  monkeypatch.setattr(
+    las,
+    "incremental_predicates_host",
+    lambda **_kwargs: {"consistent": False, "identity_frame": True, "fits_slab": True},
+  )
+  routed = las.aminx_sample_batch(model, batch, n, seed_base, temperature=1.0)
+  forced_off = las.aminx_sample_batch_at_incremental(
+    model, batch, n, seed_base, temperature=1.0, incremental="off"
+  )
+  np.testing.assert_array_equal(routed, forced_off)
+
+
+# --------------------------------------------------------------------------------------
 # T9 remediation regression: `layer_a_sampling_budget_floor._n_draws_forced_off` must not
 # raise for ANY lane, on a real fixture -- the synthetic model above never exercises
 # `use_side_chain_context`, so it could not have caught the P11-s bug this guards.
