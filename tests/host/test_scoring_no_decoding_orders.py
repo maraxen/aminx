@@ -1,33 +1,45 @@
-"""Test for Debt #1717: verify scoring does not return meaningless decoding orders.
+"""``runner.score`` must not publish a decoding order it never used (debt #1717).
 
-Scoring is full-context (non-autoregressive), so decoding order is not applicable.
-This test verifies that the score() function's API documentation correctly
-states that decoding_orders is None/absent for full-context scoring.
+Every score() path is full-context teacher forcing: the mask is ``1 - I`` and there are no
+waves, so no decoding order participates in the computation. The runner nevertheless drew a
+random permutation per candidate and returned it as ``results["decoding_orders"]``, where a
+consumer would reasonably read it as describing the scoring run. It is now ``None``.
+
+Marked slow: it loads real weights and runs the full pipeline.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 
-def test_scoring_result_schema_documents_decoding_orders_not_applicable() -> None:
-  """Verify the score() docstring documents that decoding_orders is not applicable.
+import pytest
 
-  This is a documentation test: it verifies that the public API documentation
-  (the score() function's docstring) clearly states that decoding order is
-  not applicable to full-context scoring.
-  """
-  from aminx.host.runner import score as score_fn
+STRUCTURE = Path(__file__).resolve().parents[1] / "data" / "1ubq.pdb"
+UBIQUITIN_SEQUENCE = "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
 
-  docstring = score_fn.__doc__
-  assert docstring is not None, "score() must have a docstring"
-  # Check that the docstring mentions full-context to explain why decoding_orders
-  # is not applicable
-  assert "full-context" in docstring.lower(), (
-    "score() docstring must document that scoring is full-context (non-AR) "
-    "to explain why decoding_orders is not applicable"
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+@pytest.mark.parametrize("average_node_features", [False, True])
+def test_score_reports_no_decoding_order(average_node_features: bool) -> None:  # noqa: FBT001
+  from aminx.host import runner  # noqa: PLC0415
+  from aminx.run.specs import ScoringSpecification  # noqa: PLC0415
+
+  if not STRUCTURE.is_file():
+    pytest.skip(f"structure fixture missing: {STRUCTURE}")
+
+  result = runner.score(
+    ScoringSpecification(
+      inputs=str(STRUCTURE),
+      chain_id="A",
+      checkpoint_id="proteinmpnn_v_48_020",
+      sequences_to_score=[UBIQUITIN_SEQUENCE],
+      backbone_noise=0.0,
+      average_node_features=average_node_features,
+      return_decoding_orders=True,
+    ),
   )
-  # Check that the decoding_orders documentation mentions it's not applicable
-  # to full-context scoring
-  assert "full-context" in docstring.lower() and "decoding_orders" in docstring.lower(), (
-    "score() docstring must document the relationship between decoding_orders "
-    "and full-context scoring"
-  )
+
+  assert "decoding_orders" in result, "requested key must be present (as an explicit None)"
+  assert result["decoding_orders"] is None
+  assert result["scores"].shape == (1, 1)

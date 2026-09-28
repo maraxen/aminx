@@ -509,10 +509,12 @@ def score(  # noqa: PLR0915
             Metadata including specification, structure_ids, and skipped_inputs.
         logits : jax.Array, optional
             Per-position logits if return_logits=True. Shape: (num_structures, num_sequences, L, 21).
-        decoding_orders : jax.Array or None, optional
-            Decoding orders if return_decoding_orders=True and scoring is not full-context.
-            For full-context scoring (the default), this field is omitted (full-context scoring
-            is non-autoregressive and has no decoding order). Shape: (num_structures, num_sequences, L).
+        decoding_orders : None, optional
+            Present (and always ``None``) if return_decoding_orders=True. Every score()
+            path is full-context teacher forcing (``1 - I`` mask, no waves), so there is no
+            decoding order to report. This key used to carry a random permutation that the
+            computation never used (debt #1717); it is kept, as ``None``, so callers that
+            index it get an explicit "not applicable" rather than a KeyError or noise.
 
   Raises
   ------
@@ -589,11 +591,9 @@ def score(  # noqa: PLR0915
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
   from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax  # noqa: PLC0415
 
-  all_scores, all_logits, all_decoding_orders = [], None, None
+  all_scores, all_logits = [], None
   if spec.return_logits:
     all_logits = []
-  if spec.return_decoding_orders:
-    all_decoding_orders = []
 
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -697,7 +697,9 @@ def score(  # noqa: PLR0915
         _score_one_candidate, {"key": struct_keys, "seq": _stacked_sequences},
       )
 
-    batch_scores, batch_logits, batch_decoding_orders = jax.vmap(_score_structure)(
+    # The third output (a decoding order) is discarded: scoring is full-context, see the
+    # `decoding_orders` note in this function's docstring (debt #1717).
+    batch_scores, batch_logits, _ = jax.vmap(_score_structure)(
       batched_ensemble.coordinates,
       batched_ensemble.mask,
       batched_ensemble.residue_index,
@@ -708,10 +710,6 @@ def score(  # noqa: PLR0915
     all_scores.append(batch_scores)
     if spec.run_spec.sampling.return_logits and all_logits is not None:
       all_logits.append(batch_logits)
-    if spec.run_spec.sampling.return_decoding_orders and all_decoding_orders is not None:
-      # Only append if decoding_orders is not None (None indicates full-context scoring)
-      if batch_decoding_orders is not None:
-        all_decoding_orders.append(batch_decoding_orders)
 
     resolved_structure_ids.extend(batch_structure_ids)
     structure_offset += batch_size
@@ -734,10 +732,8 @@ def score(  # noqa: PLR0915
     # Shape: (num_structures, num_sequences, L, 21)
     results["logits"] = jnp.concatenate(all_logits, axis=0)
 
-  if spec.run_spec.sampling.return_decoding_orders and all_decoding_orders is not None and all_decoding_orders:
-    # Shape: (num_structures, num_sequences, L)
-    # Note: all_decoding_orders will be empty if scoring was full-context (return None)
-    results["decoding_orders"] = jnp.concatenate(all_decoding_orders, axis=0)
+  if spec.run_spec.sampling.return_decoding_orders:
+    results["decoding_orders"] = None
 
   return results
 
@@ -855,7 +851,7 @@ def _score_fused_multistate(
       multi_state_temperature=spec.multi_state_temperature,
     )
 
-  all_scores, all_logits, all_decoding_orders = candidate_iterator(
+  all_scores, all_logits, _ = candidate_iterator(
     _score_one_candidate, {"key": candidate_keys, "seq": stacked_sequences},
   )
 
@@ -873,8 +869,9 @@ def _score_fused_multistate(
   }
   if spec.return_logits:
     results["logits"] = all_logits[None, :]
-  if spec.return_decoding_orders and all_decoding_orders is not None:
-    results["decoding_orders"] = all_decoding_orders[None, :]
+  if spec.return_decoding_orders:
+    # Full-context scoring has no decoding order; see score()'s docstring (debt #1717).
+    results["decoding_orders"] = None
 
   return results
 

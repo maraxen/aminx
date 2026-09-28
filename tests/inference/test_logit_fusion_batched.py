@@ -189,5 +189,5 @@ def test_arithmetic_mean_mismatched_weights_raises_clear_error():
     fuser = ArithmeticMeanLogits(weights=jnp.ones(3))
     per_state = jnp.zeros((S, L, V))
 
-    with pytest.raises(ValueError, match=r"weight|shape|length|S="):
+    with pytest.raises(ValueError, match=r"state_weights length 3 incompatible with 16 states; expected length 1 or 16"):
         fuser(per_state)
