@@ -338,7 +338,6 @@ def _make_averaged_score_fn(
   from aminx.inference.bundle_builder import build_inference_bundle  # noqa: PLC0415
   from aminx.inference.score_conditional import score_averaged  # noqa: PLC0415
   from aminx.scoring.score import _nll_from_logits  # noqa: PLC0415
-  from aminx.utils.decoding_order import random_decoding_order  # noqa: PLC0415
 
   def _check_r3_invariance(bundles_per_noise: list) -> None:
     """Check R3: all D bundles must share conditioning fields; only backbone_noise may vary.
@@ -370,12 +369,9 @@ def _make_averaged_score_fn(
     mask: jax.Array,
     multi_state_strategy: str = "arithmetic_mean",
     use_rolling_state: bool = False,
-  ) -> tuple[jax.Array, jax.Array, jax.Array]:
+  ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
     """JIT-compiled core: encode, fuse, decode. Receives pre-built concrete bundles."""
     del use_rolling_state, multi_state_strategy
-
-    L = sequence.shape[0]
-    decoding_order, _key = random_decoding_order(prng_key, L, None, None)
 
     # Encode at each noise level, fuse, decode
     logits = score_averaged(
@@ -390,7 +386,9 @@ def _make_averaged_score_fn(
     # Compute NLL using the extracted helper
     nll = _nll_from_logits(logits, sequence, mask)
 
-    return nll, logits, decoding_order
+    # Scoring is full-context (non-autoregressive), so decoding order is not applicable.
+    # Return None instead of a meaningless random permutation.
+    return nll, logits, None
 
   def score_sequence_averaged(
     prng_key: jax.Array,
@@ -511,8 +509,10 @@ def score(  # noqa: PLR0915
             Metadata including specification, structure_ids, and skipped_inputs.
         logits : jax.Array, optional
             Per-position logits if return_logits=True. Shape: (num_structures, num_sequences, L, 21).
-        decoding_orders : jax.Array, optional
-            Decoding orders if return_decoding_orders=True. Shape: (num_structures, num_sequences, L).
+        decoding_orders : jax.Array or None, optional
+            Decoding orders if return_decoding_orders=True and scoring is not full-context.
+            For full-context scoring (the default), this field is omitted (full-context scoring
+            is non-autoregressive and has no decoding order). Shape: (num_structures, num_sequences, L).
 
   Raises
   ------
@@ -709,7 +709,9 @@ def score(  # noqa: PLR0915
     if spec.run_spec.sampling.return_logits and all_logits is not None:
       all_logits.append(batch_logits)
     if spec.run_spec.sampling.return_decoding_orders and all_decoding_orders is not None:
-      all_decoding_orders.append(batch_decoding_orders)
+      # Only append if decoding_orders is not None (None indicates full-context scoring)
+      if batch_decoding_orders is not None:
+        all_decoding_orders.append(batch_decoding_orders)
 
     resolved_structure_ids.extend(batch_structure_ids)
     structure_offset += batch_size
@@ -732,8 +734,9 @@ def score(  # noqa: PLR0915
     # Shape: (num_structures, num_sequences, L, 21)
     results["logits"] = jnp.concatenate(all_logits, axis=0)
 
-  if spec.run_spec.sampling.return_decoding_orders and all_decoding_orders is not None:
+  if spec.run_spec.sampling.return_decoding_orders and all_decoding_orders is not None and all_decoding_orders:
     # Shape: (num_structures, num_sequences, L)
+    # Note: all_decoding_orders will be empty if scoring was full-context (return None)
     results["decoding_orders"] = jnp.concatenate(all_decoding_orders, axis=0)
 
   return results
@@ -870,7 +873,7 @@ def _score_fused_multistate(
   }
   if spec.return_logits:
     results["logits"] = all_logits[None, :]
-  if spec.return_decoding_orders:
+  if spec.return_decoding_orders and all_decoding_orders is not None:
     results["decoding_orders"] = all_decoding_orders[None, :]
 
   return results
