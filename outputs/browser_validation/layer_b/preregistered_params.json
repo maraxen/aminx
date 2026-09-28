@@ -1,0 +1,117 @@
+{
+  "ctrl_effect": {
+    "p03": 0.00010108947753906251,
+    "p04": 0.0005602836608886719
+  },
+  "delta_b03": 0.0001,
+  "delta_b04": 0.0005623413251903491,
+  "epsilon_tie": 0.0001,
+  "headroom": {
+    "p03|edge_features|b_ort|1024": {
+      "calib_value": 5.698204040527344e-05,
+      "inherited_from": null,
+      "state": "not_advanced"
+    },
+    "p03|edge_features|b_ort|128": {
+      "calib_value": 2.288818359375e-05,
+      "inherited_from": null,
+      "state": "not_advanced"
+    },
+    "p03|edge_features|b_ort|512": {
+      "calib_value": 2.002716064453125e-05,
+      "inherited_from": null,
+      "state": "not_advanced"
+    },
+    "p03|neighbor_indices|b_ort|1024": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p03|neighbor_indices|b_ort|128": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p03|neighbor_indices|b_ort|512": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|argmax|b_ort|1024": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|argmax|b_ort|128": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|argmax|b_ort|512": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|b_ort|1024": {
+      "calib_value": 1.33514404296875e-05,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|b_ort|128": {
+      "calib_value": 8.344650268554688e-06,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|b_ort|512": {
+      "calib_value": 1.0967254638671875e-05,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|p27|1024": {
+      "calib_value": 1.239776611328125e-05,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|p27|128": {
+      "calib_value": 7.152557373046875e-06,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|log_probs|p27|512": {
+      "calib_value": 1.1444091796875e-05,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|b_ort|1024": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|b_ort|128": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|b_ort|512": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|p27|1024": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|p27|128": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    },
+    "p04|neighbor_indices|p27|512": {
+      "calib_value": 0.0,
+      "inherited_from": null,
+      "state": "advanced"
+    }
+  },
+  "max_abs_dist_err": 1.0288730734941964e-05
+}
