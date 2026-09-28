@@ -22,6 +22,19 @@ writer"). Detection of these controls in the browser happens in T5b (validate), 
 
 Writes `outputs/browser_validation/layer_c/preregistered_params.json`
 (`{delta_c04, delta_c03, ctrl_effect_c, headroom_c}`, T5b reads this).
+
+Operational note (r1, agent trap): under Claude Code's Bash-tool sandbox, `$BV_ARTIFACTS`
+(`/home/marielle/bv-artifacts/260926_layer_b`, outside the default write-allowlist) makes
+`_rebuild_sized_artifacts_c`'s jax2onnx/onnx write raise `OSError: [Errno 30] Read-only
+file system` -- indistinguishable from a real read-only mount unless you already know the
+allowlist. This function's caller catches that (and any other export/write failure) and
+records `ctrl_unsized` rather than crashing (see the `except Exception` around its call
+site), so the RUN still succeeds with a graded, non-error outcome -- just not `pass`. Run
+`local_run.sh` with the Bash tool's `dangerouslyDisableSandbox: true` to get a real
+`$BV_ARTIFACTS` write and a `pass`-eligible run. Because bathos runs are append-only and
+`check_run.sh` asserts exactly one row per (stem, git_hash), a sandboxed attempt that
+already consumed a git_hash (even a graceful `ctrl_unsized`, not just a crash) means the
+next attempt needs a NEW commit, not a bare retry at the same HEAD.
 """
 
 from __future__ import annotations
