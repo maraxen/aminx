@@ -26,7 +26,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -234,7 +234,8 @@ def claim_ratio_pairs(records: list[Any], *, native_pinned: bool) -> list[tuple[
 
 
 def timing_sentences(
-  records: list[Any], summaries: dict[str, bench_stats.WithinSessionCI]
+  records: list[Any],
+  summaries: dict[str, bench_stats.WithinSessionCI],
 ) -> list[str]:
   """Timing sentences for citable records, only after END_TO_END accepts the bucket."""
   pool = _citable(records, native_pinned=True, for_ratio=False)
@@ -480,6 +481,96 @@ def _time_native(
   }
 
 
+class RouteTiming(NamedTuple):
+  """Steady-state samples plus the fields both arms actually return."""
+
+  steady_ms: list[float]
+  n_warmup: int
+  n_iter: int
+  phases: dict[str, Any] | None
+  threads_observed: Any
+  threads_mismatch: bool
+  peak_memory_available: bool
+  wasm_heap_bytes: Any
+
+
+def parse_route_timing(timed: dict[str, Any], *, browser: bool) -> RouteTiming:
+  """Read one cell's timings.
+
+  `browser/layer_c/bench.mjs` `timeCell` nests `steady_ms`, `n_warmup`, and
+  `n_iter` under `phases`. The native arm (`_time_native`) returns those three
+  at the top level. `threadsObserved`, `threadsMismatch`, `peakMemory`, and
+  `wasmHeapBytes` stay top-level on the browser response.
+  """
+  if browser:
+    phases = timed.get("phases")
+    if not isinstance(phases, dict):
+      raise KeyError("phases")
+    source: dict[str, Any] = phases
+  else:
+    source = timed
+  steady_ms = [float(value) for value in source["steady_ms"]]
+  peak = timed.get("peakMemory")
+  peak_memory_available = (isinstance(peak, dict) and bool(peak.get("available"))) or bool(
+    timed.get("jax_memory_available"),
+  )
+  phase_map = timed.get("phases")
+  return RouteTiming(
+    steady_ms=steady_ms,
+    n_warmup=int(source["n_warmup"]),
+    n_iter=int(source["n_iter"]),
+    phases=phase_map if isinstance(phase_map, dict) else None,
+    threads_observed=timed.get("threadsObserved"),
+    threads_mismatch=bool(timed.get("threadsMismatch")),
+    peak_memory_available=peak_memory_available,
+    wasm_heap_bytes=timed.get("wasmHeapBytes"),
+  )
+
+
+def record_cell_exception(result: dict[str, Any], cell_key: str, exc: BaseException) -> None:
+  """Count one per-cell failure and keep its message. The run itself continues."""
+  result["n_cells_error"] = int(result["n_cells_error"]) + 1
+  errors = result.setdefault("_errors", {})
+  errors[cell_key] = f"{type(exc).__name__}: {exc}"
+
+
+def collect_cell_timing(
+  result: dict[str, Any],
+  timed: dict[str, Any],
+  *,
+  browser: bool,
+  cell_key: str,
+) -> RouteTiming | None:
+  """Parse one fetched cell. A missing timing is recorded, not raised."""
+  try:
+    return parse_route_timing(timed, browser=browser)
+  except Exception as exc:  # noqa: BLE001 -- recorded on the cell; the run still exits 0
+    record_cell_exception(result, cell_key, exc)
+    return None
+
+
+def graded_exit_code(*, integrity_failure: bool) -> int:
+  """Graded outcomes (per-cell, harness, budget) exit 0. Integrity refusals exit 3."""
+  if integrity_failure:
+    return 3
+  return 0
+
+
+def _accepted_browser_timing(response: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+  """Unwrap a `run_bench.mjs` time reply. Isolation failure is data on `result`."""
+  if not response.get("ok"):
+    msg = str(response.get("error"))
+    raise RuntimeError(msg)
+  timed = response.get("result") or {}
+  if not timed.get("ok"):
+    if timed.get("crossOriginIsolated") is False:
+      result["isolation_ok"] = False
+      result["cross_origin_isolated"] = False
+    msg = str(timed.get("error") or "cell failed")
+    raise RuntimeError(msg)
+  return timed
+
+
 def _browser_spec(
   plan: dict[str, Any],
   inputs: list[dict[str, Any]],
@@ -630,10 +721,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
       samples: dict[str, list[np.ndarray]] = {plan["cell_id"]: [] for plan in plans}
       details: dict[str, Any] = {}
       errors: dict[str, str] = {}
+      result["_errors"] = errors
       warmups: list[int] = []
       iterations: list[int] = []
       measured = 0
-      n_errors = 0
       below = 0
       peak_available = False
       repeats_done = 0
@@ -666,6 +757,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 n_iter=N_ITER,
                 weight_load_s=weight_load_s,
               )
+              browser = False
             else:
               response = session.request(
                 {
@@ -680,56 +772,55 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 },
                 timeout_s=float(args.timeout_s),
               )
-              if not response.get("ok"):
-                msg = str(response.get("error"))
-                raise RuntimeError(msg)
-              timed = response.get("result") or {}
-              if not timed.get("ok"):
-                if timed.get("crossOriginIsolated") is False:
-                  result["isolation_ok"] = False
-                  result["cross_origin_isolated"] = False
-                msg = str(timed.get("error") or "cell failed")
-                raise RuntimeError(msg)
-            steady = [float(value) for value in timed["steady_ms"]]
-            if len(steady) < N_ITER or int(timed.get("n_warmup", N_WARMUP)) < N_WARMUP:
-              below += 1
-            if not np.isfinite(steady).all():
-              msg = "non-finite steady-state sample"
-              raise ValueError(msg)
-            samples[plan["cell_id"]].append(np.asarray(steady, dtype=np.float64))
-            warmups.append(int(timed.get("n_warmup", N_WARMUP)))
-            iterations.append(int(timed.get("n_iter", len(steady))))
-            if timed.get("peakMemory", {}).get("available") or timed.get("jax_memory_available"):
-              peak_available = True
-            details[cell_key] = {
-              "route": plan["route"],
-              "threads_requested": (
-                1
-                if plan["route"] in {"ort_wasm_t1", "aa_dup", "planted_5ms"}
-                else threads_n
-                if plan["route"] == "ort_wasm_tN"
-                else 1
-              ),
-              "threads_observed": timed.get("threadsObserved"),
-              "threads_mismatch": bool(timed.get("threadsMismatch")),
-              "source": "ort.env.wasm.numThreads" if plan["context"] else "XLA_FLAGS",
-              "phases": timed.get("phases"),
-              "n_warmup": int(timed.get("n_warmup", N_WARMUP)),
-              "n_iter": len(steady),
-            }
-            if plan["route"] == "native_jax_cpu":
-              details[cell_key]["threads_observed"] = 1 if native_pinned else None
-              details[cell_key]["source"] = "XLA_FLAGS"
-            measured += 1
-          except (RuntimeError, ValueError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-            n_errors += 1
-            errors[cell_key] = f"{type(exc).__name__}: {exc}"
+              timed = _accepted_browser_timing(response, result)
+              browser = True
+          except Exception as exc:  # noqa: BLE001 -- cell failures are stored, then the run continues
+            record_cell_exception(result, cell_key, exc)
+            continue
+          parsed = collect_cell_timing(result, timed, browser=browser, cell_key=cell_key)
+          if parsed is None:
+            continue
+          steady = parsed.steady_ms
+          if len(steady) < N_ITER or parsed.n_warmup < N_WARMUP:
+            below += 1
+          if not np.isfinite(steady).all():
+            record_cell_exception(
+              result,
+              cell_key,
+              ValueError("non-finite steady-state sample"),
+            )
+            continue
+          samples[plan["cell_id"]].append(np.asarray(steady, dtype=np.float64))
+          warmups.append(parsed.n_warmup)
+          iterations.append(parsed.n_iter)
+          if parsed.peak_memory_available:
+            peak_available = True
+          details[cell_key] = {
+            "route": plan["route"],
+            "threads_requested": (
+              1
+              if plan["route"] in {"ort_wasm_t1", "aa_dup", "planted_5ms"}
+              else threads_n
+              if plan["route"] == "ort_wasm_tN"
+              else 1
+            ),
+            "threads_observed": parsed.threads_observed,
+            "threads_mismatch": parsed.threads_mismatch,
+            "source": "ort.env.wasm.numThreads" if plan["context"] else "XLA_FLAGS",
+            "phases": parsed.phases,
+            "n_warmup": parsed.n_warmup,
+            "n_iter": parsed.n_iter,
+            "wasm_heap_bytes": parsed.wasm_heap_bytes,
+          }
+          if plan["route"] == "native_jax_cpu":
+            details[cell_key]["threads_observed"] = 1 if native_pinned else None
+            details[cell_key]["source"] = "XLA_FLAGS"
+          measured += 1
         if budget_expired:
           break
         repeats_done += 1
 
       result["cells_measured"] = measured
-      result["n_cells_error"] = n_errors
       result["n_repeats"] = repeats_done
       result["min_warmup"] = min(warmups) if warmups else 0
       result["min_iterations"] = min(iterations) if iterations else 0
@@ -858,14 +949,15 @@ def main(argv: list[str] | None = None) -> int:
   parser.add_argument("--budget-s", type=float, default=BUDGET_S)
   args = parser.parse_args(argv)
 
+  integrity_failure = False
   try:
     result = run(args)
-    exit_code = 0
   except (FileNotFoundError, ValueError) as exc:
     logger.error("layer_c_bench: integrity refusal: %s", exc)
     result = _empty_result("", False)
     result["_integrity_error"] = str(exc)
-    exit_code = 3
+    integrity_failure = True
+  exit_code = graded_exit_code(integrity_failure=integrity_failure)
 
   lac.emit(result, args.out)
   if not lac.differential_mode()["active"]:
