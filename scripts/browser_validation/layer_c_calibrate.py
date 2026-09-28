@@ -596,13 +596,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
       with PARAMS_PATH.open("w") as fh:
         json.dump(params, fh, indent=2, sort_keys=True)
       params_written = True
-    except OSError as exc:
-      # A write/IO failure while rebuilding the sized artifacts (e.g. the shared D-G
-      # $BV_ARTIFACTS store is temporarily unwritable) must not crash the script with an
-      # uncaught traceback and a bare, un-graded exit code -- the result-emission rule
-      # requires every non-integrity-refusal path to exit 0 with a result JSON. Recorded
-      # as a residual (ctrl_unsized, since controls_sized stays < controls_total's
-      # params-writing half) rather than silently treated as params_written.
+    except Exception as exc:  # noqa: BLE001 -- recorded, not swallowed
+      # A failure while rebuilding the sized artifacts (jax2onnx export, ONNX save, or a
+      # write/IO failure -- e.g. the shared D-G $BV_ARTIFACTS store is temporarily
+      # unwritable) must not crash the script with an uncaught traceback and a bare,
+      # un-graded exit code -- the result-emission rule requires every
+      # non-integrity-refusal path to exit 0 with a result JSON. Matches
+      # _size_controls_c's own `except Exception` above. Recorded as a residual
+      # (ctrl_unsized via `NOT params_written`, never pass) rather than silently
+      # treated as params_written.
       errors["manifest_rebuild"] = f"{type(exc).__name__}: {exc}"
 
   versions = {
