@@ -270,3 +270,52 @@ class TestNoRemainingLaxTopKCallSites:
       encoding="utf-8",
     )
     assert _lax_top_k_call_lines(sample) == [4]
+
+
+class TestTopKRowChunk:
+  """``row_chunk`` (T4, IREE stack-allocation fix) must not change the answer.
+
+  ``aminx.export.wrappers`` passes ``row_chunk=32`` to keep the compiled
+  ``lax.sort``'s stack footprint bounded at the L=512/1024 export buckets (see
+  ``top_k``'s docstring). Every export bucket (128/256/512/1024) happens to be a
+  multiple of 32, so the wrapper-level tests in ``test_export_wrappers.py`` never
+  exercise the padding branch (``n_rows % row_chunk != 0``) in
+  ``_top_k_row_chunked`` -- these tests cover that directly.
+  """
+
+  @pytest.mark.parametrize("batch", [1, 7, 32, 33, 63, 100])
+  @pytest.mark.parametrize("row_chunk", [1, 8, 32])
+  def test_matches_unchunked_including_non_divisible_batch(
+    self, batch: int, row_chunk: int
+  ) -> None:
+    x = jax.random.normal(jax.random.PRNGKey(batch * 100 + row_chunk), (batch, SHAPE[1]))
+    vals, idx = top_k(x, K, row_chunk=row_chunk)
+    ref_vals, ref_idx = top_k(x, K, row_chunk=None)
+    assert np.array_equal(np.asarray(idx), np.asarray(ref_idx)), (batch, row_chunk)
+    assert np.array_equal(np.asarray(vals), np.asarray(ref_vals)), (batch, row_chunk)
+
+  def test_matches_unchunked_on_a_tie_heavy_input(self) -> None:
+    """Padding rows must not leak into a real row's tie-break order."""
+    x = jax.random.normal(jax.random.PRNGKey(11), (100, SHAPE[1]))
+    x = jnp.round(x * 2.0) / 2.0
+    vals, idx = top_k(x, K, row_chunk=32)
+    ref_vals, ref_idx = top_k(x, K, row_chunk=None)
+    assert np.array_equal(np.asarray(idx), np.asarray(ref_idx))
+    assert np.array_equal(np.asarray(vals), np.asarray(ref_vals))
+
+  def test_square_shape_matches_unchunked(self) -> None:
+    """The actual shape ``select_neighbors`` calls ``top_k`` with: batch == sort axis."""
+    for length in (100, 128, 512):
+      x = jax.random.normal(jax.random.PRNGKey(length), (length, length))
+      vals, idx = top_k(x, K, row_chunk=32)
+      ref_vals, ref_idx = top_k(x, K, row_chunk=None)
+      assert np.array_equal(np.asarray(idx), np.asarray(ref_idx)), length
+      assert np.array_equal(np.asarray(vals), np.asarray(ref_vals)), length
+
+  def test_none_is_unaffected_by_ndim_guard(self) -> None:
+    """1-D input has no batch axis to chunk; ``row_chunk`` must be a harmless no-op."""
+    x = jax.random.normal(jax.random.PRNGKey(5), (SHAPE[1],))
+    vals, idx = top_k(x, K, row_chunk=32)
+    ref_vals, ref_idx = top_k(x, K, row_chunk=None)
+    assert np.array_equal(np.asarray(idx), np.asarray(ref_idx))
+    assert np.array_equal(np.asarray(vals), np.asarray(ref_vals))
