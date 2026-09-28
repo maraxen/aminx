@@ -576,6 +576,12 @@ def _max_abs_dist_err(cells: list[dict[str, Any]]) -> float:
   is the epsilon-sizing proxy the near-tie rule's docstring names ("T3a records
   `max_abs_dist_err` ... This is a proxy, because the exported graphs do not output
   distances").
+
+  The diagonal (a row's distance to itself) is excluded: `compute_backbone_distance`
+  adds `1e-6` inside its `sqrt` (`sqrt(1e-6 + sum_of_squares)`), so its self-distance is
+  `sqrt(1e-6) = 1e-3` against the host's exact `0` -- a fixed property of that
+  convention, not a float32-vs-float64 EVALUATION-ORDER error on a genuine pair, and
+  including it would swamp the real (~ulp-scale) signal this proxy measures.
   """
   from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 
@@ -589,7 +595,9 @@ def _max_abs_dist_err(cells: list[dict[str, Any]]) -> float:
     ca64 = ca_real.astype(np.float64)
     diffs = ca64[:, None, :] - ca64[None, :, :]
     d_host64 = np.sqrt(np.sum(diffs * diffs, axis=-1))
-    worst = max(worst, float(np.max(np.abs(d_f32 - d_host64))))
+    diff = np.abs(d_f32 - d_host64)
+    np.fill_diagonal(diff, 0.0)
+    worst = max(worst, float(np.max(diff)))
   return worst
 
 
