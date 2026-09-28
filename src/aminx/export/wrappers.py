@@ -63,6 +63,27 @@ _NO_KEY = cast("PRNGKeyArray", None)
 #: instead of trusting either the model instance or a bare constant alone.
 PINNED_CHECKPOINT_ID = "proteinmpnn_v_48_020"
 
+#: T4 (IREE stack-allocation fix): row-chunk size passed to ``select_neighbors`` ->
+#: ``top_k`` for the compiled export path only (the eager/training call in
+#: ``ProteinFeatures.forward_edge_stages`` is unaffected -- it does not pass
+#: ``row_chunk`` and keeps its pre-T4 trace exactly).
+#:
+#: Measured 260928 (see ``top_k``'s docstring): IREE's llvm-cpu codegen for the
+#: unchunked ``lax.sort`` stack-allocates a scratch buffer that starts exceeding the
+#: default 32768-byte limit around L=360-400 and keeps growing with L (131072 bytes
+#: at L=512, 262144 at L=1024) -- this is what made P03/P04 fail to compile
+#: (native AND wasm32) at the L=512/1024 export buckets. Capping the batch axis
+#: actually processed per compiled call at 32 rows keeps the allocation bounded
+#: (~19KB native / ~16KB wasm32) at every export bucket (128/256/512/1024), with
+#: comfortable headroom under both IREE's own default limit and Emscripten's
+#: default 64KiB linked wasm stack -- a real reduction in per-call footprint, not
+#: a raised ceiling (``--iree-llvmcpu-stack-allocation-limit`` was rejected for
+#: wasm32 specifically because it only raises IREE's compile-time guard without
+#: changing the actual stack frame size, which would silently overflow
+#: Emscripten's default stack at runtime; nothing here executes wasm32 to verify
+#: that empirically, so it is not an acceptable fix for that target).
+EXPORT_TOP_K_ROW_CHUNK = 32
+
 
 class _MetaCallable:
   """A JAX-traceable callable carrying a ``.meta`` dict (``n_dropout``, ``max_p_before``).
@@ -158,7 +179,12 @@ def make_p03_featurize(
   ) -> tuple[Int[Array, "L k"], Float[Array, "L k H"]]:
     backbone_coords = compute_backbone_coordinates(coords)
     distances = compute_backbone_distance(backbone_coords)
-    neighbor_indices = select_neighbors(distances, mask, model.features.k_neighbors)
+    neighbor_indices = select_neighbors(
+      distances,
+      mask,
+      model.features.k_neighbors,
+      row_chunk=EXPORT_TOP_K_ROW_CHUNK,
+    )
     rbf = compute_radial_basis(backbone_coords, neighbor_indices)
     stages = model.features.forward_edge_stages(
       _NO_KEY,
@@ -216,7 +242,12 @@ def make_p04_unconditional(
   ) -> tuple[Float[Array, "L 21"], Int[Array, "L k"]]:
     backbone_coords = compute_backbone_coordinates(coords)
     distances = compute_backbone_distance(backbone_coords)
-    neighbor_indices = select_neighbors(distances, mask, model.features.k_neighbors)
+    neighbor_indices = select_neighbors(
+      distances,
+      mask,
+      model.features.k_neighbors,
+      row_chunk=EXPORT_TOP_K_ROW_CHUNK,
+    )
     rbf = compute_radial_basis(backbone_coords, neighbor_indices)
     stages = model.features.forward_edge_stages(
       _NO_KEY,
