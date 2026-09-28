@@ -66,7 +66,15 @@ async function postResult(name, body) {
 
 async function runCell(cell) {
   const modelBuf = await fetchArrayBuffer(cell.onnx);
-  const session = await ort.InferenceSession.create(modelBuf, { executionProviders: ["wasm"] });
+  const sessionOptions = { executionProviders: ["wasm"] };
+  if (cell.profile) {
+    // T6 (--profile mode): opt-in per-cell, via the cells.json manifest (NOT a URL
+    // query param) -- so a caller that never sets `cell.profile` (every existing
+    // layer_c_calibrate.py/layer_c_parity.py cell) takes the IDENTICAL code path as
+    // before this change, byte-for-byte.
+    sessionOptions.enableProfiling = true;
+  }
+  const session = await ort.InferenceSession.create(modelBuf, sessionOptions);
   if (session.inputNames.length !== cell.inputs.length) {
     throw new Error(
       `${cell.name}: session has ${session.inputNames.length} inputs, manifest declares ${cell.inputs.length}`,
@@ -88,6 +96,19 @@ async function runCell(cell) {
     const bytes = tensorRawBytes(tensor, outSpec.dtype);
     // eslint-disable-next-line no-await-in-loop
     await postResult(`${cell.name}__${outSpec.label}.bin`, bytes);
+  }
+  if (cell.profile) {
+    // onnxruntime-web's wasm EP exposes NO JS-readable per-node profiling event array:
+    // `endProfiling()` only frees an internal Emscripten MEMFS file handle (confirmed
+    // against the bundled 1.30.0 dist, `ort.wasm.mjs`'s
+    // `endProfiling = (sessionId) => { ... wasm2._OrtFree(profileFileName); }` --
+    // there is no public API call that reads that file's bytes back into JS). We still
+    // call it (so a future ORT Web version that DOES expose events is exercised
+    // identically), but report unavailability honestly rather than fabricating
+    // per-op data -- layer_b_profile.py reads `profileEventsAvailable` to decide its
+    // own `web_per_op_available` result field.
+    session.endProfiling();
+    return { ok: true, profileEventsAvailable: false };
   }
   return { ok: true };
 }

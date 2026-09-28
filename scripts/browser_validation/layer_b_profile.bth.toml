@@ -1,0 +1,83 @@
+[metadata]
+title = "T6: Profiling -- ORT per-op (CPU + Web) and JAX-native cost analysis"
+created = "260928"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "For every already-converted P03/P04 artifact at every export bucket, ORT-CPU profiling (5 warm-ups + 30 measured runs, enable_profiling=True) aggregates cleanly into per-op-type mean-time/share/count tables with coverage >= 0.8 at both intra_op_num_threads=1 (the cross-route table paired against ORT Web t1) and =4 (its own table only); JAX-native profiling (jax.jit(wrapper).lower(*specs).compile()) records cost_analysis(), an HLO op histogram, and a DISPATCH_COUNT claim (xtrax.profiling) whose n_executions cross-checks the trace's own executable-launch count and whose n_compilations/n_jit_traces are measured via jax.monitoring on the exact jax 0.10.0 event names, verified in-run by a fresh-vs-repeated jax.jit self-check; the synthetic aggregator self-test and both malformed-ProbeRecord controls (a stage-0 record missing n_jit_traces refused by assert_claim_supported, a boolean metric refused at construction) all fire correctly. ORT Web per-op data is attempted through a --profile mode of browser/layer_c/parity.mjs but is expected to be unavailable (onnxruntime-web's wasm EP exposes no JS-readable per-node event array in 1.30.0), which caps the outcome at partial rather than pass -- this is a documented instrument limitation, not a measurement failure."
+stage_name = "exploration"
+novel = true
+
+[controls]
+positive_outcome = ["pass", "partial"]
+negative_outcome = ["ctrl_blind", "incomplete", "low_coverage"]
+
+# Declaration order matters (first matching branch wins, per this task's own step-3
+# ordering): blocked (T2 BLOCKED table takes precedence over every other label when
+# n_paths_available = 0, common context's own note), then ctrl_blind (no parity/perf
+# statement is trustworthy if the instrument itself is not proven sensitive), then
+# incomplete (a genuinely missing cell), then low_coverage (a residual quality flag on an
+# otherwise-complete run), then partial (web per-op unavailable -- the ANTICIPATED,
+# honestly-reported instrument limitation), then pass.
+
+[outcomes.blocked]
+condition = "n_paths_available = 0"
+decision = "T2 BLOCKED table: neither P03 nor P04 fully converted at every bucket; nothing could be profiled. Recorded so the block is on record, per the common context's own rule for every downstream sidecar."
+reasoning = "Matches every other layer-(b)/(c) sidecar's own first-matching BLOCKED branch when n_paths_available = 0 (layer_b_iree.bth.toml, layer_c_parity.bth.toml)."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "NOT agg_self_check_pass OR NOT monitor_selfcheck_pass OR NOT malformed_record_ctrl_pass OR dispatch_count_mismatch OR NOT dispatch_claim_ok"
+decision = "One or more in-run instrument self-checks failed: the synthetic ORT-profile aggregator, the jax.monitoring fresh-vs-repeated jit self-check, one of the two malformed-ProbeRecord controls, a per-cell n_executions/trace-launch-count mismatch, or the DISPATCH_COUNT claim assertion itself. No profiling number from this run may be trusted."
+decision_extra = ""
+reasoning = "BATHOS.md: verify the measurement pipeline on synthetic ground truth first, paired with a negative control that must fail. Each of these five conditions is exactly such a control (three synthetic/self-tests, one cross-check, one library-level assertion) -- any single failure means the rest of this run's numbers cannot be distinguished from a broken instrument silently reporting confident nonsense."
+is_residual = true
+
+[outcomes.incomplete]
+condition = "n_skipped > 0"
+decision = "One or more (path, bucket) cells failed to profile (ORT-CPU session/aggregation error, or JAX-native compile/trace error); this run proves nothing for the missing cells and must not be committed as a clean pass."
+reasoning = "A skipped cell means the comparisons/measurements this run would report did not all run; per the result-emission rule, this is recorded as its own residual outcome rather than silently reporting a partial table as if it were complete."
+is_residual = true
+
+[outcomes.low_coverage]
+condition = "min_ort_cpu_coverage_available AND min_ort_cpu_coverage < 0.8"
+decision = "At least one ORT-CPU t1 cell's coverage (node-event time / model_run time) fell below 0.8; the per-op time shares for that cell may be missing a large fraction of session overhead (memory planning, executor dispatch) not attributed to any node."
+reasoning = "This task's own step-3 declaration: 'low_coverage (residual): any ORT-CPU coverage < 0.8'. A low-coverage table is still reported (not blocked), but is flagged as a residual quality concern distinct from an outright missing cell."
+is_residual = true
+
+[outcomes.partial]
+condition = "NOT web_per_op_available"
+decision = "Every available ORT-CPU (t1 and t4) and JAX-native cell profiled cleanly with coverage >= 0.8, the DISPATCH_COUNT claim is supported, and every self-check/control passed, but ORT Web per-op data was not available (the documented onnxruntime-web wasm-EP endProfiling() limitation, or a browser-harness failure)."
+reasoning = "Matches this task's own step-3 declaration and AC-P1's 'or partial (web per-op unavailable)' clause verbatim -- the absence of a per-node ORT Web event array is an anticipated property of onnxruntime-web 1.30.0's public API, not evidence of a measurement defect, so it is capped at partial rather than graded as incomplete or ctrl_blind."
+is_residual = false
+
+[outcomes.pass]
+condition = "web_per_op_available AND min_ort_cpu_coverage_available AND min_ort_cpu_coverage >= 0.8 AND n_skipped = 0"
+decision = "Every available cell profiled cleanly on all three routes (ORT-CPU t1/t4, ORT Web, JAX native) with coverage >= 0.8, the DISPATCH_COUNT claim is supported, and every self-check/control passed."
+reasoning = "The full positive close: nothing skipped, no low-coverage cell, every self-check/control fired correctly, AND ORT Web actually returned per-op data (which 1.30.0's public API is not expected to do, but the condition is not hand-waved away if a future onnxruntime-web version changes that)."
+is_residual = false
+
+[result_schema]
+git_hash = "str"
+git_clean = "bool"
+n_paths_available = "int"
+converted_by_path = "dict"
+cells_total = "int"
+cells_measured = "int"
+n_skipped = "int"
+min_ort_cpu_coverage = "float"
+min_ort_cpu_coverage_available = "bool"
+web_per_op_available = "bool"
+agg_self_check_pass = "bool"
+monitor_selfcheck_pass = "bool"
+malformed_record_ctrl_pass = "bool"
+dispatch_count_mismatch = "bool"
+dispatch_claim_ok = "bool"
+artifact_subdir = "str"
+versions = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
+xtrax_version = { type = "string", required = true }
