@@ -1,0 +1,83 @@
+[metadata]
+title = "Layer (c): browser (ORT Web wasm EP, headless Chromium) calibrate on fixture set A"
+created = "260928"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On fixture set A (5L33@128, tie_lattice_L96@128 [P03 only], 4GYT@512, 6EHB@1024), the SAME already-converted, tracked T2 ONNX artifacts layer (b) ran through ONNX Runtime's native CPU execution provider also run, unchanged, through onnxruntime-web's wasm execution provider inside real headless Chromium (numThreads = 1, cross-origin-isolated), and agree with the ORT-CPU run of that identical artifact (neighbour indices EXACT with the near-tie exclusion, P03 edge features and P04 log-probs TOL against the layer-(c) bars, which are bar/10 of the layer-(b) bars). A geometric-bisection search on 5L33@128 finds a P04 log-prob bias delta_c04 and a P03 edge-projection bias delta_c03 that each size their perturbed artifact into [2x, 10x] of its OWN layer-(c) bar (not taken from T3a's ctrl_effect), both perturbed artifacts are rebuilt at every export bucket with the chosen deltas and appended to the SAME tracked D-G manifest, and the headroom rule (route = ort_wasm) is applied per (path, quantity, bucket), writing outputs/browser_validation/layer_c/preregistered_params.json. The browser harness itself runs cross-origin-isolated (self.crossOriginIsolated === true), which this calibrate run also records as a precondition for trusting numThreads = 1 wasm evidence at all."
+stage_name = "calibration"
+novel = true
+# No [reproduction]: novel = true replaces it. No [differential] and no
+# experiment.claim_discriminates: calibration sidecars never prove sensitivity
+# themselves -- lint_sidecars.py's calibration-no-differential check fails the build
+# otherwise.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["blocked", "incomplete", "not_isolated", "ctrl_unsized"]
+
+# Declaration order matters (first matching branch wins), per the task spec's own
+# ordering ("Outcomes: blocked, incomplete, not_isolated, ctrl_unsized, pass"): blocked
+# (no path available, T2 BLOCKED table), then incomplete (dirty tree / harness did not
+# even run / a comparison cell failed to compute), then not_isolated (the harness ran but
+# was NOT cross-origin-isolated -- a numThreads = 1 result from a non-isolated page is
+# not the same evidence AC-C1 asks for), then ctrl_unsized, then pass. not_advanced
+# headroom rows never change this outcome (spec: "not_advanced rows do not change the
+# calibrate outcome") -- they are recorded only in preregistered_params.json's headroom_c
+# dict.
+
+[outcomes.blocked]
+condition = "n_paths_available = 0"
+decision = "Neither P03 nor P04 has a clean converted artifact for every export bucket (T2 BLOCKED table); no cell could be run through either ORT-CPU or the browser, and the run is recorded as blocked rather than silently producing an empty pass."
+reasoning = "T2's per-path BLOCKED table requires every downstream sidecar to declare blocked as its FIRST-matching outcome when n_paths_available == 0 (spec 'Referenced excerpt: Task 2 per-path BLOCKED table')."
+is_residual = true
+
+[outcomes.incomplete]
+condition = "NOT git_clean OR NOT harness_ok OR n_measurements_computed < n_measurements_expected"
+decision = "The run tree was dirty, the headless-Chromium harness itself failed to produce a result (browser launch, page crash, navigation error, timeout, or no node binary found), or one or more (fixture, path) cells failed to compute a comparison; this calibration proves nothing and must not be committed as a clean calibration."
+reasoning = "A dirty tree, a harness that never produced browser evidence, or a comparison that crashed mid-run each mean the measurements this run would tighten deltas/headroom from did not run under the conditions the claim requires."
+is_residual = true
+
+[outcomes.not_isolated]
+condition = "NOT cross_origin_isolated"
+decision = "The harness produced a result, but the page was not cross-origin-isolated (self.crossOriginIsolated !== true), so the numThreads = 1 wasm run this calibration measures is not the isolated evidence AC-C1 requires -- serve.mjs's COOP/COEP headers did not take effect for this run."
+reasoning = "The Definitions section fixes numThreads at wasm-init time and the harness always requests isolation for the parity comparison; a non-isolated result silently mixes in a different (and untested-for-this-task) code path and must not be reported as the calibrated comparison."
+is_residual = true
+
+[outcomes.ctrl_unsized]
+condition = "controls_sized < controls_total"
+decision = "The geometric-bisection search failed to land delta_c04 and/or delta_c03 in its [2x, 10x] window (of the layer-(c) bars) within 20 steps; the committed deltas would rest on an insensitive or under-sized instrument."
+reasoning = "Pre-registered bars: 'Layer c (T5a, r1 M7): delta_c04 ... sized to [2x, 10x] of 1e-5, and delta_c03 ... sized to [2x, 10x] of 2e-6 ... sized against the c bars, not taken from T3a's ctrl_effect'; a control that cannot be sized during calibration would silently pass an unsized perturbation through to validate."
+is_residual = true
+
+[outcomes.pass]
+condition = "params_written AND controls_sized = controls_total AND cross_origin_isolated"
+decision = "preregistered_params.json was written with both layer-(c) controls sized and the browser harness ran cross-origin-isolated, regardless of how many headroom_c keys were flagged not_advanced."
+reasoning = "Headroom is a result field, not an outcome (mirrors 'Calibration-twin outcomes' precedent in layer_a_exact_calibrate.bth.toml and layer_b_ort_calibrate.bth.toml): a calibration that legitimately finds not_advanced buckets still wrote a usable, fully-sized params file and must still declare pass."
+is_residual = false
+
+[result_schema]
+n_paths_available = "int"
+converted_by_path = "dict"
+n_measurements_expected = "int"
+n_measurements_computed = "int"
+git_hash = "str"
+git_clean = "bool"
+harness_ok = "bool"
+cross_origin_isolated = "bool"
+delta_c04 = "float"
+delta_c03 = "float"
+controls_total = "int"
+controls_sized = "int"
+params_written = "bool"
+artifact_subdir = "str"
+versions = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
+onnxruntime_web_version = { type = "string", required = false }
+playwright_version = { type = "string", required = false }

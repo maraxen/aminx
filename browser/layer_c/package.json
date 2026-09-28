@@ -1,0 +1,10 @@
+{
+  "name": "aminx-browser-layer-c",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Phase 2a T5a: browser layer (c) harness -- ORT Web wasm EP parity vs ORT-CPU, headless Chromium.",
+  "dependencies": {
+    "onnxruntime-web": "1.30.0",
+    "@playwright/test": "1.63.0"
+  }
+}
