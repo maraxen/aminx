@@ -1,4 +1,4 @@
-"""RNG-free P03/P04 export wrappers (D-A, D-B, D-H).
+"""RNG-free P03/P04/P07 export wrappers (D-A, D-B, D-H).
 
 ``Aminx.__call__`` always consumes a PRNG key (injecting ``PRNGKey(0)`` when none is
 given, V17), which makes it unsuitable to trace for export: an exported graph that
@@ -31,12 +31,16 @@ from jaxtyping import Array, Float, Int, PRNGKeyArray
 
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.decode.factory import make_decode_fn  # noqa: TID251
-from aminx.inference.decode.mode import UnconditionalMode  # noqa: TID251
+from aminx.inference.decode.mode import (  # noqa: TID251
+  AutoregressiveMode,
+  UnconditionalMode,
+)
 from aminx.io.weights import get_topology_for_checkpoint
 from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors
 from aminx.tiling.strategy import Vmap
-from aminx.types.bundles import EncoderOutput
+from aminx.types.bundles import EncoderOutput, WaveScheduleBundle
+from aminx.utils.autoregression import generate_ar_mask
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 from aminx.utils.radial_basis import compute_radial_basis
 
@@ -45,8 +49,11 @@ if TYPE_CHECKING:
   # the PottsModel-parallel banned-api rule (ADR 260605_potts-parallel-not-stageset) at
   # runtime already (this wrapper never imports them for a value, only a type), same
   # status as `aminx.potts.designer`'s existing TID251 exemption.
+  from aminx.inference.decode.autoregressive import AutoregressiveDecode  # noqa: TID251
   from aminx.inference.decode.unconditional import UnconditionalDecode  # noqa: TID251
   from aminx.model import Aminx
+  from aminx.types.bundles import InferenceBundle
+  from aminx.types.configs import InferenceConfig
   from aminx.types.stages import StageSet  # noqa: TID251
 
 #: ``forward_edge_stages``/``UnconditionalDecode.__call__`` type their PRNG-key
@@ -286,3 +293,183 @@ def make_p04_unconditional(
     )
 
   return _MetaCallable(p04_unconditional, dict(stats))
+
+
+def wave_from_decoding_order(
+  decoding_order: Int[Array, " L"],
+  tie_group_map: Int[Array, " L"],
+) -> WaveScheduleBundle:
+  """Jit-safe ``WaveScheduleBundle.from_tie_groups`` (static shapes, no host callbacks).
+
+  ``decoding_order`` is an ORDER array: index ``t`` holds the position decoded at
+  step ``t`` (a permutation of ``0 .. L-1``). Tied positions (equal ``tie_group_map``
+  ids, ids in ``0 .. L-1``) share one wave, ordered by their first step. Absent ids
+  pad the wave axis out to ``L`` so the shape does not depend on how many groups
+  are present. Sort keys are tie-free and ``is_stable=False`` (export safety).
+  """
+  length = decoding_order.shape[0]
+  steps = jnp.arange(length, dtype=jnp.int32)
+  step_of_pos = jnp.full((length,), length, dtype=jnp.int32).at[decoding_order].set(steps)
+  # Min step among positions that carry each id. Ids nobody uses stay at ``length``.
+  first_step = jnp.full((length,), length, dtype=jnp.int32).at[tie_group_map].min(step_of_pos)
+  group_index = jnp.arange(length, dtype=jnp.int32)
+  _, group_order = jax.lax.sort(
+    (first_step, group_index),
+    dimension=0,
+    is_stable=False,
+    num_keys=2,
+  )
+  present = first_step[group_order] < length
+  pos = jnp.arange(length, dtype=jnp.int32)
+  member = (tie_group_map[None, :] == group_order[:, None]) & present[:, None]
+  # Members sort first, in ascending position order; non-members follow. Every key
+  # is unique (position vs length + position), so stability cannot change the order.
+  sort_key = jnp.where(member, pos[None, :], length + pos[None, :])
+  order_in_wave = jnp.argsort(sort_key, axis=-1, stable=False)
+  counts = jnp.sum(member, axis=-1)
+  position_valid = steps[None, :] < counts[:, None]
+  group_positions = jnp.where(position_valid, order_in_wave, jnp.int32(0))
+  return WaveScheduleBundle(
+    group_ids=group_order[:, None],
+    group_positions=group_positions[:, None, :],
+    group_valid=present[:, None],
+    position_valid=position_valid[:, None, :],
+  )
+
+
+def p07_bundle(
+  coords: Float[Array, "L 4 3"],
+  mask: Float[Array, " L"],
+  residue_index: Int[Array, " L"],
+  chain_index: Int[Array, " L"],
+  decoding_order: Int[Array, " L"],
+  bias: Float[Array, "L 21"],
+  fixed_mask: Float[Array, " L"],
+  fixed_tokens: Int[Array, " L"],
+  temperature: Float[Array, ""],
+  tie_group_map: Int[Array, " L"],
+) -> tuple[InferenceBundle, InferenceConfig]:
+  """Bundle whose wave and ``ar_mask`` come from ``decoding_order`` and ``tie_group_map``.
+
+  Every sampling control is an argument. ``generate_ar_mask`` is called with the tie
+  map (ORDER-array convention: ``tie_group_map[decoding_order]``), which is what
+  identity ``arange(L)`` uses for "no ties".
+  """
+  wave = wave_from_decoding_order(decoding_order, tie_group_map)
+  ar_mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
+  return build_inference_bundle(
+    coords=coords,
+    mask=mask,
+    residue_index=residue_index,
+    chain_index=chain_index,
+    ar_mask=ar_mask,
+    bias=bias,
+    fixed_mask=fixed_mask,
+    fixed_tokens=fixed_tokens,
+    tie_group_map=tie_group_map,
+    temperature=temperature,
+    mode="sample_autoregressive",
+    inference=True,
+    wave=wave,
+  )
+
+
+def make_p07_sample(
+  model: Aminx,
+  stage_set: StageSet,
+) -> _MetaCallable:
+  """Build an RNG-free P07 (autoregressive sample) wrapper closed over ``model``.
+
+  The returned callable's arguments are the structure plus every RunSpec sampling
+  control. Gumbel noise is an input, so the graph contains the autoregressive scan
+  and no RNG op. Tokens match ``sample_autoregressive.kernel`` when ``gumbel_noise``
+  is ``gumbel_noise_for_key`` for that kernel's key and the bundle is ``p07_bundle``
+  of the same controls (dropout disabled on the key-path model).
+
+  Args:
+    model: The model to wrap. Must satisfy the V10 topology assertion.
+    stage_set: A ``StageSet`` (``aminx.inference.logits.make_stage_set()``).
+
+  Returns:
+    A callable ``(coords, mask, residue_index, chain_index, gumbel_noise,
+    decoding_order, bias, fixed_mask, fixed_tokens, temperature, tie_group_map)
+    -> (tokens, log_probs)`` with ``tokens`` ``int32 (L,)`` and ``log_probs``
+    ``float32 (L, 21)`` (log-softmax of the bias-free fused logits), plus a
+    ``.meta`` dict (``n_dropout``, ``max_p_before``).
+  """
+  _assert_pinned_topology(model)
+  _, stats = zero_dropout(model)
+  # Default config: incremental cache when it is exact, full recompute otherwise.
+  decode_fn = cast(
+    "AutoregressiveDecode",
+    make_decode_fn(
+      model,
+      mode=AutoregressiveMode(),
+      strategy=Vmap(),
+    ),
+  )
+
+  def p07_sample(
+    coords: Float[Array, "L 4 3"],
+    mask: Float[Array, " L"],
+    residue_index: Int[Array, " L"],
+    chain_index: Int[Array, " L"],
+    gumbel_noise: Float[Array, "L 21"],
+    decoding_order: Int[Array, " L"],
+    bias: Float[Array, "L 21"],
+    fixed_mask: Float[Array, " L"],
+    fixed_tokens: Int[Array, " L"],
+    temperature: Float[Array, ""],
+    tie_group_map: Int[Array, " L"],
+  ) -> tuple[Int[Array, " L"], Float[Array, "L 21"]]:
+    backbone_coords = compute_backbone_coordinates(coords)
+    distances = compute_backbone_distance(backbone_coords)
+    neighbor_indices = select_neighbors(
+      distances,
+      mask,
+      model.features.k_neighbors,
+      row_chunk=EXPORT_TOP_K_ROW_CHUNK,
+    )
+    rbf = compute_radial_basis(backbone_coords, neighbor_indices)
+    stages = model.features.forward_edge_stages(
+      _NO_KEY,
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      None,
+      rbf_features=rbf,
+      neighbor_indices=neighbor_indices,
+    )
+    node_features, edge_features = model.encoder(
+      stages.final,
+      stages.neighbor_indices,
+      mask,
+      key=None,
+    )
+    enc = EncoderOutput(
+      node_features=jnp.asarray(node_features)[None, ...],
+      edge_features=jnp.asarray(edge_features)[None, ...],
+      neighbor_indices=stages.neighbor_indices[None, ...],
+      mask=jnp.asarray(mask)[None, ...],
+    )
+    bundle, config = p07_bundle(
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      decoding_order,
+      bias,
+      fixed_mask,
+      fixed_tokens,
+      temperature,
+      tie_group_map,
+    )
+    result = decode_fn(_NO_KEY, enc, bundle, config, stage_set, gumbel_noise=gumbel_noise)
+    log_probs = jax.nn.log_softmax(result.logits, axis=-1)
+    return (
+      jnp.asarray(result.sequence, dtype=jnp.int32),
+      jnp.asarray(log_probs, dtype=jnp.float32),
+    )
+
+  return _MetaCallable(p07_sample, dict(stats))
