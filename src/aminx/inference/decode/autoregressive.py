@@ -47,11 +47,29 @@ DecodingOrderFn = Callable[[WaveScheduleBundle], Any]
 #: alanine and index 20 is the unknown token X -- neither expresses "no draw yet".
 #: ``jax.nn.one_hot(-1, 21)`` is the all-zero vector, so a -1 slot contributes no sequence
 #: signal to the decoder, exactly as the reference does with ``h_S = torch.zeros_like(h_V)``.
+#: jax2onnx's OneHot does not: index -1 lands on class 20. ``_one_hot_tokens`` keeps the
+#: zero vector for every out-of-range index so the exported graph matches JAX.
 #: Using a distinct negative value also makes "undrawn" recoverable from a stored
 #: mid-decode sequence, which index 0 could not express.
 #:
 #: Any position still holding this value after a completed decode was never scheduled.
 UNDRAWN_TOKEN = -1
+
+_N_TOKENS = 21
+
+
+def _one_hot_tokens(tokens: jnp.ndarray) -> jnp.ndarray:
+  """One-hot with a zero vector for out-of-range indices, including ``UNDRAWN_TOKEN``.
+
+  ``jax.nn.one_hot`` already does this. jax2onnx lowers OneHot so index -1 becomes
+  the last class, which would feed token X into every tied partner that is still
+  undrawn. Masking after a clipped one-hot matches JAX on CPU and in ORT.
+  """
+  in_range = (tokens >= 0) & (tokens < _N_TOKENS)
+  safe = jnp.where(in_range, tokens, jnp.int32(0))
+  one_hot = jax.nn.one_hot(safe, _N_TOKENS)
+  return jnp.where(in_range[..., None], one_hot, jnp.float32(0.0))
+
 
 #: Wave-loop carry: the sequence (full recompute) or (sequence, layer cache) (incremental).
 CarryT = TypeVar("CarryT")
@@ -85,9 +103,10 @@ def _fuse_and_sample(
   fixed_mask: jnp.ndarray,
   fixed_tokens: jnp.ndarray,
   group_id: jnp.ndarray,
-  key: PRNGKeyArray,
+  key: PRNGKeyArray | None,
   stage_set: StageSet,
   temperature: jnp.ndarray,
+  gumbel_noise: jnp.ndarray | None = None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
   """Fuse states, average tied positions, sample one token per group slot.
 
@@ -145,10 +164,19 @@ def _fuse_and_sample(
   )(mask_group)  # (G, 21)
 
   # Sample each group from its own bias-applied logits, independently.
-  subkeys = jax.vmap(lambda gid: jax.random.fold_in(key, gid))(group_id)  # (G, 2)
-  sampled = jax.vmap(
-    lambda k, sampling_logits_g: jax.random.categorical(k, sampling_logits_g / temperature),
-  )(subkeys, avg_sampling)  # (G,)
+  # ``gumbel_noise[g]`` is the vector ``categorical`` would draw for tie-group id ``g``
+  # (see ``sample_autoregressive.gumbel_noise_for_key``). argmax(logits + gumbel) is that
+  # draw, so the explicit-noise path matches the key path and puts no RNG in the graph.
+  if gumbel_noise is None:
+    if key is None:
+      msg = "key is required when gumbel_noise is not provided"
+      raise ValueError(msg)
+    subkeys = jax.vmap(lambda gid: jax.random.fold_in(key, gid))(group_id)  # (G, 2)
+    sampled = jax.vmap(
+      lambda k, sampling_logits_g: jax.random.categorical(k, sampling_logits_g / temperature),
+    )(subkeys, avg_sampling)  # (G,)
+  else:
+    sampled = jnp.argmax(avg_sampling / temperature + gumbel_noise[group_id], axis=-1)
 
   # Fixed positions override the sample.
   fixed_mask_bool = fixed_mask.astype(jnp.bool_)
@@ -173,7 +201,7 @@ def _decode_positions(
   sequence: jnp.ndarray,
   positions: jnp.ndarray,
   position_valid: jnp.ndarray,
-  key: PRNGKeyArray,
+  key: PRNGKeyArray | None,
 ) -> tuple[jnp.ndarray, jnp.ndarray]:
   """Conditional decoder over a slab of B positions, reading everyone else from `cache`.
 
@@ -205,7 +233,7 @@ def _decode_positions(
   ar_rows = ar_neighbors[positions]  # (B, K)
   mask_bw = row_mask[:, None] * ar_rows
   mask_fw = row_mask[:, None] * (1 - ar_rows)
-  emb_nbr = jax.nn.one_hot(sequence[nbr], 21) @ w_s  # (B, K, H)
+  emb_nbr = _one_hot_tokens(sequence[nbr]) @ w_s  # (B, K, H)
   h_enc_nbr = node_features[nbr]  # (B, K, H)
   fw_context = mask_fw[..., None] * jnp.concatenate(
     [e, jnp.zeros_like(h_enc_nbr), h_enc_nbr],
@@ -215,7 +243,7 @@ def _decode_positions(
   in_slab = (nbr[:, :, None] == positions[None, None, :]) & position_valid[None, None, :]
   in_slab_any = jnp.any(in_slab, axis=-1, keepdims=True)
 
-  keys = jax.random.split(key, len(layers))
+  keys = jax.random.split(key, len(layers)) if key is not None else (None,) * len(layers)
   h = node_features[positions]  # (B, H)
   outputs = []
   for i, layer in enumerate(layers):
@@ -320,6 +348,7 @@ class AutoregressiveDecode(eqx.Module):
     bundle: InferenceBundle,
     config: InferenceConfig,
     stage_set: StageSet,
+    gumbel_noise: jnp.ndarray | None = None,
   ) -> SampleResult:
     """Autoregressive decode: carry sequence through wave scan, then scatter logits.
 
@@ -363,6 +392,8 @@ class AutoregressiveDecode(eqx.Module):
     """
     L = enc.node_features.shape[1]
     S = enc.node_features.shape[0]
+    # Static: the export path always passes noise (and no key); the key path never does.
+    step_key = key if gumbel_noise is None else None
     cond = bundle.conditioning
     wave = bundle.wave
     n_waves, max_groups_per_wave = wave.group_ids.shape
@@ -470,7 +501,7 @@ class AutoregressiveDecode(eqx.Module):
       def do_sample(seq: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Decode (once, shared across groups), fuse/sample/update per group."""
         # One-hot encode sequence for all S states
-        seq_oh = jax.nn.one_hot(seq, 21)  # (L, 21)
+        seq_oh = _one_hot_tokens(seq)  # (L, 21)
         seq_oh_stack = jnp.broadcast_to(
           seq_oh[None, ...],
           (S, L, 21),
@@ -497,7 +528,7 @@ class AutoregressiveDecode(eqx.Module):
             mask=mask,
             ar_mask=ar_mask,
             sequence_oh=seq_oh,
-            key=key,
+            key=step_key,
             inference=config.inference,
             decode_step=stage_set.decode_step,
           )
@@ -542,9 +573,10 @@ class AutoregressiveDecode(eqx.Module):
           cond.fixed_mask,
           cond.fixed_tokens,
           group_id,
-          key,
+          step_key,
           stage_set,
           cond.temperature,
+          gumbel_noise,
         )
 
         # Groups within a wave are disjoint (by construction of a valid
@@ -691,7 +723,7 @@ class AutoregressiveDecode(eqx.Module):
             seq,
             positions,
             pvalid,
-            key,
+            step_key,
           )
 
         return self.state_iterator(per_state_fn, (*per_state_static, cache), in_axes=0)
@@ -732,9 +764,10 @@ class AutoregressiveDecode(eqx.Module):
             cond.fixed_mask[positions],
             cond.fixed_tokens[positions],
             group_id,
-            key,
+            step_key,
             stage_set,
             cond.temperature,
+            gumbel_noise,
           )
           token_grid = jnp.where(mask_group, final_token[:, None], 0)  # (G, B)
           covered = jnp.any(mask_group, axis=0)

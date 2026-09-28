@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import equinox as eqx
+import jax
+import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
 if TYPE_CHECKING:
@@ -54,6 +56,21 @@ class SampleResult(eqx.Module):
   packer_result: PackerResult | None = None
 
 
+def gumbel_noise_for_key(prng_key: PRNGKeyArray, length: int) -> Float[Array, "L 21"]:
+  """Gumbel noise the key path draws, one ``(21,)`` row per tie-group id.
+
+  Row ``g`` is ``gumbel(fold_in(k_dec, g), (21,))`` in float32, where ``k_dec`` is the
+  decode half of ``split(prng_key)`` — the same key ``_fuse_and_sample`` folds with the
+  tie-group id before ``jax.random.categorical``. ``categorical`` is
+  ``argmax(logits + gumbel)``, so passing this array as ``gumbel_noise`` reproduces the
+  key path's tokens.
+  """
+  _, k_dec = jax.random.split(prng_key)
+  group_ids = jnp.arange(length, dtype=jnp.int32)
+  subkeys = jax.vmap(lambda gid: jax.random.fold_in(k_dec, gid))(group_ids)
+  return jax.vmap(lambda k: jax.random.gumbel(k, (21,), dtype=jnp.float32))(subkeys)
+
+
 def kernel(
   model: Aminx,
   prng_key: PRNGKeyArray,
@@ -63,6 +80,7 @@ def kernel(
   *,
   inference_only: bool = False,
   state_strategy: AxisStrategy | None = None,
+  gumbel_noise: Float[Array, "L 21"] | None = None,
 ) -> SampleResult:
   """Autoregressive sampling kernel.
 
@@ -116,4 +134,4 @@ def kernel(
     strategy=state_strategy if state_strategy is not None else Vmap(),
     autoregressive_config=AutoregressiveConfig(inference_only=inference_only),
   )
-  return decode_fn(k_dec, enc, bundle, config, stage_set)
+  return decode_fn(k_dec, enc, bundle, config, stage_set, gumbel_noise=gumbel_noise)

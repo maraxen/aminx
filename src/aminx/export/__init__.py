@@ -10,7 +10,7 @@ Public contract (everything in ``__all__``):
 - Length bucketing (D-C): ``EXPORT_BUCKETS``, ``select_export_bucket``, ``pad_inputs``,
   and their refusal errors.
 - Wrappers (D-B, D-H): ``make_p03_featurize``, ``make_p04_unconditional``,
-  ``zero_dropout``, ``PINNED_CHECKPOINT_ID``.
+  ``make_p07_sample``, ``zero_dropout``, ``PINNED_CHECKPOINT_ID``.
 - RNG audit: ``RNG_PRIMITIVES``, ``find_rng_primitives``.
 """
 
@@ -29,6 +29,7 @@ from .wrappers import (
   PINNED_CHECKPOINT_ID,
   make_p03_featurize,
   make_p04_unconditional,
+  make_p07_sample,
   zero_dropout,
 )
 
@@ -42,6 +43,7 @@ __all__ = [
   "find_rng_primitives",
   "make_p03_featurize",
   "make_p04_unconditional",
+  "make_p07_sample",
   "pad_inputs",
   "select_export_bucket",
   "zero_dropout",
