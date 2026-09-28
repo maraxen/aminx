@@ -70,6 +70,42 @@ class TestCoordinates(chex.TestCase):
         assert not jnp.allclose(coords[:, 4, :], backbone_coords[:, 4, :])
         chex.assert_tree_all_finite(backbone_coords)
 
+    def test_compute_backbone_coordinates_compact_backbone_layout(self):
+        """Regression (260926_browser-export-loop, T2b).
+
+        The export wrappers (``aminx.export.wrappers.make_p03_featurize`` /
+        ``make_p04_unconditional``) pass a compact, backbone-only ``(L, 4, 3)`` array in
+        the literal column order (N, CA, C, O) -- there is no CB column at all, unlike
+        the >= 5-atom Atom37 layout the other branch handles. ``proxide``'s
+        ``atom_order["O"] == 4`` is out of range on a 4-wide axis; the previous
+        implementation relied on JAX's basic-indexing fallback to
+        ``lax.dynamic_slice``, whose start index XLA silently clamps to the last valid
+        column (3) at runtime -- numerically correct here only by coincidence (column 3
+        IS oxygen in this layout), but it traces a ``dynamic_slice`` this test asserts
+        against directly. ``jax2onnx`` exports that same computation as an unclamped
+        ONNX ``Slice(start=4)`` on a dim of size 4, which onnxruntime rejects at
+        ``InferenceSession`` construction (``ShapeInferenceError`` on a genuinely empty
+        ``[L, 0, 3]`` slice feeding ``Squeeze``, node ``node_Squeeze_24``).
+        """
+        coords = jnp.arange(6 * 4 * 3).reshape((6, 4, 3)).astype(jnp.float32)
+
+        backbone_coords = compute_backbone_coordinates(coords)
+        chex.assert_shape(backbone_coords, (6, 5, 3))
+        # N, CA, C, O pass through unchanged from the compact layout's own columns.
+        chex.assert_trees_all_equal(coords, backbone_coords[:, :4, :])
+        chex.assert_tree_all_finite(backbone_coords)
+
+        # The traced jaxpr for a 4-wide atom axis must contain no `dynamic_slice`: every
+        # backbone-atom read is a static, in-range `slice`. Red-check (revert the
+        # `coordinates.shape[-2] == 4` branch in `compute_backbone_coordinates`): this
+        # assertion fails because the O read falls back to `dynamic_slice`, exactly the
+        # primitive `jax2onnx` lowers to the unclamped ONNX `Slice` that breaks ORT.
+        jaxpr = jax.make_jaxpr(compute_backbone_coordinates.__wrapped__)(coords)
+        primitive_names = [eqn.primitive.name for eqn in jaxpr.jaxpr.eqns]
+        assert "dynamic_slice" not in primitive_names, (
+            f"expected no dynamic_slice for a 4-wide atom axis, got eqns: {primitive_names}"
+        )
+
     @chex.variants(with_jit=True, without_jit=True)
     def test_compute_backbone_distance(self):
         """Test computation of pairwise distances between backbone alpha carbons."""

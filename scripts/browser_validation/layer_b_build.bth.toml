@@ -4,7 +4,7 @@ created = "260927"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "The RNG-free P03/P04 export wrappers (aminx.export, T1) convert cleanly through jax2onnx across the export bucket ladder (128, 256, 512, 1024), the RNG audit (jaxpr walker + ONNX-graph walker) finds no RNG primitive/op in any clean artifact, and the same audit correctly detects every one of the exactly-5 AC-B2 planted controls (spec lines 240-246): (1) the unmodified score_unconditional.kernel jaxpr, (2) a wrapper variant with a planted normal, (3) RNG inside lax.cond inside jit, (4) an ONNX copy with RandomUniform injected into an If subgraph, and (5) an ONNX copy with RandomUniform inside a local function body (model_proto.functions). Two further ONNX plants (RandomNormal in a Loop subgraph, a top-level Multinomial) are built and audited as supplementary controls, reported separately and never folded into controls_total/controls_detected."
+hypothesis = "The RNG-free P03/P04 export wrappers (aminx.export, T1) convert cleanly through jax2onnx across the export bucket ladder (128, 256, 512, 1024), the RNG audit (jaxpr walker + ONNX-graph walker) finds no RNG primitive/op in any clean artifact, and the same audit correctly detects every one of the exactly-5 AC-B2 planted controls (spec lines 240-246): (1) the unmodified score_unconditional.kernel jaxpr, (2) a wrapper variant with a planted normal, (3) RNG inside lax.cond inside jit, (4) an ONNX copy with RandomUniform injected into an If subgraph, and (5) an ONNX copy with RandomUniform inside a local function body (model_proto.functions). Two further ONNX plants (RandomNormal in a Loop subgraph, a top-level Multinomial) are built and audited as supplementary controls, reported separately and never folded into controls_total/controls_detected. (260926_browser-export-loop, T2b) Conversion success alone is not evidence an artifact is usable: every artifact this build produces (the clean artifact AND every numeric-perturbation/index-swap control variant) must also create a genuine onnxruntime.InferenceSession and .run() successfully on its own bucket's fixture inputs, with finite outputs -- this is the execution gate T2's own build never had, which is why every P03/P04 artifact it recorded pass on in fact failed InferenceSession construction outright (ShapeInferenceError, node_Squeeze_24, root-caused to an out-of-range atom-axis index in aminx.utils.coordinates.compute_backbone_coordinates, fixed at the source in this task)."
 stage_name = "exploration"
 novel = true
 
@@ -33,10 +33,16 @@ decision = "One or more clean (path, bucket) artifacts failed to convert through
 reasoning = "A conversion failure is itself the finding this build step exists to surface (spec 'Evidence that closes it': a not_converted record with controls_detected = controls_total is a legitimate close, not a defect)."
 is_residual = false
 
+[outcomes.not_ort_executable]
+condition = "n_ort_ok < n_ort_checked"
+decision = "One or more converted artifacts (the clean artifact or a control variant) failed genuine ONNX Runtime execution (InferenceSession construction, .run(), or a non-finite output) on their own bucket's fixture inputs, even though jax2onnx reported conversion success. Nothing downstream may treat this run as pass; per-artifact ort_ok is recorded in ort_results for triage."
+reasoning = "260926_browser-export-loop T2b: jax2onnx conversion success is not evidence an artifact is usable -- T2's own gate never created an ORT session at all, and every P03/P04 artifact it recorded pass on in fact failed InferenceSession construction outright (ShapeInferenceError on an out-of-range atom-axis index that JAX silently clamps but ONNX's exported Slice does not). A build whose artifacts cannot execute must not be reported pass just because they converted."
+is_residual = true
+
 [outcomes.pass]
-condition = "n_converted = n_artifacts AND n_rng_clean = n_converted AND controls_detected = controls_total"
-decision = "Every clean (path, bucket) artifact converted, every clean artifact is RNG-free at both the jaxpr and ONNX level, and the audit detected all 5 planted controls. All downstream tasks proceed."
-reasoning = "This is the fully-clean close: conversion succeeded, the RNG-freedom claim (D-B) holds under audit, and the audit's own sensitivity is proven by its planted controls."
+condition = "n_converted = n_artifacts AND n_rng_clean = n_converted AND controls_detected = controls_total AND n_ort_ok = n_ort_checked"
+decision = "Every clean (path, bucket) artifact converted, every clean artifact is RNG-free at both the jaxpr and ONNX level, the audit detected all 5 planted controls, AND every converted artifact (clean plus every control variant) genuinely executes under ONNX Runtime with finite outputs on its own bucket's fixture inputs. All downstream tasks proceed."
+reasoning = "This is the fully-clean close: conversion succeeded, the RNG-freedom claim (D-B) holds under audit, the audit's own sensitivity is proven by its planted controls, and (T2b) the artifacts are proven usable by ONNX Runtime itself, not merely by jax2onnx's own conversion-success signal."
 is_residual = false
 
 [result_schema]
@@ -49,6 +55,9 @@ converted_by_path = "dict"
 opsets = "dict"
 versions = "dict"
 artifacts = "dict"
+n_ort_checked = "int"
+n_ort_ok = "int"
+ort_results = "dict"
 
 [dependencies]
 aminx_version = { type = "git_sha", required = true }

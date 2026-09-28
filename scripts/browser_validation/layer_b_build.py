@@ -422,6 +422,50 @@ def _rng_audit_artifact(fn: Any, inputs: tuple[np.ndarray, ...], onnx_path: Path
   return [f"jaxpr:{h}" for h in jaxpr_hits] + onnx_hits
 
 
+def ort_execution_check(onnx_path: Path, inputs: tuple[np.ndarray, ...]) -> dict[str, Any]:
+  """Create an `onnxruntime.InferenceSession` for `onnx_path` and `.run()` it on `inputs`.
+
+  (260926_browser-export-loop, T2b.) Conversion success (`jax2onnx.to_onnx` returning
+  without raising) is NOT evidence an artifact is usable: T2's own build gate never
+  created an ORT session at all, and every P03/P04 artifact it recorded `pass` on in
+  fact failed `InferenceSession` construction outright (`ShapeInferenceError` at node
+  `node_Squeeze_24`, root-caused to `aminx.utils.coordinates.compute_backbone_coordinates`
+  reading an atom-axis index of 4 -- `atom_order["O"]` -- on the export wrappers' compact
+  `(L, 4, 3)` backbone-only input, whose valid range is 0..3; JAX's own execution
+  silently clamps the out-of-range `dynamic_slice` start to 3, but `jax2onnx` lowers the
+  same read to a literal, unclamped ONNX `Slice(start=4)` that onnxruntime rejects). This
+  is the actual execution gate that catches that failure mode, whether or not the root
+  cause above stays fixed.
+
+  Args:
+    onnx_path: Path to a `.onnx` artifact.
+    inputs: The exact fixture inputs this artifact's bucket was built/converted against
+      (`_synthetic_inputs(bucket)`), in the same `(coords, mask, residue_index,
+      chain_index)` order `_specs`/`jax2onnx.to_onnx` traced.
+
+  Returns:
+    `{"ort_ok": bool, "error": str | None}`. `error` is `None` iff `ort_ok` is `True`.
+    `ort_ok` is `False` on ANY exception raised by session construction or `.run()`, or
+    if any output array contains a non-finite value (NaN/Inf) -- a session that builds
+    and runs but returns garbage is not "ok" either.
+  """
+  import onnxruntime as ort
+
+  try:
+    session = ort.InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
+    feeds = dict(zip([i.name for i in session.get_inputs()], inputs, strict=True))
+    outputs = session.run(None, feeds)
+  except Exception as e:  # noqa: BLE001 -- the error text itself is the finding
+    logger.warning("%s: ORT execution failed: %s: %s", onnx_path.name, type(e).__name__, e)
+    return {"ort_ok": False, "error": f"{type(e).__name__}: {e}"}
+
+  if not all(np.all(np.isfinite(np.asarray(o))) for o in outputs):
+    logger.warning("%s: ORT execution produced non-finite output(s)", onnx_path.name)
+    return {"ort_ok": False, "error": "non-finite output"}
+
+  return {"ort_ok": True, "error": None}
+
+
 def _perturb_bias(model: Any, get_bias: Any, delta: float) -> Any:
   """Return a copy of `model` with `get_bias(model)[0] += delta` (a real weight edit,
   `eqx.tree_at`), mirroring `jax2onnx_spike.perturb_w_out_bias`'s pattern."""
@@ -546,7 +590,20 @@ def build_path_bucket(
         }
       )
 
+  # AC-B3/T2b ORT execution gate: every artifact this cell built (the clean artifact
+  # AND every control variant), not just the ones whose conversion "succeeded", must
+  # genuinely create an `onnxruntime.InferenceSession` and `.run()` on this bucket's
+  # own fixture inputs -- conversion success alone is not evidence of usability (see
+  # `ort_execution_check`'s docstring for the defect this catches).
+  ort_results: dict[str, dict[str, Any]] = {}
+  for row in manifest_rows:
+    check = ort_execution_check(artifacts_dir / row["path"], inputs)
+    row["ort_ok"] = check["ort_ok"]
+    row["ort_error"] = check["error"]
+    ort_results[row["path"]] = check
+
   cell["manifest_rows"] = manifest_rows
+  cell["ort_results"] = ort_results
   return cell
 
 
@@ -609,6 +666,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
       "opsets": {},
       "versions": versions,
       "artifacts": {},
+      "n_ort_checked": 0,
+      "n_ort_ok": 0,
+      "ort_results": {},
       "_ac_b2_detail": controls["detail"],  # extra diagnostic, not schema-required
       "_ac_b2_supplementary_detected": controls["supplementary_detected"],
       "_ac_b2_supplementary_total": controls["supplementary_total"],
@@ -626,6 +686,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
   opsets: dict[str, Any] = {}
   all_manifest_rows: list[dict[str, Any]] = []
   errors: dict[str, Any] = {}
+  ort_results: dict[str, dict[str, Any]] = {}
 
   for path in PATHS:
     path_all_converted = True
@@ -640,6 +701,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         else:
           logger.error("%s: clean artifact carries RNG findings: %s", key, cell["rng_hits"])
         all_manifest_rows.extend(cell.get("manifest_rows", []))
+        ort_results.update(cell.get("ort_results", {}))
         import onnx as onnx_mod  # noqa: PLC0415
 
         onnx_path = artifacts_dir / f"{key}.onnx"
@@ -653,6 +715,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     lbc.manifest_append(all_manifest_rows, artifacts_dir / "artifact_manifest.json")
 
   artifacts = {row["path"]: row for row in all_manifest_rows}
+  n_ort_checked = len(ort_results)
+  n_ort_ok = sum(1 for r in ort_results.values() if r["ort_ok"])
 
   return {
     "n_artifacts": n_artifacts,
@@ -664,6 +728,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     "opsets": opsets,
     "versions": versions,
     "artifacts": artifacts,
+    "n_ort_checked": n_ort_checked,
+    "n_ort_ok": n_ort_ok,
+    "ort_results": ort_results,
     "_ac_b2_detail": controls["detail"],  # extra diagnostic, not schema-required
     "_ac_b2_supplementary_detected": controls["supplementary_detected"],
     "_ac_b2_supplementary_total": controls["supplementary_total"],
@@ -718,6 +785,9 @@ def main(argv: list[str] | None = None) -> int:
       "opsets": {},
       "versions": {},
       "artifacts": {},
+      "n_ort_checked": 0,
+      "n_ort_ok": 0,
+      "ort_results": {},
       "_integrity_error": str(exc),
     }
     exit_code = 3
