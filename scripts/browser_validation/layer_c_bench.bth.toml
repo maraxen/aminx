@@ -1,0 +1,85 @@
+[metadata]
+title = "T8: browser benchmark (ORT Web wasm t1/tN, interleaved native JAX CPU)"
+created = "260928"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Inside one cross-origin-isolated headless-Chromium session, ORT Web wasm (numThreads 1 and N=min(8, hardwareConcurrency)) and an in-process JAX CPU arm, interleaved across 3 repeats of paths {p03, p04} x buckets {128, 256, 512, 1024}, produce within-session stratified-bootstrap p50/p90 intervals. The p04@256 planted 5 ms busy-wait is detected (p50 difference CI excludes 0 and the point estimate lies in [4, 6] ms) and the A/A duplicate of ort_wasm_t1 has a p50 ratio CI that contains 1. A run with no converted path, a cell below the warm-up/iteration/repeat minima, a harness or budget failure, or a page that is not cross-origin isolated does not grade as pass."
+stage_name = "exploration"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["blocked", "incomplete", "not_isolated", "ctrl_blind"]
+
+# Declaration order is the grade order: blocked, incomplete, not_isolated, ctrl_blind, pass.
+
+[outcomes.blocked]
+condition = "n_paths_available = 0"
+decision = "Neither P03 nor P04 has a clean converted artifact at every export bucket (T2 BLOCKED table); the benchmark did not run and is recorded as blocked."
+reasoning = "Every downstream sidecar declares blocked as its first-matching outcome when n_paths_available = 0."
+is_residual = true
+
+[outcomes.incomplete]
+condition = "n_cells_error > 0 OR n_cells_below_minima > 0 OR budget_expired OR NOT harness_ok OR n_repeats < 3 OR min_warmup < 5 OR min_iterations < 30 OR NOT git_clean"
+decision = "A cell errored, a cell is below the warm-up (>= 5), iteration (>= 30) or repeat (>= 3) minimum, the 90 minute wall budget expired, the browser harness did not come up, or the tree was dirty. The run is incomplete and is not a pass."
+reasoning = "Graded failures still write a result and exit 0. Incomplete is the residual for a measurement that did not meet the pre-registered cell minima or that aborted at the budget."
+is_residual = true
+
+[outcomes.not_isolated]
+condition = "NOT isolation_ok"
+decision = "The Chromium session was not cross-origin isolated, so wasm thread counts and peak-memory reads are not the isolated evidence this benchmark requires."
+reasoning = "numThreads is fixed at wasm init only under cross-origin isolation. A page with crossOriginIsolated !== true cannot support a tN sentence."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "NOT planted_diff_ci_excludes_zero OR NOT planted_point_estimate_ms_available OR planted_point_estimate_ms < 4 OR planted_point_estimate_ms > 6 OR NOT aa_ratio_ci_contains_one"
+decision = "The planted 5 ms busy-wait was not detected (its p50-difference CI does not exclude 0, or the point estimate is outside [4, 6] ms) or the A/A duplicate ratio CI does not contain 1. No timing claim from this run is trusted."
+reasoning = "ctrl_blind is the instrument check: planted_5ms minus the p04@256 ort_wasm_t1 base must land in [4, 6] ms with a CI that excludes 0, and aa_dup/base must cover 1. Those are result fields, not a script-chosen outcome label."
+is_residual = true
+
+[outcomes.pass]
+condition = "planted_diff_ci_excludes_zero AND planted_point_estimate_ms_available AND planted_point_estimate_ms >= 4 AND planted_point_estimate_ms <= 6 AND aa_ratio_ci_contains_one AND isolation_ok AND harness_ok AND NOT budget_expired AND n_cells_error = 0 AND n_cells_below_minima = 0 AND n_repeats >= 3 AND min_warmup >= 5 AND min_iterations >= 30 AND git_clean AND n_paths_available > 0"
+decision = "Every cell met the warm-up, iteration and repeat minima, the session was cross-origin isolated, the planted 5 ms arm was detected, and the A/A ratio CI contains 1."
+reasoning = "Pass requires the control fields themselves to clear their thresholds after the blocked, incomplete and not_isolated gates have been passed."
+is_residual = false
+
+[result_schema]
+n_paths_available = "int"
+converted_by_path = "dict"
+git_hash = "str"
+git_clean = "bool"
+cells_total = "int"
+cells_measured = "int"
+n_cells_error = "int"
+n_cells_below_minima = "int"
+n_repeats = "int"
+min_warmup = "int"
+min_iterations = "int"
+harness_ok = "bool"
+budget_expired = "bool"
+cross_origin_isolated = "bool"
+isolation_ok = "bool"
+planted_diff_ci_excludes_zero = "bool"
+planted_point_estimate_ms = "float"
+planted_point_estimate_ms_available = "bool"
+aa_ratio_point = "float"
+aa_ratio_point_available = "bool"
+aa_ratio_ci_contains_one = "bool"
+native_threads = "str"
+session_id = "str"
+wall_seconds = "float"
+peak_memory_available = "bool"
+artifact_subdir = "str"
+versions = "dict"
+hardware_concurrency = "int"
+n_sentences = "int"
+thread_caps = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = false }
+onnxruntime_web_version = { type = "string", required = false }
+playwright_version = { type = "string", required = false }
+xtrax_version = { type = "string", required = true }
