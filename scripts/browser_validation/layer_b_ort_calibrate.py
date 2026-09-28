@@ -628,9 +628,12 @@ def _build_headroom(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
   artifacts_base = Path(args.artifacts_dir)
-  manifest = lbc.load_manifest_verified(TRACKED_MANIFEST_PATH, artifacts_base)  # raises -> exit 3
+  # resolve_artifact_subdir must run FIRST: the tracked manifest's rows carry no
+  # artifact_subdir field (D-G), so verifying against artifacts_base directly (with no
+  # subdir) would never find the artifacts on disk.
   subdir = lbc.resolve_artifact_subdir(artifacts_base, TRACKED_MANIFEST_PATH)  # raises -> exit 3
   resolved_dir = artifacts_base / subdir
+  manifest = lbc.load_manifest_verified(TRACKED_MANIFEST_PATH, resolved_dir)  # raises -> exit 3
 
   provenance = lac.provenance()  # exits 3 on a non-git provenance channel
 
