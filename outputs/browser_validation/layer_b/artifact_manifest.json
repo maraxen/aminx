@@ -315,6 +315,198 @@
       "path": "p04_L512_perturbed_sized_c.onnx",
       "role": "control_perturbed_bias_sized_c",
       "sha256": "e155b092de05537f0b4250c4520e1a2133dde449c9ffe098efceb0fb61057c17"
+    },
+    "p03_L1024.native.vmfb": {
+      "bucket": 1024,
+      "export_path": "p03",
+      "path": "p03_L1024.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "6264c3791f970499205a045e48388277fb0c495bbff08c7d4d83e3baf28e011e",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p03_L1024.wasm32.vmfb": {
+      "bucket": 1024,
+      "export_path": "p03",
+      "path": "p03_L1024.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "acc7a1ddf1376b9e6fae2c4ffbe0f72dd25b6cd40d1a1be73620d7dfc3cd3d83",
+      "target": "wasm32",
+      "verification": "codegen_only"
+    },
+    "p03_L128.native.vmfb": {
+      "bucket": 128,
+      "export_path": "p03",
+      "path": "p03_L128.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "c3fcecee8457ee4937f5c463072ae9b3e36c45c82eae1a21fbe5f6cd0ea8ad5a",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p03_L128.wasm32.vmfb": {
+      "bucket": 128,
+      "export_path": "p03",
+      "path": "p03_L128.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "0511eb3034c8c4e557ce1382436c48e93f486a09cb5c216c76a86ceaefb98e6b",
+      "target": "wasm32",
+      "verification": "codegen_only"
+    },
+    "p03_L128_ebias_sized.native.vmfb": {
+      "bucket": 128,
+      "delta": 0.0001,
+      "export_path": "p03",
+      "path": "p03_L128_ebias_sized.native.vmfb",
+      "role": "control_ebias_sized",
+      "route": "iree",
+      "sha256": "1ce4857ad389d665a5bda9a4a358ecb0790b0570a9724bc6b28d85877fbbd282",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p03_L128_swap.native.vmfb": {
+      "bucket": 128,
+      "export_path": "p03",
+      "path": "p03_L128_swap.native.vmfb",
+      "role": "control_swap",
+      "route": "iree",
+      "sha256": "147be307e673d9eebe38048cc2d1924d9a0dfd7725ccb12eec353014192a34f8",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p03_L256.native.vmfb": {
+      "bucket": 256,
+      "export_path": "p03",
+      "path": "p03_L256.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "50b31582b35fe726601f0e61f076e6686707c3d9e83b49962684b5e2d2ff78a2",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p03_L256.wasm32.vmfb": {
+      "bucket": 256,
+      "export_path": "p03",
+      "path": "p03_L256.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "b70c8cda7c0c63a80198aefe07c8f3e5d06bff65a0c815974d3f9fe185b72f2e",
+      "target": "wasm32",
+      "verification": "codegen_only"
+    },
+    "p03_L512.native.vmfb": {
+      "bucket": 512,
+      "export_path": "p03",
+      "path": "p03_L512.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "c85ef32a7dbc78760fb62c3fe96122f749b71d881b17101f71a267c0cba5b5fd",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p03_L512.wasm32.vmfb": {
+      "bucket": 512,
+      "export_path": "p03",
+      "path": "p03_L512.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "aa51c15c235aeacab61986fefa226c417b4305c08a614ef9e41c9c16c38f24ec",
+      "target": "wasm32",
+      "verification": "codegen_only"
+    },
+    "p04_L1024.native.vmfb": {
+      "bucket": 1024,
+      "export_path": "p04",
+      "path": "p04_L1024.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "6814fa8d5dbf141eee6625800713163001305e27d995220eedba6eb99bb7d676",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p04_L1024.wasm32.vmfb": {
+      "bucket": 1024,
+      "export_path": "p04",
+      "path": "p04_L1024.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "24b7f40f26a9f040c9526b8567edb6a4134c0aaac8094e2211293e5076983a43",
+      "target": "wasm32",
+      "verification": "codegen_only"
+    },
+    "p04_L128.native.vmfb": {
+      "bucket": 128,
+      "export_path": "p04",
+      "path": "p04_L128.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "5a797a1130d6531a824bf53598f7410b4af2857cb4b25dbb2385b34a77c20c18",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p04_L128.wasm32.vmfb": {
+      "bucket": 128,
+      "export_path": "p04",
+      "path": "p04_L128.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "9f683bf7756e69cfc99693d0a5db5afd0e2d0dbdd3a66581b1bd6f18c2b12f81",
+      "target": "wasm32",
+      "verification": "codegen_only"
+    },
+    "p04_L128_perturbed_sized.native.vmfb": {
+      "bucket": 128,
+      "delta": 0.0005623413251903491,
+      "export_path": "p04",
+      "path": "p04_L128_perturbed_sized.native.vmfb",
+      "role": "control_perturbed_sized",
+      "route": "iree",
+      "sha256": "25415922680f0e6ea67dcadbef8ad57fecf4ccae64625cfa277e0e6bf17b5295",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p04_L256.native.vmfb": {
+      "bucket": 256,
+      "export_path": "p04",
+      "path": "p04_L256.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "9ca30cb833ef45336b197af7c46cd206b72584aa388a445d9c9f9b9f9fde590a",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p04_L256.wasm32.vmfb": {
+      "bucket": 256,
+      "export_path": "p04",
+      "path": "p04_L256.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "fbb8e8120b666d1a9d0c8a2b8ba9d1eff4f7b9ca6df99e95ebfad885b4b8f9b8",
+      "target": "wasm32",
+      "verification": "codegen_only"
+    },
+    "p04_L512.native.vmfb": {
+      "bucket": 512,
+      "export_path": "p04",
+      "path": "p04_L512.native.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "c76d83054e349115a2be0dbd2ad8aad18260734220fabb66c988e5e2c0918004",
+      "target": "native",
+      "verification": "executed"
+    },
+    "p04_L512.wasm32.vmfb": {
+      "bucket": 512,
+      "export_path": "p04",
+      "path": "p04_L512.wasm32.vmfb",
+      "role": "clean",
+      "route": "iree",
+      "sha256": "eeed1ba53b0555c935d2103f5871f08e825a708416c2d6c8d91e692f7c6d12b1",
+      "target": "wasm32",
+      "verification": "codegen_only"
     }
   }
 }
