@@ -114,6 +114,74 @@ test("omit overrides an additive bias on the same letter", () => {
   assert.equal(built.bias.data[MPNN_ALPHABET.indexOf("C")], toFloat32(-1e8));
 });
 
+function assertGroup(order, first, second) {
+  const head = [...order.slice(0, first.length)].sort((a, b) => a - b);
+  const tail = [...order.slice(first.length)].sort((a, b) => a - b);
+  const expectHead = [...first].sort((a, b) => a - b);
+  const expectTail = [...second].sort((a, b) => a - b);
+  assert.deepEqual(head, expectHead, `order ${[...order]} head ${head}`);
+  assert.deepEqual(tail, expectTail, `order ${[...order]} tail ${tail}`);
+}
+
+test("random order decodes fixed, padding, and undesigned chains first", () => {
+  const n = 200;
+  for (let seed = 0; seed < n; seed += 1) {
+    const fixed = buildP07Inputs(structure(), {
+      seed,
+      fixed_positions: { 0: "A", 4: "G" },
+    });
+    assertGroup(fixed.decoding_order.data, [0, 4], [1, 2, 3, 5]);
+
+    const padded = structure();
+    padded.mask = [1, 1, 1, 1, 1, 0];
+    const padBuilt = buildP07Inputs(padded, { seed });
+    assertGroup(padBuilt.decoding_order.data, [5], [0, 1, 2, 3, 4]);
+
+    const chains = buildP07Inputs(structure(), {
+      seed,
+      chains_to_design: ["A"],
+    });
+    assertGroup(chains.decoding_order.data, [3, 4, 5], [0, 1, 2]);
+
+    const tied = buildP07Inputs(structure(4), {
+      seed,
+      fixed_positions: { 0: "A", 2: "C" },
+      tied_positions: [[2, 1]],
+    });
+    assert.equal(
+      tied.decoding_order.data[0],
+      0,
+      `tied seed ${seed} order ${tied.decoding_order.data}`,
+    );
+  }
+});
+
+test("designed-group order is uniform for a two-position group", () => {
+  const n = 4000;
+  let leading = 0;
+  for (let seed = 0; seed < n; seed += 1) {
+    const built = buildP07Inputs(structure(4), {
+      seed,
+      fixed_positions: { 0: "A", 1: "C" },
+    });
+    const order = built.decoding_order.data;
+    assertGroup(order, [0, 1], [2, 3]);
+    if (order[2] === 2) leading += 1;
+  }
+  assert.ok(leading > 1800 && leading < 2200, `designed-pair count ${leading} of ${n}`);
+});
+
+test("explicit decoding order is unchanged when positions are fixed", () => {
+  const order = [5, 4, 3, 2, 1, 0];
+  const built = buildP07Inputs(structure(), {
+    seed: 3,
+    fixed_positions: { 0: "A", 1: "C" },
+    chains_to_design: ["A"],
+    decoding_order: order,
+  });
+  assert.deepEqual(built.decoding_order.data, order);
+});
+
 test("the same seed rebuilds identical noise", () => {
   const spec = { seed: 42, temperature: 0.2 };
   const a = buildP07Inputs(structure(), spec);

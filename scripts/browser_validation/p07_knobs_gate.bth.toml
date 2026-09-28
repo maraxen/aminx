@@ -4,7 +4,7 @@ created = "260928"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "On layer-c set A structures that fit export buckets 128 and 256, RunSpec tensors from browser/layer_c/runspec.mjs fed to JAX make_p07_sample and to the jax2onnx ORT-CPU graph agree on tokens bitwise and on log-probs within 1e-4 nats. Each non-default knob (temperature 1, bias+omit, fixed positions, tied pairs, chains_to_design, explicit order, all combined) changes tokens versus the temperature-0.1 baseline on at least one seed, while a wrapper that closes bias over as zeros is not live on bias+omit. Teacher-forced per-position log-probs versus reference ProteinMPNN under bias+omit, fixed positions, tied pairs, explicit order, and temperature stay within 1e-4 nats. Gumbel-max draws from runspec.mjs noise match softmax(logits/T) (total variation <= 0.03, chi-square p >= 0.001, omitted class drawn 0 times) and L=4 Fisher-Yates is uniform over 24 permutations (chi-square p >= 0.001). The controls g=-log(u) and the biased shuffle fail those same tests."
+hypothesis = "On layer-c set A structures that fit export buckets 128 and 256, RunSpec tensors from browser/layer_c/runspec.mjs fed to JAX make_p07_sample and to the jax2onnx ORT-CPU graph agree on tokens bitwise and on log-probs within 1e-4 nats. Each non-default knob (temperature 1, bias+omit, fixed positions, tied pairs, chains_to_design, explicit order, all combined) changes tokens versus the temperature-0.1 baseline on at least one seed, while a wrapper that closes bias over as zeros is not live on bias+omit. Teacher-forced per-position log-probs versus reference ProteinMPNN under bias+omit, fixed positions, tied pairs, explicit order, and temperature stay within 1e-4 nats. Gumbel-max draws from runspec.mjs noise match softmax(logits/T) (total variation <= 0.03, chi-square p >= 0.001, omitted class drawn 0 times) and L=4 Fisher-Yates is uniform over 24 permutations (chi-square p >= 0.001). The controls g=-log(u) and the biased shuffle fail those same tests. When some positions are fixed or not designed, the default random decoding order places every fixed, not-designed, or padded position before every designed position, and the designed-group sub-permutation is uniform (chi-square p >= 0.001); a uniform shuffle of all positions produces fixed-first violations."
 stage_name = "validation"
 claim_discriminates = ["H_p07_knobs_exact", "H_null_misspec"]
 claim_isolates = ["C_sampling_controls"]
@@ -25,8 +25,8 @@ reasoning = "A partial, smoke, CPU-only or undersized measurement is not evidenc
 is_residual = true
 
 [outcomes.ctrl_blind]
-condition = "NOT ctrl_frozen_detected OR NOT ctrl_bad_gumbel_detected OR NOT ctrl_bad_shuffle_detected"
-decision = "A negative control did not fail: the bias-frozen wrapper still looked live, or a bad Gumbel or biased shuffle passed the synthetic tests."
+condition = "NOT ctrl_frozen_detected OR NOT ctrl_bad_gumbel_detected OR NOT ctrl_bad_shuffle_detected OR NOT ctrl_uniform_order_detected"
+decision = "A negative control did not fail: the bias-frozen wrapper still looked live, a bad Gumbel or biased shuffle passed the synthetic tests, or a uniform shuffle produced no fixed-first violations."
 negative_outcome_note = "Instrument insensitive; no knob-parity statement is permitted for this run."
 reasoning = "If a planted dead bias, a non-Gumbel transform, or a biased shuffle is not detected, a clean row is not evidence."
 is_residual = true
@@ -50,13 +50,13 @@ reasoning = "Knob semantics are the reference sampling controls; a larger gap is
 is_residual = true
 
 [outcomes.b2_fail]
-condition = "b2_gumbel_tv_max > 0.03 OR b2_gumbel_p_min < 0.001 OR b2_order_p < 0.001 OR b2_omitted_draws > 0"
-decision = "Gumbel-max draws miss softmax(logits/T), an omitted class was sampled, or Fisher-Yates is not uniform."
+condition = "b2_gumbel_tv_max > 0.03 OR b2_gumbel_p_min < 0.001 OR b2_order_p < 0.001 OR b2_omitted_draws > 0 OR b2_order_fixed_first_violations > 0 OR b2_order_within_p < 0.001"
+decision = "Gumbel-max draws miss softmax(logits/T), an omitted class was sampled, Fisher-Yates is not uniform, a designed position is decoded before a fixed one, or the designed-group order is not uniform."
 reasoning = "The synthetic checks are the ground truth for the noise transform and the shuffle."
 is_residual = true
 
 [outcomes.pass]
-condition = "checks_complete AND NOT budget_exceeded AND NOT smoke AND browser_enabled AND knobs_total >= 7 AND a_cases_total >= 144 AND b2_n >= 200000 AND order_n >= 240000 AND a_cases_bitwise_web = a_cases_total AND ctrl_frozen_detected AND ctrl_bad_gumbel_detected AND ctrl_bad_shuffle_detected AND a_web_ok AND alias_ok AND knobs_live = knobs_total AND a_cases_bitwise_cpu = a_cases_total AND a_max_logprob_abs_diff <= 0.0001 AND b1_max_abs_nats <= 0.0001 AND b2_gumbel_tv_max <= 0.03 AND b2_gumbel_p_min >= 0.001 AND b2_order_p >= 0.001 AND b2_omitted_draws = 0"
+condition = "checks_complete AND NOT budget_exceeded AND NOT smoke AND browser_enabled AND knobs_total >= 7 AND a_cases_total >= 144 AND b2_n >= 200000 AND order_n >= 240000 AND a_cases_bitwise_web = a_cases_total AND ctrl_frozen_detected AND ctrl_bad_gumbel_detected AND ctrl_bad_shuffle_detected AND a_web_ok AND alias_ok AND knobs_live = knobs_total AND a_cases_bitwise_cpu = a_cases_total AND a_max_logprob_abs_diff <= 0.0001 AND b1_max_abs_nats <= 0.0001 AND b2_gumbel_tv_max <= 0.03 AND b2_gumbel_p_min >= 0.001 AND b2_order_p >= 0.001 AND b2_omitted_draws = 0 AND b2_order_fixed_first_violations = 0 AND b2_order_within_p >= 0.001 AND ctrl_uniform_order_detected"
 decision = "Export tokens match, log-probs are within 1e-4, every graded knob is live, the frozen-bias and bad-transform controls fire, and the reference and synthetic checks pass."
 reasoning = "Exact export agreement, live knobs, sensitive controls, and both reference and synthetic grounds are the minimum evidence for the sampling knobs."
 is_residual = false
@@ -73,10 +73,13 @@ knobs_total = "int"
 ctrl_frozen_detected = "bool"
 ctrl_bad_gumbel_detected = "bool"
 ctrl_bad_shuffle_detected = "bool"
+ctrl_uniform_order_detected = "bool"
 b1_max_abs_nats = "float"
 b2_gumbel_tv_max = "float"
 b2_gumbel_p_min = "float"
 b2_order_p = "float"
+b2_order_fixed_first_violations = "int"
+b2_order_within_p = "float"
 b2_omitted_draws = "int"
 b2_n = "int"
 order_n = "int"

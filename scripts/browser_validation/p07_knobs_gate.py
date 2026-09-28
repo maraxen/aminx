@@ -5,8 +5,9 @@ Check A feeds RunSpec tensors from ``browser/layer_c/runspec.mjs`` to JAX
 to onnxruntime-web through ``run_p07.mjs``). Liveness requires each non-default
 knob to change tokens on at least one seed; a bias-frozen wrapper must stay
 not-live on bias+omit. B1 is the teacher-forced log-prob comparison against
-reference ProteinMPNN. B2 is synthetic Gumbel-max and Fisher-Yates uniformity,
-including the ``-log(u)`` and biased-shuffle controls.
+reference ProteinMPNN. B2 is synthetic Gumbel-max, Fisher-Yates uniformity,
+and fixed-first decoding order, including the ``-log(u)``, biased-shuffle,
+and uniform-shuffle controls.
 
 Graded failures exit 0. Exit 3 is reserved for an integrity refusal.
 ``temp0.1`` repeats the default temperature, so it is an alias of baseline and
@@ -85,7 +86,8 @@ OUTCOMES: tuple[tuple[str, str], ...] = (
   ),
   (
     "ctrl_blind",
-    "NOT ctrl_frozen_detected OR NOT ctrl_bad_gumbel_detected OR NOT ctrl_bad_shuffle_detected",
+    "NOT ctrl_frozen_detected OR NOT ctrl_bad_gumbel_detected OR NOT ctrl_bad_shuffle_detected "
+    "OR NOT ctrl_uniform_order_detected",
   ),
   (
     "a_mismatch",
@@ -96,7 +98,8 @@ OUTCOMES: tuple[tuple[str, str], ...] = (
   ("b1_mismatch", "b1_max_abs_nats > 0.0001"),
   (
     "b2_fail",
-    "b2_gumbel_tv_max > 0.03 OR b2_gumbel_p_min < 0.001 OR b2_order_p < 0.001 OR b2_omitted_draws > 0",
+    "b2_gumbel_tv_max > 0.03 OR b2_gumbel_p_min < 0.001 OR b2_order_p < 0.001 "
+    "OR b2_omitted_draws > 0 OR b2_order_fixed_first_violations > 0 OR b2_order_within_p < 0.001",
   ),
   (
     "pass",
@@ -107,7 +110,9 @@ OUTCOMES: tuple[tuple[str, str], ...] = (
     "AND ctrl_bad_shuffle_detected AND a_web_ok AND alias_ok AND knobs_live = knobs_total "
     "AND a_cases_bitwise_cpu = a_cases_total AND a_max_logprob_abs_diff <= 0.0001 "
     "AND b1_max_abs_nats <= 0.0001 AND b2_gumbel_tv_max <= 0.03 AND b2_gumbel_p_min >= 0.001 "
-    "AND b2_order_p >= 0.001 AND b2_omitted_draws = 0",
+    "AND b2_order_p >= 0.001 AND b2_omitted_draws = 0 "
+    "AND b2_order_fixed_first_violations = 0 AND b2_order_within_p >= 0.001 "
+    "AND ctrl_uniform_order_detected",
   ),
 )
 
@@ -185,6 +190,30 @@ def shuffle(length: int, prng: SplitMix64) -> np.ndarray:
     j = next_below(prng, i + 1)
     order[i], order[j] = order[j], order[i]
   return order
+
+
+def designed_flags(mask: np.ndarray, fixed_mask: np.ndarray, ties: np.ndarray) -> np.ndarray:
+  """Positions decoded with the designed group (1), after tie expansion.
+
+  Unmasked and unfixed positions are designed. A tie group that contains any
+  designed position is entirely designed.
+  """
+  base = (mask != 0) & (fixed_mask == 0)
+  group_hit = np.zeros((mask.shape[0],), dtype=bool)
+  group_hit[ties[base]] = True
+  return group_hit[ties]
+
+
+def fixed_first_shuffle(length: int, prng: SplitMix64, designed: np.ndarray) -> np.ndarray:
+  """Fisher-Yates, then a stable partition (not-designed, then designed).
+
+  Within-group uniformity follows because ``shuffle`` is uniform on S_L and the
+  relative order of a subset of a uniform permutation is uniform on that subset.
+  The partition draws no further random numbers.
+  """
+  order = shuffle(length, prng)
+  flags = np.asarray(designed, dtype=bool)
+  return np.concatenate([order[~flags[order]], order[flags[order]]]).astype(np.int32, copy=False)
 
 
 def biased_shuffle(length: int, prng: SplitMix64) -> np.ndarray:
@@ -313,7 +342,7 @@ def build_p07_inputs(  # noqa: PLR0915
   prng = SplitMix64(seed)
   requested = runspec.get("decoding_order", "random")
   if requested == "random" or requested is None:
-    decoding_order = shuffle(length, prng)
+    decoding_order = fixed_first_shuffle(length, prng, designed_flags(mask, fixed_mask, ties))
   else:
     decoding_order = np.asarray(requested, dtype=np.int32)
     if decoding_order.shape != (length,) or len({int(v) for v in decoding_order}) != length:
@@ -495,10 +524,13 @@ def result_template() -> dict[str, object]:
     "ctrl_frozen_detected": False,
     "ctrl_bad_gumbel_detected": False,
     "ctrl_bad_shuffle_detected": False,
+    "ctrl_uniform_order_detected": False,
     "b1_max_abs_nats": 0.0,
     "b2_gumbel_tv_max": 0.0,
     "b2_gumbel_p_min": 1.0,
     "b2_order_p": 1.0,
+    "b2_order_fixed_first_violations": 0,
+    "b2_order_within_p": 1.0,
     "b2_omitted_draws": 0,
     "b2_n": 0,
     "order_n": 0,
@@ -533,10 +565,13 @@ def passing_result() -> dict[str, object]:
       "ctrl_frozen_detected": True,
       "ctrl_bad_gumbel_detected": True,
       "ctrl_bad_shuffle_detected": True,
+      "ctrl_uniform_order_detected": True,
       "b1_max_abs_nats": 0.0,
       "b2_gumbel_tv_max": 0.01,
       "b2_gumbel_p_min": 0.2,
       "b2_order_p": 0.2,
+      "b2_order_fixed_first_violations": 0,
+      "b2_order_within_p": 0.2,
       "b2_omitted_draws": 0,
       "b2_n": B2_N_FULL,
       "order_n": ORDER_N_FULL,
@@ -643,6 +678,30 @@ def order_counts_js(*, node: str, seed: int, n_draws: int, length: int, kind: st
     timeout=600,
   )
   return np.asarray(payload["counts"], dtype=np.int64)
+
+
+def fixed_order_stats_js(*, node: str, seed: int, n_draws: int) -> dict[str, float | int | bool]:
+  """Fixed-first violations, designed-group chi-square p, and the uniform-shuffle control.
+
+  L=6 with positions 0 and 1 fixed. The control is the old uniform Fisher-Yates,
+  which must put a designed position before a fixed one on at least one draw.
+  """
+  payload = _run_node(
+    {"op": "fixed_order", "seed": seed, "n": n_draws, "length": 6, "fixed": [0, 1]},
+    node,
+    timeout=600,
+  )
+  counts = np.asarray(payload["counts"], dtype=np.int64)
+  within_p = float(summarize_orders(counts)["p"])
+  if not math.isfinite(within_p):
+    within_p = 0.0
+  violations = int(payload["violations"])
+  uniform_violations = int(payload["uniform_violations"])
+  return {
+    "violations": violations,
+    "within_p": within_p,
+    "uniform_detected": uniform_violations > 0,
+  }
 
 
 def _git_state(root: Path) -> tuple[str, bool]:
@@ -1391,20 +1450,28 @@ def run(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0911, PLR091
   )
   fair_order = summarize_orders(fair_counts)
   bad_order = summarize_orders(bad_counts)
+  fixed_order = fixed_order_stats_js(node=node, seed=7, n_draws=order_n)
   result["b2_gumbel_tv_max"] = float(gumbel_ok["tv"])
   result["b2_gumbel_p_min"] = float(gumbel_ok["p"])
   result["b2_omitted_draws"] = int(gumbel_ok["omitted"])
   result["b2_order_p"] = float(fair_order["p"])
+  result["b2_order_fixed_first_violations"] = int(fixed_order["violations"])
+  result["b2_order_within_p"] = float(fixed_order["within_p"])
   result["ctrl_bad_gumbel_detected"] = not bool(gumbel_bad["ok"])
   result["ctrl_bad_shuffle_detected"] = not bool(bad_order["ok"])
+  result["ctrl_uniform_order_detected"] = bool(fixed_order["uniform_detected"])
   logger.info(
-    "B2 gumbel tv=%s p=%s omitted=%s order_p=%s bad_gumbel_ok=%s bad_shuffle_ok=%s",
+    "B2 gumbel tv=%s p=%s omitted=%s order_p=%s fixed_first=%s within_p=%s "
+    "bad_gumbel_ok=%s bad_shuffle_ok=%s uniform_order_detected=%s",
     result["b2_gumbel_tv_max"],
     result["b2_gumbel_p_min"],
     result["b2_omitted_draws"],
     result["b2_order_p"],
+    result["b2_order_fixed_first_violations"],
+    result["b2_order_within_p"],
     gumbel_bad["ok"],
     bad_order["ok"],
+    result["ctrl_uniform_order_detected"],
   )
   if expired():
     result["budget_exceeded"] = True

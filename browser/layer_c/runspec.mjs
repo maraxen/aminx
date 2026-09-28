@@ -4,7 +4,8 @@
 // MPNN_ALPHABET (src/aminx/utils/aa_convert.py): "ACDEFGHIKLMNPQRSTVWYX".
 //
 // Randomness is one SplitMix64 stream per (structure, runspec, seed):
-//   1. unbiased Fisher-Yates for decoding_order when it is "random"
+//   1. unbiased Fisher-Yates, then a stable fixed-first partition, when
+//      decoding_order is "random" (ProteinMPNN argsort of chain_mask)
 //   2. then Gumbel noise (L, 21) in row-major order
 // Uniforms are in (0, 1). Gumbel is g = -log(-log(u)) stored as float32.
 // Tie-group ids are the smallest member of each group so every id stays in 0..L-1
@@ -86,6 +87,57 @@ export function shuffle(length, prng) {
     order[j] = tmp;
   }
   return order;
+}
+
+export function designedFlags(length, mask, fixedMask, tie) {
+  const designed = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) {
+    if (mask[i] !== 0 && fixedMask[i] === 0) designed[i] = 1;
+  }
+  const group = new Uint8Array(length);
+  for (let i = 0; i < length; i += 1) {
+    if (designed[i]) group[tie[i]] = 1;
+  }
+  for (let i = 0; i < length; i += 1) {
+    if (group[tie[i]]) designed[i] = 1;
+  }
+  return designed;
+}
+
+// One Fisher-Yates, then a stable partition: design-mask 0 (fixed, chain not
+// designed, or padding) first, designed positions after. A tie group that
+// contains any designed position is designed, so `designed` must already be
+// expanded through tie groups.
+//
+// Within-group uniformity: shuffle() is an unbiased Fisher-Yates, so π is
+// uniform on S_L. Let F = {i | designed[i] === 0} and D its complement. The
+// stable partition writes F in the order those positions appear in π, then D
+// the same way, and it draws no further random numbers. In a uniform random
+// permutation the relative order of any fixed subset is itself uniform: each
+// of the |F|! orders of F is paired with the same number of interleavings and
+// orders of D, namely L! / |F|!, so each has probability 1/|F|!, and each
+// order of D has probability 1/|D|!. The PRNG stream after this call matches
+// a plain shuffle of the same length.
+export function fixedFirstShuffle(length, prng, designed) {
+  const order = shuffle(length, prng);
+  let nFixed = 0;
+  for (let i = 0; i < length; i += 1) {
+    if (designed[order[i]] === 0) nFixed += 1;
+  }
+  const out = new Int32Array(length);
+  let head = 0;
+  let tail = nFixed;
+  for (let i = 0; i < length; i += 1) {
+    const pos = order[i];
+    if (designed[pos] === 0) {
+      out[head] = pos;
+      head += 1;
+    } else {
+      out[tail] = pos;
+      tail += 1;
+    }
+  }
+  return out;
 }
 
 export function biasedShuffle(length, prng) {
@@ -238,7 +290,8 @@ export function buildP07Inputs(structure, runspec) {
   let decodingOrder;
   const requested = spec.decoding_order === undefined ? "random" : spec.decoding_order;
   if (requested === "random") {
-    decodingOrder = shuffle(length, prng);
+    const designed = designedFlags(length, mask, fixedMask, tie);
+    decodingOrder = fixedFirstShuffle(length, prng, designed);
   } else {
     decodingOrder = Int32Array.from(requested);
     if (decodingOrder.length !== length) {
@@ -302,6 +355,55 @@ function writeGumbel(spec) {
   return { ok: true, bytes: out.length, rows, cols };
 }
 
+function violatesFixedFirst(order, designed) {
+  let seenDesigned = false;
+  for (let i = 0; i < order.length; i += 1) {
+    if (designed[order[i]]) seenDesigned = true;
+    else if (seenDesigned) return true;
+  }
+  return false;
+}
+
+function subpermRank(order, designedPositions) {
+  const rankOf = new Map();
+  for (let i = 0; i < designedPositions.length; i += 1) {
+    rankOf.set(designedPositions[i], i);
+  }
+  const sub = [];
+  for (let i = 0; i < order.length; i += 1) {
+    const rank = rankOf.get(order[i]);
+    if (rank !== undefined) sub.push(rank);
+  }
+  return lexRank(sub);
+}
+
+function writeFixedOrder(spec) {
+  const length = spec.length;
+  const fixed = new Set(spec.fixed);
+  const mask = new Float32Array(length);
+  mask.fill(1);
+  const fixedMask = new Float32Array(length);
+  for (const pos of fixed) fixedMask[pos] = 1;
+  const tie = tieGroupMap(length, []);
+  const designed = designedFlags(length, mask, fixedMask, tie);
+  const designedPositions = [];
+  for (let i = 0; i < length; i += 1) {
+    if (designed[i]) designedPositions.push(i);
+  }
+  const counts = new Array(factSmall(designedPositions.length)).fill(0);
+  let violations = 0;
+  let uniformViolations = 0;
+  for (let i = 0; i < spec.n; i += 1) {
+    const seed = (spec.seed + i) >>> 0;
+    const order = fixedFirstShuffle(length, makePrng(seed), designed);
+    if (violatesFixedFirst(order, designed)) violations += 1;
+    counts[subpermRank(order, designedPositions)] += 1;
+    const uniform = shuffle(length, makePrng(seed));
+    if (violatesFixedFirst(uniform, designed)) uniformViolations += 1;
+  }
+  return { violations, uniform_violations: uniformViolations, counts, n: spec.n, length };
+}
+
 function writeOrders(spec) {
   const length = spec.length;
   const nPerm = factSmall(length);
@@ -336,6 +438,7 @@ if (invokedDirectly()) {
   let result;
   if (spec.op === "gumbel") result = writeGumbel(spec);
   else if (spec.op === "orders") result = writeOrders(spec);
+  else if (spec.op === "fixed_order") result = writeFixedOrder(spec);
   else result = buildP07Inputs(spec.structure, spec.runspec);
   process.stdout.write(`${JSON.stringify(result)}\n`);
 }
