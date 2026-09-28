@@ -74,13 +74,18 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 from typing import Any
 
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
 import numpy as np
+
+from aminx.parity.compare import iut_equivalent, tost_mean_diff
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -92,6 +97,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 import layer_a_common as lac  # noqa: E402
 import layer_a_exact as lae  # noqa: E402
 import layer_a_sampling as las  # noqa: E402
+import layer_a_sampling_shard as lass
 
 _WORKTREE_ROOT = _SCRIPT_DIR.parents[1]
 PARAMS_PATH = (
@@ -132,7 +138,9 @@ def _params_committed_and_clean() -> tuple[bool, str]:
   if tracked.returncode != 0:
     return False, f"{rel} is not tracked by git (`git ls-files --error-unmatch` failed)"
   clean = subprocess.run(  # noqa: S603, S607
-    ["git", "diff", "--quiet", "HEAD", "--", rel], cwd=_WORKTREE_ROOT, check=False
+    ["git", "diff", "--quiet", "HEAD", "--", rel],
+    cwd=_WORKTREE_ROOT,
+    check=False,
   )
   if clean.returncode != 0:
     return False, f"{rel} has uncommitted changes (`git diff --quiet HEAD --` failed)"
@@ -232,7 +240,9 @@ def _main_js_vs_ref(
 
 
 def run_differential_arm(
-  mode: dict[str, Any], params: dict[str, Any], args: argparse.Namespace
+  mode: dict[str, Any],
+  params: dict[str, Any],
+  args: argparse.Namespace,
 ) -> int:
   if mode["knob"] != DIFFERENTIAL_KNOB:
     print(
@@ -302,80 +312,39 @@ def _lane_margin(sampling: dict[str, Any], lane: str) -> float:
   return float(margin)
 
 
-def _run_lane_measurement(
-  data_utils_module: Any,
-  fixtures_for_set: list[dict[str, Any]],
+def _score_drawn_arms(
   lane: str,
-  sampling: dict[str, Any],
-  allocation: dict[str, int],
-  *,
-  full_model_bundle: tuple[Any, Any, Any, Any],
-) -> dict[str, Any]:
-  """One lane's teacher-forced + statistical measurement, pooled over `fixtures_for_set`
-  per `allocation` (V1: `sampling.draw_allocation`, never `n` per fixture)."""
-  from aminx.parity.compare import iut_equivalent, tost_mean_diff
-
-  jax_model, pt_model, torch, _model_utils = full_model_bundle
-  temperature = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES)[lane]
-  margin = _lane_margin(sampling, lane)
-
-  fixture_batches = []
-  tf_results = []
-  for fixture in fixtures_for_set:
-    batch = las.build_lane_batch(fixture, lane, data_utils_module)
-    fixture_batches.append((fixture, batch))
-    if batch.comparison_positions.size == 0:
-      continue  # P09-s on a fixture with no qualifying groups: nothing to teacher-force
-    tf_results.append(
-      las.teacher_forced_lane(
-        fixture,
-        lane,
-        "eqx",
-        full_model_bundle,
-        data_utils_module,
-        temperature=temperature,
-        fusion_eps=sampling.get("p09_fusion_ctrl_eps", las.DEFAULT_FUSION_CTRL_EPS),
-      )
-    )
-
-  tf_values = [r["tf_max_abs"] for r in tf_results if r.get("tf_max_abs") is not None]
-  tf_max_abs = max(tf_values) if tf_values else 0.0
-
-  a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
-    jax_model,
-    pt_model,
-    torch,
-    fixture_batches,
-    allocation,
-    temperature=temperature,
-    reference_is_aminx=False,
-    seed_tag=f"main{lane}",
-  )
-  n_arm_side = sum(x.shape[0] for x in a1)  # == sum(allocation actually used)
-  n_per_arm = 2 * n_arm_side  # A1 + A2 (V1's own definition)
-
+  margin: float,
+  a1: list[np.ndarray],
+  a2: list[np.ndarray],
+  r1: list[np.ndarray],
+  r2: list[np.ndarray],
+  seq_ref_list: list[np.ndarray],
+) -> dict[str, object]:
+  """TOST, excess-JS, and omitted-AA counts for one lane's drawn arms."""
   equiv = False
   tost_pass = False
   excess_js_point = 0.0
   excess_js_ub = las.UNCOMPUTED_SENTINEL
   if a1:
-    recovery_a = las.full_arm_recovery(a1, a2, seq_ref_list)  # V3: FULL arms
+    recovery_a = las.full_arm_recovery(a1, a2, seq_ref_list)
     recovery_r = las.full_arm_recovery(r1, r2, seq_ref_list)
     if recovery_a.size >= 2 and recovery_r.size >= 2:
       tost_pass, _pl, _pu = tost_mean_diff(recovery_a, recovery_r, las.RECOVERY_DELTA)
     rng = np.random.default_rng(las._seed_for(lane + "bootstrap"))
     stat = las.lane_equivalence(
-      a1, a2, r1, r2, margin=margin, n_boot=N_BOOT, rng=rng
-    )  # V2: n_boot=1000
-    excess_js_point = stat["excess_js"]  # V6: point estimate
+      a1,
+      a2,
+      r1,
+      r2,
+      margin=margin,
+      n_boot=N_BOOT,
+      rng=rng,
+    )
+    excess_js_point = stat["excess_js"]
     excess_js_ub = stat["excess_js_ub"]
-    # A missing/uncomputed committed margin (las.UNCOMPUTED_SENTINEL) must NEVER let a
-    # lane spuriously pass the excess-JS half of the IUT test just because the sentinel
-    # is astronomically larger than any real excess_js_ub.
     equiv_js = stat["equiv_js"] and margin < las.UNCOMPUTED_SENTINEL
     equiv = iut_equivalent([tost_pass, equiv_js])
-
-  # V4: omitted-AA/X over ALL statistical draws of BOTH arms, not just the teacher-forced one.
   omitted_aminx = sum(las.count_omitted(arr, lane) for arr in a1) + sum(
     las.count_omitted(arr, lane) for arr in a2
   )
@@ -384,29 +353,123 @@ def _run_lane_measurement(
   )
   x_aminx = sum(las.count_x(arr) for arr in a1) + sum(las.count_x(arr) for arr in a2)
   x_reference = sum(las.count_x(arr) for arr in r1) + sum(las.count_x(arr) for arr in r2)
+  return {
+    "equiv": equiv,
+    "tost_pass": tost_pass,
+    "excess_js": excess_js_point,
+    "excess_js_ub": excess_js_ub,
+    "omitted_aa_count": omitted_aminx + omitted_reference,
+    "x_token_count_aminx": x_aminx,
+    "x_token_count_reference": x_reference,
+  }
 
-  fusion_detected = all(
-    r.get("fusion_control", {}).get("detected", True) for r in tf_results if "fusion_control" in r
-  )
-  p09_fused_tf = max(
-    (r["p09_fused_tf_max_abs"] for r in tf_results if "p09_fused_tf_max_abs" in r), default=0.0
-  )
-  p09_tied_positions = max(
-    (r["p09_tied_positions"] for r in tf_results if "p09_tied_positions" in r), default=0
-  )
+
+def _run_lane_measurement(
+  data_utils_module: Any,
+  fixtures_for_set: list[dict[str, Any]],
+  lane: str,
+  sampling: dict[str, Any],
+  allocation: dict[str, int],
+  *,
+  full_model_bundle: tuple[Any, Any, Any, Any] | None = None,
+  drawn: tuple[
+    list[np.ndarray],
+    list[np.ndarray],
+    list[np.ndarray],
+    list[np.ndarray],
+    list[np.ndarray],
+  ]
+  | None = None,
+  tf_override: dict[str, object] | None = None,
+) -> dict[str, Any]:
+  """One lane's teacher-forced + statistical measurement, pooled over `fixtures_for_set`
+  per `allocation` (V1: `sampling.draw_allocation`, never `n` per fixture)."""
+  temperature = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES)[lane]
+  margin = _lane_margin(sampling, lane)
+
+  fixture_batches = []
+  tf_results: list[dict[str, Any]] = []
+  if tf_override is None:
+    if full_model_bundle is None:
+      msg = "full_model_bundle is required to teacher-force a lane"
+      raise ValueError(msg)
+    for fixture in fixtures_for_set:
+      batch = las.build_lane_batch(fixture, lane, data_utils_module)
+      fixture_batches.append((fixture, batch))
+      if batch.comparison_positions.size == 0:
+        continue  # P09-s on a fixture with no qualifying groups: nothing to teacher-force
+      tf_results.append(
+        las.teacher_forced_lane(
+          fixture,
+          lane,
+          "eqx",
+          full_model_bundle,
+          data_utils_module,
+          temperature=temperature,
+          fusion_eps=sampling.get("p09_fusion_ctrl_eps", las.DEFAULT_FUSION_CTRL_EPS),
+        ),
+      )
+
+  if tf_override is None:
+    tf_values = [r["tf_max_abs"] for r in tf_results if r.get("tf_max_abs") is not None]
+    tf_max_abs = max(tf_values) if tf_values else 0.0
+  else:
+    tf_raw = tf_override.get("tf_max_abs", 0.0)
+    tf_max_abs = float(tf_raw) if isinstance(tf_raw, int | float) else 0.0
+
+  if drawn is None:
+    if full_model_bundle is None:
+      msg = "full_model_bundle is required to draw a lane"
+      raise ValueError(msg)
+    jax_model, pt_model, torch, _model_utils = full_model_bundle
+    a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
+      jax_model,
+      pt_model,
+      torch,
+      fixture_batches,
+      allocation,
+      temperature=temperature,
+      reference_is_aminx=False,
+      seed_tag=f"main{lane}",
+    )
+  else:
+    a1, a2, r1, r2, seq_ref_list = drawn
+  n_arm_side = sum(x.shape[0] for x in a1)  # == sum(allocation actually used)
+  n_per_arm = 2 * n_arm_side  # A1 + A2 (V1's own definition)
+  scored = _score_drawn_arms(lane, margin, a1, a2, r1, r2, seq_ref_list)
+
+  if tf_override is None:
+    fusion_detected = all(
+      r.get("fusion_control", {}).get("detected", True) for r in tf_results if "fusion_control" in r
+    )
+    p09_fused_tf = max(
+      (r["p09_fused_tf_max_abs"] for r in tf_results if "p09_fused_tf_max_abs" in r),
+      default=0.0,
+    )
+    p09_tied_positions = max(
+      (r["p09_tied_positions"] for r in tf_results if "p09_tied_positions" in r),
+      default=0,
+    )
+  else:
+    fusion_raw = tf_override.get("p09_fusion_ctrl_detected", True)
+    fusion_detected = bool(fusion_raw)
+    fused_raw = tf_override.get("p09_fused_tf_max_abs", 0.0)
+    p09_fused_tf = float(fused_raw) if isinstance(fused_raw, int | float) else 0.0
+    tied_raw = tf_override.get("p09_tied_positions", 0)
+    p09_tied_positions = int(tied_raw) if isinstance(tied_raw, int | float) else 0
 
   return {
     "lane": lane,
     "tf_max_abs": tf_max_abs,
-    "tost_pass": tost_pass,
-    "excess_js": excess_js_point,
-    "excess_js_ub": excess_js_ub,
+    "tost_pass": scored["tost_pass"],
+    "excess_js": scored["excess_js"],
+    "excess_js_ub": scored["excess_js_ub"],
     "margin": margin,
-    "equiv": equiv,
+    "equiv": scored["equiv"],
     "n_per_arm": n_per_arm,
-    "omitted_aa_count": omitted_aminx + omitted_reference,
-    "x_token_count_aminx": x_aminx,
-    "x_token_count_reference": x_reference,
+    "omitted_aa_count": scored["omitted_aa_count"],
+    "x_token_count_aminx": scored["x_token_count_aminx"],
+    "x_token_count_reference": scored["x_token_count_reference"],
     "p09_fused_tf_max_abs": p09_fused_tf,
     "p09_fusion_ctrl_detected": fusion_detected,
     "p09_tied_positions": p09_tied_positions,
@@ -419,7 +482,8 @@ def run_controls(
   sampling: dict[str, Any],
   allocation: dict[str, int],
   *,
-  full_model_bundle: tuple[Any, Any, Any, Any],
+  full_model_bundle: tuple[Any, Any, Any, Any] | None = None,
+  records: list[dict[str, object]] | None = None,
 ) -> tuple[int, int]:
   """V5: 20 disjoint-seed replicates each, pooled over set B at `allocation`, per-replicate
   `n = n_required` per half (`2n` per arm), `n_boot = N_BOOT`:
@@ -436,9 +500,7 @@ def run_controls(
   """
   from aminx.parity.compare import iut_equivalent, tost_mean_diff
 
-  jax_model, _pt_model, _torch, _model_utils = full_model_bundle
   lane = "P07@1.0"
-  temperature = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES)[lane]
   margin = _lane_margin(sampling, lane)
   beta = sampling.get("beta", las.DEFAULT_BETA)
 
@@ -466,8 +528,25 @@ def run_controls(
     equiv_js = stat["equiv_js"] and margin < las.UNCOMPUTED_SENTINEL
     return iut_equivalent([tost_pass, equiv_js])
 
+  if records is not None:
+    posctl_detected = 0
+    negctl_fp = 0
+    for replicate in range(las.N_CONTROL_REPLICATES):
+      pos = _drawn_for(records, lane, "pos", replicate)
+      if pos[0] and not _equiv(*pos, f"posctl{replicate}boot"):
+        posctl_detected += 1
+      neg = _drawn_for(records, lane, "neg", replicate)
+      if neg[0] and not _equiv(*neg, f"negctl{replicate}boot"):
+        negctl_fp += 1
+    return posctl_detected, negctl_fp
+
+  if full_model_bundle is None:
+    msg = "full_model_bundle is required to draw controls"
+    raise ValueError(msg)
+  jax_model, _pt_model, _torch, _model_utils = full_model_bundle
+  temperature = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES)[lane]
   posctl_detected = 0
-  for replicate in range(las.NULL_REPLICATES):
+  for replicate in range(las.N_CONTROL_REPLICATES):
     a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
       jax_model,
       None,
@@ -483,7 +562,7 @@ def run_controls(
       posctl_detected += 1
 
   negctl_fp = 0
-  for replicate in range(las.NULL_REPLICATES):
+  for replicate in range(las.N_CONTROL_REPLICATES):
     a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
       jax_model,
       None,
@@ -500,8 +579,343 @@ def run_controls(
   return posctl_detected, negctl_fp
 
 
+def _as_float(value: object, default: float = 0.0) -> float:
+  if isinstance(value, int | float):
+    return float(value)
+  return default
+
+
+def _stack_arm(
+  records: list[dict[str, object]],
+  lane: str,
+  arm: str,
+  replicate: int,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
+  grouped: dict[str, list[dict[str, object]]] = {}
+  for record in records:
+    if (
+      record.get("lane") == lane
+      and record.get("arm") == arm
+      and int(record.get("replicate", -1)) == replicate
+      and "tokens" in record
+    ):
+      grouped.setdefault(str(record["fixture"]), []).append(record)
+  arrays: list[np.ndarray] = []
+  seqs: list[np.ndarray] = []
+  for fixture in sorted(grouped):
+    rows = sorted(grouped[fixture], key=lambda row: int(row["draw_index"]))
+    arrays.append(np.asarray([row["tokens"] for row in rows], dtype=np.int32))
+    seqs.append(np.asarray(rows[0]["seq_ref"], dtype=np.int32))
+  return arrays, seqs
+
+
+def _drawn_for(
+  records: list[dict[str, object]],
+  lane: str,
+  kind: str,
+  replicate: int,
+) -> tuple[
+  list[np.ndarray],
+  list[np.ndarray],
+  list[np.ndarray],
+  list[np.ndarray],
+  list[np.ndarray],
+]:
+  a1, seq = _stack_arm(records, lane, f"{kind}/A1", replicate)
+  a2, _seq_a2 = _stack_arm(records, lane, f"{kind}/A2", replicate)
+  r1, _seq_r1 = _stack_arm(records, lane, f"{kind}/R1", replicate)
+  r2, _seq_r2 = _stack_arm(records, lane, f"{kind}/R2", replicate)
+  return a1, a2, r1, r2, seq
+
+
+def _score_controls_from_records(
+  records: list[dict[str, object]],
+  sampling: dict[str, Any],
+) -> tuple[int, int]:
+  return run_controls(None, [], sampling, {}, records=records)
+
+
+def _sample_units(
+  units: list[lass.WorkUnit],
+  fixtures_for_set: list[dict[str, Any]],
+  sampling: dict[str, Any],
+  data_utils_module: object,
+  *,
+  shard_index: int,
+) -> list[dict[str, object]]:
+  by_name = {fixture["name"]: fixture for fixture in fixtures_for_set}
+  bundles: dict[str, tuple[Any, Any, Any, Any]] = {}
+  batches: dict[tuple[str, str], Any] = {}
+  temps = sampling.get("lane_temperatures", las.DEFAULT_LANE_TEMPERATURES)
+  beta_default = _as_float(sampling.get("beta", las.DEFAULT_BETA), las.DEFAULT_BETA)
+  records: list[dict[str, object]] = []
+  for unit in units:
+    fixture = by_name[unit.fixture]
+    batch_key = (unit.lane, unit.fixture)
+    if batch_key not in batches:
+      batches[batch_key] = las.build_lane_batch(fixture, unit.lane, data_utils_module)
+    batch = batches[batch_key]
+    if unit.lane not in bundles:
+      bundles[unit.lane] = las.full_model_bundle_for_lane(unit.lane, "eqx")
+    jax_model, pt_model, torch, _model_utils = bundles[unit.lane]
+    kind, half = unit.arm.split("/", 1)
+    temperature = _as_float(temps[unit.lane], las.DEFAULT_LANE_TEMPERATURES[unit.lane])
+    beta = beta_default if kind == "pos" and half in {"A1", "A2"} else 0.0
+    for draw_index in range(unit.draw_start, unit.draw_end):
+      seed = lass.folded_seed(
+        unit.lane,
+        unit.fixture,
+        unit.arm,
+        unit.replicate,
+        draw_index,
+        shard_index=shard_index,
+      )
+      if kind == "main" and half in {"R1", "R2"}:
+        seqs = las.reference_sample_batch(pt_model, torch, batch, 1, seed, temperature=temperature)
+      else:
+        seqs = las.aminx_sample_batch(
+          jax_model,
+          batch,
+          1,
+          seed,
+          temperature=temperature,
+          beta_alanine=beta,
+        )
+      restricted = las.restrict_to_comparison(seqs, batch)
+      seq_ref = np.asarray(batch.seq_ref[batch.comparison_positions])
+      records.append(
+        {
+          "lane": unit.lane,
+          "fixture": unit.fixture,
+          "arm": unit.arm,
+          "replicate": unit.replicate,
+          "draw_index": draw_index,
+          "tokens": np.asarray(restricted[0]).astype(int).tolist(),
+          "seq_ref": seq_ref.astype(int).tolist(),
+        },
+      )
+  return records
+
+
+def statistics_from_draw_records(
+  records: list[dict[str, object]],
+  *,
+  sampling: dict[str, Any],
+  tf_by_lane: dict[str, object],
+  native_x_frequency: float = 0.0,
+) -> dict[str, Any]:
+  """Score merged draws with the same lane and control tests as an unsharded validate."""
+  lane_names = list(
+    dict.fromkeys(
+      str(record["lane"]) for record in records if str(record.get("arm", "")).startswith("main/")
+    ),
+  )
+  if not lane_names:
+    lane_names = [str(lane) for lane in tf_by_lane]
+  lanes: list[dict[str, Any]] = []
+  for lane in lane_names:
+    override = tf_by_lane.get(lane, {})
+    tf_override = override if isinstance(override, dict) else {}
+    lanes.append(
+      _run_lane_measurement(
+        None,
+        [],
+        lane,
+        sampling,
+        {},
+        drawn=_drawn_for(records, lane, "main", 0),
+        tf_override=tf_override,
+      ),
+    )
+  posctl_detected, negctl_fp = _score_controls_from_records(records, sampling)
+  return _pack_lane_results(
+    lanes,
+    posctl_detected,
+    negctl_fp,
+    sampling,
+    native_x_frequency=native_x_frequency,
+  )
+
+
+def _pack_lane_results(
+  lanes: list[dict[str, Any]],
+  posctl_detected: int,
+  negctl_fp: int,
+  sampling: dict[str, Any],
+  *,
+  native_x_frequency: float,
+) -> dict[str, Any]:
+  tf_max_abs = max((lane["tf_max_abs"] for lane in lanes), default=0.0)
+  n_per_arm = min((lane["n_per_arm"] for lane in lanes), default=0)
+  excess_js_ub_max_ratio = max(
+    (
+      (lane["excess_js_ub"] / lane["margin"] if lane["margin"] > 0 else las.UNCOMPUTED_SENTINEL)
+      for lane in lanes
+    ),
+    default=0.0,
+  )
+  main_js_vs_ref = float(np.mean([lane["excess_js"] for lane in lanes])) if lanes else 0.0
+  return {
+    "tf_max_abs": tf_max_abs,
+    "tf_bar": las.TF_BAR,
+    "n_lanes": len(lanes),
+    "n_lanes_equiv": sum(1 for lane in lanes if lane["equiv"]),
+    "n_per_arm": n_per_arm,
+    "n_required": sampling.get("n_required", las.N_REQUIRED_FLOOR),
+    "sigma_hat": sampling.get("sigma_hat", 0.0),
+    "excess_js_ub_max_ratio": excess_js_ub_max_ratio,
+    "main_js_vs_ref": main_js_vs_ref,
+    "posctl_detected": posctl_detected,
+    "negctl_fp": negctl_fp,
+    "omitted_aa_count": sum(lane["omitted_aa_count"] for lane in lanes),
+    "x_token_count_aminx": sum(lane["x_token_count_aminx"] for lane in lanes),
+    "x_token_count_reference": sum(lane["x_token_count_reference"] for lane in lanes),
+    "native_x_frequency": native_x_frequency,
+    "p09_tied_positions": max((lane["p09_tied_positions"] for lane in lanes), default=0),
+    "p09_tied_positions_prereg": sampling.get("p09_tied_positions", 0),
+    "p09_fused_tf_max_abs": max((lane["p09_fused_tf_max_abs"] for lane in lanes), default=0.0),
+    "p09_fusion_ctrl_detected": all(lane["p09_fusion_ctrl_detected"] for lane in lanes),
+    "lanes": lanes,
+  }
+
+
+def _tf_map(
+  selected_lanes: tuple[str, ...],
+  fixtures_for_set: list[dict[str, Any]],
+  sampling: dict[str, Any],
+  data_utils_module: object,
+) -> dict[str, object]:
+  zero_alloc = {fixture["name"]: 0 for fixture in fixtures_for_set}
+  out: dict[str, object] = {}
+  for lane in selected_lanes:
+    measured = _run_lane_measurement(
+      data_utils_module,
+      fixtures_for_set,
+      lane,
+      sampling,
+      zero_alloc,
+      full_model_bundle=las.full_model_bundle_for_lane(lane, "eqx"),
+    )
+    out[lane] = {
+      "tf_max_abs": measured["tf_max_abs"],
+      "p09_fusion_ctrl_detected": measured["p09_fusion_ctrl_detected"],
+      "p09_fused_tf_max_abs": measured["p09_fused_tf_max_abs"],
+      "p09_tied_positions": measured["p09_tied_positions"],
+    }
+  return out
+
+
+def _v2_measurement(
+  args: argparse.Namespace,
+  sampling: dict[str, Any],
+  fixtures_for_set: list[dict[str, Any]],
+  prov: dict[str, Any],
+  prereq: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
+  n_shards = int(getattr(args, "n_shards", 1))
+  shard_index = int(getattr(args, "shard_index", 0))
+  if n_shards < 1 or not 0 <= shard_index < n_shards:
+    msg = f"--shard-index {shard_index} is outside 0..{n_shards - 1}"
+    raise SystemExit(msg)
+  data_utils_module = lae._load_reference_data_utils()  # noqa: SLF001
+  allocation = sampling.get("draw_allocation", {})
+  if not allocation:
+    allocation = {
+      fixture["name"]: sampling.get("n_required", las.N_REQUIRED_FLOOR)
+      for fixture in fixtures_for_set[:1]
+    }
+  raw_costs = sampling.get("per_draw_costs_s")
+  costs = raw_costs if isinstance(raw_costs, dict) else None
+  units = lass.enumerate_work_units(
+    lanes=selected_lanes,
+    allocation=allocation,
+    n_control_replicates=las.N_CONTROL_REPLICATES,
+    costs=costs,
+    control_scope="once",
+  )
+  plan = lass.plan_shards(units, n_shards)
+  records = _sample_units(
+    plan[shard_index],
+    fixtures_for_set,
+    sampling,
+    data_utils_module,
+    shard_index=shard_index,
+  )
+  tf_by_lane: dict[str, object] = {}
+  native_x_frequency = 0.0
+  if shard_index == 0:
+    tf_by_lane = _tf_map(selected_lanes, fixtures_for_set, sampling, data_utils_module)
+    named = [fixture for fixture in fixtures_for_set if fixture["name"] in allocation]
+    if named and "P07@1.0" in selected_lanes:
+      bundle = las.full_model_bundle_for_lane("P07@1.0", "eqx")
+      batch = las.build_lane_batch(named[0], "P07@1.0", data_utils_module)
+      if batch.comparison_positions.size:
+        native_x_frequency = las.measure_native_x_frequency(
+          bundle[0],
+          batch,
+          las.DEFAULT_LANE_TEMPERATURES["P07@1.0"],
+          n=NATIVE_X_FREQ_N,
+        )
+  protocol: dict[str, object] = {
+    "lanes": list(selected_lanes),
+    "allocation": allocation,
+    "n_control_replicates": las.N_CONTROL_REPLICATES,
+    "control_scope": "once",
+    "control_lane": "P07@1.0",
+  }
+  partial = lass.make_partial(
+    git_hash=str(prov.get("git_hash", "")),
+    params={"sampling": sampling},
+    shard_index=shard_index,
+    n_shards=n_shards,
+    records=records,
+    lanes=selected_lanes,
+    n_control_replicates=las.N_CONTROL_REPLICATES,
+    protocol=protocol,
+  )
+  partial["tf_by_lane"] = tf_by_lane
+  partial["native_x_frequency"] = native_x_frequency
+  partial["fixture_set"] = args.fixture_set
+  partial["prereq_ok"] = prereq["prereq_ok"]
+  partial["prereq_reason"] = prereq["reason"]
+  partial.update(lass.device_record())
+  if n_shards > 1:
+    return partial, 0
+  scored = statistics_from_draw_records(
+    records,
+    sampling=sampling,
+    tf_by_lane=tf_by_lane,
+    native_x_frequency=native_x_frequency,
+  )
+  scored.update(
+    {
+      "n_skipped": 0,
+      "prereq_ok": prereq["prereq_ok"],
+      "prereq_reason": prereq["reason"],
+      "reference_commit": _reference_commit(),
+      "weight_source": "eqx",
+      "fixture_set": args.fixture_set,
+      "smoke": False,
+      "n_shards": n_shards,
+      "shard_index": shard_index,
+      "n_control_replicates": las.N_CONTROL_REPLICATES,
+      "selected_lanes": list(selected_lanes),
+      **lass.device_record(),
+      **prov,
+    },
+  )
+  exit_code = 0
+  if not prereq["prereq_ok"]:
+    logger.error("prereq_check failed: %s", prereq["reason"])
+  return scored, exit_code
+
+
 def run_measurement(
-  params: dict[str, Any], args: argparse.Namespace, *, smoke: bool
+  params: dict[str, Any],
+  args: argparse.Namespace,
+  *,
+  smoke: bool,
 ) -> tuple[dict[str, Any], int]:
   prov = lac.provenance(PARAMS_PATH)
   prereq = lac.prereq_check("layer_a_sampling", "sampling", params)
@@ -533,48 +947,13 @@ def run_measurement(
     smoke_batch = las.build_lane_batch(fixture, SMOKE_LANE, data_utils_module)
     if smoke_batch.comparison_positions.size:
       native_x_frequency = las.measure_native_x_frequency(
-        jax_model, smoke_batch, las.DEFAULT_LANE_TEMPERATURES[SMOKE_LANE], n=5
+        jax_model,
+        smoke_batch,
+        las.DEFAULT_LANE_TEMPERATURES[SMOKE_LANE],
+        n=5,
       )
   else:
-    data_utils_module = lae._load_reference_data_utils()  # noqa: SLF001
-    allocation = sampling.get("draw_allocation", {})
-    if not allocation:
-      allocation = {
-        f["name"]: sampling.get("n_required", las.N_REQUIRED_FLOOR) for f in fixtures_for_set[:1]
-      }
-    lanes = []
-    for lane in las.LANE_KEYS:
-      full_model_bundle = las.full_model_bundle_for_lane(lane, "eqx")
-      lanes.append(
-        _run_lane_measurement(
-          data_utils_module,
-          fixtures_for_set,
-          lane,
-          sampling,
-          allocation,
-          full_model_bundle=full_model_bundle,
-        )
-      )
-    n_per_arm = min((lane["n_per_arm"] for lane in lanes), default=0)
-    posctl_detected, negctl_fp = run_controls(
-      data_utils_module,
-      fixtures_for_set,
-      sampling,
-      allocation,
-      full_model_bundle=las.full_model_bundle_for_lane("P07@1.0", "eqx"),
-    )
-    native_x_frequency = 0.0
-    p07_batches = [f for f in fixtures_for_set if f["name"] in allocation]
-    if p07_batches:
-      p07_full_model_bundle = las.full_model_bundle_for_lane("P07@1.0", "eqx")
-      p07_batch = las.build_lane_batch(p07_batches[0], "P07@1.0", data_utils_module)
-      if p07_batch.comparison_positions.size:
-        native_x_frequency = las.measure_native_x_frequency(
-          p07_full_model_bundle[0],
-          p07_batch,
-          las.DEFAULT_LANE_TEMPERATURES["P07@1.0"],
-          n=NATIVE_X_FREQ_N,
-        )
+    return _v2_measurement(args, sampling, fixtures_for_set, prov, prereq)
 
   tf_max_abs = max((lane["tf_max_abs"] for lane in lanes), default=0.0)
   n_lanes = len(lanes)
@@ -622,6 +1001,10 @@ def run_measurement(
     "fixture_set": args.fixture_set,
     "lanes": lanes,
     "smoke": smoke,
+    "n_shards": int(getattr(args, "n_shards", 1)),
+    "shard_index": int(getattr(args, "shard_index", 0)),
+    "n_control_replicates": las.N_CONTROL_REPLICATES,
+    **lass.device_record(),
     **prov,
   }
   exit_code = 0
@@ -634,7 +1017,9 @@ def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--dry-run", action="store_true", help="Check imports/manifest/sidecar only.")
   parser.add_argument(
-    "--smoke", action="store_true", help="One fixture, one lane, n=50, < 60 s target."
+    "--smoke",
+    action="store_true",
+    help="One fixture, one lane, n=50, < 60 s target.",
   )
   parser.add_argument(
     "--fixture-set",
@@ -643,7 +1028,15 @@ def main(argv: list[str] | None = None) -> int:
     help="Manifest fixture set to validate on (held-out set B by default).",
   )
   parser.add_argument("--out", required=True, type=Path, help="Path to write the result JSON.")
+  parser.add_argument(
+    "--lanes",
+    default=None,
+    help="Comma-separated lane keys (default: the four ProteinMPNN V2_LANES).",
+  )
+  parser.add_argument("--n-shards", type=int, default=1, help="How many shards the plan uses.")
+  parser.add_argument("--shard-index", type=int, default=0, help="Which shard this process runs.")
   args = parser.parse_args(argv)
+  lass.ensure_xla_preallocate_false()
 
   ok, reason = _params_committed_and_clean()
   if not ok:

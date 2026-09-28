@@ -89,11 +89,14 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import resource
 import sys
 import time
 from pathlib import Path
 from typing import Any
+
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 import numpy as np
 
@@ -107,6 +110,7 @@ if str(_SCRIPT_DIR) not in sys.path:
 import layer_a_common as lac  # noqa: E402
 import layer_a_exact as lae  # noqa: E402
 import layer_a_sampling as las  # noqa: E402
+import layer_a_sampling_shard as lass
 
 _WORKTREE_ROOT = _SCRIPT_DIR.parents[1]
 DEFAULT_PARAMS_OUT = (
@@ -345,7 +349,13 @@ def _null_replicate_check(
     tost_pass, _pl, _pu = tost_mean_diff(recovery_a, recovery_r, las.RECOVERY_DELTA)
     rng = np.random.default_rng(las._seed_for(f"{seed_prefix}null{replicate}boot"))
     excess_js_ub = __import__("aminx.parity.compare", fromlist=["excess_js_upper"]).excess_js_upper(
-      a1, a2, r1, r2, n_boot=N_BOOT, rng=rng, k=21
+      a1,
+      a2,
+      r1,
+      r2,
+      n_boot=N_BOOT,
+      rng=rng,
+      k=21,
     )
     if tost_pass and excess_js_ub < margin:
       null_pass += 1
@@ -394,7 +404,9 @@ def _search_beta_for_lane(
 
 
 def _search_fusion_eps(
-  jax_model: Any, batch: Any, decoding_order: np.ndarray
+  jax_model: Any,
+  batch: Any,
+  decoding_order: np.ndarray,
 ) -> tuple[float, bool]:
   lo, hi = las.SIZING_RATIO_RANGE
   tried = []
@@ -413,38 +425,33 @@ def _search_fusion_eps(
   return las.FUSION_EPS_CANDIDATES[-1], False
 
 
-def _project_validate_draw_counts(n_required: int, n_lanes: int) -> tuple[int, int]:
-  """`(aminx_draws_total, reference_draws_total)` -- the EXACT draw counts a full validate
-  run (`layer_a_sampling_validate.py`, non-smoke) would issue, per THIS module's own
-  implementation (C4):
+def _project_validate_draw_counts(
+  n_required: int,
+  n_lanes: int,
+  n_control_replicates: int = las.N_CONTROL_REPLICATES,
+) -> tuple[int, int]:
+  """Per-slot draw totals at ``n_required`` across ``n_lanes``.
 
-  - Main lane measurement: `2*n_required` aminx (A1+A2) AND `2*n_required` reference
-    (R1+R2) per lane, summed over `n_lanes`.
-  - Positive control (`run_controls`): aminx+beta (A1,A2) vs UNPERTURBED aminx (R1,R2)
-    per V5's explicit allowance ("positive = aminx+beta vs aminx is acceptable") --
-    `4*n_required` aminx draws, ZERO reference draws, per replicate, x20 replicates.
-  - Negative control: aminx vs aminx, likewise `4*n_required` aminx draws, ZERO
-    reference draws, per replicate, x20 replicates.
-
-  So `aminx_draws_total = 2*n_required*n_lanes + 4*n_required*NULL_REPLICATES*2` and
-  `reference_draws_total = 2*n_required*n_lanes` (reference draws come ONLY from the
-  main lane measurement -- both controls are aminx-only by design).
+  Each allocated slot is priced at ``aminx_draws_per_slot(R)`` aminx draws and
+  ``REFERENCE_DRAWS_PER_SLOT`` reference draws. ``R`` is ``N_CONTROL_REPLICATES``
+  (the same constant validate's control loops use). Allocation sums to ``n_required``
+  per lane, so the totals are ``(2+8*R)*n_required*n_lanes`` and ``2*n_required*n_lanes``.
   """
-  aminx_draws_total = 2 * n_required * n_lanes + 4 * n_required * las.NULL_REPLICATES * 2
-  reference_draws_total = 2 * n_required * n_lanes
+  factor = las.aminx_draws_per_slot(n_control_replicates)
+  aminx_draws_total = factor * n_required * n_lanes
+  reference_draws_total = las.REFERENCE_DRAWS_PER_SLOT * n_required * n_lanes
   return aminx_draws_total, reference_draws_total
 
 
 FLOOR_BUDGET_FORMULA = (
-  "budget_wall_hours = sum over lanes l and set-B fixtures f of "
-  "a_lf * (162 * c_aminx(f,l) + 2 * c_ref(f,l)) / 3600, with a_lf = draw_allocation at "
-  "n = N_REQUIRED_FLOOR (per sub-arm, sums to n per lane). 162 = main arm A1+A2 (2) + "
-  "positive control 20 replicates x (A1+A2 aminx+beta, R1+R2 aminx) (80) + negative "
-  "control 20 x 4 (80) aminx draws per allocated slot; 2 = main arm R1+R2 reference draws. "
-  "c_* are measured wall seconds per draw on this run's own hardware (batched aminx path "
-  "incl. host-side wave construction; batched reference .sample()), so no core-count "
-  "division is applied. The projection is a LOWER bound on validate's cost: n_required >= "
-  "N_REQUIRED_FLOOR and cost is increasing in n."
+  "budget_wall_hours = max over shards of the LPT-packed per-shard sums; "
+  "budget_gpu_hours = sum over shards. Each allocated slot costs "
+  "(2 + 8*N_CONTROL_REPLICATES) * c_aminx + 2 * c_ref seconds "
+  "(main A1+A2, positive control R*4, negative control R*4, main R1+R2). "
+  "R = N_CONTROL_REPLICATES (v2 default 5 -> 42 aminx draws/slot; v1 R=20 -> 162). "
+  "c_* are measured wall seconds per draw. The projection is a LOWER bound on "
+  "validate's cost: n_required >= N_REQUIRED_FLOOR and cost is increasing in n. "
+  "Only the selected lanes (default V2_LANES) are priced."
 )
 
 
@@ -454,16 +461,26 @@ def _budget_at_floor(
   torch: Any,
   protein_fixtures_b: list[dict[str, Any]],
   data_utils_module: Any,
+  *,
+  lanes: tuple[str, ...] | None = None,
+  n_shards: int = las.N_SHARDS,
+  n_control_replicates: int = las.N_CONTROL_REPLICATES,
 ) -> dict[str, Any]:
   """Project validate's wall time at `n = N_REQUIRED_FLOOR` from per-draw costs measured
   per (lane, set-B fixture) (D10). Validate cost only grows with `n`, so a floor projection
   above `BUDGET_WALL_HOURS_CAP` proves the pre-registered protocol cannot fit, before any
-  pilot, margin or null-replicate draw is spent."""
+  pilot, margin or null-replicate draw is spent.
+
+  ``budget_wall_hours`` is the longest shard after LPT packing. ``budget_gpu_hours`` is
+  the sum across shards. Only ``lanes`` (default ``V2_LANES``) are priced.
+  """
+  selected = las.V2_LANES if lanes is None else lanes
   n_floor = las.N_REQUIRED_FLOOR
   per_lane_hours: dict[str, float] = {}
   costs: dict[str, dict[str, dict[str, float]]] = {}
   allocations: dict[str, dict[str, int]] = {}
-  for lane in las.LANE_KEYS:
+  factor = las.aminx_draws_per_slot(n_control_replicates)
+  for lane in selected:
     lane_model = las.full_model_bundle_for_lane(lane, "eqx")
     lane_jax, lane_pt = lane_model[0], lane_model[1]
     batches = _lane_fixture_batches(protein_fixtures_b, lane, data_utils_module)
@@ -475,7 +492,7 @@ def _budget_at_floor(
       c_a = las.measure_aminx_draw_cost_s(lane_jax, batch, temp)
       c_r = las.measure_reference_draw_cost_s(lane_pt, torch, batch, temp, REFERENCE_COST_SAMPLE_N)
       costs[lane][fixture["name"]] = {"aminx_s": c_a, "reference_s": c_r}
-      hours += alloc[fixture["name"]] * (162 * c_a + 2 * c_r) / 3600.0
+      hours += alloc[fixture["name"]] * (factor * c_a + las.REFERENCE_DRAWS_PER_SLOT * c_r) / 3600.0
       logger.info(
         "budget floor: lane %s fixture %s L=%d alloc=%d aminx %.3fs/draw ref %.3fs/draw",
         lane,
@@ -488,10 +505,23 @@ def _budget_at_floor(
     per_lane_hours[lane] = hours
     allocations[lane] = alloc
   del jax_model, pt_model  # the pilot lane's models; each lane loads its own above
-  total = sum(per_lane_hours.values())
+  units = lass.enumerate_work_units(
+    lanes=selected,
+    allocation=allocations,
+    n_control_replicates=n_control_replicates,
+    costs=costs,
+    control_scope="per_slot",
+  )
+  report = lass.shard_budget_report(units, n_shards)
   return {
     "n_floor": n_floor,
-    "budget_wall_hours": total,
+    "budget_wall_hours": report["budget_wall_hours"],
+    "budget_gpu_hours": report["budget_gpu_hours"],
+    "per_shard_hours": report["per_shard_hours"],
+    "n_shards": n_shards,
+    "n_control_replicates": n_control_replicates,
+    "lanes": list(selected),
+    "aminx_draws_per_slot": factor,
     "per_lane_hours": per_lane_hours,
     "per_draw_costs_s": costs,
     "draw_allocation_by_lane": allocations,
@@ -500,24 +530,19 @@ def _budget_at_floor(
 
 
 BUDGET_FORMULA = (
-  "budget_wall_hours = (aminx_draws_total * per_draw_cost_aminx_s "
-  "+ reference_draws_total * per_draw_cost_reference_s) / 3600, where "
-  "aminx_draws_total = 2*n_required*n_lanes + 4*n_required*NULL_REPLICATES*2 "
-  "(main-lane A1+A2 per lane, plus BOTH controls' aminx-only 4*n_required-per-replicate "
-  "draws x20 replicates each -- V5: positive control is aminx+beta vs aminx, no reference "
-  "draws), reference_draws_total = 2*n_required*n_lanes (main-lane R1+R2 per lane only). "
-  "per_draw_cost_{aminx,reference}_s are measured empirically on THIS run's own real "
-  "draws (aminx: timed directly from the per-lane margin computation's 4*n_required "
-  "draws; reference: a small dedicated REFERENCE_COST_SAMPLE_N-draw batched call), "
-  "already reflecting whatever thread/core pinning this process ran under -- no separate "
-  "division by core count is applied (per-draw cost already measures wall time under "
-  "that pinning, e.g. titanix's taskset -c 0-15 per ODQ-13)."
+  "budget_wall_hours = max over shards of an LPT packing of per-slot costs "
+  "(2 + 8*N_CONTROL_REPLICATES) * c_aminx + 2 * c_ref, summed over the selected lanes "
+  "(default V2_LANES). budget_gpu_hours is the sum across shards. "
+  "N_CONTROL_REPLICATES is the same constant validate's positive/negative control loops use "
+  "(v2 default 5 -> 42 aminx draws per slot; v1 R=20 -> 162). "
+  "per-draw costs are measured on this run's hardware; no core-count division is applied."
 )
 
 
 def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
   start = time.monotonic()
   prov = lac.provenance(None)
+  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
   manifest = _load_manifest()
   protein_fixtures = _fixtures_for_set(manifest, args.fixture_set)
   fixture = _pick_fixture(protein_fixtures, SMOKE_FIXTURE_NAME)
@@ -531,7 +556,11 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
   # -- drawing them separately would double smoke's own (empirically expensive, see that
   # function's docstring) wall time for no benefit.
   sigma_hat, smoke_lane_margin, _elapsed = _pilot_sigma_and_margin(
-    jax_model, fixture_batches, SMOKE_LANE, SMOKE_PILOT_N, "smokesigmamargin"
+    jax_model,
+    fixture_batches,
+    SMOKE_LANE,
+    SMOKE_PILOT_N,
+    "smokesigmamargin",
   )
   from aminx.parity.compare import required_n
 
@@ -543,9 +572,9 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
   # measured during this revision: `WaveScheduleBundle.from_tie_groups`'s per-draw
   # host-side construction cost made 5-lane-at-n=6 smoke run past 9m50s before being
   # killed. `margins_smoke_placeholder` records which entries are real vs placeholder.
-  margins: dict[str, float] = dict.fromkeys(las.LANE_KEYS, 0.0)
+  margins: dict[str, float] = dict.fromkeys(selected_lanes, 0.0)
   margins[SMOKE_LANE] = smoke_lane_margin
-  margins_smoke_placeholder: dict[str, bool] = {lane: lane != SMOKE_LANE for lane in las.LANE_KEYS}
+  margins_smoke_placeholder: dict[str, bool] = {lane: lane != SMOKE_LANE for lane in selected_lanes}
 
   p09_qualifying_groups, p09_tied_positions = _p09_set_b_counts(manifest)
 
@@ -560,7 +589,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     "margins_smoke_placeholder": margins_smoke_placeholder,
     "margin_fixtures_excluded_reason": MARGIN_EXCLUDE_REASON,
     "beta": las.DEFAULT_BETA,
-    "beta_by_lane": dict.fromkeys(las.LANE_KEYS, las.DEFAULT_BETA),
+    "beta_by_lane": dict.fromkeys(selected_lanes, las.DEFAULT_BETA),
     "reduced_subset": [fixture["name"]],
     "reduced_subset_size": 1,
     "min_effect": max(representative_margin / 2.0, sys.float_info.min),
@@ -618,6 +647,11 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   enforced safety net (FAILS loudly, writes no params, rather than cutting a corner)."""
   start = time.monotonic()
   prov = lac.provenance(None)
+  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
+  n_shards = int(getattr(args, "n_shards", las.N_SHARDS))
+  if args.pilot_lane not in selected_lanes:
+    msg = f"--pilot-lane {args.pilot_lane} is not in the selected lanes {selected_lanes}"
+    raise SystemExit(msg)
   manifest = _load_manifest()
   protein_fixtures_a = _fixtures_for_set(manifest, args.fixture_set)
   protein_fixtures_b = _fixtures_for_set(manifest, "B")
@@ -629,7 +663,10 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   jax_model, pt_model, torch, _model_utils = full_model_bundle
 
   pilot_batches = _lane_fixture_batches(
-    protein_fixtures_a, pilot_lane, data_utils_module, exclude=MARGIN_EXCLUDE_FIXTURES
+    protein_fixtures_a,
+    pilot_lane,
+    data_utils_module,
+    exclude=MARGIN_EXCLUDE_FIXTURES,
   )
   if not pilot_batches:
     msg = (
@@ -639,7 +676,16 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     raise SystemExit(msg)
 
   # D10: fail fast when even the n = N_REQUIRED_FLOOR projection is over budget.
-  floor = _budget_at_floor(jax_model, pt_model, torch, protein_fixtures_b, data_utils_module)
+  floor = _budget_at_floor(
+    jax_model,
+    pt_model,
+    torch,
+    protein_fixtures_b,
+    data_utils_module,
+    lanes=selected_lanes,
+    n_shards=n_shards,
+    n_control_replicates=las.N_CONTROL_REPLICATES,
+  )
   floor_rss = _peak_rss_gib()
   if floor["budget_wall_hours"] > BUDGET_WALL_HOURS_CAP or floor_rss > PROJECTED_PEAK_RSS_GIB_CAP:
     logger.error(
@@ -673,7 +719,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       "params_section_sha256": "",
       "n_not_advanced": 0,
       "n_skipped": 0,
-      "controls_total": len(las.LANE_KEYS) + 1 + 1,
+      "controls_total": len(selected_lanes) + 1 + 1,
       "controls_sized": 0,
       "fixture_set": args.fixture_set,
       "fixture_manifest_sha256": manifest_sha256,
@@ -698,10 +744,19 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   pilot_margin = 0.0
   while True:
     pilot_margin, _cost, _n, _alloc = _lane_margin_and_cost(
-      jax_model, pilot_batches, pilot_lane, n_required, f"pilotmargin{n_doublings}"
+      jax_model,
+      pilot_batches,
+      pilot_lane,
+      n_required,
+      f"pilotmargin{n_doublings}",
     )
     null_pass = _null_replicate_check(
-      jax_model, pilot_batches, pilot_lane, n_required, pilot_margin, f"doubling{n_doublings}"
+      jax_model,
+      pilot_batches,
+      pilot_lane,
+      n_required,
+      pilot_margin,
+      f"doubling{n_doublings}",
     )
     if null_pass >= las.NULL_REPLICATES_PASS_FLOOR:
       null_criterion_met = True
@@ -736,7 +791,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       "params_section_sha256": "",
       "n_not_advanced": 0,
       "n_skipped": 0,
-      "controls_total": len(las.LANE_KEYS) + 1 + 1,
+      "controls_total": len(selected_lanes) + 1 + 1,
       "controls_sized": 0,
       "fixture_set": args.fixture_set,
       "fixture_manifest_sha256": manifest_sha256,
@@ -760,16 +815,23 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   # (re-time the pilot lane's own margin cost at the FINAL n once more, cleanly, rather
   # than reusing a doubling-loop timing that may have run at a smaller n)
   _pilot_margin_final, pilot_cost, pilot_n_draws, _alloc = _lane_margin_and_cost(
-    jax_model, pilot_batches, pilot_lane, n_required, "pilotmarginfinal"
+    jax_model,
+    pilot_batches,
+    pilot_lane,
+    n_required,
+    "pilotmarginfinal",
   )
   margins[pilot_lane] = _pilot_margin_final
   lane_costs.append((pilot_n_draws, pilot_cost))
 
-  for lane in las.LANE_KEYS:
+  for lane in selected_lanes:
     if lane == pilot_lane:
       continue
     lane_batches = _lane_fixture_batches(
-      protein_fixtures_a, lane, data_utils_module, exclude=MARGIN_EXCLUDE_FIXTURES
+      protein_fixtures_a,
+      lane,
+      data_utils_module,
+      exclude=MARGIN_EXCLUDE_FIXTURES,
     )
     if not lane_batches:
       logger.error(
@@ -781,7 +843,11 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       margins[lane] = UNCOMPUTED_SENTINEL
       continue
     margin, cost, n_draws, _alloc = _lane_margin_and_cost(
-      jax_model, lane_batches, lane, n_required, f"margin{lane}"
+      jax_model,
+      lane_batches,
+      lane,
+      n_required,
+      f"margin{lane}",
     )
     margins[lane] = margin
     lane_costs.append((n_draws, cost))
@@ -794,15 +860,22 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   # C3: beta, per lane, EVERY lane must be attempted (sized or recorded unsized).
   beta_by_lane: dict[str, float | None] = {}
   beta_sized_count = 0
-  for lane in las.LANE_KEYS:
+  for lane in selected_lanes:
     lane_batches = _lane_fixture_batches(
-      protein_fixtures_a, lane, data_utils_module, exclude=MARGIN_EXCLUDE_FIXTURES
+      protein_fixtures_a,
+      lane,
+      data_utils_module,
+      exclude=MARGIN_EXCLUDE_FIXTURES,
     )
     if not lane_batches or margins.get(lane, UNCOMPUTED_SENTINEL) == UNCOMPUTED_SENTINEL:
       beta_by_lane[lane] = None
       continue
     beta_lane, sized, _tried = _search_beta_for_lane(
-      jax_model, lane_batches, lane, margins[lane], f"betasearch{lane}"
+      jax_model,
+      lane_batches,
+      lane,
+      margins[lane],
+      f"betasearch{lane}",
     )
     beta_by_lane[lane] = beta_lane
     beta_sized_count += int(sized)
@@ -878,11 +951,29 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     REFERENCE_COST_SAMPLE_N,
   )
   aminx_draws_total, reference_draws_total = _project_validate_draw_counts(
-    n_required, len(las.LANE_KEYS)
+    n_required,
+    len(selected_lanes),
   )
-  budget_wall_hours = (
-    aminx_draws_total * per_draw_cost_aminx_s + reference_draws_total * per_draw_cost_reference_s
-  ) / 3600.0
+  alloc_by_lane = {
+    lane: las.allocate_draws(
+      _lane_fixture_batches(protein_fixtures_b, lane, data_utils_module),
+      n_required,
+    )
+    for lane in selected_lanes
+  }
+  shard_report = lass.shard_budget_report(
+    lass.enumerate_work_units(
+      lanes=selected_lanes,
+      allocation=alloc_by_lane,
+      n_control_replicates=las.N_CONTROL_REPLICATES,
+      costs=floor["per_draw_costs_s"],
+      control_scope="per_slot",
+    ),
+    n_shards,
+  )
+  budget_wall_hours = float(shard_report["budget_wall_hours"])
+  budget_gpu_hours = float(shard_report["budget_gpu_hours"])
+  per_shard_hours = shard_report["per_shard_hours"]
   projected_peak_rss_gib = _peak_rss_gib()
   within_budget = (
     budget_wall_hours <= BUDGET_WALL_HOURS_CAP
@@ -890,10 +981,11 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   )
 
   allocation = las.allocate_draws(
-    _lane_fixture_batches(protein_fixtures_b, "P07@1.0", data_utils_module), n_required
+    _lane_fixture_batches(protein_fixtures_b, "P07@1.0", data_utils_module),
+    n_required,
   )
 
-  controls_total = len(las.LANE_KEYS) + 1 + 1  # 5 per-lane betas + fusion eps + null-replicate
+  controls_total = len(selected_lanes) + 1 + 1  # 5 per-lane betas + fusion eps + null-replicate
   controls_sized = beta_sized_count + int(fusion_sized) + int(null_criterion_met)
 
   sampling_section = {
@@ -916,6 +1008,11 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     "p09_fusion_ctrl_eps": p09_fusion_ctrl_eps,
     "draw_allocation": allocation,
     "budget_wall_hours": budget_wall_hours,
+    "budget_gpu_hours": budget_gpu_hours,
+    "per_shard_hours": per_shard_hours,
+    "n_shards": n_shards,
+    "n_control_replicates": las.N_CONTROL_REPLICATES,
+    "lanes": list(selected_lanes),
     "budget_formula": BUDGET_FORMULA,
     "per_draw_cost_aminx_s": per_draw_cost_aminx_s,
     "per_draw_cost_reference_s": per_draw_cost_reference_s,
@@ -960,6 +1057,9 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     "controls_total": controls_total,
     "controls_sized": controls_sized,
     "budget_wall_hours": budget_wall_hours,
+    "budget_gpu_hours": budget_gpu_hours,
+    "per_shard_hours": per_shard_hours,
+    "n_shards": n_shards,
     "projected_peak_rss_gib": projected_peak_rss_gib,
     "n_not_advanced": 0,
     "n_skipped": 0,
@@ -979,10 +1079,15 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument(
-    "--smoke", action="store_true", help="One fixture, one lane, small pilot, per-lane margins."
+    "--smoke",
+    action="store_true",
+    help="One fixture, one lane, small pilot, per-lane margins.",
   )
   parser.add_argument(
-    "--fixture-set", choices=("A", "B"), default="A", help="Manifest fixture set to calibrate on."
+    "--fixture-set",
+    choices=("A", "B"),
+    default="A",
+    help="Manifest fixture set to calibrate on.",
   )
   parser.add_argument(
     "--pilot-lane",
@@ -997,12 +1102,24 @@ def main(argv: list[str] | None = None) -> int:
     help="Where to write preregistered_params.json's sampling section.",
   )
   parser.add_argument("--out", required=True, type=Path, help="Path to write the result JSON.")
+  parser.add_argument(
+    "--lanes",
+    default=None,
+    help="Comma-separated lane keys (default: the four ProteinMPNN V2_LANES).",
+  )
+  parser.add_argument(
+    "--n-shards",
+    type=int,
+    default=las.N_SHARDS,
+    help="Shard count for the budget wall-clock projection (default N_SHARDS).",
+  )
   args = parser.parse_args(argv)
+  lass.ensure_xla_preallocate_false()
 
   if args.smoke and args.params_out == DEFAULT_PARAMS_OUT:
     parser.error(
       "--smoke requires a non-default --params-out (a scratch file "
-      "layer_a_sampling_validate.py never reads)"
+      "layer_a_sampling_validate.py never reads)",
     )
 
   if args.smoke:
@@ -1010,6 +1127,7 @@ def main(argv: list[str] | None = None) -> int:
     exit_code = 0
   else:
     result, exit_code = run_full(args)
+  result.update(lass.device_record())
 
   lac.emit(result, args.out)
   logger.info(

@@ -102,6 +102,16 @@ POSCTL_MIN_DETECTED = 18  # ">= 18/20"
 NEGCTL_MAX_FP = 3  # "<= 3/20"
 MAX_N_DOUBLINGS = 3  # bounded: full doubling-until-18/20 is a titanix-only cost
 
+# v2 (2026-09-28): one knob for the budget formula AND validate's control loops.
+# v1 priced R = NULL_REPLICATES (20) -> 162 aminx draws per allocated slot.
+# The null-replicate criterion above stays at 20; it is a different test.
+N_CONTROL_REPLICATES = 5
+N_SHARDS = 2
+REFERENCE_DRAWS_PER_SLOT = 2
+
+# Vanilla ProteinMPNN lanes. LigandMPNN / P11-s is deferred (full LANE_KEYS stays reachable).
+V2_LANES: tuple[str, ...] = ("P07@0.1", "P07@1.0", "P08@1.0", "P09-s@1.0")
+
 # spec "Lane temperatures (pre-registered, R2-C11)".
 LANE_KEYS: tuple[str, ...] = ("P07@0.1", "P07@1.0", "P08@1.0", "P09-s@1.0", "P11-s@1.0")
 DEFAULT_LANE_TEMPERATURES: dict[str, float] = {
@@ -139,6 +149,19 @@ SIZING_RATIO_RANGE: tuple[float, float] = (2.0, 10.0)  # "[2x, 10x] the bar"
 UNCOMPUTED_SENTINEL = 1.0e18
 
 _SEED_BASE = 20260924  # arbitrary fixed base, distinct from layer_a_exact's own base
+
+
+def aminx_draws_per_slot(n_control_replicates: int = N_CONTROL_REPLICATES) -> int:
+  """Aminx draws priced into one allocated slot.
+
+  Main arm A1+A2 (2) + positive control ``R`` replicates x 4 + negative control
+  ``R`` x 4 = ``2 + 8*R``. ``R=20`` is the v1 factor 162; ``R=5`` is the v2 factor 42.
+  Reference draws per slot stay ``REFERENCE_DRAWS_PER_SLOT`` (main R1+R2 only).
+  """
+  if n_control_replicates < 0:
+    msg = f"n_control_replicates must be >= 0, got {n_control_replicates}"
+    raise ValueError(msg)
+  return 2 + 8 * n_control_replicates
 
 
 def _seed_for(name: str) -> int:
@@ -194,7 +217,9 @@ def _reference_omit_aa_bias(length: int) -> np.ndarray:
 
 
 def _chain_mask_fixed_fraction(
-  length: int, seed: int, frac: float = P07_FIXED_FRACTION
+  length: int,
+  seed: int,
+  frac: float = P07_FIXED_FRACTION,
 ) -> np.ndarray:
   """P07: chain_mask with `frac` of residues fixed (0.0), the rest designable (1.0)."""
   rng = np.random.default_rng(seed)
@@ -338,7 +363,8 @@ def full_model_bundle_for_lane(lane: str, weight_source: str) -> tuple[Any, Any,
   the full-model pair (`lac.load_full_model`, reused)."""
   if _LANE_BASE[lane] == "P11-s":
     reference_model, aminx_model = lac.load_sidechain_context_models(
-      weight_source, use_side_chain_context=True
+      weight_source,
+      use_side_chain_context=True,
     )
     torch = __import__("torch")
     return aminx_model, reference_model, torch, None
@@ -391,7 +417,12 @@ def _draw_order_for(batch: LaneBatch, seed_i: int) -> tuple[np.ndarray, np.ndarr
 
 
 def reference_sample_one(
-  pt_model: Any, torch: Any, batch: LaneBatch, seed_i: int, *, temperature: float
+  pt_model: Any,
+  torch: Any,
+  batch: LaneBatch,
+  seed_i: int,
+  *,
+  temperature: float,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
   """One reference `.sample()` call at batch 1. Returns `(S, log_probs, decoding_order, randn)`.
 
@@ -419,7 +450,13 @@ def reference_sample_one(
 
 
 def reference_sample_batch(
-  pt_model: Any, torch: Any, batch: LaneBatch, n: int, seed_base: int, *, temperature: float
+  pt_model: Any,
+  torch: Any,
+  batch: LaneBatch,
+  n: int,
+  seed_base: int,
+  *,
+  temperature: float,
 ) -> np.ndarray:
   """`n` reference draws, FULL length, shape `(n, L)` -- NOT pre-restricted to
   `batch.comparison_positions` (callers that need the restricted view call `restrict_to_comparison`
@@ -456,7 +493,12 @@ def restrict_to_comparison(seqs: np.ndarray, batch: LaneBatch) -> np.ndarray:
 
 
 def aminx_sample_one(
-  jax_model: Any, batch: LaneBatch, order_i: np.ndarray, prng_key: Any, *, temperature: float
+  jax_model: Any,
+  batch: LaneBatch,
+  order_i: np.ndarray,
+  prng_key: Any,
+  *,
+  temperature: float,
 ) -> tuple[np.ndarray, np.ndarray]:
   """One `inference.sample_autoregressive.kernel` draw. Returns `(sequence, logits)`.
 
@@ -472,7 +514,8 @@ def aminx_sample_one(
   from aminx.types.bundles import WaveScheduleBundle
 
   wave = WaveScheduleBundle.from_tie_groups(
-    jax.numpy.asarray(batch.tie_group_map), jax.numpy.asarray(order_i)
+    jax.numpy.asarray(batch.tie_group_map),
+    jax.numpy.asarray(order_i),
   )
   kw: dict[str, Any] = {
     "coords": jax.numpy.asarray(batch.x4),
@@ -495,7 +538,10 @@ def aminx_sample_one(
 
 
 def aminx_conditional_logits(
-  jax_model: Any, batch: LaneBatch, seq_tokens: np.ndarray, order_i: np.ndarray
+  jax_model: Any,
+  batch: LaneBatch,
+  seq_tokens: np.ndarray,
+  order_i: np.ndarray,
 ) -> np.ndarray:
   """RAW (pre-`log_softmax`) `score_conditional.kernel` logits for `seq_tokens` under the AR
   mask derived from `order_i`, at `batch.tie_group_map` (fused if P09-s)."""
@@ -520,7 +566,11 @@ def aminx_conditional_logits(
   kw.update(side_chain_context_kwargs(batch))
   bundle, config = build_inference_bundle(**kw)
   logits = score_conditional.kernel(
-    jax_model, jax.random.PRNGKey(0), bundle, config, make_stage_set()
+    jax_model,
+    jax.random.PRNGKey(0),
+    bundle,
+    config,
+    make_stage_set(),
   )
   return np.asarray(logits)
 
@@ -629,7 +679,8 @@ def incremental_predicates_host(
   no_occurrence_sentinel = n_waves * max_groups_per_wave
   wave_index_grid = np.broadcast_to(np.arange(n_waves, dtype=np.int64)[:, None], group_ids.shape)
   slot_grid = np.broadcast_to(
-    np.arange(max_groups_per_wave, dtype=np.int64)[None, :], group_ids.shape
+    np.arange(max_groups_per_wave, dtype=np.int64)[None, :],
+    group_ids.shape,
   )
   combined_rank_grid = wave_index_grid * max_groups_per_wave + slot_grid
   flat_group_id = np.where(group_valid, group_ids, 0).reshape(-1)
@@ -640,13 +691,17 @@ def incremental_predicates_host(
   # decode_wave (autoregressive.py:616-621).
   pos_rank = group_first_rank[tgm]
   decode_wave = np.where(
-    pos_rank < no_occurrence_sentinel, pos_rank // max_groups_per_wave, n_waves
+    pos_rank < no_occurrence_sentinel,
+    pos_rank // max_groups_per_wave,
+    n_waves,
   ).astype(np.int64)
 
   # wave_start (autoregressive.py:622-627).
   order_pos = np.argsort(decode_wave, kind="stable")
   wave_start = np.searchsorted(
-    decode_wave[order_pos], np.arange(n_waves + 1, dtype=np.int64), side="left"
+    decode_wave[order_pos],
+    np.arange(n_waves + 1, dtype=np.int64),
+    side="left",
   ).astype(np.int64)
 
   # consistent (autoregressive.py:629-641, 751).
@@ -726,7 +781,12 @@ def aminx_sample_batch(
   ]
   incremental = _choose_incremental_mode(jax_model, eff_batch, waves, temperature=temperature)
   return aminx_sample_batch_at_incremental(
-    jax_model, eff_batch, n, seed_base, temperature=temperature, incremental=incremental
+    jax_model,
+    eff_batch,
+    n,
+    seed_base,
+    temperature=temperature,
+    incremental=incremental,
   )
 
 
@@ -762,7 +822,11 @@ def teacher_forced_lane(
     }
 
   seq, ref_log_probs, decoding_order, _randn = reference_sample_one(
-    pt_model, torch, batch, seed_i, temperature=temperature
+    pt_model,
+    torch,
+    batch,
+    seed_i,
+    temperature=temperature,
   )
   aminx_raw_logits = aminx_conditional_logits(jax_model, batch, seq, decoding_order)
   aminx_log_probs = np.asarray(_log_softmax(aminx_raw_logits))
@@ -785,7 +849,9 @@ def teacher_forced_lane(
     from tests.parity.test_full_model_parity import _combine_reference_tied_log_probs
 
     ref_fused = _combine_reference_tied_log_probs(
-      ref_log_probs, tie_groups=batch.groups, tie_weights=[[1.0] * len(g) for g in batch.groups]
+      ref_log_probs,
+      tie_groups=batch.groups,
+      tie_weights=[[1.0] * len(g) for g in batch.groups],
     )
     member_idx = batch.comparison_positions
     tf_max_abs = lae._max_abs(ref_fused[member_idx], aminx_log_probs[member_idx])  # noqa: SLF001
@@ -793,7 +859,10 @@ def teacher_forced_lane(
     result["p09_fused_tf_max_abs"] = tf_max_abs
     result["p09_tied_positions"] = int(member_idx.size)
     result["fusion_control"] = _fusion_sized_control(
-      jax_model, batch, decoding_order, eps=fusion_eps
+      jax_model,
+      batch,
+      decoding_order,
+      eps=fusion_eps,
     )
   else:
     pos = batch.comparison_positions if batch.comparison_positions.size else np.arange(batch.length)
@@ -808,7 +877,11 @@ def _log_softmax(logits: np.ndarray) -> np.ndarray:
 
 
 def _fusion_sized_control(
-  jax_model: Any, batch: LaneBatch, decoding_order: np.ndarray, *, eps: float
+  jax_model: Any,
+  batch: LaneBatch,
+  decoding_order: np.ndarray,
+  *,
+  eps: float,
 ) -> dict[str, Any]:
   """R3-C6(3): the aminx fusion with the LAST group member's logits scaled by `(1+eps)` must
   move the fused max-abs into `SIZING_RATIO_RANGE` of `TF_BAR`. Reuses
@@ -846,7 +919,10 @@ def _fusion_sized_control(
 
 
 def _count_omitted_and_x(
-  tokens: np.ndarray, lane: str, *, aminx_seq: np.ndarray | None
+  tokens: np.ndarray,
+  lane: str,
+  *,
+  aminx_seq: np.ndarray | None,
 ) -> tuple[int, int, int]:
   """`(omitted_aa_count, x_token_count_aminx, x_token_count_reference)` on a full-length
   (unrestricted) token array. Only P08 has a nonzero omit vocabulary; every lane's X-omit
@@ -910,7 +986,10 @@ def pooled_excess_js(
 
 
 def pooled_js(
-  a: np.ndarray | list[np.ndarray], b: np.ndarray | list[np.ndarray], *, k: int = 21
+  a: np.ndarray | list[np.ndarray],
+  b: np.ndarray | list[np.ndarray],
+  *,
+  k: int = 21,
 ) -> float:
   """Pooled-composition JS divergence between two arms (`main_js_vs_ref`'s own metric: no
   excess-JS bias correction, just `mean_positional_js` on pooled token counts)."""
@@ -959,7 +1038,10 @@ def lane_equivalence(
 
 
 def recovery_tost(
-  arm_recovery: np.ndarray, reference_recovery: np.ndarray, *, delta: float = RECOVERY_DELTA
+  arm_recovery: np.ndarray,
+  reference_recovery: np.ndarray,
+  *,
+  delta: float = RECOVERY_DELTA,
 ) -> dict[str, Any]:
   """Recovery TOST between two per-sequence recovery-fraction arrays."""
   from aminx.parity.compare import tost_mean_diff
@@ -993,7 +1075,11 @@ def draw_iut_arms(
   reference_is_aminx: bool = False,
   seed_tag: str,
 ) -> tuple[
-  list[np.ndarray], list[np.ndarray], list[np.ndarray], list[np.ndarray], list[np.ndarray]
+  list[np.ndarray],
+  list[np.ndarray],
+  list[np.ndarray],
+  list[np.ndarray],
+  list[np.ndarray],
 ]:
   """Draw `(a1_list, a2_list, r1_list, r2_list, seq_ref_list)`, each a list of one
   `(k, n_pos)` array per fixture (fixture-stratified, restricted to `comparison_positions`),
@@ -1023,7 +1109,12 @@ def draw_iut_arms(
     tag = f"{fixture['name']}{batch.lane}{seed_tag}"
     a1 = restrict_to_comparison(
       aminx_sample_batch(
-        jax_model, batch, k, _seed_for(tag + "A1"), temperature=temperature, beta_alanine=beta_a
+        jax_model,
+        batch,
+        k,
+        _seed_for(tag + "A1"),
+        temperature=temperature,
+        beta_alanine=beta_a,
       ),
       batch,
     )
@@ -1033,21 +1124,33 @@ def draw_iut_arms(
     )
     if reference_is_aminx:
       r1 = restrict_to_comparison(
-        aminx_sample_batch(jax_model, batch, k, _seed_for(tag + "R1"), temperature=temp_r), batch
+        aminx_sample_batch(jax_model, batch, k, _seed_for(tag + "R1"), temperature=temp_r),
+        batch,
       )
       r2 = restrict_to_comparison(
-        aminx_sample_batch(jax_model, batch, k, _seed_for(tag + "R2"), temperature=temp_r), batch
+        aminx_sample_batch(jax_model, batch, k, _seed_for(tag + "R2"), temperature=temp_r),
+        batch,
       )
     else:
       r1 = restrict_to_comparison(
         reference_sample_batch(
-          pt_model, torch, batch, k, _seed_for(tag + "R1"), temperature=temp_r
+          pt_model,
+          torch,
+          batch,
+          k,
+          _seed_for(tag + "R1"),
+          temperature=temp_r,
         ),
         batch,
       )
       r2 = restrict_to_comparison(
         reference_sample_batch(
-          pt_model, torch, batch, k, _seed_for(tag + "R2"), temperature=temp_r
+          pt_model,
+          torch,
+          batch,
+          k,
+          _seed_for(tag + "R2"),
+          temperature=temp_r,
         ),
         batch,
       )
@@ -1060,7 +1163,9 @@ def draw_iut_arms(
 
 
 def full_arm_recovery(
-  arm1_list: list[np.ndarray], arm2_list: list[np.ndarray], seq_ref_list: list[np.ndarray]
+  arm1_list: list[np.ndarray],
+  arm2_list: list[np.ndarray],
+  seq_ref_list: list[np.ndarray],
 ) -> np.ndarray:
   """Per-sequence recovery over the FULL arm (`arm1 UNION arm2`, spec V3: "Recovery TOST
   over the full arms"), pooled across fixtures."""
@@ -1077,7 +1182,11 @@ def full_arm_recovery(
 
 
 def measure_aminx_draw_cost_s(
-  jax_model: Any, batch: LaneBatch, temperature: float, *, seed_base: int = 999_000
+  jax_model: Any,
+  batch: LaneBatch,
+  temperature: float,
+  *,
+  seed_base: int = 999_000,
 ) -> float:
   """Seconds per aminx draw on the batched path, STEADY-STATE: one untimed chunk first
   (compile), then one timed chunk of `sample_chunk_size(L)` draws, host-side wave
@@ -1120,7 +1229,13 @@ def _vmapped_sample_at(incremental: Literal["off", "force"]) -> Any:
       def one(key: Any, wave: Any) -> Any:
         b = _bundle_for_draw(bundle, wave)
         return sample_autoregressive.kernel(
-          model, key, b, config, stage_set, inference_only=True, incremental=incremental
+          model,
+          key,
+          b,
+          config,
+          stage_set,
+          inference_only=True,
+          incremental=incremental,
         ).sequence
 
       return jax.vmap(one)(keys, waves)
@@ -1193,7 +1308,11 @@ def aminx_sample_batch_at_incremental(
 
 
 def _choose_incremental_mode(
-  jax_model: Any, batch: LaneBatch, waves: list[Any], *, temperature: float
+  jax_model: Any,
+  batch: LaneBatch,
+  waves: list[Any],
+  *,
+  temperature: float,
 ) -> Literal["off", "force"]:
   """T9b: decide the homogeneous `incremental` mode for a chunk of `waves` ON THE HOST,
   via `incremental_predicates_host` (reused, not re-derived) -- "force" iff EVERY draw's
@@ -1265,17 +1384,31 @@ def measure_aminx_draw_cost_at_incremental_s(
 
   chunk = sample_chunk_size(batch.length)
   aminx_sample_batch_at_incremental(
-    jax_model, batch, chunk, seed_base, temperature=temperature, incremental=incremental
+    jax_model,
+    batch,
+    chunk,
+    seed_base,
+    temperature=temperature,
+    incremental=incremental,
   )
   start = time.monotonic()
   aminx_sample_batch_at_incremental(
-    jax_model, batch, chunk, seed_base + chunk, temperature=temperature, incremental=incremental
+    jax_model,
+    batch,
+    chunk,
+    seed_base + chunk,
+    temperature=temperature,
+    incremental=incremental,
   )
   return (time.monotonic() - start) / chunk
 
 
 def measure_native_x_frequency(
-  jax_model: Any, batch: LaneBatch, temperature: float, n: int = 20, seed_base: int = 777_000
+  jax_model: Any,
+  batch: LaneBatch,
+  temperature: float,
+  n: int = 20,
+  seed_base: int = 777_000,
 ) -> float:
   """AC-11: a small, SEPARATE, non-gating diagnostic -- aminx's own X-sampling frequency
   WITHOUT the X-omit bias column (i.e. what the model would do if nothing hard-omitted X),
@@ -1289,7 +1422,11 @@ def measure_native_x_frequency(
 
 
 def measure_reference_draw_cost_s(
-  pt_model: Any, torch: Any, batch: LaneBatch, temperature: float, n_sample: int
+  pt_model: Any,
+  torch: Any,
+  batch: LaneBatch,
+  temperature: float,
+  n_sample: int,
 ) -> float:
   """Seconds per reference draw, amortized over one batched (or batch-1-looped, for P09-s)
   `.sample()` call of `n_sample` draws."""
@@ -1307,7 +1444,8 @@ def measure_reference_draw_cost_s(
 
 
 def allocate_draws(
-  fixtures_for_lane: list[tuple[dict[str, Any], LaneBatch]], n_total: int
+  fixtures_for_lane: list[tuple[dict[str, Any], LaneBatch]],
+  n_total: int,
 ) -> dict[str, int]:
   """Allocate `n_total` per-arm draws across fixtures proportionally to
   `len(comparison_positions)`, largest remainder method (deterministic, sums to `n_total`)."""

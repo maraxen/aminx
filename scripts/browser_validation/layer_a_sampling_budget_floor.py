@@ -34,9 +34,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
+
+os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
 import numpy as np
 
@@ -51,6 +54,7 @@ import layer_a_common as lac  # noqa: E402
 import layer_a_exact as lae  # noqa: E402
 import layer_a_sampling as las  # noqa: E402
 import layer_a_sampling_calibrate as lasc  # noqa: E402
+import layer_a_sampling_shard as lass
 
 _WORKTREE_ROOT = _SCRIPT_DIR.parents[1]
 _MANIFEST_PATH = _WORKTREE_ROOT / "outputs" / "browser_validation" / "fixtures" / "manifest.json"
@@ -193,18 +197,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
   jax_model, pt_model, torch, _model_utils = full_model_bundle
 
   # --- floor budget projection: layer_a_sampling_calibrate._budget_at_floor, reused ---
+  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
+  n_shards = int(getattr(args, "n_shards", las.N_SHARDS))
   floor = lasc._budget_at_floor(  # noqa: SLF001 -- reuse, not reimplement (spec T9 step 3)
-    jax_model, pt_model, torch, protein_fixtures_b, data_utils_module
+    jax_model,
+    pt_model,
+    torch,
+    protein_fixtures_b,
+    data_utils_module,
+    lanes=selected_lanes,
+    n_shards=n_shards,
+    n_control_replicates=las.N_CONTROL_REPLICATES,
   )
   projected_peak_rss_gib = lasc._peak_rss_gib()  # noqa: SLF001
 
   # --- n_draws_forced_off per lane, over the SAME floor allocation ---
   n_draws_forced_off: dict[str, int] = {}
-  for lane in las.LANE_KEYS:
+  for lane in selected_lanes:
     lane_model = las.full_model_bundle_for_lane(lane, "eqx")
     lane_jax = lane_model[0]
     batches = lasc._lane_fixture_batches(  # noqa: SLF001 -- reuse, not reimplement
-      protein_fixtures_b, lane, data_utils_module
+      protein_fixtures_b,
+      lane,
+      data_utils_module,
     )
     n_draws_forced_off[lane] = _n_draws_forced_off(
       lane_jax,
@@ -220,16 +235,32 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
   temp = las.DEFAULT_LANE_TEMPERATURES[CONTROL_LANE]
 
   c_force_1 = las.measure_aminx_draw_cost_at_incremental_s(
-    jax_model, control_batch, temp, incremental="force", seed_base=AA_CONTROL_SEED_BASE_1
+    jax_model,
+    control_batch,
+    temp,
+    incremental="force",
+    seed_base=AA_CONTROL_SEED_BASE_1,
   )
   c_force_2 = las.measure_aminx_draw_cost_at_incremental_s(
-    jax_model, control_batch, temp, incremental="force", seed_base=AA_CONTROL_SEED_BASE_2
+    jax_model,
+    control_batch,
+    temp,
+    incremental="force",
+    seed_base=AA_CONTROL_SEED_BASE_2,
   )
   c_off = las.measure_aminx_draw_cost_at_incremental_s(
-    jax_model, control_batch, temp, incremental="off", seed_base=FASTPATH_CONTROL_SEED_BASE
+    jax_model,
+    control_batch,
+    temp,
+    incremental="off",
+    seed_base=FASTPATH_CONTROL_SEED_BASE,
   )
   c_ref = las.measure_reference_draw_cost_s(
-    pt_model, torch, control_batch, temp, REFERENCE_COST_SAMPLE_N
+    pt_model,
+    torch,
+    control_batch,
+    temp,
+    REFERENCE_COST_SAMPLE_N,
   )
 
   aa_ratio = c_force_1 / c_force_2 if c_force_2 > 0 else las.UNCOMPUTED_SENTINEL
@@ -241,6 +272,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     "git_clean": prov["git_clean"],
     "n_floor": floor["n_floor"],
     "budget_wall_hours": floor["budget_wall_hours"],
+    "budget_gpu_hours": floor["budget_gpu_hours"],
+    "per_shard_hours": floor["per_shard_hours"],
+    "n_shards": floor["n_shards"],
+    "n_control_replicates": floor["n_control_replicates"],
+    "lanes": floor["lanes"],
     "budget_formula": floor["budget_formula"],
     "per_lane_hours": floor["per_lane_hours"],
     "per_draw_costs_s": floor["per_draw_costs_s"],
@@ -259,7 +295,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     "budget_includes_ref": False,
     "aa_ratio": aa_ratio,
     "fastpath_ratio": fastpath_ratio,
-    "device_kind": _device_kind(),
+    "device_kind": lass.device_record()["device_kind"],
+    "visible_devices": lass.device_record()["visible_devices"],
     "smoke": smoke,
     **prov,
   }
@@ -270,6 +307,17 @@ def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--out", required=True, type=Path, help="Path to write the result JSON.")
   parser.add_argument(
+    "--lanes",
+    default=None,
+    help="Comma-separated lane keys (default: the four ProteinMPNN V2_LANES).",
+  )
+  parser.add_argument(
+    "--n-shards",
+    type=int,
+    default=las.N_SHARDS,
+    help="Shard count for the budget wall-clock projection (default N_SHARDS).",
+  )
+  parser.add_argument(
     "--smoke",
     action="store_true",
     help=(
@@ -279,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
     ),
   )
   args = parser.parse_args(argv)
+  lass.ensure_xla_preallocate_false()
 
   result = run(args)
   lac.emit(result, args.out)
