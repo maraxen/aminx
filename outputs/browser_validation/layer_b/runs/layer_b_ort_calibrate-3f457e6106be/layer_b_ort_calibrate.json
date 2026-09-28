@@ -1,0 +1,259 @@
+{
+  "n_paths_available": 2,
+  "converted_by_path": {
+    "p03": true,
+    "p04": true
+  },
+  "n_measurements_expected": 10,
+  "n_measurements_computed": 10,
+  "git_hash": "3f457e6106bec2e2e40a682e2204f7f1c8574ac1",
+  "git_clean": true,
+  "length_probes_ok": true,
+  "delta_b04": 0.0005623413251903491,
+  "delta_b03": 0.0001,
+  "controls_total": 2,
+  "controls_sized": 2,
+  "epsilon_tie": 0.0001,
+  "max_abs_dist_err": 1.0288730734941964e-05,
+  "epsilon_ok": true,
+  "max_p_before": 0.0,
+  "n_dropout": 15,
+  "params_written": true,
+  "artifact_subdir": "3f457e6106be",
+  "versions": {
+    "jax": "0.10.2",
+    "equinox": "0.13.8",
+    "onnxruntime": "1.30.0",
+    "onnx": "1.23.0",
+    "jax2onnx": "0.16.1",
+    "bathos_overlay": {
+      "origin": "/home/marielle/.cache/uv/archive-v0/EoGCOP94g2olJZ_b/lib/python3.14/site-packages/bathos/__init__.py",
+      "sidecar.py_sha256": "6af2388b5ce33c02c054e14d39d93b59c7b964f48ffed674f5f009f4d541e521",
+      "mcp.py_sha256": "3f65e1078474a91ad019605e36ad8998889dc41fafb43607f35b00ec9688f58c"
+    }
+  },
+  "_headroom": {
+    "p03|neighbor_indices|b_ort|128": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p03|neighbor_indices|b_ort|512": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p03|neighbor_indices|b_ort|1024": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p03|edge_features|b_ort|128": {
+      "state": "not_advanced",
+      "calib_value": 2.288818359375e-05,
+      "inherited_from": null
+    },
+    "p03|edge_features|b_ort|512": {
+      "state": "not_advanced",
+      "calib_value": 2.002716064453125e-05,
+      "inherited_from": null
+    },
+    "p03|edge_features|b_ort|1024": {
+      "state": "not_advanced",
+      "calib_value": 5.698204040527344e-05,
+      "inherited_from": null
+    },
+    "p04|neighbor_indices|p27|128": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|neighbor_indices|p27|512": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|neighbor_indices|p27|1024": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|log_probs|p27|128": {
+      "state": "advanced",
+      "calib_value": 7.152557373046875e-06,
+      "inherited_from": null
+    },
+    "p04|log_probs|p27|512": {
+      "state": "advanced",
+      "calib_value": 1.1444091796875e-05,
+      "inherited_from": null
+    },
+    "p04|log_probs|p27|1024": {
+      "state": "advanced",
+      "calib_value": 1.239776611328125e-05,
+      "inherited_from": null
+    },
+    "p04|neighbor_indices|b_ort|128": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|neighbor_indices|b_ort|512": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|neighbor_indices|b_ort|1024": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|log_probs|b_ort|128": {
+      "state": "advanced",
+      "calib_value": 8.344650268554688e-06,
+      "inherited_from": null
+    },
+    "p04|log_probs|b_ort|512": {
+      "state": "advanced",
+      "calib_value": 1.0967254638671875e-05,
+      "inherited_from": null
+    },
+    "p04|log_probs|b_ort|1024": {
+      "state": "advanced",
+      "calib_value": 1.33514404296875e-05,
+      "inherited_from": null
+    },
+    "p04|argmax|b_ort|128": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|argmax|b_ort|512": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    },
+    "p04|argmax|b_ort|1024": {
+      "state": "advanced",
+      "calib_value": 0.0,
+      "inherited_from": null
+    }
+  },
+  "_f_d1b_triggered": false,
+  "_length_probes": {
+    "oversize_raised": true,
+    "oversize_error_type": "LengthAboveMaxBucketError",
+    "undersize_raised": true,
+    "undersize_error_type": "LengthBelowNeighborsError",
+    "ok": true
+  },
+  "_manifest_rows_added": [
+    {
+      "path": "p04_L128_perturbed_sized.onnx",
+      "sha256": "dee3bdf330489106e869d245bf02429c4679e81dda832825d99700d33bce77bf",
+      "role": "control_perturbed_bias_sized",
+      "export_path": "p04",
+      "bucket": 128,
+      "delta": 0.0005623413251903491
+    },
+    {
+      "path": "p03_L128_ebias_sized.onnx",
+      "sha256": "7f5e510222fd7a89def629bc517ece69f174733eb89f11cffe7b248036dfd3c5",
+      "role": "control_ebias_sized",
+      "export_path": "p03",
+      "bucket": 128,
+      "delta": 0.0001
+    },
+    {
+      "path": "p04_L256_perturbed_sized.onnx",
+      "sha256": "d51eafd06be0f7ac7d81889a8f6d0eda529c421fdebe8c659dc332e71bb8e6b3",
+      "role": "control_perturbed_bias_sized",
+      "export_path": "p04",
+      "bucket": 256,
+      "delta": 0.0005623413251903491
+    },
+    {
+      "path": "p03_L256_ebias_sized.onnx",
+      "sha256": "3b09dcedd6485f3ab627edae1008dd0b8b172afa057aab58a7140e2d6da54349",
+      "role": "control_ebias_sized",
+      "export_path": "p03",
+      "bucket": 256,
+      "delta": 0.0001
+    },
+    {
+      "path": "p04_L512_perturbed_sized.onnx",
+      "sha256": "040bbab32c224b66133e56b5d38332f81b04873c190ebad77efa1cf21adf59d2",
+      "role": "control_perturbed_bias_sized",
+      "export_path": "p04",
+      "bucket": 512,
+      "delta": 0.0005623413251903491
+    },
+    {
+      "path": "p03_L512_ebias_sized.onnx",
+      "sha256": "bb7c91bbee2b64a40d24e83e93b25711e59d1fd9ed6bda0eaec5e4cf19976aaf",
+      "role": "control_ebias_sized",
+      "export_path": "p03",
+      "bucket": 512,
+      "delta": 0.0001
+    },
+    {
+      "path": "p04_L1024_perturbed_sized.onnx",
+      "sha256": "c24e14accceebdf2ea2b09ac67dc7525c53eaddbddc52d3cb57e85d7077ad439",
+      "role": "control_perturbed_bias_sized",
+      "export_path": "p04",
+      "bucket": 1024,
+      "delta": 0.0005623413251903491
+    },
+    {
+      "path": "p03_L1024_ebias_sized.onnx",
+      "sha256": "fee154f0c1df876b98153c7447a523a93f11c27bc8bc8cf7a3f946ea1c438f8d",
+      "role": "control_ebias_sized",
+      "export_path": "p03",
+      "bucket": 1024,
+      "delta": 0.0001
+    }
+  ],
+  "_ep_histograms": {
+    "p03_L128.onnx": {
+      "CPUExecutionProvider": 136
+    },
+    "p04_L128.onnx": {
+      "CPUExecutionProvider": 520
+    },
+    "p03_L512.onnx": {
+      "CPUExecutionProvider": 136
+    },
+    "p04_L512.onnx": {
+      "CPUExecutionProvider": 520
+    },
+    "p03_L1024.onnx": {
+      "CPUExecutionProvider": 136
+    },
+    "p04_L1024.onnx": {
+      "CPUExecutionProvider": 520
+    }
+  },
+  "_sizing": {
+    "delta_b04_tried": [
+      {
+        "delta": 0.0001,
+        "ratio_to_bar": 0.9965896606445312
+      },
+      {
+        "delta": 0.0031622776601683794,
+        "ratio_to_bar": 31.528472900390625
+      },
+      {
+        "delta": 0.0005623413251903491,
+        "ratio_to_bar": 5.602836608886719
+      }
+    ],
+    "delta_b03_tried": [
+      {
+        "delta": 0.0001,
+        "ratio_to_bar": 5.054473876953125
+      }
+    ]
+  },
+  "_errors": {}
+}
