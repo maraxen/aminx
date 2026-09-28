@@ -19,6 +19,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
   sys.path.insert(0, str(_SCRIPT_DIR))
 
+import layer_a_sampling as las
 import layer_a_sampling_shard as lass
 import layer_a_sampling_validate as lasv
 
@@ -47,9 +48,20 @@ def _expected_units(partials: list[dict[str, object]]) -> list[lass.WorkUnit]:
     allocation=allocation,
     n_control_replicates=int(protocol.get("n_control_replicates", 0)),
     costs=None,
-    control_scope=str(protocol.get("control_scope", "once")),
-    control_lane=str(protocol.get("control_lane", "P07@1.0")),
+    control_scope=str(protocol.get("control_scope", lass.PROTOCOL_CONTROL_SCOPE)),
+    control_lane=str(protocol.get("control_lane", las.CONTROL_LANE)),
   )
+
+
+def grade_scored(scored: dict[str, object]) -> dict[str, object]:
+  """Apply the pre-registered 18/20 and 3/20 control bar to a merged result."""
+  detected = scored["posctl_detected"]
+  fp = scored["negctl_fp"]
+  if not isinstance(detected, int) or not isinstance(fp, int):
+    msg = "posctl_detected and negctl_fp must be ints"
+    raise lass.ShardMergeError(msg)
+  scored.update(las.grade_controls(detected, fp))
+  return scored
 
 
 def merge_files(paths: list[Path]) -> dict[str, object]:
@@ -71,7 +83,7 @@ def merge_files(paths: list[Path]) -> dict[str, object]:
     scored["lanes"] = merged["lanes"]
     scored["n_control_replicates"] = merged["n_control_replicates"]
     scored["n_shards"] = merged["n_shards"]
-    return scored
+    return grade_scored(scored)
   values = np.asarray(merged["values"])
   out = {key: value for key, value in merged.items() if key != "values"}
   out["values"] = values.tolist()

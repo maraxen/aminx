@@ -33,6 +33,9 @@ MAIN_AMINX_ARMS: tuple[str, ...] = ("main/A1", "main/A2")
 MAIN_REFERENCE_ARMS: tuple[str, ...] = ("main/R1", "main/R2")
 _CONTROL_HALVES: tuple[str, ...] = ("A1", "A2", "R1", "R2")
 _CONTROL_KINDS: tuple[str, ...] = ("pos", "neg")
+# validate.run_controls draws the control replicates once. "per_slot" is the v1
+# formula (factor 2+8*R on every lane; R=20 -> 162), kept for that test only.
+PROTOCOL_CONTROL_SCOPE = "once"
 
 
 class WorkUnit(NamedTuple):
@@ -77,6 +80,22 @@ def parse_lanes(spec: str | None, *, valid: Sequence[str] = las.LANE_KEYS) -> tu
     msg = f"unknown lanes {unknown}; valid: {tuple(valid)}"
     raise ValueError(msg)
   return lanes
+
+
+def require_control_lane(
+  lanes: Sequence[str],
+  *,
+  control_lane: str = las.CONTROL_LANE,
+) -> tuple[str, ...]:
+  """Refuse ``--lanes`` that omits the lane controls are scheduled on."""
+  selected = tuple(lanes)
+  if control_lane not in selected:
+    msg = (
+      f"--lanes omits the control lane {control_lane}; "
+      "positive and negative controls run once on that lane"
+    )
+    raise ValueError(msg)
+  return selected
 
 
 def _stable_id(text: str) -> int:
@@ -181,14 +200,14 @@ def enumerate_work_units(
   allocation: Mapping[str, Mapping[str, int] | int],
   n_control_replicates: int = las.N_CONTROL_REPLICATES,
   costs: Mapping[str, Mapping[str, Mapping[str, float]]] | None = None,
-  control_scope: str = "per_slot",
-  control_lane: str = "P07@1.0",
+  control_scope: str = PROTOCOL_CONTROL_SCOPE,
+  control_lane: str = las.CONTROL_LANE,
 ) -> list[WorkUnit]:
   """Expand the protocol into priced draw-ranges.
 
-  ``control_scope="per_slot"`` prices positive and negative controls into every lane
-  (the budget formula). ``control_scope="once"`` emits those draws only on
-  ``control_lane`` (what validate actually runs).
+  ``control_scope="once"`` (the v2 budget and what validate runs) emits positive
+  and negative controls only on ``control_lane``, which must be selected.
+  ``control_scope="per_slot"`` is the v1 formula: those draws on every lane.
   """
   if control_scope not in ("per_slot", "once"):
     msg = f"control_scope must be 'per_slot' or 'once', got {control_scope!r}"
@@ -196,6 +215,8 @@ def enumerate_work_units(
   if n_control_replicates < 0:
     msg = f"n_control_replicates must be >= 0, got {n_control_replicates}"
     raise ValueError(msg)
+  if control_scope == "once":
+    require_control_lane(lanes, control_lane=control_lane)
   units: list[WorkUnit] = []
   for lane in lanes:
     include_controls = control_scope == "per_slot" or lane == control_lane

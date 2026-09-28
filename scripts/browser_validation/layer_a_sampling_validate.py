@@ -490,17 +490,17 @@ def run_controls(
 
   - positive: `+beta` on alanine in the aminx arm vs UNPERTURBED aminx (V5's explicit
     allowance -- no reference draws needed); *detected* = the IUT test fails to declare
-    equivalence; required `>= 18/20`.
+    equivalence; required `>= POSCTL_PASS_FLOOR` (18/20).
   - negative: aminx vs aminx; a *false positive* = the IUT test fails to declare
-    equivalence; required `<= 3/20`.
+    equivalence; required `<= NEGCTL_FP_CEIL` (3/20).
 
-  Runs on the P07@1.0 lane (the cheapest lane geometry available; the controls' own
+  Runs on ``CONTROL_LANE`` (P07@1.0; the controls' own
   sensitivity is a property of the statistical machinery, not of which lane supplies
   the draws). Returns `(posctl_detected, negctl_fp)`.
   """
   from aminx.parity.compare import iut_equivalent, tost_mean_diff
 
-  lane = "P07@1.0"
+  lane = las.CONTROL_LANE
   margin = _lane_margin(sampling, lane)
   beta = sampling.get("beta", las.DEFAULT_BETA)
 
@@ -767,6 +767,7 @@ def _pack_lane_results(
     "main_js_vs_ref": main_js_vs_ref,
     "posctl_detected": posctl_detected,
     "negctl_fp": negctl_fp,
+    **las.grade_controls(posctl_detected, negctl_fp),
     "omitted_aa_count": sum(lane["omitted_aa_count"] for lane in lanes),
     "x_token_count_aminx": sum(lane["x_token_count_aminx"] for lane in lanes),
     "x_token_count_reference": sum(lane["x_token_count_reference"] for lane in lanes),
@@ -812,7 +813,7 @@ def _v2_measurement(
   prov: dict[str, Any],
   prereq: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
-  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
+  selected_lanes = lass.require_control_lane(lass.parse_lanes(getattr(args, "lanes", None)))
   n_shards = int(getattr(args, "n_shards", 1))
   shard_index = int(getattr(args, "shard_index", 0))
   if n_shards < 1 or not 0 <= shard_index < n_shards:
@@ -832,7 +833,8 @@ def _v2_measurement(
     allocation=allocation,
     n_control_replicates=las.N_CONTROL_REPLICATES,
     costs=costs,
-    control_scope="once",
+    control_scope=lass.PROTOCOL_CONTROL_SCOPE,
+    control_lane=las.CONTROL_LANE,
   )
   plan = lass.plan_shards(units, n_shards)
   records = _sample_units(
@@ -847,22 +849,22 @@ def _v2_measurement(
   if shard_index == 0:
     tf_by_lane = _tf_map(selected_lanes, fixtures_for_set, sampling, data_utils_module)
     named = [fixture for fixture in fixtures_for_set if fixture["name"] in allocation]
-    if named and "P07@1.0" in selected_lanes:
-      bundle = las.full_model_bundle_for_lane("P07@1.0", "eqx")
-      batch = las.build_lane_batch(named[0], "P07@1.0", data_utils_module)
+    if named and las.CONTROL_LANE in selected_lanes:
+      bundle = las.full_model_bundle_for_lane(las.CONTROL_LANE, "eqx")
+      batch = las.build_lane_batch(named[0], las.CONTROL_LANE, data_utils_module)
       if batch.comparison_positions.size:
         native_x_frequency = las.measure_native_x_frequency(
           bundle[0],
           batch,
-          las.DEFAULT_LANE_TEMPERATURES["P07@1.0"],
+          las.DEFAULT_LANE_TEMPERATURES[las.CONTROL_LANE],
           n=NATIVE_X_FREQ_N,
         )
   protocol: dict[str, object] = {
     "lanes": list(selected_lanes),
     "allocation": allocation,
     "n_control_replicates": las.N_CONTROL_REPLICATES,
-    "control_scope": "once",
-    "control_lane": "P07@1.0",
+    "control_scope": lass.PROTOCOL_CONTROL_SCOPE,
+    "control_lane": las.CONTROL_LANE,
   }
   partial = lass.make_partial(
     git_hash=str(prov.get("git_hash", "")),
@@ -985,6 +987,7 @@ def run_measurement(
     "main_js_vs_ref": main_js_vs_ref,
     "posctl_detected": posctl_detected,
     "negctl_fp": negctl_fp,
+    **las.grade_controls(posctl_detected, negctl_fp),
     "omitted_aa_count": omitted_aa_count,
     "x_token_count_aminx": x_token_count_aminx,
     "x_token_count_reference": x_token_count_reference,

@@ -59,7 +59,7 @@ import layer_a_sampling_shard as lass
 _WORKTREE_ROOT = _SCRIPT_DIR.parents[1]
 _MANIFEST_PATH = _WORKTREE_ROOT / "outputs" / "browser_validation" / "fixtures" / "manifest.json"
 
-CONTROL_LANE = "P07@1.0"  # spec T9 step 3: "Controls at the ... lane P07@1.0"
+CONTROL_LANE = las.CONTROL_LANE  # spec T9 step 3: controls at lane P07@1.0
 AA_CONTROL_SEED_BASE_1 = 5_101_000
 AA_CONTROL_SEED_BASE_2 = 5_202_000
 FASTPATH_CONTROL_SEED_BASE = 5_303_000
@@ -197,7 +197,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
   jax_model, pt_model, torch, _model_utils = full_model_bundle
 
   # --- floor budget projection: layer_a_sampling_calibrate._budget_at_floor, reused ---
-  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
+  selected_lanes = lass.require_control_lane(lass.parse_lanes(getattr(args, "lanes", None)))
   n_shards = int(getattr(args, "n_shards", las.N_SHARDS))
   floor = lasc._budget_at_floor(  # noqa: SLF001 -- reuse, not reimplement (spec T9 step 3)
     jax_model,

@@ -96,18 +96,21 @@ RECOVERY_DELTA = 0.01  # bars table: "recovery TOST delta = 0.01"
 ALPHA = 0.05
 N_REQUIRED_FLOOR = 1500
 DEFAULT_N_BOOT = 1000
-NULL_REPLICATES = 20
-NULL_REPLICATES_PASS_FLOOR = 18  # ">= 18/20"
-POSCTL_MIN_DETECTED = 18  # ">= 18/20"
-NEGCTL_MAX_FP = 3  # "<= 3/20"
+# One replicate count for validate's controls and for the n_required doubling
+# ("until 18/20"). The pass rules are this pair, asserted against R == 20.
+N_CONTROL_REPLICATES = 20
+assert N_CONTROL_REPLICATES == 20  # noqa: S101 -- pass rules are pinned to R == 20
+POSCTL_PASS_FLOOR = 18  # posctl_detected >= 18/20
+NEGCTL_FP_CEIL = 3  # negctl_fp <= 3/20
+NULL_REPLICATES = N_CONTROL_REPLICATES
+NULL_REPLICATES_PASS_FLOOR = POSCTL_PASS_FLOOR
+POSCTL_MIN_DETECTED = POSCTL_PASS_FLOOR
+NEGCTL_MAX_FP = NEGCTL_FP_CEIL
 MAX_N_DOUBLINGS = 3  # bounded: full doubling-until-18/20 is a titanix-only cost
-
-# v2 (2026-09-28): one knob for the budget formula AND validate's control loops.
-# v1 priced R = NULL_REPLICATES (20) -> 162 aminx draws per allocated slot.
-# The null-replicate criterion above stays at 20; it is a different test.
-N_CONTROL_REPLICATES = 5
 N_SHARDS = 2
 REFERENCE_DRAWS_PER_SLOT = 2
+# validate.run_controls draws positive and negative replicates once, on this lane.
+CONTROL_LANE = "P07@1.0"
 
 # Vanilla ProteinMPNN lanes. LigandMPNN / P11-s is deferred (full LANE_KEYS stays reachable).
 V2_LANES: tuple[str, ...] = ("P07@0.1", "P07@1.0", "P08@1.0", "P09-s@1.0")
@@ -152,16 +155,26 @@ _SEED_BASE = 20260924  # arbitrary fixed base, distinct from layer_a_exact's own
 
 
 def aminx_draws_per_slot(n_control_replicates: int = N_CONTROL_REPLICATES) -> int:
-  """Aminx draws priced into one allocated slot.
+  """Aminx draws in one slot when controls are priced into that slot.
 
   Main arm A1+A2 (2) + positive control ``R`` replicates x 4 + negative control
-  ``R`` x 4 = ``2 + 8*R``. ``R=20`` is the v1 factor 162; ``R=5`` is the v2 factor 42.
-  Reference draws per slot stay ``REFERENCE_DRAWS_PER_SLOT`` (main R1+R2 only).
+  ``R`` x 4 = ``2 + 8*R``. ``R=20`` is the v1 per-slot factor 162. v2 charges
+  that control block once on ``CONTROL_LANE`` and only the main 2 aminx draws
+  on every other lane. Reference draws per slot stay ``REFERENCE_DRAWS_PER_SLOT``.
   """
   if n_control_replicates < 0:
     msg = f"n_control_replicates must be >= 0, got {n_control_replicates}"
     raise ValueError(msg)
   return 2 + 8 * n_control_replicates
+
+
+def grade_controls(posctl_detected: int, negctl_fp: int) -> dict[str, int | bool]:
+  """Pre-registered bar: ``posctl_detected >= 18/20`` and ``negctl_fp <= 3/20``."""
+  return {
+    "posctl_pass_floor": POSCTL_PASS_FLOOR,
+    "negctl_fp_ceil": NEGCTL_FP_CEIL,
+    "controls_pass": posctl_detected >= POSCTL_PASS_FLOOR and negctl_fp <= NEGCTL_FP_CEIL,
+  }
 
 
 def _seed_for(name: str) -> int:

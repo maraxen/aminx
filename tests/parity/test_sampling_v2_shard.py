@@ -15,17 +15,22 @@ import numpy as np
 import pytest
 
 import scripts.browser_validation.layer_a_sampling as las
+import scripts.browser_validation.layer_a_sampling_merge as merge
 import scripts.browser_validation.layer_a_sampling_shard as shard
+import scripts.browser_validation.layer_a_sampling_validate as lasv
 
 _PARAMS = {"sampling": {"n_required": 4}}
 _GIT = "abc123"
 
 
 def test_control_replicate_factor_v1_and_v2() -> None:
-  assert las.N_CONTROL_REPLICATES == 5
+  assert las.N_CONTROL_REPLICATES == 20
+  assert las.POSCTL_PASS_FLOOR == 18
+  assert las.NEGCTL_FP_CEIL == 3
+  assert las.NULL_REPLICATES_PASS_FLOOR == las.POSCTL_PASS_FLOOR
   assert las.aminx_draws_per_slot(20) == 162
   assert las.aminx_draws_per_slot(5) == 42
-  assert las.aminx_draws_per_slot() == 42
+  assert las.aminx_draws_per_slot() == 162
   assert las.REFERENCE_DRAWS_PER_SLOT == 2
 
 
@@ -37,16 +42,16 @@ def test_v2_lanes_budget_excludes_p11() -> None:
   units = shard.enumerate_work_units(
     lanes=las.V2_LANES,
     allocation=allocation,
-    n_control_replicates=5,
     costs=costs,
-    control_scope="per_slot",
   )
   assert units
   assert all(unit.lane != "P11-s@1.0" for unit in units)
   report = shard.shard_budget_report(units, n_shards=2)
   per_shard = report["per_shard_hours"]
   assert isinstance(per_shard, list)
-  assert report["budget_gpu_hours"] == pytest.approx(42.0 * len(las.V2_LANES))
+  # Once-pricing: 162 aminx hours on the control lane, 2 on each other lane.
+  other_lanes = len(las.V2_LANES) - 1
+  assert report["budget_gpu_hours"] == pytest.approx(162.0 + 2.0 * other_lanes)
   assert report["budget_wall_hours"] == pytest.approx(max(per_shard))
   assert report["budget_gpu_hours"] == pytest.approx(sum(per_shard))
   one = shard.enumerate_work_units(
@@ -59,6 +64,110 @@ def test_v2_lanes_budget_excludes_p11() -> None:
   v1 = shard.shard_budget_report(one, n_shards=1)
   assert v1["budget_wall_hours"] == pytest.approx(162.0)
   assert v1["budget_gpu_hours"] == pytest.approx(162.0)
+
+
+# Bathos run 27f9f25e per-draw costs (aminx_s, reference_s) and floor allocation.
+_T9_ALLOCATION: dict[str, dict[str, int]] = {
+  "P07@0.1": {"1BC8": 106, "3HTN": 498, "4YOW": 815, "6MRR": 81},
+  "P07@1.0": {"1BC8": 112, "3HTN": 495, "4YOW": 813, "6MRR": 80},
+  "P08@1.0": {"1BC8": 111, "3HTN": 496, "4YOW": 812, "6MRR": 81},
+  "P09-s@1.0": {"3HTN": 410, "4YOW": 1090},
+}
+_T9_COSTS: dict[str, dict[str, dict[str, float]]] = {
+  "P07@0.1": {
+    "1BC8": {"aminx_s": 0.04624, "reference_s": 0.05276},
+    "3HTN": {"aminx_s": 0.12829, "reference_s": 0.19492},
+    "4YOW": {"aminx_s": 0.34249, "reference_s": 0.36918},
+    "6MRR": {"aminx_s": 0.04315, "reference_s": 0.03233},
+  },
+  "P07@1.0": {
+    "1BC8": {"aminx_s": 0.04628, "reference_s": 0.05957},
+    "3HTN": {"aminx_s": 0.12878, "reference_s": 0.19837},
+    "4YOW": {"aminx_s": 0.34620, "reference_s": 0.33511},
+    "6MRR": {"aminx_s": 0.04314, "reference_s": 0.03356},
+  },
+  "P08@1.0": {
+    "1BC8": {"aminx_s": 0.04514, "reference_s": 0.05384},
+    "3HTN": {"aminx_s": 0.12837, "reference_s": 0.18695},
+    "4YOW": {"aminx_s": 0.33690, "reference_s": 0.32389},
+    "6MRR": {"aminx_s": 0.04294, "reference_s": 0.03235},
+  },
+  "P09-s@1.0": {
+    "3HTN": {"aminx_s": 0.12773, "reference_s": 0.90765},
+    "4YOW": {"aminx_s": 0.11585, "reference_s": 1.56018},
+  },
+}
+
+
+def _t9_gpu_hours(control_scope: str) -> float:
+  units = shard.enumerate_work_units(
+    lanes=las.V2_LANES,
+    allocation=_T9_ALLOCATION,
+    n_control_replicates=las.N_CONTROL_REPLICATES,
+    costs=_T9_COSTS,
+    control_scope=control_scope,
+  )
+  report = shard.shard_budget_report(units, n_shards=1)
+  hours = report["budget_gpu_hours"]
+  assert isinstance(hours, float)
+  return hours
+
+
+def test_t9_once_pricing_near_18_2_and_per_slot_near_57_1() -> None:
+  assert las.N_CONTROL_REPLICATES == 20
+  once = _t9_gpu_hours(shard.PROTOCOL_CONTROL_SCOPE)
+  assert once == pytest.approx(18.2, rel=0.01)
+  per_slot = _t9_gpu_hours("per_slot")
+  assert per_slot == pytest.approx(57.1, rel=0.01)
+
+
+def test_planner_controls_only_on_p07() -> None:
+  units = shard.enumerate_work_units(
+    lanes=las.V2_LANES,
+    allocation=_T9_ALLOCATION,
+    n_control_replicates=las.N_CONTROL_REPLICATES,
+    costs=_T9_COSTS,
+  )
+  control_units = [
+    unit for unit in units if unit.arm.startswith("pos/") or unit.arm.startswith("neg/")
+  ]
+  assert control_units
+  assert {unit.lane for unit in control_units} == {las.CONTROL_LANE}
+  assert shard.PROTOCOL_CONTROL_SCOPE == "once"
+  with pytest.raises(ValueError, match="control lane"):
+    shard.enumerate_work_units(
+      lanes=("P08@1.0",),
+      allocation={"P08@1.0": {"fx": 1}},
+    )
+  with pytest.raises(ValueError, match="control lane"):
+    shard.require_control_lane(("P08@1.0", "P09-s@1.0"))
+
+
+def test_merged_control_grading_uses_18_of_20() -> None:
+  packed = lasv._pack_lane_results(  # noqa: SLF001
+    [],
+    las.POSCTL_PASS_FLOOR,
+    las.NEGCTL_FP_CEIL,
+    {},
+    native_x_frequency=0.0,
+  )
+  assert packed["posctl_pass_floor"] == las.POSCTL_PASS_FLOOR == 18
+  assert packed["negctl_fp_ceil"] == las.NEGCTL_FP_CEIL == 3
+  assert packed["controls_pass"] is True
+  low = lasv._pack_lane_results(  # noqa: SLF001
+    [],
+    las.POSCTL_PASS_FLOOR - 1,
+    0,
+    {},
+    native_x_frequency=0.0,
+  )
+  assert low["controls_pass"] is False
+  merged = merge.grade_scored({"posctl_detected": 18, "negctl_fp": 3})
+  assert merged["controls_pass"] is True
+  assert merged["posctl_pass_floor"] == las.POSCTL_PASS_FLOOR
+  assert merged["negctl_fp_ceil"] == las.NEGCTL_FP_CEIL
+  blind = merge.grade_scored({"posctl_detected": 18, "negctl_fp": 4})
+  assert blind["controls_pass"] is False
 
 
 def _mixed_units() -> list[shard.WorkUnit]:

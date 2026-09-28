@@ -22,8 +22,9 @@ FAILS the run (no params written) rather than silently shrinking any threshold.
   scored with the SAME IUT test validate uses (recovery TOST delta=0.01 over the FULL
   arms, AND `excess_js_upper` -- 1000-resample fixture-stratified bootstrap -- against
   the pilot lane's own margin). `n_required` doubles (bounded at `MAX_N_DOUBLINGS`)
-  until >= 18/20 declare equivalence. If the criterion is STILL not met after
-  `MAX_N_DOUBLINGS`, this run does NOT write params -- `null_criterion_met=false` is
+  until >= POSCTL_PASS_FLOOR of N_CONTROL_REPLICATES (18/20) declare equivalence.
+  If the criterion is STILL not met after `MAX_N_DOUBLINGS`, this run does NOT
+  write params -- `null_criterion_met=false` is
   recorded and the run exits 1, exactly like a budget failure (never proceeds on an
   unmet criterion).
 - **Margin m_l, PER LANE (C1).** For EACH of `las.LANE_KEYS`, `mean(excess_js(...))`
@@ -327,7 +328,7 @@ def _null_replicate_check(
   """C2: 20 aminx-vs-aminx replicates, EACH drawing `2n` per arm (A1/A2 vs R1/R2, exactly
   as validate will), scored with the SAME IUT validate uses (recovery TOST over the FULL
   arms AND `excess_js_upper` (`N_BOOT`-resample bootstrap) < `margin`). Returns the count
-  declaring equivalence (target `>= NULL_REPLICATES_PASS_FLOOR`)."""
+  declaring equivalence (target `>= POSCTL_PASS_FLOOR`, the same 18/20 bar)."""
   from aminx.parity.compare import tost_mean_diff
 
   temp = las.DEFAULT_LANE_TEMPERATURES[lane]
@@ -430,28 +431,31 @@ def _project_validate_draw_counts(
   n_lanes: int,
   n_control_replicates: int = las.N_CONTROL_REPLICATES,
 ) -> tuple[int, int]:
-  """Per-slot draw totals at ``n_required`` across ``n_lanes``.
+  """Draw totals at ``n_required`` across ``n_lanes``, matching validate.
 
-  Each allocated slot is priced at ``aminx_draws_per_slot(R)`` aminx draws and
-  ``REFERENCE_DRAWS_PER_SLOT`` reference draws. ``R`` is ``N_CONTROL_REPLICATES``
-  (the same constant validate's control loops use). Allocation sums to ``n_required``
-  per lane, so the totals are ``(2+8*R)*n_required*n_lanes`` and ``2*n_required*n_lanes``.
+  Every lane draws main A1+A2 and main R1+R2. Positive and negative controls
+  (``8*R`` aminx draws, allocation summing to ``n_required``) are charged once
+  on the control lane. ``R`` is ``N_CONTROL_REPLICATES``. The v1 per-slot factor
+  ``2+8*R`` (R=20 -> 162) is not this projection.
   """
-  factor = las.aminx_draws_per_slot(n_control_replicates)
-  aminx_draws_total = factor * n_required * n_lanes
+  main_aminx = len(lass.MAIN_AMINX_ARMS) * n_required * n_lanes
+  control_aminx = 8 * n_control_replicates * n_required
+  if lass.PROTOCOL_CONTROL_SCOPE == "per_slot":
+    control_aminx *= n_lanes
   reference_draws_total = las.REFERENCE_DRAWS_PER_SLOT * n_required * n_lanes
-  return aminx_draws_total, reference_draws_total
+  return main_aminx + control_aminx, reference_draws_total
 
 
 FLOOR_BUDGET_FORMULA = (
   "budget_wall_hours = max over shards of the LPT-packed per-shard sums; "
-  "budget_gpu_hours = sum over shards. Each allocated slot costs "
-  "(2 + 8*N_CONTROL_REPLICATES) * c_aminx + 2 * c_ref seconds "
-  "(main A1+A2, positive control R*4, negative control R*4, main R1+R2). "
-  "R = N_CONTROL_REPLICATES (v2 default 5 -> 42 aminx draws/slot; v1 R=20 -> 162). "
-  "c_* are measured wall seconds per draw. The projection is a LOWER bound on "
-  "validate's cost: n_required >= N_REQUIRED_FLOOR and cost is increasing in n. "
-  "Only the selected lanes (default V2_LANES) are priced."
+  "budget_gpu_hours = sum over shards. Every selected lane prices main A1+A2 "
+  "(2 aminx draws) and main R1+R2 (2 reference draws) per allocated slot. "
+  "Positive and negative controls (8*N_CONTROL_REPLICATES aminx draws per slot) "
+  "are priced once, on the control lane P07@1.0, matching validate.run_controls. "
+  "The per-slot factor (2+8*R on every lane; R=20 -> 162) is the v1 formula and "
+  "is not this budget. c_* are measured wall seconds per draw. The projection is "
+  "a LOWER bound on validate's cost: n_required >= N_REQUIRED_FLOOR and cost is "
+  "increasing in n. Only the selected lanes (default V2_LANES) are priced."
 )
 
 
@@ -475,11 +479,12 @@ def _budget_at_floor(
   the sum across shards. Only ``lanes`` (default ``V2_LANES``) are priced.
   """
   selected = las.V2_LANES if lanes is None else lanes
+  if lass.PROTOCOL_CONTROL_SCOPE == "once":
+    lass.require_control_lane(selected)
   n_floor = las.N_REQUIRED_FLOOR
   per_lane_hours: dict[str, float] = {}
   costs: dict[str, dict[str, dict[str, float]]] = {}
   allocations: dict[str, dict[str, int]] = {}
-  factor = las.aminx_draws_per_slot(n_control_replicates)
   for lane in selected:
     lane_model = las.full_model_bundle_for_lane(lane, "eqx")
     lane_jax, lane_pt = lane_model[0], lane_model[1]
@@ -488,6 +493,12 @@ def _budget_at_floor(
     temp = las.DEFAULT_LANE_TEMPERATURES[lane]
     hours = 0.0
     costs[lane] = {}
+    include_controls = lass.PROTOCOL_CONTROL_SCOPE == "per_slot" or lane == las.CONTROL_LANE
+    factor = (
+      las.aminx_draws_per_slot(n_control_replicates)
+      if include_controls
+      else len(lass.MAIN_AMINX_ARMS)
+    )
     for fixture, batch in batches:
       c_a = las.measure_aminx_draw_cost_s(lane_jax, batch, temp)
       c_r = las.measure_reference_draw_cost_s(lane_pt, torch, batch, temp, REFERENCE_COST_SAMPLE_N)
@@ -510,7 +521,8 @@ def _budget_at_floor(
     allocation=allocations,
     n_control_replicates=n_control_replicates,
     costs=costs,
-    control_scope="per_slot",
+    control_scope=lass.PROTOCOL_CONTROL_SCOPE,
+    control_lane=las.CONTROL_LANE,
   )
   report = lass.shard_budget_report(units, n_shards)
   return {
@@ -521,7 +533,9 @@ def _budget_at_floor(
     "n_shards": n_shards,
     "n_control_replicates": n_control_replicates,
     "lanes": list(selected),
-    "aminx_draws_per_slot": factor,
+    "control_scope": lass.PROTOCOL_CONTROL_SCOPE,
+    "control_lane": las.CONTROL_LANE,
+    "aminx_draws_per_slot": las.aminx_draws_per_slot(n_control_replicates),
     "per_lane_hours": per_lane_hours,
     "per_draw_costs_s": costs,
     "draw_allocation_by_lane": allocations,
@@ -530,11 +544,12 @@ def _budget_at_floor(
 
 
 BUDGET_FORMULA = (
-  "budget_wall_hours = max over shards of an LPT packing of per-slot costs "
-  "(2 + 8*N_CONTROL_REPLICATES) * c_aminx + 2 * c_ref, summed over the selected lanes "
-  "(default V2_LANES). budget_gpu_hours is the sum across shards. "
-  "N_CONTROL_REPLICATES is the same constant validate's positive/negative control loops use "
-  "(v2 default 5 -> 42 aminx draws per slot; v1 R=20 -> 162). "
+  "budget_wall_hours = max over shards of an LPT packing. Every selected lane "
+  "(default V2_LANES) prices 2*c_aminx + 2*c_ref per allocated slot (main A1+A2 "
+  "and R1+R2). Controls add 8*N_CONTROL_REPLICATES*c_aminx once, on P07@1.0, "
+  "the same lane and replicate count validate's control loops use (R=20). "
+  "budget_gpu_hours is the sum across shards. The v1 per-slot factor is "
+  "2+8*R on every lane (R=20 -> 162) and is not this budget. "
   "per-draw costs are measured on this run's hardware; no core-count division is applied."
 )
 
@@ -542,7 +557,7 @@ BUDGET_FORMULA = (
 def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
   start = time.monotonic()
   prov = lac.provenance(None)
-  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
+  selected_lanes = lass.require_control_lane(lass.parse_lanes(getattr(args, "lanes", None)))
   manifest = _load_manifest()
   protein_fixtures = _fixtures_for_set(manifest, args.fixture_set)
   fixture = _pick_fixture(protein_fixtures, SMOKE_FIXTURE_NAME)
@@ -647,7 +662,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   enforced safety net (FAILS loudly, writes no params, rather than cutting a corner)."""
   start = time.monotonic()
   prov = lac.provenance(None)
-  selected_lanes = lass.parse_lanes(getattr(args, "lanes", None))
+  selected_lanes = lass.require_control_lane(lass.parse_lanes(getattr(args, "lanes", None)))
   n_shards = int(getattr(args, "n_shards", las.N_SHARDS))
   if args.pilot_lane not in selected_lanes:
     msg = f"--pilot-lane {args.pilot_lane} is not in the selected lanes {selected_lanes}"
@@ -758,7 +773,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       pilot_margin,
       f"doubling{n_doublings}",
     )
-    if null_pass >= las.NULL_REPLICATES_PASS_FLOOR:
+    if null_pass >= las.POSCTL_PASS_FLOOR:
       null_criterion_met = True
       break
     if n_doublings >= las.MAX_N_DOUBLINGS:
@@ -967,7 +982,8 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       allocation=alloc_by_lane,
       n_control_replicates=las.N_CONTROL_REPLICATES,
       costs=floor["per_draw_costs_s"],
-      control_scope="per_slot",
+      control_scope=lass.PROTOCOL_CONTROL_SCOPE,
+      control_lane=las.CONTROL_LANE,
     ),
     n_shards,
   )
