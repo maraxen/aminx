@@ -1,0 +1,297 @@
+[
+  {
+    "name": "blocked_no_path_available",
+    "expect": "blocked",
+    "result": {
+      "n_paths_available": 0,
+      "converted_by_path": {
+        "p03": false,
+        "p04": false
+      },
+      "controls_total": 3,
+      "controls_detected": 0,
+      "n_rows": 0,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 0,
+      "n_low_headroom": 0,
+      "n_over_bar": 0,
+      "n_tie_unstable": 0,
+      "length_probes_ok": false,
+      "worst_ratio_to_bar": null,
+      "worst_path": null,
+      "max_p_before": 0.0,
+      "n_dropout": 0,
+      "git_hash": "0000000000000000000000000000000000000a",
+      "git_clean": true,
+      "artifact_subdir": null,
+      "versions": {},
+      "comparator_self_test_pass": false,
+      "control_fixture": null,
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "incomplete_cell_skipped",
+    "expect": "incomplete",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 3,
+      "n_rows": 40,
+      "n_skipped": 1,
+      "n_excluded_not_advanced": 4,
+      "n_low_headroom": 0,
+      "n_over_bar": 0,
+      "n_tie_unstable": 0,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 0.5,
+      "worst_path": "6MRR.L128.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "0000000000000000000000000000000000000b",
+      "git_clean": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "incomplete_dirty_tree_wins_over_pass",
+    "expect": "incomplete",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 3,
+      "n_rows": 40,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 0,
+      "n_low_headroom": 0,
+      "n_over_bar": 0,
+      "n_tie_unstable": 0,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 0.5,
+      "worst_path": "6MRR.L128.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "0000000000000000000000000000000000000c",
+      "git_clean": false,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "ctrl_blind_one_control_undetected",
+    "expect": "ctrl_blind",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 2,
+      "n_rows": 40,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 4,
+      "n_low_headroom": 0,
+      "n_over_bar": 0,
+      "n_tie_unstable": 0,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 0.5,
+      "worst_path": "6MRR.L128.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "0000000000000000000000000000000000000d",
+      "git_clean": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "fail_gated_row_over_bar",
+    "expect": "fail",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 3,
+      "n_rows": 40,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 4,
+      "n_low_headroom": 0,
+      "n_over_bar": 1,
+      "n_tie_unstable": 0,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 3.2,
+      "worst_path": "3HTN.L512.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "0000000000000000000000000000000000000e",
+      "git_clean": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "tie_unstable_mismatch_confined_to_near_tie_rows",
+    "expect": "tie_unstable",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 3,
+      "n_rows": 40,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 4,
+      "n_low_headroom": 0,
+      "n_over_bar": 0,
+      "n_tie_unstable": 1,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 0.6,
+      "worst_path": "1BC8.L128.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "0000000000000000000000000000000000000f",
+      "git_clean": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "partial_headroom_not_advanced_carryover",
+    "expect": "partial_headroom",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 3,
+      "n_rows": 40,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 4,
+      "n_low_headroom": 0,
+      "n_over_bar": 0,
+      "n_tie_unstable": 0,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 0.4,
+      "worst_path": "6MRR.L128.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "00000000000000000000000000000000000010",
+      "git_clean": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "partial_headroom_low_headroom_only",
+    "expect": "partial_headroom",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 3,
+      "n_rows": 40,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 0,
+      "n_low_headroom": 2,
+      "n_over_bar": 0,
+      "n_tie_unstable": 0,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 0.9,
+      "worst_path": "3HTN.L1024.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "00000000000000000000000000000000000011",
+      "git_clean": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  },
+  {
+    "name": "pass_fully_clean",
+    "expect": "pass",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {
+        "p03": true,
+        "p04": true
+      },
+      "controls_total": 3,
+      "controls_detected": 3,
+      "n_rows": 40,
+      "n_skipped": 0,
+      "n_excluded_not_advanced": 0,
+      "n_low_headroom": 0,
+      "n_over_bar": 0,
+      "n_tie_unstable": 0,
+      "length_probes_ok": true,
+      "worst_ratio_to_bar": 0.2,
+      "worst_path": "6MRR.L128.bORT.p04.logprobs",
+      "max_p_before": 0.0,
+      "n_dropout": 12,
+      "git_hash": "00000000000000000000000000000000000012",
+      "git_clean": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {
+        "jax": "0.10.2"
+      },
+      "comparator_self_test_pass": true,
+      "control_fixture": "6MRR",
+      "ctrl_ratio_min": 0.0
+    }
+  }
+]

@@ -1,0 +1,44 @@
+[claim]
+headline       = "Every in-scope P03/P04 ORT-CPU export artifact for layer (b) matches its RNG-free JAX wrapper (and, via W/P27, the native aminx kernel) within its pre-registered bar on held-out fixture set B."
+kill_condition = "On fixture set B with all 3 planted controls detected: any GATED row (not excluded_not_advanced) exceeds its bar with a non-near-tie mismatch or an over-bar TOL metric (layer_b_ort_validate outcome fail)."
+regime         = "CPU f32 ORT CPUExecutionProvider vs JAX (aminx proteinmpnn_v_48_020 checkpoint); fixture set B (6MRR, 1BC8, 3HTN, 4YOW); export buckets 128/256/512/1024 (D-C)"
+kill_condition_satisfiable_by_null = true
+
+[[hypotheses]]
+id = "H_b_ort_within_bar"
+label = "ORT-CPU-executed P03/P04 export artifacts reproduce the RNG-free JAX wrapper (and the wrapper reproduces the native kernel) within bar on held-out structures"
+predicted_signature = "layer_b_ort_validate outcome pass or partial_headroom/tie_unstable; all 3 controls detected; differential preflight passed"
+[[hypotheses]]
+id = "H_null_misspec"
+label = "the comparison is misspecified or the instrument cannot see the claimed resolution"
+predicted_signature = "controls undetected (ctrl_blind), skipped cells (incomplete), or a mismatch that survives explanation as near-tie"
+
+[[assumptions]]
+id = "A_same_checkpoint"
+label = "both the wrapper and the ORT artifact trace from the SAME pinned proteinmpnn_v_48_020 checkpoint (sha256-verified)"
+halt_if = "assert_checkpoint_pinned fails"
+status = "untested"
+
+[[confounds]]
+id = "C_artifact_provenance"
+label = "artifacts consumed are the tracked, sha256-verified T2/T3a build (outputs/browser_validation/layer_b/artifact_manifest.json), never a locally-rebuilt copy"
+control = "layer_b_common.load_manifest_verified against the tracked manifest at the run's git_hash"
+isolating_run = ""
+status = "uncontrolled"
+
+[[confounds]]
+id = "C_headroom_carryover"
+label = "P03 edge-feature b-ORT headroom is not_advanced at every T3a-measured export bucket (calibrated on set A); this validate run cannot itself upgrade that path"
+control = "excluded_not_advanced accounting; outcome capped at partial_headroom whenever any not_advanced/low_headroom cell is present"
+isolating_run = ""
+status = "uncontrolled"
+
+[[claim.union_gate.clauses]]
+id = "C_b_ort_paths"
+description = "layer_b_ort_validate covers every set-B (fixture, bucket >= own) W/P27/b-ORT row"
+hypothesis_ids = ["H_b_ort_within_bar", "H_null_misspec"]
+[[claim.union_gate.clauses]]
+id = "C_b_ort_sensitivity"
+description = "the three planted controls (T3a-sized P04 bias, T3a-sized P03 edge bias, T2 index-slot swap) are each detected, and the [differential] preflight's ctrl_ratio_min reproduces min_effect"
+hypothesis_ids = ["H_b_ort_within_bar"]
+positive_control = true
