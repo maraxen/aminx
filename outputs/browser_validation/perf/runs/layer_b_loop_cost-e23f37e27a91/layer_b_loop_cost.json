@@ -1,0 +1,474 @@
+{
+  "outcome": "loop_body_scales",
+  "outcome_reason": "ar_force: alpha 0.6792 > 0.35 (loop-body scaling detected)",
+  "alpha_linear": 0.9997359071827957,
+  "alpha_linear_available": true,
+  "alpha_reduce": 0.9958563062728243,
+  "alpha_reduce_available": true,
+  "alpha_constant": 0.0,
+  "alpha_constant_available": true,
+  "alpha_ar_off": 0.9980640857053809,
+  "alpha_ar_off_available": true,
+  "alpha_ar_force": 0.6792316170372413,
+  "alpha_ar_force_available": true,
+  "controls": {
+    "linear": {
+      "measurements": {
+        "128": 4099,
+        "256": 8195,
+        "512": 16387
+      },
+      "top_10_at_max_l": [
+        {
+          "name": "broadcast_add_fusion",
+          "op": "fusion",
+          "operand_elements": 8192,
+          "output_elements": 8192,
+          "total_weight": 16384,
+          "scope": null
+        },
+        {
+          "name": "wrapped_add",
+          "op": "fusion",
+          "operand_elements": 2,
+          "output_elements": 1,
+          "total_weight": 3,
+          "scope": null
+        }
+      ],
+      "has_nested_while": false,
+      "alpha_128_256": 0.9994719593520425,
+      "alpha_256_512": 0.9997359071827957,
+      "alpha": 0.9997359071827957,
+      "alpha_available": true,
+      "expected_range": [
+        0.9,
+        1.1
+      ],
+      "in_range": true
+    },
+    "reduce": {
+      "measurements": {
+        "128": 526,
+        "256": 1046,
+        "512": 2086
+      },
+      "top_10_at_max_l": [
+        {
+          "name": "broadcast_add_fusion",
+          "op": "fusion",
+          "operand_elements": 512,
+          "output_elements": 512,
+          "total_weight": 1024,
+          "scope": null
+        },
+        {
+          "name": "wrapped_reduce-window",
+          "op": "fusion",
+          "operand_elements": 513,
+          "output_elements": 16,
+          "total_weight": 529,
+          "scope": null
+        },
+        {
+          "name": "copy.4",
+          "op": "copy",
+          "operand_elements": 0,
+          "output_elements": 512,
+          "total_weight": 512,
+          "scope": null
+        },
+        {
+          "name": "reduce_add_fusion",
+          "op": "fusion",
+          "operand_elements": 17,
+          "output_elements": 1,
+          "total_weight": 18,
+          "scope": null
+        },
+        {
+          "name": "wrapped_add",
+          "op": "fusion",
+          "operand_elements": 2,
+          "output_elements": 1,
+          "total_weight": 3,
+          "scope": null
+        }
+      ],
+      "has_nested_while": false,
+      "alpha_128_256": 0.9917481469546391,
+      "alpha_256_512": 0.9958563062728243,
+      "alpha": 0.9958563062728243,
+      "alpha_available": true,
+      "expected_range": [
+        0.9,
+        1.1
+      ],
+      "in_range": true
+    },
+    "constant": {
+      "measurements": {
+        "128": 4618,
+        "256": 4618,
+        "512": 4618
+      },
+      "top_10_at_max_l": [
+        {
+          "name": "ynn_fusion",
+          "op": "fusion",
+          "operand_elements": 1024,
+          "output_elements": 768,
+          "total_weight": 1792,
+          "scope": null
+        },
+        {
+          "name": "broadcast_add_fusion.1",
+          "op": "fusion",
+          "operand_elements": 768,
+          "output_elements": 768,
+          "total_weight": 1536,
+          "scope": null
+        },
+        {
+          "name": "wrapped_reduce-window",
+          "op": "fusion",
+          "operand_elements": 769,
+          "output_elements": 2,
+          "total_weight": 771,
+          "scope": null
+        },
+        {
+          "name": "broadcast_add_fusion",
+          "op": "fusion",
+          "operand_elements": 256,
+          "output_elements": 256,
+          "total_weight": 512,
+          "scope": null
+        },
+        {
+          "name": "reduce_add_fusion",
+          "op": "fusion",
+          "operand_elements": 3,
+          "output_elements": 1,
+          "total_weight": 4,
+          "scope": null
+        },
+        {
+          "name": "wrapped_add",
+          "op": "fusion",
+          "operand_elements": 2,
+          "output_elements": 1,
+          "total_weight": 3,
+          "scope": null
+        }
+      ],
+      "has_nested_while": false,
+      "alpha_128_256": 0.0,
+      "alpha_256_512": 0.0,
+      "alpha": 0.0,
+      "alpha_available": true,
+      "expected_range": [
+        -0.1,
+        0.1
+      ],
+      "in_range": true
+    }
+  },
+  "ar_kernel": {
+    "off": {
+      "measurements": {
+        "128": 105859696,
+        "256": 211080587,
+        "512": 421595067
+      },
+      "top_10_at_max_l": [
+        {
+          "name": "multiply_add_fusion.2",
+          "op": "fusion",
+          "operand_elements": 18924032,
+          "output_elements": 9437184,
+          "total_weight": 28361216,
+          "scope": null
+        },
+        {
+          "name": "multiply_add_fusion.1",
+          "op": "fusion",
+          "operand_elements": 18924032,
+          "output_elements": 9437184,
+          "total_weight": 28361216,
+          "scope": null
+        },
+        {
+          "name": "multiply_add_fusion",
+          "op": "fusion",
+          "operand_elements": 18924032,
+          "output_elements": 9437184,
+          "total_weight": 28361216,
+          "scope": null
+        },
+        {
+          "name": "copy_bitcast_fusion.15",
+          "op": "fusion",
+          "operand_elements": 12582912,
+          "output_elements": 12582912,
+          "total_weight": 25165824,
+          "scope": null
+        },
+        {
+          "name": "copy_bitcast_fusion.10",
+          "op": "fusion",
+          "operand_elements": 12582912,
+          "output_elements": 12582912,
+          "total_weight": 25165824,
+          "scope": null
+        },
+        {
+          "name": "copy_bitcast_fusion.5",
+          "op": "fusion",
+          "operand_elements": 12582912,
+          "output_elements": 12582912,
+          "total_weight": 25165824,
+          "scope": null
+        },
+        {
+          "name": "ynn_fusion.36",
+          "op": "fusion",
+          "operand_elements": 12648448,
+          "output_elements": 3145728,
+          "total_weight": 15794176,
+          "scope": null
+        },
+        {
+          "name": "ynn_fusion.26",
+          "op": "fusion",
+          "operand_elements": 12648448,
+          "output_elements": 3145728,
+          "total_weight": 15794176,
+          "scope": null
+        },
+        {
+          "name": "ynn_fusion.16",
+          "op": "fusion",
+          "operand_elements": 12648448,
+          "output_elements": 3145728,
+          "total_weight": 15794176,
+          "scope": null
+        },
+        {
+          "name": "concatenate.15",
+          "op": "concatenate",
+          "operand_elements": 0,
+          "output_elements": 12582912,
+          "total_weight": 12582912,
+          "scope": null
+        }
+      ],
+      "has_nested_while": true,
+      "alpha_128_256": 0.9956404846137851,
+      "alpha_256_512": 0.9980640857053809,
+      "alpha": 0.9980640857053809,
+      "alpha_available": true,
+      "compile_seconds": {
+        "128": 3.2359442450106144,
+        "256": 12.210071260982659,
+        "512": 45.27763180801412
+      },
+      "steady_seconds": {
+        "128": [
+          3.5879339100210927,
+          3.6850667040562257,
+          3.7054930169833824,
+          3.689807477989234,
+          3.4034125980106182,
+          3.242634830006864,
+          3.14893846900668,
+          3.177906217984855,
+          3.3918224029475823,
+          3.2093741840217263
+        ],
+        "256": [
+          12.101416005985811,
+          13.779278792033438,
+          13.73004050401505,
+          12.462467674980871,
+          15.206838610989507,
+          12.730583716009278,
+          14.661927537992597,
+          13.582713651994709,
+          12.599850536964368,
+          13.017367857974023
+        ],
+        "512": [
+          50.991368692950346,
+          50.28881153796101,
+          50.55640563904308,
+          47.714655277028214,
+          47.415745505015366,
+          49.691967779013794,
+          91.09902647597482,
+          106.35630518000107,
+          104.62009779497748,
+          103.53402734099654
+        ]
+      },
+      "steady_median_seconds": {
+        "128": 3.3976175004791003,
+        "256": 13.300040754984366,
+        "512": 50.77388716599671
+      }
+    },
+    "force": {
+      "measurements": {
+        "128": 4482979,
+        "256": 6410147,
+        "512": 10264483
+      },
+      "top_10_at_max_l": [
+        {
+          "name": "bitcast_dynamic-slice_fusion.2",
+          "op": "fusion",
+          "operand_elements": 3145729,
+          "output_elements": 6144,
+          "total_weight": 3151873,
+          "scope": null
+        },
+        {
+          "name": "bitcast_dynamic-slice_fusion",
+          "op": "fusion",
+          "operand_elements": 3145729,
+          "output_elements": 6144,
+          "total_weight": 3151873,
+          "scope": null
+        },
+        {
+          "name": "select_dynamic-update-slice_fusion",
+          "op": "fusion",
+          "operand_elements": 131330,
+          "output_elements": 131072,
+          "total_weight": 262402,
+          "scope": null
+        },
+        {
+          "name": "bitcast_select_fusion.2",
+          "op": "fusion",
+          "operand_elements": 156387,
+          "output_elements": 6144,
+          "total_weight": 162531,
+          "scope": null
+        },
+        {
+          "name": "bitcast_select_fusion.1",
+          "op": "fusion",
+          "operand_elements": 156387,
+          "output_elements": 6144,
+          "total_weight": 162531,
+          "scope": null
+        },
+        {
+          "name": "bitcast_select_fusion",
+          "op": "fusion",
+          "operand_elements": 156387,
+          "output_elements": 6144,
+          "total_weight": 162531,
+          "scope": null
+        },
+        {
+          "name": "ynn_fusion.20",
+          "op": "fusion",
+          "operand_elements": 90112,
+          "output_elements": 6144,
+          "total_weight": 96256,
+          "scope": null
+        },
+        {
+          "name": "ynn_fusion.16",
+          "op": "fusion",
+          "operand_elements": 90112,
+          "output_elements": 6144,
+          "total_weight": 96256,
+          "scope": null
+        },
+        {
+          "name": "ynn_fusion.12",
+          "op": "fusion",
+          "operand_elements": 90112,
+          "output_elements": 6144,
+          "total_weight": 96256,
+          "scope": null
+        },
+        {
+          "name": "ynn_fusion.7",
+          "op": "fusion",
+          "operand_elements": 90112,
+          "output_elements": 6144,
+          "total_weight": 96256,
+          "scope": null
+        }
+      ],
+      "has_nested_while": true,
+      "alpha_128_256": 0.5158997004054511,
+      "alpha_256_512": 0.6792316170372413,
+      "alpha": 0.6792316170372413,
+      "alpha_available": true,
+      "compile_seconds": {
+        "128": 0.16510221699718386,
+        "256": 0.3223571529961191,
+        "512": 1.1093180740135722
+      },
+      "steady_seconds": {
+        "128": [
+          0.14818799501517788,
+          0.1431386879994534,
+          0.1197675209841691,
+          0.11859159002779052,
+          0.34650730999419466,
+          0.2384017439908348,
+          0.24304917495464906,
+          0.2917343539884314,
+          0.2196755590266548,
+          0.14672034798422828
+        ],
+        "256": [
+          0.2693410039646551,
+          0.3154531659674831,
+          0.29723274300340563,
+          0.3064989050035365,
+          0.29357687098672614,
+          0.29717703600181267,
+          0.5024276070180349,
+          0.5744568899972364,
+          0.5566317510092631,
+          0.5811269280384295
+        ],
+        "512": [
+          1.0630220209714025,
+          1.0528588249580935,
+          1.0576939759775996,
+          1.1414840779616497,
+          1.083887531014625,
+          1.164700246998109,
+          1.2201880980283022,
+          1.207209141983185,
+          1.2922171640093438,
+          1.1272018880117685
+        ]
+      },
+      "steady_median_seconds": {
+        "128": 0.18393177702091634,
+        "256": 0.3109760354855098,
+        "512": 1.134342982986709
+      }
+    },
+    "tokens_equal_off_force": {
+      "128": true,
+      "256": true,
+      "512": true
+    }
+  },
+  "followup_backlog_text": "## aminx #1981: AR decoder loop-body scaling (loop_body_scales finding)\n\nlayer_b_loop_cost.py (T7) measured the AR decode kernel's while-loop body_operand_elements scaling alpha (L=256->512) above the 0.35 bar under `incremental=\"force\"`, meaning the per-wave loop body carries data-flow weight that grows faster than expected for a supposedly O(1)-per-wave incremental cache. Top offending body instructions (by weight): bitcast_dynamic-slice_fusion.2, bitcast_dynamic-slice_fusion, select_dynamic-update-slice_fusion, bitcast_select_fusion.2, bitcast_select_fusion.1. Needs investigation of what in the incremental decode path (KV-style cache update, position-map gather, or fixed-mask broadcast) scales with L instead of the wave size.",
+  "provenance": {
+    "git_hash": "e23f37e27a9199ce508d44f57210843a571bcebb",
+    "git_clean": true,
+    "prereg_sha256": ""
+  }
+}
