@@ -1,0 +1,122 @@
+[metadata]
+title = "Layer (b): IREE route safety, native vmfb parity, WASM32 codegen (T4)"
+created = "260927"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The RNG-free P03/P04 export wrappers (T1) trace cleanly (jax.make_jaxpr) and pass xtrax.export.check_export_safety for BOTH the NATIVE and WASM32 targets at every export bucket, the two T1 census controls (random_decoding_order -> random-permutation, lax.top_k -> unlegalizable-op) are re-detected by the same instrument, the StableHLO export compiled for NATIVE and executed via run_native_vmfb matches the wrapper's own JAX output on held-out fixture set B within the b bars (neighbour indices EXACT with the near-tie exclusion; P03 edge features and P04 log-probs TOL; P04 argmax EXACT), every gated cell honours the T3a-committed calibration headroom state (inherited from the b-ORT route, since b-IREE has no calibrate pass of its own), and the three T3a-sized/T2-built planted controls (P04 log-prob bias, P03 edge-projection bias, index-slot swap) are each detected when compiled and executed as native vmfbs. WASM32 compiles cleanly for the same StableHLO and its vmfb sha256 is recorded as CODEGEN_ONLY (no emsdk IREE runtime exists to execute it)."
+stage_name = "validation"
+claim_discriminates = ["H_b_iree_within_bar", "H_null_misspec"]
+claim_isolates = ["C_artifact_provenance", "C_iree_toolchain_version"]
+
+[reproduction]
+novel = true
+# No external paper/reference codebase is being reproduced: this is an internal
+# IREE-artifact-vs-JAX-wrapper consistency check, mirroring layer_b_ort_validate.bth.toml's
+# own choice of `novel = true` over a [reproduction] target.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "unsafe", "ctrl_blind", "fail"]
+
+[differential]
+knob = "AMINX_BV_LAYERB_IREE_VALIDATE_PERTURB"  # read via BTH_DIFFERENTIAL_VALUE; 1 = apply
+                                                 # T3a's committed delta_b04/delta_b03 on 5L33@128
+off = "0"
+on = "1"
+expect = "differs"
+metric = "ctrl_ratio_min"        # min(P04 log-prob ratio-to-bar, P03 edge ratio-to-bar) on 5L33@128
+                                  # -- the SAME pure-JAX formula T3a/T3b use (layer_b_iree.py's
+                                  # `_ctrl_ratio_min`), so this run's "on" arm reproduces the
+                                  # identical value without re-running the IREE compile pipeline.
+min_effect = 5.054473876953125   # PINNED: min(ctrl_effect.p04 / 1e-4, ctrl_effect.p03 / 2e-5) from
+                                  # the T3a-committed preregistered_params.json (effect in bar units;
+                                  # ctrl_effect.p04=0.0005602836608886719/1e-4=5.602836608886719,
+                                  # ctrl_effect.p03=0.00010108947753906251/2e-5=5.054473876953125,
+                                  # min = 5.054473876953125). Same deterministic JAX computation as
+                                  # T3a/T3b's own sizing search -- SAME number, not re-derived.
+
+# Declaration order matters (first matching branch wins): blocked, incomplete, unsafe,
+# ctrl_blind, fail, tie_unstable, partial_headroom, pass (this task's own step-3 ordering).
+
+[outcomes.blocked]
+condition = "iree_import_ok = false"
+decision = "Step 1's IREE toolchain import (iree.compiler, iree.runtime, xtrax.export's compile_for_target/run_native_vmfb/check_export_safety/NATIVE/WASM32) failed; nothing in this task could run, and the IREE route is recorded as not-validated rather than silently skipped."
+reasoning = "The task spec's own step 1: 'If this fails, the run writes status = BLOCKED ... and T4 closes as a finding.' The result-emission rule still requires exit 0 with a full-schema result even on this path."
+is_residual = true
+
+[outcomes.incomplete]
+condition = "n_skipped > 0 OR NOT git_clean"
+decision = "One or more (path, bucket) compile/execute cells or fixture rows failed, or the run tree was dirty; this run proves nothing and must not be committed as a clean validation."
+reasoning = "A skipped cell or a dirty tree means the comparisons this run would grade did not all run under the conditions the claim requires, regardless of what the computed rows say."
+is_residual = true
+
+[outcomes.unsafe]
+condition = "NOT trace_ok_all OR NOT safety_clean_all"
+decision = "At least one wrapper failed an independent jax.make_jaxpr trace, or xtrax.export.check_export_safety returned a non-empty blocker list for NATIVE or WASM32 at some bucket; the IREE route is not clean for export at every bucket this run covered."
+reasoning = "AC-B4 requires check_export_safety(..., NATIVE) and (..., WASM32) to both return [] with an independent trace_ok, for BOTH wrappers, at every bucket -- a single blocker or trace failure means the export boundary itself is not proven safe, which is a distinct failure mode from a numeric parity miss (fail) or an insensitive instrument (ctrl_blind), so it is graded before either."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "census_controls_detected < census_controls_total OR controls_detected < controls_total"
+decision = "Either a T1 census self-test control (random_decoding_order, lax.top_k) failed to trip, or a T3a-sized/T2-built planted numeric control (P04 bias, P03 bias, index swap) failed to trip when compiled and executed as a native vmfb; no parity statement is permitted for this run."
+reasoning = "A census control that fails to trip means check_export_safety itself is not confirmed to fire on known-unsafe ops in THIS run's environment. A planted numeric/index control that fails to trip means the native-vmfb harness cannot be trusted to catch a real discrepancy of this or smaller magnitude on set B, so a clean row set is not evidence of parity in either case."
+is_residual = true
+
+[outcomes.fail]
+condition = "n_over_bar > 0"
+decision = "At least one GATED row (not excluded_not_advanced) exceeds its bar with a non-near-tie mismatch or a TOL metric over bar: finding + DEVIATION."
+reasoning = "Residual catch-all: a gated row's OWN measurement exceeding its bar, with sensitive controls and no calibration not_advanced/low_headroom cushion available, is a genuine divergence between the native vmfb and the wrapper."
+is_residual = true
+
+[outcomes.tie_unstable]
+condition = "n_over_bar = 0 AND n_tie_unstable > 0"
+decision = "Every GATED index mismatch is confined to near-tie rows (pre-registered bars' Near-tie rule); the IREE-compiled artifact is not shown to disagree with the wrapper on any geometrically well-separated row."
+reasoning = "The near-tie rule exists precisely so that float32-evaluation-order-driven neighbour-slot swaps on genuinely tied rows are not mistaken for a real divergence; recording tie_unstable (rather than pass or fail) keeps that distinction visible."
+is_residual = false
+
+[outcomes.partial_headroom]
+condition = "n_over_bar = 0 AND n_tie_unstable = 0 AND (n_excluded_not_advanced > 0 OR n_low_headroom > 0)"
+decision = "Every gated row is within bar (or tie_unstable-excluded), but at least one cell was excluded as not_advanced (b-ORT-inherited calibration headroom) or gated with only low_headroom margin; the excluded/low-headroom paths do not advance from this run."
+reasoning = "b-IREE has no calibrate pass of its own and inherits the b-ORT route's headroom state for the same (path, quantity, bucket) key (spec step 2: 'inherited_route'); T3a already flagged P03 edge_features/b_ort as not_advanced at every measured bucket, and reporting that inheritance here without gating on it keeps the accounting honest without conflating it with a fresh validation failure."
+is_residual = false
+
+[outcomes.pass]
+condition = "n_over_bar = 0 AND n_tie_unstable = 0 AND n_excluded_not_advanced = 0 AND n_low_headroom = 0"
+decision = "Every gated row is within bar, with full (inherited) calibration headroom (advanced) on every measured/inherited bucket, both census controls detected, and all three planted controls detected."
+reasoning = "Zero over-bar rows, zero tie_unstable rows, zero not_advanced/low_headroom cells, with every control (census + planted) detected, are the minimum evidence that the IREE NATIVE route is parity-equivalent to the wrapper on the held-out set, and that WASM32 compiled cleanly from the same safe StableHLO."
+is_residual = false
+
+[result_schema]
+iree_import_ok = "bool"
+git_hash = "str"
+git_clean = "bool"
+trace_ok_all = "bool"
+safety_clean_all = "bool"
+census_controls_total = "int"
+census_controls_detected = "int"
+controls_total = "int"
+controls_detected = "int"
+n_rows = "int"
+n_skipped = "int"
+n_excluded_not_advanced = "int"
+n_low_headroom = "int"
+n_over_bar = "int"
+n_tie_unstable = "int"
+worst_ratio_to_bar = "float"
+worst_ratio_to_bar_available = "bool"
+worst_path = "str"
+max_p_before = "float"
+n_dropout = "int"
+artifact_subdir = "str"
+rings = "str"
+versions = "dict"
+control_fixture = "str"
+ctrl_ratio_min = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+iree_base_compiler_version = { type = "string", required = true }
+iree_base_runtime_version = { type = "string", required = true }
+xtrax_version = { type = "string", required = true }
