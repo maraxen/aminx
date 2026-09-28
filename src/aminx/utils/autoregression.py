@@ -301,6 +301,39 @@ def generate_wave_ar_mask(
   return mask * (1 - jnp.eye(seq_len, dtype=mask.dtype))
 
 
+def ar_mask_from_decoding_order(
+  decoding_order: DecodingOrder,
+  tie_group_map: jnp.ndarray | None = None,
+) -> AutoRegressiveMask:
+  """Causal, self-excluding mask for an ORDER array (``decoding_order[t]`` = position at step t).
+
+  This is the mask to pair with what ``utils.decoding_order`` functions return. It is built
+  through the same schedule the sampler decodes with (``WaveScheduleBundle.from_decoding_order``
+  then :func:`generate_wave_ar_mask`), so a mask built here and a wave built from the same
+  order cannot disagree.
+
+  Do not pass an order to :func:`generate_ar_mask` directly: its untied branch compares
+  ``decoding_order`` values as a RANK array, while its tied branch indexes by it as an ORDER
+  array. For a uniformly random permutation the mix-up is invisible in distribution, which
+  is why it survived; for any deliberate order (a custom ``decoding_order_fn``, a
+  counterfactual schedule) it silently yields a mask for a different order (debt #1982).
+
+  Args:
+    decoding_order: (L,) ORDER array.
+    tie_group_map: Optional (L,) tie group id per position. Tied positions are mutually
+      visible and decode at their earliest member's step, as in :func:`generate_ar_mask`.
+
+  Returns:
+    (L, L) float32 mask; ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
+  """
+  from aminx.types.bundles import WaveScheduleBundle  # noqa: PLC0415 -- type-only at module level
+
+  seq_len = decoding_order.shape[0]
+  groups = jnp.arange(seq_len, dtype=jnp.int32) if tie_group_map is None else tie_group_map
+  wave = WaveScheduleBundle.from_decoding_order(decoding_order, tie_group_map)
+  return generate_wave_ar_mask(wave, groups)
+
+
 def full_context_ar_mask(seq_len: int) -> jnp.ndarray:
   """Every position sees every other position's sequence, but not its own: ``1 - I``.
 

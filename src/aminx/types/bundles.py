@@ -354,6 +354,49 @@ class WaveScheduleBundle(eqx.Module):
     )
 
   @staticmethod
+  def from_decoding_order(
+    decoding_order: Int[Array, L],
+    tie_group_map: Int[Array, L] | None = None,
+  ) -> WaveScheduleBundle:
+    """Sequential schedule that visits positions in `decoding_order` (jit/vmap-safe).
+
+    This is `empty` with its waves permuted: W = L waves, one slot each, wave `t`
+    holding position `decoding_order[t]`. Unlike `from_tie_groups` it has no
+    data-dependent shapes or `.tolist()` calls, so it can be built inside a trace from a
+    traced (e.g. freshly drawn) order.
+
+    Tie groups need no special handling: `AutoregressiveDecode` resolves each slot to its
+    real group via the conditioning `tie_group_map` and samples a group only at its first
+    occurrence, and `generate_wave_ar_mask` places each group at its first wave. A tied
+    group is therefore decoded at the step its earliest member appears in the order --
+    the same semantics as `from_tie_groups`, with the later duplicate waves inert.
+
+    Parameters
+    ----------
+    decoding_order : Int[Array, "L"]
+        ORDER array: `decoding_order[t]` is the position decoded at step `t`. Not a rank
+        array -- see `aminx.utils.autoregression.generate_ar_mask` for the distinction.
+    tie_group_map : Int[Array, "L"] | None
+        Tie group id per position (state-0 convention). `None` means untied (each
+        position its own group).
+
+    Returns
+    -------
+    WaveScheduleBundle
+        Schedule of shape W = L, G = 1, P = 1.
+
+    """
+    order = jnp.asarray(decoding_order, dtype=jnp.int32)
+    seq_len = order.shape[0]
+    group_of_step = order if tie_group_map is None else jnp.asarray(tie_group_map, dtype=jnp.int32)[order]
+    return WaveScheduleBundle(
+      group_ids=group_of_step[:, None],
+      group_positions=order[:, None, None],
+      group_valid=jnp.ones((seq_len, 1), dtype=jnp.bool_),
+      position_valid=jnp.ones((seq_len, 1, 1), dtype=jnp.bool_),
+    )
+
+  @staticmethod
   def empty(seq_len: int) -> WaveScheduleBundle:
     """Sequential single-position-at-a-time schedule (no tied positions).
 

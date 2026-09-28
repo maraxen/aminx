@@ -173,16 +173,27 @@ def make_sample_sequences(
       )
       S = structure_coordinates.shape[0] if structure_coordinates.ndim == 4 else 1
 
+      # Accepted for signature compatibility. `generate_ar_mask`, its only consumer, never
+      # read it either: tie handling keys off `tie_group_map` alone.
+      del num_groups
+
       k_order, prng_key = jax.random.split(prng_key)
       decoding_order, _ = decoding_order_fn(k_order, L, None, None)
+      if decoding_order is None:
+        decoding_order = jnp.arange(L, dtype=jnp.int32)
 
-      from aminx.utils.autoregression import generate_ar_mask
-
-      ar_mask_single = generate_ar_mask(
-        decoding_order if decoding_order is not None else jnp.arange(L),
-        tie_group_map=tie_group_map,
-        num_groups=num_groups,
-      )
+      # The wave schedule and the ar_mask must describe the SAME order. This used to build
+      # `ar_mask` with `generate_ar_mask(decoding_order)` while leaving the bundle on its
+      # default N->C wave: the kernel then drew positions N->C while each position saw a
+      # context chosen by an unrelated permutation, and `generate_ar_mask`'s untied branch
+      # reads a RANK array anyway, not the ORDER array `decoding_order_fn` returns (debt
+      # #1982). Passing the wave and letting `build_inference_bundle` derive the mask from
+      # it (`generate_wave_ar_mask`) makes the two agree by construction.
+      if wave_schedule is None:
+        tie_map_state0 = None
+        if tie_group_map is not None:
+          tie_map_state0 = tie_group_map[0] if tie_group_map.ndim == 2 else tie_group_map
+        wave_schedule = WaveScheduleBundle.from_decoding_order(decoding_order, tie_map_state0)
 
       bundle, config = build_inference_bundle(
         coords=structure_coordinates,
@@ -195,7 +206,7 @@ def make_sample_sequences(
         bias=bias,
         tie_group_map=tie_group_map,
         state_weights=state_weights,
-        ar_mask=ar_mask_single,
+        wave=wave_schedule,
         ligand_coords=ligand_coords,
         ligand_atom_types=ligand_atom_types,
         ligand_mask=ligand_mask,
@@ -208,9 +219,6 @@ def make_sample_sequences(
         strategy_temperature=multi_state_temperature,
         state_weights=state_weights,
       )
-      if wave_schedule is not None:
-        bundle = eqx.tree_at(lambda b: b.wave, bundle, wave_schedule)
-
       result = sample_autoregressive.kernel(
         model, prng_key, bundle, config, stage_set, inference_only=inference_only,
       )
