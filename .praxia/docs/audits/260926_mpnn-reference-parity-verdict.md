@@ -295,3 +295,71 @@ budget-floor probe).
   This finding is therefore facts-plus-fix-plus-test-evidence only; the actual floor numbers
   (`fastpath_ratio`, `aa_ratio`, `budget_wall_hours` on real GPU hardware) are not yet measured
   and are NOT claimed here.
+
+## T9 close-out (260927, sprint `260927_aminx-browser-export-phase2a`, T9)
+
+**Facts, no re-grading** (the sampling tier is still absent from the clause scorecard above).
+The budget-floor probe described just above HAS now run on titanix GPU 2; this section
+records what happened, per `outputs/browser_validation/layer_a/run_ledger.json`.
+
+- **Run 1, `f582a075…` -- outcome `error`.** The P11-s lane crashed:
+  `ValueError: atom_37 and atom_37_mask must be provided when use_side_chains=True`
+  (`ligand_features.py:360`). Root cause:
+  `layer_a_sampling_budget_floor._n_draws_forced_off` built its OWN per-lane
+  `build_inference_bundle` kwargs rather than reusing `layer_a_sampling.
+  side_chain_context_kwargs` (the one helper `aminx_sample_one`/`aminx_conditional_logits`/
+  `aminx_sample_batch` already share for exactly this purpose) and omitted the
+  `atom_37`/`atom_37_mask`/`ligand_*` inputs -- invisible to every unit test in this file
+  because they use a synthetic, non-side-chain-context `Aminx` model, and only surfaced the
+  first time a REAL lane (P11-s) exercised the diagnostic. **Fixed** (`cb2b7264`): reuses
+  `side_chain_context_kwargs(batch)` at that call site. Regression-guarded by
+  `test_budget_floor_n_draws_forced_off_every_lane` (5/5 lane parametrizations, `parity_heavy`,
+  real reference checkpoint).
+- **Run 2, `eedd3993-2437-44e9-b0e5-b7cbcdaf41a0` -- outcome `floor_exceeded`** (git
+  `cb2b72642f6cddcd2a1bcfa424ce5e41d2bab128`, titanix GPU 2, `git_dirty=false`, sidecar
+  `867c05d5…`; `check_run.sh` verified). Measured (`n = 1500` floor):
+  `budget_wall_hours = 446.4` against a `16.0` h cap; `projected_peak_rss_gib = 4.38` against a
+  `48.0` GiB cap (RSS is not the blocker). Per-lane hours: P07@0.1 = 105.8, P07@1.0 = 106.1,
+  P08@1.0 = 106.0, P09-s@1.0 = 54.5, P11-s@1.0 = 74.0. Controls at the control cell
+  (4YOW, P07@1.0): `aa_ratio = 0.979` (inside `[0.8, 1.25]` -- the cost MEASUREMENT is stable,
+  per BATHOS.md's own control discipline) and `fastpath_ratio = 0.0385` (well under the
+  `fastpath_not_engaged` threshold of `0.5` -- the fastpath itself DOES engage and IS ~26x
+  cheaper: `c_force = 0.0883` s/draw vs `c_off = 2.292` s/draw). `n_draws_forced_off = 0` on
+  EVERY lane -- every allocated draw's own wave already host-certifies the fastpath's
+  preconditions. Per the sidecar's outcome ordering, `floor_exceeded` fires before
+  `fastpath_not_engaged` is even reached, but the `n_draws_forced_off` diagnostic and the
+  fastpath control together establish that the fastpath is available and correctness-preserving
+  -- the harness just never DISPATCHES a batch through it. T10 (per the sprint's `run_if` gate:
+  "`floor_exceeded`/`fastpath_not_engaged` are findings: the track stops and T10 does not run")
+  did **not** run.
+- **Diagnosis (backed by this run's own `per_draw_costs_s`, not re-derived).**
+  `layer_a_sampling_calibrate._budget_at_floor` prices every main-arm aminx draw via
+  `layer_a_sampling.measure_aminx_draw_cost_s`, which (pre-T9b) called the batched harness's
+  `_vmapped_sample()` -- the `incremental="auto"` vmapped path. Under `jax.vmap`,
+  `AutoregressiveDecode.incremental` is read as a batched (not static) value, so the kernel's
+  `lax.cond` dispatch runs BOTH the incremental and full-recompute branches for every draw
+  (V16) -- `"auto"` therefore pays full-recompute cost regardless of whether the fastpath would
+  have applied. This run's own `per_draw_costs_s["P07@1.0"]["4YOW"]["aminx_s"] = 2.372` matches
+  `c_off = 2.292` (same order, both ~2.3 s/draw), not `c_force = 0.088` -- even though
+  `n_draws_forced_off["P07@1.0"] = 0` shows every draw in that lane's allocation WOULD have
+  qualified for `force`. The harness has a working, correctness-preserving fastpath
+  (`test_force_equals_off_when_host_true`) that the production batched sampler never actually
+  takes.
+- **What a fix might give (UNMEASURED extrapolation, not a claim).** Naively rescaling the
+  measured `budget_wall_hours = 446.4` by the single control cell's `fastpath_ratio = 0.0385`
+  gives `446.4 * 0.0385 ≈ 17.2` h -- still slightly ABOVE the `16.0` h cap. This number is
+  **not evidence of anything**: it applies ONE ratio, measured at ONE (fixture, lane) cell
+  (4YOW, P07@1.0), to a formula that sums over five lanes and four set-B fixtures each with
+  its own `c_aminx`/`c_ref`, several of which (3HTN, 6MRR, P09-s's 3HTN/4YOW) are far smaller
+  or already cheap relative to 4YOW and would not shrink by the same factor (or, per the
+  reference-cost floor, cannot shrink below `c_ref`-scale contributions at all). Whether a
+  routed sampler actually clears the 16 h cap is an empirical question for the next titanix
+  run, not something this arithmetic answers.
+- **Follow-up (T9b, same task_id, separate commit).** Routes `aminx_sample_batch`/
+  `measure_aminx_draw_cost_s` through a new `layer_a_sampling.route_incremental_for_batch`
+  host-certified router -- `"force"` iff EVERY draw in a batch host-certifies (never `"auto"`
+  under vmap), `"off"` otherwise -- reusing `aminx_sample_batch_at_incremental` rather than
+  duplicating its chunking/wave-building logic. Does not touch the budget formula, the caps, or
+  `layer_a_sampling_budget_floor.bth.toml` (pre-registered, untouched). The same sidecar will
+  be re-run by the orchestrator on titanix at the new commit; its outcome is not yet known and
+  is not claimed here.

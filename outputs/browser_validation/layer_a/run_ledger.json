@@ -124,5 +124,29 @@
     "fixture_set": "A",
     "gpu": 2,
     "summary": "validate budget at the n=1500 floor 483.0 h (cap 16 h; per lane 71-105 h), peak RSS 4.18 GiB; no pilot, no params written; sampling tier NOT validated at the pre-registered scale (D10)"
+  },
+  {
+    "stem": "layer_a_sampling_budget_floor",
+    "H_v": "7ad39982388dd95a9775ee9707463d3108cba966",
+    "session": "bv-layer_a_sampling_budget_floor-7ad39982388d",
+    "prereg_sha256": "867c05d5591eed01648929e499a2cd2e9084c06d8c4ccb4e00cfb310cfddd640",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "f582a075",
+    "outcome": "error",
+    "gpu": 2,
+    "note": "P11-s lane crashed: ValueError: atom_37 and atom_37_mask must be provided when use_side_chains=True (ligand_features.py:360) -- _n_draws_forced_off built its own per-lane bundle kwargs and omitted the side-chain-context inputs, the first time a real lane (rather than the unit tests' synthetic non-side-chain model) exercised it; fixed by cb2b7264 (reuses las.side_chain_context_kwargs, the same helper aminx_sample_one/aminx_conditional_logits/aminx_sample_batch already use). H_v/prereg_sha256/lock_sha256 recomputed from git (sidecar unchanged between this H_v and cb2b7264: both hash to prereg_sha256 above); run_id given to this task only as an 8-char prefix, and exit/free_gb_before_sync were not independently available (this task never ran bth, per its own constraints) -- exit is presumed 1 (uncaught ValueError), consistent with F-T8 forcing bathos outcome=error on any non-zero exit."
+  },
+  {
+    "stem": "layer_a_sampling_budget_floor",
+    "H_v": "cb2b72642f6cddcd2a1bcfa424ce5e41d2bab128",
+    "session": "bv-layer_a_sampling_budget_floor-cb2b72642f6c",
+    "exit": 0,
+    "prereg_sha256": "867c05d5591eed01648929e499a2cd2e9084c06d8c4ccb4e00cfb310cfddd640",
+    "lock_sha256": "7cea53b8ff6e66acaf01edc335d2d38f104c087c41a70683efb07446669dd33f",
+    "run_id": "eedd3993-2437-44e9-b0e5-b7cbcdaf41a0",
+    "outcome": "floor_exceeded",
+    "fixture_set": "B",
+    "gpu": 2,
+    "summary": "n=1500 floor: budget_wall_hours=446.4 (cap 16), projected_peak_rss_gib=4.38 (cap 48); per_lane_hours P07@0.1=105.8, P07@1.0=106.1, P08@1.0=106.0, P09-s@1.0=54.5, P11-s@1.0=74.0; controls at 4YOW/P07@1.0: aa_ratio=0.979 (in [0.8,1.25]), fastpath_ratio=0.0385 (<=0.5 -- fastpath engaged: c_force=0.0883 s/draw vs c_off=2.292 s/draw); n_draws_forced_off=0 on every lane. git_dirty=false; free_gb_before_sync not independently available (this task never ran bth). Diagnosis: layer_a_sampling_calibrate._budget_at_floor prices the main-arm draws via measure_aminx_draw_cost_s, which (pre-T9b) called the batched harness's 'auto' vmapped path -- under vmap this runs BOTH lax.cond branches (V16), so it measured ~2.37 s/draw at 4YOW/P07@1.0, matching c_off (2.292) not c_force (0.088) despite the fastpath genuinely qualifying (n_draws_forced_off=0). T9b (same task_id, follow-up) routes aminx_sample_batch/measure_aminx_draw_cost_s through a host-certified incremental router so this projection is expected to fall sharply on re-run; the re-run itself is an orchestrator-only titanix step this task does not perform."
   }
 ]
