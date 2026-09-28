@@ -1,0 +1,75 @@
+[metadata]
+title = "Layer (b): ORT-CPU calibrate on fixture set A (sized controls, headroom, near-tie epsilon)"
+created = "260927"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On fixture set A (5L33@128, tie_lattice_L96@128 [P03 only], 4GYT@512, 6EHB@1024), the RNG-free P03/P04 export wrappers (T1) run directly in JAX agree with ONNX Runtime's CPU execution provider on the already-converted T2 artifacts (neighbour indices EXACT with the near-tie exclusion, P03 edge features and P04 log-probs TOL, P04 argmax EXACT), and P04 additionally agrees with the native unpadded score_unconditional.kernel on zero_dropout(model) (D-H, the P27 comparator). A geometric-bisection search on 5L33@128 finds a P04 log-prob bias delta and a P03 edge-projection bias delta that each size their perturbed artifact into [2x, 10x] of its bar, both perturbed artifacts are rebuilt at every export bucket with the chosen deltas, the near-tie epsilon (1e-4 Angstrom) is proven at least 5x the measured float32-vs-float64 CA-distance error, and the headroom rule is applied per (path, quantity, route, bucket), writing outputs/browser_validation/layer_b/preregistered_params.json. Two refusal probes (2GFB oversize, 5L33[:40] undersize) are validated iff they raise their named exception."
+stage_name = "calibration"
+novel = true
+# No [reproduction]: novel = true replaces it. No [differential] and no
+# experiment.claim_discriminates: calibration sidecars never prove sensitivity
+# themselves -- lint_sidecars.py's calibration-no-differential check fails the build
+# otherwise.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["blocked", "incomplete", "ctrl_unsized"]
+
+# Declaration order matters (first matching branch wins), per the task spec's own
+# ordering: blocked (no path available, T2 BLOCKED table), then incomplete, then
+# ctrl_unsized, then pass. not_advanced headroom rows never change this outcome (spec:
+# "not_advanced rows do not change the calibrate outcome") -- they are recorded only in
+# preregistered_params.json's headroom dict.
+
+[outcomes.blocked]
+condition = "n_paths_available = 0"
+decision = "Neither P03 nor P04 has a clean converted artifact for every export bucket (T2 BLOCKED table); nothing in this task's comparisons could run, and the run is recorded as blocked rather than silently producing an empty pass."
+reasoning = "T2's per-path BLOCKED table requires every downstream sidecar to declare blocked as its FIRST-matching outcome when n_paths_available == 0 (spec 'Referenced excerpt: Task 2 per-path BLOCKED table')."
+is_residual = true
+
+[outcomes.incomplete]
+condition = "NOT git_clean OR NOT length_probes_ok OR n_measurements_computed < n_measurements_expected"
+decision = "The run tree was dirty, one of the two length-refusal probes did not raise its named exception, or one or more (fixture, path) cells failed to compute a comparison; this calibration proves nothing and must not be committed as a clean calibration."
+reasoning = "A dirty tree, a length-refusal probe that silently accepted instead of raising, or a comparison that crashed mid-run each mean the measurements this run would tighten deltas/headroom from did not run under the conditions the claim requires."
+is_residual = true
+
+[outcomes.ctrl_unsized]
+condition = "controls_sized < controls_total OR NOT epsilon_ok"
+decision = "The geometric-bisection search failed to land delta_b04 and/or delta_b03 in its [2x, 10x] window within 20 steps, or the near-tie epsilon (1e-4) is not at least 5x the measured max_abs_dist_err; the committed deltas or the near-tie exclusion itself would rest on an insensitive or under-sized instrument."
+reasoning = "Pre-registered bars: 'If epsilon < 5 x max_abs_dist_err, T3a outcome is ctrl_unsized (epsilon under-sized)'; and a control that cannot be sized during calibration would silently pass an unsized perturbation through to validate."
+is_residual = true
+
+[outcomes.pass]
+condition = "params_written AND controls_sized = controls_total AND epsilon_ok"
+decision = "preregistered_params.json was written with both controls sized and the near-tie epsilon proven sufficient, regardless of how many headroom keys were flagged not_advanced."
+reasoning = "Headroom is a result field, not an outcome (mirrors 'Calibration-twin outcomes' precedent in layer_a_exact_calibrate.bth.toml): a calibration that legitimately finds not_advanced buckets still wrote a usable, fully-sized params file and must still declare pass."
+is_residual = false
+
+[result_schema]
+n_paths_available = "int"
+converted_by_path = "dict"
+n_measurements_expected = "int"
+n_measurements_computed = "int"
+git_hash = "str"
+git_clean = "bool"
+length_probes_ok = "bool"
+delta_b04 = "float"
+delta_b03 = "float"
+controls_total = "int"
+controls_sized = "int"
+epsilon_tie = "float"
+max_abs_dist_err = "float"
+epsilon_ok = "bool"
+max_p_before = "float"
+n_dropout = "int"
+params_written = "bool"
+artifact_subdir = "str"
+versions = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
