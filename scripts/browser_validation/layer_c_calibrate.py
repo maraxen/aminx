@@ -575,24 +575,35 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
   manifest_rows: list[dict[str, Any]] = []
   params_written = False
   if delta_c04 is not None and delta_c03 is not None and n_paths_available > 0:
-    manifest_rows = _rebuild_sized_artifacts_c(model, stage_set, delta_c04, delta_c03, resolved_dir)
-    params = {
-      "delta_c04": delta_c04,
-      "delta_c03": delta_c03,
-      "ctrl_effect_c": {
-        "p04": sizing_result["delta_c04_tried"][-1]["ratio_to_bar"] * P04_LOGPROB_BAR_C
-        if sizing_result.get("delta_c04_tried")
-        else None,
-        "p03": sizing_result["delta_c03_tried"][-1]["ratio_to_bar"] * P03_EDGE_BAR_C
-        if sizing_result.get("delta_c03_tried")
-        else None,
-      },
-      "headroom_c": headroom,
-    }
-    PARAMS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with PARAMS_PATH.open("w") as fh:
-      json.dump(params, fh, indent=2, sort_keys=True)
-    params_written = True
+    try:
+      manifest_rows = _rebuild_sized_artifacts_c(
+        model, stage_set, delta_c04, delta_c03, resolved_dir
+      )
+      params = {
+        "delta_c04": delta_c04,
+        "delta_c03": delta_c03,
+        "ctrl_effect_c": {
+          "p04": sizing_result["delta_c04_tried"][-1]["ratio_to_bar"] * P04_LOGPROB_BAR_C
+          if sizing_result.get("delta_c04_tried")
+          else None,
+          "p03": sizing_result["delta_c03_tried"][-1]["ratio_to_bar"] * P03_EDGE_BAR_C
+          if sizing_result.get("delta_c03_tried")
+          else None,
+        },
+        "headroom_c": headroom,
+      }
+      PARAMS_PATH.parent.mkdir(parents=True, exist_ok=True)
+      with PARAMS_PATH.open("w") as fh:
+        json.dump(params, fh, indent=2, sort_keys=True)
+      params_written = True
+    except OSError as exc:
+      # A write/IO failure while rebuilding the sized artifacts (e.g. the shared D-G
+      # $BV_ARTIFACTS store is temporarily unwritable) must not crash the script with an
+      # uncaught traceback and a bare, un-graded exit code -- the result-emission rule
+      # requires every non-integrity-refusal path to exit 0 with a result JSON. Recorded
+      # as a residual (ctrl_unsized, since controls_sized stays < controls_total's
+      # params-writing half) rather than silently treated as params_written.
+      errors["manifest_rebuild"] = f"{type(exc).__name__}: {exc}"
 
   versions = {
     "jax": jax.__version__,

@@ -126,6 +126,27 @@
     }
   },
   {
+    "name": "ctrl_unsized_deltas_sized_but_manifest_rebuild_failed",
+    "expect": "ctrl_unsized",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 7,
+      "git_hash": "00000000000000000000000000000000000011",
+      "git_clean": true,
+      "harness_ok": true,
+      "cross_origin_isolated": true,
+      "delta_c04": 0.00004,
+      "delta_c03": 0.000008,
+      "controls_total": 2,
+      "controls_sized": 2,
+      "params_written": false,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
     "name": "pass_fully_clean_with_not_advanced_headroom",
     "expect": "pass",
     "result": {
