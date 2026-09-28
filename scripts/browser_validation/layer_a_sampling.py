@@ -303,6 +303,35 @@ def build_lane_batch(fixture: dict[str, Any], lane: str, data_utils_module: Any)
   )
 
 
+def side_chain_context_kwargs(batch: LaneBatch) -> dict[str, Any]:
+  """`atom_37`/`atom_37_mask`/ligand-* `build_inference_bundle` kwargs, present only when
+  `batch.use_side_chain_context` (P11-s) -- empty dict for every other lane.
+
+  The ONE place these are built, so every caller that constructs a per-lane bundle
+  (`aminx_sample_one`, `aminx_conditional_logits`, `aminx_sample_batch`, and
+  `layer_a_sampling_budget_floor._n_draws_forced_off`) gets exactly the same inputs
+  `build_lane_batch` produced for that lane -- never re-derived at the call site.
+
+  T9 remediation: `_n_draws_forced_off` built its own bundle kwargs without this
+  block, so the P11-s lane crashed with `ValueError: atom_37 and atom_37_mask must
+  be provided when use_side_chains=True` (`ligand_features.py:359`) the first time a
+  real lane (rather than the unit tests' synthetic, non-side-chain Aminx model)
+  exercised it.
+  """
+  if not batch.use_side_chain_context:
+    return {}
+  import jax
+
+  actx = 16
+  return {
+    "atom_37": jax.numpy.asarray(batch.atom37),
+    "atom_37_mask": jax.numpy.asarray(batch.atom37_mask),
+    "ligand_coords": jax.numpy.zeros((batch.length, actx, 3)),
+    "ligand_atom_types": jax.numpy.zeros((batch.length, actx), jax.numpy.int32),
+    "ligand_mask": jax.numpy.zeros((batch.length, actx)),
+  }
+
+
 def full_model_bundle_for_lane(lane: str, weight_source: str) -> tuple[Any, Any, Any, Any]:
   """P11-s uses the ligand/side-chain-context checkpoint pair (`lac.load_sidechain_context_models`,
   always pinned to `weight_source="eqx"` per that loader's own docstring); every other lane uses
@@ -459,13 +488,7 @@ def aminx_sample_one(
     "temperature": float(temperature),
     "mode": "sample",
   }
-  if batch.use_side_chain_context:
-    kw["atom_37"] = jax.numpy.asarray(batch.atom37)
-    kw["atom_37_mask"] = jax.numpy.asarray(batch.atom37_mask)
-    actx = 16
-    kw["ligand_coords"] = jax.numpy.zeros((batch.length, actx, 3))
-    kw["ligand_atom_types"] = jax.numpy.zeros((batch.length, actx), jax.numpy.int32)
-    kw["ligand_mask"] = jax.numpy.zeros((batch.length, actx))
+  kw.update(side_chain_context_kwargs(batch))
   bundle, config = build_inference_bundle(**kw)
   result = sample_autoregressive.kernel(jax_model, prng_key, bundle, config, make_stage_set())
   return np.asarray(result.sequence), np.asarray(result.logits)
@@ -494,13 +517,7 @@ def aminx_conditional_logits(
     "tie_group_map": jax.numpy.asarray(batch.tie_group_map),
     "mode": "score_conditional",
   }
-  if batch.use_side_chain_context:
-    kw["atom_37"] = jax.numpy.asarray(batch.atom37)
-    kw["atom_37_mask"] = jax.numpy.asarray(batch.atom37_mask)
-    actx = 16
-    kw["ligand_coords"] = jax.numpy.zeros((batch.length, actx, 3))
-    kw["ligand_atom_types"] = jax.numpy.zeros((batch.length, actx), jax.numpy.int32)
-    kw["ligand_mask"] = jax.numpy.zeros((batch.length, actx))
+  kw.update(side_chain_context_kwargs(batch))
   bundle, config = build_inference_bundle(**kw)
   logits = score_conditional.kernel(
     jax_model, jax.random.PRNGKey(0), bundle, config, make_stage_set()
@@ -751,13 +768,7 @@ def aminx_sample_batch(
     "temperature": float(temperature),
     "mode": "sample",
   }
-  if eff_batch.use_side_chain_context:
-    kw["atom_37"] = jnp.asarray(eff_batch.atom37)
-    kw["atom_37_mask"] = jnp.asarray(eff_batch.atom37_mask)
-    actx = 16
-    kw["ligand_coords"] = jnp.zeros((eff_batch.length, actx, 3))
-    kw["ligand_atom_types"] = jnp.zeros((eff_batch.length, actx), jnp.int32)
-    kw["ligand_mask"] = jnp.zeros((eff_batch.length, actx))
+  kw.update(side_chain_context_kwargs(eff_batch))
   bundle, config = build_inference_bundle(**kw)
   run = _vmapped_sample()
   chunk = min(sample_chunk_size(eff_batch.length), n)

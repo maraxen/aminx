@@ -506,3 +506,69 @@ def test_planted_inconsistent_mask_not_forced(model: Aminx) -> None:
   )
   forced = sample_autoregressive.kernel(model, key, bundle, config, stage_set, incremental="force")
   assert not np.allclose(np.asarray(forced.logits), np.asarray(full.logits), atol=LOGIT_ATOL)
+
+
+# --------------------------------------------------------------------------------------
+# T9 remediation regression: `layer_a_sampling_budget_floor._n_draws_forced_off` must not
+# raise for ANY lane, on a real fixture -- the synthetic model above never exercises
+# `use_side_chain_context`, so it could not have caught the P11-s bug this guards.
+# --------------------------------------------------------------------------------------
+
+_ONE_FIXTURE_ALLOCATION_CACHE_NAME = "1BC8"  # smallest set-B fixture resolvable WITHOUT
+# $PROTEINMPNN_PATH (only needs $REFERENCE_PATH, present on every dev box that has the
+# LigandMPNN reference clone at all) -- L=113, real PDB, real atom_37 data.
+
+
+@pytest.mark.parity_heavy
+@pytest.mark.parametrize("lane", las.LANE_KEYS)
+def test_budget_floor_n_draws_forced_off_every_lane(lane: str) -> None:
+  """`layer_a_sampling_budget_floor._n_draws_forced_off` -- the function whose per-lane
+  bundle construction this task's root cause lives in -- must not raise for ANY lane in
+  `las.LANE_KEYS`, on a real fixture. Builds the model + per-lane batch via the EXACT
+  same reused helpers the budget-floor script's own `run()` calls
+  (`las.full_model_bundle_for_lane`, `layer_a_sampling_calibrate._lane_fixture_batches`)
+  rather than re-deriving lane inputs here, then calls `_n_draws_forced_off` itself (the
+  function under test, not a reimplementation of it) for one allocated draw.
+
+  Regression guard for T9: pre-fix, the P11-s lane's per-lane bundle kwargs omitted
+  `atom_37`/`atom_37_mask`/`ligand_*` (now `las.side_chain_context_kwargs`), crashing
+  with `ValueError: atom_37 and atom_37_mask must be provided when use_side_chains=True`
+  (`ligand_features.py:359`) the first time a real lane -- rather than this file's other
+  tests' synthetic, non-side-chain-context `Aminx` model -- exercised it. `P09-s@1.0` on
+  this fixture has no k-NN-disjoint qualifying tie group (`tie_groups_knn_disjoint: []`
+  in the manifest), so `_lane_fixture_batches` filters it out and the loop below runs
+  zero iterations for that lane -- still a valid "did not raise" pass, matching what the
+  real `run()` does when no set-B fixture qualifies for a lane.
+
+  Marked `parity_heavy`: needs the real reference checkpoint + torch
+  (`load_full_model`/`load_sidechain_context_models`), unlike this file's synthetic-model
+  tests above. Run locally with a narrow selection, e.g.:
+  `OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 uv run pytest
+  tests/parity/test_layer_a_sampling_batched.py -k test_budget_floor_n_draws_forced_off_every_lane
+  -m parity_heavy`.
+  """
+  import json
+
+  import scripts.browser_validation.layer_a_exact as lae  # noqa: PLC0415
+  import scripts.browser_validation.layer_a_sampling_budget_floor as lasbf  # noqa: PLC0415
+  import scripts.browser_validation.layer_a_sampling_calibrate as lasc  # noqa: PLC0415
+
+  manifest_path = (
+    Path(__file__).resolve().parents[2]
+    / "outputs"
+    / "browser_validation"
+    / "fixtures"
+    / "manifest.json"
+  )
+  manifest = json.loads(manifest_path.read_text())
+  fixture = next(f for f in manifest["fixtures"] if f["name"] == _ONE_FIXTURE_ALLOCATION_CACHE_NAME)
+  data_utils_module = lae._load_reference_data_utils()  # noqa: SLF001 -- reuse, not reimplement
+
+  lane_model = las.full_model_bundle_for_lane(lane, "eqx")
+  lane_jax = lane_model[0]
+  batches = lasc._lane_fixture_batches([fixture], lane, data_utils_module)  # noqa: SLF001
+  n_off = lasbf._n_draws_forced_off(  # noqa: SLF001 -- the function under test, not reimplemented
+    lane_jax, batches, lane, {fixture["name"]: 1}
+  )
+  assert isinstance(n_off, int)
+  assert n_off >= 0

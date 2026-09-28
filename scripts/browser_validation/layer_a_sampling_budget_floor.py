@@ -61,6 +61,23 @@ AA_CONTROL_SEED_BASE_2 = 5_202_000
 FASTPATH_CONTROL_SEED_BASE = 5_303_000
 REFERENCE_COST_SAMPLE_N = lasc.REFERENCE_COST_SAMPLE_N
 
+# T9 remediation (step 3): local CPU smoke support. `--smoke` restricts every reused
+# helper below (`_budget_at_floor`, `_lane_fixture_batches`, `_largest_fixture`) to ONE
+# small set-B fixture by shrinking the `protein_fixtures_b` list THEY are called with --
+# never by editing those functions themselves (both stay reused unmodified, per this
+# module's own docstring). "1BC8" is the only set-B protein fixture resolvable with just
+# $REFERENCE_PATH (no $PROTEINMPNN_PATH clone needed), so it is the one every dev box
+# with the LigandMPNN reference clone can smoke against.
+SMOKE_FIXTURE_NAME = "1BC8"
+# n_floor's real per-fixture allocation is computed at N_REQUIRED_FLOOR=1500 (unmodified,
+# per the module docstring); with a single smoke fixture it would receive the FULL 1500,
+# and _n_draws_forced_off would host-loop that many wave/predicate computations per lane
+# purely to prove "does not raise". SMOKE_MAX_DRAWS_PER_FIXTURE caps that loop under
+# --smoke ONLY (never a real run) -- it does not touch `floor`/`draw_allocation_by_lane`
+# itself, so the recorded allocation and budget projection are unaffected; only the
+# smoke-only diagnostic draw count they feed is capped.
+SMOKE_MAX_DRAWS_PER_FIXTURE = 5
+
 
 def _load_manifest() -> dict[str, Any]:
   with _MANIFEST_PATH.open() as fh:
@@ -76,12 +93,18 @@ def _n_draws_forced_off(
   batches: list[tuple[dict[str, Any], las.LaneBatch]],
   lane: str,
   allocation: dict[str, int],
+  *,
+  max_draws: int | None = None,
 ) -> int:
   """Count how many of `allocation`'s allocated draws, over `batches`, fail the
   three-way host predicate AND (D-F) -- purely diagnostic (spec "n_draws_forced_off
   per lane"). One deterministic encode per fixture (noise 0, `mode="sample"`'s own
   bundle construction re-derives the SAME neighbour geometry the kernel itself would
   use for a real draw -- V4/V19: encode does not depend on the sampled sequence).
+
+  `max_draws`, when given, caps how many of `allocation`'s draws are actually
+  inspected per fixture (smoke acceleration ONLY -- `None`, the default, inspects every
+  allocated draw exactly as a real run does). It never changes `allocation` itself.
   """
   import jax
 
@@ -94,6 +117,8 @@ def _n_draws_forced_off(
     k = allocation.get(fixture["name"], 0)
     if k <= 0:
       continue
+    if max_draws is not None:
+      k = min(k, max_draws)
     kw: dict[str, Any] = {
       "coords": batch.x4,
       "mask": batch.mask,
@@ -107,6 +132,10 @@ def _n_draws_forced_off(
       "temperature": las.DEFAULT_LANE_TEMPERATURES[lane],
       "mode": "sample",
     }
+    # T9 remediation: reuse the SAME per-lane bundle-kwargs helper `aminx_sample_one`/
+    # `aminx_sample_batch` use, rather than re-deriving lane inputs here -- this is what
+    # was missing (P11-s's atom_37/atom_37_mask/ligand_* kwargs), causing the ValueError.
+    kw.update(las.side_chain_context_kwargs(batch))
     seed_base = las._seed_for(f"{fixture['name']}{lane}forcedoff")  # noqa: SLF001
     waves = [
       las.wave_from_tie_groups_np(
@@ -148,6 +177,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
   protein_fixtures_b = [
     f for f in manifest["fixtures"] if f.get("set") == "B" and f.get("kind") == "protein"
   ]
+  smoke = bool(getattr(args, "smoke", False))
+  if smoke:
+    # T9 remediation (step 1): restrict to the one smoke fixture by shrinking the LIST
+    # every reused helper below is called with -- never by editing those functions
+    # (`_budget_at_floor`/`_lane_fixture_batches`/`_largest_fixture` stay reused
+    # unmodified, per this module's own docstring).
+    protein_fixtures_b = [f for f in protein_fixtures_b if f.get("name") == SMOKE_FIXTURE_NAME]
+    if not protein_fixtures_b:
+      msg = f"--smoke fixture {SMOKE_FIXTURE_NAME!r} not found in set-B protein fixtures"
+      raise ValueError(msg)
+  max_draws = SMOKE_MAX_DRAWS_PER_FIXTURE if smoke else None
   data_utils_module = lae._load_reference_data_utils()  # noqa: SLF001
   full_model_bundle = las.full_model_bundle_for_lane(CONTROL_LANE, "eqx")
   jax_model, pt_model, torch, _model_utils = full_model_bundle
@@ -167,7 +207,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
       protein_fixtures_b, lane, data_utils_module
     )
     n_draws_forced_off[lane] = _n_draws_forced_off(
-      lane_jax, batches, lane, floor["draw_allocation_by_lane"].get(lane, {})
+      lane_jax,
+      batches,
+      lane,
+      floor["draw_allocation_by_lane"].get(lane, {}),
+      max_draws=max_draws,
     )
 
   # --- controls at the largest set-B fixture, CONTROL_LANE ---
@@ -216,6 +260,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     "aa_ratio": aa_ratio,
     "fastpath_ratio": fastpath_ratio,
     "device_kind": _device_kind(),
+    "smoke": smoke,
     **prov,
   }
   return result
@@ -224,6 +269,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--out", required=True, type=Path, help="Path to write the result JSON.")
+  parser.add_argument(
+    "--smoke",
+    action="store_true",
+    help=(
+      "Local CPU smoke mode: restrict to the single SMOKE_FIXTURE_NAME set-B fixture and "
+      "cap the n_draws_forced_off diagnostic loop at SMOKE_MAX_DRAWS_PER_FIXTURE draws per "
+      "lane. Never bathos-tracked; a real run (no --smoke) is unchanged."
+    ),
+  )
   args = parser.parse_args(argv)
 
   result = run(args)
