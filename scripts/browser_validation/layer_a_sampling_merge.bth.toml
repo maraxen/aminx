@@ -1,0 +1,100 @@
+# v2 FINDING. Carries the v1 validate contract (git history of
+# layer_a_sampling_validate.bth.toml at 68f33c78) onto the four ProteinMPNN
+# V2_LANES. LigandMPNN / P11-s is deferred by user decision 2026-09-28.
+
+[metadata]
+title = "Layer (a) sampling v2 finding: merged V2_LANES equivalence on fixture set B"
+created = "260928"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On fixture set B, for the four V2_LANES (P07@0.1, P07@1.0, P08@1.0, P09-s@1.0; LigandMPNN / P11-s deferred by user decision 2026-09-28): teacher-forced per-step log-probs match within 1e-4 nats, and every lane is declared equivalent (recovery TOST delta 0.01 AND excess-JS 95% upper bound < committed m_l; IUT, alpha 0.05 per lane) at n_required, with zero omitted-AA and zero X tokens in both arms; positive control detected >= 18/20, negative control false positives <= 3/20, and the P09-s fusion control is detected. A missing unit, a duplicate unit, or a git_hash mismatch is a residual merge_refused, emitted as a graded result."
+stage_name = "validation"
+claim_discriminates = ["H_sampling_equiv", "H_null_misspec"]
+
+[reproduction]
+reproduces_paper = "dauparas/LigandMPNN@26ec57ac976ade5379920dbd43c7f97a91cf82de (reference code; Mode A). P11-s / LigandMPNN is deferred by user decision 2026-09-28 and is not scored."
+# no requires_pass_stem; prereq_check() against layer_a_sampling_calibrate replaces it
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["merge_refused", "incomplete", "ctrl_blind", "underpowered", "fail"]
+
+[differential]
+knob = "AMINX_BV_SAMPLING_BIAS"   # 1 = calibrated +beta on alanine, MAIN aminx arm
+off = "0"
+on = "1"
+expect = "differs"
+metric = "main_js_vs_ref"         # pooled-composition JS, main aminx arm vs reference arm, reduced subset
+min_effect = 0.0                  # PLACEHOLDER: set to sampling.min_effect (> 0) in the params commit, BEFORE any validate smoke (R3-C9); --dry-run fails on 0.0
+
+# Declaration order is load-bearing (first match wins): merge_refused, then the
+# v1 order incomplete, ctrl_blind, underpowered, pass, fail.
+
+[outcomes.merge_refused]
+condition = "merge_refused"
+decision = "The shard set is not a partition (missing unit, duplicate unit, or git_hash / header mismatch); no equivalence statement is permitted."
+reasoning = "A hole, a double-covered draw, or a disagreeing git_hash means the merged statistics are not the protocol the finding pre-registered. This is a graded residual, emitted with exit 0."
+is_residual = true
+
+[outcomes.incomplete]
+condition = "n_skipped > 0 OR NOT prereq_ok OR NOT git_clean OR p09_tied_positions <> p09_tied_positions_prereg"
+decision = "A prerequisite was missing, the calibrate prerequisite check failed, the run tree was dirty, or the tied-position count drifted from calibration; the run proves nothing."
+reasoning = "Any of a skipped reference call, a failed calibrate prerequisite, a dirty tree, or a tied-position-count drift from the pre-registered sampling.p09_tied_positions means the comparison did not run under the conditions this claim requires, regardless of what tf_max_abs or the lane verdicts say."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "posctl_detected < 18 OR negctl_fp > 3 OR NOT p09_fusion_ctrl_detected"
+decision = "Instrument insensitive at the claimed resolution (statistical controls or the P09-s fusion control); no equivalence statement is permitted."
+reasoning = "A positive control that fails to trip, an inflated negative-control false-positive rate, or an undetected fusion control means the harness itself cannot be trusted to catch a real divergence of this or smaller magnitude, so a clean lane set is not evidence of equivalence."
+is_residual = true
+
+[outcomes.underpowered]
+condition = "n_per_arm < 2 * n_required"
+decision = "This run drew fewer sequences per arm than the pre-registered n_required calls for; no equivalence statement is permitted."
+reasoning = "n_required (and its doubling-until-18/20 derivation) is the pre-registered minimum power for the recovery TOST and excess-JS bootstrap; running below it invalidates the statistical guarantees those tests are supposed to provide."
+is_residual = true
+
+[outcomes.pass]
+condition = "tf_max_abs <= tf_bar AND n_lanes = 4 AND n_lanes_equiv = n_lanes AND excess_js_ub_max_ratio < 1 AND omitted_aa_count = 0 AND x_token_count_aminx = 0 AND x_token_count_reference = 0"
+decision = "Every V2 lane's teacher-forced comparison is within bar, every lane is declared statistically equivalent (IUT, including excess-JS upper bound < m_l), and no omitted-AA or X tokens leaked on either arm; eligible for the advance table (T11)."
+reasoning = "Zero teacher-forced divergence beyond bar, full IUT equivalence across the four V2_LANES, an excess-JS 95% upper bound inside every committed margin, and zero omitted/X-token leakage, with every control detected, are the minimum evidence that the sampling tier is parity-equivalent to the reference on the held-out set."
+is_residual = false
+
+[outcomes.fail]
+condition = "tf_max_abs > tf_bar OR n_lanes <> 4 OR n_lanes_equiv < n_lanes OR excess_js_ub_max_ratio >= 1 OR omitted_aa_count > 0 OR x_token_count_aminx > 0 OR x_token_count_reference > 0"
+decision = "A teacher-forced comparison exceeded bar, a lane failed the IUT (TOST or excess-JS upper bound over m_l), the lane count was not the four V2_LANES, or an omitted-AA/X token leaked: finding + DEVIATION."
+reasoning = "Residual catch-all: with a sensitive instrument and prerequisites satisfied, any of these is a genuine divergence -- a hard omit that leaked, a recovery TOST that failed, or an excess-JS upper bound that cleared its margin -- not a footnote."
+is_residual = true
+
+[result_schema]
+merge_refused = "bool"
+tf_max_abs = "float"
+tf_bar = "float"
+n_lanes = "int"
+n_lanes_equiv = "int"
+n_per_arm = "int"
+n_required = "int"
+sigma_hat = "float"
+excess_js_ub_max_ratio = "float"   # max over lanes of UB(E_l)/m_l; pass requires this < 1
+main_js_vs_ref = "float"
+posctl_detected = "int"
+negctl_fp = "int"
+omitted_aa_count = "int"
+x_token_count_aminx = "int"
+x_token_count_reference = "int"
+p09_tied_positions = "int"
+p09_tied_positions_prereg = "int"
+p09_fused_tf_max_abs = "float"      # included in tf_max_abs (R3-C6)
+p09_fusion_ctrl_detected = "bool"
+n_skipped = "int"
+prereq_ok = "bool"
+reference_commit = "str"
+git_hash = "str"
+git_clean = "bool"
+prereg_sha256 = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+torch_version = { type = "string", required = true }

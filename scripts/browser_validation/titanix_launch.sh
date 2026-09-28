@@ -7,8 +7,8 @@
 # and runs its --self-test mode, which touches no network.
 #
 # Usage:
-#   titanix_launch.sh <stem> <campaign-id> [SCRIPT_ARGS...]
-#   titanix_launch.sh --self-test      # verify the O9 argv-safety check in isolation
+#   titanix_launch.sh [--gpu N] [--tag TAG] [--prepare-only] <stem> <campaign-id> [SCRIPT_ARGS...]
+#   titanix_launch.sh --self-test      # O9 argv-safety plus --tag session names; no network
 #
 # Deviation #1 (orchestrator-approved, 260924): .git/config is write-protected in this
 # worktree, so `git remote add titanix-bv ...` is impossible. Push by URL instead --
@@ -31,6 +31,44 @@ check_arg_safe() {
   return 0
 }
 
+# --tag is appended so two shards of one stem at one commit get distinct units, logs,
+# .exit files, result paths, and remote worktrees. With no tag the historical names
+# are unchanged. titanix_run.sh honours BV_SESSION / BV_OUT_REL only when this script
+# exports them (tagged launches).
+session_name() {
+  local stem="$1" hash="$2" tag="${3:-}"
+  local session="bv-${stem}-${hash:0:12}"
+  if [ -n "$tag" ]; then
+    session="${session}-${tag}"
+  fi
+  printf '%s\n' "$session"
+}
+
+checkout_dir() {
+  local stem="$1" hash="$2" tag="${3:-}"
+  local rd="/home/solab/bv/aminx-browser-validation-${stem}-${hash:0:12}"
+  if [ -n "$tag" ]; then
+    rd="${rd}-${tag}"
+  fi
+  printf '%s\n' "$rd"
+}
+
+result_relpath() {
+  local stem="$1" tag="${2:-}"
+  if [ -n "$tag" ]; then
+    printf 'outputs/browser_validation/layer_a/%s-%s.json\n' "$stem" "$tag"
+  else
+    printf 'outputs/browser_validation/layer_a/%s.json\n' "$stem"
+  fi
+}
+
+tag_valid() {
+  case "$1" in
+    ""|*[!a-z0-9-]*) return 1 ;;
+  esac
+  return 0
+}
+
 self_test() {
   local failures=0
   if check_arg_safe "a b"; then
@@ -41,8 +79,54 @@ self_test() {
     echo "self-test FAILED: 'a;b' should have been rejected (exit 2)" >&2
     failures=$((failures + 1))
   fi
+  untagged="$(session_name "layer_a_sampling_validate" "abcdef0123456789ffff")"
+  shard0="$(session_name "layer_a_sampling_validate" "abcdef0123456789ffff" "shard-0")"
+  shard1="$(session_name "layer_a_sampling_validate" "abcdef0123456789ffff" "shard-1")"
+  if [ "$untagged" != "bv-layer_a_sampling_validate-abcdef012345" ]; then
+    echo "self-test FAILED: untagged session is '$untagged'" >&2
+    failures=$((failures + 1))
+  fi
+  if [ "$shard0" = "$untagged" ] || [ "$shard0" = "$shard1" ]; then
+    echo "self-test FAILED: tagged sessions are not distinct from each other and from untagged" >&2
+    failures=$((failures + 1))
+  fi
+  if [ "${shard0}.log" = "${shard1}.log" ] || [ "${shard0}.exit" = "${shard1}.exit" ]; then
+    echo "self-test FAILED: tagged log or .exit names collide" >&2
+    failures=$((failures + 1))
+  fi
+  plain_out="$(result_relpath "layer_a_sampling_validate")"
+  tag_out="$(result_relpath "layer_a_sampling_validate" "shard-0")"
+  other_out="$(result_relpath "layer_a_sampling_validate" "shard-1")"
+  if [ "$plain_out" != "outputs/browser_validation/layer_a/layer_a_sampling_validate.json" ]; then
+    echo "self-test FAILED: untagged result path is '$plain_out'" >&2
+    failures=$((failures + 1))
+  fi
+  if [ "$tag_out" = "$plain_out" ] || [ "$tag_out" = "$other_out" ]; then
+    echo "self-test FAILED: tagged result paths are not distinct" >&2
+    failures=$((failures + 1))
+  fi
+  plain_rd="$(checkout_dir "layer_a_sampling_validate" "abcdef0123456789ffff")"
+  tag_rd="$(checkout_dir "layer_a_sampling_validate" "abcdef0123456789ffff" "shard-0")"
+  other_rd="$(checkout_dir "layer_a_sampling_validate" "abcdef0123456789ffff" "shard-1")"
+  expected_rd="/home/solab/bv/aminx-browser-validation-layer_a_sampling_validate-abcdef012345"
+  if [ "$plain_rd" != "$expected_rd" ]; then
+    echo "self-test FAILED: untagged checkout is '$plain_rd'" >&2
+    failures=$((failures + 1))
+  fi
+  if [ "$tag_rd" = "$plain_rd" ] || [ "$tag_rd" = "$other_rd" ]; then
+    echo "self-test FAILED: tagged checkouts are not distinct" >&2
+    failures=$((failures + 1))
+  fi
+  if ! tag_valid "shard-0"; then
+    echo "self-test FAILED: 'shard-0' should be a valid tag" >&2
+    failures=$((failures + 1))
+  fi
+  if tag_valid "Shard" || tag_valid "" || tag_valid "a_b"; then
+    echo "self-test FAILED: invalid tags were accepted" >&2
+    failures=$((failures + 1))
+  fi
   if [ "$failures" -eq 0 ]; then
-    echo "self-test OK: 'a b' and 'a;b' both rejected with exit 2 by check_arg_safe"
+    echo "self-test OK: metacharacters rejected; --tag session/log/exit/result/checkout names distinct"
     return 0
   fi
   return 1
@@ -50,7 +134,7 @@ self_test() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: titanix_launch.sh [--gpu N] [--prepare-only] <stem> <campaign-id> [SCRIPT_ARGS...]
+Usage: titanix_launch.sh [--gpu N] [--tag TAG] [--prepare-only] <stem> <campaign-id> [SCRIPT_ARGS...]
        titanix_launch.sh --self-test
 EOF
 }
@@ -67,6 +151,7 @@ fi
 # untouched) and syncs the lock's `cuda12` extra. `--prepare-only` stops after the checkout
 # is materialized and synced (no unit is started) and prints its path -- for probes.
 GPU=""
+TAG=""
 PREPARE_ONLY=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -75,6 +160,14 @@ while [ "$#" -gt 0 ]; do
         [0-9]) GPU="$2" ;;
         *) echo "titanix_launch.sh: --gpu needs a single GPU index" >&2; exit 2 ;;
       esac
+      shift 2
+      ;;
+    --tag)
+      TAG="${2:-}"
+      if ! tag_valid "$TAG"; then
+        echo "titanix_launch.sh: --tag must match [a-z0-9-]+" >&2
+        exit 2
+      fi
       shift 2
       ;;
     --prepare-only)
@@ -119,19 +212,31 @@ if [ -n "$(git ls-files --others --exclude-standard -- scripts src pyproject.tom
 fi
 
 H="$(git rev-parse HEAD)"
-SESSION="bv-${STEM}-${H:0:12}"
+SESSION="$(session_name "$STEM" "$H" "$TAG")"
+# Per-tag worktrees, not one shared checkout under a lock. Two shards of the same
+# commit would otherwise race on `git worktree add` of one path and on `uv sync`
+# in one venv. Distinct directories do not share an index; git's own lock serializes
+# the bare repo. The push ref stays the untagged commit ref (same object either way).
+RD="$(checkout_dir "$STEM" "$H" "$TAG")"
 
-# F-C3: one heavy run at a time on titanix.
-out=$(ssh titanix systemctl --user list-units 'bv-*' --state=active,activating --no-legend --plain)
-if [ -n "$out" ]; then
-  echo "titanix_launch.sh: a bv-* unit is already active/activating on titanix; refusing a second concurrent run:" >&2
-  echo "$out" >&2
-  exit 1
+# F-C3: one heavy run at a time on titanix when --tag is absent (historical behaviour).
+# A tagged launch is one shard of a parallel pair: refuse only that same unit name.
+if [ -z "$TAG" ]; then
+  out=$(ssh titanix systemctl --user list-units 'bv-*' --state=active,activating --no-legend --plain)
+  if [ -n "$out" ]; then
+    echo "titanix_launch.sh: a bv-* unit is already active/activating on titanix; refusing a second concurrent run:" >&2
+    echo "$out" >&2
+    exit 1
+  fi
+else
+  unit_state="$(ssh titanix systemctl --user is-active "$SESSION" || true)"
+  if [ "$unit_state" = "active" ] || [ "$unit_state" = "activating" ]; then
+    echo "titanix_launch.sh: unit ${SESSION} is already active/activating on titanix; refusing a second launch of the same tag" >&2
+    exit 1
+  fi
 fi
 
 git push "$TX_REPO_URL" "$H:refs/heads/bv/${STEM}-${H:0:12}"
-
-RD="/home/solab/bv/aminx-browser-validation-${STEM}-${H:0:12}"
 
 # Deviation D8: model weights (*.eqx.zst etc.) are Git LFS files. A push by URL carries only
 # the 132-byte pointers and titanix has no git-lfs, so the checkout would hold pointers, not
@@ -208,7 +313,11 @@ fi
 # as terminal via `systemctl --user is-active`, not via unit persistence.
 gpu_env=()
 [ -n "$GPU" ] && gpu_env=("--setenv=BV_GPU=${GPU}")
-ssh titanix systemd-run --user "--unit=${SESSION}" --collect -p MemoryMax=64G -p MemorySwapMax=0 "${gpu_env[@]}" \
+tag_env=()
+if [ -n "$TAG" ]; then
+  tag_env=("--setenv=BV_SESSION=${SESSION}" "--setenv=BV_OUT_REL=$(result_relpath "$STEM" "$TAG")")
+fi
+ssh titanix systemd-run --user "--unit=${SESSION}" --collect -p MemoryMax=64G -p MemorySwapMax=0 "${gpu_env[@]}" "${tag_env[@]}" \
   "${RD}/scripts/browser_validation/titanix_run.sh" "$RD" "$H" "$CAMPAIGN_ID" "$STEM" "${SCRIPT_ARGS[@]}"
 
 echo "$SESSION"

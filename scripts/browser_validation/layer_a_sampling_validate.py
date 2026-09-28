@@ -50,9 +50,11 @@ lane restrictions", R3-C6).
 
 **Schema completeness / no inf-or-NaN (binding, titanix finding 2026-09-25).** EVERY
 key this script's sidecar declares under `[result_schema]` is present in EVERY result
-this module writes (full, `--smoke`, AND the differential-arm path), with a documented
-zero/empty default where a field genuinely was not computed on that path -- never
-omitted. No result field is ever a bare `inf`/`nan`: `las.UNCOMPUTED_SENTINEL` (a large
+this module writes (full, `--smoke`, the differential-arm path, AND a sharded partial),
+with a documented zero/empty default where a field genuinely was not computed on that
+path -- never omitted. A sharded partial (`n_shards > 1`) writes draw records to a
+sibling `*.records.json` and emits only the flat shard schema; a graded shortfall still
+exits 0. No result field is ever a bare `inf`/`nan`: `las.UNCOMPUTED_SENTINEL` (a large
 finite float) stands in wherever a ratio/margin could not be computed (e.g. a missing
 committed margin, or a degenerate zero-margin division).
 
@@ -191,6 +193,68 @@ def _reference_commit() -> str:
   return str(pins_data.get("ligandmpnn_commit", ""))
 
 
+def shard_schema_fields(
+  *,
+  units_assigned: int = 0,
+  units_drawn: int = 0,
+  prereq_ok: bool = False,
+  git_clean: bool = False,
+  n_shards: int = 1,
+  shard_index: int = 0,
+  records_path: str = "",
+  git_hash: str = "",
+) -> dict[str, object]:
+  """Flat shard-contract fields. ``units_assigned <= 0`` marks a path that did not draw."""
+  return {
+    "units_assigned": int(units_assigned),
+    "units_drawn": int(units_drawn),
+    "prereq_ok": bool(prereq_ok),
+    "git_clean": bool(git_clean),
+    "n_shards": int(n_shards),
+    "shard_index": int(shard_index),
+    "records_path": str(records_path),
+    "git_hash": str(git_hash),
+  }
+
+
+def _write_shard_records(partial: dict[str, Any], out: Path) -> Path:
+  """Persist the merge-ready partial (draw records included) beside the bathos result."""
+  records_path = out.with_name(f"{out.stem}.records.json")
+  records_path.parent.mkdir(parents=True, exist_ok=True)
+  encoded = json.loads(json.dumps(partial, default=str))
+  with records_path.open("w") as handle:
+    json.dump(encoded, handle, indent=2, allow_nan=False)
+    handle.write("\n")
+  return records_path.resolve()
+
+
+def finalize_shard_partial(
+  partial: dict[str, Any],
+  out: Path,
+  *,
+  units_assigned: int,
+  units_drawn: int,
+  prereq_ok: bool,
+  git_clean: bool,
+  n_shards: int,
+  shard_index: int,
+  git_hash: str,
+) -> tuple[dict[str, Any], int]:
+  """Emit the flat shard schema and exit 0 even when the shard is graded incomplete."""
+  records_path = _write_shard_records(partial, out)
+  flat = shard_schema_fields(
+    units_assigned=units_assigned,
+    units_drawn=units_drawn,
+    prereq_ok=prereq_ok,
+    git_clean=git_clean,
+    n_shards=n_shards,
+    shard_index=shard_index,
+    records_path=str(records_path),
+    git_hash=git_hash,
+  )
+  return flat, 0
+
+
 def _sidecar_min_effect() -> float:
   with _SIDECAR_PATH.open("rb") as fh:
     doc = tomllib.load(fh)
@@ -264,6 +328,10 @@ def run_differential_arm(
     "differential_phase": mode["phase"],
     "differential_value": mode["value"],
     "fixture_set": args.fixture_set,
+    **shard_schema_fields(
+      n_shards=int(getattr(args, "n_shards", 1)),
+      shard_index=int(getattr(args, "shard_index", 0)),
+    ),
   }
   lac.emit(result, args.out)
   logger.info(
@@ -295,6 +363,10 @@ def run_dry_run(params: dict[str, Any], args: argparse.Namespace) -> int:
     "sidecar_min_effect": sidecar_min_effect,
     "params_min_effect": params_min_effect,
     "fixture_set": args.fixture_set,
+    **shard_schema_fields(
+      n_shards=int(getattr(args, "n_shards", 1)),
+      shard_index=int(getattr(args, "shard_index", 0)),
+    ),
   }
   lac.emit(result, args.out)
   if not ok:
@@ -881,9 +953,22 @@ def _v2_measurement(
   partial["fixture_set"] = args.fixture_set
   partial["prereq_ok"] = prereq["prereq_ok"]
   partial["prereq_reason"] = prereq["reason"]
+  partial["git_clean"] = bool(prov.get("git_clean", False))
   partial.update(lass.device_record())
+  assigned = plan[shard_index]
+  units_assigned = sum(unit.draw_end - unit.draw_start for unit in assigned)
   if n_shards > 1:
-    return partial, 0
+    return finalize_shard_partial(
+      partial,
+      Path(args.out),
+      units_assigned=units_assigned,
+      units_drawn=len(records),
+      prereq_ok=bool(prereq["prereq_ok"]),
+      git_clean=bool(prov.get("git_clean", False)),
+      n_shards=n_shards,
+      shard_index=shard_index,
+      git_hash=str(prov.get("git_hash", "")),
+    )
   scored = statistics_from_draw_records(
     records,
     sampling=sampling,
@@ -905,6 +990,15 @@ def _v2_measurement(
       "selected_lanes": list(selected_lanes),
       **lass.device_record(),
       **prov,
+      **shard_schema_fields(
+        units_assigned=units_assigned,
+        units_drawn=len(records),
+        prereq_ok=bool(prereq["prereq_ok"]),
+        git_clean=bool(prov.get("git_clean", False)),
+        n_shards=n_shards,
+        shard_index=shard_index,
+        git_hash=str(prov.get("git_hash", "")),
+      ),
     },
   )
   exit_code = 0
@@ -1009,6 +1103,13 @@ def run_measurement(
     "n_control_replicates": las.N_CONTROL_REPLICATES,
     **lass.device_record(),
     **prov,
+    **shard_schema_fields(
+      prereq_ok=bool(prereq["prereq_ok"]),
+      git_clean=bool(prov.get("git_clean", False)),
+      n_shards=int(getattr(args, "n_shards", 1)),
+      shard_index=int(getattr(args, "shard_index", 0)),
+      git_hash=str(prov.get("git_hash", "")),
+    ),
   }
   exit_code = 0
   if not prereq["prereq_ok"]:

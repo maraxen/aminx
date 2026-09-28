@@ -15,7 +15,12 @@ STEM="$4"
 shift 4
 SCRIPT_ARGS=("$@")
 
+# Untagged launches leave BV_SESSION unset, so the unit/log/.exit name stays
+# bv-$STEM-${H:0:12}. titanix_launch.sh --tag exports BV_SESSION (the unit name).
 SESSION="bv-${STEM}-${H:0:12}"
+if [ -n "${BV_SESSION:-}" ]; then
+  SESSION="$BV_SESSION"
+fi
 LOG_DIR="/home/solab/bv/logs"
 LOG_FILE="${LOG_DIR}/${SESSION}.log"
 EXIT_FILE="${LOG_DIR}/${SESSION}.exit"
@@ -85,7 +90,13 @@ fi
 # parquet; `bth sql`/prereq checks read only the warm bathos.db).
 "$TX_BTH" compact
 
+# Untagged: the historical stem json. Tagged: BV_OUT_REL from titanix_launch.sh
+# (outputs/browser_validation/layer_a/${STEM}-${TAG}.json) so two shards do not
+# share one result file inside their own worktrees either.
 OUT_PATH="outputs/browser_validation/layer_a/${STEM}.json"
+if [ -n "${BV_OUT_REL:-}" ]; then
+  OUT_PATH="$BV_OUT_REL"
+fi
 
 # F-C1: keep these uv option tokens in EXACTLY this order, nothing between `python` and
 # the script path -- bathos `_find_script_path` (runner.py:57-75 at 84be544e) reads

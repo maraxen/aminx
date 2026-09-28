@@ -1,21 +1,31 @@
+# v1 finding (teacher-forced <= 1e-4 nats, recovery TOST delta 0.01 AND excess-JS
+# 95% upper bound < committed m_l, IUT alpha 0.05 per lane, zero omitted-AA and
+# zero X tokens, posctl_detected >= 18/20, negctl_fp <= 3/20, P09-s fusion
+# control, lanes including P11-s) is the pre-draft text of THIS file. Recover it
+# from git history (branch feat/sampling-v2d-cursor at 68f33c78 and its parents).
+# That finding now lives in layer_a_sampling_merge.bth.toml. LigandMPNN / P11-s
+# is deferred by user decision 2026-09-28. This sidecar is the v2 SHARD contract.
+
 [metadata]
-title = "Layer (a) sampling tier: aminx JAX vs LigandMPNN@26ec57ac on held-out fixture set B"
+title = "Layer (a) sampling v2 shard: one deterministic slice of V2_LANES"
 created = "260925"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "On fixture set B, for lanes P07@T0.1, P07@T1.0, P08, P09-s, P11-s: teacher-forced per-step log-probs match within 1e-4 nats, and every lane is declared equivalent (recovery TOST delta 0.01 AND excess-JS 95% upper bound < committed m_l; IUT, alpha 0.05 per lane) at n_required, with zero omitted-AA and zero X tokens in both arms; positive control detected >= 18/20, negative control false positives <= 3/20."
+hypothesis = "This shard drew every unit the deterministic planner assigned it, from a clean tree, with prerequisites met."
 stage_name = "validation"
-claim_discriminates = ["H_sampling_equiv", "H_null_misspec"]
 
 [reproduction]
-reproduces_paper = "dauparas/LigandMPNN@26ec57ac976ade5379920dbd43c7f97a91cf82de (reference code; Mode A)"
+reproduces_paper = "dauparas/LigandMPNN@26ec57ac976ade5379920dbd43c7f97a91cf82de (reference code; Mode A). P11-s / LigandMPNN is deferred by user decision 2026-09-28 and is not a v2 shard lane."
 # no requires_pass_stem; prereq_check() against layer_a_sampling_calibrate replaces it
 
 [controls]
 positive_outcome = ["pass"]
-negative_outcome = ["incomplete", "ctrl_blind", "underpowered", "fail"]
+negative_outcome = ["incomplete"]
 
+# [differential] stays on this file because layer_a_sampling_validate.py --dry-run
+# reads [differential].min_effect from its own sidecar. The finding's differential
+# is the merge sidecar. min_effect 0.0 remains the placeholder until the params commit.
 [differential]
 knob = "AMINX_BV_SAMPLING_BIAS"   # 1 = calibrated +beta on alanine, MAIN aminx arm
 off = "0"
@@ -24,61 +34,30 @@ expect = "differs"
 metric = "main_js_vs_ref"         # pooled-composition JS, main aminx arm vs reference arm, reduced subset
 min_effect = 0.0                  # PLACEHOLDER: set to sampling.min_effect (> 0) in the params commit, BEFORE any validate smoke (R3-C9); --dry-run fails on 0.0
 
+# Declaration order is load-bearing (first match wins). A path that did not draw
+# emits units_assigned <= 0, which is incomplete rather than a vacuous pass.
+
 [outcomes.incomplete]
-condition = "n_skipped > 0 OR NOT prereq_ok OR NOT git_clean OR p09_tied_positions <> p09_tied_positions_prereg"
-decision = "A prerequisite was missing, the calibrate prerequisite check failed, the run tree was dirty, or the tied-position count drifted from calibration; the run proves nothing."
-reasoning = "Any of a skipped reference call, a failed calibrate prerequisite, a dirty tree, or a tied-position-count drift from the pre-registered sampling.p09_tied_positions means the comparison did not run under the conditions this claim requires, regardless of what tf_max_abs or the lane verdicts say."
-is_residual = true
-
-[outcomes.ctrl_blind]
-condition = "posctl_detected < 18 OR negctl_fp > 3 OR NOT p09_fusion_ctrl_detected"
-decision = "Instrument insensitive at the claimed resolution (statistical controls or the P09-s fusion control); no equivalence statement is permitted."
-reasoning = "A positive control that fails to trip, an inflated negative-control false-positive rate, or an undetected fusion control means the harness itself cannot be trusted to catch a real divergence of this or smaller magnitude, so a clean lane set is not evidence of equivalence."
-is_residual = true
-
-[outcomes.underpowered]
-condition = "n_per_arm < 2 * n_required"
-decision = "This run drew fewer sequences per arm than the pre-registered n_required calls for; no equivalence statement is permitted."
-reasoning = "n_required (and its doubling-until-18/20 derivation) is the pre-registered minimum power for the recovery TOST and excess-JS bootstrap; running below it invalidates the statistical guarantees those tests are supposed to provide."
+condition = "units_assigned <= 0 OR units_drawn <> units_assigned OR NOT prereq_ok OR NOT git_clean OR n_shards < 1 OR shard_index < 0 OR shard_index >= n_shards"
+decision = "This shard did not draw every unit the planner assigned, a prerequisite failed, or the tree was dirty; the partial proves nothing."
+reasoning = "A short shard, a failed calibrate prerequisite, a dirty tree, or a shard index outside 0..n_shards-1 means the slice did not run under the conditions the merge finding requires."
 is_residual = true
 
 [outcomes.pass]
-condition = "tf_max_abs <= tf_bar AND n_lanes_equiv = n_lanes AND omitted_aa_count = 0 AND x_token_count_aminx = 0 AND x_token_count_reference = 0"
-decision = "Every lane's teacher-forced comparison is within bar, every lane is declared statistically equivalent (IUT), and no omitted-AA or X tokens leaked on either arm; eligible for the advance table (T11)."
-reasoning = "Zero teacher-forced divergence beyond bar, full IUT equivalence across every lane, and zero omitted/X-token leakage, with every control detected, are the minimum evidence that the sampling tier is parity-equivalent to the reference on the held-out set."
+condition = "units_assigned > 0 AND units_drawn = units_assigned AND prereq_ok AND git_clean AND n_shards >= 1 AND shard_index >= 0 AND shard_index < n_shards"
+decision = "This shard drew every assigned unit from a clean tree with prerequisites met; eligible to be merged."
+reasoning = "units_drawn matching units_assigned, with prereq_ok and git_clean, is the evidence that this slice is a complete partition element."
 is_residual = false
 
-[outcomes.fail]
-condition = "tf_max_abs > tf_bar OR n_lanes_equiv < n_lanes OR omitted_aa_count > 0 OR x_token_count_aminx > 0 OR x_token_count_reference > 0"
-decision = "A teacher-forced comparison exceeded bar, a lane failed the IUT equivalence test, or an omitted-AA/X token leaked: finding + DEVIATION."
-reasoning = "Residual catch-all: with a sensitive instrument and prerequisites satisfied, any of these is a genuine divergence -- a hard omit that leaked, or a lane that measurably failed to recover the reference distribution -- not a footnote."
-is_residual = true
-
 [result_schema]
-tf_max_abs = "float"
-tf_bar = "float"
-n_lanes = "int"
-n_lanes_equiv = "int"
-n_per_arm = "int"
-n_required = "int"
-sigma_hat = "float"
-excess_js_ub_max_ratio = "float"   # max over lanes of UB(E_l)/m_l
-main_js_vs_ref = "float"
-posctl_detected = "int"
-negctl_fp = "int"
-omitted_aa_count = "int"
-x_token_count_aminx = "int"
-x_token_count_reference = "int"
-p09_tied_positions = "int"
-p09_tied_positions_prereg = "int"
-p09_fused_tf_max_abs = "float"      # included in tf_max_abs (R3-C6)
-p09_fusion_ctrl_detected = "bool"
-n_skipped = "int"
+units_assigned = "int"
+units_drawn = "int"
 prereq_ok = "bool"
-reference_commit = "str"
-git_hash = "str"
 git_clean = "bool"
-prereg_sha256 = "str"
+n_shards = "int"
+shard_index = "int"
+records_path = "str"
+git_hash = "str"
 
 [dependencies]
 aminx_version = { type = "git_sha", required = true }
