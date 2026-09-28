@@ -45,9 +45,9 @@ reasoning = "The Definitions section fixes numThreads at wasm-init time and the 
 is_residual = true
 
 [outcomes.ctrl_unsized]
-condition = "controls_sized < controls_total"
-decision = "The geometric-bisection search failed to land delta_c04 and/or delta_c03 in its [2x, 10x] window (of the layer-(c) bars) within 20 steps; the committed deltas would rest on an insensitive or under-sized instrument."
-reasoning = "Pre-registered bars: 'Layer c (T5a, r1 M7): delta_c04 ... sized to [2x, 10x] of 1e-5, and delta_c03 ... sized to [2x, 10x] of 2e-6 ... sized against the c bars, not taken from T3a's ctrl_effect'; a control that cannot be sized during calibration would silently pass an unsized perturbation through to validate."
+condition = "controls_sized < controls_total OR NOT params_written"
+decision = "Either the geometric-bisection search failed to land delta_c04 and/or delta_c03 in its [2x, 10x] window (of the layer-(c) bars) within 20 steps, or both deltas were sized but the sized artifacts could not be rebuilt/written to the D-G manifest (e.g. the shared artifact store was transiently unwritable) -- in either case the committed deltas do not rest on a usable, fully-sized instrument."
+reasoning = "Pre-registered bars: 'Layer c (T5a, r1 M7): delta_c04 ... sized to [2x, 10x] of 1e-5, and delta_c03 ... sized to [2x, 10x] of 2e-6 ... sized against the c bars, not taken from T3a's ctrl_effect'; a control that cannot be sized, OR whose sized artifact never made it into the tracked manifest, would silently pass an unsized/unusable perturbation through to validate. NOT params_written mirrors the pass condition's own params_written requirement -- anything pass would reject on that field belongs to this residual, not to an unmatched fifth state."
 is_residual = true
 
 [outcomes.pass]
