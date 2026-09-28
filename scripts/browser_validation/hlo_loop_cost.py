@@ -1,19 +1,45 @@
 """HLO loop-body structural cost instrumentation (T7, P07 diagnostic; xtrax #1983 tie-in).
 
 From `compiled.as_text()`, find every `while` instruction's body/condition computations
-and compute the metric `body_operand_elements`: Σ over the body's instructions of a per-
-instruction weight:
+and compute the metric `body_operand_elements` (r1 M14 rename -- this is NOT an
+output-element count): Sigma over the body's instructions of a per-instruction weight:
 
-- `fusion`: once at the call site, Σ operand + output elements (no descent into fused);
-- unfused reduce/reduce-window/dot/convolution/gather/sort: Σ operand + output elements;
-- dynamic-update-slice/scatter: update operand (+ scatter indices) elements, not full output;
-- dynamic-slice: output elements;
-- other unfused ops: output elements;
-- `parameter`, `constant`, `tuple`, `get-tuple-element`, `bitcast` excluded; `copy` counted;
-- descend into `call` and `conditional` (max over branches);
-- nested `while` flagged `nested_while` and body counted once.
+- `fusion`: counted ONCE, at the call site, as Sigma operand elements + output elements.
+  The walker does NOT descend into the fused computation (`calls=` of a fusion), so
+  fusion internals are never double-counted;
+- unfused `reduce`, `reduce-window`, `dot`, `convolution`, `gather`, `sort`: Sigma operand
+  elements + output elements (a reduction to a scalar costs its operand, not 1);
+- `dynamic-update-slice` / `scatter`: update operand (+ scatter indices) elements, not
+  the full output; `dynamic-slice`: output elements;
+- any other unfused op: output elements;
+- `parameter`, `constant`, `tuple`, `get-tuple-element` and `bitcast` are excluded;
+  `copy` is counted (a carried-buffer copy is exactly what #1983 wants to find).
 
-Scaling α = log2(m(2L) / m(L)).
+Traversal: descend into `call` (`to_apply=`/`calls=` of a `call` op) and into
+`conditional` branches (`branch_computations={...}`, max over branches). A nested
+`while` has its body counted once and is flagged `nested_while` (trip count unknown).
+The scalar reducer computations named by `to_apply=` on reduce/scatter/sort/all-reduce
+are NOT descended.
+
+Scaling alpha = log2(m(2L) / m(L)) for m = body_operand_elements, guarded (None if
+either side is <= 0). Reuses `xtrax.profiling.trace.scope_map_from_hlo_text` for
+named-scope attribution where op_name-carried labels exist (best-effort, non-gating).
+
+Real compiled HLO (confirmed empirically against the installed jax/jaxlib before writing
+this parser, per BATHOS.md "verify the measurement pipeline on synthetic ground truth
+first"):
+- computations are printed at the top level, never lexically nested; each opens with a
+  header line ending in `{` (`NAME (params) -> RETTYPE {`, optionally `ENTRY `-prefixed)
+  and closes with a bare `}` line;
+- a `while` instruction is `%name = TYPE while(%operand), condition=%C, body=%B, ...`
+  (condition/body order is NOT guaranteed -- resolved independently via search, not
+  positional parsing);
+- a `conditional` instruction carries `branch_computations={%A, %B, ...}`, not a
+  positional branch-computation list;
+- XLA frequently wraps a whole `while` (and its surrounding tuple-packing) in a
+  top-level `call(...), to_apply=%some_computation` (`xla_cpu_small_call` heuristic) --
+  `while` instructions are therefore searched across EVERY parsed computation, not just
+  ENTRY.
 """
 
 from __future__ import annotations
@@ -23,6 +49,7 @@ import json
 import logging
 import math
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,23 +57,58 @@ from typing import Any
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+  sys.path.insert(0, str(_SCRIPT_DIR))
+
+try:
+  from xtrax.profiling.trace import scope_map_from_hlo_text
+except ImportError:  # pragma: no cover -- best-effort enrichment only, never gating
+  scope_map_from_hlo_text = None  # type: ignore[assignment]
+
+# Ops excluded from the weight entirely (never appear in the top-10 list either).
+EXCLUDED_OPS = frozenset({"parameter", "constant", "tuple", "get-tuple-element", "bitcast"})
+
+# Ops whose weight is Sigma(operand elements) + Sigma(output elements), when UNFUSED
+# (i.e. this literal op name appears directly in a body, not wrapped in a `fusion`).
+_OPERAND_PLUS_OUTPUT_OPS = frozenset(
+  {"reduce", "reduce-window", "dot", "convolution", "gather", "sort"}
+)
+
+# Ops that descend into another computation instead of being weighed directly.
+_DESCEND_OPS = frozenset({"call", "conditional", "while"})
+
 
 @dataclass
 class OpWeight:
   """Per-instruction weight for the body_operand_elements metric."""
+
   op_name: str
   operand_elements: int
   output_elements: int
+  name: str = ""
+  scope: str | None = None
 
   @property
   def total_weight(self) -> int:
     """Total weight: operand + output elements."""
     return self.operand_elements + self.output_elements
 
+  def to_dict(self) -> dict[str, Any]:
+    return {
+      "name": self.name,
+      "op": self.op_name,
+      "operand_elements": self.operand_elements,
+      "output_elements": self.output_elements,
+      "total_weight": self.total_weight,
+      "scope": self.scope,
+    }
+
 
 @dataclass
 class WhileLoopAnalysis:
   """Analysis of a single while loop's body."""
+
   name: str
   body_operand_elements: int
   has_nested_while: bool = False
@@ -61,22 +123,57 @@ class WhileLoopAnalysis:
     }
 
 
+# ---------------------------------------------------------------------------------------
+# Shape parsing
+# ---------------------------------------------------------------------------------------
+
+_DIMS_RE = re.compile(r"\[(.*?)\]")
+
+
 def _parse_shape(shape_str: str) -> tuple[int, ...]:
-  """Parse HLO shape string like 'f32[16,256]' -> (16, 256), 'f32[]' -> ()."""
-  # Extract the part after the type (f32, s32, etc.)
-  match = re.search(r'\[(.*?)\]', shape_str)
+  """Parse an array shape's bracket group, e.g. 'f32[16,256]{1,0}' -> (16, 256).
+
+  Scalars ('f32[]') and non-array types return (). Not valid on tuple types (callers
+  route those through `_count_elements`'s tuple branch instead).
+  """
+  match = _DIMS_RE.search(shape_str)
   if not match:
-    # Scalar
     return ()
   dims_str = match.group(1)
   if not dims_str:
     return ()
-  return tuple(int(d) for d in dims_str.split(','))
+  return tuple(int(d) for d in dims_str.split(","))
+
+
+def _split_top_level(s: str, sep: str = ",") -> list[str]:
+  """Split `s` on `sep` at bracket/paren/brace depth 0 only."""
+  parts: list[str] = []
+  depth = 0
+  cur: list[str] = []
+  for ch in s:
+    if ch in "([{":
+      depth += 1
+    elif ch in ")]}":
+      depth -= 1
+    if ch == sep and depth == 0:
+      parts.append("".join(cur))
+      cur = []
+    else:
+      cur.append(ch)
+  parts.append("".join(cur))
+  return parts
 
 
 def _count_elements(shape_str: str) -> int:
-  """Count total elements in a shape. Scalars return 1."""
-  dims = _parse_shape(shape_str)
+  """Count total elements in a shape string. Scalars return 1; tuples sum recursively."""
+  s = shape_str.strip()
+  if s.startswith("("):
+    inner = s[1:-1] if s.endswith(")") else s[1:]
+    inner = inner.strip()
+    if not inner:
+      return 0
+    return sum(_count_elements(p) for p in _split_top_level(inner) if p.strip())
+  dims = _parse_shape(s)
   if not dims:
     return 1
   result = 1
@@ -85,188 +182,310 @@ def _count_elements(shape_str: str) -> int:
   return result
 
 
-def _parse_operands_from_instruction(instr_text: str) -> list[str]:
-  """Extract operand shapes from an instruction's text."""
-  # Very simple pattern: look for "= <op>(...)" or similar
-  # We need to extract argument references and then look up their types
-  operands = []
-  # This is a simplified version; real parsing would need full HLO grammar
-  return operands
+# ---------------------------------------------------------------------------------------
+# Computation / instruction parsing
+# ---------------------------------------------------------------------------------------
+
+
+@dataclass
+class Instruction:
+  name: str
+  op: str
+  shape: str
+  args: list[str]
+  to_apply: str | None = None
+  calls: str | None = None
+  branches: list[str] = field(default_factory=list)
+  condition: str | None = None
+  body: str | None = None
+
+
+_LEAD_RE = re.compile(r"^\s*(?:ROOT\s+)?%([\w.\-]+)\s*=\s*(.*)$")
+_HEADER_RE = re.compile(r"^(?:ENTRY\s+)?%([\w.\-]+)\s*\(")
+_OPNAME_RE = re.compile(r"^([A-Za-z][\w-]*)\(")
+_TO_APPLY_RE = re.compile(r"\bto_apply=%([\w.\-]+)")
+_CALLS_RE = re.compile(r"\bcalls=%([\w.\-]+)")
+_BRANCHES_RE = re.compile(r"\bbranch_computations=\{([^}]*)\}")
+_CONDITION_RE = re.compile(r"\bcondition=%([\w.\-]+)")
+_BODY_RE = re.compile(r"\bbody=%([\w.\-]+)")
+
+
+def _split_computations(hlo_text: str) -> dict[str, list[str]]:
+  """Split HLO text into {computation_name: [body_lines]}.
+
+  Computations are printed at the top level in the installs this was resolved against
+  (never lexically nested): a header line ends with `{`, the body is every line until a
+  bare `}` line. See module docstring.
+  """
+  comps: dict[str, list[str]] = {}
+  name: str | None = None
+  buf: list[str] = []
+  for line in hlo_text.splitlines():
+    stripped = line.strip()
+    if name is None:
+      if stripped.endswith("{") and "->" in stripped and _HEADER_RE.match(stripped):
+        name = _HEADER_RE.match(stripped).group(1)  # type: ignore[union-attr]
+        buf = []
+      continue
+    if stripped == "}":
+      comps[name] = buf
+      name = None
+      buf = []
+      continue
+    buf.append(line)
+  return comps
+
+
+def _split_type_and_rest(remainder: str) -> tuple[str, str] | None:
+  """Split `TYPE OPNAME(ARGS)...` at the depth-0 space preceding `OPNAME(`."""
+  depth = 0
+  for i, ch in enumerate(remainder):
+    if ch in "([{":
+      depth += 1
+    elif ch in ")]}":
+      depth -= 1
+    elif ch == " " and depth == 0:
+      rest = remainder[i + 1 :]
+      if _OPNAME_RE.match(rest):
+        return remainder[:i], rest
+  return None
+
+
+def _parse_instruction_line(line: str) -> Instruction | None:
+  lead = _LEAD_RE.match(line)
+  if not lead:
+    return None
+  name, remainder = lead.group(1), lead.group(2)
+  split = _split_type_and_rest(remainder)
+  if split is None:
+    return None
+  shape, rest = split
+  op_match = _OPNAME_RE.match(rest)
+  if not op_match:
+    return None
+  op = op_match.group(1)
+  after_paren = rest[op_match.end() :]
+  depth = 1
+  close_idx = None
+  for i, ch in enumerate(after_paren):
+    if ch == "(":
+      depth += 1
+    elif ch == ")":
+      depth -= 1
+      if depth == 0:
+        close_idx = i
+        break
+  if close_idx is None:
+    return None
+  args_str = after_paren[:close_idx]
+  tail = after_paren[close_idx + 1 :]
+  args = [a.strip().lstrip("%") for a in _split_top_level(args_str) if a.strip()]
+
+  to_apply_m = _TO_APPLY_RE.search(tail)
+  calls_m = _CALLS_RE.search(tail)
+  branches_m = _BRANCHES_RE.search(tail)
+  condition_m = _CONDITION_RE.search(tail)
+  body_m = _BODY_RE.search(tail)
+  branches = (
+    [b.strip().lstrip("%") for b in branches_m.group(1).split(",") if b.strip()]
+    if branches_m
+    else []
+  )
+
+  return Instruction(
+    name=name,
+    op=op,
+    shape=shape.strip(),
+    args=args,
+    to_apply=to_apply_m.group(1) if to_apply_m else None,
+    calls=calls_m.group(1) if calls_m else None,
+    branches=branches,
+    condition=condition_m.group(1) if condition_m else None,
+    body=body_m.group(1) if body_m else None,
+  )
+
+
+def _parse_instructions(lines: list[str]) -> dict[str, Instruction]:
+  out: dict[str, Instruction] = {}
+  for line in lines:
+    instr = _parse_instruction_line(line)
+    if instr is not None:
+      out[instr.name] = instr
+  return out
+
+
+# ---------------------------------------------------------------------------------------
+# Weighing
+# ---------------------------------------------------------------------------------------
+
+
+def _leaf_weight(op: str, instr: Instruction, symtab: dict[str, str]) -> tuple[int, int]:
+  """(operand_elements, output_elements) for a non-descending instruction."""
+
+  def elems(idx: int) -> int:
+    if idx >= len(instr.args):
+      return 0
+    shape = symtab.get(instr.args[idx])
+    return _count_elements(shape) if shape else 0
+
+  output_elements = _count_elements(instr.shape)
+
+  if op == "fusion":
+    operand_elements = sum(elems(i) for i in range(len(instr.args)))
+    return operand_elements, output_elements
+  if op in _OPERAND_PLUS_OUTPUT_OPS:
+    operand_elements = sum(elems(i) for i in range(len(instr.args)))
+    return operand_elements, output_elements
+  if op == "dynamic-update-slice":
+    # operand(0)=array being updated, operand(1)=update, operand(2+)=start indices
+    # (scalars). Weight is the update operand only -- never the full output.
+    return elems(1), 0
+  if op == "scatter":
+    # Canonical XLA scatter operand order: operand, scatter_indices, updates.
+    return elems(1) + elems(2), 0
+  if op == "dynamic-slice":
+    return 0, output_elements
+  # Any other unfused op (add, multiply, select, compare, copy, broadcast, convert, ...):
+  # output elements only. `copy` falls through here deliberately (spec: "counted").
+  return 0, output_elements
 
 
 class HLOLoopAnalyzer:
-  """Parses HLO text and analyzes while loop body costs."""
+  """Parses HLO text and analyzes while-loop body costs."""
 
-  def __init__(self, hlo_text: str):
+  def __init__(self, hlo_text: str, known_scope_labels: frozenset[str] = frozenset()):
     self.hlo_text = hlo_text
     self.while_loops: list[WhileLoopAnalysis] = []
+    self._computations = _split_computations(hlo_text)
+    self._parsed: dict[str, dict[str, Instruction]] = {
+      name: _parse_instructions(lines) for name, lines in self._computations.items()
+    }
+    self._symtabs: dict[str, dict[str, str]] = {
+      name: {i.name: i.shape for i in instrs.values()} for name, instrs in self._parsed.items()
+    }
+    self._memo: dict[str, tuple[int, bool, list[OpWeight]]] = {}
+    self._scope_map: dict[str, str | None] = {}
+    if known_scope_labels and scope_map_from_hlo_text is not None:
+      try:
+        self._scope_map = scope_map_from_hlo_text(hlo_text, known_scope_labels)
+      except Exception:  # noqa: BLE001 -- best-effort enrichment only
+        self._scope_map = {}
 
-  def _extract_computation_text(self, comp_name: str) -> str | None:
-    """Extract the text of a named computation (e.g., 'body_computation')."""
-    pattern = rf'ENTRY {comp_name}.*?\n(?:.*?\n)*?^}}'
-    match = re.search(pattern, self.hlo_text, re.MULTILINE | re.DOTALL)
-    if match:
-      return match.group(0)
-    # Try alternate pattern
-    pattern = rf'{comp_name} .*?{{(.*?)}}'
-    match = re.search(pattern, self.hlo_text, re.MULTILINE | re.DOTALL)
-    if match:
-      return match.group(1)
-    return None
+  def _computation_weight(self, comp_name: str) -> tuple[int, bool, list[OpWeight]]:
+    if comp_name in self._memo:
+      return self._memo[comp_name]
+    instrs = self._parsed.get(comp_name)
+    if instrs is None:
+      logger.warning("Could not resolve computation %r", comp_name)
+      return 0, False, []
+    self._memo[comp_name] = (0, False, [])  # cycle guard
+    symtab = self._symtabs.get(comp_name, {})
+    total = 0
+    nested_while = False
+    entries: list[OpWeight] = []
 
-  def _parse_instructions_in_computation(self, comp_text: str) -> dict[str, dict[str, Any]]:
-    """Parse all instructions in a computation text, returning name -> instruction dict."""
-    instructions: dict[str, dict[str, Any]] = {}
-
-    # Split into individual instruction lines
-    lines = comp_text.split('\n')
-    for line in lines:
-      line = line.strip()
-      if not line or line.startswith('//'):
+    for instr in instrs.values():
+      op = instr.op
+      if op in EXCLUDED_OPS:
         continue
 
-      # Parse instruction: name = operation(args) : type [, ...], metadata
-      # Example: %param.1 = f32[16] parameter(0)
-      match = re.match(r'%(\S+)\s*=\s*(\S+(?:\[\S+\])?)\s+(\w+)\((.*?)\)', line)
-      if match:
-        instr_name = match.group(1)
-        instr_type = match.group(2)  # e.g., "f32[16,256]"
-        op_type = match.group(3)  # e.g., "parameter", "fusion", "add"
-        args = match.group(4)  # arguments
-
-        output_elements = _count_elements(instr_type)
-
-        instructions[instr_name] = {
-          'name': instr_name,
-          'op_type': op_type,
-          'type': instr_type,
-          'output_elements': output_elements,
-          'operand_elements': 0,  # Will compute from args
-          'args': args,
-          'line': line,
-        }
-
-    return instructions
-
-  def _compute_body_operand_elements(self, body_comp: str) -> tuple[int, bool, list[dict[str, Any]]]:
-    """Compute body_operand_elements for a while loop's body computation.
-
-    Returns: (total_weight, has_nested_while, top_10_instructions)
-    """
-    instructions = self._parse_instructions_in_computation(body_comp)
-
-    total_weight = 0
-    has_nested_while = False
-    weights: list[OpWeight] = []
-
-    for instr_name, instr in instructions.items():
-      op_type = instr['op_type']
-      output_elements = instr['output_elements']
-
-      # Skip excluded ops
-      if op_type in ('parameter', 'constant', 'tuple', 'get-tuple-element', 'bitcast'):
+      if op == "call" and instr.to_apply:
+        w, nw, sub = self._computation_weight(instr.to_apply)
+        total += w
+        nested_while = nested_while or nw
+        entries.extend(sub)
         continue
 
-      # Count operand elements by looking at argument types
-      operand_elements = 0
+      if op == "conditional" and instr.branches:
+        branch_results = [self._computation_weight(b) for b in instr.branches]
+        best = max(branch_results, key=lambda r: r[0], default=(0, False, []))
+        total += best[0]
+        nested_while = nested_while or any(r[1] for r in branch_results)
+        entries.extend(best[2])
+        continue
 
-      # For now, use a simplified approach: assume operands have same type as output
-      # (This is a simplification; real implementation would track all operand types)
-      if op_type in ('reduce', 'reduce-window', 'dot', 'convolution', 'gather', 'sort'):
-        # These use full operand + output
-        # For simplification, estimate from args
-        operand_elements = output_elements  # Placeholder
-      elif op_type in ('dynamic-update-slice', 'scatter'):
-        # Use update operand elements
-        operand_elements = output_elements  # Placeholder
-      elif op_type == 'dynamic-slice':
-        operand_elements = 0
-      elif op_type == 'while':
-        has_nested_while = True
-        operand_elements = output_elements
-      else:
-        operand_elements = output_elements
+      if op == "while" and instr.body:
+        w, _nw, sub = self._computation_weight(instr.body)
+        total += w
+        nested_while = True
+        entries.extend(sub)
+        continue
 
-      weight = OpWeight(
-        op_name=op_type,
-        operand_elements=operand_elements,
-        output_elements=output_elements,
+      operand_elements, output_elements = _leaf_weight(op, instr, symtab)
+      weight = operand_elements + output_elements
+      total += weight
+      entries.append(
+        OpWeight(
+          op_name=op,
+          operand_elements=operand_elements,
+          output_elements=output_elements,
+          name=instr.name,
+          scope=self._scope_map.get(instr.name),
+        )
       )
-      weights.append(weight)
-      total_weight += weight.total_weight
 
-    # Sort by weight and get top 10
-    weights.sort(key=lambda w: w.total_weight, reverse=True)
-    top_10 = [
-      {
-        'op': w.op_name,
-        'operand_elements': w.operand_elements,
-        'output_elements': w.output_elements,
-        'total_weight': w.total_weight,
-      }
-      for w in weights[:10]
-    ]
-
-    return total_weight, has_nested_while, top_10
+    self._memo[comp_name] = (total, nested_while, entries)
+    return self._memo[comp_name]
 
   def analyze(self) -> list[WhileLoopAnalysis]:
-    """Find all while loops and analyze their bodies."""
-    # Find while loop patterns
-    while_pattern = r'while\((.*?)\)\s*,\s*body=([\w.]+)\s*,\s*condition=([\w.]+)'
-
-    for match in re.finditer(while_pattern, self.hlo_text):
-      body_name = match.group(2)
-      condition_name = match.group(3)
-
-      body_comp = self._extract_computation_text(body_name)
-      if not body_comp:
-        logger.warning(f"Could not extract body computation: {body_name}")
-        continue
-
-      body_cost, has_nested, top_10 = self._compute_body_operand_elements(body_comp)
-
-      analysis = WhileLoopAnalysis(
-        name=body_name,
-        body_operand_elements=body_cost,
-        has_nested_while=has_nested,
-        top_10_instructions=top_10,
-      )
-      self.while_loops.append(analysis)
-
+    """Find every `while` instruction (in every parsed computation) and weigh its body."""
+    self.while_loops = []
+    for instrs in self._parsed.values():
+      for instr in instrs.values():
+        if instr.op != "while" or not instr.body:
+          continue
+        weight, nested_while, entries = self._computation_weight(instr.body)
+        top_10 = sorted(entries, key=lambda e: e.total_weight, reverse=True)[:10]
+        self.while_loops.append(
+          WhileLoopAnalysis(
+            name=instr.name,
+            body_operand_elements=weight,
+            has_nested_while=nested_while,
+            top_10_instructions=[e.to_dict() for e in top_10],
+          )
+        )
     return self.while_loops
 
 
-def compute_scaling_factor(m_2l: int, m_l: int) -> float | None:
-  """Compute α = log2(m(2L) / m(L)), guarded against zero/negative."""
-  if m_l <= 0 or m_2l <= 0:
+def compute_scaling_factor(m_2l: int | float | None, m_l: int | float | None) -> float | None:
+  """Compute alpha = log2(m_2l / m_l), guarded against a null/non-positive input."""
+  if m_l is None or m_2l is None or m_l <= 0 or m_2l <= 0:
     return None
   return math.log2(m_2l / m_l)
 
 
-def analyze_hlo_file(hlo_text: str) -> dict[str, Any]:
+def analyze_hlo_file(
+  hlo_text: str, known_scope_labels: frozenset[str] = frozenset()
+) -> dict[str, Any]:
   """Analyze HLO text and return structured results."""
-  analyzer = HLOLoopAnalyzer(hlo_text)
+  analyzer = HLOLoopAnalyzer(hlo_text, known_scope_labels=known_scope_labels)
   loops = analyzer.analyze()
-
   return {
-    'num_while_loops': len(loops),
-    'loops': [loop.to_dict() for loop in loops],
+    "num_while_loops": len(loops),
+    "loops": [loop.to_dict() for loop in loops],
   }
 
 
-if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='Analyze HLO loop-body costs')
-  parser.add_argument('--hlo-text', type=str, help='HLO text to analyze')
-  parser.add_argument('--hlo-file', type=Path, help='File containing HLO text')
+def primary_while_loop(loops: list[WhileLoopAnalysis]) -> WhileLoopAnalysis | None:
+  """Pick the "primary" while loop out of possibly several found (max by weight)."""
+  if not loops:
+    return None
+  return max(loops, key=lambda loop: loop.body_operand_elements)
+
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser(description="Analyze HLO loop-body costs")
+  parser.add_argument("--hlo-text", type=str, help="HLO text to analyze")
+  parser.add_argument("--hlo-file", type=Path, help="File containing HLO text")
 
   args = parser.parse_args()
 
   if args.hlo_file:
-    hlo_text = args.hlo_file.read_text()
+    hlo_text_arg = args.hlo_file.read_text()
   elif args.hlo_text:
-    hlo_text = args.hlo_text
+    hlo_text_arg = args.hlo_text
   else:
-    raise ValueError('Either --hlo-text or --hlo-file required')
+    raise ValueError("Either --hlo-text or --hlo-file required")
 
-  result = analyze_hlo_file(hlo_text)
+  result = analyze_hlo_file(hlo_text_arg)
   print(json.dumps(result, indent=2))

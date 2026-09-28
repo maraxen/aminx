@@ -1,10 +1,10 @@
 [metadata]
-title = "Layer (b) loop-body structural cost report"
+title = "Layer (b) loop-body structural cost report (P07 diagnostic; xtrax #1983 tie-in)"
 created = "260927"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "The AR decoder's loop body has non-trivial scaling with sequence length L. Synthetic controls (linear, reduce-to-scalar, constant) measure correctly via HLO analysis, and AR-force mode may show α > 0.35 if loop-body scaling is real."
+hypothesis = "The real HLO while-loop body-cost parser (hlo_loop_cost.py: body_operand_elements = Sigma over the body's instructions, fusion counted once at the call site, unfused reduce/dot/etc as operand+output, DUS/scatter as update-operand-only, call/conditional descent with max-over-branches) correctly measures scaling alpha = log2(m(2L)/m(L)) on three synthetic ground-truth controls (linear: alpha ~= 1 via a fusion; reduce-to-scalar: alpha ~= 1, the exact case an output-only metric would blind to ~0; constant: alpha ~= 0, a matmul independent of L) at L in {128, 256, 512}. Having verified the instrument on synthetic ground truth (BATHOS.md), it then measures the real AR decode kernel (aminx.inference.decode.autoregressive, production-shaped random-weight model per bench_ar_incremental.py, host from_tie_groups(arange(L), arange(L)) wave) for incremental in {off, force}, reporting whether the force-mode loop body's data-flow weight scales faster than expected (alpha > 0.35) for a supposedly near-O(1)-per-wave incremental cache."
 stage_name = "exploration"
 novel = true
 
@@ -12,50 +12,50 @@ novel = true
 positive_outcome = ["pass"]
 negative_outcome = ["ctrl_blind", "loop_body_scales"]
 
+# Declaration order matters (first matching branch wins): ctrl_blind, then
+# loop_body_scales, then pass -- matches the task spec's own ordering exactly. Every
+# gated float's `<x>_available` must be true for a pass-direction (or loop_body_scales)
+# condition to fire (result-emission rule #4); an unavailable/null gated float always
+# routes to ctrl_blind (the instrument-blindness branch), never to `error` -- there is
+# no [outcomes.error] here (a non-zero exit is bathos's own `error` classification,
+# never a declared branch of this sidecar; see common context "Result-emission rule").
+
 [outcomes.ctrl_blind]
-condition = "outcome = 'ctrl_blind'"
-decision = "Synthetic measurement pipeline failed; cannot trust loop-cost measurements."
+condition = "NOT alpha_linear_available OR alpha_linear < 0.9 OR alpha_linear > 1.1 OR NOT alpha_reduce_available OR alpha_reduce < 0.9 OR alpha_reduce > 1.1 OR NOT alpha_constant_available OR alpha_constant < -0.1 OR alpha_constant > 0.1 OR NOT alpha_ar_off_available OR alpha_ar_off < 0.8 OR NOT alpha_ar_force_available"
+decision = "One or more synthetic ground-truth controls fell outside its pre-registered interval (or measured null), or the AR-off (full-recompute) arm's alpha fell below 0.8, or the AR-force arm's alpha could not be measured at all; the loop-cost instrument cannot be trusted and no loop_body_scales/pass finding may be drawn from it."
+reasoning = "BATHOS.md: verify the measurement pipeline on synthetic ground truth before trusting any research conclusion. The reduce-to-scalar control specifically exists because an output-element-only metric would blind alpha to ~0 for it while still reading correctly for the linear control -- a control that only catches SOME blindness modes is not a full sensitivity check. A null (rather than out-of-range) alpha means the parser found no while loop or a non-positive measurement; that is the same instrument failure, not a different one, and must route here, not to `error`."
 is_residual = true
 
 [outcomes.loop_body_scales]
-condition = "outcome = 'loop_body_scales'"
-decision = "Loop-body scaling detected; non-linear data flow growth with L."
+condition = "alpha_ar_force_available AND alpha_ar_force > 0.35"
+decision = "With every synthetic control verified in-range, the AR decoder's force-mode (incremental cache) loop body still shows data-flow weight growing faster than the 0.35 bar as L doubles -- a real finding, not an instrument defect. Filed as followup_backlog_text for aminx #1981; downstream tasks are unaffected (T7 is a diagnostic side branch, dependency graph: 'T2 -> T7 ... independent of T3..T6')."
+reasoning = "V13/V16 already suspected the incremental decode path may not achieve the expected near-O(1)-per-wave scaling once vmap forces both lax.cond branches to run; this outcome is exactly that suspicion made measurable and falsifiable rather than asserted."
 is_residual = true
 
 [outcomes.pass]
-condition = "outcome = 'pass'"
-decision = "Synthetic controls passed, AR kernel shows expected behavior."
+condition = "alpha_linear_available AND alpha_linear >= 0.9 AND alpha_linear <= 1.1 AND alpha_reduce_available AND alpha_reduce >= 0.9 AND alpha_reduce <= 1.1 AND alpha_constant_available AND alpha_constant >= -0.1 AND alpha_constant <= 0.1 AND alpha_ar_off_available AND alpha_ar_off >= 0.8 AND alpha_ar_force_available AND alpha_ar_force <= 0.35"
+decision = "Every synthetic control measured in its pre-registered interval and the AR kernel's force-mode loop body scales at or below the 0.35 bar; the loop-cost instrument is trusted and the AR incremental cache shows the expected near-flat scaling."
+reasoning = "This is the fully-clean close: the instrument passed its own sensitivity check (three controls, including the output-metric-blind reduce case) and the real measurement it was built to make came back inside bar."
 is_residual = false
 
-[outcomes.error]
-condition = "outcome = 'error'"
-decision = "Fatal error in execution."
-is_residual = true
-
 [result_schema]
-outcome = { type = "str", required = true }
-outcome_reason = { type = "str", required = true }
-controls = { type = "dict", required = true }
-ar_kernel = { type = "dict", required = true }
-followup_backlog_text = { type = "str", required = true }
-provenance = { type = "dict", required = true }
+outcome = "str"
+outcome_reason = "str"
+alpha_linear = "float"
+alpha_linear_available = "bool"
+alpha_reduce = "float"
+alpha_reduce_available = "bool"
+alpha_constant = "float"
+alpha_constant_available = "bool"
+alpha_ar_off = "float"
+alpha_ar_off_available = "bool"
+alpha_ar_force = "float"
+alpha_ar_force_available = "bool"
+controls = "dict"
+ar_kernel = "dict"
+followup_backlog_text = "str"
+provenance = "dict"
 
-[[cases]]
-outcome = "pass"
-outcome_reason = "All controls within range"
-expect = "pass"
-
-[[cases]]
-outcome = "ctrl_blind"
-outcome_reason = "synthetic control failed"
-expect = "ctrl_blind"
-
-[[cases]]
-outcome = "loop_body_scales"
-outcome_reason = "ar_force: alpha 0.4 > 0.35"
-expect = "loop_body_scales"
-
-[[cases]]
-outcome = "error"
-outcome_reason = "Fatal error"
-expect = "error"
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }

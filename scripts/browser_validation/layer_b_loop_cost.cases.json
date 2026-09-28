@@ -1,78 +1,112 @@
 [
   {
-    "name": "all_pass",
+    "name": "pass_all_controls_in_range",
+    "expect": "pass",
     "result": {
       "outcome": "pass",
-      "outcome_reason": "All controls within range",
-      "controls": {
-        "linear": {"alpha": 1.0},
-        "reduce": {"alpha": 1.0},
-        "constant": {"alpha": 0.0}
-      },
-      "ar_kernel": {
-        "off": {"alpha": 0.9},
-        "force": {"alpha": 0.2}
-      },
+      "outcome_reason": "all controls in range; ar_off alpha >= 0.8; ar_force alpha <= 0.35",
+      "alpha_linear": 0.9997,
+      "alpha_linear_available": true,
+      "alpha_reduce": 0.9958,
+      "alpha_reduce_available": true,
+      "alpha_constant": 0.0,
+      "alpha_constant_available": true,
+      "alpha_ar_off": 1.5,
+      "alpha_ar_off_available": true,
+      "alpha_ar_force": 0.2,
+      "alpha_ar_force_available": true,
+      "controls": {},
+      "ar_kernel": {},
       "followup_backlog_text": "",
       "provenance": {}
-    },
-    "expect": "pass"
+    }
   },
   {
-    "name": "ctrl_blind_linear_alpha_none",
+    "name": "ctrl_blind_planted_bad_linear_alpha",
+    "expect": "ctrl_blind",
     "result": {
       "outcome": "ctrl_blind",
-      "outcome_reason": "linear: alpha None",
-      "controls": {
-        "linear": {"alpha": null},
-        "reduce": {"alpha": 1.0},
-        "constant": {"alpha": 0.0}
-      },
-      "ar_kernel": {
-        "off": {"alpha": 0.9},
-        "force": {"alpha": 0.2}
-      },
+      "outcome_reason": "linear: alpha 2.5000 outside [0.9, 1.1]",
+      "alpha_linear": 2.5,
+      "alpha_linear_available": true,
+      "alpha_reduce": 0.9958,
+      "alpha_reduce_available": true,
+      "alpha_constant": 0.0,
+      "alpha_constant_available": true,
+      "alpha_ar_off": 1.5,
+      "alpha_ar_off_available": true,
+      "alpha_ar_force": 0.2,
+      "alpha_ar_force_available": true,
+      "controls": {},
+      "ar_kernel": {},
       "followup_backlog_text": "",
       "provenance": {}
-    },
-    "expect": "ctrl_blind"
+    }
   },
   {
-    "name": "loop_body_scales_ar_force",
+    "name": "ctrl_blind_null_reduce_alpha_routes_here_not_error",
+    "expect": "ctrl_blind",
+    "result": {
+      "outcome": "ctrl_blind",
+      "outcome_reason": "reduce: alpha unavailable (null)",
+      "alpha_linear": 0.9997,
+      "alpha_linear_available": true,
+      "alpha_reduce": null,
+      "alpha_reduce_available": false,
+      "alpha_constant": 0.0,
+      "alpha_constant_available": true,
+      "alpha_ar_off": 1.5,
+      "alpha_ar_off_available": true,
+      "alpha_ar_force": 0.2,
+      "alpha_ar_force_available": true,
+      "controls": {},
+      "ar_kernel": {},
+      "followup_backlog_text": "",
+      "provenance": {}
+    }
+  },
+  {
+    "name": "ctrl_blind_ar_off_below_bar",
+    "expect": "ctrl_blind",
+    "result": {
+      "outcome": "ctrl_blind",
+      "outcome_reason": "ar_off: alpha 0.5000 < 0.8",
+      "alpha_linear": 0.9997,
+      "alpha_linear_available": true,
+      "alpha_reduce": 0.9958,
+      "alpha_reduce_available": true,
+      "alpha_constant": 0.0,
+      "alpha_constant_available": true,
+      "alpha_ar_off": 0.5,
+      "alpha_ar_off_available": true,
+      "alpha_ar_force": 0.2,
+      "alpha_ar_force_available": true,
+      "controls": {},
+      "ar_kernel": {},
+      "followup_backlog_text": "",
+      "provenance": {}
+    }
+  },
+  {
+    "name": "loop_body_scales_ar_force_above_bar",
+    "expect": "loop_body_scales",
     "result": {
       "outcome": "loop_body_scales",
-      "outcome_reason": "ar_force: alpha 0.4 > 0.35",
-      "controls": {
-        "linear": {"alpha": 1.0},
-        "reduce": {"alpha": 1.0},
-        "constant": {"alpha": 0.0}
-      },
-      "ar_kernel": {
-        "off": {"alpha": 0.9},
-        "force": {"alpha": 0.4}
-      },
-      "followup_backlog_text": "## xtrax #1983",
+      "outcome_reason": "ar_force: alpha 0.4024 > 0.35 (loop-body scaling detected)",
+      "alpha_linear": 0.9997,
+      "alpha_linear_available": true,
+      "alpha_reduce": 0.9958,
+      "alpha_reduce_available": true,
+      "alpha_constant": 0.0,
+      "alpha_constant_available": true,
+      "alpha_ar_off": 1.8,
+      "alpha_ar_off_available": true,
+      "alpha_ar_force": 0.4024,
+      "alpha_ar_force_available": true,
+      "controls": {},
+      "ar_kernel": {},
+      "followup_backlog_text": "## aminx #1981 ...",
       "provenance": {}
-    },
-    "expect": "loop_body_scales"
-  },
-  {
-    "name": "ctrl_blind_ar_off_low",
-    "result": {
-      "outcome": "ctrl_blind",
-      "outcome_reason": "ar_off: alpha 0.7 < 0.8",
-      "controls": {
-        "linear": {"alpha": 1.0},
-        "reduce": {"alpha": 1.0},
-        "constant": {"alpha": 0.0}
-      },
-      "ar_kernel": {
-        "off": {"alpha": 0.7},
-        "force": {"alpha": 0.2}
-      },
-      "followup_backlog_text": "",
-      "provenance": {}
-    },
-    "expect": "ctrl_blind"
+    }
   }
 ]
