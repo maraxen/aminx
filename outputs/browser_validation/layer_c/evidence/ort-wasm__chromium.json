@@ -1,0 +1,24 @@
+{
+  "browser_version": "153.0.8010.12",
+  "contexts": [
+    {
+      "threads_observed": 1,
+      "threads_observed_available": true,
+      "threads_requested": 1
+    }
+  ],
+  "cross_origin_isolated": true,
+  "execution_provider": "wasm",
+  "no_isolation_check": {
+    "cross_origin_isolated": false
+  },
+  "ort_web_version": "1.30.0",
+  "playwright_version": "1.63.0",
+  "session_id": "2f434b45-946c-40a5-9679-8e6b0d02cd44",
+  "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.8010.12 Safari/537.36",
+  "webgpu": {
+    "adapter": false,
+    "available": true,
+    "error": null
+  }
+}
