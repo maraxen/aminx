@@ -75,6 +75,14 @@ scripts/scratch/
 browser/**/node_modules/
 browser/**/.cache/
 
+# Playwright Test runner scratch (browser/layer_c/tests/threads.spec.mjs, T5a): the
+# default test-results/ report dir and a leftover playwright-report/ HTML report, plus
+# the ephemeral static-site fixture threads.spec.mjs builds and removes in afterAll
+# (defensive -- it is not supposed to survive a run, but never commit it if it does).
+browser/**/test-results/
+browser/**/playwright-report/
+browser/layer_c/.test-site/
+
 # Claude Code background-job scratch space (per-job tmp dirs; should never
 # land under the repo, but a relative path can resolve here by mistake).
 .claude/jobs/
