@@ -962,6 +962,53 @@ def _convert_onnx(fn: object, sample: dict[str, np.ndarray], bucket: int, out_pa
     output_path=str(out_path),
     return_mode="file",
   )
+  embed_external_data(out_path)
+
+
+def _graph_tensors(graph: object) -> list[object]:
+  """Every TensorProto in ``graph``, including Loop/If/Scan subgraph initializers."""
+  import onnx  # noqa: PLC0415
+
+  tensors: list[object] = list(graph.initializer)  # type: ignore[attr-defined]
+  for node in graph.node:  # type: ignore[attr-defined]
+    for attr in node.attribute:
+      if attr.type == onnx.AttributeProto.TENSOR:
+        tensors.append(attr.t)
+      elif attr.type == onnx.AttributeProto.TENSORS:
+        tensors.extend(attr.tensors)
+      elif attr.type == onnx.AttributeProto.GRAPH:
+        tensors.extend(_graph_tensors(attr.g))
+      elif attr.type == onnx.AttributeProto.GRAPHS:
+        for sub in attr.graphs:
+          tensors.extend(_graph_tensors(sub))
+  return tensors
+
+
+def embed_external_data(onnx_path: Path) -> None:
+  """Rewrite ``onnx_path`` as one self-contained file.
+
+  jax2onnx stores some Loop-subgraph constants as external data next to the model.
+  onnxruntime (CPU) resolves those from disk, but the browser site serves only the
+  ``.onnx`` file, so ORT-Web fails session creation ("external data path could not be
+  canonicalized"). Both arms load the rewritten file, so they run the same bytes.
+  """
+  import onnx  # noqa: PLC0415
+
+  model = onnx.load(str(onnx_path), load_external_data=True)
+  for tensor in _graph_tensors(model.graph):
+    if tensor.data_location == onnx.TensorProto.EXTERNAL:  # type: ignore[attr-defined]
+      tensor.data_location = onnx.TensorProto.DEFAULT  # type: ignore[attr-defined]
+      del tensor.external_data[:]  # type: ignore[attr-defined]
+  onnx.save_model(model, str(onnx_path), save_as_external_data=False)
+  reloaded = onnx.load(str(onnx_path), load_external_data=False)
+  leftover = [
+    tensor.name  # type: ignore[attr-defined]
+    for tensor in _graph_tensors(reloaded.graph)
+    if tensor.data_location == onnx.TensorProto.EXTERNAL  # type: ignore[attr-defined]
+  ]
+  if leftover:
+    msg = f"P07 ONNX still references external data after embedding: {leftover[:5]}"
+    raise ValueError(msg)
 
 
 def _ort_run(session: object, arrays: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
