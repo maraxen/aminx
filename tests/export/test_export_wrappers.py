@@ -507,6 +507,56 @@ class TestFindRngPrimitives:
     jaxpr = jax.make_jaxpr(fn)(jnp.zeros((4,)))
     assert find_rng_primitives(jaxpr) != []
 
+
+# --------------------------------------------------------------------------------------
+# (f) check_export_safety: no sort-stability blocker on the P03/P04 wrappers, for both
+# NATIVE and WASM32 (T4, task 260926_browser-export-loop). Until this fix,
+# `make_p04_unconditional`'s traced jaxpr carried a `sort` op with `is_stable=True`
+# (xtrax's `sort-stability` rule): NOT from `inference/decode/autoregressive.py`'s wave
+# order (P04 goes through `UnconditionalDecode`, which never calls
+# `AutoregressiveDecode.__call__`), but from `build_inference_bundle` ->
+# `generate_ar_mask`'s tied branch (`utils/autoregression.py`, ~L207), whose
+# `group_decoding_order = jnp.argsort(...)` relied on the default `stable=True` over a
+# key where every "group not present" slot shares one sentinel. See
+# `tests/utils/test_autoregression.py::test_group_decoding_order_tie_free_matches_stable_argsort`
+# for the unit-level tie-free-key proof, and this class's own red-check (documented in
+# the T4 report) for confirmation this test fails on the pre-fix code.
+# --------------------------------------------------------------------------------------
+
+
+class TestCheckExportSafetyNoSortStability:
+  @staticmethod
+  def _blockers(fn: object, bucket: int) -> dict[str, list[str]]:
+    from xtrax.export import NATIVE, WASM32, check_export_safety
+
+    specs = _avals_for(bucket)
+    out = {}
+    for target_name, target in (("NATIVE", NATIVE), ("WASM32", WASM32)):
+      blockers = check_export_safety([], {}, specs, fn, target)
+      out[target_name] = [b.rule for b in blockers]
+    return out
+
+  @pytest.mark.requires_weights
+  @pytest.mark.parametrize("bucket", [128, 256, 512, 1024])
+  def test_p04_wrapper_has_no_sort_stability_blocker(
+    self, checkpoint_model: Aminx, bucket: int
+  ) -> None:
+    stage_set = make_stage_set()
+    p04 = make_p04_unconditional(checkpoint_model, stage_set)
+    blockers = self._blockers(p04, bucket)
+    for target_name, rules in blockers.items():
+      assert "sort-stability" not in rules, (target_name, rules)
+
+  @pytest.mark.requires_weights
+  @pytest.mark.parametrize("bucket", [128, 256, 512, 1024])
+  def test_p03_wrapper_has_no_sort_stability_blocker(
+    self, checkpoint_model: Aminx, bucket: int
+  ) -> None:
+    p03 = make_p03_featurize(checkpoint_model)
+    blockers = self._blockers(p03, bucket)
+    for target_name, rules in blockers.items():
+      assert "sort-stability" not in rules, (target_name, rules)
+
   def test_rng_in_cond_in_jit_is_flagged(self) -> None:
     def cond_rng(pred: jax.Array, x: jax.Array) -> jax.Array:
       def true_branch(x: jax.Array) -> jax.Array:
