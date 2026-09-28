@@ -253,10 +253,25 @@ def _evaluate_p03_cell(
   idx_wrap = np.asarray(idx_wrap)
   feat_wrap = np.asarray(feat_wrap)
 
-  onnx_path = resolved_dir / f"p03_L{bucket}.onnx"
-  outputs, ep_hist, threads = _run_ort(
-    onnx_path, padded["coords"], padded["mask"], padded["residue_index"], padded["chain_index"]
-  )
+  cell: dict[str, Any] = {"fixture": fixture_name, "bucket": bucket, "b_ort": None}
+
+  # The ORT execution arm is isolated from the JAX-only wrapper computation above: an
+  # ORT-side failure (e.g. a converted-artifact defect) must not discard the wrapper
+  # data itself, even though P03 has no OTHER route to report (b-ORT is its only bar
+  # row) -- the isolation still matters for the shared `_run_ort` failure mode this
+  # discovered (see commit body finding), and keeps this function's shape symmetric
+  # with `_evaluate_p04_cell`'s P27 arm, which DOES have independent value.
+  try:
+    onnx_path = resolved_dir / f"p03_L{bucket}.onnx"
+    outputs, ep_hist, threads = _run_ort(
+      onnx_path, padded["coords"], padded["mask"], padded["residue_index"], padded["chain_index"]
+    )
+  except Exception as exc:  # noqa: BLE001 -- recorded, not swallowed
+    cell["b_ort_error"] = f"{type(exc).__name__}: {exc}"
+    cell["ep_histogram"] = {}
+    cell["threads"] = None
+    return cell
+
   idx_ort = np.asarray(outputs[0])
   feat_ort = np.asarray(outputs[1])
 
@@ -266,16 +281,13 @@ def _evaluate_p03_cell(
   idx_cmp = lbc.compare_neighbor_indices(idx_ort[:n_real], idx_wrap[:n_real], real_mask, near_tie)
   edge_max_abs = max_abs(feat_ort[:n_real], feat_wrap[:n_real])
 
-  return {
-    "fixture": fixture_name,
-    "bucket": bucket,
-    "b_ort": {
-      "neighbor_indices": idx_cmp,
-      "edge_features_max_abs": edge_max_abs,
-    },
-    "ep_histogram": {f"p03_L{bucket}.onnx": ep_hist},
-    "threads": threads,
+  cell["b_ort"] = {
+    "neighbor_indices": idx_cmp,
+    "edge_features_max_abs": edge_max_abs,
   }
+  cell["ep_histogram"] = {f"p03_L{bucket}.onnx": ep_hist}
+  cell["threads"] = threads
+  return cell
 
 
 def _evaluate_p04_cell(
@@ -305,17 +317,44 @@ def _evaluate_p04_cell(
   idx_wrap = np.asarray(idx_wrap)
   log_probs_wrap = np.asarray(jax.nn.log_softmax(logits_wrap, axis=-1), dtype=np.float64)
 
-  onnx_path = resolved_dir / f"p04_L{bucket}.onnx"
-  outputs, ep_hist, threads = _run_ort(
-    onnx_path, padded["coords"], padded["mask"], padded["residue_index"], padded["chain_index"]
-  )
-  logits_ort = np.asarray(outputs[0])
-  idx_ort = np.asarray(outputs[1])
-  log_probs_ort = np.asarray(jax.nn.log_softmax(jnp.asarray(logits_ort), axis=-1), dtype=np.float64)
-
   ca_real = x4[:n_real, 1, :]
   near_tie = lbc.near_tie_rows(ca_real, model.features.k_neighbors, EPSILON_TIE)
   real_mask = np.ones((n_real,), dtype=bool)
+
+  # P27 (D-H: wrapper vs native UNPADDED) needs no ORT at all -- computed independently
+  # of the b-ORT arm below, so an ORT-side failure (e.g. a converted-artifact defect)
+  # does not discard this genuinely ORT-independent evidence.
+  native_log_probs = _native_p04_log_probs(native_model, x4, mask, residue_index, chain_index)
+  native_idx = _native_p04_indices(native_model, x4, mask, residue_index, chain_index)
+  p27_logprob_max_abs = max_abs(log_probs_wrap[:n_real], native_log_probs)
+  p27_idx_cmp = lbc.compare_neighbor_indices(
+    idx_wrap[:n_real], native_idx[:n_real], real_mask, near_tie
+  )
+
+  cell: dict[str, Any] = {
+    "fixture": fixture_name,
+    "bucket": bucket,
+    "b_ort": None,
+    "p27": {
+      "neighbor_indices": p27_idx_cmp,
+      "log_probs_max_abs": p27_logprob_max_abs,
+    },
+  }
+
+  try:
+    onnx_path = resolved_dir / f"p04_L{bucket}.onnx"
+    outputs, ep_hist, threads = _run_ort(
+      onnx_path, padded["coords"], padded["mask"], padded["residue_index"], padded["chain_index"]
+    )
+  except Exception as exc:  # noqa: BLE001 -- recorded, not swallowed
+    cell["b_ort_error"] = f"{type(exc).__name__}: {exc}"
+    cell["ep_histogram"] = {}
+    cell["threads"] = None
+    return cell
+
+  logits_ort = np.asarray(outputs[0])
+  idx_ort = np.asarray(outputs[1])
+  log_probs_ort = np.asarray(jax.nn.log_softmax(jnp.asarray(logits_ort), axis=-1), dtype=np.float64)
 
   idx_cmp_b_ort = lbc.compare_neighbor_indices(
     idx_ort[:n_real], idx_wrap[:n_real], real_mask, near_tie
@@ -325,29 +364,15 @@ def _evaluate_p04_cell(
   agree, valid = argmax_agreement(log_probs_wrap[:n_real], log_probs_ort[:n_real], ARGMAX_MARGIN)
   n_argmax_mismatch = int(np.sum(valid & ~agree))
 
-  native_log_probs = _native_p04_log_probs(native_model, x4, mask, residue_index, chain_index)
-  native_idx = _native_p04_indices(native_model, x4, mask, residue_index, chain_index)
-  p27_logprob_max_abs = max_abs(log_probs_wrap[:n_real], native_log_probs)
-  p27_idx_cmp = lbc.compare_neighbor_indices(
-    idx_wrap[:n_real], native_idx[:n_real], real_mask, near_tie
-  )
-
-  return {
-    "fixture": fixture_name,
-    "bucket": bucket,
-    "b_ort": {
-      "neighbor_indices": idx_cmp_b_ort,
-      "log_probs_max_abs": logprob_max_abs,
-      "log_probs_pearson": logprob_pearson,
-      "n_argmax_mismatch": n_argmax_mismatch,
-    },
-    "p27": {
-      "neighbor_indices": p27_idx_cmp,
-      "log_probs_max_abs": p27_logprob_max_abs,
-    },
-    "ep_histogram": {f"p04_L{bucket}.onnx": ep_hist},
-    "threads": threads,
+  cell["b_ort"] = {
+    "neighbor_indices": idx_cmp_b_ort,
+    "log_probs_max_abs": logprob_max_abs,
+    "log_probs_pearson": logprob_pearson,
+    "n_argmax_mismatch": n_argmax_mismatch,
   }
+  cell["ep_histogram"] = {f"p04_L{bucket}.onnx": ep_hist}
+  cell["threads"] = threads
+  return cell
 
 
 # --------------------------------------------------------------------------------------
@@ -678,6 +703,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
       errors["sizing"] = f"{type(exc).__name__}: {exc}"
 
+  # Counting is at the ARM level (b_ort / p27), not the cell level: `_evaluate_p04_cell`
+  # computes P27 independently of the b-ORT ONNX Runtime execution, so a converted-
+  # artifact defect that breaks every b-ORT arm (see commit body finding) must not also
+  # discard the genuinely ORT-independent P27 evidence.
   for fixture_name, bucket in FIXTURE_BUCKETS.items():
     fixture = fixture_corpus[fixture_name]
     p03_only = fixture_name in P03_ONLY_FIXTURES
@@ -692,29 +721,32 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
       errors[f"{fixture_name}.p03"] = f"{type(exc).__name__}: {exc}"
     else:
-      n_measurements_computed += 1
       ep_histograms.update(p03_cell["ep_histogram"])
-      _accumulate(
-        measurements,
-        "p03",
-        "neighbor_indices",
-        "b_ort",
-        bucket,
-        float(p03_cell["b_ort"]["neighbor_indices"]["n_mismatch_non_near_tie"]),
-      )
-      _accumulate(
-        measurements,
-        "p03",
-        "edge_features",
-        "b_ort",
-        bucket,
-        p03_cell["b_ort"]["edge_features_max_abs"],
-      )
+      if p03_cell["b_ort"] is None:
+        errors[f"{fixture_name}.p03.b_ort"] = p03_cell["b_ort_error"]
+      else:
+        n_measurements_computed += 1
+        _accumulate(
+          measurements,
+          "p03",
+          "neighbor_indices",
+          "b_ort",
+          bucket,
+          float(p03_cell["b_ort"]["neighbor_indices"]["n_mismatch_non_near_tie"]),
+        )
+        _accumulate(
+          measurements,
+          "p03",
+          "edge_features",
+          "b_ort",
+          bucket,
+          p03_cell["b_ort"]["edge_features_max_abs"],
+        )
 
     if p03_only:
       continue
 
-    n_measurements_expected += 1
+    n_measurements_expected += 2  # b_ort, p27
     try:
       p04_cell = _evaluate_p04_cell(
         fixture_name,
@@ -732,8 +764,25 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
       errors[f"{fixture_name}.p04"] = f"{type(exc).__name__}: {exc}"
       continue
-    n_measurements_computed += 1
+
     ep_histograms.update(p04_cell["ep_histogram"])
+    n_measurements_computed += 1  # p27 (D-H) never depends on ORT
+    _accumulate(
+      measurements,
+      "p04",
+      "neighbor_indices",
+      "p27",
+      bucket,
+      float(p04_cell["p27"]["neighbor_indices"]["n_mismatch_non_near_tie"]),
+    )
+    _accumulate(
+      measurements, "p04", "log_probs", "p27", bucket, p04_cell["p27"]["log_probs_max_abs"]
+    )
+
+    if p04_cell["b_ort"] is None:
+      errors[f"{fixture_name}.p04.b_ort"] = p04_cell["b_ort_error"]
+      continue
+    n_measurements_computed += 1
     _accumulate(
       measurements,
       "p04",
@@ -747,17 +796,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     _accumulate(
       measurements, "p04", "argmax", "b_ort", bucket, float(p04_cell["b_ort"]["n_argmax_mismatch"])
-    )
-    _accumulate(
-      measurements,
-      "p04",
-      "neighbor_indices",
-      "p27",
-      bucket,
-      float(p04_cell["p27"]["neighbor_indices"]["n_mismatch_non_near_tie"]),
-    )
-    _accumulate(
-      measurements, "p04", "log_probs", "p27", bucket, p04_cell["p27"]["log_probs_max_abs"]
     )
 
   max_abs_dist_err = _max_abs_dist_err(cells_for_dist_err)
