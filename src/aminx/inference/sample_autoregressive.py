@@ -49,7 +49,7 @@ class SampleResult(eqx.Module):
   by accident of current callers, not by contract.
   """
 
-  sequence: Int[Array, L]
+  sequence: Int[Array, "L"]
   logits: Float[Array, "L 21"]
   packer_result: PackerResult | None = None
 

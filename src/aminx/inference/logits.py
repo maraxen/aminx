@@ -41,7 +41,7 @@ class ArithmeticMeanLogits(eqx.Module):
 
   """
 
-  weights: Float[Array, S]
+  weights: Float[Array, "S"]
 
   def __call__(
     self,
@@ -128,7 +128,7 @@ class GeometricMeanLogits(eqx.Module):
 
   """
 
-  weights: Float[Array, S]
+  weights: Float[Array, "S"]
   temperature: float = eqx.field(static=True, default=1.0)
 
   def __call__(
@@ -247,7 +247,7 @@ class ProductOfProbabilities(eqx.Module):
 
   """
 
-  weights: Float[Array, S]
+  weights: Float[Array, "S"]
   sharpness: float | None = eqx.field(static=True, default=1.0)
 
   def __call__(
@@ -326,7 +326,7 @@ class ARLogitFuse(eqx.Module):
 
   """
 
-  def __call__(self, logits: Float[Array, "S V"], bias: Float[Array, V]) -> Float[Array, V]:
+  def __call__(self, logits: Float[Array, "S V"], bias: Float[Array, "V"]) -> Float[Array, "V"]:
     """Fuse per-state logits and add bias.
 
     Parameters
@@ -370,8 +370,8 @@ class TieGroupLogsumexpMean(eqx.Module):
   def __call__(
     self,
     logits: Float[Array, "L V"],
-    mask: Bool[Array, L],
-  ) -> Float[Array, V]:
+    mask: Bool[Array, "L"],
+  ) -> Float[Array, "V"]:
     """Fuse tied-position logits via logsumexp mean.
 
     Parameters
@@ -414,8 +414,8 @@ class TieGroupProductOfExperts(eqx.Module):
   def __call__(
     self,
     logits: Float[Array, "L V"],
-    mask: Bool[Array, L],
-  ) -> Float[Array, V]:
+    mask: Bool[Array, "L"],
+  ) -> Float[Array, "V"]:
     """Fuse tied-position logits via product-of-experts.
 
     Parameters

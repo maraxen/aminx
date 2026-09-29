@@ -131,12 +131,12 @@ class ConditioningBundle(eqx.Module):
 
   """
 
-  fixed_mask: Float[Array, L]
-  fixed_tokens: Int[Array, L]
+  fixed_mask: Float[Array, "L"]
+  fixed_tokens: Int[Array, "L"]
   bias: Float[Array, "L V"]
   tie_group_map: Int[Array, "S L"]
   state_position_map: Int[Array, "S L"]
-  state_weights: Float[Array, S]
+  state_weights: Float[Array, "S"]
   sequence_oh: Float[Array, "L V"]  # zeros for unconditional/AR
   ar_mask: Float[Array, "S L L"]  # full 1s for purely conditional
   temperature: Float[Array, ""] = eqx.field(default_factory=lambda: jnp.array(1.0))
@@ -210,8 +210,8 @@ class WaveScheduleBundle(eqx.Module):
 
   @staticmethod
   def from_tie_groups(
-    tie_group_map: Int[Array, L],
-    decoding_order: Int[Array, L],
+    tie_group_map: Int[Array, "L"],
+    decoding_order: Int[Array, "L"],
   ) -> WaveScheduleBundle:
     """Create a schedule where tied positions are in the same wave step.
 
@@ -279,7 +279,7 @@ class WaveScheduleBundle(eqx.Module):
   @staticmethod
   def from_colors(
     group_colors: Int[Array, " n_groups"],
-    tie_group_map: Int[Array, L],
+    tie_group_map: Int[Array, "L"],
   ) -> WaveScheduleBundle:
     """Create a schedule from a graph coloring of tie groups (chromatic / improper-coloring arms).
 
@@ -606,16 +606,16 @@ class PackerBundle(eqx.Module):
 
   """
 
-  sequence: Int[Array, L] | Int[Array, "S L"]
+  sequence: Int[Array, "L"] | Int[Array, "S L"]
   backbone_coords: Float[Array, "L 14 3"] | Float[Array, "S L 14 3"]
   backbone_mask: Float[Array, "L 14"] | Float[Array, "S L 14"]
   ligand_coords: Float[Array, "L M 3"] | Float[Array, "S L M 3"]
   ligand_mask: Float[Array, "L M"] | Float[Array, "S L M"]
   ligand_atom_types: Float[Array, "L M"] | Float[Array, "S L M"]
-  mask: Float[Array, L] | Float[Array, "S L"]
-  residue_index: Int[Array, L] | Int[Array, "S L"]
-  chain_labels: Int[Array, L] | Int[Array, "S L"]
-  backbone_noise: Float[Array, ""] = 0.0
+  mask: Float[Array, "L"] | Float[Array, "S L"]
+  residue_index: Int[Array, "L"] | Int[Array, "S L"]
+  chain_labels: Int[Array, "L"] | Int[Array, "S L"]
+  backbone_noise: Float[Array, ""] | float = 0.0
 
 
 class DecodeOutput(eqx.Module):

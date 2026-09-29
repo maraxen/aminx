@@ -19,4 +19,4 @@ class EncoderOutput(NamedTuple):
   node_features: Float[Array, "L D"]
   edge_features: Float[Array, "L K D"]
   neighbor_indices: Int[Array, "L K"]
-  mask: Float[Array, L] | None = None
+  mask: Float[Array, "L"] | None = None
