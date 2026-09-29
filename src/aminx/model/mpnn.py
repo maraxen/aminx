@@ -138,7 +138,7 @@ class Aminx(eqx.Module):
         y: accepted but ignored (for API compatibility with LigandMPNN).
         y_t: accepted but ignored (for API compatibility with LigandMPNN).
         y_m: accepted but ignored (for API compatibility with LigandMPNN).
-        inference: accepted but ignored (kept for symmetry with downstream calls).
+        inference: When True, encoder dropout is disabled. Training must pass False.
 
     Returns:
         (node_features, edge_features, neighbor_indices) for this state.
@@ -167,6 +167,7 @@ class Aminx(eqx.Module):
       neighbor_indices,
       mask,
       initial_node_features=effective_node_features,
+      inference=inference,
       key=prng_key,
     )
     return node_features, edge_features, neighbor_indices
