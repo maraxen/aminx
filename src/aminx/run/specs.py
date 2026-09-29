@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 import warnings
-from collections.abc import MutableMapping, Sequence
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TextIO, cast
@@ -14,7 +14,7 @@ from aminx.io.proxide_fetch import InputResolutionError
 from aminx.io.weights import get_topology_for_checkpoint
 from aminx.model.versions import MODEL_VERSION, MODEL_WEIGHTS
 
-from .spec import RunSpec, build_run_spec
+from .spec import UNSET, RunSpec, Unset, _as_temperature_tuple, build_run_spec
 
 _DEPRECATED_SPEC_KWARGS = frozenset(
   {
@@ -57,6 +57,7 @@ if TYPE_CHECKING:
   from aminx.utils.decoding_order import DecodingOrderFn
 
   from .batch_mapping import MappedBy
+  from .options import LaserOptions, PottsMPNNOptions
 
 
 # Type aliases for convenience
@@ -324,6 +325,10 @@ class RunSpecification:
   multi_state_temperature: float = 1.0
   fixed_mask: ArrayLike | MappedBy[ArrayLike] | None = None
   sidechain_conditioning: bool = False
+  potts_mpnn: PottsMPNNOptions | None = None
+  """PottsMPNN knobs. ``None`` means the family defaults; set only for ``pottsmpnn``."""
+  laser: LaserOptions | None = None
+  """LASErMPNN knobs. ``None`` means the family defaults; set only for ``lasermpnn``."""
 
   run_spec: RunSpec = field(init=False, repr=False)
   _run_spec_synced: bool = field(init=False, default=False)
@@ -333,6 +338,10 @@ class RunSpecification:
       return
     object.__setattr__(self, "_run_spec_synced", True)
     object.__setattr__(self, "run_spec", build_run_spec(self))
+
+  def _resolve_family_defaults(self) -> None:
+    """Family-specific field defaults. Sampling overrides this; the base is a no-op."""
+    return
 
   def __post_init__(self) -> None:
     """Post-initialization processing and validation for tied-position logit averaging."""
@@ -529,7 +538,45 @@ class RunSpecification:
         self.checkpoint_id,
       )
 
+    self._resolve_family_defaults()
     self._sync_run_spec()
+
+
+_SEQUENCE_OUTPUT_KINDS = frozenset({"nll", "logits"})
+_ALL_OUTPUT_KINDS = frozenset(
+  {
+    "nll",
+    "logits",
+    "energy",
+    "ddg",
+    "proofread_unconditional",
+    "proofread_conditional",
+  },
+)
+_OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
+  "proteinmpnn": frozenset({"nll"}),
+  "ligandmpnn": frozenset({"nll"}),
+  "membrane": frozenset({"nll"}),
+  "pottsmpnn": frozenset({"nll", "logits", "energy", "ddg"}),
+  "lasermpnn": frozenset(
+    {"nll", "logits", "proofread_unconditional", "proofread_conditional"},
+  ),
+}
+
+
+def _validate_output_kind(output_kind: str, model_family: str | None) -> None:
+  """Reject unknown kinds, and non-nll kinds on MPNN families."""
+  if output_kind not in _ALL_OUTPUT_KINDS:
+    msg = f"Unknown output_kind {output_kind!r}"
+    raise ValueError(msg)
+  family = model_family if isinstance(model_family, str) else "proteinmpnn"
+  allowed = _OUTPUT_KINDS_BY_FAMILY.get(family, frozenset({"nll"}))
+  if output_kind not in allowed:
+    msg = (
+      f"output_kind {output_kind!r} is not supported for model_family {family!r}; "
+      f"allowed: {sorted(allowed)}"
+    )
+    raise ValueError(msg)
 
 
 @register_spec
@@ -552,6 +599,14 @@ class ScoringSpecification(RunSpecification):
   """
 
   sequences_to_score: Sequence[str] = ()
+  output_kind: Literal[
+    "nll",
+    "logits",
+    "energy",
+    "ddg",
+    "proofread_unconditional",
+    "proofread_conditional",
+  ] = "nll"
   temperature: float = 1.0
   return_logits: bool = False
   return_decoding_orders: bool = False
@@ -565,7 +620,8 @@ class ScoringSpecification(RunSpecification):
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    if not self.sequences_to_score:
+    _validate_output_kind(self.output_kind, self.model_family)
+    if self.output_kind in _SEQUENCE_OUTPUT_KINDS and not self.sequences_to_score:
       msg = (
         "No sequences provided for scoring."
         "`sequences_to_score` must be a non-empty list of strings."
@@ -583,7 +639,7 @@ class SamplingSpecification(RunSpecification):
 
   num_samples: int = 1
   sampling_strategy: Literal["temperature", "straight_through"] = "temperature"
-  temperature: Sequence[float] | float = 0.1
+  temperature: Sequence[float | None] | float | None | Unset = UNSET
   use_unified_driver: bool = True
   bias: ArrayLike | None = None
   fixed_positions: ArrayLike | None = None
@@ -635,15 +691,30 @@ class SamplingSpecification(RunSpecification):
   chunk_id: int | None = None
   sample_start: int | None = None
   sample_count: int | None = None
+  omit_aa: Sequence[str] = ()
+  omit_aa_per_position: Mapping[int, str] | None = None
   carry_specs: list[CarrySpec] | None = None
   dedup_specs: list[DedupSpec] | None = None
+
+  def _resolve_family_defaults(self) -> None:
+    object.__setattr__(
+      self,
+      "temperature",
+      _as_temperature_tuple(self.temperature, self.model_family),
+    )
+    object.__setattr__(self, "omit_aa", tuple(str(token) for token in self.omit_aa))
+    per_position = self.omit_aa_per_position
+    if per_position is not None:
+      object.__setattr__(
+        self,
+        "omit_aa_per_position",
+        {int(pos): str(letters) for pos, letters in per_position.items()},
+      )
 
   def __post_init__(self) -> None:
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    if isinstance(self.temperature, float):
-      object.__setattr__(self, "temperature", (self.temperature,))
     if self.sampling_strategy == "straight_through" and (
       self.iterations is None or self.learning_rate is None
     ):
@@ -781,8 +852,7 @@ class InspectionSpecification(RunSpecification):
     if "batched_conditional_logits" in self.inspection_features:
       if not self.candidate_sequences:
         msg = (
-          "candidate_sequences must be non-empty when 'batched_conditional_logits' "
-          "is requested."
+          "candidate_sequences must be non-empty when 'batched_conditional_logits' is requested."
         )
         raise ValueError(msg)
       if self.n_replicates < 1:

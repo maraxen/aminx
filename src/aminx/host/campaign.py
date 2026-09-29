@@ -33,6 +33,7 @@ from xtrax.run import (
 from aminx.host.family_driver import refuse_driver_family
 from aminx.host.runner import sample
 from aminx.host.spec_partition import campaign_sampling_spec_payload
+from aminx.run.spec import mpnn_temperatures
 from aminx.run.spec_json import _coerce_field_value
 from aminx.run.specs import SamplingSpecification, pop_deprecated_spec_kwargs
 from aminx.runtime import configure_multiprocessing
@@ -83,8 +84,10 @@ def build_manifest_row(
   output_h5_path and sampling_spec.
   """
   refuse_driver_family(spec, surface="campaign")
-  temperature_list = list(spec.run_spec.sampling.temperature) if spec.run_spec.sampling.temperature else []
-  backbone_noise_list = list(spec.run_spec.sampling.backbone_noise) if spec.run_spec.sampling.backbone_noise else []
+  temperature_list = list(mpnn_temperatures(spec.run_spec))
+  backbone_noise_list = (
+    list(spec.run_spec.sampling.backbone_noise) if spec.run_spec.sampling.backbone_noise else []
+  )
   hash_payload = {
     "schema_version": MANIFEST_ROW_SCHEMA_VERSION,
     "campaign_id": campaign_id,
@@ -307,8 +310,6 @@ def _normalize_inputs(inputs: Any) -> list[str]:  # noqa: ANN401
 
 def _row_output_path(base_dir: Path, campaign_id: str, row_hash: str) -> str:
   return str((base_dir / campaign_id / f"{row_hash}.h5").resolve())
-
-
 
 
 def _lock_path(output_h5_path: Path) -> Path:
@@ -1636,7 +1637,10 @@ def _add_plan_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPar
   # aminx cannot know any protein's catalytic triad -- so it was written to the row as a
   # label and never reached the model. Absent => fix nothing.
   parser.add_argument(
-    "--fixed-arm", action="append", default=None, metavar="LABEL=PATH",
+    "--fixed-arm",
+    action="append",
+    default=None,
+    metavar="LABEL=PATH",
     help=(
       "Arm LABEL=DECLARATION, e.g. catalytic_triad=H38|D73|C143 (residue letter + 0-based "
       "canonical index). A .npy mask path also works. Repeatable."
@@ -1708,7 +1712,10 @@ def _add_ramp_plan_parser(subparsers: argparse._SubParsersAction[argparse.Argume
   # aminx cannot know any protein's catalytic triad -- so it was written to the row as a
   # label and never reached the model. Absent => fix nothing.
   parser.add_argument(
-    "--fixed-arm", action="append", default=None, metavar="LABEL=PATH",
+    "--fixed-arm",
+    action="append",
+    default=None,
+    metavar="LABEL=PATH",
     help=(
       "Arm LABEL=DECLARATION, e.g. catalytic_triad=H38|D73|C143 (residue letter + 0-based "
       "canonical index). A .npy mask path also works. Repeatable."

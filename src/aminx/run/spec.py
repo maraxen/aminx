@@ -11,16 +11,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import field, fields
 from os import PathLike, fspath
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 import equinox as eqx
 import jax
 from xtrax.run import RunSpec as _XtraxRunSpec
 
 from aminx.types.stages import DecodingFusionFn, EncodingFusionFn
+
+if TYPE_CHECKING:
+  from aminx.run.options import LaserOptions, PottsMPNNOptions
 
 
 class IOConfig(eqx.Module):
@@ -115,7 +119,9 @@ class SamplingConfig(eqx.Module):
   return_decoding_orders: bool = eqx.field(static=True)
   return_logit_fingerprint: bool = eqx.field(static=True)
   backbone_noise: tuple[float, ...] = eqx.field(static=True)
-  temperature: tuple[float, ...] = eqx.field(static=True)
+  temperature: tuple[float | None, ...] = eqx.field(static=True)
+  omit_aa: tuple[str, ...] = eqx.field(static=True, default=())
+  omit_aa_per_position: Mapping[int, str] | None = eqx.field(static=True, default=None)
   bias: Any = None
   fixed_mask: Any = None
   fixed_positions: Any = None
@@ -146,8 +152,40 @@ class RunSpec(_XtraxRunSpec):
   precision: PrecisionConfig = field(default_factory=lambda: None)  # type: ignore
   plan: PlannerTopology = field(default_factory=lambda: None)  # type: ignore
   sampling: SamplingConfig = field(default_factory=lambda: None)  # type: ignore
+  potts_mpnn: PottsMPNNOptions | None = eqx.field(static=True, default=None)
+  laser: LaserOptions | None = eqx.field(static=True, default=None)
   encoding_fusion: EncodingFusionFn | None = eqx.field(static=True, default=None)
   decoding_fusion: DecodingFusionFn | None = eqx.field(static=True, default=None)
+
+
+class Unset:
+  """Sentinel for a sampling temperature the family default has not resolved yet.
+
+  ``__reduce__`` rebuilds this singleton, so ``pickle.loads(pickle.dumps(UNSET)) is UNSET``.
+  """
+
+  _singleton: Unset | None = None
+
+  def __new__(cls) -> Self:
+    existing = cls._singleton
+    if existing is None:
+      created = cast("Self", super().__new__(cls))
+      cls._singleton = created
+      return created
+    return cast("Self", existing)
+
+  def __repr__(self) -> str:
+    return "UNSET"
+
+  def __reduce__(self) -> tuple[object, tuple[()]]:
+    return (_restore_unset, ())
+
+
+def _restore_unset() -> Unset:
+  return UNSET
+
+
+UNSET = Unset()
 
 
 def _as_float_tuple(v: object | None) -> tuple[float, ...]:
@@ -159,6 +197,94 @@ def _as_float_tuple(v: object | None) -> tuple[float, ...]:
     return (float(v),)
   # Handle iterable case (guaranteed by elimination)
   return tuple(float(x) for x in cast("Any", v))
+
+
+def _as_temperature_tuple(value: object, model_family: object) -> tuple[float | None, ...]:
+  """Resolve a sampling temperature to a tuple, keeping LASEr ``None`` (argmax).
+
+  ``UNSET`` becomes ``(0.1,)`` for proteinmpnn / ligandmpnn / membrane / pottsmpnn
+  and ``(None,)`` for lasermpnn. A scalar or explicit ``None`` becomes a 1-tuple.
+  Any ``None`` outside lasermpnn is an error. A lasermpnn element equal to ``0.0``
+  becomes ``None`` (the batch-CLI falsy rule).
+  """
+  family = model_family if isinstance(model_family, str) else "proteinmpnn"
+  if value is UNSET:
+    if family == "lasermpnn":
+      return (None,)
+    return (0.1,)
+  items = _temperature_items(value)
+  resolved: list[float | None] = []
+  for item in items:
+    number = _temperature_element(item, family)
+    if number is None and family != "lasermpnn":
+      msg = (
+        "temperature None is only valid for model_family 'lasermpnn' (argmax); "
+        f"got model_family={family!r}"
+      )
+      raise ValueError(msg)
+    resolved.append(number)
+  return tuple(resolved)
+
+
+def _temperature_items(value: object) -> tuple[object, ...]:
+  if value is None or (isinstance(value, (int, float)) and not isinstance(value, bool)):
+    return (value,)
+  if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+    return tuple(value)
+  msg = f"temperature must be a float, None, or a sequence of those, got {type(value).__name__}"
+  raise TypeError(msg)
+
+
+def _temperature_element(item: object, family: str) -> float | None:
+  if item is None:
+    return None
+  if isinstance(item, bool) or not isinstance(item, (int, float)):
+    msg = f"temperature element must be int, float, or None, got {type(item).__name__}"
+    raise TypeError(msg)
+  number = float(item)
+  if family == "lasermpnn" and number == 0.0:
+    return None
+  return number
+
+
+def _temperature_carries_laser_none(raw: object, family: object) -> bool:
+  """True when ``raw`` still needs the None-preserving temperature resolver."""
+  if isinstance(raw, tuple | list):
+    if any(item is None for item in raw):
+      return True
+    return family == "lasermpnn" and any(_is_temperature_zero(item) for item in raw)
+  return family == "lasermpnn" and _is_temperature_zero(raw)
+
+
+def _is_temperature_zero(item: object) -> bool:
+  return isinstance(item, (int, float)) and not isinstance(item, bool) and float(item) == 0.0
+
+
+def _sampling_temperature_for_run_spec(spec: object) -> tuple[float | None, ...]:
+  """Temperature stored on ``SamplingConfig``.
+
+  Specs with no temperature field (everything except sampling) keep the historical
+  ``_as_float_tuple(None) -> ()`` result. Sampling resolves ``UNSET`` in
+  ``SamplingSpecification._resolve_family_defaults`` before this runs, so ``UNSET``
+  does not arrive here on the public constructor path.
+  """
+  raw = getattr(spec, "temperature", None)
+  family = getattr(spec, "model_family", None)
+  if raw is UNSET or _temperature_carries_laser_none(raw, family):
+    return _as_temperature_tuple(raw, family)
+  return _as_float_tuple(raw)
+
+
+def mpnn_temperatures(run_spec: RunSpec) -> tuple[float, ...]:
+  """Concrete MPNN temperatures. ``None`` (LASEr argmax) raises."""
+  values = run_spec.sampling.temperature
+  concrete: list[float] = []
+  for value in values:
+    if value is None:
+      msg = "MPNN consumers require a concrete temperature; None (argmax) is lasermpnn-only"
+      raise ValueError(msg)
+    concrete.append(float(value))
+  return tuple(concrete)
 
 
 def _optional_path(value: object | None) -> Path | None:
@@ -340,6 +466,19 @@ def build_run_spec(spec: object) -> RunSpec:
     use_unified_driver=bool(getattr(spec, "use_unified_driver", True)),
   )
 
+  family = getattr(spec, "model_family", None)
+  potts_mpnn = getattr(spec, "potts_mpnn", None)
+  laser = getattr(spec, "laser", None)
+  if potts_mpnn is not None and family != "pottsmpnn":
+    msg = f"potts_mpnn options require model_family 'pottsmpnn', got {family!r}"
+    raise ValueError(msg)
+  if laser is not None and family != "lasermpnn":
+    msg = f"laser options require model_family 'lasermpnn', got {family!r}"
+    raise ValueError(msg)
+
+  omit_raw = getattr(spec, "omit_aa", ())
+  omit_aa = tuple(omit_raw) if omit_raw else ()
+
   sampling = SamplingConfig(
     num_samples=int(getattr(spec, "num_samples", 1) or 1),
     random_seed=int(getattr(spec, "random_seed", 42) or 42),
@@ -348,7 +487,9 @@ def build_run_spec(spec: object) -> RunSpec:
     return_decoding_orders=bool(getattr(spec, "return_decoding_orders", False)),
     return_logit_fingerprint=bool(getattr(spec, "return_logit_fingerprint", False)),
     backbone_noise=_as_float_tuple(getattr(spec, "backbone_noise", None)),
-    temperature=_as_float_tuple(getattr(spec, "temperature", None)),
+    temperature=_sampling_temperature_for_run_spec(spec),
+    omit_aa=omit_aa,
+    omit_aa_per_position=getattr(spec, "omit_aa_per_position", None),
     bias=getattr(spec, "bias", None),
     fixed_mask=getattr(spec, "fixed_mask", None),
     fixed_positions=getattr(spec, "fixed_positions", None),
@@ -383,4 +524,6 @@ def build_run_spec(spec: object) -> RunSpec:
     precision=precision,
     plan=plan,
     sampling=sampling,
+    potts_mpnn=potts_mpnn,
+    laser=laser,
   )

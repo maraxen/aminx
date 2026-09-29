@@ -201,7 +201,9 @@ def sample(
   if spec.state_position_map is not None or spec.multi_state_strategy != _multistate_default:
     _bad_fields = []
     if spec.state_position_map is not None:
-      _bad_fields.append(f"state_position_map (shape {getattr(spec.state_position_map, 'shape', type(spec.state_position_map))})")
+      _bad_fields.append(
+        f"state_position_map (shape {getattr(spec.state_position_map, 'shape', type(spec.state_position_map))})",
+      )
     if spec.multi_state_strategy != _multistate_default:
       _bad_fields.append(f"multi_state_strategy={spec.multi_state_strategy!r}")
     msg = (
@@ -228,7 +230,9 @@ def sample(
   # Non-streaming path uses io_callback staging via streaming_tensor_sink_session;
   # drains per-batch via take_staging_sequences_logits.
   all_sequences, all_pseudo_perplexities = [], []
-  needs_logits = spec.run_spec.sampling.return_logits or spec.run_spec.sampling.return_logit_fingerprint
+  needs_logits = (
+    spec.run_spec.sampling.return_logits or spec.run_spec.sampling.return_logit_fingerprint
+  )
   all_logits = [] if needs_logits else None
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -291,7 +295,9 @@ def sample(
       "structure_ids": resolved_structure_ids,
     },
   }
-  aggregated_logits = aggregate_logits(all_logits, max_len) if needs_logits and all_logits is not None else None
+  aggregated_logits = (
+    aggregate_logits(all_logits, max_len) if needs_logits and all_logits is not None else None
+  )
   if spec.run_spec.sampling.return_logits and aggregated_logits is not None:
     results["logits"] = aggregated_logits
   if spec.run_spec.sampling.return_logit_fingerprint and aggregated_logits is not None:
@@ -543,8 +549,7 @@ def score(  # noqa: PLR0915
     pop_deprecated_spec_kwargs(kw)
     spec = ScoringSpecification(**kw)
 
-  # output_kind is T0.6; until that field exists every score purpose is nll.
-  purpose = "score:nll"
+  purpose = f"score:{spec.output_kind}"
   if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
@@ -610,7 +615,10 @@ def score(  # noqa: PLR0915
   # this fix, not assumed from a source read alone.
   if spec.state_position_map is not None:
     return _score_fused_multistate(
-      spec, protein_iterator, score_fn, sequence_indices_list,
+      spec,
+      protein_iterator,
+      score_fn,
+      sequence_indices_list,
     )
 
   from aminx.sampling.conditional_logits import _plan_axis_strategy  # noqa: PLC0415
@@ -692,7 +700,10 @@ def score(  # noqa: PLR0915
 
     activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
     strategy = _plan_axis_strategy(
-      N_CANDIDATES, n_candidates, None, activation_bytes_per_element=activation_bytes,
+      N_CANDIDATES,
+      n_candidates,
+      None,
+      activation_bytes_per_element=activation_bytes,
     )
     candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
@@ -720,7 +731,8 @@ def score(  # noqa: PLR0915
         )
 
       return _candidate_iterator(
-        _score_one_candidate, {"key": struct_keys, "seq": _stacked_sequences},
+        _score_one_candidate,
+        {"key": struct_keys, "seq": _stacked_sequences},
       )
 
     # The third output (a decoding order) is discarded: scoring is full-context, see the
@@ -799,7 +811,9 @@ def _score_fused_multistate(
   for batched_ensemble in protein_iterator:
     batch_size = batched_ensemble.coordinates.shape[0]
     batch_structure_ids = _structure_ids_for_batch(
-      canonical_structure_ids, structure_offset=structure_offset, batch_size=batch_size,
+      canonical_structure_ids,
+      structure_offset=structure_offset,
+      batch_size=batch_size,
     )
     for struct_idx in range(batch_size):
       all_coords.append(batched_ensemble.coordinates[struct_idx])
@@ -845,7 +859,8 @@ def _score_fused_multistate(
   stacked_sequences = jnp.stack(padded_seqs, axis=0)  # (C, struct_len)
   n_candidates = stacked_sequences.shape[0]
   candidate_keys = jax.random.split(
-    jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42), n_candidates,
+    jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42),
+    n_candidates,
   )
 
   # Candidate (sequences-to-score) axis dispatched via aminx's own BatchPlanner ->
@@ -859,7 +874,10 @@ def _score_fused_multistate(
 
   activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
   strategy = _plan_axis_strategy(
-    N_CANDIDATES, n_candidates, None, activation_bytes_per_element=activation_bytes,
+    N_CANDIDATES,
+    n_candidates,
+    None,
+    activation_bytes_per_element=activation_bytes,
   )
   candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
@@ -880,7 +898,8 @@ def _score_fused_multistate(
     )
 
   all_scores, all_logits, _ = candidate_iterator(
-    _score_one_candidate, {"key": candidate_keys, "seq": stacked_sequences},
+    _score_one_candidate,
+    {"key": candidate_keys, "seq": stacked_sequences},
   )
 
   # Leading dim of 1: ONE fused "structure", not len(spec.inputs) independent ones.

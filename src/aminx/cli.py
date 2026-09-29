@@ -9,7 +9,7 @@ import os
 import warnings
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, Literal, cast
 
 import typer
 
@@ -23,11 +23,13 @@ from aminx.io.proxide_fetch import (
   fetch_md_cath,
   fetch_pdb,
 )
+from aminx.run.options import LaserOptions, PottsMPNNOptions
 from aminx.run.run_spec_portable_json import (
   run_spec_portable_from_dict,
   run_spec_portable_to_dict,
 )
 from aminx.run.spec_json import (
+  options_from_json_value,
   run_specification_from_json,
   run_specification_to_json,
   run_specification_to_json_dict,
@@ -80,6 +82,33 @@ def _parse_float_tuple(value: str | None) -> tuple[float, ...] | None:
   if value is None:
     return None
   return tuple(float(x.strip()) for x in value.split(","))
+
+
+def _parse_options_json(raw: str | None) -> Any:
+  if raw is None:
+    return None
+  return json.loads(raw)
+
+
+def _sampling_temperature_kwargs(temperature: str | None) -> dict[str, tuple[float, ...]]:
+  """Omit the temperature kwarg when the CLI flag was left unset.
+
+  ``SamplingSpecification.temperature`` then stays ``UNSET`` and the family
+  default resolves in ``__post_init__`` (``(0.1,)`` for MPNN families).
+  """
+  parsed = _parse_float_tuple(temperature)
+  if not parsed:
+    return {}
+  return {"temperature": parsed}
+
+
+_SCORE_SEQUENCE_KINDS = frozenset({"nll", "logits"})
+
+
+def _require_sequences_for_output_kind(output_kind: str, sequences: list[str]) -> None:
+  if output_kind in _SCORE_SEQUENCE_KINDS and not sequences:
+    typer.echo("--sequences-to-score is required", err=True)
+    raise typer.Exit(code=2)
 
 
 def _parse_tied_positions(
@@ -443,6 +472,8 @@ class _RunBase:
   multi_state_temperature: float
   input_type: str
   input_cache_dir: Path | None
+  potts_options_json: str | None = None
+  laser_options_json: str | None = None
 
 
 @run_app.callback()
@@ -535,6 +566,14 @@ def _run_base(
       ),
     ),
   ] = None,
+  potts_options_json: Annotated[
+    str | None,
+    _OPT("--potts-options-json", help="JSON object of PottsMPNNOptions fields"),
+  ] = None,
+  laser_options_json: Annotated[
+    str | None,
+    _OPT("--laser-options-json", help="JSON object of LaserOptions fields"),
+  ] = None,
 ) -> None:
   """Build and dispatch run specifications.
 
@@ -583,6 +622,8 @@ def _run_base(
     multi_state_temperature=multi_state_temperature,
     input_type=input_type,
     input_cache_dir=input_cache_dir,
+    potts_options_json=potts_options_json,
+    laser_options_json=laser_options_json,
   )
 
 
@@ -630,6 +671,11 @@ def _base_spec_kwargs(b: _RunBase) -> dict[str, Any]:
     "tied_positions": tied_positions_parsed,
     "pass_mode": b.pass_mode,
     "multi_state_temperature": b.multi_state_temperature,
+    "potts_mpnn": options_from_json_value(
+      PottsMPNNOptions,
+      _parse_options_json(b.potts_options_json),
+    ),
+    "laser": options_from_json_value(LaserOptions, _parse_options_json(b.laser_options_json)),
   }
 
 
@@ -663,7 +709,10 @@ def run_sample(
     str,
     _OPT(help="Sampling strategy: temperature or straight_through"),
   ] = "temperature",
-  temperature: Annotated[str, _OPT(help="Comma-separated temperature values")] = "0.1",
+  temperature: Annotated[
+    str | None,
+    _OPT(help="Comma-separated temperature values; omit to use the family default"),
+  ] = None,
   use_unified_driver: Annotated[bool, _OPT(help="Use unified driver")] = True,
   iterations: Annotated[int | None, _OPT(help="Straight-through iterations")] = None,
   learning_rate: Annotated[float | None, _OPT(help="Straight-through learning rate")] = None,
@@ -710,8 +759,6 @@ def run_sample(
     cache_dir=b.input_cache_dir,
     fail_fast=inputs_fail_fast,
   )
-  temperature_parsed = _parse_float_tuple(temperature)
-
   from aminx.run.specs import SamplingSpecification  # noqa: PLC0415
 
   try:
@@ -720,7 +767,7 @@ def run_sample(
       **_base_spec_kwargs(b),  # type: ignore[arg-type]
       num_samples=num_samples,
       sampling_strategy=sampling_strategy,  # type: ignore[arg-type]
-      temperature=temperature_parsed or (0.1,),
+      **_sampling_temperature_kwargs(temperature),
       use_unified_driver=use_unified_driver,
       iterations=iterations,
       learning_rate=learning_rate,
@@ -773,8 +820,11 @@ def run_score(
   ],
   sequences_to_score: Annotated[
     list[str],
-    _OPT("--sequences-to-score", help="Amino acid sequences to score (repeatable, required)"),
-  ],
+    _OPT(
+      "--sequences-to-score",
+      help="Amino acid sequences to score (repeatable; required for nll and logits)",
+    ),
+  ] = [],  # noqa: B006
   inputs_fail_fast: Annotated[
     bool,
     _OPT(
@@ -788,6 +838,13 @@ def run_score(
   ] = False,
   out: Annotated[Path | None, _OPT(help="Write JSON file (only with --emit-json)")] = None,
   # Score-specific
+  output_kind: Annotated[
+    str,
+    _OPT(
+      "--output-kind",
+      help="nll, logits, energy, ddg, proofread_unconditional, or proofread_conditional",
+    ),
+  ] = "nll",
   temperature: Annotated[str, _OPT(help="Comma-separated temperature values")] = "1.0",
   return_logits: Annotated[bool, _OPT(help="Return logits")] = False,
   return_decoding_orders: Annotated[bool, _OPT(help="Return decoding orders")] = False,
@@ -813,9 +870,7 @@ def run_score(
     cache_dir=b.input_cache_dir,
     fail_fast=inputs_fail_fast,
   )
-  if not sequences_to_score:
-    typer.echo("--sequences-to-score is required", err=True)
-    raise typer.Exit(code=2)
+  _require_sequences_for_output_kind(output_kind, sequences_to_score)
 
   b: _RunBase = ctx.obj
   temperature_parsed = _parse_float_tuple(temperature)
@@ -827,6 +882,10 @@ def run_score(
       inputs=inputs,
       **_base_spec_kwargs(b),  # type: ignore[arg-type]
       sequences_to_score=sequences_to_score,
+      output_kind=cast(
+        "Literal['nll', 'logits', 'energy', 'ddg', 'proofread_unconditional', 'proofread_conditional']",
+        output_kind,
+      ),
       temperature=temperature_parsed[0]
       if temperature_parsed and len(temperature_parsed) == 1
       else (temperature_parsed[0] if temperature_parsed else 1.0),
@@ -1089,7 +1148,16 @@ def _spec_base(
     ),
   ] = "auto",
   input_cache_dir: Annotated[
-    Path | None, _OPT(help="Cache directory for fetched structures"),
+    Path | None,
+    _OPT(help="Cache directory for fetched structures"),
+  ] = None,
+  potts_options_json: Annotated[
+    str | None,
+    _OPT("--potts-options-json", help="JSON object of PottsMPNNOptions fields"),
+  ] = None,
+  laser_options_json: Annotated[
+    str | None,
+    _OPT("--laser-options-json", help="JSON object of LaserOptions fields"),
   ] = None,
 ) -> None:
   """Run specification JSON (see aminx.run.spec_json).
@@ -1139,6 +1207,8 @@ def _spec_base(
     multi_state_temperature=multi_state_temperature,
     input_type=input_type,
     input_cache_dir=input_cache_dir,
+    potts_options_json=potts_options_json,
+    laser_options_json=laser_options_json,
   )
 
 
@@ -1182,7 +1252,10 @@ def spec_emit_sample(
     str,
     _OPT(help="Sampling strategy: temperature or straight_through"),
   ] = "temperature",
-  temperature: Annotated[str, _OPT(help="Comma-separated temperature values")] = "0.1",
+  temperature: Annotated[
+    str | None,
+    _OPT(help="Comma-separated temperature values; omit to use the family default"),
+  ] = None,
   use_unified_driver: Annotated[bool, _OPT(help="Use unified driver")] = True,
   iterations: Annotated[int | None, _OPT(help="Straight-through iterations")] = None,
   learning_rate: Annotated[float | None, _OPT(help="Straight-through learning rate")] = None,
@@ -1229,8 +1302,6 @@ def spec_emit_sample(
     cache_dir=b.input_cache_dir,
     fail_fast=inputs_fail_fast,
   )
-  temperature_parsed = _parse_float_tuple(temperature)
-
   from aminx.run.specs import SamplingSpecification  # noqa: PLC0415
 
   try:
@@ -1239,7 +1310,7 @@ def spec_emit_sample(
       **_base_spec_kwargs(b),  # type: ignore[arg-type]
       num_samples=num_samples,
       sampling_strategy=sampling_strategy,  # type: ignore[arg-type]
-      temperature=temperature_parsed or (0.1,),
+      **_sampling_temperature_kwargs(temperature),
       use_unified_driver=use_unified_driver,
       iterations=iterations,
       learning_rate=learning_rate,
@@ -1288,8 +1359,11 @@ def spec_emit_score(
   ],
   sequences_to_score: Annotated[
     list[str],
-    _OPT("--sequences-to-score", help="Amino acid sequences to score (repeatable, required)"),
-  ],
+    _OPT(
+      "--sequences-to-score",
+      help="Amino acid sequences to score (repeatable; required for nll and logits)",
+    ),
+  ] = [],  # noqa: B006,
   inputs_fail_fast: Annotated[
     bool,
     _OPT(
@@ -1300,6 +1374,13 @@ def spec_emit_score(
   out: Annotated[Path | None, _OPT(help="Write JSON to this file instead of stdout")] = None,
   compact: Annotated[bool, _OPT("--compact", help="Single-line JSON")] = False,
   # Score-specific
+  output_kind: Annotated[
+    str,
+    _OPT(
+      "--output-kind",
+      help="nll, logits, energy, ddg, proofread_unconditional, or proofread_conditional",
+    ),
+  ] = "nll",
   temperature: Annotated[str, _OPT(help="Comma-separated temperature values")] = "1.0",
   return_logits: Annotated[bool, _OPT(help="Return logits")] = False,
   return_decoding_orders: Annotated[bool, _OPT(help="Return decoding orders")] = False,
@@ -1325,9 +1406,7 @@ def spec_emit_score(
     cache_dir=b.input_cache_dir,
     fail_fast=inputs_fail_fast,
   )
-  if not sequences_to_score:
-    typer.echo("--sequences-to-score is required", err=True)
-    raise typer.Exit(code=2)
+  _require_sequences_for_output_kind(output_kind, sequences_to_score)
 
   b: _RunBase = ctx.obj
   temperature_parsed = _parse_float_tuple(temperature)
@@ -1339,6 +1418,10 @@ def spec_emit_score(
       inputs=inputs,
       **_base_spec_kwargs(b),  # type: ignore[arg-type]
       sequences_to_score=sequences_to_score,
+      output_kind=cast(
+        "Literal['nll', 'logits', 'energy', 'ddg', 'proofread_unconditional', 'proofread_conditional']",
+        output_kind,
+      ),
       temperature=temperature_parsed[0]
       if temperature_parsed and len(temperature_parsed) == 1
       else (temperature_parsed[0] if temperature_parsed else 1.0),
@@ -1676,9 +1759,9 @@ def campaign_plan(
         "proxide.ops.processing.frame_iterator_from_inputs for accepted forms). "
         "JSON only, to support the full range that field already accepts: "
         "a bare string ('\"A\"') applies to every input; a JSON array "
-        "('[\"A\",\"B\"]') is a filter applied to every input; a JSON object "
+        '(\'["A","B"]\') is a filter applied to every input; a JSON object '
         "mapping each --inputs path to its own chain list "
-        "('{\"a.cif\": [\"A\",\"B\"], \"b.cif\": [\"A\",\"C\"]}') selects "
+        '(\'{"a.cif": ["A","B"], "b.cif": ["A","C"]}\') selects '
         "per-input, e.g. to discard extra crystallographic copies that differ "
         "in chain layout across a multi-input PoE bead."
       ),

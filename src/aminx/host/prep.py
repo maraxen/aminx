@@ -62,7 +62,7 @@ def _resolve_local_checkpoint_from_registry(spec: Specs) -> str | None:
     (
       "pottsmpnn_",
       "lasermpnn_",
-    )
+    ),
   )
   if driver_family and "sha256" not in found:
     msg = (

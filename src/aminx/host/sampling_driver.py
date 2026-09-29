@@ -26,7 +26,10 @@ class SamplingDriver(BaseDriver["SamplingSpecification"]):
   """Resolve a registered sampler factory from a :class:`~aminx.run.specs.SamplingSpecification`."""
 
   def __init__(
-    self, spec: SamplingSpecification, *, sampler_factory_key: str = "make_sample_sequences",
+    self,
+    spec: SamplingSpecification,
+    *,
+    sampler_factory_key: str = "make_sample_sequences",
   ) -> None:
     super().__init__(spec)
     self.sampler_factory_key = sampler_factory_key

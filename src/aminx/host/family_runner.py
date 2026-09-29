@@ -39,10 +39,9 @@ def _output_kind(purpose: str) -> str:
 
 
 def _scalar_dropout(spec: Any, purpose: str) -> bool:  # noqa: ANN401
-  """LASEr proofreading keeps scalar dropout on unless the option says otherwise.
+  """LASEr proofreading keeps scalar dropout on unless ``LaserOptions`` says otherwise.
 
-  ``LaserOptions`` is T0.6. Until that field exists, the upstream default
-  (dropout enabled) applies to the two proofreading purposes only.
+  ``proofread_dropout`` defaults to True, matching upstream ``not disable_inference_dropout``.
   """
   if purpose not in _PROOFREAD_PURPOSES:
     return False

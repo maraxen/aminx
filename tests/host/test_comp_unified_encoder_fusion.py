@@ -262,6 +262,10 @@ def test_make_inference_plan_wires_fusion_when_avg():
     mock_model.w_s_embed.weight = jnp.zeros((21, 128))
 
     spec = MagicMock()
+    spec.potts_mpnn = None
+    spec.laser = None
+    spec.omit_aa = ()
+    spec.omit_aa_per_position = None
     spec.average_node_features = True
     spec.use_rolling_state = False
     spec.multi_state_strategy = "arithmetic_mean"
@@ -296,6 +300,10 @@ def test_make_inference_plan_no_fusion_when_no_avg():
     mock_model.w_s_embed.weight = jnp.zeros((21, 128))
 
     spec = MagicMock()
+    spec.potts_mpnn = None
+    spec.laser = None
+    spec.omit_aa = ()
+    spec.omit_aa_per_position = None
     spec.average_node_features = False
     spec.use_rolling_state = False
     spec.multi_state_strategy = "arithmetic_mean"
@@ -725,6 +733,10 @@ def test_ste_routes_via_stage_set():
     mock_model.w_s_embed.weight = jnp.zeros((21, 128))
 
     spec = MagicMock()
+    spec.potts_mpnn = None
+    spec.laser = None
+    spec.omit_aa = ()
+    spec.omit_aa_per_position = None
     spec.average_node_features = False
     spec.use_rolling_state = False
     spec.multi_state_strategy = "arithmetic_mean"

@@ -89,6 +89,36 @@ def sample(spec):
     )
 
 
+def test_rs6b_gate_fires_on_omit_aa_planted_violation() -> None:
+    """Assert the rule FIRES on a planted flat read of omit_aa."""
+    violation_code = """\
+def sample(spec):
+    omitted = spec.omit_aa
+    return omitted
+"""
+    host_dir = _REPO_ROOT / "src" / "aminx" / "host"
+    probe_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=str(host_dir),
+            suffix="_rs6b_omit_aa_probe.py",
+            mode="w",
+            delete=False,
+        ) as f:
+            f.write(violation_code)
+            probe_path = f.name
+
+        success, output = run_ast_grep_rule(_RULE_PATH)
+    finally:
+        if probe_path and os.path.exists(probe_path):
+            os.unlink(probe_path)
+
+    assert not success, (
+        f"Rule should have fired on spec.omit_aa in planted violation, but passed.\n"
+        f"Rule output:\n{output}"
+    )
+
+
 def test_rs6b_gate_clean_on_real_host_tree() -> None:
     """Assert the rule produces 0 violations on the real src/aminx/host/ tree.
 
@@ -101,6 +131,6 @@ def test_rs6b_gate_clean_on_real_host_tree() -> None:
         f"RS-6b flat-field ban gate found violations in src/aminx/host/:\n{output}\n\n"
         "Fix: migrate sampling-exclusive flat reads to run_spec sub-configs.\n"
         "Sampling-exclusive fields: num_samples, bias, fixed_positions, fixed_tokens,\n"
-        "  use_unified_driver, compute_pseudo_perplexity.\n"
+        "  use_unified_driver, compute_pseudo_perplexity, omit_aa, omit_aa_per_position.\n"
         "Exemption: prep.py is intentionally excluded."
     )
