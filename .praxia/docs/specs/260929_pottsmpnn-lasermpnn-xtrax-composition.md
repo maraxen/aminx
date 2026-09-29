@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: converged-r13-main
+status: converged-r14-a10
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -73,6 +73,18 @@ Revision history:
   "order from a fixed N→C wave schedule" are historical; U-a (all PottsMPNN sampling in the driver)
   is unaffected. (e) Source anchors (file:line) into `src/aminx/**` were taken at the dogfood base
   and may have drifted; per §0 the code at HEAD wins.
+- r13 → r14 (T0.2b xtrax 0.4.0a10 re-verify; evidence
+  `research/260929_potts-laser-t02b-xtrax-a10-reverify.md`): every xtrax-derived fact holds on
+  0.4.0a10 (SinkSpec/`derive_sink_spec`/ZarrStagingSink line anchors identical; `RunSpec.run_id`
+  static; AxisSpec/BatchPlanner/AxisBoundary/Fuse/`stages._callback` unchanged for our use; `port/`
+  unchanged since `35c5100`). **Changed/false and fixed:** (1) T0.0 as merged does NOT add
+  `sink_ids.sink_spec_for`/`spec_run_id`; it calls `xtrax.run.derive_sink_spec` directly and
+  `RunSpec.run_id` stays unset, so every sink gets a fresh unlinked id and re-running into an
+  existing output dir raises xtrax's own ValueError; §2.1 "Output channel" and the T0.0 row now say
+  so; (2) `DesignZarrWriter` defaults `run_id` to `new_run_id()` (not a path hash); (3) only four of
+  five sites were migrated: `scripts/analysis/jacobian_profile.py:187` still TypeErrors (non-gating
+  follow-up); (4) MPNN AR now honours `decoding_order_fn` via `with_decoding_order` (§1 row 164
+  historical); (5) runner entry-point / streaming / model_family anchors updated.
 - r11 → r12 (T0.2 corrections; prose fixed to match pinned upstream per the §0 normative clause;
   evidence `research/260929_potts-laser-t02-probe-report.md`): §5.4a order tiers (upstream inference
   never sets `extra_atom_contact_mask`, tier 2 empty); LASEr stored `seq_logits` are post-min-p (§5.3
@@ -161,10 +173,10 @@ harness.
 |---|---|
 | Runner entry points | `cli.py` `run` callback (`:448-461`, `--model-family` before subcommand) → `run_sample`/`run_score`/`run_jacobian`/`run_inspect` → `host/runner.py` `sample/score/jacobian/inspect` |
 | score bypasses InferencePlan unless averaging | `host/runner.py:498-506` (`make_score_fn`), `one_hot(seq,21)` `:626`, `output_h5_path` NotImplemented `:489-491`, NLL result `:661-670`; `sequences_to_score` required `run/specs.py:556-561`, `cli.py:816` |
-| MPNN AR ignores `decoding_order_fn`; order from wave schedule | `inference/decode/autoregressive.py:191-420`; `inference/bundle_builder.py:76,187-188,237-243`; `host/kernel_dispatch.py:222-258`; `decoding_order_fn` callable `run/specs.py:260`, `utils/decoding_order.py:21-24` |
+| MPNN AR ignores `decoding_order_fn`; order from wave schedule (**historical, r14: main #160 now draws a per-sample order in `host/kernel_dispatch.py:253-268` and applies it via `with_decoding_order`, `inference/bundle_builder.py:381-413` -> `WaveScheduleBundle.from_decoding_order`, honouring `decoding_order_fn`**) | `inference/decode/autoregressive.py:191-420`; `inference/bundle_builder.py:76,187-188,237-243`; `host/kernel_dispatch.py:222-258`; `decoding_order_fn` callable `run/specs.py:260`, `utils/decoding_order.py:21-24` |
 | MPNN tied fuse = plain mean | `autoregressive.py:326-331` |
 | Staging sink carries only seq/logits | `host/output_sinks.py:51-153`; `types/protocols.py:102-120` |
-| xtrax generic array sink | `xtrax/run/zarr_sink.py:254-313` `ZarrStagingSink.stage(key, attrs, **arrays)` + `take(key)`; provenance attrs `_CORE_PROVENANCE_FIELDS` `:34` stamped on root/groups; **at pinned 56a9f551 `SinkSpec.run_id` is required (`run/sink.py:26`) and every aminx call site omits it (`host/streaming.py:80`, `host/runner.py:1225`, `io/designs.py:81`, `sampling/multistate_poe.py:605`, `scripts/analysis/jacobian_profile.py:187`) → all existing aminx Zarr paths TypeError today (fixed by T0.0)**; `derive_sink_spec` `run/sink.py:61-105` |
+| xtrax generic array sink | `xtrax/run/zarr_sink.py:254-313` `ZarrStagingSink.stage(key, attrs, **arrays)` + `take(key)`; provenance attrs `_CORE_PROVENANCE_FIELDS` `:34` stamped on root/groups; **at pinned xtrax 0.4.0a10 (re-verified r14; anchors identical to the former 56a9f551) `SinkSpec.run_id` is required (`run/sink.py:26`); main `9e6c340a` migrated the runner-path sites to `derive_sink_spec` (`host/streaming.py:88-91`, `host/runner.py:1336-1341`, `sampling/multistate_poe.py:689`; `io/designs.py:107-109` passes `run_id` explicitly, default `new_run_id()`); `scripts/analysis/jacobian_profile.py:187` still omits it (TypeError; non-gating follow-up)**; `derive_sink_spec` `run/sink.py:61-105` (precedence explicit `run_id` > `run_spec.run_id` > `new_run_id()`); sink construction raises `ValueError` if the root already carries a different `run_id` (`zarr_sink.py:214-222`); with `flush_every=1` every `stage` drains at once (`:296`) so `take` sees nothing; `RunSpec.run_id` is static (`run/spec.py:22`) |
 | Structure ids positional | `host/_sampling_helper.py:36-61`; prep forces inference mode `host/prep.py:200` |
 | `DecoderLayer` reusable per row | `model/decoder.py:281` |
 | Family Literal + consumers | `run/specs.py:236`; derivation `:476-490`; `_sampling_helper.py:255`, `prep.py:47-49`, `run_spec_portable_json.py:12-15,153`, `multistate_poe.py:609`, `streaming.py:84`, `_sampling_grid_lineage.py:94,111`, `campaign.py:95`, `run/spec.py:321` |
@@ -229,11 +241,13 @@ slices each structure's arrays to its own `L_total` (host, from `FamilyBatch` me
 (chunks concatenated within a structure only). `test_family_sink_ragged_L`: two structures of
 different `L_total` in one batch → per-group shapes equal each `L_total` and values equal
 single-structure runs. `run_family_driver` then: (i) if `output_h5_path` set →
-on one `sink = ZarrStagingSink(sink_spec_for(spec, spec.run_spec.io.output_h5_path))` (T0.0; same
-root as `streaming.py:79`, not `RunSpecification.output_dir`):
+on one `sink = ZarrStagingSink(derive_sink_spec(spec.run_spec, output_dir=Path(spec.run_spec.io.output_h5_path), format="zarr", flush_every=1))`
+(`xtrax.run.derive_sink_spec`, exactly as main's T0.0 does at `streaming.py:88-91`; `run_spec.run_id`
+is unset so the id is fresh per call and re-running into an existing dir raises xtrax's ValueError,
+which drivers let propagate; same root as `streaming.py:88`, not `RunSpecification.output_dir`):
 `sink.stage((f"structure_{input_index}", str(chunk_start)), **chunk)`; per structure once
 `sink.stage((f"structure_{input_index}",), attrs={"structure_index": input_index, "structure_id":
-structure_id})`; root attrs via `sink.stage((), attrs={…})` (as `streaming.py:104`):
+structure_id})`; root attrs via `sink.stage((), attrs={…})` (as `streaming.py:173`):
 `schema_version="<family>_v1"`, `model_family`, `purpose`, `output_kind`,
 `alphabet="ACDEFGHIKLMNPQRSTVWYX"`, `skipped_inputs`; `finalize()` at end; else (ii) concatenates
 chunks into the result dict. Memory bound = one batch × one chunk (as `host/streaming.py:62-69`).
@@ -258,8 +272,10 @@ T0.2 lists every `nn.Dropout` module path and every `self.training`/`F.dropout(t
 its state under this rule.
 
 **Reused as-is:** `_canonical_structure_ids_for_spec`, `resolve_target_samples`,
-`make_axis_dispatch_via_xtrax`, xtrax `ZarrStagingSink`, `metadata` key set of `sample()` (T0.2
-confirms names/signatures; any extraction refactor keeps MPNN outputs byte-identical, gated by T0.5a).
+`make_axis_dispatch_via_xtrax`, xtrax `ZarrStagingSink` + `derive_sink_spec`, `metadata` key set of
+`sample()` (T0.2/T0.2b confirm names/signatures at HEAD: `_sampling_helper.py:36`, `plan.py:382`,
+`tiling/dispatch.py:161`; new on main: `WaveScheduleBundle.from_decoding_order` `types/bundles.py:357`,
+`ar_mask_from_decoding_order` `utils/autoregression.py:318`, unused by drivers; any extraction refactor keeps MPNN outputs byte-identical, gated by T0.5a).
 
 ### 2.2 Family plumbing
 
@@ -1177,7 +1193,7 @@ control is aminx at `m·T`.
 
 | ID | Task | Depends | Gate |
 |---|---|---|---|
-| T0.0 | **DONE on main (`9e6c340a`), r13.** **Sink run_id fix (prerequisite).** `aminx.host.sink_ids.sink_spec_for(spec, output_dir, *, flush_every=1, run_id=None) -> SinkSpec` calls pinned `xtrax.run.sink.derive_sink_spec(spec.run_spec, run_id=run_id or spec_run_id(spec), output_dir=Path(output_dir), format="zarr", flush_every=flush_every)` (`sink.py:61-105`). `spec_run_id(spec) = sha256(json.dumps(run_specification_to_json_dict(spec), sort_keys=True, separators=(",",":")).encode()).hexdigest()[:16]`; on `SpecJSONEncodeError` fall back to `xtrax.run.ident.new_run_id()` + `logger.warning`. `run_spec.run_id` never set (static field → retrace). Re-run policy: if `output_dir` holds a Zarr root whose `attrs["run_id"]` ≠ derived id → `ValueError(f"{output_dir} holds outputs of a different specification (run_id {old}); use a new output_dir or pass run_id=")`; same spec reopens (mode `a`, arrays overwrite). Spec-less sites: `DesignsWriter(..., run_id=None)` defaults to `sha256(str(Path(path).resolve()))[:16]`; `jacobian_profile.py` uses sha256 of canonical argv JSON. All five call sites (`host/streaming.py:80`, `host/runner.py:1225`, `io/designs.py:81`, `sampling/multistate_poe.py:605`, `scripts/analysis/jacobian_profile.py:187`) migrated | T0.5a | per-site tests: fresh dir writes expected root `run_id`; same spec reopens; different spec raises the aminx ValueError; in-memory goldens exact |
+| T0.0 | **DONE on main (`9e6c340a`), r13; r14 corrected to what main actually does.** **Sink run_id fix (prerequisite).** No aminx helper (`sink_ids.py`/`sink_spec_for`/`spec_run_id` do not exist). Sites with a `RunSpec` call `xtrax.run.derive_sink_spec(spec.run_spec, output_dir=..., format="zarr", flush_every=...)` (`sink.py:61-105`) directly: `host/streaming.py:88-91`, `host/runner.py:1336-1341` (jacobian), `sampling/multistate_poe.py:689`. `run_spec.run_id` is never set (static field → retrace), so precedence falls to `new_run_id()`: a fresh, unlinked id per sink; deriving it from job/spec identity is a separate open design question. Re-run policy = xtrax's own: a store whose root `run_id` differs raises `ValueError` at sink construction (`zarr_sink.py:214-222`); no aminx-level check. Spec-less site: `DesignZarrWriter(..., run_id=None)` (`io/designs.py:74,107-109`) defaults to `new_run_id()`, accepts an explicit id to reopen. **Missed:** `scripts/analysis/jacobian_profile.py:187` still builds `SinkSpec` without `run_id` (TypeError; non-gating follow-up fix via `new_run_id()`) | T0.5a | done on main for the four migrated sites (`tests/io/test_designs.py`, `tests/host/test_multistate_poe_campaign_integration.py`); driver sink follows the same `derive_sink_spec` call; goldens compare arrays + non-provenance attrs only |
 | T0.1 | Vendor upstreams at pinned SHAs; `aminx-oracles/` env on titanix | — | files + manifest |
 | T0.2 | Probe report (§10) | T0.1 | DONE: `research/260929_potts-laser-t02-probe-report.md`; corrections applied in r12 |
 | T0.3 | `tests/port/` contract + self-test; `tests/knob_gate/_coverage.py` + `selftest_coverage/` fixtures (i)–(vii); `branch_manifest` / `sidecar_ledger` schemas (`tests/knob_gate/schemas/*.json`) | — | selftest on titanix |
@@ -1262,9 +1278,9 @@ single-fixture facts) before any number is cited outside the report.
 - Runner helpers (report §1): `_canonical_structure_id(s)_for_spec` `host/_sampling_helper.py:22,36`
   (reads only `spec.inputs`, any spec type); `_structure_ids_for_batch` `:48`; `resolve_target_samples`
   `host/plan.py:382`; `make_axis_dispatch_via_xtrax` `tiling/dispatch.py:161` (docstring "not wired" is
-  stale, ~15 call sites); entry points `host/runner.py:60,441,820,1143`; `sample()` metadata keys
-  `specification`, `skipped_inputs`, `structure_ids`, `lineage`; both aminx Zarr sites build
-  `SinkSpec` without `run_id` (T0.0 premise confirmed).
+  stale, ~15 call sites); entry points `host/runner.py:79,480,881,1220` (r14; were `60,441,820,1143`); `sample()` metadata keys
+  `specification`, `skipped_inputs`, `structure_ids`, `lineage`; both aminx Zarr sites built
+  `SinkSpec` without `run_id` (T0.0 premise confirmed; migrated on main, r14).
 - `model_family` consumers (report §2): complete classified list; only new runner reader is the
   dispatch; portable-JSON guard `run_spec_portable_json.py:153` must become `!= "proteinmpnn"`;
   `_prepare_ligand_context` and the `prep.py` registry lookup are the only fallback-path consumers.
