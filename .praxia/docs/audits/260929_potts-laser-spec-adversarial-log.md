@@ -175,3 +175,8 @@ All C7-xx landed (T_eff matches `run_inference.py:541-544`; skip_calc matches `s
 - **C8-M3** `vehicle` type undefined; step 1b reruns whole wave per mutant (entire non-port suite). Fix: vehicle = sidecar slug or nodeid list; rerun selects only those ids.
 - **C8-M4** `potts_etab`/`potts_E_idx` K dim: slice to min(48,L_total) too (K_static=min(48,L_pad)); extend ragged test.
 - **C8-M5** stage→vehicle table omits knob tests used as vehicles elsewhere (refine_order, tied_last_member, tied_masked_member, t0_floor, pssm_precedence, x_gap_energy, skip_gaps, laser_bias_minp, fs_sequence_temp, laser_score_order, tied_rank_flat); list them or state any vehicle allowed.
+
+# Round 8 — defender (Opus) — 7 CONCEDE / 1 PARTIAL (C8-M5 wording) / 0 REBUT
+Verified bathos runs columns (`compact.py:352-412`: git_hash, git_dirty, status, outcome, sidecar_sha256, output_paths, parent_run_id…; no per-control column, metadata dropped @84be544e) → C8-02 uses script-emitted `branch_controls.json` in output_paths. Upstream `sample_seqs.py:40-41,130-157,338-339` verified for C8-M1/C8-03.
+
+# Spec r8 written

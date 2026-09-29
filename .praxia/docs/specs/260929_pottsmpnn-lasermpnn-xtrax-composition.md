@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: draft-r7
+status: draft-r8
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -42,6 +42,10 @@ Revision history:
   `test_branch_coverage`, stage→vehicle table); LASEr `T_eff` fs-temp resolution; `skip_calc`
   (`optimize_pdb`/`optimize_fasta`) stage graph + schema + divergences; LASEr bias step 1b; AR/opt T
   floors; per-structure `L_total` slicing; §5.4a contact/chain_mask sources.
+- r7 → r8: clean/mutant outcome separation; sidecar coverage via gate-run bathos records
+  (`git_hash`, `sidecar_sha256`, `branch_controls.json` in `output_paths`); order-generation stage +
+  vehicle; refine fresh-order key; `skip_calc` mirrors upstream N=1/mode-none; typed `vehicle`;
+  `check_branch_coverage` + separate selftest manifest; etab K slicing.
 
 ## 0. Goal, non-goals, assumed decisions
 
@@ -92,19 +96,20 @@ deliberate departures are rows in §6.5b (divergences), §6.4 (exclusions), and 
 conditioning where upstream has no caller (e.g. §5.4a); each names its upstream anchor.
 **Branch coverage (normative).** Coverage vehicles are tier waves (§7.2), bathos sidecars (§7.3),
 `test_knob_semantics_*` tests and the A0/B0 gates; one rule governs all.
-`tests/port/branch_manifest.toml` holds one `[[branch]] {id, stage, vehicle, fixture, mutant}` row per
+`tests/port/branch_manifest.toml` holds one `[[branch]] {id, stage, vehicle, fixture, mutant}` row (`vehicle` =
+`{kind="pytest", nodeids=[…]}` or `{kind="sidecar", slug="<name>"}`) per
 documented upstream branch of every stage in the §8 stage→vehicle table: fixed/designed,
 gap/`present==0`, tied (incl. masked member, mixed fixed/designed groups), `ignore_chain_mask_zeros`,
 `repack_all`/`repack_only`, ligand-absent/`ignore_ligand`, argmax vs sampled, NaN input χ,
 `skip_calc` (§4.3), and every T0.2-enumerated conditional (T0.2 emits `conditional_ids.txt`).
-`mutant` names a function in `tests/port/mutants/<vehicle>.py` returning a context manager that
+`mutant` names a function in `tests/port/mutants/<stage_slug>.py` returning a context manager that
 monkeypatches the named port function (or the static branch flag it reads) to take the wrong side.
 Pytest vehicles (incl. A0/B0 gates) run clean and once per row with `AMINX_PORT_MUTANT=<id>` (root
-`tests/conftest.py` enters it at `pytest_sessionstart`; outcome records gain `mutant`); sidecar
+`tests/conftest.py` enters it at `pytest_sessionstart`; outcome records carry `mutant`, null when clean); sidecar
 scripts take `--mutant <id>` and list their rows' mutants among their negative controls.
 `tests/redsox/test_branch_coverage.py` (§6.6 step 2) asserts: every `conditional_ids.txt` id and every
 §8 stage appears in a row; every clean run passed; every mutant run failed (pytest: ≥1 vehicle id
-failed under it; sidecar: the bathos record shows that negative control failed). Missing fixture,
+failed under it; sidecar: per §6.6 step 1c). Missing fixture,
 missing mutant run, or passing mutant → `instrument_invalid`. Transcription slips are therefore
 caught by gates, not by review.
 
@@ -400,7 +405,7 @@ tiers use the gapped `L_total ≤ 48` fixture.
 | purpose / output_kind | Path | Stages / axes |
 |---|---|---|
 | `sample` (any mode/PSSM/tied/bias_by_res) | driver | `MPNNEncode → PottsARDecode → PottsSampleEnergy → [PottsRefine iff mode≠none] → sinks`; host ranking after last chunk; axes `samples`, `temperatures` |
-| `sample` with `optimize_pdb`/`optimize_fasta` (upstream `skip_calc`, `sample_seqs.py:128-157`; mode≠none else `ValueError`) | driver | `MPNNEncode → PottsRefine` on loaded sequences; no PottsARDecode/PottsSampleEnergy/ranking; `num_samples>1` → `ValueError` (upstream forces 1, `:40`); axis `samples` = loaded sequences. `optimize_fasta`: entries whose key `startswith(<pdb><suffix>)` (`:319`, prefix quirk kept), file order, `:` stripped (`:322`); `optimize_pdb`: native per-chain sequences in A0 chain order (§6.5b). Length ≠ L_total → `ValueError`; encoded by `seq_to_ints` (`:347`). Refine order: `upstream_refine_order` with empty stored orders (`:325-343` keying incl. reuse when suffix empty; §6.5b). PDB (iff `write_pdb`) = `refined_sequence` of the last loaded key (`:368-373`). Tests `knob_semantics_optimize_pdb`, `_optimize_fasta` |
+| `sample` with `optimize_pdb`/`optimize_fasta` (upstream `skip_calc`, `sample_seqs.py:128-157`; if mode==none the run is ordinary `sample` with N forced to 1, upstream `:41`, `:130-157`) | driver | `MPNNEncode → PottsRefine` on loaded sequences; no PottsARDecode/PottsSampleEnergy/ranking; `num_samples` forced to 1 with a `logger.warning` if >1 requested (upstream `:40` forces silently; logging only, not a behaviour divergence); `knob_semantics_optimize_pdb` covers mode none → AR output N=1 and `num_samples=4` → N=1 + warning; axis `samples` = loaded sequences. `optimize_fasta`: entries whose key `startswith(<pdb><suffix>)` (`:319`, prefix quirk kept), file order, `:` stripped (`:322`); `optimize_pdb`: native per-chain sequences in A0 chain order (§6.5b). Length ≠ L_total → `ValueError`; encoded by `seq_to_ints` (`:347`). Refine order: `upstream_refine_order` with empty stored orders (`:325-343` keying incl. reuse when suffix empty; §6.5b). PDB (iff `write_pdb`) = `refined_sequence` of the last loaded key (`:368-373`). Tests `knob_semantics_optimize_pdb`, `_optimize_fasta` |
 | `score:energy` | driver | `MPNNEncode → PottsHead → etab_energy → potts_energy`; axis `candidates` = `sequences_to_score` if non-empty, else the `score:ddg` resolution (mutant_fasta / mutant_csv / DMS), always plus WT; absolute energies; partitions never evaluated (upstream `ddG=False`). Each `sequences_to_score` entry must have length L_total in A0 row order (sorted designed chains then sorted fixed chains, `tied_featurize :327`) with gap rows as `-`/`X`, else `ValueError` naming expected length + chain order; test `test_score_energy_gapped_alignment` |
 | `score:ddg` | driver | as energy; candidates = mutant_fasta / mutant_csv else single-mutant DMS (respecting `exclude_chains`); `ddg=E(mut)−E(wt)`; binding: axis `partition` (§4.4); `mean_norm` per PDB after ddG |
 | `score:nll`, `score:logits`, `jacobian`, `inspect` | MPNN fallback on `model.mpnn` | unchanged |
@@ -437,7 +442,9 @@ tiers use the gapped `L_total ≤ 48` fixture.
   `decoder(decoding_order=)`. Tied oracle: inject `randn`, then pass the oracle's returned flattened
   `decoding_order` to aminx (regroup-invariant; test asserts `rank_flat` equality). Masked rows
   take `S_true` (`:1448`); fixed rows `S_t·cm + S_true·(1−cm)` (`:1483`). Per-step probabilities via
-  PSSMMix (below).
+  PSSMMix (below). **Refine fresh-order key** (`skip_calc` or stored order missing):
+  `argsort((chain_mask + 1e-4)·|randn|)` with no `chain_M_pos` and no `present`
+  (`sample_seqs.py:338-339`); under `fix_decoding_order` the seed is per `:332-337`.
   **Tied (also covers untied: all singletons, `M_max=1`).** Host builds `tie_groups: int32 (L_pad,
   M_max)`, −1-padded (shape depends only on static buckets `L_pad` and `M_max` = next power of 2 ≥
   largest group, min 1): rows = `tied_positions` groups in listing order (members in listing order),
@@ -525,7 +532,10 @@ excluded from the per-chunk key check), opt-in `potts_etab
 (L,K,20,20)`, `potts_E_idx`, `refine_energy_trace`. `score:energy`: `energy (N_cand,) f32`,
 `candidate_ids`. `score:ddg`: `ddg (N_mut,) f32`, `mutant_ids`, `ddg_expt (N_mut,) f32|nan`.
 `emit_dense_hJ` converts host-side only. Under `skip_calc`: `refined_sequence (N_loaded,L_total) i32`
-only (+ opt-in `potts_etab`, `potts_E_idx`, `refine_energy_trace`). Per-position dims are `L_total`.
+only (+ opt-in `potts_etab`, `potts_E_idx`, `refine_energy_trace`). Per-position dims are `L_total`. The
+`potts_etab`/`potts_E_idx` neighbour dim is sliced to `K_eff = min(48, L_total)` (device uses
+`K_static = min(48, L_pad)`, §4.1a); `test_family_sink_ragged_L` also asserts
+`potts_etab.shape[1] == min(48, L_total)` for an `L_total < 48` structure.
 
 ## 5. LASErMPNN
 
@@ -655,7 +665,9 @@ designable∧contact, contact = upstream `extra_atom_contact_mask` (`utils/pdb_d
 not `first_shell_ligand_contact_mask`), named in the B0 gate field list; `chain_mask` = the B0 mask
 from `fixed_positions`/`fixed_mask`/`fix_from_bfactor`, as for `sample`; `u = jax.random.uniform(key_order,(L,))` from `random_seed`; the same rule drives
 `sample` and proofread orders; injectable `decoding_order` (length L) in parity tiers; emitted under
-`return_decoding_orders`. (ii) χ: `chi[i,k] = input_chi[i,k]` iff `aa_to_chi_angle_mask[cand_i
+`return_decoding_orders`. The injectable uniform stream follows the upstream layout: concatenation of
+tier-0, tier-1, tier-2 uniforms, each in ascending row index (`utils/pdb_dataset.py:1618-1650`); aminx
+maps it back to rows before `argsort(u + tier)`. (ii) χ: `chi[i,k] = input_chi[i,k]` iff `aa_to_chi_angle_mask[cand_i
 (X→G)][k]` ∧ input non-NaN, else NaN. (iii) Outputs: `seq_log_prob (N,L) =
 log_softmax(sequence_logits)[cand]` (no disabled mask, bias/omit, temperature or min-p); `chi_log_prob (N,L,4) =
 log_softmax(chi_logits_k)[bin(chi)]`, NaN where χ is NaN (T0.2 transcribes `bin`); `scores (N,) =
@@ -824,13 +836,33 @@ tests pass; fail = any):
    to that wave's list. Hooks in `tests/conftest.py`, active only when those env vars are set:
    deselect (never skip) items whose `port_wave` ≠ `AMINX_PORT_WAVE` or whose nodeid ∉ ids file;
    `pytest.UsageError` if a listed id is not collected; `pytest_runtest_logreport` appends
-   `{nodeid, wave, when, outcome, wasxfail}`. `passed_nodeids` = ids whose call phase passed in a
-   record with `wave == declared wave`, no failed phase, no `wasxfail`; `skipped` never counts. Gate
+   `{nodeid, wave, when, outcome, wasxfail, mutant}` (`mutant` null on clean runs). `passed_nodeids`
+   considers only records with `mutant is None`: an id passes iff its call phase passed in such a
+   record with `wave == declared wave`, with no failed phase and no `wasxfail` among its `mutant is
+   None` records; `skipped` never counts. `test_branch_coverage` groups records by `(mutant, nodeid)`:
+   clean verdict uses `mutant is None`; row R's verdict uses `mutant == R.id` restricted to R's
+   vehicle ids. Gate
    passes iff `rc==0` and step 2 passes. `tests/port/conftest.py` hooks return early if
    `AMINX_PORT_WAVE == "__nonport__"` (defensive).
-1b. For each `branch_manifest` row with a pytest vehicle: rerun that row's wave with
-   `AMINX_PORT_MUTANT=<id>` appended to `outcomes.jsonl`; exit status not folded into `rc` (judged by
-   step 2).
+1b. For each `branch_manifest` row with a pytest vehicle: rerun only the row's `vehicle.nodeids`
+   (ids file = that list, `AMINX_PORT_WAVE` = their declared wave) with `AMINX_PORT_MUTANT=<id>`,
+   appended to `outcomes.jsonl`; exit status not folded into `rc` (judged by step 2).
+1c. Sidecar vehicles. For each sidecar slug S with `branch_manifest` rows, `run_gate.sh` runs
+   `bth run --project-slug aminx -- uv run --no-sync python3 scripts/parity/S.py --mutants <comma list
+   of S's row ids> --out $OUT/sidecar_S`, then `bth compact`, and appends `{slug, bth_run_id}` (id from
+   `bth run` output) to `$OUT/sidecar_runs.jsonl` (nested run records `parent_run_id` = gate run).
+   The script runs every listed mutant as a negative-control arm and writes
+   `$OUT/sidecar_S/branch_controls.json` = `{mutant_id: "failed"|"passed", clean: "pass"|"fail"}`;
+   the sidecar's `[outcomes]` pass criterion requires `clean=="pass"` and every listed mutant
+   `=="failed"`. `test_branch_coverage` resolves each id via `bth sql "SELECT
+   id,status,outcome,git_hash,git_dirty,sidecar_sha256,output_paths FROM runs WHERE id='<id>'"` and
+   asserts: `status=='completed'` and `outcome=='pass'`; `git_dirty` false and `git_hash == git
+   rev-parse HEAD` at gate start; `sidecar_sha256 == sha256(scripts/parity/S.bth.toml)` at HEAD;
+   `branch_controls.json` ∈ `output_paths` with mutant set == S's manifest rows, each `"failed"`.
+   Missing/stale/mismatched record → `instrument_invalid`. Fallback for expensive sidecars: a manifest
+   row may set `reuse_run_id`; the gate then skips the rerun only if `git diff --name-only <record
+   git_hash>..HEAD` touches nothing under `src/aminx/model/**`, `src/aminx/families/**`,
+   `src/aminx/host/family_*`, `scripts/parity/S*`, `aminx-oracles/shims/**`; all other assertions apply.
 2. `AMINX_REDSOX_OUTCOMES=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/redsox -q`
    (incl. `test_branch_coverage`)
 redsox U1 reachability runs only as a smoke check (presence-only). T0.4 runs the gate on current
@@ -882,8 +914,10 @@ target` (xtrax reads pyproject only, `conftest.py:64-71`); CI iterates waves; (3
 `stochastic`: a stochastic wave without an injected-uniform oracle key is a T2/T3 error; (4) T2 runs
 in a scoped `jax.experimental.enable_x64()` fixture; (5) `pytest-timeout` added to dev deps
 (`conftest.py:214,232`). T5 uses `max_traces`. **Self-test first (T0.3):** sign-flipped kernel must
-fail T2; retrace-per-call kernel must fail T5; planted row `selftest_noop` (no-op mutant) must be
-reported `instrument_invalid` by `test_branch_coverage`. Follow-up: `xtrax.port` pytest plugin in the wheel.
+fail T2; retrace-per-call kernel must fail T5; `tests/redsox/test_branch_coverage.py` delegates to
+`check_branch_coverage(manifest_path, outcomes_path, sidecar_runs_path) -> verdict` in
+`tests/redsox/_coverage.py`; the self-test calls it on `tests/port/selftest_branch_manifest.toml`
+(planted row `selftest_noop`, no-op mutant) and asserts `instrument_invalid`. Follow-up: `xtrax.port` pytest plugin in the wheel.
 
 | Wave | Symbol | stochastic | tol f64 / f32 | max_traces |
 |---|---|---|---|---|
@@ -987,11 +1021,16 @@ control is aminx at `m·T`.
 | Z1 | redsox gate PASS on final tree | A5, A6, B6, B7 | `run_gate` sidecar PASS incl. `test_branch_coverage` |
 | Z2 | CLI docs + `using-aminx` skill | Z1 | — |
 
-**Stage → vehicle (every stage in the `[[branch]]` `stage` column must be listed here):**
+**Stage → vehicle (every stage in the `[[branch]]` `stage` column must be listed here; the Vehicles
+column lists primary vehicles only — any vehicle allowed by §0 may back a row, e.g.
+`knob_semantics_refine_order`, `_tied_last_member`, `_tied_masked_member`, `_t0_floor`,
+`_pssm_precedence`, `_x_gap_energy`, `_skip_gaps`, `_laser_bias_minp`, `_fs_sequence_temp`,
+`_laser_score_order`, `test_tied_rank_flat_matches_upstream`):**
 
 | Stage | Vehicles |
 |---|---|
 | A0 / B0 featurizers | A0 gate / B0 gate |
+| Order generation (Potts AR key, Potts refine fresh key, LASEr 3-tier) | `test_knob_semantics_order_generation`: Potts — oracle and aminx given the same `randn`, exact order on a fixture with `fixed_positions` + a gap row, for AR and refine keys; LASEr — `torch.rand` in `_masked_sort_for_decoding_order` shimmed with injected per-tier uniforms, aminx given the same stream, exact order on a fixture with fixed/non-contact/contact rows. Mutants: drop tier offset; drop `chain_M_pos` from AR key; swap AR↔refine keys |
 | MPNNEncode (Potts) | `pottsmpnn_full` |
 | PottsHead, merge_pair d2/d4, potts_energy | their waves; `potts_energy_parity` |
 | PottsARDecode (+tied, PSSMMix) | `potts_ar_decode`; `potts_ar_refine_exact` |
