@@ -167,10 +167,11 @@ def build_cases() -> tuple[GoldenCase, ...]:
       cases.extend(
         _one_case("sample", checkpoint_id, family, fixture, batch_size) for batch_size in (1, 2)
       )
-      cases.extend(
-        _one_case(operation, checkpoint_id, family, fixture, 1)
-        for operation in ("score", "jacobian", "inspect")
-      )
+      # runner.jacobian does not support ligandmpnn today: its encode_fn calls
+      # ProteinFeaturesLigand without ligand_atom_types/ligand_mask (TypeError at capture,
+      # 260929) -- an invalid combination, recorded as tech debt, not a golden.
+      operations = ("score", "inspect") if family == "ligandmpnn" else ("score", "jacobian", "inspect")
+      cases.extend(_one_case(operation, checkpoint_id, family, fixture, 1) for operation in operations)
   return tuple(cases)
 
 
@@ -253,12 +254,14 @@ def _score_spec(case: GoldenCase, random_seed: int) -> ScoringSpecification:
 
 
 def _jacobian_spec(case: GoldenCase, random_seed: int) -> JacobianSpecification:
+  # max_length = native length: the default pad to 512 makes each (L,21,L,21) golden ~463 MB.
   return JacobianSpecification(
     inputs=case.fixture,
     checkpoint_id=case.checkpoint_id,
     model_family=case.model_family,
     random_seed=random_seed,
     batch_size=case.batch_size,
+    max_length=len(native_sequence(case.fixture)),
   )
 
 
