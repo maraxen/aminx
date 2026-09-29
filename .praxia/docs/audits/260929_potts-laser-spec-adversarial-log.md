@@ -211,3 +211,14 @@ All C9-xx landed consistently.
 Verified: cool tier path `<catalog>/runs/<slug>/run_<full-id>.parquet` atomically rewritten at `runner.py:732` (running) and `:1155` (final) (`catalog.py:38-47`); catalog_dir default `~/.bth/catalog` (`config.py:18,30`); aminx uv.lock lacks pyarrow → added to dev group (T0.4).
 
 # Spec r10 written
+
+# Round 11 — challenger (Opus, spec r10 @ 35431edf, strict rubric) — **CONVERGED: 0 BLOCKER / 0 MAJOR / 5 MINOR**
+All C10-xx verified against installed bathos (`runner.py:65-129` resolves `uv run --no-sync python3 x.py`; outcomes evaluated as DuckDB SQL `sidecar.py:696-712`; cool tier `catalog.py:40-42`, never deleted by compact; `argv` list `schema.py:32`; `.bth/refs` ignored via `ensure_manifest_ignored` `runner.py:755-767`). Whole-spec pass: no new aminx-defined contradictions, no non-discriminating gate, no uncovered upstream branch.
+MINORs (applied by orchestrator, no defender round needed at convergence):
+- C11-01 `pytest_runtest_logreport` gets TestReport (no excinfo) → makereport hookwrapper → user_properties; kill precedence (≥1 AssertionError kill wins; invalid only if no kill + non-Assertion failure); selftest (vii-b).
+- C11-02 hooks active only when AMINX_PORT_WAVE set; step 2 reads AMINX_REDSOX_OUTCOMES_READ.
+- C11-03 sidecar arms each in fresh subprocess (jit cache hides trace-time mutants).
+- C11-04 registry `sha256` required = converted artifact SHA (optional today `host/prep.py:60`); `source_sha256` separate.
+- C11-05 freshness scope `scripts/parity/**`, `scripts/recapture/**`.
+
+# CONVERGED at spec r11. Rounds: 11 challenger + 10 defender. Major counts per round: 17 → 14 → 8 → 5 → 2 → 8 → 4 → 3 → 3 → 3 → 0.
