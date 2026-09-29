@@ -21,6 +21,7 @@ from aminx.families.potts_mpnn.featurize import (
   parse_pdb_upstream,
   tied_featurize_port,
 )
+from aminx.families.potts_mpnn.model import PottsMPNN, PottsMPNNOutput, cast_floating
 from aminx.families.potts_mpnn.potts_head import PottsHead
 
 __all__ = [
@@ -32,6 +33,9 @@ __all__ = [
   "PottsFeatures",
   "PottsHead",
   "PottsInputError",
+  "PottsMPNN",
+  "PottsMPNNOutput",
+  "cast_floating",
   "etab_to_model",
   "knn_boundary_tie",
   "merge_pair",
