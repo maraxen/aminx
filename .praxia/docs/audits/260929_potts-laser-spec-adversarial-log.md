@@ -34,3 +34,10 @@ created: 260929
 - **C1-25 MINOR §2.1** `resolve_decode_mode` is "the ONE place" (`plan.py:796-803`) — plan_builder bypass re-forks aminx#110; `InferencePlan.decode` argmaxes non-SampleResult (`plan.py:691-695`); `parity_heavy` excluded by addopts (`pyproject.toml:229`) — name command+host; B2–B4 need weights converted in B5.
 
 User-decision candidates: U1 LASEr-specific plan/driver vs widening; U2 bit-parity with upstream quirks vs intended semantics; U3 MSA vocab-22 in v1; U4 redsox change vs local harness; U5 LASEr proofreading + two-structure tied in v1.
+
+# Round 1 — defender (Opus) — needs_revision; 22 CONCEDE / 3 PARTIAL (C1-10, C1-20, C1-25) / 0 REBUT
+
+Core resolution: **FamilyDriver seam** dispatched from `runner.sample/score` (reusing prep, streaming sinks, xtrax dispatch, Zarr sink) — keeps one central runner without widening StageSet/EncoderOutput/ModelProtocol/DecodeMode; deletes r0's plan_builder bypass, post_decode slot, InterpolatedTieFuse, sc_coords carry. Partial rebuttals: C1-10 core AR loop is vanilla MPNN and bias/omit/log-odds are logit-expressible — only PSSM convex mix is not; C1-20 r0 already declared mirrored contract, schema drift conceded; C1-25 bypass concern moot under driver seam, parity_heavy/B-ordering conceded.
+U1–U5 defaults (applied in r1 as assumptions): U1 LASEr FamilyDriver; U2 bit-parity + documented quirks, family defaults follow upstream example configs; U3 defer MSA vocab-22; U4 local harness over redsox library check_superset + upstream follow-up; U5 proofreading + two-structure tied in v1 (B7).
+
+# Spec r1 written (removes the four r0 designs above; see spec revision history)
