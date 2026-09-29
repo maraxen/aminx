@@ -1,0 +1,2793 @@
+# Alias skeleton for tests/redsox/reference_surfaces.py.
+# Spec-decided rows (§6.3, §6.4) are filled. Every other row is TODO.
+
+[[row]]
+ref = "laser_checkpoint__build_hydrogens"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__lig_lig_knn_graph_k"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__lig_pr_distance_cutoff"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__lig_pr_knn_graph_k"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__pr_pr_knn_graph_k"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__batch"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__budget_residue_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__chi_angle_sample_temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__chi_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__disable_charged_residue_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__ignore_chain_mask_zeros"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__return_encoder_embeddings"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__seq_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__sequence_sample_temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__batch1"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__batch2"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__budget_residue_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__chi_angle_sample_temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__lambda_"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__sequence_sample_temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__batch"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__disable_charged_residue_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__ignore_chain_mask_zeros"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__return_encoder_embeddings"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__seq_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__sequence_sample_temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__budget_residue_sele_string"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__chi_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__chi_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__designs_per_batch"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference__designs_per_input"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__first_shell_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__fix_beta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__fs_calc_ca_distance"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__fs_no_calc_burial"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__ignore_key_mismatch"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "store_false, passed as strict= (run_batch_inference.py:250,379); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_batch_inference__ignore_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__inference_device"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__input_pdb_directory"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__inputs_processed_simultaneously"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference__model_weights_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__noncanonical_aa_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__output_fasta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__output_fasta_only"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__output_pdb_directory"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__repack_only_input_sequence"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "repack_only_input_sequence maps to repack_only"
+
+[[row]]
+ref = "laser_run_batch_inference__seq_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_batch_inference__use_water"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__budget_residue_sele_string"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__chi_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__chi_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__designs_per_batch"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__designs_per_input"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__first_shell_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fix_beta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fs_calc_ca_distance"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fs_no_calc_burial"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__ignore_key_mismatch"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "store_false, passed as strict= (run_batch_inference.py:250,379); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__ignore_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__inference_device"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__input_pdb_directory"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__inputs_processed_simultaneously"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__model_weights_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__noncanonical_aa_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__output_fasta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__output_fasta_only"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__output_pdb_directory"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__repack_only_input_sequence"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "repack_only_input_sequence maps to repack_only"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__seq_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__use_water"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__backbone_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "LASEr bb_noise / CLI dest backbone_noise maps to noise"
+
+[[row]]
+ref = "laser_run_inference__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__entropy_decoder"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "entropy_decoder deferred (aminx tech debt 2069)"
+
+[[row]]
+ref = "laser_run_inference__fix_beta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__fs_calc_ca_distance"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__fs_no_calc_burial"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__fs_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__ignore_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__input_pdb_code"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_inference__noncanonical_aa_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__repack_only"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference__strict_load"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__backbone_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "LASEr bb_noise / CLI dest backbone_noise maps to noise"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__entropy_decoder"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "entropy_decoder deferred (aminx tech debt 2069)"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fix_beta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_calc_ca_distance"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_no_calc_burial"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__ignore_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__input_pdb_code"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__noncanonical_aa_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__repack_only"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__strict_load"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__batch_data"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__bb_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "LASEr bb_noise / CLI dest backbone_noise maps to noise"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__budget_residue_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__chi_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__chi_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__fs_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__ignore_chain_mask_zeros"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__model"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__params"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__seq_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__use_edo"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__batch_data"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__bb_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "LASEr bb_noise / CLI dest backbone_noise maps to noise"
+
+[[row]]
+ref = "laser_run_inference_sample_model__budget_residue_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__chi_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__chi_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__fs_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__ignore_chain_mask_zeros"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__model"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__params"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__seq_min_p"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_sample_model__use_edo"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__backbone_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "LASEr bb_noise / CLI dest backbone_noise maps to noise"
+
+[[row]]
+ref = "laser_run_inference_tied__budget_residue_sele_string"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__designs_per_input"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__entropy_decoder"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "entropy_decoder deferred (aminx tech debt 2069)"
+
+[[row]]
+ref = "laser_run_inference_tied__fix_beta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__fs_calc_ca_distance"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__fs_no_calc_burial"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__fs_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__ignore_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__input_pdb_code_1"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__input_pdb_code_2"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_inference_tied__noncanonical_aa_ligand"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__repack_only"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_tied__strict_load"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_inference_tied__tied_probability_interpolation_lambda"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__ala_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__batch_data1"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__batch_data2"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__bb_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "LASEr bb_noise / CLI dest backbone_noise maps to noise"
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__budget_residue_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__chi_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__disable_charged_fs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__disabled_residues"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__fs_sequence_temp"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__gly_budget"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__ignore_chain_mask_zeros"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__interpolation_lambda"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__model"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__params"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__use_edo"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_predict_partial_charges__input_pdb"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_predict_partial_charges__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_predict_partial_charges__output_pdb"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__disable_inference_dropout"
+targets = ["proofread_dropout"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "inverted relative to proofread_dropout"
+
+[[row]]
+ref = "laser_run_proofreading__n_decoding_orders"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__n_dropouts"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__output_dir"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__pdb_file"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__selection_string"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__silent"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__weights"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_thread_and_score_sequences__backbone"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_thread_and_score_sequences__fasta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_thread_and_score_sequences__output_dir"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_thread_and_score_sequences__weights"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_assign_fixed_chains__chain_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_assign_fixed_chains__input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_assign_fixed_chains__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_energy_prediction__config"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_bias_AA__AA_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_bias_AA__bias_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_bias_AA__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_bias_per_res_dict__input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_bias_per_res_dict__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__chain_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__position_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__specify_non_fixed"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__chain_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__homooligomer"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__pos_neg_chain_betas"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__pos_neg_chain_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__position_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pssm_input_dict__PSSM_input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pssm_input_dict__jsonl_input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_pssm_input_dict__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_tied_positions_dict__chain_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_tied_positions_dict__homooligomer"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_tied_positions_dict__input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_tied_positions_dict__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_make_tied_positions_dict__position_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_mutation_search__allowed_from_aas"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__allowed_to_aas"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__binding_energy_cutoff"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__binding_energy_json"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__cfg_path"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__disallowed_chains"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__energy_mode"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__max_keep_per_depth"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__max_mutations"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__no_pareto_front"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__pdb_paths"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__per_position_quota"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__plot_dir"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__rrf_k"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__top_percent"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__top_percent_decay_base"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_parse_multiple_chains__ca_only"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2068"
+parity_test_ids = []
+note = "CA-only deferred (aminx tech debt 2068)"
+
+[[row]]
+ref = "potts_parse_multiple_chains__input_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_parse_multiple_chains__output_path"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__S_true"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__X"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__bias_AAs_np"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__bias_by_res"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__chain_M_pos"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__chain_encoding_all"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__chain_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__omit_AA_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__omit_AAs_np"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_bias"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_bias_flag"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_coef"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_log_odds_flag"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_log_odds_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_multi"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__randn"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__residue_idx"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__S_true"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__X"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__bias_AAs_np"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__bias_by_res"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__chain_M_pos"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__chain_encoding_all"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__chain_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__omit_AA_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__omit_AAs_np"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_bias"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_bias_flag"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_coef"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_log_odds_flag"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_log_odds_mask"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_multi"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__randn"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__residue_idx"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__tied_beta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__tied_pos"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_sample_seqs__config"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__backbone_noise"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__batch_size"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__debug"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__dropout"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__gradient_norm"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__hidden_dim"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__max_protein_length"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__mixed_precision"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__num_decoder_layers"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__num_encoder_layers"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__num_epochs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__num_examples_per_epoch"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__num_neighbors"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__path_for_outputs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__path_for_training_data"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__previous_checkpoint"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__reload_data_every_n_epochs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__rescut"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "potts_training__save_model_every_n_epochs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__chain_dict_json"
+targets = ["fixed_mask", "chain_design_mask_json"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "chain dict JSON maps onto fixed_mask and chain_design_mask_json"
+
+[[row]]
+ref = "pottsmpnn_cfg__dev"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__bias_AA_json"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__bias_by_res_json"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__binding_energy_cutoff"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__binding_energy_json"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__binding_energy_optimization"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__chain_dict"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__chain_ranges"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__ddG"
+targets = ["output_kind"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "True ≡ output_kind ddg; False ≡ energy"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__decoding_order_offset"
+targets = ["random_seed"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "seeded-order test; order source is the driver, not decoding_order_fn"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__exclude_chains"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__filter"
+targets = ["filter_nan"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "no-op quirk; maps to filter_nan"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__fix_decoding_order"
+targets = ["random_seed"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "seeded-order test; order source is the driver, not decoding_order_fn"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__fixed_positions_json"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__max_tokens"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__mean_norm"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "eval augment_eps on all backbone atoms; knob test is iid Gaussian N/CA/C/O"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__num_samples"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__omit_AA_json"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__omit_AAs"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimization_mode"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimization_temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimize_fasta"
+targets = ["optimize_fasta"]
+equivalence = "divergence"
+parity_test_ids = []
+note = "upstream asserts optimize_fasta then reads out_dir/out_name.fasta (§6.5b)"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimize_pdb"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_bias_flag"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_json"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_log_odds_flag"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_multi"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_threshold"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__skip_gaps"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__temperature"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__tied_epistasis"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__tied_positions_json"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__write_pdb"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__input_dir"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__input_list"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__model__check_path"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__edge_features"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__hidden_dim"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__num_edges"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__num_layers"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__potts_dim"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__vocab"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2067"
+parity_test_ids = []
+note = "MSA vocab-22 deferred (aminx tech debt 2067)"
+
+[[row]]
+ref = "pottsmpnn_cfg__mutant_csv"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__mutant_fasta"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__out_dir"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__out_name"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "pottsmpnn_input_list__designed_chains"
+targets = ["fixed_mask", "chain_design_mask_json"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "input-list designed chains map onto fixed_mask and chain_design_mask_json"
+
+[[row]]
+ref = "pottsmpnn_input_list__fixed_chains"
+targets = ["fixed_mask", "chain_design_mask_json"]
+equivalence = "semantic"
+parity_test_ids = []
+note = "input-list fixed chains map onto fixed_mask and chain_design_mask_json"
+
+[[row]]
+ref = "pottsmpnn_input_list__pdb"
+targets = []
+equivalence = "TODO"
+parity_test_ids = []
+note = ""
