@@ -175,16 +175,6 @@ def test_arithmetic_mean_shape1_weights_identical_states_S16_equals_state():
 # len(weights) not in {1, S}. Document that invariant here.
 # ---------------------------------------------------------------------------
 
-@pytest.mark.xfail(
-    strict=False,
-    reason=(
-        "Currently raises raw reshape error instead of a clear ValueError. "
-        "After fix: weights of length 3 for S=16 should raise a clear error "
-        "stating that weights length must be 1 or S (the number of states). "
-        "xfail(strict=False) because the current reshape error may satisfy the "
-        "spirit of the test even if not the letter."
-    ),
-)
 def test_arithmetic_mean_mismatched_weights_raises_clear_error():
     """ArithmeticMeanLogits(weights=ones(3)) with S=16 should raise a clear ValueError.
 
@@ -199,5 +189,5 @@ def test_arithmetic_mean_mismatched_weights_raises_clear_error():
     fuser = ArithmeticMeanLogits(weights=jnp.ones(3))
     per_state = jnp.zeros((S, L, V))
 
-    with pytest.raises(ValueError, match=r"weight|shape|length|S="):
+    with pytest.raises(ValueError, match=r"state_weights length 3 incompatible with 16 states; expected length 1 or 16"):
         fuser(per_state)

@@ -107,6 +107,54 @@ def random_decoding_order(
   return jnp.asarray(decoding_order, dtype=jnp.int32), next_key
 
 
+@jax.jit
+def random_design_order(
+  prng_key: PRNGKeyArray,
+  tie_group_map: jnp.ndarray,
+  fixed_mask: jnp.ndarray | None = None,
+) -> DecodingOrder:
+  """The default sampling order: fixed positions first, then a uniform random order of groups.
+
+  Mirrors reference ProteinMPNN/LigandMPNN, which decode in
+  ``argsort((chain_mask + 1e-4) * |randn|)``: known (fixed) positions come first, so every
+  designed position is conditioned on them, and the designed positions follow in a uniformly
+  random order. Tie groups are drawn as units -- one random score per GROUP, so group order
+  is uniform over groups regardless of their size (drawing per position would favour large
+  groups) -- and a group's members are adjacent, in position order.
+
+  A group counts as fixed if any member is fixed (the sampler writes the fixed token to the
+  whole group).
+
+  Args:
+    prng_key: Key for the order draw.
+    tie_group_map: (L,) tie group id per position, ids in ``[0, L)``. Use ``arange(L)`` for
+      untied.
+    fixed_mask: Optional (L,) mask, > 0.5 where the token is fixed.
+
+  Returns:
+    (L,) int32 ORDER array (``order[t]`` = position decoded at step ``t``).
+  """
+  seq_len = tie_group_map.shape[0]
+  tie = jnp.asarray(tie_group_map, dtype=jnp.int32)
+  group_score = jax.random.uniform(prng_key, (seq_len,))
+  if fixed_mask is None:
+    group_fixed = jnp.zeros((seq_len,), dtype=jnp.int32)
+  else:
+    fixed = (jnp.asarray(fixed_mask) > 0.5).astype(jnp.int32)  # noqa: PLR2004
+    group_fixed = jnp.zeros((seq_len,), dtype=jnp.int32).at[tie].max(fixed)
+  designable = 1 - group_fixed[tie]
+  positions = jnp.arange(seq_len, dtype=jnp.int32)
+  # Three explicit keys (designable, group score, position) give a strict total order, so the
+  # result does not depend on sort stability (IREE's sort is not stable).
+  *_, order = jax.lax.sort(
+    (designable, group_score[tie], positions),
+    dimension=0,
+    is_stable=False,
+    num_keys=3,
+  )
+  return order.astype(jnp.int32)
+
+
 def single_decoding_order(
   key: PRNGKeyArray,
   num_residues: int,

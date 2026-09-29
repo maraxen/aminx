@@ -27,7 +27,7 @@ from aminx.types.arrays import Logits, ProteinSequence
 from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 from aminx.types.stages import StageSet
-from aminx.utils.autoregression import generate_ar_mask
+from aminx.utils.autoregression import ar_mask_from_decoding_order
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
 from aminx.utils.ste import gumbel_softmax, straight_through_estimator
 
@@ -259,8 +259,10 @@ class STEDecode(eqx.Module):
         num_groups,
       )
 
-      # Generate AR masks for each decoding order (batch_size, L, L)
-      ar_masks = jax.vmap(generate_ar_mask, in_axes=(0, None))(
+      # Generate AR masks for each decoding order (batch_size, L, L). Not generate_ar_mask:
+      # it reads a RANK array, and its second positional parameter is `chain_idx`, so the
+      # tie map passed here used to land there (debt #1982).
+      ar_masks = jax.vmap(ar_mask_from_decoding_order, in_axes=(0, None))(
         decoding_orders,
         tie_group_map[0] if tie_group_map is not None else None,
       )
@@ -380,7 +382,7 @@ class STEDecode(eqx.Module):
       tie_group_map[0] if tie_group_map is not None else None,
       num_groups,
     )
-    final_ar_mask = generate_ar_mask(
+    final_ar_mask = ar_mask_from_decoding_order(
       final_decoding_order,
       tie_group_map[0] if tie_group_map is not None else None,
     )

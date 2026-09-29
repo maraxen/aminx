@@ -133,8 +133,8 @@ class TieGroupFuseFn(Protocol):
   def __call__(
     self,
     logits: Float[Array, "L V"],
-    mask: Bool[Array, L],
-  ) -> Float[Array, V]:
+    mask: Bool[Array, "L"],
+  ) -> Float[Array, "V"]:
     """Fuse tied-position logits into a single canonical set.
 
     Parameters

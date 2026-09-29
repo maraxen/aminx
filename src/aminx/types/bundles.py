@@ -131,12 +131,12 @@ class ConditioningBundle(eqx.Module):
 
   """
 
-  fixed_mask: Float[Array, L]
-  fixed_tokens: Int[Array, L]
+  fixed_mask: Float[Array, "L"]
+  fixed_tokens: Int[Array, "L"]
   bias: Float[Array, "L V"]
   tie_group_map: Int[Array, "S L"]
   state_position_map: Int[Array, "S L"]
-  state_weights: Float[Array, S]
+  state_weights: Float[Array, "S"]
   sequence_oh: Float[Array, "L V"]  # zeros for unconditional/AR
   ar_mask: Float[Array, "S L L"]  # full 1s for purely conditional
   temperature: Float[Array, ""] = eqx.field(default_factory=lambda: jnp.array(1.0))
@@ -210,8 +210,8 @@ class WaveScheduleBundle(eqx.Module):
 
   @staticmethod
   def from_tie_groups(
-    tie_group_map: Int[Array, L],
-    decoding_order: Int[Array, L],
+    tie_group_map: Int[Array, "L"],
+    decoding_order: Int[Array, "L"],
   ) -> WaveScheduleBundle:
     """Create a schedule where tied positions are in the same wave step.
 
@@ -279,7 +279,7 @@ class WaveScheduleBundle(eqx.Module):
   @staticmethod
   def from_colors(
     group_colors: Int[Array, " n_groups"],
-    tie_group_map: Int[Array, L],
+    tie_group_map: Int[Array, "L"],
   ) -> WaveScheduleBundle:
     """Create a schedule from a graph coloring of tie groups (chromatic / improper-coloring arms).
 
@@ -351,6 +351,51 @@ class WaveScheduleBundle(eqx.Module):
       group_positions=jnp.array(group_positions_list, dtype=jnp.int32),
       group_valid=jnp.array(group_valid_list, dtype=jnp.bool_),
       position_valid=jnp.array(position_valid_list, dtype=jnp.bool_),
+    )
+
+  @staticmethod
+  def from_decoding_order(
+    decoding_order: Int[Array, "L"],
+    tie_group_map: Int[Array, "L"] | None = None,
+  ) -> WaveScheduleBundle:
+    """Sequential schedule that visits positions in `decoding_order` (jit/vmap-safe).
+
+    This is `empty` with its waves permuted: W = L waves, one slot each, wave `t`
+    holding position `decoding_order[t]`. Unlike `from_tie_groups` it has no
+    data-dependent shapes or `.tolist()` calls, so it can be built inside a trace from a
+    traced (e.g. freshly drawn) order.
+
+    Tie groups need no special handling: `AutoregressiveDecode` resolves each slot to its
+    real group via the conditioning `tie_group_map` and samples a group only at its first
+    occurrence, and `generate_wave_ar_mask` places each group at its first wave. A tied
+    group is therefore decoded at the step its earliest member appears in the order --
+    the same semantics as `from_tie_groups`, with the later duplicate waves inert.
+
+    Parameters
+    ----------
+    decoding_order : Int[Array, "L"]
+        ORDER array: `decoding_order[t]` is the position decoded at step `t`. Not a rank
+        array -- see `aminx.utils.autoregression.generate_ar_mask` for the distinction.
+    tie_group_map : Int[Array, "L"] | None
+        Tie group id per position (state-0 convention). `None` means untied (each
+        position its own group).
+
+    Returns
+    -------
+    WaveScheduleBundle
+        Schedule of shape W = L, G = 1, P = 1.
+
+    """
+    order = jnp.asarray(decoding_order, dtype=jnp.int32)
+    seq_len = order.shape[0]
+    group_of_step = (
+      order if tie_group_map is None else jnp.asarray(tie_group_map, dtype=jnp.int32)[order]
+    )
+    return WaveScheduleBundle(
+      group_ids=group_of_step[:, None],
+      group_positions=order[:, None, None],
+      group_valid=jnp.ones((seq_len, 1), dtype=jnp.bool_),
+      position_valid=jnp.ones((seq_len, 1, 1), dtype=jnp.bool_),
     )
 
   @staticmethod
@@ -561,16 +606,16 @@ class PackerBundle(eqx.Module):
 
   """
 
-  sequence: Int[Array, L] | Int[Array, "S L"]
+  sequence: Int[Array, "L"] | Int[Array, "S L"]
   backbone_coords: Float[Array, "L 14 3"] | Float[Array, "S L 14 3"]
   backbone_mask: Float[Array, "L 14"] | Float[Array, "S L 14"]
   ligand_coords: Float[Array, "L M 3"] | Float[Array, "S L M 3"]
   ligand_mask: Float[Array, "L M"] | Float[Array, "S L M"]
   ligand_atom_types: Float[Array, "L M"] | Float[Array, "S L M"]
-  mask: Float[Array, L] | Float[Array, "S L"]
-  residue_index: Int[Array, L] | Int[Array, "S L"]
-  chain_labels: Int[Array, L] | Int[Array, "S L"]
-  backbone_noise: Float[Array, ""] = 0.0
+  mask: Float[Array, "L"] | Float[Array, "S L"]
+  residue_index: Int[Array, "L"] | Int[Array, "S L"]
+  chain_labels: Int[Array, "L"] | Int[Array, "S L"]
+  backbone_noise: Float[Array, ""] | float = 0.0
 
 
 class DecodeOutput(eqx.Module):

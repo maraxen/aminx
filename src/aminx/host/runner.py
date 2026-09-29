@@ -37,11 +37,14 @@ from aminx.host.plan import (
   resolve_chunk_size,
   resolve_target_samples,
 )
-from aminx.host.streaming import (
+from aminx.host.schema_versions import (
   GRID_SCHEMA_VERSION,
+  INSPECTION_SCHEMA_VERSION,
+  JACOBIAN_SCHEMA_VERSION,
   SAMPLING_SCHEMA_VERSION,
-  _sample_streaming,
+  SCORING_SCHEMA_VERSION,
 )
+from aminx.host.streaming import _sample_streaming
 from aminx.host.streaming_host import StreamingBatchHost
 from aminx.io.sink_provenance import prng_seed_attrs, resolve_aminx_version
 from aminx.run.batch_mapping import MappedBy
@@ -305,9 +308,7 @@ def sample(
   return results
 
 
-SCORING_SCHEMA_VERSION = "scoring_v1"
-INSPECTION_SCHEMA_VERSION = "inspection_v1"
-JACOBIAN_SCHEMA_VERSION = "jacobian_v1"
+# All schema versions are now imported from schema_versions.py (single source of truth).
 
 
 def _make_averaged_score_fn(
@@ -337,7 +338,6 @@ def _make_averaged_score_fn(
   from aminx.inference.bundle_builder import build_inference_bundle  # noqa: PLC0415
   from aminx.inference.score_conditional import score_averaged  # noqa: PLC0415
   from aminx.scoring.score import _nll_from_logits  # noqa: PLC0415
-  from aminx.utils.decoding_order import random_decoding_order  # noqa: PLC0415
 
   def _check_r3_invariance(bundles_per_noise: list) -> None:
     """Check R3: all D bundles must share conditioning fields; only backbone_noise may vary.
@@ -369,12 +369,9 @@ def _make_averaged_score_fn(
     mask: jax.Array,
     multi_state_strategy: str = "arithmetic_mean",
     use_rolling_state: bool = False,
-  ) -> tuple[jax.Array, jax.Array, jax.Array]:
+  ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
     """JIT-compiled core: encode, fuse, decode. Receives pre-built concrete bundles."""
     del use_rolling_state, multi_state_strategy
-
-    L = sequence.shape[0]
-    decoding_order, _key = random_decoding_order(prng_key, L, None, None)
 
     # Encode at each noise level, fuse, decode
     logits = score_averaged(
@@ -389,7 +386,9 @@ def _make_averaged_score_fn(
     # Compute NLL using the extracted helper
     nll = _nll_from_logits(logits, sequence, mask)
 
-    return nll, logits, decoding_order
+    # Scoring is full-context (non-autoregressive), so decoding order is not applicable.
+    # Return None instead of a meaningless random permutation.
+    return nll, logits, None
 
   def score_sequence_averaged(
     prng_key: jax.Array,
@@ -412,7 +411,7 @@ def _make_averaged_score_fn(
     ligand_atom_types: jax.Array | None = None,
     ligand_mask: jax.Array | None = None,
     **kwargs: Any,  # noqa: ANN401
-  ) -> tuple[jax.Array, jax.Array, jax.Array]:
+  ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
     """Python-level wrapper: build bundles, check R3 on concrete arrays, call JIT core."""
     del (
       multi_state_temperature,
@@ -510,8 +509,12 @@ def score(  # noqa: PLR0915
             Metadata including specification, structure_ids, and skipped_inputs.
         logits : jax.Array, optional
             Per-position logits if return_logits=True. Shape: (num_structures, num_sequences, L, 21).
-        decoding_orders : jax.Array, optional
-            Decoding orders if return_decoding_orders=True. Shape: (num_structures, num_sequences, L).
+        decoding_orders : None, optional
+            Present (and always ``None``) if return_decoding_orders=True. Every score()
+            path is full-context teacher forcing (``1 - I`` mask, no waves), so there is no
+            decoding order to report. This key used to carry a random permutation that the
+            computation never used (debt #1717); it is kept, as ``None``, so callers that
+            index it get an explicit "not applicable" rather than a KeyError or noise.
 
   Raises
   ------
@@ -588,11 +591,9 @@ def score(  # noqa: PLR0915
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
   from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax  # noqa: PLC0415
 
-  all_scores, all_logits, all_decoding_orders = [], None, None
+  all_scores, all_logits = [], None
   if spec.return_logits:
     all_logits = []
-  if spec.return_decoding_orders:
-    all_decoding_orders = []
 
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -677,10 +678,10 @@ def score(  # noqa: PLR0915
       struct_keys: jax.Array,
       _candidate_iterator: Any = candidate_iterator,  # noqa: ANN401
       _stacked_sequences: jax.Array = stacked_sequences,
-    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
       def _score_one_candidate(
         item: dict[str, jax.Array],
-      ) -> tuple[jax.Array, jax.Array, jax.Array]:
+      ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
         seq_one_hot = jax.nn.one_hot(item["seq"], 21)
         return score_fn(  # type: ignore[misc]
           item["key"],
@@ -696,7 +697,9 @@ def score(  # noqa: PLR0915
         _score_one_candidate, {"key": struct_keys, "seq": _stacked_sequences},
       )
 
-    batch_scores, batch_logits, batch_decoding_orders = jax.vmap(_score_structure)(
+    # The third output (a decoding order) is discarded: scoring is full-context, see the
+    # `decoding_orders` note in this function's docstring (debt #1717).
+    batch_scores, batch_logits, _ = jax.vmap(_score_structure)(
       batched_ensemble.coordinates,
       batched_ensemble.mask,
       batched_ensemble.residue_index,
@@ -707,8 +710,6 @@ def score(  # noqa: PLR0915
     all_scores.append(batch_scores)
     if spec.run_spec.sampling.return_logits and all_logits is not None:
       all_logits.append(batch_logits)
-    if spec.run_spec.sampling.return_decoding_orders and all_decoding_orders is not None:
-      all_decoding_orders.append(batch_decoding_orders)
 
     resolved_structure_ids.extend(batch_structure_ids)
     structure_offset += batch_size
@@ -731,9 +732,8 @@ def score(  # noqa: PLR0915
     # Shape: (num_structures, num_sequences, L, 21)
     results["logits"] = jnp.concatenate(all_logits, axis=0)
 
-  if spec.run_spec.sampling.return_decoding_orders and all_decoding_orders is not None:
-    # Shape: (num_structures, num_sequences, L)
-    results["decoding_orders"] = jnp.concatenate(all_decoding_orders, axis=0)
+  if spec.run_spec.sampling.return_decoding_orders:
+    results["decoding_orders"] = None
 
   return results
 
@@ -837,7 +837,9 @@ def _score_fused_multistate(
   )
   candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
-  def _score_one_candidate(item: dict[str, jax.Array]) -> tuple[jax.Array, jax.Array, jax.Array]:
+  def _score_one_candidate(
+    item: dict[str, jax.Array],
+  ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
     seq_one_hot = jax.nn.one_hot(item["seq"], 21)
     return score_fn(
       item["key"],
@@ -851,7 +853,7 @@ def _score_fused_multistate(
       multi_state_temperature=spec.multi_state_temperature,
     )
 
-  all_scores, all_logits, all_decoding_orders = candidate_iterator(
+  all_scores, all_logits, _ = candidate_iterator(
     _score_one_candidate, {"key": candidate_keys, "seq": stacked_sequences},
   )
 
@@ -870,7 +872,8 @@ def _score_fused_multistate(
   if spec.return_logits:
     results["logits"] = all_logits[None, :]
   if spec.return_decoding_orders:
-    results["decoding_orders"] = all_decoding_orders[None, :]
+    # Full-context scoring has no decoding order; see score()'s docstring (debt #1717).
+    results["decoding_orders"] = None
 
   return results
 

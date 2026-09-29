@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jax
 import jax.experimental
@@ -25,7 +25,11 @@ from aminx.host.plan import (
   make_sampling_planner,
   resolve_target_samples,
 )
-from aminx.inference.bundle_builder import build_inference_bundle
+from aminx.inference.bundle_builder import (
+  build_inference_bundle,
+  decoding_order_key,
+  with_decoding_order,
+)
 from aminx.run.specs import SamplingSpecification
 from aminx.utils.safe_map import safe_map as _safe_map
 
@@ -95,6 +99,51 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
     return strategy.gather_fn(ys_unique, index_map)  # in-trace scatter
   # Fallback: treat as safe_map with batch_size_fallback
   return _safe_map(body, xs, batch_size=batch_size_fallback)
+
+
+# (build_inference_bundle kwarg, key in the _prepare_ligand_context dict). The context
+# uses the reference implementation's capitalised names; a lowercase lookup here was the
+# KeyError #111 had to fix in every inline copy of this mapping.
+_LIGAND_BUNDLE_KEYS = (
+  ("ligand_coords", "Y"),
+  ("ligand_atom_types", "Y_t"),
+  ("ligand_mask", "Y_m"),
+  ("atom_37", "atom_37"),
+  ("atom_37_mask", "atom_37_mask"),
+  ("chain_mask", "chain_mask"),
+)
+
+
+def _take(arr: Any, structure_idx: Any) -> Any:  # noqa: ANN401
+  """Row ``structure_idx`` of a per-structure array, or None.
+
+  ``jnp.asarray`` first: ``structure_idx`` is traced under vmap, and indexing a NumPy array
+  with a tracer calls ``__array__`` on it (TracerArrayConversionError, #111). As a JAX
+  array the same indexing lowers to a gather.
+  """
+  return None if arr is None else jnp.asarray(arr)[structure_idx]
+
+
+def _structure_bundle_kwargs(
+  structure_idx: Any,  # noqa: ANN401
+  *,
+  per_structure: dict[str, Any],
+  ligand_context: dict[str, Any],
+  shared: dict[str, Any],
+) -> dict[str, Any]:
+  """Every ``build_inference_bundle`` argument that depends on which structure is decoded.
+
+  The single source for all dispatch paths in :func:`_sample_batch` (debt #122): those
+  closures used to repeat this indexing inline, so a fix to one copy (e.g. #111) had to
+  be repeated in each. ``per_structure`` maps bundle kwarg names to per-structure arrays
+  (or None); ``ligand_context`` is ``_prepare_ligand_context``'s dict; ``shared`` holds
+  structure-independent kwargs passed through unchanged.
+  """
+  kwargs = {name: _take(arr, structure_idx) for name, arr in per_structure.items()}
+  for bundle_name, context_key in _LIGAND_BUNDLE_KEYS:
+    kwargs[bundle_name] = _take(ligand_context[context_key], structure_idx)
+  kwargs.update(shared)
+  return kwargs
 
 
 def _sample_batch(
@@ -189,6 +238,51 @@ def _sample_batch(
   state_weights = (
     jnp.asarray(spec.state_weights, dtype=jnp.float32) if spec.state_weights is not None else None
   )
+  per_structure = {
+    "coords": coords_for_vmap,
+    "mask": mask_for_vmap,
+    "residue_index": residue_index_for_vmap,
+    "chain_index": chain_index_for_vmap,
+    "fixed_mask": fixed_mask_for_vmap,
+    "fixed_tokens": fixed_tokens_for_vmap,
+    "tie_group_map": tie_map_for_vmap,
+    "state_position_map": state_position_map_for_vmap,
+    "structure_mapping": mapping_for_vmap,
+  }
+  # Every sample decodes in its own random order (fixed positions first, uniform over tie
+  # groups) unless the spec supplies a decoding_order_fn. The order key is DERIVED from the
+  # sample key (fold_in), so the decode's own key stream is untouched. Without this, a
+  # sample_ar bundle decodes in the fixed N->C order of schedule="fixed_n_to_c".
+  custom_order_fn = getattr(spec.run_spec.sampling, "decoding_order_fn", None)
+  order_num_groups = (
+    int(jnp.max(jnp.asarray(spec.tie_group_map))) + 1
+    if custom_order_fn is not None and spec.tie_group_map is not None
+    else None
+  )
+
+  def _with_sample_order(bundle: Any, sample_key: Any) -> Any:  # noqa: ANN401
+    return with_decoding_order(
+      bundle,
+      decoding_order_key(sample_key),
+      custom_order_fn,
+      order_num_groups,
+    )
+
+  def _bundle_kwargs(structure_idx: Any) -> dict[str, Any]:  # noqa: ANN401
+    # `bias` is read here, inside the traced closure, exactly where each inline copy read
+    # it before this helper existed -- so the refactor does not move the spec access.
+    bias = spec.run_spec.sampling.bias
+    return _structure_bundle_kwargs(
+      structure_idx,
+      per_structure=per_structure,
+      ligand_context=ligand_context,
+      shared={
+        "bias": jnp.asarray(bias, dtype=jnp.float32) if bias is not None else None,
+        "state_weights": state_weights,
+        "mode": "sample_ar",
+        "inference": True,
+      },
+    )
 
   # 3. Compute deterministic sample keys
   sample_keys = compute_sample_keys(
@@ -213,49 +307,10 @@ def _sample_batch(
     sample_decision = decision_for(batch_plan, AxisNames.N_SAMPLES)
 
     def _unified_call_kernel(key_samples, structure_idx, noise_val, temp_val):
-      c = coords_for_vmap[structure_idx]
-      m = mask_for_vmap[structure_idx]
-      ri = residue_index_for_vmap[structure_idx]
-      ci = chain_index_for_vmap[structure_idx]
-      fm = fixed_mask_for_vmap[structure_idx]
-      ft = fixed_tokens_for_vmap[structure_idx]
-
       bundle, config = build_inference_bundle(
-        coords=c,
-        mask=m,
-        residue_index=ri,
-        chain_index=ci,
+        **_bundle_kwargs(structure_idx),
         backbone_noise=noise_val,
-        fixed_mask=fm,
-        fixed_tokens=ft,
-        bias=jnp.asarray(spec.run_spec.sampling.bias, dtype=jnp.float32) if spec.run_spec.sampling.bias is not None else None,
-        tie_group_map=tie_map_for_vmap[structure_idx] if tie_map_for_vmap is not None else None,
-        state_weights=state_weights,
-        state_position_map=state_position_map_for_vmap[structure_idx]
-        if state_position_map_for_vmap is not None
-        else None,
-        ligand_coords=ligand_context["Y"][structure_idx]
-        if ligand_context["Y"] is not None
-        else None,
-        ligand_atom_types=ligand_context["Y_t"][structure_idx]
-        if ligand_context["Y_t"] is not None
-        else None,
-        ligand_mask=ligand_context["Y_m"][structure_idx]
-        if ligand_context["Y_m"] is not None
-        else None,
-        atom_37=ligand_context["atom_37"][structure_idx]
-        if ligand_context["atom_37"] is not None
-        else None,
-        atom_37_mask=ligand_context["atom_37_mask"][structure_idx]
-        if ligand_context["atom_37_mask"] is not None
-        else None,
-        chain_mask=ligand_context["chain_mask"][structure_idx]
-        if ligand_context["chain_mask"] is not None
-        else None,
-        structure_mapping=mapping_for_vmap[structure_idx] if mapping_for_vmap is not None else None,
         temperature=temp_val,
-        mode="sample_ar",
-        inference=True,
       )
 
       encode_key = jax.random.fold_in(base_key, structure_idx)
@@ -265,7 +320,7 @@ def _sample_batch(
         _sink(enc, jnp.int32(batch_idx), structure_idx, jnp.int32(0))
 
       def _run_one_sample(k):
-        res = plan.decode(enc, bundle, k, config)
+        res = plan.decode(enc, _with_sample_order(bundle, k), k, config)
         return res.sequence, res.logits
 
       return _dispatch_axis(sample_decision.strategy, _run_one_sample, key_samples)
@@ -295,52 +350,13 @@ def _sample_batch(
     sample_decision = decision_for(batch_plan, AxisNames.N_SAMPLES)
 
     def _unified_call_structure_fused(structure_idx):
-      c = coords_for_vmap[structure_idx]
-      m = mask_for_vmap[structure_idx]
-      ri = residue_index_for_vmap[structure_idx]
-      ci = chain_index_for_vmap[structure_idx]
-      fm = fixed_mask_for_vmap[structure_idx]
-      ft = fixed_tokens_for_vmap[structure_idx]
+      structure_kwargs = _bundle_kwargs(structure_idx)
 
       def _build_bundle(noise_val, temperature_val=jnp.float32(1.0)):
         return build_inference_bundle(
-          coords=c,
-          mask=m,
-          residue_index=ri,
-          chain_index=ci,
+          **structure_kwargs,
           backbone_noise=noise_val,
-          fixed_mask=fm,
-          fixed_tokens=ft,
-          bias=jnp.asarray(spec.run_spec.sampling.bias, dtype=jnp.float32) if spec.run_spec.sampling.bias is not None else None,
-          tie_group_map=tie_map_for_vmap[structure_idx] if tie_map_for_vmap is not None else None,
-          state_weights=state_weights,
-          state_position_map=state_position_map_for_vmap[structure_idx]
-          if state_position_map_for_vmap is not None
-          else None,
-          ligand_coords=ligand_context["Y"][structure_idx]
-          if ligand_context["Y"] is not None
-          else None,
-          ligand_atom_types=ligand_context["Y_t"][structure_idx]
-          if ligand_context["Y_t"] is not None
-          else None,
-          ligand_mask=ligand_context["Y_m"][structure_idx]
-          if ligand_context["Y_m"] is not None
-          else None,
-          atom_37=ligand_context["atom_37"][structure_idx]
-          if ligand_context["atom_37"] is not None
-          else None,
-          atom_37_mask=ligand_context["atom_37_mask"][structure_idx]
-          if ligand_context["atom_37_mask"] is not None
-          else None,
-          chain_mask=ligand_context["chain_mask"][structure_idx]
-          if ligand_context["chain_mask"] is not None
-          else None,
-          structure_mapping=mapping_for_vmap[structure_idx]
-          if mapping_for_vmap is not None
-          else None,
           temperature=temperature_val,
-          mode="sample_ar",
-          inference=True,
         )
 
       # Step 1: encode at each noise level using the noise axis strategy
@@ -373,7 +389,7 @@ def _sample_batch(
           _, t_config = _build_bundle(jnp.float32(0.0), temperature_val=temp_val)
 
           def _run_one_sample(k):
-            res = plan.decode(enc_k, decode_bundle, k, t_config)
+            res = plan.decode(enc_k, _with_sample_order(decode_bundle, k), k, t_config)
             return res.sequence, res.logits
 
           return _dispatch_axis(sample_decision.strategy, _run_one_sample, sample_keys)
@@ -403,49 +419,10 @@ def _sample_batch(
     # Path A: no fusion — standard encode-per-(structure, noise, temp) topology
     # -------------------------------------------------------------------------
     def _call_kernel(key_samples, structure_idx, noise_val, temp_val):
-      c = coords_for_vmap[structure_idx]
-      m = mask_for_vmap[structure_idx]
-      ri = residue_index_for_vmap[structure_idx]
-      ci = chain_index_for_vmap[structure_idx]
-      fm = fixed_mask_for_vmap[structure_idx]
-      ft = fixed_tokens_for_vmap[structure_idx]
-
       bundle, config = build_inference_bundle(
-        coords=c,
-        mask=m,
-        residue_index=ri,
-        chain_index=ci,
+        **_bundle_kwargs(structure_idx),
         backbone_noise=noise_val,
-        fixed_mask=fm,
-        fixed_tokens=ft,
-        bias=jnp.asarray(spec.run_spec.sampling.bias, dtype=jnp.float32) if spec.run_spec.sampling.bias is not None else None,
-        tie_group_map=tie_map_for_vmap[structure_idx] if tie_map_for_vmap is not None else None,
-        state_weights=state_weights,
-        state_position_map=state_position_map_for_vmap[structure_idx]
-        if state_position_map_for_vmap is not None
-        else None,
-        ligand_coords=ligand_context["Y"][structure_idx]
-        if ligand_context["Y"] is not None
-        else None,
-        ligand_atom_types=ligand_context["Y_t"][structure_idx]
-        if ligand_context["Y_t"] is not None
-        else None,
-        ligand_mask=ligand_context["Y_m"][structure_idx]
-        if ligand_context["Y_m"] is not None
-        else None,
-        atom_37=ligand_context["atom_37"][structure_idx]
-        if ligand_context["atom_37"] is not None
-        else None,
-        atom_37_mask=ligand_context["atom_37_mask"][structure_idx]
-        if ligand_context["atom_37_mask"] is not None
-        else None,
-        chain_mask=ligand_context["chain_mask"][structure_idx]
-        if ligand_context["chain_mask"] is not None
-        else None,
-        structure_mapping=mapping_for_vmap[structure_idx] if mapping_for_vmap is not None else None,
         temperature=temp_val,
-        mode="sample_ar",
-        inference=True,
       )
 
       encode_key = jax.random.fold_in(base_key, structure_idx)
@@ -455,7 +432,7 @@ def _sample_batch(
         _sink(enc, jnp.int32(batch_idx), structure_idx, jnp.int32(0))
 
       def _run_one_sample(k):
-        res = plan.decode(enc, bundle, k, config)
+        res = plan.decode(enc, _with_sample_order(bundle, k), k, config)
         return res.sequence, res.logits
 
       return _safe_map(_run_one_sample, key_samples, batch_size=samples_bs)
@@ -481,52 +458,13 @@ def _sample_batch(
     # Path B: with fusion — encode D times per structure, fuse → K, decode K×T×N
     # -------------------------------------------------------------------------
     def _call_structure_fused(structure_idx):
-      c = coords_for_vmap[structure_idx]
-      m = mask_for_vmap[structure_idx]
-      ri = residue_index_for_vmap[structure_idx]
-      ci = chain_index_for_vmap[structure_idx]
-      fm = fixed_mask_for_vmap[structure_idx]
-      ft = fixed_tokens_for_vmap[structure_idx]
+      structure_kwargs = _bundle_kwargs(structure_idx)
 
       def _build_bundle(noise_val, temperature_val=jnp.float32(1.0)):
         return build_inference_bundle(
-          coords=c,
-          mask=m,
-          residue_index=ri,
-          chain_index=ci,
+          **structure_kwargs,
           backbone_noise=noise_val,
-          fixed_mask=fm,
-          fixed_tokens=ft,
-          bias=jnp.asarray(spec.run_spec.sampling.bias, dtype=jnp.float32) if spec.run_spec.sampling.bias is not None else None,
-          tie_group_map=tie_map_for_vmap[structure_idx] if tie_map_for_vmap is not None else None,
-          state_weights=state_weights,
-          state_position_map=state_position_map_for_vmap[structure_idx]
-          if state_position_map_for_vmap is not None
-          else None,
-          ligand_coords=ligand_context["Y"][structure_idx]
-          if ligand_context["Y"] is not None
-          else None,
-          ligand_atom_types=ligand_context["Y_t"][structure_idx]
-          if ligand_context["Y_t"] is not None
-          else None,
-          ligand_mask=ligand_context["Y_m"][structure_idx]
-          if ligand_context["Y_m"] is not None
-          else None,
-          atom_37=ligand_context["atom_37"][structure_idx]
-          if ligand_context["atom_37"] is not None
-          else None,
-          atom_37_mask=ligand_context["atom_37_mask"][structure_idx]
-          if ligand_context["atom_37_mask"] is not None
-          else None,
-          chain_mask=ligand_context["chain_mask"][structure_idx]
-          if ligand_context["chain_mask"] is not None
-          else None,
-          structure_mapping=mapping_for_vmap[structure_idx]
-          if mapping_for_vmap is not None
-          else None,
           temperature=temperature_val,
-          mode="sample_ar",
-          inference=True,
         )
 
       # Step 1: encode at each noise level
@@ -555,7 +493,7 @@ def _sample_batch(
           _, t_config = _build_bundle(jnp.float32(0.0), temperature_val=temp_val)
 
           def _run_one_sample(k):
-            res = plan.decode(enc_k, decode_bundle, k, t_config)
+            res = plan.decode(enc_k, _with_sample_order(decode_bundle, k), k, t_config)
             return res.sequence, res.logits
 
           return _safe_map(_run_one_sample, sample_keys, batch_size=samples_bs)

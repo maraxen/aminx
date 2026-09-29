@@ -9,11 +9,12 @@ import jax.numpy as jnp
 from jaxtyping import PRNGKeyArray
 
 from aminx.inference import optimize_ste, sample_autoregressive
-from aminx.inference.bundle_builder import build_inference_bundle
+from aminx.inference.bundle_builder import build_inference_bundle, with_decoding_order
 from aminx.inference.logits import make_stage_set
 from aminx.registry import SAMPLERS
 from aminx.types.bundles import WaveScheduleBundle
 from aminx.types.protocols import ModelProtocol, SamplerFn
+from aminx.utils.autoregression import decoding_order_from_wave
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
 
 _AMINO_ACID_VOCAB = 21
@@ -166,23 +167,9 @@ def make_sample_sequences(
       inference_only: bool = False,
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
 
-      L = (
-        structure_coordinates.shape[1]
-        if structure_coordinates.ndim == 4
-        else structure_coordinates.shape[0]
-      )
-      S = structure_coordinates.shape[0] if structure_coordinates.ndim == 4 else 1
-
+      # Split unconditionally so the sampling key stream is the same whether or not the
+      # caller supplies a schedule.
       k_order, prng_key = jax.random.split(prng_key)
-      decoding_order, _ = decoding_order_fn(k_order, L, None, None)
-
-      from aminx.utils.autoregression import generate_ar_mask
-
-      ar_mask_single = generate_ar_mask(
-        decoding_order if decoding_order is not None else jnp.arange(L),
-        tie_group_map=tie_group_map,
-        num_groups=num_groups,
-      )
 
       bundle, config = build_inference_bundle(
         coords=structure_coordinates,
@@ -195,7 +182,7 @@ def make_sample_sequences(
         bias=bias,
         tie_group_map=tie_group_map,
         state_weights=state_weights,
-        ar_mask=ar_mask_single,
+        wave=wave_schedule,
         ligand_coords=ligand_coords,
         ligand_atom_types=ligand_atom_types,
         ligand_mask=ligand_mask,
@@ -203,16 +190,28 @@ def make_sample_sequences(
         mode="sample_ar",
         inference=True,
       )
+      # The wave schedule and the ar_mask must describe the SAME order (debt #1982): this
+      # used to pair a mask from one random permutation with the default N->C wave. Unless
+      # the caller supplied a schedule, set both from one drawn order -- by default the
+      # shared random design order (fixed positions first, uniform over tie groups); a
+      # non-default `decoding_order_fn` overrides it.
+      if wave_schedule is None:
+        custom_fn = None if decoding_order_fn is _DEFAULT_DECODING_ORDER_FN else decoding_order_fn
+        bundle = with_decoding_order(bundle, k_order, custom_fn, num_groups)
+      # Report the order the bundle's schedule actually decodes.
+      decoding_order = decoding_order_from_wave(bundle.wave, bundle.conditioning.tie_group_map[0])
       stage_set = make_stage_set(
         strategy=multi_state_strategy,
         strategy_temperature=multi_state_temperature,
         state_weights=state_weights,
       )
-      if wave_schedule is not None:
-        bundle = eqx.tree_at(lambda b: b.wave, bundle, wave_schedule)
-
       result = sample_autoregressive.kernel(
-        model, prng_key, bundle, config, stage_set, inference_only=inference_only,
+        model,
+        prng_key,
+        bundle,
+        config,
+        stage_set,
+        inference_only=inference_only,
       )
 
       return result.sequence.astype(jnp.int8), result.logits, decoding_order

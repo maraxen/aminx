@@ -10,7 +10,6 @@ import numpy as np
 from xtrax.run import ZarrStagingSink, derive_sink_spec
 
 from aminx.host._sampling_grid_lineage import (
-  GRID_SCHEMA_VERSION,
   _grid_iteration_arrays,
   _grid_job_seed_hash,
   _grid_manifest_row_hash,
@@ -31,6 +30,7 @@ from aminx.host.plan import (
   resolve_sample_start,
   resolve_target_samples,
 )
+from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
 from aminx.host.streaming_host import StreamingBatchHost
 from aminx.io.sink_provenance import (
   SINK_PROVENANCE_VERSION,
@@ -45,22 +45,9 @@ if TYPE_CHECKING:
   from aminx.run.specs import SamplingSpecification
 
 
-# REVERTED to "sampling_v1" (audit finding A, task_id `260910_aminx-sink-provenance-schema`,
-# code-review round on PR #154) -- see the matching revert comment on GRID_SCHEMA_VERSION
-# in `_sampling_grid_lineage.py` for why: this label change is not free even though this
-# constant itself doesn't feed the PRNG seed, because `GRID_SCHEMA_VERSION` and
-# `SAMPLING_SCHEMA_VERSION` are bumped together at every call site
-# (`GRID_SCHEMA_VERSION if spec.grid_mode else SAMPLING_SCHEMA_VERSION`), so keeping this
-# one in lockstep with the grid constant is what stops a future edit from re-introducing
-# the same schema-version/resume-safety coupling by mistake. The new fields this task adds
-# (logits_bias_semantics, prng_seed, aminx_version) are purely additive; absent on an older
-# store just means "written before these fields existed" -- aminx has no reader for these
-# stores yet, so this makes no claim about reader behavior. See
-# `aminx.io.sink_provenance.SINK_PROVENANCE_VERSION` for the hash-free way to distinguish
-# stores that carry these new fields, instead of bumping this schema label.
-SAMPLING_SCHEMA_VERSION = "sampling_v1"
-# GRID_SCHEMA_VERSION is re-exported (not redefined) from `_sampling_grid_lineage` --
-# that module is now the single source of truth; see the comment on its own definition.
+# Both GRID_SCHEMA_VERSION and SAMPLING_SCHEMA_VERSION are now imported from
+# schema_versions.py (single source of truth). See schema_versions.py for rationale
+# and coupling warnings.
 
 
 def _grid_lineage_attrs(grid_lineage: dict[str, int | str]) -> dict[str, Any]:
