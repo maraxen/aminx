@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: draft-r4
+status: draft-r5
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -29,6 +29,10 @@ Revision history:
   featurizer A0 with upstream gap rows and `present`/`pad_valid` mask table (retires r3
   `edge_valid`); per-wave redsox gate loop; tied last-member select; `nodes` fw recompute; sealed
   DecLayer fixture.
+- r4 → r5: AR masks use `present` only (refine/`nodes` keep `present·chain_M_pos`) + fixed-position
+  fixtures/controls; `knn_boundary_tie` detection/exclusion (stock features untouched); port
+  self-test wave; order-injection padding + tied oracle `randn` injection; gapped `sequences_to_score`
+  alignment.
 
 ## 0. Goal, non-goals, assumed decisions
 
@@ -288,13 +292,14 @@ Output length `L_total` (gap rows included), padded to `L_pad` with
 
 | Site | Mask |
 |---|---|
-| kNN (`mpnn.features(mask=present)`) | invalid pairs → +inf; `lax.top_k` lower-index-first tie-break ⇒ gap rows before pad rows; `K_static=min(48,L_pad)`; first `min(48,L_total)` slots of real rows = upstream set (`:1143-1150`) |
+| kNN (`mpnn.features(mask=present)`) | invalid pairs → +inf; `lax.top_k` lower-index-first tie-break ⇒ gap rows before pad rows; `K_static=min(48,L_pad)`; first `min(48,L_total)` slots of real rows = upstream set (`:1143-1150`) on non-tie rows (upstream invalid pairs get row D_max, `:1148`, never selected when #present > K). Structures with #present ≤ K_eff < L_total are `knn_boundary_tie` (host-detected): upstream topk breaks the D_max tie arbitrarily, so no fill reproduces it; aminx keeps +inf; stock `ProteinFeatures` untouched |
 | encoder `mask_V`/`mask_attend` | `present` (`:1789-1792`) |
 | `PottsHead` | `present[i]·pad_valid[E_idx[i,k]]`, then slot-0×eye (`:1795-1797`) |
 | `merge_pair` | reverse edge exists ∧ `pad_valid` both ends; no valid reverse → undivided (`etab_utils.py:176-183`); `exclude_self` ≡ slot `k==0` |
 | `potts_energy`, `positional_potts_energy` | `pad_valid` both ends (gap rows contribute 0 via row mask + zero `-`/`X` slots, as upstream) |
 | row kernel `attention_mask` (AR + `nodes`) | `nbr_valid[i,k] = pad_valid[E_idx[i,k]]` |
-| `mask_bw/mask_fw`, `S_true` branch, refine skip | `present` (·`chain_M_pos` where upstream multiplies it, `:1419`, `sample_seqs.py:346`) |
+| AR `mask_bw/mask_fw` (decoder, tied_decoder), `S_true` branch | `present` only (raw mask, `:1426-1428`, `:1620-1622`, `:1448`); `chain_M_pos` enters AR only via `cm` (order key + fixed/sampled select, `:1419`/`:1603`) |
+| `nodes`/refine `mask_bw/mask_fw`, refine skip | `present·chain_M_pos` (`sample_seqs.py:346,355`) |
 
 **Index space.** All driver per-position inputs (`fixed_positions`, `fixed_tokens`,
 `tied_positions`, `bias` rows, `omit_aa_per_position`) are 0-based over A0 rows; `mutant_csv` `pos`
@@ -304,9 +309,12 @@ fixtures are gap-free.
 **Gate (A0).** Field-level equality vs upstream `parse_PDB`+`tied_featurize` on: 2 example_pdbs;
 a numbering-gap chain with `L_total ≤ 48`; a gapped chain with `L_total > 48` and #present < 48; an
 insertion-code chain; a partial-backbone residue; each with `skip_gaps ∈ {False, True}`. `E_idx`
-compared as per-row sets. If a fixture's gap-row neighbour list differs (torch tie-break on an
-all-tie row), record §6.5b divergence `gap_row_knn_tiebreak` (only observable: `potts_etab` on edges
-incident to gap rows; those entries excluded from the wave comparison, listed by index).
+compared as per-row sets. Gap rows (all-tie): record §6.5b `gap_row_knn_tiebreak` (only
+observable: `potts_etab` on edges incident to gap rows; excluded, listed by index).
+`knn_boundary_tie` structures (#present ≤ K_eff < L_total): A0 compares only the deterministic
+subset `{j : d_ij < D_max_i} ⊆ E_idx[i]` on present rows; §6.5b `knn_boundary_tie` scope = all
+outputs of that structure; runtime `logger.warning`; excluded from exact waves and sidecars. Exact
+tiers use the gapped `L_total ≤ 48` fixture.
 `test_knob_semantics_skip_gaps` on the gapped fixture.
 
 ### 4.2 Potts head, etab conventions, padding
@@ -344,7 +352,7 @@ incident to gap rows; those entries excluded from the wave comparison, listed by
 | purpose / output_kind | Path | Stages / axes |
 |---|---|---|
 | `sample` (any mode/PSSM/tied/bias_by_res) | driver | `MPNNEncode → PottsARDecode → PottsSampleEnergy → [PottsRefine iff mode≠none] → sinks`; host ranking after last chunk; axes `samples`, `temperatures` |
-| `score:energy` | driver | `MPNNEncode → PottsHead → etab_energy → potts_energy`; axis `candidates` = `sequences_to_score` if non-empty, else the `score:ddg` resolution (mutant_fasta / mutant_csv / DMS), always plus WT; absolute energies; partitions never evaluated (upstream `ddG=False`) |
+| `score:energy` | driver | `MPNNEncode → PottsHead → etab_energy → potts_energy`; axis `candidates` = `sequences_to_score` if non-empty, else the `score:ddg` resolution (mutant_fasta / mutant_csv / DMS), always plus WT; absolute energies; partitions never evaluated (upstream `ddG=False`). Each `sequences_to_score` entry must have length L_total in A0 row order (sorted designed chains then sorted fixed chains, `tied_featurize :327`) with gap rows as `-`/`X`, else `ValueError` naming expected length + chain order; test `test_score_energy_gapped_alignment` |
 | `score:ddg` | driver | as energy; candidates = mutant_fasta / mutant_csv else single-mutant DMS (respecting `exclude_chains`); `ddg=E(mut)−E(wt)`; binding: axis `partition` (§4.4); `mean_norm` per PDB after ddG |
 | `score:nll`, `score:logits`, `jacobian`, `inspect` | MPNN fallback on `model.mpnn` | unchanged |
 
@@ -356,7 +364,7 @@ incident to gap rows; those entries excluded from the wave comparison, listed by
   **Row kernel (normative).** Once per structure, outside the scan: `rank_flat` (Tied, below;
   equals `argsort(order)` when every group is a singleton); `mask_attend[i,k] =
   rank_flat[E_idx[i,k]] < rank_flat[i]` (= upstream `order_mask_backward` gathered by `E_idx`,
-  `:1423-1426`/`:1616-1619`, O(L·K)); with `m = present·chain_M_pos` where upstream multiplies it:
+  `:1423-1426`/`:1616-1619`, O(L·K)); with `m = present` (AR; upstream raw mask, `:1426-1428`):
   `mask_bw = m[:,None]·mask_attend`; `mask_fw = m[:,None]·(1−mask_attend)`; `h_EXV_fw = mask_fw[...,None]·concatenate_neighbor_nodes(
   h_V, concatenate_neighbor_nodes(zeros_like(h_V), h_E, E_idx), E_idx)`. Step t:
   `h_ES_t = concatenate_neighbor_nodes(h_S, h_E[t:t+1], E_idx[t:t+1])`; per layer l:
@@ -372,7 +380,10 @@ incident to gap rows; those entries excluded from the wave comparison, listed by
   no torch in the aminx env; T0.2 greps `src/aminx/model/**` for other
   hardcoded float32 on encoder/decoder paths.
   Order `argsort((chain_mask·chain_M_pos·mask + 1e-4)·|randn|)` (`:1419-1421`),
-  `randn = jax.random.normal(key_order,(L,))`; injected `decoding_order (L,)` overrides. Masked rows
+  `randn = jax.random.normal(key_order,(L,))`; injected `decoding_order` has length L_total;
+  device order = `concatenate([injected, arange(L_total, L_pad)])`. Untied oracle: passed to
+  `decoder(decoding_order=)`. Tied oracle: inject `randn`, then pass the oracle's returned flattened
+  `decoding_order` to aminx (regroup-invariant; test asserts `rank_flat` equality). Masked rows
   take `S_true` (`:1448`); fixed rows `S_t·cm + S_true·(1−cm)` (`:1483`). Per-step probabilities via
   PSSMMix (below).
   **Tied (also covers untied: all singletons, `M_max=1`).** Host builds `tie_groups: int32 (L_pad,
@@ -382,7 +393,7 @@ incident to gap rows; those entries excluded from the wave comparison, listed by
   `present==0` rows**, then all-−1 rows. Host asserts groups disjoint with union `range(L_total)`;
   overlapping groups → `ValueError` (§6.5b). On device:
   ```python
-  key   = jnp.where(pad_valid, (cm*cmp*present + 1e-4)*jnp.abs(randn), jnp.inf)  # pad rows last
+  key   = jnp.where(pad_valid, (chain_mask*cmp*present + 1e-4)*jnp.abs(randn), jnp.inf)  # pad rows last
   order = decoding_order if injected else jnp.argsort(key)
   rank  = jnp.argsort(order)
   BIG   = jnp.iinfo(jnp.int32).max
@@ -645,6 +656,7 @@ already implements it). `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
 | Upstream bug | Anchor | aminx | Test |
 |---|---|---|---|
 | `optimize_fasta` asserts its own path, then reads `out_dir/out_name.fasta` | `sample_seqs.py:133-137` | reads `optimize_fasta` | `test_divergence_optimize_fasta_path` (oracle fixture uses path == `filename` so both agree) |
+| `knn_boundary_tie`: #present ≤ K_eff < L_total → upstream torch.topk breaks the row-D_max tie arbitrarily | `potts_mpnn_utils.py:1144-1150` | aminx +inf fill, lower-index-first; runtime warning; scope = all outputs of that structure; excluded from exact waves/sidecars | A0 deterministic-subset test |
 | Overlapping tied groups double-decode shared positions | `potts_mpnn_utils.py:1606-1614` | `ValueError` | `test_tied_overlap_raises` |
 | (pre-existing aminx, not upstream) stock MPNN decoder passes invalid-neighbour messages when `L_total<48<L_pad` | `decoder.py:144-147`; `features.py:165-184` | unchanged; PottsMPNN fallback parity only unpadded | backlog id filed in T0.2 |
 
@@ -684,16 +696,19 @@ scripts/redsox/run_gate.sh` on titanix (sidecar `scripts/redsox/run_gate.bth.tom
 tests pass; fail = any):
 0. `uv run --no-sync python3 scripts/redsox/gate_ids.py --out $OUT` → per-wave `ids_<W>.txt` /
    `files_<W>.txt` (union of alias `parity_test_ids` + every `tests/knob_semantics`, `tests/port`,
-   `tests/golden` test id, partitioned by wave; `__nonport__` holds all non-port ids + port selftest).
+   `tests/golden` test id, partitioned by wave; `__nonport__` holds all ids outside `tests/port/**` so
+   `tests/port/conftest.py` is never loaded in that wave; the port self-test is its own wave
+   `port_selftest` with `tests/port/targets/port_selftest.toml` + manifest).
 1. `rc=0; for W in __nonport__ $(ls tests/port/targets/*.toml | xargs -n1 basename -s .toml | sort); do AMINX_PORT_WAVE=$W AMINX_REDSOX_SELECT=$OUT/ids_$W.txt AMINX_REDSOX_OUTCOMES=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" $(cat $OUT/files_$W.txt) || rc=1; done`
-   (no `-m`). Every module under `tests/port/` except `tests/port/selftest/**` declares
+   (no `-m`). Every module under `tests/port/` (incl. selftest, `port_wave("port_selftest")`) declares
    `pytestmark = pytest.mark.port_wave("<wave>")` (missing marker = collection error); its ids go only
    to that wave's list. Hooks in `tests/conftest.py`, active only when those env vars are set:
    deselect (never skip) items whose `port_wave` ≠ `AMINX_PORT_WAVE` or whose nodeid ∉ ids file;
    `pytest.UsageError` if a listed id is not collected; `pytest_runtest_logreport` appends
    `{nodeid, wave, when, outcome, wasxfail}`. `passed_nodeids` = ids whose call phase passed in a
    record with `wave == declared wave`, no failed phase, no `wasxfail`; `skipped` never counts. Gate
-   passes iff `rc==0` and step 2 passes.
+   passes iff `rc==0` and step 2 passes. `tests/port/conftest.py` hooks return early if
+   `AMINX_PORT_WAVE == "__nonport__"` (defensive).
 2. `AMINX_REDSOX_OUTCOMES=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/redsox -q`
 redsox U1 reachability runs only as a smoke check (presence-only). T0.4 runs the gate on current
 aminx first (expected FAIL = implementation checklist). Follow-up filed: redsox CLI multi-target +
@@ -751,7 +766,7 @@ fail T2; retrace-per-call kernel must fail T5. Follow-up: `xtrax.port` pytest pl
 | `potts_merge_pair_d2` | `merge_pair(denom=2)` | no | exact / atol=1e-7 | 1 |
 | `potts_merge_pair_d4` | `merge_pair(denom=4,exclude_self)` | no | exact / atol=1e-7 | 1 |
 | `potts_energy` | `potts_energy` | no | rtol=1e-10 / rtol=1e-5 | 1 |
-| `potts_ar_decode` | `PottsARDecode` (+tied, PSSMMix) with injected uniforms/order | yes | exact tokens / match rate | 1 |
+| `potts_ar_decode` | `PottsARDecode` (+tied, PSSMMix) with injected uniforms/order; fixture with `fixed_positions` (`chain_M_pos=0` rows); negative control AR `m = present·chain_M_pos` must fail | yes | exact tokens / match rate | 1 |
 | `potts_refine` | `PottsRefine` (all modes) injected uniforms | yes | exact tokens / match rate | 1 |
 | `pottsmpnn_full` | etab_forward + teacher-forced log-probs | no | atol 1e-8 / log-prob 1e-4 | 1 per bucket |
 | `laser_layers` | GATv2/GVP/LN | no | rtol=1e-9 / rtol=1e-5 | 1 |
@@ -776,7 +791,7 @@ Every sidecar declares `pass`/`inconclusive`/`fail`, a measured-path negative co
 | `runner_goldens` (T0.5a in-memory at pre-refactor SHA; T0.5b Zarr at T0.0 merge SHA — Zarr paths TypeError before T0.0) | matrix {sample in-memory, sample Zarr, score nll, jacobian in-memory, jacobian Zarr, inspect} × 2 MPNN ids (1 proteinmpnn, 1 ligandmpnn) × 2 fixtures, pinned; `uv.lock` SHA-256, jax/jaxlib versions, titanix GPU index recorded; capture + compare same host/GPU | arrays byte-equal + dtype + shape; attrs equal on root and every group after dropping `_CORE_PROVENANCE_FIELDS` (`zarr_sink.py:34`); `metadata["specification"]` compared only on field names present at capture SHA; other metadata keys exact | — | any diff | `random_seed=1` must differ; planted change to one non-provenance attr must fail |
 | `potts_energy_parity` | `PottsMPNN/inputs/example_pdbs/*` + L=30 chain + 200 random seqs/structure | \|ΔE\| ≤ 1e-4 + 1e-5·\|E_up\| | ≤ 10× bound | > 10× | permute `etab_out` rows → fail; hand-built 3-residue etab with analytic E → 1e-12 (f64) |
 | `potts_ddg_megascale` | `energy_benchmark_datasets/megascale_test_subset.csv` (all rows; n in TOML) | max \|Δddg\| ≤ 1e-4 | (1e-4,1e-3] | > 1e-3 | skip transpose in `merge_pair` → fail |
-| `potts_ar_refine_exact` | example_pdbs, 50 seeds, injected uniforms/order, f64 | exact match = 1.0 | [0.99,1.0) | < 0.99 | wrong partition sign; N→C order → fail |
+| `potts_ar_refine_exact` | example_pdbs, 50 seeds, injected uniforms/order, f64 | exact match = 1.0 | [0.99,1.0) | < 0.99 | wrong partition sign; N→C order; AR `m = present·chain_M_pos` on a `fixed_positions` fixture → fail |
 | `potts_sample_dist` | distributional protocol, Potts conditions | see below | | | T×m; N→C (plain, T=1.0) |
 | `laser_score_parity` | `4jnj-1_prot.pdb` + 20 complexes from `databases/` (list pinned) | max \|Δ log-prob\| ≤ 1e-4 | (1e-4,1e-3] | > 1e-3 | permute one decoder layer → fail |
 | `laser_decode_e2e` | same 21, injected order, argmax | exact seq + χ-bin = 1.0 AND max circular \|Δchi_deg\| ≤ 1e-6° (f64) on chi_mask | — | otherwise | reversed order → < 1.0; aminx χ bin +1 mod Nbins → fail; offset := 0 → fail |

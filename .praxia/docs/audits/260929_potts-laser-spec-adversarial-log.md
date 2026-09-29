@@ -122,3 +122,8 @@ All C4-xx landed (tied rank_flat verified vs `new_decoding_order :1606-1614`, un
 - **C5-03 MINOR** `__nonport__` wave: port conftest `pytest_collection_modifyitems → load_port_target()` unconditional (xtrax `port/tests/conftest.py:218-225`) → crash. Fix: selftest own wave `port_selftest` (target+manifest) or conftest no-op for `__nonport__`.
 - **C5-04 MINOR** Order injection: injected order length L_total → `order = concat(injected, arange(L_total, L_pad))`; upstream tied_decoder/tied_sample take no decoding_order (`:1599,1604`) → oracle injects randn, aminx injects oracle's returned flattened order (regroup-invariant); rename `cm*cmp*present` → `chain_mask*cmp*present` in key snippet.
 - **C5-05 MINOR** score:energy `sequences_to_score` alignment for gapped structures (upstream strings include `-` rows, `run_utils.py:729-743`; etab rows sorted chain order `tied_featurize :327` vs strings chain_order `parse_PDB :177-195`). Fix: require length L_total in A0 row order with gap rows `-`/`X`, else ValueError; gapped-fixture test.
+
+# Round 5 — defender (Opus) — 4 CONCEDE / 1 PARTIAL (C5-02: D_max fill rejected — cannot reproduce torch's arbitrary tie-break, would touch shared ProteinFeatures incl. structure_mapping branch; unobservable on gap-free inputs; resolution = knn_boundary_tie detection + exclusion) / 0 REBUT
+Orchestrator-verified: upstream `mask_1D = mask` for mask_bw/fw (`:1426-1428`), chain_M_pos only in chain_mask (`:1419`), `_dist` D_max fill (`:1144-1150`).
+
+# Spec r5 written
