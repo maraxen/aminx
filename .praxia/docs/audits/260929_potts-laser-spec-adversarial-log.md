@@ -206,3 +206,8 @@ All C9-xx landed consistently.
 - **C10-M3** schemas (branch_manifest, sidecar_ledger) needed by T0.3 but owned by T0.4 → move to T0.3.
 - **C10-M4** selftest (v) missing: status≠completed; clean=="fail"; controls key set ≠ manifest; output_paths dir ≠ git_hash[:8].
 - **C10-M5** ancestor check breaks under squash/rebase merges (PR #112 precedent) → Z1 includes operator rerun of stale vehicle sidecars at final tree from clean detached worktree on titanix, or require merge commits.
+
+# Round 10 — defender (Opus) — 7 CONCEDE / 1 PARTIAL (C10-M1: weights already SHA-registered; only scope list widened + weights SHA in controls) / 0 REBUT
+Verified: cool tier path `<catalog>/runs/<slug>/run_<full-id>.parquet` atomically rewritten at `runner.py:732` (running) and `:1155` (final) (`catalog.py:38-47`); catalog_dir default `~/.bth/catalog` (`config.py:18,30`); aminx uv.lock lacks pyarrow → added to dev group (T0.4).
+
+# Spec r10 written

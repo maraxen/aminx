@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: draft-r9
+status: draft-r10
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -50,6 +50,10 @@ Revision history:
   validated via real bathos columns (ancestor + diff-scope freshness, argv mutant set,
   `--output-paths` controls file); gate writes outside tracked tree (`AMINX_PORT_AUDITS_PATH`,
   `/outputs/` gitignored); full-verdict coverage self-test; per-wave mutant reruns; LASEr pad rows.
+- r9 → r10: Python gate driver (bathos-resolvable sidecar); cool-tier parquet resolver, no in-gate
+  compact; three-label vehicle outcomes incl. inconclusive + mutant `error`; broadened freshness scope
+  + weights SHA check; AssertionError-only kill; schemas to T0.3; selftest (vi)/(vii) + full (v);
+  Z1 operator re-run of stale sidecars at final tree.
 
 ## 0. Goal, non-goals, assumed decisions
 
@@ -835,9 +839,14 @@ def test_parity_ids_passed():
            if any(i.split("::")[-1].startswith("test_knob_semantics_") and i in passed for i in r["parity_test_ids"])}
     assert NEW_FIELDS <= sem   # all fields of both Options + omit_aa, omit_aa_per_position, output_kind
 ```
-Gate script `scripts/redsox/run_gate.sh`, run as `bth run --project-slug aminx -- bash
-scripts/redsox/run_gate.sh` on titanix (sidecar `scripts/redsox/run_gate.bth.toml`; pass = all
-tests pass; fail = any):
+Gate script `scripts/redsox/run_gate.py`, run on titanix as `bth run --project-slug aminx -- uv run
+--no-sync python3 scripts/redsox/run_gate.py` (sidecar `scripts/redsox/run_gate.bth.toml`; a `bash`
+argv would leave bathos unable to resolve the sidecar, `runner.py:57-63`). `REPO` = first ancestor of
+`Path(__file__)` containing `pyproject.toml`. Steps 0–2 are `subprocess` calls with the argv shown;
+the script writes `{rc, step2_passed, n_ids, n_mutant_runs}` to `$BTH_RESULTS_PATH` and exits 0
+whenever it graded the tree (FAIL included), non-zero only on harness crash. `[outcomes]` disjoint:
+`pass = "rc = 0 AND step2_passed = true AND n_ids > 0"`,
+`fail = "NOT (rc = 0 AND step2_passed = true AND n_ids > 0)"`:
 0. `uv run --no-sync python3 scripts/redsox/gate_ids.py --out $OUT` → per-wave `ids_<W>.txt` /
    `files_<W>.txt` (union of alias `parity_test_ids` + every `tests/knob_semantics`, `tests/port`,
    `tests/golden` test id, partitioned by wave; `__nonport__` holds all ids outside `tests/port/**` so
@@ -849,7 +858,8 @@ tests pass; fail = any):
    to that wave's list. Hooks in `tests/conftest.py`, active only when those env vars are set:
    deselect (never skip) items whose `port_wave` ≠ `AMINX_PORT_WAVE` or whose nodeid ∉ ids file;
    `pytest.UsageError` if a listed id is not collected; `pytest_runtest_logreport` appends
-   `{nodeid, wave, when, outcome, wasxfail, mutant}` (`mutant` null on clean runs). `passed_nodeids`
+   `{nodeid, wave, when, outcome, wasxfail, mutant, exc_type}` (`mutant` null on clean runs;
+   `exc_type` = class name of `call.excinfo`, else null). `passed_nodeids`
    considers only records with `mutant is None`: an id passes iff its call phase passed in such a
    record with `wave == declared wave`, with no failed phase and no `wasxfail` among its `mutant is
    None` records; `skipped` never counts. `test_branch_coverage` groups records by `(mutant, nodeid)`:
@@ -860,24 +870,33 @@ tests pass; fail = any):
 1b. For each `branch_manifest` row with a pytest vehicle: group the row's `vehicle.nodeids` by
    declared wave (`__nonport__` for A0/B0 gates) and run one invocation per (row, wave), ids file =
    that group, `AMINX_PORT_WAVE` = that wave, `AMINX_PORT_MUTANT=<id>`, appended to `outcomes.jsonl`;
-   the row's verdict pools every group (≥1 vehicle id failed under the mutant); exit status not
+   the row's verdict pools every group (≥1 vehicle id whose `when=='call'` record under the mutant failed with
+   `exc_type=='AssertionError'`; any other failure type → `instrument_invalid`); exit status not
    folded into `rc` (judged by step 2).
 1c. Sidecar vehicles (validated here, never run here). For each sidecar slug S with
    `branch_manifest` rows, the owning task (or the gate operator, when the record is stale) runs, from
    a committed tree with `git status --porcelain` empty, on titanix:
    `bth run --project-slug aminx --output-paths $SC/S/<git-sha8>/branch_controls.json -- uv run --no-sync python3 scripts/parity/S.py --mutants <S's row ids, sorted, comma-joined> --controls-out $SC/S/<git-sha8>/branch_controls.json`
    with `SC=${AMINX_SIDECAR_OUT:-$HOME/.aminx/sidecars}` (absolute, outside every worktree, never
-   `/tmp`); then `bth compact` and commit `sidecar_ledger.toml` with the new id. The script writes
-   `branch_controls.json` = `{clean: "pass"|"fail", mutants: {id: "failed"|"passed"}}` and
-   `{clean, n_listed, n_failed}` to `$BTH_RESULTS_PATH`; S's `.bth.toml` `[outcomes]` declares,
-   disjointly, `pass = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"` and
-   `fail = "NOT (…)"` (bathos `outcome` = name of first matching label, `sidecar.py:696-712`).
-   `test_branch_coverage` first runs `bth compact`, then resolves each ledger id via `bth sql "SELECT
-   id,status,outcome,git_hash,git_dirty,sidecar_sha256,argv,output_paths FROM runs WHERE id='<id>'"`
-   and asserts: `status=='completed'` and `outcome=='pass'`; `git_dirty` false; `git merge-base
-   --is-ancestor <git_hash> HEAD`; `git diff --name-only <git_hash>..HEAD` touches nothing under
-   `src/aminx/model/**`, `src/aminx/families/**`, `src/aminx/host/family_*`, `scripts/parity/S*`,
-   `tests/port/mutants/**`, `aminx-oracles/shims/**`, `uv.lock` (the ledger itself is out of scope);
+   `/tmp`); then commit `sidecar_ledger.toml` with the new id. The script writes
+   `branch_controls.json` = `{clean: "pass"|"inconclusive"|"fail", mutants: {id:
+   "failed"|"passed"|"error"}, weights: {path: sha256}}` — `clean` is the §7.3 band label of the
+   unmutated measurement; a mutant is `"failed"` only if its measurement completed and landed in S's
+   §7.3 fail band (for sidecars without an inconclusive band: "otherwise"); an exception gives
+   `"error"`; `weights` lists every checkpoint loaded — and `{clean, n_listed, n_failed}` to
+   `$BTH_RESULTS_PATH`. S's `.bth.toml` `[outcomes]` are disjoint, with K = `n_listed > 0 AND n_failed =
+   n_listed`: `pass = "clean = 'pass' AND K"`, `inconclusive = "clean = 'inconclusive' AND K"`,
+   `fail = "NOT (clean IN ('pass','inconclusive') AND K)"` (bathos `outcome` = name of first matching
+   label, `sidecar.py:696-712`); the ledger accepts only `outcome=='pass'`.
+   The default `resolve_run(id)` reads the cool-tier fragment `<catalog>/runs/aminx/run_<id>.parquet`
+   (full id; `<catalog>` = aminx `.bth.toml` `catalog_dir`, else `~/.bth/catalog`; `catalog.py:38-47`,
+   columns `schema.py:27-54`) with pyarrow (added to the aminx dev group in T0.4); it never reads the
+   warm tier and the gate never runs `bth compact` (an in-run compact freezes in-flight rows,
+   `compact.py:957-962`). It asserts: `status=='completed'` and `outcome=='pass'`; `git_dirty` false;
+   `git merge-base --is-ancestor <git_hash> HEAD`; `git diff --name-only <git_hash>..HEAD` touches
+   nothing under `src/aminx/**`, `scripts/parity/S*`, `tests/port/**`, `aminx-oracles/**`,
+   `pyproject.toml`, `uv.lock` (the ledger itself is out of scope); every `branch_controls.json`
+   `weights` SHA-256 equals the checkpoint registry's SHA-256 at HEAD;
    `sidecar_sha256 == sha256(scripts/parity/S.bth.toml)` at HEAD (raw bytes, `sidecar.py:434`); the
    `--mutants` value in `argv`, as a set, equals S's manifest row ids; an `output_paths` entry ends in
    `/S/<git_hash[:8]>/branch_controls.json`, the file exists, its `mutants` key set equals S's row ids,
@@ -885,7 +904,7 @@ tests pass; fail = any):
    `instrument_invalid`. The gate host must hold the catalog (titanix).
 2. `AMINX_REDSOX_OUTCOMES=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/redsox -q`
    (incl. `test_branch_coverage`). `OUT=${AMINX_GATE_OUT:-$REPO/outputs/gate/<utc-ts>}` (absolute;
-   `/outputs/` is gitignored, T0.4); `run_gate.sh` exports `AMINX_PORT_AUDITS_PATH=$OUT/port_audits.jsonl`.
+   `/outputs/` is gitignored, T0.4); `run_gate.py` sets, in every child env, `AMINX_PORT_AUDITS_PATH=$OUT/port_audits.jsonl`.
 redsox U1 reachability runs only as a smoke check (presence-only). T0.4 runs the gate on current
 aminx first (expected FAIL = implementation checklist). Follow-up filed: redsox CLI multi-target +
 recursion + per-class aliases.
@@ -935,20 +954,26 @@ target` (xtrax reads pyproject only, `conftest.py:64-71`); CI iterates waves; (3
 `stochastic`: a stochastic wave without an injected-uniform oracle key is a T2/T3 error; (4) T2 runs
 in a scoped `jax.experimental.enable_x64()` fixture; (5) `pytest-timeout` added to dev deps
 (`conftest.py:214,232`); (6) `AMINX_PORT_AUDITS_PATH` overrides the `domain=port` audit path (xtrax
-hardcodes `REPO_ROOT/.praxia/audits.jsonl`, `conftest.py:277`); `run_gate.sh` sets it to
+hardcodes `REPO_ROOT/.praxia/audits.jsonl`, `conftest.py:277`); `run_gate.py` sets it to
 `$OUT/port_audits.jsonl` so the gate leaves the tracked tree clean. T5 uses `max_traces`.
 **Self-test first (T0.3):** sign-flipped kernel must fail T2; retrace-per-call kernel must fail T5;
 `tests/redsox/test_branch_coverage.py` delegates to `check_branch_coverage(manifest_path,
 outcomes_path, ledger_path, *, resolve_run, changed_paths, is_ancestor) ->
 Literal["pass","fail","instrument_invalid"]` in `tests/redsox/_coverage.py` (callables default to
-`bth sql`, `git diff --name-only <h>..HEAD`, `git merge-base --is-ancestor <h> HEAD`). The self-test
+the cool-tier parquet reader (§6.6 step 1c), `git diff --name-only <h>..HEAD`, `git merge-base --is-ancestor <h> HEAD`). The self-test
 injects fakes over synthetic fixtures in `tests/port/selftest_coverage/`, one per branch, asserting:
 (i) planted row `selftest_noop` whose mutant run passes → `instrument_invalid`; (ii) row with no
 mutant record → `instrument_invalid`; (iii) clean vehicle id failed → `fail`; (iv) all valid (clean
 passes, pytest mutant fails, sidecar record valid) → `pass`; (v) one sidecar fixture per broken
 condition → `instrument_invalid`: `git_dirty` true; `sidecar_sha256` mismatch; `outcome != "pass"`;
 argv mutant set ≠ manifest rows; a controls file with one mutant `"passed"`; missing controls file;
-record commit not an ancestor of HEAD; diff touching a scoped path; slug with no ledger entry. Follow-up: `xtrax.port` pytest plugin in the wheel.
+record commit not an ancestor of HEAD; diff touching a scoped path; `outcome == "inconclusive"`;
+weights SHA ≠ registry; `status != "completed"`; `clean == "fail"`; controls `mutants` key set ≠
+manifest rows (extra and missing); `output_paths` directory ≠ `git_hash[:8]`; slug with no ledger
+entry — every step-1c assertion has exactly one (v) fixture; (vi) default `resolve_run` against a
+temporary catalog holding only a cool-tier fragment resolves every field, missing fragment →
+`instrument_invalid`; (vii) row `selftest_raise` whose mutant raises `RuntimeError` →
+`instrument_invalid`. Follow-up: `xtrax.port` pytest plugin in the wheel.
 
 | Wave | Symbol | stochastic | tol f64 / f32 | max_traces |
 |---|---|---|---|---|
@@ -971,8 +996,9 @@ measured deviation.
 ### 7.3 Bathos sidecars (committed before running)
 
 Invocation `bth run --project-slug aminx -- uv run --no-sync python3 scripts/parity/<name>.py …`
-(titanix; L1/L2 local gates first); verification by record (`bth compact`; `bth sql "SELECT
-id,status,outcome,exit_code,command FROM runs WHERE id LIKE '<p>%'"`) + spot-check output paths.
+(titanix; L1/L2 local gates first); verification by record (the cool-tier fragment
+`run_<id>.parquet`, or `bth compact` then `bth sql "SELECT id,status,outcome,exit_code,command FROM
+runs WHERE id LIKE '<p>%'"` after the run has finished) + spot-check output paths.
 Every sidecar declares `pass`/`inconclusive`/`fail`, a measured-path negative control that must FAIL
 (else `instrument_invalid`), and a synthetic ground truth where applicable.
 
@@ -1027,8 +1053,8 @@ control is aminx at `m·T`.
 | T0.0 | **Sink run_id fix (prerequisite).** `aminx.host.sink_ids.sink_spec_for(spec, output_dir, *, flush_every=1, run_id=None) -> SinkSpec` calls pinned `xtrax.run.sink.derive_sink_spec(spec.run_spec, run_id=run_id or spec_run_id(spec), output_dir=Path(output_dir), format="zarr", flush_every=flush_every)` (`sink.py:61-105`). `spec_run_id(spec) = sha256(json.dumps(run_specification_to_json_dict(spec), sort_keys=True, separators=(",",":")).encode()).hexdigest()[:16]`; on `SpecJSONEncodeError` fall back to `xtrax.run.ident.new_run_id()` + `logger.warning`. `run_spec.run_id` never set (static field → retrace). Re-run policy: if `output_dir` holds a Zarr root whose `attrs["run_id"]` ≠ derived id → `ValueError(f"{output_dir} holds outputs of a different specification (run_id {old}); use a new output_dir or pass run_id=")`; same spec reopens (mode `a`, arrays overwrite). Spec-less sites: `DesignsWriter(..., run_id=None)` defaults to `sha256(str(Path(path).resolve()))[:16]`; `jacobian_profile.py` uses sha256 of canonical argv JSON. All five call sites (`host/streaming.py:80`, `host/runner.py:1225`, `io/designs.py:81`, `sampling/multistate_poe.py:605`, `scripts/analysis/jacobian_profile.py:187`) migrated | T0.5a | per-site tests: fresh dir writes expected root `run_id`; same spec reopens; different spec raises the aminx ValueError; in-memory goldens exact |
 | T0.1 | Vendor upstreams at pinned SHAs; `aminx-oracles/` env on titanix | — | files + manifest |
 | T0.2 | Probe report (§10) | T0.1 | appended to §10 |
-| T0.3 | `tests/port/` contract + self-test; `tests/redsox/_coverage.py` + `selftest_coverage/` fixtures (i)–(v) | — | selftest on titanix |
-| T0.4 | Extractor, reference surfaces, alias skeleton, exclusions, harness, `run_gate.sh`, `test_branch_coverage.py` wiring, `/outputs/` gitignore (bathos creates `outputs/<id8>` after capturing git state, `runner.py:901-903`), empty `branch_manifest.toml` + `sidecar_ledger.toml` schemas, mutant hook; run vs current aminx (FAIL baseline); file redsox follow-up + deferred items | T0.1, T0.3 | bathos run FAIL recorded |
+| T0.3 | `tests/port/` contract + self-test; `tests/redsox/_coverage.py` + `selftest_coverage/` fixtures (i)–(vii); `branch_manifest` / `sidecar_ledger` schemas (`tests/redsox/schemas/*.json`) | — | selftest on titanix |
+| T0.4 | Extractor, reference surfaces, alias skeleton, exclusions, harness, `run_gate.py` + `run_gate.bth.toml`, pyarrow in dev group, `test_branch_coverage.py` wiring, `/outputs/` gitignore (bathos creates `outputs/<id8>` after capturing git state, `runner.py:901-903`), empty `branch_manifest.toml` + `sidecar_ledger.toml` (schemas from T0.3), mutant hook; run vs current aminx (FAIL baseline); file redsox follow-up + deferred items | T0.1, T0.3 | bathos run FAIL recorded |
 | T0.5a | Runner goldens, in-memory rows, at pre-refactor SHA | — | `runner_goldens` sidecar (capture) |
 | T0.5b | Runner goldens, Zarr rows, at T0.0 merge SHA | T0.0 | `runner_goldens` sidecar (capture) |
 | T0.5 | FamilyDriver protocol, registry, runner dispatch + raise, `run_family_driver` (ZarrStagingSink channel, keys, ids/skips, inference mode), family Literal/derivation/consumer branches, `DecoderLayer` promote_types accumulation, L-DRV lint | T0.0, T0.2, T0.5a, T0.5b | unit tests; lint; goldens exact on titanix |
@@ -1049,7 +1075,7 @@ control is aminx at `m·T`.
 | B5 | `LaserJointDecode` + §5.3.1 | T0.3, B4 | wave `laser_decode_step`; `laser_decode_e2e`; pilot → `laser_sample_dist` |
 | B6 | RotamerBuilder (post) + PDB/FASTA sinks | T0.3, B5 | wave `laser_rotamers` |
 | B7 | proofreading (both), two-structure tied, remaining Laser Options | B5 | `laser_proofread_parity`; knob tests |
-| Z1 | redsox gate PASS on final tree | A5, A6, B6, B7 | `run_gate` sidecar PASS incl. `test_branch_coverage` |
+| Z1 | Operator, on titanix from a clean committed worktree at the final tree: re-runs (per §6.6 step 1c) every vehicle sidecar whose ledger record fails the ancestor or diff-scope check, commits `sidecar_ledger.toml`, then runs the gate | A5, A6, B6, B7 | Gate cool-tier record: `status=='completed'`, `outcome=='pass'`, `sidecar_sha256 == sha256(run_gate.bth.toml)` (non-empty), `git_dirty` false; includes `test_branch_coverage` |
 | Z2 | CLI docs + `using-aminx` skill | Z1 | — |
 
 **Stage → vehicle (every stage in the `[[branch]]` `stage` column must be listed here; the Vehicles
