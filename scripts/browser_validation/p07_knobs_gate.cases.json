@@ -572,6 +572,94 @@
     }
   },
   {
+    "name": "a_logprob_within_amended_bound",
+    "expect": "pass",
+    "result": {
+      "a_cases_total": 144,
+      "a_cases_bitwise_cpu": 144,
+      "a_cases_bitwise_web": 144,
+      "a_max_logprob_abs_diff": 0.00015,
+      "a_web_ok": true,
+      "alias_ok": true,
+      "knobs_live": 7,
+      "knobs_total": 7,
+      "ctrl_frozen_detected": true,
+      "ctrl_bad_gumbel_detected": true,
+      "ctrl_bad_shuffle_detected": true,
+      "b1_max_abs_nats": 0.0,
+      "b2_gumbel_tv_max": 0.01,
+      "b2_gumbel_p_min": 0.2,
+      "b2_order_p": 0.2,
+      "b2_order_fixed_first_violations": 0,
+      "b2_order_within_p": 0.2,
+      "b2_omitted_draws": 0,
+      "ctrl_uniform_order_detected": true,
+      "b2_n": 200000,
+      "order_n": 240000,
+      "browser_enabled": true,
+      "budget_exceeded": false,
+      "checks_complete": true,
+      "smoke": false,
+      "git_hash": "0000000000000000000000000000000000000000",
+      "git_clean": true,
+      "fixture_ids": [
+        "5L33"
+      ],
+      "buckets": [
+        128
+      ],
+      "versions": {
+        "jax": "0"
+      },
+      "status_note": "",
+      "export_ok": true
+    }
+  },
+  {
+    "name": "a_mismatch_logprob_beyond_amended_bound",
+    "expect": "a_mismatch",
+    "result": {
+      "a_cases_total": 144,
+      "a_cases_bitwise_cpu": 144,
+      "a_cases_bitwise_web": 144,
+      "a_max_logprob_abs_diff": 0.00025,
+      "a_web_ok": true,
+      "alias_ok": true,
+      "knobs_live": 7,
+      "knobs_total": 7,
+      "ctrl_frozen_detected": true,
+      "ctrl_bad_gumbel_detected": true,
+      "ctrl_bad_shuffle_detected": true,
+      "b1_max_abs_nats": 0.0,
+      "b2_gumbel_tv_max": 0.01,
+      "b2_gumbel_p_min": 0.2,
+      "b2_order_p": 0.2,
+      "b2_order_fixed_first_violations": 0,
+      "b2_order_within_p": 0.2,
+      "b2_omitted_draws": 0,
+      "ctrl_uniform_order_detected": true,
+      "b2_n": 200000,
+      "order_n": 240000,
+      "browser_enabled": true,
+      "budget_exceeded": false,
+      "checks_complete": true,
+      "smoke": false,
+      "git_hash": "0000000000000000000000000000000000000000",
+      "git_clean": true,
+      "fixture_ids": [
+        "5L33"
+      ],
+      "buckets": [
+        128
+      ],
+      "versions": {
+        "jax": "0"
+      },
+      "status_note": "",
+      "export_ok": true
+    }
+  },
+  {
     "name": "ctrl_blind_uniform_order",
     "expect": "ctrl_blind",
     "result": {
