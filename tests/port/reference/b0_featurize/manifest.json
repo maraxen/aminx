@@ -1,0 +1,31 @@
+{
+  "upstream_commit": "e70f2c6d765416f7e29d51bfd6d4e08496438878",
+  "fixtures": [
+    {
+      "name": "4jnj-1_prot",
+      "path": "/home/solab/repos/LASErMPNN/example_pdbs/4jnj-1_prot.pdb",
+      "sha256": "0a933729c4915cfee14ff34408a57e1d65fd98845df189ba79ad4f4d8470ae7e"
+    },
+    {
+      "name": "101m_1",
+      "path": "/home/solab/projects/aminx-260929-a0/tests/fixtures/laser/101m_1.pdb",
+      "sha256": "5ee11918c0c71703859cc057cd3225583fb397909ba0e294c1f97f8e39448a9f"
+    },
+    {
+      "name": "102m_1",
+      "path": "/home/solab/projects/aminx-260929-a0/tests/fixtures/laser/102m_1.pdb",
+      "sha256": "cfb756a7e48b87344d4c9fb76ff93b29596f6b400c207a0e45f53066358e6ee4"
+    },
+    {
+      "name": "103m_1",
+      "path": "/home/solab/projects/aminx-260929-a0/tests/fixtures/laser/103m_1.pdb",
+      "sha256": "f8edd971b7754e0c30f7e3ae56fa64ad120338d50708873aa4019f180210201d"
+    },
+    {
+      "name": "104m_1",
+      "path": "/home/solab/projects/aminx-260929-a0/tests/fixtures/laser/104m_1.pdb",
+      "sha256": "44f0347958f06f13b8bd7f171d94cb54d3665c419539247eb21a127a1ef98ed8"
+    }
+  ],
+  "npz_sha256": "93ab1bddd97bbea9c0b72f50fe3ac336f5768bd96a1f78c6b7003f03e83f727a"
+}

@@ -130,6 +130,9 @@ docs = [
 foldcomp = [
     { name = "foldcomp", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
+laser = [
+    { name = "prody", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
 tests = [
     { name = "beartype", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "biopython", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -193,6 +196,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=1.26" },
     { name = "optax", specifier = ">=0.2" },
     { name = "prody", marker = "extra == 'benchmark'", specifier = ">=2.6.1" },
+    { name = "prody", marker = "extra == 'laser'", specifier = ">=2.6.1" },
     { name = "proxide", specifier = ">=0.1.0a17", index = "https://pypi.org/simple" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "pyarrow", marker = "extra == 'tests'", specifier = ">=18" },
@@ -224,7 +228,7 @@ requires-dist = [
     { name = "xtrax", extras = ["io", "export"], specifier = "==0.4.0a10" },
     { name = "zstandard", specifier = ">=0.21.0" },
 ]
-provides-extras = ["benchmark", "docs", "tests", "dev", "foldcomp", "cpu", "cuda12"]
+provides-extras = ["laser", "benchmark", "docs", "tests", "dev", "foldcomp", "cpu", "cuda12"]
 
 [package.metadata.requires-dev]
 benchmark = [
