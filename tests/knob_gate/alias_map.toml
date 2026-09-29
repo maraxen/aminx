@@ -1,4 +1,4 @@
-# Alias skeleton for tests/redsox/reference_surfaces.py.
+# Alias skeleton for tests/knob_gate/reference_surfaces.py.
 # Spec-decided rows (§6.3, §6.4) are filled. Every other row is TODO.
 
 [[row]]

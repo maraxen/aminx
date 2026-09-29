@@ -56,6 +56,8 @@ docs = [
 tests = [
     "pytest",
     "pytest-cov",
+    "pytest-timeout>=2.3.1",
+    "pyarrow>=18",
     "chex",
     "ty",
     "foldcomp",
@@ -239,7 +241,17 @@ markers = [
     "requires_weights: test requires model weight files (bundled or HF Hub)",
     "knob_differential: control-knob reachability through the real CLI/manifest/spec/runner path",
     "alphabet_boundary: AF-vs-MPNN convention at a real parse/model boundary (never a fixture)",
+    "tier_1: graded port parity tier 1 (dtype and shape)",
+    "tier_2: graded port parity tier 2 (float64 numeric parity)",
+    "tier_3: graded port parity tier 3 (float32 numeric parity)",
+    "tier_4: graded port parity tier 4 (autodiff; blocking only when ad_critical)",
+    "tier_5: graded port parity tier 5 (trace budget, max_traces)",
+    "port_wave(name): port wave this item belongs to",
+    "redsox_gate: redsox gate harness test",
 ]
+
+[tool.port]
+target = "tests/port/targets/port_selftest.toml"
 
 [tool.ty.environment]
 root = ["src/aminx"]
@@ -273,7 +285,9 @@ dev = [
     "alphex>=0.1.0a1",
     "torch>=2.12.0",
     "pytest>=8.0.0",
+    "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.5.0",
+    "pyarrow>=18",
     # Heavy parity: packer test requires Bio (sc_utils PDB IO) and dm-tree (sc_utils import tree).
     "biopython>=1.83",
     "dm-tree>=0.1.8",

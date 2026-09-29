@@ -1,0 +1,12 @@
+[manifest]
+wave_id = "port_selftest"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:85e9c123703e096fdce8203c230f2d1153d56d69497e78106f9fb8d147101a96"
+created_at = "2026-09-29T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "port_selftest.kernel.sign_flipped_kernel"
+module_path = "tests/port/selftest/kernel.py"
+depends_on = []

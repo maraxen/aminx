@@ -12,7 +12,7 @@ _REPO = Path(__file__).resolve().parents[2]
 _POTTS = Path("/home/marielle/repos/PottsMPNN")
 _LASER = Path("/home/marielle/repos/LASErMPNN")
 _SCRIPT = _REPO / "scripts/redsox/extract_upstream_knobs.py"
-_OUT = _REPO / "tests/redsox/reference_surfaces.py"
+_OUT = _REPO / "tests/knob_gate/reference_surfaces.py"
 
 
 def test_reference_surfaces_match_pinned_upstreams() -> None:

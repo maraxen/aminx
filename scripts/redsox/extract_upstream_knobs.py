@@ -1320,7 +1320,7 @@ def _toml_string(text: str) -> str:
 def render_alias(rows: Sequence[AliasRow]) -> str:
   """Render the alias skeleton. One ``[[row]]`` per reference field."""
   blocks: list[str] = [
-    "# Alias skeleton for tests/redsox/reference_surfaces.py.",
+    "# Alias skeleton for tests/knob_gate/reference_surfaces.py.",
     "# Spec-decided rows (§6.3, §6.4) are filled. Every other row is TODO.",
     "",
   ]

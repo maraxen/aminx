@@ -145,8 +145,8 @@ Pytest vehicles (incl. A0/B0 gates) run clean and once per row with `AMINX_PORT_
 `tests/conftest.py` enters it at `pytest_sessionstart`; outcome records carry `mutant`, null when
 clean). Sidecar vehicles are never run by the gate: their owning task runs them (§6.6 step 1c) with
 `--mutants <comma-separated ids>` (each mutant a negative-control arm) and records the run in the
-committed `tests/redsox/sidecar_ledger.toml` (`[sidecar.<slug>] bth_run_id = "<id>"`).
-`tests/redsox/test_branch_coverage.py` (§6.6 step 2) asserts: every `conditional_ids.txt` id and every
+committed `tests/knob_gate/sidecar_ledger.toml` (`[sidecar.<slug>] bth_run_id = "<id>"`).
+`tests/knob_gate/test_branch_coverage.py` (§6.6 step 2) asserts: every `conditional_ids.txt` id and every
 §8 stage appears in a row; every clean run passed; every mutant run failed (pytest: ≥1 vehicle id
 failed under it; sidecar: the ledger record validates per §6.6 step 1c). Missing fixture, missing
 mutant run, passing mutant, or missing/stale/invalid ledger record → `instrument_invalid`.
@@ -826,14 +826,14 @@ rows (§6.4).
 `scripts/redsox/extract_upstream_knobs.py` (bathos-tracked, pure AST): every upstream `*.py` with
 argparse (glob) → dests; `sample_model`/entry-point parameters; PottsMPNN `cfg.inference.X`/
 `cfg.model.X` reads and `'X' in cfg.inference` tests ∪ example-YAML keys. Emits
-`tests/redsox/reference_surfaces.py`: one frozen dataclass per entry point, fields namespaced
+`tests/knob_gate/reference_surfaces.py`: one frozen dataclass per entry point, fields namespaced
 `<entrypoint>__<dest>`, header with upstream SHA; regeneration diff test. Plus a manual dataclass
 `pottsmpnn_input_list` (`pdb`, `designed_chains`, `fixed_chains`; line format
 `pdb|designed:chains|fixed:chains`, `sample_seqs.py:81-94`), marked `# MANUAL`, skipped by the diff.
 
 ### 6.3 Alias table
 
-`tests/redsox/alias_map.toml`, one row per reference field: `{ref, targets:[..], equivalence ∈
+`tests/knob_gate/alias_map.toml`, one row per reference field: `{ref, targets:[..], equivalence ∈
 {identical, semantic, exclusion, divergence}, reason?, parity_test_ids:[..], note}`. Namespacing ⇒
 no implicit name matches. Known non-identical rows: `*__chain_dict_json` and
 `pottsmpnn_input_list__{designed,fixed}_chains` → `[fixed_mask, chain_design_mask_json]` semantic;
@@ -924,7 +924,7 @@ live-knob treatment; none of them is an Options field. `DEFERRED_IDS` is a check
 
 ### 6.6 Gate
 
-redsox added as a dev dependency pinned to a SHA. Harness `tests/redsox/test_knob_superset.py`:
+redsox added as a dev dependency pinned to a SHA. Harness `tests/knob_gate/test_knob_superset.py`:
 
 ```python
 ROWS = tomllib.load(open(ALIAS, "rb"))["row"]
@@ -1024,7 +1024,7 @@ whenever it graded the tree (FAIL included), non-zero only on harness crash. `[o
    `/S/<git_hash[:8]>/branch_controls.json`, the file exists, its `mutants` key set equals S's row ids,
    every value `"failed"`, and `clean=="pass"`. Any failed assertion or missing record →
    `instrument_invalid`. The gate host must hold the catalog (titanix).
-2. `AMINX_REDSOX_OUTCOMES_READ=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/redsox -q`
+2. `AMINX_REDSOX_OUTCOMES_READ=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/knob_gate -q`
    (`AMINX_PORT_WAVE` unset ⇒ outcome hooks off)
    (incl. `test_branch_coverage`). `OUT=${AMINX_GATE_OUT:-$REPO/outputs/gate/<utc-ts>}` (absolute;
    `/outputs/` is gitignored, T0.4); `run_gate.py` sets, in every child env, `AMINX_PORT_AUDITS_PATH=$OUT/port_audits.jsonl`.
@@ -1083,9 +1083,9 @@ in a scoped `jax.experimental.enable_x64()` fixture; (5) `pytest-timeout` added 
 hardcodes `REPO_ROOT/.praxia/audits.jsonl`, `conftest.py:277`); `run_gate.py` sets it to
 `$OUT/port_audits.jsonl` so the gate leaves the tracked tree clean. T5 uses `max_traces`.
 **Self-test first (T0.3):** sign-flipped kernel must fail T2; retrace-per-call kernel must fail T5;
-`tests/redsox/test_branch_coverage.py` delegates to `check_branch_coverage(manifest_path,
+`tests/knob_gate/test_branch_coverage.py` delegates to `check_branch_coverage(manifest_path,
 outcomes_path, ledger_path, *, resolve_run, changed_paths, is_ancestor) ->
-Literal["pass","fail","instrument_invalid"]` in `tests/redsox/_coverage.py` (callables default to
+Literal["pass","fail","instrument_invalid"]` in `tests/knob_gate/_coverage.py` (callables default to
 the cool-tier parquet reader (§6.6 step 1c), `git diff --name-only <h>..HEAD`, `git merge-base --is-ancestor <h> HEAD`). The self-test
 injects fakes over synthetic fixtures in `tests/port/selftest_coverage/`, one per branch, asserting:
 (i) planted row `selftest_noop` whose mutant run passes → `instrument_invalid`; (ii) row with no
@@ -1180,7 +1180,7 @@ control is aminx at `m·T`.
 | T0.0 | **DONE on main (`9e6c340a`), r13.** **Sink run_id fix (prerequisite).** `aminx.host.sink_ids.sink_spec_for(spec, output_dir, *, flush_every=1, run_id=None) -> SinkSpec` calls pinned `xtrax.run.sink.derive_sink_spec(spec.run_spec, run_id=run_id or spec_run_id(spec), output_dir=Path(output_dir), format="zarr", flush_every=flush_every)` (`sink.py:61-105`). `spec_run_id(spec) = sha256(json.dumps(run_specification_to_json_dict(spec), sort_keys=True, separators=(",",":")).encode()).hexdigest()[:16]`; on `SpecJSONEncodeError` fall back to `xtrax.run.ident.new_run_id()` + `logger.warning`. `run_spec.run_id` never set (static field → retrace). Re-run policy: if `output_dir` holds a Zarr root whose `attrs["run_id"]` ≠ derived id → `ValueError(f"{output_dir} holds outputs of a different specification (run_id {old}); use a new output_dir or pass run_id=")`; same spec reopens (mode `a`, arrays overwrite). Spec-less sites: `DesignsWriter(..., run_id=None)` defaults to `sha256(str(Path(path).resolve()))[:16]`; `jacobian_profile.py` uses sha256 of canonical argv JSON. All five call sites (`host/streaming.py:80`, `host/runner.py:1225`, `io/designs.py:81`, `sampling/multistate_poe.py:605`, `scripts/analysis/jacobian_profile.py:187`) migrated | T0.5a | per-site tests: fresh dir writes expected root `run_id`; same spec reopens; different spec raises the aminx ValueError; in-memory goldens exact |
 | T0.1 | Vendor upstreams at pinned SHAs; `aminx-oracles/` env on titanix | — | files + manifest |
 | T0.2 | Probe report (§10) | T0.1 | DONE: `research/260929_potts-laser-t02-probe-report.md`; corrections applied in r12 |
-| T0.3 | `tests/port/` contract + self-test; `tests/redsox/_coverage.py` + `selftest_coverage/` fixtures (i)–(vii); `branch_manifest` / `sidecar_ledger` schemas (`tests/redsox/schemas/*.json`) | — | selftest on titanix |
+| T0.3 | `tests/port/` contract + self-test; `tests/knob_gate/_coverage.py` + `selftest_coverage/` fixtures (i)–(vii); `branch_manifest` / `sidecar_ledger` schemas (`tests/knob_gate/schemas/*.json`) | — | selftest on titanix |
 | T0.4 | Extractor, reference surfaces, alias skeleton, exclusions, harness, `run_gate.py` + `run_gate.bth.toml`, pyarrow in dev group, `test_branch_coverage.py` wiring, `/outputs/` gitignore (bathos creates `outputs/<id8>` after capturing git state, `runner.py:901-903`), empty `branch_manifest.toml` + `sidecar_ledger.toml` (schemas from T0.3), mutant hook; run vs current aminx (FAIL baseline); file debt for `run_predict_partial_charges` (deferred items #2067–#2070 and redsox #2071 already filed 260929) | T0.1, T0.3 | bathos run FAIL recorded |
 | D1 | **Resolve debt #2051**: `Aminx.__call__` honours `inference` (no encoder dropout at inference on freshly constructed models); runner path already forces `inference_mode` (`host/prep.py:200`) so runner outputs are unchanged; fallback purposes of PottsMPNN (`model.mpnn`) depend on this | — | unit test: two inference calls on a freshly constructed model are bit-identical; negative control dropout-on differs; runner outputs unchanged (T0.5a captured after) |
 | D2 | **SUPERSEDED on main by #160 (`random_design_order`); not carried after the r13 rebase.** ~~Resolve debt #2017~~: MPNN `random_decoding_order` places fixed/non-designed positions first as the reference does (`argsort((chain_mask+1e-4)·\|randn\|)`); intentional change to MPNN sampling order when fixed positions are set | — | parity test vs reference ordering rule on a fixed-positions fixture; negative control (old order) fails; outputs without fixed positions byte-identical |

@@ -1,0 +1,23 @@
+{
+  "expected": "pass",
+  "ancestor": true,
+  "changed": [],
+  "registry": {
+    "weights/potts.bin": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "sidecar_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "run_id": "run-vii_b",
+  "run": {
+    "status": "completed",
+    "outcome": "pass",
+    "git_dirty": false,
+    "git_hash": "0123456789abcdef0123456789abcdef01234567",
+    "sidecar_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "argv": [
+      "python"
+    ]
+  },
+  "dir8": null,
+  "write_controls": false,
+  "use_default_resolve": false
+}
