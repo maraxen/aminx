@@ -180,3 +180,14 @@ All C7-xx landed (T_eff matches `run_inference.py:541-544`; skip_calc matches `s
 Verified bathos runs columns (`compact.py:352-412`: git_hash, git_dirty, status, outcome, sidecar_sha256, output_paths, parent_run_id…; no per-control column, metadata dropped @84be544e) → C8-02 uses script-emitted `branch_controls.json` in output_paths. Upstream `sample_seqs.py:40-41,130-157,338-339` verified for C8-M1/C8-03.
 
 # Spec r8 written
+
+# Round 9 — challenger (Opus, spec r8 @ dce0ca0a, strict rubric) — NOT converged: 0 BLOCKER / 3 MAJOR / 5 MINOR
+All C8-xx landed; bathos columns git_hash/git_dirty/sidecar_sha256(file bytes, `sidecar.py:434`)/output_paths exist. Order keys verified (`potts_mpnn_utils.py:1415,1419-1421`; `sample_seqs.py:222,338-339`; `pdb_dataset.py:1637-1648`).
+- **C9-01 MAJOR(b)** `git_dirty false` unsatisfiable: step 1 port waves write tracked `.praxia/audits.jsonl` (xtrax `port/tests/conftest.py:277`) before step 1c; bathos captures git state pre-launch (`runner.py:604`), dirty incl. untracked (`cisternal/telemetry/git_state.py:224-225`); `$OUT` unlocated; `outputs/` not gitignored. Fix: clean-tree precondition; step 1c first or all gate writes outside worktree (`AMINX_PORT_AUDITS_PATH`), `/outputs/` gitignore.
+- **C9-02 MAJOR(b)** `branch_controls.json` never in output_paths: bathos records only `bth run --output-paths` + files under `BTH_OUTPUT_DIR=cwd/outputs/<id8>` (`runner.py:899-903,1016-1022`). Fix: `--output-paths`, absolute durable $OUT.
+- **C9-03 MAJOR(b)** check_branch_coverage selftest only exercises "missing mutant run" → a checker ignoring surviving mutants passes selftest + Z1. Fix: synthetic fixtures asserting (i) surviving noop → instrument_invalid, (ii) missing → invalid, (iii) all good → pass, (iv) sidecar dirty/stale hash/mismatched controls → invalid; T0.3 depends on T0.4; ownership of branch_manifest rows (stage tasks) vs harness (T0.4).
+- **C9-M1** reuse_run_id fallback unusable (git_hash==HEAD still asserted) → swap HEAD-equality for diff-scope on reuse rows.
+- **C9-M2** `--mutant` (§0) vs `--mutants` (§6.6) → unify.
+- **C9-M3** parent_run_id=gate run false (set only from derived_from, `runner.py:650,688-707`; gate id not passed to children `:899-903`) → delete.
+- **C9-M4** step 1b rows mixing waves → group nodeids by declared wave, one invocation per wave.
+- **C9-M5** §5.4a pad rows in LASEr order: key +inf, after L_total, excluded from injected stream (upstream `curr_batch_mask` `pdb_dataset.py:1625-1633`).
