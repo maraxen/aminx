@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: converged-r12-t02
+status: converged-r13-main
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -59,6 +59,20 @@ Revision history:
   outcome hooks keyed on `AMINX_PORT_WAVE`, step 2 reads `AMINX_REDSOX_OUTCOMES_READ`; per-arm
   subprocess for sidecar mutants; required artifact `sha256` in registry; freshness scope covers
   `scripts/parity/**`, `scripts/recapture/**`.
+- r12 → r13 (**rebased onto origin/main 79956bd0**, user 260929: the sprint branch had been cut
+  from local `dogfood/xtrax-probing-stage2`; now `wt/260929-potts-laser-main`, PR supersedes #164):
+  (a) **T0.0 done on main** by `9e6c340a` ("migrate SinkSpec construction across xtrax a7's required
+  run_id") — no sprint task; T0.5b no longer blocked externally. (b) **D2 superseded:** main #160
+  (`79956bd0`) already fixes #2017 via `utils/decoding_order.random_design_order` (fixed-first,
+  group-level uniform, explicit total order) as the default sampling order; the D2 commit is not
+  carried. (c) **xtrax pin is now `xtrax[io,export]==0.4.0a10` (PyPI)**, not git `56a9f551`: every
+  xtrax-derived fact in this spec (SinkSpec/ZarrStagingSink/derive_sink_spec signatures, port/
+  contract, stages API) is **re-verified against 0.4.0a10 by probe T0.2b** before T0.5; prose that
+  disagrees is fixed per §0. (d) main's #160 also derives the MPNN sampler's wave from the decoding
+  order (`WaveScheduleBundle.from_decoding_order`), so §1 rows describing the MPNN AR path as
+  "order from a fixed N→C wave schedule" are historical; U-a (all PottsMPNN sampling in the driver)
+  is unaffected. (e) Source anchors (file:line) into `src/aminx/**` were taken at the dogfood base
+  and may have drifted; per §0 the code at HEAD wins.
 - r11 → r12 (T0.2 corrections; prose fixed to match pinned upstream per the §0 normative clause;
   evidence `research/260929_potts-laser-t02-probe-report.md`): §5.4a order tiers (upstream inference
   never sets `extra_atom_contact_mask`, tier 2 empty); LASEr stored `seq_logits` are post-min-p (§5.3
@@ -1163,13 +1177,13 @@ control is aminx at `m·T`.
 
 | ID | Task | Depends | Gate |
 |---|---|---|---|
-| T0.0 | **(Owned by a parallel session per user 260929 — external dependency here; only T0.5b waits on it.)** **Sink run_id fix (prerequisite).** `aminx.host.sink_ids.sink_spec_for(spec, output_dir, *, flush_every=1, run_id=None) -> SinkSpec` calls pinned `xtrax.run.sink.derive_sink_spec(spec.run_spec, run_id=run_id or spec_run_id(spec), output_dir=Path(output_dir), format="zarr", flush_every=flush_every)` (`sink.py:61-105`). `spec_run_id(spec) = sha256(json.dumps(run_specification_to_json_dict(spec), sort_keys=True, separators=(",",":")).encode()).hexdigest()[:16]`; on `SpecJSONEncodeError` fall back to `xtrax.run.ident.new_run_id()` + `logger.warning`. `run_spec.run_id` never set (static field → retrace). Re-run policy: if `output_dir` holds a Zarr root whose `attrs["run_id"]` ≠ derived id → `ValueError(f"{output_dir} holds outputs of a different specification (run_id {old}); use a new output_dir or pass run_id=")`; same spec reopens (mode `a`, arrays overwrite). Spec-less sites: `DesignsWriter(..., run_id=None)` defaults to `sha256(str(Path(path).resolve()))[:16]`; `jacobian_profile.py` uses sha256 of canonical argv JSON. All five call sites (`host/streaming.py:80`, `host/runner.py:1225`, `io/designs.py:81`, `sampling/multistate_poe.py:605`, `scripts/analysis/jacobian_profile.py:187`) migrated | T0.5a | per-site tests: fresh dir writes expected root `run_id`; same spec reopens; different spec raises the aminx ValueError; in-memory goldens exact |
+| T0.0 | **DONE on main (`9e6c340a`), r13.** **Sink run_id fix (prerequisite).** `aminx.host.sink_ids.sink_spec_for(spec, output_dir, *, flush_every=1, run_id=None) -> SinkSpec` calls pinned `xtrax.run.sink.derive_sink_spec(spec.run_spec, run_id=run_id or spec_run_id(spec), output_dir=Path(output_dir), format="zarr", flush_every=flush_every)` (`sink.py:61-105`). `spec_run_id(spec) = sha256(json.dumps(run_specification_to_json_dict(spec), sort_keys=True, separators=(",",":")).encode()).hexdigest()[:16]`; on `SpecJSONEncodeError` fall back to `xtrax.run.ident.new_run_id()` + `logger.warning`. `run_spec.run_id` never set (static field → retrace). Re-run policy: if `output_dir` holds a Zarr root whose `attrs["run_id"]` ≠ derived id → `ValueError(f"{output_dir} holds outputs of a different specification (run_id {old}); use a new output_dir or pass run_id=")`; same spec reopens (mode `a`, arrays overwrite). Spec-less sites: `DesignsWriter(..., run_id=None)` defaults to `sha256(str(Path(path).resolve()))[:16]`; `jacobian_profile.py` uses sha256 of canonical argv JSON. All five call sites (`host/streaming.py:80`, `host/runner.py:1225`, `io/designs.py:81`, `sampling/multistate_poe.py:605`, `scripts/analysis/jacobian_profile.py:187`) migrated | T0.5a | per-site tests: fresh dir writes expected root `run_id`; same spec reopens; different spec raises the aminx ValueError; in-memory goldens exact |
 | T0.1 | Vendor upstreams at pinned SHAs; `aminx-oracles/` env on titanix | — | files + manifest |
 | T0.2 | Probe report (§10) | T0.1 | DONE: `research/260929_potts-laser-t02-probe-report.md`; corrections applied in r12 |
 | T0.3 | `tests/port/` contract + self-test; `tests/redsox/_coverage.py` + `selftest_coverage/` fixtures (i)–(vii); `branch_manifest` / `sidecar_ledger` schemas (`tests/redsox/schemas/*.json`) | — | selftest on titanix |
 | T0.4 | Extractor, reference surfaces, alias skeleton, exclusions, harness, `run_gate.py` + `run_gate.bth.toml`, pyarrow in dev group, `test_branch_coverage.py` wiring, `/outputs/` gitignore (bathos creates `outputs/<id8>` after capturing git state, `runner.py:901-903`), empty `branch_manifest.toml` + `sidecar_ledger.toml` (schemas from T0.3), mutant hook; run vs current aminx (FAIL baseline); file debt for `run_predict_partial_charges` (deferred items #2067–#2070 and redsox #2071 already filed 260929) | T0.1, T0.3 | bathos run FAIL recorded |
 | D1 | **Resolve debt #2051**: `Aminx.__call__` honours `inference` (no encoder dropout at inference on freshly constructed models); runner path already forces `inference_mode` (`host/prep.py:200`) so runner outputs are unchanged; fallback purposes of PottsMPNN (`model.mpnn`) depend on this | — | unit test: two inference calls on a freshly constructed model are bit-identical; negative control dropout-on differs; runner outputs unchanged (T0.5a captured after) |
-| D2 | **Resolve debt #2017**: MPNN `random_decoding_order` places fixed/non-designed positions first as the reference does (`argsort((chain_mask+1e-4)·\|randn\|)`); intentional change to MPNN sampling order when fixed positions are set | — | parity test vs reference ordering rule on a fixed-positions fixture; negative control (old order) fails; outputs without fixed positions byte-identical |
+| D2 | **SUPERSEDED on main by #160 (`random_design_order`); not carried after the r13 rebase.** ~~Resolve debt #2017~~: MPNN `random_decoding_order` places fixed/non-designed positions first as the reference does (`argsort((chain_mask+1e-4)·\|randn\|)`); intentional change to MPNN sampling order when fixed positions are set | — | parity test vs reference ordering rule on a fixed-positions fixture; negative control (old order) fails; outputs without fixed positions byte-identical |
 | T0.5a | Runner goldens, in-memory rows, captured **after D1+D2 land** (goldens freeze corrected behaviour; §7.3 row) | D1, D2 | `runner_goldens` sidecar (capture) |
 | T0.5b | Runner goldens, Zarr rows, at T0.0 merge SHA | T0.0 | `runner_goldens` sidecar (capture) |
 | T0.5 | FamilyDriver protocol, registry, runner dispatch + raise, `run_family_driver` (ZarrStagingSink channel, keys, ids/skips, inference mode), family Literal/derivation/consumer branches, `DecoderLayer` promote_types accumulation, L-DRV lint | T0.0, T0.2, T0.5a, T0.5b | unit tests; lint; goldens exact on titanix |
