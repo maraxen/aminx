@@ -87,7 +87,7 @@ plotting; migrating TRW `aminx.potts.PottsModel`; LASEr partial-charge entry poi
 gradient (T4) consumers.
 
 **Assumed decisions (defaults applied; user may override — log U1–U5, U-a–U-c).**
-- U1: LASEr is a FamilyDriver; MPNN contracts (`StageSet`, `EncoderOutput`, `ModelProtocol`,
+- U1 (**user-confirmed 260929**, "own driver, but still xtrax composed"): LASEr is a FamilyDriver, xtrax-composed per §0/L-DRV; MPNN contracts (`StageSet`, `EncoderOutput`, `ModelProtocol`,
   `DecodeMode`, `make_inference_plan`, `AutoregressiveDecode`, `kernel_dispatch`) unchanged.
 - U2/U-b: **bit-parity** for all numerical and sampling semantics incl. quirks (§6.5); pure I/O
   plumbing bugs are fixed and recorded as divergences (§6.5b). Family defaults follow upstream.
@@ -320,6 +320,10 @@ New `decisions/260929_pottsmpnn-lasermpnn-family-drivers.md` (`amends: 260605`):
   `DecoderLayer` modules; its nll/logits scoring and jacobian/inspect run the unmodified MPNN paths
   on the embedded `Aminx` core. 260605 Option III (EncoderOutput widening) stays rejected.
 - LASErMPNN is a FamilyDriver with its own encoder-output/result types; MPNN contracts not widened.
+  Its own driver does **not** exempt it from composition: `LaserDriver` is xtrax-composed under the
+  same §0 normative definition and L-DRV lint as PottsMPNN (eqx stage modules; samples/temperatures/
+  ligand_atoms/focus_residue/decoding_order/dropout_seed as xtrax axes via `BatchPlanner`; proofread
+  and tied reductions as `AxisBoundary` Fuses; export via xtrax `ZarrStagingSink`).
 - New modules: `aminx.model.potts_mpnn`, `aminx.families.potts_mpnn`, `aminx.model.laser`,
   `aminx.families.laser`, `aminx.host.family_driver`, `aminx.host.family_runner`; L-DRV R5.
 - `potts/model.py` docstring: one-line disambiguation pointer.
@@ -782,8 +786,9 @@ records name/polarity inversion);
 ### 6.4 Exclusions
 
 `reason ∈ {io_only, device, visualization, training_only, checkpoint_derived, no_op, internal,
-duplicate, deferred:<backlog#>}`. Deferred (v1): `entropy_decoder`, `mutation_search.*`, CA-only,
-MSA vocab-22, `run_predict_partial_charges.*`; `run_inference_ligandmpnn.py`,
+duplicate, deferred:<debt#>}`. Deferred (v1), filed as aminx tech debt 260929: `entropy_decoder` →
+`deferred:2069`; `mutation_search.*` → `deferred:2070`; CA-only → `deferred:2068`; MSA vocab-22 →
+`deferred:2067`; `run_predict_partial_charges.*` → `deferred:<filed in T0.4>`; `run_inference_ligandmpnn.py`,
 `run_batch_inference_ligandmpnn.py` → `duplicate` if T0.2 confirms they drive LigandMPNN (aminx
 already implements it). `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
 
@@ -922,8 +927,8 @@ whenever it graded the tree (FAIL included), non-zero only on harness crash. `[o
    (incl. `test_branch_coverage`). `OUT=${AMINX_GATE_OUT:-$REPO/outputs/gate/<utc-ts>}` (absolute;
    `/outputs/` is gitignored, T0.4); `run_gate.py` sets, in every child env, `AMINX_PORT_AUDITS_PATH=$OUT/port_audits.jsonl`.
 redsox U1 reachability runs only as a smoke check (presence-only). T0.4 runs the gate on current
-aminx first (expected FAIL = implementation checklist). Follow-up filed: redsox CLI multi-target +
-recursion + per-class aliases.
+aminx first (expected FAIL = implementation checklist). Follow-up filed: redsox tech debt #2071
+(redsox workspace) — CLI multi-target + recursion + per-class aliases + exclusions + behavioural U1.
 
 ## 7. Parity
 
@@ -1071,7 +1076,7 @@ control is aminx at `m·T`.
 | T0.1 | Vendor upstreams at pinned SHAs; `aminx-oracles/` env on titanix | — | files + manifest |
 | T0.2 | Probe report (§10) | T0.1 | appended to §10 |
 | T0.3 | `tests/port/` contract + self-test; `tests/redsox/_coverage.py` + `selftest_coverage/` fixtures (i)–(vii); `branch_manifest` / `sidecar_ledger` schemas (`tests/redsox/schemas/*.json`) | — | selftest on titanix |
-| T0.4 | Extractor, reference surfaces, alias skeleton, exclusions, harness, `run_gate.py` + `run_gate.bth.toml`, pyarrow in dev group, `test_branch_coverage.py` wiring, `/outputs/` gitignore (bathos creates `outputs/<id8>` after capturing git state, `runner.py:901-903`), empty `branch_manifest.toml` + `sidecar_ledger.toml` (schemas from T0.3), mutant hook; run vs current aminx (FAIL baseline); file redsox follow-up + deferred items | T0.1, T0.3 | bathos run FAIL recorded |
+| T0.4 | Extractor, reference surfaces, alias skeleton, exclusions, harness, `run_gate.py` + `run_gate.bth.toml`, pyarrow in dev group, `test_branch_coverage.py` wiring, `/outputs/` gitignore (bathos creates `outputs/<id8>` after capturing git state, `runner.py:901-903`), empty `branch_manifest.toml` + `sidecar_ledger.toml` (schemas from T0.3), mutant hook; run vs current aminx (FAIL baseline); file debt for `run_predict_partial_charges` (deferred items #2067–#2070 and redsox #2071 already filed 260929) | T0.1, T0.3 | bathos run FAIL recorded |
 | T0.5a | Runner goldens, in-memory rows, at pre-refactor SHA | — | `runner_goldens` sidecar (capture) |
 | T0.5b | Runner goldens, Zarr rows, at T0.0 merge SHA | T0.0 | `runner_goldens` sidecar (capture) |
 | T0.5 | FamilyDriver protocol, registry, runner dispatch + raise, `run_family_driver` (ZarrStagingSink channel, keys, ids/skips, inference mode), family Literal/derivation/consumer branches, `DecoderLayer` promote_types accumulation, L-DRV lint | T0.0, T0.2, T0.5a, T0.5b | unit tests; lint; goldens exact on titanix |
