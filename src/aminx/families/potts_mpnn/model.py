@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
+from aminx.families.potts_mpnn.features import potts_edge_features
 from aminx.families.potts_mpnn.potts_head import PottsHead
 from aminx.model.decoder import (
   conditional_decoder_layer_edge_features,
@@ -151,18 +152,11 @@ def _encoder_states(
   Index 0 is the input of encoder layer 0 (node features are zeros, matching
   upstream ``h_V = 0``). Later indices are layer outputs.
   """
-  raw_edges, raw_neighbors, _node_features, _key = mpnn.features(
-    jax.random.key(0),
-    coords,
-    mask,
-    residue_index,
-    chain_index,
-    jnp.zeros((), dtype=coords.dtype),
-  )
-  # mpnn.features promotes to float64 under jax_enable_x64 even for float32
-  # coords; pin the edge graph to the input dtype so the forward follows it.
-  edge_features = cast("Array", raw_edges).astype(coords.dtype)
-  neighbor_indices = cast('Int[Array, "L K"]', raw_neighbors)
+  graph = potts_edge_features(mpnn.features, coords, mask, residue_index, chain_index)
+  # The RBF centers are float32, so the edge graph can promote under x64 even
+  # for float32 coords. Pin it to the input dtype so the forward follows it.
+  edge_features = graph.edge_features.astype(coords.dtype)
+  neighbor_indices = graph.neighbor_indices
   node_features = jnp.zeros(
     (edge_features.shape[0], mpnn.encoder.node_feature_dim),
     dtype=edge_features.dtype,

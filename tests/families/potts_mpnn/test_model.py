@@ -14,8 +14,10 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from aminx.families.potts_mpnn.features import potts_edge_features
 from aminx.families.potts_mpnn.model import PottsMPNN
 from aminx.model.decoder import DecoderLayer
+from aminx.utils.radial_basis import RBF_CENTERS, RBF_SIGMA
 
 _REPO = Path(__file__).resolve().parents[3]
 _REFERENCE = _REPO / "tests/port/reference/a1_potts"
@@ -66,6 +68,40 @@ def _call(model: PottsMPNN, coords: jax.Array, mask: jax.Array) -> object:
   sequence = jnp.zeros((length,), dtype=jnp.int32)
   decoding_order = jnp.arange(length, dtype=jnp.int32)
   return model(coords, mask, residue_index, chain_index, sequence, decoding_order)
+
+
+def _gaussian_rbf(distance: jax.Array) -> jax.Array:
+  scaled = (distance[..., None] - RBF_CENTERS) / RBF_SIGMA
+  return jnp.exp(-jnp.square(scaled))
+
+
+def test_gap_row_rbf_uses_dmax_and_origin() -> None:
+  """Present->gap Ca-Ca RBF is ``D_max``; N-N RBF is the distance to the origin."""
+  previous = jax.config.jax_enable_x64
+  jax.config.update("jax_enable_x64", True)
+  length = 4
+  gap = 2
+  coords = _backbone(length, jnp.float64).at[gap].set(0.0)
+  mask = jnp.ones((length,), dtype=jnp.float64).at[gap].set(0.0)
+  model = PottsMPNN(key=jax.random.key(0))
+  residue_index = jnp.arange(length, dtype=jnp.int32)
+  chain_index = jnp.zeros((length,), dtype=jnp.int32)
+  try:
+    graph = potts_edge_features(model.mpnn.features, coords, mask, residue_index, chain_index)
+    row = 0
+    slot = int(np.where(np.asarray(graph.neighbor_indices[row]) == gap)[0][0])
+    ca = coords[:, 1, :]
+    pairwise = jnp.sqrt(jnp.sum(jnp.square(ca[:, None, :] - ca[None, :, :]), axis=-1) + 1e-6)
+    masked = mask[:, None] * mask[None, :] * pairwise
+    distance_max = jnp.max(masked, axis=-1)[row]
+    geometric = pairwise[row, gap]
+    nitrogen_to_origin = jnp.linalg.norm(coords[row, 0, :])
+    rbf = graph.rbf[row, slot]
+    np.testing.assert_allclose(rbf[:16], _gaussian_rbf(distance_max), atol=1e-6, rtol=0.0)
+    np.testing.assert_allclose(rbf[16:32], _gaussian_rbf(nitrogen_to_origin), atol=1e-6, rtol=0.0)
+    assert not np.allclose(np.asarray(rbf[:16]), np.asarray(_gaussian_rbf(geometric)), atol=1e-3)
+  finally:
+    jax.config.update("jax_enable_x64", previous)
 
 
 def test_self_edge_on_present_rows() -> None:

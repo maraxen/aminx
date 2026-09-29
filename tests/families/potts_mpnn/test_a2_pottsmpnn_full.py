@@ -77,7 +77,7 @@ def _tolerances(precision: str, *, log_probs: bool) -> dict[str, float]:
   if precision == "f64":
     return {"rtol": 0.0, "atol": 1e-8}
   if log_probs:
-    return {"rtol": 0.0, "atol": 1e-4}
+    return {"rtol": 1e-4, "atol": 1e-4}  # spec r16
   return {"rtol": 1e-4, "atol": 1e-4}
 
 
@@ -103,9 +103,9 @@ def _slot_alignment(
 
   Gap rows are all-tie (§4.1a, §6.5b ``gap_row_knn_tiebreak``), so kNN slot order
   is not comparable once gap rows exist. On present rows the neighbour *sets* must
-  match exactly; edge arrays are then compared per neighbour id on edges whose two
-  endpoints are present. Returns ``(perm, keep)`` with ``perm[i, k]`` the predicted
-  slot holding ``ref_idx[i, k]``.
+  match exactly; edge arrays are then compared per neighbour id on every edge out
+  of a present row, including present->non-present. Returns ``(perm, keep)`` with
+  ``perm[i, k]`` the predicted slot holding ``ref_idx[i, k]``.
   """
   length, k = ref_idx.shape
   perm = np.tile(np.arange(k), (length, 1))
@@ -115,7 +115,7 @@ def _slot_alignment(
     assert sorted(pred_row) == sorted(ref_row), f"{label}: neighbour set differs at row {row}"
     lookup = {neighbour: slot for slot, neighbour in enumerate(pred_row)}
     perm[row] = [lookup[neighbour] for neighbour in ref_row]
-  keep = present[:, None] & present[ref_idx]
+  keep = np.broadcast_to(present[:, None], (length, k))
   return perm, keep
 
 

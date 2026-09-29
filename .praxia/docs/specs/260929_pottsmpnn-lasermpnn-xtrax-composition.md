@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: converged-r15-a10
+status: converged-r16-a10
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -73,6 +73,19 @@ Revision history:
   "order from a fixed N→C wave schedule" are historical; U-a (all PottsMPNN sampling in the driver)
   is unaffected. (e) Source anchors (file:line) into `src/aminx/**` were taken at the dogfood base
   and may have drifted; per §0 the code at HEAD wins.
+- r15 → r16 (A2 execution; items (1) and (4) **post-hoc, made after observing a failure**): (1)
+  `pottsmpnn_full` f32 log-prob tolerance gains `rtol=1e-4` next to `atol=1e-4` (user-approved
+  260929): one element of 1512
+  (soluble_30 3dkm, row 71, value −3.132) missed pure `atol=1e-4` by 1.7e-5 (rel err 3.7e-5), while
+  the same code passes f64 at atol 1e-8 on every fixture incl. gap fixtures. (2) §4.1a correction:
+  non-present rows inside a present row's kNN set DO reach the encoder/decoder through
+  present→non-present edges; upstream feeds the Cα–Cα RBF `D_adjust` (= row `D_max` for invalid
+  pairs) and the other 24 RBFs raw zeroed-coordinate distances. The Potts path
+  (`families/potts_mpnn/features.py`) reproduces this; stock MPNN features are unchanged. (3) The A1
+  f64 oracles were regenerated with true-f64 RBF centres (`rbf_follows_input_dtype` shim, upstream
+  `potts_mpnn_utils.py:1156`). (4) aminx `RBF_CENTERS` is materialised at import, so it is float32
+  whenever x64 is enabled after import; RBFs now build their centres in the input dtype at call time
+  (`utils/radial_basis.rbf_centers`; f32 byte-identical, runner goldens 18/18 exact).
 - r14 → r15 (A1/A3 execution; **post-hoc, made after observing a failure**): (1) `potts_energy` f32
   tolerance: a pure `rtol=1e-5` on a total that is a sum of O(L·K) terms is ill-posed when the terms
   cancel. Observed on the A3 wave: `vanilla_30 two_chain` random seq 3, total 0.01207, abs err
@@ -1136,7 +1149,7 @@ killed (not invalid). Follow-up: `xtrax.port` pytest plugin in the wheel.
 | `potts_energy` | `potts_energy` | no | rtol=1e-10 / \|err\| ≤ 1e-5·Σ\|terms\| (r15) | 1 |
 | `potts_ar_decode` | `PottsARDecode` (+tied, PSSMMix) with injected uniforms/order; fixture with `fixed_positions` (`chain_M_pos=0` rows); negative control AR `m = present·chain_M_pos` must fail | yes | exact tokens / match rate | 1 |
 | `potts_refine` | `PottsRefine` (all modes) injected uniforms | yes | exact tokens / match rate | 1 |
-| `pottsmpnn_full` | etab_forward + teacher-forced log-probs | no | atol 1e-8 / log-prob 1e-4 | 1 per bucket |
+| `pottsmpnn_full` | etab_forward + teacher-forced log-probs | no | atol 1e-8 / log-prob rtol=1e-4,atol=1e-4 (r16) | 1 per bucket |
 | `laser_layers` | GATv2/GVP/LN | no | rtol=1e-9 / rtol=1e-5 | 1 |
 | `laser_encoder` | encoders | no | rtol=1e-8 / rtol=1e-4 | 1 per bucket |
 | `laser_score` | teacher-forced seq+χ log-probs | no | atol 1e-8 / 1e-4 nats | 1 per bucket |
