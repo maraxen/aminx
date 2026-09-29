@@ -28,7 +28,12 @@ from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 from aminx.types.stages import StageSet
 from aminx.utils.autoregression import generate_ar_mask
-from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
+from aminx.utils.decoding_order import (
+  DecodingOrderFn,
+  DecodingOrderOutputs,
+  design_chain_mask,
+  random_decoding_order,
+)
 from aminx.utils.ste import gumbel_softmax, straight_through_estimator
 
 _DEFAULT_DECODING_ORDER_FN = cast("DecodingOrderFn", random_decoding_order)
@@ -200,6 +205,8 @@ class STEDecode(eqx.Module):
       fixed_bias = jnp.zeros((num_residues, num_classes), dtype=jnp.float32)
       fixed_mask_bool = jnp.zeros(num_residues, dtype=jnp.bool_)
 
+    chain_mask = design_chain_mask(bundle.geometry.mask, fixed_mask)
+
     # Initialize sequence logits
     sequence_logits = jnp.zeros((num_residues, num_classes), dtype=jnp.float32)
 
@@ -250,9 +257,15 @@ class STEDecode(eqx.Module):
       keys_for_decoding = jax.random.split(key_decoding_orders, batch_size)
 
       # Generate batch_size decoding orders
-      decoding_orders, _ = jax.vmap(
-        self.decoding_order_fn, in_axes=(0, None, None, None),
-      )(
+      def _order_with_mask(
+        key: PRNGKeyArray,
+        n_res: int,
+        ties: jnp.ndarray | None,
+        n_groups: int | None,
+      ) -> DecodingOrderOutputs:
+        return self.decoding_order_fn(key, n_res, ties, n_groups, chain_mask=chain_mask)
+
+      decoding_orders, _ = jax.vmap(_order_with_mask, in_axes=(0, None, None, None))(
         keys_for_decoding,
         num_residues,
         tie_group_map[0] if tie_group_map is not None else None,
@@ -379,6 +392,7 @@ class STEDecode(eqx.Module):
       num_residues,
       tie_group_map[0] if tie_group_map is not None else None,
       num_groups,
+      chain_mask=chain_mask,
     )
     final_ar_mask = generate_ar_mask(
       final_decoding_order,

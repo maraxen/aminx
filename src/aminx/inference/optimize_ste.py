@@ -42,7 +42,12 @@ if TYPE_CHECKING:
 
 
 from aminx.utils.autoregression import generate_ar_mask
-from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
+from aminx.utils.decoding_order import (
+  DecodingOrderFn,
+  DecodingOrderOutputs,
+  design_chain_mask,
+  random_decoding_order,
+)
 from aminx.utils.ste import gumbel_softmax, straight_through_estimator
 
 _DEFAULT_DECODING_ORDER_FN = cast("DecodingOrderFn", random_decoding_order)
@@ -126,6 +131,7 @@ def make_optimize_sequence_fn(
       fixed_mask_bool = jnp.zeros(num_residues, dtype=jnp.bool_)
 
     sequence_logits = jnp.zeros((num_residues, num_classes), dtype=jnp.float32)
+    chain_mask = design_chain_mask(bundle.geometry.mask, fixed_mask)
 
     optimizer = optax.adam(learning_rate)
     opt_state = optimizer.init(sequence_logits)
@@ -147,7 +153,16 @@ def make_optimize_sequence_fn(
         key_decoding_orders, next_key = jax.random.split(current_key)
 
       keys_for_decoding = jax.random.split(key_decoding_orders, batch_size)
-      decoding_orders, _ = jax.vmap(decoding_order_fn, in_axes=(0, None, None, None))(
+
+      def _order_with_mask(
+        key: PRNGKeyArray,
+        n_res: int,
+        ties: jnp.ndarray | None,
+        n_groups: int | None,
+      ) -> DecodingOrderOutputs:
+        return decoding_order_fn(key, n_res, ties, n_groups, chain_mask=chain_mask)
+
+      decoding_orders, _ = jax.vmap(_order_with_mask, in_axes=(0, None, None, None))(
         keys_for_decoding,
         num_residues,
         tie_group_map[0]
@@ -158,7 +173,8 @@ def make_optimize_sequence_fn(
 
       # ar_masks will have shape (batch_size, L, L)
       ar_masks = jax.vmap(generate_ar_mask, in_axes=(0, None))(
-        decoding_orders, tie_group_map[0] if tie_group_map is not None else None,
+        decoding_orders,
+        tie_group_map[0] if tie_group_map is not None else None,
       )
 
       def loss_fn(logits: Logits) -> Float:
@@ -172,7 +188,8 @@ def make_optimize_sequence_fn(
         def eval_with_mask(ar_mask: AutoRegressiveMask) -> Logits:
           # Broadcast ar_mask to S
           ar_mask_stack = jnp.broadcast_to(
-            ar_mask[None, ...], (bundle.geometry.n_states, *ar_mask.shape),
+            ar_mask[None, ...],
+            (bundle.geometry.n_states, *ar_mask.shape),
           )
 
           # Replace conditioning with our local one_hot_sequence and ar_mask
@@ -279,14 +296,20 @@ def make_optimize_sequence_fn(
       jax.effects_barrier()
 
     final_decoding_order, _ = decoding_order_fn(
-      final_key, num_residues, tie_group_map[0] if tie_group_map is not None else None, num_groups,
+      final_key,
+      num_residues,
+      tie_group_map[0] if tie_group_map is not None else None,
+      num_groups,
+      chain_mask=chain_mask,
     )
     final_ar_mask = cast("Callable", generate_ar_mask)(
-      final_decoding_order, tie_group_map[0] if tie_group_map is not None else None,
+      final_decoding_order,
+      tie_group_map[0] if tie_group_map is not None else None,
     )
 
     ar_mask_stack = jnp.broadcast_to(
-      final_ar_mask[None, ...], (bundle.geometry.n_states, *final_ar_mask.shape),
+      final_ar_mask[None, ...],
+      (bundle.geometry.n_states, *final_ar_mask.shape),
     )
     cond_new = eqx.tree_at(
       lambda c: (c.sequence_oh, c.ar_mask),

@@ -12,7 +12,7 @@ from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.logits import make_stage_set
 from aminx.types.protocols import ModelProtocol, ScoreFn
 from aminx.utils.autoregression import full_context_ar_mask
-from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
+from aminx.utils.decoding_order import DecodingOrderFn, design_chain_mask, random_decoding_order
 
 _DEFAULT_DECODING_ORDER_FN = cast("DecodingOrderFn", random_decoding_order)
 
@@ -145,7 +145,15 @@ def make_score_fn(
     # The decoding order is still drawn (and returned) so callers that want an
     # autoregressive factorization can pass the matching ``ar_mask`` back in, but it no
     # longer selects the default mask -- see the ``ar_mask is None`` branch below.
-    decoding_order, prng_key = decoding_order_fn(prng_key, L, None, None)
+    # Residue mask is the design mask here: padded positions (0) decode first.
+    # score() has no fixed-position argument; nothing else is held fixed.
+    decoding_order, prng_key = decoding_order_fn(
+      prng_key,
+      L,
+      None,
+      None,
+      chain_mask=design_chain_mask(mask),
+    )
     if ar_mask is None:
       # Full context minus self (``1 - I``): every position is scored given every OTHER
       # position's sequence, never its own. This is the conditional estimand

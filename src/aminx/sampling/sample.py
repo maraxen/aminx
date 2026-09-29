@@ -14,7 +14,7 @@ from aminx.inference.logits import make_stage_set
 from aminx.registry import SAMPLERS
 from aminx.types.bundles import WaveScheduleBundle
 from aminx.types.protocols import ModelProtocol, SamplerFn
-from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
+from aminx.utils.decoding_order import DecodingOrderFn, design_chain_mask, random_decoding_order
 
 _AMINO_ACID_VOCAB = 21
 
@@ -79,7 +79,9 @@ def make_sample_sequences(
       tie_group_map: jax.Array | None = None,
       num_groups: int | None = None,
       multi_state_strategy: Literal[
-        "arithmetic_mean", "geometric_mean", "product",
+        "arithmetic_mean",
+        "geometric_mean",
+        "product",
       ] = "arithmetic_mean",
       multi_state_temperature: float = 1.0,
       state_weights: jax.Array | None = None,
@@ -151,7 +153,9 @@ def make_sample_sequences(
       tie_group_map: jax.Array | None = None,
       num_groups: int | None = None,
       multi_state_strategy: Literal[
-        "arithmetic_mean", "geometric_mean", "product",
+        "arithmetic_mean",
+        "geometric_mean",
+        "product",
       ] = "arithmetic_mean",
       multi_state_temperature: float = 1.0,
       state_weights: jax.Array | None = None,
@@ -174,7 +178,14 @@ def make_sample_sequences(
       S = structure_coordinates.shape[0] if structure_coordinates.ndim == 4 else 1
 
       k_order, prng_key = jax.random.split(prng_key)
-      decoding_order, _ = decoding_order_fn(k_order, L, None, None)
+      # chain_mask: 1 = designed. Fixed and padded positions decode first.
+      decoding_order, _ = decoding_order_fn(
+        k_order,
+        L,
+        None,
+        None,
+        chain_mask=design_chain_mask(mask, fixed_mask),
+      )
 
       from aminx.utils.autoregression import generate_ar_mask
 
@@ -212,7 +223,12 @@ def make_sample_sequences(
         bundle = eqx.tree_at(lambda b: b.wave, bundle, wave_schedule)
 
       result = sample_autoregressive.kernel(
-        model, prng_key, bundle, config, stage_set, inference_only=inference_only,
+        model,
+        prng_key,
+        bundle,
+        config,
+        stage_set,
+        inference_only=inference_only,
       )
 
       return result.sequence.astype(jnp.int8), result.logits, decoding_order
