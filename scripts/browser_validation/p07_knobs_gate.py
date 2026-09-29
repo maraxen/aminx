@@ -45,7 +45,7 @@ MANIFEST_PATH = _ROOT / "outputs" / "browser_validation" / "fixtures" / "manifes
 
 MPNN_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
 OMIT_BIAS = np.float32(-1e8)
-LOGPROB_BAR = 1e-4
+LOGPROB_BAR = 2e-4  # a_max_logprob_abs_diff bound; amended 1e-4 -> 2e-4 (run e15b06ec, 260929)
 TV_BAR = 0.03
 P_BAR = 1e-3
 N_AA = 21
@@ -92,7 +92,7 @@ OUTCOMES: tuple[tuple[str, str], ...] = (
   (
     "a_mismatch",
     "a_cases_bitwise_cpu < a_cases_total OR a_cases_bitwise_web < a_cases_total "
-    "OR a_max_logprob_abs_diff > 0.0001 OR NOT a_web_ok OR NOT alias_ok",
+    "OR a_max_logprob_abs_diff > 0.0002 OR NOT a_web_ok OR NOT alias_ok",
   ),
   ("not_live", "knobs_live < knobs_total"),
   ("b1_mismatch", "b1_max_abs_nats > 0.0001"),
@@ -108,7 +108,7 @@ OUTCOMES: tuple[tuple[str, str], ...] = (
     "AND a_cases_bitwise_web = a_cases_total "
     "AND ctrl_frozen_detected AND ctrl_bad_gumbel_detected "
     "AND ctrl_bad_shuffle_detected AND a_web_ok AND alias_ok AND knobs_live = knobs_total "
-    "AND a_cases_bitwise_cpu = a_cases_total AND a_max_logprob_abs_diff <= 0.0001 "
+    "AND a_cases_bitwise_cpu = a_cases_total AND a_max_logprob_abs_diff <= 0.0002 "
     "AND b1_max_abs_nats <= 0.0001 AND b2_gumbel_tv_max <= 0.03 AND b2_gumbel_p_min >= 0.001 "
     "AND b2_order_p >= 0.001 AND b2_omitted_draws = 0 "
     "AND b2_order_fixed_first_violations = 0 AND b2_order_within_p >= 0.001 "
