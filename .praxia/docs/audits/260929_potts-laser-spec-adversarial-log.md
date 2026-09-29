@@ -191,3 +191,7 @@ All C8-xx landed; bathos columns git_hash/git_dirty/sidecar_sha256(file bytes, `
 - **C9-M3** parent_run_id=gate run false (set only from derived_from, `runner.py:650,688-707`; gate id not passed to children `:899-903`) → delete.
 - **C9-M4** step 1b rows mixing waves → group nodeids by declared wave, one invocation per wave.
 - **C9-M5** §5.4a pad rows in LASEr order: key +inf, after L_total, excluded from injected stream (upstream `curr_batch_mask` `pdb_dataset.py:1625-1633`).
+
+# Round 9 — defender (Opus) — 8/8 CONCEDE; adopted orchestrator SIMPLIFY (gate validates committed sidecar ledger, never runs sidecars) with hardenings: ancestor check, argv-derived mutant set, durable --output-paths controls file, titanix catalog locality. Verified bathos: `--output-paths` repeatable (`mcp.py:1881-1887`), schema columns (`schema.py:32-47`), outcome = first matching label (`sidecar.py:696-712`), status completed on exit 0 (`runner.py:933`), outputs/<id8> created after git capture (`runner.py:901-903`).
+
+# Spec r9 written
