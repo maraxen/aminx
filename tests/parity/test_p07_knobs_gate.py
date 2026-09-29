@@ -31,6 +31,7 @@ from scripts.browser_validation.p07_knobs_gate import (
   gumbel_from_uniform,
   js_build,
   old_bucket_onnx_files,
+  onnx_sidecar_files,
   old_output_paths,
   order_counts,
   passing_result,
@@ -265,7 +266,7 @@ def test_find_old_site_file_supports_chunked_layout(tmp_path: Path) -> None:
   assert found.read_bytes() == b"y"
 
 
-def test_old_bucket_onnx_files_includes_sidecar_data_when_present(tmp_path: Path) -> None:
+def test_old_bucket_onnx_files_is_the_served_onnx_only(tmp_path: Path) -> None:
   old_dir = tmp_path / "old"
   models_dir = old_dir / "site_L128" / "models"
   models_dir.mkdir(parents=True)
@@ -274,9 +275,27 @@ def test_old_bucket_onnx_files_includes_sidecar_data_when_present(tmp_path: Path
   assert old_bucket_onnx_files(old_dir, 128, "p07_L128.onnx") == [onnx]
 
   Path(f"{onnx}.data").write_bytes(b"external")
-  assert old_bucket_onnx_files(old_dir, 128, "p07_L128.onnx") == [onnx, Path(f"{onnx}.data")]
+  assert old_bucket_onnx_files(old_dir, 128, "p07_L128.onnx") == [onnx]
 
   assert old_bucket_onnx_files(old_dir, 256, "p07_L256.onnx") is None
+
+
+def test_stale_root_onnx_data_does_not_break_resume_hash(tmp_path: Path) -> None:
+  """T11f regression: a fresh export leaves a stale ``.onnx.data`` beside the root
+  ``.onnx``; the old site copy has none. Same served bytes must hash equal."""
+  new_root = tmp_path / "new"
+  new_root.mkdir()
+  new_onnx = new_root / "p07_L128.onnx"
+  new_onnx.write_bytes(b"self-contained-model")
+  Path(f"{new_onnx}.data").write_bytes(b"stale-external-data")
+
+  old_dir = tmp_path / "old"
+  (old_dir / "site_L128" / "models").mkdir(parents=True)
+  (old_dir / "site_L128" / "models" / "p07_L128.onnx").write_bytes(b"self-contained-model")
+
+  old_files = old_bucket_onnx_files(old_dir, 128, "p07_L128.onnx")
+  assert old_files is not None
+  assert sha256_files(onnx_sidecar_files(new_onnx)) == sha256_files(old_files)
 
 
 def test_check_outputs_complete(tmp_path: Path) -> None:

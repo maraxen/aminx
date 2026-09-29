@@ -1209,18 +1209,15 @@ def sha256_files(paths: list[Path]) -> str:
 
 
 def onnx_sidecar_files(onnx_path: Path) -> list[Path]:
-  """``onnx_path`` plus its sibling ``<onnx_path>.data``, if that external-data file exists.
+  """The model file(s) the browser actually loads: just the self-contained ``.onnx``.
 
-  ``embed_external_data`` normally leaves no live external-data reference, but an
-  unused ``.onnx.data`` can still sit next to the ``.onnx`` file (jax2onnx wrote it
-  before embedding); include it when present so a stale leftover can't silently
-  diverge between two exports without being noticed.
+  ``embed_external_data`` folds all weights into the ``.onnx``; ``assemble_site``
+  copies only that file into ``site/models/``. The stale ``.onnx.data`` jax2onnx
+  leaves at the export root is never served, so it must NOT enter the hash -- it
+  exists beside a fresh export but not beside an old site copy, and hashing it made
+  every resume report a false ONNX mismatch (T11f smoke, 260929).
   """
-  files = [onnx_path]
-  data_path = Path(f"{onnx_path}.data")
-  if data_path.is_file():
-    files.append(data_path)
-  return files
+  return [onnx_path]
 
 
 def find_old_site_file(old_dir: Path, bucket: int, relative: str) -> Path | None:
@@ -1241,12 +1238,14 @@ def find_old_site_file(old_dir: Path, bucket: int, relative: str) -> Path | None
 
 
 def old_bucket_onnx_files(old_dir: Path, bucket: int, model_name: str) -> list[Path] | None:
-  """``[onnx, onnx.data?]`` for ``bucket`` under ``old_dir``, or ``None`` if not found."""
+  """``[onnx]`` as served from an old site for ``bucket``, or ``None`` if not found.
+
+  Same file set as :func:`onnx_sidecar_files` -- the served ``.onnx`` only.
+  """
   main = find_old_site_file(old_dir, bucket, f"models/{model_name}")
   if main is None:
     return None
-  data_path = Path(f"{main}.data")
-  return [main, data_path] if data_path.is_file() else [main]
+  return onnx_sidecar_files(main)
 
 
 def files_identical(left: Path, right: Path) -> bool:
