@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: converged-r11
+status: converged-r12-t02
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -59,6 +59,16 @@ Revision history:
   outcome hooks keyed on `AMINX_PORT_WAVE`, step 2 reads `AMINX_REDSOX_OUTCOMES_READ`; per-arm
   subprocess for sidecar mutants; required artifact `sha256` in registry; freshness scope covers
   `scripts/parity/**`, `scripts/recapture/**`.
+- r11 → r12 (T0.2 corrections; prose fixed to match pinned upstream per the §0 normative clause;
+  evidence `research/260929_potts-laser-t02-probe-report.md`): §5.4a order tiers (upstream inference
+  never sets `extra_atom_contact_mask`, tier 2 empty); LASEr stored `seq_logits` are post-min-p (§5.3
+  1b); `fs_calc_*`/`fs_no_calc_burial` inert → `no_op` rows, first-shell rule = heavy-atom contact
+  (§5.5/§6.1/§6.4); LASEr `bb_noise` ≠ Potts `noise` (§6.3); LASEr `temperature==0` rule (§2.3/§5.4);
+  `disabled_residues` default provenance (§6.1/§6.3); dead tied-CLI flags → `no_op` (§6.3/§6.4);
+  tied-refine quirks + `ZeroDivisionError` divergence (§6.5/§6.5b); proofread `resindex`↔row
+  divergence (§5.4/§6.5b); `proteinmpnn_compatible` files are ProteinMPNN-only, never Potts-loadable
+  (§4.1); LASEr fixtures from upstream Zenodo dataset acquired in B1(a) (§5.5/§7.3/§8); anchor fixes
+  (§1, §4.3, §5.2); §10 open items resolved.
 
 ## 0. Goal, non-goals, assumed decisions
 
@@ -150,8 +160,8 @@ harness.
 | No CA featurizer / no B-factors | `rg` 0 hits each |
 | TRW Potts model (distinct) | `potts/model.py:71`; ADR 260605; `tests/lint/test_potts_import_boundary.py` |
 | RS-6b lint pattern | `tests/lint/test_rs6b_flat_field_gate.py:54-80`; `.ast-grep/rules/rs6b-host-flat-field-ban.yml` |
-| Upstream PottsMPNN | KeatingLab/PottsMPNN @ `0cb0a58`; class `potts_mpnn_utils.py:1225-1261` (ProteinMPNN layers + `etab_out`); forward `:1267-1290`; K=min(48,L) `:1150`; CLI decode path `decoder :1415-1488` (order `:1419-1421`, masks `:1422-1428`, masked rows `:1448`, fixed select `:1483`) and `tied_decoder :1599-` (body as `:1546-1595`, groups `:1515-1523`, last-member leak `:1575-1589`); called from `sample_seqs.py:226,235` |
-| PottsMPNN energy/refine | `run_utils.get_etab :816-835`; `etab_utils.functionalize_etab` denom 4 excl. self `:177-178,253-271`; `calc_eners :299-309`; alphabets `potts_mpnn_utils.py:69` vs `etab_utils.py:362-366`; `optimize_sequence :113-198` (binding `:135-148`, accumulate `:148,176`, cap `:116-120`), `nodes :180-270`; T floor `sample_seqs.py:38-39`; energy sort `:268-287`; refine order keying `:274-279,321-345`, `run_utils.py:110-111`; input list format `sample_seqs.py:81-94`; `optimize_fasta` `:133-141`; `strict=False` `:60` after xavier `potts_mpnn_utils.py:1263-1265` |
+| Upstream PottsMPNN | KeatingLab/PottsMPNN @ `0cb0a58`; class `potts_mpnn_utils.py:1225-1261` (ProteinMPNN layers + `etab_out`); forward `:1267-1290`; K=min(48,L) `:1150`; CLI decode path `decoder :1415-1488` (order `:1419-1421`, masks `:1422-1428`, masked rows `:1448`, fixed select `:1483`) and `tied_decoder :1599-1687` (body `:1636-1685`, groups `:1606-1614`, last-member leak `:1665-1684`; `tied_sample :1490-1597` is the near-identical unused copy); called from `sample_seqs.py:226,235` |
+| PottsMPNN energy/refine | `run_utils.get_etab :791-835`; `etab_utils.functionalize_etab` denom 4 excl. self `:177-178,253-271`; `calc_eners :299-309`; alphabets `potts_mpnn_utils.py:69` vs `etab_utils.py:362-366`; `optimize_sequence :113-198` (binding `:135-148`, accumulate `:148,176`, cap `:116-120`), `nodes :180-270`; T floor `sample_seqs.py:38-39`; energy sort `:268-287`; refine order keying `:274-279,321-345`, `run_utils.py:110-111`; input list format `sample_seqs.py:81-94`; `optimize_fasta` `:133-141`; `strict=False` `:60` after xavier `potts_mpnn_utils.py:1263-1265` |
 | Upstream LASErMPNN | polizzilab/LASErMPNN @ `e70f2c6d765416f7e29d51bfd6d4e08496438878` (MIT); `utils/model.py:107`; alphabet `utils/constants.py:34`; `tied_sample :460-627` (λ mix `:626`, T None→1e-6 `:617-618`, disabled mask `:606`); `sample :727-941` (carry `:773`, prior visibility `:815-818,916-917`, step `:833-865`, χ GVP `:931-934`); rotamers post-sampling `run_inference.py:747-750`; argparse `:773-792`; `sample_model` `:511-517` |
 | redsox | `checkers/superset.py:27-60` (`alias_map: dict[str,str]` `:31,43`); CLI `target_dataclasses[0]` only `cli/main.py:120-121,161-165,205-207`; U1 presence-only `reachability.py:18-40` |
 | xtrax port contract | `xtrax/port/port_target.toml`, `port/tests/conftest.py` (`:64-71` target, `:103-114` manifest, `:159-171` oracle import, `:214,232` timeout, `:277-286` emit), `test_parity_safe_map.py:53` (global x64); aminx pins wheel `pyproject.toml:26` → `port/` not importable |
@@ -242,12 +252,17 @@ confirms names/signatures; any extraction refactor keeps MPNN outputs byte-ident
 - `run/specs.py:236` Literal adds `"pottsmpnn"`, `"lasermpnn"`; `__post_init__` derives them from
   `checkpoint_id` prefixes `pottsmpnn_`/`lasermpnn_` before the `model_type` derivation; explicit
   family never overridden.
-- Each `model_family` consumer (§1; T0.2 re-greps): `_prepare_ligand_context` never reached for
-  driver families (test); checkpoint registry gains `pottsmpnn`/`lasermpnn` sections; portable JSON
-  v2 raises `ValueError`; multistate PoE / grid lineage / campaign / streaming raise `ValueError` for
-  driver families unless T0.2 shows them family-agnostic. Fallback purposes see `model_family=
-  "pottsmpnn"` but an `Aminx` model: consumers reached on the fallback path (T0.2 lists) treat it
-  as `proteinmpnn`.
+- Each `model_family` consumer (§1; T0.2 re-grep'd, full classified list in the probe report §2):
+  `_prepare_ligand_context` never reached for driver families (test; on the fallback path
+  `pottsmpnn != "ligandmpnn"` already behaves as `proteinmpnn`, keep the explicit test); checkpoint
+  registry gains `pottsmpnn`/`lasermpnn` sections (fallback: registry key stays `pottsmpnn`,
+  `load_model` returns the embedded `Aminx`); portable JSON v2 raises `ValueError` — the serialize
+  guard `run_spec_portable_json.py:153` is `== "ligandmpnn"` only and must become `!= "proteinmpnn"`,
+  else a driver-family spec silently round-trips as `proteinmpnn`; multistate PoE / grid lineage /
+  campaign / streaming raise `ValueError` for driver families (T0.2: the family label is harmless
+  there, the chunked-lineage semantics are not implemented by drivers). Fallback purposes see
+  `model_family="pottsmpnn"` but an `Aminx` model: the only consumers reached on that path
+  (`_prepare_ligand_context`, `prep.py` registry lookup) treat it as `proteinmpnn`.
 - Unsupported `(family, purpose, output_kind)` → `ValueError` at `__post_init__`.
 
 ### 2.3 Spec/CLI surface
@@ -268,7 +283,11 @@ confirms names/signatures; any extraction refactor keeps MPNN outputs byte-ident
   `self._sync_run_spec()` (currently `specs.py:519-520`); base hook no-op; `SamplingSpecification`
   overrides: `UNSET` → `(0.1,)` for proteinmpnn/ligandmpnn/membrane/pottsmpnn, `(None,)` for
   lasermpnn; scalar/`None` → 1-tuple; sequence → tuple; any `None` with non-lasermpnn →
-  `ValueError`. The existing float→tuple at `specs.py:633-634` moves into the hook.
+  `ValueError`; lasermpnn element `0.0` → `None` (argmax; the batch-CLI rule: `--sequence_temp` is
+  `type=float` so 0.0 is falsy, `run_batch_inference.py:245,370`; the single-input/tied CLIs take a
+  *string* where `'0'` is truthy, so upstream passes `0.0` and divides by it → NaN,
+  `run_inference.py:777,796`, recorded §6.5b `laser_temperature_zero`; PottsMPNN's 0 → 1e-6 floor,
+  §6.5, is a different rule; tied `sample` maps both `0.0` and `None` → 1e-6, §5.4). The existing float→tuple at `specs.py:633-634` moves into the hook.
   `ScoringSpecification.temperature: float = 1.0` untouched. **Types:** `SamplingConfig.temperature:
   tuple[float|None, ...]`; new `_as_temperature_tuple` keeps `None` (`_as_float_tuple` unchanged, used
   for noise). MPNN consumers (`kernel_dispatch.py:134`, `_sampling_grid_lineage.py:98,115`,
@@ -339,12 +358,18 @@ satisfied by `mpnn` by construction; no subclassing, no capability field changes
 - Conversion `scripts/recapture/pottsmpnn_model_to_eqx.py` (bathos-tracked) reuses
   `scripts/convert_weights.py`'s ProteinMPNN key map; only `etab_out.*` is new. T0.2 records
   `load_state_dict(strict=False)` missing/unexpected keys per checkpoint; non-empty missing →
-  blocking finding. Registered with **required** `sha256` = SHA-256 of the converted artifact prep
+  blocking finding. **T0.2 result:** the 5 in-scope checkpoints have empty missing/unexpected sets;
+  the six `proteinmpnn_compatible_model_weights/*` files have missing `{etab_out.weight,
+  etab_out.bias}` (they are ProteinMPNN-only; loaded as Potts they would run Xavier-random `etab_out`,
+  `potts_mpnn_utils.py:1263-1265`) and must never be registered under the `pottsmpnn` family (B1). Registered with **required** `sha256` = SHA-256 of the converted artifact prep
   loads (registry `sha256` is optional today, `host/prep.py:60`; required for `pottsmpnn_*`/
   `lasermpnn_*`), plus separate `source_sha256` (upstream torch file) + upstream commit.
-- In scope: `vanilla/pottsmpnn_{20,30}`, `soluble/sol_pottsmpnn_{20,30}`, `ft/potts_ft` (T0.2
-  confirms ft config); `proteinmpnn_compatible_model_weights/` → `duplicate` exclusion if
-  byte-equivalent after mapping (T0.2), else in scope.
+- In scope: `vanilla/pottsmpnn_{20,30}`, `soluble/sol_pottsmpnn_{20,30}`, `ft/potts_ft` (T0.2:
+  same constructor config as the others, 120/120 tensors differ from `vanilla_20`, no `ft`-specific
+  overrides); `proteinmpnn_compatible_model_weights/` → `duplicate` exclusion (T0.2: all 118 shared
+  tensors bit-equal to the matching vanilla/soluble file, but no `etab_out.*`, so not loadable as
+  Potts; a registry test asserts none is registered under `pottsmpnn` and that a converter fed one
+  raises on the missing `etab_out`).
 - `mpnn_ext/external/aminx/weights/pottsmpnn/*.eqx.zst` not reused (TRW-model artefacts).
 - Self-edge invariant test: `neighbor_indices[...,0]==arange(L)` on present rows.
 
@@ -360,8 +385,8 @@ PottsMPNN driver purposes do not use proxide (`prep.py:102-122`: no upstream gap
   (`:143-156`); absent chains dropped; non-`.pdb` inputs → `skipped_inputs` reason
   `pottsmpnn_requires_pdb`.
 - `tied_featurize_port` (`:293-512`): chain order = sorted designed chains + sorted fixed chains;
-  `-`→`X`; `S_true` (model alphabet), `chain_M`, `chain_M_pos` (per-chain 1-based p → row
-  `global_idx_start[chain]+p−1`, `:415`), `chain_encoding`, `residue_idx = 100(c−1)+row`
+  `-`→`X`; `S_true` (model alphabet), `chain_M`, `chain_M_pos` (per-chain 1-based p → chain-local write
+  `:415`, global row = `global_idx_start[chain]+p−1` by concatenation), `chain_encoding`, `residue_idx = 100(c−1)+row`
   (`:373,408`), omit/pssm/`bias_by_res` arrays, tied groups + `tied_beta` (`:445-460`);
   `present = isfinite(sum X over atoms,xyz)`, then `X[isnan]=0` (`:510-512`).
 Output length `L_total` (gap rows included), padded to `L_pad` with
@@ -429,7 +454,7 @@ tiers use the gapped `L_total ≤ 48` fixture.
 | purpose / output_kind | Path | Stages / axes |
 |---|---|---|
 | `sample` (any mode/PSSM/tied/bias_by_res) | driver | `MPNNEncode → PottsARDecode → PottsSampleEnergy → [PottsRefine iff mode≠none] → sinks`; host ranking after last chunk; axes `samples`, `temperatures` |
-| `sample` with `optimize_pdb`/`optimize_fasta` (upstream `skip_calc`, `sample_seqs.py:128-157`; if mode==none the run is ordinary `sample` with N forced to 1, upstream `:41`, `:130-157`) | driver | `MPNNEncode → PottsRefine` on loaded sequences; no PottsARDecode/PottsSampleEnergy/ranking; `num_samples` forced to 1 with a `logger.warning` if >1 requested (upstream `:40` forces silently; logging only, not a behaviour divergence); `knob_semantics_optimize_pdb` covers mode none → AR output N=1 and `num_samples=4` → N=1 + warning; axis `samples` = loaded sequences. `optimize_fasta`: entries whose key `startswith(<pdb><suffix>)` (`:319`, prefix quirk kept), file order, `:` stripped (`:322`); `optimize_pdb`: native per-chain sequences in A0 chain order (§6.5b). Length ≠ L_total → `ValueError`; encoded by `seq_to_ints` (`:347`). Refine order: `upstream_refine_order` with empty stored orders (`:325-343` keying incl. reuse when suffix empty; §6.5b). PDB (iff `write_pdb`) = `refined_sequence` of the last loaded key (`:368-373`). Tests `knob_semantics_optimize_pdb`, `_optimize_fasta` |
+| `sample` with `optimize_pdb`/`optimize_fasta` (upstream `skip_calc`, `sample_seqs.py:128-157`; if mode==none the run is ordinary `sample` with N forced to 1, upstream `:40` (`:41` only normalises `"none"`→`""`), `:130-157`) | driver | `MPNNEncode → PottsRefine` on loaded sequences; no PottsARDecode/PottsSampleEnergy/ranking; `num_samples` forced to 1 with a `logger.warning` if >1 requested (upstream `:40` forces silently; logging only, not a behaviour divergence); `knob_semantics_optimize_pdb` covers mode none → AR output N=1 and `num_samples=4` → N=1 + warning; axis `samples` = loaded sequences. `optimize_fasta`: entries whose key `startswith(<pdb><suffix>)` (`:319`, prefix quirk kept), file order, `:` stripped (`:322`); `optimize_pdb`: native per-chain sequences in A0 chain order (§6.5b). Length ≠ L_total → `ValueError`; encoded by `seq_to_ints` (`:347`). Refine order: `upstream_refine_order` with empty stored orders (`:325-343` keying incl. reuse when suffix empty; §6.5b). PDB (iff `write_pdb`) = `refined_sequence` of the last loaded key (`:368-373`). Tests `knob_semantics_optimize_pdb`, `_optimize_fasta` |
 | `score:energy` | driver | `MPNNEncode → PottsHead → etab_energy → potts_energy`; axis `candidates` = `sequences_to_score` if non-empty, else the `score:ddg` resolution (mutant_fasta / mutant_csv / DMS), always plus WT; absolute energies; partitions never evaluated (upstream `ddG=False`). Each `sequences_to_score` entry must have length L_total in A0 row order (sorted designed chains then sorted fixed chains, `tied_featurize :327`) with gap rows as `-`/`X`, else `ValueError` naming expected length + chain order; test `test_score_energy_gapped_alignment` |
 | `score:ddg` | driver | as energy; candidates = mutant_fasta / mutant_csv else single-mutant DMS (respecting `exclude_chains`); `ddg=E(mut)−E(wt)`; binding: axis `partition` (§4.4); `mean_norm` per PDB after ddG |
 | `score:nll`, `score:logits`, `jacobian`, `inspect` | MPNN fallback on `model.mpnn` | unchanged |
@@ -528,7 +553,9 @@ tiers use the gapped `L_total ≤ 48` fixture.
   (self slot only; never the AR-order `h_EXV_fw`); `h_S` at t not masked (`h_S_masked` is a plain
   clone, `:203`); `attention_mask = nbr_valid`. `test_knob_semantics_nodes_gibbs` negative control:
   AR-order `h_EXV_fw` must fail.
-  Tied refine (`tied_optimize_sequence`, `tied_epistasis`) transcribed in T0.2. Tests
+  Tied refine (`tied_optimize_sequence`, `run_utils.py:273-519`, incl. `tied_epistasis`) is
+  transcribed in the probe report §4.4; its quirks are bit-parity obligations listed in §6.5, its one
+  crash is §6.5b. Tests
   `test_knob_semantics_nodes_gibbs`, `test_knob_semantics_binding_converge_stop`.
 - **PottsSampleEnergy + host ranking.** Device: `sample_energy[n] = potts_energy(etab_energy,
   S_AR[n])` on the **pre-refine** AR sequence (`sample_seqs.py:259`); every sample refined
@@ -592,7 +619,7 @@ LASEr order. Oracle outputs mapped to aminx order before comparison. Tests
 
 | Upstream | aminx | Notes |
 |---|---|---|
-| `LigandFeaturizer`, `LigandEncoderModule` (`model.py:1150,1312`) | `LaserLigandEncoder` | weights from main checkpoint (T0.2 confirms keys) |
+| `LigandFeaturizer` (`utils/ligand_featurization.py:7`; the 6 `ligand_featurizer.*` buffers), `LigandEncoderModule` (`model.py:1146`, init `:1150`; `:1312` is the unused `SpiceDatasetPretrainingModule`) | `LaserLigandEncoder` | weights from main checkpoint (T0.2 confirmed keys present) |
 | `HomoGATv2`, `HeteroGATv2`, `GVP`, `DenseGVP`, `EquivariantLayerNorm` | `aminx.model.laser.layers` | edge-list → dense padded neighbour axis + mask; `scatter_softmax` → masked softmax returning 0 on empty K |
 | encoder/decoder layers | `LaserEncoder`, `LaserDecoderLayer` | |
 | χ heads | `LaserChiHead` | bins from checkpoint `chi_angle_rbf_bin_width` |
@@ -616,9 +643,16 @@ node_stack_s (n_dec+1,L,Hs), node_stack_v (n_dec+1,L,V,3), ala_count, gly_count)
 1b. `logits += bias_row[t]`, `bias_row` = aminx `bias` (L,21) + −1e8 at `omit_aa`/`omit_aa_per_position`
    letters on designed rows (§2.3), in LASEr order (§5.1a). Untempered, before steps 2–5: divided by
    `T_eff`, seen by min-p and argmax, as in aminx MPNN (`inference/decode/autoregressive.py:320-323,336`).
-   Steps 2–4 assign, so masked entries are unaffected. Stored `seq_logits`/`seq_log_prob` = the step-5
-   input recomputed with `bias_row=0` (aminx stored-logits convention, `autoregressive.py:302-309`);
-   with zero bias both equal upstream `utils/model.py:881`. `test_knob_semantics_laser_bias_minp`: bias
+   Steps 2–4 assign, so masked entries are unaffected. Stored `seq_logits` = the step-5
+   logits **after** `minp_warp_logits` (post-min-p, untempered; `-inf` at removed tokens when
+   `seq_min_p>0`; when `T_eff` is None no warp, so the step-4 logits) recomputed with `bias_row=0`:
+   upstream reassigns `curr_out_logits = minp_warp_logits(...)` (`utils/model.py:854`, only when a
+   temperature is set) and stores the reassigned tensor (`:881`), so with zero bias this is exactly
+   upstream's stored tensor; `seq_log_prob = softmax(stored)[sampled]` is therefore renormalised over
+   the kept tokens (`run_inference.py:744`). It is not the pre-min-p tensor.
+   `test_knob_semantics_laser_stored_logits_minp` (`seq_min_p=0.05`, T=0.3: stored logits equal oracle
+   `sequence_logits` incl. the `-inf` pattern, and `seq_log_prob`; negative control storing pre-warp
+   logits fails; `seq_min_p=0` and `T_eff` None cases equal oracle). `test_knob_semantics_laser_bias_minp`: bias
    moves a residue across the min-p threshold (seq_min_p=0.05, T=0.3, injected uniforms) vs analytic;
    negative controls bias-after-min-p and bias-after-`/T` fail.
 2. disabled residues := `finfo.min` on rows `~chain_mask` (LASEr `chain_mask=1` = fixed), or on rows
@@ -675,20 +709,29 @@ rotamer build in-loop; jaxpr loop-body guard asserts no O(L²) op.
 | purpose | Stages / axes |
 |---|---|
 | `sample` | encode → `LaserJointDecode` → RotamerBuilder (post) → sinks; axes `samples`, `temperatures` |
-| `sample` tied (`tied_second_input`) | encode both (equal L else `ValueError`), shared order, per-step `λ·P1+(1−λ)·P2` (§6.5); bias/omit per §5.3 step 1b added to each structure's logits before its softmax: `λ·softmax((l₁+b)/T)+(1−λ)·softmax((l₂+b)/T)`; tied semantics: disabled mask on `~chain_mask` only (`:606`), no min-p, no charged mask, T None→1e-6 sampled (`:617-618`); setting `seq_min_p`/`chi_min_p`/`fs_sequence_temp`/`disable_charged_fs`/`ignore_chain_mask_zeros` with tied → `ValueError` (none is a `tied_sample` parameter, `utils/model.py:460-465`; T0.2 verifies list) |
+| `sample` tied (`tied_second_input`) | encode both (equal L else `ValueError`), shared order, per-step `λ·P1+(1−λ)·P2` (§6.5); bias/omit per §5.3 step 1b added to each structure's logits before its softmax: `λ·softmax((l₁+b)/T)+(1−λ)·softmax((l₂+b)/T)`; tied semantics: disabled mask on `~chain_mask` only (`:606`), no min-p, no charged mask, T None→1e-6 sampled (`:617-618`; aminx also maps `0.0`→1e-6, §2.3, §6.5b); setting `seq_min_p`/`chi_min_p`/`fs_sequence_temp`/`disable_charged_fs`/`ignore_chain_mask_zeros` with tied → `ValueError` (none is a `tied_sample` parameter, `utils/model.py:460-465`; list confirmed by T0.2). The tied CLI's `--disable_charged_fs`, `--disabled_residues`, `--ebd` are parsed but dead (§6.3) |
 | `score:nll`, `score:logits` | teacher-forced seq+χ log-probs (`get_logits_for_score :261` port; conditioning per §5.4a) — primary parity surface |
 | `score:proofread_unconditional` | one forward, `return_unconditional_probabilities`, softmax; residues = first shell or `selection_string` |
-| `score:proofread_conditional` | axes `focus_residue` × `dropout_seed` (`n_dropouts`) × `decoding_order` (`n_decoding_orders`). Focus set = the unconditional pass's set: `first_shell_ligand_contact_mask` (`run_proofreading.py:55`), or if `selection_string` non-empty, resindices of `(same residue as (sel)) and name CA` (`:69-79`, None → ValueError); `residue_ids` ordering = upstream `ylabels`; T0.2 verifies resindex ↔ B0 row map. Per (focus r, rep d): one batch of `n_decoding_orders` copies, only r designable (others `chain_mask=1`), fresh orders per rep (§5.4a rule), per-copy scalar-dropout masks; `sample` at T=1, χT=1, `disabled_residues=('X',)`, `seq_min_p=0` (identity, `model.py:61-62`), `repack_all` per Options; `p[d,o]=softmax(sequence_logits[r])` on stored post-disabled-mask untempered logits (`:838,881`). Fuse: `m_d=mean_o p`, `s_d=std_o(p, ddof=1)`; `proofread_mean=mean_d m_d`, `proofread_std=mean_d s_d`, `proofread_mean_plus_std=proofread_mean+proofread_std`; no renormalisation; `n_decoding_orders=1` → std NaN (kept); sampling `bias`/`omit_aa*` not applied (scoring purpose) |
+| `score:proofread_conditional` | axes `focus_residue` × `dropout_seed` (`n_dropouts`) × `decoding_order` (`n_decoding_orders`). Focus set = the unconditional pass's set: `first_shell_ligand_contact_mask` (`run_proofreading.py:55`), or if `selection_string` non-empty, resindices of `(same residue as (sel)) and name CA` (`:69-79`, None → ValueError); `residue_ids` ordering = upstream `ylabels`. **`resindex` ↔ row (T0.2):** upstream *assumes* ProDy `resindex` (counts every residue of the parsed `AtomGroup`: ligand, water, non-amino, dropped) equals the batch row (`run_proofreading.py:120`, `:69-79`); true on `4jnj-1_prot.pdb`, false when any non-row residue precedes the focus residue in file order. B0 emits `row_to_resindex`; focus rows/selection resindices are mapped through it (§6.5b `proofread_resindex_identity`). Per (focus r, rep d): one batch of `n_decoding_orders` copies, only r designable (others `chain_mask=1`), fresh orders per rep (§5.4a rule), per-copy scalar-dropout masks; `sample` at T=1, χT=1, `disabled_residues=('X',)`, `seq_min_p=0` (identity, `model.py:61-62`), `repack_all` per Options; `p[d,o]=softmax(sequence_logits[r])` on stored post-disabled-mask untempered logits (`:838,881`). Fuse: `m_d=mean_o p`, `s_d=std_o(p, ddof=1)`; `proofread_mean=mean_d m_d`, `proofread_std=mean_d s_d`, `proofread_mean_plus_std=proofread_mean+proofread_std`; no renormalisation; `n_decoding_orders=1` → std NaN (kept); sampling `bias`/`omit_aa*` not applied (scoring purpose) |
 | `jacobian`, `inspect` | `ValueError` (no fallback) |
 
 **§5.4a `score:nll|logits` conditioning (normative aminx defaults; upstream `get_logits_for_score`
 has no caller in the pinned repo).** (i) Order: one per structure, shared by all candidates, by the
 upstream sampler rule `_masked_sort_for_decoding_order` (`utils/pdb_dataset.py:1618-1650`):
 `order = argsort(u + tier)`, tier 0 = `chain_mask` (fixed), 1 = designable∧¬contact, 2 =
-designable∧contact, contact = upstream `extra_atom_contact_mask` (`utils/pdb_dataset.py:1236-1239`,
-not `first_shell_ligand_contact_mask`), named in the B0 gate field list; `chain_mask` = the B0 mask
-from `fixed_positions`/`fixed_mask`/`fix_from_bfactor`, as for `sample`; `u = jax.random.uniform(key_order,(L,))` from `random_seed`; the same rule drives
-`sample` and proofread orders; injectable `decoding_order` (length L) in parity tiers; emitted under
+designable∧contact, contact = `batch.extra_atom_contact_mask` (not `first_shell_ligand_contact_mask`), named in the B0 gate
+field list. **T0.2 (B3): upstream inference never sets it**: the featurizer writes `'extra_atom_contact_mask':
+zeros_bool` (`run_inference.py:350,371`; tied `run_inference_tied.py:404,425`; batch collate
+`run_batch_inference.py:129` only concatenates it), and nothing in `construct_graphs` reassigns it. The
+non-trivial definition `pdb_dataset.py:1233-1239` (heavy atoms of `all_extra_coords_data`) belongs to
+the training-dataset loader. Hence at inference tier 2 is **empty** and the order is fixed first, then
+all designable, random within tier; that is what `sample`, proofread and (aminx default) `score:nll|logits`
+use. The 3-tier rule is kept verbatim for parity of `_masked_sort_for_decoding_order`, and its tier-2
+branch is exercised only by injecting `extra_atom_contact_mask` on the oracle batch by hand (the
+upstream inference featurizer cannot produce it); any non-empty aminx-defined contact mask for
+`score:nll|logits` is out of v1 and would have to be named separately from the `sample` rule. `chain_mask` = the B0 mask
+from `fixed_positions`/`fixed_mask`/`fix_from_bfactor`, as for `sample`; `u = jax.random.uniform(key_order,(L,))` from `random_seed`; the same rule (with the empty tier 2 above)
+drives `sample` and proofread orders; injectable `decoding_order` (length L) in parity tiers; emitted under
 `return_decoding_orders`. The injectable uniform stream follows the upstream layout: concatenation of
 tier-0, tier-1, tier-2 uniforms, each in ascending row index (`utils/pdb_dataset.py:1618-1650`); aminx
 maps it back to rows before `argsort(u + tier)`. Padding rows (aminx shape-bucket rows beyond the
@@ -707,14 +750,25 @@ native χ for a mismatched candidate → fail.
 ### 5.5 Host featurizer (B0)
 
 B-factors (`fix_from_bfactor` requires {0,1}), side-chain coords + χ (NaN → mask), ligand
-elements/H/water (`use_water`)/ncAA-as-ligand, φ/ψ, SS/exposure, alpha-hull first shell. Proxide
+elements/H/water (`use_water`)/ncAA-as-ligand, φ/ψ, SS/exposure, first shell. **First shell (T0.2):**
+the consumed `first_shell_ligand_contact_mask` is the *post-`construct_graphs`* mask
+(`pdb_dataset.py:590` unconditionally overwrites the `output_batch_data` mask, `run_inference.py:321-328`,
+before every consumer reads it), i.e. the heavy-atom contact rule `compute_first_shell_node_idces`
+(`:756-786`, called `:528,555`): residue in the ligand-protein edge set with a heavy atom `<5.0 Å` of a
+ligand heavy atom (`+0.3 Å` for Gly/X, CA only); ligand-free → all-False (`:449-454`). B0 does **not**
+implement the alpha-hull burial or the 10 Å CA test for this mask (`fs_calc_*` knobs are inert, §6.4).
+Proxide
 (`prep.py:102-122`) lacks B-factors → B0 extends the proxide call or parses via ProDy in `batches()`.
-Gate: field-level equality vs upstream `BatchData` on 5 fixtures (`example_pdbs/4jnj-1_prot.pdb` + 4
-from `databases/`, pinned path+SHA-256). `construct_graphs(num_adjacent_residues_to_drop=·)` is inert
+B0 also emits `row_to_resindex` (§5.4). **Fixtures (T0.2, B2):** the pinned repo ships only
+`example_pdbs/4jnj-1_prot.pdb`; `databases/` holds `README.md` + `dataset_split_info.zip` (split JSON,
+no structures). Gate: field-level equality vs upstream `BatchData` on 5 fixtures
+(`example_pdbs/4jnj-1_prot.pdb` + 4 complexes from the upstream Zenodo PDB dataset, entries 1–4 of the
+`laser_score_parity` list, §7.3), acquired and pinned (URL + SHA-256 of the archive and of each
+extracted file) in task step **B1(a)** (§8). `construct_graphs(num_adjacent_residues_to_drop=·)` is inert
 at inference (`sampled_pseudoligands is None`; only the pseudoligand path uses it,
 `utils/pdb_dataset.py:443,481-488,512`; hardcoded 6/0 in `run_proofreading.py:50,133` /
 `run_inference_tied.py:586,598`, not an argparse dest); B0 gate asserts upstream graphs with 0 and 6
-are identical on the 5 fixtures; T0.2 confirms.
+are identical on the 5 fixtures; T0.2 confirmed statically (probe report §6.9).
 
 ### 5.6 Result schema
 
@@ -741,13 +795,17 @@ PDB (hydrogens per checkpoint `build_hydrogens`); FASTA (`output_fasta`, `output
 `str | None`. (Upstream `ddG` maps to `output_kind`, §6.3.)
 
 `LaserOptions`: `fs_sequence_temp`, `chi_temp`, `seq_min_p`, `chi_min_p`,
-`disabled_residues=("X","C")`, `disable_charged_fs`, `repack_only`, `fix_from_bfactor`,
-`ignore_ligand`, `use_water`, `noncanonical_aa_ligand`, `fs_calc_ca_distance=10.0`,
-`fs_calc_burial_hull_alpha_value=9.0`, `fs_no_calc_burial`, `ala_budget=4`, `gly_budget=0`,
+`disabled_residues=("X","C")` (the batch-CLI default, `run_batch_inference.py:380`; single-input
+`run_inference.py:514`/`sample()` `utils/model.py:731` default `['X']`, see §6.3),
+`disable_charged_fs`, `repack_only`, `fix_from_bfactor`,
+`ignore_ligand`, `use_water`, `noncanonical_aa_ligand`, `ala_budget=4`, `gly_budget=0`,
 `constrain_ala_gly_to_exposed_non_ss`, `budget_residue_selection`, `ignore_chain_mask_zeros`,
 `tied_second_input`, `tied_interpolation_lambda=0.0`, `selection_string`, `n_decoding_orders=10`,
 `n_dropouts=10`, `proofread_dropout=True`, `repack_all=False`, `strict_load=True`, `output_fasta`,
 `output_fasta_only`. (Defaults transcribed by the extractor; generated alias table is authoritative.)
+`fs_calc_ca_distance`, `fs_calc_burial_hull_alpha_value`, `fs_no_calc_burial` are **not** Options
+fields: T0.2 showed they are inert for every consumed output (§5.5), so they are `no_op` exclusion
+rows (§6.4).
 
 ### 6.2 Reference surfaces (generated)
 
@@ -767,7 +825,23 @@ no implicit name matches. Known non-identical rows: `*__chain_dict_json` and
 `pottsmpnn_input_list__{designed,fixed}_chains` → `[fixed_mask, chain_design_mask_json]` semantic;
 `fix_decoding_order`+`decoding_order_offset` → `[random_seed]` semantic (seeded-order test; order
 source is the driver, not `decoding_order_fn`); Potts `noise` (eval `augment_eps`, all backbone
-atoms) → `[noise]` semantic (knob test: iid Gaussian N/CA/C/O); LASEr `bb_noise` → `[noise]`;
+atoms, applied whenever `augment_eps>0` incl. eval, `potts_mpnn_utils.py:1170-1171`) → `[noise]`
+semantic (knob test: iid Gaussian N/CA/C/O per atom); LASEr `bb_noise` → `[noise]` semantic with a
+**different** rule (`pdb_dataset.py:412-415`, only if `>0`: coordinates rounded to 2 decimals, then
+one `randn((N,1,3))` translation per residue shared by all 5 backbone atoms, i.e. a rigid
+per-residue shift; tied CLI noises each structure independently, `run_inference_tied.py:576-599`):
+the LASEr driver has its own noise stage and `test_knob_semantics_laser_noise` (per-residue rigid
+translation + rounding vs oracle with injected `randn`; negative control iid-per-atom fails);
+`run_inference*__fs_calc_ca_distance`, `__fs_calc_burial_hull_alpha_value`, `__fs_no_calc_burial`
+(and `run_batch_inference*`) → `exclusion`/`no_op` (§6.4; T0.2: overwritten by `construct_graphs`,
+`pdb_dataset.py:590`); `run_inference_tied__disable_charged_fs`, `__disabled_residues`,
+`__entropy_decoder` → `exclusion`/`no_op` (parsed, never consumed: `run_inference_tied.py:620` comments
+out the `disable_charged_residue_mask=` argument, `run_inference(...)` has no `disabled_residues`
+parameter, `use_edo` unused in the tied path; note the spec's `ValueError` for `tied_second_input` +
+`disable_charged_fs` set via the *Options* is deliberate and stricter than upstream, which silently
+accepts the flag); `run_inference__disabled_residues`: no such flag (fixed `['X']`,
+`run_inference.py:514`; batch/tied CLIs default `'X,C'`), so the parity call for the single-input
+entry point passes `disabled_residues=("X",)` and the alias row records this;
 `*__repack_all` → `[repack_all]` identical; `*__repack_only`,
 `run_batch_inference*__repack_only_input_sequence` → `[repack_only]` semantic;
 `run_proofreading__disable_inference_dropout` → `[proofread_dropout]` semantic (inverted);
@@ -775,7 +849,8 @@ atoms) → `[noise]` semantic (knob test: iid Gaussian N/CA/C/O); LASEr `bb_nois
 `run_batch_inference.py:250,379`) and `run_inference*__strict_load` (`--ignore_statedict_mismatch`,
 store_false, `run_inference.py:783`) → `[strict_load]` semantic (dest True ≡ `strict_load=True`; note
 records name/polarity inversion);
-`laser_*__sequence_temp` → `[temperature]` semantic (family default None, §2.3);
+`laser_*__sequence_temp` → `[temperature]` semantic (family default None, §2.3; `0`/`0.0` → argmax
+per §2.3, and `run_inference*__sequence_temp` is a *string* flag, `'0'` truthy, `''` → None);
 `designs_per_batch`/`max_tokens`/`inputs_processed_simultaneously` → `[batch_size]` semantic
 (output-invariance test); `model_weights`/`check_path` → `[checkpoint_id, model_local_path]`;
 `device` → exclusion `device`; `verbose`/`disable_pbar`/`silent` → `io_only`; `model.*`,
@@ -789,8 +864,14 @@ records name/polarity inversion);
 duplicate, deferred:<debt#>}`. Deferred (v1), filed as aminx tech debt 260929: `entropy_decoder` →
 `deferred:2069`; `mutation_search.*` → `deferred:2070`; CA-only → `deferred:2068`; MSA vocab-22 →
 `deferred:2067`; `run_predict_partial_charges.*` → `deferred:<filed in T0.4>`; `run_inference_ligandmpnn.py`,
-`run_batch_inference_ligandmpnn.py` → `duplicate` if T0.2 confirms they drive LigandMPNN (aminx
-already implements it). `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
+`run_batch_inference_ligandmpnn.py` → `duplicate` (T0.2 confirmed: they import
+`LASErMPNN.utils.model_ligandmpnn.LigandMPNN`; aminx already implements LigandMPNN).
+`proteinmpnn_compatible_model_weights/*` → `duplicate` (§4.1). **`no_op` rows (T0.2, each with an
+inverse-differential `knob_semantics_*` test: set == unset byte-identical in aminx and oracle):**
+`run_inference*__fs_calc_ca_distance`, `__fs_calc_burial_hull_alpha_value`, `__fs_no_calc_burial`
+(+ `run_batch_inference*`; inert, §5.5); `run_inference_tied__disable_charged_fs`,
+`__disabled_residues`, `__entropy_decoder` (dead tied-CLI flags, §6.3). These replace the earlier
+live-knob treatment; none of them is an Options field. `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
 
 ### 6.5 Upstream quirks preserved (bit-parity)
 
@@ -807,6 +888,10 @@ already implements it). `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
 | LASEr tied λ weights structure 1; default 0.0 = structure 2 only (help text says opposite) | `utils/model.py:626` vs `run_inference_tied.py:875` | code semantics, default 0.0; `knob_semantics_tied_lambda` |
 | LASEr fs temp: T None → 1e-6 on non-first-shell rows (sampled, min-p active); set T kept | `run_inference.py:541-544` | §5.3 step 5; §5.3.1-6 |
 | Tied group with any `mask==0` member: all members take that member's `S_true`, no draw; rows already written by earlier members stay | `potts_mpnn_utils.py:1641-1647` (and `:1551-1557`) | PottsARDecode tied `lax.cond` at member scan; `knob_semantics_tied_masked_member` |
+| Tied refine (`tied_optimize_sequence`, `run_utils.py:273-519`), non-`nodes` modes: a group is skipped when **any** member has `mask==0` **or** `chain_mask==0` (fixed), and every member is then overwritten with the *first such member's* current residue (`seq[pos_inner]=seq[pos]`) | `run_utils.py:331-340` | PottsRefine tied; `knob_semantics_tied_refine_frozen_group` (group with one fixed member; negative control designed-only skip fails) |
+| `tied_epistasis`: mutants set all members jointly (`:349-355`), but the positional energy, binding lookup (`inter_mask`, partition) and the `t` used for `bias_by_res`/PSSM/omit are read at the **leaked loop variable `pos`** = last member (`:361,:404`) | `run_utils.py:349-361,404` | PottsRefine tied; `knob_semantics_tied_epistasis_leaked_pos` (negative control: first member fails) |
+| Tied binding branch subtracts the unbound energy **without** the current-identity reference subtraction used untied (probabilities identical by softmax shift-invariance; the accumulated `ener_delta` is not), so tied `potts_converge` with binding runs to the 1000-sweep cap like the non-binding case | `run_utils.py:371,398` vs `:148` | PottsRefine tied; `knob_semantics_tied_binding_no_reference` (ener_delta trace vs oracle) |
+| Tied `nodes` has **no per-member `chain_mask` skip** (only `mask==0`, `:473`); `chain_mask` enters via the last-member hard pick (`:513`) and the caller's `mask*chain_M_pos`; a masked member copies the current `S[:,t]`, not `S_true` (`:474`) | `run_utils.py:466-516` | PottsRefine tied `nodes`; `knob_semantics_tied_nodes_member_skip` |
 
 ### 6.5b Divergences (fixed upstream I/O bugs)
 
@@ -818,7 +903,10 @@ already implements it). `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
 | `optimize_pdb` concatenates chains in listing/alphabet order, misaligned with featurization order | `sample_seqs.py:146-155`; `potts_mpnn_utils.py:268-290`, `:327` | per-chain sequences concatenated in A0 order | `test_divergence_optimize_pdb_chain_order` (fixed-first listing); parity fixture where orders agree |
 | LASEr tied with `fs_sequence_temp` → NameError (undefined `batch`) | `utils/model.py:485`; `run_inference_tied.py:607-616` | `ValueError` naming the flag | `test_divergence_tied_fs_temp` |
 | Overlapping tied groups double-decode shared positions | `potts_mpnn_utils.py:1606-1614` | `ValueError` | `test_tied_overlap_raises` |
-| (pre-existing aminx, not upstream) stock MPNN decoder passes invalid-neighbour messages when `L_total<48<L_pad` | `decoder.py:144-147`; `features.py:165-184` | unchanged; PottsMPNN fallback parity only unpadded | backlog id filed in T0.2 |
+| Tied refine non-epistasis path divides by `num_pos` (`predicted_E /= num_pos`, float `0.0`); when every member is non-interface under `binding_energy_optimization="only"`, `num_pos==0` → upstream `ZeroDivisionError` crash | `run_utils.py:401` | `ValueError` naming the group (all members non-interface under `only`) | `test_divergence_tied_only_zero_pos` (oracle fixture asserts the upstream raise; aminx raises `ValueError`) |
+| LASEr `temperature==0`: batch CLI (`--sequence_temp` `type=float`) maps 0.0 → None (argmax); single-input/tied CLIs (`--temp` string, `'0'` truthy) pass `0.0` → `softmax(logits/0.0)` NaN | `run_batch_inference.py:245,370`; `run_inference.py:777,796`; `run_inference_tied.py:880` | `sample`: `0.0` → argmax (batch rule, §2.3); tied: `0.0` → 1e-6 (same as None, `utils/model.py:617-618`); the NaN path is never reproduced | `test_divergence_laser_temperature_zero` |
+| Proofread `resindex` used as batch row index (assumes ProDy `resindex` == row) | `run_proofreading.py:69-79,120` | explicit `row_to_resindex` map from B0; identical to upstream whenever identity holds (all parity fixtures, incl. `4jnj-1_prot.pdb`); when it fails upstream fixes/selects the wrong residue or raises `IndexError`, aminx warns and maps correctly | `test_divergence_proofread_resindex_identity` (fixture with a non-row residue before the focus residue; parity fixture where identity holds) |
+| (pre-existing aminx, not upstream) stock MPNN decoder passes invalid-neighbour messages when `L_total<48<L_pad` | `decoder.py:144-147`; `features.py:165-184` | unchanged; PottsMPNN fallback parity only unpadded | backlog id to be filed by the orchestrator (draft in probe report §8; not filed by T0.2) |
 
 ### 6.6 Gate
 
@@ -944,7 +1032,9 @@ aminx first (expected FAIL = implementation checklist). Follow-up filed: redsox 
   precision, `shimmed`, `shim_sha256`, `shim_sites`). Oracle generation is a bathos run.
 - **Shims** (`aminx-oracles/shims/`, monkeypatched; vendored sources never edited):
   1. Draws (`torch.multinomial`/`Categorical.sample` at `run_utils.py:174,263`,
-     `potts_mpnn_utils.py:1480,1590`, LASEr `model.py:627,859` + χ sites listed in T0.2) →
+     `potts_mpnn_utils.py:1480,1590`, LASEr `model.py:627,859`; χ sites `model.py:899` (`sample`) and
+     `:676`,`:677` (`tied_sample`, structure 1 then 2 per χ index); entropy-decoder sites `:1065,1104`
+     excluded) →
      `c = cumsum(p.double(), -1)`; `i = searchsorted(c, u·c[-1], right=True)`;
      `i = min(i, last index with p>0)`, with an injected f64 uniform stream indexed by
      (sample, step[, χ]). aminx implements the identical rule in **all** driver draws, in f64 under
@@ -952,7 +1042,8 @@ aminx first (expected FAIL = implementation checklist). Follow-up filed: redsox 
      test-only path). Tests: zero-probability tail token never drawn; `u = 1−2⁻⁵³` (f64) and
      `1−2⁻²⁴` (f32) return the last positive-probability index.
   2. Order: PottsMPNN native `decoder(decoding_order=)` / `optimize_sequence(decoding_order=)`
-     (no patch); LASEr order draw in `sample` patched (T0.2 cites line).
+     (no patch); LASEr order draw patched at `utils/pdb_dataset.py:1641` (`rand_urns = torch.rand(...) + mask_idx`
+     in `_masked_sort_for_decoding_order`; module-local shim, other `torch.rand` uses untouched).
   3. Dropout (`_VDropout` never patched; the dump asserts every `_VDropout.training is False`):
      LASEr `nn.Dropout.forward` → `x*mask/(1-p)` with injected masks keyed by (module path,
      call idx); aminx proofread stage accepts the same masks.
@@ -1031,7 +1122,7 @@ Every sidecar declares `pass`/`inconclusive`/`fail`, a measured-path negative co
 | `potts_ddg_megascale` | `energy_benchmark_datasets/megascale_test_subset.csv` (all rows; n in TOML) | max \|Δddg\| ≤ 1e-4 | (1e-4,1e-3] | > 1e-3 | skip transpose in `merge_pair` → fail |
 | `potts_ar_refine_exact` | example_pdbs, 50 seeds, injected uniforms/order, f64 | exact match = 1.0 | [0.99,1.0) | < 0.99 | wrong partition sign; N→C order; AR `m = present·chain_M_pos` on a `fixed_positions` fixture → fail |
 | `potts_sample_dist` | distributional protocol, Potts conditions | see below | | | T×m; N→C (plain, T=1.0) |
-| `laser_score_parity` | `4jnj-1_prot.pdb` + 20 complexes from `databases/` (list pinned) | max \|Δ log-prob\| ≤ 1e-4 | (1e-4,1e-3] | > 1e-3 | permute one decoder layer → fail |
+| `laser_score_parity` | `4jnj-1_prot.pdb` + 20 complexes from the upstream Zenodo PDB dataset (list, source URL and per-file SHA-256 pinned by B1(a); the pinned repo's `databases/` holds no structures); entries 1–4 double as the B0 fixtures | max \|Δ log-prob\| ≤ 1e-4 | (1e-4,1e-3] | > 1e-3 | permute one decoder layer → fail |
 | `laser_decode_e2e` | same 21, injected order, argmax | exact seq + χ-bin = 1.0 AND max circular \|Δchi_deg\| ≤ 1e-6° (f64) on chi_mask | — | otherwise | reversed order → < 1.0; aminx χ bin +1 mod Nbins → fail; offset := 0 → fail. Tied fixture (injected order + uniforms, χ streams indexed (sample,step,χ,structure); oracle calls `model.tied_sample` directly): exact sequence + χ₁/χ₂ bins, chi_deg ≤1e-6°; negative controls χ₂:=χ₁ → fail, λ on logits → fail |
 | `laser_sample_dist` | distributional protocol, LASEr conditions | see below | | | T×m |
 | `laser_proofread_parity` | 5 complexes, injected masks | max \|Δ mean\|, \|Δ std\| ≤ 1e-4 | (1e-4,1e-3] | > 1e-3 | reduction swap (std over reps) → fail; ddof=0 → fail; scalar dropout off → \|Δmean\|>1e-3 somewhere; vector dropout on → fail. Ground truth: n_orders=2, n_dropouts=1, injected masks: `proofread_std=\|p₁−p₂\|/√2` (f64 exact); n_orders=1: mean = single cell, std all-NaN. Plus `test_knob_semantics_proofread_dropout` |
@@ -1074,7 +1165,7 @@ control is aminx at `m·T`.
 |---|---|---|---|
 | T0.0 | **(Owned by a parallel session per user 260929 — external dependency here; only T0.5b waits on it.)** **Sink run_id fix (prerequisite).** `aminx.host.sink_ids.sink_spec_for(spec, output_dir, *, flush_every=1, run_id=None) -> SinkSpec` calls pinned `xtrax.run.sink.derive_sink_spec(spec.run_spec, run_id=run_id or spec_run_id(spec), output_dir=Path(output_dir), format="zarr", flush_every=flush_every)` (`sink.py:61-105`). `spec_run_id(spec) = sha256(json.dumps(run_specification_to_json_dict(spec), sort_keys=True, separators=(",",":")).encode()).hexdigest()[:16]`; on `SpecJSONEncodeError` fall back to `xtrax.run.ident.new_run_id()` + `logger.warning`. `run_spec.run_id` never set (static field → retrace). Re-run policy: if `output_dir` holds a Zarr root whose `attrs["run_id"]` ≠ derived id → `ValueError(f"{output_dir} holds outputs of a different specification (run_id {old}); use a new output_dir or pass run_id=")`; same spec reopens (mode `a`, arrays overwrite). Spec-less sites: `DesignsWriter(..., run_id=None)` defaults to `sha256(str(Path(path).resolve()))[:16]`; `jacobian_profile.py` uses sha256 of canonical argv JSON. All five call sites (`host/streaming.py:80`, `host/runner.py:1225`, `io/designs.py:81`, `sampling/multistate_poe.py:605`, `scripts/analysis/jacobian_profile.py:187`) migrated | T0.5a | per-site tests: fresh dir writes expected root `run_id`; same spec reopens; different spec raises the aminx ValueError; in-memory goldens exact |
 | T0.1 | Vendor upstreams at pinned SHAs; `aminx-oracles/` env on titanix | — | files + manifest |
-| T0.2 | Probe report (§10) | T0.1 | appended to §10 |
+| T0.2 | Probe report (§10) | T0.1 | DONE: `research/260929_potts-laser-t02-probe-report.md`; corrections applied in r12 |
 | T0.3 | `tests/port/` contract + self-test; `tests/redsox/_coverage.py` + `selftest_coverage/` fixtures (i)–(vii); `branch_manifest` / `sidecar_ledger` schemas (`tests/redsox/schemas/*.json`) | — | selftest on titanix |
 | T0.4 | Extractor, reference surfaces, alias skeleton, exclusions, harness, `run_gate.py` + `run_gate.bth.toml`, pyarrow in dev group, `test_branch_coverage.py` wiring, `/outputs/` gitignore (bathos creates `outputs/<id8>` after capturing git state, `runner.py:901-903`), empty `branch_manifest.toml` + `sidecar_ledger.toml` (schemas from T0.3), mutant hook; run vs current aminx (FAIL baseline); file debt for `run_predict_partial_charges` (deferred items #2067–#2070 and redsox #2071 already filed 260929) | T0.1, T0.3 | bathos run FAIL recorded |
 | D1 | **Resolve debt #2051**: `Aminx.__call__` honours `inference` (no encoder dropout at inference on freshly constructed models); runner path already forces `inference_mode` (`host/prep.py:200`) so runner outputs are unchanged; fallback purposes of PottsMPNN (`model.mpnn`) depend on this | — | unit test: two inference calls on a freshly constructed model are bit-identical; negative control dropout-on differs; runner outputs unchanged (T0.5a captured after) |
@@ -1090,8 +1181,8 @@ control is aminx at `m·T`.
 | A4 | Driver `score:energy|ddg`, mutants/DMS, partitions axis, sinks | A2, A3, T0.6 | `potts_energy_parity`, `potts_ddg_megascale` |
 | A5 | `PottsARDecode` (+tied, PSSMMix), `PottsRefine` (all modes, binding, order quirk), `PottsSampleEnergy` + host ranking, all Potts Options | A4 | waves `potts_ar_decode`, `potts_refine`; `potts_ar_refine_exact`; pilot → `potts_sample_dist`; knob tests |
 | A6 | ADR + lint updates | A2 | lint green |
-| B0 | LASEr host featurizer | T0.1, T0.2 | field-level parity (5 fixtures) |
-| B1 | LASEr oracle dumps | T0.1, T0.2 | manifest |
+| B0 | LASEr host featurizer | T0.1, T0.2, B1(a) | field-level parity (5 fixtures) |
+| B1 | (a) **Fixture acquisition:** fetch the upstream protonated-PDB dataset from Zenodo (chunks `10.5281/zenodo.17990180` + `10.5281/zenodo.17990253` per `databases/README.md`, reassembled with `cat`, md5 `c9418cb9368c8068a6053feebbff5fda` as documented upstream, ~50 GB, PDB format; note `download_protonated_pdb_training_dataset.sh` fetches a different Zenodo record, `https://zenodo.org/records/15035128/files/all_data.zip`, the shelve database, which is not a PDB source), select the 20-complex `laser_score_parity` list (ids and selection rule recorded; entries 1–4 = B0 extras), extract only those PDBs, and commit `tests/fixtures/laser/fixtures_manifest.toml` (source URL, archive SHA-256, per-file SHA-256, chosen ids); run on titanix as a bathos-tracked script (bulk download is a data-acquisition run, its record is the provenance); (b) LASEr oracle dumps | T0.1, T0.2 | (a) manifest with SHA-256s resolves and files hash-match; (b) manifest |
 | B1.5 | LASEr weight conversion | B1 | 0 unmapped keys |
 | B2 | layers | T0.3, B1.5 | wave `laser_layers` |
 | B3 | encoders + ligand bucket axis | T0.3, B0, B2 | wave `laser_encoder` |
@@ -1105,13 +1196,15 @@ control is aminx at `m·T`.
 **Stage → vehicle (every stage in the `[[branch]]` `stage` column must be listed here; the Vehicles
 column lists primary vehicles only — any vehicle allowed by §0 may back a row, e.g.
 `knob_semantics_refine_order`, `_tied_last_member`, `_tied_masked_member`, `_t0_floor`,
-`_pssm_precedence`, `_x_gap_energy`, `_skip_gaps`, `_laser_bias_minp`, `_fs_sequence_temp`,
-`_laser_score_order`, `test_tied_rank_flat_matches_upstream`):**
+`_pssm_precedence`, `_x_gap_energy`, `_skip_gaps`, `_laser_bias_minp`, `_laser_stored_logits_minp`,
+`_fs_sequence_temp`, `_laser_score_order`, `_laser_noise`, `_tied_refine_frozen_group`,
+`_tied_epistasis_leaked_pos`, `_tied_binding_no_reference`, `_tied_nodes_member_skip`, the `no_op`
+inverse differentials of §6.4, `test_tied_rank_flat_matches_upstream`):**
 
 | Stage | Vehicles |
 |---|---|
 | A0 / B0 featurizers | A0 gate / B0 gate |
-| Order generation (Potts AR key, Potts refine fresh key, LASEr 3-tier) | `test_knob_semantics_order_generation`: Potts — oracle and aminx given the same `randn`, exact order on a fixture with `fixed_positions` + a gap row, for AR and refine keys; LASEr — `torch.rand` in `_masked_sort_for_decoding_order` shimmed with injected per-tier uniforms, aminx given the same stream, exact order on a fixture with fixed/non-contact/contact rows. Mutants: drop tier offset; drop `chain_M_pos` from AR key; swap AR↔refine keys |
+| Order generation (Potts AR key, Potts refine fresh key, LASEr 3-tier) | `test_knob_semantics_order_generation`: Potts — oracle and aminx given the same `randn`, exact order on a fixture with `fixed_positions` + a gap row, for AR and refine keys; LASEr — `torch.rand` in `_masked_sort_for_decoding_order` shimmed with injected per-tier uniforms, aminx given the same stream, exact order on (a) an inference-featurized fixture (tier 2 empty, as upstream inference always produces, §5.4a) and (b) an oracle batch with fixed/non-contact rows and `batch.extra_atom_contact_mask` set by hand for the contact rows (the upstream inference featurizer cannot produce tier 2). Mutants: drop tier offset; drop `chain_M_pos` from AR key; swap AR↔refine keys |
 | MPNNEncode (Potts) | `pottsmpnn_full` |
 | PottsHead, merge_pair d2/d4, potts_energy | their waves; `potts_energy_parity` |
 | PottsARDecode (+tied, PSSMMix) | `potts_ar_decode`; `potts_ar_refine_exact` |
@@ -1146,11 +1239,39 @@ Resolved during authoring (260929): `EncoderOutput` carries `edge_features`/`nei
 (`types/bundles.py:457-473`); no CA featurizer; aminx `bias`/`fixed_positions`/`fixed_tokens`/
 `fixed_mask`, no omit; `temperature` is `Sequence[float] | float` default 0.1.
 
-Open for T0.2: runner helper names/signatures (`_canonical_structure_ids_for_spec`,
-`resolve_target_samples`, `make_axis_dispatch_via_xtrax`, `sample()` metadata keys); full
-`model_family` consumer grep incl. fallback-path consumers; PottsMPNN missing/unexpected keys per
-checkpoint; ft config; `proteinmpnn_compatible` equivalence; T floor value; verbatim transcription
-of `decoder`/`tied_decoder` PSSM block, `optimize_sequence` incl. tied variants, `nodes`, refine
-order keying `sample_seqs.py:321-345`; LASEr `model_params` dims, ligand-encoder keys,
-`LASER_ALPHABET` string, every `radius_graph`/`scatter_*` site, χ draw sites, order-draw line,
-`tied_sample` ignored-knob list; LigandMPNN entry points in LASEr repo.
+**Resolved by T0.2** (see `research/260929_potts-laser-t02-probe-report.md`, "report §n"; anchors are
+pinned-upstream or worktree `file:line`; corrections C1–C12 and blockers B1–B3 are applied in r12 above).
+The torch probes (key audits, tensor equalities, dropout enumeration, `4jnj` first-shell/`resindex`/graph
+facts) were **exploratory: run inline on titanix, no bathos sidecar**, and cite nothing as a finding; they
+will be re-confirmed by the tracked A1/B1 oracle-dump bathos runs (and the A0/B0 gates for the
+single-fixture facts) before any number is cited outside the report.
+- Runner helpers (report §1): `_canonical_structure_id(s)_for_spec` `host/_sampling_helper.py:22,36`
+  (reads only `spec.inputs`, any spec type); `_structure_ids_for_batch` `:48`; `resolve_target_samples`
+  `host/plan.py:382`; `make_axis_dispatch_via_xtrax` `tiling/dispatch.py:161` (docstring "not wired" is
+  stale, ~15 call sites); entry points `host/runner.py:60,441,820,1143`; `sample()` metadata keys
+  `specification`, `skipped_inputs`, `structure_ids`, `lineage`; both aminx Zarr sites build
+  `SinkSpec` without `run_id` (T0.0 premise confirmed).
+- `model_family` consumers (report §2): complete classified list; only new runner reader is the
+  dispatch; portable-JSON guard `run_spec_portable_json.py:153` must become `!= "proteinmpnn"`;
+  `_prepare_ligand_context` and the `prep.py` registry lookup are the only fallback-path consumers.
+- PottsMPNN keys (report §3): in-scope 5 checkpoints missing/unexpected = `[]`; `proteinmpnn_compatible/*`
+  miss `etab_out.*` (B1, excluded); `ft/potts_ft` = same config, 120/120 tensors differ; compat trunk
+  118/118 bit-equal; T floor = `1e-6` on exact `0` only (`sample_seqs.py:38-39`).
+- Verbatim transcriptions (report §4): `decoder :1415-1488`, `tied_decoder :1599-1687`,
+  `optimize_sequence`/`nodes :75-271`, `tied_optimize_sequence :273-519`, refine order keying,
+  `skip_calc :126-159`; tied-refine quirks now §6.5/§6.5b.
+- aminx side (report §5): only hardcoded-float32 on the core is `decoder.py:338-341`; slot-0 self
+  edge holds for `present` rows only (gap/pad rows tie, `features.py:143-186`).
+- LASEr (report §6): `model_params` dims Hs=256, V=10, E=128, Hl=256, Vl=15, K=48, Kl=48, k_ll=5,
+  cutoff 20.0, Nbins=72; the 3 LASEr checkpoints load `strict=True` and carry identical params; ligand
+  encoder keys ARE in the main checkpoint (83 keys; pretrained file not needed);
+  `LASER_ALPHABET` = `'ARNDCEQGHILKMFPSTWYVX'` (`utils/constants.py:34`, non-trivial E/Q permutation);
+  graph sites G1–G10 enumerated with dense replacements (`radius_graph` has zero call sites); draw
+  sites `model.py:859,899` / tied `:627,676,677`, order draw `pdb_dataset.py:1641`; dropout: 74
+  modules (72 `nn.Dropout`, 44 with `p>0`, 1 `_VDropout`), `self.training` read once
+  (`model_generics.py:631`); `tied_sample` ignored-knob list confirmed exactly; LigandMPNN scripts
+  drive LigandMPNN (`duplicate` confirmed); fixtures not in repo (B2, B1(a)).
+- Branch-coverage ids: `conditional_ids.txt` content is in report §7 (to be committed at
+  `tests/port/conditional_ids.txt` by T0.3/T0.4).
+- Not resolved by T0.2: the aminx invalid-neighbour debt entry (§6.5b last row) is drafted in report
+  §8 but **not filed**; the orchestrator files it.
