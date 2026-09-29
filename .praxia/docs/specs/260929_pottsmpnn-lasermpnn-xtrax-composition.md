@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: converged-r14-a10
+status: converged-r15-a10
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -73,6 +73,16 @@ Revision history:
   "order from a fixed N→C wave schedule" are historical; U-a (all PottsMPNN sampling in the driver)
   is unaffected. (e) Source anchors (file:line) into `src/aminx/**` were taken at the dogfood base
   and may have drifted; per §0 the code at HEAD wins.
+- r14 → r15 (A1/A3 execution; **post-hoc, made after observing a failure**): (1) `potts_energy` f32
+  tolerance: a pure `rtol=1e-5` on a total that is a sum of O(L·K) terms is ill-posed when the terms
+  cancel. Observed on the A3 wave: `vanilla_30 two_chain` random seq 3, total 0.01207, abs err
+  1.9e-7, rel err 1.56e-5, while the same port passes f64 at rtol=1e-10 on every cell. f32 is now the
+  summation backward-error bound `|got−ref| ≤ 1e-5·Σ|terms|` with `Σ|terms| = potts_energy(|etab|,
+  seq)`; f64 unchanged. (2) Refine waves omit X (`constant[20]=1`): upstream refine builds 20
+  candidates but samples over 21 letters and raises IndexError when X is drawn (debt #2260); A5 must
+  define X handling. (3) A1 f64 dumps shim `potts_mpnn_utils.py:940` (`d_onehot.float()` → weight
+  dtype). (4) A-wave parity tests run as plain tests under `tests/families/potts_mpnn/` until each
+  wave has a tier target + manifest + reference `algo.py` (harness wiring task).
 - r13 → r14 (T0.2b xtrax 0.4.0a10 re-verify; evidence
   `research/260929_potts-laser-t02b-xtrax-a10-reverify.md`): every xtrax-derived fact holds on
   0.4.0a10 (SinkSpec/`derive_sink_spec`/ZarrStagingSink line anchors identical; `RunSpec.run_id`
@@ -1123,7 +1133,7 @@ killed (not invalid). Follow-up: `xtrax.port` pytest plugin in the wheel.
 | `potts_head` | `PottsHead` | no | rtol=1e-10,atol=1e-12 / rtol=1e-5,atol=1e-6 | 1 |
 | `potts_merge_pair_d2` | `merge_pair(denom=2)` | no | exact / atol=1e-7 | 1 |
 | `potts_merge_pair_d4` | `merge_pair(denom=4,exclude_self)` | no | exact / atol=1e-7 | 1 |
-| `potts_energy` | `potts_energy` | no | rtol=1e-10 / rtol=1e-5 | 1 |
+| `potts_energy` | `potts_energy` | no | rtol=1e-10 / \|err\| ≤ 1e-5·Σ\|terms\| (r15) | 1 |
 | `potts_ar_decode` | `PottsARDecode` (+tied, PSSMMix) with injected uniforms/order; fixture with `fixed_positions` (`chain_M_pos=0` rows); negative control AR `m = present·chain_M_pos` must fail | yes | exact tokens / match rate | 1 |
 | `potts_refine` | `PottsRefine` (all modes) injected uniforms | yes | exact tokens / match rate | 1 |
 | `pottsmpnn_full` | etab_forward + teacher-forced log-probs | no | atol 1e-8 / log-prob 1e-4 | 1 per bucket |
