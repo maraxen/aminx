@@ -72,13 +72,21 @@ fi
 # tool install`, so its dist-info lives under ~/.local/share/uv/tools/bathos/. Here
 # $BTH_BIN is a plain venv at $HOME/bv/bth-84be544e (one-time Engaging staging), so its
 # dist-info sits under that venv's own site-packages instead. Same check, same pin.
-venv_site_pkg="$(dirname "$(dirname "$BTH_BIN")")"/lib/python3*/site-packages
-venv_dist_info="$(ls -d "${venv_site_pkg}"/bathos-*.dist-info 2>/dev/null | head -1)"
+# Glob unquoted so python3* expands (a quoted glob made `ls` exit 2, which pipefail +
+# set -e turned into a silent exit 2 -- L3 smoke job 24335840). No jq dependency.
+venv_root="$(dirname "$(dirname "$BTH_BIN")")"
+venv_dist_info=""
+for candidate in "$venv_root"/lib/python3*/site-packages/bathos-*.dist-info; do
+  if [ -f "$candidate/direct_url.json" ]; then
+    venv_dist_info="$candidate"
+    break
+  fi
+done
 if [ -z "$venv_dist_info" ]; then
-  echo "engaging_run.sbatch: cannot find bathos dist-info under $(dirname "$(dirname "$BTH_BIN")")" >&2
+  echo "engaging_run.sbatch: cannot find bathos dist-info under ${venv_root}" >&2
   exit 3
 fi
-installed_bathos_commit="$(jq -r '.vcs_info.commit_id // ""' "${venv_dist_info}/direct_url.json")"
+installed_bathos_commit="$(sed -n 's/.*"commit_id" *: *"\([0-9a-f]*\)".*/\1/p' "${venv_dist_info}/direct_url.json")"
 if [ "$installed_bathos_commit" != "$BATHOS_COMMIT_PIN" ]; then
   echo "engaging_run.sbatch: installed bathos commit is '${installed_bathos_commit}', expected '${BATHOS_COMMIT_PIN}'" >&2
   exit 3
