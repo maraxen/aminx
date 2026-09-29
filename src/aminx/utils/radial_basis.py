@@ -79,7 +79,7 @@ def compute_radial_basis(
     return jnp.exp(
       -(
         jnp.square(
-          (neighbor_distances[..., None] - rbf_centers(neighbor_distances.dtype)) / RBF_SIGMA
+          (neighbor_distances[..., None] - rbf_centers(neighbor_distances.dtype)) / RBF_SIGMA,
         )
       ),
     )
