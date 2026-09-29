@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: draft-r10
+status: converged-r11
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -54,6 +54,11 @@ Revision history:
   compact; three-label vehicle outcomes incl. inconclusive + mutant `error`; broadened freshness scope
   + weights SHA check; AssertionError-only kill; schemas to T0.3; selftest (vi)/(vii) + full (v);
   Z1 operator re-run of stale sidecars at final tree.
+- r10 → r11 (**converged**: round-11 challenger found 0 BLOCKER / 0 MAJOR under the strict rubric;
+  its 5 MINORs applied by the orchestrator): makereport hookwrapper for `exc_type` + kill precedence;
+  outcome hooks keyed on `AMINX_PORT_WAVE`, step 2 reads `AMINX_REDSOX_OUTCOMES_READ`; per-arm
+  subprocess for sidecar mutants; required artifact `sha256` in registry; freshness scope covers
+  `scripts/parity/**`, `scripts/recapture/**`.
 
 ## 0. Goal, non-goals, assumed decisions
 
@@ -330,7 +335,9 @@ satisfied by `mpnn` by construction; no subclassing, no capability field changes
 - Conversion `scripts/recapture/pottsmpnn_model_to_eqx.py` (bathos-tracked) reuses
   `scripts/convert_weights.py`'s ProteinMPNN key map; only `etab_out.*` is new. T0.2 records
   `load_state_dict(strict=False)` missing/unexpected keys per checkpoint; non-empty missing →
-  blocking finding. Registered with source SHA-256 + upstream commit.
+  blocking finding. Registered with **required** `sha256` = SHA-256 of the converted artifact prep
+  loads (registry `sha256` is optional today, `host/prep.py:60`; required for `pottsmpnn_*`/
+  `lasermpnn_*`), plus separate `source_sha256` (upstream torch file) + upstream commit.
 - In scope: `vanilla/pottsmpnn_{20,30}`, `soluble/sol_pottsmpnn_{20,30}`, `ft/potts_ft` (T0.2
   confirms ft config); `proteinmpnn_compatible_model_weights/` → `duplicate` exclusion if
   byte-equivalent after mapping (T0.2), else in scope.
@@ -833,7 +840,7 @@ def test_exclusions():
             assert not r.get("targets") and (r["reason"] in REASONS or r["reason"].startswith("deferred:"))
             if r["reason"].startswith("deferred:"): assert r["reason"][9:] in DEFERRED_IDS
 def test_parity_ids_passed():
-    passed = passed_nodeids(os.environ["AMINX_REDSOX_OUTCOMES"])   # call passed, no failed phase, not xfail
+    passed = passed_nodeids(os.environ["AMINX_REDSOX_OUTCOMES_READ"])   # call passed, no failed phase, not xfail
     for r in LIVE: assert r["parity_test_ids"] and set(r["parity_test_ids"]) <= passed, r
     sem = {t for r in LIVE for t in r["targets"]
            if any(i.split("::")[-1].startswith("test_knob_semantics_") and i in passed for i in r["parity_test_ids"])}
@@ -855,11 +862,14 @@ whenever it graded the tree (FAIL included), non-zero only on harness crash. `[o
 1. `rc=0; for W in __nonport__ $(ls tests/port/targets/*.toml | xargs -n1 basename -s .toml | sort); do AMINX_PORT_WAVE=$W AMINX_REDSOX_SELECT=$OUT/ids_$W.txt AMINX_REDSOX_OUTCOMES=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" $(cat $OUT/files_$W.txt) || rc=1; done`
    (no `-m`). Every module under `tests/port/` (incl. selftest, `port_wave("port_selftest")`) declares
    `pytestmark = pytest.mark.port_wave("<wave>")` (missing marker = collection error); its ids go only
-   to that wave's list. Hooks in `tests/conftest.py`, active only when those env vars are set:
-   deselect (never skip) items whose `port_wave` ≠ `AMINX_PORT_WAVE` or whose nodeid ∉ ids file;
-   `pytest.UsageError` if a listed id is not collected; `pytest_runtest_logreport` appends
+   to that wave's list. Hooks in `tests/conftest.py`, active **only when `AMINX_PORT_WAVE` is set**
+   (step 2 runs with it unset, so its hooks are off and it reads outcomes via the read-only
+   `AMINX_REDSOX_OUTCOMES_READ`): deselect (never skip) items whose `port_wave` ≠ `AMINX_PORT_WAVE`
+   or whose nodeid ∉ ids file; `pytest.UsageError` if a listed id is not collected; a
+   `pytest_runtest_makereport` hookwrapper copies `call.excinfo.typename` onto
+   `report.user_properties`; `pytest_runtest_logreport` appends
    `{nodeid, wave, when, outcome, wasxfail, mutant, exc_type}` (`mutant` null on clean runs;
-   `exc_type` = class name of `call.excinfo`, else null). `passed_nodeids`
+   `exc_type` read from `user_properties`, else null). `passed_nodeids`
    considers only records with `mutant is None`: an id passes iff its call phase passed in such a
    record with `wave == declared wave`, with no failed phase and no `wasxfail` among its `mutant is
    None` records; `skipped` never counts. `test_branch_coverage` groups records by `(mutant, nodeid)`:
@@ -871,7 +881,8 @@ whenever it graded the tree (FAIL included), non-zero only on harness crash. `[o
    declared wave (`__nonport__` for A0/B0 gates) and run one invocation per (row, wave), ids file =
    that group, `AMINX_PORT_WAVE` = that wave, `AMINX_PORT_MUTANT=<id>`, appended to `outcomes.jsonl`;
    the row's verdict pools every group (≥1 vehicle id whose `when=='call'` record under the mutant failed with
-   `exc_type=='AssertionError'`; any other failure type → `instrument_invalid`); exit status not
+   `exc_type=='AssertionError'` ⇒ killed; only if no such kill exists and some non-Assertion failure
+   occurred ⇒ `instrument_invalid`); exit status not
    folded into `rc` (judged by step 2).
 1c. Sidecar vehicles (validated here, never run here). For each sidecar slug S with
    `branch_manifest` rows, the owning task (or the gate operator, when the record is stale) runs, from
@@ -883,7 +894,10 @@ whenever it graded the tree (FAIL included), non-zero only on harness crash. `[o
    "failed"|"passed"|"error"}, weights: {path: sha256}}` — `clean` is the §7.3 band label of the
    unmutated measurement; a mutant is `"failed"` only if its measurement completed and landed in S's
    §7.3 fail band (for sidecars without an inconclusive band: "otherwise"); an exception gives
-   `"error"`; `weights` lists every checkpoint loaded — and `{clean, n_listed, n_failed}` to
+   `"error"`; `weights` lists every checkpoint loaded; the clean arm and **each mutant arm run in a
+   fresh subprocess** (a jit/filter_jit cache traced by an earlier arm would otherwise hide a
+   trace-time mutant; harness unit test shows a trace-time mutant changes the output) — and
+   `{clean, n_listed, n_failed}` to
    `$BTH_RESULTS_PATH`. S's `.bth.toml` `[outcomes]` are disjoint, with K = `n_listed > 0 AND n_failed =
    n_listed`: `pass = "clean = 'pass' AND K"`, `inconclusive = "clean = 'inconclusive' AND K"`,
    `fail = "NOT (clean IN ('pass','inconclusive') AND K)"` (bathos `outcome` = name of first matching
@@ -894,15 +908,17 @@ whenever it graded the tree (FAIL included), non-zero only on harness crash. `[o
    warm tier and the gate never runs `bth compact` (an in-run compact freezes in-flight rows,
    `compact.py:957-962`). It asserts: `status=='completed'` and `outcome=='pass'`; `git_dirty` false;
    `git merge-base --is-ancestor <git_hash> HEAD`; `git diff --name-only <git_hash>..HEAD` touches
-   nothing under `src/aminx/**`, `scripts/parity/S*`, `tests/port/**`, `aminx-oracles/**`,
-   `pyproject.toml`, `uv.lock` (the ledger itself is out of scope); every `branch_controls.json`
-   `weights` SHA-256 equals the checkpoint registry's SHA-256 at HEAD;
+   nothing under `src/aminx/**`, `scripts/parity/**`, `scripts/recapture/**`, `tests/port/**`,
+   `aminx-oracles/**`, `pyproject.toml`, `uv.lock` (the ledger itself is out of scope); every
+   `branch_controls.json` `weights` SHA-256 equals the checkpoint registry's `sha256` (the converted
+   artifact prep loads; required on every `pottsmpnn_*`/`lasermpnn_*` entry, §4.1) at HEAD;
    `sidecar_sha256 == sha256(scripts/parity/S.bth.toml)` at HEAD (raw bytes, `sidecar.py:434`); the
    `--mutants` value in `argv`, as a set, equals S's manifest row ids; an `output_paths` entry ends in
    `/S/<git_hash[:8]>/branch_controls.json`, the file exists, its `mutants` key set equals S's row ids,
    every value `"failed"`, and `clean=="pass"`. Any failed assertion or missing record →
    `instrument_invalid`. The gate host must hold the catalog (titanix).
-2. `AMINX_REDSOX_OUTCOMES=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/redsox -q`
+2. `AMINX_REDSOX_OUTCOMES_READ=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/redsox -q`
+   (`AMINX_PORT_WAVE` unset ⇒ outcome hooks off)
    (incl. `test_branch_coverage`). `OUT=${AMINX_GATE_OUT:-$REPO/outputs/gate/<utc-ts>}` (absolute;
    `/outputs/` is gitignored, T0.4); `run_gate.py` sets, in every child env, `AMINX_PORT_AUDITS_PATH=$OUT/port_audits.jsonl`.
 redsox U1 reachability runs only as a smoke check (presence-only). T0.4 runs the gate on current
@@ -973,7 +989,8 @@ manifest rows (extra and missing); `output_paths` directory ≠ `git_hash[:8]`; 
 entry — every step-1c assertion has exactly one (v) fixture; (vi) default `resolve_run` against a
 temporary catalog holding only a cool-tier fragment resolves every field, missing fragment →
 `instrument_invalid`; (vii) row `selftest_raise` whose mutant raises `RuntimeError` →
-`instrument_invalid`. Follow-up: `xtrax.port` pytest plugin in the wheel.
+`instrument_invalid`; (vii-b) a row with one AssertionError-killed id and one RuntimeError id →
+killed (not invalid). Follow-up: `xtrax.port` pytest plugin in the wheel.
 
 | Wave | Symbol | stochastic | tol f64 / f32 | max_traces |
 |---|---|---|---|---|
