@@ -12,7 +12,6 @@ etab ``X`` (21). Energy tables used by ``potts_energy`` are 22x22 with the
 
 from __future__ import annotations
 
-import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
@@ -145,10 +144,7 @@ def potts_energy(
   """
   single = seq.ndim == 1
   sequences = seq[None] if single else seq
-  neighbours = e_idx.astype(jnp.int32)
-  scores = jax.vmap(lambda sequence: _sequence_energy(etab, neighbours, pad_valid, sequence))(
-    sequences,
-  )
+  scores = _batch_energy(etab, e_idx.astype(jnp.int32), pad_valid, sequences)
   return scores[0] if single else scores
 
 
@@ -183,21 +179,26 @@ def positional_potts_energy(
   return jnp.where(pad_valid[pos], total, jnp.zeros_like(total))
 
 
-def _sequence_energy(
+def _batch_energy(
   etab: Float[Array, "L K A A"],
   e_idx: Int[Array, "L K"],
   pad_valid: Bool[Array, " L"],
-  seq: Int[Array, " L"],
-) -> Float[Array, ""]:
-  length, k, alphabet, _ = etab.shape
+  sequences: Int[Array, "N L"],
+) -> Float[Array, " N"]:
+  """Energies of ``N`` sequences by one broadcast gather of ``etab[i, k, s_i, s_j]``.
+
+  Broadcasting over the sequence axis, not ``vmap``: L-DRV R1 bans vmap in
+  ``families/``.
+  """
+  length, k, _, _ = etab.shape
   in_range = (e_idx >= 0) & (e_idx < length)
   safe = jnp.clip(e_idx, 0, length - 1)
   missing = jnp.zeros_like(in_range)
   edge_ok = pad_valid[:, None] & jnp.where(in_range, pad_valid[safe], missing)
-  amino_j = seq[safe]
-  column = jnp.broadcast_to(amino_j[:, :, None, None], (length, k, alphabet, 1))
-  by_row = jnp.take_along_axis(etab, column, axis=-1).squeeze(-1)
-  amino_i = jnp.broadcast_to(seq[:, None, None], (length, k, 1))
-  terms = jnp.take_along_axis(by_row, amino_i, axis=-1).squeeze(-1)
+  rows = jnp.arange(length)[:, None]
+  slots = jnp.arange(k)[None, :]
+  amino_i = sequences[:, :, None]
+  amino_j = sequences[:, safe]
+  terms = etab[rows, slots, amino_i, amino_j]
   zero = jnp.asarray(0, dtype=etab.dtype)
-  return jnp.where(edge_ok, terms, zero).sum()
+  return jnp.where(edge_ok[None], terms, zero).sum(axis=(-2, -1))

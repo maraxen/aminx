@@ -239,6 +239,10 @@ def _teacher_forced(
       ),
     )
     node_states.append(node_features)
-  logits = jax.vmap(mpnn.w_out)(node_features)
+  # Row-wise readout as a matmul: L-DRV R1 bans vmap in families/.
+  w_out = mpnn.w_out
+  logits = node_features @ w_out.weight.T
+  if w_out.bias is not None:
+    logits = logits + w_out.bias
   log_probs = jax.nn.log_softmax(logits, axis=-1)
   return log_probs, tuple(node_states), tuple(edge_states)
