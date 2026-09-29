@@ -87,6 +87,7 @@ def train_step(
         chain_idx,
         decoding_approach="diffusion",
         prng_key=key,
+        inference=False,
         physics_features=phys_feat,
         timestep=t,
         noisy_sequence=noisy_seq,
