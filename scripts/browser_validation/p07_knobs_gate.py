@@ -17,11 +17,13 @@ is not part of the liveness count.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -131,6 +133,23 @@ P07_KEYS = (
   "temperature",
   "tie_group_map",
 )
+
+P07_INPUT_DTYPES: dict[str, str] = {
+  "coords": "float32",
+  "mask": "float32",
+  "residue_index": "int32",
+  "chain_index": "int32",
+  "gumbel_noise": "float32",
+  "decoding_order": "int32",
+  "bias": "float32",
+  "fixed_mask": "float32",
+  "fixed_tokens": "int32",
+  "temperature": "float32",
+  "tie_group_map": "int32",
+}
+
+DEFAULT_CHUNK_CELLS = 16
+DEFAULT_CHUNK_TIMEOUT_S = 3600.0
 
 
 class IntegrityRefusalError(RuntimeError):
@@ -545,6 +564,12 @@ def result_template() -> dict[str, object]:
     "versions": {},
     "status_note": "",
     "export_ok": True,
+    "resume_from": "",
+    "chunk_cells": DEFAULT_CHUNK_CELLS,
+    "browser_cells_reused": 0,
+    "browser_cells_run": 0,
+    "browser_reuse": [],
+    "browser_reuse_onnx_mismatch_buckets": [],
   }
 
 
@@ -1152,93 +1177,407 @@ def _raise_on_failed_cells(harness: dict[str, object], names: list[str]) -> None
     raise RuntimeError(msg)
 
 
+def plan_chunks(names: list[str], chunk_size: int) -> list[list[str]]:
+  """Split ``names`` into consecutive chunks of at most ``chunk_size`` entries.
+
+  ``37`` names with ``chunk_size=16`` gives ``[16, 16, 5]``-sized chunks; an empty
+  ``names`` gives no chunks at all (nothing to run, nothing to raise about).
+  """
+  if chunk_size <= 0:
+    msg = f"chunk_cells must be positive, got {chunk_size}"
+    raise ValueError(msg)
+  return [names[i : i + chunk_size] for i in range(0, len(names), chunk_size)]
+
+
+def sha256_file(path: Path) -> str:
+  """sha256 hex digest of ``path``'s bytes, read in fixed-size chunks."""
+  digest = hashlib.sha256()
+  with path.open("rb") as handle:
+    for block in iter(lambda: handle.read(1 << 20), b""):
+      digest.update(block)
+  return digest.hexdigest()
+
+
+def sha256_files(paths: list[Path]) -> str:
+  """sha256 over the concatenation of ``paths``' bytes, in the given order."""
+  digest = hashlib.sha256()
+  for path in paths:
+    with path.open("rb") as handle:
+      for block in iter(lambda: handle.read(1 << 20), b""):
+        digest.update(block)
+  return digest.hexdigest()
+
+
+def onnx_sidecar_files(onnx_path: Path) -> list[Path]:
+  """``onnx_path`` plus its sibling ``<onnx_path>.data``, if that external-data file exists.
+
+  ``embed_external_data`` normally leaves no live external-data reference, but an
+  unused ``.onnx.data`` can still sit next to the ``.onnx`` file (jax2onnx wrote it
+  before embedding); include it when present so a stale leftover can't silently
+  diverge between two exports without being noticed.
+  """
+  files = [onnx_path]
+  data_path = Path(f"{onnx_path}.data")
+  if data_path.is_file():
+    files.append(data_path)
+  return files
+
+
+def find_old_site_file(old_dir: Path, bucket: int, relative: str) -> Path | None:
+  """Locate ``relative`` (e.g. ``models/p07_L128.onnx``) under an old work dir.
+
+  Supports both the pre-chunking layout (``site_L{bucket}/<relative>``) and the
+  chunked layout (``site_L{bucket}_c*/<relative>``, first match wins -- every chunk's
+  site was assembled from the same per-bucket ONNX and, for a given cell, the same
+  input bytes, so any one copy is as good as another).
+  """
+  direct = old_dir / f"site_L{bucket}" / relative
+  if direct.is_file():
+    return direct
+  for candidate in sorted(old_dir.glob(f"site_L{bucket}_c*/{relative}")):
+    if candidate.is_file():
+      return candidate
+  return None
+
+
+def old_bucket_onnx_files(old_dir: Path, bucket: int, model_name: str) -> list[Path] | None:
+  """``[onnx, onnx.data?]`` for ``bucket`` under ``old_dir``, or ``None`` if not found."""
+  main = find_old_site_file(old_dir, bucket, f"models/{model_name}")
+  if main is None:
+    return None
+  data_path = Path(f"{main}.data")
+  return [main, data_path] if data_path.is_file() else [main]
+
+
+def files_identical(left: Path, right: Path) -> bool:
+  """Byte-identical (size first, then sha256), both must exist."""
+  if not left.is_file() or not right.is_file():
+    return False
+  if left.stat().st_size != right.stat().st_size:
+    return False
+  return sha256_file(left) == sha256_file(right)
+
+
+def expected_output_bytes(length: int, label: str) -> int:
+  """Raw little-endian byte size ``parity.mjs`` writes for a cell's ``label`` output."""
+  if label == "tokens":
+    return length * 4  # int32
+  if label == "log_probs":
+    return length * N_AA * 4  # float32
+  msg = f"unknown output label {label!r}"
+  raise ValueError(msg)
+
+
+def old_output_paths(old_dir: Path, bucket: int, name: str) -> dict[str, Path]:
+  """``{label: path}`` for a cell's outputs, under the shared (never-chunked) out dir."""
+  out_dir = old_dir / f"browser_L{bucket}"
+  return {
+    "tokens": out_dir / f"{name}__tokens.bin",
+    "log_probs": out_dir / f"{name}__log_probs.bin",
+  }
+
+
+def check_outputs_complete(paths: dict[str, Path], length: int) -> bool:
+  """Every path in ``paths`` exists with exactly the byte size its label implies."""
+  for label, path in paths.items():
+    if not path.is_file():
+      return False
+    if path.stat().st_size != expected_output_bytes(length, label):
+      return False
+  return True
+
+
+def stamp_reusable(
+  stamp_path: Path,
+  onnx_sha256: str,
+  input_sha256s: list[str],
+  output_sha256s: dict[str, str],
+) -> bool:
+  """``True`` if no stamp exists (predates the stamp feature) or it matches exactly.
+
+  A stamp that exists but disagrees with the freshly computed hashes is stronger
+  evidence than the hash checks above being unable to see (e.g. a hand-edited output);
+  treat that as NOT reusable rather than silently trusting the newer hash check alone.
+  """
+  if not stamp_path.is_file():
+    return True
+  try:
+    data = json.loads(stamp_path.read_text())
+  except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    return True
+  if not isinstance(data, dict):
+    return True
+  if data.get("onnx_sha256") != onnx_sha256:
+    return False
+  if list(data.get("input_sha256s", [])) != list(input_sha256s):
+    return False
+  stamped_outputs = data.get("output_sha256s")
+  if not isinstance(stamped_outputs, dict):
+    return False
+  return all(stamped_outputs.get(label) == sha for label, sha in output_sha256s.items())
+
+
+def cell_reuse_eligible(
+  *,
+  name: str,
+  bucket: int,
+  length: int,
+  new_input_paths: list[Path],
+  old_dir: Path,
+  onnx_ok: bool,
+  onnx_sha256: str,
+) -> dict[str, object]:
+  """Decide whether ``name``'s browser outputs can be reused from ``old_dir``.
+
+  Returns ``{"eligible": bool, "reason": str | None, ...}``; on ``eligible=True`` the
+  dict also carries ``old_output_paths``, ``input_sha256s``, and ``output_sha256s`` for
+  the caller to copy outputs and write a stamp without re-hashing.
+  """
+  if not onnx_ok:
+    return {"eligible": False, "reason": "onnx_mismatch"}
+  old_inputs = [
+    find_old_site_file(old_dir, bucket, f"data/{path.name}") for path in new_input_paths
+  ]
+  if any(old_path is None for old_path in old_inputs):
+    return {"eligible": False, "reason": "input_missing"}
+  for new_path, old_path in zip(new_input_paths, old_inputs, strict=True):
+    if not files_identical(new_path, old_path):  # type: ignore[arg-type]
+      return {"eligible": False, "reason": "input_mismatch"}
+  input_sha256s = [sha256_file(path) for path in new_input_paths]
+  outputs = old_output_paths(old_dir, bucket, name)
+  if not check_outputs_complete(outputs, length):
+    return {"eligible": False, "reason": "output_incomplete"}
+  output_sha256s = {label: sha256_file(path) for label, path in outputs.items()}
+  stamp_path = old_dir / f"browser_L{bucket}" / f"{name}__stamp.json"
+  if not stamp_reusable(stamp_path, onnx_sha256, input_sha256s, output_sha256s):
+    return {"eligible": False, "reason": "stamp_mismatch"}
+  return {
+    "eligible": True,
+    "reason": None,
+    "old_output_paths": outputs,
+    "input_sha256s": input_sha256s,
+    "output_sha256s": output_sha256s,
+  }
+
+
+def write_cell_stamp(
+  *,
+  out_dir: Path,
+  name: str,
+  onnx_sha256: str,
+  input_sha256s: list[str],
+  output_sha256s: dict[str, str],
+  git_hash: str,
+  reused_from: str | None = None,
+) -> None:
+  """Per-cell completion stamp: hashes of everything that must match to trust a reuse."""
+  payload: dict[str, object] = {
+    "onnx_sha256": onnx_sha256,
+    "input_sha256s": list(input_sha256s),
+    "output_sha256s": dict(output_sha256s),
+    "git_hash": git_hash,
+  }
+  if reused_from is not None:
+    payload["reused_from"] = reused_from
+  (out_dir / f"{name}__stamp.json").write_text(json.dumps(payload))
+
+
 def _browser_compare(
   cases: list[dict[str, object]],
   onnx_by_bucket: dict[int, Path],
   work: Path,
   node: str,
-  timeout_s: float,
-) -> tuple[int, float]:
+  chunk_timeout_s: float,
+  *,
+  chunk_cells: int,
+  resume_from: Path | None,
+  git_hash: str,
+) -> dict[str, object]:
+  """Run the browser arm in per-chunk, resumable slices; compare every cell to JAX.
+
+  Each chunk gets its own site dir and its own ``run_p07.mjs`` process (a fresh
+  browser), so a timeout or crash loses at most one chunk's cells -- everything an
+  earlier chunk already wrote (bin outputs + stamps) stays on disk under
+  ``work/browser_L{bucket}``, which is shared across all of a bucket's chunks.
+
+  When ``resume_from`` is given, a cell already verified-complete there (matching
+  ONNX, matching inputs, complete + correctly sized outputs, and -- if present -- a
+  matching stamp) is copied over and excluded from any chunk's browser invocation;
+  the JAX comparison below still runs over EVERY cell, reused or fresh, so resume
+  changes scheduling only, never the outcome logic.
+  """
   import layer_c_common as lcc  # noqa: PLC0415
 
   matched = 0
   max_diff = 0.0
+  reused = 0
+  run_count = 0
+  reuse_entries: list[dict[str, object]] = []
+  onnx_mismatch_buckets: list[int] = []
+
   by_bucket: dict[int, list[dict[str, object]]] = {}
   for case in cases:
     by_bucket.setdefault(int(case["bucket"]), []).append(case)
-  dtypes = {
-    "coords": "float32",
-    "mask": "float32",
-    "residue_index": "int32",
-    "chain_index": "int32",
-    "gumbel_noise": "float32",
-    "decoding_order": "int32",
-    "bias": "float32",
-    "fixed_mask": "float32",
-    "fixed_tokens": "int32",
-    "temperature": "float32",
-    "tie_group_map": "int32",
-  }
+
   for bucket, group in by_bucket.items():
-    site = work / f"site_L{bucket}"
-    data_dir = site / "data"
-    cells = []
     model_name = f"p07_L{bucket}.onnx"
-    for case in group:
-      arrays = case["arrays"]
-      if not isinstance(arrays, dict):
-        continue
-      inputs = []
-      for index, key in enumerate(P07_KEYS):
-        inputs.append(
-          lcc.write_raw_input(
-            np.asarray(arrays[key]),
-            data_dir / f"{case['name']}_{index}.bin",
-            dtypes[key],
-          ),
+    onnx_files = onnx_sidecar_files(onnx_by_bucket[bucket])
+    onnx_sha256 = sha256_files(onnx_files)
+    onnx_ok = False
+    if resume_from is not None:
+      old_onnx_files = old_bucket_onnx_files(resume_from, bucket, model_name)
+      onnx_ok = (
+        old_onnx_files is not None
+        and len(old_onnx_files) == len(onnx_files)
+        and sha256_files(old_onnx_files) == onnx_sha256
+      )
+      if not onnx_ok:
+        onnx_mismatch_buckets.append(bucket)
+        logger.warning(
+          "resume: bucket L=%s ONNX does not match %s (or was not found); "
+          "reusing nothing for this bucket",
+          bucket,
+          resume_from,
         )
-      cells.append(
-        {
-          "name": str(case["name"]),
-          "onnx": f"models/{model_name}",
-          "inputs": inputs,
-          "outputs": [
-            {"label": "tokens", "dtype": "int32"},
-            {"label": "log_probs", "dtype": "float32"},
-          ],
-        },
-      )
-    lcc.assemble_site(cells, {model_name: onnx_by_bucket[bucket]}, site)
-    harness = _run_p07_browser(
-      site_dir=site,
-      out_dir=work / f"browser_L{bucket}",
-      node_bin=node,
-      timeout_s=timeout_s,
-    )
-    if not harness.get("harnessOk"):
-      msg = f"browser harness failed: {harness.get('harnessError')}"
-      raise RuntimeError(msg)
-    group_names = [str(case["name"]) for case in group if isinstance(case["arrays"], dict)]
-    _raise_on_failed_cells(harness, group_names)
-    for case in group:
-      arrays = case["arrays"]
-      if not isinstance(arrays, dict):
-        continue
-      length = int(np.asarray(arrays["mask"]).shape[0])
-      name = str(case["name"])
-      out_dir = work / f"browser_L{bucket}"
-      tokens = lcc.read_raw_output(out_dir / f"{name}__tokens.bin", "int32", (length,))
-      log_probs = lcc.read_raw_output(
-        out_dir / f"{name}__log_probs.bin",
-        "float32",
-        (length, N_AA),
-      )
-      jax_tokens = np.asarray(case["jax_tokens"])
-      jax_lp = np.asarray(case["jax_log_probs"])
-      if np.array_equal(tokens, jax_tokens):
-        matched += 1
-      max_diff = max(max_diff, float(np.max(np.abs(log_probs - jax_lp))))
-  return matched, max_diff
+
+    out_dir = work / f"browser_L{bucket}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    name_to_case = {str(case["name"]): case for case in group if isinstance(case["arrays"], dict)}
+    chunks = plan_chunks(list(name_to_case), chunk_cells)
+
+    for chunk_index, chunk_names in enumerate(chunks):
+      site = work / f"site_L{bucket}_c{chunk_index:03d}"
+      data_dir = site / "data"
+      to_run_cells: list[dict[str, object]] = []
+      to_run_names: list[str] = []
+      input_paths_by_name: dict[str, list[Path]] = {}
+
+      for name in chunk_names:
+        case = name_to_case[name]
+        arrays = case["arrays"]
+        if not isinstance(arrays, dict):
+          continue
+        input_specs = []
+        input_paths = []
+        for index, key in enumerate(P07_KEYS):
+          path = data_dir / f"{name}_{index}.bin"
+          input_specs.append(
+            lcc.write_raw_input(np.asarray(arrays[key]), path, P07_INPUT_DTYPES[key]),
+          )
+          input_paths.append(path)
+        input_paths_by_name[name] = input_paths
+
+        length = int(np.asarray(arrays["mask"]).shape[0])
+        reuse_info = (
+          cell_reuse_eligible(
+            name=name,
+            bucket=bucket,
+            length=length,
+            new_input_paths=input_paths,
+            old_dir=resume_from,
+            onnx_ok=onnx_ok,
+            onnx_sha256=onnx_sha256,
+          )
+          if resume_from is not None
+          else {"eligible": False, "reason": None}
+        )
+        if reuse_info["eligible"]:
+          old_outputs = reuse_info["old_output_paths"]
+          for label, old_path in old_outputs.items():  # type: ignore[union-attr]
+            shutil.copyfile(old_path, out_dir / f"{name}__{label}.bin")
+          write_cell_stamp(
+            out_dir=out_dir,
+            name=name,
+            onnx_sha256=onnx_sha256,
+            input_sha256s=reuse_info["input_sha256s"],  # type: ignore[arg-type]
+            output_sha256s=reuse_info["output_sha256s"],  # type: ignore[arg-type]
+            git_hash=git_hash,
+            reused_from=str(resume_from),
+          )
+          reused += 1
+          reuse_entries.append(
+            {
+              "name": name,
+              "bucket": bucket,
+              "onnx_sha256": onnx_sha256,
+              "output_sha256s": dict(reuse_info["output_sha256s"]),  # type: ignore[arg-type]
+            },
+          )
+        else:
+          to_run_names.append(name)
+          to_run_cells.append(
+            {
+              "name": name,
+              "onnx": f"models/{model_name}",
+              "inputs": input_specs,
+              "outputs": [
+                {"label": "tokens", "dtype": "int32"},
+                {"label": "log_probs", "dtype": "float32"},
+              ],
+            },
+          )
+
+      if to_run_cells:
+        lcc.assemble_site(to_run_cells, {model_name: onnx_by_bucket[bucket]}, site)
+        try:
+          harness = _run_p07_browser(
+            site_dir=site,
+            out_dir=out_dir,
+            node_bin=node,
+            timeout_s=chunk_timeout_s,
+          )
+          if not harness.get("harnessOk"):
+            msg = f"browser harness failed: {harness.get('harnessError')}"
+            raise RuntimeError(msg)  # noqa: TRY301
+          _raise_on_failed_cells(harness, to_run_names)
+        except Exception as exc:
+          msg = (
+            f"browser chunk {chunk_index} for bucket L={bucket} "
+            f"({len(to_run_names)} cell(s): {to_run_names}) failed: "
+            f"{type(exc).__name__}: {exc}"
+          )
+          raise RuntimeError(msg) from exc
+        run_count += len(to_run_names)
+        for name in to_run_names:
+          output_sha256s = {
+            "tokens": sha256_file(out_dir / f"{name}__tokens.bin"),
+            "log_probs": sha256_file(out_dir / f"{name}__log_probs.bin"),
+          }
+          write_cell_stamp(
+            out_dir=out_dir,
+            name=name,
+            onnx_sha256=onnx_sha256,
+            input_sha256s=[sha256_file(path) for path in input_paths_by_name[name]],
+            output_sha256s=output_sha256s,
+            git_hash=git_hash,
+          )
+
+      for name in chunk_names:
+        case = name_to_case[name]
+        arrays = case["arrays"]
+        if not isinstance(arrays, dict):
+          continue
+        length = int(np.asarray(arrays["mask"]).shape[0])
+        tokens = lcc.read_raw_output(out_dir / f"{name}__tokens.bin", "int32", (length,))
+        log_probs = lcc.read_raw_output(
+          out_dir / f"{name}__log_probs.bin",
+          "float32",
+          (length, N_AA),
+        )
+        jax_tokens = np.asarray(case["jax_tokens"])
+        jax_lp = np.asarray(case["jax_log_probs"])
+        if np.array_equal(tokens, jax_tokens):
+          matched += 1
+        max_diff = max(max_diff, float(np.max(np.abs(log_probs - jax_lp))))
+
+  return {
+    "matched": matched,
+    "max_diff": max_diff,
+    "reused": reused,
+    "run": run_count,
+    "reuse_entries": reuse_entries,
+    "onnx_mismatch_buckets": onnx_mismatch_buckets,
+  }
 
 
 def _lane_batch(geom: dict[str, object], lane: str) -> object:
@@ -1439,6 +1778,20 @@ def run(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0911, PLR091
   git_hash, git_clean = _git_state(_ROOT)
   result["git_hash"] = git_hash
   result["git_clean"] = git_clean
+
+  resume_from: Path | None = args.resume_from
+  result["resume_from"] = str(resume_from) if resume_from is not None else ""
+  chunk_cells = int(args.chunk_cells)
+  result["chunk_cells"] = chunk_cells
+  # Back-compat: --timeout-s used to be the whole-run browser timeout. If the caller
+  # gave it explicitly and did not also give --chunk-timeout-s, use it as the
+  # per-chunk timeout; otherwise chunking gets its own, larger default budget.
+  if args.chunk_timeout_s is not None:
+    chunk_timeout_s = float(args.chunk_timeout_s)
+  elif args.timeout_s is not None:
+    chunk_timeout_s = float(args.timeout_s)
+  else:
+    chunk_timeout_s = DEFAULT_CHUNK_TIMEOUT_S
 
   buckets = (128,) if args.smoke else FULL_BUCKETS
   seeds = SMOKE_SEEDS if args.smoke else FULL_SEEDS
@@ -1656,16 +2009,25 @@ def run(args: argparse.Namespace) -> dict[str, object]:  # noqa: PLR0911, PLR091
   result["a_max_logprob_abs_diff"] = max_diff
   if args.browser:
     try:
-      web_match, web_diff = _browser_compare(
+      browser_result = _browser_compare(
         cases,
         onnx_by_bucket,
         work,
         node,
-        float(args.timeout_s),
+        chunk_timeout_s,
+        chunk_cells=chunk_cells,
+        resume_from=resume_from,
+        git_hash=git_hash,
       )
+      web_match = int(browser_result["matched"])
+      web_diff = float(browser_result["max_diff"])
       result["a_cases_bitwise_web"] = web_match
       result["a_max_logprob_abs_diff"] = max(max_diff, web_diff)
       result["a_web_ok"] = web_match == len(cases)
+      result["browser_cells_reused"] = int(browser_result["reused"])
+      result["browser_cells_run"] = int(browser_result["run"])
+      result["browser_reuse"] = browser_result["reuse_entries"]
+      result["browser_reuse_onnx_mismatch_buckets"] = browser_result["onnx_mismatch_buckets"]
     except Exception as exc:
       logger.exception("browser arm failed")
       result["status_note"] = f"browser arm failed: {type(exc).__name__}: {exc}"
@@ -1699,7 +2061,37 @@ def main(argv: list[str] | None = None) -> int:
   parser.add_argument("--browser", action="store_true", help="Also run ORT-Web via run_p07.mjs.")
   parser.add_argument("--budget-s", type=float, default=3600.0, help="Wall-clock budget.")
   parser.add_argument("--node-bin", default=None, help="Explicit node binary.")
-  parser.add_argument("--timeout-s", type=float, default=300.0, help="Browser harness timeout.")
+  parser.add_argument(
+    "--timeout-s",
+    type=float,
+    default=None,
+    help=(
+      "DEPRECATED alias for --chunk-timeout-s, kept for back-compat: if given and "
+      "--chunk-timeout-s is not, this becomes the per-chunk browser timeout "
+      f"(default {DEFAULT_CHUNK_TIMEOUT_S}s otherwise)."
+    ),
+  )
+  parser.add_argument(
+    "--chunk-cells",
+    type=int,
+    default=DEFAULT_CHUNK_CELLS,
+    help="Cells per browser chunk (fresh browser process per chunk).",
+  )
+  parser.add_argument(
+    "--chunk-timeout-s",
+    type=float,
+    default=None,
+    help=f"Per-chunk browser harness timeout (default {DEFAULT_CHUNK_TIMEOUT_S}s).",
+  )
+  parser.add_argument(
+    "--resume-from",
+    type=Path,
+    default=None,
+    help=(
+      "Old work dir (e.g. a previous run's tempfile.mkdtemp output) to reuse "
+      "verified-complete browser cells from, instead of recomputing them."
+    ),
+  )
   args = parser.parse_args(argv)
 
   import layer_a_common as lac  # noqa: PLC0415

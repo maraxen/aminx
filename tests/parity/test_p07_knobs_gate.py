@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from scripts.browser_validation.p07_knobs_gate import (
+  N_AA,
   OUTCOMES,
   P07_KEYS,
   SplitMix64,
@@ -21,16 +22,28 @@ from scripts.browser_validation.p07_knobs_gate import (
   _raise_on_failed_cells,
   bad_gumbel_from_uniform,
   build_p07_inputs,
+  cell_reuse_eligible,
+  check_outputs_complete,
   evaluate_outcome,
+  expected_output_bytes,
+  files_identical,
+  find_old_site_file,
   gumbel_from_uniform,
   js_build,
+  old_bucket_onnx_files,
+  old_output_paths,
   order_counts,
   passing_result,
+  plan_chunks,
   result_template,
+  sha256_file,
+  sha256_files,
+  stamp_reusable,
   summarize_gumbel,
   summarize_orders,
   tie_group_map,
   uniform_from_u32,
+  write_cell_stamp,
 )
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -163,3 +176,392 @@ def test_cases_grade_with_the_pinned_bathos_evaluator() -> None:
     assert got == row["expect"], row["name"]
   passing = sidecar_mod.evaluate_outcome(sidecar, passing_result())
   assert getattr(passing, "outcome", passing) == "pass"
+
+
+# --- T11f: browser chunking + resume (pure, no browser, no JAX export) ---------------------
+
+
+def _write_cell_inputs(
+  base: Path,
+  *,
+  bucket: int,
+  name: str,
+  n_inputs: int,
+  payloads: list[bytes],
+) -> list[Path]:
+  """Write ``<name>_<i>.bin`` under ``base/site_L{bucket}/data/``; return their paths."""
+  data_dir = base / f"site_L{bucket}" / "data"
+  data_dir.mkdir(parents=True, exist_ok=True)
+  paths = []
+  for i in range(n_inputs):
+    path = data_dir / f"{name}_{i}.bin"
+    path.write_bytes(payloads[i])
+    paths.append(path)
+  return paths
+
+
+def _write_cell_outputs(
+  base: Path, *, bucket: int, name: str, length: int, ok: bool = True
+) -> None:
+  """Write ``<name>__tokens.bin`` / ``<name>__log_probs.bin`` under ``base/browser_L{bucket}/``."""
+  out_dir = base / f"browser_L{bucket}"
+  out_dir.mkdir(parents=True, exist_ok=True)
+  tokens_size = expected_output_bytes(length, "tokens")
+  log_probs_size = expected_output_bytes(length, "log_probs")
+  if not ok:
+    tokens_size -= 4  # wrong size: simulates a truncated/partial write
+  (out_dir / f"{name}__tokens.bin").write_bytes(b"\x01" * tokens_size)
+  (out_dir / f"{name}__log_probs.bin").write_bytes(b"\x02" * log_probs_size)
+
+
+def test_plan_chunks_splits_with_a_remainder() -> None:
+  names = [f"c{i}" for i in range(37)]
+  chunks = plan_chunks(names, 16)
+  assert [len(chunk) for chunk in chunks] == [16, 16, 5]
+  assert [name for chunk in chunks for name in chunk] == names
+
+
+def test_plan_chunks_empty_names_gives_no_chunks() -> None:
+  assert plan_chunks([], 16) == []
+
+
+def test_plan_chunks_rejects_non_positive_chunk_size() -> None:
+  with pytest.raises(ValueError, match="positive"):
+    plan_chunks(["a"], 0)
+
+
+def test_expected_output_bytes_matches_dtype_sizes() -> None:
+  assert expected_output_bytes(10, "tokens") == 10 * 4
+  assert expected_output_bytes(10, "log_probs") == 10 * N_AA * 4
+  with pytest.raises(ValueError, match="unknown"):
+    expected_output_bytes(10, "bogus")
+
+
+def test_files_identical(tmp_path: Path) -> None:
+  a = tmp_path / "a.bin"
+  b = tmp_path / "b.bin"
+  a.write_bytes(b"same-bytes")
+  b.write_bytes(b"same-bytes")
+  assert files_identical(a, b)
+  b.write_bytes(b"different")
+  assert not files_identical(a, b)
+  assert not files_identical(a, tmp_path / "missing.bin")
+
+
+def test_find_old_site_file_direct_and_missing(tmp_path: Path) -> None:
+  old_dir = tmp_path / "old"
+  (old_dir / "site_L128" / "data").mkdir(parents=True)
+  (old_dir / "site_L128" / "data" / "foo_0.bin").write_bytes(b"x")
+  assert find_old_site_file(old_dir, 128, "data/foo_0.bin") is not None
+  assert find_old_site_file(old_dir, 256, "data/foo_0.bin") is None
+
+
+def test_find_old_site_file_supports_chunked_layout(tmp_path: Path) -> None:
+  old_dir = tmp_path / "old"
+  (old_dir / "site_L256_c003" / "data").mkdir(parents=True)
+  (old_dir / "site_L256_c003" / "data" / "bar_1.bin").write_bytes(b"y")
+  found = find_old_site_file(old_dir, 256, "data/bar_1.bin")
+  assert found is not None
+  assert found.read_bytes() == b"y"
+
+
+def test_old_bucket_onnx_files_includes_sidecar_data_when_present(tmp_path: Path) -> None:
+  old_dir = tmp_path / "old"
+  models_dir = old_dir / "site_L128" / "models"
+  models_dir.mkdir(parents=True)
+  onnx = models_dir / "p07_L128.onnx"
+  onnx.write_bytes(b"onnx-bytes")
+  assert old_bucket_onnx_files(old_dir, 128, "p07_L128.onnx") == [onnx]
+
+  Path(f"{onnx}.data").write_bytes(b"external")
+  assert old_bucket_onnx_files(old_dir, 128, "p07_L128.onnx") == [onnx, Path(f"{onnx}.data")]
+
+  assert old_bucket_onnx_files(old_dir, 256, "p07_L256.onnx") is None
+
+
+def test_check_outputs_complete(tmp_path: Path) -> None:
+  bucket, name, length = 128, "cellZ", 4
+  _write_cell_outputs(tmp_path, bucket=bucket, name=name, length=length)
+  assert check_outputs_complete(old_output_paths(tmp_path, bucket, name), length)
+  assert not check_outputs_complete(old_output_paths(tmp_path, bucket, "missing_cell"), length)
+
+
+def test_write_cell_stamp_round_trip(tmp_path: Path) -> None:
+  out_dir = tmp_path / "browser_L128"
+  out_dir.mkdir()
+  write_cell_stamp(
+    out_dir=out_dir,
+    name="cellX",
+    onnx_sha256="sha-onnx",
+    input_sha256s=["sha-in-0", "sha-in-1"],
+    output_sha256s={"tokens": "sha-tok", "log_probs": "sha-lp"},
+    git_hash="deadbeef",
+    reused_from="/tmp/old",
+  )
+  payload = json.loads((out_dir / "cellX__stamp.json").read_text())
+  assert payload == {
+    "onnx_sha256": "sha-onnx",
+    "input_sha256s": ["sha-in-0", "sha-in-1"],
+    "output_sha256s": {"tokens": "sha-tok", "log_probs": "sha-lp"},
+    "git_hash": "deadbeef",
+    "reused_from": "/tmp/old",
+  }
+
+
+def test_write_cell_stamp_omits_reused_from_when_fresh(tmp_path: Path) -> None:
+  out_dir = tmp_path / "browser_L128"
+  out_dir.mkdir()
+  write_cell_stamp(
+    out_dir=out_dir,
+    name="cellX",
+    onnx_sha256="s",
+    input_sha256s=[],
+    output_sha256s={},
+    git_hash="h",
+  )
+  payload = json.loads((out_dir / "cellX__stamp.json").read_text())
+  assert "reused_from" not in payload
+
+
+def test_stamp_reusable_true_when_absent(tmp_path: Path) -> None:
+  assert stamp_reusable(tmp_path / "nope__stamp.json", "sha", [], {})
+
+
+def test_stamp_reusable_true_when_matching(tmp_path: Path) -> None:
+  write_cell_stamp(
+    out_dir=tmp_path,
+    name="s",
+    onnx_sha256="sha-onnx",
+    input_sha256s=["a", "b"],
+    output_sha256s={"tokens": "t", "log_probs": "l"},
+    git_hash="h",
+  )
+  stamp = tmp_path / "s__stamp.json"
+  assert stamp_reusable(stamp, "sha-onnx", ["a", "b"], {"tokens": "t", "log_probs": "l"})
+
+
+def test_stamp_reusable_false_when_onnx_sha_differs(tmp_path: Path) -> None:
+  write_cell_stamp(
+    out_dir=tmp_path,
+    name="s",
+    onnx_sha256="sha-onnx",
+    input_sha256s=["a", "b"],
+    output_sha256s={"tokens": "t", "log_probs": "l"},
+    git_hash="h",
+  )
+  stamp = tmp_path / "s__stamp.json"
+  assert not stamp_reusable(stamp, "different-sha", ["a", "b"], {"tokens": "t", "log_probs": "l"})
+
+
+def test_cell_reuse_eligible_when_everything_matches(tmp_path: Path) -> None:
+  bucket, name, length, n_inputs = 128, "cellA", 6, 2
+  payloads = [b"in0", b"in1"]
+  old_dir = tmp_path / "old"
+  _write_cell_inputs(old_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads)
+  _write_cell_outputs(old_dir, bucket=bucket, name=name, length=length)
+
+  new_dir = tmp_path / "new"
+  new_paths = _write_cell_inputs(
+    new_dir,
+    bucket=bucket,
+    name=name,
+    n_inputs=n_inputs,
+    payloads=payloads,
+  )
+
+  result = cell_reuse_eligible(
+    name=name,
+    bucket=bucket,
+    length=length,
+    new_input_paths=new_paths,
+    old_dir=old_dir,
+    onnx_ok=True,
+    onnx_sha256="abc123",
+  )
+  assert result["eligible"] is True
+  assert result["reason"] is None
+  assert len(result["input_sha256s"]) == n_inputs
+  assert set(result["output_sha256s"]) == {"tokens", "log_probs"}
+
+
+def test_cell_reuse_eligible_input_byte_differs_is_not_eligible(tmp_path: Path) -> None:
+  bucket, name, length, n_inputs = 128, "cellA", 6, 2
+  old_dir = tmp_path / "old"
+  _write_cell_inputs(
+    old_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=[b"in0", b"in1"]
+  )
+  _write_cell_outputs(old_dir, bucket=bucket, name=name, length=length)
+
+  new_dir = tmp_path / "new"
+  new_paths = _write_cell_inputs(
+    new_dir,
+    bucket=bucket,
+    name=name,
+    n_inputs=n_inputs,
+    payloads=[b"in0", b"DIFFERENT"],
+  )
+
+  result = cell_reuse_eligible(
+    name=name,
+    bucket=bucket,
+    length=length,
+    new_input_paths=new_paths,
+    old_dir=old_dir,
+    onnx_ok=True,
+    onnx_sha256="abc123",
+  )
+  assert result["eligible"] is False
+  assert result["reason"] == "input_mismatch"
+
+
+def test_cell_reuse_eligible_onnx_mismatch_reuses_nothing(tmp_path: Path) -> None:
+  bucket, name, length, n_inputs = 128, "cellA", 6, 2
+  payloads = [b"in0", b"in1"]
+  old_dir = tmp_path / "old"
+  _write_cell_inputs(old_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads)
+  _write_cell_outputs(old_dir, bucket=bucket, name=name, length=length)
+
+  new_dir = tmp_path / "new"
+  new_paths = _write_cell_inputs(
+    new_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads
+  )
+
+  result = cell_reuse_eligible(
+    name=name,
+    bucket=bucket,
+    length=length,
+    new_input_paths=new_paths,
+    old_dir=old_dir,
+    onnx_ok=False,
+    onnx_sha256="abc123",
+  )
+  assert result == {"eligible": False, "reason": "onnx_mismatch"}
+
+
+def test_cell_reuse_eligible_output_missing_is_not_eligible(tmp_path: Path) -> None:
+  bucket, name, length, n_inputs = 128, "cellA", 6, 2
+  payloads = [b"in0", b"in1"]
+  old_dir = tmp_path / "old"
+  _write_cell_inputs(old_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads)
+  # No outputs written for this cell.
+
+  new_dir = tmp_path / "new"
+  new_paths = _write_cell_inputs(
+    new_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads
+  )
+
+  result = cell_reuse_eligible(
+    name=name,
+    bucket=bucket,
+    length=length,
+    new_input_paths=new_paths,
+    old_dir=old_dir,
+    onnx_ok=True,
+    onnx_sha256="abc123",
+  )
+  assert result["eligible"] is False
+  assert result["reason"] == "output_incomplete"
+
+
+def test_cell_reuse_eligible_output_wrong_size_is_not_eligible(tmp_path: Path) -> None:
+  bucket, name, length, n_inputs = 128, "cellA", 6, 2
+  payloads = [b"in0", b"in1"]
+  old_dir = tmp_path / "old"
+  _write_cell_inputs(old_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads)
+  _write_cell_outputs(old_dir, bucket=bucket, name=name, length=length, ok=False)
+
+  new_dir = tmp_path / "new"
+  new_paths = _write_cell_inputs(
+    new_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads
+  )
+
+  result = cell_reuse_eligible(
+    name=name,
+    bucket=bucket,
+    length=length,
+    new_input_paths=new_paths,
+    old_dir=old_dir,
+    onnx_ok=True,
+    onnx_sha256="abc123",
+  )
+  assert result["eligible"] is False
+  assert result["reason"] == "output_incomplete"
+
+
+def test_cell_reuse_eligible_stamp_mismatch_is_not_eligible(tmp_path: Path) -> None:
+  bucket, name, length, n_inputs = 128, "cellA", 6, 2
+  payloads = [b"in0", b"in1"]
+  old_dir = tmp_path / "old"
+  _write_cell_inputs(old_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads)
+  _write_cell_outputs(old_dir, bucket=bucket, name=name, length=length)
+  write_cell_stamp(
+    out_dir=old_dir / f"browser_L{bucket}",
+    name=name,
+    onnx_sha256="stale-onnx-sha",
+    input_sha256s=["whatever"],
+    output_sha256s={"tokens": "x", "log_probs": "y"},
+    git_hash="deadbeef",
+  )
+
+  new_dir = tmp_path / "new"
+  new_paths = _write_cell_inputs(
+    new_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads
+  )
+
+  result = cell_reuse_eligible(
+    name=name,
+    bucket=bucket,
+    length=length,
+    new_input_paths=new_paths,
+    old_dir=old_dir,
+    onnx_ok=True,
+    onnx_sha256="current-onnx-sha",
+  )
+  assert result["eligible"] is False
+  assert result["reason"] == "stamp_mismatch"
+
+
+def test_cell_reuse_eligible_supports_chunked_old_layout(tmp_path: Path) -> None:
+  bucket, name, length, n_inputs = 256, "cellB", 6, 2
+  payloads = [b"in0", b"in1"]
+  old_dir = tmp_path / "old"
+  data_dir = old_dir / f"site_L{bucket}_c002" / "data"
+  data_dir.mkdir(parents=True)
+  for i, payload in enumerate(payloads):
+    (data_dir / f"{name}_{i}.bin").write_bytes(payload)
+  _write_cell_outputs(old_dir, bucket=bucket, name=name, length=length)
+
+  new_dir = tmp_path / "new"
+  new_paths = _write_cell_inputs(
+    new_dir, bucket=bucket, name=name, n_inputs=n_inputs, payloads=payloads
+  )
+
+  result = cell_reuse_eligible(
+    name=name,
+    bucket=bucket,
+    length=length,
+    new_input_paths=new_paths,
+    old_dir=old_dir,
+    onnx_ok=True,
+    onnx_sha256="abc123",
+  )
+  assert result["eligible"] is True
+
+
+def test_sha256_file_matches_hashlib(tmp_path: Path) -> None:
+  import hashlib
+
+  path = tmp_path / "f.bin"
+  path.write_bytes(b"hello world")
+  assert sha256_file(path) == hashlib.sha256(b"hello world").hexdigest()
+
+
+def test_sha256_files_concatenates_in_order(tmp_path: Path) -> None:
+  import hashlib
+
+  a = tmp_path / "a.bin"
+  b = tmp_path / "b.bin"
+  a.write_bytes(b"AAA")
+  b.write_bytes(b"BBB")
+  assert sha256_files([a, b]) == hashlib.sha256(b"AAABBB").hexdigest()
+  assert sha256_files([b, a]) == hashlib.sha256(b"BBBAAA").hexdigest()
