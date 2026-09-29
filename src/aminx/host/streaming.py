@@ -21,7 +21,6 @@ from aminx.host._sampling_helper import (
   _structure_ids_for_batch,
   fixed_provenance_outputs,
 )
-from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
 from aminx.host.output_sinks import (
   streaming_tensor_sink_session,
   take_staging_sequences_logits,
@@ -31,6 +30,7 @@ from aminx.host.plan import (
   resolve_sample_start,
   resolve_target_samples,
 )
+from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
 from aminx.host.streaming_host import StreamingBatchHost
 from aminx.io.sink_provenance import (
   SINK_PROVENANCE_VERSION,
