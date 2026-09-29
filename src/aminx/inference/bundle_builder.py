@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 
@@ -27,6 +28,7 @@ from aminx.utils.autoregression import (
   generate_ar_mask,
   generate_wave_ar_mask,
 )
+from aminx.utils.decoding_order import DecodingOrderFn, random_design_order
 
 
 class ConditioningLengthError(ValueError):
@@ -364,3 +366,51 @@ def build_inference_bundle(
   )
 
   return bundle, config
+
+
+#: Folded into a per-sample decode key to derive that sample's decoding-order key, so the
+#: order draw never consumes the key stream the decode itself uses.
+DECODING_ORDER_KEY_SALT = 0x0DEC0DE
+
+
+def decoding_order_key(sample_key: jax.Array) -> jax.Array:
+  """The key a sample's random decoding order is drawn from (derived, not split)."""
+  return jax.random.fold_in(sample_key, DECODING_ORDER_KEY_SALT)
+
+
+def with_decoding_order(
+  bundle: InferenceBundle,
+  key: jax.Array,
+  decoding_order_fn: DecodingOrderFn | None = None,
+  num_groups: int | None = None,
+) -> InferenceBundle:
+  """Set a bundle's wave schedule AND ar_mask from one freshly drawn decoding order.
+
+  This is the default for every sampling path: without it a ``sample_ar`` bundle decodes in
+  the fixed N->C order of ``schedule="fixed_n_to_c"``. The wave and the mask are both
+  derived from the same order, so they cannot disagree (debt #1982). jit/vmap-safe.
+
+  Args:
+    bundle: A ``sample_ar`` bundle (its tie map, fixed mask and mask shape are used).
+    key: Key for the order draw -- see :func:`decoding_order_key`.
+    decoding_order_fn: ``None`` draws :func:`aminx.utils.decoding_order.random_design_order`
+      (fixed positions first, then a uniform random order of tie groups). A callable with
+      the ``DecodingOrderFn`` signature overrides it; it receives the tie map only when
+      ``num_groups`` is given, as ``random_decoding_order`` requires.
+    num_groups: Number of tie groups, forwarded to ``decoding_order_fn``.
+
+  Returns:
+    The bundle with ``wave`` and ``conditioning.ar_mask`` replaced.
+  """
+  cond = bundle.conditioning
+  tie = cond.tie_group_map[0]
+  seq_len = tie.shape[0]
+  if decoding_order_fn is None:
+    fixed = cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask  # noqa: PLR2004
+    order = random_design_order(key, tie, fixed)
+  else:
+    order, _ = decoding_order_fn(key, seq_len, tie if num_groups is not None else None, num_groups)
+  wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(order), tie)
+  mask = generate_wave_ar_mask(wave, tie).astype(cond.ar_mask.dtype)
+  mask = jnp.broadcast_to(mask[None, ...], cond.ar_mask.shape)
+  return eqx.tree_at(lambda b: (b.wave, b.conditioning.ar_mask), bundle, (wave, mask))

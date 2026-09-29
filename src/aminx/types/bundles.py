@@ -355,8 +355,8 @@ class WaveScheduleBundle(eqx.Module):
 
   @staticmethod
   def from_decoding_order(
-    decoding_order: Int[Array, L],
-    tie_group_map: Int[Array, L] | None = None,
+    decoding_order: Int[Array, "L"],
+    tie_group_map: Int[Array, "L"] | None = None,
   ) -> WaveScheduleBundle:
     """Sequential schedule that visits positions in `decoding_order` (jit/vmap-safe).
 
@@ -388,7 +388,9 @@ class WaveScheduleBundle(eqx.Module):
     """
     order = jnp.asarray(decoding_order, dtype=jnp.int32)
     seq_len = order.shape[0]
-    group_of_step = order if tie_group_map is None else jnp.asarray(tie_group_map, dtype=jnp.int32)[order]
+    group_of_step = (
+      order if tie_group_map is None else jnp.asarray(tie_group_map, dtype=jnp.int32)[order]
+    )
     return WaveScheduleBundle(
       group_ids=group_of_step[:, None],
       group_positions=order[:, None, None],

@@ -225,6 +225,45 @@ def generate_ar_mask(
   return ar_mask * (1 - jnp.eye(N, dtype=ar_mask.dtype))
 
 
+def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -> jnp.ndarray:
+  """(L,) index of the wave each position decodes in -- the one rule every consumer shares.
+
+  Both :func:`generate_wave_ar_mask` (what a position may see) and
+  :func:`decoding_order_from_wave` (the order that is reported) are functions of this, so
+  they cannot disagree about when a position is decoded.
+
+  A position's wave is the first wave its tie group appears in. Positions whose group never
+  appears (a *partial* schedule -- e.g. a caller that only schedules the positions it
+  actually needs) get the sentinel ``num_waves``. The sentinel must be LARGER than any real
+  wave index, not smaller: the mask compares via ``>``/``==``, so a too-small sentinel (e.g.
+  -1) would make every omitted position look "earlier than everything" and leak its (never
+  decoded, all-zero) value as false context. A too-large sentinel makes omitted positions
+  "infinitely late" -- invisible to every real position and to each other.
+  """
+  seq_len = tie_group_map.shape[0]
+  num_waves, max_groups_per_wave = wave.group_ids.shape
+  never_scheduled_sentinel = num_waves
+  wave_index_grid = jnp.broadcast_to(
+    jnp.arange(num_waves, dtype=jnp.int32)[:, None],
+    (num_waves, max_groups_per_wave),
+  )
+  flat_group_ids = jnp.where(wave.group_valid, wave.group_ids, 0).reshape(-1)
+  flat_wave_index = jnp.where(
+    wave.group_valid,
+    wave_index_grid,
+    never_scheduled_sentinel,
+  ).reshape(-1)
+  # Scatter-min: each group id ends up mapped to the (single, real) wave index it was
+  # assigned to; invalid (padding) entries carry the sentinel and never win over a real
+  # (smaller) wave index.
+  group_wave_index = (
+    jnp.full((seq_len,), never_scheduled_sentinel, dtype=jnp.int32)
+    .at[flat_group_ids]
+    .min(flat_wave_index)
+  )
+  return group_wave_index[tie_group_map]
+
+
 @jax.jit
 def generate_wave_ar_mask(
   wave: WaveScheduleBundle,
@@ -260,32 +299,7 @@ def generate_wave_ar_mask(
 
   """
   seq_len = tie_group_map.shape[0]
-  num_waves, max_groups_per_wave = wave.group_ids.shape
-
-  # Sentinel for groups that never appear in `wave` at all (a *partial*
-  # decoding order -- e.g. a caller that only schedules the positions it
-  # actually needs, leaving the rest permanently undecided). Must be LARGER
-  # than any real wave index, not smaller: `earlier_wave`/`same_wave` below
-  # compare via `>`/`==`, so a too-small sentinel (e.g. -1) would make every
-  # omitted position look "earlier than everything" and leak its (never
-  # decoded, all-zero) value as false context. A too-large sentinel instead
-  # makes omitted positions "infinitely late" -- correctly invisible to
-  # every real position, and never visible to each other either.
-  never_scheduled_sentinel = num_waves
-  wave_index_grid = jnp.broadcast_to(
-    jnp.arange(num_waves, dtype=jnp.int32)[:, None],
-    (num_waves, max_groups_per_wave),
-  )
-  flat_group_ids = jnp.where(wave.group_valid, wave.group_ids, 0).reshape(-1)
-  flat_wave_index = jnp.where(wave.group_valid, wave_index_grid, never_scheduled_sentinel).reshape(-1)
-
-  # Scatter-min: each group id ends up mapped to the (single, real) wave index
-  # it was assigned to; invalid (padding) entries carry the sentinel and never
-  # win over a real (smaller) wave index.
-  group_wave_index = jnp.full((seq_len,), never_scheduled_sentinel, dtype=jnp.int32).at[
-    flat_group_ids
-  ].min(flat_wave_index)
-  position_wave_index = group_wave_index[tie_group_map]
+  position_wave_index = _position_wave_index(wave, tie_group_map)
 
   same_wave = position_wave_index[:, None] == position_wave_index[None, :]
   earlier_wave = position_wave_index[:, None] > position_wave_index[None, :]
@@ -330,14 +344,14 @@ def ar_mask_from_decoding_order(
 
   seq_len = decoding_order.shape[0]
   groups = jnp.arange(seq_len, dtype=jnp.int32) if tie_group_map is None else tie_group_map
-  wave = WaveScheduleBundle.from_decoding_order(decoding_order, tie_group_map)
+  wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(decoding_order), tie_group_map)
   return generate_wave_ar_mask(wave, groups)
 
 
 def decoding_order_from_wave(
   wave: WaveScheduleBundle,
   tie_group_map: jnp.ndarray,
-) -> DecodingOrder:
+) -> jax.Array:
   """The ORDER array a `WaveScheduleBundle` actually decodes (jit/vmap-safe).
 
   Positions sorted by the wave their tie group first appears in; positions that share a
@@ -355,22 +369,17 @@ def decoding_order_from_wave(
     (L,) int32 ORDER array.
   """
   seq_len = tie_group_map.shape[0]
-  num_waves, max_groups_per_wave = wave.group_ids.shape
-  never_scheduled = num_waves
-  wave_index_grid = jnp.broadcast_to(
-    jnp.arange(num_waves, dtype=jnp.int32)[:, None], (num_waves, max_groups_per_wave),
-  )
-  flat_group_ids = jnp.where(wave.group_valid, wave.group_ids, 0).reshape(-1)
-  flat_wave_index = jnp.where(wave.group_valid, wave_index_grid, never_scheduled).reshape(-1)
-  group_wave_index = jnp.full((seq_len,), never_scheduled, dtype=jnp.int32).at[flat_group_ids].min(
-    flat_wave_index,
-  )
-  position_wave_index = group_wave_index[tie_group_map]
+  position_wave_index = _position_wave_index(wave, tie_group_map)
   positions = jnp.arange(seq_len, dtype=jnp.int32)
   # Two explicit keys, (wave, position): a strict total order, so the result does not depend
   # on sort stability (IREE's sort is not stable; see utils/decoding_order.py).
-  _, order = jax.lax.sort((position_wave_index, positions), dimension=0, is_stable=False, num_keys=2)
-  return order.astype(jnp.int32)
+  _, order = jax.lax.sort(
+    (position_wave_index, positions),
+    dimension=0,
+    is_stable=False,
+    num_keys=2,
+  )
+  return jnp.asarray(order, dtype=jnp.int32)
 
 
 def full_context_ar_mask(seq_len: int) -> jnp.ndarray:

@@ -411,7 +411,7 @@ def _make_averaged_score_fn(
     ligand_atom_types: jax.Array | None = None,
     ligand_mask: jax.Array | None = None,
     **kwargs: Any,  # noqa: ANN401
-  ) -> tuple[jax.Array, jax.Array, jax.Array]:
+  ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
     """Python-level wrapper: build bundles, check R3 on concrete arrays, call JIT core."""
     del (
       multi_state_temperature,
@@ -678,10 +678,10 @@ def score(  # noqa: PLR0915
       struct_keys: jax.Array,
       _candidate_iterator: Any = candidate_iterator,  # noqa: ANN401
       _stacked_sequences: jax.Array = stacked_sequences,
-    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+    ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
       def _score_one_candidate(
         item: dict[str, jax.Array],
-      ) -> tuple[jax.Array, jax.Array, jax.Array]:
+      ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
         seq_one_hot = jax.nn.one_hot(item["seq"], 21)
         return score_fn(  # type: ignore[misc]
           item["key"],
@@ -837,7 +837,9 @@ def _score_fused_multistate(
   )
   candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
-  def _score_one_candidate(item: dict[str, jax.Array]) -> tuple[jax.Array, jax.Array, jax.Array]:
+  def _score_one_candidate(
+    item: dict[str, jax.Array],
+  ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
     seq_one_hot = jax.nn.one_hot(item["seq"], 21)
     return score_fn(
       item["key"],

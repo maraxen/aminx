@@ -72,8 +72,13 @@ from aminx.host.plan import (
   resolve_target_samples,
 )
 from aminx.host.prep import prep_protein_stream_and_model
-from aminx.host.streaming import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION, _grid_lineage_attrs
-from aminx.inference.bundle_builder import build_inference_bundle
+from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
+from aminx.host.streaming import _grid_lineage_attrs
+from aminx.inference.bundle_builder import (
+  build_inference_bundle,
+  decoding_order_key,
+  with_decoding_order,
+)
 from aminx.inference.logits import make_stage_set
 from aminx.inference.sample_autoregressive import kernel as _sample_autoregressive_kernel
 from aminx.io.sink_provenance import (
@@ -107,6 +112,7 @@ def sample_states_fused(
   prng_key: PRNGKeyArray,
   n_samples: int,
   sample_batch_size: int | None = None,
+  randomize_decoding_order: bool = True,  # noqa: FBT001, FBT002
 ) -> tuple[Int[Array, "n_samples L"], Float[Array, "n_samples L 21"]]:
   """Draw n_samples independent samples from an already-built, already-fused bundle.
 
@@ -171,6 +177,10 @@ def sample_states_fused(
       memory-budget-driven Vmap/SafeMap choice, matching
       `make_batched_conditional_logits_split_fn`'s `replicate_batch_size`/
       `candidate_batch_size` default behavior.
+  randomize_decoding_order : bool, default True
+      Draw a fresh random decoding order per sample (fixed positions first, uniform over
+      tie groups) -- the package-wide default. False decodes in the schedule already on
+      `bundle` (N->C unless the caller built another).
 
   Returns
   -------
@@ -208,8 +218,14 @@ def sample_states_fused(
     raise TypeError(msg)
 
   def _one_sample(key: PRNGKeyArray) -> tuple[Any, Any]:
+    # Each sample decodes in its own random order (fixed positions first, uniform over tie
+    # groups), keyed off -- not split from -- the sample key. randomize_decoding_order=False
+    # keeps whatever schedule the caller built into `bundle`.
+    sample_bundle = (
+      with_decoding_order(bundle, decoding_order_key(key)) if randomize_decoding_order else bundle
+    )
     result = _sample_autoregressive_kernel(
-      model, key, bundle, config, stage_set, state_strategy=state_strategy,
+      model, key, sample_bundle, config, stage_set, state_strategy=state_strategy,
     )
     return result.sequence, result.logits
 

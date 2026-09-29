@@ -25,7 +25,11 @@ from aminx.host.plan import (
   make_sampling_planner,
   resolve_target_samples,
 )
-from aminx.inference.bundle_builder import build_inference_bundle
+from aminx.inference.bundle_builder import (
+  build_inference_bundle,
+  decoding_order_key,
+  with_decoding_order,
+)
 from aminx.run.specs import SamplingSpecification
 from aminx.utils.safe_map import safe_map as _safe_map
 
@@ -245,6 +249,25 @@ def _sample_batch(
     "state_position_map": state_position_map_for_vmap,
     "structure_mapping": mapping_for_vmap,
   }
+  # Every sample decodes in its own random order (fixed positions first, uniform over tie
+  # groups) unless the spec supplies a decoding_order_fn. The order key is DERIVED from the
+  # sample key (fold_in), so the decode's own key stream is untouched. Without this, a
+  # sample_ar bundle decodes in the fixed N->C order of schedule="fixed_n_to_c".
+  custom_order_fn = getattr(spec.run_spec.sampling, "decoding_order_fn", None)
+  order_num_groups = (
+    int(jnp.max(jnp.asarray(spec.tie_group_map))) + 1
+    if custom_order_fn is not None and spec.tie_group_map is not None
+    else None
+  )
+
+  def _with_sample_order(bundle: Any, sample_key: Any) -> Any:  # noqa: ANN401
+    return with_decoding_order(
+      bundle,
+      decoding_order_key(sample_key),
+      custom_order_fn,
+      order_num_groups,
+    )
+
   def _bundle_kwargs(structure_idx: Any) -> dict[str, Any]:  # noqa: ANN401
     # `bias` is read here, inside the traced closure, exactly where each inline copy read
     # it before this helper existed -- so the refactor does not move the spec access.
@@ -297,7 +320,7 @@ def _sample_batch(
         _sink(enc, jnp.int32(batch_idx), structure_idx, jnp.int32(0))
 
       def _run_one_sample(k):
-        res = plan.decode(enc, bundle, k, config)
+        res = plan.decode(enc, _with_sample_order(bundle, k), k, config)
         return res.sequence, res.logits
 
       return _dispatch_axis(sample_decision.strategy, _run_one_sample, key_samples)
@@ -327,9 +350,11 @@ def _sample_batch(
     sample_decision = decision_for(batch_plan, AxisNames.N_SAMPLES)
 
     def _unified_call_structure_fused(structure_idx):
+      structure_kwargs = _bundle_kwargs(structure_idx)
+
       def _build_bundle(noise_val, temperature_val=jnp.float32(1.0)):
         return build_inference_bundle(
-          **_bundle_kwargs(structure_idx),
+          **structure_kwargs,
           backbone_noise=noise_val,
           temperature=temperature_val,
         )
@@ -364,7 +389,7 @@ def _sample_batch(
           _, t_config = _build_bundle(jnp.float32(0.0), temperature_val=temp_val)
 
           def _run_one_sample(k):
-            res = plan.decode(enc_k, decode_bundle, k, t_config)
+            res = plan.decode(enc_k, _with_sample_order(decode_bundle, k), k, t_config)
             return res.sequence, res.logits
 
           return _dispatch_axis(sample_decision.strategy, _run_one_sample, sample_keys)
@@ -407,7 +432,7 @@ def _sample_batch(
         _sink(enc, jnp.int32(batch_idx), structure_idx, jnp.int32(0))
 
       def _run_one_sample(k):
-        res = plan.decode(enc, bundle, k, config)
+        res = plan.decode(enc, _with_sample_order(bundle, k), k, config)
         return res.sequence, res.logits
 
       return _safe_map(_run_one_sample, key_samples, batch_size=samples_bs)
@@ -433,9 +458,11 @@ def _sample_batch(
     # Path B: with fusion — encode D times per structure, fuse → K, decode K×T×N
     # -------------------------------------------------------------------------
     def _call_structure_fused(structure_idx):
+      structure_kwargs = _bundle_kwargs(structure_idx)
+
       def _build_bundle(noise_val, temperature_val=jnp.float32(1.0)):
         return build_inference_bundle(
-          **_bundle_kwargs(structure_idx),
+          **structure_kwargs,
           backbone_noise=noise_val,
           temperature=temperature_val,
         )
@@ -466,7 +493,7 @@ def _sample_batch(
           _, t_config = _build_bundle(jnp.float32(0.0), temperature_val=temp_val)
 
           def _run_one_sample(k):
-            res = plan.decode(enc_k, decode_bundle, k, t_config)
+            res = plan.decode(enc_k, _with_sample_order(decode_bundle, k), k, t_config)
             return res.sequence, res.logits
 
           return _safe_map(_run_one_sample, sample_keys, batch_size=samples_bs)

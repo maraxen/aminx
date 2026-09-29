@@ -114,8 +114,21 @@ def _make_plan_mock() -> MagicMock:
     return plan
 
 
-def _run_sample_batch_capturing_bundle_kwargs(monkeypatch, spec, *, batch_size: int = 1) -> list[dict]:
+def _run_sample_batch_capturing_bundle_kwargs(
+    monkeypatch, spec, *, batch_size: int = 1, order_calls: list | None = None,
+) -> list[dict]:
     from aminx.host.kernel_dispatch import _sample_batch
+
+    # The bundles here are MagicMocks, so the per-sample random decoding order cannot run
+    # for real; record that it was requested instead.
+    def _spy_with_decoding_order(bundle, key, decoding_order_fn=None, num_groups=None):
+        if order_calls is not None:
+            order_calls.append({"bundle": bundle, "key": key, "fn": decoding_order_fn})
+        return bundle
+
+    monkeypatch.setattr(
+        "aminx.host.kernel_dispatch.with_decoding_order", _spy_with_decoding_order,
+    )
 
     batch_plan = MagicMock()
     _make_dispatch_monkeypatches(monkeypatch, batch_plan=batch_plan, batch_size=batch_size)
@@ -203,3 +216,26 @@ def test_state_position_map_broadcasts_across_batch(monkeypatch):
     assert len(calls) >= 2
     for call in calls:
         assert jnp.array_equal(call["state_position_map"], _STATE_POSITION_MAP)
+
+
+def test_every_sample_decodes_with_its_own_random_order(monkeypatch):
+    """runner.sample's default is a random decoding order per sample, not N->C.
+
+    The order key is DERIVED from the sample key (decoding_order_key), so the decode's own
+    key stream is untouched, and no decoding_order_fn is set by default (the shared random
+    design order is used).
+    """
+    from aminx.inference.bundle_builder import decoding_order_key
+
+    spec = SamplingSpecification(inputs=["/tmp/test.pdb"], checkpoint_id="ckpt_001")
+    order_calls: list = []
+    _run_sample_batch_capturing_bundle_kwargs(monkeypatch, spec, order_calls=order_calls)
+
+    assert order_calls, "no sample was given a decoding order -- decoding would be N->C"
+    sample_key = jax.random.key(0)  # compute_sample_keys is stubbed to this single key
+    for call in order_calls:
+        assert call["fn"] is None
+        assert jnp.array_equal(
+            jax.random.key_data(call["key"]),
+            jax.random.key_data(decoding_order_key(sample_key)),
+        )

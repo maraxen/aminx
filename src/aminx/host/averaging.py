@@ -29,7 +29,7 @@ from aminx.types.protocols import ModelProtocol
 from aminx.types.stages import (
   EncodingFusionFn as _EncodingFusionFn,  # noqa: F401 (type reference)
 )
-from aminx.utils.autoregression import generate_ar_mask
+from aminx.utils.autoregression import ar_mask_from_decoding_order
 from aminx.utils.data_structures import Protein
 from aminx.utils.decoding_order import DecodingOrder, DecodingOrderFn
 from aminx.utils.ste import straight_through_estimator
@@ -447,7 +447,9 @@ def _make_encoding_sampling_split_fn_legacy(
     if temperature is None:
       temperature = jnp.array(1.0, dtype=jnp.float32)
 
-    autoregressive_mask = cast("Callable", generate_ar_mask)(decoding_order, tie_group_map)
+    # `decoding_order` is an ORDER array. generate_ar_mask would read it as a RANK array, and
+    # its second positional parameter is chain_idx, not the tie map (debt #1982).
+    autoregressive_mask = jnp.asarray(ar_mask_from_decoding_order(decoding_order, tie_group_map))
 
     # Dispatch based on sampling strategy
     if sampling_strategy == "straight_through":
@@ -456,7 +458,7 @@ def _make_encoding_sampling_split_fn_legacy(
         encoded_features,
         decode_logits_fn,
         autoregressive_mask,
-        seq_length=cast("jax.Array", autoregressive_mask).shape[0],
+        seq_length=autoregressive_mask.shape[0],
         iterations=100 if iterations is None else iterations,
         learning_rate=0.01 if learning_rate is None else learning_rate,
         temperature=temperature,
@@ -466,7 +468,7 @@ def _make_encoding_sampling_split_fn_legacy(
     # Temperature-based sampling path
     del iterations, learning_rate  # Not used in temperature sampling
 
-    seq_length = cast("jax.Array", autoregressive_mask).shape[0]
+    seq_length = autoregressive_mask.shape[0]
     _, prng_key = jax.random.split(prng_key)
     initial_seq = jax.random.randint(
       prng_key,
@@ -477,6 +479,15 @@ def _make_encoding_sampling_split_fn_legacy(
     )
 
     if tie_group_map is not None and num_groups is not None:
+      # Visit groups in the order they first appear in `decoding_order` -- the order the mask
+      # above encodes -- not in group-id order, which the mask knows nothing about.
+      seq_len_groups = tie_group_map.shape[0]
+      first_step_of_group = (
+        jnp.full((seq_len_groups,), seq_len_groups, dtype=jnp.int32)
+        .at[tie_group_map[decoding_order]]
+        .min(jnp.arange(seq_len_groups, dtype=jnp.int32))
+      )
+      group_sequence = jnp.argsort(first_step_of_group, stable=True)
 
       def sample_group_step(
         group_idx: int,
@@ -486,7 +497,7 @@ def _make_encoding_sampling_split_fn_legacy(
         sequence, key = state
 
         logits = decode_logits_fn(encoded_features, sequence, autoregressive_mask)
-        group_member_mask = tie_group_map == group_idx  # (N,) boolean
+        group_member_mask = tie_group_map == group_sequence[group_idx]  # (N,) boolean
         # Stubbed for Phase 5 refactor compatibility
         if multi_state_strategy == "arithmetic_mean":
           strategy_cls = LOGIT_STRATEGIES.get("arithmetic_mean")

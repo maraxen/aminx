@@ -9,7 +9,7 @@ import jax.numpy as jnp
 from jaxtyping import PRNGKeyArray
 
 from aminx.inference import optimize_ste, sample_autoregressive
-from aminx.inference.bundle_builder import build_inference_bundle
+from aminx.inference.bundle_builder import build_inference_bundle, with_decoding_order
 from aminx.inference.logits import make_stage_set
 from aminx.registry import SAMPLERS
 from aminx.types.bundles import WaveScheduleBundle
@@ -167,37 +167,9 @@ def make_sample_sequences(
       inference_only: bool = False,
     ) -> tuple[jax.Array, jax.Array, jax.Array]:
 
-      L = (
-        structure_coordinates.shape[1]
-        if structure_coordinates.ndim == 4
-        else structure_coordinates.shape[0]
-      )
-      S = structure_coordinates.shape[0] if structure_coordinates.ndim == 4 else 1
-
-      # Accepted for signature compatibility. `generate_ar_mask`, its only consumer, never
-      # read it either: tie handling keys off `tie_group_map` alone.
-      del num_groups
-
       # Split unconditionally so the sampling key stream is the same whether or not the
       # caller supplies a schedule.
       k_order, prng_key = jax.random.split(prng_key)
-
-      # The wave schedule and the ar_mask must describe the SAME order. This used to build
-      # `ar_mask` with `generate_ar_mask(decoding_order)` while leaving the bundle on its
-      # default N->C wave: the kernel then drew positions N->C while each position saw a
-      # context chosen by an unrelated permutation, and `generate_ar_mask`'s untied branch
-      # reads a RANK array anyway, not the ORDER array `decoding_order_fn` returns (debt
-      # #1982). Passing the wave and letting `build_inference_bundle` derive the mask from
-      # it (`generate_wave_ar_mask`) makes the two agree by construction.
-      caller_wave = wave_schedule is not None
-      if not caller_wave:
-        decoding_order, _ = decoding_order_fn(k_order, L, None, None)
-        if decoding_order is None:
-          decoding_order = jnp.arange(L, dtype=jnp.int32)
-        tie_map_state0 = None
-        if tie_group_map is not None:
-          tie_map_state0 = tie_group_map[0] if tie_group_map.ndim == 2 else tie_group_map
-        wave_schedule = WaveScheduleBundle.from_decoding_order(decoding_order, tie_map_state0)
 
       bundle, config = build_inference_bundle(
         coords=structure_coordinates,
@@ -218,18 +190,28 @@ def make_sample_sequences(
         mode="sample_ar",
         inference=True,
       )
-      if caller_wave:
-        # Report the order the caller's schedule decodes, not an unused random draw.
-        decoding_order = decoding_order_from_wave(
-          bundle.wave, bundle.conditioning.tie_group_map[0],
-        )
+      # The wave schedule and the ar_mask must describe the SAME order (debt #1982): this
+      # used to pair a mask from one random permutation with the default N->C wave. Unless
+      # the caller supplied a schedule, set both from one drawn order -- by default the
+      # shared random design order (fixed positions first, uniform over tie groups); a
+      # non-default `decoding_order_fn` overrides it.
+      if wave_schedule is None:
+        custom_fn = None if decoding_order_fn is _DEFAULT_DECODING_ORDER_FN else decoding_order_fn
+        bundle = with_decoding_order(bundle, k_order, custom_fn, num_groups)
+      # Report the order the bundle's schedule actually decodes.
+      decoding_order = decoding_order_from_wave(bundle.wave, bundle.conditioning.tie_group_map[0])
       stage_set = make_stage_set(
         strategy=multi_state_strategy,
         strategy_temperature=multi_state_temperature,
         state_weights=state_weights,
       )
       result = sample_autoregressive.kernel(
-        model, prng_key, bundle, config, stage_set, inference_only=inference_only,
+        model,
+        prng_key,
+        bundle,
+        config,
+        stage_set,
+        inference_only=inference_only,
       )
 
       return result.sequence.astype(jnp.int8), result.logits, decoding_order
