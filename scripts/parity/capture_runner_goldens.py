@@ -20,6 +20,13 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+# Byte-exact goldens need deterministic GPU reductions: without this flag jacobian and inspect
+# outputs vary run-to-run at the float32 ULP level on the same GPU (measured 260929 on the
+# titanix TITAN RTX, max rel diff ~1e-6). Must be set before jax is imported.
+DETERMINISTIC_FLAG = "--xla_gpu_deterministic_ops=true"
+if DETERMINISTIC_FLAG not in os.environ.get("XLA_FLAGS", ""):
+  os.environ["XLA_FLAGS"] = f"{os.environ.get('XLA_FLAGS', '')} {DETERMINISTIC_FLAG}".strip()
+
 import jax
 import jaxlib
 from runner_golden_cases import (
@@ -109,6 +116,7 @@ def _manifest(golden_dir: Path, fixture_hashes: dict[str, str]) -> dict[str, Any
     "jaxlib_version": jaxlib.__version__,
     "uv_lock_sha256": _sha256_file(lock_path),
     "device_kind": current_device_kind(),
+    "xla_flags": os.environ.get("XLA_FLAGS", ""),
     "golden_dir": golden_dir.as_posix(),
     "negative_control_case_id": negative_control_case().case_id,
     "notes": (

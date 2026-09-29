@@ -10,6 +10,7 @@ manifest. Case definitions live in ``scripts/parity/runner_golden_cases.py``.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,13 @@ def test_runner_v0_goldens_byte_exact() -> None:
       "capture runs on titanix under bathos and is not generated in-tree",
     )
   manifest = json.loads(manifest_path.read_text())
+  # Goldens were captured with deterministic GPU ops; that flag must be set before jax is
+  # imported, which a pytest process cannot guarantee from inside a test module.
+  required_flag = "--xla_gpu_deterministic_ops=true"
+  if required_flag in str(manifest.get("xla_flags", "")) and required_flag not in os.environ.get(
+    "XLA_FLAGS", "",
+  ):
+    pytest.skip(f"run with XLA_FLAGS='{required_flag}' (goldens captured deterministic)")
   device = current_device_kind()
   captured_device = str(manifest["device_kind"])
   if device != captured_device:
