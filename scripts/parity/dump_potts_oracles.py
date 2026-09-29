@@ -37,6 +37,7 @@ from oracle_shims.potts import (
   injected_tied_randn,
   injected_uniform_draws,
   inverse_cdf_index,
+  rbf_follows_input_dtype,
   shim_sha256,
   untied_decoding_order,
   weight_dtype_positional_encodings,
@@ -1254,12 +1255,12 @@ def _run_dumps(
           "unexpected_keys": unexpected,
         },
       )
-      precision_shim = (
-        weight_dtype_positional_encodings(potts.PositionalEncodings)  # type: ignore[attr-defined]
-        if precision == "f64"
-        else contextlib.nullcontext()
-      )
-      with precision_shim, torch.no_grad():
+      with contextlib.ExitStack() as precision_shims, torch.no_grad():
+        if precision == "f64":
+          precision_shims.enter_context(
+            weight_dtype_positional_encodings(potts.PositionalEncodings),  # type: ignore[attr-defined]
+          )
+          precision_shims.enter_context(rbf_follows_input_dtype(potts.ProteinFeatures))  # type: ignore[attr-defined]
         for fixture in fixtures:
           _dump_fixture(
             buckets,

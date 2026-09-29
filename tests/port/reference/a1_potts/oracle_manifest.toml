@@ -1,8 +1,8 @@
 upstream_commit = "0cb0a58874e373d664114f1735deab77614e4ab5"
 torch_version = "2.4.1+cpu"
 seed = 0
-shim_sha256 = "18ef2f8936fc2f1dfd710d9b6da6761e9cd0e21718e90638a997f33be74f4947"
-shim_sites = ["potts_mpnn_utils.py:1405", "potts_mpnn_utils.py:1480", "potts_mpnn_utils.py:1590", "potts_mpnn_utils.py:1680", "run_utils.py:174", "run_utils.py:263", "run_utils.py:421", "run_utils.py:512", "potts_mpnn_utils.py:940"]
+shim_sha256 = "8a25ef2353839992d0a308a4a5ba609810056278cf33b375c0839f6ecc70dbd2"
+shim_sites = ["potts_mpnn_utils.py:1405", "potts_mpnn_utils.py:1480", "potts_mpnn_utils.py:1590", "potts_mpnn_utils.py:1680", "run_utils.py:174", "run_utils.py:263", "run_utils.py:421", "run_utils.py:512", "potts_mpnn_utils.py:940", "potts_mpnn_utils.py:1156"]
 shimmed = true
 
 [[checkpoint]]
@@ -79,56 +79,56 @@ unexpected_keys = []
 wave = "potts_head"
 precision = "f64"
 path = "potts_head/oracle_f64.npz"
-sha256 = "7e054d89e8f86198736583a54aa776f0e5a27af3f71736699bb0ef3eb1cc9371"
+sha256 = "4bad82488791105f28ff66518611cd28d4b0d46c5007a5e36e0b18a9c84423c9"
 shimmed = false
 
 [[dump]]
 wave = "potts_merge_pair_d2"
 precision = "f64"
 path = "potts_merge_pair_d2/oracle_f64.npz"
-sha256 = "19c1cf0c5b7c2bb68e1d2d553fa51094a2c89e7895b5e014edc3b5347fdba138"
+sha256 = "657ee24bdd6152050440c12110987b9582da062cf26d8c2e3e3290555dc84ca2"
 shimmed = false
 
 [[dump]]
 wave = "potts_merge_pair_d4"
 precision = "f64"
 path = "potts_merge_pair_d4/oracle_f64.npz"
-sha256 = "87f1ee9f53435f249a91cc7fd7804e9553a5296b25ea02338ce3d60f59103392"
+sha256 = "4e30f9546c8d04e9d30fb2abb128b2b36a67fb311eeb674cff2373138f18c07e"
 shimmed = false
 
 [[dump]]
 wave = "potts_energy"
 precision = "f64"
 path = "potts_energy/oracle_f64.npz"
-sha256 = "2c4683ebfbe8a56dff894dd4fab9fb83d92f57659dec7505ba8ad5472530f6fc"
+sha256 = "94c4036a9b7647eecf2ca3538470c4e1bab2b3fd284d074ff90118526a3e5d5c"
 shimmed = false
 
 [[dump]]
 wave = "potts_ar_decode"
 precision = "f64"
 path = "potts_ar_decode/oracle_f64.npz"
-sha256 = "1979de1454be5881c6cb9cf8cf579328c11bb6afba077f1eb867fd91b94450a3"
+sha256 = "3bad8ee084b1f59573ee199ae747cf3073befa1bc7359671e74478998bb61714"
 shimmed = true
 
 [[dump]]
 wave = "potts_refine"
 precision = "f64"
 path = "potts_refine/oracle_f64.npz"
-sha256 = "5d889b0ff4d264a137084093f17bc4d5f40e46c0ada5e592c162ce9fa7a2b8f8"
+sha256 = "b3eaf178636e7ebc68f5b8e84d3d87eebfaf6e8ac8fc5e7c8ca89cc7448c0bbf"
 shimmed = true
 
 [[dump]]
 wave = "pottsmpnn_full"
 precision = "f64"
 path = "pottsmpnn_full/oracle_f64.npz"
-sha256 = "452fc20639061eadeb37e785af6f53f8a1a23831e2641820123365fc87914b7a"
+sha256 = "0fe956b3e4b4e151df4eea5924f6975a7fdf020abacec41d03b6cfcffb981e85"
 shimmed = false
 
 [[dump]]
 wave = "declayer_f64"
 precision = "f64"
 path = "declayer_f64.npz"
-sha256 = "4207eb81aac55dd86d0f461bce945090a83a18adfa939763f3ac61ebddac7d39"
+sha256 = "62e55be135cd13a4c80463e42cbf06589357f693573f253a56232b8ce5b2d3fd"
 shimmed = false
 
 [[dump]]

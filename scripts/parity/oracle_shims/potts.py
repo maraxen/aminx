@@ -26,6 +26,10 @@ Shim 3 (``weight_dtype_positional_encodings``, f64 dumps only) replaces the
 ``d_onehot.float()`` cast at ``potts_mpnn_utils.py:940`` with a cast to the linear
 weight dtype so a ``model.double()`` forward runs in float64 end to end.
 
+Shim 4 (``rbf_follows_input_dtype``, f64 dumps only) builds the
+``ProteinFeatures._rbf`` ``torch.linspace`` centres (``potts_mpnn_utils.py:1156``)
+in the input dtype instead of float32.
+
 With no context manager entered, ``torch.multinomial`` and the tied methods
 are the originals.
 """
@@ -50,6 +54,7 @@ SHIM_SITES: tuple[str, ...] = (
   "run_utils.py:421",
   "run_utils.py:512",
   "potts_mpnn_utils.py:940",
+  "potts_mpnn_utils.py:1156",
 )
 
 _ORIGINAL_MULTINOMIAL = torch.multinomial
@@ -243,3 +248,27 @@ def weight_dtype_positional_encodings(encodings_cls: object) -> Iterator[None]:
     yield
   finally:
     encodings_cls.forward = original
+
+
+@contextmanager
+def rbf_follows_input_dtype(features_cls: object) -> Iterator[None]:
+  """Build ``ProteinFeatures._rbf`` centres in the dtype of ``D``.
+
+  Upstream ``potts_mpnn_utils.py:1156`` calls ``torch.linspace`` with no dtype,
+  so a ``model.double()`` forward still uses float32-rounded RBF centres. Under
+  float32 input the patched method is the original.
+  """
+  original = features_cls._rbf  # noqa: SLF001 - the shim patches this private method
+
+  def _rbf(self: torch.nn.Module, distances: torch.Tensor) -> torch.Tensor:
+    d_min, d_max, d_count = 2.0, 22.0, self.num_rbf
+    d_mu = torch.linspace(d_min, d_max, d_count, device=distances.device, dtype=distances.dtype)
+    d_mu = d_mu.view([1, 1, 1, -1])
+    d_sigma = (d_max - d_min) / d_count
+    return torch.exp(-(((torch.unsqueeze(distances, -1) - d_mu) / d_sigma) ** 2))
+
+  features_cls._rbf = _rbf  # noqa: SLF001
+  try:
+    yield
+  finally:
+    features_cls._rbf = original  # noqa: SLF001
