@@ -267,7 +267,10 @@ OUT_REL="$(result_relpath "$STEM" "$TAG")"
 
 # Refuse a duplicate concurrent launch of the exact same session (stem+commit+tag) --
 # Slurm job names are not unique the way systemd unit names are, so check squeue by name.
-existing_jobs="$(ssh engaging squeue -h -n "$SESSION" --format='%i %T' || true)"
+# ssh joins argv with spaces and the remote shell re-splits it (O9), so the format must be
+# one space-free token; keep only lines that start with a job id so a squeue usage/error
+# message can never read as "a job exists".
+existing_jobs="$(ssh engaging squeue -h -n "$SESSION" --format=%i,%T | grep -E '^[0-9]' || true)"
 if [ -n "$existing_jobs" ]; then
   echo "engaging_launch.sh: a Slurm job named ${SESSION} is already queued/running; refusing a second launch:" >&2
   echo "$existing_jobs" >&2
