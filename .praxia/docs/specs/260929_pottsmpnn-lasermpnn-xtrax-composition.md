@@ -2,7 +2,7 @@
 title: PottsMPNN + LASErMPNN as xtrax-composed model families on the central runner
 description: Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 task_id: 260929_potts-laser-xtrax-compose
-status: draft-r6
+status: draft-r7
 created: 260929
 amends: decisions/260605_potts-parallel-not-stageset.md (scope-narrowing, see §3)
 adversarial_log: audits/260929_potts-laser-spec-adversarial-log.md
@@ -38,6 +38,10 @@ Revision history:
   `num_adjacent_residues_to_drop` removed (inert); §5.4a score conditioning; tied `_2` channels + gate;
   Potts tied masked-member tail; LASEr carry init + `ignore_chain_mask_zeros` no-op; LASEr self-edge;
   tied fs-temp divergence; `strict_load` polarity.
+- r6 → r7: branch-coverage enforcement (coverage vehicles, `branch_manifest.toml`, mutant hook,
+  `test_branch_coverage`, stage→vehicle table); LASEr `T_eff` fs-temp resolution; `skip_calc`
+  (`optimize_pdb`/`optimize_fasta`) stage graph + schema + divergences; LASEr bias step 1b; AR/opt T
+  floors; per-structure `L_total` slicing; §5.4a contact/chain_mask sources.
 
 ## 0. Goal, non-goals, assumed decisions
 
@@ -86,14 +90,23 @@ disagree, upstream wins. The disagreement is a spec bug, fixed by amending the p
 it is never an implementation choice and may not be resolved by following the prose. The only
 deliberate departures are rows in §6.5b (divergences), §6.4 (exclusions), and aminx-defined
 conditioning where upstream has no caller (e.g. §5.4a); each names its upstream anchor.
-**Branch coverage (normative).** Every stage port has oracle-diff coverage by at least one tier wave
-whose fixture manifest declares, per documented upstream branch, the fixture that exercises it:
-fixed/designed, gap/`present==0`, tied (incl. masked member and mixed fixed/designed groups),
-`ignore_chain_mask_zeros`, `repack_all`/`repack_only`, ligand-absent/`ignore_ligand`, argmax vs
-sampled, NaN input χ, and every T0.2-enumerated conditional. Each declared branch carries a negative
-control — a mutated port taking the wrong side of that branch that must fail the wave. A branch with
-no fixture, or whose negative control passes, fails the gate (`instrument_invalid`). Transcription
-slips are therefore caught by gates, not by review.
+**Branch coverage (normative).** Coverage vehicles are tier waves (§7.2), bathos sidecars (§7.3),
+`test_knob_semantics_*` tests and the A0/B0 gates; one rule governs all.
+`tests/port/branch_manifest.toml` holds one `[[branch]] {id, stage, vehicle, fixture, mutant}` row per
+documented upstream branch of every stage in the §8 stage→vehicle table: fixed/designed,
+gap/`present==0`, tied (incl. masked member, mixed fixed/designed groups), `ignore_chain_mask_zeros`,
+`repack_all`/`repack_only`, ligand-absent/`ignore_ligand`, argmax vs sampled, NaN input χ,
+`skip_calc` (§4.3), and every T0.2-enumerated conditional (T0.2 emits `conditional_ids.txt`).
+`mutant` names a function in `tests/port/mutants/<vehicle>.py` returning a context manager that
+monkeypatches the named port function (or the static branch flag it reads) to take the wrong side.
+Pytest vehicles (incl. A0/B0 gates) run clean and once per row with `AMINX_PORT_MUTANT=<id>` (root
+`tests/conftest.py` enters it at `pytest_sessionstart`; outcome records gain `mutant`); sidecar
+scripts take `--mutant <id>` and list their rows' mutants among their negative controls.
+`tests/redsox/test_branch_coverage.py` (§6.6 step 2) asserts: every `conditional_ids.txt` id and every
+§8 stage appears in a row; every clean run passed; every mutant run failed (pytest: ≥1 vehicle id
+failed under it; sidecar: the bathos record shows that negative control failed). Missing fixture,
+missing mutant run, or passing mutant → `instrument_invalid`. Transcription slips are therefore
+caught by gates, not by review.
 
 ## 1. Recon evidence base
 
@@ -163,7 +176,12 @@ proofread_unconditional,proofread_conditional}`; `mpnn_fallback_purposes=∅`. S
 
 **Output channel (v1: no `io_callback` in drivers).** Each jitted dispatch over one `FamilyBatch` ×
 one `samples` chunk **returns** `dict[str, Array]` whose keys/dims equal `result_schema(spec,
-purpose)` (mismatch → `RuntimeError`). `run_family_driver` then: (i) if `output_h5_path` set →
+purpose)` (mismatch → `RuntimeError`). Per-position dims are named `L_total`; `run_family_driver`
+slices each structure's arrays to its own `L_total` (host, from `FamilyBatch` metadata) before
+`sink.stage` or in-memory assembly; pad rows are never staged; in-memory results are per structure
+(chunks concatenated within a structure only). `test_family_sink_ragged_L`: two structures of
+different `L_total` in one batch → per-group shapes equal each `L_total` and values equal
+single-structure runs. `run_family_driver` then: (i) if `output_h5_path` set →
 on one `sink = ZarrStagingSink(sink_spec_for(spec, spec.run_spec.io.output_h5_path))` (T0.0; same
 root as `streaming.py:79`, not `RunSpecification.output_dir`):
 `sink.stage((f"structure_{input_index}", str(chunk_start)), **chunk)`; per structure once
@@ -236,7 +254,8 @@ confirms names/signatures; any extraction refactor keeps MPNN outputs byte-ident
   `dataclasses.replace` treats it as explicit; `replace(s, model_family=…, temperature=UNSET)`
   re-resolves. **JSON:** `(None,)` ↔ `[null]`; `_coerce_field_value` temperature branch accepts
   `int|float|None` elements. **CLI:** `--temperature` default unset → kwarg omitted. In a
-  `temperatures` axis `None` is a static per-element branch (argmax, no min-p). Tests: UNSET never
+  `temperatures` axis `None` is a static per-element branch: argmax, no min-p, unless
+  `LaserOptions.fs_sequence_temp` is set (then 1e-6 on non-first-shell rows, §5.3 step 5). Tests: UNSET never
   reaches `build_run_spec`; per-family defaults; None+MPNN ValueError; both replace cases; `[null]`
   round-trip; T0.5a goldens exact.
 - CLI (T0.6): `run score --output-kind`; `_RunBase` `--potts-options-json`, `--laser-options-json`
@@ -381,6 +400,7 @@ tiers use the gapped `L_total ≤ 48` fixture.
 | purpose / output_kind | Path | Stages / axes |
 |---|---|---|
 | `sample` (any mode/PSSM/tied/bias_by_res) | driver | `MPNNEncode → PottsARDecode → PottsSampleEnergy → [PottsRefine iff mode≠none] → sinks`; host ranking after last chunk; axes `samples`, `temperatures` |
+| `sample` with `optimize_pdb`/`optimize_fasta` (upstream `skip_calc`, `sample_seqs.py:128-157`; mode≠none else `ValueError`) | driver | `MPNNEncode → PottsRefine` on loaded sequences; no PottsARDecode/PottsSampleEnergy/ranking; `num_samples>1` → `ValueError` (upstream forces 1, `:40`); axis `samples` = loaded sequences. `optimize_fasta`: entries whose key `startswith(<pdb><suffix>)` (`:319`, prefix quirk kept), file order, `:` stripped (`:322`); `optimize_pdb`: native per-chain sequences in A0 chain order (§6.5b). Length ≠ L_total → `ValueError`; encoded by `seq_to_ints` (`:347`). Refine order: `upstream_refine_order` with empty stored orders (`:325-343` keying incl. reuse when suffix empty; §6.5b). PDB (iff `write_pdb`) = `refined_sequence` of the last loaded key (`:368-373`). Tests `knob_semantics_optimize_pdb`, `_optimize_fasta` |
 | `score:energy` | driver | `MPNNEncode → PottsHead → etab_energy → potts_energy`; axis `candidates` = `sequences_to_score` if non-empty, else the `score:ddg` resolution (mutant_fasta / mutant_csv / DMS), always plus WT; absolute energies; partitions never evaluated (upstream `ddG=False`). Each `sequences_to_score` entry must have length L_total in A0 row order (sorted designed chains then sorted fixed chains, `tied_featurize :327`) with gap rows as `-`/`X`, else `ValueError` naming expected length + chain order; test `test_score_energy_gapped_alignment` |
 | `score:ddg` | driver | as energy; candidates = mutant_fasta / mutant_csv else single-mutant DMS (respecting `exclude_chains`); `ddg=E(mut)−E(wt)`; binding: axis `partition` (§4.4); `mean_norm` per PDB after ddG |
 | `score:nll`, `score:logits`, `jacobian`, `inspect` | MPNN fallback on `model.mpnn` | unchanged |
@@ -486,8 +506,7 @@ tiers use the gapped `L_total ≤ 48` fixture.
   `best = sample_rank[0]`. PDB (iff `write_pdb`): `sequence[best]` if mode none, else
   `refined_sequence[best]` (not re-ranked, `:368-373`). Sampled FASTA = `sequence` in rank order named
   `<pdb><suffix>_<sidx>` (no `_sidx` when N=1) (`:268-272,392-396`); optimized FASTA =
-  `refined_sequence` in the same order (`:378-382`). `optimize_fasta` path: only `refined_sequence`;
-  PDB only when N=1 (`:368`). Test `knob_semantics_rank_before_refine`: seed where AR-energy argmin ≠
+  `refined_sequence` in the same order (`:378-382`). `skip_calc` path: see its row. Test `knob_semantics_rank_before_refine`: seed where AR-energy argmin ≠
   refined-energy argmin; PDB follows AR energy and matches oracle.
 
 ### 4.4 Binding partitions
@@ -505,7 +524,8 @@ scored only when `partition_flag` (`energy_prediction.py:57-75`).
 excluded from the per-chunk key check), opt-in `potts_etab
 (L,K,20,20)`, `potts_E_idx`, `refine_energy_trace`. `score:energy`: `energy (N_cand,) f32`,
 `candidate_ids`. `score:ddg`: `ddg (N_mut,) f32`, `mutant_ids`, `ddg_expt (N_mut,) f32|nan`.
-`emit_dense_hJ` converts host-side only.
+`emit_dense_hJ` converts host-side only. Under `skip_calc`: `refined_sequence (N_loaded,L_total) i32`
+only (+ opt-in `potts_etab`, `potts_E_idx`, `refine_energy_trace`). Per-position dims are `L_total`.
 
 ## 5. LASErMPNN
 
@@ -559,12 +579,22 @@ buckets. T0.2 enumerates every `radius_graph`/`scatter_*` site with its dense re
 node_stack_s (n_dec+1,L,Hs), node_stack_v (n_dec+1,L,V,3), ala_count, gly_count)`. Step t
 (`utils/model.py:833-865`):
 1. decoder layers → `sequence_output_layer`;
+1b. `logits += bias_row[t]`, `bias_row` = aminx `bias` (L,21) + −1e8 at `omit_aa`/`omit_aa_per_position`
+   letters on designed rows (§2.3), in LASEr order (§5.1a). Untempered, before steps 2–5: divided by
+   `T_eff`, seen by min-p and argmax, as in aminx MPNN (`inference/decode/autoregressive.py:320-323,336`).
+   Steps 2–4 assign, so masked entries are unaffected. Stored `seq_logits`/`seq_log_prob` = the step-5
+   input recomputed with `bias_row=0` (aminx stored-logits convention, `autoregressive.py:302-309`);
+   with zero bias both equal upstream `utils/model.py:881`. `test_knob_semantics_laser_bias_minp`: bias
+   moves a residue across the min-p threshold (seq_min_p=0.05, T=0.3, injected uniforms) vs analytic;
+   negative controls bias-after-min-p and bias-after-`/T` fail.
 2. disabled residues := `finfo.min` on rows `~chain_mask` (LASEr `chain_mask=1` = fixed), or on rows
    `chain_mask` under `ignore_chain_mask_zeros` (`:836`);
 3. ALA/GLY over budget := `finfo.min` (`:840-841`);
 4. `disable_charged_fs` K/R/D/E := `-inf` (`:843-848`);
-5. if T is None: argmax; else `minp_warp_logits(logits, seq_min_p)` on **untempered** logits → `/T`
-   (per-residue vector under fs temp) → softmax → draw;
+5. `T_eff = T` if `fs_sequence_temp` is None, else `where(first_shell_ligand_contact_mask,
+   fs_sequence_temp, 1e-6 if T is None else T)` (per-residue, never None; `run_inference.py:541-544`).
+   If `T_eff` is None: argmax; else `minp_warp_logits(logits, seq_min_p)` on **untempered** logits →
+   `/T_eff` → softmax → draw;
 6. fixed/sampled select (`:861-865`);
 7. χ1..χ4 sequential (`:889-934`): `chi_logits_k = head_k(cat[s, seq_emb[t], chi_prev])`; argmax if
    χT None else `minp_warp(·, chi_min_p)` → `/chi_temp` → draw; `offset_k =
@@ -587,12 +617,15 @@ rotamer build in-loop; jaxpr loop-body guard asserts no O(L²) op.
 1. Budget counts every decoded residue incl. fixed (`:782-788`); region from
    `budget_residue_selection` (ProDy host) or exposed-non-SS heuristic (B0).
 2. Disabled `finfo.min` vs charged `-inf` (step 2/4).
-3. min-p only when T set; T None → argmax.
+3. min-p only when `T_eff` set; `T_eff` None (T None, no fs temp) → argmax.
 4. `sample`: input χ kept only where fixed and non-NaN (`:907-914`). Tied: input χ `nan_to_num`ed
    (`:491-492`) and kept wherever fixed unless `repack_all` (`:690-692`) — a NaN fixed χ becomes 0°;
    `test_knob_semantics_tied_chi_nan_fixed`.
 5. `ignore_chain_mask_zeros` writes `X` at unsampled positions (`:936-937`).
-6. `fs_sequence_temp` set → global seq temp 1e-6 (`run_inference.py:541-544`).
+6. `fs_sequence_temp` set → always sampled, min-p active; first-shell rows use `fs_sequence_temp`,
+   others use T (1e-6 if T None). `test_knob_semantics_fs_sequence_temp` over T∈{None,0.3} ×
+   seq_min_p∈{0,0.05} vs oracle, injected uniforms; negative control "1e-6 on non-first-shell rows
+   regardless of T" fails at T=0.3.
 7. `ignore_ligand` → empty lig-prot K; masked softmax 0; equals upstream empty-ligand output.
 8. `repack_only` ⇒ `chain_mask=1`; effective `repack_all = repack_all ∨ repack_only`
    (`run_inference.py:729-740`; `run_batch_inference.py:203,217`); `repack_all` alone keeps
@@ -608,23 +641,25 @@ rotamer build in-loop; jaxpr loop-body guard asserts no O(L²) op.
 | purpose | Stages / axes |
 |---|---|
 | `sample` | encode → `LaserJointDecode` → RotamerBuilder (post) → sinks; axes `samples`, `temperatures` |
-| `sample` tied (`tied_second_input`) | encode both (equal L else `ValueError`), shared order, per-step `λ·P1+(1−λ)·P2` (§6.5); tied semantics: disabled mask on `~chain_mask` only (`:606`), no min-p, no charged mask, T None→1e-6 sampled (`:617-618`); setting `seq_min_p`/`chi_min_p`/`fs_sequence_temp`/`disable_charged_fs` with tied → `ValueError` (T0.2 verifies list) |
+| `sample` tied (`tied_second_input`) | encode both (equal L else `ValueError`), shared order, per-step `λ·P1+(1−λ)·P2` (§6.5); bias/omit per §5.3 step 1b added to each structure's logits before its softmax: `λ·softmax((l₁+b)/T)+(1−λ)·softmax((l₂+b)/T)`; tied semantics: disabled mask on `~chain_mask` only (`:606`), no min-p, no charged mask, T None→1e-6 sampled (`:617-618`); setting `seq_min_p`/`chi_min_p`/`fs_sequence_temp`/`disable_charged_fs`/`ignore_chain_mask_zeros` with tied → `ValueError` (none is a `tied_sample` parameter, `utils/model.py:460-465`; T0.2 verifies list) |
 | `score:nll`, `score:logits` | teacher-forced seq+χ log-probs (`get_logits_for_score :261` port; conditioning per §5.4a) — primary parity surface |
 | `score:proofread_unconditional` | one forward, `return_unconditional_probabilities`, softmax; residues = first shell or `selection_string` |
-| `score:proofread_conditional` | axes `focus_residue` × `dropout_seed` (`n_dropouts`) × `decoding_order` (`n_decoding_orders`). Focus set = the unconditional pass's set: `first_shell_ligand_contact_mask` (`run_proofreading.py:55`), or if `selection_string` non-empty, resindices of `(same residue as (sel)) and name CA` (`:69-79`, None → ValueError); `residue_ids` ordering = upstream `ylabels`; T0.2 verifies resindex ↔ B0 row map. Per (focus r, rep d): one batch of `n_decoding_orders` copies, only r designable (others `chain_mask=1`), fresh orders per rep (§5.4a rule), per-copy scalar-dropout masks; `sample` at T=1, χT=1, `disabled_residues=('X',)`, `seq_min_p=0` (identity, `model.py:61-62`), `repack_all` per Options; `p[d,o]=softmax(sequence_logits[r])` on stored post-disabled-mask untempered logits (`:838,881`). Fuse: `m_d=mean_o p`, `s_d=std_o(p, ddof=1)`; `proofread_mean=mean_d m_d`, `proofread_std=mean_d s_d`, `proofread_mean_plus_std=proofread_mean+proofread_std`; no renormalisation; `n_decoding_orders=1` → std NaN (kept) |
+| `score:proofread_conditional` | axes `focus_residue` × `dropout_seed` (`n_dropouts`) × `decoding_order` (`n_decoding_orders`). Focus set = the unconditional pass's set: `first_shell_ligand_contact_mask` (`run_proofreading.py:55`), or if `selection_string` non-empty, resindices of `(same residue as (sel)) and name CA` (`:69-79`, None → ValueError); `residue_ids` ordering = upstream `ylabels`; T0.2 verifies resindex ↔ B0 row map. Per (focus r, rep d): one batch of `n_decoding_orders` copies, only r designable (others `chain_mask=1`), fresh orders per rep (§5.4a rule), per-copy scalar-dropout masks; `sample` at T=1, χT=1, `disabled_residues=('X',)`, `seq_min_p=0` (identity, `model.py:61-62`), `repack_all` per Options; `p[d,o]=softmax(sequence_logits[r])` on stored post-disabled-mask untempered logits (`:838,881`). Fuse: `m_d=mean_o p`, `s_d=std_o(p, ddof=1)`; `proofread_mean=mean_d m_d`, `proofread_std=mean_d s_d`, `proofread_mean_plus_std=proofread_mean+proofread_std`; no renormalisation; `n_decoding_orders=1` → std NaN (kept); sampling `bias`/`omit_aa*` not applied (scoring purpose) |
 | `jacobian`, `inspect` | `ValueError` (no fallback) |
 
 **§5.4a `score:nll|logits` conditioning (normative aminx defaults; upstream `get_logits_for_score`
 has no caller in the pinned repo).** (i) Order: one per structure, shared by all candidates, by the
 upstream sampler rule `_masked_sort_for_decoding_order` (`utils/pdb_dataset.py:1618-1650`):
 `order = argsort(u + tier)`, tier 0 = `chain_mask` (fixed), 1 = designable∧¬contact, 2 =
-designable∧contact, `u = jax.random.uniform(key_order,(L,))` from `random_seed`; the same rule drives
+designable∧contact, contact = upstream `extra_atom_contact_mask` (`utils/pdb_dataset.py:1236-1239`,
+not `first_shell_ligand_contact_mask`), named in the B0 gate field list; `chain_mask` = the B0 mask
+from `fixed_positions`/`fixed_mask`/`fix_from_bfactor`, as for `sample`; `u = jax.random.uniform(key_order,(L,))` from `random_seed`; the same rule drives
 `sample` and proofread orders; injectable `decoding_order` (length L) in parity tiers; emitted under
 `return_decoding_orders`. (ii) χ: `chi[i,k] = input_chi[i,k]` iff `aa_to_chi_angle_mask[cand_i
 (X→G)][k]` ∧ input non-NaN, else NaN. (iii) Outputs: `seq_log_prob (N,L) =
-log_softmax(sequence_logits)[cand]` (no disabled mask, temperature or min-p); `chi_log_prob (N,L,4) =
+log_softmax(sequence_logits)[cand]` (no disabled mask, bias/omit, temperature or min-p); `chi_log_prob (N,L,4) =
 log_softmax(chi_logits_k)[bin(chi)]`, NaN where χ is NaN (T0.2 transcribes `bin`); `scores (N,) =
-−mean_{present} seq_log_prob` (nats); `chi_nll (N,) = −nanmean chi_log_prob`; opt-in `seq_logits`,
+−mean_{prot_mask} seq_log_prob` (nats); `chi_nll (N,) = −nanmean chi_log_prob`; opt-in `seq_logits`,
 `chi_logits`. Tests: `test_knob_semantics_laser_score_order` (seeds differ; injected oracle order
 matches); `test_laser_score_chi_candidate_mismatch` (native A→K, native K→G); negative control:
 native χ for a mismatched candidate → fail.
@@ -722,14 +757,14 @@ already implements it). `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
 |---|---|---|
 | PSSM mixing fires whenever `pssm_bias` non-empty (precedence) | `potts_mpnn_utils.py:1392` | PSSMMix; `knob_semantics_pssm_precedence` |
 | `potts_converge` accumulates absolute energy (non-binding) → ~1000 sweeps; binding sums ΔE | `run_utils.py:116-120,148,176` | PottsRefine; `knob_semantics_potts_converge`, `..._binding_converge_stop` |
-| T=0 → floor + draw | `sample_seqs.py:38-39` | `knob_semantics_t0_floor` |
+| AR `temperature==0` and `optimization_temperature==0` → 1e-6, then draw | `sample_seqs.py:38-39` | host floor per `temperatures` axis element and on `optimization_temperature` before dispatch; `knob_semantics_t0_floor` tests AR T=0 and T_opt=0 separately vs oracle |
 | `filter` no-op | `etab_utils.py:312` | `no_op` inverse differential |
 | Refine order lookup key mismatch (`str(i)` vs `"_i"`) → N→C for `num_samples>1`; chain-suffix miss → fresh randn order | `sample_seqs.py:274-279,321-345`; `run_utils.py:110-111` | host `upstream_refine_order(...)`; `knob_semantics_refine_order` |
 | Ranked by pre-refine AR energy; PDB = refined seq of that best | `sample_seqs.py:257-287,368-373` | host ranking; `knob_semantics_rank_before_refine` |
 | Tied bias/PSSM/omit **and fixed/sampled select** read at last listed member; designed-last group overwrites fixed members with the draw, fixed-last writes `S_true[t_last]` to all | `potts_mpnn_utils.py:1665-1684` (`tied_sample :1575-1594`) | PottsARDecode tied; `knob_semantics_tied_last_member` covers fixed-last and designed-last mixed groups |
 | `X`/`-` score as zero-padded slots 21/20 | `etab_utils.py:362-366`; `sample_seqs.py:211` | potts_energy; `knob_semantics_x_gap_energy` |
 | LASEr tied λ weights structure 1; default 0.0 = structure 2 only (help text says opposite) | `utils/model.py:626` vs `run_inference_tied.py:875` | code semantics, default 0.0; `knob_semantics_tied_lambda` |
-| LASEr fs temp forces seq temp 1e-6 | `run_inference.py:541-544` | §5.3.1-6 |
+| LASEr fs temp: T None → 1e-6 on non-first-shell rows (sampled, min-p active); set T kept | `run_inference.py:541-544` | §5.3 step 5; §5.3.1-6 |
 | Tied group with any `mask==0` member: all members take that member's `S_true`, no draw; rows already written by earlier members stay | `potts_mpnn_utils.py:1641-1647` (and `:1551-1557`) | PottsARDecode tied `lax.cond` at member scan; `knob_semantics_tied_masked_member` |
 
 ### 6.5b Divergences (fixed upstream I/O bugs)
@@ -738,6 +773,8 @@ already implements it). `DEFERRED_IDS` is a checked-in list refreshed by T0.4.
 |---|---|---|---|
 | `optimize_fasta` asserts its own path, then reads `out_dir/out_name.fasta` | `sample_seqs.py:133-137` | reads `optimize_fasta` | `test_divergence_optimize_fasta_path` (oracle fixture uses path == `filename` so both agree) |
 | `knn_boundary_tie`: #present ≤ K_eff < L_total → upstream torch.topk breaks the row-D_max tie arbitrarily | `potts_mpnn_utils.py:1144-1150` | aminx +inf fill, lower-index-first; runtime warning; scope = all outputs of that structure; excluded from exact waves/sidecars | A0 deterministic-subset test |
+| `optimize_fasta` reads refine orders from implicit prior-run file `out_dir/out_name_decoding_order.json` (no config key) | `sample_seqs.py:122,178-180,325-330` | never read; fresh-order branch (`:331-343`), = upstream when the file is absent | `test_divergence_refine_order_json` (oracle out_dir without file) |
+| `optimize_pdb` concatenates chains in listing/alphabet order, misaligned with featurization order | `sample_seqs.py:146-155`; `potts_mpnn_utils.py:268-290`, `:327` | per-chain sequences concatenated in A0 order | `test_divergence_optimize_pdb_chain_order` (fixed-first listing); parity fixture where orders agree |
 | LASEr tied with `fs_sequence_temp` → NameError (undefined `batch`) | `utils/model.py:485`; `run_inference_tied.py:607-616` | `ValueError` naming the flag | `test_divergence_tied_fs_temp` |
 | Overlapping tied groups double-decode shared positions | `potts_mpnn_utils.py:1606-1614` | `ValueError` | `test_tied_overlap_raises` |
 | (pre-existing aminx, not upstream) stock MPNN decoder passes invalid-neighbour messages when `L_total<48<L_pad` | `decoder.py:144-147`; `features.py:165-184` | unchanged; PottsMPNN fallback parity only unpadded | backlog id filed in T0.2 |
@@ -791,7 +828,11 @@ tests pass; fail = any):
    record with `wave == declared wave`, no failed phase, no `wasxfail`; `skipped` never counts. Gate
    passes iff `rc==0` and step 2 passes. `tests/port/conftest.py` hooks return early if
    `AMINX_PORT_WAVE == "__nonport__"` (defensive).
+1b. For each `branch_manifest` row with a pytest vehicle: rerun that row's wave with
+   `AMINX_PORT_MUTANT=<id>` appended to `outcomes.jsonl`; exit status not folded into `rc` (judged by
+   step 2).
 2. `AMINX_REDSOX_OUTCOMES=$OUT/outcomes.jsonl uv run --no-sync pytest -o addopts="" tests/redsox -q`
+   (incl. `test_branch_coverage`)
 redsox U1 reachability runs only as a smoke check (presence-only). T0.4 runs the gate on current
 aminx first (expected FAIL = implementation checklist). Follow-up filed: redsox CLI multi-target +
 recursion + per-class aliases.
@@ -841,7 +882,8 @@ target` (xtrax reads pyproject only, `conftest.py:64-71`); CI iterates waves; (3
 `stochastic`: a stochastic wave without an injected-uniform oracle key is a T2/T3 error; (4) T2 runs
 in a scoped `jax.experimental.enable_x64()` fixture; (5) `pytest-timeout` added to dev deps
 (`conftest.py:214,232`). T5 uses `max_traces`. **Self-test first (T0.3):** sign-flipped kernel must
-fail T2; retrace-per-call kernel must fail T5. Follow-up: `xtrax.port` pytest plugin in the wheel.
+fail T2; retrace-per-call kernel must fail T5; planted row `selftest_noop` (no-op mutant) must be
+reported `instrument_invalid` by `test_branch_coverage`. Follow-up: `xtrax.port` pytest plugin in the wheel.
 
 | Wave | Symbol | stochastic | tol f64 / f32 | max_traces |
 |---|---|---|---|---|
@@ -942,8 +984,26 @@ control is aminx at `m·T`.
 | B5 | `LaserJointDecode` + §5.3.1 | T0.3, B4 | wave `laser_decode_step`; `laser_decode_e2e`; pilot → `laser_sample_dist` |
 | B6 | RotamerBuilder (post) + PDB/FASTA sinks | T0.3, B5 | wave `laser_rotamers` |
 | B7 | proofreading (both), two-structure tied, remaining Laser Options | B5 | `laser_proofread_parity`; knob tests |
-| Z1 | redsox gate PASS on final tree | A5, A6, B6, B7 | `run_gate` sidecar PASS |
+| Z1 | redsox gate PASS on final tree | A5, A6, B6, B7 | `run_gate` sidecar PASS incl. `test_branch_coverage` |
 | Z2 | CLI docs + `using-aminx` skill | Z1 | — |
+
+**Stage → vehicle (every stage in the `[[branch]]` `stage` column must be listed here):**
+
+| Stage | Vehicles |
+|---|---|
+| A0 / B0 featurizers | A0 gate / B0 gate |
+| MPNNEncode (Potts) | `pottsmpnn_full` |
+| PottsHead, merge_pair d2/d4, potts_energy | their waves; `potts_energy_parity` |
+| PottsARDecode (+tied, PSSMMix) | `potts_ar_decode`; `potts_ar_refine_exact` |
+| PottsRefine (all modes, tied, `skip_calc`) | `potts_refine`; `knob_semantics_nodes_gibbs`, `_binding_converge_stop`, `_optimize_pdb`, `_optimize_fasta` |
+| PottsSampleEnergy + host ranking | `potts_ar_refine_exact` (compares `sample_energy`, `sample_rank`); `knob_semantics_rank_before_refine` |
+| Partition fuse (binding ddG) | `knob_semantics_binding_partition_ddg` (2-chain fixture, oracle per-partition `get_etab`; mutant `+Σ_p`) |
+| score:energy/ddg candidates | `potts_energy_parity`, `potts_ddg_megascale` |
+| LASEr layers / encoders / score | `laser_layers`, `laser_encoder`, `laser_score` + `laser_score_parity` |
+| LaserJointDecode step / multi-step | `laser_decode_step` / `laser_decode_e2e` + §5.3.1 knob tests |
+| LASEr tied decode | `laser_decode_e2e` tied fixture; `knob_semantics_tied_lambda`, `_tied_chi_nan_fixed` |
+| Proofread (both) + fuse | `laser_proofread_parity`; `knob_semantics_proofread_dropout` |
+| RotamerBuilder | `laser_rotamers` |
 
 ## 9. Risks
 

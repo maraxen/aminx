@@ -159,3 +159,8 @@ All C6-xx landed consistently.
 - **C7-06 MINOR** sink arrays: slice to per-structure L_total before stage; dim name L_total; 2-structure different-L test.
 - **C7-07 MINOR** §5.4a: `present` undefined for LASEr → `prot_mask`; contact tier = `extra_atom_contact_mask` (`pdb_dataset.py:1631-1633,1236-1239`) add to B0 gate; score chain_mask source.
 - **C7-08 MINOR** tied ValueError list add `ignore_chain_mask_zeros` (not a tied_sample param, `utils/model.py:460-465`).
+
+# Round 7 — defender (Opus) — 5 CONCEDE (C7-01..04, C7-06) / 3 PARTIAL (C7-05, C7-07, C7-08) / 0 REBUT
+C7-01 resolved via coverage-vehicle rule (no new waves); C7-03: implicit prior-run orders JSON not a user input → divergence row; C7-04: bias before /T, stored logits bias-free, per aminx `autoregressive.py:302-309,320-323,336`.
+
+# Spec r7 written
