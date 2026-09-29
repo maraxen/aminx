@@ -67,3 +67,9 @@ Round-1 resolved: C1-01..07, 09, 11(deferred), 14, 17, 21, 22, 23. Carried: C1-0
 - **C2-20 MINOR §6.2/§4.1** PottsMPNN input-list line format `pdb|designed:chains|fixed:chains` (`sample_seqs.py:81-94`) is a knob channel invisible to AST → manual reference row; ModelProtocol also needs `__call__`, `stage_schema` (`types/protocols.py:137-142`) — subclass vs compose Aminx.
 
 User-decision candidates: U-a all PottsMPNN sampling via driver vs MPNN schedule arm; U-b replicate vs fix optimize_fasta path bug / tied λ default / X handling; U-c LASEr default temperature=None (argmax).
+
+# Round 2 — defender (Opus) — 19/19 CONCEDE with replacement text (no C2-03 exists)
+Key resolutions: U-a(a) all PottsMPNN sampling in driver via `PottsARDecode` reusing aminx `DecoderLayer` (`model/decoder.py:281`) as a row kernel over upstream `decoder :1415-1488`/`tied_decoder :1599-`; driver outputs through existing xtrax `ZarrStagingSink.stage/take` (`xtrax/src/xtrax/run/zarr_sink.py:254-313`); T0.5a runner goldens; concrete L-DRV R1–R5; nodes = Gibbs; edge_valid padding convention; LASEr alphabet boundary; LASEr step order; oracle shims (inverse-CDF on injected f64 uniforms, order, dropout masks); distributional protocol with pilot-derived δ and near-margin controls; junit-backed redsox harness; quirk+divergence tables; explicit fallback raise; U-b replicate numerics incl. refine order-keying quirk, fix optimize_fasta path only; U-c LASEr default None.
+Orchestrator deviation from defender text: U-c implemented as an UNSET sentinel resolved per family in `__post_init__` (defender proposed CLI-only family default, leaving Python-API/CLI defaults inconsistent). Also: aminx driver draws use the same inverse-CDF rule as the shim in production (injected-uniform parity is structural).
+
+# Spec r2 written
