@@ -341,6 +341,10 @@ LFS_MANIFEST_NAME="$5"
 
 BV="$HOME/bv"
 mkdir -p "$BV/logs" "$BV/lfs-objects" "$BV/bundles"
+# Engaging has git-lfs installed globally (titanix does not), so checkout would try to
+# smudge LFS pointers from a remote that does not exist ("missing protocol"). Leave the
+# pointers in place; the manifest loop below copies in each sha256-verified object.
+export GIT_LFS_SKIP_SMUDGE=1
 
 if [ ! -d "$BV/aminx.git" ]; then
   git init --bare "$BV/aminx.git"
