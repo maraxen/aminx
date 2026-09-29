@@ -90,3 +90,9 @@ Resolved: C2-01,02,07,09,11,14,16,17,18,19,20 (+C2-06/15/12 with follow-ups). Re
 - **C3-12 MINOR** Tied quirk: any member mask==0 → all members get that member's S_true without sampling after earlier members wrote h_V_stack (`potts_mpnn_utils.py:1551-1557,1641-1647`). Quirk row + test.
 - **C3-13 MINOR** score:energy candidate source when sequences_to_score empty unspecified; `spec_json._to_json_value` lacks nested-dataclass branch (`spec_json.py:62-80`) → SpecJSONEncodeError for Options, decode needs dict→Options; `spec_partition.py:128-135` probe hides it. Specify.
 User decisions: C3-04 (a)/(b); C3-02 placement + run_id policy.
+
+# Round 3 — defender (Opus) — 12 CONCEDE / 1 PARTIAL (C3-06: overlap claim overstated; overlapping groups double-decode → made a ValueError divergence) / 0 REBUT
+Beyond challenger: (1) padding fix must mask messages via `DecoderLayer(attention_mask=edge_valid)` (`decoder.py:333-336`, orchestrator-verified) since `message_mlp([h_i,0])≠0`; (2) Zarr goldens impossible pre-T0.0 → T0.5a in-memory / T0.5b Zarr split; (3) run_id via pinned `derive_sink_spec(run_id=)` (`run/sink.py:61`, verified), never `RunSpec.run_id` (static → retrace). Orchestrator-verified pinned structure files `inputs/example_pdbs/{2yc3,3dkm,3gg7,4jox,6w25,swe1_ligand}.pdb` exist.
+User-decision defaults applied: C3-04(b) stock MPNN decoder unchanged, fallback parity unpadded-only; C3-02 T0.0 in-epic, deterministic spec-hash run_id.
+
+# Spec r3 written (all round-3 replacement text applied)
