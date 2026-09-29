@@ -1,0 +1,35 @@
+[metadata]
+title = "MPNN runner in-memory goldens (T0.5a)"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "In-memory MPNN runner goldens (sample, score nll, jacobian, inspect) reproduce byte-exactly on the same host and GPU they were captured on."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "n_cases > 0 AND n_mismatch = 0 AND negative_control_differs = true"
+decision = "The captured in-memory runner outputs reproduced exactly, and the random_seed=1 control changed a sample row."
+reasoning = "Byte-equal arrays (dtype and shape included) plus exact metadata, with specification compared only on fields present at capture, means this host/GPU still matches the freeze. The seed control shows the comparison is not vacuously true."
+is_residual = false
+adversarial_check = "NOT (n_cases > 0 AND n_mismatch = 0 AND negative_control_differs = true)"
+
+[outcomes.fail]
+condition = "NOT (n_cases > 0 AND n_mismatch = 0 AND negative_control_differs = true)"
+decision = "Do not treat the FamilyDriver refactor as byte-identical to this freeze; inspect mismatches or the negative control."
+reasoning = "Any array or metadata diff, an empty case list, or a seed=1 sample row that matches the golden falsifies exact reproduction on this host/GPU."
+is_residual = true
+adversarial_check = "n_cases > 0 AND n_mismatch = 0 AND negative_control_differs = true"
+
+[result_schema]
+n_cases = "int"
+n_mismatch = "int"
+mismatches = "list of {case_id, detail}"
+negative_control_differs = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[provenance]
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/capture_runner_goldens.py --mode compare --negative-control. Capture (writes tests/golden/runner_v0, does not grade) is --mode capture. In-memory rows only; Zarr rows are T0.5b. Hypothesis is same host and GPU as the manifest device_kind. Pass and fail conditions are logical complements."
