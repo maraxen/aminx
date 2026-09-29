@@ -1,0 +1,14 @@
+# A1 PottsMPNN oracle provenance (task_id 260929_potts-laser-xtrax-compose).
+# The npz oracles (9.6 GB) stay on titanix; oracles.sha256 pins every file.
+host = "titanix"
+oracle_dir = "~/projects/aminx-oracles/dumps/a1_potts"
+oracle_env = "~/projects/aminx-oracles (torch 2.4.1 CPU)"
+dump_script = "scripts/parity/dump_potts_oracles.py"
+dump_script_sha256 = "fd1546e9217f314813a325ca110dbad32cc7e8621d5fb883d4ab0697352b7c78"
+shim_module = "scripts/parity/oracle_shims/potts.py"
+shim_sha256 = "18ef2f8936fc2f1dfd710d9b6da6761e9cd0e21718e90638a997f33be74f4947"
+fixtures_dir = "tests/port/reference/a0_featurize/_fixtures"
+captured = "2026-09-29"
+# Refine waves omit X (constant[20] = 1): upstream refine can index past its 20
+# candidates when X is drawable (debt #2260).
+refine_omit_index = 20
