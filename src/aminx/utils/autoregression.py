@@ -334,6 +334,45 @@ def ar_mask_from_decoding_order(
   return generate_wave_ar_mask(wave, groups)
 
 
+def decoding_order_from_wave(
+  wave: WaveScheduleBundle,
+  tie_group_map: jnp.ndarray,
+) -> DecodingOrder:
+  """The ORDER array a `WaveScheduleBundle` actually decodes (jit/vmap-safe).
+
+  Positions sorted by the wave their tie group first appears in; positions that share a
+  wave (a tie group, or conditionally independent groups of a chromatic wave) are ordered
+  by position, and positions the schedule never reaches come last. For a wave built by
+  ``WaveScheduleBundle.from_decoding_order(order, tie_group_map)`` this recovers ``order``
+  exactly when untied, and ``random_decoding_order``'s (step, position) convention when
+  tied.
+
+  Args:
+    wave: The schedule.
+    tie_group_map: (L,) tie group id per position (state-0 convention).
+
+  Returns:
+    (L,) int32 ORDER array.
+  """
+  seq_len = tie_group_map.shape[0]
+  num_waves, max_groups_per_wave = wave.group_ids.shape
+  never_scheduled = num_waves
+  wave_index_grid = jnp.broadcast_to(
+    jnp.arange(num_waves, dtype=jnp.int32)[:, None], (num_waves, max_groups_per_wave),
+  )
+  flat_group_ids = jnp.where(wave.group_valid, wave.group_ids, 0).reshape(-1)
+  flat_wave_index = jnp.where(wave.group_valid, wave_index_grid, never_scheduled).reshape(-1)
+  group_wave_index = jnp.full((seq_len,), never_scheduled, dtype=jnp.int32).at[flat_group_ids].min(
+    flat_wave_index,
+  )
+  position_wave_index = group_wave_index[tie_group_map]
+  positions = jnp.arange(seq_len, dtype=jnp.int32)
+  # Two explicit keys, (wave, position): a strict total order, so the result does not depend
+  # on sort stability (IREE's sort is not stable; see utils/decoding_order.py).
+  _, order = jax.lax.sort((position_wave_index, positions), dimension=0, is_stable=False, num_keys=2)
+  return order.astype(jnp.int32)
+
+
 def full_context_ar_mask(seq_len: int) -> jnp.ndarray:
   """Every position sees every other position's sequence, but not its own: ``1 - I``.
 

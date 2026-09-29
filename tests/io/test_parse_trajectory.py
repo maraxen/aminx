@@ -71,3 +71,26 @@ def test_real_parm7_xtc_frames() -> None:
   # (chain starts 0/101/377/477; proxide validation run a91fe079).
   assert len(np.unique(np.asarray(first.chain_index))) == 4  # noqa: PLR2004
   assert int(np.asarray(first.aatype).max()) < 20, "no unknown residues (AMBER variants resolved)"  # noqa: PLR2004
+
+
+def test_single_path_call_still_parses_a_structure_with_a_warning(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  import aminx.io.parsing.dispatch as dispatch  # noqa: PLC0415
+
+  seen = []
+
+  def fake_parse_structure(path, **kwargs):
+    seen.append((path, kwargs))
+    return "structure"
+
+  monkeypatch.setattr(dispatch, "parse_structure", fake_parse_structure)
+  with pytest.warns(DeprecationWarning, match="parse_input"):
+    result = list(parse_trajectory("x.pdb", k_neighbors=12))
+  assert result == ["structure"]
+  assert seen == [("x.pdb", {"k_neighbors": 12})]
+
+
+def test_frames_without_trajectory_is_an_error() -> None:
+  with pytest.raises(TypeError, match="requires a `trajectory`"):
+    parse_trajectory("x.pdb", frames=[0])

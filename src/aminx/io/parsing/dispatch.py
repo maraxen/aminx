@@ -11,6 +11,7 @@ What these entry points actually support:
 Legacy biotite/mdtraj-based parsers have been removed; do not add mdtraj back.
 """
 
+import warnings
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Any
@@ -80,7 +81,7 @@ def parse_structure(
 
 def parse_trajectory(
   topology: str | Path,
-  trajectory: str | Path,
+  trajectory: str | Path | None = None,
   frames: Sequence[int] | None = None,
   k_neighbors: int = 48,
   **kwargs: Any,  # noqa: ANN401
@@ -89,7 +90,10 @@ def parse_trajectory(
 
   Args:
     topology: AMBER ``.parm7``/``.prmtop`` file (atom names, residues, chains).
-    trajectory: ``.xtc`` trajectory whose atom count matches the topology.
+    trajectory: ``.xtc`` trajectory whose atom count matches the topology. Omitting it
+      is the deprecated single-path form: ``topology`` is then parsed as an ordinary
+      structure file exactly as :func:`parse_input` does (what this function did when it
+      was an alias of ``parse_input``), with a ``DeprecationWarning``.
     frames: Frame indices to load (negative counts from the end). ``None`` loads frame 0
       only; loading a whole trajectory must be requested explicitly.
     k_neighbors: Neighbours for the RBF features, as in :func:`parse_structure`.
@@ -104,6 +108,19 @@ def parse_trajectory(
   Raises:
     ImportError: If the installed proxide predates ``parse_amber_trajectory``.
   """
+  if trajectory is None:
+    if frames is not None:
+      msg = "parse_trajectory: `frames` requires a `trajectory`"
+      raise TypeError(msg)
+    warnings.warn(
+      "parse_trajectory(path) is deprecated: it parses a single structure file, exactly like "
+      "parse_input(path). Call parse_input for structures, or "
+      "parse_trajectory(topology, trajectory, frames=...) for MD trajectories.",
+      DeprecationWarning,
+      stacklevel=2,
+    )
+    return parse_input(topology, k_neighbors=k_neighbors, **kwargs)
+
   # Resolved eagerly so a too-old proxide fails at the call, not at first iteration.
   try:
     from proxide.io.parsing.backend import parse_amber_trajectory  # noqa: PLC0415

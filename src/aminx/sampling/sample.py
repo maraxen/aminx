@@ -14,6 +14,7 @@ from aminx.inference.logits import make_stage_set
 from aminx.registry import SAMPLERS
 from aminx.types.bundles import WaveScheduleBundle
 from aminx.types.protocols import ModelProtocol, SamplerFn
+from aminx.utils.autoregression import decoding_order_from_wave
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
 
 _AMINO_ACID_VOCAB = 21
@@ -177,10 +178,9 @@ def make_sample_sequences(
       # read it either: tie handling keys off `tie_group_map` alone.
       del num_groups
 
+      # Split unconditionally so the sampling key stream is the same whether or not the
+      # caller supplies a schedule.
       k_order, prng_key = jax.random.split(prng_key)
-      decoding_order, _ = decoding_order_fn(k_order, L, None, None)
-      if decoding_order is None:
-        decoding_order = jnp.arange(L, dtype=jnp.int32)
 
       # The wave schedule and the ar_mask must describe the SAME order. This used to build
       # `ar_mask` with `generate_ar_mask(decoding_order)` while leaving the bundle on its
@@ -189,7 +189,11 @@ def make_sample_sequences(
       # reads a RANK array anyway, not the ORDER array `decoding_order_fn` returns (debt
       # #1982). Passing the wave and letting `build_inference_bundle` derive the mask from
       # it (`generate_wave_ar_mask`) makes the two agree by construction.
-      if wave_schedule is None:
+      caller_wave = wave_schedule is not None
+      if not caller_wave:
+        decoding_order, _ = decoding_order_fn(k_order, L, None, None)
+        if decoding_order is None:
+          decoding_order = jnp.arange(L, dtype=jnp.int32)
         tie_map_state0 = None
         if tie_group_map is not None:
           tie_map_state0 = tie_group_map[0] if tie_group_map.ndim == 2 else tie_group_map
@@ -214,6 +218,11 @@ def make_sample_sequences(
         mode="sample_ar",
         inference=True,
       )
+      if caller_wave:
+        # Report the order the caller's schedule decodes, not an unused random draw.
+        decoding_order = decoding_order_from_wave(
+          bundle.wave, bundle.conditioning.tie_group_map[0],
+        )
       stage_set = make_stage_set(
         strategy=multi_state_strategy,
         strategy_temperature=multi_state_temperature,

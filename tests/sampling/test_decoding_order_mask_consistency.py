@@ -22,6 +22,7 @@ from aminx.sampling import make_sample_sequences
 from aminx.types.bundles import WaveScheduleBundle
 from aminx.utils.autoregression import (
   ar_mask_from_decoding_order,
+  decoding_order_from_wave,
   generate_ar_mask,
   generate_wave_ar_mask,
 )
@@ -152,3 +153,58 @@ def test_sampler_first_decoded_position_sees_no_sequence_context(small_model, mo
   assert any(not np.array_equal(seqs[0], s) for s in seqs[1:])
   for other in first_logits[1:]:
     np.testing.assert_allclose(other, first_logits[0], rtol=0, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# The order a schedule decodes (code-review finding on sample.py)
+# ---------------------------------------------------------------------------
+
+
+def test_decoding_order_from_wave_round_trips_untied():
+  order = _rotated_order(L)
+  wave = WaveScheduleBundle.from_decoding_order(order)
+  got = decoding_order_from_wave(wave, jnp.arange(L, dtype=jnp.int32))
+  np.testing.assert_array_equal(np.asarray(got), np.asarray(order))
+
+
+def test_decoding_order_from_wave_tied_uses_step_then_position():
+  tie_group_map = jnp.array([0, 0, 1, 2, 3, 3, 4], dtype=jnp.int32)
+  order = jnp.array([6, 5, 1, 4, 2, 0, 3], dtype=jnp.int32)
+  wave = WaveScheduleBundle.from_decoding_order(order, tie_group_map)
+  got = np.asarray(decoding_order_from_wave(wave, tie_group_map))
+  # Groups by first appearance: g4 {6}, g3 {4, 5}, g0 {0, 1}, g1 {2}, g2 {3};
+  # a tied group decodes together, members ordered by position.
+  np.testing.assert_array_equal(got, [6, 4, 5, 0, 1, 2, 3])
+
+
+def test_decoding_order_from_wave_puts_unscheduled_positions_last():
+  tie_group_map = jnp.arange(6, dtype=jnp.int32)
+  wave = WaveScheduleBundle.from_tie_groups(tie_group_map, jnp.array([4, 1, 2], dtype=jnp.int32))
+  got = np.asarray(decoding_order_from_wave(wave, tie_group_map))
+  np.testing.assert_array_equal(got[:3], [4, 1, 2])
+  assert sorted(got[3:].tolist()) == [0, 3, 5]
+
+
+def test_decoding_order_from_wave_multi_group_waves_sorted_by_wave_then_position():
+  tie_group_map = jnp.arange(4, dtype=jnp.int32)
+  # colors: groups 1 and 3 in wave 0, groups 0 and 2 in wave 1 (G = 2 slots per wave).
+  wave = WaveScheduleBundle.from_colors(jnp.array([1, 0, 1, 0], dtype=jnp.int32), tie_group_map)
+  got = np.asarray(decoding_order_from_wave(wave, tie_group_map))
+  np.testing.assert_array_equal(got, [1, 3, 0, 2])
+
+
+def test_sampler_reports_the_order_of_a_caller_supplied_schedule(small_model, model_inputs):
+  n = model_inputs["mask"].shape[0]
+  drawn = jnp.arange(n, dtype=jnp.int32)  # what decoding_order_fn would say
+  scheduled = _rotated_order(n, shift=max(1, n // 3))  # what the caller asks to decode
+  sample_fn = make_sample_sequences(small_model, decoding_order_fn=_fixed_order_fn(drawn))
+  _, _, returned = sample_fn(
+    jax.random.PRNGKey(0),
+    model_inputs["structure_coordinates"],
+    model_inputs["mask"],
+    model_inputs["residue_index"],
+    model_inputs["chain_index"],
+    backbone_noise=0.0,
+    wave_schedule=WaveScheduleBundle.from_decoding_order(scheduled),
+  )
+  np.testing.assert_array_equal(np.asarray(returned), np.asarray(scheduled))
