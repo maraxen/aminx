@@ -75,42 +75,57 @@ async function runCell(cell) {
     sessionOptions.enableProfiling = true;
   }
   const session = await ort.InferenceSession.create(modelBuf, sessionOptions);
-  if (session.inputNames.length !== cell.inputs.length) {
-    throw new Error(
-      `${cell.name}: session has ${session.inputNames.length} inputs, manifest declares ${cell.inputs.length}`,
-    );
+  try {
+    if (session.inputNames.length !== cell.inputs.length) {
+      throw new Error(
+        `${cell.name}: session has ${session.inputNames.length} inputs, manifest declares ${cell.inputs.length}`,
+      );
+    }
+    if (session.outputNames.length !== cell.outputs.length) {
+      throw new Error(
+        `${cell.name}: session has ${session.outputNames.length} outputs, manifest declares ${cell.outputs.length}`,
+      );
+    }
+    const feeds = {};
+    for (let i = 0; i < cell.inputs.length; i += 1) {
+      feeds[session.inputNames[i]] = await loadRawTensor(cell.inputs[i]);
+    }
+    const outputMap = await session.run(feeds);
+    for (let i = 0; i < cell.outputs.length; i += 1) {
+      const outSpec = cell.outputs[i];
+      const tensor = outputMap[session.outputNames[i]];
+      const bytes = tensorRawBytes(tensor, outSpec.dtype);
+      // eslint-disable-next-line no-await-in-loop
+      await postResult(`${cell.name}__${outSpec.label}.bin`, bytes);
+      // tensorRawBytes already copied the bytes out via buffer.slice, so it is safe
+      // to free the underlying wasm-side tensor now, if this ORT Web build exposes
+      // dispose() (not guaranteed across versions -- guard defensively).
+      if (typeof tensor.dispose === "function") {
+        tensor.dispose();
+      }
+    }
+    if (cell.profile) {
+      // onnxruntime-web's wasm EP exposes NO JS-readable per-node profiling event array:
+      // `endProfiling()` only frees an internal Emscripten MEMFS file handle (confirmed
+      // against the bundled 1.30.0 dist, `ort.wasm.mjs`'s
+      // `endProfiling = (sessionId) => { ... wasm2._OrtFree(profileFileName); }` --
+      // there is no public API call that reads that file's bytes back into JS). We still
+      // call it (so a future ORT Web version that DOES expose events is exercised
+      // identically), but report unavailability honestly rather than fabricating
+      // per-op data -- layer_b_profile.py reads `profileEventsAvailable` to decide its
+      // own `web_per_op_available` result field.
+      session.endProfiling();
+      return { ok: true, profileEventsAvailable: false };
+    }
+    return { ok: true };
+  } finally {
+    // T11d: InferenceSession.create is called once per cell (up to 144 in one page);
+    // without an explicit release() the wasm heap's allocations leak across cells until
+    // the fixed heap fills and every later create() fails with ERROR_CODE 6 / bad_alloc
+    // (or a bare numeric wasm abort). release() must run even when the cell threw, so a
+    // single bad cell doesn't ALSO leak its session on top of failing.
+    await session.release();
   }
-  if (session.outputNames.length !== cell.outputs.length) {
-    throw new Error(
-      `${cell.name}: session has ${session.outputNames.length} outputs, manifest declares ${cell.outputs.length}`,
-    );
-  }
-  const feeds = {};
-  for (let i = 0; i < cell.inputs.length; i += 1) {
-    feeds[session.inputNames[i]] = await loadRawTensor(cell.inputs[i]);
-  }
-  const outputMap = await session.run(feeds);
-  for (let i = 0; i < cell.outputs.length; i += 1) {
-    const outSpec = cell.outputs[i];
-    const tensor = outputMap[session.outputNames[i]];
-    const bytes = tensorRawBytes(tensor, outSpec.dtype);
-    // eslint-disable-next-line no-await-in-loop
-    await postResult(`${cell.name}__${outSpec.label}.bin`, bytes);
-  }
-  if (cell.profile) {
-    // onnxruntime-web's wasm EP exposes NO JS-readable per-node profiling event array:
-    // `endProfiling()` only frees an internal Emscripten MEMFS file handle (confirmed
-    // against the bundled 1.30.0 dist, `ort.wasm.mjs`'s
-    // `endProfiling = (sessionId) => { ... wasm2._OrtFree(profileFileName); }` --
-    // there is no public API call that reads that file's bytes back into JS). We still
-    // call it (so a future ORT Web version that DOES expose events is exercised
-    // identically), but report unavailability honestly rather than fabricating
-    // per-op data -- layer_b_profile.py reads `profileEventsAvailable` to decide its
-    // own `web_per_op_available` result field.
-    session.endProfiling();
-    return { ok: true, profileEventsAvailable: false };
-  }
-  return { ok: true };
 }
 
 async function webgpuProbe() {

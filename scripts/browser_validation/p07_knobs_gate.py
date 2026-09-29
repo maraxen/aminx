@@ -1124,6 +1124,34 @@ def _run_p07_browser(
   raise RuntimeError(msg)
 
 
+def _raise_on_failed_cells(harness: dict[str, object], names: list[str]) -> None:
+  """Raise if any of ``names`` is missing from ``harness["result"]["cells"]`` or not ok.
+
+  T11d: ``harnessOk`` only proves the browser PAGE ran to completion, not that every
+  individual cell inside it succeeded -- a leaked-session ``bad_alloc`` (or the bare
+  numeric wasm abort that precedes it) fails a cell without failing the harness, and
+  the caller previously discovered this only later, via a confusing
+  ``FileNotFoundError`` on a missing ``__tokens.bin``. Fail fast with the real cause.
+  """
+  result = harness.get("result")
+  cells = (result or {}).get("cells", {}) if isinstance(result, dict) else {}
+  failed: list[tuple[str, str]] = []
+  for name in names:
+    cell = cells.get(name) if isinstance(cells, dict) else None
+    if not isinstance(cell, dict) or cell.get("ok") is not True:
+      error = cell.get("error") if isinstance(cell, dict) else None
+      if error is None:
+        error = "missing from browser harness result"
+      failed.append((name, str(error)[:500]))
+  if failed:
+    first_name, first_error = failed[0]
+    msg = (
+      f"browser harness reported {len(failed)}/{len(names)} failed cell(s); "
+      f"first failure: {first_name!r}: {first_error}"
+    )
+    raise RuntimeError(msg)
+
+
 def _browser_compare(
   cases: list[dict[str, object]],
   onnx_by_bucket: dict[int, Path],
@@ -1190,6 +1218,8 @@ def _browser_compare(
     if not harness.get("harnessOk"):
       msg = f"browser harness failed: {harness.get('harnessError')}"
       raise RuntimeError(msg)
+    group_names = [str(case["name"]) for case in group if isinstance(case["arrays"], dict)]
+    _raise_on_failed_cells(harness, group_names)
     for case in group:
       arrays = case["arrays"]
       if not isinstance(arrays, dict):
