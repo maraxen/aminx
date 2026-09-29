@@ -109,3 +109,8 @@ All C3-xx landed consistently (row kernel vs `utils/concatenate.py:11-28`, `deco
 - **C4-08 MINOR** Tied fixed/sampled select uses last member's chain_mask/S_true, writes that token to all (`:1591-1594`); extend quirk row + test to mixed fixed/designed.
 - **C4-09 MINOR** `nodes` needs h_EXV_fw recomputed with `mask_fw = mask·(1−mask_bw)` = self slot only (`run_utils.py:188-191`); not AR-order h_EXV_fw.
 - **C4-10 MINOR** DecoderLayer vs torch DecLayer unit test impossible in aminx env (no torch) → sealed f64 fixture from dump_potts_oracles.py, rtol 1e-12.
+
+# Round 4 — defender (Opus) — 8 CONCEDE / 2 PARTIAL (C4-04 mask assignment corrected: upstream masks etab rows only `potts_mpnn_utils.py:1284,1337,1505,1795` + encoder, no edge node-masks at etab/merge/energy/decoder — orchestrator-verified; C4-09 partial) / 0 REBUT
+Applied: tied rank_flat JAX code over static (L_pad,M_max) groups; LaserChiOffsetHead + χ-angle gate + offset:=0 control; PottsSampleEnergy pre-refine + host ranking + refined_sequence; §4.1a A0 featurizer (upstream parse_PDB port, gap rows orchestrator-verified `:143-156`) with present/pad_valid/nbr_valid table (r3 edge_valid retired); per-wave gate loop with port_wave markers; sink root = run_spec.io.output_h5_path; tied last-member select; nodes h_EXV_fw recompute; sealed declayer_f64 fixture.
+
+# Spec r4 written
