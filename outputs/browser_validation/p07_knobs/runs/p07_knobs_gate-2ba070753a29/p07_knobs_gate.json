@@ -1,0 +1,49 @@
+{
+  "a_cases_total": 288,
+  "a_cases_bitwise_cpu": 288,
+  "a_cases_bitwise_web": 0,
+  "a_max_logprob_abs_diff": 9.5367431640625e-05,
+  "a_web_ok": false,
+  "alias_ok": true,
+  "knobs_live": 7,
+  "knobs_total": 7,
+  "ctrl_frozen_detected": true,
+  "ctrl_bad_gumbel_detected": true,
+  "ctrl_bad_shuffle_detected": true,
+  "ctrl_uniform_order_detected": true,
+  "b1_max_abs_nats": 3.62396240234375e-05,
+  "b2_gumbel_tv_max": 0.004579999999999997,
+  "b2_gumbel_p_min": 0.050734099654733,
+  "b2_order_p": 0.7531683390497929,
+  "b2_order_fixed_first_violations": 0,
+  "b2_order_within_p": 0.9974202354773718,
+  "b2_omitted_draws": 0,
+  "b2_n": 200000,
+  "order_n": 240000,
+  "browser_enabled": true,
+  "budget_exceeded": false,
+  "checks_complete": false,
+  "smoke": false,
+  "git_hash": "2ba070753a2921ff1cad69483da360ac12cad390",
+  "git_clean": true,
+  "fixture_ids": [
+    "5L33",
+    "tie_lattice_L96"
+  ],
+  "buckets": [
+    128,
+    256
+  ],
+  "versions": {
+    "jax": "0.10.2",
+    "jax2onnx": "0.16.1",
+    "onnx": "1.23.0",
+    "onnxruntime": "1.30.0",
+    "numpy": "2.4.6",
+    "equinox": "0.13.8",
+    "scipy": "1.17.1",
+    "node": "v24.14.1"
+  },
+  "status_note": "browser arm failed: FileNotFoundError: [Errno 2] No such file or directory: '/tmp/p07_knobs_nz4o99rs/browser_L128/5L33_L128_chains_to_design_s55__tokens.bin'",
+  "export_ok": true
+}

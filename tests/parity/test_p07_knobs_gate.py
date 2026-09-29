@@ -18,6 +18,7 @@ from scripts.browser_validation.p07_knobs_gate import (
   SplitMix64,
   _json_default,
   _node_bin,
+  _raise_on_failed_cells,
   bad_gumbel_from_uniform,
   build_p07_inputs,
   evaluate_outcome,
@@ -122,6 +123,34 @@ def test_outcome_pass_and_each_failure_and_sidecar_schema() -> None:
   assert evaluate_outcome(passing_result()) == "pass"
   for row in json.loads(_CASES.read_text()):
     assert evaluate_outcome(row["result"]) == row["expect"], row["name"]
+
+
+def test_raise_on_failed_cells_reports_the_failed_cell_name() -> None:
+  harness = {
+    "harnessOk": True,
+    "result": {
+      "cells": {
+        "good": {"ok": True},
+        "bad": {"ok": False, "error": "ERROR_CODE: 6, ERROR_MESSAGE: std::bad_alloc"},
+      },
+    },
+  }
+  with pytest.raises(RuntimeError, match="bad"):
+    _raise_on_failed_cells(harness, ["good", "bad"])
+
+
+def test_raise_on_failed_cells_does_not_raise_when_all_ok() -> None:
+  harness = {
+    "harnessOk": True,
+    "result": {"cells": {"good": {"ok": True}, "also_good": {"ok": True}}},
+  }
+  _raise_on_failed_cells(harness, ["good", "also_good"])
+
+
+def test_raise_on_failed_cells_reports_a_missing_cell() -> None:
+  harness = {"harnessOk": True, "result": {"cells": {"good": {"ok": True}}}}
+  with pytest.raises(RuntimeError, match="missing"):
+    _raise_on_failed_cells(harness, ["good", "never_ran"])
 
 
 def test_cases_grade_with_the_pinned_bathos_evaluator() -> None:
