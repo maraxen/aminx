@@ -1,0 +1,21 @@
+# merge_pair(denom=2, exclude_self=false) vs sealed etab_forward.
+[port]
+wave_id = "potts_merge_pair_d2"
+oracle_id = "ref:tests/port/reference/potts_merge_pair_d2:v1:sha256:657ee24bdd6152050440c12110987b9582da062cf26d8c2e3e3290555dc84ca2"
+symbol_qualname = "aminx.families.potts_mpnn.etab.merge_pair"
+reference_subtree = "reference/potts_merge_pair_d2"
+
+[capabilities]
+stochastic = false
+dynamic_shape = false
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "exact"
+tolerance_policy_f32 = "atol=1e-7"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true

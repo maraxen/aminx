@@ -1,0 +1,21 @@
+# merge_pair(denom=4, exclude_self=true) vs sealed etab_energy.
+[port]
+wave_id = "potts_merge_pair_d4"
+oracle_id = "ref:tests/port/reference/potts_merge_pair_d4:v1:sha256:4e30f9546c8d04e9d30fb2abb128b2b36a67fb311eeb674cff2373138f18c07e"
+symbol_qualname = "aminx.families.potts_mpnn.etab.merge_pair"
+reference_subtree = "reference/potts_merge_pair_d4"
+
+[capabilities]
+stochastic = false
+dynamic_shape = false
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "exact"
+tolerance_policy_f32 = "atol=1e-7"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true

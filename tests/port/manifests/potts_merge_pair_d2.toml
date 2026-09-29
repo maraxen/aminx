@@ -1,0 +1,12 @@
+[manifest]
+wave_id = "potts_merge_pair_d2"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:5f769639195497925bceca073b4d01c4291c8c788d98128a85e838b07ff094eb"
+created_at = "2026-09-29T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.families.potts_mpnn.etab.merge_pair"
+module_path = "src/aminx/families/potts_mpnn/etab.py"
+depends_on = []
