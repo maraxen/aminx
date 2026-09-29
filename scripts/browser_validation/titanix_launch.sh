@@ -10,6 +10,23 @@
 #   titanix_launch.sh <stem> <campaign-id> [SCRIPT_ARGS...]
 #   titanix_launch.sh --self-test      # verify the O9 argv-safety check in isolation
 #
+# T11g: browser stems (e.g. p07_knobs_gate, which drives headless Chromium via
+# node/playwright in browser/layer_c) run on titanix like any other stem, plus three
+# opt-in flags, all no-ops when absent (existing sampling stems are byte-for-byte
+# unaffected):
+#   --npm-dir DIR     repo-relative dir to `npm ci` on titanix before the run (e.g.
+#                     browser/layer_c); threads through to titanix_run.sh as BV_NPM_DIR.
+#   --cpu             no GPU: JAX_PLATFORMS=cpu, CUDA_VISIBLE_DEVICES="", drops the
+#                     cuda12 extra even if --gpu is also (incorrectly) supplied; mutually
+#                     exclusive with --gpu. The knobs gate's JAX side needs no GPU.
+#   --uv-with SPEC    repeatable; extra `--with SPEC` packages appended to the uv run in
+#                     titanix_run.sh (e.g. jax2onnx==0.16.1, not a pyproject dependency).
+#
+# Example (p07_knobs_gate, full browser run):
+#   bash scripts/browser_validation/titanix_launch.sh --cpu --npm-dir browser/layer_c \
+#     --uv-with jax2onnx==0.16.1 --uv-with onnxruntime==1.30.0 --uv-with onnx==1.23.0 \
+#     --tag T p07_knobs_gate <campaign> --browser --budget-s 28800 --chunk-cells 8
+#
 # Deviation #1 (orchestrator-approved, 260924): .git/config is write-protected in this
 # worktree, so `git remote add titanix-bv ...` is impossible. Push by URL instead --
 # there is no named remote anywhere in this script.
@@ -50,7 +67,8 @@ self_test() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: titanix_launch.sh [--gpu N] [--prepare-only] <stem> <campaign-id> [SCRIPT_ARGS...]
+Usage: titanix_launch.sh [--gpu N | --cpu] [--prepare-only] [--npm-dir DIR]
+                          [--uv-with SPEC]... <stem> <campaign-id> [SCRIPT_ARGS...]
        titanix_launch.sh --self-test
 EOF
 }
@@ -66,8 +84,16 @@ fi
 # `--gpu N` exposes only GPU N to the run (titanix's other GPUs serve vLLM and must stay
 # untouched) and syncs the lock's `cuda12` extra. `--prepare-only` stops after the checkout
 # is materialized and synced (no unit is started) and prints its path -- for probes.
+#
+# T11g: `--cpu` is the browser-stem counterpart of `--gpu` -- no GPU, JAX_PLATFORMS=cpu,
+# CUDA_VISIBLE_DEVICES="" -- and mutually exclusive with it. `--npm-dir DIR` and repeatable
+# `--uv-with SPEC` are opt-in and forwarded to titanix_run.sh; both empty is the pre-T11g
+# behavior, byte-for-byte.
 GPU=""
+CPU=0
 PREPARE_ONLY=0
+NPM_DIR=""
+UV_WITH=()
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --gpu)
@@ -77,13 +103,32 @@ while [ "$#" -gt 0 ]; do
       esac
       shift 2
       ;;
+    --cpu)
+      CPU=1
+      shift
+      ;;
     --prepare-only)
       PREPARE_ONLY=1
       shift
       ;;
+    --npm-dir)
+      NPM_DIR="${2:-}"
+      [ -n "$NPM_DIR" ] || { echo "titanix_launch.sh: --npm-dir needs a directory" >&2; exit 2; }
+      shift 2
+      ;;
+    --uv-with)
+      [ -n "${2:-}" ] || { echo "titanix_launch.sh: --uv-with needs a package spec" >&2; exit 2; }
+      UV_WITH+=("$2")
+      shift 2
+      ;;
     *) break ;;
   esac
 done
+
+if [ -n "$GPU" ] && [ "$CPU" -eq 1 ]; then
+  echo "titanix_launch.sh: --gpu and --cpu are mutually exclusive" >&2
+  exit 2
+fi
 
 if [ "$#" -lt 2 ]; then
   usage
@@ -95,8 +140,8 @@ CAMPAIGN_ID="$2"
 shift 2
 SCRIPT_ARGS=("$@")
 
-for arg in "$STEM" "$CAMPAIGN_ID" "${SCRIPT_ARGS[@]}"; do
-  check_arg_safe "$arg" || exit 2
+for arg in "$STEM" "$CAMPAIGN_ID" "$NPM_DIR" "${UV_WITH[@]}" "${SCRIPT_ARGS[@]}"; do
+  [ -n "$arg" ] && { check_arg_safe "$arg" || exit 2; }
 done
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -206,9 +251,16 @@ fi
 # ODQ-13 mechanism -- tmux is NOT installed on titanix). --collect lets a finished unit
 # be garbage-collected; the orchestrator's poll (T4 common context step 5) treats that
 # as terminal via `systemctl --user is-active`, not via unit persistence.
-gpu_env=()
-[ -n "$GPU" ] && gpu_env=("--setenv=BV_GPU=${GPU}")
-ssh titanix systemd-run --user "--unit=${SESSION}" --collect -p MemoryMax=64G -p MemorySwapMax=0 "${gpu_env[@]}" \
+# T11g: --cpu, --npm-dir, --uv-with thread through as env (BV_*), same mechanism as --gpu's
+# BV_GPU; titanix_run.sh reads them. BV_UV_WITH is space-joined -- check_arg_safe above
+# already refused any --uv-with spec containing whitespace, so a plain `read -ra` split on
+# the titanix_run.sh side is unambiguous.
+extra_env=()
+[ -n "$GPU" ] && extra_env+=("--setenv=BV_GPU=${GPU}")
+[ "$CPU" -eq 1 ] && extra_env+=("--setenv=BV_CPU=1")
+[ -n "$NPM_DIR" ] && extra_env+=("--setenv=BV_NPM_DIR=${NPM_DIR}")
+[ "${#UV_WITH[@]}" -gt 0 ] && extra_env+=("--setenv=BV_UV_WITH=${UV_WITH[*]}")
+ssh titanix systemd-run --user "--unit=${SESSION}" --collect -p MemoryMax=64G -p MemorySwapMax=0 "${extra_env[@]}" \
   "${RD}/scripts/browser_validation/titanix_run.sh" "$RD" "$H" "$CAMPAIGN_ID" "$STEM" "${SCRIPT_ARGS[@]}"
 
 echo "$SESSION"

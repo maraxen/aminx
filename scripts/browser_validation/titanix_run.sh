@@ -5,6 +5,21 @@
 # a fresh git-worktree checkout ($RD) as its cwd argument.
 #
 # Usage: titanix_run.sh <RD> <H> <CAMPAIGN_ID> <STEM> [SCRIPT_ARGS...]
+#
+# T11g: browser stems read three optional env vars, set by titanix_launch.sh's --cpu,
+# --npm-dir, --uv-with flags (all no-ops when unset, so non-browser stems are unaffected):
+#   BV_CPU        non-empty -> JAX_PLATFORMS=cpu, CUDA_VISIBLE_DEVICES="", no cuda12 extra.
+#   BV_NPM_DIR    repo-relative dir (e.g. browser/layer_c) to `npm ci` before the run, with
+#                 BV_NODE_BIN_DIR (default /home/solab/bv/node/node-v24.14.1-linux-x64/bin)
+#                 prepended to PATH so `node`/`npx` resolve.
+#   BV_UV_WITH    space-joined extra `--with SPEC` packages for the uv run below (e.g.
+#                 "jax2onnx==0.16.1 onnxruntime==1.30.0 onnx==1.23.0" -- none of these are
+#                 pyproject dependencies).
+#
+# Example (p07_knobs_gate, driven via titanix_launch.sh):
+#   bash scripts/browser_validation/titanix_launch.sh --cpu --npm-dir browser/layer_c \
+#     --uv-with jax2onnx==0.16.1 --uv-with onnxruntime==1.30.0 --uv-with onnx==1.23.0 \
+#     --tag T p07_knobs_gate <campaign> --browser --budget-s 28800 --chunk-cells 8
 
 set -euo pipefail
 
@@ -36,6 +51,16 @@ BATHOS_COMMIT_PIN="84be544ecb45734f46e43d22f351a54d6edd6ae5"
 BATHOS_REQ="bathos @ git+https://github.com/maraxen/bathos@${BATHOS_COMMIT_PIN}"
 
 cd "$RD"
+
+# T11g: node/npm before anything else, so a network problem there fails fast rather than
+# after the guards below. browser/**/node_modules/ is gitignored (.gitignore:75), so this
+# never dirties the tree the clean-tree check below inspects, but run it first anyway to
+# match local_run.sh's convention (uv sync / npm ci, then the dirty check).
+if [ -n "${BV_NPM_DIR:-}" ]; then
+  NODE_BIN_DIR="${BV_NODE_BIN_DIR:-/home/solab/bv/node/node-v24.14.1-linux-x64/bin}"
+  export PATH="${NODE_BIN_DIR}:${PATH}"
+  ( cd "${RD}/${BV_NPM_DIR}" && npm ci )
+fi
 
 # titanix's own worktree is a FRESH checkout (unlike the local $WT, which carries the
 # many untracked harness files titanix_launch.sh's clean-tree check works around) --
@@ -73,12 +98,18 @@ export BTH_BIN="$TX_BTH"
 
 # Deviation D10: GPU mode (set by titanix_launch.sh --gpu N). Only GPU N is visible, and JAX
 # must not preallocate: titanix's other GPUs serve vLLM. The reference (torch) stays on CPU.
+# T11g: BV_CPU (set by --cpu) takes precedence over BV_GPU even if both were somehow set
+# (titanix_launch.sh already refuses that combination) -- no cuda12 extra under --cpu, since
+# the knobs gate's JAX side runs on CPU and the extra is pointless weight for a CPU run.
 UV_EXTRAS=(--extra dev --extra benchmark)
-if [ -n "${BV_GPU:-}" ]; then
+if [ -n "${BV_GPU:-}" ] && [ -z "${BV_CPU:-}" ]; then
   export CUDA_VISIBLE_DEVICES="$BV_GPU"
   export JAX_PLATFORMS="cuda"
   export XLA_PYTHON_CLIENT_PREALLOCATE="false"
   UV_EXTRAS+=(--extra cuda12)
+elif [ -n "${BV_CPU:-}" ]; then
+  export JAX_PLATFORMS="cpu"
+  export CUDA_VISIBLE_DEVICES=""
 fi
 
 # So prereq_check() sees a warm catalog (R2-C1: a local `bth run` writes only cool-tier
@@ -87,14 +118,28 @@ fi
 
 OUT_PATH="outputs/browser_validation/layer_a/${STEM}.json"
 
+# T11g: extra --with SPEC pairs from BV_UV_WITH (e.g. jax2onnx, onnxruntime, onnx for
+# browser stems -- none are pyproject dependencies). Each stays a two-token `--with SPEC`
+# pair, inserted before `--prerelease allow` so the F-C1 pairing below is unaffected;
+# check_arg_safe on the launcher side already refused any spec containing whitespace.
+UV_WITH_ARGS=()
+if [ -n "${BV_UV_WITH:-}" ]; then
+  read -ra _uv_with_specs <<<"$BV_UV_WITH"
+  for spec in "${_uv_with_specs[@]}"; do
+    UV_WITH_ARGS+=(--with "$spec")
+  done
+fi
+
 # F-C1: keep these uv option tokens in EXACTLY this order, nothing between `python` and
 # the script path -- bathos `_find_script_path` (runner.py:57-75 at 84be544e) reads
 # tokens in pairs after `run`, and `--no-sync` only resolves because it sits in a
 # skipped slot. `--prerelease allow` MUST stay two tokens (a single
 # `--prerelease=allow` token would swallow the following one and break the pairing);
-# without it the `--with` overlay fails to resolve (fastmcp-slim prerelease).
+# without it the `--with` overlay fails to resolve (fastmcp-slim prerelease). Any
+# `${UV_WITH_ARGS[@]}` (T11g) are themselves two-token `--with SPEC` pairs, so inserting
+# them here preserves the pairing.
 taskset -c 0-15 "$TX_BTH" run --campaign-id "$CAMPAIGN_ID" --output-paths "$OUT_PATH" -- \
-  "$TX_UV" run --frozen --no-sync "${UV_EXTRAS[@]}" --with "$BATHOS_REQ" --prerelease allow python \
+  "$TX_UV" run --frozen --no-sync "${UV_EXTRAS[@]}" --with "$BATHOS_REQ" "${UV_WITH_ARGS[@]}" --prerelease allow python \
   "scripts/browser_validation/${STEM}.py" "${SCRIPT_ARGS[@]}" --out "$OUT_PATH"
 
 echo "=== titanix_run.sh finished $(date -u +%FT%TZ) ==="

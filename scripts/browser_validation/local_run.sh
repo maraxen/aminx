@@ -23,7 +23,7 @@ BV_REL="scripts/browser_validation"
 # Dirty-tree check (Common context step 1; Hard rule: never touch/inspect the worktree's
 # pre-existing tool-log dirt -- .praxia/audits.jsonl, .praxia/recon.jsonl -- so BOTH the
 # tracked-dirty check and the untracked check are scoped to code paths only, same paths
-# titanix_launch.sh:112-119 scopes its OWN untracked check to).
+# titanix_launch.sh:157-164 scopes its OWN untracked check to).
 # --------------------------------------------------------------------------------------
 refuse_if_dirty() {
   local root="$1"
