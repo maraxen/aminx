@@ -143,3 +143,8 @@ All C5-xx landed, no residual contradictions in mask/order/knn surface.
 - **C6-M3** §5.3.1-4 holds for sample not tied_sample (`:491-492,690-692` nan_to_num, no NaN mask); scope + tied row/test.
 - **C6-M4** `--ignore_key_mismatch` store_false → strict (`run_batch_inference.py:379`; `run_inference.py:488`); alias must record inversion.
 - **C6-M5** proofread_conditional residue set = fs_mask/ylabels returned by unconditional pass incl. selection_string (`run_proofreading.py:66-104,217,108`).
+
+# Round 6 — defender (Opus) — 10 CONCEDE / 3 PARTIAL (C6-06: entry point returns only structure 1, but χ₂ feeds structure-2 edges; C6-07: untied write value-equal via mask·h_V, tied tail after first masked member conceded; C6-M2: NameError only for tensor temp i.e. fs_sequence_temp) / 0 REBUT
+Extra findings: unconditional proofread pass also scalar-dropout-on; get_logits_for_score has no callers upstream → §5.4a aminx-defined conditioning. Added normative source-of-truth + branch-coverage clause to §0 (transcription slips become gate-caught, not review-caught).
+
+# Spec r6 written
