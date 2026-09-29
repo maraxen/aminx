@@ -65,6 +65,7 @@ from aminx.host._sampling_helper import (
   _prepare_ligand_context,
   fixed_provenance_outputs,
 )
+from aminx.host.family_driver import refuse_driver_family
 from aminx.host.plan import (
   resolve_chunk_size,
   resolve_decode_mode,
@@ -555,6 +556,7 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
       multi-state rows, but re-asserts the precondition rather than trusting the caller).
 
   """
+  refuse_driver_family(spec, surface="multistate PoE")
   if not isinstance(spec.inputs, (list, tuple)) or len(spec.inputs) < 2:
     msg = (
       f"sample_multistate_poe_campaign_row needs >=2 states in spec.inputs to fuse across "

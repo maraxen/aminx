@@ -1,0 +1,6 @@
+# L-DRV R3 allowlist. Each [[entries]] row permits lax.scan / lax.while_loop /
+# lax.fori_loop at one (path, enclosing qualname). reason must be
+# "sequential_dependency". Empty until PottsARDecode, PottsRefine, and
+# LaserJointDecode land.
+
+entries = []

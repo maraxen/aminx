@@ -20,6 +20,8 @@ from aminx.host._sampling_helper import (
   _canonical_structure_ids_for_spec,
   _structure_ids_for_batch,
 )
+from aminx.host.family_driver import FAMILY_DRIVERS
+from aminx.host.family_runner import run_family_driver
 from aminx.host.kernel_dispatch import _sample_batch
 from aminx.host.logit_aggregation import (
   aggregate_logits,
@@ -175,6 +177,18 @@ def sample(
     kw = dict(kwargs)
     pop_deprecated_spec_kwargs(kw)
     spec = SamplingSpecification(**kw)
+
+  # FamilyDriver dispatch. An empty registry leaves this path untouched.
+  purpose = "sample"
+  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
 
   # F002/F003 guard [260826_aminx-invariant-audit]: runner.sample cannot honour
   # multistate spec fields.  score() routes through _score_fused_multistate which
@@ -528,6 +542,18 @@ def score(  # noqa: PLR0915
     kw = dict(kwargs)
     pop_deprecated_spec_kwargs(kw)
     spec = ScoringSpecification(**kw)
+
+  # output_kind is T0.6; until that field exists every score purpose is nll.
+  purpose = "score:nll"
+  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
 
   if spec.output_h5_path:
     msg = "score runner: HDF5 streaming output not yet implemented; omit --output-h5-path for in-memory results"
@@ -921,6 +947,17 @@ def inspect(  # noqa: PLR0915
     pop_deprecated_spec_kwargs(kw)
     spec = InspectionSpecification(**kw)
 
+  purpose = "inspect"
+  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
+
   # F005 guard [260826_aminx-invariant-audit]: runner.inspect cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit
   # count 0; see findings.jsonl F005 evidence), so a caller-supplied map would
@@ -1234,6 +1271,17 @@ def jacobian(
     kw = dict(kwargs)
     pop_deprecated_spec_kwargs(kw)
     spec = JacobianSpecification(**kw)
+
+  purpose = "jacobian"
+  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
 
   # F005 guard [260826_aminx-invariant-audit]: runner.jacobian cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit

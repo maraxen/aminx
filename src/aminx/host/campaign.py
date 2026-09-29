@@ -30,6 +30,7 @@ from xtrax.run import (
 )
 
 # campaign manifest functions are implemented in this module (see build_manifest_row et al.)
+from aminx.host.family_driver import refuse_driver_family
 from aminx.host.runner import sample
 from aminx.host.spec_partition import campaign_sampling_spec_payload
 from aminx.run.spec_json import _coerce_field_value
@@ -81,6 +82,7 @@ def build_manifest_row(
   Returns a dict ready for plan_campaign_manifest to extend with
   output_h5_path and sampling_spec.
   """
+  refuse_driver_family(spec, surface="campaign")
   temperature_list = list(spec.run_spec.sampling.temperature) if spec.run_spec.sampling.temperature else []
   backbone_noise_list = list(spec.run_spec.sampling.backbone_noise) if spec.run_spec.sampling.backbone_noise else []
   hash_payload = {
@@ -1077,6 +1079,7 @@ def run_manifest_row(  # noqa: PLR0915
       for key, value in worker_payload.items()
     }
     sampling_spec = SamplingSpecification(**worker_payload)
+    refuse_driver_family(sampling_spec, surface="campaign")
     # Genuine multi-state PoE rows (len(inputs) > 1) route to
     # sample_multistate_poe_campaign_row instead of sample() -- sample()'s real dispatcher
     # (_sample_batch) treats every --inputs path as an independent single-state structure and

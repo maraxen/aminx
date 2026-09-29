@@ -21,6 +21,7 @@ from aminx.host._sampling_helper import (
   _structure_ids_for_batch,
   fixed_provenance_outputs,
 )
+from aminx.host.family_driver import refuse_driver_family
 from aminx.host.output_sinks import (
   streaming_tensor_sink_session,
   take_staging_sequences_logits,
@@ -77,6 +78,7 @@ def _sample_streaming(
   too large, xtrax.run.ZarrStagingSink would need an append-mode extension
   to restore true per-chunk incremental writes.
   """
+  refuse_driver_family(spec, surface="streaming")
   grid_lineage = _resolve_grid_lineage(spec)
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []

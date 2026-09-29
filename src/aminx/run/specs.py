@@ -229,13 +229,15 @@ class RunSpecification:
   # None means "not explicitly set by the caller" -- __post_init__ resolves this to a real
   # Literal value (derived from checkpoint_id when possible, else "proteinmpnn") before
   # __init__ returns, so every RunSpecification/SamplingSpecification instance always has a
-  # concrete model_family by the time any caller reads it. An explicit "proteinmpnn"/
-  # "ligandmpnn" from the caller is never overridden -- only the None (unset) case gets
-  # auto-derived. See __post_init__ for why this matters: model_family gates real ligand/
+  # concrete model_family by the time any caller reads it. An explicit family from the
+  # caller is never overridden -- only the None (unset) case gets auto-derived.
+  # ``pottsmpnn_`` / ``lasermpnn_`` checkpoint prefixes resolve before the ligand
+  # ``model_type`` derivation. See __post_init__ for why this matters: model_family
+  # gates real ligand/
   # sidechain context injection (host/_sampling_helper.py::_prepare_ligand_context)
   # independent of checkpoint_id, and a caller who forgot to set it got a silent no-op
   # (found live 2026-07-14).
-  model_family: Literal["proteinmpnn", "ligandmpnn"] | None = None
+  model_family: Literal["proteinmpnn", "ligandmpnn", "pottsmpnn", "lasermpnn"] | None = None
   checkpoint_id: str | None = None
   model_local_path: str | Path | None = None
   checkpoint_registry_path: str | Path | None = None
@@ -475,6 +477,14 @@ class RunSpecification:
     # condition and, caught by its own test, silently overrode a genuinely explicit
     # model_family="proteinmpnn" the same as an unset one. Only the None (truly unset) case
     # is auto-derived here; an explicit value is never touched.
+    # Prefixes are decided before model_type is consulted, so a potts/laser id
+    # cannot fall through to proteinmpnn (get_topology reports model_type protein).
+    checkpoint_name = self.checkpoint_id if isinstance(self.checkpoint_id, str) else ""
+    if self.model_family is None and checkpoint_name.startswith("pottsmpnn_"):
+      object.__setattr__(self, "model_family", "pottsmpnn")
+    elif self.model_family is None and checkpoint_name.startswith("lasermpnn_"):
+      object.__setattr__(self, "model_family", "lasermpnn")
+
     derived_topology = (
       get_topology_for_checkpoint(self.checkpoint_id) if self.checkpoint_id is not None else None
     )
