@@ -1,5 +1,5 @@
 {
-  "capture_git_sha": "60bd23f23bb52c743174d61aa787498e8b50c121",
+  "capture_git_sha": "abefceae711d74688efb177172a0082e47c188bf",
   "cases": [
     {
       "batch_size": 1,
@@ -179,5 +179,6 @@
   "negative_control_case_id": "sample_bs1__proteinmpnn_v_48_020__1ubq",
   "notes": "In-memory rows only. Zarr rows are T0.5b. Every operation x checkpoint x fixture combination in cases is valid. 1mbn supplies the HEM ligand for ligandmpnn; 1ubq is apo.",
   "schema_version": 1,
-  "uv_lock_sha256": "3b56a81108d891b6173a7bd7317e38f851a6324dd7c4c4de2040de530fefe82e"
+  "uv_lock_sha256": "3b56a81108d891b6173a7bd7317e38f851a6324dd7c4c4de2040de530fefe82e",
+  "xla_flags": "--xla_gpu_deterministic_ops=true"
 }
