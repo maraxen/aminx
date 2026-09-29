@@ -76,6 +76,12 @@ export OPENBLAS_NUM_THREADS=16
 export MKL_NUM_THREADS=16
 export BTH_BIN="$TX_BTH"
 
+# T10g: unbuffered stdout/stderr so long-running scripts' INFO progress logs (e.g.
+# layer_a_sampling_calibrate.py's run_full, previously silent for 6-7+ hours after its
+# "budget floor" lines) actually reach $LOG_FILE promptly instead of sitting in a
+# buffer until process exit.
+export PYTHONUNBUFFERED=1
+
 # Deviation D10: GPU mode (set by titanix_launch.sh --gpu N). Only GPU N is visible, and JAX
 # must not preallocate: titanix's other GPUs serve vLLM. The reference (torch) stays on CPU.
 UV_EXTRAS=(--extra dev --extra benchmark)
@@ -98,14 +104,27 @@ if [ -n "${BV_OUT_REL:-}" ]; then
   OUT_PATH="$BV_OUT_REL"
 fi
 
+# T10g: layer_a_sampling_calibrate's run_full gets a checkpoint dir OUTSIDE this
+# per-run worktree ($RD is a fresh checkout each dispatch), keyed on STEM + the
+# committed HEAD ($H) -- a relaunch at the SAME commit finds and resumes it. Every
+# other stem is byte-identical to before (empty array, no flag added).
+CHECKPOINT_ARGS=()
+if [ "$STEM" = "layer_a_sampling_calibrate" ]; then
+  CHECKPOINT_DIR="/home/solab/bv/ckpt/${STEM}-${H:0:12}"
+  mkdir -p "$CHECKPOINT_DIR"
+  CHECKPOINT_ARGS=(--checkpoint-dir "$CHECKPOINT_DIR")
+fi
+
 # F-C1: keep these uv option tokens in EXACTLY this order, nothing between `python` and
 # the script path -- bathos `_find_script_path` (runner.py:57-75 at 84be544e) reads
 # tokens in pairs after `run`, and `--no-sync` only resolves because it sits in a
 # skipped slot. `--prerelease allow` MUST stay two tokens (a single
 # `--prerelease=allow` token would swallow the following one and break the pairing);
-# without it the `--with` overlay fails to resolve (fastmcp-slim prerelease).
+# without it the `--with` overlay fails to resolve (fastmcp-slim prerelease). Script
+# args (including CHECKPOINT_ARGS) go after the script path -- that's fine, only the
+# `python <script path>` pairing above the script path is order-sensitive.
 taskset -c 0-15 "$TX_BTH" run --campaign-id "$CAMPAIGN_ID" --output-paths "$OUT_PATH" -- \
   "$TX_UV" run --frozen --no-sync "${UV_EXTRAS[@]}" --with "$BATHOS_REQ" --prerelease allow python \
-  "scripts/browser_validation/${STEM}.py" "${SCRIPT_ARGS[@]}" --out "$OUT_PATH"
+  "scripts/browser_validation/${STEM}.py" "${SCRIPT_ARGS[@]}" --out "$OUT_PATH" "${CHECKPOINT_ARGS[@]}"
 
 echo "=== titanix_run.sh finished $(date -u +%FT%TZ) ==="

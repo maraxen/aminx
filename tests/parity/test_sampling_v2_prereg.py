@@ -257,6 +257,8 @@ def _calibrate_pass() -> dict[str, object]:
     "git_clean": True,
     "budget_wall_hours": 1.0,
     "projected_peak_rss_gib": 2.0,
+    "checkpoint_dir": "",
+    "checkpoint_units_resumed": [],
   }
 
 
@@ -352,3 +354,157 @@ def test_search_fusion_eps_returns_zero_when_never_sized(
   eps, sized = lasc._search_fusion_eps(None, None, None)  # noqa: SLF001
   assert eps == 0.0
   assert sized is False
+
+
+# --------------------------------------------------------------------------------------
+# T10g: checkpoint store (atomic write/load round trip, fingerprint mismatch ->
+# recompute, missing -> recompute, toy stage-runner load-instead-of-recompute) + the
+# `_seed_for` determinism fix (identity-derived, never call-order dependent).
+# --------------------------------------------------------------------------------------
+
+
+class _CallCounter:
+  """A `compute` callable that counts its own invocations and returns a fixed value --
+  used to prove a `CheckpointStore.get_or_compute` call did or did not actually run it."""
+
+  def __init__(self, value: dict[str, object]) -> None:
+    self.value = value
+    self.calls = 0
+
+  def __call__(self) -> dict[str, object]:
+    self.calls += 1
+    return dict(self.value)
+
+
+def test_checkpoint_store_missing_checkpoint_recomputes(tmp_path: Path) -> None:
+  """No checkpoint file yet -> `compute` runs, and a checkpoint file is written."""
+  store = lasc.CheckpointStore(tmp_path, {"git_hash": "abc", "fixture_set": "A"})
+  counter = _CallCounter({"x": 1.5})
+  value = store.get_or_compute("unit_a", {"lane": "P07@1.0"}, counter)
+  assert value == {"x": 1.5}
+  assert counter.calls == 1
+  files = list(tmp_path.glob("*.json"))
+  assert len(files) == 1
+
+
+def test_checkpoint_store_atomic_round_trip_resumes_without_recompute(tmp_path: Path) -> None:
+  """A SECOND store (simulating a fresh process after a crash/resume), same
+  `checkpoint_dir` and same identity, LOADS the checkpoint instead of recomputing --
+  and the loaded value is byte-identical (JSON round-trip) to what was computed."""
+  base_fp = {"git_hash": "abc", "fixture_set": "A", "smoke": False, "selected_lanes": ["P07@1.0"]}
+  store1 = lasc.CheckpointStore(tmp_path, base_fp)
+  counter1 = _CallCounter({"margin": 0.123456789, "n_draws": 4000, "allocation": {"5L33": 1000}})
+  value1 = store1.get_or_compute("lanemargin_P07@1.0_n1000_pilotmargin0", {"n_required": 1000}, counter1)
+  assert counter1.calls == 1
+
+  # A NEW store instance -- as a resumed run would construct, in a new process.
+  store2 = lasc.CheckpointStore(tmp_path, base_fp)
+  counter2 = _CallCounter({"margin": 999.0, "n_draws": 1, "allocation": {}})  # must NOT be used
+  value2 = store2.get_or_compute("lanemargin_P07@1.0_n1000_pilotmargin0", {"n_required": 1000}, counter2)
+  assert counter2.calls == 0, "resumed unit must not recompute"
+  assert value2 == value1
+  assert store2.units_resumed == ["lanemargin_P07@1.0_n1000_pilotmargin0"]
+
+
+def test_checkpoint_store_fingerprint_mismatch_recomputes(
+  tmp_path: Path,
+  caplog: pytest.LogCaptureFixture,
+) -> None:
+  """A checkpoint written under one identity (e.g. one git_hash) is NEVER silently reused
+  under a different one -- it is recomputed, and the mismatch is logged WARNING."""
+  store1 = lasc.CheckpointStore(tmp_path, {"git_hash": "abc", "fixture_set": "A"})
+  counter1 = _CallCounter({"x": 1.0})
+  store1.get_or_compute("unit_a", {}, counter1)
+  assert counter1.calls == 1
+
+  store2 = lasc.CheckpointStore(tmp_path, {"git_hash": "DIFFERENT", "fixture_set": "A"})
+  counter2 = _CallCounter({"x": 2.0})
+  with caplog.at_level("WARNING"):
+    value2 = store2.get_or_compute("unit_a", {}, counter2)
+  assert counter2.calls == 1, "a fingerprint mismatch must recompute, never silently reuse"
+  assert value2 == {"x": 2.0}
+  assert any("fingerprint mismatch" in rec.message for rec in caplog.records)
+
+
+def test_checkpoint_store_disabled_is_pure_passthrough(tmp_path: Path) -> None:
+  """`checkpoint_dir=None` -- the default -- always calls `compute`, writes nothing, and
+  every call site's behavior is unchanged from before T10g."""
+  store = lasc.CheckpointStore(None, {"git_hash": "abc"})
+  counter = _CallCounter({"x": 1.0})
+  store.get_or_compute("unit_a", {}, counter)
+  store.get_or_compute("unit_a", {}, counter)
+  assert counter.calls == 2
+  assert list(tmp_path.iterdir()) == []
+
+
+def test_checkpoint_store_toy_stage_runner_resumes_every_unit(tmp_path: Path) -> None:
+  """A toy multi-unit "stage runner" (mirroring `run_full`'s null-replicate loop): the
+  FIRST pass computes `n` units; a SECOND pass, with a fresh store over the same dir and
+  identity, must load every one of them without recomputing any -- proving
+  load-instead-of-recompute at the granularity `run_full` actually uses (one unit per
+  null replicate)."""
+  base_fp = {"git_hash": "abc", "fixture_set": "A", "smoke": False}
+
+  def _run_stage(store: lasc.CheckpointStore, counters: list[_CallCounter]) -> list[dict[str, object]]:
+    results = []
+    for replicate in range(5):
+      counter = _CallCounter({"tost_pass": True, "excess_js_ub": 0.001 * replicate})
+      counters.append(counter)
+      unit = f"nullreplicate_d0_r{replicate}_n1500"
+      results.append(store.get_or_compute(unit, {"replicate": replicate, "n": 1500}, counter))
+    return results
+
+  store1 = lasc.CheckpointStore(tmp_path, base_fp)
+  counters1: list[_CallCounter] = []
+  first_pass = _run_stage(store1, counters1)
+  assert all(c.calls == 1 for c in counters1)
+
+  store2 = lasc.CheckpointStore(tmp_path, base_fp)
+  counters2: list[_CallCounter] = []
+  second_pass = _run_stage(store2, counters2)
+  assert all(c.calls == 0 for c in counters2), "every unit must resume, none recomputed"
+  assert second_pass == first_pass
+  assert len(store2.units_resumed) == 5
+
+
+def test_checkpoint_store_atomic_write_uses_tmp_then_replace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  """`_atomic_write_json` never leaves a partially-written checkpoint file visible under
+  its final name -- it writes a `.tmp<pid>` sibling and `os.replace`s it into place."""
+  seen_tmp_paths: list[Path] = []
+  real_replace = lasc.os.replace
+
+  def _spy_replace(src: object, dst: object) -> None:
+    seen_tmp_paths.append(Path(src))
+    assert Path(src).is_file(), "tmp file must exist and be fully written before replace"
+    real_replace(src, dst)
+
+  monkeypatch.setattr(lasc.os, "replace", _spy_replace)
+  target = tmp_path / "unit.json"
+  lasc._atomic_write_json(target, {"fingerprint": "abc", "value": {"x": 1}})
+  assert target.is_file()
+  assert len(seen_tmp_paths) == 1
+  assert seen_tmp_paths[0] != target
+  assert not seen_tmp_paths[0].exists(), "tmp file must be gone after os.replace"
+  with target.open() as fh:
+    assert json.load(fh) == {"fingerprint": "abc", "value": {"x": 1}}
+
+
+def test_seed_for_is_identity_derived_hashlib_based() -> None:
+  """`_seed_for` is a PURE function of its string argument -- not of call order, and not
+  of Python's (per-process-randomized) builtin `hash()`. Pins the hashlib-based formula
+  directly (a regression back to `hash()` would fail this even within one process, since
+  the formula would no longer match)."""
+  import hashlib
+
+  name = "P07@1.0testA1"
+  digest = hashlib.sha256(name.encode("utf-8")).digest()
+  expected = (las._SEED_BASE + (int.from_bytes(digest[:8], "big") % 10_000)) & 0xFFFFFFFF  # noqa: SLF001
+  assert las._seed_for(name) == expected  # noqa: SLF001
+
+  # Order independence: seed_for(tagA) does not change once other tags are looked up
+  # in between -- proving no shared/advancing state underlies the derivation.
+  first = las._seed_for("tagA")  # noqa: SLF001
+  _ = las._seed_for("tagB")  # noqa: SLF001
+  _ = las._seed_for("tagC")  # noqa: SLF001
+  second = las._seed_for("tagA")  # noqa: SLF001
+  assert first == second

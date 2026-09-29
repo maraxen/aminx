@@ -117,7 +117,7 @@ import resource
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
@@ -167,6 +167,192 @@ MARGIN_EXCLUDE_REASON = (
 
 EXIT_SKIPPED = 4
 EXIT_NOT_WRITTEN = 1
+
+
+# --------------------------------------------------------------------------------------
+# T10g: checkpointing + progress logging for run_full's 6-7+ hour, previously-silent,
+# previously-unresumable middle stretch (pilot -> null-replicate doubling -> per-lane
+# margins -> per-lane beta search -> fusion-eps search -> differential sentinel ->
+# budget projection -> params write).
+# --------------------------------------------------------------------------------------
+
+
+def _atomic_write_json(path: Path, obj: Any) -> None:
+  """tmp-file + `os.replace` -- never a partially-written checkpoint file, even if the
+  process is killed mid-write (the failure mode this whole feature exists to survive)."""
+  tmp = path.with_name(path.name + f".tmp{os.getpid()}")
+  with tmp.open("w") as fh:
+    json.dump(obj, fh, indent=2, sort_keys=True)
+  os.replace(tmp, path)
+
+
+class CheckpointStore:
+  """One JSON file per completed checkpoint UNIT under `checkpoint_dir`
+  (`<stage>__<key>.json`), each carrying a `fingerprint` (sha256 over this run's
+  identity -- git hash, fixture_set, smoke flag, selected lanes, every constant the
+  unit's own computation depends on -- plus the unit's own JSON-round-trippable
+  `value`). `checkpoint_dir=None` makes every method a pure pass-through/no-op --
+  callers do not need an `if store is not None` at every call site (they still may,
+  for clarity, but it is never required for correctness).
+
+  A load with a MATCHING fingerprint short-circuits recomputation (`resumed <unit>`,
+  INFO) -- this is what makes `run_full` resumable at the exact seed/data a
+  never-interrupted run would have used (T10g's `_seed_for` fix, see
+  `layer_a_sampling.py`, is what makes that recomputation-free load bit-identical to
+  what an uninterrupted run would have computed in the first place). A MISMATCHING
+  fingerprint is logged WARNING and recomputed -- a stale checkpoint from a different
+  commit, fixture set, lane selection, or constant must NEVER be silently reused.
+  """
+
+  def __init__(self, checkpoint_dir: Path | None, base_fingerprint: dict[str, Any]) -> None:
+    self.checkpoint_dir = checkpoint_dir
+    self.base_fingerprint = dict(base_fingerprint)
+    self.units_resumed: list[str] = []
+    if self.checkpoint_dir is not None:
+      self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+  @staticmethod
+  def _safe_unit_name(unit: str) -> str:
+    return "".join(c if (c.isalnum() or c in "-_.") else "_" for c in unit)
+
+  def _path(self, unit: str) -> Path:
+    if self.checkpoint_dir is None:
+      msg = "CheckpointStore._path called with checkpoint_dir=None"
+      raise RuntimeError(msg)
+    return self.checkpoint_dir / f"{self._safe_unit_name(unit)}.json"
+
+  def fingerprint(self, unit: str, extra: dict[str, Any]) -> str:
+    payload = {"unit": unit, **self.base_fingerprint, **extra}
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+  def load(self, unit: str, expected_fingerprint: str) -> tuple[bool, Any]:
+    """`(found, value)`. `found=False` means "recompute" -- missing, unreadable, OR a
+    fingerprint mismatch (the last is logged WARNING; the other two are silent since
+    they are the ordinary first-run/no-checkpoint-yet case, not an anomaly)."""
+    if self.checkpoint_dir is None:
+      return False, None
+    path = self._path(unit)
+    if not path.is_file():
+      return False, None
+    try:
+      with path.open() as fh:
+        data = json.load(fh)
+    except (json.JSONDecodeError, OSError) as exc:
+      logger.warning("checkpoint %s: unreadable (%s) -- recomputing", unit, exc)
+      return False, None
+    stored_fp = data.get("fingerprint")
+    if stored_fp != expected_fingerprint:
+      logger.warning(
+        "checkpoint %s: fingerprint mismatch (stored=%s expected=%s) -- recomputing, "
+        "never silently reusing a stale checkpoint",
+        unit,
+        stored_fp,
+        expected_fingerprint,
+      )
+      return False, None
+    logger.info("resumed %s", unit)
+    if unit not in self.units_resumed:
+      self.units_resumed.append(unit)
+    return True, data["value"]
+
+  def save(self, unit: str, fingerprint_value: str, value: Any) -> None:
+    if self.checkpoint_dir is None:
+      return
+    _atomic_write_json(self._path(unit), {"unit": unit, "fingerprint": fingerprint_value, "value": value})
+
+  def get_or_compute(
+    self,
+    unit: str,
+    extra_fingerprint: dict[str, Any],
+    compute: Callable[[], Any],
+  ) -> Any:
+    """Load-or-compute for one unit. `compute` runs iff no valid checkpoint is found
+    (missing, unreadable, or fingerprint-mismatched) -- or always, when checkpointing
+    is disabled (`checkpoint_dir is None`), which is the default and leaves behavior
+    completely unchanged from before T10g except for the logging callers add around it."""
+    if self.checkpoint_dir is None:
+      return compute()
+    fp = self.fingerprint(unit, extra_fingerprint)
+    found, value = self.load(unit, fp)
+    if found:
+      return value
+    value = compute()
+    self.save(unit, fp, value)
+    return value
+
+
+class _StageLog:
+  """Context manager: INFO stage-start/stage-end lines with per-stage AND
+  cumulative-since-run-start elapsed seconds, via the module logger (flush-friendly
+  when the caller sets `PYTHONUNBUFFERED=1` -- see `titanix_run.sh`/`engaging_run.sbatch`)."""
+
+  def __init__(self, run_start: float, name: str) -> None:
+    self._run_start = run_start
+    self._name = name
+    self._stage_start = 0.0
+
+  def __enter__(self) -> "_StageLog":
+    self._stage_start = time.monotonic()
+    logger.info(
+      "stage start: %s (cumulative %.1fs)",
+      self._name,
+      self._stage_start - self._run_start,
+    )
+    return self
+
+  def __exit__(self, *exc: object) -> None:
+    now = time.monotonic()
+    logger.info(
+      "stage end: %s (stage %.1fs, cumulative %.1fs)",
+      self._name,
+      now - self._stage_start,
+      now - self._run_start,
+    )
+
+
+def _checkpointed_lane_margin(
+  store: CheckpointStore | None,
+  jax_model: Any,
+  fixture_batches: list[tuple[dict[str, Any], Any]],
+  lane: str,
+  n_required: int,
+  seed_tag: str,
+) -> tuple[float, float, int, dict[str, int]]:
+  """`_lane_margin_and_cost`, checkpointed as unit `lanemargin_{lane}_n{n_required}_{seed_tag}`.
+
+  The checkpointed VALUE includes the measured `per_draw_cost_s` -- a wall-clock
+  timing, not a pure function of identity -- so a resumed run reuses the ORIGINAL
+  measurement rather than re-timing (which would legitimately differ run to run);
+  this is what keeps a resumed run's budget projection bit-identical to an
+  uninterrupted one, not just its margins.
+  """
+  unit = f"lanemargin_{lane}_n{n_required}_{seed_tag}"
+
+  def _compute() -> dict[str, Any]:
+    margin, cost, n_draws, allocation = _lane_margin_and_cost(
+      jax_model,
+      fixture_batches,
+      lane,
+      n_required,
+      seed_tag,
+    )
+    return {
+      "margin": margin,
+      "per_draw_cost_s": cost,
+      "n_draws": n_draws,
+      "allocation": allocation,
+    }
+
+  if store is not None:
+    value = store.get_or_compute(
+      unit,
+      {"lane": lane, "n_required": n_required, "seed_tag": seed_tag},
+      _compute,
+    )
+  else:
+    value = _compute()
+  return value["margin"], value["per_draw_cost_s"], value["n_draws"], value["allocation"]
 
 
 def _load_manifest() -> dict[str, Any]:
@@ -346,42 +532,88 @@ def _null_replicate_check(
   n: int,
   margin: float,
   seed_prefix: str,
+  *,
+  store: CheckpointStore | None = None,
+  n_doublings: int = 0,
+  run_start: float | None = None,
 ) -> int:
   """C2: 20 aminx-vs-aminx replicates, EACH drawing `2n` per arm (A1/A2 vs R1/R2, exactly
   as validate will), scored with the SAME IUT validate uses (recovery TOST over the FULL
   arms AND `excess_js_upper` (`N_BOOT`-resample bootstrap) < `margin`). Returns the count
-  declaring equivalence (target `>= POSCTL_PASS_FLOOR`, the same 18/20 bar)."""
+  declaring equivalence (target `>= POSCTL_PASS_FLOOR`, the same 18/20 bar).
+
+  T10g: each replicate is its own checkpoint unit (`nullreplicate_d{n_doublings}_r{i}_n{n}`)
+  -- this is the single most expensive loop in `run_full` (up to `MAX_N_DOUBLINGS + 1`
+  doubling levels x `NULL_REPLICATES` replicates x `4*n` real draws each), so per-replicate
+  resumability is what actually prevents a crash from losing hours of work. `store=None`
+  (the default) reproduces the exact pre-T10g behavior with no checkpoint I/O at all.
+  """
   from aminx.parity.compare import tost_mean_diff
 
   temp = las.DEFAULT_LANE_TEMPERATURES[lane]
   allocation = las.allocate_draws(fixture_batches, n)
   null_pass = 0
   for replicate in range(las.NULL_REPLICATES):
-    a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
-      jax_model,
-      None,
-      None,
-      fixture_batches,
-      allocation,
-      temperature=temp,
-      reference_is_aminx=True,
-      seed_tag=f"{seed_prefix}null{replicate}",
-    )
-    recovery_a = las.full_arm_recovery(a1, a2, seq_ref_list)
-    recovery_r = las.full_arm_recovery(r1, r2, seq_ref_list)
-    tost_pass, _pl, _pu = tost_mean_diff(recovery_a, recovery_r, las.RECOVERY_DELTA)
-    rng = np.random.default_rng(las._seed_for(f"{seed_prefix}null{replicate}boot"))
-    excess_js_ub = __import__("aminx.parity.compare", fromlist=["excess_js_upper"]).excess_js_upper(
-      a1,
-      a2,
-      r1,
-      r2,
-      n_boot=N_BOOT,
-      rng=rng,
-      k=21,
-    )
+    unit = f"nullreplicate_d{n_doublings}_r{replicate}_n{n}"
+
+    def _compute(replicate: int = replicate) -> dict[str, Any]:
+      a1, a2, r1, r2, seq_ref_list = las.draw_iut_arms(
+        jax_model,
+        None,
+        None,
+        fixture_batches,
+        allocation,
+        temperature=temp,
+        reference_is_aminx=True,
+        seed_tag=f"{seed_prefix}null{replicate}",
+      )
+      recovery_a = las.full_arm_recovery(a1, a2, seq_ref_list)
+      recovery_r = las.full_arm_recovery(r1, r2, seq_ref_list)
+      tost_pass, _pl, _pu = tost_mean_diff(recovery_a, recovery_r, las.RECOVERY_DELTA)
+      rng = np.random.default_rng(las._seed_for(f"{seed_prefix}null{replicate}boot"))
+      excess_js_ub = __import__(
+        "aminx.parity.compare",
+        fromlist=["excess_js_upper"],
+      ).excess_js_upper(a1, a2, r1, r2, n_boot=N_BOOT, rng=rng, k=21)
+      return {"tost_pass": bool(tost_pass), "excess_js_ub": float(excess_js_ub)}
+
+    if store is not None:
+      value = store.get_or_compute(
+        unit,
+        {
+          "lane": lane,
+          "n": n,
+          "n_doublings": n_doublings,
+          "replicate": replicate,
+          "null_replicates": las.NULL_REPLICATES,
+          "n_boot": N_BOOT,
+          "recovery_delta": las.RECOVERY_DELTA,
+          "seed_prefix": seed_prefix,
+        },
+        _compute,
+      )
+    else:
+      value = _compute()
+
+    tost_pass = value["tost_pass"]
+    excess_js_ub = value["excess_js_ub"]
     if tost_pass and excess_js_ub < margin:
       null_pass += 1
+    elapsed = (time.monotonic() - run_start) if run_start is not None else -1.0
+    logger.info(
+      "null replicate %d/%d doubling=%d n=%d tost_pass=%s excess_js_ub=%.6g margin=%.6g "
+      "running_pass=%d/%d (cumulative %.1fs)",
+      replicate + 1,
+      las.NULL_REPLICATES,
+      n_doublings,
+      n,
+      tost_pass,
+      excess_js_ub,
+      margin,
+      null_pass,
+      replicate + 1,
+      elapsed,
+    )
   return null_pass
 
 
@@ -391,6 +623,9 @@ def _search_beta_for_lane(
   lane: str,
   margin: float,
   seed_tag: str,
+  *,
+  store: CheckpointStore | None = None,
+  run_start: float | None = None,
 ) -> tuple[float | None, bool, list[dict[str, Any]]]:
   """C3: smallest `BETA_CANDIDATES` value with `mean(excess_js(aminx+beta, aminx)) >= 2*margin`
   on THIS lane, at `SIZING_N` (>= 100) draws per arm. Returns `(beta_or_None, sized, tried)` --
@@ -417,20 +652,43 @@ def _search_beta_for_lane(
   lo = las.SIZING_RATIO_RANGE[0]
   tried: list[dict[str, Any]] = []
   for beta in las.BETA_CANDIDATES:
-    a1, a2, r1, r2, _seq_ref = las.draw_iut_arms(
-      jax_model,
-      None,
-      None,
-      fixture_batches,
-      allocation,
-      temperature=temp,
-      beta_a=beta,
-      reference_is_aminx=True,
-      seed_tag=f"{seed_tag}beta{beta}",
-    )
-    effect = las.pooled_excess_js(a1, a2, r1, r2)
+    candidate_seed_tag = f"{seed_tag}beta{beta}"
+    unit = f"betaeval_{lane}_beta{beta}"
+
+    def _compute(beta: float = beta, candidate_seed_tag: str = candidate_seed_tag) -> dict[str, Any]:
+      a1, a2, r1, r2, _seq_ref = las.draw_iut_arms(
+        jax_model,
+        None,
+        None,
+        fixture_batches,
+        allocation,
+        temperature=temp,
+        beta_a=beta,
+        reference_is_aminx=True,
+        seed_tag=candidate_seed_tag,
+      )
+      return {"effect": las.pooled_excess_js(a1, a2, r1, r2)}
+
+    if store is not None:
+      value = store.get_or_compute(
+        unit,
+        {"lane": lane, "beta": beta, "sizing_n": SIZING_N, "seed_tag": candidate_seed_tag},
+        _compute,
+      )
+    else:
+      value = _compute()
+    effect = value["effect"]
     ratio = effect / margin
     tried.append({"beta": beta, "ratio_to_margin": ratio, "effect": effect})
+    elapsed = (time.monotonic() - run_start) if run_start is not None else -1.0
+    logger.info(
+      "beta candidate lane=%s beta=%s effect=%.6g ratio_to_margin=%.4f (cumulative %.1fs)",
+      lane,
+      beta,
+      effect,
+      ratio,
+      elapsed,
+    )
     if ratio >= lo:
       return beta, True, tried
   logger.warning(
@@ -447,6 +705,10 @@ def _search_fusion_eps(
   jax_model: Any,
   batch: Any,
   decoding_order: np.ndarray,
+  *,
+  store: CheckpointStore | None = None,
+  fixture_name: str = "",
+  run_start: float | None = None,
 ) -> tuple[float, bool]:
   """Smallest `FUSION_EPS_CANDIDATES` value sizing the fusion control's `ratio_to_bar` into
   `SIZING_RATIO_RANGE`. Returns `(eps, sized)`.
@@ -461,9 +723,30 @@ def _search_fusion_eps(
   lo, hi = las.SIZING_RATIO_RANGE
   tried = []
   for eps in las.FUSION_EPS_CANDIDATES:
-    control = las._fusion_sized_control(jax_model, batch, decoding_order, eps=eps)  # noqa: SLF001
-    tried.append({"eps": eps, "ratio_to_bar": control["ratio_to_bar"]})
-    if lo <= control["ratio_to_bar"] <= hi:
+    unit = f"fusioneval_eps{eps}"
+
+    def _compute(eps: float = eps) -> dict[str, Any]:
+      control = las._fusion_sized_control(jax_model, batch, decoding_order, eps=eps)  # noqa: SLF001
+      return {"ratio_to_bar": control["ratio_to_bar"]}
+
+    if store is not None:
+      value = store.get_or_compute(
+        unit,
+        {"eps": eps, "fixture": fixture_name, "sizing_ratio_range": list(las.SIZING_RATIO_RANGE)},
+        _compute,
+      )
+    else:
+      value = _compute()
+    ratio_to_bar = value["ratio_to_bar"]
+    tried.append({"eps": eps, "ratio_to_bar": ratio_to_bar})
+    elapsed = (time.monotonic() - run_start) if run_start is not None else -1.0
+    logger.info(
+      "fusion eps candidate eps=%s ratio_to_bar=%.6g (cumulative %.1fs)",
+      eps,
+      ratio_to_bar,
+      elapsed,
+    )
+    if lo <= ratio_to_bar <= hi:
       return eps, True
   logger.warning(
     "no eps in %r sized the fusion control into [%sx, %sx] the bar (tried: %r)",
@@ -701,6 +984,11 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     "fixture": fixture["name"],
     "elapsed_seconds": elapsed_seconds,
     "smoke": True,
+    # T10g: schema fields shared with run_full's result -- smoke never checkpoints
+    # (it is already a small, fast, single-pass path), so these are always the
+    # unset/empty default.
+    "checkpoint_dir": "",
+    "checkpoint_units_resumed": [],
     **prov,
   }
 
@@ -739,17 +1027,55 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     )
     raise SystemExit(msg)
 
-  # D10: fail fast when even the n = N_REQUIRED_FLOOR projection is over budget.
-  floor = _budget_at_floor(
-    jax_model,
-    pt_model,
-    torch,
-    protein_fixtures_b,
-    data_utils_module,
-    lanes=selected_lanes,
-    n_shards=n_shards,
-    n_control_replicates=las.N_CONTROL_REPLICATES,
+  # T10g: checkpoint store, keyed on this run's identity + every constant the
+  # checkpointed stages below depend on. `--checkpoint-dir` absent (checkpoint_dir=None)
+  # makes every store call a pure pass-through -- behavior is unchanged from pre-T10g,
+  # only the logging below is new.
+  checkpoint_dir = getattr(args, "checkpoint_dir", None)
+  base_fingerprint = {
+    "git_hash": prov["git_hash"],
+    "fixture_set": args.fixture_set,
+    "smoke": False,
+    "selected_lanes": list(selected_lanes),
+    "pilot_lane": pilot_lane,
+    "n_shards": n_shards,
+    "pilot_n": PILOT_N,
+    "sizing_n": SIZING_N,
+    "sentinel_half_n": SENTINEL_HALF_N,
+    "null_replicates": las.NULL_REPLICATES,
+    "max_n_doublings": las.MAX_N_DOUBLINGS,
+    "posctl_pass_floor": las.POSCTL_PASS_FLOOR,
+    "beta_candidates": list(las.BETA_CANDIDATES),
+    "fusion_eps_candidates": list(las.FUSION_EPS_CANDIDATES),
+    "sizing_ratio_range": list(las.SIZING_RATIO_RANGE),
+    "recovery_delta": las.RECOVERY_DELTA,
+    "n_boot": N_BOOT,
+    "margin_temperature_ratio": las.MARGIN_TEMPERATURE_RATIO,
+    "margin_exclude_fixtures": list(MARGIN_EXCLUDE_FIXTURES),
+  }
+  store = CheckpointStore(checkpoint_dir, base_fingerprint)
+  logger.info(
+    "run_full starting: fixture_set=%s pilot_lane=%s lanes=%r checkpoint_dir=%s",
+    args.fixture_set,
+    pilot_lane,
+    selected_lanes,
+    checkpoint_dir,
   )
+
+  # D10: fail fast when even the n = N_REQUIRED_FLOOR projection is over budget.
+  # (Not itself checkpointed -- it already logs per (lane, fixture) as it goes, so it
+  # is not the silent stretch this feature targets; see module docstring / T10g brief.)
+  with _StageLog(start, "budget_floor_projection"):
+    floor = _budget_at_floor(
+      jax_model,
+      pt_model,
+      torch,
+      protein_fixtures_b,
+      data_utils_module,
+      lanes=selected_lanes,
+      n_shards=n_shards,
+      n_control_replicates=las.N_CONTROL_REPLICATES,
+    )
   floor_rss = _peak_rss_gib()
   if floor["budget_wall_hours"] > BUDGET_WALL_HOURS_CAP or floor_rss > PROJECTED_PEAK_RSS_GIB_CAP:
     logger.error(
@@ -788,6 +1114,8 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       "fixture_set": args.fixture_set,
       "fixture_manifest_sha256": manifest_sha256,
       "elapsed_seconds": time.monotonic() - start,
+      "checkpoint_dir": str(checkpoint_dir) if checkpoint_dir is not None else "",
+      "checkpoint_units_resumed": list(store.units_resumed),
       **prov,
     }
     # Exit 0, not EXIT_NOT_WRITTEN: the result is complete and the sidecar's
@@ -796,33 +1124,91 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     # branch from the record (observed on titanix run 1a45a859).
     return result, 0
 
-  sigma_hat = _pilot_sigma(jax_model, pilot_batches, pilot_lane, PILOT_N, "pilotsigma")
+  with _StageLog(start, "pilot_sigma"):
+    sigma_hat = store.get_or_compute(
+      f"pilot_{pilot_lane}",
+      {
+        "lane": pilot_lane,
+        "pilot_n": PILOT_N,
+        "seed_tag": "pilotsigma",
+      },
+      lambda: {"sigma_hat": _pilot_sigma(jax_model, pilot_batches, pilot_lane, PILOT_N, "pilotsigma")},
+    )["sigma_hat"]
   from aminx.parity.compare import required_n
 
   n_required = max(las.N_REQUIRED_FLOOR, required_n(max(sigma_hat, 1e-6), las.RECOVERY_DELTA))
+  logger.info(
+    "pilot done: sigma_hat=%.6g n_required=%d (cumulative %.1fs)",
+    sigma_hat,
+    n_required,
+    time.monotonic() - start,
+  )
 
   # C2: null-replicate criterion at the CURRENT n_required, using the pilot lane's own
   # margin (recomputed at each doubling, since it must be evaluated "at n = n_required").
+  #
+  # T10g: each doubling level is its own checkpoint unit (`nulldecision_d{n_doublings}`),
+  # whose `compute()` calls the (also checkpointed) lane-margin + null-replicate-check
+  # helpers -- so a doubling level already fully decided in a prior run is skipped
+  # entirely (`resumed nulldecision_d{n}`), while a doubling level interrupted PARTWAY
+  # through its 20 replicates resumes each already-computed replicate individually and
+  # only spends new draws on the remainder (see `_null_replicate_check`).
   n_doublings = 0
   null_criterion_met = False
   pilot_margin = 0.0
   while True:
-    pilot_margin, _cost, _n, _alloc = _lane_margin_and_cost(
-      jax_model,
-      pilot_batches,
-      pilot_lane,
-      n_required,
-      f"pilotmargin{n_doublings}",
-    )
-    null_pass = _null_replicate_check(
-      jax_model,
-      pilot_batches,
-      pilot_lane,
+
+    def _doubling_decision(n_doublings: int = n_doublings, n_required: int = n_required) -> dict[str, Any]:
+      margin, _cost, _n, _alloc = _checkpointed_lane_margin(
+        store,
+        jax_model,
+        pilot_batches,
+        pilot_lane,
+        n_required,
+        f"pilotmargin{n_doublings}",
+      )
+      null_pass = _null_replicate_check(
+        jax_model,
+        pilot_batches,
+        pilot_lane,
+        n_required,
+        margin,
+        f"doubling{n_doublings}",
+        store=store,
+        n_doublings=n_doublings,
+        run_start=start,
+      )
+      return {
+        "pilot_margin": margin,
+        "null_pass": null_pass,
+        "criterion_met": null_pass >= las.POSCTL_PASS_FLOOR,
+      }
+
+    with _StageLog(start, f"null_criterion_doubling_{n_doublings}"):
+      decision = store.get_or_compute(
+        f"nulldecision_d{n_doublings}",
+        {
+          "lane": pilot_lane,
+          "n_doublings": n_doublings,
+          "n_required": n_required,
+          "posctl_pass_floor": las.POSCTL_PASS_FLOOR,
+        },
+        _doubling_decision,
+      )
+    pilot_margin = decision["pilot_margin"]
+    null_pass = decision["null_pass"]
+    logger.info(
+      "doubling %d done: n_required=%d pilot_margin=%.6g null_pass=%d/%d (floor %d) "
+      "(cumulative %.1fs)",
+      n_doublings,
       n_required,
       pilot_margin,
-      f"doubling{n_doublings}",
+      null_pass,
+      las.NULL_REPLICATES,
+      las.POSCTL_PASS_FLOOR,
+      time.monotonic() - start,
     )
-    if null_pass >= las.POSCTL_PASS_FLOOR:
+    if decision["criterion_met"]:
       null_criterion_met = True
       break
     if n_doublings >= las.MAX_N_DOUBLINGS:
@@ -860,6 +1246,8 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       "fixture_set": args.fixture_set,
       "fixture_manifest_sha256": manifest_sha256,
       "elapsed_seconds": elapsed_seconds,
+      "checkpoint_dir": str(checkpoint_dir) if checkpoint_dir is not None else "",
+      "checkpoint_units_resumed": list(store.units_resumed),
       **prov,
     }
     logger.error(
@@ -878,15 +1266,24 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
   pilot_n_draws = 4 * sum(las.allocate_draws(pilot_batches, n_required).values())
   # (re-time the pilot lane's own margin cost at the FINAL n once more, cleanly, rather
   # than reusing a doubling-loop timing that may have run at a smaller n)
-  _pilot_margin_final, pilot_cost, pilot_n_draws, _alloc = _lane_margin_and_cost(
-    jax_model,
-    pilot_batches,
-    pilot_lane,
-    n_required,
-    "pilotmarginfinal",
-  )
+  with _StageLog(start, f"lane_margin_final_{pilot_lane}"):
+    _pilot_margin_final, pilot_cost, pilot_n_draws, _alloc = _checkpointed_lane_margin(
+      store,
+      jax_model,
+      pilot_batches,
+      pilot_lane,
+      n_required,
+      "pilotmarginfinal",
+    )
   margins[pilot_lane] = _pilot_margin_final
   lane_costs.append((pilot_n_draws, pilot_cost))
+  logger.info(
+    "lane margin lane=%s (final) margin=%.6g per_draw_cost_s=%.6g (cumulative %.1fs)",
+    pilot_lane,
+    _pilot_margin_final,
+    pilot_cost,
+    time.monotonic() - start,
+  )
 
   for lane in selected_lanes:
     if lane == pilot_lane:
@@ -906,15 +1303,24 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       )
       margins[lane] = UNCOMPUTED_SENTINEL
       continue
-    margin, cost, n_draws, _alloc = _lane_margin_and_cost(
-      jax_model,
-      lane_batches,
-      lane,
-      n_required,
-      f"margin{lane}",
-    )
+    with _StageLog(start, f"lane_margin_{lane}"):
+      margin, cost, n_draws, _alloc = _checkpointed_lane_margin(
+        store,
+        jax_model,
+        lane_batches,
+        lane,
+        n_required,
+        f"margin{lane}",
+      )
     margins[lane] = margin
     lane_costs.append((n_draws, cost))
+    logger.info(
+      "lane margin lane=%s margin=%.6g per_draw_cost_s=%.6g (cumulative %.1fs)",
+      lane,
+      margin,
+      cost,
+      time.monotonic() - start,
+    )
 
   total_n_draws = sum(n for n, _c in lane_costs)
   per_draw_cost_aminx_s = (
@@ -934,15 +1340,25 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     if not lane_batches or margins.get(lane, UNCOMPUTED_SENTINEL) == UNCOMPUTED_SENTINEL:
       beta_by_lane[lane] = None
       continue
-    beta_lane, sized, _tried = _search_beta_for_lane(
-      jax_model,
-      lane_batches,
-      lane,
-      margins[lane],
-      f"betasearch{lane}",
-    )
+    with _StageLog(start, f"beta_search_{lane}"):
+      beta_lane, sized, _tried = _search_beta_for_lane(
+        jax_model,
+        lane_batches,
+        lane,
+        margins[lane],
+        f"betasearch{lane}",
+        store=store,
+        run_start=start,
+      )
     beta_by_lane[lane] = beta_lane
     beta_sized_count += int(sized)
+    logger.info(
+      "lane %s: beta search done beta=%s sized=%s (cumulative %.1fs)",
+      lane,
+      beta_lane,
+      sized,
+      time.monotonic() - start,
+    )
   beta = max((b for b in beta_by_lane.values() if b is not None), default=las.DEFAULT_BETA)
 
   # Fusion eps (P09-s), on a set-A fixture with qualifying groups.
@@ -967,37 +1383,59 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         las._seed_for(set_a_with_groups["name"] + "p09s"),
         temperature=1.0,
       )
-      p09_fusion_ctrl_eps, fusion_sized = _search_fusion_eps(jax_model, p09s_batch, decoding_order)
+      with _StageLog(start, "fusion_eps_search"):
+        p09_fusion_ctrl_eps, fusion_sized = _search_fusion_eps(
+          jax_model,
+          p09s_batch,
+          decoding_order,
+          store=store,
+          fixture_name=set_a_with_groups["name"],
+          run_start=start,
+        )
+      logger.info(
+        "fusion eps search done eps=%s sized=%s (cumulative %.1fs)",
+        p09_fusion_ctrl_eps,
+        fusion_sized,
+        time.monotonic() - start,
+      )
 
   # C6: differential sentinel, reduced subset (pilot fixture only), SENTINEL_HALF_N per arm.
-  reduced_subset = [pilot_batches[0][0]]
-  sentinel_batches = [(pilot_batches[0][0], pilot_batches[0][1])]
-  sentinel_allocation = {pilot_batches[0][0]["name"]: SENTINEL_HALF_N}
-  a1_off, a2_off, r1_off, r2_off, _seq_ref = las.draw_iut_arms(
-    jax_model,
-    pt_model,
-    torch,
-    sentinel_batches,
-    sentinel_allocation,
-    temperature=las.DEFAULT_LANE_TEMPERATURES[pilot_lane],
-    reference_is_aminx=False,
-    seed_tag="sentineloff",
+  with _StageLog(start, "differential_sentinel"):
+    reduced_subset = [pilot_batches[0][0]]
+    sentinel_batches = [(pilot_batches[0][0], pilot_batches[0][1])]
+    sentinel_allocation = {pilot_batches[0][0]["name"]: SENTINEL_HALF_N}
+    a1_off, a2_off, r1_off, r2_off, _seq_ref = las.draw_iut_arms(
+      jax_model,
+      pt_model,
+      torch,
+      sentinel_batches,
+      sentinel_allocation,
+      temperature=las.DEFAULT_LANE_TEMPERATURES[pilot_lane],
+      reference_is_aminx=False,
+      seed_tag="sentineloff",
+    )
+    off_metric = las.pooled_js(a1_off + a2_off, r1_off + r2_off)
+    a1_on, a2_on, r1_on, r2_on, _seq_ref = las.draw_iut_arms(
+      jax_model,
+      pt_model,
+      torch,
+      sentinel_batches,
+      sentinel_allocation,
+      temperature=las.DEFAULT_LANE_TEMPERATURES[pilot_lane],
+      beta_a=beta,
+      reference_is_aminx=False,
+      seed_tag="sentinelon",
+    )
+    on_metric = las.pooled_js(a1_on + a2_on, r1_on + r2_on)
+    measured_half_effect = abs(on_metric - off_metric) / 2.0
+    min_effect = measured_half_effect
+  logger.info(
+    "differential sentinel: off=%.6g on=%.6g measured_half_effect=%.6g (cumulative %.1fs)",
+    off_metric,
+    on_metric,
+    measured_half_effect,
+    time.monotonic() - start,
   )
-  off_metric = las.pooled_js(a1_off + a2_off, r1_off + r2_off)
-  a1_on, a2_on, r1_on, r2_on, _seq_ref = las.draw_iut_arms(
-    jax_model,
-    pt_model,
-    torch,
-    sentinel_batches,
-    sentinel_allocation,
-    temperature=las.DEFAULT_LANE_TEMPERATURES[pilot_lane],
-    beta_a=beta,
-    reference_is_aminx=False,
-    seed_tag="sentinelon",
-  )
-  on_metric = las.pooled_js(a1_on + a2_on, r1_on + r2_on)
-  measured_half_effect = abs(on_metric - off_metric) / 2.0
-  min_effect = measured_half_effect
   if min_effect <= 0:
     msg = (
       f"measured_half_effect={measured_half_effect!r} <= 0 (off={off_metric!r}, on={on_metric!r}) "
@@ -1006,48 +1444,57 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     raise SystemExit(msg)
 
   # C4: budget projection (VALIDATE's projected cost, never calibrate's own elapsed time).
-  reference_cost_batch = _lane_fixture_batches([pilot_batches[0][0]], pilot_lane, data_utils_module)
-  per_draw_cost_reference_s = las.measure_reference_draw_cost_s(
-    pt_model,
-    torch,
-    reference_cost_batch[0][1],
-    las.DEFAULT_LANE_TEMPERATURES[pilot_lane],
-    REFERENCE_COST_SAMPLE_N,
-  )
-  aminx_draws_total, reference_draws_total = _project_validate_draw_counts(
-    n_required,
-    len(selected_lanes),
-  )
-  alloc_by_lane = {
-    lane: las.allocate_draws(
-      _lane_fixture_batches(protein_fixtures_b, lane, data_utils_module),
+  with _StageLog(start, "budget_projection"):
+    reference_cost_batch = _lane_fixture_batches([pilot_batches[0][0]], pilot_lane, data_utils_module)
+    per_draw_cost_reference_s = las.measure_reference_draw_cost_s(
+      pt_model,
+      torch,
+      reference_cost_batch[0][1],
+      las.DEFAULT_LANE_TEMPERATURES[pilot_lane],
+      REFERENCE_COST_SAMPLE_N,
+    )
+    aminx_draws_total, reference_draws_total = _project_validate_draw_counts(
+      n_required,
+      len(selected_lanes),
+    )
+    alloc_by_lane = {
+      lane: las.allocate_draws(
+        _lane_fixture_batches(protein_fixtures_b, lane, data_utils_module),
+        n_required,
+      )
+      for lane in selected_lanes
+    }
+    shard_report = lass.shard_budget_report(
+      lass.enumerate_work_units(
+        lanes=selected_lanes,
+        allocation=alloc_by_lane,
+        n_control_replicates=las.N_CONTROL_REPLICATES,
+        costs=floor["per_draw_costs_s"],
+        control_scope=lass.PROTOCOL_CONTROL_SCOPE,
+        control_lane=las.CONTROL_LANE,
+      ),
+      n_shards,
+    )
+    budget_wall_hours = float(shard_report["budget_wall_hours"])
+    budget_gpu_hours = float(shard_report["budget_gpu_hours"])
+    per_shard_hours = shard_report["per_shard_hours"]
+    projected_peak_rss_gib = _peak_rss_gib()
+    within_budget = (
+      budget_wall_hours <= BUDGET_WALL_HOURS_CAP
+      and projected_peak_rss_gib <= PROJECTED_PEAK_RSS_GIB_CAP
+    )
+
+    allocation = las.allocate_draws(
+      _lane_fixture_batches(protein_fixtures_b, "P07@1.0", data_utils_module),
       n_required,
     )
-    for lane in selected_lanes
-  }
-  shard_report = lass.shard_budget_report(
-    lass.enumerate_work_units(
-      lanes=selected_lanes,
-      allocation=alloc_by_lane,
-      n_control_replicates=las.N_CONTROL_REPLICATES,
-      costs=floor["per_draw_costs_s"],
-      control_scope=lass.PROTOCOL_CONTROL_SCOPE,
-      control_lane=las.CONTROL_LANE,
-    ),
-    n_shards,
-  )
-  budget_wall_hours = float(shard_report["budget_wall_hours"])
-  budget_gpu_hours = float(shard_report["budget_gpu_hours"])
-  per_shard_hours = shard_report["per_shard_hours"]
-  projected_peak_rss_gib = _peak_rss_gib()
-  within_budget = (
-    budget_wall_hours <= BUDGET_WALL_HOURS_CAP
-    and projected_peak_rss_gib <= PROJECTED_PEAK_RSS_GIB_CAP
-  )
-
-  allocation = las.allocate_draws(
-    _lane_fixture_batches(protein_fixtures_b, "P07@1.0", data_utils_module),
-    n_required,
+  logger.info(
+    "budget projection: budget_wall_hours=%.3f budget_gpu_hours=%.3f within_budget=%s "
+    "(cumulative %.1fs)",
+    budget_wall_hours,
+    budget_gpu_hours,
+    within_budget,
+    time.monotonic() - start,
   )
 
   controls_total = len(selected_lanes) + 1 + 1  # per-lane betas + fusion eps + null-replicate
@@ -1090,21 +1537,22 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
   params_written = False
   params_section_sha256 = lac.section_sha({"sampling": sampling_section}, "sampling")
-  if within_budget:
-    params = _merge_params(args.params_out, sampling_section)
-    args.params_out.parent.mkdir(parents=True, exist_ok=True)
-    with args.params_out.open("w") as fh:
-      json.dump(params, fh, indent=2, default=str)
-    params_written = True
-  else:
-    logger.error(
-      "budget exceeded (budget_wall_hours=%.3f cap=%.1f, projected_peak_rss_gib=%.3f cap=%.1f) "
-      "-- NOT writing --params-out; reduce set-B fixtures/n_required, never raise the cap",
-      budget_wall_hours,
-      BUDGET_WALL_HOURS_CAP,
-      projected_peak_rss_gib,
-      PROJECTED_PEAK_RSS_GIB_CAP,
-    )
+  with _StageLog(start, "params_write"):
+    if within_budget:
+      params = _merge_params(args.params_out, sampling_section)
+      args.params_out.parent.mkdir(parents=True, exist_ok=True)
+      with args.params_out.open("w") as fh:
+        json.dump(params, fh, indent=2, default=str)
+      params_written = True
+    else:
+      logger.error(
+        "budget exceeded (budget_wall_hours=%.3f cap=%.1f, projected_peak_rss_gib=%.3f cap=%.1f) "
+        "-- NOT writing --params-out; reduce set-B fixtures/n_required, never raise the cap",
+        budget_wall_hours,
+        BUDGET_WALL_HOURS_CAP,
+        projected_peak_rss_gib,
+        PROJECTED_PEAK_RSS_GIB_CAP,
+      )
 
   result = {
     "sigma_hat": sigma_hat,
@@ -1131,6 +1579,8 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     "fixture_set": args.fixture_set,
     "fixture_manifest_sha256": manifest_sha256,
     "elapsed_seconds": time.monotonic() - start,
+    "checkpoint_dir": str(checkpoint_dir) if checkpoint_dir is not None else "",
+    "checkpoint_units_resumed": list(store.units_resumed),
     **prov,
   }
   exit_code = 0
@@ -1177,6 +1627,18 @@ def main(argv: list[str] | None = None) -> int:
     type=int,
     default=las.N_SHARDS,
     help="Shard count for the budget wall-clock projection (default N_SHARDS).",
+  )
+  parser.add_argument(
+    "--checkpoint-dir",
+    type=Path,
+    default=None,
+    help=(
+      "T10g: optional dir for run_full's per-unit checkpoints (pilot, null replicates, "
+      "lane margins, beta/fusion-eps searches). Absent (default): behavior is unchanged "
+      "except for the new progress logging. A relaunch at the SAME commit/config with the "
+      "SAME --checkpoint-dir resumes already-completed units instead of recomputing them, "
+      "bit-identically (see layer_a_sampling._seed_for's T10g fix). Ignored by --smoke."
+    ),
   )
   args = parser.parse_args(argv)
   lass.ensure_xla_preallocate_false()

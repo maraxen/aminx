@@ -107,6 +107,12 @@ export OPENBLAS_NUM_THREADS="$CPUS"
 export MKL_NUM_THREADS="$CPUS"
 export BTH_BIN
 
+# T10g: unbuffered stdout/stderr so long-running scripts' INFO progress logs (e.g.
+# layer_a_sampling_calibrate.py's run_full, previously silent for 6-7+ hours after its
+# "budget floor" lines) actually reach the Slurm log promptly instead of sitting in a
+# buffer until process exit.
+export PYTHONUNBUFFERED=1
+
 # CLUSTER.md #2 / myxcel-myxcel-cluster-rules.md: JAX autotuning hangs on SM120 (Blackwell,
 # node4007/node4008) even with jaxlib >= 0.4.38. Keyed on hostname, not partition, and a
 # no-op on non-Blackwell hardware -- safe to set unconditionally.
@@ -131,15 +137,28 @@ if [ -n "${BV_OUT_REL:-}" ]; then
   OUT_PATH="$BV_OUT_REL"
 fi
 
+# T10g: layer_a_sampling_calibrate's run_full gets a checkpoint dir OUTSIDE this
+# per-run worktree ($BV_RD is a fresh checkout each dispatch), keyed on stem + the
+# committed HEAD ($BV_H) -- a relaunch at the SAME commit finds and resumes it. Every
+# other stem is byte-identical to before (empty array, no flag added).
+CHECKPOINT_ARGS=()
+if [ "$BV_STEM" = "layer_a_sampling_calibrate" ]; then
+  CHECKPOINT_DIR="$HOME/bv/ckpt/${BV_STEM}-${BV_H:0:12}"
+  mkdir -p "$CHECKPOINT_DIR"
+  CHECKPOINT_ARGS=(--checkpoint-dir "$CHECKPOINT_DIR")
+fi
+
 # F-C1 (titanix_run.sh): keep these uv option tokens in EXACTLY this order, nothing
 # between `python` and the script path -- bathos `_find_script_path` (runner.py:57-75 at
 # 84be544e) reads tokens in pairs after `run`, and `--no-sync` only resolves because it
 # sits in a skipped slot. `--prerelease allow` MUST stay two tokens (a single
 # `--prerelease=allow` token would swallow the following one and break the pairing);
 # without it the `--with` overlay fails to resolve (fastmcp-slim prerelease). No `taskset`
-# here (unlike titanix_run.sh) -- Slurm already confines this job to $CPUS CPUs.
+# here (unlike titanix_run.sh) -- Slurm already confines this job to $CPUS CPUs. Script
+# args (including CHECKPOINT_ARGS) go after the script path -- that's fine, only the
+# `python <script path>` pairing above the script path is order-sensitive.
 "$BTH_BIN" run --campaign-id "$BV_CAMPAIGN_ID" --output-paths "$OUT_PATH" -- \
   "$UV_BIN" run --frozen --no-sync "${UV_EXTRAS[@]}" --with "$BATHOS_REQ" --prerelease allow python \
-  "scripts/browser_validation/${BV_STEM}.py" "${SCRIPT_ARGS[@]}" --out "$OUT_PATH"
+  "scripts/browser_validation/${BV_STEM}.py" "${SCRIPT_ARGS[@]}" --out "$OUT_PATH" "${CHECKPOINT_ARGS[@]}"
 
 echo "=== engaging_run.sbatch finished $(date -u +%FT%TZ) ==="

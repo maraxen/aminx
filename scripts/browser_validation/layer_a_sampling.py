@@ -68,6 +68,7 @@ math, and needs no kernel-internal hook.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import logging
 import sys
 from dataclasses import dataclass
@@ -221,7 +222,28 @@ def grade_controls(posctl_detected: int, negctl_fp: int) -> dict[str, int | bool
 
 
 def _seed_for(name: str) -> int:
-  return (_SEED_BASE + (hash(name) % 10_000)) & 0xFFFFFFFF
+  """Identity-derived seed: a PURE function of `name` alone, never of call order or of
+  how many earlier draws/stages ran. This is what makes calibrate's checkpoint/resume
+  (T10g) bit-identical -- a resumed unit re-derives the SAME seed a never-interrupted
+  run would have used for that same identity tag.
+
+  T10g fix (pre-registration note, made BEFORE any run used it): this used to be
+  `hash(name) % 10_000` -- Python's builtin `str.__hash__` is SipHash-randomized per
+  PROCESS (`PYTHONHASHSEED` defaults to `random`), so the SAME tag produced a
+  DIFFERENT seed in every fresh interpreter (measured: three `python3 -c` invocations
+  of `hash('P07@1.0testA1') % 10000` returned 9142, 9751, 8451). Within one
+  uninterrupted process this was internally self-consistent (one hash seed for the
+  whole run), but a checkpoint/resume by construction starts a NEW process -- so
+  every unit computed after a resume would have silently drawn from different
+  randomness than an uninterrupted run, breaking the "resuming gives the SAME
+  results" requirement even for units that were never checkpointed. Replaced with
+  `hashlib.sha256`, which is stable across processes/machines by construction. No
+  caller's numeric threshold, grid, replicate count, or n changes -- only the
+  seed-derivation primitive underneath an already identity-shaped `name -> int`
+  mapping.
+  """
+  digest = hashlib.sha256(name.encode("utf-8")).digest()
+  return (_SEED_BASE + (int.from_bytes(digest[:8], "big") % 10_000)) & 0xFFFFFFFF
 
 
 def _mpnn_index(char: str) -> int:
