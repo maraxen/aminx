@@ -1,6 +1,13 @@
 # v2 FINDING. Carries the v1 validate contract (git history of
-# layer_a_sampling_validate.bth.toml at 68f33c78) onto the four ProteinMPNN
+# layer_a_sampling_validate.bth.toml at 68f33c78) onto the three ProteinMPNN
 # V2_LANES. LigandMPNN / P11-s is deferred by user decision 2026-09-28.
+#
+# AMENDED 2026-09-29 (T10e, BEFORE any run used this sidecar): P07@0.1 DROPPED from
+# V2_LANES per run e091a33e's ctrl_unsized grade (5/6 controls) -- see
+# layer_a_sampling_calibrate.bth.toml's hypothesis for the two root-caused defects
+# (negative/near-zero margin mishandled by the beta search; P09-s fusion-eps grid never
+# reaching the sizing band). T=0.1 stays covered bitwise by the P07 knobs gate. n_lanes
+# is now pinned to 3, not 4 -- a mechanical consequence of the lane count.
 
 [metadata]
 title = "Layer (a) sampling v2 finding: merged V2_LANES equivalence on fixture set B"
@@ -8,7 +15,7 @@ created = "260928"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "On fixture set B, for the four V2_LANES (P07@0.1, P07@1.0, P08@1.0, P09-s@1.0; LigandMPNN / P11-s deferred by user decision 2026-09-28): teacher-forced per-step log-probs match within 1e-4 nats, and every lane is declared equivalent (recovery TOST delta 0.01 AND excess-JS 95% upper bound < committed m_l; IUT, alpha 0.05 per lane) at n_required, with zero omitted-AA and zero X tokens in both arms; positive control detected >= 18/20, negative control false positives <= 3/20, and the P09-s fusion control is detected. A missing unit, a duplicate unit, or a git_hash mismatch is a residual merge_refused, emitted as a graded result."
+hypothesis = "On fixture set B, for the three V2_LANES (P07@1.0, P08@1.0, P09-s@1.0; LigandMPNN / P11-s deferred by user decision 2026-09-28; P07@0.1 DROPPED 2026-09-29 per T10e/run e091a33e, not merely deferred -- T=0.1 stays covered bitwise by the P07 knobs gate): teacher-forced per-step log-probs match within 1e-4 nats, and every lane is declared equivalent (recovery TOST delta 0.01 AND excess-JS 95% upper bound < committed m_l; IUT, alpha 0.05 per lane) at n_required, with zero omitted-AA and zero X tokens in both arms; positive control detected >= 18/20, negative control false positives <= 3/20, and the P09-s fusion control is detected. A missing unit, a duplicate unit, or a git_hash mismatch is a residual merge_refused, emitted as a graded result."
 stage_name = "validation"
 claim_discriminates = ["H_sampling_equiv", "H_null_misspec"]
 
@@ -56,14 +63,14 @@ reasoning = "n_required (and its doubling-until-18/20 derivation) is the pre-reg
 is_residual = true
 
 [outcomes.pass]
-condition = "tf_max_abs <= tf_bar AND n_lanes = 4 AND n_lanes_equiv = n_lanes AND excess_js_ub_max_ratio < 1 AND omitted_aa_count = 0 AND x_token_count_aminx = 0 AND x_token_count_reference = 0"
+condition = "tf_max_abs <= tf_bar AND n_lanes = 3 AND n_lanes_equiv = n_lanes AND excess_js_ub_max_ratio < 1 AND omitted_aa_count = 0 AND x_token_count_aminx = 0 AND x_token_count_reference = 0"
 decision = "Every V2 lane's teacher-forced comparison is within bar, every lane is declared statistically equivalent (IUT, including excess-JS upper bound < m_l), and no omitted-AA or X tokens leaked on either arm; eligible for the advance table (T11)."
-reasoning = "Zero teacher-forced divergence beyond bar, full IUT equivalence across the four V2_LANES, an excess-JS 95% upper bound inside every committed margin, and zero omitted/X-token leakage, with every control detected, are the minimum evidence that the sampling tier is parity-equivalent to the reference on the held-out set."
+reasoning = "Zero teacher-forced divergence beyond bar, full IUT equivalence across the three V2_LANES (post-T10e; P07@0.1 dropped), an excess-JS 95% upper bound inside every committed margin, and zero omitted/X-token leakage, with every control detected, are the minimum evidence that the sampling tier is parity-equivalent to the reference on the held-out set."
 is_residual = false
 
 [outcomes.fail]
-condition = "tf_max_abs > tf_bar OR n_lanes <> 4 OR n_lanes_equiv < n_lanes OR excess_js_ub_max_ratio >= 1 OR omitted_aa_count > 0 OR x_token_count_aminx > 0 OR x_token_count_reference > 0"
-decision = "A teacher-forced comparison exceeded bar, a lane failed the IUT (TOST or excess-JS upper bound over m_l), the lane count was not the four V2_LANES, or an omitted-AA/X token leaked: finding + DEVIATION."
+condition = "tf_max_abs > tf_bar OR n_lanes <> 3 OR n_lanes_equiv < n_lanes OR excess_js_ub_max_ratio >= 1 OR omitted_aa_count > 0 OR x_token_count_aminx > 0 OR x_token_count_reference > 0"
+decision = "A teacher-forced comparison exceeded bar, a lane failed the IUT (TOST or excess-JS upper bound over m_l), the lane count was not the three V2_LANES, or an omitted-AA/X token leaked: finding + DEVIATION."
 reasoning = "Residual catch-all: with a sensitive instrument and prerequisites satisfied, any of these is a genuine divergence -- a hard omit that leaked, a recovery TOST that failed, or an excess-JS upper bound that cleared its margin -- not a footnote."
 is_residual = true
 

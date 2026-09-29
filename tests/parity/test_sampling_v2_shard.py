@@ -35,8 +35,12 @@ def test_control_replicate_factor_v1_and_v2() -> None:
 
 
 def test_v2_lanes_budget_excludes_p11() -> None:
-  assert las.V2_LANES == ("P07@0.1", "P07@1.0", "P08@1.0", "P09-s@1.0")
+  # T10e amendment (run e091a33e, ctrl_unsized): P07@0.1 DROPPED, not merely deferred
+  # like P11-s -- see layer_a_sampling.V2_LANES's own docstring for the two defects.
+  assert las.V2_LANES == ("P07@1.0", "P08@1.0", "P09-s@1.0")
   assert "P11-s@1.0" not in las.V2_LANES
+  assert "P07@0.1" not in las.V2_LANES
+  assert "P07@0.1" not in las.LANE_KEYS
   costs = {lane: {"fx": {"aminx_s": 3600.0, "reference_s": 0.0}} for lane in las.LANE_KEYS}
   allocation = {lane: {"fx": 1} for lane in las.LANE_KEYS}
   units = shard.enumerate_work_units(
@@ -67,6 +71,11 @@ def test_v2_lanes_budget_excludes_p11() -> None:
 
 
 # Bathos run 27f9f25e per-draw costs (aminx_s, reference_s) and floor allocation.
+# The P07@0.1 entries are RETAINED (historical record of that run's measurement) but no
+# longer PRICED: `_t9_gpu_hours` passes `lanes=las.V2_LANES`, and P07@0.1 is dropped from
+# V2_LANES as of T10e (run e091a33e, ctrl_unsized) -- `enumerate_work_units` only reads
+# entries for lanes in the `lanes=` it is given, so this dict's extra P07@0.1 key is
+# inert dead data here, not a live lane list.
 _T9_ALLOCATION: dict[str, dict[str, int]] = {
   "P07@0.1": {"1BC8": 106, "3HTN": 498, "4YOW": 815, "6MRR": 81},
   "P07@1.0": {"1BC8": 112, "3HTN": 495, "4YOW": 813, "6MRR": 80},
@@ -113,12 +122,15 @@ def _t9_gpu_hours(control_scope: str) -> float:
   return hours
 
 
-def test_t9_once_pricing_near_18_2_and_per_slot_near_57_1() -> None:
+def test_t9_once_pricing_near_17_8_and_per_slot_near_41_1() -> None:
+  # T10e: recomputed for the 3-lane V2_LANES (P07@0.1 dropped) -- was 18.2/57.1 over
+  # the pre-amendment 4 lanes; recomputed directly via `_t9_gpu_hours`, same recorded
+  # run-27f9f25e per-draw costs, just priced over 3 lanes instead of 4.
   assert las.N_CONTROL_REPLICATES == 20
   once = _t9_gpu_hours(shard.PROTOCOL_CONTROL_SCOPE)
-  assert once == pytest.approx(18.2, rel=0.01)
+  assert once == pytest.approx(17.78, rel=0.01)
   per_slot = _t9_gpu_hours("per_slot")
-  assert per_slot == pytest.approx(57.1, rel=0.01)
+  assert per_slot == pytest.approx(41.08, rel=0.01)
 
 
 def test_planner_controls_only_on_p07() -> None:

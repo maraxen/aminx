@@ -96,9 +96,9 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
   sys.path.insert(0, str(_SCRIPT_DIR))
 
-import layer_a_common as lac  # noqa: E402
-import layer_a_exact as lae  # noqa: E402
-import layer_a_sampling as las  # noqa: E402
+import layer_a_common as lac
+import layer_a_exact as lae
+import layer_a_sampling as las
 import layer_a_sampling_shard as lass
 
 _WORKTREE_ROOT = _SCRIPT_DIR.parents[1]
@@ -130,7 +130,7 @@ def _params_committed_and_clean() -> tuple[bool, str]:
   if not PARAMS_PATH.is_file():
     return False, f"{PARAMS_PATH} does not exist (calibrate has not been committed yet)"
   rel = _relative_to_worktree(PARAMS_PATH)
-  tracked = subprocess.run(  # noqa: S603, S607
+  tracked = subprocess.run(  # noqa: S603
     ["git", "ls-files", "--error-unmatch", rel],
     cwd=_WORKTREE_ROOT,
     capture_output=True,
@@ -139,7 +139,7 @@ def _params_committed_and_clean() -> tuple[bool, str]:
   )
   if tracked.returncode != 0:
     return False, f"{rel} is not tracked by git (`git ls-files --error-unmatch` failed)"
-  clean = subprocess.run(  # noqa: S603, S607
+  clean = subprocess.run(  # noqa: S603
     ["git", "diff", "--quiet", "HEAD", "--", rel],
     cwd=_WORKTREE_ROOT,
     check=False,
@@ -1135,7 +1135,7 @@ def main(argv: list[str] | None = None) -> int:
   parser.add_argument(
     "--lanes",
     default=None,
-    help="Comma-separated lane keys (default: the four ProteinMPNN V2_LANES).",
+    help="Comma-separated lane keys (default: the three ProteinMPNN V2_LANES).",
   )
   parser.add_argument("--n-shards", type=int, default=1, help="How many shards the plan uses.")
   parser.add_argument("--shard-index", type=int, default=0, help="Which shard this process runs.")

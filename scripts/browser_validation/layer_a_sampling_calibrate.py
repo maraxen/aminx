@@ -13,6 +13,21 @@ correspondingly expensive by design and is a titanix-only path; the budget cap
 (`BUDGET_WALL_HOURS_CAP`/`PROJECTED_PEAK_RSS_GIB_CAP`) is the enforced safety net that
 FAILS the run (no params written) rather than silently shrinking any threshold.
 
+**T10e pre-registration AMENDMENT (this revision), made BEFORE any run has used it, in
+response to run e091a33e's `ctrl_unsized` grade (5/6 controls):** the P07@0.1 lane is
+DROPPED from the selected lanes -- `las.V2_LANES` is now `(P07@1.0, P08@1.0, P09-s@1.0)`,
+three lanes, not four -- per user decision, because (a) its own margin (aminx@T vs
+aminx@1.05*T excess-JS) measured -8.5e-5, below estimator noise at this low a
+temperature, which the old `_search_beta_for_lane` silently mishandled by comparing a
+"sized" ratio against `UNCOMPUTED_SENTINEL` instead of declaring the lane unsized, and
+(b) T=0.1 stays covered bitwise by the P07 knobs gate (`layer_a_exact.py`) regardless, so
+nothing is lost by removing it from this distributional tier. Every "5 lanes"/"4 lanes"
+count below is now "3 lanes"/"2 lanes" and `controls_total` follows mechanically from
+`len(selected_lanes)` (3 betas + 1 fusion eps + 1 null-replicate = 5, not 7). The P09-s
+fusion-eps grid (`las.FUSION_EPS_CANDIDATES`) is separately extended downward (a second,
+independent defect: the old grid floored at 0.01 and never reached `SIZING_RATIO_RANGE`)
+-- see that constant's own docstring in `layer_a_sampling.py`.
+
 - **sigma_hat / n_required.** A pilot (set A, `n = PILOT_N`) of aminx draws at the
   pilot lane's temperature `T` vs `1.05*T` gives per-sequence recovery; `sigma_hat` is
   its SD. `n_required = max(1500, required_n(sigma_hat, 0.01))`
@@ -27,7 +42,8 @@ FAILS the run (no params written) rather than silently shrinking any threshold.
   write params -- `null_criterion_met=false` is
   recorded and the run exits 1, exactly like a budget failure (never proceeds on an
   unmet criterion).
-- **Margin m_l, PER LANE (C1).** For EACH of `las.LANE_KEYS`, `mean(excess_js(...))`
+- **Margin m_l, PER LANE (C1).** For EACH of `selected_lanes` (default `las.V2_LANES`,
+  three lanes post-T10e), `mean(excess_js(...))`
   between aminx@T and aminx@1.05*T (`reference_is_aminx=True` in
   `las.draw_iut_arms` -- both "arms" are aminx, no reference draws needed), pooled
   over set-A protein fixtures (`MARGIN_EXCLUDE_FIXTURES` -- `2GFB` -- excluded, with
@@ -36,20 +52,24 @@ FAILS the run (no params written) rather than silently shrinking any threshold.
   designable-position weight), allocated by designable-position count, at
   `n = n_required`. For P09-s, `comparison_positions` is ALREADY restricted to
   tie-group member positions (`LaneBatch`), so this falls out of the SAME machinery
-  automatically. Recorded as all 5 lane values in `sampling.margins` -- never one
-  value copied across lanes.
+  automatically. Recorded as all `len(selected_lanes)` lane values in `sampling.margins`
+  -- never one value copied across lanes.
 - **Beta, PER LANE (C3).** For EACH lane, the smallest `BETA_CANDIDATES` value with
   `mean(excess_js(aminx+beta, aminx))` landing `>= 2*m_l` for THAT lane, evaluated at
-  `SIZING_N` (>= 100) draws per arm. `sampling.beta` records the MAXIMUM of the 5
+  `SIZING_N` (>= 100) draws per arm. `sampling.beta` records the MAXIMUM of the
   per-lane values (a single scalar `beta` is what the positive control and the
   differential sentinel apply -- using the largest ensures every lane's control is at
-  least as sized as its own search found); `sampling.beta_by_lane` records all 5.
+  least as sized as its own search found); `sampling.beta_by_lane` records all of them.
   A lane with no qualifying candidate is recorded as unsized (`controls_sized` docked
   accordingly), never silently dropped or raised as a hard crash -- see
-  `_search_beta_for_lane`.
+  `_search_beta_for_lane`. A margin that is `<= 0` or non-finite (T10e: P07@0.1's own
+  margin was -8.5e-5) is ALSO unsized immediately, never compared against
+  `UNCOMPUTED_SENTINEL` as if it were a real ratio.
 - **Fusion eps (P09-s).** Smallest `FUSION_EPS_CANDIDATES` value sizing the fusion
   control into `SIZING_RATIO_RANGE` of the `1e-4` bar, on a set-A fixture with
-  qualifying tie groups.
+  qualifying tie groups. T10e: the grid now extends down to `1e-5` (was `0.01`); when
+  nothing sizes, `_search_fusion_eps` returns `(0.0, False)` -- never the grid's last
+  candidate, which would be indistinguishable from a genuinely sized value.
 - **Budget (C4).** `sampling.budget_wall_hours` is a PROJECTION of VALIDATE's cost
   (never calibrate's own elapsed time), per `sampling.budget_formula` (also recorded
   verbatim): `(aminx_draws_total * per_draw_cost_aminx_s + reference_draws_total *
@@ -64,9 +84,10 @@ FAILS the run (no params written) rather than silently shrinking any threshold.
   derivation). A FULL run fails (writes a diagnostic result but NOT `--params-out`)
   above the 16h/48GiB caps -- the fix is fewer set-B fixtures/lower `n_required`,
   recorded, never a raised cap.
-- **`controls_total`/`controls_sized` (C5).** Computed from REAL outcomes: 5 per-lane
-  beta searches + 1 fusion-eps search + 1 null-replicate criterion = 7 controls;
-  `controls_sized` counts how many actually succeeded.
+- **`controls_total`/`controls_sized` (C5).** Computed from REAL outcomes:
+  `len(selected_lanes)` per-lane beta searches + 1 fusion-eps search + 1 null-replicate
+  criterion (post-T10e, with the default 3-lane `V2_LANES`: 3 + 1 + 1 = 5 controls, not
+  the pre-amendment 7); `controls_sized` counts how many actually succeeded.
 - **Differential sentinel (C6).** `min_effect` = half the measured
   `main_js_vs_ref`-style on/off effect on the reduced subset, at `>= SENTINEL_HALF_N`
   (>= 100) draws per arm (real reference draws for the "off"/reference side, real
@@ -77,7 +98,8 @@ FAILS the run (no params written) rather than silently shrinking any threshold.
   smoke included.
 
 **`--smoke`** runs a small pilot on ONE small fixture (`SMOKE_FIXTURE_NAME`, set A) at
-ONE lane (`SMOKE_LANE`) -- never the full 5-lane x n_required x controls protocol.
+ONE lane (`SMOKE_LANE`) -- never the full 3-lane x n_required x controls protocol
+(post-T10e; was 5-lane pre-amendment).
 Per-lane margins ARE still computed separately per lane at a SMALL smoke n (never
 copied from one lane to the rest); every `sampling` field this run writes is marked
 `"smoke": true` and MUST NOT be read by validate as a real params commit (requires a
@@ -108,9 +130,9 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
   sys.path.insert(0, str(_SCRIPT_DIR))
 
-import layer_a_common as lac  # noqa: E402
-import layer_a_exact as lae  # noqa: E402
-import layer_a_sampling as las  # noqa: E402
+import layer_a_common as lac
+import layer_a_exact as lae
+import layer_a_sampling as las
 import layer_a_sampling_shard as lass
 
 _WORKTREE_ROOT = _SCRIPT_DIR.parents[1]
@@ -372,7 +394,24 @@ def _search_beta_for_lane(
 ) -> tuple[float | None, bool, list[dict[str, Any]]]:
   """C3: smallest `BETA_CANDIDATES` value with `mean(excess_js(aminx+beta, aminx)) >= 2*margin`
   on THIS lane, at `SIZING_N` (>= 100) draws per arm. Returns `(beta_or_None, sized, tried)` --
-  NEVER raises: an unsized lane is recorded, not silently dropped or crashed on (C5)."""
+  NEVER raises: an unsized lane is recorded, not silently dropped or crashed on (C5).
+
+  T10e fix (run e091a33e): a `margin` that is `<= 0` or non-finite makes `effect / margin`
+  meaningless -- P07@0.1's own margin measured -8.5e-5 (below estimator noise at low T),
+  and the old code's `margin > 0 else UNCOMPUTED_SENTINEL` fallback compared `ratio` (the
+  1e18 sentinel) against `lo`, which ALWAYS passes on the first candidate -- a silent false
+  "sized" that spent zero real signal. Such a lane is declared UNSIZED immediately, with
+  `tried == []` (no draws are wasted searching against a margin that cannot be sized
+  against), and the sentinel is never compared as if it were a real ratio.
+  """
+  if margin is None or not np.isfinite(margin) or margin <= 0:
+    logger.warning(
+      "lane %s: margin %r is <= 0 or non-finite -- cannot size a beta against it; "
+      "declaring UNSIZED without running the beta search",
+      lane,
+      margin,
+    )
+    return None, False, []
   temp = las.DEFAULT_LANE_TEMPERATURES[lane]
   allocation = las.allocate_draws(fixture_batches, SIZING_N)
   lo = las.SIZING_RATIO_RANGE[0]
@@ -390,7 +429,7 @@ def _search_beta_for_lane(
       seed_tag=f"{seed_tag}beta{beta}",
     )
     effect = las.pooled_excess_js(a1, a2, r1, r2)
-    ratio = effect / margin if margin > 0 else UNCOMPUTED_SENTINEL
+    ratio = effect / margin
     tried.append({"beta": beta, "ratio_to_margin": ratio, "effect": effect})
     if ratio >= lo:
       return beta, True, tried
@@ -409,6 +448,16 @@ def _search_fusion_eps(
   batch: Any,
   decoding_order: np.ndarray,
 ) -> tuple[float, bool]:
+  """Smallest `FUSION_EPS_CANDIDATES` value sizing the fusion control's `ratio_to_bar` into
+  `SIZING_RATIO_RANGE`. Returns `(eps, sized)`.
+
+  T10e fix (run e091a33e): when NOTHING in the grid sizes, this must return a value that
+  cannot be mistaken for a real sized eps -- the old code returned
+  `FUSION_EPS_CANDIDATES[-1]` (1.0) with `sized=False`, but callers/readers checking only
+  `p09_fusion_ctrl_eps` (not the paired `sized` flag) could not tell that from a genuinely
+  sized 1.0. Returns `0.0` instead (never a valid eps -- `eps=0.0` is a no-op perturbation
+  by construction) so an unsized search is unambiguous even from the eps value alone.
+  """
   lo, hi = las.SIZING_RATIO_RANGE
   tried = []
   for eps in las.FUSION_EPS_CANDIDATES:
@@ -423,7 +472,7 @@ def _search_fusion_eps(
     hi,
     tried,
   )
-  return las.FUSION_EPS_CANDIDATES[-1], False
+  return 0.0, False
 
 
 def _project_validate_draw_counts(
@@ -581,7 +630,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
 
   n_required = max(las.N_REQUIRED_FLOOR, required_n(max(sigma_hat, 1e-6), las.RECOVERY_DELTA))
 
-  # C1 (smoke variant): the reviewer explicitly sanctions marking the OTHER four lanes'
+  # C1 (smoke variant): the reviewer explicitly sanctions marking the OTHER two lanes'
   # margins as an explicit placeholder (never a copy of SMOKE_LANE's real value) when
   # computing all 5 at even a small n is genuinely too expensive for a smoke gate --
   # measured during this revision: `WaveScheduleBundle.from_tie_groups`'s per-draw
@@ -822,7 +871,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     )
     return result, EXIT_NOT_WRITTEN
 
-  # C1: per-lane margins, at the FINAL n_required, for the remaining 4 lanes (the pilot
+  # C1: per-lane margins, at the FINAL n_required, for the remaining lanes (the pilot
   # lane's margin at this n was already computed as part of the doubling loop above).
   margins: dict[str, float] = {pilot_lane: pilot_margin}
   lane_costs: list[tuple[int, float]] = []  # (n_draws, per_draw_cost_s), for the budget projection
@@ -905,7 +954,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
       f
       for f in protein_fixtures_a
       if f["name"] not in MARGIN_EXCLUDE_FIXTURES and las.lae._qualifying_groups(f)
-    ),  # noqa: SLF001
+    ),
     None,
   )
   if set_a_with_groups is not None:
@@ -1001,7 +1050,7 @@ def run_full(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     n_required,
   )
 
-  controls_total = len(selected_lanes) + 1 + 1  # 5 per-lane betas + fusion eps + null-replicate
+  controls_total = len(selected_lanes) + 1 + 1  # per-lane betas + fusion eps + null-replicate
   controls_sized = beta_sized_count + int(fusion_sized) + int(null_criterion_met)
 
   sampling_section = {
@@ -1121,7 +1170,7 @@ def main(argv: list[str] | None = None) -> int:
   parser.add_argument(
     "--lanes",
     default=None,
-    help="Comma-separated lane keys (default: the four ProteinMPNN V2_LANES).",
+    help="Comma-separated lane keys (default: the three ProteinMPNN V2_LANES).",
   )
   parser.add_argument(
     "--n-shards",

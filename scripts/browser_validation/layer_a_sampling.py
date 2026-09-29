@@ -1,9 +1,12 @@
 r"""Layer (a) sampling-tier engine (T8): teacher-forced exact tier + IUT statistical tier.
 
 Companion to `layer_a_exact.py` (T7): where that module compares deterministic
-log-probs/NLL on real fixtures, this module compares SAMPLED sequences across five
-lanes -- P07@T0.1, P07@T1.0, P08, P09-s, P11-s -- at two tiers per the bars table's
-"Teacher-forced per-step log-probs" and "Sampled sequences" rows:
+log-probs/NLL on real fixtures, this module compares SAMPLED sequences across four
+lanes -- P07@T1.0, P08, P09-s, P11-s -- at two tiers per the bars table's
+"Teacher-forced per-step log-probs" and "Sampled sequences" rows. (T10e amendment,
+run e091a33e: the P07@T0.1 lane was DROPPED from this tier -- not deferred like
+P11-s -- because T=0.1 stays covered bitwise by the P07 knobs gate elsewhere; see
+`V2_LANES`'s own docstring for the two defects that also motivated dropping it.)
 
 - **(a) Teacher-forced.** The reference's OWN sampled sequence and decoding order are
   fed into aminx conditional decoding (`score_conditional.kernel`) with the matching
@@ -80,8 +83,8 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
   sys.path.insert(0, str(_SCRIPT_DIR))
 
-import layer_a_common as lac  # noqa: E402
-import layer_a_exact as lae  # noqa: E402
+import layer_a_common as lac
+import layer_a_exact as lae
 
 # --------------------------------------------------------------------------------------
 # Constants (Pre-registered layer-(a) bars / Sampling statistics / P09-s restrictions)
@@ -113,10 +116,29 @@ REFERENCE_DRAWS_PER_SLOT = 2
 CONTROL_LANE = "P07@1.0"
 
 # Vanilla ProteinMPNN lanes. LigandMPNN / P11-s is deferred (full LANE_KEYS stays reachable).
-V2_LANES: tuple[str, ...] = ("P07@0.1", "P07@1.0", "P08@1.0", "P09-s@1.0")
+#
+# T10e amendment (run e091a33e, `ctrl_unsized`, 5/6 controls): P07@0.1 DROPPED from the
+# sampling-distributional tier's selected lanes -- not deferred like P11-s -- per two
+# root-caused defects: (a) FUSION_EPS_CANDIDATES bottomed out at 1.0 without ever
+# reaching SIZING_RATIO_RANGE for the P09-s fusion control (ratio_to_bar was linear in
+# eps, ~28,600*eps -- the needed eps ~7e-5..3.5e-4 was below the old grid's floor of
+# 0.01), and (b) this lane's own margin (T vs 1.05*T excess-JS) was -8.5e-5, i.e. BELOW
+# estimator noise at low T -- `_search_beta_for_lane` divided by that non-positive
+# margin and silently "sized" against `UNCOMPUTED_SENTINEL` instead of declaring the
+# lane unsized. T=0.1 stays covered bitwise by the P07 knobs gate (`layer_a_exact.py`),
+# so nothing is lost by dropping it here. User decision 2026-09-29.
+V2_LANES: tuple[str, ...] = ("P07@1.0", "P08@1.0", "P09-s@1.0")
 
-# spec "Lane temperatures (pre-registered, R2-C11)".
-LANE_KEYS: tuple[str, ...] = ("P07@0.1", "P07@1.0", "P08@1.0", "P09-s@1.0", "P11-s@1.0")
+# spec "Lane temperatures (pre-registered, R2-C11)", amended per V2_LANES's own T10e note
+# above -- P07@0.1 is DROPPED (not merely deferred, unlike P11-s), so it is excluded here
+# too: nothing in `calibrate`/`validate`/`shard`/`merge` may treat it as a selectable lane.
+LANE_KEYS: tuple[str, ...] = ("P07@1.0", "P08@1.0", "P09-s@1.0", "P11-s@1.0")
+# P07@0.1 keeps its entry here (and in `_LANE_BASE` below) even though it is no longer in
+# `V2_LANES`/`LANE_KEYS` (T10e amendment) -- harmless: neither dict is ever iterated as a
+# whole to drive lane selection (both are looked up BY an already-selected lane key), and
+# `tests/parity/test_layer_a_sampling_batched.py`'s F-S1 harness-wiring tests still build a
+# `LaneBatch`/`aminx_sample_batch` at lane="P07@0.1" (an arbitrary label + T=0.1, unrelated
+# to the distributional-tier lane list) via `build_lane_batch`, which needs this key present.
 DEFAULT_LANE_TEMPERATURES: dict[str, float] = {
   "P07@0.1": 0.1,
   "P07@1.0": 1.0,
@@ -127,7 +149,7 @@ DEFAULT_LANE_TEMPERATURES: dict[str, float] = {
 MARGIN_TEMPERATURE_RATIO = 1.05  # "T vs 1.05*T" margin rule
 
 _LANE_BASE: dict[str, str] = {
-  "P07@0.1": "P07",
+  "P07@0.1": "P07",  # kept for build_lane_batch callers outside V2_LANES/LANE_KEYS; see above
   "P07@1.0": "P07",
   "P08@1.0": "P08",
   "P09-s@1.0": "P09-s",
@@ -142,8 +164,29 @@ P07_FIXED_FRACTION = 0.20  # "fixed positions on 20% of residues"
 DEFAULT_BETA = 5.0  # smoke-path default; run_full searches BETA_CANDIDATES for real
 BETA_CANDIDATES: tuple[float, ...] = (0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 40.0)
 DEFAULT_FUSION_CTRL_EPS = 0.1  # smoke-path default; run_full searches FUSION_EPS_CANDIDATES
-FUSION_EPS_CANDIDATES: tuple[float, ...] = (0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0)
-SIZING_RATIO_RANGE: tuple[float, float] = (2.0, 10.0)  # "[2x, 10x] the bar"
+# T10e amendment (run e091a33e): the old grid (0.01 ... 1.0) never reached
+# SIZING_RATIO_RANGE -- ratio_to_bar was linear in eps (~28,600*eps measured on 3HTN), so
+# the needed eps (~7e-5..3.5e-4 for [2x, 10x] of the 1e-4 bar) was below its floor of 0.01.
+# Extended downward, ascending, ~16 candidates spanning 1e-5..1.0.
+FUSION_EPS_CANDIDATES: tuple[float, ...] = (
+  1e-5,
+  2e-5,
+  5e-5,
+  1e-4,
+  2e-4,
+  5e-4,
+  1e-3,
+  2e-3,
+  5e-3,
+  0.01,
+  0.02,
+  0.05,
+  0.1,
+  0.2,
+  0.5,
+  1.0,
+)
+SIZING_RATIO_RANGE: tuple[float, float] = (2.0, 10.0)  # "[2x, 10x] the bar" -- unchanged by T10e
 
 # A finite "could not compute" sentinel, never literal inf/nan -- pinned bathos
 # (0.13.0a4) renders result fields as DuckDB SQL literals and a bare `inf`/`nan` fails
@@ -212,7 +255,7 @@ def _omit_aa_bias(length: int) -> np.ndarray:
   bias = np.zeros((length, 21), dtype=np.float32)
   for idx in _omit_indices(OMIT_AA_CHARS):
     bias[:, idx] = -1e8
-  if P08_PER_RESIDUE_OMIT_POSITION < length:
+  if length > P08_PER_RESIDUE_OMIT_POSITION:
     bias[P08_PER_RESIDUE_OMIT_POSITION, _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)] = -1e8
   bias[:, X_INDEX] = -1e8
   return bias
@@ -224,7 +267,7 @@ def _reference_omit_aa_bias(length: int) -> np.ndarray:
   bias = np.zeros((length, 21), dtype=np.float32)
   for idx in _omit_indices(OMIT_AA_CHARS):
     bias[:, idx] = -1e8
-  if P08_PER_RESIDUE_OMIT_POSITION < length:
+  if length > P08_PER_RESIDUE_OMIT_POSITION:
     bias[P08_PER_RESIDUE_OMIT_POSITION, _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)] = -1e8
   return bias
 
@@ -959,7 +1002,7 @@ def count_omitted(tokens: np.ndarray, lane: str) -> int:
   arr = np.atleast_2d(tokens)
   omitted = int(np.isin(arr, _omit_indices(OMIT_AA_CHARS)).sum())
   per_residue_idx = _mpnn_index(P08_PER_RESIDUE_OMIT_CHAR)
-  if P08_PER_RESIDUE_OMIT_POSITION < arr.shape[1]:
+  if arr.shape[1] > P08_PER_RESIDUE_OMIT_POSITION:
     omitted += int(np.sum(arr[:, P08_PER_RESIDUE_OMIT_POSITION] == per_residue_idx))
   return omitted
 

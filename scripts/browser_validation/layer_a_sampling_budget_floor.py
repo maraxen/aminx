@@ -50,10 +50,10 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 if str(_SCRIPT_DIR) not in sys.path:
   sys.path.insert(0, str(_SCRIPT_DIR))
 
-import layer_a_common as lac  # noqa: E402
-import layer_a_exact as lae  # noqa: E402
-import layer_a_sampling as las  # noqa: E402
-import layer_a_sampling_calibrate as lasc  # noqa: E402
+import layer_a_common as lac
+import layer_a_exact as lae
+import layer_a_sampling as las
+import layer_a_sampling_calibrate as lasc
 import layer_a_sampling_shard as lass
 
 _WORKTREE_ROOT = _SCRIPT_DIR.parents[1]
@@ -309,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
   parser.add_argument(
     "--lanes",
     default=None,
-    help="Comma-separated lane keys (default: the four ProteinMPNN V2_LANES).",
+    help="Comma-separated lane keys (default: the three ProteinMPNN V2_LANES).",
   )
   parser.add_argument(
     "--n-shards",

@@ -13,8 +13,10 @@ import bathos.sidecar as bathos_sidecar
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 import scripts.browser_validation.layer_a_sampling as las
+import scripts.browser_validation.layer_a_sampling_calibrate as lasc
 import scripts.browser_validation.layer_a_sampling_merge as merge
 import scripts.browser_validation.layer_a_sampling_shard as shard
 import scripts.browser_validation.layer_a_sampling_validate as lasv
@@ -104,12 +106,13 @@ def test_shard_partial_emits_schema_and_exits_zero(tmp_path: Path) -> None:
 
 
 def _passing_finding() -> dict[str, object]:
+  # T10e amendment: n_lanes is now 3 (P07@0.1 dropped from V2_LANES, run e091a33e).
   return {
     "merge_refused": False,
     "tf_max_abs": 0.0,
     "tf_bar": las.TF_BAR,
-    "n_lanes": 4,
-    "n_lanes_equiv": 4,
+    "n_lanes": 3,
+    "n_lanes_equiv": 3,
     "n_per_arm": 4,
     "n_required": 2,
     "sigma_hat": 0.01,
@@ -139,7 +142,7 @@ def test_merge_finding_outcomes() -> None:
   assert _outcome(_MERGE, passing) == "pass"
 
   tost = dict(passing)
-  tost["n_lanes_equiv"] = 3
+  tost["n_lanes_equiv"] = 2
   assert _outcome(_MERGE, tost) == "fail"
 
   js_over = dict(passing)
@@ -271,3 +274,81 @@ def test_calibrate_sidecar_names_budget_rule() -> None:
   rss = dict(passing)
   rss["projected_peak_rss_gib"] = 49.0
   assert _outcome(_CALIBRATE, rss) == "budget_exceeded"
+
+
+# --------------------------------------------------------------------------------------
+# T10e regression guards: negative/non-finite margin must not "size" against the
+# UNCOMPUTED_SENTINEL, and the extended FUSION_EPS_CANDIDATES grid must size a
+# linear-in-eps control (the run-e091a33e measured relationship) in its new low range,
+# never falling back to the grid's last candidate when nothing sizes.
+# --------------------------------------------------------------------------------------
+
+
+def test_search_beta_for_lane_nonpositive_margin_is_unsized(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A lane whose own margin is `<= 0` or non-finite (P07@0.1 measured -8.5e-5 on run
+  e091a33e) must be declared UNSIZED immediately, `tried == []` -- never by dividing by
+  that margin and comparing the result against `UNCOMPUTED_SENTINEL`, which the pre-fix
+  code did (any beta then "sized" trivially on the FIRST candidate, spending real draws
+  on a search that could never mean anything). Monkeypatches `draw_iut_arms` to raise if
+  called at all, proving the short-circuit happens before a single real draw."""
+
+  def _must_not_be_called(*_args: object, **_kwargs: object) -> None:
+    msg = "draw_iut_arms must not run when margin is <= 0 or non-finite"
+    raise AssertionError(msg)
+
+  monkeypatch.setattr(lasc.las, "draw_iut_arms", _must_not_be_called)
+  for bad_margin in (-8.5e-5, 0.0, float("nan"), float("-inf")):
+    beta, sized, tried = lasc._search_beta_for_lane(  # noqa: SLF001
+      None,
+      [],
+      "P07@1.0",
+      bad_margin,
+      "redcheck",
+    )
+    assert beta is None
+    assert sized is False
+    assert tried == []
+
+
+def _linear_fusion_control(
+  _jax_model: object,
+  _batch: object,
+  _decoding_order: object,
+  *,
+  eps: float,
+) -> dict[str, object]:
+  """Fake control mirroring the measured run-e091a33e relationship on 3HTN:
+  `ratio_to_bar` linear in `eps`, ~28,600*eps."""
+  ratio = 28_600.0 * eps
+  return {"eps": eps, "effect": ratio * las.TF_BAR, "ratio_to_bar": ratio, "detected": ratio > 1.0}
+
+
+def test_search_fusion_eps_sizes_in_new_low_range(monkeypatch: pytest.MonkeyPatch) -> None:
+  """With `FUSION_EPS_CANDIDATES` extended down to 1e-5, a fusion control whose
+  `ratio_to_bar` is linear in eps (~28,600*eps, the measured run-e091a33e relationship)
+  now sizes -- at eps=1e-4 (ratio~2.86, inside [2x, 10x]) -- instead of bottoming out
+  unsized at the pre-amendment grid's floor of 0.01 (ratio~286, already over 10x)."""
+  monkeypatch.setattr(lasc.las, "_fusion_sized_control", _linear_fusion_control)
+  eps, sized = lasc._search_fusion_eps(None, None, None)  # noqa: SLF001
+  assert sized is True
+  assert eps == pytest.approx(1e-4)
+  lo, hi = lasc.las.SIZING_RATIO_RANGE
+  assert lo <= 28_600.0 * eps <= hi
+
+
+def test_search_fusion_eps_returns_zero_when_never_sized(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """When NOTHING in the grid sizes, `_search_fusion_eps` must return `(0.0, False)` --
+  never the grid's last candidate, which is indistinguishable from a genuinely sized
+  value to a caller that reads only `p09_fusion_ctrl_eps` without its paired `sized`."""
+
+  def _never_sizes(*_args: object, **_kwargs: object) -> dict[str, object]:
+    return {"eps": 0.0, "effect": 0.0, "ratio_to_bar": 0.0, "detected": False}
+
+  monkeypatch.setattr(lasc.las, "_fusion_sized_control", _never_sizes)
+  eps, sized = lasc._search_fusion_eps(None, None, None)  # noqa: SLF001
+  assert eps == 0.0
+  assert sized is False
