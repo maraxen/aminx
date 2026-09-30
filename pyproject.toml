@@ -92,6 +92,10 @@ dev = [
   "chex",
   "foldcomp",
   "mdtraj",
+  # Provides the `sg` binary. tests/lint/test_potts_import_boundary.py and
+  # tests/lint/test_rs6b_flat_field_gate.py SKIP without it, so six of the
+  # sixteen lint tests silently pass by not running when it is absent.
+  "ast-grep-cli>=0.45",
 ]
 foldcomp = [
     "foldcomp",

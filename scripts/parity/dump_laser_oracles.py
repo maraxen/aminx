@@ -272,39 +272,121 @@ def _graphs(
   _cast_floats(batch, dtype)
 
 
-def _leaves(prefix: str, value: object, out: dict[str, torch.Tensor]) -> None:
+def _leaves(
+  prefix: str,
+  value: object,
+  out: dict[str, torch.Tensor],
+  *,
+  clone: bool = False,
+) -> None:
+  def _keep(tensor: torch.Tensor) -> torch.Tensor:
+    detached = tensor.detach()
+    return detached.clone() if clone else detached
+
   if isinstance(value, torch.Tensor):
-    out[prefix] = value.detach()
+    out[prefix] = _keep(value)
     return
   scalars = getattr(value, "scalars", None)
   vectors = getattr(value, "vectors", None)
   if isinstance(scalars, torch.Tensor) and isinstance(vectors, torch.Tensor):
-    out[prefix + "__scalars"] = scalars.detach()
-    out[prefix + "__vectors"] = vectors.detach()
+    out[prefix + "__scalars"] = _keep(scalars)
+    out[prefix + "__vectors"] = _keep(vectors)
     return
   if isinstance(value, tuple | list):
     for index, item in enumerate(value):
-      _leaves(f"{prefix}__{index}", item, out)
+      _leaves(f"{prefix}__{index}", item, out, clone=clone)
 
 
 def _layer_hooks(model: torch.nn.Module) -> tuple[dict[str, dict[str, torch.Tensor]], list[object]]:
+  """Capture each layer's first call: inputs BEFORE it runs, outputs after.
+
+  The split matters. ``HomoGATv2.forward`` and ``HeteroGATv2.forward`` assign
+  ``nodes.scalars = self.final_atten_aggr(...)`` onto the ``EquivariantData``
+  they were *passed*, so a post-forward hook reading ``inputs`` sees the mutated
+  object and records a mid-layer intermediate under ``in__``. Replaying a layer
+  from that is not a parity test of anything. Measured before this split: the
+  ligand GAT's ``in__0__scalars`` differed from the preceding GVP's output by
+  6.46, and ``EquivariantLayerNorm(GVP(in__))`` reproduced ``out__`` to 5.8e-15
+  -- i.e. ``in__`` was the post-attention intermediate. Inputs are cloned so a
+  later genuine in-place tensor op cannot rewrite what we already captured.
+  """
   captured: dict[str, dict[str, torch.Tensor]] = {}
+  seen_in: set[str] = set()
+  seen_out: set[str] = set()
   handles: list[object] = []
 
-  def _make(name: str):  # noqa: ANN202
-    def hook(_module: torch.nn.Module, _inputs: object, output: object) -> None:
-      if name in captured:
+  def _make_pre(name: str):  # noqa: ANN202
+    def pre_hook(_module: torch.nn.Module, inputs: object) -> None:
+      if name in seen_in:
         return
-      leaves: dict[str, torch.Tensor] = {}
-      _leaves("out", output, leaves)
-      captured[name] = leaves
+      seen_in.add(name)
+      _leaves("in", inputs, captured.setdefault(name, {}), clone=True)
+
+    return pre_hook
+
+  def _make_post(name: str):  # noqa: ANN202
+    def hook(_module: torch.nn.Module, _inputs: object, output: object) -> None:
+      if name in seen_out:
+        return
+      seen_out.add(name)
+      _leaves("out", output, captured.setdefault(name, {}))
 
     return hook
 
   for path, module in model.named_modules():
     if path in LAYER_MODULES:
-      handles.append(module.register_forward_hook(_make(path)))
+      handles.append(module.register_forward_pre_hook(_make_pre(path)))
+      handles.append(module.register_forward_hook(_make_post(path)))
   return captured, handles
+
+
+def _check_layer_hook_inputs() -> None:
+  """Negative control: the capture must survive a layer that mutates its input.
+
+  A module whose forward overwrites an attribute of its argument is exactly the
+  upstream GAT shape. Asserting only that ``in__`` exists would pass on the old
+  post-forward hook too, so this asserts the captured value is the ORIGINAL --
+  the check fails on the implementation it is meant to reject.
+  """
+
+  class _Holder:
+    def __init__(self, scalars: torch.Tensor, vectors: torch.Tensor) -> None:
+      self.scalars = scalars
+      self.vectors = vectors
+
+  class _Mutator(torch.nn.Module):
+    def forward(self, held: _Holder) -> _Holder:  # noqa: D102
+      held.scalars = held.scalars + 100.0  # upstream's `nodes.scalars = ...`
+      return held
+
+  original = torch.zeros(2, 3)
+  held = _Holder(original.clone(), torch.zeros(2, 1, 3))
+  model = _Mutator()
+  global LAYER_MODULES  # noqa: PLW0603
+  previous = LAYER_MODULES
+  LAYER_MODULES = frozenset({""})
+  try:
+    captured, handles = _layer_hooks(model)
+    try:
+      model(held)
+    finally:
+      for handle in handles:
+        handle.remove()  # type: ignore[attr-defined]
+  finally:
+    LAYER_MODULES = previous
+  leaves = captured.get("", {})
+  got = leaves.get("in__0__scalars")
+  if got is None:
+    msg = "_layer_hooks captured no in__0__scalars for the mutating control"
+    raise SystemExit(msg)
+  if not torch.equal(got, original):
+    msg = (
+      "_layer_hooks recorded the MUTATED input: "
+      f"max|captured - original| = {(got - original).abs().max().item()}. "
+      "Inputs must be captured in a forward PRE-hook."
+    )
+    raise SystemExit(msg)
+  logger.info("selftest: layer-hook inputs are pre-mutation")
 
 
 def _score_arrays(
@@ -673,6 +755,7 @@ def _selftest(package: Path, fixtures_dir: Path) -> None:  # noqa: PLR0915
     raise RuntimeError(msg)
   _check_ideal_coords_shim()
   _check_literal_factory_shim()
+  _check_layer_hook_inputs()
   example = package / "example_pdbs" / "4jnj-1_prot.pdb"
   weights = package / CHECKPOINTS["nothing_heldout"]
   if not example.is_file() or not weights.is_file():
