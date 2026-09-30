@@ -178,24 +178,42 @@ gather internally, Graph D could take the pre-gathered `[L,K]` (K=48) instead of
 **Unverified** — it needs a read of `pack_conditional_decoder_static_edges`, and it is an
 optimisation, not a prerequisite.
 
-**What JavaScript owns after the split.** Already present in `runspec_core.mjs`: PRNG
-(SplitMix64), Gumbel noise, decoding-order construction (`shuffle`/`fixedFirstShuffle`/
-`biasedShuffle`), `bias_AA`/`omit_AA` and per-residue variants, `fixedMask`/`fixedTokens`,
-`tieGroupMap`, temperature. **New JS work required:**
+**Graph W (wave schedule + ar_mask), exported once per bucket, called once per sample.**
+`p07_bundle`'s schedule half (`wrappers.py:340-374`): `wave_from_decoding_order` plus
+`generate_ar_mask`.
+Inputs: `decoding_order [L] i32`, `tie_group_map [L] i32`.
+Outputs: `group_ids`, `group_positions`, `group_valid`, `position_valid`, `ar_mask [L,L] f32`.
 
-1. Wave-schedule construction — currently `wave_from_decoding_order` (`wrappers.py:298-337`)
-   producing `{group_ids, group_positions, group_valid, position_valid}`.
-2. `can_increment` evaluation (§1.1), and with it the choice of variant (§3).
-3. Per-wave `ar_mask` construction.
-4. One-hot of the running sequence (currently `_one_hot_tokens`, `autoregressive.py:504`).
-5. The fuse-and-sample step — `_fuse_and_sample` (`autoregressive.py:99-189`): tied-group
-   logsumexp averaging, `argmax(avg/temperature + gumbel_noise[group_id])`, fixed-position
-   override, stored-vs-sampling logits distinction.
-6. Sequence scatter update (currently `autoregressive.py:584-586`).
+**Graph F (fuse-and-sample), exported once per bucket, called once per wave.**
+`_fuse_and_sample` (`autoregressive.py:99-189`) closed over `make_stage_set()`.
+Inputs: `logits [S,N,21]`, `cond_bias [N,21]`, `mask_group [G,N] bool`, `fixed_mask [N]`,
+`fixed_tokens [N] i32`, `group_id [G] i32`, `temperature []`, `gumbel_noise [L,21]`.
+Outputs: `final_token [G] i32`, `avg_stored [G,21] f32`.
+Properties: pure arithmetic — no scan, no cond. The `if gumbel_noise is None` branch
+resolves at trace time when explicit noise is supplied, which is how P07 runs it.
 
-Items 5 and 6 are where numerical parity is most at risk, because they are the only new JS
-that does arithmetic on model outputs rather than on RunSpec inputs. They get their own
-parity gate (§4, G1a).
+> **Four graphs, not two.** An earlier revision of this spec cut only E and D and moved
+> everything else into hand-written JavaScript. That was wrong, and G0b/G0c settled it:
+> the fuse step and the wave schedule both export. Decision and reversal conditions:
+> `.praxia/docs/daily/260929_overnight-decisions.md` D1.
+
+**What JavaScript owns after the split — orchestration only.** Already present in
+`runspec_core.mjs`: PRNG (SplitMix64), Gumbel noise, decoding-order construction
+(`shuffle`/`fixedFirstShuffle`/`biasedShuffle`), `bias_AA`/`omit_AA` and per-residue
+variants, `fixedMask`/`fixedTokens`, `tieGroupMap`, temperature. **New JS work required:**
+
+1. `can_increment` evaluation (§1.1) — pure boolean logic over the Graph W outputs.
+2. One-hot of the running sequence (currently `_one_hot_tokens`, `autoregressive.py:504`).
+3. Per-wave slicing: selecting the wave's `mask_group`, `group_id` and position slab from
+   Graph W's outputs to feed Graph F.
+4. Sequence scatter update (currently `autoregressive.py:584-586`).
+5. Calling E → W once, then D → F per wave, carrying the sequence between iterations.
+
+**None of this is model arithmetic.** Product-of-experts fusion, tied-group averaging, the
+Gumbel argmax, the fixed-position override and the multi-key sort all stay inside exported
+graphs that the JAX and reference comparisons already cover. What remains in JS is index
+bookkeeping, which is what G1a now measures — a far smaller and more tractable gate than
+validating a hand-rolled reimplementation of the numerics.
 
 ## 3. Two variants, and the one real performance question
 
