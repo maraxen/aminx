@@ -1,0 +1,48 @@
+[metadata]
+title = "Production export of the four split graphs (E/W/D/F) with a sha256 manifest"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "All four graphs of the split cut -- encoder, wave schedule (including the group_first_rank and pos_first_rank index outputs beyond p07_bundle's own), decoder step, and fuse-and-sample -- export to self-contained ONNX files for every requested bucket, and a manifest records each file's sha256, byte size, input shapes and dtypes together with the git commit, the checkpoint id and the alphabet. This is an ARTIFACT-PRODUCING run, not a comparison: it makes no parity claim and computes no agreement, and the G0 family (runs 8daaa978, b8f413b6, a7f62e90) is what established that these pieces convert at all. It is tracked with a sidecar because its manifest reports numbers that will be cited -- notably `n_waves`, `max_groups_per_wave` and `decoder_calls_per_design`, which together state how many sequential decoder invocations a single design costs. That figure drives the whole performance question (wave_from_decoding_order returns group_ids of shape (L, 1), so the expectation read off the source is max_groups_per_wave = 1 and n_waves = L, i.e. L decoder calls per design -- the O(L^2 k) full-recompute arm), and a number that will be cited must come from a tracked run rather than from a reading. Export determinism is asserted separately by re-running --verify-manifest, not by this run."
+stage_name = "artifact"
+claim_isolates = ["C_split_artifacts"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling probes).
+# No [differential]: this run produces artifacts and hashes, not an effect to size.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete"]
+
+[outcomes.incomplete]
+condition = "NOT all_graphs_exported OR NOT manifest_written OR jax_enable_x64"
+decision = "At least one graph failed to export, the manifest was not written, or the process had x64 enabled. No artifact from this run may be served or measured against."
+reasoning = "A partial export is worse than none: a downstream gate could silently measure a stale file left over from an earlier attempt. x64 would emit int64/float64 graphs, colliding with ORT-Web's WebGPU EP dtype gap."
+is_residual = true
+
+[outcomes.pass]
+condition = "all_graphs_exported AND manifest_written AND NOT jax_enable_x64"
+decision = "The four graphs exist for every requested bucket with recorded hashes; downstream gates may cite the manifest to say exactly which bytes they measured."
+reasoning = "Every graph converted and every hash was recorded, which is the whole job of an artifact run. It licenses no parity or performance claim on its own."
+is_residual = false
+
+[result_schema]
+buckets_requested = "int"
+buckets_exported = "int"
+graphs_per_bucket = "int"
+all_graphs_exported = "bool"
+manifest_written = "bool"
+manifest_sha256 = "str"
+n_waves = "int"
+max_groups_per_wave = "int"
+decoder_calls_per_design = "int"
+total_bytes = "int"
+git_hash = "str"
+jax_enable_x64 = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
