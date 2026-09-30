@@ -147,6 +147,16 @@ def generate_ar_mask(
 ) -> AutoRegressiveMask:
   """Get the self-excluding autoregressive mask for the given decoding order.
 
+  **Argument convention -- read before passing a deliberate order.** The untied branch
+  compares ``decoding_order`` VALUES as a RANK array (``decoding_order[i]`` = the decode
+  step of position ``i``), whereas everything in ``utils.decoding_order`` returns an ORDER
+  array (``order[t]`` = the position decoded at step ``t``); the tied branch indexes it as an
+  ORDER array. For a uniformly random permutation the two readings are identically
+  distributed, so the mix-up is invisible until someone supplies a structured order (blocks,
+  a rotation, a counterfactual schedule), which silently yields the mask of a different
+  order. ColabDesign applies ``order.argsort()`` first for this reason. To turn an ORDER
+  array into a mask use :func:`ar_mask_from_decoding_order` (#166).
+
   **The diagonal is 0: no position ever reads its own slot.** This matches both
   independent reference implementations, verified against primary source:
 
