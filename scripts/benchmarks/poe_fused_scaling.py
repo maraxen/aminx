@@ -327,10 +327,14 @@ def main() -> int:
   parser.add_argument("--dry-run", action="store_true", help="L1: imports and paths only")
   parser.add_argument("--smoke", action="store_true", help="L2: tiny random model, n=2, CPU")
   parser.add_argument("--aggregate", type=Path, metavar="DIR", help="summarise a results dir; prints JSON")
+  parser.add_argument("--out", type=Path, default=None, help="with --aggregate: also write the JSON to this file")
   args = parser.parse_args()
 
   if args.aggregate is not None:
-    print(json.dumps(aggregate(args.aggregate), indent=2, sort_keys=True))
+    text = json.dumps(aggregate(args.aggregate), indent=2, sort_keys=True)
+    if args.out is not None:  # bth evaluates [outcomes] from a result FILE; same JSON as stdout
+      args.out.write_text(text)
+    print(text)
     return 0
   if args.dry_run:
     import jax
