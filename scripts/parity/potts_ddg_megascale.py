@@ -33,6 +33,15 @@ N_ROWS = 202804
 CHECKPOINT_SHA256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
 
 
+def _default_potts_root() -> Path:
+    """Upstream checkout, env-overridable.
+
+    A hardcoded laptop path makes this script unrunnable on the box that holds the
+    weights, which is the only box it runs on.
+    """
+    return Path(os.environ.get("AMINX_POTTS_ROOT", "~/repos/PottsMPNN")).expanduser()
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -43,7 +52,7 @@ def _sha256(path: Path) -> str:
 
 def _parse(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--potts-root", type=Path, default=Path("/home/marielle/repos/PottsMPNN"))
+    parser.add_argument("--potts-root", type=Path, default=_default_potts_root())
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--oracle-python", default=os.environ.get("POTTS_ORACLE_PYTHON"))
     parser.add_argument("--mutants", default=MUTANT_ID)

@@ -44,6 +44,7 @@ cache_dir = "str"
 aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
 
 [data]
+potts_root_env = "AMINX_POTTS_ROOT (defaults to ~/repos/PottsMPNN); the paths below are the canonical checkout layout, not a fixed machine"
 example_pdbs = "/home/marielle/repos/PottsMPNN/inputs/example_pdbs"
 l30_rule = "chain A residues 1..30 of 2yc3.pdb, renumbered from 1"
 checkpoint = "/home/marielle/repos/PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt"

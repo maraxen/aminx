@@ -43,6 +43,7 @@ cache_dir = "str"
 aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
 
 [data]
+potts_root_env = "AMINX_POTTS_ROOT (defaults to ~/repos/PottsMPNN); the paths below are the canonical checkout layout, not a fixed machine"
 csv = "/home/marielle/repos/PottsMPNN/energy_benchmark_datasets/megascale_test_subset.csv"
 csv_sha256 = "9c816f1d1fb836f5c03db226beeab6af37bbf8bf1110f5af2fdeb72d095ea9e5"
 n_rows = 202804
