@@ -1,0 +1,65 @@
+script_path = "scripts/parity/laser_layers_tolerance.py"
+task_id = "260929_potts-laser-xtrax-compose"
+stage_name = "confirmation"
+novel = false
+
+hypothesis = """
+The laser_layers f64 tolerance as pre-registered in spec section 7.2 (line 1153,
+`rtol=1e-9 / rtol=1e-5`, with no atol) is unsatisfiable by any implementation,
+because the sealed oracle contains reference elements that are exactly 0.0 and a
+pure relative bound admits an error of exactly 0 for those -- i.e. it demands
+bit-exactness of a floating-point result. If so, the residual laser_layers f64
+failure is an artefact of the bound's FORM and not evidence about the port, and
+the bound should become a (rtol, atol) pair like every neighbouring row in the
+same table (potts_head is rtol=1e-10,atol=1e-12).
+
+This is measured on the oracle ALONE. No aminx code is imported, so the result
+cannot be confounded by a port defect, and it is not evidence that the port is
+correct -- only that this bound cannot distinguish a correct port from an
+incorrect one at round-off scale.
+
+A tolerance amendment must not be able to pass by being loose. The negative
+control therefore requires that the proposed mixed bound still REJECT a 1e-6
+relative perturbation on at least 90% of elements; if it does not, the amendment
+is refused regardless of the zero-element count.
+"""
+
+[outcomes.pass]
+condition = "band = 'pass'"
+decision = "Amend the laser_layers f64 bound to rtol=1e-9 with atol=1e-12, citing this run. Still requires user ratification before laser_layers parity is claimed."
+reasoning = "The oracle contains exactly-zero reference elements, a round-off-scale error is rejected by the pure-rtol bound and accepted by the mixed bound, the oracle compares clean against itself, and a 1e-6 relative perturbation is still rejected on >=90% of elements."
+is_residual = false
+adversarial_check = "NOT (band = 'pass')"
+
+[outcomes.inconclusive]
+condition = "band = 'inconclusive'"
+decision = "Do not amend on this evidence. Report the counts and escalate."
+reasoning = "Either there are no exactly-zero elements (only near-zero ones, a weaker argument), or the proposed atol does not actually admit round-off, which would mean 1e-12 is the wrong value."
+is_residual = true
+adversarial_check = "NOT (band = 'inconclusive')"
+
+[outcomes.fail]
+condition = "band = 'fail'"
+decision = "Do not amend. Do not claim the bound is unsatisfiable."
+reasoning = "An empty comparison, an oracle that rejects itself under the proposed bound (broken instrument), or a proposed bound that accepts a 1e-6 relative perturbation (too loose to be a test) all falsify the vehicle."
+is_residual = true
+adversarial_check = "band IN ('pass', 'inconclusive')"
+
+[controls]
+positive_control = "identity: the oracle compared against itself must be accepted on every element (identity_control_rejected = 0)"
+negative_control = "perturbation: oracle * (1 + 1e-6) must be rejected on >= 90% of elements under atol=1e-12 + rtol=1e-9 (perturb_control_rejected_frac >= 0.9)"
+
+[provenance]
+note = """
+Reads the sealed f64 dump from AMINX_LASER_ORACLE_DIR. Must be the dump produced
+AFTER b5c9e274, which fixed input capture to a forward PRE-hook; dumps made
+before that recorded mid-layer intermediates under in__ and are not valid for any
+laser_layers claim. Runs on the layer/leaf the wave still fails on,
+protein_encoder_layers_0_hetgat / out__0__scalars.
+
+Prior measurement that motivated this run (ungraded, exploratory, and therefore
+NOT citable as a finding): on nothing_heldout/101m_1 the port matched the
+corrected oracle to 7.105427e-15 absolute while 1072 of 39424 elements exceeded
+pure rtol=1e-9, with failing |ref| median 2.482464e-09 and min exactly 0.0
+against a passing median of 1.892931e-02.
+"""
