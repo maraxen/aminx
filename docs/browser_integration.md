@@ -5,8 +5,9 @@ This guide is for porting the exported ProteinMPNN sampler into a plain static s
 WebGPU. The page loads one ONNX file per length bucket and runs it with
 onnxruntime-web on the wasm execution provider.
 
-Status as of 2026-09-29. Items marked **pending** are still running or not yet done.
-Don't cite a number from them yet.
+Status as of 2026-09-29. The RunSpec knobs gate and the reference comparison have PASSED
+(numbers below, from bathos run `fd80f81d`). Items still marked **pending** or **not
+measured** are exactly that — do not cite a number from them.
 
 ## What ships
 
@@ -144,14 +145,29 @@ indices into the structure arrays, not PDB residue numbers.
 
 ## Validation status
 
+Every measured row below is filled from a bathos run record, not from console output.
+Run `fd80f81d-3788-49c1-919f-e86acde3c4eb`, at commit `443c5b4f`, clean tree.
+
 | Check | What it compares | Status |
 | :--- | :--- | :--- |
-| Browser vs native ORT, bitwise | ORT-Web (Chromium) tokens and log-probs vs onnxruntime CPU on the same `.onnx`, same inputs | Bitwise identical on the 12-cell resume smoke. Full gate **pending** (below) |
-| RunSpec knobs gate | JAX vs ORT-CPU vs ORT-Web across every RunSpec knob, L128 and L256, 288 cells. Tokens exact; log-prob bound 2e-4 | **Pending**. The recovery run is in progress; 250 of 288 cells were carried over from the interrupted run by verified hash |
+| RunSpec knobs gate | JAX vs ORT-CPU vs ORT-Web across every RunSpec knob, L128 and L256, 288 cells | **PASS.** Tokens bitwise identical **288/288** against ORT-CPU *and* **288/288** against ORT-Web. Max log-prob difference **1.013e-04** (bound 2e-4). All 7 knobs live |
+| Teacher-forced vs reference ProteinMPNN | Per-position log-probs vs LigandMPNN@`26ec57ac`, same checkpoint, same fed sequence and order | **PASS. 4.482e-05 nats** (bound 1e-4). This is the link that anchors everything else to the reference implementation rather than to aminx's own JAX |
+| Sampling correctness | Gumbel-max draws vs `softmax(logits/T)`; decoding-order uniformity | **PASS.** Gumbel total variation 0.00458 (bound 0.03) over 200,000 draws; order uniformity p=0.753 over 240,000 draws; 0 fixed-first violations; 0 omitted-class draws |
+| Instrument sensitivity | Planted defects that MUST be caught | **4/4 detected** — a bias-frozen wrapper stayed not-live, a non-Gumbel transform and a biased shuffle failed, and a uniform shuffle produced fixed-first violations |
 | JS RunSpec builder vs Python | `runspec_core.mjs` inputs vs the Python builder (PRNG, Gumbel, orders, bias) | Node unit tests pass (`runspec.test.mjs` 11/11, `aminx_sampler.test.mjs` 5/5) |
-| Sampling distribution vs reference ProteinMPNN | Statistical comparison of aminx samples against LigandMPNN@26ec57ac | **Pending**. Calibration running on titanix; validate shards next on Engaging |
-| Speed / memory profile | Wall time per design, session-create time, peak memory | **Not measured.** The one earlier benchmark failed its own timer control, so no timing number is trustworthy yet |
+| Sampling distribution vs reference | Statistical comparison of aminx samples against LigandMPNN@26ec57ac | **Pending.** Calibration running on titanix; validate shards next on Engaging |
+| Speed / memory profile | Wall time per design, session-create time, peak memory | **Not measured.** The one earlier benchmark failed its own timer control, so no timing number here is trustworthy yet |
 | WebGPU | — | **Not validated; out of scope for the first release** |
+
+**What that adds up to.** The chain runs reference PyTorch → aminx JAX (teacher-forced,
+4.48e-05 nats) → ONNX (288/288 bitwise) → ORT-Web wasm (288/288 bitwise), across every
+RunSpec knob at both buckets, with a demonstrably sensitive instrument. Agreement with
+aminx's own JAX alone would only show self-consistency; the reference link is what makes
+it evidence.
+
+**What it does not cover:** performance, WebGPU, and free-sampling distributional
+agreement with the reference. Those rows say pending or not-measured, and nothing in this
+document should be read as a speed claim.
 
 ## WebGPU
 
