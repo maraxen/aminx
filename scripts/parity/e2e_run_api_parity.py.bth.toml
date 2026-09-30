@@ -1,0 +1,39 @@
+[experiment]
+hypothesis = "Through the public run API (SamplingSpecification/ScoringSpecification -> runner -> sample()/score()), aminx reproduces upstream LigandMPNN on 1BC8 chain C for protein_mpnn (proteinmpnn_v_48_020) and ligand_mpnn (ligandmpnn_v_32_020_25) under each of six knob settings (base, temperature 0.5, omit_AA CW, bias_AA A:1.5,E:-2.0, fixed residues C1-C10, redesigned residues C20-C60): (T) per-position conditional log-probabilities of aminx's own samples, teacher-forced through the reference under the injected decoding order, agree within 1e-3; (D) aminx's first-designed-step token frequencies are consistent with the reference's exact sampling_probs (chi-square p > 1e-3 at N=512); (C) at temperature 1e-3 every token up to the first near-tie matches exactly; (S) aminx score() logits and NLL agree within 1e-3 with the reference decoder layers run under an explicit full-context mask. Each lane has a control that must be rejected, and the CLI carries every CLI-reachable knob into the emitted spec"
+stage_name = "confirmation"
+novel = false
+task_id = "260930_resolve-issues-debt"
+
+[outcomes.pass]
+condition = "cells_ok = true AND controls_rejected = true AND instrument_ok = true AND cli_ok = true AND single_code_commit = true"
+decision = "Relabel the parity matrix path 'end-to-end-run-apis' as runner-level reference parity scoped to exactly the knobs_varied list, list knobs_declared_unvaried alongside it in the matrix and README, and keep the self-consistency check under its own comparison kind. Attach this run id as the evidence. The claim covers 1BC8 chain C, proteinmpnn_v_48_020 and ligandmpnn_v_32_020_25 on CPU float32 only."
+reasoning = "A pass requires every lane of every knob cell to agree with the oracle AND every must-fail control to be rejected AND the distributional test to have measured false-reject rate <= 0.005 and power >= 0.9 at TV 0.10. Without the controls and the instrument cell a pass could be a comparison that cannot fail. The oracle for lane S is the reference's own decoder layers under an explicit full-context mask, because the stock single_aa_score depends on the injected randn and is not the same conditional (shown by ctl_S_stock_single_aa); this choice was fixed after a spike on one structure, before any counted run."
+is_residual = false
+
+[outcomes.marginal]
+condition = "cells_ok = true AND (controls_rejected = false OR instrument_ok = false OR cli_ok = false)"
+decision = "Do NOT cite the cell agreement as parity. The instrument cannot discriminate (a control was not rejected, or the chi-square test lacks the stated power) or the CLI drops a knob. Fix the instrument or the CLI wiring, re-register, and re-run; name which control/cell flagged it."
+reasoning = "Agreement under an instrument that also accepts a known-wrong configuration carries no information, and a CLI that drops a declared knob is itself a dispatch-layer defect."
+is_residual = false
+
+[outcomes.fail]
+condition = "cells_ok = false OR single_code_commit = false"
+decision = "At least one lane disagrees with the reference (or the cells ran against different code). Each entry in failing_cells is a finding about the aminx run path, not yet a bug: triage by lane (T: model/conditioning, D: sampling distribution, C: decode loop, S: score path) against the recorded maxima, decide whether aminx or the harness mapping is wrong with a minimal reproduction, fix aminx where it is wrong, and re-run only the affected cells under a documented deviation."
+reasoning = "The point of the experiment is to find runner-level divergences the model-level parity cannot see. A cell failure is the outcome the experiment exists to surface; it is recorded as such and is not averaged away."
+is_residual = true
+
+[result_schema]
+cells_ok = "bool"
+n_cells_ok = "int"
+n_cells_expected = "int"
+controls_rejected = "bool"
+n_controls_rejected = "int"
+instrument_ok = "bool"
+cli_ok = "bool"
+single_code_commit = "bool"
+
+[result_schema.provenance]
+script_commit = "git log --oneline -1"
+related_debt = "aminx #2326 (this), bathos #2322/#2323, xtrax #2324/#2325; aminx lessons #544/#545"
+hardware_targets = ["titanix CPU (JAX_PLATFORMS=cpu, CUDA_VISIBLE_DEVICES empty) -- the reference is driven in-process with torch on CPU; GPU 3 is held by the #2158 run"]
+notes = "Oracle: upstream LigandMPNN run.py executed in-process with its own argument parsing (REFERENCE_PATH=/home/solab/bv/ref/LigandMPNN), ProteinMPNN.sample wrapped only to inject the decoding-order randn (seed 7) and capture the feature dict/outputs. aminx receives the reference's decoding order through decoding_order_fn and its fixed/bias configuration is DERIVED from the reference feature dict, so both sides share one source of truth. RNG streams are never matched seed-for-seed. Knob-effect visibility differs by lane (stored logits are bias-free, so lane T cannot see temperature/omit/bias; lane D and C can). Declared unvaried (knobs_declared_unvaried): batch_size, number_of_batches, symmetry, per-residue bias/omit, chains_to_design, ligand cutoff/atom-context/side-chain-context, side-chain packing, membrane labels, soluble/membrane checkpoints, other structures. Through the CLI only temperature/num_samples/chain_id/checkpoint/seed are reachable (bias, fixed positions, fixed tokens are non-serializable per the CLI's own docstring); lane CLI checks only those. Reference fixtures (randn, S, log_probs, sampling_probs, decoding order, masks, bias) are persisted per cell under fixtures/ with sha256 in the cell record. Resume: one process per cell, hash-verified .started/.done stamps, reuse only on matching inputs hash. A spike (uncounted, no sidecar) on one structure preceded this registration; it showed lane T agrees to 4e-5 and lane S to 2e-5 on the base configuration and fixed the conventions above, so those two base cells are expected to pass and the experiment's information is in the knob, ligand and control cells. No timing is a claim."
