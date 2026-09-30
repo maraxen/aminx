@@ -182,9 +182,12 @@ def main() -> int:
     apc = None
 
   if args.zarr_out is not None:
-    from xtrax.run import SinkSpec, ZarrStagingSink, fsync_tree, zarr_content_digest
+    from xtrax.run import SinkSpec, ZarrStagingSink, fsync_tree, new_run_id, zarr_content_digest
 
-    sink = ZarrStagingSink(SinkSpec(output_dir=args.zarr_out, format="zarr", flush_every=1))
+    # run_id is required by SinkSpec from xtrax 0.4.0a7 (same call as aminx.io.designs).
+    sink = ZarrStagingSink(
+      SinkSpec(run_id=new_run_id(), output_dir=args.zarr_out, format="zarr", flush_every=1),
+    )
     arrays: dict[str, np.ndarray] = {
       "categorical_jacobian": jacobian_np,
       "residue_index": residue_index.astype(np.int32),
