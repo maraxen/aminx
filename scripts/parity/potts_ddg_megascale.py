@@ -362,7 +362,18 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
         if launched.returncode != 0:
             measured[arm] = {"band": "error", "detail": launched.stderr[-500:]}
             continue
-        measured[arm] = json.loads(launched.stdout)
+        try:
+            measured[arm] = json.loads(launched.stdout)
+        except json.JSONDecodeError:
+            # An arm that exits 0 with unparseable stdout must not surface as a bare
+            # JSONDecodeError in the parent with the child's stderr discarded.
+            logger.error(
+                "arm %s exited 0 but wrote no parseable JSON; stdout=%r stderr=%s",
+                arm,
+                launched.stdout[:200],
+                launched.stderr[-2000:] or "<empty>",
+            )
+            measured[arm] = {"band": "error", "detail": launched.stderr[-500:] or "empty stdout"}
     clean = measured["clean"]["band"]
     statuses = {
         mutant: "failed" if measured[mutant]["band"] == "fail" else "passed"

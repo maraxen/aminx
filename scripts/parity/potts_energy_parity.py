@@ -148,7 +148,11 @@ def _analytic_abs_err() -> float:
 
     from aminx.families.potts_mpnn.etab import potts_energy
 
-    with jax.experimental.enable_x64():
+    # jax.experimental.enable_x64 is absent on this JAX; tests/port/a1_compare.py:32 uses the
+    # same fallback, which is why the A1 f64 tiers pass. Not imported from tests/ because
+    # tests/ on the path shadows installed packages in this repo.
+    enable_x64 = getattr(jax.experimental, "enable_x64", None) or jax.enable_x64
+    with enable_x64():
         length = 3
         alphabet = 22
         table = jnp.zeros((length, length, alphabet, alphabet), dtype=jnp.float64)
@@ -435,7 +439,18 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
         if launched.returncode != 0:
             measured[arm] = {"band": "error", "detail": launched.stderr[-500:]}
             continue
-        measured[arm] = json.loads(launched.stdout)
+        try:
+            measured[arm] = json.loads(launched.stdout)
+        except json.JSONDecodeError:
+            # An arm that exits 0 with unparseable stdout must not surface as a bare
+            # JSONDecodeError in the parent with the child's stderr discarded.
+            logger.error(
+                "arm %s exited 0 but wrote no parseable JSON; stdout=%r stderr=%s",
+                arm,
+                launched.stdout[:200],
+                launched.stderr[-2000:] or "<empty>",
+            )
+            measured[arm] = {"band": "error", "detail": launched.stderr[-500:] or "empty stdout"}
     clean = measured["clean"]["band"]
     statuses = {
         mutant: "failed" if measured[mutant]["band"] == "fail" else "passed"
