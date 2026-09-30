@@ -1,0 +1,21 @@
+{
+  "bench_ok": true,
+  "bucket": 128,
+  "cells_total": 4,
+  "chromium_version": "153.0.8010.12",
+  "cross_origin_isolated": true,
+  "ctrl_measured_ms": 250.19999992847443,
+  "ctrl_ratio": 1.0007999997138977,
+  "failure": "",
+  "git_clean": true,
+  "git_hash": "f9258776b75acc0babd00207a05c1f137248371c",
+  "max_ms": 7103.745000004768,
+  "median_ms": 6795.744999945164,
+  "min_ms": 6578.129999995232,
+  "num_threads_effective": 4,
+  "num_threads_requested": 4,
+  "outcome": "pass",
+  "planted_ms": 250.0,
+  "reps": 3,
+  "session_create_total_ms": 409.69000005722046
+}
