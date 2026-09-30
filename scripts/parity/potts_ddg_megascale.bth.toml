@@ -34,6 +34,10 @@ clean = "str"
 n_listed = "int"
 n_failed = "int"
 max_abs_delta = "float"
+n_units = "int"
+n_reused = "int"
+n_computed = "int"
+cache_dir = "str"
 
 [dependencies]
 aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
@@ -51,4 +55,9 @@ fail_bound = "> 1e-3"
 negative_control = "skip_transpose_merge_pair"
 
 [provenance]
-note = "Graded invocation: uv run --no-sync python3 scripts/parity/potts_ddg_megascale.py --mutants skip_transpose_merge_pair --controls-out $SC/potts_ddg_megascale/<git-sha8>/branch_controls.json. Upstream scoring runs under POTTS_ORACLE_PYTHON. Pass, inconclusive, and fail follow the §6.6 K split. Not run by the A4 fixer."
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/potts_ddg_megascale.py --mutants skip_transpose_merge_pair --controls-out $SC/potts_ddg_megascale/<git-sha8>/branch_controls.json. Upstream scoring runs under POTTS_ORACLE_PYTHON. Pass, inconclusive, and fail follow the §6.6 K split. Not run by the A4 fixer. Each PDB is one unit for the oracle worker and one unit per arm. The unit body is written, then a completion stamp, under $TMPDIR/potts_ddg_megascale/units (or --work-dir). The cache key is the sha256 of the PDB name, the arm id, the checkpoint sha256, that unit's CSV-plus-PDB sha256, and the script sha256. A unit is reused only when --resume is set (the default) and the stamp matches. The oracle worker and each arm are separate subprocesses with --arm-timeout (default 86400s) and are re-launched up to --max-attempts (default 3); a timeout drops only the in-flight PDB. n_reused counts units stamped before that subprocess loop; n_computed counts units stamped during it. n_units sums the oracle worker and every arm."
+
+[resume]
+unit = "one PDB for one arm, and one PDB for the oracle worker"
+cache_key = "sha256 of unit id, arm id, checkpoint sha256, input CSV/PDB sha256, script sha256"
+max_attempts = 3

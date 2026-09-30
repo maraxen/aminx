@@ -35,6 +35,10 @@ n_listed = "int"
 n_failed = "int"
 max_abs_delta = "float"
 analytic_abs_err = "float"
+n_units = "int"
+n_reused = "int"
+n_computed = "int"
+cache_dir = "str"
 
 [dependencies]
 aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
@@ -58,4 +62,9 @@ negative_control = "permute_etab_out_rows"
 analytic = "3-residue etab, |E - 1.5| <= 1e-12 (f64)"
 
 [provenance]
-note = "Graded invocation: uv run --no-sync python3 scripts/parity/potts_energy_parity.py --mutants permute_etab_out_rows --controls-out $SC/potts_energy_parity/<git-sha8>/branch_controls.json. Upstream scoring runs under POTTS_ORACLE_PYTHON. Pass, inconclusive, and fail follow the §6.6 K = n_listed > 0 AND n_failed = n_listed split. Not run by the A4 fixer."
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/potts_energy_parity.py --mutants permute_etab_out_rows --controls-out $SC/potts_energy_parity/<git-sha8>/branch_controls.json. Upstream scoring runs under POTTS_ORACLE_PYTHON. Pass, inconclusive, and fail follow the §6.6 K = n_listed > 0 AND n_failed = n_listed split. Not run by the A4 fixer. Each structure (six example PDBs plus the L30 chain) is one unit for the oracle worker and one unit per arm. The unit body is written, then a completion stamp, under $TMPDIR/potts_energy_parity/units (or --work-dir). The cache key is the sha256 of the structure name, the arm id, the checkpoint sha256, that unit's PDB-plus-sequence sha256, and the script sha256. A unit is reused only when --resume is set (the default) and the stamp matches. The oracle worker and each arm are separate subprocesses with --arm-timeout (default 86400s) and are re-launched up to --max-attempts (default 3); a timeout drops only the in-flight PDB. The 3-residue analytic table stays outside the cache. n_reused counts units stamped before that subprocess loop; n_computed counts units stamped during it. n_units sums the oracle worker and every arm."
+
+[resume]
+unit = "one PDB for one arm, and one PDB for the oracle worker"
+cache_key = "sha256 of unit id, arm id, checkpoint sha256, input PDB sha256, script sha256"
+max_attempts = 3

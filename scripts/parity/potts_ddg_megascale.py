@@ -4,7 +4,9 @@ All rows of ``energy_benchmark_datasets/megascale_test_subset.csv``. Pass when
 ``max |ΔddG| ≤ 1e-4``, inconclusive on ``(1e-4, 1e-3]``, fail above ``1e-3``.
 
 Negative control ``skip_transpose_merge_pair`` must land in the fail band.
-Each arm is a fresh subprocess. Results go to ``$BTH_RESULTS_PATH``.
+Each arm, including the oracle worker, is its own subprocess with its own
+timeout and is re-launched from the per-PDB cache. Results go to
+``$BTH_RESULTS_PATH``.
 """
 
 from __future__ import annotations
@@ -13,11 +15,17 @@ import argparse
 import csv
 import hashlib
 import json
+import logging
 import os
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+
+_PARITY_DIR = str(Path(__file__).resolve().parent)
+if _PARITY_DIR not in sys.path:
+    sys.path.insert(0, _PARITY_DIR)
+
+import graded_resume
 
 MUTANT_ID = "skip_transpose_merge_pair"
 CSV_SHA256 = "9c816f1d1fb836f5c03db226beeab6af37bbf8bf1110f5af2fdeb72d095ea9e5"
@@ -43,6 +51,9 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--arm", default=None)
     parser.add_argument("--upstream", type=Path, default=None)
     parser.add_argument("--work-dir", type=Path, default=None)
+    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--max-attempts", type=int, default=3)
+    parser.add_argument("--arm-timeout", type=float, default=86400.0)
     parser.add_argument("--oracle-worker", action="store_true")
     return parser.parse_args(argv)
 
@@ -137,27 +148,82 @@ def _pdb_names(table: Path) -> list[str]:
     return seen
 
 
-def _score_aminx(root: Path, checkpoint: Path) -> dict[str, list[float]]:
+def _work_dir(args: argparse.Namespace) -> Path:
+    work = args.work_dir or Path(os.environ.get("TMPDIR", "/tmp")) / "potts_ddg_megascale"
+    work.mkdir(parents=True, exist_ok=True)
+    return work
+
+
+def _unit_input_sha(pdb: Path, csv_sha: str) -> str:
+    digest = hashlib.sha256()
+    digest.update(csv_sha.encode("utf-8"))
+    digest.update(b"\0")
+    with pdb.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _units(root: Path, arm_id: str, checkpoint: Path) -> list[graded_resume.Unit]:
+    table = _csv_path(root)
+    csv_sha = _sha256(table)
+    checkpoint_sha = _sha256(checkpoint)
+    script_sha = _sha256(Path(__file__).resolve())
+    units: list[graded_resume.Unit] = []
+    for name in _pdb_names(table):
+        pdb = _pdb_dir(root) / f"{name}.pdb"
+        units.append(
+            graded_resume.Unit(
+                unit_id=name,
+                arm_id=arm_id,
+                checkpoint_sha256=checkpoint_sha,
+                input_sha256=_unit_input_sha(pdb, csv_sha),
+                script_sha256=script_sha,
+            ),
+        )
+    return units
+
+
+def _score_one(root: Path, checkpoint: Path, name: str) -> list[float]:
     from aminx.host.runner import score
     from aminx.run.options import PottsMPNNOptions
     from aminx.run.specs import ScoringSpecification
 
     table = _csv_path(root)
-    found: dict[str, list[float]] = {}
+    pdb = _pdb_dir(root) / f"{name}.pdb"
     options = PottsMPNNOptions(mutant_csv=str(table), mean_norm=False)
-    for name in _pdb_names(table):
-        pdb = _pdb_dir(root) / f"{name}.pdb"
-        spec = ScoringSpecification(
-            inputs=str(pdb),
-            model_family="pottsmpnn",
-            checkpoint_id="pottsmpnn_vanilla_20",
-            model_local_path=checkpoint,
-            output_kind="ddg",
-            potts_mpnn=options,
-        )
-        values = score(spec)["structures"]["0"]["arrays"]["ddg"]
-        found[name] = [float(value) for value in values]
-    return found
+    spec = ScoringSpecification(
+        inputs=str(pdb),
+        model_family="pottsmpnn",
+        checkpoint_id="pottsmpnn_vanilla_20",
+        model_local_path=checkpoint,
+        output_kind="ddg",
+        potts_mpnn=options,
+    )
+    values = score(spec)["structures"]["0"]["arrays"]["ddg"]
+    return [float(value) for value in values]
+
+
+def _resume_flag(args: argparse.Namespace) -> str:
+    if args.resume:
+        return "--resume"
+    return "--no-resume"
+
+
+def _logger() -> logging.Logger:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+    logger = logging.getLogger("potts_ddg_megascale")
+    logger.setLevel(logging.INFO)
+    return logger
+
+
+def _validate_launch(args: argparse.Namespace) -> None:
+    if int(args.max_attempts) < 1:
+        msg = "--max-attempts must be >= 1"
+        raise SystemExit(msg)
+    if float(args.arm_timeout) <= 0:
+        msg = "--arm-timeout must be positive"
+        raise SystemExit(msg)
 
 
 def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
@@ -165,12 +231,26 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
 
     _install_mutant(args.arm)
     upstream = json.loads(args.upstream.read_text(encoding="utf-8"))
-    ours = _score_aminx(args.potts_root, _checkpoint(args))
+    checkpoint = _checkpoint(args)
+    arm_id = str(args.arm or "clean")
+    units = _units(args.potts_root, arm_id, checkpoint)
+    cache = graded_resume.cache_dir(_work_dir(args))
+
+    def compute(unit: graded_resume.Unit) -> list[float]:
+        return _score_one(args.potts_root, checkpoint, unit.unit_id)
+
+    payloads, _stats = graded_resume.run_units(
+        units,
+        compute,
+        cache,
+        resume=bool(args.resume),
+    )
     gaps: list[float] = []
-    for name, pred in ours.items():
-        ref = upstream[name]
+    for unit, payload in zip(units, payloads, strict=True):
+        pred = [float(value) for value in payload]
+        ref = upstream[unit.unit_id]
         if len(pred) != len(ref):
-            msg = f"{name} n_mut {len(pred)} != upstream {len(ref)}"
+            msg = f"{unit.unit_id} n_mut {len(pred)} != upstream {len(ref)}"
             raise SystemExit(msg)
         gaps.extend(abs(float(a) - float(b)) for a, b in zip(pred, ref, strict=True))
     max_abs = float(np.max(gaps)) if gaps else float("inf")
@@ -188,16 +268,40 @@ def _oracle_python(args: argparse.Namespace) -> str:
     return sys.executable
 
 
-def _parent(args: argparse.Namespace) -> dict[str, Any]:
+def _launch(
+    args: argparse.Namespace,
+    logger: logging.Logger,
+    command: list[str],
+    units: list[graded_resume.Unit],
+    work: Path,
+) -> graded_resume.LaunchResult:
+    return graded_resume.relaunch_subprocess(
+        command,
+        directory=graded_resume.cache_dir(work),
+        units=units,
+        resume=bool(args.resume),
+        max_attempts=int(args.max_attempts),
+        timeout_s=float(args.arm_timeout),
+        logger=logger,
+    )
+
+
+def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
     checkpoint = _checkpoint(args)
     _check_inputs(args.potts_root, checkpoint)
-    work = args.work_dir or Path(os.environ.get("TMPDIR", "/tmp")) / "potts_ddg_megascale"
-    work.mkdir(parents=True, exist_ok=True)
+    _validate_launch(args)
+    work = _work_dir(args)
+    cache = graded_resume.cache_dir(work)
     upstream_path = work / "upstream.json"
-    subprocess.run(
+    script = str(Path(__file__).resolve())
+    resume_flag = _resume_flag(args)
+    oracle_units = _units(args.potts_root, graded_resume.ORACLE_ARM, checkpoint)
+    oracle = _launch(
+        args,
+        logger,
         [
             _oracle_python(args),
-            str(Path(__file__).resolve()),
+            script,
             "--oracle-worker",
             "--potts-root",
             str(args.potts_root),
@@ -205,16 +309,29 @@ def _parent(args: argparse.Namespace) -> dict[str, Any]:
             str(checkpoint),
             "--upstream",
             str(upstream_path),
+            "--work-dir",
+            str(work),
+            resume_flag,
         ],
-        check=True,
+        oracle_units,
+        work,
     )
+    if oracle.returncode != 0:
+        logger.error("oracle worker failed after %s attempts", args.max_attempts)
+        raise SystemExit(oracle.stderr[-500:])
     mutants = [item for item in args.mutants.split(",") if item]
     measured: dict[str, dict[str, Any]] = {}
+    n_units = oracle.n_units
+    n_reused = oracle.n_reused
+    n_computed = oracle.n_computed
     for arm in ("clean", *mutants):
-        completed = subprocess.run(
+        units = _units(args.potts_root, arm, checkpoint)
+        launched = _launch(
+            args,
+            logger,
             [
                 sys.executable,
-                str(Path(__file__).resolve()),
+                script,
                 "--arm",
                 arm,
                 "--upstream",
@@ -223,15 +340,20 @@ def _parent(args: argparse.Namespace) -> dict[str, Any]:
                 str(checkpoint),
                 "--potts-root",
                 str(args.potts_root),
+                "--work-dir",
+                str(work),
+                resume_flag,
             ],
-            check=False,
-            capture_output=True,
-            text=True,
+            units,
+            work,
         )
-        if completed.returncode != 0:
-            measured[arm] = {"band": "error", "detail": completed.stderr[-500:]}
+        n_units += launched.n_units
+        n_reused += launched.n_reused
+        n_computed += launched.n_computed
+        if launched.returncode != 0:
+            measured[arm] = {"band": "error", "detail": launched.stderr[-500:]}
             continue
-        measured[arm] = json.loads(completed.stdout)
+        measured[arm] = json.loads(launched.stdout)
     clean = measured["clean"]["band"]
     statuses = {
         mutant: "failed" if measured[mutant]["band"] == "fail" else "passed"
@@ -258,19 +380,53 @@ def _parent(args: argparse.Namespace) -> dict[str, Any]:
         "n_listed": len(mutants),
         "n_failed": sum(status == "failed" for status in statuses.values()),
         "max_abs_delta": float(measured["clean"].get("max_abs_delta", float("nan"))),
+        "n_units": n_units,
+        "n_reused": n_reused,
+        "n_computed": n_computed,
+        "cache_dir": str(cache),
     }
 
 
 def _oracle_worker(args: argparse.Namespace) -> None:
+    checkpoint = _checkpoint(args)
+    root = args.potts_root
+    work = _work_dir(args)
+    units = _units(root, graded_resume.ORACLE_ARM, checkpoint)
+    cache = graded_resume.cache_dir(work)
+    _reused, remaining = graded_resume.count_units(cache, units, resume=bool(args.resume))
+    prepared: dict[str, Any] | None = None
+    if remaining > 0:
+        prepared = _load_oracle(args, checkpoint, root)
+
+    def compute(unit: graded_resume.Unit) -> list[float]:
+        if prepared is None:
+            msg = "oracle model was not loaded"
+            raise RuntimeError(msg)
+        return _oracle_one(prepared, unit.unit_id)
+
+    payloads, _stats = graded_resume.run_units(
+        units,
+        compute,
+        cache,
+        resume=bool(args.resume),
+    )
+    scores = {
+        unit.unit_id: [float(value) for value in payload]
+        for unit, payload in zip(units, payloads, strict=True)
+    }
+    args.upstream.write_text(json.dumps(scores), encoding="utf-8")
+
+
+def _load_oracle(args: argparse.Namespace, checkpoint: Path, root: Path) -> dict[str, Any]:
     import numpy as np
     import torch
     from types import SimpleNamespace
 
-    sys.path.insert(0, str(args.potts_root))
+    sys.path.insert(0, str(root))
     from potts_mpnn_utils import PottsMPNN
-    from run_utils import process_data, score_seqs
+    from run_utils import process_data
 
-    blob = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    blob = torch.load(checkpoint, map_location="cpu", weights_only=False)
     state = blob["model_state_dict"] if isinstance(blob, dict) and "model_state_dict" in blob else blob
     model = PottsMPNN(
         ca_only=False,
@@ -287,7 +443,6 @@ def _oracle_worker(args: argparse.Namespace) -> None:
     )
     model.load_state_dict(state, strict=False)
     model.eval()
-    root = args.potts_root
     listing = args.upstream.parent / "pdb_list.txt"
     names = _pdb_names(_csv_path(root))
     listing.write_text("\n".join(names) + "\n", encoding="utf-8")
@@ -297,7 +452,7 @@ def _oracle_worker(args: argparse.Namespace) -> None:
         input_dir=str(_pdb_dir(root)),
         mutant_fasta=None,
         mutant_csv=str(_csv_path(root)),
-        model=SimpleNamespace(vocab=21, check_path=str(args.checkpoint)),
+        model=SimpleNamespace(vocab=21, check_path=str(checkpoint)),
         inference=SimpleNamespace(
             ddG=True,
             filter=False,
@@ -308,22 +463,26 @@ def _oracle_worker(args: argparse.Namespace) -> None:
             binding_energy_json=None,
         ),
     )
-    mutant_data, _lens, pdb_list, _binding = process_data(cfg)
-    from potts_mpnn_utils import parse_PDB
+    mutant_data, _lens, _pdb_list, _binding = process_data(cfg)
+    return {"model": model, "cfg": cfg, "mutant_data": mutant_data, "np": np}
 
-    scores: dict[str, list[float]] = {}
-    for pdb in pdb_list:
-        subset = mutant_data[mutant_data["pdb"] == pdb]
-        parsed = parse_PDB(str(Path(cfg.input_dir) / f"{pdb}.pdb"), skip_gaps=False)
-        pred, _seqs, _ref = score_seqs(
-            model,
-            cfg,
-            parsed,
-            np.asarray(subset["ddG_expt"].values, dtype=np.float64),
-            list(subset["sequences"].values),
-        )
-        scores[pdb] = [float(value) for value in pred.reshape(-1).detach().cpu()]
-    args.upstream.write_text(json.dumps(scores), encoding="utf-8")
+
+def _oracle_one(prepared: dict[str, Any], pdb: str) -> list[float]:
+    from potts_mpnn_utils import parse_PDB
+    from run_utils import score_seqs
+
+    cfg = prepared["cfg"]
+    mutant_data = prepared["mutant_data"]
+    subset = mutant_data[mutant_data["pdb"] == pdb]
+    parsed = parse_PDB(str(Path(cfg.input_dir) / f"{pdb}.pdb"), skip_gaps=False)
+    pred, _seqs, _ref = score_seqs(
+        prepared["model"],
+        cfg,
+        parsed,
+        prepared["np"].asarray(subset["ddG_expt"].values, dtype=prepared["np"].float64),
+        list(subset["sequences"].values),
+    )
+    return [float(value) for value in pred.reshape(-1).detach().cpu()]
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -334,7 +493,8 @@ def main(argv: list[str] | None = None) -> None:
     if args.arm:
         sys.stdout.write(json.dumps(_run_arm(args)))
         return
-    results = _parent(args)
+    logger = _logger()
+    results = _parent(args, logger)
     path = _results_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
