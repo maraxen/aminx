@@ -1,0 +1,60 @@
+[metadata]
+title = "PottsMPNN refine parity"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "PottsRefine matches upstream tokens in potts, potts_converge, and nodes when uniforms are injected. Exact match is pass; [0.99, 1) is inconclusive; below 0.99 is fail."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Every refine mode matches and unmasked_x_logit failed."
+reasoning = "Match is 1.0 with X masked, and the control that leaves logit 20 drawable is outside the pass band."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Refine token match is in [0.99, 1). Do not claim exact refine parity."
+reasoning = "The negative control still fails, but at least one designed site disagrees."
+is_residual = true
+adversarial_check = "NOT (clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed)"
+decision = "Do not treat refine as parity."
+reasoning = "Match below 0.99, an empty mutant list, or unmasked_x_logit passing falsifies the vehicle."
+is_residual = true
+adversarial_check = "clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+match = "float"
+n_units = "int"
+n_reused = "int"
+n_computed = "int"
+cache_dir = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+potts_root_env = "AMINX_POTTS_ROOT (defaults to ~/repos/PottsMPNN)"
+modes = "potts, potts_converge, nodes"
+checkpoint_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+pass_band = "token match = 1.0"
+inconclusive_band = "[0.99, 1.0)"
+fail_band = "< 0.99"
+negative_control = "unmasked_x_logit"
+
+[provenance]
+note = "Graded invocation writes the arm payload with --payload-out and reads the upstream checkout from AMINX_POTTS_ROOT. Not run by the A5 fixer. Each example PDB times each refine mode is one unit. The negative control unmasked_x_logit must FAIL."
+
+[resume]
+unit = "one PDB and one refine mode for one arm"
+cache_key = "sha256 of unit id, arm id, checkpoint sha256, input PDB sha256, script sha256"
+max_attempts = 3

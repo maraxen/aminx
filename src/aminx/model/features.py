@@ -2,6 +2,18 @@
 
 This module contains the ProteinFeatures class that extracts and projects
 features from raw protein coordinates.
+
+PottsMPNN does not call this masking. Invalid pairs (``mask_i * mask_j == 0``)
+become ``+inf`` before ``top_k``, and every atom-pair RBF - including Ca-Ca -
+uses ``sqrt(|A_i - B_j|^2 + 1e-6)`` on backbone coordinates. Cb is
+``compute_c_beta`` with no mask, so a zeroed gap row has Cb at the origin.
+``top_k`` breaks distance ties lower-index-first.
+
+Upstream Potts ``ProteinFeatures._dist`` (``potts_mpnn_utils.py``) instead
+sets ``D = mask_2D * sqrt(|dCa|^2 + 1e-6)``, ``D_adjust = D + (1 - mask_2D) *
+D_max``, and feeds gathered ``D_adjust`` to the Ca-Ca RBF, so a present->gap
+edge uses the row max ``D_max``. The other 24 RBFs stay on raw coordinates.
+That path is ``aminx.families.potts_mpnn.features``, which reuses these weights.
 """
 
 from __future__ import annotations

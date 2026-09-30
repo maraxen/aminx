@@ -54,8 +54,8 @@ class StageBundleAdapter(eqx.Module):
       return None
 
     def chained(
-        *args: Any,
-        **kwargs: Any,
+      *args: Any,
+      **kwargs: Any,
     ) -> None:
       """Invoke all sinks in order with same arguments."""
       for fn in sinks:

@@ -1,0 +1,3447 @@
+upstream_commit = "e70f2c6d765416f7e29d51bfd6d4e08496438878"
+n_keys = 492
+source_checkpoint = "model_weights/laser_weights_0p1A_nothing_heldout.pt"
+
+[[key]]
+upstream = "backbone_frame_vec_input_layer.wh.weight"
+shape = [10, 4]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.backbone_frame.wh.weight"
+
+[[key]]
+upstream = "backbone_frame_vec_input_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.backbone_frame.wv.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.0.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.0.layers.0.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.0.layers.0.weight"
+shape = [256, 144]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.0.layers.0.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.0.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.0.layers.3.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.0.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.0.layers.3.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.0.layers.6.bias"
+shape = [1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.0.layers.6.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.0.layers.6.weight"
+shape = [1, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.0.layers.6.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.1.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.1.layers.0.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.1.layers.0.weight"
+shape = [256, 144]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.1.layers.0.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.1.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.1.layers.3.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.1.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.1.layers.3.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.1.layers.6.bias"
+shape = [1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.1.layers.6.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.1.layers.6.weight"
+shape = [1, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.1.layers.6.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.2.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.2.layers.0.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.2.layers.0.weight"
+shape = [256, 144]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.2.layers.0.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.2.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.2.layers.3.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.2.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.2.layers.3.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.2.layers.6.bias"
+shape = [1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.2.layers.6.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.2.layers.6.weight"
+shape = [1, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.2.layers.6.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.3.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.3.layers.0.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.3.layers.0.weight"
+shape = [256, 144]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.3.layers.0.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.3.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.3.layers.3.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.3.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.3.layers.3.weight"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.3.layers.6.bias"
+shape = [1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.3.layers.6.bias"
+
+[[key]]
+upstream = "chi_offset_prediction_layers.3.layers.6.weight"
+shape = [1, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_offset_head.layers.3.layers.6.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.0.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.0.layers.0.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.0.layers.0.weight"
+shape = [256, 512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.0.layers.0.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.0.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.0.layers.3.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.0.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.0.layers.3.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.0.layers.6.bias"
+shape = [72]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.0.layers.6.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.0.layers.6.weight"
+shape = [72, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.0.layers.6.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.1.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.1.layers.0.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.1.layers.0.weight"
+shape = [256, 584]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.1.layers.0.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.1.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.1.layers.3.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.1.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.1.layers.3.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.1.layers.6.bias"
+shape = [72]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.1.layers.6.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.1.layers.6.weight"
+shape = [72, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.1.layers.6.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.2.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.2.layers.0.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.2.layers.0.weight"
+shape = [256, 656]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.2.layers.0.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.2.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.2.layers.3.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.2.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.2.layers.3.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.2.layers.6.bias"
+shape = [72]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.2.layers.6.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.2.layers.6.weight"
+shape = [72, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.2.layers.6.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.3.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.3.layers.0.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.3.layers.0.weight"
+shape = [256, 728]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.3.layers.0.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.3.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.3.layers.3.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.3.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.3.layers.3.weight"
+
+[[key]]
+upstream = "chi_prediction_layers.3.layers.6.bias"
+shape = [72]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.3.layers.6.bias"
+
+[[key]]
+upstream = "chi_prediction_layers.3.layers.6.weight"
+shape = [72, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.prediction.3.layers.6.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.0.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.0.wh.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.0.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.0.ws.bias"
+
+[[key]]
+upstream = "chi_vector_update_layers.0.ws.weight"
+shape = [256, 338]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.0.ws.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.0.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.0.wsv.bias"
+
+[[key]]
+upstream = "chi_vector_update_layers.0.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.0.wsv.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.0.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.0.wv.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.1.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.1.wh.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.1.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.1.ws.bias"
+
+[[key]]
+upstream = "chi_vector_update_layers.1.ws.weight"
+shape = [256, 410]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.1.ws.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.1.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.1.wsv.bias"
+
+[[key]]
+upstream = "chi_vector_update_layers.1.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.1.wsv.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.1.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.1.wv.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.2.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.2.wh.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.2.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.2.ws.bias"
+
+[[key]]
+upstream = "chi_vector_update_layers.2.ws.weight"
+shape = [256, 482]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.2.ws.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.2.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.2.wsv.bias"
+
+[[key]]
+upstream = "chi_vector_update_layers.2.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.2.wsv.weight"
+
+[[key]]
+upstream = "chi_vector_update_layers.2.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_chi_head.vector_update.2.wv.weight"
+
+[[key]]
+upstream = "hbond_network_detector.backbone_donor_index"
+shape = [1]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.backbone_donor_index"
+
+[[key]]
+upstream = "hbond_network_detector.hbond_aa_acceptor_index_set"
+shape = [20]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.hbond_aa_acceptor_index_set"
+
+[[key]]
+upstream = "hbond_network_detector.hbond_aa_donor_index_set"
+shape = [10]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.hbond_aa_donor_index_set"
+
+[[key]]
+upstream = "hbond_network_detector.hbond_acceptor_aa_idx_to_acceptor_indices"
+shape = [20, 23]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.hbond_acceptor_aa_idx_to_acceptor_indices"
+
+[[key]]
+upstream = "hbond_network_detector.hbond_donor_aa_idx_to_donor_heavy_pair"
+shape = [20, 23, 3]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.hbond_donor_aa_idx_to_donor_heavy_pair"
+
+[[key]]
+upstream = "hbond_network_detector.hbonding_atom_indices"
+shape = [3]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.hbonding_atom_indices"
+
+[[key]]
+upstream = "hbond_network_detector.nitrogen_or_oxygen_indices"
+shape = [2]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.nitrogen_or_oxygen_indices"
+
+[[key]]
+upstream = "hbond_network_detector.sidechain_start_index"
+shape = []
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.sidechain_start_index"
+
+[[key]]
+upstream = "hbond_network_detector.sulfur_indices"
+shape = [1]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.hbond_network_detector.sulfur_indices"
+
+[[key]]
+upstream = "lig_prot_edge_input_layer.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.lig_prot_edge_input.bias"
+
+[[key]]
+upstream = "lig_prot_edge_input_layer.weight"
+shape = [128, 385]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.lig_prot_edge_input.weight"
+
+[[key]]
+upstream = "lig_prot_rbf_encoding.D_mu"
+shape = [1, 75]
+dtype = "float32"
+kind = "buffer"
+destination = "laser_encoder.lig_prot_rbf.D_mu"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.edge_norm.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.edge_norm.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.edge_norm.weight"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.edge_norm.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.gatA"
+shape = [3, 256, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.gatA"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.gatW.weight"
+shape = [768, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.gatW.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.linear_edge_updates.layers.0.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.linear_edge_updates.layers.0.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.linear_edge_updates.layers.0.weight"
+shape = [128, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.linear_edge_updates.layers.0.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.linear_edge_updates.layers.3.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.linear_edge_updates.layers.3.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.linear_edge_updates.layers.3.weight"
+shape = [128, 128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.linear_edge_updates.layers.3.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.linear_edge_updates.layers.6.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.linear_edge_updates.layers.6.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.linear_edge_updates.layers.6.weight"
+shape = [128, 128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.linear_edge_updates.layers.6.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.vectors_update_layer.wh.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.vectors_update_layer.ws.weight"
+shape = [256, 271]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.vectors_update_layer.wsv.bias"
+shape = [15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.vectors_update_layer.wsv.weight"
+shape = [15, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.0.vectors_update_layer.wv.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.0.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.edge_norm.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.edge_norm.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.edge_norm.weight"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.edge_norm.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.gatA"
+shape = [3, 256, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.gatA"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.gatW.weight"
+shape = [768, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.gatW.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.linear_edge_updates.layers.0.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.linear_edge_updates.layers.0.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.linear_edge_updates.layers.0.weight"
+shape = [128, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.linear_edge_updates.layers.0.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.linear_edge_updates.layers.3.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.linear_edge_updates.layers.3.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.linear_edge_updates.layers.3.weight"
+shape = [128, 128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.linear_edge_updates.layers.3.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.linear_edge_updates.layers.6.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.linear_edge_updates.layers.6.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.linear_edge_updates.layers.6.weight"
+shape = [128, 128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.linear_edge_updates.layers.6.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.vectors_update_layer.wh.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.vectors_update_layer.ws.weight"
+shape = [256, 271]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.vectors_update_layer.wsv.bias"
+shape = [15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.vectors_update_layer.wsv.weight"
+shape = [15, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.1.vectors_update_layer.wv.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.1.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.gatA"
+shape = [3, 256, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.gatA"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.gatW.weight"
+shape = [768, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.gatW.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.vectors_update_layer.wh.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.vectors_update_layer.ws.weight"
+shape = [256, 271]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.vectors_update_layer.wsv.bias"
+shape = [15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.vectors_update_layer.wsv.weight"
+shape = [15, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "ligand_encoder.gat_layers.2.vectors_update_layer.wv.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.gat_layers.2.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "ligand_encoder.input_gvp.wh.weight"
+shape = [15, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.input_gvp.wh.weight"
+
+[[key]]
+upstream = "ligand_encoder.input_gvp.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.input_gvp.ws.bias"
+
+[[key]]
+upstream = "ligand_encoder.input_gvp.ws.weight"
+shape = [256, 271]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.input_gvp.ws.weight"
+
+[[key]]
+upstream = "ligand_encoder.input_gvp.wsv.bias"
+shape = [15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.input_gvp.wsv.bias"
+
+[[key]]
+upstream = "ligand_encoder.input_gvp.wsv.weight"
+shape = [15, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.input_gvp.wsv.weight"
+
+[[key]]
+upstream = "ligand_encoder.input_gvp.wv.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.input_gvp.wv.weight"
+
+[[key]]
+upstream = "ligand_encoder.ligand_edge_input_layer.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.ligand_edge_input_layer.bias"
+
+[[key]]
+upstream = "ligand_encoder.ligand_edge_input_layer.weight"
+shape = [128, 75]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.ligand_edge_input_layer.weight"
+
+[[key]]
+upstream = "ligand_encoder.ligand_edge_rbf_encoding.D_mu"
+shape = [1, 75]
+dtype = "float32"
+kind = "buffer"
+destination = "laser_ligand_encoder.encoder.ligand_edge_rbf_encoding.D_mu"
+
+[[key]]
+upstream = "ligand_encoder.ligand_input_layer.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.ligand_input_layer.bias"
+
+[[key]]
+upstream = "ligand_encoder.ligand_input_layer.weight"
+shape = [256, 26]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.encoder.ligand_input_layer.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.dropout.vdropout.dummy_param"
+shape = [0]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.dropout.vdropout.dummy_param"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l1.wh.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l1.wh.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l1.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l1.ws.bias"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l1.ws.weight"
+shape = [256, 271]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l1.ws.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l1.wsv.bias"
+shape = [15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l1.wsv.bias"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l1.wsv.weight"
+shape = [15, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l1.wsv.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l1.wv.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l1.wv.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l2.wh.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l2.wh.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l2.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l2.ws.bias"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l2.ws.weight"
+shape = [256, 271]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l2.ws.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l2.wsv.bias"
+shape = [15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l2.wsv.bias"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l2.wsv.weight"
+shape = [15, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l2.wsv.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l2.wv.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l2.wv.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l3.wh.weight"
+shape = [15, 15]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l3.wh.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l3.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l3.ws.bias"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.l3.ws.weight"
+shape = [256, 271]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.l3.ws.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.norm1.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.norm1.scalar_norm.bias"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.norm1.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.norm1.scalar_norm.weight"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.norm2.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.norm2.scalar_norm.bias"
+
+[[key]]
+upstream = "ligand_encoder_output_gvp.norm2.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_ligand_encoder.output_gvp.norm2.scalar_norm.weight"
+
+[[key]]
+upstream = "ligand_featurizer.amino_acid_index_to_featurization"
+shape = [21, 24, 26]
+dtype = "float32"
+kind = "buffer"
+destination = "laser_ligand_encoder.featurizer.amino_acid_index_to_featurization"
+
+[[key]]
+upstream = "ligand_featurizer.amino_acid_index_to_is_hydrogen_mask"
+shape = [21, 24]
+dtype = "bool"
+kind = "buffer"
+destination = "laser_ligand_encoder.featurizer.amino_acid_index_to_is_hydrogen_mask"
+
+[[key]]
+upstream = "ligand_featurizer.atomic_number_idx_to_group_idx"
+shape = [118]
+dtype = "int64"
+kind = "buffer"
+destination = "laser_ligand_encoder.featurizer.atomic_number_idx_to_group_idx"
+
+[[key]]
+upstream = "ligand_featurizer.atomic_number_idx_to_period_idx"
+shape = [118]
+dtype = "int64"
+kind = "buffer"
+destination = "laser_ligand_encoder.featurizer.atomic_number_idx_to_period_idx"
+
+[[key]]
+upstream = "ligand_featurizer.hydrogen_encoding"
+shape = [1, 26]
+dtype = "float32"
+kind = "buffer"
+destination = "laser_ligand_encoder.featurizer.hydrogen_encoding"
+
+[[key]]
+upstream = "ligand_featurizer.sequence_index_to_atomic_number_index"
+shape = [21, 24]
+dtype = "int64"
+kind = "buffer"
+destination = "laser_ligand_encoder.featurizer.sequence_index_to_atomic_number_index"
+
+[[key]]
+upstream = "prot_prot_edge_input_layer.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.prot_prot_edge_input.bias"
+
+[[key]]
+upstream = "prot_prot_edge_input_layer.weight"
+shape = [128, 500]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.prot_prot_edge_input.weight"
+
+[[key]]
+upstream = "prot_prot_rbf_encoding.D_mu"
+shape = [1, 16]
+dtype = "float32"
+kind = "buffer"
+destination = "laser_encoder.prot_prot_rbf.D_mu"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.layers.0.bias"
+shape = [512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.layers.0.weight"
+shape = [512, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.layers.2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.layers.2.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.layers.2.weight"
+shape = [256, 512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.layers.2.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.node_norm1.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.node_norm1.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.node_norm1.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.node_norm1.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.node_norm2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.node_norm2.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.dense_residual_node_update.node_norm2.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.dense_residual_node_update.node_norm2.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+shape = [256, 1184]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.gatA"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.gatW.weight"
+shape = [1024, 1184]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.gatW.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.0.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.0.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.gatA"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.gatW.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.subgats.1.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.subgats.1.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.0.hetgat.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.0.hetgat.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.layers.0.bias"
+shape = [512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.layers.0.weight"
+shape = [512, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.layers.2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.layers.2.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.layers.2.weight"
+shape = [256, 512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.layers.2.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.node_norm1.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.node_norm1.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.node_norm1.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.node_norm1.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.node_norm2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.node_norm2.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.dense_residual_node_update.node_norm2.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.dense_residual_node_update.node_norm2.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+shape = [256, 1184]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.gatA"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.gatW.weight"
+shape = [1024, 1184]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.gatW.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.0.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.0.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.gatA"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.gatW.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.subgats.1.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.subgats.1.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.1.hetgat.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.1.hetgat.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.layers.0.bias"
+shape = [512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.layers.0.weight"
+shape = [512, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.layers.2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.layers.2.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.layers.2.weight"
+shape = [256, 512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.layers.2.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.node_norm1.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.node_norm1.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.node_norm1.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.node_norm1.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.node_norm2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.node_norm2.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.dense_residual_node_update.node_norm2.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.dense_residual_node_update.node_norm2.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+shape = [256, 1184]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.gatA"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.gatW.weight"
+shape = [1024, 1184]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.gatW.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.0.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.0.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.gatA"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.gatW.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.subgats.1.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.subgats.1.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_decoder_layers.2.hetgat.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.layers.2.hetgat.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.final_lig_pr_mlp.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.final_lig_pr_mlp.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.final_lig_pr_mlp.weight"
+shape = [128, 138]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.final_lig_pr_mlp.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.final_pr_pr_mlp.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.final_pr_pr_mlp.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.final_pr_pr_mlp.weight"
+shape = [128, 228]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.final_pr_pr_mlp.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.layers.0.bias"
+shape = [512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.layers.0.weight"
+shape = [512, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.layers.2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.layers.2.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.layers.2.weight"
+shape = [256, 512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.layers.2.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.node_norm1.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.node_norm1.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.node_norm1.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.node_norm1.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.node_norm2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.node_norm2.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.dense_residual_node_update.node_norm2.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.dense_residual_node_update.node_norm2.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.gatA"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.gatW.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.0.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.0.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.gatA"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.gatW.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.subgats.1.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.subgats.1.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.0.hetgat.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.0.hetgat.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.final_lig_pr_mlp.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.final_lig_pr_mlp.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.final_lig_pr_mlp.weight"
+shape = [128, 138]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.final_lig_pr_mlp.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.final_pr_pr_mlp.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.final_pr_pr_mlp.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.final_pr_pr_mlp.weight"
+shape = [128, 228]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.final_pr_pr_mlp.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.layers.0.bias"
+shape = [512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.layers.0.weight"
+shape = [512, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.layers.2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.layers.2.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.layers.2.weight"
+shape = [256, 512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.layers.2.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.node_norm1.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.node_norm1.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.node_norm1.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.node_norm1.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.node_norm2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.node_norm2.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.dense_residual_node_update.node_norm2.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.dense_residual_node_update.node_norm2.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.gatA"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.gatW.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.0.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.0.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.gatA"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.gatW.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.subgats.1.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.subgats.1.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.1.hetgat.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.1.hetgat.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.final_lig_pr_mlp.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.final_lig_pr_mlp.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.final_lig_pr_mlp.weight"
+shape = [128, 138]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.final_lig_pr_mlp.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.final_pr_pr_mlp.bias"
+shape = [128]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.final_pr_pr_mlp.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.final_pr_pr_mlp.weight"
+shape = [128, 228]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.final_pr_pr_mlp.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.layers.0.bias"
+shape = [512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.layers.0.weight"
+shape = [512, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.layers.2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.layers.2.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.layers.2.weight"
+shape = [256, 512]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.layers.2.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.node_norm1.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.node_norm1.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.node_norm1.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.node_norm1.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.node_norm2.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.node_norm2.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.dense_residual_node_update.node_norm2.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.dense_residual_node_update.node_norm2.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.gatA"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.gatW.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.0.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.0.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+shape = [256, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.0.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.3.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+shape = [256, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.dense_node_update_layers.layers.6.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.equivariant_layer_norm.scalar_norm.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.gatA"
+shape = [1, 1024, 1]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.gatA"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.gatW.weight"
+shape = [1024, 640]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.gatW.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.subgats.1.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.subgats.1.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.vectors_update_layer.wh.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.vectors_update_layer.wh.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.vectors_update_layer.ws.bias"
+shape = [256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.vectors_update_layer.ws.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.vectors_update_layer.ws.weight"
+shape = [256, 266]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.vectors_update_layer.ws.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.vectors_update_layer.wsv.bias"
+shape = [10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.vectors_update_layer.wsv.bias"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.vectors_update_layer.wsv.weight"
+shape = [10, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.vectors_update_layer.wsv.weight"
+
+[[key]]
+upstream = "protein_encoder_layers.2.hetgat.vectors_update_layer.wv.weight"
+shape = [10, 10]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_encoder.layers.2.hetgat.vectors_update_layer.wv.weight"
+
+[[key]]
+upstream = "rotamer_builder.aa_to_chi_angle_atom_index"
+shape = [21, 4, 4]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.aa_to_chi_angle_atom_index"
+
+[[key]]
+upstream = "rotamer_builder.aa_to_chi_angle_mask"
+shape = [21, 4]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.builder.aa_to_chi_angle_mask"
+
+[[key]]
+upstream = "rotamer_builder.aa_to_hydrogen_alignment_index"
+shape = [21, 5, 7]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.aa_to_hydrogen_alignment_index"
+
+[[key]]
+upstream = "rotamer_builder.aa_to_hydrogen_alignment_triad_indices"
+shape = [21, 5, 3]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.aa_to_hydrogen_alignment_triad_indices"
+
+[[key]]
+upstream = "rotamer_builder.aa_to_needs_alignment"
+shape = [21]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.builder.aa_to_needs_alignment"
+
+[[key]]
+upstream = "rotamer_builder.alignment_indices"
+shape = [21, 3]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.alignment_indices"
+
+[[key]]
+upstream = "rotamer_builder.backbone_c_ca_n_atoms"
+shape = [1, 3, 3]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.backbone_c_ca_n_atoms"
+
+[[key]]
+upstream = "rotamer_builder.backbone_frame_mask_1"
+shape = [5]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.builder.backbone_frame_mask_1"
+
+[[key]]
+upstream = "rotamer_builder.backbone_frame_mask_2"
+shape = [5]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.builder.backbone_frame_mask_2"
+
+[[key]]
+upstream = "rotamer_builder.backbone_nh_bond_angle"
+shape = [1]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.backbone_nh_bond_angle"
+
+[[key]]
+upstream = "rotamer_builder.backbone_nh_bond_length"
+shape = [1, 1]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.backbone_nh_bond_length"
+
+[[key]]
+upstream = "rotamer_builder.cap_nc_dist"
+shape = [1]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.cap_nc_dist"
+
+[[key]]
+upstream = "rotamer_builder.ct_cap_alignment_coords"
+shape = [3, 3]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.ct_cap_alignment_coords"
+
+[[key]]
+upstream = "rotamer_builder.ct_cap_indices"
+shape = [3]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.ct_cap_indices"
+
+[[key]]
+upstream = "rotamer_builder.ct_cap_remaining_coords"
+shape = [5, 3]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.ct_cap_remaining_coords"
+
+[[key]]
+upstream = "rotamer_builder.ct_nitrogen_angle"
+shape = [1]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.ct_nitrogen_angle"
+
+[[key]]
+upstream = "rotamer_builder.cys_hydrogen_optional_mask"
+shape = [24]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.builder.cys_hydrogen_optional_mask"
+
+[[key]]
+upstream = "rotamer_builder.final_cap_atomic_numbers"
+shape = [13]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.final_cap_atomic_numbers"
+
+[[key]]
+upstream = "rotamer_builder.frame_n_ca_c_indices"
+shape = [1, 3, 1]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.frame_n_ca_c_indices"
+
+[[key]]
+upstream = "rotamer_builder.his_hydrogen_optional_mask"
+shape = [24]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.builder.his_hydrogen_optional_mask"
+
+[[key]]
+upstream = "rotamer_builder.histidine_hydrogen_indices"
+shape = [2]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.histidine_hydrogen_indices"
+
+[[key]]
+upstream = "rotamer_builder.histidine_nitrogen_indices"
+shape = [2]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.histidine_nitrogen_indices"
+
+[[key]]
+upstream = "rotamer_builder.ideal_aa_coords"
+shape = [21, 14, 3]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.ideal_aa_coords"
+
+[[key]]
+upstream = "rotamer_builder.ideal_bond_angles"
+shape = [21, 4]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.ideal_bond_angles"
+
+[[key]]
+upstream = "rotamer_builder.ideal_bond_lengths"
+shape = [21, 4]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.ideal_bond_lengths"
+
+[[key]]
+upstream = "rotamer_builder.ideal_prot_aa_coords"
+shape = [21, 24, 3]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.ideal_prot_aa_coords"
+
+[[key]]
+upstream = "rotamer_builder.index_to_degree_bin"
+shape = [72]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.index_to_degree_bin"
+
+[[key]]
+upstream = "rotamer_builder.leftover_atom_indices"
+shape = [21, 7]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.leftover_atom_indices"
+
+[[key]]
+upstream = "rotamer_builder.n_ca_c_indices"
+shape = [1, 3, 1]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.n_ca_c_indices"
+
+[[key]]
+upstream = "rotamer_builder.n_ca_cb_indices"
+shape = [1, 3, 1]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.n_ca_cb_indices"
+
+[[key]]
+upstream = "rotamer_builder.nt_cap_alignment_coords"
+shape = [3, 3]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.nt_cap_alignment_coords"
+
+[[key]]
+upstream = "rotamer_builder.nt_cap_indices"
+shape = [3]
+dtype = "int64"
+kind = "buffer"
+destination = "rotamers.builder.nt_cap_indices"
+
+[[key]]
+upstream = "rotamer_builder.nt_cap_remaining_coords"
+shape = [6, 3]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.nt_cap_remaining_coords"
+
+[[key]]
+upstream = "rotamer_builder.nt_carbon_angle"
+shape = [1]
+dtype = "float32"
+kind = "buffer"
+destination = "rotamers.builder.nt_carbon_angle"
+
+[[key]]
+upstream = "rotamer_builder.proline_mask"
+shape = [13]
+dtype = "bool"
+kind = "buffer"
+destination = "rotamers.builder.proline_mask"
+
+[[key]]
+upstream = "sequence_label_embedding.weight"
+shape = [22, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.sequence_label_embedding.weight"
+
+[[key]]
+upstream = "sequence_output_layer.bias"
+shape = [21]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.sequence_output.bias"
+
+[[key]]
+upstream = "sequence_output_layer.weight"
+shape = [21, 256]
+dtype = "float32"
+kind = "parameter"
+destination = "laser_decoder.sequence_output.weight"

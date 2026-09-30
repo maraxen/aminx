@@ -20,6 +20,7 @@ import equinox as eqx
 import jax
 from proxide.ops.dataset import create_protein_dataset
 
+from aminx.host.family_driver import FAMILY_DRIVERS
 from aminx.io.weights import load_model
 from aminx.run.resources import proxide_dataset_resource_kwargs
 
@@ -56,6 +57,19 @@ def _resolve_local_checkpoint_from_registry(spec: Specs) -> str | None:
       f"checkpoint_id={spec.checkpoint_id!r}"
     )
     raise ValueError(msg)
+  checkpoint_name = spec.checkpoint_id if isinstance(spec.checkpoint_id, str) else ""
+  driver_family = spec.model_family in {"pottsmpnn", "lasermpnn"} or checkpoint_name.startswith(
+    (
+      "pottsmpnn_",
+      "lasermpnn_",
+    ),
+  )
+  if driver_family and "sha256" not in found:
+    msg = (
+      f"Registry entry for model_family={spec.model_family!r} "
+      f"checkpoint_id={spec.checkpoint_id!r} must include sha256"
+    )
+    raise ValueError(msg)
   artifact = _artifact_path_for_registry_entry(reg_path, str(found["artifact_path"]))
   if "sha256" in found:
     digest = hashlib.sha256(artifact.read_bytes()).hexdigest()
@@ -83,11 +97,12 @@ def prep_protein_stream_and_model(
   - Else if ``spec.checkpoint_registry_path`` is set, the registry JSON must contain
     top-level ``"entries"``: a list of objects with ``model_family``,
     ``checkpoint_id``, ``artifact_path`` (relative paths resolve next to the registry
-    file), and optional ``sha256``. The entry matching ``spec.model_family`` and
-    ``spec.checkpoint_id`` is chosen; if ``sha256`` is present it must match the
-    artifact bytes or :class:`ValueError` is raised. Missing entry raises
-    :class:`ValueError`. ``checkpoint_id`` must be set on the spec when using the
-    registry.
+    file), and optional ``sha256``. ``pottsmpnn`` and ``lasermpnn`` entries (and any
+    ``pottsmpnn_`` / ``lasermpnn_`` checkpoint id) require ``sha256``. The entry
+    matching ``spec.model_family`` and ``spec.checkpoint_id`` is chosen; if ``sha256``
+    is present it must match the artifact bytes or :class:`ValueError` is raised.
+    Missing entry raises :class:`ValueError`. ``checkpoint_id`` must be set on the
+    spec when using the registry.
   - Otherwise weights load from packaged resources via ``checkpoint_id`` /
     ``model_weights`` + ``model_version`` as in :func:`load_model`.
 
@@ -180,6 +195,19 @@ def prep_protein_stream_and_model(
     "use_vdw": bool(spec.use_vdw),
   }
 
+  driver = FAMILY_DRIVERS.get(spec.model_family)
+  if driver is not None:
+    # Fallback purposes: the registered driver loaded the composite module and
+    # the MPNN path continues on its embedded core. Handled purposes never reach
+    # this function.
+    loaded = driver.load(spec)
+    core = driver.mpnn_core(loaded)
+    if core is None:
+      msg = f"{driver.name} does not provide an MPNN core for fallback purposes"
+      raise ValueError(msg)
+    # Same inference-mode step as the load_model branches. Returned as Model so
+    # the MPNN callers of this function keep their previous type.
+    return protein_iterator, eqx.nn.inference_mode(core, value=True)  # type: ignore[return-value]
   if spec.checkpoint_id is not None:
     model = load_model(
       checkpoint_id=spec.checkpoint_id,

@@ -1,0 +1,77 @@
+{
+  "upstream_commit": "0cb0a58874e373d664114f1735deab77614e4ab5",
+  "fixtures": [
+    {
+      "name": "ex_2yc3_gaps0",
+      "sha256": "ef62cf3625931b1c0abef080baa36677e53dca1dbaaa7d1740c9e9888e24e2ca",
+      "skip_gaps": false,
+      "L_total": 226
+    },
+    {
+      "name": "ex_2yc3_gaps1",
+      "sha256": "ef62cf3625931b1c0abef080baa36677e53dca1dbaaa7d1740c9e9888e24e2ca",
+      "skip_gaps": true,
+      "L_total": 219
+    },
+    {
+      "name": "ex_3dkm_gaps0",
+      "sha256": "3d847d573e648b631983885a02f41bc14d8a8a11ac893b1c8c76ec5c46781c86",
+      "skip_gaps": false,
+      "L_total": 72
+    },
+    {
+      "name": "ex_3dkm_gaps1",
+      "sha256": "3d847d573e648b631983885a02f41bc14d8a8a11ac893b1c8c76ec5c46781c86",
+      "skip_gaps": true,
+      "L_total": 72
+    },
+    {
+      "name": "gap_le48_gaps0",
+      "sha256": "c7ca7159796d1acd4cf0f44e15a1fa24a8fe6d8f7d0388753e4853507129d436",
+      "skip_gaps": false,
+      "L_total": 4
+    },
+    {
+      "name": "gap_le48_gaps1",
+      "sha256": "c7ca7159796d1acd4cf0f44e15a1fa24a8fe6d8f7d0388753e4853507129d436",
+      "skip_gaps": true,
+      "L_total": 2
+    },
+    {
+      "name": "gap_gt48_gaps0",
+      "sha256": "35ccc97b5e6373ec5f1715af35321509e5bf0a4e06dfdca5b20034c8e21e2ea2",
+      "skip_gaps": false,
+      "L_total": 70
+    },
+    {
+      "name": "gap_gt48_gaps1",
+      "sha256": "35ccc97b5e6373ec5f1715af35321509e5bf0a4e06dfdca5b20034c8e21e2ea2",
+      "skip_gaps": true,
+      "L_total": 2
+    },
+    {
+      "name": "icode_gaps0",
+      "sha256": "843aec627af4b9f1d52dd55bca418053ee42ffb0d4861bd47f3e42fee663d65d",
+      "skip_gaps": false,
+      "L_total": 2
+    },
+    {
+      "name": "icode_gaps1",
+      "sha256": "843aec627af4b9f1d52dd55bca418053ee42ffb0d4861bd47f3e42fee663d65d",
+      "skip_gaps": true,
+      "L_total": 2
+    },
+    {
+      "name": "partial_gaps0",
+      "sha256": "f3bd230b6b05bbe647d7a2a686afb65c040fb844854796856ac989f3930b68e9",
+      "skip_gaps": false,
+      "L_total": 2
+    },
+    {
+      "name": "partial_gaps1",
+      "sha256": "f3bd230b6b05bbe647d7a2a686afb65c040fb844854796856ac989f3930b68e9",
+      "skip_gaps": true,
+      "L_total": 2
+    }
+  ]
+}

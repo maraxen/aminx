@@ -20,6 +20,8 @@ from aminx.host._sampling_helper import (
   _canonical_structure_ids_for_spec,
   _structure_ids_for_batch,
 )
+from aminx.host.family_driver import FAMILY_DRIVERS, FamilyDriver
+from aminx.host.family_runner import run_family_driver
 from aminx.host.kernel_dispatch import _sample_batch
 from aminx.host.logit_aggregation import (
   aggregate_logits,
@@ -55,6 +57,20 @@ from aminx.run.specs import (
   ScoringSpecification,
   pop_deprecated_spec_kwargs,
 )
+
+
+def _family_driver_for(spec: Any) -> FamilyDriver | None:  # noqa: ANN401
+  """Return the driver for ``spec``, importing PottsMPNN the first time it is needed.
+
+  A driver already registered under ``pottsmpnn`` is left in place so tests can
+  install a stand-in before dispatch.
+  """
+  family = getattr(spec, "model_family", None)
+  if family == "pottsmpnn" and FAMILY_DRIVERS.get("pottsmpnn") is None:
+    import aminx.families.potts_mpnn as _potts_mpnn  # noqa: F401, PLC0415
+
+  return FAMILY_DRIVERS.get(family)
+
 
 from .prep import prep_protein_stream_and_model
 
@@ -176,6 +192,18 @@ def sample(
     pop_deprecated_spec_kwargs(kw)
     spec = SamplingSpecification(**kw)
 
+  # FamilyDriver dispatch. An empty registry leaves this path untouched.
+  purpose = "sample"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
+
   # F002/F003 guard [260826_aminx-invariant-audit]: runner.sample cannot honour
   # multistate spec fields.  score() routes through _score_fused_multistate which
   # performs real cross-state fusion; sample() has no such path (the internal
@@ -187,7 +215,9 @@ def sample(
   if spec.state_position_map is not None or spec.multi_state_strategy != _multistate_default:
     _bad_fields = []
     if spec.state_position_map is not None:
-      _bad_fields.append(f"state_position_map (shape {getattr(spec.state_position_map, 'shape', type(spec.state_position_map))})")
+      _bad_fields.append(
+        f"state_position_map (shape {getattr(spec.state_position_map, 'shape', type(spec.state_position_map))})",
+      )
     if spec.multi_state_strategy != _multistate_default:
       _bad_fields.append(f"multi_state_strategy={spec.multi_state_strategy!r}")
     msg = (
@@ -214,7 +244,9 @@ def sample(
   # Non-streaming path uses io_callback staging via streaming_tensor_sink_session;
   # drains per-batch via take_staging_sequences_logits.
   all_sequences, all_pseudo_perplexities = [], []
-  needs_logits = spec.run_spec.sampling.return_logits or spec.run_spec.sampling.return_logit_fingerprint
+  needs_logits = (
+    spec.run_spec.sampling.return_logits or spec.run_spec.sampling.return_logit_fingerprint
+  )
   all_logits = [] if needs_logits else None
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -277,7 +309,9 @@ def sample(
       "structure_ids": resolved_structure_ids,
     },
   }
-  aggregated_logits = aggregate_logits(all_logits, max_len) if needs_logits and all_logits is not None else None
+  aggregated_logits = (
+    aggregate_logits(all_logits, max_len) if needs_logits and all_logits is not None else None
+  )
   if spec.run_spec.sampling.return_logits and aggregated_logits is not None:
     results["logits"] = aggregated_logits
   if spec.run_spec.sampling.return_logit_fingerprint and aggregated_logits is not None:
@@ -529,6 +563,17 @@ def score(  # noqa: PLR0915
     pop_deprecated_spec_kwargs(kw)
     spec = ScoringSpecification(**kw)
 
+  purpose = f"score:{spec.output_kind}"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
+
   if spec.output_h5_path:
     msg = "score runner: HDF5 streaming output not yet implemented; omit --output-h5-path for in-memory results"
     raise NotImplementedError(msg)
@@ -584,7 +629,10 @@ def score(  # noqa: PLR0915
   # this fix, not assumed from a source read alone.
   if spec.state_position_map is not None:
     return _score_fused_multistate(
-      spec, protein_iterator, score_fn, sequence_indices_list,
+      spec,
+      protein_iterator,
+      score_fn,
+      sequence_indices_list,
     )
 
   from aminx.sampling.conditional_logits import _plan_axis_strategy  # noqa: PLC0415
@@ -666,7 +714,10 @@ def score(  # noqa: PLR0915
 
     activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
     strategy = _plan_axis_strategy(
-      N_CANDIDATES, n_candidates, None, activation_bytes_per_element=activation_bytes,
+      N_CANDIDATES,
+      n_candidates,
+      None,
+      activation_bytes_per_element=activation_bytes,
     )
     candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
@@ -694,7 +745,8 @@ def score(  # noqa: PLR0915
         )
 
       return _candidate_iterator(
-        _score_one_candidate, {"key": struct_keys, "seq": _stacked_sequences},
+        _score_one_candidate,
+        {"key": struct_keys, "seq": _stacked_sequences},
       )
 
     # The third output (a decoding order) is discarded: scoring is full-context, see the
@@ -773,7 +825,9 @@ def _score_fused_multistate(
   for batched_ensemble in protein_iterator:
     batch_size = batched_ensemble.coordinates.shape[0]
     batch_structure_ids = _structure_ids_for_batch(
-      canonical_structure_ids, structure_offset=structure_offset, batch_size=batch_size,
+      canonical_structure_ids,
+      structure_offset=structure_offset,
+      batch_size=batch_size,
     )
     for struct_idx in range(batch_size):
       all_coords.append(batched_ensemble.coordinates[struct_idx])
@@ -819,7 +873,8 @@ def _score_fused_multistate(
   stacked_sequences = jnp.stack(padded_seqs, axis=0)  # (C, struct_len)
   n_candidates = stacked_sequences.shape[0]
   candidate_keys = jax.random.split(
-    jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42), n_candidates,
+    jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42),
+    n_candidates,
   )
 
   # Candidate (sequences-to-score) axis dispatched via aminx's own BatchPlanner ->
@@ -833,7 +888,10 @@ def _score_fused_multistate(
 
   activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
   strategy = _plan_axis_strategy(
-    N_CANDIDATES, n_candidates, None, activation_bytes_per_element=activation_bytes,
+    N_CANDIDATES,
+    n_candidates,
+    None,
+    activation_bytes_per_element=activation_bytes,
   )
   candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
@@ -854,7 +912,8 @@ def _score_fused_multistate(
     )
 
   all_scores, all_logits, _ = candidate_iterator(
-    _score_one_candidate, {"key": candidate_keys, "seq": stacked_sequences},
+    _score_one_candidate,
+    {"key": candidate_keys, "seq": stacked_sequences},
   )
 
   # Leading dim of 1: ONE fused "structure", not len(spec.inputs) independent ones.
@@ -920,6 +979,17 @@ def inspect(  # noqa: PLR0915
     kw = dict(kwargs)
     pop_deprecated_spec_kwargs(kw)
     spec = InspectionSpecification(**kw)
+
+  purpose = "inspect"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
 
   # F005 guard [260826_aminx-invariant-audit]: runner.inspect cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit
@@ -1234,6 +1304,17 @@ def jacobian(
     kw = dict(kwargs)
     pop_deprecated_spec_kwargs(kw)
     spec = JacobianSpecification(**kw)
+
+  purpose = "jacobian"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
 
   # F005 guard [260826_aminx-invariant-audit]: runner.jacobian cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit

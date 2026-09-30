@@ -1,0 +1,12 @@
+[manifest]
+wave_id = "potts_energy"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:1d1e85def82e538f9d3f13c741c28ae35a18ddda769b646bdc3bc9801e253b83"
+created_at = "2026-09-29T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.families.potts_mpnn.etab.potts_energy"
+module_path = "src/aminx/families/potts_mpnn/etab.py"
+depends_on = []

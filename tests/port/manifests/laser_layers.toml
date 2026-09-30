@@ -1,0 +1,36 @@
+[manifest]
+wave_id = "laser_layers"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:bccc89c6173f1f774e836049b09e468a7a97b684e10a1504b1df9fd22b0c172b"
+created_at = "2026-09-29T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.model.laser.layers.GVP"
+module_path = "src/aminx/model/laser/layers.py"
+depends_on = []
+
+[[kernels]]
+order = 2
+qualname = "aminx.model.laser.layers.EquivariantLayerNorm"
+module_path = "src/aminx/model/laser/layers.py"
+depends_on = []
+
+[[kernels]]
+order = 3
+qualname = "aminx.model.laser.layers.HomoGATv2"
+module_path = "src/aminx/model/laser/layers.py"
+depends_on = []
+
+[[kernels]]
+order = 4
+qualname = "aminx.model.laser.layers.HeteroGATv2"
+module_path = "src/aminx/model/laser/layers.py"
+depends_on = []
+
+[[kernels]]
+order = 5
+qualname = "aminx.model.laser.layers.DenseGVP"
+module_path = "src/aminx/model/laser/layers.py"
+depends_on = []

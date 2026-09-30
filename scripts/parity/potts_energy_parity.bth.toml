@@ -1,0 +1,71 @@
+[metadata]
+title = "PottsMPNN score:energy parity"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "PottsMPNNDriver score:energy matches upstream absolute energies on the example PDBs, a 30-residue chain, and 200 random sequences per structure, within 1e-4 + 1e-5*|E|."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Energy parity is inside the pass band and permute_etab_out_rows failed."
+reasoning = "Every |delta E| is within 1e-4 + 1e-5*|E_up|, the 3-residue analytic table is within 1e-12, and the row-permuted etab_out control is outside 10x that bound."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Energies are inside 10x the pass bound but not inside it; do not claim bit-level energy parity."
+reasoning = "The negative control still fails, so the comparison is alive, but at least one sequence sits between the pass bound and 10x that bound."
+is_residual = true
+adversarial_check = "NOT (clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed)"
+decision = "Do not treat score:energy as parity; the band, the analytic table, or the negative control failed."
+reasoning = "A deviation beyond 10x the bound, an analytic error above 1e-12, an empty mutant list, or a negative control that does not fail falsifies the vehicle."
+is_residual = true
+adversarial_check = "clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+max_abs_delta = "float"
+analytic_abs_err = "float"
+n_units = "int"
+n_reused = "int"
+n_computed = "int"
+cache_dir = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+potts_root_env = "AMINX_POTTS_ROOT (defaults to ~/repos/PottsMPNN); the paths below are the canonical checkout layout, not a fixed machine"
+example_pdbs = "/home/marielle/repos/PottsMPNN/inputs/example_pdbs"
+l30_rule = "chain A residues 1..30 of 2yc3.pdb, renumbered from 1"
+checkpoint = "/home/marielle/repos/PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt"
+checkpoint_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+"2yc3.pdb" = "ef62cf3625931b1c0abef080baa36677e53dca1dbaaa7d1740c9e9888e24e2ca"
+"3dkm.pdb" = "3d847d573e648b631983885a02f41bc14d8a8a11ac893b1c8c76ec5c46781c86"
+"3gg7.pdb" = "2203e4a69287a5b968a78df5fb80b29f10fbdb37f73f64363cefbee8f1899712"
+"4jox.pdb" = "c16543717793ced9e9475df6213a52054d05b70dd02069d41fac82e164f09ee8"
+"6w25.pdb" = "4a9a6dc228bf3953a746d09f29e6116f07c1f2cfc152030fe878728c65cca086"
+"swe1_ligand.pdb" = "493352b8c64c02c133f1143c1705e7b5217e0f67127bd22e6b3964319b6445c6"
+n_random = 200
+pass_bound = "|dE| <= 1e-4 + 1e-5*|E_up|"
+inconclusive_bound = "<= 10x pass bound"
+fail_bound = "> 10x pass bound"
+negative_control = "permute_etab_out_rows"
+analytic = "3-residue etab, |E - 1.5| <= 1e-12 (f64)"
+
+[provenance]
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/potts_energy_parity.py --mutants permute_etab_out_rows --controls-out $SC/potts_energy_parity/<git-sha8>/branch_controls.json. Upstream scoring runs under POTTS_ORACLE_PYTHON. Pass, inconclusive, and fail follow the §6.6 K = n_listed > 0 AND n_failed = n_listed split. Not run by the A4 fixer. Each structure (six example PDBs plus the L30 chain) is one unit for the oracle worker and one unit per arm. The unit body is written, then a completion stamp, under $TMPDIR/potts_energy_parity/units (or --work-dir). The cache key is the sha256 of the structure name, the arm id, the checkpoint sha256, that unit's PDB-plus-sequence sha256, and the script sha256. A unit is reused only when --resume is set (the default) and the stamp matches. The oracle worker and each arm are separate subprocesses with --arm-timeout (default 86400s) and are re-launched up to --max-attempts (default 3); a timeout drops only the in-flight PDB. The 3-residue analytic table stays outside the cache. n_reused counts units stamped before that subprocess loop; n_computed counts units stamped during it. n_units sums the oracle worker and every arm."
+
+[resume]
+unit = "one PDB for one arm, and one PDB for the oracle worker"
+cache_key = "sha256 of unit id, arm id, checkpoint sha256, input PDB sha256, script sha256"
+max_attempts = 3

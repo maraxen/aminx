@@ -65,6 +65,8 @@ from aminx.host._sampling_helper import (
   _prepare_ligand_context,
   fixed_provenance_outputs,
 )
+from aminx.host.family_driver import refuse_driver_family
+from aminx.host.omit_aa_bias import compile_omit_aa_bias, omit_aa_is_active
 from aminx.host.plan import (
   resolve_chunk_size,
   resolve_decode_mode,
@@ -88,6 +90,7 @@ from aminx.io.sink_provenance import (
   prng_seed_attrs,
   resolve_aminx_version,
 )
+from aminx.run.spec import mpnn_temperatures
 from aminx.sampling.conditional_logits import _plan_axis_strategy
 from aminx.tiling.axes import N_SAMPLES, N_STATES
 from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
@@ -405,10 +408,8 @@ def sample_multistate_poe_bead(
     raise ValueError(msg)
   tie_group_map = jnp.asarray(spec.tie_group_map) if spec.tie_group_map is not None else None
 
-  temperature_val = spec.run_spec.sampling.temperature
-  temperature = float(temperature_val[0]) if isinstance(temperature_val, (list, tuple)) else float(
-    temperature_val,
-  )
+  temperature_val = mpnn_temperatures(spec.run_spec)
+  temperature = float(temperature_val[0])
   noise_val = spec.run_spec.sampling.backbone_noise
   backbone_noise = float(noise_val[0]) if isinstance(noise_val, (list, tuple)) else float(noise_val)
   bias = (
@@ -416,6 +417,14 @@ def sample_multistate_poe_bead(
     if spec.run_spec.sampling.bias is not None
     else None
   )
+  if omit_aa_is_active(spec.run_spec.sampling.omit_aa, spec.run_spec.sampling.omit_aa_per_position):
+    bias = compile_omit_aa_bias(
+      bias,
+      fixed_mask_row=fixed_mask,
+      omit_aa=spec.run_spec.sampling.omit_aa,
+      omit_aa_per_position=spec.run_spec.sampling.omit_aa_per_position,
+      seq_len=seq_len,
+    )
 
   bundle, config = build_inference_bundle(
     coords=batched_ensemble.coordinates,
@@ -555,6 +564,7 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
       multi-state rows, but re-asserts the precondition rather than trusting the caller).
 
   """
+  refuse_driver_family(spec, surface="multistate PoE")
   if not isinstance(spec.inputs, (list, tuple)) or len(spec.inputs) < 2:
     msg = (
       f"sample_multistate_poe_campaign_row needs >=2 states in spec.inputs to fuse across "
@@ -593,10 +603,7 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
   sample_start = resolve_sample_start(grid_lineage)
   base_key = jax.random.fold_in(_base_sampling_key(spec, grid_lineage=grid_lineage), sample_start)
 
-  temperature_val = spec.run_spec.sampling.temperature
-  temperatures = (
-    list(temperature_val) if isinstance(temperature_val, (list, tuple)) else [temperature_val]
-  )
+  temperatures = list(mpnn_temperatures(spec.run_spec))
   noise_val = spec.run_spec.sampling.backbone_noise
   noises = list(noise_val) if isinstance(noise_val, (list, tuple)) else [noise_val]
   return_logits = spec.run_spec.sampling.return_logits

@@ -1,0 +1,12 @@
+[manifest]
+wave_id = "declayer_f64"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:21b3e2f21ba7f7a6c8deeadaab04d32411fdb6d31ec256537451330b3e18b17a"
+created_at = "2026-09-29T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.model.decoder.DecoderLayer"
+module_path = "src/aminx/model/decoder.py"
+depends_on = []

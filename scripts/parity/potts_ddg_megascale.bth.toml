@@ -1,0 +1,97 @@
+[metadata]
+title = "PottsMPNN megascale ddG parity"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "PottsMPNNDriver score:ddg matches upstream ddG on every row of megascale_test_subset.csv within 5e-4, the float32 cancellation floor for a difference of Potts energies of magnitude ~1024 (amended 260929; see [amendment])."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Megascale ddG is inside 5e-4 and skip_transpose_merge_pair failed."
+reasoning = "max |delta ddG| <= 5e-4 on all 202804 rows, and dropping the pair-table transpose exceeds 5e-3."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed"
+decision = "ddG sits in (5e-4, 5e-3]; do not claim the pass band."
+reasoning = "The transpose control still fails, but the largest |delta ddG| is above 5e-4 and at most 5e-3."
+is_residual = true
+adversarial_check = "NOT (clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed)"
+decision = "Do not treat score:ddg as megascale parity."
+reasoning = "max |delta ddG| > 5e-3, an empty mutant list, or a transpose control that does not fail falsifies the vehicle."
+is_residual = true
+adversarial_check = "clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+max_abs_delta = "float"
+mutant_max_abs_delta = "dict"
+n_units = "int"
+n_reused = "int"
+n_computed = "int"
+cache_dir = "str"
+
+[amendment]
+amended = "260929"
+amended_by = "user, explicit approval in session 260929_potts-laser-xtrax-compose"
+original_pass_bound = "1e-4"
+original_inconclusive_bound = "1e-3"
+amended_pass_bound = "5e-4"
+amended_inconclusive_bound = "5e-3"
+measured_run = "6b51b846-ce8e-486c-93f5-089381b71b42"
+measured_clean_max_abs_delta = "1.220703125e-04"
+measured_control_max_abs_delta = "11.645736694335938"
+rationale = """
+Run 6b51b846 (clean tree, git 19eeb619, all 696 units computed fresh) measured a clean-arm
+max |delta ddG| of 1.220703125e-04 and recorded outcome=inconclusive against the original
+1e-4 pass bound. That value is EXACTLY 2^-13, one float32 ULP for magnitudes in [1024, 2048).
+ddG is E_mut - E_wt, a small difference of large absolute Potts energies, so a few ULP of
+catastrophic cancellation is the arithmetic floor of an f32 comparison rather than evidence of
+a port defect. The companion energy sidecar passed on the same commit (run 866196a5,
+max_abs_delta 7.32e-04) because its bound is RELATIVE (1e-4 + 1e-5*|E_up|, about 1e-2 at these
+magnitudes); the ddG bound was absolute and did not scale with the energies being differenced.
+
+The amendment raises both bands by 5x, to roughly 4 ULP at the observed magnitude. It does NOT
+weaken the negative control: skip_transpose_merge_pair measured 11.645736694335938 in the same
+run, 2329x the amended fail threshold, so the control still fails by a wide margin and the
+instrument stays alive. Rejected alternative: recomputing the clean arm in f64 so the
+differencing is not f32-limited - declined, since f32 is the production path and agreement only
+in f64 would not be the quantity of interest.
+
+Per section 7.2 a loosened tolerance requires a new bathos run citing the measured deviation.
+This block is that citation. The amended bands take effect from the next run; the superseded
+inconclusive record 6b51b846 stays in the catalog rather than being replaced.
+"""
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+potts_root_env = "AMINX_POTTS_ROOT (defaults to ~/repos/PottsMPNN); the paths below are the canonical checkout layout, not a fixed machine"
+csv = "/home/marielle/repos/PottsMPNN/energy_benchmark_datasets/megascale_test_subset.csv"
+csv_sha256 = "9c816f1d1fb836f5c03db226beeab6af37bbf8bf1110f5af2fdeb72d095ea9e5"
+n_rows = 202804
+pdbs = "/home/marielle/repos/PottsMPNN/energy_benchmark_datasets/megascale_pdbs"
+checkpoint = "/home/marielle/repos/PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt"
+checkpoint_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+pass_bound = "max |ddG| <= 1e-4"
+inconclusive_bound = "(1e-4, 1e-3]"
+fail_bound = "> 1e-3"
+negative_control = "skip_transpose_merge_pair"
+
+[provenance]
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/potts_ddg_megascale.py --mutants skip_transpose_merge_pair --controls-out $SC/potts_ddg_megascale/<git-sha8>/branch_controls.json. Upstream scoring runs under POTTS_ORACLE_PYTHON. Pass, inconclusive, and fail follow the §6.6 K split. Not run by the A4 fixer. Each PDB is one unit for the oracle worker and one unit per arm. The unit body is written, then a completion stamp, under $TMPDIR/potts_ddg_megascale/units (or --work-dir). The cache key is the sha256 of the PDB name, the arm id, the checkpoint sha256, that unit's CSV-plus-PDB sha256, and the script sha256. A unit is reused only when --resume is set (the default) and the stamp matches. The oracle worker and each arm are separate subprocesses with --arm-timeout (default 86400s) and are re-launched up to --max-attempts (default 3); a timeout drops only the in-flight PDB. n_reused counts units stamped before that subprocess loop; n_computed counts units stamped during it. n_units sums the oracle worker and every arm."
+
+[resume]
+unit = "one PDB for one arm, and one PDB for the oracle worker"
+cache_key = "sha256 of unit id, arm id, checkpoint sha256, input CSV/PDB sha256, script sha256"
+max_attempts = 3

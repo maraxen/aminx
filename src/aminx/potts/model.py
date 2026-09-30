@@ -2,6 +2,7 @@
 
 Architecture: PottsModel is a parallel model family (NOT a StageSet consumer).
 See ADR 260605_potts-parallel-not-stageset for design rationale.
+This module is the TRW structure model (aminx.potts); PottsMPNN is aminx.families.potts_mpnn (ADR 260929_pottsmpnn-lasermpnn-family-drivers).
 
 h and J carry a factor-of-2 from the directed-slot PottsMPNN convention
 (counting each pairwise edge twice in the MRF). This factor is preserved

@@ -5,7 +5,9 @@ from typing import Any, Final
 import jax
 import numpy as np
 
+from aminx.host.family_driver import refuse_driver_family
 from aminx.host.schema_versions import GRID_SCHEMA_VERSION
+from aminx.run.spec import mpnn_temperatures
 from aminx.run.specs import SamplingSpecification
 
 # GRID_SCHEMA_VERSION is now defined in schema_versions.py (single source of truth).
@@ -27,7 +29,10 @@ _SEED_HASH_SCHEMA_PIN: Final[str] = "grid_v1"
 def _resolve_grid_lineage(spec: SamplingSpecification) -> dict[str, int | str] | None:
   if not spec.grid_mode:
     return None
-  sample_count = int(spec.sample_count if spec.sample_count is not None else spec.run_spec.sampling.num_samples)
+  refuse_driver_family(spec, surface="grid lineage")
+  sample_count = int(
+    spec.sample_count if spec.sample_count is not None else spec.run_spec.sampling.num_samples,
+  )
   if sample_count <= 0:
     msg = "sample_count must be positive when grid_mode=True."
     raise ValueError(msg)
@@ -118,6 +123,7 @@ def _grid_manifest_row_hash(
   silently), and it is the intended effect of bumping a *schema* version -- it should be a
   breaking change against old resume state, not something that can quietly drift back in.
   """
+  refuse_driver_family(spec, surface="grid lineage")
   payload = {
     "schema_version": GRID_SCHEMA_VERSION,
     "job_id": str(lineage["job_id"]),
@@ -128,7 +134,7 @@ def _grid_manifest_row_hash(
     "ligand_conditioning": bool(spec.ligand_conditioning),
     "sidechain_conditioning": bool(spec.sidechain_conditioning),
     "multi_state_strategy": spec.multi_state_strategy,
-    "temperature": _canonical_float_strings(spec.run_spec.sampling.temperature),
+    "temperature": _canonical_float_strings(mpnn_temperatures(spec.run_spec)),
     "backbone_noise": _canonical_float_strings(spec.run_spec.sampling.backbone_noise),
   }
   return hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()
@@ -144,6 +150,7 @@ def _grid_job_seed_hash(
   `_base_sampling_key`, so its payload must never move for reasons unrelated to a
   deliberate, explicit reproducibility break.
   """
+  refuse_driver_family(spec, surface="grid lineage")
   payload = {
     "schema_version": _SEED_HASH_SCHEMA_PIN,
     "job_id": str(lineage["job_id"]),
@@ -151,7 +158,7 @@ def _grid_job_seed_hash(
     "ligand_conditioning": bool(spec.ligand_conditioning),
     "sidechain_conditioning": bool(spec.sidechain_conditioning),
     "multi_state_strategy": spec.multi_state_strategy,
-    "temperature": _canonical_float_strings(spec.run_spec.sampling.temperature),
+    "temperature": _canonical_float_strings(mpnn_temperatures(spec.run_spec)),
     "backbone_noise": _canonical_float_strings(spec.run_spec.sampling.backbone_noise),
   }
   return hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()

@@ -1,0 +1,9 @@
+{
+  "clean": "pass",
+  "mutants": {
+    "sc_row": "failed"
+  },
+  "weights": {
+    "weights/potts.bin": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  }
+}

@@ -1,0 +1,35 @@
+[metadata]
+title = "PottsMPNN torch checkpoints to Equinox"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The five in-scope PottsMPNN checkpoints convert, and a proteinmpnn_compatible file raises because etab_out is missing."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "n_converted = 5 AND negative_control_raised = true"
+decision = "All five in-scope checkpoints converted and the proteinmpnn_compatible control raised."
+reasoning = "n_converted counts vanilla/soluble 20 and 30 plus ft. The control is a proteinmpnn_compatible state dict, which has no etab_out and must raise so it is never registered under pottsmpnn."
+is_residual = false
+adversarial_check = "NOT (n_converted = 5 AND negative_control_raised = true)"
+
+[outcomes.fail]
+condition = "NOT (n_converted = 5 AND negative_control_raised = true)"
+decision = "Do not register the converted artifacts; a checkpoint failed to convert or the compatible-file control did not raise."
+reasoning = "Fewer than five conversions, or a proteinmpnn_compatible file that converts, would put a ProteinMPNN-only checkpoint on the pottsmpnn registry."
+is_residual = true
+adversarial_check = "n_converted = 5 AND negative_control_raised = true"
+
+[result_schema]
+n_converted = "int — in-scope checkpoints written (expected 5)"
+negative_control_raised = "bool — proteinmpnn_compatible input raised on missing etab_out"
+checkpoint_ids = "list of converted checkpoint ids"
+negative_control_id = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[provenance]
+note = "Graded invocation converts the five paths in tests/port/reference/a1_potts/oracle_manifest.toml (vanilla_20, vanilla_30, soluble_20, soluble_30, ft) under AMINX_POTTS_ROOT. Negative control: any file in proteinmpnn_compatible_model_weights/. Pass and fail conditions are logical complements. Do not register proteinmpnn_compatible ids under pottsmpnn."

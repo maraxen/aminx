@@ -38,6 +38,10 @@ repository = "https://github.com/maraxen/Aminx.git"
 documentation = "https://aminx.readthedocs.io"
 
 [project.optional-dependencies]
+# LASErMPNN host featurizer (families/laser_mpnn/featurize.py) parses with ProDy, as upstream does.
+laser = [
+    "prody>=2.6.1",
+]
 benchmark = [
     "torch>=2.12.0",
     "prody>=2.6.1",
@@ -56,6 +60,8 @@ docs = [
 tests = [
     "pytest",
     "pytest-cov",
+    "pytest-timeout>=2.3.1",
+    "pyarrow>=18",
     "chex",
     "ty",
     "foldcomp",
@@ -86,6 +92,10 @@ dev = [
   "chex",
   "foldcomp",
   "mdtraj",
+  # Provides the `sg` binary. tests/lint/test_potts_import_boundary.py and
+  # tests/lint/test_rs6b_flat_field_gate.py SKIP without it, so six of the
+  # sixteen lint tests silently pass by not running when it is absent.
+  "ast-grep-cli>=0.45",
 ]
 foldcomp = [
     "foldcomp",
@@ -148,8 +158,9 @@ ignore = [
 pylint.max-args = 15
 
 [tool.ruff.lint.flake8-tidy-imports]
-# Enforce import boundaries for aminx.potts module (ADR 260605_potts-parallel-not-stageset)
-# PottsModel is a parallel model family and must NOT import from the stageset/inference pipeline
+# PottsModel stageset bans (ADR 260605, scope-narrowed by ADR 260929): in force for
+# aminx.potts. FamilyDriver modules are exempt via per-file-ignores below.
+# xtrax deep-import bans stay global.
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "aminx.inference.decode" = {msg = "PottsModel is parallel, not a stageset consumer. Use aminx.potts.model.PottsModel.infer_params() instead. See ADR 260605_potts-parallel-not-stageset.md"}
 "aminx.host.plan" = {msg = "PottsModel is parallel, not a stageset consumer. Use aminx.potts.model.PottsModel.infer_params() instead. See ADR 260605_potts-parallel-not-stageset.md"}
@@ -178,6 +189,16 @@ pylint.max-args = 15
 "src/aminx/potts/designer.py" = [
   "TID251",  # Exempt designer.py from banned-api (ADR 260605_potts-parallel-not-stageset: designer is exempt)
 ]
+# ADR 260929: the PottsModel stageset bans above do not apply to PottsMPNN / LASEr
+# FamilyDriver modules. TID251 is one rule code, so these files also skip the xtrax
+# deep-import bans; those bans stay in force for aminx.potts and the rest of the tree.
+# host/family_runner.py is not listed: it already suppresses its host.plan import
+# with a line noqa, and a file-level ignore would make that noqa unused (RUF100).
+"src/aminx/families/potts_mpnn/**/*.py" = ["TID251"]
+"src/aminx/families/laser_mpnn/**/*.py" = ["TID251"]
+"src/aminx/host/family_driver.py" = ["TID251"]
+"src/aminx/model/potts_mpnn/**/*.py" = ["TID251"]
+"src/aminx/model/laser/**/*.py" = ["TID251"]
 "src/aminx/profiling/hlo_tools.py" = [
   "ANN201",
   "ANN202",
@@ -239,7 +260,17 @@ markers = [
     "requires_weights: test requires model weight files (bundled or HF Hub)",
     "knob_differential: control-knob reachability through the real CLI/manifest/spec/runner path",
     "alphabet_boundary: AF-vs-MPNN convention at a real parse/model boundary (never a fixture)",
+    "tier_1: graded port parity tier 1 (dtype and shape)",
+    "tier_2: graded port parity tier 2 (float64 numeric parity)",
+    "tier_3: graded port parity tier 3 (float32 numeric parity)",
+    "tier_4: graded port parity tier 4 (autodiff; blocking only when ad_critical)",
+    "tier_5: graded port parity tier 5 (trace budget, max_traces)",
+    "port_wave(name): port wave this item belongs to",
+    "redsox_gate: redsox gate harness test",
 ]
+
+[tool.port]
+target = "tests/port/targets/port_selftest.toml"
 
 [tool.ty.environment]
 root = ["src/aminx"]
@@ -273,7 +304,9 @@ dev = [
     "alphex>=0.1.0a1",
     "torch>=2.12.0",
     "pytest>=8.0.0",
+    "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.5.0",
+    "pyarrow>=18",
     # Heavy parity: packer test requires Bio (sc_utils PDB IO) and dm-tree (sc_utils import tree).
     "biopython>=1.83",
     "dm-tree>=0.1.8",
@@ -282,7 +315,7 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-aminx = ["py.typed"]
+aminx = ["py.typed", "families/laser_mpnn/ideal_geometry.npz"]
 
 # Weights are tracked in the source tree but must NOT ride along in the wheel. Modern
 # setuptools auto-includes them, which took a25 from 499,612 bytes (a24, zero weight files)

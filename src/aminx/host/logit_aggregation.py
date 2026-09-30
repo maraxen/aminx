@@ -230,7 +230,9 @@ def compute_logit_fingerprint(
   else:
     jsd_to_reference = _jsd_base2(mean_prob, reference_mean_prob)
 
-  subset_size = bootstrap_subset_size if bootstrap_subset_size is not None else max(n_samples // 2, 2)
+  subset_size = (
+    bootstrap_subset_size if bootstrap_subset_size is not None else max(n_samples // 2, 2)
+  )
   subset_keys = jax.random.split(key, bootstrap_b)
 
   def _subset_mean(subset_key: Array) -> Array:

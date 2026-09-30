@@ -21,6 +21,7 @@ from aminx.host._sampling_helper import (
   _structure_ids_for_batch,
   fixed_provenance_outputs,
 )
+from aminx.host.family_driver import refuse_driver_family
 from aminx.host.output_sinks import (
   streaming_tensor_sink_session,
   take_staging_sequences_logits,
@@ -77,6 +78,7 @@ def _sample_streaming(
   too large, xtrax.run.ZarrStagingSink would need an append-mode extension
   to restore true per-chunk incremental writes.
   """
+  refuse_driver_family(spec, surface="streaming")
   grid_lineage = _resolve_grid_lineage(spec)
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -164,12 +166,14 @@ def _sample_streaming(
     # discarded whatever `bias_arrays` staged above (audit finding, task_id
     # `260910_aminx-sink-provenance-schema`): `bias_persisted: true` would then be a lying
     # attr, since the `bias` array it claims exists never reached the store in grid mode.
-    root_arrays.update({
-      "sample_indices": _grid_sample_indices(grid_lineage),
-      "grid_iteration_ids": iteration_ids,
-      "grid_iteration_sample_start": iteration_starts,
-      "grid_iteration_sample_count": iteration_counts,
-    })
+    root_arrays.update(
+      {
+        "sample_indices": _grid_sample_indices(grid_lineage),
+        "grid_iteration_ids": iteration_ids,
+        "grid_iteration_sample_start": iteration_starts,
+        "grid_iteration_sample_count": iteration_counts,
+      },
+    )
   sink.stage((), attrs=root_attrs, **root_arrays)
 
   structure_idx = 0
@@ -277,12 +281,15 @@ def _sample_streaming(
               perplexity_parts[key].append(np.asarray(pseudo_perplexity[i], dtype=np.float32))
 
         for key in structure_keys:
-          concat_arrays: dict[str, np.ndarray] = {"sequences": np.concatenate(seq_parts[key], axis=0)}
+          concat_arrays: dict[str, np.ndarray] = {
+            "sequences": np.concatenate(seq_parts[key], axis=0),
+          }
           # The evidence that anything was actually held fixed. Emitted beside the sequences
           # so a reader can CHECK them against it; without this the mask reached the model
           # and vanished, and 882/882 rows completed with valid digests and void science.
           fixed_arrays, fixed_attrs = fixed_provenance_outputs(
-            spec, seq_len=int(batched_ensemble.coordinates.shape[1]),
+            spec,
+            seq_len=int(batched_ensemble.coordinates.shape[1]),
           )
           concat_arrays.update(fixed_arrays)
           if logits_parts[key]:
