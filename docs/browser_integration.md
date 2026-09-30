@@ -192,7 +192,11 @@ Two levers exist and neither has been measured, so neither is claimed:
 
 - **Threads.** These numbers are `numThreads = 1`. Multithreaded wasm needs cross-origin
   isolation (the COOP/COEP headers under "Hosting requirements"). Expect improvement;
-  don't quote a figure until it is run.
+  don't quote a figure until it is run. Attempted at 4 threads and it did **not** run
+  (`98a62501`, graded incomplete): above one thread ORT-Web spawns Workers that *fetch*
+  the threaded wasm binary, which fails when the runtime is loaded from a `file://` path.
+  It needs the ORT dist served over HTTP, so the figure will come from the browser
+  harness rather than from a standalone script.
 - **WebGPU.** See below. Unvalidated.
 
 ## The four-graph split (faster and much smaller; browser validation pending)
