@@ -157,14 +157,21 @@ def _analytic_abs_err() -> float:
         length = 3
         alphabet = 22
         table = jnp.zeros((length, length, alphabet, alphabet), dtype=jnp.float64)
-        table = table.at[0, 1, 1, 2].set(0.5)
-        table = table.at[1, 2, 2, 0].set(-0.25)
-        table = table.at[2, 0, 0, 1].set(1.25)
         neighbors = jnp.asarray([[0, 1, 2], [1, 2, 0], [2, 0, 1]], dtype=jnp.int32)
-        valid = jnp.ones((length,), dtype=jnp.bool_)
         sequence = jnp.asarray([1, 2, 0], dtype=jnp.int32)
+        # etab is [L K A A]: axis 1 is the NEIGHBOUR SLOT, and neighbors[i, k] is the
+        # residue in that slot - not an absolute residue index. Each entry below is
+        # (i, slot 1, a_i, a_partner) for the partner neighbors[i, 1] actually holds:
+        #   i=0 slot1 -> residue 1, a=2   ->  0.5
+        #   i=1 slot1 -> residue 2, a=0   -> -0.25
+        #   i=2 slot1 -> residue 0, a=1   ->  1.25
+        # summing to 1.5. Indexing axis 1 as a residue leaves two terms unselected and
+        # yields 0.5, which is what this control reported before (analytic_abs_err 1.0).
+        table = table.at[0, 1, 1, 2].set(0.5)
+        table = table.at[1, 1, 2, 0].set(-0.25)
+        table = table.at[2, 1, 0, 1].set(1.25)
+        valid = jnp.ones((length,), dtype=jnp.bool_)
         got = potts_energy(table, neighbors, valid, sequence)
-        # Slots: (i=0,k=1) 0.5, (i=1,k=2) -0.25, (i=2,k=0) 1.25.
         return float(jnp.abs(got - jnp.asarray(1.5, dtype=jnp.float64)))
 
 
