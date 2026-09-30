@@ -1,0 +1,73 @@
+[metadata]
+title = "G0c: the wave schedule + ar_mask converts to a standalone ONNX graph (Graph W)"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The schedule half of `p07_bundle` (export/wrappers.py:340-374) -- `wave_from_decoding_order` plus `generate_ar_mask`, taking only `decoding_order` and `tie_group_map` -- converts to a self-contained ONNX graph via jax2onnx, loads in onnxruntime CPU, and reproduces ALL FIVE JAX outputs (group_ids, group_positions, group_valid, position_valid, ar_mask) EXACTLY on a synthetic L=128 fixture with a non-identity decoding order, multi-member tie groups and unused group ids. Exactness, not a tolerance, is the correct instrument here because every output of this graph is discrete -- indices, validity masks, and a 0/1 ar_mask -- so the only failure mode is a permuted index, which is either right or wrong; a float bound would be structurally unable to see it. This is gate G0c, the last of the four-graph split's feasibility probes (decision D1, .praxia/docs/daily/260929_overnight-decisions.md), sibling to G0 (Graph E + Graph D, run 8daaa978) and G0b (Graph F, run b8f413b6); it re-opens neither. Why it matters that this exports rather than being hand-ported: Graph W carries `wave_from_decoding_order`'s jax.lax.sort (wrappers.py:316-321), one of only two index-producing sites in the traced graph and, per xtrax .praxia/docs/research/260914_browser-inference-routes-jaxjs-jax2onnx.md S5, the more consequential one -- it determines the order residues are generated in, so a permutation changes the whole design rather than one neighbour list, and that research names a hand-rolled multi-key sort as the likeliest way this route produces a green check over wrong output. Graph W runs once per SAMPLE, so the int64 TopK it retains costs one WebGPU partition boundary per design, not per wave (cost accepted in D1)."
+stage_name = "validation"
+claim_discriminates = ["H_wave_exportable", "H_null_conversion_blocked"]
+claim_isolates = ["C_wave_instrument"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling probes).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "fixture_blind", "ctrl_blind", "fail"]
+
+# First matching branch wins: incomplete, fixture_blind, ctrl_blind, fail, pass.
+
+[outcomes.incomplete]
+condition = "jax_enable_x64 OR NOT w_converted OR NOT w_ran OR NOT git_clean"
+decision = "The graph did not convert, did not load/run, the tree was dirty in a code path, or the process had x64 enabled. If conversion itself failed, THAT IS THE FINDING: the wave schedule cannot be exported standalone, and decision D1 reverses -- the multi-key sort would have to move to JavaScript, which is a supervised change, not an autonomous one."
+reasoning = "A conversion refusal is the outcome this gate exists to detect and must never be reported as a parity result; `failure` carries the exception text. x64 matters doubly here because this is the graph that emits int64 TopK indices already."
+is_residual = true
+
+[outcomes.fixture_blind]
+condition = "NOT fixture_ok"
+decision = "The fixture was degenerate -- an identity decoding order, no multi-member tie group, or no unused group ids -- so a clean comparison says nothing about the cases this graph exists to handle."
+reasoning = "An identity order makes the sort trivial and puts one position in every wave, and with no ties or padding the group_positions/position_valid machinery is never exercised. Asserting the fixture's shape is what stops this gate passing on inputs that never reached the interesting branches -- the same anti-vacuity discipline the negative controls apply to the comparator."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "A negative control did not fire: a planted single-index change or a planted single-mask flip was not detected. No feasibility statement is permitted."
+reasoning = "`array_equal` is trivially satisfied by comparing an array to itself, so the exactness checks are pass-by-default. The two controls perturb one element of each output KIND this graph produces -- an index array and a boolean mask -- which is what proves the comparator can fail at all (rules/BATHOS.md)."
+is_residual = true
+
+[outcomes.fail]
+condition = "n_outputs_exact < n_outputs_total"
+decision = "Graph W converted and ran, but at least one output differs from JAX; `mismatched_outputs` names which. The wave schedule converts but is wrong, and since it fixes the generation order this would change designs silently. Do not build on it until root-caused."
+reasoning = "This is the precise failure the route research predicts for multi-key sort lowered to repeated TopK: jax2onnx implements it as an LSD radix pass that is only correct if each pass is stable. Naming the specific mismatched outputs is what makes such a failure diagnosable rather than just red."
+is_residual = true
+
+[outcomes.pass]
+condition = "w_all_outputs_exact"
+decision = "The wave schedule and ar_mask are exportable and exactly faithful on this fixture. The four-graph split (E/W/D/F) is fully realisable, no multi-key sort needs hand-porting, and G1a reduces to index bookkeeping."
+reasoning = "Bit-exact agreement on all five discrete outputs, on a fixture demonstrably covering non-identity order, multi-member ties and padded slots, with a demonstrably sensitive comparator, is the minimum evidence that this graph need not be reimplemented by hand."
+is_residual = false
+
+[result_schema]
+length = "int"
+w_converted = "bool"
+w_ran = "bool"
+w_all_outputs_exact = "bool"
+n_outputs_exact = "int"
+n_outputs_total = "int"
+w_onnx_bytes = "int"
+fixture_ok = "bool"
+controls_total = "int"
+controls_detected = "int"
+ctrl_index_perturb_detected = "bool"
+ctrl_mask_flip_detected = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+git_dirty_paths = "str"
+jax_enable_x64 = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
