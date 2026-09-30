@@ -190,13 +190,23 @@ steps (256 instead of 128) and has **not** been measured.
 
 Two levers exist and neither has been measured, so neither is claimed:
 
-- **Threads.** These numbers are `numThreads = 1`. Multithreaded wasm needs cross-origin
-  isolation (the COOP/COEP headers under "Hosting requirements"). Expect improvement;
-  don't quote a figure until it is run. Attempted at 4 threads and it did **not** run
-  (`98a62501`, graded incomplete): above one thread ORT-Web spawns Workers that *fetch*
-  the threaded wasm binary, which fails when the runtime is loaded from a `file://` path.
-  It needs the ORT dist served over HTTP, so the figure will come from the browser
-  harness rather than from a standalone script.
+- **Threads — the big one, and it works.** The table above is `numThreads = 1`. In
+  headless Chromium with COOP/COEP the split ran at **4 effective threads** with a median
+  of **6.7 s** per design against **16.3 s** single-threaded (`da02516e` vs `d6be02ea`).
+  Results were unchanged — tokens identical, log-probs bit-identical — so the speed costs
+  nothing in correctness.
+
+  **Treat ~2.4× as indicative, not measured.** Those two wall times come from the parity
+  gates, which grade correctness and carry **no timer control**; G4's planted-delay check
+  validated `process.hrtime` under Node, not the browser's `performance.now`. The figure
+  is almost certainly real — it is far too large to be clock noise — but quoting it as a
+  measured speedup would repeat the mistake that got this project's first benchmark
+  discarded. A browser benchmark with its own planted-delay control is what would settle
+  it.
+
+  Practical reading: enabling COOP/COEP is the difference between roughly 17 s and
+  roughly 7 s per design, which makes those headers the main performance lever rather
+  than a hosting detail.
 - **WebGPU.** See below. Unvalidated.
 
 ## The four-graph split (faster and much smaller; browser validation pending)
@@ -223,7 +233,9 @@ Correctness, all from run records:
 | :--- | :--- | :--- |
 | Split vs monolith and vs JAX, ORT-CPU, L128 | tokens **exact** 56/56 | `d2a06073` |
 | Same at L256 | tokens **exact** 32/32 | `ed2a2617` |
-| Shipping `split_loop.mjs` on ORT-Web wasm | tokens **exact** 56/56 | `bc8eb3d7` |
+| Shipping `split_loop.mjs` on ORT-Web wasm (Node) | tokens **exact** 56/56 | `bc8eb3d7` |
+| **Shipping loop in headless Chromium** | tokens **exact** 8/8 | `d6be02ea` |
+| **Same, 4 threads with COOP/COEP** | tokens **exact** 8/8, log-probs **bit-identical** to 1 thread | `da02516e` |
 | **Split vs reference ProteinMPNN, teacher-forced, direct** | **3.822e-05 nats** (bound 1e-4) | `ed4f0b77` |
 
 The last row is the important one: the exported split graphs were compared **directly**
@@ -236,9 +248,17 @@ Across both buckets that is 15,360 decoder invocations with zero token mismatche
 the error does not grow with length — the L256 log-prob gap (4.768e-06) matches L128's
 exactly, so doubling the autoregressive depth does not accumulate drift.
 
-What is still missing before recommending it over the monolith: **a real-browser run.**
-Everything above is Node, and while that executes the same wasm module a page would load,
-it is not the same environment. Use the monolith until that lands.
+The browser rows are the ones that matter for a page, and they cover the full knob set —
+`fixed_positions`, `tied_pairs`, `chains_to_design` and `explicit_order` — end to end
+through the real sampling loop, with `crossOriginIsolated` confirmed true.
+
+**Threading is safe.** At 4 threads the tokens are identical and the log-prob difference
+is *bit-identical* to the single-threaded run. That was worth checking rather than
+assuming: thread count changes float accumulation order, so results could in principle
+have moved, and this guide asks you to enable COOP/COEP.
+
+Remaining gaps, both narrow: L=256 has been validated against the monolith under ORT-CPU
+but not yet in the browser, and WebGPU is untouched (below).
 
 ## WebGPU
 
