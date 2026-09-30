@@ -1659,9 +1659,28 @@ def campaign_plan(
     ),
   ] = None,
   state_weight_profiles: Annotated[
-    str,
-    _OPT("--state-weight-profiles", help="Comma-separated state weight profile names"),
-  ] = "equal",
+    str | None,
+    _OPT(
+      "--state-weight-profiles",
+      help=(
+        "Comma-separated state weight profile NAMES. Only 'equal' resolves by name; any "
+        "other name must also be declared with --state-weight-profile. Default: equal, "
+        "unless --state-weight-profile is given."
+      ),
+    ),
+  ] = None,
+  state_weight_profile: Annotated[
+    list[str] | None,
+    _OPT(
+      "--state-weight-profile",
+      help=(
+        "Profile LABEL=WEIGHTS, e.g. pocket_heavy=0.7|0.3 -- one weight per state, pipe- or "
+        "comma-separated; a 1-D .npy path also works. Reaches each row's state_weights, so "
+        "two profiles are two genuinely different weightings. Repeatable; each profile is "
+        "its own row-set."
+      ),
+    ),
+  ] = None,
   checkpoint_id: Annotated[
     str | None,
     _OPT("--checkpoint-id", help="Checkpoint identifier for manifest rows"),
@@ -1704,6 +1723,7 @@ def campaign_plan(
     SamplingSpecification,
     _parse_csv,
     parse_fixed_arms,
+    parse_state_weight_profiles,
     write_campaign_manifest,
   )
 
@@ -1723,7 +1743,9 @@ def campaign_plan(
     samples_chunk_size=samples_chunk_size,
     output_root=output_root,
     fixed_arms=parse_fixed_arms(fixed_arm),
-    state_weight_profiles=_parse_csv(state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      state_weight_profiles, state_weight_profile,
+    ),
   )
 
 
@@ -1901,9 +1923,28 @@ def campaign_ramp_plan(
     ),
   ] = None,
   state_weight_profiles: Annotated[
-    str,
-    _OPT("--state-weight-profiles", help="Comma-separated state weight profile names"),
-  ] = "equal",
+    str | None,
+    _OPT(
+      "--state-weight-profiles",
+      help=(
+        "Comma-separated state weight profile NAMES. Only 'equal' resolves by name; any "
+        "other name must also be declared with --state-weight-profile. Default: equal, "
+        "unless --state-weight-profile is given."
+      ),
+    ),
+  ] = None,
+  state_weight_profile: Annotated[
+    list[str] | None,
+    _OPT(
+      "--state-weight-profile",
+      help=(
+        "Profile LABEL=WEIGHTS, e.g. pocket_heavy=0.7|0.3 -- one weight per state, pipe- or "
+        "comma-separated; a 1-D .npy path also works. Reaches each row's state_weights, so "
+        "two profiles are two genuinely different weightings. Repeatable; each profile is "
+        "its own row-set."
+      ),
+    ),
+  ] = None,
   plan_path: Annotated[
     Path | None,
     _OPT("--plan-path", help="Path to write scale ramp plan JSON"),
@@ -1920,6 +1961,7 @@ def campaign_ramp_plan(
     _parse_csv,
     _parse_int_csv,
     parse_fixed_arms,
+    parse_state_weight_profiles,
     plan_scale_ramp,
   )
 
@@ -1936,7 +1978,9 @@ def campaign_ramp_plan(
     stage_designs_per_library_type=_parse_int_csv(stage_designs_per_library_type),
     samples_chunk_size=samples_chunk_size,
     fixed_arms=parse_fixed_arms(fixed_arm),
-    state_weight_profiles=_parse_csv(state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      state_weight_profiles, state_weight_profile,
+    ),
   )
   _emit_json(plan_payload, str(plan_path) if plan_path else None)
 
