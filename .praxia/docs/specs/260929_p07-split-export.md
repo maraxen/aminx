@@ -434,32 +434,41 @@ bathos run record, not from console output.
 | G1-256 | same as G1 at L256, 32 cells | running | — |
 | G1c | split in Chromium (the real browser environment) | not run | — |
 | G4 | wall time, session create, peak RSS, wasm single-thread | **pass** | `be45e729` |
-| G3a | **reference** PyTorch vs split, teacher-forced | transferred — see below | `fd80f81d` + `d2a06073` |
+| G3a | **reference** PyTorch vs split, teacher-forced, DIRECT | **pass** — 3.822e-05 nats | `ed4f0b77` |
 | G3b | reference vs split, recovery/perplexity | not run | — |
 | G2 | WebGPU, ORT-Web EP and @jax-js/onnx | not run | — |
 
-**On G3a — and a correction to how this was first written here.** The knobs gate's B1
-check (`p07_knobs_gate.py:1710`) compares **aminx JAX against the PyTorch reference
-directly**, via `layer_a_common.load_full_model("eqx")`. It does *not* run through ONNX.
-So the knobs gate never measured "the monolith against the reference" as an earlier
-revision of this section claimed; it measured reference↔JAX (B1) and JAX↔ONNX (check A)
-as two separate links.
+**On G3a — now measured directly, no longer composed.** The knobs gate's B1 check
+(`p07_knobs_gate.py:1710`) compares **aminx JAX against the PyTorch reference directly**,
+never through ONNX. So the anchoring used to reach the split only by chaining
+reference↔JAX (B1) with JAX↔split (G1). Run `ed4f0b77` removes the intermediary:
 
-That makes the split's chain to the reference **two measured links, both direct**:
-
-| Link | Measured | Bound | Run |
+| Claim | Measured | Bound | Run |
 | :--- | :--- | :--- | :--- |
-| reference PyTorch ↔ aminx JAX, teacher-forced | 4.482e-05 nats | 1e-4 | `fd80f81d` |
-| aminx JAX ↔ split, tokens + log-probs | **exact** / 1.526e-05 | 2e-4 | `d2a06073` |
+| **split graphs ↔ reference PyTorch, teacher-forced** | **3.822e-05 nats** | 1e-4 | `ed4f0b77` |
+| reference ↔ aminx JAX (context) | 4.482e-05 nats | 1e-4 | `fd80f81d` |
+| aminx JAX ↔ split (context) | exact / 1.526e-05 | 2e-4 | `d2a06073` |
 
-The monolith is not load-bearing in that chain at all — G1 compared the split to JAX
-directly, so the monolith is corroboration rather than an intermediate. Good, because a
-shorter chain is a stronger one.
+The exported graphs meet the reference at essentially the same distance aminx's own JAX
+does — 3.8e-05 against 4.5e-05 — which is the strongest form this evidence takes.
 
-Remaining caveats, unchanged: a composed claim is only as tight as its weaker link, and
-two chained measurements are weaker evidence than one direct split-vs-reference
-teacher-forced run. The machinery for that direct run now exists (B1's own helpers plus
-the split composition), so it is cheap and worth doing before publication.
+**Scope, and it is narrow.** Untied lanes, fully-designed structures, L=128, ORT-CPU, two
+cases (5L33, 6MRR). Four cases are skipped with recorded reasons: every P07 lane plus
+1BC8's P08 lane carry a non-zero `fixed_mask`, and Graph D has no `chain_mask` input
+because the split handles fixed positions in Graph F's override during *sampling* rather
+than inside the conditional decode. Where positions are fixed, this gate would be
+comparing two different functions. Fixed positions are covered instead by G1/G1n end to
+end through the real sampling loop, 88 cells across both buckets, tokens exact.
+
+**`tie_lattice_L96` is excluded, and the reason matters.** Two earlier runs of this gate
+graded `fail` at ~2.4 nats on it, and both records are committed. Reading that as an
+export defect would have been wrong: the knobs gate itself excludes that fixture from B1
+(`p07_knobs_gate.py:1934-1943`), so aminx JAX versus the reference has never been measured
+on it either. It is a synthetic lattice built to produce tied k-NN distances, so a gap
+there says the JAX-to-reference link is unmeasured on that fixture and supports no
+split-specific conclusion. Whether the reference and aminx agree on deliberately-tied
+geometry is a real open question — it is simply not this gate's question, and it is the
+one the route research's sort-stability hypothesis would bear on.
 
 Production sizes at L=128 (manifest run `5ee51cbb`): E 3,970,503 B · W 57,482 B ·
 D 2,905,149 B · F 30,922 B — **6,964,056 B total, against the monolith's 20,374,293 B**,

@@ -213,13 +213,28 @@ The size gap widens with length because the split's graphs are weight-dominated 
 loop-free, while the monolith embeds the unrolled control flow *and* both decoder
 implementations behind a runtime branch.
 
-Correctness so far: the split reproduces the monolith's tokens **exactly** on 56/56 cells
-under native ORT-CPU (run `d2a06073`) and again through the shipping JavaScript loop on
-ORT-Web wasm (run `bc8eb3d7`), with log-probs within 7.4e-06. Since the monolith is itself
-anchored to reference ProteinMPNN, that anchoring carries over.
+Correctness, all from run records:
 
-What is still missing before recommending it: a real-browser run (everything so far is
-Node), and L=256 parity. Use the monolith until those land.
+| Check | Result | Run |
+| :--- | :--- | :--- |
+| Split vs monolith and vs JAX, ORT-CPU, L128 | tokens **exact** 56/56 | `d2a06073` |
+| Same at L256 | tokens **exact** 32/32 | `ed2a2617` |
+| Shipping `split_loop.mjs` on ORT-Web wasm | tokens **exact** 56/56 | `bc8eb3d7` |
+| **Split vs reference ProteinMPNN, teacher-forced, direct** | **3.822e-05 nats** (bound 1e-4) | `ed4f0b77` |
+
+The last row is the important one: the exported split graphs were compared **directly**
+against the PyTorch reference, not via aminx's JAX, and land at essentially the same
+distance aminx's own JAX does (3.8e-05 against 4.5e-05). That measurement is scoped to
+untied lanes on fully-designed structures at L=128; fixed-position and tied cases are
+covered instead by the exact-token parity rows above, which run the full sampling loop.
+
+Across both buckets that is 15,360 decoder invocations with zero token mismatches, and
+the error does not grow with length — the L256 log-prob gap (4.768e-06) matches L128's
+exactly, so doubling the autoregressive depth does not accumulate drift.
+
+What is still missing before recommending it over the monolith: **a real-browser run.**
+Everything above is Node, and while that executes the same wasm module a page would load,
+it is not the same environment. Use the monolith until that lands.
 
 ## WebGPU
 
