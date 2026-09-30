@@ -110,15 +110,21 @@ def main(argv: list[str] | None = None) -> int:
 
     probe_out = work / "probe.json"
     cmd = [
-      node, str(_SAMPLER / "webgpu_probe.mjs"),
+      node, str(_REPO_ROOT / "browser" / "layer_c" / "webgpu_probe.mjs"),
       "--site", str(site),
       "--out", str(probe_out),
       "--bucket", str(args.bucket),
     ]
     logger.info("running: %s", " ".join(cmd))
-    subprocess.run(cmd, check=False, timeout=900)  # noqa: S603
+    # Capture rather than inherit: when the driver dies at import time (a missing
+    # package, say) an inherited stderr did NOT reach this gate's log, and the failure
+    # read as a bare "wrote no output" with the actual cause invisible. Folding the tail
+    # into the message makes the next such failure diagnosable from the record alone.
+    proc = subprocess.run(cmd, check=False, timeout=900, capture_output=True, text=True)  # noqa: S603
+    if proc.stderr:
+      logger.info("probe driver stderr tail:\n%s", proc.stderr[-2000:])
     if not probe_out.is_file():
-      msg = "probe driver wrote no output"
+      msg = f"probe driver wrote no output (rc={proc.returncode}): {proc.stderr[-600:]}"
       raise RuntimeError(msg)
     p = json.loads(probe_out.read_text())
 
