@@ -522,7 +522,7 @@ the failure mode this replaces.
 |---------|---------|
 | `uv run pytest` | Fast test suite (excludes `parity_heavy`) |
 | `uv run ruff check src` | Lint |
-| `uv run ty check` | Type check (ty strict) |
+| `uv run --extra dev ty check` | Type check (advisory: not a CI gate, and it currently reports many diagnostics) |
 | `uv run ruff format .` | Auto-format |
 
 All five decoding paths are validated via `parity_heavy` tests — see [Validation Reference](#validation-reference) below.
