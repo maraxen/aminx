@@ -27,6 +27,17 @@ if TYPE_CHECKING:
 PRNGKeyArray = jax.Array
 LayerNorm = eqx.nn.LayerNorm
 
+# Three distinct top-k windows govern LigandMPNN's neighbourhoods; conflating them is silent
+# because none of them changes a stored tensor shape:
+#   * ``k_neighbors``       -- residue kNN graph (checkpoint-parameterised: 30/32/48).
+#   * ``atom_context_num``  -- nearest ligand atoms per residue (checkpoint-parameterised:
+#                              25 for ``ligandmpnn_v_32_*_25``, 16 for the ``_sc_`` packer).
+#   * this constant         -- how many of a residue's nearest NEIGHBOUR residues contribute
+#                              their side-chain atoms as extra ligand context. Hardcoded ``16``
+#                              in the reference (``E_idx[:, :, :16]`` in ``model_utils.py``),
+#                              independent of both of the above.
+SIDE_CHAIN_CONTEXT_NEIGHBORS = 16
+
 # Static periodic table features: (3, 119)
 # 0: Atomic Number (0-118)
 # 1: Group (1..18, 0 for null)
@@ -365,7 +376,7 @@ class ProteinFeaturesLigand(eqx.Module):
         else chain_mask.astype(jnp.float32)
       )
 
-      e_idx_sub = E_idx[:, :16]
+      e_idx_sub = E_idx[:, :SIDE_CHAIN_CONTEXT_NEIGHBORS]
       atom_37_mask = atom_37_mask * (1.0 - chain_mask_in[:, None])
       r_m = atom_37_mask[:, 5:][e_idx_sub]
       r = atom_37[:, 5:, :][e_idx_sub]

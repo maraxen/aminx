@@ -848,6 +848,8 @@ def main():
             num_encoder_layers=3,
             num_decoder_layers=3,
             k_neighbors=32 if "32" in args.input else 48,
+            # A property of the checkpoint (reference: run.py reads checkpoint["atom_context_num"]).
+            atom_context_num=int((checkpoint_payload or {}).get("atom_context_num", 16)),
             num_positional_embeddings=num_pos,
             num_context_layers=NUM_LIGAND_CONTEXT_LAYERS,
             ligand_mpnn_use_side_chain_context=use_side_chain_context,

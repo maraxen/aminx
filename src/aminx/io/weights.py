@@ -424,6 +424,7 @@ def load_model(
       num_encoder_layers=NUM_ENCODER_LAYERS,
       num_decoder_layers=NUM_DECODER_LAYERS,
       k_neighbors=topo["k_neighbors"],
+      atom_context_num=topo["atom_context_num"],
       num_positional_embeddings=topo["num_positional_embeddings"],
       num_context_layers=NUM_LIGAND_CONTEXT_LAYERS,
       ligand_mpnn_use_side_chain_context=use_side_chain_context,
