@@ -93,6 +93,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
     "per_case": [],
     "skipped": [],
     "n_positions_compared": -1,
+    "fixtures": [],
+    "excluded_fixtures": [],
     "controls_total": 1,
     "controls_detected": 0,
     "ctrl_perturb_detected": False,
@@ -114,10 +116,34 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
     import tempfile  # noqa: PLC0415
 
     work = Path(tempfile.mkdtemp(prefix="p07_split_ref_tf_"))
-    geometries = [
-      _parse_geometry(row, work / "canonical")
-      for row in _select_fixtures(_load_manifest(), [args.bucket])
+
+    # Select REAL structures that fit the bucket, rather than _select_fixtures' curated
+    # per-bucket map, which for L=128 yields only 5L33 plus the synthetic lattice -- one
+    # comparable case, below this gate's own floor.
+    #
+    # tie_lattice_L96 is excluded deliberately and for the same reason the knobs gate
+    # excludes it from B1 (p07_knobs_gate.py:1934-1943, which prefers 5L33 and skips this
+    # fixture by name): it is a SYNTHETIC lattice built to produce tied k-NN distances, so
+    # aminx JAX versus the reference has never been measured on it either. The first runs
+    # of this gate scored 2.4 nats there, and attributing that to the split would have
+    # been wrong -- the JAX-to-reference link is simply unmeasured on that fixture, so no
+    # split-specific conclusion is available. Excluding it keeps this gate's scope equal
+    # to B1's, which is what makes the two numbers comparable.
+    from aminx.io.weights import get_topology_for_checkpoint  # noqa: PLC0415
+
+    k_neighbors = int(get_topology_for_checkpoint("proteinmpnn_v_48_020")["k_neighbors"])
+    rows = [
+      row
+      for row in _load_manifest()["fixtures"]
+      if isinstance(row, dict)
+      and str(row["name"]) != "tie_lattice_L96"
+      and k_neighbors <= int(row["L"]) <= args.bucket
     ]
+    result["fixtures"] = [str(r["name"]) for r in rows]
+    result["excluded_fixtures"] = ["tie_lattice_L96 (synthetic tie lattice; outside B1 scope)"]
+    logger.info("fixtures %s", result["fixtures"])
+    geometries = [_parse_geometry(row, work / "canonical") for row in rows]
+    _ = _select_fixtures  # kept imported for parity with sibling gates; unused here
     _jax_model, pt_model, torch, _utils = lac.load_full_model("eqx")
 
     enc_sess = ort.InferenceSession(
