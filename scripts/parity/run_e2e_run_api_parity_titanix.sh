@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run the e2e run-API parity cells on titanix CPU, one process per cell.
 #
-# Pre-registered: scripts/parity/e2e_run_api_parity.py.bth.toml.  Usage, from the repo root on titanix:
+# Pre-registered: scripts/parity/e2e_run_api_parity.bth.toml.  Usage, from the repo root on titanix:
 #
 #   bash scripts/parity/run_e2e_run_api_parity_titanix.sh <out-dir> <code-commit> [--smoke]
 #

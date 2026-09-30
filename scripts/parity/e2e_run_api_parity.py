@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end parity of the public run API (spec -> runner -> sample()/score()) against upstream LigandMPNN.
 
-Pre-registered: scripts/parity/e2e_run_api_parity.py.bth.toml.  Why this exists: the old
+Pre-registered: scripts/parity/e2e_run_api_parity.bth.toml.  Why this exists: the old
 "end-to-end-run-apis" parity path called run_sample twice and compared the two results to each other
 (self-consistency), and no test drove RunSpec / the runner against the upstream reference (aminx debt
 #2326).  This drives BOTH implementations on identical inputs and compares their outputs.
@@ -63,7 +63,12 @@ CHAIN = "C"
 ORDER_SEED = 7  # seeds the injected decoding-order randn (both sides consume the same row)
 SAMPLE_SEED = 3
 DIST_SEED = 5
-N_PAD = 512  # aminx pads per-position arrays to RunSpecification.max_length
+# aminx pads every per-position array to RunSpecification.max_length (default 512) and the AR decode runs at the
+# PADDED length, so a 93-residue chain at 512 costs ~86 s/sample on CPU (measured: 4 samples = ~345 s, warm or cold;
+# compile is not the cost).  The experiment buckets to the smallest multiple of 32 that fits chain C (93 -> 96).
+# That is itself a declared knob: one cell (pmpnn__pad512) runs the default 512 path.
+N_PAD = 96
+PAD_DEFAULT = 512
 N_TEACHER = 4
 N_DIST = 512
 N_DIST_SMOKE = 32
@@ -97,7 +102,19 @@ KNOBS: dict[str, dict[str, Any]] = {
   "fixed_1_10": {"ref": ["--fixed_residues", " ".join(f"{CHAIN}{i}" for i in range(1, 11))], "temperature": None},
   "redesign_20_60": {"ref": ["--redesigned_residues", " ".join(f"{CHAIN}{i}" for i in range(20, 61))],
                      "temperature": None},
+  # The default padded length users actually run.  Too slow for the 512-draw lane (see N_PAD), so lanes T and C
+  # only, at N_TEACHER samples.
+  "pad512": {"ref": [], "temperature": None, "max_length": PAD_DEFAULT, "lanes": "TC"},
 }
+
+
+def _pad(knob: str) -> int:
+  return int(KNOBS.get(knob, {}).get("max_length", N_PAD))
+
+
+def _lanes(knob: str) -> str:
+  return str(KNOBS.get(knob, {}).get("lanes", "TDC"))
+
 DEFAULT_T = 0.1  # run.py and SamplingSpecification both default to 0.1
 
 # Knobs the reference's run.py exposes that this experiment does NOT vary, stated not omitted.
@@ -108,9 +125,11 @@ KNOBS_DECLARED_UNVARIED = (
   "global_transmembrane_label", "checkpoints: solublempnn/membrane/sc", "structures other than 1BC8 chain C",
 )
 KNOBS_VARIED = ("temperature", "omit_AA", "bias_AA", "fixed_residues", "redesigned_residues",
-                "model_type+checkpoint (protein_mpnn, ligand_mpnn)", "decoding order (injected)")
+                "model_type+checkpoint (protein_mpnn, ligand_mpnn)", "decoding order (injected)",
+                "max_length (96 bucket everywhere; the default 512 in one protein_mpnn cell, lanes T and C only)")
 
-KNOB_CELLS = {f"{m}__{k}": (m, k) for m in MODELS for k in KNOBS}
+KNOB_CELLS = {f"{m}__{k}": (m, k) for m in MODELS for k in KNOBS if k != "pad512"}
+KNOB_CELLS["pmpnn__pad512"] = ("pmpnn", "pad512")
 SCORE_CELLS = {f"{m}__score": (m, "score") for m in MODELS}
 CONTROL_CELLS = {
   "ctl_T_wrong_order": ("pmpnn", "fixed_1_10"),
@@ -282,25 +301,25 @@ def _order_fn(order: np.ndarray, length: int):
   return fn
 
 
-def aminx_kwargs(model_key: str, ctx: dict[str, Any], *, temperature: float, bias_override: np.ndarray | None = None
-                 ) -> dict[str, Any]:
+def aminx_kwargs(model_key: str, ctx: dict[str, Any], *, temperature: float, bias_override: np.ndarray | None = None,
+                 pad: int = N_PAD) -> dict[str, Any]:
   """aminx spec kwargs derived from the reference's feature dict, so both sides share one source of truth."""
   root = _ref_root()
   fd = ctx["fd"]
   chain_mask = fd["chain_mask"][0].numpy()
   s_native = fd["S"][0].numpy()
   kw: dict[str, Any] = {"inputs": [str(root / "inputs" / PDB_NAME)], "checkpoint_id": MODELS[model_key]["checkpoint"],
-                        "chain_id": CHAIN, "temperature": temperature}
+                        "chain_id": CHAIN, "temperature": temperature, "max_length": pad}
   length = chain_mask.shape[0]
   fixed = chain_mask == 0
   if fixed.any():
-    fm = np.zeros(N_PAD, np.float32)
-    ft = np.zeros(N_PAD, np.int32)
+    fm = np.zeros(pad, np.float32)
+    ft = np.zeros(pad, np.int32)
     fm[:length][fixed] = 1.0
     ft[:length][fixed] = s_native[fixed]
     kw["fixed_mask"], kw["fixed_tokens"] = fm, ft
   ref_bias = fd["bias"][0].numpy()  # (L, 21) = -1e8*omit + bias_AA
-  bias = np.zeros((N_PAD, 21), np.float32)
+  bias = np.zeros((pad, 21), np.float32)
   bias[:length] = ref_bias
   if bias_override is not None:
     bias = bias_override
@@ -349,8 +368,8 @@ def shared_sample(model_key: str, knob: str, ctx: dict[str, Any], *, n_draws: in
   fd, out = ctx["fd"], ctx["out"]
   order = out["decoding_order"][0].numpy() if order_override is None else order_override
   temperature = (KNOBS[knob]["temperature"] or DEFAULT_T) * temperature_scale
-  return aminx_sample(aminx_kwargs(model_key, ctx, temperature=temperature), num_samples=n_draws, seed=DIST_SEED,
-                      order=order, length=fd["mask"].shape[1])
+  return aminx_sample(aminx_kwargs(model_key, ctx, temperature=temperature, pad=_pad(knob)), num_samples=n_draws,
+                      seed=DIST_SEED, order=order, length=fd["mask"].shape[1])
 
 
 def lane_teacher(ctx: dict[str, Any], seqs: np.ndarray, logits: np.ndarray) -> dict[str, Any]:
@@ -398,11 +417,11 @@ def lane_collapsed(model_key: str, knob: str, *, bias_poke: bool = False) -> dic
   ref_seq = out["S"][0].numpy()
   bias_override = None
   if bias_poke:  # negative control: forbid the reference's first-designed-step token on the aminx side only
-    base = aminx_kwargs(model_key, ctx, temperature=COLLAPSED_T).get("bias")
-    bias_override = np.zeros((N_PAD, 21), np.float32) if base is None else np.array(base)
+    base = aminx_kwargs(model_key, ctx, temperature=COLLAPSED_T, pad=_pad(knob)).get("bias")
+    bias_override = np.zeros((_pad(knob), 21), np.float32) if base is None else np.array(base)
     pos_first = int(order[int((~designed).sum())])
     bias_override[pos_first, int(ref_seq[pos_first])] = -1e8
-  kw = aminx_kwargs(model_key, ctx, temperature=COLLAPSED_T, bias_override=bias_override)
+  kw = aminx_kwargs(model_key, ctx, temperature=COLLAPSED_T, bias_override=bias_override, pad=_pad(knob))
   seqs, _ = aminx_sample(kw, num_samples=1, seed=SAMPLE_SEED, order=order, length=length)
   # first near-tie in decode order (ties make later contexts legitimately diverge)
   lp = out["log_probs"][0].numpy() + fd["bias"][0].numpy()
@@ -432,7 +451,7 @@ def lane_score(model_key: str, ctx: dict[str, Any], *, vs_stock: bool) -> dict[s
   strings = ["".join(ALPHABET[i] for i in s) for s in (native, other)]
   kw: dict[str, Any] = {"inputs": [str(_ref_root() / "inputs" / PDB_NAME)],
                         "checkpoint_id": MODELS[model_key]["checkpoint"], "chain_id": CHAIN,
-                        "sequences_to_score": strings, "return_logits": True}
+                        "sequences_to_score": strings, "return_logits": True, "max_length": N_PAD}
   if MODELS[model_key]["ligand"]:
     kw["ligand_conditioning"] = True
   res = score(ScoringSpecification(**kw))
@@ -465,9 +484,9 @@ def lane_cli() -> dict[str, Any]:
   """`aminx run sample --emit-json` must carry every CLI-reachable knob into the spec."""
   root = _ref_root()
   cmd = [sys.executable, "-c", "from aminx.cli import main; main()", "run", "sample",
-         "--inputs", str(root / "inputs" / PDB_NAME), "--checkpoint-id", CLI_KNOBS["checkpoint_id"],
+         "--inputs", str(root / "inputs" / PDB_NAME), "--checkpoint-id", str(CLI_KNOBS["checkpoint_id"]),
          "--num-samples", str(CLI_KNOBS["num_samples"]), "--temperature", str(CLI_KNOBS["temperature"]),
-         "--chain-id", CLI_KNOBS["chain_id"], "--random-seed", str(CLI_KNOBS["random_seed"]), "--emit-json"]
+         "--chain-id", str(CLI_KNOBS["chain_id"]), "--random-seed", str(CLI_KNOBS["random_seed"]), "--emit-json"]
   proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
   record: dict[str, Any] = {"returncode": proc.returncode, "stderr_tail": proc.stderr[-400:]}
   if proc.returncode != 0:
@@ -558,10 +577,14 @@ def _run_cell_body(cell: str, out_dir: Path, smoke: bool) -> dict[str, Any]:
     ctx = ref_context(model_key, knob, temperature=KNOBS[knob]["temperature"])
     fixture = _persist_fixture(out_dir, cell, ctx)
     t0 = time.perf_counter()
-    seqs, logits = shared_sample(model_key, knob, ctx, n_draws=n_draws)  # ONE aminx call feeds lanes T and D
-    LOG.info("%s: aminx sample(%d) %.1fs", cell, n_draws, time.perf_counter() - t0)
-    lanes = {"T": lane_teacher(ctx, seqs, logits), "D": lane_dist(ctx, seqs)}
-    LOG.info("%s: lanes T,D done %.1fs", cell, time.perf_counter() - t0)
+    wanted = _lanes(knob)
+    n_call = n_draws if "D" in wanted else N_TEACHER
+    seqs, logits = shared_sample(model_key, knob, ctx, n_draws=n_call)  # ONE aminx call feeds lanes T and D
+    LOG.info("%s: aminx sample(%d, pad %d) %.1fs", cell, n_call, _pad(knob), time.perf_counter() - t0)
+    lanes = {"T": lane_teacher(ctx, seqs, logits)}
+    if "D" in wanted:
+      lanes["D"] = lane_dist(ctx, seqs)
+    LOG.info("%s: lanes %s done %.1fs", cell, "T,D" if "D" in wanted else "T", time.perf_counter() - t0)
     lanes["C"] = lane_collapsed(model_key, knob)
     LOG.info("%s: lane C done %.1fs", cell, time.perf_counter() - t0)
     return {"kind": "knob", "model": model_key, "knob": knob, "fixture": fixture, "lanes": lanes,
