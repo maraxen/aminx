@@ -23,7 +23,8 @@
   "failure": "",
   "git_clean": true,
   "git_dirty_paths": "",
-  "git_hash": "645175d9584fab9ae71ba6f4df9fbad4432965dc",
+  "git_hash": "c82440d93447dd4aa5554717e5209a23e8642bbe",
+  "jax_enable_x64": false,
   "outcome": "pass",
   "within_bound": true
 }

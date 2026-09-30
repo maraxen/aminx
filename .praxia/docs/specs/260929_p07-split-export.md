@@ -71,6 +71,61 @@ not merely "move the loop out"; it is "move the branch decision out", so we expo
 decoder path instead of two-plus-an-`If`. That removes the dominant control-flow obstacle
 to the WebGPU EP.
 
+### 1.2 Why jax2onnx, and not jax-js or xtrax/IREE
+
+Settled by prior research —
+`xtrax:.praxia/docs/research/260914_browser-inference-routes-jaxjs-jax2onnx.md` (branch
+`docs/browser-inference-routes`) — recorded here because this spec is otherwise silent on
+route choice and the question recurs.
+
+- **jax-js is not a converter.** It is a from-scratch reimplementation of the JAX/NumPy API
+  in JavaScript. It cannot ingest a Python JAX model: no StableHLO, no `jax.export`, no
+  serialized-program path. The only two ways in are rewriting the model in JS or loading an
+  **ONNX** file via `@jax-js/onnx`. So jax-js is a *runtime* downstream of jax2onnx, not an
+  alternative to it — but it IS a second candidate WebGPU consumer of the very files this
+  spec produces (see G2).
+- **xtrax/IREE cannot reach WebGPU today.** aminx already uses `xtrax.export`
+  (`check_export_safety`, `compile_for_target`, `NATIVE`/`WASM32`) on the layer-b IREE
+  route. IREE's target list is `cuda llvm-cpu metal-spirv rocm vmvx vmvx-inline
+  vulkan-spirv` — no `webgpu`, blocked on iree#24650 (open since 2026-06-29). This is why
+  the spec designates IREE the *fallback* route (ODQ-1), and it is unchanged.
+- **jax2onnx takes Equinox directly**, so there is no reimplementation step, and it ships
+  an explicit `export_mode="web"`.
+
+### 1.3 The split isolates the project's single biggest index risk
+
+This is an argument FOR the split that §1.1 does not make, and it may matter more.
+
+Per that research, `lax.sort` is the **sole** index-producing primitive in the traced graph
+(`jax.lax.top_k` is banned repo-wide; the surviving calls are eager host code). ONNX
+*mandates* `tensor(int64)` for `TopK`'s index output — not the exporter's choice — and
+jax2onnx lowers `lax.sort` to `TopK` + `GatherElements`, stamping indices INT64. **ORT-Web's
+WebGPU EP does not support int64.** The consequence is not a load failure but per-node EP
+fallback: index nodes execute on CPU while matmuls run on GPU, with device copies at each
+boundary — and, in that research's words, *"the WebGPU run and the wasm run may not agree
+on tie order even for the same file."*
+
+There are two sort sites, and the split treats them very differently:
+
+| Site | Purpose | Under the split |
+| :--- | :--- | :--- |
+| `model/features.py:90` | k-NN neighbour selection | stays in **Graph E** — once per structure |
+| `wrappers.py:316-321` (`wave_from_decoding_order`) | wave schedule from decoding order | **leaves the graph entirely** → JS |
+
+The research calls the decode-order site "the more consequential of the two: it determines
+the sequence in which residues are generated, so a permutation there changes the whole
+design, not one neighbour list." The split removes it from ONNX altogether and confines the
+remaining one to a graph that runs **once per structure**. **Graph D — the per-step hot
+loop — contains no sort and no TopK at all**, so the per-step path carries no int64 index
+tensor and nothing for the WebGPU EP to reject.
+
+That also means the JS gains responsibility for wave-schedule tie order, which is why G1a
+compares **tokens exactly** and not merely log-probs within a bound: the research flags
+jax2onnx's multi-key sort (an LSD radix pass emitting one `TopK` per key, correct only if
+each pass is stable) as "the single most likely way this route produces a green check over
+wrong output", and notes it is *invisible to float parity*. Exact token comparison is the
+instrument that sees it.
+
 ## 2. The cut
 
 The encoder/decoder boundary in `wrappers.py` is already a clean line at 425-455.
@@ -230,10 +285,24 @@ split's own bound is set in its sidecar before running, not inherited silently).
 **G1c — ORT-Web wasm.** G1b repeated in Chromium. Negative control: the existing
 `--no-isolation` arm.
 
-**G2 — WebGPU EP.** Same fixtures, `executionProviders:["webgpu"]`. Tokens exact vs wasm;
-log-probs within bound. A capability probe runs first and its failure is a legitimate
-recorded outcome, not a retry trigger. Per ODQ-B3, no WebGPU number is quoted anywhere
-until this gate passes on real GPU hardware.
+**G2 — WebGPU, two candidate runtimes.** Same fixtures, tokens exact vs wasm, log-probs
+within bound. A capability probe runs first and its failure is a legitimate recorded
+outcome, not a retry trigger. Per ODQ-B3, no WebGPU number is quoted anywhere until this
+gate passes on real GPU hardware.
+
+Two runtimes consume the *same* Graph E / Graph D files and both are in scope:
+
+- **ORT-Web WebGPU EP** (`executionProviders:["webgpu"]`). Expected to partition: Graph E's
+  k-NN `TopK` emits int64 indices the EP cannot take, so those nodes fall back to CPU with
+  device copies. Graph D should partition cleanly, having no sort (§1.3).
+- **`@jax-js/onnx`** — jax-js's own WebGPU runtime, reading the same ONNX. Worth measuring
+  precisely because it is not bound to ORT's int64 gap, and because Graph D's shape (five
+  loop-invariant inputs, one changing, §2) suits a runtime that can keep tensors resident.
+
+Report both, or report one and say plainly that the other was not run. **Tokens must be
+exact against the wasm reference on either runtime**; a tie-order difference between
+backends on the same file is the specific failure §1.3 predicts, and it is invisible to a
+log-prob bound.
 
 **G3a — deterministic vs the reference implementation (link R1, the anchor).**
 Teacher-forced per-position log-probs from the **split** pipeline against reference
