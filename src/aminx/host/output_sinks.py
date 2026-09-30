@@ -7,21 +7,24 @@ using ``OUTPUT_SINKS.get`` in host code — :mod:`aminx.run.sampling` does so.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import equinox as eqx
 import jax
 import jax.experimental
 import numpy as np
+from numpy.typing import NDArray
 
 from aminx.registry import OUTPUT_SINKS
-from aminx.types.protocols import DesignSink
 
 if TYPE_CHECKING:
+  from aminx.run.options import LaserOptions
   from aminx.types.bundles import EncoderOutput
+  from aminx.types.protocols import DesignSink
 
 
 class NoopDesignSink:
@@ -371,9 +374,147 @@ def stage_jacobian_io(structure_idx: jax.Array, jacobian: jax.Array) -> jax.Arra
   return jacobian
 
 
+def laser_design_targets(options: LaserOptions) -> tuple[bool, bool]:
+  """Which design files to write.
+
+  ``output_fasta_only`` suppresses the PDB. Either fasta flag turns the FASTA
+  on. Defaults stay PDB-only, matching ``run_batch_inference.py``.
+  """
+  write_fasta = options.output_fasta or options.output_fasta_only
+  write_pdb = not options.output_fasta_only
+  return write_pdb, write_fasta
+
+
+def _pdb_atom_name(name: str) -> str:
+  """Columns 13-16. A 4-character name fills them; shorter names lead with a space."""
+  if len(name) >= 4:
+    return name[:4]
+  return f" {name:<3}"[:4]
+
+
+def _element_symbol(name: str) -> str:
+  """Columns 77-78. Amino-acid names encode the element in the first character."""
+  return name[0]
+
+
+def format_pdb_atom(
+  serial: int,
+  name: str,
+  resname: str,
+  chain_id: str,
+  resnum: int,
+  xyz: NDArray[np.floating],
+  *,
+  occupancy: float = 1.0,
+  bfactor: float = 0.0,
+  alt_loc: str = " ",
+  icode: str = " ",
+) -> str:
+  """One ATOM record. Columns follow the PDB fixed-width spec so a parser can round-trip."""
+  x, y, z = (float(value) for value in xyz)
+  # serial and resnum wrap the way the format's columns do; designs stay inside them.
+  serial_field = serial % 100000
+  resnum_field = resnum % 10000
+  return (
+    f"ATOM  {serial_field:5d} {_pdb_atom_name(name)}{alt_loc[:1]:1s}{resname:>3s} "
+    f"{chain_id[:1]:1s}{resnum_field:4d}{icode[:1]:1s}   "
+    f"{x:8.3f}{y:8.3f}{z:8.3f}{occupancy:6.2f}{bfactor:6.2f}"
+    f"          {_element_symbol(name):>2s}"
+  )
+
+
+def write_design_pdb(
+  path: Path,
+  coords: NDArray[np.floating],
+  sequence: NDArray[np.integer],
+  *,
+  chain_ids: Sequence[str] | None = None,
+  resnums: Sequence[int] | None = None,
+  bfactors: NDArray[np.floating] | None = None,
+) -> None:
+  """Write finite sidechain atoms. NaN slots are left out, not written as zeros."""
+  # Lazy: rotamers imports the ProDy featurizer, and this module is imported
+  # at package init to register the tensor sinks. PDB writing must not make
+  # `import aminx` require the laser extra.
+  from aminx.model.laser.rotamers import placed_atoms  # noqa: PLC0415
+
+  length = int(np.asarray(sequence).shape[0])
+  chains = ("A",) * length if chain_ids is None else tuple(chain_ids)
+  numbers = tuple(range(1, length + 1)) if resnums is None else tuple(resnums)
+  betas = None if bfactors is None else np.asarray(bfactors, dtype=np.float64)
+  lines: list[str] = []
+  serial = 1
+  for residue, name, resname, xyz in placed_atoms(coords, sequence):
+    beta = 0.0 if betas is None else float(betas[residue])
+    lines.append(
+      format_pdb_atom(
+        serial,
+        name,
+        resname,
+        chains[residue],
+        numbers[residue],
+        xyz,
+        bfactor=beta,
+      ),
+    )
+    serial += 1
+  lines.append("END")
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_design_fasta(
+  path: Path,
+  sequence: NDArray[np.integer],
+  *,
+  header: str,
+  append: bool = True,
+) -> None:
+  """Append one FASTA record. ``append`` keeps the batch writer's designs.fasta."""
+  from aminx.families.laser_mpnn.featurize import LASER_ALPHABET  # noqa: PLC0415
+
+  letters = "".join(LASER_ALPHABET[int(index)] for index in np.asarray(sequence).tolist())
+  path.parent.mkdir(parents=True, exist_ok=True)
+  mode = "a" if append else "w"
+  with path.open(mode, encoding="utf-8") as handle:
+    handle.write(f">{header}\n{letters}\n")
+
+
+def emit_laser_design(
+  options: LaserOptions,
+  output_dir: Path,
+  *,
+  stem: str,
+  coords: NDArray[np.floating],
+  sequence: NDArray[np.integer],
+  fasta_header: str,
+  chain_ids: Sequence[str] | None = None,
+  resnums: Sequence[int] | None = None,
+  bfactors: NDArray[np.floating] | None = None,
+) -> tuple[Path | None, Path | None]:
+  """Write PDB and/or FASTA according to the existing LaserOptions flags."""
+  write_pdb, write_fasta = laser_design_targets(options)
+  pdb_path: Path | None = None
+  fasta_path: Path | None = None
+  if write_pdb:
+    pdb_path = output_dir / f"{stem}.pdb"
+    write_design_pdb(
+      pdb_path,
+      coords,
+      sequence,
+      chain_ids=chain_ids,
+      resnums=resnums,
+      bfactors=bfactors,
+    )
+  if write_fasta:
+    fasta_path = output_dir / "designs.fasta"
+    write_design_fasta(fasta_path, sequence, header=fasta_header, append=True)
+  return pdb_path, fasta_path
+
+
 def _register_default_output_sinks() -> None:
-  OUTPUT_SINKS.register("noop")(lambda: NoopDesignSink())
-  OUTPUT_SINKS.register("streaming_tensor_staging")(lambda: StreamingTensorStagingSink())
+  OUTPUT_SINKS.register("noop")(lambda: NoopDesignSink())  # noqa: PLW0108
+  OUTPUT_SINKS.register("streaming_tensor_staging")(lambda: StreamingTensorStagingSink())  # noqa: PLW0108
 
 
 _register_default_output_sinks()

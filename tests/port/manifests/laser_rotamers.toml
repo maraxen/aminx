@@ -1,0 +1,12 @@
+[manifest]
+wave_id = "laser_rotamers"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:660cbf0b7dbc7470321e789fd97eb9504d916b03c26934cde37fc6ee422a3af7"
+created_at = "2026-09-30T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.model.laser.rotamers.build_rotamers"
+module_path = "src/aminx/model/laser/rotamers.py"
+depends_on = ["aminx.families.laser_mpnn.featurize.build_rotamers"]
