@@ -1,0 +1,315 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>aminx Browser Sampler</title><meta name="description" content="How to run aminx ProteinMPNN sampling in a static site with onnxruntime-web.">
+<style>
+:root{--bg:#fbfaf7;--fg:#1d1d1f;--muted:#5b5b63;--line:#e3e1db;--code:#f1efe9;--accent:#2f6f5e;--pend:#9a5b00}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#141516;--fg:#e8e6e1;--muted:#a3a19b;--line:#2d2f31;--code:#1e2022;--accent:#7cc4ac;--pend:#e0a84a}}
+:root[data-theme="dark"]{--bg:#141516;--fg:#e8e6e1;--muted:#a3a19b;--line:#2d2f31;--code:#1e2022;--accent:#7cc4ac;--pend:#e0a84a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .5rem}
+h2{font-size:1.25rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--line)}
+a{color:var(--accent)}
+code{font:0.88em ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:.1em .3em;border-radius:4px}
+pre{background:var(--code);padding:14px;border-radius:8px;overflow-x:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.85em}
+.tw{overflow-x:auto;margin:1rem 0}
+table{border-collapse:collapse;width:100%;font-size:.92em}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600}
+td strong{color:var(--pend)}
+</style></head><body><main><h1>Running aminx ProteinMPNN sampling in the browser</h1>
+<p>This guide is for porting the exported ProteinMPNN sampler into a plain static site
+(for example a local ProteinHunter.org build). No bundler, no server-side Python, no
+WebGPU. The page loads one ONNX file per length bucket and runs it with
+onnxruntime-web on the wasm execution provider.</p>
+<p>Status as of 2026-09-29. Items marked <strong>pending</strong> are still running or not yet done.
+Don't cite a number from them yet.</p>
+<h2>What ships</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Piece</th>
+<th style="text-align: left;">Path in repo</th>
+<th style="text-align: left;">Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Sampler module</td>
+<td style="text-align: left;"><code>browser/aminx-sampler/aminx_sampler.mjs</code></td>
+<td style="text-align: left;"><code>createSampler</code>, bucket choice, padding, feeding the session</td>
+</tr>
+<tr>
+<td style="text-align: left;">RunSpec core</td>
+<td style="text-align: left;"><code>browser/aminx-sampler/runspec_core.mjs</code></td>
+<td style="text-align: left;">Builds the 11 input tensors from a structure and a RunSpec: PRNG, Gumbel noise, decoding order, bias/omit, fixed/tied positions. Has no <code>node:</code> imports.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Model, L ≤ 128</td>
+<td style="text-align: left;"><code>p07_sample_L128.onnx</code> (about 19.4 MB)</td>
+<td style="text-align: left;">Built by the export step below. It isn't checked in yet (<strong>pending</strong>: persisted release files with a sha256 manifest)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Model, L ≤ 256</td>
+<td style="text-align: left;"><code>p07_sample_L256.onnx</code> (about 31.5 MB)</td>
+<td style="text-align: left;">Same</td>
+</tr>
+<tr>
+<td style="text-align: left;">Runtime</td>
+<td style="text-align: left;"><code>onnxruntime-web@1.30.0</code>, wasm build (<code>ort.wasm.min.mjs</code>)</td>
+<td style="text-align: left;">Pinned. This is the version and build every parity run used</td>
+</tr>
+</tbody>
+</table></div>
+<p>"P07" is the internal name of this export: the full autoregressive sampler inside
+one ONNX graph. The encoder, the decoding loop and the sampling step all run
+in-graph. The noise and every RunSpec setting are runtime inputs, so one file per
+bucket serves every design configuration.</p>
+<p>Browser scope is <strong>ProteinMPNN sampling only</strong> (checkpoint <code>proteinmpnn_v_48_020</code>).
+LigandMPNN, membrane and other variants aren't exported to the browser.</p>
+<h2>Files to copy into the static site</h2>
+<pre><code>site/
+  index.html
+  js/aminx_sampler.mjs      &lt;- browser/aminx-sampler/aminx_sampler.mjs
+  js/runspec_core.mjs       &lt;- browser/aminx-sampler/runspec_core.mjs (same dir; imported relatively)
+  models/p07_sample_L128.onnx
+  models/p07_sample_L256.onnx
+</code></pre>
+<p>Serve only the <code>.onnx</code> file. The export embeds its weights: <code>embed_external_data</code>
+rewrites the jax2onnx output into one self-contained file. A stray <code>.onnx.data</code> file
+next to it is stale. Don't ship it and don't rely on it.</p>
+<h2>Minimal integration (plain ES modules)</h2>
+<pre><code class="language-html">&lt;script type=&quot;module&quot;&gt;
+  import * as ort from &quot;https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs&quot;;
+  import { createSampler, pickBucket, MPNN_ALPHABET } from &quot;./js/aminx_sampler.mjs&quot;;
+
+  // Point ORT at its wasm binaries (same CDN version as the JS).
+  ort.env.wasm.wasmPaths = &quot;https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/&quot;;
+
+  // structure: backbone only, L residues (see &quot;Structure format&quot; below)
+  const L = structure.coords.length;
+  const bucket = pickBucket(L);                 // 128 or 256; throws if L &gt; 256
+  const sampler = await createSampler(ort, `./models/p07_sample_L${bucket}.onnx`, {
+    numThreads: crossOriginIsolated ? navigator.hardwareConcurrency : 1,
+  });
+
+  try {
+    const runspec = {
+      seed: 42,
+      temperature: 0.1,
+      omit_AA: &quot;C&quot;,
+      // bias_AA: { A: -1.0 }, fixed_positions: { 0: &quot;M&quot; }, tied_positions: [[3, 40]], ...
+    };
+    const { outputs, nReal } = await sampler.sample(structure, runspec);
+
+    const tokens = outputs[&quot;cond_out_0&quot;].data;        // Int32Array [bucket]
+    const logProbs = outputs[&quot;log_softmax_out_0&quot;].data; // Float32Array [bucket * 21]
+    const sequence = Array.from(tokens.slice(0, nReal), (t) =&gt; MPNN_ALPHABET[t]).join(&quot;&quot;);
+    console.log(sequence);
+  } finally {
+    await sampler.release();                    // free wasm memory; one session per model
+  }
+&lt;/script&gt;
+</code></pre>
+<p>Notes:</p>
+<ul>
+<li><strong>Outputs.</strong> <code>cond_out_0</code> holds the sampled tokens (int32, <code>[bucket]</code>).
+  <code>log_softmax_out_0</code> holds per-position log-probabilities (float32,
+  <code>[bucket, 21]</code>). Use only the first <code>nReal</code> rows; the rest is padding. If you
+  re-export, check <code>session.outputNames</code> to confirm the names.</li>
+<li><strong>Alphabet.</strong> Token <code>i</code> is <code>"ACDEFGHIKLMNPQRSTVWYX"[i]</code>. That is the ProteinMPNN
+  order, not alphabetical-by-name. Index 20 is <code>X</code>.</li>
+<li><strong>Reuse the sampler.</strong> Session creation compiles the graph and is the slow part.
+  Create one sampler per bucket, call <code>sample</code> many times, and release it on
+  teardown.</li>
+<li><strong>Many designs.</strong> Call <code>sample</code> again with a different <code>seed</code>. Randomness comes
+  only from the <code>seed</code> field, through a SplitMix64 PRNG, so a given
+  (structure, RunSpec, seed) always gives the same sequence.</li>
+</ul>
+<h2>Structure format</h2>
+<p><code>sampler.sample(structure, runspec)</code> takes plain arrays or typed arrays:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Shape / type</th>
+<th style="text-align: left;">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>coords</code></td>
+<td style="text-align: left;"><code>[L][4][3]</code> numbers, or flat <code>Float32Array</code> with <code>coords_shape: [L,4,3]</code></td>
+<td style="text-align: left;">Backbone atoms in the order <strong>N, CA, C, O</strong> (no CB; the model computes it)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>mask</code></td>
+<td style="text-align: left;"><code>[L]</code> 0/1</td>
+<td style="text-align: left;">1 = real residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>residue_index</code></td>
+<td style="text-align: left;"><code>[L]</code> int</td>
+<td style="text-align: left;">PDB residue numbering, used for relative-position features</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chain_index</code></td>
+<td style="text-align: left;"><code>[L]</code> int</td>
+<td style="text-align: left;">Integer chain id per residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chain_ids</code></td>
+<td style="text-align: left;"><code>[L]</code> strings, optional</td>
+<td style="text-align: left;">Chain letters. Needed only for <code>chains_to_design</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Parse the PDB/mmCIF in the page with any JS parser. Take N/CA/C/O per residue in
+file order. Drop residues missing any backbone atom, or keep them with <code>mask: 0</code>.</p>
+<p>Padding up to the bucket is automatic: <code>padStructure</code> zero-pads coords and mask
+and repeats the last residue/chain index. This matches the Python export's
+convention exactly. <strong>The maximum length is 256 residues.</strong> Longer inputs throw.</p>
+<h2>RunSpec settings (all runtime inputs)</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Key</th>
+<th style="text-align: left;">Example</th>
+<th style="text-align: left;">Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>seed</code></td>
+<td style="text-align: left;"><code>42</code></td>
+<td style="text-align: left;">Drives the Gumbel noise and the random decoding order</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>temperature</code></td>
+<td style="text-align: left;"><code>0.1</code> (default)</td>
+<td style="text-align: left;">Sampling temperature</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bias_AA</code></td>
+<td style="text-align: left;"><code>{ "A": -1.0 }</code></td>
+<td style="text-align: left;">Add to that residue type's logit everywhere</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bias_AA_per_residue</code></td>
+<td style="text-align: left;"><code>{ "5": { "W": 2.0 } }</code></td>
+<td style="text-align: left;">Per-position logit bias</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>omit_AA</code></td>
+<td style="text-align: left;"><code>"CX"</code></td>
+<td style="text-align: left;">Forbid residue types everywhere</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>omit_AA_per_residue</code></td>
+<td style="text-align: left;"><code>{ "5": "P" }</code></td>
+<td style="text-align: left;">Forbid residue types at a position</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chains_to_design</code></td>
+<td style="text-align: left;"><code>["A"]</code></td>
+<td style="text-align: left;">Other chains stay fixed at their native tokens (needs <code>chain_ids</code> and <code>native_tokens</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>fixed_positions</code></td>
+<td style="text-align: left;"><code>{ "0": "M", "4": "G" }</code></td>
+<td style="text-align: left;">Pin these 0-based positions to the given residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>tied_positions</code></td>
+<td style="text-align: left;"><code>[[3, 40], [4, 41]]</code></td>
+<td style="text-align: left;">Force groups of positions to the same residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>decoding_order</code></td>
+<td style="text-align: left;"><code>"random"</code> or an explicit permutation</td>
+<td style="text-align: left;">Autoregressive order. With <code>"random"</code>, fixed positions decode first</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>chains_to_design</code> fixes every other chain to <code>structure.native_tokens</code> (<code>[L]</code> int32 in
+the alphabet above), so supply those when you use it. All positions are 0-based
+indices into the structure arrays, not PDB residue numbers.</p>
+<h2>Hosting requirements</h2>
+<ul>
+<li><strong>Multithreading needs cross-origin isolation.</strong> Serve the page with
+  <code>Cross-Origin-Opener-Policy: same-origin</code> and
+  <code>Cross-Origin-Embedder-Policy: require-corp</code>. Without these headers,
+  <code>crossOriginIsolated</code> is false and ORT runs single-threaded. Output is the same,
+  just slower. <code>browser/layer_c/serve.mjs</code> sets these headers for local testing.
+  With COEP on, CDN assets must be CORS-enabled (jsdelivr is) or self-hosted.</li>
+<li><strong>Memory.</strong> One L256 session plus its inputs fits comfortably in a desktop tab.
+  Mobile hasn't been tested.</li>
+<li><strong>Execution provider.</strong> Use wasm only. Don't pass <code>webgpu</code> (see below).</li>
+</ul>
+<h2>Validation status</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Check</th>
+<th style="text-align: left;">What it compares</th>
+<th style="text-align: left;">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Browser vs native ORT, bitwise</td>
+<td style="text-align: left;">ORT-Web (Chromium) tokens and log-probs vs onnxruntime CPU on the same <code>.onnx</code>, same inputs</td>
+<td style="text-align: left;">Bitwise identical on the 12-cell resume smoke. Full gate <strong>pending</strong> (below)</td>
+</tr>
+<tr>
+<td style="text-align: left;">RunSpec knobs gate</td>
+<td style="text-align: left;">JAX vs ORT-CPU vs ORT-Web across every RunSpec knob, L128 and L256, 288 cells. Tokens exact; log-prob bound 2e-4</td>
+<td style="text-align: left;"><strong>Pending</strong>. The recovery run is in progress; 250 of 288 cells were carried over from the interrupted run by verified hash</td>
+</tr>
+<tr>
+<td style="text-align: left;">JS RunSpec builder vs Python</td>
+<td style="text-align: left;"><code>runspec_core.mjs</code> inputs vs the Python builder (PRNG, Gumbel, orders, bias)</td>
+<td style="text-align: left;">Node unit tests pass (<code>runspec.test.mjs</code> 11/11, <code>aminx_sampler.test.mjs</code> 5/5)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Sampling distribution vs reference ProteinMPNN</td>
+<td style="text-align: left;">Statistical comparison of aminx samples against LigandMPNN@26ec57ac</td>
+<td style="text-align: left;"><strong>Pending</strong>. Calibration running on titanix; validate shards next on Engaging</td>
+</tr>
+<tr>
+<td style="text-align: left;">Speed / memory profile</td>
+<td style="text-align: left;">Wall time per design, session-create time, peak memory</td>
+<td style="text-align: left;"><strong>Not measured.</strong> The one earlier benchmark failed its own timer control, so no timing number is trustworthy yet</td>
+</tr>
+<tr>
+<td style="text-align: left;">WebGPU</td>
+<td style="text-align: left;">—</td>
+<td style="text-align: left;"><strong>Not validated; out of scope for the first release</strong></td>
+</tr>
+</tbody>
+</table></div>
+<h2>WebGPU</h2>
+<p>Not covered in this release. The P07 graph keeps the whole autoregressive loop
+in-graph (ONNX <code>Loop</code>/<code>If</code>/<code>Scan</code>). The ORT WebGPU provider tends to run control-flow
+nodes on the CPU, which forces transfers every step. Any speedup would have to be
+measured, not assumed. The plan is a later pre-registered probe on real GPU hardware
+that checks output against the wasm path before any speed comparison. Until then,
+wasm is the supported path.</p>
+<h2>Reproducing the ONNX files</h2>
+<p>From an aminx checkout (Python 3.12, <code>uv</code>):</p>
+<pre><code class="language-bash">uv run --frozen --with jax2onnx==0.16.1 --with onnx --with onnxruntime==1.30.0 \
+  python scripts/browser_validation/p07_knobs_gate.py --out /tmp/p07.json --budget-s 3600
+</code></pre>
+<p>The gate calls <code>aminx.export.wrappers.make_p07_sample</code> on
+<code>load_model(checkpoint_id="proteinmpnn_v_48_020")</code>, converts with <code>jax2onnx.to_onnx</code>
+for each bucket, and embeds the external data into one file. Export is
+byte-deterministic: repeated exports of the same commit give the same sha256. A
+standalone <code>export</code> entry point with a sha256 manifest is <strong>pending</strong>. Until it
+lands, take the models from a gate run's work directory (<code>browser_L128/</code>,
+<code>browser_L256/</code>).</p>
+<h2>Licensing</h2>
+<p>The aminx code is MIT. The weights are converted from upstream ProteinMPNN
+(dauparas) and distributed through Hugging Face <code>maraxen/aminx</code>. <strong>Confirm the
+upstream weights license allows redistribution before serving them publicly</strong>, and
+credit ProteinMPNN (Dauparas et al., <em>Science</em> 2022) on the page.</p></main></body></html>
