@@ -112,7 +112,14 @@ def _sha256_file(path: Path) -> str:
 
 
 def _np(value: torch.Tensor) -> np.ndarray:
-  return value.detach().cpu().numpy()
+  """Detach to a numpy array that OWNS its memory.
+
+  ``.cpu()`` is a no-op for a CPU tensor and ``.numpy()`` shares storage with it,
+  so without the copy ``_put`` would bank a view. The npz is only written after
+  every wave has run on the same batch and model, so any later in-place op on
+  that storage would retroactively edit an already-"recorded" oracle value.
+  """
+  return value.detach().cpu().numpy().copy()
 
 
 def _toml_str(value: str) -> str:
@@ -387,6 +394,30 @@ def _check_layer_hook_inputs() -> None:
     )
     raise SystemExit(msg)
   logger.info("selftest: layer-hook inputs are pre-mutation")
+
+
+def _check_put_owns_memory() -> None:
+  """Negative control: a banked oracle value must survive in-place mutation.
+
+  Every wave runs on the same batch and model before the npz is written, so a
+  value stored as a view into torch storage can be edited after the fact. This
+  mutates the source tensor after ``_put`` and asserts the banked array is
+  unchanged. Asserting only that the key exists would pass on the aliasing
+  implementation too.
+  """
+  buckets = Buckets(precision="f64")
+  tensor = torch.zeros(4)
+  _put(buckets, ("laser_encoder",), "control__owns_memory", tensor)
+  banked = buckets.waves["laser_encoder"]["control__owns_memory"]
+  before = banked.copy()
+  tensor.add_(7.0)  # exactly what a later wave's in-place op would do
+  if not np.array_equal(banked, before):
+    msg = (
+      "_put banked a VIEW into torch storage: an in-place mutation after capture "
+      f"changed the recorded value by {np.abs(banked - before).max()}. _np must copy."
+    )
+    raise SystemExit(msg)
+  logger.info("selftest: _put banks memory it owns")
 
 
 def _score_arrays(
@@ -756,6 +787,7 @@ def _selftest(package: Path, fixtures_dir: Path) -> None:  # noqa: PLR0915
   _check_ideal_coords_shim()
   _check_literal_factory_shim()
   _check_layer_hook_inputs()
+  _check_put_owns_memory()
   example = package / "example_pdbs" / "4jnj-1_prot.pdb"
   weights = package / CHECKPOINTS["nothing_heldout"]
   if not example.is_file() or not weights.is_file():
