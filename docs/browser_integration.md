@@ -185,28 +185,31 @@ Linux workstation, 8 RunSpec cells × 5 repetitions.
 | Four-graph split (see below) | **17.19 s** | 364 ms | 550 MB |
 
 **The headline is the absolute number, not the ratio: roughly 17–20 seconds per design at
-L=128, single-threaded.** That is what a user waits. L=256 doubles the autoregressive
-steps (256 instead of 128) and has **not** been measured.
+L=128, single-threaded.** That is what a user waits — and it is why the threading result
+below matters more than the split-vs-monolith gap. L=256 doubles the autoregressive steps
+(256 instead of 128) and has **not** been measured.
 
-Two levers exist and neither has been measured, so neither is claimed:
+Two levers. The first is measured and large; the second is untouched:
 
-- **Threads — the big one, and it works.** The table above is `numThreads = 1`. In
-  headless Chromium with COOP/COEP the split ran at **4 effective threads** with a median
-  of **6.7 s** per design against **16.3 s** single-threaded (`da02516e` vs `d6be02ea`).
-  Results were unchanged — tokens identical, log-probs bit-identical — so the speed costs
-  nothing in correctness.
+- **Threads — the main lever, and it is measured.** In headless Chromium with COOP/COEP,
+  both arms below passed their own timer control (planted 250.0 ms → measured 250.2 ms,
+  ratio 1.001) *in the browser*, so these are measurements rather than estimates.
 
-  **Treat ~2.4× as indicative, not measured.** Those two wall times come from the parity
-  gates, which grade correctness and carry **no timer control**; G4's planted-delay check
-  validated `process.hrtime` under Node, not the browser's `performance.now`. The figure
-  is almost certainly real — it is far too large to be clock noise — but quoting it as a
-  measured speedup would repeat the mistake that got this project's first benchmark
-  discarded. A browser benchmark with its own planted-delay control is what would settle
-  it.
+  | Threads | Median per design | Range | Run |
+  | ---: | ---: | :--- | :--- |
+  | 1 | **15.77 s** | 15.48–16.85 | `69bac70f` |
+  | 4 | **6.80 s** | 6.58–7.10 | `7fdb4001` |
 
-  Practical reading: enabling COOP/COEP is the difference between roughly 17 s and
-  roughly 7 s per design, which makes those headers the main performance lever rather
-  than a hosting detail.
+  **2.32× faster, at no cost in correctness** — at 4 threads the tokens are identical and
+  the log-probs bit-identical to single-threaded (`da02516e`). Session creation for all
+  four graphs is ~0.4 s either way.
+
+  So **enabling COOP/COEP takes an L=128 design from roughly 16 s to under 7 s.** That
+  makes those headers the main performance lever rather than a hosting detail.
+
+  Worth noting for anyone reproducing this: browsers coarsen `performance.now` under some
+  isolation settings — exactly the settings threaded wasm requires — so the clock was
+  checked under those settings rather than assumed. It was not coarsened here.
 - **WebGPU.** See below. Unvalidated.
 
 ## The four-graph split (faster and much smaller; browser validation pending)
