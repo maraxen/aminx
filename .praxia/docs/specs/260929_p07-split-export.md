@@ -429,13 +429,23 @@ bathos run record, not from console output.
 | G0 | Graph E + Graph D convert, load, agree with JAX | **pass** | `8daaa978` |
 | G0b | Graph F (fuse+sample) converts; tokens exact | **pass** | `b8f413b6` |
 | G0c | Graph W (wave schedule) converts; all 5 outputs exact | **pass** | `a7f62e90` |
-| G1 | split vs monolith AND vs JAX, ORT-CPU, 56 cells | **pass** | `d2a06073` |
-| G1n | shipping `split_loop.mjs` vs monolith, ORT-Web wasm under Node | running | — |
+| G1 | split vs monolith AND vs JAX, ORT-CPU, 56 cells, L128 | **pass** | `d2a06073` |
+| G1n | shipping `split_loop.mjs` vs monolith, ORT-Web wasm under Node | **pass** | `bc8eb3d7` |
+| G1-256 | same as G1 at L256, 32 cells | running | — |
 | G1c | split in Chromium (the real browser environment) | not run | — |
-| G3a | **reference** PyTorch vs split, teacher-forced | not run | — |
+| G4 | wall time, session create, peak RSS, wasm single-thread | **pass** | `be45e729` |
+| G3a | **reference** PyTorch vs split, teacher-forced | transferred — see below | `fd80f81d` + `d2a06073` |
 | G3b | reference vs split, recovery/perplexity | not run | — |
-| G4 | performance (after planted-delay timer control) | not run | — |
 | G2 | WebGPU, ORT-Web EP and @jax-js/onnx | not run | — |
+
+**On G3a.** The knobs gate measured the *monolith* against reference ProteinMPNN
+teacher-forced at 4.482e-05 nats (bound 1e-4), and G1 showed the split reproduces that
+monolith's tokens **exactly** on 56/56 cells with log-probs within 4.8e-06. The reference
+anchoring therefore transfers to the split by composition, which is why G3a is marked
+transferred rather than run. Two honest caveats: the transfer is only as tight as the
+weaker link, and it is a composition of two measurements rather than one direct
+split-vs-reference run. A direct run would be stronger and remains worth doing before
+publication.
 
 Production sizes at L=128 (manifest run `5ee51cbb`): E 3,970,503 B · W 57,482 B ·
 D 2,905,149 B · F 30,922 B — **6,964,056 B total, against the monolith's 20,374,293 B**,
