@@ -22,6 +22,11 @@ import { runSplitDecode } from "./split_loop.mjs";
 
 const qs = new URLSearchParams(window.location.search);
 const numThreads = Number(qs.get("numThreads") || "1");
+// Benchmark knobs. Both default to the parity behaviour (one pass, no control), so
+// the parity gates see an unchanged page.
+const reps = Number(qs.get("reps") || "1");
+const plantedMs = Number(qs.get("plantedMs") || "0");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function typedFrom(spec) {
   const { dtype, shape, data } = spec;
@@ -59,6 +64,22 @@ async function main() {
   ort.env.logLevel = "error";
 
   const cells = await (await fetch("./cells.json")).json();
+  // Benchmark knobs come from cells.json, which the gate writes, rather than from the
+  // query string: run_p07.mjs forwards only numThreads and it is shared with the
+  // monolith harness, so sourcing them here avoids editing code another gate depends on.
+  const repsEff = Number(cells.reps ?? reps);
+  const plantedEff = Number(cells.planted_ms ?? plantedMs);
+
+  // Timer control, through the SAME clock (performance.now) and the same await
+  // machinery the per-design timings use. The Node benchmark validated
+  // process.hrtime; this is a different clock in a different runtime and has to prove
+  // itself separately before any browser timing is quotable.
+  let ctrlMeasuredMs = -1;
+  if (plantedEff > 0) {
+    const c0 = performance.now();
+    await sleep(plantedEff);
+    ctrlMeasuredMs = performance.now() - c0;
+  }
   const bucket = cells.bucket;
 
   const sessions = {};
@@ -108,8 +129,12 @@ async function main() {
       },
     };
 
+    const wallAll = [];
+    let tokens;
+    let logProbs;
+    for (let r = 0; r < repsEff; r += 1) {
     const t0 = performance.now();
-    const { tokens, logProbs } = await runSplitDecode(callbacks, {
+    ({ tokens, logProbs } = await runSplitDecode(callbacks, {
       length: a.mask.shape[0],
       encoderInputs: {
         coords: a.coords, mask: a.mask,
@@ -123,10 +148,13 @@ async function main() {
       fixedTokens: a.fixed_tokens,
       temperature: a.temperature,
       gumbelNoise: a.gumbel_noise,
-    });
+    }));
+    wallAll.push(performance.now() - t0);
+    }
     results.push({
       name: cell.name,
-      wall_ms: performance.now() - t0,
+      wall_ms: wallAll[0],
+      wall_ms_all: wallAll,
       tokens: Array.from(tokens.data),
       log_probs: Array.from(logProbs.data),
     });
@@ -137,6 +165,9 @@ async function main() {
   return {
     bucket,
     n_cells: results.length,
+    reps: repsEff,
+    planted_ms: plantedEff,
+    ctrl_measured_ms: ctrlMeasuredMs,
     // What ORT actually used, not what was asked for: a silent fallback to one thread
     // must show up as data rather than be mistaken for a threading result.
     num_threads_effective: ort.env.wasm.numThreads,
