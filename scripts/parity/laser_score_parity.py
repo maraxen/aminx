@@ -13,6 +13,7 @@ arm are separate subprocesses. Results go to ``$BTH_RESULTS_PATH``.
 from __future__ import annotations
 
 import os
+import pathlib
 
 # x64 before any JAX import. Parent and children share this so the decoding
 # order drawn from random_seed is the same permutation on both sides.
@@ -404,11 +405,14 @@ def _oracle_worker(args: argparse.Namespace) -> None:
   import torch
 
   sys.path.insert(0, str(_package_parent(args.laser_root)))
+  sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
   from LASErMPNN.run_inference import (  # noqa: PLC0415
     ProteinComplexData,
     get_protein_hierview,
     load_model_from_parameter_dict,
   )
+  from LASErMPNN.utils.model import RBF_Encoding  # noqa: PLC0415
+  from oracle_shims.laser import f64_runtime  # noqa: PLC0415
 
   checkpoint = _checkpoint(args)
   torch.manual_seed(0)
@@ -420,29 +424,34 @@ def _oracle_worker(args: argparse.Namespace) -> None:
   job = json.loads(args.job.read_text(encoding="utf-8"))
   scores: dict[str, list[float]] = {}
   model_params = params["model_params"]
-  for name, payload in job["structures"].items():
-    view = get_protein_hierview(payload["pdb"])
-    data = ProteinComplexData(view, payload["pdb"], verbose=False)
-    batch = data.output_batch_data(fix_beta=False)
-    _cast_floats(batch, torch.float64)
-    batch.construct_graphs(  # type: ignore[attr-defined]
-      model.rotamer_builder,
-      model.ligand_featurizer,
-      **model_params["graph_structure"],
-      protein_training_noise=0.0,
-      ligand_training_noise=0.0,
-      subgraph_only_dropout_rate=0.0,
-      num_adjacent_residues_to_drop=0,
-      build_hydrogens=bool(model_params["build_hydrogens"]),
-    )
-    _cast_floats(batch, torch.float64)
-    order = torch.tensor(payload["order"], dtype=torch.long)
-    sequence = batch.sequence_indices
-    chi = batch.chi_angles
-    logits, *_rest = model.get_logits_for_score(batch, order, sequence, chi)
-    seq_log = torch.log_softmax(logits, dim=-1)
-    gathered = seq_log.gather(-1, sequence.long().unsqueeze(-1)).squeeze(-1)
-    scores[name] = [float(value) for value in gathered.detach().cpu()]
+  # Upstream's own float32 literals otherwise collide with the f64 batch inside
+  # compute_first_shell_node_idces -> torch.cdist. dump_laser_oracles wraps the
+  # identical work in this shim, so using it keeps this vehicle comparable to
+  # the laser_score oracle. It cannot nest, hence one context for the whole loop.
+  with f64_runtime(RBF_Encoding), torch.no_grad():
+    for name, payload in job["structures"].items():
+      view = get_protein_hierview(payload["pdb"])
+      data = ProteinComplexData(view, payload["pdb"], verbose=False)
+      batch = data.output_batch_data(fix_beta=False)
+      _cast_floats(batch, torch.float64)
+      batch.construct_graphs(  # type: ignore[attr-defined]
+        model.rotamer_builder,
+        model.ligand_featurizer,
+        **model_params["graph_structure"],
+        protein_training_noise=0.0,
+        ligand_training_noise=0.0,
+        subgraph_only_dropout_rate=0.0,
+        num_adjacent_residues_to_drop=0,
+        build_hydrogens=bool(model_params["build_hydrogens"]),
+      )
+      _cast_floats(batch, torch.float64)
+      order = torch.tensor(payload["order"], dtype=torch.long)
+      sequence = batch.sequence_indices
+      chi = batch.chi_angles
+      logits, *_rest = model.get_logits_for_score(batch, order, sequence, chi)
+      seq_log = torch.log_softmax(logits, dim=-1)
+      gathered = seq_log.gather(-1, sequence.long().unsqueeze(-1)).squeeze(-1)
+      scores[name] = [float(value) for value in gathered.detach().cpu()]
   args.upstream.write_text(json.dumps(scores), encoding="utf-8")
 
 
