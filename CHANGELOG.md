@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **The trainer optimized against AF-permuted labels** (#109). A loader batch's `aatype` is
+  AF-ordered (`ARNDCQEGHILKMFPSTWYVX`) but the model's token space is MPNN-ordered
+  (`ACDEFGHIKLMNPQRSTVWYX`), and `train_step` / `eval_step` (and the diffusion `train_step`)
+  received `batch.aatype` unconverted. The permuted array was the cross-entropy target, the
+  decoder's one-hot embedding input, and the reference for `sequence_recovery_accuracy` and
+  `perplexity`, so no symptom ever appeared. Labels are now converted at read time with
+  `aminx.utils.aa_convert.training_labels` at every call site in `training/trainer.py` and
+  `training/test_diffusion_loop.py`. The persisted `"aatype"` key in preprocessed array_record
+  datasets is unchanged (still AF-ordered), so existing datasets remain valid.
+  - **Consequence for existing checkpoints and metrics (not remediated here):** any checkpoint
+    trained or fine-tuned with aminx before this fix is suspect. Fine-tuning from an MPNN
+    checkpoint pushed the weights to relearn a permutation they already encoded correctly;
+    training from scratch self-consistently learned AF order, so those checkpoints are
+    AF-native while the whole inference stack assumes MPNN. The training metrics recorded for
+    such runs (loss, accuracy, perplexity, validation and test) are unreliable. The bundled
+    pretrained checkpoints and inference are unaffected.
+  - New guard: `tests/training/test_trainer_alphabet.py` runs the trainer's own `eval_step` /
+    `train_step` on real `proteinmpnn_v_48_020` weights and fails if raw AF labels reach them.
+
 ## 0.2.0a1 (2026-09-10)
 
 **Minor bump, not another `0.1.0a` alpha.** Two things in this release change what a run writes

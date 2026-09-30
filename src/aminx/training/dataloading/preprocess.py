@@ -123,6 +123,9 @@ def _worker_process_protein(
       "protein_id": protein_id,
       "source_file": str(structure_path),
       "coordinates": np.array(protein.coordinates),
+      # AF-ordered (ARNDCQEGHILKMFPSTWYVX), exactly as proxide parsed it -- NOT the model's
+      # MPNN token space. Readers convert via aminx.utils.aa_convert.training_labels; do not
+      # rewrite this key in place (it would silently invalidate existing array_record stores).
       "aatype": np.array(protein.aatype),
       "atom_mask": np.array(protein.full_atom_mask)
       if protein.full_atom_mask is not None
