@@ -3,6 +3,10 @@
 f64 uses rtol=1e-9. f32 uses rtol=1e-5 and reports every key whose rows exceed
 that tolerance, rather than stopping at the first mismatch (debt #2299).
 
+Each tier is one item per (checkpoint, fixture) pair. Those ids are read from
+the dump at collection time; an absent oracle yields no pairs and skips.
+Tier 1 is also split by precision.
+
 The sealed dump must contain both ``out__`` leaves and the ``in__`` leaves
 written by ``scripts/parity/dump_laser_oracles.py``. A dump that only has
 outputs cannot replay a layer. Weights come from the LASEr checkpoint under
@@ -23,6 +27,7 @@ import numpy as np
 import pytest
 
 from port.a1_compare import assert_shape_dtype, names, open_dump, x64_context
+from port.reference.laser_layers.algo import OracleAbsentError, load as load_laser_dump
 
 from aminx.model.laser.layers import EquivariantLayerNorm, GVP, HeteroGATv2, HomoGATv2
 
@@ -48,7 +53,14 @@ def _laser_root() -> Path:
   return Path(os.environ.get("AMINX_LASER_ROOT", "~/repos/LASErMPNN")).expanduser()
 
 
+_STATE_CACHE: dict[str, dict[str, Any]] = {}
+
+
 def _state_dict(checkpoint: str) -> dict[str, Any]:
+  """Load one checkpoint at most once per session."""
+  cached = _STATE_CACHE.get(checkpoint)
+  if cached is not None:
+    return cached
   torch = pytest.importorskip("torch")
   root = _laser_root()
   if not root.is_dir():
@@ -61,6 +73,7 @@ def _state_dict(checkpoint: str) -> dict[str, Any]:
   if not isinstance(state, dict):
     msg = f"{path} model_state_dict is not a dict"
     raise TypeError(msg)
+  _STATE_CACHE[checkpoint] = state
   return state
 
 
@@ -311,51 +324,53 @@ def _rows_over(got: np.ndarray, ref: np.ndarray, rtol: float) -> tuple[int, int,
   return int(np.sum(row_bad)), int(row_bad.shape[0]), float(np.max(error))
 
 
-def _run(data: np.lib.npyio.NpzFile, precision: str, *, numeric: bool) -> int:
+def _run(
+  data: np.lib.npyio.NpzFile,
+  precision: str,
+  checkpoint: str,
+  fixture: str,
+  *,
+  numeric: bool,
+) -> int:
   compared = 0
   failures: list[str] = []
   worst = 0.0
   dtype = np.float64 if precision == "f64" else np.float32
   rtol = _RTOL[precision]
-  states: dict[str, dict[str, Any]] = {}
+  base = f"{checkpoint}__{fixture}__layer__"
+  layer_ids = sorted(
+    {
+      key[len(base) :].split("__out__", 1)[0]
+      for key in data.files
+      if key.startswith(base) and "__out__" in key
+    },
+  )
   with x64_context(precision), jax.default_matmul_precision("highest"):
-    for checkpoint in names(data["checkpoint_ids"]):
-      for fixture in names(data["fixture_names"]):
-        base = f"{checkpoint}__{fixture}__layer__"
-        layer_ids = sorted(
-          {
-            key[len(base) :].split("__out__", 1)[0]
-            for key in data.files
-            if key.startswith(base) and "__out__" in key
-          },
-        )
-        if not layer_ids:
-          continue
-        if checkpoint not in states:
-          states[checkpoint] = _state_dict(checkpoint)
-        for layer_id in layer_ids:
-          module = _module_for(layer_id, states[checkpoint], dtype)
-          prefix = base + layer_id + "__"
-          predicted = _predict(layer_id, module, data, prefix)
-          out_keys = [key for key in data.files if key.startswith(prefix + "out__")]
-          for key in out_keys:
-            suffix = key.split("__out__", 1)[1]
-            if suffix not in predicted:
-              msg = f"{key}: aminx produced no leaf {suffix!r} (have {sorted(predicted)})"
-              raise AssertionError(msg)
-            got = predicted[suffix]
-            ref = np.asarray(data[key])
-            label = f"laser_layers {precision} {key}"
-            if not numeric:
+    if layer_ids:
+      state = _state_dict(checkpoint)
+      for layer_id in layer_ids:
+        module = _module_for(layer_id, state, dtype)
+        prefix = base + layer_id + "__"
+        predicted = _predict(layer_id, module, data, prefix)
+        out_keys = [key for key in data.files if key.startswith(prefix + "out__")]
+        for key in out_keys:
+          suffix = key.split("__out__", 1)[1]
+          if suffix not in predicted:
+            msg = f"{key}: aminx produced no leaf {suffix!r} (have {sorted(predicted)})"
+            raise AssertionError(msg)
+          got = predicted[suffix]
+          ref = np.asarray(data[key])
+          label = f"laser_layers {precision} {key}"
+          if not numeric:
+            assert_shape_dtype(got, ref, label)
+          else:
+            if got.shape != ref.shape or got.dtype != ref.dtype:
               assert_shape_dtype(got, ref, label)
-            else:
-              if got.shape != ref.shape or got.dtype != ref.dtype:
-                assert_shape_dtype(got, ref, label)
-              n_bad, n_rows, max_abs = _rows_over(got, ref, rtol)
-              worst = max(worst, max_abs)
-              if n_bad:
-                failures.append(f"{key}: {n_bad}/{n_rows} rows exceed rtol={rtol:g}")
-            compared += 1
+            n_bad, n_rows, max_abs = _rows_over(got, ref, rtol)
+            worst = max(worst, max_abs)
+            if n_bad:
+              failures.append(f"{key}: {n_bad}/{n_rows} rows exceed rtol={rtol:g}")
+          compared += 1
   if numeric and failures:
     report = "\n".join(failures)
     msg = f"Max absolute difference: {worst:.6e}\n{report}"
@@ -363,45 +378,97 @@ def _run(data: np.lib.npyio.NpzFile, precision: str, *, numeric: bool) -> int:
   return compared
 
 
-@pytest.mark.tier_1
-def test_tier_1_dtype_shape(oracle: object) -> None:
-  """Hooked layer outputs match the sealed dtype and shape."""
+def _oracle_pairs() -> list[tuple[str, str]]:
+  """Read checkpoint and fixture ids from the dump at collection time.
+
+  Returns ``[]`` when the oracle is absent so parametrization collects no
+  cases and the wave skips instead of erroring. Only those two arrays are
+  read; the archive is closed before return.
+  """
+  data: np.lib.npyio.NpzFile | None = None
   for precision in ("f64", "f32"):
-    data = open_dump(oracle, precision)
     try:
-      assert _run(data, precision, numeric=False) > 0
-    finally:
-      data.close()
+      data = load_laser_dump(precision)
+    except OracleAbsentError:
+      continue
+    break
+  if data is None:
+    return []
+  try:
+    checkpoints = names(data["checkpoint_ids"])
+    fixtures = names(data["fixture_names"])
+  finally:
+    data.close()
+  return [(checkpoint, fixture) for checkpoint in checkpoints for fixture in fixtures]
+
+
+_PAIRS = _oracle_pairs()
+_PAIR_IDS = [f"{checkpoint}-{fixture}" for checkpoint, fixture in _PAIRS]
+
+
+def _skip_absent_oracle() -> None:
+  if not _PAIRS:
+    pytest.skip("laser_layers oracle absent")
+
+
+@pytest.mark.tier_1
+@pytest.mark.parametrize("precision", ("f64", "f32"))
+@pytest.mark.parametrize(("checkpoint", "fixture"), _PAIRS, ids=_PAIR_IDS)
+def test_tier_1_dtype_shape(
+  oracle: object,
+  precision: str,
+  checkpoint: str,
+  fixture: str,
+) -> None:
+  """Hooked layer outputs match the sealed dtype and shape."""
+  _skip_absent_oracle()
+  data = open_dump(oracle, precision)
+  try:
+    assert _run(data, precision, checkpoint, fixture, numeric=False) > 0
+  finally:
+    data.close()
 
 
 @pytest.mark.tier_2
-def test_tier_2_f64(oracle: object) -> None:
+@pytest.mark.parametrize(("checkpoint", "fixture"), _PAIRS, ids=_PAIR_IDS)
+def test_tier_2_f64(oracle: object, checkpoint: str, fixture: str) -> None:
   """f64 layer outputs match at rtol=1e-9 under x64."""
+  _skip_absent_oracle()
   data = open_dump(oracle, "f64")
   try:
-    assert _run(data, "f64", numeric=True) > 0
+    assert _run(data, "f64", checkpoint, fixture, numeric=True) > 0
   finally:
     data.close()
 
 
 @pytest.mark.tier_3
-def test_tier_3_f32(oracle: object) -> None:
+@pytest.mark.parametrize(("checkpoint", "fixture"), _PAIRS, ids=_PAIR_IDS)
+def test_tier_3_f32(oracle: object, checkpoint: str, fixture: str) -> None:
   """f32 layer outputs match at rtol=1e-5, reporting every exceeding key."""
+  _skip_absent_oracle()
   data = open_dump(oracle, "f32")
   try:
-    assert _run(data, "f32", numeric=True) > 0
+    assert _run(data, "f32", checkpoint, fixture, numeric=True) > 0
   finally:
     data.close()
 
 
 @pytest.mark.tier_5
-def test_tier_5_trace_budget(oracle: object, max_traces: int) -> None:
+@pytest.mark.parametrize(("checkpoint", "fixture"), _PAIRS, ids=_PAIR_IDS)
+def test_tier_5_trace_budget(
+  oracle: object,
+  max_traces: int,
+  checkpoint: str,
+  fixture: str,
+) -> None:
   """One static GVP shape traces at most ``max_traces`` times."""
   import chex
 
+  _skip_absent_oracle()
   data = open_dump(oracle, "f32")
   try:
-    assert len(data.files) > 0
+    base = f"{checkpoint}__{fixture}__layer__"
+    assert any(key.startswith(base) and "__out__" in key for key in data.files)
   finally:
     data.close()
   module = GVP((_NODE, 1), (_NODE, _V_LIG), vector_gate=True, key=jax.random.key(0))
