@@ -289,6 +289,22 @@ def main(argv: list[str] | None = None) -> int:
 
     from aminx.utils.autoregression import generate_ar_mask  # noqa: PLC0415
 
+    # x64 is a PROCESS-WIDE flag, not import-scoped. aminx's library code never enables
+    # it, but scripts/data_processing/{process_parallel,debug_worker}.py set it
+    # unconditionally at module import and never restore it, so an export run from a
+    # process that imported either one traces in x64 and silently emits an int64/float64
+    # graph. That matters here beyond dtype hygiene: ONNX already mandates int64 for
+    # TopK's index output, and ORT-Web's WebGPU EP does not support int64, so any extra
+    # int64 we introduce ourselves lands on the same gap. Assert rather than assume.
+    # (xtrax .praxia/docs/research/260914_browser-inference-routes-jaxjs-jax2onnx.md, S4.)
+    result["jax_enable_x64"] = bool(jax.config.jax_enable_x64)
+    if jax.config.jax_enable_x64:
+      msg = (
+        "jax_enable_x64 is True in this process; the exported graphs would be int64/"
+        "float64. Refusing to export."
+      )
+      raise RuntimeError(msg)
+
     length = args.bucket
     geom = _synthetic_backbone(length)
     graph_e, graph_d, dropout_stats = _build_graphs(length)
