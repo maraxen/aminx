@@ -1,0 +1,23 @@
+# laser_layers: HomoGATv2, HeteroGATv2, GVP, DenseGVP, EquivariantLayerNorm.
+# oracle_id hashes tests/port/reference/laser_layers/{algo.py,sealed.py}.
+# The f64 npz is staged outside this tree; sealed.load checks oracle_manifest.toml.
+[port]
+wave_id = "laser_layers"
+oracle_id = "ref:tests/port/reference/laser_layers:v1:sha256:5fb11ec35bbca8903b38390d66bff4ef9a0fbdaffa98d41a256a55841ef1f78b"
+symbol_qualname = "aminx.model.laser.layers"
+reference_subtree = "reference/laser_layers"
+
+[capabilities]
+stochastic = false
+dynamic_shape = false
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=1e-9"
+tolerance_policy_f32 = "rtol=1e-5"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true

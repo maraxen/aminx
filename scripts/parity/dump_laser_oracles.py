@@ -292,11 +292,14 @@ def _layer_hooks(model: torch.nn.Module) -> tuple[dict[str, dict[str, torch.Tens
   handles: list[object] = []
 
   def _make(name: str):  # noqa: ANN202
-    def hook(_module: torch.nn.Module, _inputs: object, output: object) -> None:
+    def hook(_module: torch.nn.Module, inputs: object, output: object) -> None:
       if name in captured:
         return
       leaves: dict[str, torch.Tensor] = {}
       _leaves("out", output, leaves)
+      # Replay needs the same tensors the layer consumed. Outputs alone cannot
+      # rebuild edge lists (B2). ``in__`` uses the same leaf rules as ``out__``.
+      _leaves("in", inputs, leaves)
       captured[name] = leaves
 
     return hook
