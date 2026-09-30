@@ -59,8 +59,21 @@ DEFAULT_AGREE_BOUND = 1e-3
 CTRL_PERTURB_MAGNITUDE = 1.0
 
 
-def _git_state(repo: Path) -> tuple[str, bool]:
-  """Return ``(HEAD sha, clean)`` for ``repo``."""
+# The paths whose cleanliness actually determines whether this run reproduces from git.
+# Mirrors titanix_launch.sh's own rationale: the worktree permanently carries harness dirt
+# (.praxia/*, .claude/*, .bth/refs/, *.ses) that "must never be committed or deleted", so a
+# bare `git status --porcelain` can never be empty here and would gate every run to
+# `incomplete` for a reason unrelated to the measurement.
+_CODE_PATHS = ("src", "scripts", "pyproject.toml", "uv.lock")
+
+
+def _git_state(repo: Path) -> tuple[str, bool, str]:
+  """Return ``(HEAD sha, code paths clean, dirty listing)`` for ``repo``.
+
+  Cleanliness is scoped to ``_CODE_PATHS`` and includes untracked files there, so an
+  uncommitted source change still blocks the run while harness churn does not. The raw
+  listing is recorded either way, so a reader can see exactly what was dirty.
+  """
 
   def _run(*args: str) -> str:
     return subprocess.run(  # noqa: S603
@@ -73,8 +86,8 @@ def _git_state(repo: Path) -> tuple[str, bool]:
     ).stdout.strip()
 
   sha = _run("rev-parse", "HEAD")
-  dirty = _run("status", "--porcelain")
-  return sha, not dirty
+  dirty = _run("status", "--porcelain", "--untracked-files=all", "--", *_CODE_PATHS)
+  return sha, not dirty, dirty
 
 
 def _synthetic_backbone(length: int, *, seed: int = 0) -> dict[str, np.ndarray]:
@@ -237,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
   )
 
   repo = Path(__file__).resolve().parents[2]
-  git_hash, git_clean = _git_state(repo)
+  git_hash, git_clean, git_dirty_paths = _git_state(repo)
   work_dir = args.work_dir or (args.out.parent / f"split_L{args.bucket}")
   work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -246,6 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     "agree_bound": args.agree_bound,
     "git_hash": git_hash,
     "git_clean": git_clean,
+    "git_dirty_paths": git_dirty_paths,
     "e_converted": False,
     "d_converted": False,
     "e_ran": False,
@@ -272,30 +286,23 @@ def main(argv: list[str] | None = None) -> int:
     graph_e, graph_d, dropout_stats = _build_graphs(length)
     result["dropout_stats"] = dropout_stats
 
-    # ---- Graph E -------------------------------------------------------------
+    # ---- JAX reference arm: MUST run before jax2onnx is imported ---------------
+    # jax2onnx monkey-patches jnp.stack (and friends) at import time with primitives
+    # that have no MLIR lowering for the CPU platform, so a plain jax.jit of any code
+    # using them dies with "MLIR translation rule for primitive 'jax.numpy.stack' not
+    # found for platform cpu" once it is loaded. Measured 2026-09-29: converting first
+    # and evaluating second poisoned this script's own reference arm. Evaluate every
+    # JAX output first, materialise it to numpy, and only then convert.
+    if "jax2onnx" in sys.modules:
+      msg = (
+        "jax2onnx is already imported; the JAX reference arm would run against its "
+        "patched primitives. Evaluate JAX before converting."
+      )
+      raise RuntimeError(msg)
+
     e_inputs = [geom["coords"], geom["mask"], geom["residue_index"], geom["chain_index"]]
-    e_path = work_dir / f"p07_encoder_L{length}.onnx"
-    logger.info("converting Graph E (encoder) -> %s", e_path)
-    _convert(graph_e, e_inputs, f"p07_encoder_L{length}", e_path)
-    result["e_converted"] = True
-    result["e_onnx_bytes"] = e_path.stat().st_size
-
     e_jax = [np.asarray(x) for x in jax.jit(graph_e)(*e_inputs)]
-    e_onnx = _ort_run(e_path, e_inputs)
-    result["e_ran"] = True
-    result["e_finite"] = all(bool(np.all(np.isfinite(x))) for x in e_onnx[:2])
-    result["e_max_abs_diff"] = max(
-      _max_abs_diff(j, o) for j, o in zip(e_jax[:2], e_onnx[:2], strict=True)
-    )
-    result["e_neighbor_exact"] = bool(np.array_equal(e_jax[2], e_onnx[2]))
-    logger.info(
-      "Graph E: %d bytes, max_abs_diff=%.3e, neighbors_exact=%s",
-      result["e_onnx_bytes"],
-      result["e_max_abs_diff"],
-      result["e_neighbor_exact"],
-    )
 
-    # ---- Graph D -------------------------------------------------------------
     # ar_mask is (L, L) and CONSTANT for a whole sample; build it from a decoding order.
     decoding_order = jnp.arange(length, dtype=jnp.int32)
     ar_mask = np.asarray(generate_ar_mask(decoding_order), dtype=np.float32)
@@ -311,13 +318,37 @@ def main(argv: list[str] | None = None) -> int:
       ar_mask,
       sequence_oh,
     ]
+    d_jax = np.asarray(jax.jit(graph_d)(*d_inputs))
+    logger.info("JAX reference arm complete; importing jax2onnx now")
+
+    # ---- Graph E ---------------------------------------------------------------
+    e_path = work_dir / f"p07_encoder_L{length}.onnx"
+    logger.info("converting Graph E (encoder) -> %s", e_path)
+    _convert(graph_e, e_inputs, f"p07_encoder_L{length}", e_path)
+    result["e_converted"] = True
+    result["e_onnx_bytes"] = e_path.stat().st_size
+
+    e_onnx = _ort_run(e_path, e_inputs)
+    result["e_ran"] = True
+    result["e_finite"] = all(bool(np.all(np.isfinite(x))) for x in e_onnx[:2])
+    result["e_max_abs_diff"] = max(
+      _max_abs_diff(j, o) for j, o in zip(e_jax[:2], e_onnx[:2], strict=True)
+    )
+    result["e_neighbor_exact"] = bool(np.array_equal(e_jax[2], e_onnx[2]))
+    logger.info(
+      "Graph E: %d bytes, max_abs_diff=%.3e, neighbors_exact=%s",
+      result["e_onnx_bytes"],
+      result["e_max_abs_diff"],
+      result["e_neighbor_exact"],
+    )
+
+    # ---- Graph D ---------------------------------------------------------------
     d_path = work_dir / f"p07_decoder_step_L{length}.onnx"
     logger.info("converting Graph D (decoder step) -> %s", d_path)
     _convert(graph_d, d_inputs, f"p07_decoder_step_L{length}", d_path)
     result["d_converted"] = True
     result["d_onnx_bytes"] = d_path.stat().st_size
 
-    d_jax = np.asarray(jax.jit(graph_d)(*d_inputs))
     d_onnx = _ort_run(d_path, d_inputs)[0]
     result["d_ran"] = True
     result["d_finite"] = bool(np.all(np.isfinite(d_onnx)))
