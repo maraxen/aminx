@@ -1,0 +1,148 @@
+{
+  "alphabet": "ACDEFGHIKLMNPQRSTVWYX",
+  "buckets": [
+    {
+      "bucket": 128,
+      "decoder_calls_per_design": 128,
+      "dropout_stats": {
+        "max_p_before": 0.0,
+        "n_dropout": 15
+      },
+      "graphs": {
+        "decoder": {
+          "bytes": 2905149,
+          "file": "p07_decoder_L128.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_shapes": [
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              48,
+              128
+            ],
+            [
+              128,
+              48
+            ],
+            [
+              128
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              21
+            ]
+          ],
+          "sha256": "fee9e48eae6670badc6b19544b3d48fb2f0c6d7aa6031fcb5d9b8fdfcd631188"
+        },
+        "encoder": {
+          "bytes": 3970503,
+          "file": "p07_encoder_L128.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "int32"
+          ],
+          "input_shapes": [
+            [
+              128,
+              4,
+              3
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ]
+          ],
+          "sha256": "1816dafed0d6a4d4f7fe4d7dcc74b1638175fb7cb1d71a7e133945eb50d09999"
+        },
+        "fuse": {
+          "bytes": 30922,
+          "file": "p07_fuse_L128.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "bool",
+            "float32",
+            "int32",
+            "int32",
+            "float32",
+            "float32"
+          ],
+          "input_shapes": [
+            [
+              1,
+              128,
+              21
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              1,
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              1
+            ],
+            [],
+            [
+              128,
+              21
+            ]
+          ],
+          "sha256": "068387e755aaf5db3f5a88a1984a032a9c86690e17c3df739ee4746d786e9aaf"
+        },
+        "wave": {
+          "bytes": 57482,
+          "file": "p07_wave_L128.onnx",
+          "input_dtypes": [
+            "int32",
+            "int32"
+          ],
+          "input_shapes": [
+            [
+              128
+            ],
+            [
+              128
+            ]
+          ],
+          "sha256": "8b1cfef1a2cd85d96b84662c59afded7b65e28e50048c21c55505bdd4e866831"
+        }
+      },
+      "hidden": 128,
+      "k_neighbors": 48,
+      "max_groups_per_wave": 1,
+      "n_waves": 128
+    }
+  ],
+  "checkpoint_id": "proteinmpnn_v_48_020",
+  "git_hash": "b18974be6f7468764eb9824e85dfacc62e7d54a6"
+}
