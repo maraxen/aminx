@@ -438,14 +438,28 @@ bathos run record, not from console output.
 | G3b | reference vs split, recovery/perplexity | not run | — |
 | G2 | WebGPU, ORT-Web EP and @jax-js/onnx | not run | — |
 
-**On G3a.** The knobs gate measured the *monolith* against reference ProteinMPNN
-teacher-forced at 4.482e-05 nats (bound 1e-4), and G1 showed the split reproduces that
-monolith's tokens **exactly** on 56/56 cells with log-probs within 4.8e-06. The reference
-anchoring therefore transfers to the split by composition, which is why G3a is marked
-transferred rather than run. Two honest caveats: the transfer is only as tight as the
-weaker link, and it is a composition of two measurements rather than one direct
-split-vs-reference run. A direct run would be stronger and remains worth doing before
-publication.
+**On G3a — and a correction to how this was first written here.** The knobs gate's B1
+check (`p07_knobs_gate.py:1710`) compares **aminx JAX against the PyTorch reference
+directly**, via `layer_a_common.load_full_model("eqx")`. It does *not* run through ONNX.
+So the knobs gate never measured "the monolith against the reference" as an earlier
+revision of this section claimed; it measured reference↔JAX (B1) and JAX↔ONNX (check A)
+as two separate links.
+
+That makes the split's chain to the reference **two measured links, both direct**:
+
+| Link | Measured | Bound | Run |
+| :--- | :--- | :--- | :--- |
+| reference PyTorch ↔ aminx JAX, teacher-forced | 4.482e-05 nats | 1e-4 | `fd80f81d` |
+| aminx JAX ↔ split, tokens + log-probs | **exact** / 1.526e-05 | 2e-4 | `d2a06073` |
+
+The monolith is not load-bearing in that chain at all — G1 compared the split to JAX
+directly, so the monolith is corroboration rather than an intermediate. Good, because a
+shorter chain is a stronger one.
+
+Remaining caveats, unchanged: a composed claim is only as tight as its weaker link, and
+two chained measurements are weaker evidence than one direct split-vs-reference
+teacher-forced run. The machinery for that direct run now exists (B1's own helpers plus
+the split composition), so it is cheap and worth doing before publication.
 
 Production sizes at L=128 (manifest run `5ee51cbb`): E 3,970,503 B · W 57,482 B ·
 D 2,905,149 B · F 30,922 B — **6,964,056 B total, against the monolith's 20,374,293 B**,
