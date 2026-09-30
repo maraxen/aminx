@@ -20,7 +20,7 @@ from aminx.host._sampling_helper import (
   _canonical_structure_ids_for_spec,
   _structure_ids_for_batch,
 )
-from aminx.host.family_driver import FAMILY_DRIVERS
+from aminx.host.family_driver import FAMILY_DRIVERS, FamilyDriver
 from aminx.host.family_runner import run_family_driver
 from aminx.host.kernel_dispatch import _sample_batch
 from aminx.host.logit_aggregation import (
@@ -57,6 +57,20 @@ from aminx.run.specs import (
   ScoringSpecification,
   pop_deprecated_spec_kwargs,
 )
+
+
+def _family_driver_for(spec: Any) -> FamilyDriver | None:  # noqa: ANN401
+  """Return the driver for ``spec``, importing PottsMPNN the first time it is needed.
+
+  A driver already registered under ``pottsmpnn`` is left in place so tests can
+  install a stand-in before dispatch.
+  """
+  family = getattr(spec, "model_family", None)
+  if family == "pottsmpnn" and FAMILY_DRIVERS.get("pottsmpnn") is None:
+    import aminx.families.potts_mpnn as _potts_mpnn  # noqa: F401, PLC0415
+
+  return FAMILY_DRIVERS.get(family)
+
 
 from .prep import prep_protein_stream_and_model
 
@@ -180,7 +194,7 @@ def sample(
 
   # FamilyDriver dispatch. An empty registry leaves this path untouched.
   purpose = "sample"
-  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+  if (d := _family_driver_for(spec)) is not None:
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)
@@ -550,7 +564,7 @@ def score(  # noqa: PLR0915
     spec = ScoringSpecification(**kw)
 
   purpose = f"score:{spec.output_kind}"
-  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+  if (d := _family_driver_for(spec)) is not None:
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)
@@ -967,7 +981,7 @@ def inspect(  # noqa: PLR0915
     spec = InspectionSpecification(**kw)
 
   purpose = "inspect"
-  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+  if (d := _family_driver_for(spec)) is not None:
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)
@@ -1292,7 +1306,7 @@ def jacobian(
     spec = JacobianSpecification(**kw)
 
   purpose = "jacobian"
-  if (d := FAMILY_DRIVERS.get(spec.model_family)) is not None:
+  if (d := _family_driver_for(spec)) is not None:
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)

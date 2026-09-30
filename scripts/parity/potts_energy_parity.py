@@ -1,0 +1,409 @@
+"""Graded Potts energy parity against upstream PottsMPNN (do not run from the fixer).
+
+Clean arm: example PDBs plus a 30-residue slice of chain A from ``2yc3.pdb``,
+200 random sequences per structure. Pass when every ``|ΔE|`` is within
+``1e-4 + 1e-5·|E_up|`` and a hand-built 3-residue table matches to ``1e-12``.
+Ten times that bound is inconclusive; beyond that is fail.
+
+Negative control ``permute_etab_out_rows`` must land in the fail band.
+Each arm is a fresh subprocess. Results go to ``$BTH_RESULTS_PATH``.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+MUTANT_ID = "permute_etab_out_rows"
+N_RANDOM = 200
+SEED = 0
+CANONICAL = "ACDEFGHIKLMNPQRSTVWY"
+EXAMPLE_SHA256 = {
+    "2yc3.pdb": "ef62cf3625931b1c0abef080baa36677e53dca1dbaaa7d1740c9e9888e24e2ca",
+    "3dkm.pdb": "3d847d573e648b631983885a02f41bc14d8a8a11ac893b1c8c76ec5c46781c86",
+    "3gg7.pdb": "2203e4a69287a5b968a78df5fb80b29f10fbdb37f73f64363cefbee8f1899712",
+    "4jox.pdb": "c16543717793ced9e9475df6213a52054d05b70dd02069d41fac82e164f09ee8",
+    "6w25.pdb": "4a9a6dc228bf3953a746d09f29e6116f07c1f2cfc152030fe878728c65cca086",
+    "swe1_ligand.pdb": "493352b8c64c02c133f1143c1705e7b5217e0f67127bd22e6b3964319b6445c6",
+}
+CHECKPOINT_SHA256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _parse(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--potts-root", type=Path, default=Path("/home/marielle/repos/PottsMPNN"))
+    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument("--oracle-python", default=os.environ.get("POTTS_ORACLE_PYTHON"))
+    parser.add_argument("--mutants", default=MUTANT_ID)
+    parser.add_argument("--controls-out", type=Path, default=None)
+    parser.add_argument("--arm", default=None)
+    parser.add_argument("--job", type=Path, default=None)
+    parser.add_argument("--upstream", type=Path, default=None)
+    parser.add_argument("--work-dir", type=Path, default=None)
+    parser.add_argument("--oracle-worker", action="store_true")
+    return parser.parse_args(argv)
+
+
+def _checkpoint(args: argparse.Namespace) -> Path:
+    if args.checkpoint is not None:
+        return args.checkpoint
+    return args.potts_root / "vanilla_model_weights" / "pottsmpnn_20.pt"
+
+
+def _check_inputs(root: Path, checkpoint: Path) -> None:
+    folder = root / "inputs" / "example_pdbs"
+    for name, digest in EXAMPLE_SHA256.items():
+        path = folder / name
+        got = _sha256(path)
+        if got != digest:
+            msg = f"{path} sha256 {got} != {digest}"
+            raise SystemExit(msg)
+    got = _sha256(checkpoint)
+    if got != CHECKPOINT_SHA256:
+        msg = f"{checkpoint} sha256 {got} != {CHECKPOINT_SHA256}"
+        raise SystemExit(msg)
+
+
+def _write_l30(source: Path, dest: Path) -> None:
+    """First 30 residues of chain A, renumbered from 1. Pinned via ``2yc3.pdb``."""
+    residues: list[tuple[int, str, list[str]]] = []
+    seen: dict[tuple[int, str], int] = {}
+    for line in source.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if not line.startswith("ATOM") or line[21:22] != "A":
+            continue
+        token = line[22:27]
+        icode = token[-1] if token[-1].isalpha() else " "
+        resn = int(token[:-1]) if icode != " " else int(token)
+        key = (resn, icode)
+        if key not in seen:
+            if len(seen) == 30:
+                continue
+            seen[key] = len(residues)
+            residues.append((resn, icode, []))
+        if len(seen) <= 30 and key in seen:
+            residues[seen[key]][2].append(line)
+    if len(residues) != 30:
+        msg = f"expected 30 residues of chain A in {source}, got {len(residues)}"
+        raise SystemExit(msg)
+    lines: list[str] = []
+    for new_index, (_resn, _icode, atoms) in enumerate(residues, start=1):
+        for atom in atoms:
+            lines.append(f"{atom[:22]}{new_index:4d} {atom[27:]}")
+    dest.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _band(delta: Any, upstream: Any, *, analytic: float) -> str:
+    import numpy as np
+
+    bound = 1e-4 + 1e-5 * np.abs(upstream)
+    gap = np.abs(delta)
+    within = bool(np.all(gap <= bound))
+    within_10 = bool(np.all(gap <= 10.0 * bound))
+    if analytic > 1e-12:
+        return "fail"
+    if within:
+        return "pass"
+    if within_10:
+        return "inconclusive"
+    return "fail"
+
+
+def _analytic_abs_err() -> float:
+    import jax
+    import jax.numpy as jnp
+
+    from aminx.families.potts_mpnn.etab import potts_energy
+
+    with jax.experimental.enable_x64():
+        length = 3
+        alphabet = 22
+        table = jnp.zeros((length, length, alphabet, alphabet), dtype=jnp.float64)
+        table = table.at[0, 1, 1, 2].set(0.5)
+        table = table.at[1, 2, 2, 0].set(-0.25)
+        table = table.at[2, 0, 0, 1].set(1.25)
+        neighbors = jnp.asarray([[0, 1, 2], [1, 2, 0], [2, 0, 1]], dtype=jnp.int32)
+        valid = jnp.ones((length,), dtype=jnp.bool_)
+        sequence = jnp.asarray([1, 2, 0], dtype=jnp.int32)
+        got = potts_energy(table, neighbors, valid, sequence)
+        # Slots: (i=0,k=1) 0.5, (i=1,k=2) -0.25, (i=2,k=0) 1.25.
+        return float(jnp.abs(got - jnp.asarray(1.5, dtype=jnp.float64)))
+
+
+def _results_path() -> Path:
+    env = os.environ.get("BTH_RESULTS_PATH")
+    if not env:
+        msg = "potts_energy_parity requires $BTH_RESULTS_PATH"
+        raise SystemExit(msg)
+    return Path(env)
+
+
+def _install_mutant(arm: str | None) -> None:
+    if arm in (None, "clean"):
+        return
+    if arm != MUTANT_ID:
+        msg = f"unknown mutant {arm}"
+        raise SystemExit(msg)
+    import equinox as eqx
+    import jax.numpy as jnp
+
+    from aminx.families.potts_mpnn.driver import PottsMPNNDriver
+
+    original = PottsMPNNDriver.load
+
+    def _load(self: PottsMPNNDriver, spec: object) -> object:
+        model = original(self, spec)
+        weight = model.potts_head.linear.weight
+        index = jnp.arange(weight.shape[0] - 1, -1, -1)
+        linear = eqx.tree_at(lambda layer: layer.weight, model.potts_head.linear, weight[index])
+        return eqx.tree_at(lambda module: module.potts_head.linear, model, linear)
+
+    PottsMPNNDriver.load = _load  # type: ignore[method-assign]
+
+
+def _score_aminx(job: dict[str, Any], checkpoint: Path) -> dict[str, list[float]]:
+    from aminx.host.runner import score
+    from aminx.run.specs import ScoringSpecification
+
+    found: dict[str, list[float]] = {}
+    for name, payload in job["structures"].items():
+        spec = ScoringSpecification(
+            inputs=payload["pdb"],
+            model_family="pottsmpnn",
+            checkpoint_id="pottsmpnn_vanilla_20",
+            model_local_path=checkpoint,
+            output_kind="energy",
+            sequences_to_score=payload["random"],
+        )
+        energy = score(spec)["structures"]["0"]["arrays"]["energy"]
+        found[name] = [float(value) for value in energy]
+    return found
+
+
+def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
+    import numpy as np
+
+    _install_mutant(args.arm)
+    job = json.loads(args.job.read_text(encoding="utf-8"))
+    upstream = json.loads(args.upstream.read_text(encoding="utf-8"))
+    ours = _score_aminx(job, _checkpoint(args))
+    deltas: list[float] = []
+    references: list[float] = []
+    for name, energy in ours.items():
+        ref = upstream[name]
+        if len(energy) != len(ref):
+            msg = f"{name} length {len(energy)} != upstream {len(ref)}"
+            raise SystemExit(msg)
+        deltas.extend(float(a) - float(b) for a, b in zip(energy, ref, strict=True))
+        references.extend(float(value) for value in ref)
+    analytic = 0.0 if args.arm not in (None, "clean") else _analytic_abs_err()
+    delta = np.asarray(deltas, dtype=np.float64)
+    ref = np.asarray(references, dtype=np.float64)
+    return {
+        "band": _band(delta, ref, analytic=analytic),
+        "max_abs_delta": float(np.max(np.abs(delta))) if delta.size else float("inf"),
+        "analytic_abs_err": analytic,
+    }
+
+
+def _build_job(root: Path, work: Path) -> dict[str, Any]:
+    import numpy as np
+
+    from aminx.families.potts_mpnn.featurize import parse_pdb_upstream, tied_featurize_port
+
+    work.mkdir(parents=True, exist_ok=True)
+    l30 = work / "l30.pdb"
+    _write_l30(root / "inputs" / "example_pdbs" / "2yc3.pdb", l30)
+    paths = [*(root / "inputs" / "example_pdbs").glob("*.pdb"), l30]
+    rng = np.random.default_rng(SEED)
+    structures: dict[str, Any] = {}
+    for path in paths:
+        parsed = parse_pdb_upstream(path)[0]
+        features = tied_featurize_port([parsed], None)[0]
+        length = int(features.L_total)
+        draws = rng.integers(0, len(CANONICAL), size=(N_RANDOM, length))
+        random = ["".join(CANONICAL[int(index)] for index in row) for row in draws]
+        structures[path.stem] = {"pdb": str(path), "random": random}
+    return {"structures": structures}
+
+
+def _oracle_python(args: argparse.Namespace) -> str:
+    if args.oracle_python:
+        return str(args.oracle_python)
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        msg = "set POTTS_ORACLE_PYTHON to the torch oracle interpreter"
+        raise SystemExit(msg) from None
+    return sys.executable
+
+
+def _parent(args: argparse.Namespace) -> dict[str, Any]:
+    checkpoint = _checkpoint(args)
+    _check_inputs(args.potts_root, checkpoint)
+    work = args.work_dir or Path(os.environ.get("TMPDIR", "/tmp")) / "potts_energy_parity"
+    work.mkdir(parents=True, exist_ok=True)
+    job = _build_job(args.potts_root, work)
+    job_path = work / "job.json"
+    upstream_path = work / "upstream.json"
+    job_path.write_text(json.dumps(job), encoding="utf-8")
+    subprocess.run(
+        [
+            _oracle_python(args),
+            str(Path(__file__).resolve()),
+            "--oracle-worker",
+            "--potts-root",
+            str(args.potts_root),
+            "--checkpoint",
+            str(checkpoint),
+            "--job",
+            str(job_path),
+            "--upstream",
+            str(upstream_path),
+        ],
+        check=True,
+    )
+    mutants = [item for item in args.mutants.split(",") if item]
+    arms = ["clean", *mutants]
+    measured: dict[str, dict[str, Any]] = {}
+    for arm in arms:
+        completed = subprocess.run(
+            [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--arm",
+                arm,
+                "--job",
+                str(job_path),
+                "--upstream",
+                str(upstream_path),
+                "--checkpoint",
+                str(checkpoint),
+                "--potts-root",
+                str(args.potts_root),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            measured[arm] = {"band": "error", "detail": completed.stderr[-500:]}
+            continue
+        measured[arm] = json.loads(completed.stdout)
+    clean = measured["clean"]["band"]
+    statuses = {
+        mutant: "failed" if measured[mutant]["band"] == "fail" else "passed"
+        if measured[mutant]["band"] in {"pass", "inconclusive"}
+        else "error"
+        for mutant in mutants
+    }
+    if args.controls_out is not None:
+        args.controls_out.parent.mkdir(parents=True, exist_ok=True)
+        args.controls_out.write_text(
+            json.dumps(
+                {
+                    "clean": clean,
+                    "mutants": statuses,
+                    "weights": {str(checkpoint): _sha256(checkpoint)},
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+    n_failed = sum(status == "failed" for status in statuses.values())
+    return {
+        "clean": clean,
+        "n_listed": len(mutants),
+        "n_failed": n_failed,
+        "max_abs_delta": float(measured["clean"].get("max_abs_delta", float("nan"))),
+        "analytic_abs_err": float(measured["clean"].get("analytic_abs_err", float("nan"))),
+    }
+
+
+def _oracle_worker(args: argparse.Namespace) -> None:
+    import numpy as np
+    import torch
+    from types import SimpleNamespace
+
+    root = args.potts_root
+    sys.path.insert(0, str(root))
+    from potts_mpnn_utils import PottsMPNN, parse_PDB
+    from run_utils import score_seqs
+
+    blob = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    state = blob["model_state_dict"] if isinstance(blob, dict) and "model_state_dict" in blob else blob
+    model = PottsMPNN(
+        ca_only=False,
+        num_letters=21,
+        vocab=21,
+        node_features=128,
+        edge_features=128,
+        hidden_dim=128,
+        potts_dim=400,
+        num_encoder_layers=3,
+        num_decoder_layers=3,
+        k_neighbors=48,
+        augment_eps=0.0,
+    )
+    model.load_state_dict(state, strict=False)
+    model.eval()
+    cfg = SimpleNamespace(
+        dev="cpu",
+        model=SimpleNamespace(vocab=21),
+        inference=SimpleNamespace(
+            ddG=False,
+            filter=False,
+            mean_norm=False,
+            max_tokens=10**12,
+            skip_gaps=False,
+            noise=0.0,
+        ),
+    )
+    job = json.loads(args.job.read_text(encoding="utf-8"))
+    scores: dict[str, list[float]] = {}
+    for name, payload in job["structures"].items():
+        pdb = parse_PDB(payload["pdb"], skip_gaps=False)
+        wt = pdb[0]["seq"]
+        seqs = [wt, *payload["random"]]
+        pred, _scored, _ref = score_seqs(
+            model,
+            cfg,
+            pdb,
+            np.zeros(len(seqs), dtype=np.float32),
+            seqs,
+        )
+        scores[name] = [float(value) for value in pred.reshape(-1).detach().cpu()]
+    args.upstream.write_text(json.dumps(scores), encoding="utf-8")
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _parse(sys.argv[1:] if argv is None else argv)
+    if args.oracle_worker:
+        _oracle_worker(args)
+        return
+    if args.arm:
+        payload = _run_arm(args)
+        sys.stdout.write(json.dumps(payload))
+        return
+    results = _parent(args)
+    path = _results_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

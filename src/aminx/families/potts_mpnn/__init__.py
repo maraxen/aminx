@@ -1,5 +1,6 @@
 """PottsMPNN family host."""
 
+from aminx.families.potts_mpnn.driver import PottsMPNNDriver, absolute_energies
 from aminx.families.potts_mpnn.etab import (
   ETAB_ALPHABET,
   ETAB_GAP,
@@ -34,7 +35,9 @@ __all__ = [
   "PottsHead",
   "PottsInputError",
   "PottsMPNN",
+  "PottsMPNNDriver",
   "PottsMPNNOutput",
+  "absolute_energies",
   "cast_floating",
   "etab_to_model",
   "knn_boundary_tie",

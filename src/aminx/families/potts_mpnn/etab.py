@@ -64,6 +64,7 @@ def merge_pair(
   *,
   denom: int,
   exclude_self: bool,
+  transpose: bool = True,
 ) -> Float[Array, "L K A A"]:
   """Average a directed pair table with its reverse edge.
 
@@ -79,7 +80,9 @@ def merge_pair(
   (upstream ``denom != 2``).
 
   ``etab_forward`` uses ``denom=2, exclude_self=False``. ``etab_energy`` uses
-  ``denom=4, exclude_self=True`` on ``etab_forward``.
+  ``denom=4, exclude_self=True`` on ``etab_forward``. ``transpose=False`` adds
+  the forward table without swapping the amino-acid axes (the megascale
+  negative control).
   """
   # Neighbour indices from oracles are int64. Scatter updates require one
   # integer width, and int32 covers every residue index we index with.
@@ -111,7 +114,8 @@ def merge_pair(
     alphabet,
     alphabet,
   )
-  updated = (reverse_table + jnp.swapaxes(etab, -1, -2)) / jnp.asarray(denom, dtype=etab.dtype)
+  partner = jnp.swapaxes(etab, -1, -2) if transpose else etab
+  updated = (reverse_table + partner) / jnp.asarray(denom, dtype=etab.dtype)
 
   flat_n = length * k
   order = jnp.arange(flat_n, dtype=jnp.int32).reshape(length, k)
