@@ -1,5 +1,6 @@
 """PottsMPNN family host."""
 
+from aminx.families.potts_mpnn.decode import PottsARDecode, mask_refine_x, pssm_mix
 from aminx.families.potts_mpnn.driver import PottsMPNNDriver, absolute_energies
 from aminx.families.potts_mpnn.etab import (
   ETAB_ALPHABET,
@@ -24,6 +25,8 @@ from aminx.families.potts_mpnn.featurize import (
 )
 from aminx.families.potts_mpnn.model import PottsMPNN, PottsMPNNOutput, cast_floating
 from aminx.families.potts_mpnn.potts_head import PottsHead
+from aminx.families.potts_mpnn.refine import PottsRefine
+from aminx.families.potts_mpnn.sample_host import PottsSampleEnergy
 
 __all__ = [
   "ETAB_ALPHABET",
@@ -31,16 +34,20 @@ __all__ = [
   "ETAB_X",
   "MODEL_ALPHABET",
   "X_INDEX",
+  "PottsARDecode",
   "PottsFeatures",
   "PottsHead",
   "PottsInputError",
   "PottsMPNN",
   "PottsMPNNDriver",
   "PottsMPNNOutput",
+  "PottsRefine",
+  "PottsSampleEnergy",
   "absolute_energies",
   "cast_floating",
   "etab_to_model",
   "knn_boundary_tie",
+  "mask_refine_x",
   "merge_pair",
   "model_to_etab",
   "pad",
@@ -48,5 +55,6 @@ __all__ = [
   "parse_pdb_upstream",
   "positional_potts_energy",
   "potts_energy",
+  "pssm_mix",
   "tied_featurize_port",
 ]

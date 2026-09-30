@@ -1,10 +1,9 @@
-"""PottsMPNN family driver for ``score:energy`` and ``score:ddg``.
+"""PottsMPNN family driver for ``score:energy``, ``score:ddg``, and ``sample``.
 
-Sampling and refinement stay on A5: ``handles`` is false for those purposes,
-and the runner raises the seam's unsupported-purpose ``ValueError``.
-Registration runs when this module is imported (``aminx.families.potts_mpnn``
-imports it). The runner imports that package lazily for ``model_family ==
-"pottsmpnn"``.
+``sample`` is ``MPNNEncode → PottsARDecode → PottsSampleEnergy → PottsRefine``
+(refine only when ``optimization_mode`` is not ``none``). ``optimize_pdb`` /
+``optimize_fasta`` with a refine mode skip autoregressive decode and ranking.
+Registration runs when this module is imported.
 """
 
 from __future__ import annotations
@@ -39,7 +38,14 @@ from aminx.families.potts_mpnn.featurize import (
   tied_featurize_port,
 )
 from aminx.families.potts_mpnn.model import PottsMPNN, _encoder_states, cast_floating
-from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, SinkArraySpec
+from aminx.families.potts_mpnn.sample_host import (
+  SampleStages,
+  force_optimize_num_samples,
+  prepare_sample,
+  sample_axes,
+  sample_schema,
+)
+from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, FamilyStages, SinkArraySpec
 from aminx.host.prep import _resolve_local_checkpoint_from_registry
 from aminx.run.options import PottsMPNNOptions
 from aminx.tiling.buckets import LENGTH_BUCKETS
@@ -47,7 +53,7 @@ from aminx.types.boundaries import AxisBoundary
 
 log = logging.getLogger(__name__)
 
-_HANDLED = frozenset({"score:energy", "score:ddg"})
+_HANDLED = frozenset({"score:energy", "score:ddg", "sample"})
 _CANONICAL = "ACDEFGHIKLMNPQRSTVWY"
 _ETAB_INDEX = {letter: index for index, letter in enumerate(ETAB_ALPHABET)}
 _PARTITION_BUCKETS = (8, 16, 32, 48, 64, 96, 128, 256, 512, 1024)
@@ -218,24 +224,27 @@ def _device_graph(
 
 
 class PottsMPNNDriver:
-  """Score Potts energies and binding ddG through the family-driver seam."""
+  """Score and sample PottsMPNN through the family-driver seam."""
 
   name = "pottsmpnn"
   options_type = PottsMPNNOptions
   mpnn_fallback_purposes = frozenset({"jacobian", "inspect", "score:nll", "score:logits"})
 
   def handles(self, spec: Any, purpose: str) -> bool:  # noqa: ANN401
-    """True only for ``score:energy`` and ``score:ddg``."""
+    """True for ``score:energy``, ``score:ddg``, and ``sample``."""
     del spec
     return purpose in _HANDLED
 
   def load(self, spec: Any) -> PottsMPNN:  # noqa: ANN401
     """Load a converted PottsMPNN. Does not enter inference mode.
 
+    Optimize paths force ``num_samples`` to 1 before the runner plans chunks.
+
     ``model_local_path`` wins. A ``.pt`` path is converted on the fly
     (torch is imported only there). Otherwise the registry artifact is
     loaded, and ``pottsmpnn`` entries must carry ``sha256``.
     """
+    force_optimize_num_samples(spec)
     local = getattr(spec, "model_local_path", None)
     if local is not None:
       path = Path(str(local))
@@ -254,6 +263,10 @@ class PottsMPNNDriver:
 
   def batches(self, spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
     """One structure per batch, featurized by the A0 host port."""
+    force_optimize_num_samples(spec)
+    if _is_sample(spec):
+      yield from _sample_batches(spec)
+      return
     pending: list[tuple[int, str]] = []
     for index, item in enumerate(_inputs(spec)):
       try:
@@ -277,11 +290,9 @@ class PottsMPNNDriver:
       )
 
   def axes(self, spec: Any, purpose: str, batch: FamilyBatch) -> list[AxisSpec]:  # noqa: ANN401
-    """Structure, mutant, and (for binding ddG) partition axes.
-
-    ``BatchPlanner`` selects the mutant chunk. Scoring broadcasts inside that
-    chunk; this method does not ``vmap``.
-    """
+    """Structure, mutant, partition, or sample/temperature axes."""
+    if purpose == "sample":
+      return sample_axes(spec, batch)
     del spec
     prepared = cast("tuple[_Prepared, ...]", batch.arrays.get("prepared", ()))
     n_mut = int(prepared[0].graph.sequences.shape[0]) if prepared else 1
@@ -317,14 +328,17 @@ class PottsMPNNDriver:
       raise ValueError(msg)
     return specs
 
-  def stages(self, spec: Any, purpose: str, model: eqx.Module) -> _ScoreStages:  # noqa: ANN401
-    """Per-batch energy or ddG stage."""
-    del purpose
+  def stages(self, spec: Any, purpose: str, model: eqx.Module) -> FamilyStages:  # noqa: ANN401
+    """Per-batch energy, ddG, or sample stage."""
+    if purpose == "sample":
+      return SampleStages(cast("PottsMPNN", model), spec)
     options = _options(spec)
     return _ScoreStages(cast("PottsMPNN", model), mean_norm=bool(options.mean_norm))
 
   def result_schema(self, spec: Any, purpose: str) -> Mapping[str, SinkArraySpec]:  # noqa: ANN401
-    """§4.5 arrays. Per-position dims are not used; pad rows are not staged."""
+    """§4.5 arrays. Per-position dims are ``L_total`` on the sample path."""
+    if purpose == "sample":
+      return sample_schema(spec)
     del spec
     if purpose == "score:energy":
       return {
@@ -674,6 +688,52 @@ def _load_torch_checkpoint(path: Path) -> PottsMPNN:
 def _spec_sequences(spec: Any) -> tuple[str, ...]:  # noqa: ANN401
   raw = getattr(spec, "sequences_to_score", ())
   return tuple(str(item) for item in raw)
+
+
+def _is_sample(spec: Any) -> bool:  # noqa: ANN401
+  return not hasattr(spec, "output_kind")
+
+
+def _sample_batches(spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
+  """One PDB per batch for purpose ``sample``."""
+  options = _options(spec)
+  pending: list[tuple[int, str]] = []
+  for index, item in enumerate(_inputs(spec)):
+    if not isinstance(item, (str, Path)):
+      pending.append((index, "pottsmpnn_requires_pdb"))
+      continue
+    try:
+      path = Path(item)
+      parsed_list = parse_pdb_upstream(path, skip_gaps=options.skip_gaps)
+      parsed = parsed_list[0]
+      name = str(parsed["name"])
+      features = tied_featurize_port([parsed], _chain_dict(options, name))[0]
+      if knn_boundary_tie(features.present, features.L_total):
+        log.warning("knn_boundary_tie for %s (L_total=%s)", name, features.L_total)
+      chains = _chain_sequences(parsed, features)
+      ready = prepare_sample(
+        features,
+        tuple((chain.letter, chain.sequence) for chain in chains),
+        options,
+        spec,
+      )
+    except PottsInputError as exc:
+      pending.append((index, str(exc)))
+      continue
+    yield FamilyBatch(
+      input_indices=(index,),
+      arrays={"ready": (ready,)},
+      skipped=tuple(pending),
+      lengths=(ready.l_total,),
+    )
+    pending = []
+  if pending:
+    yield FamilyBatch(
+      input_indices=(),
+      arrays={"ready": ()},
+      skipped=tuple(pending),
+      lengths=(),
+    )
 
 
 def _prepare_from_spec(item: Any, spec: Any) -> _Prepared:  # noqa: ANN401

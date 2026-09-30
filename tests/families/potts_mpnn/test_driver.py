@@ -120,24 +120,40 @@ def test_registration_and_handles(registered: PottsMPNNDriver) -> None:
     assert potts_mpnn.PottsMPNNDriver is PottsMPNNDriver
     assert driver.handles(None, "score:energy")
     assert driver.handles(None, "score:ddg")
-    assert not driver.handles(None, "sample")
+    assert driver.handles(None, "sample")
     assert not driver.handles(None, "score:nll")
     assert not driver.handles(None, "score:logits")
     assert "score:nll" in driver.mpnn_fallback_purposes
     assert "sample" not in driver.mpnn_fallback_purposes
 
 
-def test_sample_raises_unsupported_purpose(registered: PottsMPNNDriver) -> None:
+def test_sample_serves_sequence_energy_and_rank(
+    registered: PottsMPNNDriver,
+    model_path: Path,
+    tmp_path: Path,
+) -> None:
     del registered
+    pdb = tmp_path / "toy.pdb"
+    _write_pdb(pdb, {"A": "AC"})
     spec = SamplingSpecification(
-        inputs="a.pdb",
+        inputs=str(pdb),
         model_family="pottsmpnn",
         checkpoint_id="pottsmpnn_vanilla_20",
-        num_samples=1,
+        model_local_path=model_path,
+        num_samples=2,
+        samples_chunk_size=1,
         return_logits=False,
+        potts_mpnn=PottsMPNNOptions(optimization_mode="none"),
     )
-    with pytest.raises(ValueError, match="does not support sample"):
-        sample(spec)
+    result = sample(spec)
+    arrays = result["structures"]["0"]["arrays"]
+    assert arrays["sequence"].shape == (2, 2)
+    assert arrays["sequence"].dtype == np.int32
+    assert arrays["sample_energy"].shape == (2,)
+    assert arrays["sample_energy"].dtype == np.float32
+    assert "refined_sequence" not in arrays
+    rank = np.argsort(arrays["sample_energy"], kind="stable").astype(np.int32)
+    assert np.array_equal(arrays["sample_rank"], rank)
 
 
 def test_synthetic_energy_matches_head(

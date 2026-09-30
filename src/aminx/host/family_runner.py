@@ -165,7 +165,8 @@ def run_family_driver(
   _refuse_driver_modes(spec)
   model = driver.load(spec)
   stages = driver.stages(spec, purpose, model)
-  schema = _chunk_schema(dict(driver.result_schema(spec, purpose)))
+  full_schema = dict(driver.result_schema(spec, purpose))
+  schema = _chunk_schema(full_schema)
   structure_ids = _canonical_structure_ids_for_spec(spec)
   windows = _chunk_windows(spec, purpose)
   output_kind = _output_kind(purpose)
@@ -196,6 +197,7 @@ def run_family_driver(
       batch,
       stages=stages,
       schema=schema,
+      full_schema=full_schema,
       structure_ids=structure_ids,
       windows=windows,
       scalar_dropout=scalar_dropout,
@@ -274,6 +276,7 @@ def _consume_batch(
   *,
   stages: Any,  # noqa: ANN401
   schema: Mapping[str, SinkArraySpec],
+  full_schema: Mapping[str, SinkArraySpec],
   structure_ids: list[str],
   windows: list[tuple[int, int]],
   scalar_dropout: bool,
@@ -289,6 +292,7 @@ def _consume_batch(
   if not batch.input_indices:
     return
   n_structures = len(batch.input_indices)
+  energy_parts: dict[int, list[np.ndarray]] = {}
   for chunk_start, chunk_count in windows:
     produced = stages(
       batch,
@@ -312,6 +316,9 @@ def _consume_batch(
         bucket = memory.setdefault(index, {name: [] for name in sliced})
         for name, array in sliced.items():
           bucket[name].append(array)
+      if "sample_rank" in full_schema and "sample_energy" in sliced:
+        energy_parts.setdefault(index, []).append(sliced["sample_energy"])
+  _stage_sample_rank(full_schema, batch, energy_parts, memory, sink)
   if sink is None:
     return
   for index in batch.input_indices:
@@ -322,6 +329,29 @@ def _consume_batch(
         "structure_id": _structure_id(structure_ids, index),
       },
     )
+
+
+def _stage_sample_rank(
+  full_schema: Mapping[str, SinkArraySpec],
+  batch: FamilyBatch,
+  energy_parts: dict[int, list[np.ndarray]],
+  memory: dict[int, dict[str, list[np.ndarray]]],
+  sink: ZarrStagingSink | None,
+) -> None:
+  """Rank pre-refine energies after the structure's last sample chunk."""
+  if "sample_rank" not in full_schema:
+    return
+  for index in batch.input_indices:
+    parts = energy_parts.get(index)
+    if not parts:
+      continue
+    energy = np.concatenate(parts, axis=0) if len(parts) > 1 else parts[0]
+    rank = np.argsort(energy, kind="stable").astype(np.int32)
+    if sink is None:
+      bucket = memory.setdefault(index, {})
+      bucket["sample_rank"] = [rank]
+    else:
+      _stage_chunk(sink, (f"structure_{index}",), {"sample_rank": rank})
 
 
 def _stage_chunk(

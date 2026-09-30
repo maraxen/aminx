@@ -157,9 +157,12 @@ def positional_potts_energy(
   e_idx: Int[Array, "L K"],
   pad_valid: Bool[Array, " L"],
   seq: Int[Array, " L"],
-  pos: int,
+  pos: int | Int[Array, ""],
 ) -> Float[Array, " A"]:
   """Energy of every amino acid at ``pos`` given the other sites.
+
+  ``pos`` may be a static Python ``int`` or a traced scalar: A5 sweeps it inside
+  ``lax`` control flow, while the etab tests index it with a literal.
 
   Ports ``positional_potts_energy`` for one unbatched protein (upstream reads
   batch index 0). Pair slots ``k > 0`` are summed; slot 0 contributes its
