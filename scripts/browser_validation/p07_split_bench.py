@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
   parser.add_argument("--cells", type=int, default=8)
   parser.add_argument("--reps", type=int, default=5)
   parser.add_argument("--planted-ms", type=float, default=250.0)
+  parser.add_argument("--threads", type=int, default=1, help="ORT wasm numThreads")
   parser.add_argument("--node-bin", type=str, default=None)
   args = parser.parse_args(argv)
 
@@ -168,6 +169,7 @@ def main(argv: list[str] | None = None) -> int:
       "--bucket", str(args.bucket),
       "--reps", str(args.reps),
       "--planted-ms", str(args.planted_ms),
+      "--threads", str(args.threads),
       "--out", str(bench_out),
       "--ort-dir", str(args.ort_dir),
     ]

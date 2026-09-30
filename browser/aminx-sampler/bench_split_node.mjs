@@ -36,11 +36,15 @@ const reps = Number(arg("reps", "5"));
 const plantedMs = Number(arg("planted-ms", "250"));
 const outPath = arg("out");
 const ortDir = arg("ort-dir");
+const numThreads = Number(arg("threads", "1"));
 
 const ortPkgDir = join(ortDir, "node_modules", "onnxruntime-web");
 const ort = await import(pathToFileURL(join(ortPkgDir, "dist", "ort.wasm.min.mjs")).href);
 ort.env.wasm.wasmPaths = pathToFileURL(join(ortPkgDir, "dist") + "/").href;
-ort.env.wasm.numThreads = 1;
+// Threads are a measured VARIABLE, not a fixed 1. Thread count changes float
+// accumulation order, so a run at one setting is only comparable with another at the
+// same setting -- the gate records it and the sidecar scopes every figure to it.
+ort.env.wasm.numThreads = numThreads;
 ort.env.logLevel = "error";
 
 const now = () => Number(process.hrtime.bigint()) / 1e6; // ms, monotonic
