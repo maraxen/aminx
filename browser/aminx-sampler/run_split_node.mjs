@@ -60,24 +60,33 @@ function typedFrom(spec) {
   throw new Error(`unsupported dtype ${dtype}`);
 }
 
-function toTensor(spec) {
-  const { dtype, shape, data } = spec;
-  if (dtype === "float32") return new ort.Tensor("float32", Float32Array.from(data), shape);
-  if (dtype === "int32") return new ort.Tensor("int32", Int32Array.from(data), shape);
-  if (dtype === "bool") return new ort.Tensor("bool", Uint8Array.from(data), shape);
-  throw new Error(`unsupported dtype ${dtype}`);
+// Infer the ONNX dtype from the TypedArray itself rather than carrying a dtype tag.
+// Tensors reaching here come from three places -- the dumped cell JSON, intermediates
+// built inside split_loop.mjs (Float32Array seqOh, Int32Array groupId, Uint8Array
+// maskGroup), and ORT outputs fed straight back in -- and only the first has a tag. The
+// constructor is unambiguous across all three, so this keeps one code path.
+function toTensor(t) {
+  const { shape, data } = t;
+  if (data instanceof Float32Array) return new ort.Tensor("float32", data, shape);
+  if (data instanceof Int32Array) return new ort.Tensor("int32", data, shape);
+  if (data instanceof BigInt64Array) return new ort.Tensor("int64", data, shape);
+  if (data instanceof Uint8Array) return new ort.Tensor("bool", data, shape);
+  throw new Error(`unsupported tensor data type ${data?.constructor?.name ?? typeof data}`);
 }
 
 function fromTensor(t) {
   return { shape: Array.from(t.dims), data: t.data };
 }
 
+// Load from BYTES, not a path. onnxruntime-web treats a string argument as a URL and
+// routes it through fetch(), which rejects a filesystem path under Node with
+// "Failed to parse URL". Reading the file ourselves also mirrors what createSampler does
+// in the browser (fetch -> arrayBuffer -> create), so both paths feed ORT the same shape
+// of input.
 const sessions = {};
 for (const key of ["encoder", "wave", "decoder", "fuse"]) {
-  sessions[key] = await ort.InferenceSession.create(
-    join(modelsDir, `p07_${key}_L${bucket}.onnx`),
-    { executionProviders: ["wasm"] },
-  );
+  const bytes = new Uint8Array(readFileSync(join(modelsDir, `p07_${key}_L${bucket}.onnx`)));
+  sessions[key] = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"] });
 }
 
 /** Feed a session positionally: the graphs pin input ORDER, not names. */
