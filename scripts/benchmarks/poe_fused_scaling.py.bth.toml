@@ -1,0 +1,36 @@
+[experiment]
+hypothesis = "On a production-shaped fused PoE bead (S=4 states, L=512, K=48, proteinmpnn_v_48_020), the shipped sample_states_fused completes with valid output at sample_count 128, 512 and 2048 on an H200, whereas the pre-#127 configuration (state axis and sample axis both unbounded vmap) fails at 128 -- i.e. debt #2158's crash is fixed by #127's BatchPlanner state axis plus lowered_memory_estimate, and this experiment can tell a fix from a bug that never reproduced on this hardware"
+stage_name = "confirmation"
+novel = false
+task_id = "260930_resolve-issues-debt"
+
+[outcomes.pass]
+condition = "planned_cells_ok = true AND negative_control_failed = true AND single_code_commit = true"
+decision = "Close debt #2158: the crash does not reproduce on the shipped path at production shapes, and the instrument demonstrably detects the pre-fix failure on this hardware. Scope the claim to the hardware actually run."
+reasoning = "A pass with a failing negative control is the only pass that distinguishes a fixed bug from a bug that never occurred here. planned_cells_ok requires all three planned cells to have a record with status ok, correct output shapes, in-vocabulary tokens, finite logits and more than one distinct sequence; absence or a started-but-unrecorded cell counts as failure."
+is_residual = false
+
+[outcomes.marginal]
+condition = "planned_cells_ok = true AND negative_control_failed = false"
+decision = "Do NOT close #2158 on this evidence. The shipped path works, but the pre-fix configuration also worked on this hardware, so the run cannot show the fix mattered. Repeat on hardware where the crash was originally seen (record which) or keep the debt open with this result attached."
+reasoning = "If the negative control does not fail, the experiment has no power against the original bug: a planned-path pass would be equally consistent with the crash being specific to other hardware or XLA builds. Reporting that honestly is the point of having a control."
+is_residual = false
+
+[outcomes.fail]
+condition = "planned_cells_ok = false OR single_code_commit = false"
+decision = "Debt #2158 stands: at least one planned cell crashed, was killed, or produced invalid output at production shape (or the cells ran against different code). Read the cell records' error_type, error_head and planner fields, and fix the named cause."
+reasoning = "Any planned-path failure at a production sample count is the defect the debt describes. A mix of code commits makes the cells incomparable, so it is refused rather than averaged over."
+is_residual = true
+
+[result_schema]
+planned_cells_ok = "bool"
+n_planned_ok = "int"
+negative_control_failed = "bool"
+negative_control_state = "str"
+single_code_commit = "bool"
+
+[result_schema.provenance]
+script_commit = "git log --oneline -1"
+related_debt = "#2158 (this), #942/#945 (praxia-side records of the original crash and the estimator fix); fix under test: commit 29af8302 (PR #127)"
+hardware_targets = ["Engaging mit_normal_gpu, gres gpu:h200:1 (one array task per cell)"]
+notes = "Cluster-computed: cells run as an sbatch array (one process, one job, one timeout per cell, resumable by hash-verified .done stamps) and are pulled back and summarised locally via `poe_fused_scaling.py --aggregate <pulled dir>` under bth run, the same replay convention as bench_xtrax_vs_aminx_dispatch_gpu. Backbones are synthetic (random-walk CA trace) at real size: the debt's failing tensor f32[128,12582912] equals 4*512*48*128, so the shape is the crash's actual geometry. No timing or memory number from this run is a performance claim; first_call_seconds includes compile and is recorded only to tell a timeout from a crash."
