@@ -29,6 +29,8 @@ LigandMPNN, membrane and other variants aren't exported to the browser.
 
 ## Files to copy into the static site
 
+For the monolith (the path this guide's main example uses):
+
 ```
 site/
   index.html
@@ -36,6 +38,19 @@ site/
   js/runspec_core.mjs       <- browser/aminx-sampler/runspec_core.mjs (same dir; imported relatively)
   models/p07_sample_L128.onnx
   models/p07_sample_L256.onnx
+```
+
+For the **four-graph split** (smaller and faster — see its section below), add two modules
+and swap one big model for four small ones:
+
+```
+site/
+  js/aminx_sampler.mjs      <- still needed: pickBucket, padStructure, MPNN_ALPHABET
+  js/runspec_core.mjs
+  js/split_driver.mjs       <- browser/aminx-sampler/split_driver.mjs
+  js/split_loop.mjs         <- browser/aminx-sampler/split_loop.mjs
+  models/p07_{encoder,wave,decoder,fuse}_L128.onnx
+  models/p07_{encoder,wave,decoder,fuse}_L256.onnx
 ```
 
 Serve only the `.onnx` file. The export embeds its weights: `embed_external_data`
@@ -268,6 +283,42 @@ through the real sampling loop, with `crossOriginIsolated` confirmed true.
 is *bit-identical* to the single-threaded run. That was worth checking rather than
 assuming: thread count changes float accumulation order, so results could in principle
 have moved, and this guide asks you to enable COOP/COEP.
+
+### Using the split
+
+Same shape as `createSampler`, but four URLs instead of one. Copy
+`split_driver.mjs` and `split_loop.mjs` alongside the two modules listed at the top.
+
+```html
+<script type="module">
+  import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs";
+  import { createSplitSampler } from "./js/split_driver.mjs";
+  import { pickBucket, MPNN_ALPHABET } from "./js/aminx_sampler.mjs";
+
+  ort.env.wasm.wasmPaths = "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/";
+
+  const bucket = pickBucket(structure.coords.length);   // 128 or 256
+  const sampler = await createSplitSampler(ort, {
+    encoderUrl: `./models/p07_encoder_L${bucket}.onnx`,
+    waveUrl:    `./models/p07_wave_L${bucket}.onnx`,
+    decoderUrl: `./models/p07_decoder_L${bucket}.onnx`,
+    fuseUrl:    `./models/p07_fuse_L${bucket}.onnx`,
+  }, { numThreads: crossOriginIsolated ? 4 : 1 });
+
+  try {
+    const { tokens, nReal } = await sampler.sample(structure, { seed: 42, temperature: 0.1 });
+    // tokens is {shape, data} with a plain Int32Array — NOT an ort.Tensor, unlike
+    // createSampler, which hands back the raw `outputs` map.
+    console.log(Array.from(tokens.data.slice(0, nReal), (t) => MPNN_ALPHABET[t]).join(""));
+  } finally {
+    await sampler.release();   // frees all four sessions
+  }
+</script>
+```
+
+`numThreads` is worth setting from `crossOriginIsolated` as shown: it is the difference
+between ~16 s and ~7 s per design, and it degrades safely to single-threaded if the
+headers are missing.
 
 L=256 is validated in the browser too (`8a3bb1d6`, tokens exact 4/4). Notably the
 log-prob difference is **bit-identical** — 5.7220458984375e-06 — across L128
