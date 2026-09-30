@@ -162,6 +162,51 @@ dispatch overhead across W calls, which may dominate at these sizes.
 
 ## 4. Pre-registered validation
 
+### 4.0 The chain of custody
+
+**Agreement with aminx's JAX is necessary but not sufficient.** On its own it proves only
+that our ONNX matches our JAX — self-consistency. If the JAX port itself carried a defect,
+every downstream gate would agree with it perfectly and still be wrong, and an external
+reviewer has no reason to accept it. The evidence must therefore terminate at the
+**reference implementation**, not at us:
+
+```
+reference ProteinMPNN (dauparas/LigandMPNN @ 26ec57ac, PyTorch)
+      |  R1  deterministic, teacher-forced per-position log-probs
+      v
+aminx JAX  (make_p07_sample, checkpoint proteinmpnn_v_48_020)
+      |  R2  same graph, converted
+      v
+ONNX monolith  (ORT-CPU, ORT-Web wasm)
+      |  R3  the split
+      v
+Graph E + JS loop + Graph D
+      |  R4  same graphs, different EP
+      v
+wasm (CPU)  and  WebGPU
+```
+
+Every link needs its own evidence, and **R1 is the one that anchors the rest**. R1 is
+already the layer-(a) exact tier's job, and the knobs gate already carries a teacher-forced
+reference comparison (its `b1_max_abs_nats <= 1e-4` check). The split adds R3; it must not
+be allowed to silently replace R1.
+
+Two different kinds of reference comparison, and the difference matters:
+
+- **Deterministic (R1, the strong one).** Teacher-forced: feed both implementations the
+  *same* sequence and decoding order and compare per-position log-probs. No sampling, no
+  statistics, tight bound. This is what actually demonstrates "the same model".
+- **Distributional (G3b).** Sequence recovery and perplexity from free sampling. Necessary
+  because the deterministic check cannot see a sampling-path defect (Gumbel, temperature,
+  tie fusion, fixed-position override), but it is a weaker instrument and needs a sized
+  control.
+
+The reportable claim is the *composition* of the chain, and it is only as strong as its
+weakest link. Both must be on the same checkpoint (`proteinmpnn_v_48_020`) with the
+reference pinned at `26ec57ac976ade5379920dbd43c7f97a91cf82de`.
+
+### 4.1 Gates
+
 Each gate below gets a tracked script and a `.bth.toml` sidecar **committed before the run**,
 with a negative control. No gate's threshold may be relaxed after seeing a number. Verify
 every run by its record (cool-tier parquet), never by exit code.
@@ -190,10 +235,25 @@ log-probs within bound. A capability probe runs first and its failure is a legit
 recorded outcome, not a retry trigger. Per ODQ-B3, no WebGPU number is quoted anywhere
 until this gate passes on real GPU hardware.
 
-**G3 — scientific validity.** Sequence recovery and perplexity of the split sampler against
-reference ProteinMPNN/LigandMPNN@26ec57ac on the held-out set. This is the number the
-advisor actually cares about; it is a statistical comparison, not a bitwise one, and it
-needs its own sized control.
+**G3a — deterministic vs the reference implementation (link R1, the anchor).**
+Teacher-forced per-position log-probs from the **split** pipeline against reference
+ProteinMPNN/LigandMPNN@26ec57ac, same checkpoint, same fed sequence and decoding order, on
+the held-out set. Tight pre-registered bound in nats (the knobs gate's existing
+teacher-forced reference check runs at 1e-4; the split's bound is set in its own sidecar,
+not inherited silently). Negative control: a planted perturbation of the reference-facing
+comparison, sized during calibration, that must trip it.
+
+This gate is what makes the whole chain mean anything, and it is deliberately **not**
+routed through aminx's JAX: it compares the artifact we ship to the implementation the
+field trusts. Running it on the split pipeline rather than only on the monolith is the
+point — otherwise R3 is unanchored.
+
+**G3b — distributional vs the reference.** Sequence recovery and perplexity from free
+sampling, against the same reference. Needed because G3a is teacher-forced and therefore
+structurally blind to a defect in the sampling path itself — Gumbel draw, temperature,
+tied-group fusion, fixed-position override — which is exactly the code §2 moves into new
+JavaScript. Statistical, not bitwise; needs its own sized control, and a margin <= 0 is
+recorded as unsized rather than as a pass.
 
 **G4 — performance.** Wall time per design, session-create time, peak memory; Split-A on
 wasm and (if G2 passes) WebGPU. **The timer must first pass a planted-delay control** — the
@@ -223,8 +283,46 @@ timing is reported before that control passes.
 ## 6. Sequencing
 
 G0 first — it is cheap, it is binary, and a failure changes the whole plan. Then Graph E +
-Graph D export with a sha256 manifest, then G1a (pure JS, no model), then G1b/G1c, then G3,
-then G4, then G2 last since it needs GPU hardware and gates only its own claims.
+Graph D export with a sha256 manifest, then G1a (pure JS, no model), then G1b/G1c, then
+**G3a** (the reference anchor — before any performance work, because a fast wrong sampler
+is worthless), then G3b, then G4, then G2 last since it needs GPU hardware and gates only
+its own claims.
+
+## 7. Reporting
+
+The deliverable is a **parity table organised by the §4.0 chain**, one row per link, each
+row carrying: what was compared, the pre-registered bound, the measured value, n, whether
+its negative control fired, and the bathos run id. A reviewer must be able to see which
+link is weakest without reading prose.
+
+| Link | Comparison | Bound | Measured | n | Control | Run id |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| R1/G3a | reference PyTorch ↔ split, teacher-forced log-probs | prereg | — | — | — | — |
+| R2 | aminx JAX ↔ ONNX monolith | 2e-4 | — | — | — | — |
+| R3/G1b | monolith ↔ split (ORT-CPU) | prereg | — | — | — | — |
+| R3/G1c | split ORT-CPU ↔ ORT-Web wasm | prereg | — | — | — | — |
+| R4/G2 | wasm ↔ WebGPU | prereg | — | — | — | — |
+| G3b | reference ↔ split, recovery/perplexity | prereg | — | — | — | — |
+
+Rules for the table, all of which exist to keep it honest:
+
+1. **Every cell is filled from a run record** (cool-tier parquet), never from console text
+   or an exit code. A cell whose run cannot be resolved stays empty and is reported empty.
+2. **A gate that did not run is named as not-run**, not omitted. `docs/browser_integration.md`
+   already uses explicit **pending** markers; keep that convention.
+3. **A `ctrl_blind` outcome is not a pass and is not a failure** — it means the instrument
+   was insensitive, and the row reports that rather than a number.
+4. **No WebGPU number appears anywhere until G2 passes** (ODQ-B3).
+5. **No timing number appears until G4's planted-delay timer control passes.** The earlier
+   benchmark failed exactly this, which is why there is currently no trustworthy timing
+   figure anywhere in the handoff doc.
+6. The composed claim is only as strong as its weakest link, and is stated that way rather
+   than by quoting the best row.
+
+Findings are promoted to a bathos **ledger claim** (`bth claim`) rather than cited from a
+dated document, because dated docs are an append-only log and go stale. The advisor-facing
+artifacts — `docs/browser_integration.md` and its shareable HTML page — then cite the claim
+and carry the table, replacing their current **pending** rows.
 
 Nothing in this document is measured. Every number arrives through a sidecar committed
 before its run.
