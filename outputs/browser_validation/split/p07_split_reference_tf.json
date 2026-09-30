@@ -1,37 +1,56 @@
 {
   "bound": 0.0001,
   "bucket": 128,
-  "cases_total": 4,
-  "cases_within_bound": 1,
+  "cases_total": 2,
+  "cases_within_bound": 2,
   "controls_detected": 1,
   "controls_total": 1,
   "ctrl_perturb_detected": true,
+  "excluded_fixtures": [
+    "tie_lattice_L96 (synthetic tie lattice; outside B1 scope)"
+  ],
   "failure": "",
+  "fixtures": [
+    "1BC8",
+    "5L33",
+    "6MRR"
+  ],
   "git_clean": true,
-  "git_hash": "b8973dead26660cdc5dd4ac138cd8f5d130c90b1",
+  "git_hash": "c30364d9b81ae7e17ae9485c272336f95359df3c",
   "lanes": [
     "P08@1.0",
     "P07@1.0"
   ],
-  "max_abs_nats_vs_reference": 5.99379026488658,
-  "outcome": "fail",
+  "max_abs_nats_vs_reference": 3.821793349700897e-05,
+  "n_positions_compared": 68,
+  "outcome": "pass",
   "per_case": [
     {
       "case": "5L33_P08@1.0",
-      "max_abs_nats": 2.7979537182254433e-05
+      "max_abs_nats": 3.821793349700897e-05
+    },
+    {
+      "case": "6MRR_P08@1.0",
+      "max_abs_nats": 2.7767192873007218e-05
+    }
+  ],
+  "skipped": [
+    {
+      "case": "1BC8_P08@1.0",
+      "why": "fixed_mask non-zero; Graph D has no chain_mask input"
+    },
+    {
+      "case": "1BC8_P07@1.0",
+      "why": "fixed_mask non-zero; Graph D has no chain_mask input"
     },
     {
       "case": "5L33_P07@1.0",
-      "max_abs_nats": 5.808655524228018
+      "why": "fixed_mask non-zero; Graph D has no chain_mask input"
     },
     {
-      "case": "tie_lattice_L96_P08@1.0",
-      "max_abs_nats": 1.3246321089999742
-    },
-    {
-      "case": "tie_lattice_L96_P07@1.0",
-      "max_abs_nats": 5.99379026488658
+      "case": "6MRR_P07@1.0",
+      "why": "fixed_mask non-zero; Graph D has no chain_mask input"
     }
   ],
-  "worst_case": "tie_lattice_L96_P07@1.0"
+  "worst_case": "5L33_P08@1.0"
 }
