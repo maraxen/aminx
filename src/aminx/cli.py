@@ -1699,6 +1699,28 @@ def campaign_plan(
       ),
     ),
   ] = None,
+  bias: Annotated[
+    Path | None,
+    _OPT(
+      "--bias",
+      help=(
+        "Path to a (L, 21) float .npy of per-position, per-token logit bias (L = the "
+        "campaign's padded length, max_length=512). Applied to every row of the grid and "
+        "carried in each row's sampling_spec."
+      ),
+    ),
+  ] = None,
+  tie_group_map: Annotated[
+    Path | None,
+    _OPT(
+      "--tie-group-map",
+      "--tie-group",
+      help=(
+        "Path to a (L,) integer .npy of per-position tie-group ids; positions sharing an id "
+        "are decoded tied. Applied to every row of the grid."
+      ),
+    ),
+  ] = None,
   checkpoint_id: Annotated[
     str | None,
     _OPT("--checkpoint-id", help="Checkpoint identifier for manifest rows"),
@@ -1740,6 +1762,7 @@ def campaign_plan(
   from aminx.host.campaign import (  # noqa: PLC0415
     SamplingSpecification,
     _parse_csv,
+    campaign_residue_overrides,
     parse_fixed_arms,
     parse_state_weight_profiles,
     write_campaign_manifest,
@@ -1751,6 +1774,7 @@ def campaign_plan(
     return_logits=False,
     **({"checkpoint_id": checkpoint_id} if checkpoint_id is not None else {}),
     **({"chain_id": parsed_chain_id} if parsed_chain_id is not None else {}),
+    **campaign_residue_overrides(bias, tie_group_map),
     **({"ligand_context_path": ligand_context_path} if ligand_context_path is not None else {}),
   )
   write_campaign_manifest(
@@ -1967,6 +1991,28 @@ def campaign_ramp_plan(
     Path | None,
     _OPT("--plan-path", help="Path to write scale ramp plan JSON"),
   ] = None,
+  bias: Annotated[
+    Path | None,
+    _OPT(
+      "--bias",
+      help=(
+        "Path to a (L, 21) float .npy of per-position, per-token logit bias (L = the "
+        "campaign's padded length, max_length=512). Applied to every row of the grid and "
+        "carried in each row's sampling_spec."
+      ),
+    ),
+  ] = None,
+  tie_group_map: Annotated[
+    Path | None,
+    _OPT(
+      "--tie-group-map",
+      "--tie-group",
+      help=(
+        "Path to a (L,) integer .npy of per-position tie-group ids; positions sharing an id "
+        "are decoded tied. Applied to every row of the grid."
+      ),
+    ),
+  ] = None,
   checkpoint_id: Annotated[
     str | None,
     _OPT("--checkpoint-id", help="Checkpoint identifier for manifest rows"),
@@ -1978,6 +2024,7 @@ def campaign_ramp_plan(
     _emit_json,
     _parse_csv,
     _parse_int_csv,
+    campaign_residue_overrides,
     parse_fixed_arms,
     parse_state_weight_profiles,
     plan_scale_ramp,
@@ -1987,6 +2034,7 @@ def campaign_ramp_plan(
     inputs=_parse_csv(inputs),
     return_logits=False,
     **({"checkpoint_id": checkpoint_id} if checkpoint_id is not None else {}),
+    **campaign_residue_overrides(bias, tie_group_map),
   )
   plan_payload = plan_scale_ramp(
     base_spec=base_spec,

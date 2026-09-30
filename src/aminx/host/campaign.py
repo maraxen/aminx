@@ -15,7 +15,7 @@ import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -1782,6 +1782,87 @@ def parse_fixed_arms(values: Sequence[str] | None) -> dict[str, str] | None:
   return arms
 
 
+def _load_campaign_npy(flag: str, path: str | Path) -> np.ndarray:
+  source = Path(path)
+  if not source.is_file() or source.suffix != ".npy":
+    msg = f"{flag} expects a path to an existing .npy file, got {str(path)!r}."
+    raise ValueError(msg)
+  return np.load(source, allow_pickle=False)
+
+
+def load_campaign_bias(path: str | Path, *, length: int) -> np.ndarray:
+  """Load ``--bias``: a ``(L, 21)`` float ``.npy`` of per-position, per-token logit bias.
+
+  ``L`` must equal ``length`` (the campaign's padded length, ``max_length``) -- the same
+  assumption ``fixed_arms`` masks are sized against. Shapes are checked here, where the caller
+  still has the context to fix them, rather than when a worker first touches the tensor.
+
+  Raises:
+    ValueError: not a ``.npy`` file, not 2-D ``(length, 21)``, or not finite.
+
+  """
+  bias = np.asarray(_load_campaign_npy("--bias", path), dtype=np.float32)
+  if bias.shape != (length, 21):
+    msg = (
+      f"--bias {str(path)!r} has shape {bias.shape}; expected ({length}, 21): one logit bias "
+      f"per position (padded campaign length {length}) and per token (MPNN alphabet, 21)."
+    )
+    raise ValueError(msg)
+  if not np.all(np.isfinite(bias)):
+    msg = f"--bias {str(path)!r} contains non-finite values."
+    raise ValueError(msg)
+  return bias
+
+
+def load_campaign_tie_group_map(path: str | Path, *, length: int) -> np.ndarray:
+  """Load ``--tie-group-map``: a ``(L,)`` non-negative integer ``.npy`` of tie-group ids.
+
+  Positions sharing an id are decoded together (logits tied); an id per position, in the
+  canonical frame. ``L`` must equal ``length`` (the padded campaign length).
+
+  Raises:
+    ValueError: not a ``.npy`` file, not 1-D ``(length,)``, non-integer, or negative.
+
+  """
+  raw = _load_campaign_npy("--tie-group-map", path)
+  if raw.shape != (length,):
+    msg = (
+      f"--tie-group-map {str(path)!r} has shape {raw.shape}; expected ({length},): one integer "
+      f"tie-group id per position (padded campaign length {length})."
+    )
+    raise ValueError(msg)
+  if raw.dtype.kind not in "iu" and not (
+    raw.dtype.kind == "f" and np.all(np.isfinite(raw)) and np.all(raw == np.floor(raw))
+  ):
+    msg = f"--tie-group-map {str(path)!r} must hold integer group ids, got dtype {raw.dtype}."
+    raise ValueError(msg)
+  groups = raw.astype(np.int32)
+  if np.any(groups < 0):
+    msg = f"--tie-group-map {str(path)!r} has negative group ids; ids must be >= 0."
+    raise ValueError(msg)
+  return groups
+
+
+def campaign_residue_overrides(
+  bias_path: str | Path | None,
+  tie_group_map_path: str | Path | None,
+) -> dict[str, np.ndarray]:
+  """``SamplingSpecification`` kwargs for ``--bias`` / ``--tie-group-map`` (empty if neither).
+
+  Both land on the base spec, so every row of the grid carries them in its ``sampling_spec`` --
+  the only thing a worker reads. Until now they were settable only through the Python API
+  (debt #2119, the same gap ``--fixed-arm`` closed). Sized against ``max_length``'s default,
+  which is what every campaign runs (the campaign CLIs expose no ``--max-length``).
+  """
+  length = int(next(f.default for f in fields(SamplingSpecification) if f.name == "max_length"))
+  overrides: dict[str, np.ndarray] = {}
+  if bias_path is not None:
+    overrides["bias"] = load_campaign_bias(bias_path, length=length)
+  if tie_group_map_path is not None:
+    overrides["tie_group_map"] = load_campaign_tie_group_map(tie_group_map_path, length=length)
+  return overrides
+
+
 def parse_state_weight_profiles(
   names_csv: str | None,
   declarations: Sequence[str] | None,
@@ -1874,6 +1955,24 @@ def _add_state_weight_arguments(parser: argparse.ArgumentParser) -> None:
   )
 
 
+def _add_residue_override_arguments(parser: argparse.ArgumentParser) -> None:
+  parser.add_argument(
+    "--bias",
+    default=None,
+    metavar="PATH.npy",
+    help="(L, 21) float .npy of per-position, per-token logit bias, applied to every row.",
+  )
+  parser.add_argument(
+    "--tie-group-map",
+    "--tie-group",
+    dest="tie_group_map",
+    default=None,
+    metavar="PATH.npy",
+    help="(L,) integer .npy of per-position tie-group ids (equal ids are decoded tied), "
+    "applied to every row.",
+  )
+
+
 def _add_plan_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
   parser = subparsers.add_parser("plan", help="Generate campaign manifest.")
   parser.add_argument("--inputs", required=True, help="Comma-separated input paths.")
@@ -1893,6 +1992,7 @@ def _add_plan_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPar
     ),
   )
   _add_state_weight_arguments(parser)
+  _add_residue_override_arguments(parser)
 
 
 def _add_worker_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1965,6 +2065,7 @@ def _add_ramp_plan_parser(subparsers: argparse._SubParsersAction[argparse.Argume
     ),
   )
   _add_state_weight_arguments(parser)
+  _add_residue_override_arguments(parser)
   parser.add_argument("--plan-path", default=None)
 
 
@@ -1983,6 +2084,7 @@ def _handle_plan_command(args: argparse.Namespace) -> int:
   base_spec = SamplingSpecification(
     inputs=_parse_csv(args.inputs),
     return_logits=False,
+    **campaign_residue_overrides(args.bias, args.tie_group_map),
   )
   write_campaign_manifest(
     base_spec=base_spec,
@@ -2038,6 +2140,7 @@ def _handle_ramp_plan_command(args: argparse.Namespace) -> int:
   base_spec = SamplingSpecification(
     inputs=_parse_csv(args.inputs),
     return_logits=False,
+    **campaign_residue_overrides(args.bias, args.tie_group_map),
   )
   plan_payload = plan_scale_ramp(
     base_spec=base_spec,
