@@ -182,7 +182,15 @@ optimisation, not a prerequisite.
 `p07_bundle`'s schedule half (`wrappers.py:340-374`): `wave_from_decoding_order` plus
 `generate_ar_mask`.
 Inputs: `decoding_order [L] i32`, `tie_group_map [L] i32`.
-Outputs: `group_ids`, `group_positions`, `group_valid`, `position_valid`, `ar_mask [L,L] f32`.
+Outputs: `group_ids`, `group_positions`, `group_valid`, `position_valid`, `ar_mask [L,L] f32`,
+plus — in the production signature — `group_first_rank [L] i32` and `pos_first_rank [L] i32`.
+
+Those last two are the scatter-min at `autoregressive.py:457-461` and the per-position rank
+at `:813-815`. They depend only on Graph W's own inputs, so emitting them here rather than
+recomputing them in JavaScript removes the last nontrivial index computation from the JS
+side. G0c did not cover them (it validated the signature as `p07_bundle` has it today);
+they are pure index arithmetic downstream of the sort G0c did validate, and G1's exact
+comparison covers them.
 
 **Graph F (fuse-and-sample), exported once per bucket, called once per wave.**
 `_fuse_and_sample` (`autoregressive.py:99-189`) closed over `make_stage_set()`.
@@ -411,5 +419,33 @@ dated document, because dated docs are an append-only log and go stale. The advi
 artifacts — `docs/browser_integration.md` and its shareable HTML page — then cite the claim
 and carry the table, replacing their current **pending** rows.
 
-Nothing in this document is measured. Every number arrives through a sidecar committed
-before its run.
+## 8. Gate status
+
+Feasibility (G0 family) is complete; every other gate is unrun. Each row is filled from a
+bathos run record, not from console output.
+
+| Gate | What it answered | Outcome | Run id |
+| :--- | :--- | :--- | :--- |
+| G0 | Graph E + Graph D convert, load, agree with JAX | **pass** | `8daaa978` |
+| G0b | Graph F (fuse+sample) converts; tokens exact | **pass** | `b8f413b6` |
+| G0c | Graph W (wave schedule) converts; all 5 outputs exact | **pass** | `a7f62e90` |
+| G1a | JS orchestration vs JAX | not run | — |
+| G1b | split vs monolith, ORT-CPU | not run | — |
+| G1c | split on ORT-Web wasm | not run | — |
+| G3a | **reference** PyTorch vs split, teacher-forced | not run | — |
+| G3b | reference vs split, recovery/perplexity | not run | — |
+| G4 | performance (after planted-delay timer control) | not run | — |
+| G2 | WebGPU, ORT-Web EP and @jax-js/onnx | not run | — |
+
+Exported sizes at L=128: E 3,970,503 B · W 44,741 B · D 2,905,154 B · F 30,922 B.
+
+**What the G0 family does and does not establish.** It establishes that the four-graph cut
+is realisable by the jax2onnx route and that each piece agrees with JAX on one synthetic
+fixture at L=128, with sensitive instruments. It establishes **nothing** about parity on
+real structures, nothing across the RunSpec knob grid, nothing against the reference
+implementation, nothing on any browser backend, and nothing about speed. In particular
+G0c's exact wave-schedule agreement is **ORT-CPU only** and does not speak to the
+WebGPU-vs-wasm tie-order question, which is G2's.
+
+Beyond the G0 family, nothing in this document is measured. Every number arrives through a
+sidecar committed before its run.
