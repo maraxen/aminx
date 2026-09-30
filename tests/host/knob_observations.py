@@ -150,10 +150,11 @@ OBSERVATIONS: dict[str, Verdict] = {
     value=None,
     reason=(
       "planner enumerates the 2x2 cross product (campaign.py:612-613); base_spec's value is "
-      "ignored and each combo gets its own row. Separately, at the model boundary this flag does "
-      "NOT gate injection -- model_family does (_sampling_helper.py:255); it only chooses "
-      "raise-vs-zeros when Y is absent (279-285). Unreachable in necklace: proxide's Protein has "
-      "no Y field, and the builder passes the npz iff has_ligand, from the same bool as the flag."
+      "ignored and each combo gets its own row. At the model boundary the flag is a tri-state "
+      "gate (#114, _sampling_helper.py::_prepare_ligand_context): False ABLATES (ignores batch "
+      "and ligand_context_path tensors), True requires them, None uses whatever is present; "
+      "model_family still decides whether there is a ligand channel at all. Covered by "
+      "test_ligand_conditioning_tristate.py."
     ),
   ),
   "sidechain_conditioning": Overridden(

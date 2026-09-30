@@ -626,7 +626,14 @@ class SamplingSpecification(RunSpecification):
   # sampling_spec without these fields existing here hard-crashes real sampling.
   weight_profile: str | None = None
   fixed_group: str | None = None
-  ligand_conditioning: bool = False
+  # Tri-state, because "False" used to be indistinguishable from "unset" and gated nothing:
+  #   None  -- legacy: use whatever ligand context is present (batch Y/Y_t/Y_m or
+  #            ``ligand_context_path``), else a zero placeholder. The default.
+  #   True  -- require: real ligand tensors must be present, else raise.
+  #   False -- ablate: IGNORE any ligand tensors (batch or file) and feed the zero placeholder,
+  #            i.e. a genuine no-ligand arm even when tensors are available (#114).
+  # See host/_sampling_helper.py::_prepare_ligand_context.
+  ligand_conditioning: bool | None = None
   campaign_mode: bool = False
   allow_logits_in_campaign: bool = False
   logits_memory_budget_mb: int | None = None

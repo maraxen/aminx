@@ -686,7 +686,16 @@ def run_sample(
     bool,
     _OPT(help="Compute pseudo-perplexity (requires return-logits)"),
   ] = False,
-  ligand_conditioning: Annotated[bool, _OPT(help="Ligand conditioning")] = False,
+  ligand_conditioning: Annotated[
+    bool | None,
+    _OPT(
+      help=(
+        "Ligand conditioning: --ligand-conditioning REQUIRES real ligand tensors (error if "
+        "absent); --no-ligand-conditioning ABLATES (ignores any ligand tensors); unset uses "
+        "whatever is present."
+      ),
+    ),
+  ] = None,
   sidechain_conditioning: Annotated[bool, _OPT(help="Sidechain conditioning")] = False,
   campaign_mode: Annotated[bool, _OPT(help="Campaign mode")] = False,
   allow_logits_in_campaign: Annotated[bool, _OPT(help="Allow logits in campaign")] = False,
@@ -1205,7 +1214,16 @@ def spec_emit_sample(
     bool,
     _OPT(help="Compute pseudo-perplexity (requires return-logits)"),
   ] = False,
-  ligand_conditioning: Annotated[bool, _OPT(help="Ligand conditioning")] = False,
+  ligand_conditioning: Annotated[
+    bool | None,
+    _OPT(
+      help=(
+        "Ligand conditioning: --ligand-conditioning REQUIRES real ligand tensors (error if "
+        "absent); --no-ligand-conditioning ABLATES (ignores any ligand tensors); unset uses "
+        "whatever is present."
+      ),
+    ),
+  ] = None,
   sidechain_conditioning: Annotated[bool, _OPT(help="Sidechain conditioning")] = False,
   campaign_mode: Annotated[bool, _OPT(help="Campaign mode")] = False,
   allow_logits_in_campaign: Annotated[bool, _OPT(help="Allow logits in campaign")] = False,

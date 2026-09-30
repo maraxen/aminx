@@ -55,7 +55,7 @@ class LigandConfig(eqx.Module):
 
   model_family: str = eqx.field(static=True)
   use_side_chain_context: bool | None = eqx.field(static=True)
-  ligand_conditioning: bool = eqx.field(static=True)
+  ligand_conditioning: bool | None = eqx.field(static=True)
   sidechain_conditioning: bool = eqx.field(static=True)
   context_path: Path | None = eqx.field(static=True)
 
@@ -159,6 +159,11 @@ def _as_float_tuple(v: object | None) -> tuple[float, ...]:
     return (float(v),)
   # Handle iterable case (guaranteed by elimination)
   return tuple(float(x) for x in cast("Any", v))
+
+
+def _optional_bool(value: object | None) -> bool | None:
+  """``bool(value)`` that keeps ``None`` as ``None`` (a tri-state flag's "unset")."""
+  return None if value is None else bool(value)
 
 
 def _optional_path(value: object | None) -> Path | None:
@@ -320,7 +325,9 @@ def build_run_spec(spec: object) -> RunSpec:
   ligand = LigandConfig(
     model_family=str(getattr(spec, "model_family", "proteinmpnn")),
     use_side_chain_context=getattr(spec, "ligand_mpnn_use_side_chain_context", None),
-    ligand_conditioning=bool(getattr(spec, "ligand_conditioning", False)),
+    # Tri-state passes through unchanged: None ("use whatever is present") must not be
+    # collapsed to False ("ablate"). ScoringSpecification's field is a plain bool.
+    ligand_conditioning=_optional_bool(getattr(spec, "ligand_conditioning", None)),
     sidechain_conditioning=bool(getattr(spec, "sidechain_conditioning", False)),
     context_path=_optional_path(ctx_path),
   )

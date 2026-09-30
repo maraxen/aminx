@@ -814,6 +814,10 @@ def score(  # noqa: PLR0915
         struct_len,
         canonical_structure_ids=canonical_structure_ids,
         batch_structure_ids=batch_structure_ids,
+        # ScoringSpecification.ligand_conditioning is a plain bool where False means "not
+        # required" (a ligand_context_path alone requests the ligand); it is not the sampling
+        # tri-state's ablate switch.
+        ablate_ligand=False,
       )
       batch_ligand = (ligand_context["Y"], ligand_context["Y_t"], ligand_context["Y_m"])
     else:
