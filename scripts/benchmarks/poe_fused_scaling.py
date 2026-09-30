@@ -235,6 +235,14 @@ def run_cell(cell: str, out_dir: Path, *, code_commit: str, smoke: bool) -> int:
     record["xtrax_version"] = getattr(xtrax, "__version__", "?")
   except ImportError:
     record["xtrax_version"] = "missing"
+  # The planner budgets against memory_stats()["bytes_limit"], i.e. what this process was GRANTED,
+  # so on a shared GPU the cap in force (XLA_PYTHON_CLIENT_MEM_FRACTION) is part of the experiment.
+  try:
+    record["device_bytes_limit"] = (device.memory_stats() or {}).get("bytes_limit")
+  except Exception:  # noqa: BLE001 - not all backends expose it
+    record["device_bytes_limit"] = None
+  record["xla_mem_fraction_env"] = os.environ.get("XLA_PYTHON_CLIENT_MEM_FRACTION")
+  record["cuda_visible_devices_env"] = os.environ.get("CUDA_VISIBLE_DEVICES")
 
   t0 = time.perf_counter()
   try:
@@ -286,7 +294,7 @@ def _cell_state(out_dir: Path, cell: str) -> dict[str, Any]:
     "first_call_seconds": record.get("first_call_seconds"), "device_kind": record.get("device_kind"),
     "error_type": record.get("error_type"), "error_head": record.get("error_head"),
     "peak_bytes_in_use": record.get("peak_bytes_in_use"), "planner": record.get("planner"),
-    "code_commit": record.get("code_commit"),
+    "code_commit": record.get("code_commit"), "device_bytes_limit": record.get("device_bytes_limit"),
   }
 
 
@@ -303,6 +311,9 @@ def aggregate(out_dir: Path) -> dict[str, Any]:
     "n_planned_ok": len(planned_ok),
     "negative_control_failed": control_failed,
     "negative_control_state": control_state,
+    # Reported, not judged: OOM vs an XLA autotuning error are different failures, and only the
+    # latter is the original crash. The verdict text says what each does and does not show.
+    "negative_control_error_type": states[CONTROL_CELL].get("error_type"),
     "single_code_commit": len(commits) <= 1,
     "cells": states,
   }
