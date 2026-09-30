@@ -242,22 +242,26 @@ def _convert(fn: Callable, arrays: list[np.ndarray], name: str, out_path: Path) 
   embed_external_data(out_path)
 
 
-def _export_bucket(bucket: int, out_dir: Path) -> dict[str, Any]:
+def _probe_bucket(bucket: int) -> dict[str, Any]:
+  """Run the JAX shape probes for one bucket. MUST happen before any conversion.
+
+  jax2onnx patches jnp primitives at import with ops that have no CPU MLIR lowering, and
+  the patch is global and permanent for the process. So every bucket's probes must run
+  before the FIRST conversion, not merely before its own -- exporting bucket A and then
+  probing bucket B would trace B against patched primitives. The caller enforces that
+  ordering; the guard below is the backstop that caught this exact bug.
+  """
   import jax  # noqa: PLC0415
-  import jax.numpy as jnp  # noqa: PLC0415
 
   if jax.config.jax_enable_x64:
     msg = "jax_enable_x64 is True; refusing to export an int64/float64 graph."
     raise RuntimeError(msg)
-
-  geom = _helix_backbone(bucket)
-  graphs, facts = _build_graphs(bucket)
-
-  # Trace-shape probes must run BEFORE jax2onnx is imported: it patches jnp primitives at
-  # import with ops that have no CPU MLIR lowering.
   if "jax2onnx" in sys.modules:
     msg = "jax2onnx already imported; shape probes would use patched primitives."
     raise RuntimeError(msg)
+
+  geom = _helix_backbone(bucket)
+  graphs, facts = _build_graphs(bucket)
 
   e_in = [geom["coords"], geom["mask"], geom["residue_index"], geom["chain_index"]]
   node_features, edge_features, neighbor_indices = (
@@ -293,15 +297,28 @@ def _export_bucket(bucket: int, out_dir: Path) -> dict[str, Any]:
     np.zeros((bucket, N_TOKENS), np.float32),
   ]
 
-  specs = {
-    "encoder": (graphs["encoder"], e_in),
-    "wave": (graphs["wave"], w_in),
-    "decoder": (graphs["decoder"], d_in),
-    "fuse": (graphs["fuse"], f_in),
+  return {
+    "bucket": bucket,
+    "n_waves": int(n_waves),
+    "max_groups_per_wave": int(g_per_wave),
+    "decoder_calls_per_design": int(n_waves),
+    "k_neighbors": int(facts["k_neighbors"]),
+    "hidden": int(node_features.shape[-1]),
+    "dropout_stats": facts["dropout_stats"],
+    "specs": {
+      "encoder": (graphs["encoder"], e_in),
+      "wave": (graphs["wave"], w_in),
+      "decoder": (graphs["decoder"], d_in),
+      "fuse": (graphs["fuse"], f_in),
+    },
   }
 
+
+def _convert_bucket(probe: dict[str, Any], out_dir: Path) -> dict[str, Any]:
+  """Convert one bucket's four graphs. Safe to run after jax2onnx is imported."""
+  bucket = probe["bucket"]
   entries: dict[str, Any] = {}
-  for key, (fn, arrays) in specs.items():
+  for key, (fn, arrays) in probe["specs"].items():
     path = out_dir / f"p07_{key}_L{bucket}.onnx"
     logger.info("exporting %s L=%d -> %s", key, bucket, path.name)
     _convert(fn, arrays, f"p07_{key}_L{bucket}", path)
@@ -314,16 +331,7 @@ def _export_bucket(bucket: int, out_dir: Path) -> dict[str, Any]:
     }
     logger.info("  %d bytes, sha256 %s", entries[key]["bytes"], entries[key]["sha256"][:16])
 
-  return {
-    "bucket": bucket,
-    "n_waves": int(n_waves),
-    "max_groups_per_wave": int(g_per_wave),
-    "decoder_calls_per_design": int(n_waves),
-    "k_neighbors": int(facts["k_neighbors"]),
-    "hidden": int(node_features.shape[-1]),
-    "dropout_stats": facts["dropout_stats"],
-    "graphs": entries,
-  }
+  return {k: v for k, v in probe.items() if k != "specs"} | {"graphs": entries}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -383,7 +391,12 @@ def main(argv: list[str] | None = None) -> int:
 
     result["jax_enable_x64"] = bool(jax.config.jax_enable_x64)
 
-    exported = [_export_bucket(b, args.out_dir) for b in args.buckets]
+    # ALL JAX shape probes first, across every bucket, then all conversions. jax2onnx's
+    # jnp patch is global and irreversible once imported, so interleaving probe/convert
+    # per bucket traces the second bucket against patched primitives. Caught by the
+    # guard in _probe_bucket on the first two-bucket run.
+    probes = [_probe_bucket(b) for b in args.buckets]
+    exported = [_convert_bucket(p, args.out_dir) for p in probes]
     manifest = {
       "git_hash": git_hash,
       "checkpoint_id": "proteinmpnn_v_48_020",
