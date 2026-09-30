@@ -38,6 +38,14 @@ import numpy as np
 if TYPE_CHECKING:
   from collections.abc import Callable
 
+# Run as a file (`python scripts/browser_validation/p07_split_feasibility.py`), sys.path[0]
+# is this directory, so the `scripts.browser_validation.*` import below cannot resolve.
+# `scripts/` has no __init__.py but `scripts/browser_validation/` does, so it resolves as a
+# namespace package once the repo root is on the path.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+  sys.path.insert(0, str(_REPO_ROOT))
+
 logger = logging.getLogger("p07_split_feasibility")
 
 # Pre-registered: G0 is a feasibility gate, not the parity gate. 1e-3 max-abs is loose on
