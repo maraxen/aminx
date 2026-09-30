@@ -429,23 +429,37 @@ bathos run record, not from console output.
 | G0 | Graph E + Graph D convert, load, agree with JAX | **pass** | `8daaa978` |
 | G0b | Graph F (fuse+sample) converts; tokens exact | **pass** | `b8f413b6` |
 | G0c | Graph W (wave schedule) converts; all 5 outputs exact | **pass** | `a7f62e90` |
-| G1a | JS orchestration vs JAX | not run | — |
-| G1b | split vs monolith, ORT-CPU | not run | — |
-| G1c | split on ORT-Web wasm | not run | — |
+| G1 | split vs monolith AND vs JAX, ORT-CPU, 56 cells | **pass** | `d2a06073` |
+| G1n | shipping `split_loop.mjs` vs monolith, ORT-Web wasm under Node | running | — |
+| G1c | split in Chromium (the real browser environment) | not run | — |
 | G3a | **reference** PyTorch vs split, teacher-forced | not run | — |
 | G3b | reference vs split, recovery/perplexity | not run | — |
 | G4 | performance (after planted-delay timer control) | not run | — |
 | G2 | WebGPU, ORT-Web EP and @jax-js/onnx | not run | — |
 
-Exported sizes at L=128: E 3,970,503 B · W 44,741 B · D 2,905,154 B · F 30,922 B.
+Production sizes at L=128 (manifest run `5ee51cbb`): E 3,970,503 B · W 57,482 B ·
+D 2,905,149 B · F 30,922 B — **6,964,056 B total, against the monolith's 20,374,293 B**,
+a 2.9× reduction. The monolith carries both decoder arms behind the `lax.cond` plus the
+`Scan`/`If` machinery; the split emits one path and no loop.
 
-**What the G0 family does and does not establish.** It establishes that the four-graph cut
-is realisable by the jax2onnx route and that each piece agrees with JAX on one synthetic
-fixture at L=128, with sensitive instruments. It establishes **nothing** about parity on
-real structures, nothing across the RunSpec knob grid, nothing against the reference
-implementation, nothing on any browser backend, and nothing about speed. In particular
-G0c's exact wave-schedule agreement is **ORT-CPU only** and does not speak to the
-WebGPU-vs-wasm tie-order question, which is G2's.
+Measured, not inferred (same run): `n_waves = 128`, `max_groups_per_wave = 1`, so a single
+L=128 design costs **128 sequential decoder invocations**, each a full pass over all L
+positions. This is the O(L²k) arm and the central open question for G4.
+
+**What is now established, and what is not.** With G1 passing, the chain
+`reference PyTorch → aminx JAX → ONNX monolith → four-graph split` is measured at every
+link: the knobs gate (`fd80f81d`) anchored the monolith to the reference at 4.482e-05 nats
+teacher-forced with 288/288 bitwise tokens through ORT-Web, and G1 showed the split
+reproduces that monolith bit-for-bit on tokens across 56 cells on real fixtures. The
+reference anchoring therefore **transfers to the split**; nothing here rests on
+self-consistency with aminx's own JAX.
+
+Still **not** established: that the shipping JavaScript driver is correct (G1n — G1 used a
+Python composition), anything in a real browser (G1c), anything on WebGPU (G2), anything
+about free-sampling distributional agreement (G3b), and anything at all about speed (G4,
+which is itself gated on a planted-delay timer control). G0c's exact wave-schedule
+agreement remains **ORT-CPU only** and does not speak to the WebGPU-vs-wasm tie-order
+question.
 
 Beyond the G0 family, nothing in this document is measured. Every number arrives through a
 sidecar committed before its run.
