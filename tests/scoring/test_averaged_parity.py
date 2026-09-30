@@ -732,7 +732,12 @@ def test_inv4_golden_nll_pin_real() -> None:
 
   # (b) Golden pin check — GOLDEN_NLL_D3 is pinned below after first run
   # This value was captured from the first green run of this test on CPU.
-  golden = 2.93596649  # pinned from first green run (CPU, 2026-06-18)
+  # Re-pinned 2026-09-30 from 2.93596649 (first green run, CPU, 2026-06-18). This is a
+  # RANDOMLY-INITIALISED PrxteinLigandMPNN (key=7), so its output depends on which Linear layers
+  # carry a bias: #162 added the ligand w_pos bias slot and #163 removed the phantom v_c bias,
+  # both of which change the random model. Real checkpoints are not involved; the shift is the
+  # intended consequence of matching the reference's bias layout, not a numerical regression.
+  golden = 2.97944379
   assert abs(nll_scalar_a - golden) < 1e-5, (
     f"Inv-4 real golden FAILED: got {nll_scalar_a:.8f}, expected {golden:.8f} (tol=1e-5). "
     f"If this is a legitimate code change, re-pin GOLDEN_NLL_D3 in this file."
