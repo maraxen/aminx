@@ -1,0 +1,67 @@
+[metadata]
+title = "G1: the four-graph split reproduces the monolithic P07 export and JAX, ORT-CPU"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On the same real fixtures, RunSpec knobs and seeds the knobs gate used, the four-graph split (encoder -> wave schedule -> [decoder step -> fuse-and-sample] x n_waves -> per-position gather), composed through onnxruntime CPU, reproduces the monolithic P07 export's tokens EXACTLY on every cell and its per-position log-probs to within 2e-4 nats, and likewise reproduces aminx JAX's tokens exactly and log-probs within the same bound. Both paths are fed the IDENTICAL eleven P07 input arrays, built by the same JavaScript RunSpec builder (js_build/runspec_for, imported from p07_knobs_gate rather than reimplemented), so a disagreement cannot be attributed to differing inputs -- the computation path is the only variable. The monolith is a legitimate local reference because run fd80f81d validated it end to end: 288/288 bitwise tokens against JAX and against ORT-Web, and 4.482e-05 nats teacher-forced against reference ProteinMPNN. The 2e-4 log-prob bound is INHERITED from that gate deliberately rather than invented here: it is the measured JAX-vs-ORT envelope for this model at these buckets, and the split adds graph boundaries and float32 round-trips, not new arithmetic, so it should not need a looser bound -- if it does, that is a finding, not a reason to widen it. Composing in Python rather than Node is deliberate and is stated as a limitation: it isolates 'is the graph decomposition correct' from 'is the JavaScript driver correct'. The Python loop mirrors browser/aminx-sampler/split_loop.mjs; a later gate runs that .mjs under Node against the same fixtures, and if this gate passes while that one fails, the fault is in the JS and not in the cut."
+stage_name = "validation"
+claim_discriminates = ["H_split_equals_monolith", "H_split_diverges"]
+claim_isolates = ["C_split_composition"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling gates).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_blind", "fail"]
+
+# First matching branch wins: incomplete, ctrl_blind, fail, pass.
+
+[outcomes.incomplete]
+condition = "jax_enable_x64 OR cells_total < 32 OR NOT git_clean OR failure <> ''"
+decision = "The comparison did not run at full size: fewer than 32 cells were graded, the tree was dirty in a code path, x64 was enabled, or an exception was raised. The `failure` field carries the text. This run proves nothing either way."
+reasoning = "A gate that graded zero cells is not a pass, and an exception mid-sweep leaves a partial count that must never be read as coverage. The 32-cell floor is pre-registered so that a deliberately truncated smoke (`--max-cells`) grades `incomplete` rather than borrowing the authority of a full sweep -- the knobs gate this inherits its bound from graded 288 cells, and a handful of cells is not comparable evidence."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "The planted log-prob offset did not exceed the bound, so the comparator cannot be shown to fail. No parity statement is permitted."
+reasoning = "`max_abs_diff <= bound` is trivially satisfied by a comparator wired to compare an array with itself, which is a live risk here because both arms are built from the same input dict; planting an offset is what proves the comparison is real (rules/BATHOS.md)."
+is_residual = true
+
+[outcomes.fail]
+condition = "cells_tokens_exact_vs_monolith < cells_total OR cells_tokens_exact_vs_jax < cells_total OR max_logprob_abs_diff_vs_monolith > 0.0002 OR max_logprob_abs_diff_vs_jax > 0.0002"
+decision = "The split does not reproduce the monolith or JAX. `worst_cell` names the worst offender. The four-graph cut is not yet a faithful substitute for the shipped export; do not advertise it or build the browser path on it until root-caused."
+reasoning = "Token inequality is listed first because it is the failure a log-prob bound cannot see, and because a changed token is a changed design. A log-prob excursion past the envelope the monolith already meets indicates the split's extra graph boundaries are doing something beyond float32 round-tripping."
+is_residual = true
+
+[outcomes.pass]
+condition = "cells_tokens_exact_vs_monolith = cells_total AND cells_tokens_exact_vs_jax = cells_total AND max_logprob_abs_diff_vs_monolith <= 0.0002 AND max_logprob_abs_diff_vs_jax <= 0.0002"
+decision = "The split computes what the monolith computes, on real fixtures across the knob grid. The monolith's reference anchoring (fd80f81d: 4.482e-05 nats teacher-forced vs reference ProteinMPNN) therefore transfers to the split, and the browser path may be built on the four graphs."
+reasoning = "Exact tokens on every cell plus log-probs inside the monolith's own measured envelope, with identical inputs and a demonstrably sensitive comparator, is what licenses treating the split as the same computation rather than a similar one. It licenses nothing about the JavaScript driver, about WebGPU, or about speed."
+is_residual = false
+
+[result_schema]
+bucket = "int"
+logprob_bound = "float"
+cells_total = "int"
+cells_tokens_exact_vs_monolith = "int"
+cells_tokens_exact_vs_jax = "int"
+max_logprob_abs_diff_vs_monolith = "float"
+max_logprob_abs_diff_vs_jax = "float"
+worst_cell = "str"
+n_waves = "int"
+decoder_calls_total = "int"
+controls_total = "int"
+controls_detected = "int"
+ctrl_perturb_detected = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+git_dirty_paths = "str"
+jax_enable_x64 = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
