@@ -44,7 +44,11 @@ from oracle_shims.laser import (
   SHIM_SITES,
   assert_inverse_cdf_edges,
   assert_vector_dropout_eval,
+  LITERAL_FACTORIES,
   f64_runtime,
+  float32_literals_follow_active_dtype,
+  ideal_coord_modules,
+  ideal_coords_follow_backbone_dtype,
   injected_decoding_order_uniforms,
   injected_scalar_dropout,
   injected_uniform_draws,
@@ -426,9 +430,20 @@ def _dump_fixture(  # noqa: PLR0915
     _put(buckets, ("laser_rotamers",), prefix + "sidechain_coords", coords)
     _put(buckets, ("laser_rotamers",), prefix + "backbone_coords", batch.backbone_coords)  # type: ignore[attr-defined]
     step = int(order[0].item()) if order.numel() else 0
-    batch.decoding_order = torch.tensor([[float(step)]], dtype=dtype)  # type: ignore[attr-defined]
-    batch.chain_mask = batch.chain_mask.clone()  # type: ignore[attr-defined]
-    batch.chain_mask[step] = False  # type: ignore[attr-defined]
+    # upstream utils/model.py:770 gathers decoding_order_sort_indices by node id, so the
+    # order must span every residue: a 1x1 tensor raises IndexError once any edge points
+    # at a node beyond it. One AR step is selected by chain_mask instead (model.py:791 -
+    # 1 takes sequence/chi from the input, 0 samples it), and `step` is already the first
+    # entry of the generated order, so the captured step decodes with no decoded context.
+    batch.decoding_order = order.reshape(1, -1).to(dtype)  # type: ignore[attr-defined]
+    # With ignore_chain_mask_zeros=True upstream samples ONLY the True rows of chain_mask
+    # (utils/model.py:736) and leaves the rest at the not-decoded sentinel, so exactly one
+    # residue draws. Under the default (False) the mask does not filter the loop at all:
+    # every residue still calls Categorical.sample and consumes injected uniforms, which is
+    # what exhausted the stream. Upstream's inline comment at model.py:754 states the
+    # opposite polarity to its own docstring; the docstring matches the code.
+    batch.chain_mask = torch.zeros_like(batch.chain_mask, dtype=torch.bool)  # type: ignore[attr-defined]
+    batch.chain_mask[step] = True  # type: ignore[attr-defined]
     draws = rng.random((1, N_DECODE_DRAWS))
     with injected_uniform_draws(draws) as cursor:
       sampled = model.sample(  # type: ignore[attr-defined]
@@ -437,7 +452,28 @@ def _dump_fixture(  # noqa: PLR0915
         chi_angle_sample_temperature=CHI_TEMPERATURE,
         disabled_residues=["X"],
         disable_pbar=True,
+        ignore_chain_mask_zeros=True,
       )
+    # Under ignore_chain_mask_zeros upstream overwrites every unsampled residue with X
+    # (utils/model.py:937), and disabled_residues=["X"] stops the sampled one from being X.
+    # So "exactly one AR step" means: X everywhere except `step`, and not X at `step`.
+    # Without this, an inverted chain_mask would decode the whole chain and still write a
+    # plausible-looking oracle.
+    from LASErMPNN.utils.constants import aa_short_to_idx  # noqa: PLC0415
+
+    x_index = aa_short_to_idx["X"]
+    indices = sampled.sampled_sequence_indices
+    others = (torch.arange(indices.shape[0], device=indices.device) != step)
+    if not bool((indices[others] == x_index).all()):
+      sampled_elsewhere = (indices[others] != x_index).sum().item()
+      msg = (
+        f"laser_decode_step expected residue {step} alone to be sampled; "
+        f"{sampled_elsewhere} other residues are not X"
+      )
+      raise RuntimeError(msg)
+    if int(indices[step]) == x_index:
+      msg = f"laser_decode_step residue {step} came back as X despite disabled_residues"
+      raise RuntimeError(msg)
     _put(buckets, ("laser_decode_step",), prefix + "step_index", np.asarray(step))
     _put(buckets, ("laser_decode_step",), prefix + "uniforms", draws.astype(np.float64))
     _put(
@@ -558,6 +594,50 @@ def _write_manifest(
   path.write_text("\n".join(lines))
 
 
+def _check_literal_factory_shim() -> None:
+  """The tensor factories are restored, and an unlisted site keeps float32."""
+  before = {name: getattr(torch, name) for name in LITERAL_FACTORIES}
+  with float32_literals_follow_active_dtype():
+    # This call site is not in _FLOAT32_LITERAL_SITES, so the literal must survive.
+    if torch.zeros(1, dtype=torch.float32).dtype is not torch.float32:
+      msg = "float32 literal shim fired at an unlisted call site"
+      raise RuntimeError(msg)
+  for name, original in before.items():
+    if getattr(torch, name) is not original:
+      msg = f"torch.{name} was not restored"
+      raise RuntimeError(msg)
+
+
+def _check_ideal_coords_shim() -> None:
+  """Positive and negative control for ``ideal_coords_follow_backbone_dtype``.
+
+  Negative: with no upstream module imported the shim must raise rather than
+  silently patch nothing. Positive: once imported, the constant is float64
+  inside the block, and the original object is restored on exit.
+  """
+  modules = ideal_coord_modules()
+  if not modules:
+    try:
+      with ideal_coords_follow_backbone_dtype():
+        pass
+    except RuntimeError:
+      logger.info("ideal-coords shim raises when upstream is not imported (negative control)")
+      return
+    msg = "ideal_coords_follow_backbone_dtype silently patched nothing"
+    raise RuntimeError(msg)
+  before = [getattr(module, "ideal_prot_aa_coords") for module in modules]  # noqa: B009
+  with ideal_coords_follow_backbone_dtype():
+    for module in modules:
+      if getattr(module, "ideal_prot_aa_coords").dtype is not torch.float64:  # noqa: B009
+        msg = f"ideal_prot_aa_coords in {module} was not widened to float64 inside the shim"
+        raise RuntimeError(msg)
+  for module, original in zip(modules, before, strict=True):
+    if getattr(module, "ideal_prot_aa_coords") is not original:  # noqa: B009
+      msg = f"ideal_prot_aa_coords in {module} was not restored"
+      raise RuntimeError(msg)
+  logger.info("ideal-coords shim widened and restored %d module(s)", len(modules))
+
+
 def _selftest(package: Path, fixtures_dir: Path) -> None:  # noqa: PLR0915
   """Shim edges, restoration, and an unshimmed encoder repeat when 4jnj is present."""
   assert_inverse_cdf_edges()
@@ -591,6 +671,8 @@ def _selftest(package: Path, fixtures_dir: Path) -> None:  # noqa: PLR0915
   if len(shim_sha256()) != 64:
     msg = "shim_sha256 is not a sha256 hex digest"
     raise RuntimeError(msg)
+  _check_ideal_coords_shim()
+  _check_literal_factory_shim()
   example = package / "example_pdbs" / "4jnj-1_prot.pdb"
   weights = package / CHECKPOINTS["nothing_heldout"]
   if not example.is_file() or not weights.is_file():

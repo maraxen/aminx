@@ -23,9 +23,14 @@ is in train mode and ``p > 0``. Masks are keyed by ``(module path, call index)``
 Shim 4 (f64 dumps) redirects hardcoded ``.float()`` calls listed in ``SHIM_SITES``
 to the active dtype, sets the torch default dtype to float64 for the block (so
 ``torch.empty`` / ``torch.zeros`` / ``torch.linspace`` created during the forward
-are not float32), and rebuilds ``RBF_Encoding`` centres (``utils/model.py:1296``,
-linspace with no dtype) in the distance dtype. Under float32 the dtype context is
-not entered: ``.float()`` and the default dtype are the originals.
+are not float32), rebuilds ``RBF_Encoding`` centres (``utils/model.py:1296``,
+linspace with no dtype) in the distance dtype, and widens the loaded ideal-residue
+coordinates (``utils/pdb_dataset.py:885`` moves them with ``.to(device)`` and no
+dtype). It also redirects the ``dtype=torch.float`` literals listed in
+``_FLOAT32_LITERAL_SITES``: ``run_inference.py`` pins float32 by literal rather
+than by ``.float()`` at several featurization sites, which ``_shim_float``
+cannot see. Under float32 the dtype context is not entered: ``.float()``, the
+tensor factories, and the default dtype are all the originals.
 
 Inspected and left unpatched, because they feed integer counts rather than a
 float64 matmul: ``utils/model.py:527``, ``:528``, ``:782``, ``:786``
@@ -37,6 +42,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -66,6 +72,11 @@ SHIM_SITES: tuple[str, ...] = (
   "utils/pdb_dataset.py:928",
   "utils/pdb_dataset.py:944",
   "utils/pdb_dataset.py:1022",
+  "utils/pdb_dataset.py:885",
+  "run_inference.py:86",
+  "run_inference.py:198",
+  "run_inference.py:268",
+  "run_inference.py:318",
   "utils/ligand_featurization.py:59",
   "utils/ligand_featurization.py:78",
   "utils/ligand_featurization.py:87",
@@ -91,8 +102,21 @@ _FLOAT_SITES: frozenset[tuple[str, int]] = frozenset(
     ("ligand_featurization.py", 59),
     ("ligand_featurization.py", 78),
     ("ligand_featurization.py", 87),
+    ("run_inference.py", 86),
   },
 )
+
+# (filename suffix, lineno) where upstream pins float32 with a ``dtype=torch.float``
+# literal instead of a ``.float()`` call, so the Tensor.float redirect cannot see it.
+# Each is on the featurization path reached by ``ProteinComplexData.output_batch_data``.
+_FLOAT32_LITERAL_SITES: frozenset[tuple[str, int]] = frozenset(
+  {
+    ("run_inference.py", 198),
+    ("run_inference.py", 268),
+    ("run_inference.py", 318),
+  },
+)
+LITERAL_FACTORIES: tuple[str, ...] = ("full", "zeros", "ones", "empty", "tensor")
 _DRAW_LINES: frozenset[int] = frozenset({627, 676, 677, 859, 899})
 _ORDER_LINE = 1641
 
@@ -394,9 +418,102 @@ def rbf_centres_follow_distance_dtype(rbf_cls: object) -> Iterator[None]:
     rbf_cls.forward = original  # type: ignore[attr-defined]
 
 
+# Matched as a suffix: upstream imports as LASErMPNN.utils.pdb_dataset when the pinned
+# checkout's parent is the import root, but a bare `utils.pdb_dataset` is also valid.
+_IDEAL_COORD_MODULES = ("utils.pdb_dataset", "utils.pdb_dataset_ligandmpnn")
+_IDEAL_COORD_ATTR = "ideal_prot_aa_coords"
+
+
+def ideal_coord_modules() -> list[object]:
+  """Imported upstream modules holding the ideal-coordinate constant."""
+  found: list[object] = []
+  for name, module in list(sys.modules.items()):
+    if not any(name == suffix or name.endswith(f".{suffix}") for suffix in _IDEAL_COORD_MODULES):
+      continue
+    if isinstance(getattr(module, _IDEAL_COORD_ATTR, None), torch.Tensor):
+      found.append(module)
+  return found
+
+
+def _literal_factory_shim(name: str) -> object:
+  """Wrap ``torch.<name>`` so a float32 dtype literal at a listed site follows the block dtype."""
+  original = getattr(torch, name)
+
+  def shim(*args: object, **kwargs: object) -> torch.Tensor:
+    dtype = _ACTIVE_DTYPE
+    # Cheap guards first: these factories are called constantly, and resolving the
+    # caller frame on every call would dominate the dump.
+    if dtype is None or kwargs.get("dtype") is not torch.float32:
+      return original(*args, **kwargs)
+    frame = inspect.currentframe()
+    caller = frame.f_back if frame is not None else None
+    if caller is None:
+      return original(*args, **kwargs)
+    site = (Path(caller.f_code.co_filename).name, caller.f_lineno)
+    if site not in _FLOAT32_LITERAL_SITES:
+      return original(*args, **kwargs)
+    return original(*args, **{**kwargs, "dtype": dtype})
+
+  return shim
+
+
+@contextmanager
+def float32_literals_follow_active_dtype() -> Iterator[None]:
+  """Redirect ``dtype=torch.float`` literals at ``_FLOAT32_LITERAL_SITES`` to the block dtype.
+
+  ``run_inference.py`` builds several featurization tensors with an explicit
+  ``dtype=torch.float`` rather than ``.float()``, so ``_shim_float`` never sees
+  them and an f64 forward dies with ``Index put requires the source and
+  destination dtypes match`` (``run_inference.py:301``). Only the listed sites
+  are redirected, and only when the call itself passes ``dtype=torch.float32``.
+  """
+  originals = {name: getattr(torch, name) for name in LITERAL_FACTORIES}
+  for name in LITERAL_FACTORIES:
+    setattr(torch, name, _literal_factory_shim(name))
+  try:
+    yield
+  finally:
+    for name, original in originals.items():
+      setattr(torch, name, original)
+
+
+@contextmanager
+def ideal_coords_follow_backbone_dtype() -> Iterator[None]:
+  """Widen the loaded ideal-residue coordinates to float64 for an f64 block.
+
+  ``utils/pdb_dataset.py:885`` builds the ideal alanine N/CA/C frame with
+  ``.to(bb_coords.device)`` and no dtype, so under f64 backbone coordinates
+  ``compute_alignment_matrices`` (``utils/build_rotamers.py:516``) raises
+  ``expected scalar type Float but found Double``.
+
+  This rebinds the module-level constant rather than reimplementing
+  ``idealize_backbone_coords``, so upstream's arithmetic stays verbatim.
+  ``ideal_prot_aa_coords`` is data loaded from ``files/ideal_aa_coords_prot.pt``,
+  not a computed grid, so float32 -> float64 is an exact widening: the f64 dump
+  sees the same values in wider arithmetic. (Contrast the RBF centres, which are
+  recomputed by ``rbf_centres_follow_distance_dtype`` and do change.)
+  """
+  patched: list[tuple[object, torch.Tensor]] = []
+  for module in ideal_coord_modules():
+    original = getattr(module, _IDEAL_COORD_ATTR)
+    patched.append((module, original))
+    setattr(module, _IDEAL_COORD_ATTR, original.double())
+  if not patched:
+    msg = (
+      f"ideal_coords_follow_backbone_dtype patched nothing: none of {_IDEAL_COORD_MODULES} "
+      f"is imported with {_IDEAL_COORD_ATTR}. Import upstream LASErMPNN before entering the f64 block."
+    )
+    raise RuntimeError(msg)
+  try:
+    yield
+  finally:
+    for module, original in patched:
+      setattr(module, _IDEAL_COORD_ATTR, original)
+
+
 @contextmanager
 def f64_runtime(rbf_cls: object) -> Iterator[None]:
-  """Run one f64 dump block: default dtype, ``.float()`` redirects, RBF centres."""
+  """Run one f64 dump block: default dtype, ``.float()`` redirects, RBF centres, ideal coords."""
   global _ACTIVE_DTYPE  # noqa: PLW0603
   if _ACTIVE_DTYPE is not None:
     msg = "f64_runtime cannot nest"
@@ -407,7 +524,11 @@ def f64_runtime(rbf_cls: object) -> Iterator[None]:
   torch.set_default_dtype(torch.float64)
   torch.Tensor.float = _shim_float  # type: ignore[method-assign]
   try:
-    with rbf_centres_follow_distance_dtype(rbf_cls):
+    with (
+      rbf_centres_follow_distance_dtype(rbf_cls),
+      ideal_coords_follow_backbone_dtype(),
+      float32_literals_follow_active_dtype(),
+    ):
       yield
   finally:
     torch.Tensor.float = previous_float  # type: ignore[method-assign]
