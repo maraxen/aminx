@@ -23,8 +23,9 @@ td strong{color:var(--pend)}
 (for example a local ProteinHunter.org build). No bundler, no server-side Python, no
 WebGPU. The page loads one ONNX file per length bucket and runs it with
 onnxruntime-web on the wasm execution provider.</p>
-<p>Status as of 2026-09-29. Items marked <strong>pending</strong> are still running or not yet done.
-Don't cite a number from them yet.</p>
+<p>Status as of 2026-09-29. The RunSpec knobs gate and the reference comparison have PASSED
+(numbers below, from bathos run <code>fd80f81d</code>). Items still marked <strong>pending</strong> or <strong>not
+measured</strong> are exactly that — do not cite a number from them.</p>
 <h2>What ships</h2>
 <div class="tw"><table>
 <thead>
@@ -248,6 +249,8 @@ indices into the structure arrays, not PDB residue numbers.</p>
 <li><strong>Execution provider.</strong> Use wasm only. Don't pass <code>webgpu</code> (see below).</li>
 </ul>
 <h2>Validation status</h2>
+<p>Every measured row below is filled from a bathos run record, not from console output.
+Run <code>fd80f81d-3788-49c1-919f-e86acde3c4eb</code>, at commit <code>443c5b4f</code>, clean tree.</p>
 <div class="tw"><table>
 <thead>
 <tr>
@@ -258,14 +261,24 @@ indices into the structure arrays, not PDB residue numbers.</p>
 </thead>
 <tbody>
 <tr>
-<td style="text-align: left;">Browser vs native ORT, bitwise</td>
-<td style="text-align: left;">ORT-Web (Chromium) tokens and log-probs vs onnxruntime CPU on the same <code>.onnx</code>, same inputs</td>
-<td style="text-align: left;">Bitwise identical on the 12-cell resume smoke. Full gate <strong>pending</strong> (below)</td>
+<td style="text-align: left;">RunSpec knobs gate</td>
+<td style="text-align: left;">JAX vs ORT-CPU vs ORT-Web across every RunSpec knob, L128 and L256, 288 cells</td>
+<td style="text-align: left;"><strong>PASS.</strong> Tokens bitwise identical <strong>288/288</strong> against ORT-CPU <em>and</em> <strong>288/288</strong> against ORT-Web. Max log-prob difference <strong>1.013e-04</strong> (bound 2e-4). All 7 knobs live</td>
 </tr>
 <tr>
-<td style="text-align: left;">RunSpec knobs gate</td>
-<td style="text-align: left;">JAX vs ORT-CPU vs ORT-Web across every RunSpec knob, L128 and L256, 288 cells. Tokens exact; log-prob bound 2e-4</td>
-<td style="text-align: left;"><strong>Pending</strong>. The recovery run is in progress; 250 of 288 cells were carried over from the interrupted run by verified hash</td>
+<td style="text-align: left;">Teacher-forced vs reference ProteinMPNN</td>
+<td style="text-align: left;">Per-position log-probs vs LigandMPNN@<code>26ec57ac</code>, same checkpoint, same fed sequence and order</td>
+<td style="text-align: left;"><strong>PASS. 4.482e-05 nats</strong> (bound 1e-4). This is the link that anchors everything else to the reference implementation rather than to aminx's own JAX</td>
+</tr>
+<tr>
+<td style="text-align: left;">Sampling correctness</td>
+<td style="text-align: left;">Gumbel-max draws vs <code>softmax(logits/T)</code>; decoding-order uniformity</td>
+<td style="text-align: left;"><strong>PASS.</strong> Gumbel total variation 0.00458 (bound 0.03) over 200,000 draws; order uniformity p=0.753 over 240,000 draws; 0 fixed-first violations; 0 omitted-class draws</td>
+</tr>
+<tr>
+<td style="text-align: left;">Instrument sensitivity</td>
+<td style="text-align: left;">Planted defects that MUST be caught</td>
+<td style="text-align: left;"><strong>4/4 detected</strong> — a bias-frozen wrapper stayed not-live, a non-Gumbel transform and a biased shuffle failed, and a uniform shuffle produced fixed-first violations</td>
 </tr>
 <tr>
 <td style="text-align: left;">JS RunSpec builder vs Python</td>
@@ -273,14 +286,14 @@ indices into the structure arrays, not PDB residue numbers.</p>
 <td style="text-align: left;">Node unit tests pass (<code>runspec.test.mjs</code> 11/11, <code>aminx_sampler.test.mjs</code> 5/5)</td>
 </tr>
 <tr>
-<td style="text-align: left;">Sampling distribution vs reference ProteinMPNN</td>
+<td style="text-align: left;">Sampling distribution vs reference</td>
 <td style="text-align: left;">Statistical comparison of aminx samples against LigandMPNN@26ec57ac</td>
-<td style="text-align: left;"><strong>Pending</strong>. Calibration running on titanix; validate shards next on Engaging</td>
+<td style="text-align: left;"><strong>Pending.</strong> Calibration running on titanix; validate shards next on Engaging</td>
 </tr>
 <tr>
 <td style="text-align: left;">Speed / memory profile</td>
 <td style="text-align: left;">Wall time per design, session-create time, peak memory</td>
-<td style="text-align: left;"><strong>Not measured.</strong> The one earlier benchmark failed its own timer control, so no timing number is trustworthy yet</td>
+<td style="text-align: left;"><strong>MEASURED</strong> — see "Performance" below. Run <code>be45e729</code>, whose timer control resolved a planted 250 ms delay to 250.2 ms (ratio 1.001) before any number was recorded</td>
 </tr>
 <tr>
 <td style="text-align: left;">WebGPU</td>
@@ -289,13 +302,232 @@ indices into the structure arrays, not PDB residue numbers.</p>
 </tr>
 </tbody>
 </table></div>
+<p><strong>What that adds up to.</strong> The chain runs reference PyTorch → aminx JAX (teacher-forced,
+4.48e-05 nats) → ONNX (288/288 bitwise) → ORT-Web wasm (288/288 bitwise), across every
+RunSpec knob at both buckets, with a demonstrably sensitive instrument. Agreement with
+aminx's own JAX alone would only show self-consistency; the reference link is what makes
+it evidence.</p>
+<p><strong>What it does not cover:</strong> performance, WebGPU, and free-sampling distributional
+agreement with the reference. Those rows say pending or not-measured, and nothing in this
+document should be read as a speed claim.</p>
+<h2>Performance</h2>
+<p>Measured 2026-09-29, bathos run <code>be45e729</code>. <strong>Read the control line first:</strong> a deliberately
+planted 250.0 ms delay was measured through the same clock as 250.2 ms (ratio 1.001). An
+earlier benchmark in this project never established that check and its numbers were thrown
+away, so no figure below was recorded until this one passed.</p>
+<p>Configuration: L=128, onnxruntime-web 1.30.0, <strong>wasm EP, single-threaded</strong>, Node on one
+Linux workstation, 8 RunSpec cells × 5 repetitions.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;"></th>
+<th style="text-align: right;">Median per design</th>
+<th style="text-align: right;">Session create</th>
+<th style="text-align: right;">Peak RSS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Monolith (the path this guide describes)</td>
+<td style="text-align: right;"><strong>19.96 s</strong></td>
+<td style="text-align: right;">589 ms</td>
+<td style="text-align: right;">550 MB</td>
+</tr>
+<tr>
+<td style="text-align: left;">Four-graph split (see below)</td>
+<td style="text-align: right;"><strong>17.19 s</strong></td>
+<td style="text-align: right;">364 ms</td>
+<td style="text-align: right;">550 MB</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The headline is the absolute number, not the ratio: roughly 17–20 seconds per design at
+L=128, single-threaded.</strong> That is what a user waits — and it is why the threading result
+below matters more than the split-vs-monolith gap. L=256 costs about <strong>4×</strong> L=128, not 2×
+— see the browser table below.</p>
+<p>Two levers. The first is measured and large; the second is untouched:</p>
+<ul>
+<li><strong>Threads — the main lever, and it is measured.</strong> In headless Chromium with COOP/COEP,
+  both arms below passed their own timer control (planted 250.0 ms → measured 250.2 ms,
+  ratio 1.001) <em>in the browser</em>, so these are measurements rather than estimates.</li>
+</ul>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: right;">Bucket</th>
+<th style="text-align: right;">Threads</th>
+<th style="text-align: right;">Median per design</th>
+<th style="text-align: left;">Range</th>
+<th style="text-align: left;">Run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">128</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;"><strong>15.77 s</strong></td>
+<td style="text-align: left;">15.48–16.85</td>
+<td style="text-align: left;"><code>69bac70f</code></td>
+</tr>
+<tr>
+<td style="text-align: right;">128</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;"><strong>6.80 s</strong></td>
+<td style="text-align: left;">6.58–7.10</td>
+<td style="text-align: left;"><code>7fdb4001</code></td>
+</tr>
+<tr>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;"><strong>27.18 s</strong></td>
+<td style="text-align: left;">27.03–28.63</td>
+<td style="text-align: left;"><code>4669e76f</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>2.32× faster, at no cost in correctness</strong> — at 4 threads the tokens are identical and
+  the log-probs bit-identical to single-threaded (<code>da02516e</code>). Session creation for all
+  four graphs is ~0.4 s either way.</p>
+<p>So <strong>enabling COOP/COEP takes an L=128 design from roughly 16 s to under 7 s.</strong> That
+  makes those headers the main performance lever rather than a hosting detail.</p>
+<p><strong>Length costs roughly quadratically, not linearly — size your UI accordingly.</strong> L256 is
+  4.0× L128, not 2×, even though it only doubles the autoregressive steps: each step also
+  does more work, because the encoder's L×K edge features and the wave graph's L² <code>ar_mask</code>
+  both grow. A 256-residue design is ~27 s <em>with</em> threading. If your page offers the larger
+  bucket, warn the user before they start rather than after.</p>
+<p>Worth noting for anyone reproducing this: browsers coarsen <code>performance.now</code> under some
+  isolation settings — exactly the settings threaded wasm requires — so the clock was
+  checked under those settings rather than assumed. It was not coarsened here.
+- <strong>WebGPU.</strong> See below. Unvalidated.</p>
+<h2>The four-graph split (faster and much smaller; browser validation pending)</h2>
+<p>The export can be split into four loop-free graphs — encoder, wave schedule, decoder step,
+fuse-and-sample — with the autoregressive loop driven from JavaScript
+(<code>browser/aminx-sampler/split_loop.mjs</code>). It is <strong>not</strong> the path this guide's integration
+example uses yet, because it has not been validated in a real browser. It is measurably
+better on both axes that matter for a page:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;"></th>
+<th style="text-align: right;">Monolith</th>
+<th style="text-align: right;">Split</th>
+<th style="text-align: left;"></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Download, L128</td>
+<td style="text-align: right;">19.43 MB</td>
+<td style="text-align: right;"><strong>6.64 MB</strong></td>
+<td style="text-align: left;">2.9× smaller</td>
+</tr>
+<tr>
+<td style="text-align: left;">Download, L256</td>
+<td style="text-align: right;">31.52 MB</td>
+<td style="text-align: right;"><strong>6.71 MB</strong></td>
+<td style="text-align: left;">4.7× smaller</td>
+</tr>
+<tr>
+<td style="text-align: left;">Median per design, L128</td>
+<td style="text-align: right;">19.96 s</td>
+<td style="text-align: right;"><strong>17.19 s</strong></td>
+<td style="text-align: left;">14% faster</td>
+</tr>
+</tbody>
+</table></div>
+<p>The size gap widens with length because the split's graphs are weight-dominated and
+loop-free, while the monolith embeds the unrolled control flow <em>and</em> both decoder
+implementations behind a runtime branch.</p>
+<p>Correctness, all from run records:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Check</th>
+<th style="text-align: left;">Result</th>
+<th style="text-align: left;">Run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Split vs monolith and vs JAX, ORT-CPU, L128</td>
+<td style="text-align: left;">tokens <strong>exact</strong> 56/56</td>
+<td style="text-align: left;"><code>d2a06073</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Same at L256</td>
+<td style="text-align: left;">tokens <strong>exact</strong> 32/32</td>
+<td style="text-align: left;"><code>ed2a2617</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Shipping <code>split_loop.mjs</code> on ORT-Web wasm (Node)</td>
+<td style="text-align: left;">tokens <strong>exact</strong> 56/56</td>
+<td style="text-align: left;"><code>bc8eb3d7</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Shipping loop in headless Chromium</strong></td>
+<td style="text-align: left;">tokens <strong>exact</strong> 8/8</td>
+<td style="text-align: left;"><code>d6be02ea</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Same, 4 threads with COOP/COEP</strong></td>
+<td style="text-align: left;">tokens <strong>exact</strong> 8/8, log-probs <strong>bit-identical</strong> to 1 thread</td>
+<td style="text-align: left;"><code>da02516e</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Split vs reference ProteinMPNN, teacher-forced, direct</strong></td>
+<td style="text-align: left;"><strong>3.822e-05 nats</strong> (bound 1e-4)</td>
+<td style="text-align: left;"><code>ed4f0b77</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>The last row is the important one: the exported split graphs were compared <strong>directly</strong>
+against the PyTorch reference, not via aminx's JAX, and land at essentially the same
+distance aminx's own JAX does (3.8e-05 against 4.5e-05). That measurement is scoped to
+untied lanes on fully-designed structures at L=128; fixed-position and tied cases are
+covered instead by the exact-token parity rows above, which run the full sampling loop.</p>
+<p>Across both buckets that is 15,360 decoder invocations with zero token mismatches, and
+the error does not grow with length — the L256 log-prob gap (4.768e-06) matches L128's
+exactly, so doubling the autoregressive depth does not accumulate drift.</p>
+<p>The browser rows are the ones that matter for a page, and they cover the full knob set —
+<code>fixed_positions</code>, <code>tied_pairs</code>, <code>chains_to_design</code> and <code>explicit_order</code> — end to end
+through the real sampling loop, with <code>crossOriginIsolated</code> confirmed true.</p>
+<p><strong>Threading is safe.</strong> At 4 threads the tokens are identical and the log-prob difference
+is <em>bit-identical</em> to the single-threaded run. That was worth checking rather than
+assuming: thread count changes float accumulation order, so results could in principle
+have moved, and this guide asks you to enable COOP/COEP.</p>
+<p>L=256 is validated in the browser too (<code>8a3bb1d6</code>, tokens exact 4/4). Notably the
+log-prob difference is <strong>bit-identical</strong> — 5.7220458984375e-06 — across L128
+single-threaded, L128 at 4 threads, and L256 at 4 threads, which is the signature of a
+fixed float32 rounding floor rather than error that accumulates with depth or varies with
+threading.</p>
+<p>Remaining gap: WebGPU is untouched (below).</p>
 <h2>WebGPU</h2>
-<p>Not covered in this release. The P07 graph keeps the whole autoregressive loop
-in-graph (ONNX <code>Loop</code>/<code>If</code>/<code>Scan</code>). The ORT WebGPU provider tends to run control-flow
-nodes on the CPU, which forces transfers every step. Any speedup would have to be
-measured, not assumed. The plan is a later pre-registered probe on real GPU hardware
-that checks output against the wasm path before any speed comparison. Until then,
-wasm is the supported path.</p>
+<p>Not covered in this release, and <strong>untested for want of hardware rather than want of
+effort</strong> — worth stating precisely, because "we didn't try" and "we tried and it failed"
+lead somewhere different.</p>
+<p>A capability probe ran (<code>ca0ea202</code>). Chromium exposes <code>navigator.gpu</code>, but <strong>no adapter
+could be obtained</strong> on the development machine even with <code>--enable-unsafe-swiftshader</code>
+and <code>--use-angle=swiftshader</code>; it is WSL2 with no GPU passthrough. The probe therefore
+stopped before ORT was ever asked to accept the provider, so there is <strong>no evidence
+either way</strong> about whether the WebGPU EP works for these graphs.</p>
+<p>What is known, from design rather than measurement:</p>
+<ul>
+<li>The <strong>split removes the larger obstacle.</strong> The monolith keeps the whole autoregressive
+  loop in-graph (<code>Loop</code>/<code>If</code>/<code>Scan</code>), and ORT runs control-flow nodes on CPU, forcing a
+  transfer every step. The four-graph split has no loop in any graph, and Graph D — the
+  per-step hot path — contains no sort and no control flow at all.</li>
+<li><strong>One known dtype gap remains, and it is confined.</strong> ONNX mandates <code>int64</code> indices for
+  <code>TopK</code>, which the k-NN sort lowers to, and the WebGPU EP does not support int64. Under
+  the split that node lives only in the encoder, which runs <strong>once per structure</strong> rather
+  than once per step. Expect a partition with those nodes on CPU; the per-step path should
+  be unaffected.</li>
+</ul>
+<p>If you have GPU hardware, the probe (<code>scripts/browser_validation/p07_webgpu_probe.py</code>) is
+the cheapest way to find out where the stack actually stops — it records five staged
+checks and makes no claims. Note that tokens must be compared against the wasm path
+before any speed comparison is meaningful: the EP partitioning above means the two
+backends need not agree on tie order for the same file, which a log-prob tolerance cannot
+see.</p>
 <h2>Reproducing the ONNX files</h2>
 <p>From an aminx checkout (Python 3.12, <code>uv</code>):</p>
 <pre><code class="language-bash">uv run --frozen --with jax2onnx==0.16.1 --with onnx --with onnxruntime==1.30.0 \
