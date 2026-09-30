@@ -1,6 +1,7 @@
 [project]
 slug = "aminx"
 root = "/home/marielle/projects/aminx"
+id = "41c04f5f-d493-4ffa-a82c-2789992d0e97"
 
 [remotes.engaging]
 host = "engaging"

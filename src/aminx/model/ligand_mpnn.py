@@ -122,6 +122,7 @@ class PrxteinLigandMPNN(eqx.Module):
     vocab_size: int = 21,
     dropout_rate: float = 0.1,
     ligand_l_chunk: int = 16,
+    atom_context_num: int = 16,
     *,
     ligand_mpnn_use_side_chain_context: bool = False,
     key: PRNGKeyArray,
@@ -154,6 +155,11 @@ class PrxteinLigandMPNN(eqx.Module):
         Dropout rate. Default: 0.1.
     ligand_l_chunk : int
         Chunk size for ligand processing. Default: 16.
+    atom_context_num : int
+        Number of nearest ligand atoms each residue attends to. This is a property of the
+        trained checkpoint (25 for ``ligandmpnn_v_32_*_25``, 16 for ``ligandmpnn_sc_*_16``),
+        distinct from ``k_neighbors`` and the hardcoded side-chain sub-slice of 16. No stored
+        tensor shape depends on it, so a wrong value deserialises silently. Default: 16.
     ligand_mpnn_use_side_chain_context : bool
         Whether to include side-chain context. Default: False.
     key : PRNGKeyArray
@@ -171,6 +177,7 @@ class PrxteinLigandMPNN(eqx.Module):
       node_features=node_features,
       edge_features=edge_features,
       k_neighbors=k_neighbors,
+      atom_context_num=atom_context_num,
       num_positional_embeddings=num_positional_embeddings,
       use_side_chains=ligand_mpnn_use_side_chain_context,
       ligand_l_chunk=ligand_l_chunk,
@@ -221,7 +228,10 @@ class PrxteinLigandMPNN(eqx.Module):
     self.w_c = eqx.nn.Linear(node_features, node_features, key=proj_keys[1])
     self.w_nodes_y = eqx.nn.Linear(node_features, node_features, key=proj_keys[2])
     self.w_edges_y = eqx.nn.Linear(node_features, node_features, key=proj_keys[3])
-    self.v_c = eqx.nn.Linear(node_features, node_features, key=proj_keys[4])
+    # Reference ``V_C`` is ``torch.nn.Linear(hidden_dim, hidden_dim, bias=False)`` and the
+    # checkpoint has no ``V_C.bias``. equinox defaults to use_bias=True, and nothing overwrote
+    # that layer's random init, so untrained noise shipped in the .eqx.zst (#163).
+    self.v_c = eqx.nn.Linear(node_features, node_features, use_bias=False, key=proj_keys[4])
     self.v_c_norm = eqx.nn.LayerNorm(node_features)
 
     self.dropout = Dropout(dropout_rate)

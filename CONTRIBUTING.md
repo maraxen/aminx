@@ -39,10 +39,10 @@ This will run `ruff` for linting and formatting. Please ensure that all hooks pa
 
 ## Type Checking
 
-We use `astral ty` for static type checking. While not enforced via pre-commit hooks, you can run type checking manually during development:
+We use `astral ty` for static type checking. It is **advisory**: it is not enforced via pre-commit hooks and CI does not run it (the suite only runs `pytest`), and a full run currently reports on the order of a thousand diagnostics, so there is no clean baseline to regress against. `ty` is declared in the `dev` extra, so run it manually with:
 
 ```bash
-uv run ty check
+uv run --extra dev ty check
 ```
 
 We welcome contributions to improve type compliance across the codebase, including the `tests/` directory!

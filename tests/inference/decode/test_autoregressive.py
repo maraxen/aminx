@@ -88,11 +88,6 @@ def _build_synthetic_fixture(
     return model, bundle, config
 
 
-def _dummy_decoding_order_fn(wave):
-    """Dummy decoding order function."""
-    return jnp.arange(wave.group_ids.shape[0])  # Return number of waves as dummy order
-
-
 def _build_scheduled_fixture(
     num_residues: int,
     seed: int,
@@ -151,7 +146,6 @@ def _run_ar_decode(
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -218,7 +212,6 @@ def _logits_at_target(
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -342,7 +335,6 @@ def test_autoregressive_produces_valid_output_s1():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -385,7 +377,6 @@ def test_autoregressive_produces_valid_output_s4():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -450,7 +441,6 @@ def test_state_iterator_parity_vmap_vs_safemap():
     # AR decode with Vmap
     ar_vmap = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=lambda w: jnp.arange(L),
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -467,7 +457,6 @@ def test_state_iterator_parity_vmap_vs_safemap():
     # AR decode with SafeMap
     ar_safemap = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=lambda w: jnp.arange(L),
         state_iterator=SafeMapIterator(tile=2),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -514,7 +503,6 @@ def test_autoregressive_with_tied_positions():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -671,7 +659,6 @@ def test_autoregressive_with_tied_positions_s4():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,

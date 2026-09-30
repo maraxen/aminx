@@ -502,7 +502,7 @@ In a SLURM batch script, export it before the run line:
 
 ```bash
 #SBATCH --job-name=aminx-score
-export AMINX_WEIGHTS_REVISION=25fb7f6e985724dee7471c3bc18522fe33b9228e
+export AMINX_WEIGHTS_REVISION=<commit-sha>   # a revision compatible with this aminx version
 uv run aminx run score --spec spec.json
 ```
 
@@ -522,7 +522,7 @@ the failure mode this replaces.
 |---------|---------|
 | `uv run pytest` | Fast test suite (excludes `parity_heavy`) |
 | `uv run ruff check src` | Lint |
-| `uv run ty check` | Type check (ty strict) |
+| `uv run --extra dev ty check` | Type check (advisory: not a CI gate, and it currently reports many diagnostics) |
 | `uv run ruff format .` | Auto-format |
 
 All five decoding paths are validated via `parity_heavy` tests — see [Validation Reference](#validation-reference) below.

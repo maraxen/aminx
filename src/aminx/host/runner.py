@@ -18,6 +18,7 @@ from aminx.host._sampling_grid_lineage import (
 )
 from aminx.host._sampling_helper import (
   _canonical_structure_ids_for_spec,
+  _prepare_ligand_context,
   _structure_ids_for_batch,
 )
 from aminx.host.kernel_dispatch import _sample_batch
@@ -477,6 +478,95 @@ def _make_averaged_score_fn(
   return score_sequence_averaged
 
 
+def _candidate_activation_bytes(
+  split_fns: Any,  # noqa: ANN401
+  multi_state_strategy: str,
+  batched_ensemble: Any,  # noqa: ANN401
+  batch_ligand: tuple[jax.Array | None, jax.Array | None, jax.Array | None],
+  sample_key: jax.Array,
+  sample_sequence: jax.Array,
+  *,
+  batch_size: int,
+  estimate_cache: dict[Any, int],
+) -> int:
+  """Live bytes one candidate holds once the encode is hoisted, for the candidate-axis planner.
+
+  Derived, not typed: XLA's buffer assignment for ONE candidate's decode + NLL on ONE structure
+  (``xtrax.tiling.estimators.lowered_memory_estimate``: argument + output + temp bytes), times
+  ``batch_size`` because the structure axis is vmapped outside the candidate axis, so every
+  structure in the batch holds its own candidate's working set at once.
+
+  Counted: the decoder's temporaries, the (L, 21) logits and the structural arrays it is handed.
+  Also counted, deliberately: one copy of the encoder output, because it is an *argument* of the
+  lowered function. It is shared across candidates rather than held per candidate, so this
+  over-states the per-candidate figure by at most one encoding -- the safe direction for a
+  Vmap -> SafeMap demotion decision.
+  Not counted: the ``batch_size`` encodings themselves (live however the candidate axis is tiled).
+
+  Falls back to an analytic lower bound (encoder tensors + output logits) only if the backend
+  cannot produce a memory analysis, and logs that it did.
+  """
+  from xtrax.tiling import lowered_memory_estimate  # noqa: PLC0415
+
+  coords, mask, residue_index, chain_index, ligand = jax.tree.map(
+    lambda a: a[0],
+    (
+      batched_ensemble.coordinates,
+      batched_ensemble.mask,
+      batched_ensemble.residue_index,
+      batched_ensemble.chain_index,
+      batch_ligand,
+    ),
+  )
+  ligand_kwargs = (
+    {}
+    if ligand[0] is None
+    else {"ligand_coords": ligand[0], "ligand_atom_types": ligand[1], "ligand_mask": ligand[2]}
+  )
+  encoding = jax.eval_shape(
+    lambda *a: split_fns.encode_structure(*a, **ligand_kwargs),
+    coords,
+    mask,
+    residue_index,
+    chain_index,
+  )
+
+  def _one_candidate(
+    key: jax.Array,
+    seq: jax.Array,
+    enc: Any,  # noqa: ANN401
+    c: jax.Array,
+    m: jax.Array,
+    r: jax.Array,
+    ch: jax.Array,
+  ) -> tuple[jax.Array, jax.Array, jax.Array]:
+    return split_fns.score_candidate(
+      key, jax.nn.one_hot(seq, 21), enc, c, m, r, ch, multi_state_strategy=multi_state_strategy,
+    )
+
+  args = (sample_key, sample_sequence, encoding, coords, mask, residue_index, chain_index)
+  # Lowering is a full XLA compile, so memoise per shape signature: a long structure stream
+  # with identical (padded) shapes must not recompile once per batch.
+  cache_key = (
+    multi_state_strategy,
+    tuple((tuple(leaf.shape), str(leaf.dtype)) for leaf in jax.tree.leaves(args)),
+  )
+  per_structure = estimate_cache.get(cache_key)
+  if per_structure is None:
+    try:
+      per_structure = lowered_memory_estimate(_one_candidate, *args)
+    except RuntimeError:
+      logger.warning(
+        "score runner: backend gave no memory analysis; using an analytic lower bound "
+        "(encoder tensors + logits) for the candidate-axis memory estimate.",
+      )
+      per_structure = sum(
+        int(leaf.size) * leaf.dtype.itemsize for leaf in jax.tree.leaves(encoding)
+      ) + int(coords.shape[0]) * 21 * 4
+    estimate_cache[cache_key] = per_structure
+  return int(per_structure) * batch_size
+
+
 def score(  # noqa: PLR0915
   spec: ScoringSpecification | None = None,
   **kwargs: Any,  # noqa: ANN401
@@ -551,10 +641,47 @@ def score(  # noqa: PLR0915
     )
     raise NotImplementedError(msg)
 
-  from aminx.scoring.score import make_score_fn  # noqa: PLC0415
+  # Ligand channel (#167). ``score_sequence`` accepts ligand tensors, but this surface used to
+  # have no field to receive them, so a LigandMPNN checkpoint was scored WITHOUT its ligand and
+  # nothing said so -- the returned NLL is a different, worse-conditioned number. Refuse every
+  # combination this surface cannot honour rather than dropping it.
+  ligand_requested = bool(spec.ligand_conditioning) or spec.ligand_context_path is not None
+  if spec.sidechain_conditioning:
+    msg = (
+      "score runner: spec.sidechain_conditioning=True, but aminx.scoring.score.score_sequence "
+      "has no atom_37 / side-chain parameters and never reads them, so the side-chain context "
+      "would be silently dropped. Use runner.sample, or leave sidechain_conditioning False."
+    )
+    raise NotImplementedError(msg)
+  if ligand_requested and (spec.average_node_features or spec.state_position_map is not None):
+    msg = (
+      "score runner: ligand conditioning is not implemented for the averaged-feature "
+      "(average_node_features=True) or fused multi-state (state_position_map) scoring paths; "
+      "it would be silently dropped there. Score per structure, or omit the ligand fields."
+    )
+    raise NotImplementedError(msg)
+
+  if ligand_requested and spec.model_family != "ligandmpnn":
+    msg = (
+      f"score runner: ligand conditioning was requested (ligand_conditioning="
+      f"{spec.ligand_conditioning}, ligand_context_path={spec.ligand_context_path}) but the "
+      f"checkpoint is model_family={spec.model_family!r}, which has no ligand channel; the "
+      "ligand would be silently ignored. Use a LigandMPNN checkpoint or drop the ligand fields."
+    )
+    raise ValueError(msg)
+
+  from aminx.scoring.score import make_score_fn, make_score_split_fns  # noqa: PLC0415
   from aminx.utils.aa_convert import string_to_protein_sequence  # noqa: PLC0415
 
   protein_iterator, model = prep_protein_stream_and_model(spec)
+
+  if spec.model_family == "ligandmpnn" and not ligand_requested:
+    logger.warning(
+      "score runner: scoring a LigandMPNN checkpoint WITHOUT ligand context "
+      "(ligand_conditioning=False, no ligand_context_path). If this design was conditioned on "
+      "a ligand, the returned NLL is not the number you want -- set ligand_conditioning=True "
+      "and provide the ligand via ligand_context_path or the input batch.",
+    )
 
   # Build score function: standard or averaged-feature
   if spec.average_node_features:
@@ -565,6 +692,18 @@ def score(  # noqa: PLR0915
     score_fn = _make_averaged_score_fn(plan, spec)  # type: ignore[arg-type]
   else:
     score_fn = make_score_fn(model)  # type: ignore[arg-type]
+
+  # Encode-once path (#147). Only the plain per-structure branch below uses it: the encoding is
+  # candidate-independent exactly when no backbone noise reaches the encoder, which is how this
+  # branch has always called the core (it forwards no noise level). The averaged-feature path
+  # encodes at spec.backbone_noise levels with keys derived from each candidate's key, and the
+  # fused multi-state path (state_position_map) stacks states into one encode; both keep their
+  # per-candidate core and are NOT hoisted.
+  split_fns = (
+    make_score_split_fns(model)  # type: ignore[arg-type]
+    if not spec.average_node_features and spec.state_position_map is None
+    else None
+  )
 
   # Convert string sequences to integer indices
   sequence_indices_list = []
@@ -598,6 +737,7 @@ def score(  # noqa: PLR0915
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
   structure_offset = 0
+  activation_estimates: dict[Any, int] = {}
 
   # Prepare random key
   prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42)
@@ -664,7 +804,42 @@ def score(  # noqa: PLR0915
       flat_keys.append(subkey)
     batch_keys = jnp.stack(flat_keys, axis=0).reshape(batch_size, n_candidates, -1)
 
-    activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
+    # Per-structure ligand tensors (B, L, M, ...) or None. Only prepared when the spec asks for
+    # a ligand, so the ligand-free path is byte-for-byte what it was.
+    if ligand_requested:
+      ligand_context = _prepare_ligand_context(
+        spec,  # type: ignore[arg-type]  # duck-typed: reads model_family + the ligand fields
+        batched_ensemble,
+        batch_size,
+        struct_len,
+        canonical_structure_ids=canonical_structure_ids,
+        batch_structure_ids=batch_structure_ids,
+        # ScoringSpecification.ligand_conditioning is a plain bool where False means "not
+        # required" (a ligand_context_path alone requests the ligand); it is not the sampling
+        # tri-state's ablate switch.
+        ablate_ligand=False,
+      )
+      batch_ligand = (ligand_context["Y"], ligand_context["Y_t"], ligand_context["Y_m"])
+    else:
+      batch_ligand = (None, None, None)
+
+    if split_fns is not None:
+      activation_bytes = _candidate_activation_bytes(
+        split_fns,
+        spec.multi_state_strategy,
+        batched_ensemble,
+        batch_ligand,
+        batch_keys[0, 0],
+        stacked_sequences[0],
+        batch_size=batch_size,
+        estimate_cache=activation_estimates,
+      )
+    else:
+      # Output logits only. Known to undercount: the averaged path re-encodes inside the mapped
+      # function. Kept because that path's per-candidate function is host-side Python (it builds
+      # bundles and runs an R3 check on concrete values), so it cannot be lowered for a real
+      # estimate. See #147.
+      activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
     strategy = _plan_axis_strategy(
       N_CANDIDATES, n_candidates, None, activation_bytes_per_element=activation_bytes,
     )
@@ -676,22 +851,61 @@ def score(  # noqa: PLR0915
       struct_residue_index: jax.Array,
       struct_chain_index: jax.Array,
       struct_keys: jax.Array,
+      struct_ligand: tuple[jax.Array | None, jax.Array | None, jax.Array | None],
       _candidate_iterator: Any = candidate_iterator,  # noqa: ANN401
       _stacked_sequences: jax.Array = stacked_sequences,
     ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
-      def _score_one_candidate(
-        item: dict[str, jax.Array],
-      ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
-        seq_one_hot = jax.nn.one_hot(item["seq"], 21)
-        return score_fn(  # type: ignore[misc]
-          item["key"],
-          seq_one_hot,
+      ligand_kwargs = (
+        {}
+        if struct_ligand[0] is None
+        else {
+          "ligand_coords": struct_ligand[0],
+          "ligand_atom_types": struct_ligand[1],
+          "ligand_mask": struct_ligand[2],
+        }
+      )
+
+      if split_fns is not None:
+        # Encode this structure ONCE (the ligand tensors belong to the encode side); the
+        # candidate map below closes over the encoding and runs only decode + NLL.
+        encoding = split_fns.encode_structure(
           struct_coords,
           struct_mask,
           struct_residue_index,
           struct_chain_index,
-          multi_state_strategy=spec.multi_state_strategy,
+          **ligand_kwargs,
         )
+
+        def _score_one_candidate(
+          item: dict[str, jax.Array],
+        ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
+          return split_fns.score_candidate(
+            item["key"],
+            jax.nn.one_hot(item["seq"], 21),
+            encoding,
+            struct_coords,
+            struct_mask,
+            struct_residue_index,
+            struct_chain_index,
+            multi_state_strategy=spec.multi_state_strategy,
+          )
+
+      else:
+
+        def _score_one_candidate(
+          item: dict[str, jax.Array],
+        ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
+          seq_one_hot = jax.nn.one_hot(item["seq"], 21)
+          return score_fn(  # type: ignore[misc]
+            item["key"],
+            seq_one_hot,
+            struct_coords,
+            struct_mask,
+            struct_residue_index,
+            struct_chain_index,
+            multi_state_strategy=spec.multi_state_strategy,
+            **ligand_kwargs,
+          )
 
       return _candidate_iterator(
         _score_one_candidate, {"key": struct_keys, "seq": _stacked_sequences},
@@ -705,6 +919,7 @@ def score(  # noqa: PLR0915
       batched_ensemble.residue_index,
       batched_ensemble.chain_index,
       batch_keys,
+      batch_ligand,
     )
 
     all_scores.append(batch_scores)

@@ -537,6 +537,10 @@ class ScoringSpecification(RunSpecification):
       average_node_features: Whether to average node features (default is False).
       average_encoding_mode: Mode for averaging encodings (default is "inputs_and_noise").
       noise_batch_size: The batch size for noise levels (default is 4).
+      ligand_conditioning: Score under the structure's ligand context. Requires a LigandMPNN
+          checkpoint and ligand tensors on the batch or via ``ligand_context_path``; with
+          neither, ``score()`` raises rather than scoring ligand-free.
+      ligand_context_path: Ligand context file (same format as sampling's).
       multi_state_temperature: N/A for scoring; score() returns negative log-likelihood of a fixed sequence, invariant to temperature. Accepted for API symmetry but does not affect output.
 
   """
@@ -550,6 +554,11 @@ class ScoringSpecification(RunSpecification):
   average_node_features: bool = False
   noise_batch_size: int = 4
   multi_state_strategy: Literal["arithmetic_mean", "geometric_mean", "product"] = "arithmetic_mean"
+  # Ligand channel, mirroring SamplingSpecification so a scoring spec built from a sampling
+  # row keeps the ligand it was sampled under. Without these a LigandMPNN checkpoint was
+  # scored with NO ligand and nothing said so (#167).
+  ligand_conditioning: bool = False
+  ligand_context_path: str | Path | None = None
 
   def __post_init__(self) -> None:
     """Post-initialization processing."""
@@ -563,6 +572,8 @@ class ScoringSpecification(RunSpecification):
       raise ValueError(msg)
     if self.output_h5_path and isinstance(self.output_h5_path, str):
       object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    if self.ligand_context_path and isinstance(self.ligand_context_path, str):
+      object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
     self._sync_run_spec()
 
 
@@ -615,7 +626,14 @@ class SamplingSpecification(RunSpecification):
   # sampling_spec without these fields existing here hard-crashes real sampling.
   weight_profile: str | None = None
   fixed_group: str | None = None
-  ligand_conditioning: bool = False
+  # Tri-state, because "False" used to be indistinguishable from "unset" and gated nothing:
+  #   None  -- legacy: use whatever ligand context is present (batch Y/Y_t/Y_m or
+  #            ``ligand_context_path``), else a zero placeholder. The default.
+  #   True  -- require: real ligand tensors must be present, else raise.
+  #   False -- ablate: IGNORE any ligand tensors (batch or file) and feed the zero placeholder,
+  #            i.e. a genuine no-ligand arm even when tensors are available (#114).
+  # See host/_sampling_helper.py::_prepare_ligand_context.
+  ligand_conditioning: bool | None = None
   campaign_mode: bool = False
   allow_logits_in_campaign: bool = False
   logits_memory_budget_mb: int | None = None

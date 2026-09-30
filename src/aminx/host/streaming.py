@@ -20,6 +20,7 @@ from aminx.host._sampling_helper import (
   _canonical_structure_ids_for_spec,
   _structure_ids_for_batch,
   fixed_provenance_outputs,
+  ligand_conditioning_mode,
 )
 from aminx.host.output_sinks import (
   streaming_tensor_sink_session,
@@ -100,7 +101,10 @@ def _sample_streaming(
     # `schema_version` it can be added without moving any manifest row hash or output path.
     "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
-    "ligand_conditioning": int(spec.ligand_conditioning),
+    "ligand_conditioning": int(bool(spec.ligand_conditioning)),
+    # Hash-free. The int above folds None (use whatever is present) into 0, so it cannot tell
+    # a legacy row from a genuinely ablated one; this can.
+    "ligand_conditioning_mode": ligand_conditioning_mode(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
     "samples_chunk_size": chunk_size,
     "aminx_version": resolved_aminx_version,

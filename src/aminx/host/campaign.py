@@ -15,7 +15,7 @@ import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -68,6 +68,7 @@ def build_manifest_row(
   git_sha: str,
   config_hash: str,
   job_id: str,
+  declared_state_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
   """Build a deterministic manifest row with SHA256 hash.
 
@@ -77,6 +78,12 @@ def build_manifest_row(
   temperature, and backbone_noise. job_index is intentionally excluded from
   the hash payload: it is derivable from job_id and included in the row dict
   for caller convenience.
+
+  ``declared_state_weights`` is the numeric vector a non-default ``state_weight_profile``
+  LABEL resolved to (``None`` for the ``"equal"`` profile). It is hashed only when present, so
+  every pre-existing row -- all of which are ``"equal"`` -- keeps the hash it always had, while
+  two campaigns that reuse one label for different vectors can no longer collide on a hash (and
+  therefore on an output path).
 
   Returns a dict ready for plan_campaign_manifest to extend with
   output_h5_path and sampling_spec.
@@ -99,6 +106,8 @@ def build_manifest_row(
     "temperature": [str(float(t)) for t in temperature_list],
     "backbone_noise": [str(float(n)) for n in backbone_noise_list],
   }
+  if declared_state_weights is not None:
+    hash_payload["state_weights"] = [str(float(w)) for w in declared_state_weights]
   row_hash = hashlib.sha256(canonical_json_bytes(hash_payload)).hexdigest()
   return {
     "manifest_row_hash": row_hash,
@@ -729,6 +738,141 @@ def _resolve_arm(
   return mask, None
 
 
+# The one profile label aminx can resolve without being told what it means: "no weighting".
+# It resolves to ``state_weights=None`` -- the exact value every campaign row carried before
+# profiles resolved to anything -- so the default ``("equal",)`` changes no sampled output.
+_EQUAL_PROFILE = "equal"
+
+_WEIGHT_SPLIT_RE = re.compile(r"[|,]")
+
+
+def _parse_weight_declaration(label: str, text: str) -> np.ndarray:
+  """Parse ``0.7|0.3`` (or ``0.7,0.3``) into a 1-D float32 weight vector."""
+  parts = [part.strip() for part in _WEIGHT_SPLIT_RE.split(text) if part.strip()]
+  if not parts:
+    msg = f"state_weight_profiles[{label!r}]: {text!r} declares no weights."
+    raise ValueError(msg)
+  try:
+    return np.asarray([float(part) for part in parts], dtype=np.float32)
+  except ValueError as exc:
+    msg = (
+      f"state_weight_profiles[{label!r}]: {text!r} is not a list of numbers like '0.7|0.3' "
+      f"(one weight per state, pipe- or comma-separated) or a path to a 1-D .npy."
+    )
+    raise ValueError(msg) from exc
+
+
+def _resolve_state_weight_profile(label: str, source: Any) -> np.ndarray | None:  # noqa: ANN401
+  """Resolve one profile SOURCE into a weight vector, or None for the ``"equal"`` profile.
+
+  Shapes, mirroring ``_resolve_arm``: ``None``/``"equal"`` (no weighting), an inline
+  ``"0.7|0.3"``, a path to a 1-D ``.npy``, or an array/sequence of numbers.
+
+  Raises:
+    ValueError: not 1-D, empty, non-finite, negative, or summing to zero. The vector's length
+      cannot be checked against the number of states here (the planner parses no structure);
+      ``inference/logits.py`` refuses a mismatch when the row runs.
+
+  """
+  if source is None or (isinstance(source, str) and source.strip() == _EQUAL_PROFILE):
+    return None
+  if isinstance(source, str) and not source.endswith(".npy"):
+    weights = _parse_weight_declaration(label, source)
+  elif isinstance(source, (str, Path)):
+    weights = np.asarray(np.load(Path(source)), dtype=np.float32)
+  else:
+    weights = np.asarray(source, dtype=np.float32)
+  if weights.ndim != 1 or weights.size == 0:
+    msg = (
+      f"state_weight_profiles[{label!r}] has shape {weights.shape}; state weights must be a "
+      f"non-empty 1-D vector with one entry per state."
+    )
+    raise ValueError(msg)
+  if not np.all(np.isfinite(weights)) or np.any(weights < 0) or float(weights.sum()) <= 0.0:
+    msg = (
+      f"state_weight_profiles[{label!r}] = {weights.tolist()} must be finite, non-negative and "
+      f"not all zero."
+    )
+    raise ValueError(msg)
+  return weights
+
+
+def _resolve_state_weight_profiles(
+  profiles: Mapping[str, Any] | Sequence[str] | str,
+) -> dict[str, np.ndarray | None]:
+  """Resolve the ``state_weight_profiles`` declaration into ``{label: weights | None}``.
+
+  **The declaration must carry its own referent** -- the same fix ``fixed_arms`` got for the
+  same bug. ``state_weight_profiles`` used to be ``tuple[str, ...]`` of bare names: aminx
+  cannot know what ``"weighted"`` means, so the name was hashed into the row, written to the
+  row, checked for non-emptiness, and never reached ``SamplingSpecification.state_weights``.
+  ``--state-weight-profiles equal,weighted`` produced two row-sets, differently labelled and
+  identically weighted: duplicate work counted as an ablation.
+
+  A ``Mapping`` ``label -> weights`` is the honest form. A bare sequence of names is still
+  accepted for back-compat, but only ``"equal"`` is resolvable; any other bare name RAISES
+  instead of becoming a label with no meaning.
+
+  Raises:
+    ValueError: empty declaration, empty label, an unresolvable bare name, ``"equal"`` mapped
+      to weights, an invalid vector, or two labels that resolve to the same vector (a second
+      row-set that cannot differ from the first is not a second profile).
+
+  """
+  if isinstance(profiles, str):
+    profiles = (profiles,)
+  if not profiles:
+    msg = "state_weight_profiles is empty; pass ('equal',) for no weighting (the default)."
+    raise ValueError(msg)
+
+  declared: Mapping[str, Any]
+  if isinstance(profiles, Mapping):
+    declared = profiles
+  else:
+    declared = {}
+    for name in profiles:
+      if str(name).strip() != _EQUAL_PROFILE:
+        msg = (
+          f"state_weight_profiles: {name!r} is a bare name aminx cannot resolve -- it would be "
+          f"written to the manifest as a label and never reach state_weights, so the row-set "
+          f"would be weighted exactly like 'equal'. Declare the weights: "
+          f"--state-weight-profile {name}=0.7|0.3 (CLI) or "
+          f"state_weight_profiles={{{name!r}: [0.7, 0.3]}} (API)."
+        )
+        raise ValueError(msg)
+      if str(name).strip() in declared:
+        msg = f"state_weight_profiles: {str(name).strip()!r} listed twice; labels must be unique."
+        raise ValueError(msg)
+      declared[str(name).strip()] = None
+
+  resolved: dict[str, np.ndarray | None] = {}
+  for raw_label, source in declared.items():
+    label = str(raw_label).strip()
+    if not label:
+      msg = "state_weight_profiles has an empty label."
+      raise ValueError(msg)
+    weights = _resolve_state_weight_profile(label, source)
+    if label == _EQUAL_PROFILE and weights is not None:
+      msg = (
+        f"state_weight_profiles[{_EQUAL_PROFILE!r}] is reserved for 'no weighting' but was "
+        f"given weights {weights.tolist()}. Use another label."
+      )
+      raise ValueError(msg)
+    resolved[label] = weights
+
+  seen: dict[tuple[float, ...] | None, str] = {}
+  for label, weights in resolved.items():
+    key = None if weights is None else tuple(float(w) for w in weights)
+    if key in seen:
+      msg = (
+        f"state_weight_profiles: {label!r} and {seen[key]!r} resolve to the same weights; the "
+        f"second row-set would duplicate the first and be counted as diversity."
+      )
+      raise ValueError(msg)
+    seen[key] = label
+  return resolved
+
+
 def plan_campaign_manifest(
   *,
   base_spec: SamplingSpecification,
@@ -737,7 +881,7 @@ def plan_campaign_manifest(
   samples_chunk_size: int,
   output_root: str | Path,
   fixed_arms: Mapping[str, Any] | None = None,
-  state_weight_profiles: tuple[str, ...] = ("equal",),
+  state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -769,8 +913,17 @@ def plan_campaign_manifest(
       one sequence is sampled and a position is either designed or it is not. Cross-state
       index shifts are exactly what ``state_position_map`` exists to resolve.
 
+    state_weight_profiles: Maps a profile LABEL to the weight vector it means -- ``0.7|0.3``,
+      a sequence of numbers, or a path to a 1-D ``.npy`` -- or, for back-compat, a sequence of
+      names in which only ``"equal"`` (``state_weights=None``, the default) is resolvable. Like
+      ``fixed_arms``, the profile carries its own referent: the vector lands on each row's
+      ``sampling_spec["state_weights"]``. ``base_spec.state_weights`` is kept for the
+      ``"equal"`` profile (the pre-existing route), so a caller who set it directly is
+      untouched. Two different profiles yield rows with different ``state_weights``.
+
   Raises:
-    ValueError: ``fixed_arms`` is an empty mapping (states "here are my arms", then supplies
+    ValueError: a profile cannot be resolved (see ``_resolve_state_weight_profiles``);
+      ``fixed_arms`` is an empty mapping (states "here are my arms", then supplies
       none -- a contradiction, and silently reading it as "design everything" is how the old
       zero-rows bug read), or a mask is not 1-D.
 
@@ -808,14 +961,31 @@ def plan_campaign_manifest(
     label: _resolve_arm(label, src, length=arm_length) for label, src in arms.items()
   }
 
+  resolved_profiles = _resolve_state_weight_profiles(state_weight_profiles)
+
   output_root_path = Path(output_root)
   rows: list[dict[str, Any]] = []
   job_index = 0
 
   for fixed_policy, (arm_mask, arm_tokens) in resolved_arms.items():
-    for state_weight_profile in state_weight_profiles:
+    for state_weight_profile, profile_weights in resolved_profiles.items():
       for ligand_on in (False, True):
         for sidechain_on in (False, True):
+          # sidechain_conditioning=True only does anything if the MODEL was built with the
+          # side-chain branch (`ligand_mpnn_use_side_chain_context`) -- two switches for one
+          # capability (#115). The planner owns the sidechain axis, so it owns the derivation
+          # too: a sidechain-on row on a LigandMPNN model states the model-level flag in its
+          # own sampling_spec rather than relying on prep.py to imply it at load time. (prep
+          # still implies it, so sampled output is unchanged; this makes the manifest
+          # self-describing and lets the knob harness observe it.) An EXPLICIT caller value is
+          # never overridden -- a contradiction (False with sidechain on) still raises in
+          # prep_protein_stream_and_model. No CLI flag is exposed for it on purpose: the 2x2
+          # grid always contains both a sidechain-on and a sidechain-off row, and True would
+          # crash the off rows (the branch needs atom_37) while False would contradict the
+          # on rows, so any explicit campaign-wide value could only be wrong for half the grid.
+          side_chain_context = base_spec.ligand_mpnn_use_side_chain_context
+          if sidechain_on and side_chain_context is None and base_spec.model_family == "ligandmpnn":
+            side_chain_context = True
           spec_variant = replace(
             base_spec,
             inputs=_normalize_inputs(base_spec.inputs),
@@ -823,6 +993,7 @@ def plan_campaign_manifest(
             return_logits=False,
             ligand_conditioning=ligand_on,
             sidechain_conditioning=sidechain_on,
+            ligand_mpnn_use_side_chain_context=side_chain_context,
             # THE LINE WHOSE ABSENCE WAS THE ENTIRE BUG.
             #
             # The arm's mask has to land on the SPEC, because `sampling_spec` is the only
@@ -841,6 +1012,14 @@ def plan_campaign_manifest(
             # parse at plan time. Falls back to the caller's own tokens for the .npy/array
             # shapes, which carry a mask only.
             fixed_tokens=arm_tokens if arm_tokens is not None else base_spec.fixed_tokens,
+            # The profile's vector has to land on the SPEC for the same reason the arm's mask
+            # does: `sampling_spec` is all the worker reads. The loop variable used to reach
+            # only the row's LABEL (and its hash), so every profile sampled identically.
+            # `base_spec.state_weights` wins for the "equal" profile, so a caller who sets it
+            # directly keeps working untouched.
+            state_weights=(
+              profile_weights if profile_weights is not None else base_spec.state_weights
+            ),
           )
           for chunk_index, sample_start in enumerate(
             range(0, designs_per_library_type, samples_chunk_size),
@@ -861,6 +1040,7 @@ def plan_campaign_manifest(
               git_sha=git_sha,
               config_hash=config_hash,
               job_id=f"{campaign_id}-job-{job_index}",
+              declared_state_weights=profile_weights,
             )
             row["output_h5_path"] = _row_output_path(
               output_root_path,
@@ -902,7 +1082,7 @@ def write_campaign_manifest(
   samples_chunk_size: int,
   output_root: str | Path,
   fixed_arms: Mapping[str, Any] | None = None,
-  state_weight_profiles: tuple[str, ...] = ("equal",),
+  state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -1234,7 +1414,7 @@ def plan_scale_ramp(
   stage_designs_per_library_type: Sequence[int],
   samples_chunk_size: int,
   fixed_arms: Mapping[str, Any] | None = None,
-  state_weight_profiles: tuple[str, ...] = ("equal",),
+  state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -1602,6 +1782,143 @@ def parse_fixed_arms(values: Sequence[str] | None) -> dict[str, str] | None:
   return arms
 
 
+def _load_campaign_npy(flag: str, path: str | Path) -> np.ndarray:
+  source = Path(path)
+  if not source.is_file() or source.suffix != ".npy":
+    msg = f"{flag} expects a path to an existing .npy file, got {str(path)!r}."
+    raise ValueError(msg)
+  return np.load(source, allow_pickle=False)
+
+
+def load_campaign_bias(path: str | Path, *, length: int) -> np.ndarray:
+  """Load ``--bias``: a ``(L, 21)`` float ``.npy`` of per-position, per-token logit bias.
+
+  ``L`` must equal ``length`` (the campaign's padded length, ``max_length``) -- the same
+  assumption ``fixed_arms`` masks are sized against. Shapes are checked here, where the caller
+  still has the context to fix them, rather than when a worker first touches the tensor.
+
+  Raises:
+    ValueError: not a ``.npy`` file, not 2-D ``(length, 21)``, or not finite.
+
+  """
+  bias = np.asarray(_load_campaign_npy("--bias", path), dtype=np.float32)
+  if bias.shape != (length, 21):
+    msg = (
+      f"--bias {str(path)!r} has shape {bias.shape}; expected ({length}, 21): one logit bias "
+      f"per position (padded campaign length {length}) and per token (MPNN alphabet, 21)."
+    )
+    raise ValueError(msg)
+  if not np.all(np.isfinite(bias)):
+    msg = f"--bias {str(path)!r} contains non-finite values."
+    raise ValueError(msg)
+  return bias
+
+
+def load_campaign_tie_group_map(path: str | Path, *, length: int) -> np.ndarray:
+  """Load ``--tie-group-map``: a ``(L,)`` non-negative integer ``.npy`` of tie-group ids.
+
+  Positions sharing an id are decoded together (logits tied); an id per position, in the
+  canonical frame. ``L`` must equal ``length`` (the padded campaign length).
+
+  Raises:
+    ValueError: not a ``.npy`` file, not 1-D ``(length,)``, non-integer, or negative.
+
+  """
+  raw = _load_campaign_npy("--tie-group-map", path)
+  if raw.shape != (length,):
+    msg = (
+      f"--tie-group-map {str(path)!r} has shape {raw.shape}; expected ({length},): one integer "
+      f"tie-group id per position (padded campaign length {length})."
+    )
+    raise ValueError(msg)
+  if raw.dtype.kind not in "iu" and not (
+    raw.dtype.kind == "f" and np.all(np.isfinite(raw)) and np.all(raw == np.floor(raw))
+  ):
+    msg = f"--tie-group-map {str(path)!r} must hold integer group ids, got dtype {raw.dtype}."
+    raise ValueError(msg)
+  groups = raw.astype(np.int32)
+  if np.any(groups < 0):
+    msg = f"--tie-group-map {str(path)!r} has negative group ids; ids must be >= 0."
+    raise ValueError(msg)
+  return groups
+
+
+def campaign_residue_overrides(
+  bias_path: str | Path | None,
+  tie_group_map_path: str | Path | None,
+) -> dict[str, np.ndarray]:
+  """``SamplingSpecification`` kwargs for ``--bias`` / ``--tie-group-map`` (empty if neither).
+
+  Both land on the base spec, so every row of the grid carries them in its ``sampling_spec`` --
+  the only thing a worker reads. Until now they were settable only through the Python API
+  (debt #2119, the same gap ``--fixed-arm`` closed). Sized against ``max_length``'s default,
+  which is what every campaign runs (the campaign CLIs expose no ``--max-length``).
+  """
+  length = int(next(f.default for f in fields(SamplingSpecification) if f.name == "max_length"))
+  overrides: dict[str, np.ndarray] = {}
+  if bias_path is not None:
+    overrides["bias"] = load_campaign_bias(bias_path, length=length)
+  if tie_group_map_path is not None:
+    overrides["tie_group_map"] = load_campaign_tie_group_map(tie_group_map_path, length=length)
+  return overrides
+
+
+def parse_state_weight_profiles(
+  names_csv: str | None,
+  declarations: Sequence[str] | None,
+) -> dict[str, Any]:
+  """Combine ``--state-weight-profiles`` (names) and ``--state-weight-profile`` (LABEL=WEIGHTS).
+
+  ``--state-weight-profile LABEL=0.7|0.3`` is the flag that carries its own referent (the same
+  idiom as ``--fixed-arm``); it is repeatable and each label becomes its own row-set.
+  ``--state-weight-profiles`` is the legacy CSV of bare names, in which only ``equal`` means
+  anything -- any other name must ALSO be declared with weights, else this raises (a bare name
+  was a label that never reached ``state_weights``).
+
+  With neither flag the result is ``{"equal": None}``, i.e. today's default. With only
+  declarations there is NO implicit ``equal`` baseline: add ``--state-weight-profiles equal``
+  to keep one.
+
+  Raises:
+    ValueError: an entry has no ``=``, an empty label or weights, a duplicate label, or a bare
+      non-``equal`` name with no declaration.
+
+  """
+  declared: dict[str, str] = {}
+  for raw in declarations or ():
+    label, sep, weights = raw.partition("=")
+    label, weights = label.strip(), weights.strip()
+    if not sep or not label or not weights:
+      msg = (
+        f"--state-weight-profile expects LABEL=WEIGHTS (e.g. --state-weight-profile "
+        f"pocket_heavy=0.7|0.3; a 1-D .npy path also works), got {raw!r}. Repeat the flag for "
+        f"more profiles; each becomes its own row-set."
+      )
+      raise ValueError(msg)
+    if label in declared:
+      msg = f"--state-weight-profile {label!r} given twice; profile labels must be unique."
+      raise ValueError(msg)
+    declared[label] = weights
+
+  if names_csv is None and not declared:
+    return {_EQUAL_PROFILE: None}
+  profiles: dict[str, Any] = {}
+  for name in _parse_csv(names_csv) if names_csv is not None else ():
+    if name == _EQUAL_PROFILE:
+      profiles[name] = None
+    elif name in declared:
+      profiles[name] = declared[name]
+    else:
+      msg = (
+        f"--state-weight-profiles names {name!r}, which has no weights. A bare name is a label "
+        f"aminx cannot resolve; declare it: --state-weight-profile {name}=0.7|0.3"
+      )
+      raise ValueError(msg)
+  for label, weights in declared.items():
+    profiles.setdefault(label, weights)
+  return profiles
+
+
 def _parse_int_csv(value: str) -> tuple[int, ...]:
   parsed: list[int] = []
   for item in value.split(","):
@@ -1619,6 +1936,41 @@ def _emit_json(payload: dict[str, Any], output_path: str | None = None) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(rendered + "\n", encoding="utf-8")
   sys.stdout.write(rendered + "\n")
+
+
+def _add_state_weight_arguments(parser: argparse.ArgumentParser) -> None:
+  parser.add_argument(
+    "--state-weight-profiles",
+    default=None,
+    help="Comma-separated profile NAMES; only 'equal' is resolvable by name. Default: equal "
+    "(unless --state-weight-profile is given).",
+  )
+  parser.add_argument(
+    "--state-weight-profile",
+    action="append",
+    default=None,
+    metavar="LABEL=WEIGHTS",
+    help="Profile LABEL=WEIGHTS, e.g. pocket_heavy=0.7|0.3 (one weight per state; a 1-D .npy "
+    "path also works). Reaches each row's sampling_spec state_weights. Repeatable.",
+  )
+
+
+def _add_residue_override_arguments(parser: argparse.ArgumentParser) -> None:
+  parser.add_argument(
+    "--bias",
+    default=None,
+    metavar="PATH.npy",
+    help="(L, 21) float .npy of per-position, per-token logit bias, applied to every row.",
+  )
+  parser.add_argument(
+    "--tie-group-map",
+    "--tie-group",
+    dest="tie_group_map",
+    default=None,
+    metavar="PATH.npy",
+    help="(L,) integer .npy of per-position tie-group ids (equal ids are decoded tied), "
+    "applied to every row.",
+  )
 
 
 def _add_plan_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1639,7 +1991,8 @@ def _add_plan_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPar
       "canonical index). A .npy mask path also works. Repeatable."
     ),
   )
-  parser.add_argument("--state-weight-profiles", default="equal")
+  _add_state_weight_arguments(parser)
+  _add_residue_override_arguments(parser)
 
 
 def _add_worker_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1711,7 +2064,8 @@ def _add_ramp_plan_parser(subparsers: argparse._SubParsersAction[argparse.Argume
       "canonical index). A .npy mask path also works. Repeatable."
     ),
   )
-  parser.add_argument("--state-weight-profiles", default="equal")
+  _add_state_weight_arguments(parser)
+  _add_residue_override_arguments(parser)
   parser.add_argument("--plan-path", default=None)
 
 
@@ -1730,6 +2084,7 @@ def _handle_plan_command(args: argparse.Namespace) -> int:
   base_spec = SamplingSpecification(
     inputs=_parse_csv(args.inputs),
     return_logits=False,
+    **campaign_residue_overrides(args.bias, args.tie_group_map),
   )
   write_campaign_manifest(
     base_spec=base_spec,
@@ -1739,7 +2094,9 @@ def _handle_plan_command(args: argparse.Namespace) -> int:
     samples_chunk_size=args.samples_chunk_size,
     output_root=args.output_root,
     fixed_arms=parse_fixed_arms(args.fixed_arm),
-    state_weight_profiles=_parse_csv(args.state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      args.state_weight_profiles, args.state_weight_profile,
+    ),
   )
   return 0
 
@@ -1783,6 +2140,7 @@ def _handle_ramp_plan_command(args: argparse.Namespace) -> int:
   base_spec = SamplingSpecification(
     inputs=_parse_csv(args.inputs),
     return_logits=False,
+    **campaign_residue_overrides(args.bias, args.tie_group_map),
   )
   plan_payload = plan_scale_ramp(
     base_spec=base_spec,
@@ -1792,7 +2150,9 @@ def _handle_ramp_plan_command(args: argparse.Namespace) -> int:
     stage_designs_per_library_type=_parse_int_csv(args.stage_designs_per_library_type),
     samples_chunk_size=args.samples_chunk_size,
     fixed_arms=parse_fixed_arms(args.fixed_arm),
-    state_weight_profiles=_parse_csv(args.state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      args.state_weight_profiles, args.state_weight_profile,
+    ),
   )
   _emit_json(plan_payload, args.plan_path)
   return 0

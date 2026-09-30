@@ -34,12 +34,9 @@ from aminx.inference.decode._kernel import (
   _realign_states_to_reference,
 )
 from aminx.inference.sample_autoregressive import SampleResult
-from aminx.types.bundles import EncoderOutput, InferenceBundle, WaveScheduleBundle
+from aminx.types.bundles import EncoderOutput, InferenceBundle
 from aminx.types.configs import InferenceConfig
 from aminx.types.stages import StageSet
-
-# Type alias for decoding order function
-DecodingOrderFn = Callable[[WaveScheduleBundle], Any]
 
 #: Sentinel token for a position that has not been drawn yet.
 #:
@@ -86,13 +83,17 @@ class AutoregressiveDecode(eqx.Module):
   per-wave logits back to per-position logits, preserving the two-scan structure
   from driver.py:decode_ar (Risk D-11).
 
+  **The decoding order is not chosen here.** It is whatever ``bundle.wave`` and
+  ``bundle.conditioning.ar_mask`` already encode, and those are set upstream -- by
+  :func:`aminx.inference.bundle_builder.with_decoding_order`, which is where a caller's
+  ``decoding_order_fn`` is applied. This class used to carry a ``decoding_order_fn`` field
+  that was documented as choosing the order and never read (#166), so passing one to
+  ``make_decode_fn`` was a silent no-op; the field is gone rather than kept as a trap.
+
   Parameters
   ----------
   model : Any
       Model instance with decoder and w_out attributes.
-  decoding_order_fn : Callable
-      Function (wave_schedule) -> decoding_order. Determines the order in which
-      positions are decoded within the wave schedule.
   state_iterator : MapIterator
       Iterator for the S axis (VmapIterator, SafeMapIterator, etc.).
       Injected at factory time; determines parallelism strategy.
@@ -109,8 +110,6 @@ class AutoregressiveDecode(eqx.Module):
       The MPNN model. A dynamic field: its weight arrays are traced JAX
       leaves so filter_jit partitions them as runtime inputs (not hashed
       static constants).
-  decoding_order_fn : Callable = eqx.field(static=True)
-      Decoding order function is static.
   state_iterator : MapIterator
       State axis iterator (injected at factory time).
   wave_iterator : ScanIterator
@@ -146,7 +145,6 @@ class AutoregressiveDecode(eqx.Module):
   """
 
   model: Any
-  decoding_order_fn: DecodingOrderFn = eqx.field(static=True)
   state_iterator: MapIterator
   wave_iterator: ScanIterator
   wave_carry: CarryShape = eqx.field(static=True)
@@ -186,8 +184,7 @@ class AutoregressiveDecode(eqx.Module):
     -----
     Workflow:
     1. Materialize init sequence from wave_carry metadata.
-    2. Compute decoding order via decoding_order_fn.
-    3. Build scan_body that:
+    2. Build scan_body that:
        a. For each state, call _decode_one_step via state_iterator.
        b. Project to logits.
        c. Fuse per-position logits via ar_logit_transform.
@@ -195,9 +192,10 @@ class AutoregressiveDecode(eqx.Module):
        e. Sample from averaged logits.
        f. Update sequence for sampled positions.
        g. Return (new_sequence, per_wave_logits).
-    4. Call wave_iterator(scan_body, init, jnp.arange(n_waves)).
-    5. Post-hoc scatter: map (n_waves, V) logits to (L, V) via second scan.
-    6. Return SampleResult(final_sequence, logits).
+    3. Call wave_iterator(scan_body, init, jnp.arange(n_waves)) over ``bundle.wave``;
+       each position sees ``bundle.conditioning.ar_mask`` (the order lives there).
+    4. Post-hoc scatter: map (n_waves, V) logits to (L, V) via second scan.
+    5. Return SampleResult(final_sequence, logits).
 
     """
     L = enc.node_features.shape[1]

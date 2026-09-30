@@ -36,6 +36,7 @@ from aminx.training.metrics import (
   TrainingMetrics,
   compute_grad_norm,
 )
+from aminx.utils.aa_convert import training_labels
 
 if TYPE_CHECKING:
   from chex import ArrayTree
@@ -323,7 +324,9 @@ def train_step(  # noqa: PLR0915
       mask: Valid residue mask
       residue_index: Residue indices
       chain_index: Chain indices
-      sequence: Target sequence (integer labels)
+      sequence: Target sequence (integer labels), **MPNN**-ordered (``ACDEFGHIKLMNPQRSTVWYX``) --
+          the model's token space. A loader batch's ``aatype`` is AF-ordered and must be passed
+          through ``training_labels`` first (issue #109); no range check can detect the mix-up.
       prng_key: PRNG key
       label_smoothing: Label smoothing factor
       current_step: Current training step (used for learning rate scheduling)
@@ -588,7 +591,9 @@ def eval_step(
       mask: Valid residue mask (batched)
       residue_index: Residue indices (batched)
       chain_index: Chain indices (batched)
-      sequence: Target sequence (batched)
+      sequence: Target sequence (batched), **MPNN**-ordered (``ACDEFGHIKLMNPQRSTVWYX``). A
+          loader batch's ``aatype`` is AF-ordered: pass it through ``training_labels`` first
+          (issue #109).
       prng_key: PRNG key
       physics_features: Optional physics features (if used)
       training_mode: "autoregressive" or "diffusion"
@@ -777,7 +782,7 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
         batch.mask,
         batch.residue_index,
         batch.chain_index,
-        batch.aatype,
+        training_labels(batch.aatype),
         subkey,
         spec.label_smoothing,
         step,
@@ -816,7 +821,7 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
             val_batch.mask,
             val_batch.residue_index,
             val_batch.chain_index,
-            val_batch.aatype,
+            training_labels(val_batch.aatype),
             subkey,
             val_batch.physics_features if (spec.use_electrostatics or spec.use_vdw) else None,
             spec.training_mode,
@@ -906,7 +911,7 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
         test_batch.mask,
         test_batch.residue_index,
         test_batch.chain_index,
-        test_batch.aatype,
+        training_labels(test_batch.aatype),
         subkey,
         test_batch.physics_features if (spec.use_electrostatics or spec.use_vdw) else None,
         spec.training_mode,

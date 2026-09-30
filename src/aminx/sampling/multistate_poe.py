@@ -64,6 +64,7 @@ from aminx.host._sampling_helper import (
   _prepare_fixed_controls,
   _prepare_ligand_context,
   fixed_provenance_outputs,
+  ligand_conditioning_mode,
 )
 from aminx.host.plan import (
   resolve_chunk_size,
@@ -695,7 +696,8 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     # `schema_version` it can be added without moving any manifest row hash or output path.
     "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
-    "ligand_conditioning": int(spec.ligand_conditioning),
+    "ligand_conditioning": int(bool(spec.ligand_conditioning)),
+    "ligand_conditioning_mode": ligand_conditioning_mode(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
     "samples_chunk_size": chunk_size,
     "multistate_poe_fused": 1,

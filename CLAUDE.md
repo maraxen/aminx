@@ -15,13 +15,13 @@
 - **Language**: Python 3.12+
 - **ML Framework**: JAX + Equinox
 - **Package Manager**: uv
-- **Type Checking**: ty (strict)
+- **Type Checking**: ty (advisory — CI does not run it, and it currently reports ~1.1k diagnostics; do not assume a clean `ty check` baseline)
 - **Linting**: ruff
 - **Testing**: pytest
 
 ## Code Style
 
-- Strict typing with `ty`, format with `ruff`
+- Annotate new code fully and check it with `ty` (advisory, see above); format with `ruff`
 - JAX: use `jax.jit`, `jax.vmap`, `jax.lax.scan` patterns
 - Equinox: define models as `eqx.Module` subclasses (not dataclasses), use `eqx.filter_jit` for PyTree-aware JIT compilation
 - Numerical tolerance tests with `pytest.approx`, cross-framework validation

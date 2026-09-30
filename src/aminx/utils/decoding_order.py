@@ -45,6 +45,10 @@ def random_decoding_order(
 
   Returns:
     Tuple of (decoding_order, next_key) where decoding_order respects ties.
+    ``decoding_order`` is an ORDER array: ``decoding_order[t]`` is the position decoded at
+    step ``t`` (not each position's rank). Build masks from it with
+    :func:`aminx.utils.autoregression.ar_mask_from_decoding_order`, not by passing it to
+    ``generate_ar_mask``, which reads its argument as a rank array when untied.
 
   Example:
     >>> key = jax.random.PRNGKey(0)

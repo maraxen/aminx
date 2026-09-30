@@ -462,9 +462,14 @@ class PhysicsEncoder(eqx.Module):
     # keys[0] → physics_projection, keys[1] → physics_w_v, keys[2:] → encoder layers
     keys = jax.random.split(key, num_layers + 2)
 
+    # Reference ``node_embedding`` is ``Linear(num_classes, node_features, bias=False)``
+    # (model_utils.py) and the membrane checkpoints carry no such bias. Left at equinox's
+    # use_bias=True default, its random init shipped in the .eqx.zst and shifted logits by
+    # 1-5 nats against the reference.
     self.physics_projection = eqx.nn.Linear(
       physics_feature_dim,
       node_features,
+      use_bias=False,
       key=keys[0],
     )
     self.physics_norm = eqx.nn.LayerNorm(node_features)
