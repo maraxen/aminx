@@ -1,0 +1,77 @@
+[metadata]
+title = "G0b: the fuse-and-sample step converts to a standalone ONNX graph (Graph F)"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "`_fuse_and_sample` (inference/decode/autoregressive.py:99-189), closed over the stage set P07 actually uses (make_stage_set(), whose tie_group_fuse is TieGroupProductOfExperts and whose logit_transform is ArithmeticMeanLogits), converts to a self-contained ONNX graph via jax2onnx, loads in onnxruntime CPU, runs on synthetic inputs at L=128 with 4 group slots, produces finite fused logits, reproduces the JAX tokens EXACTLY, and agrees with JAX on the fused bias-free logits to within 1e-3 max-abs. The function is exportable because it is pure arithmetic with no scan and no cond: its `if gumbel_noise is None` branch resolves at trace time when explicit noise is supplied, which is how P07 runs it. This is a FEASIBILITY gate, sibling to G0 (Graph E + Graph D, run 8daaa978, which it does not re-open); the 1e-3 bound is deliberately loose for the same reason as G0 and the tight bound is set by G1. Token equality is NOT bounded but exact, because the failure this gate most needs to see -- a tie-order or argmax divergence in product-of-experts fusion -- is invisible to a float bound (xtrax .praxia/docs/research/260914_browser-inference-routes-jaxjs-jax2onnx.md S5). Purpose: if Graph F exports, the PoE fusion, tied-group averaging, Gumbel argmax and fixed-position override stay inside a graph already covered by the JAX and reference comparisons, instead of becoming hand-written JavaScript numerics requiring validation from scratch. Decision record: .praxia/docs/daily/260929_overnight-decisions.md D1/D2."
+stage_name = "validation"
+claim_discriminates = ["H_fuse_exportable", "H_null_conversion_blocked"]
+claim_isolates = ["C_fuse_instrument"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as p07_split_feasibility.bth.toml).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "fixture_blind", "ctrl_blind", "fail"]
+
+# First matching branch wins: incomplete, fixture_blind, ctrl_blind, fail, pass.
+
+[outcomes.incomplete]
+condition = "jax_enable_x64 OR NOT f_converted OR NOT f_ran OR NOT git_clean"
+decision = "The graph did not convert, did not load/run, the tree was dirty in a code path, or the process had x64 enabled. If conversion itself failed, THAT IS THE FINDING: _fuse_and_sample cannot be exported standalone, and the fuse step must move to JavaScript after all (spec 260929_p07-split-export.md, decision D1 reverses)."
+reasoning = "A conversion refusal is the outcome this gate exists to detect and must never be reported as a parity result; the `failure` field carries the exception text. x64 would silently emit an int64/float64 graph, which collides with ORT-Web's WebGPU EP dtype gap."
+is_residual = true
+
+[outcomes.fixture_blind]
+condition = "NOT inactive_group_is_zero OR NOT fixed_override_applied"
+decision = "The synthetic fixture did not actually exercise the inactive-group branch or the fixed-position override, so a clean comparison says nothing about them."
+reasoning = "_fuse_and_sample has branches a naive fixture silently skips: an all-False group mask must fuse to zeros rather than -inf/NaN, and a fixed position inside an active group must override the sampled token. Asserting on the JAX side that both fired is what stops this gate passing on a fixture that never reached them -- the same class of vacuity the negative controls guard against for the comparator."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "A negative control did not fire: an injected non-finite value was not caught, or a known 1.0 offset did not exceed the bound. No feasibility statement is permitted."
+reasoning = "`all(isfinite(x))` and `max_abs_diff <= bound` are both trivially satisfied by a comparator that compares an array to itself; planting a NaN and an offset is what proves the instrument can fail at all (rules/BATHOS.md)."
+is_residual = true
+
+[outcomes.fail]
+condition = "NOT f_tokens_exact OR f_logits_max_abs_diff > 0.001 OR NOT f_finite"
+decision = "Graph F converted and ran, but its tokens differ from JAX, its fused logits exceed 1e-3, or an output is non-finite. The fuse step converts but is numerically wrong; do not build on it until root-caused."
+reasoning = "Conversion succeeding while the numbers move is strictly worse than a clean refusal, because it would silently corrupt every downstream gate. Token inequality is listed first because it is the failure a float bound cannot see and the one this design most needs to exclude."
+is_residual = true
+
+[outcomes.pass]
+condition = "f_finite AND f_tokens_exact AND within_bound"
+decision = "The fuse-and-sample step is exportable and numerically faithful on this fixture. The split may keep PoE fusion, tied averaging, Gumbel argmax and the fixed override in ONNX rather than hand-porting them, and G1a shrinks to index bookkeeping."
+reasoning = "Conversion plus finite outputs plus exact tokens plus sub-1e-3 fused logits, on a fixture demonstrably covering the inactive-group and fixed-override branches, with a demonstrably sensitive comparator, is the minimum evidence that this function need not be reimplemented by hand."
+is_residual = false
+
+[result_schema]
+length = "int"
+n_groups = "int"
+agree_bound = "float"
+f_converted = "bool"
+f_ran = "bool"
+f_finite = "bool"
+f_tokens_exact = "bool"
+f_logits_max_abs_diff = "float"
+f_onnx_bytes = "int"
+inactive_group_is_zero = "bool"
+fixed_override_applied = "bool"
+within_bound = "bool"
+controls_total = "int"
+controls_detected = "int"
+ctrl_nan_detected = "bool"
+ctrl_perturb_detected = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+git_dirty_paths = "str"
+jax_enable_x64 = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
