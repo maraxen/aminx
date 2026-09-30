@@ -91,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
     "worst_case": "",
     "lanes": list(UNTIED_LANES),
     "per_case": [],
+    "skipped": [],
+    "n_positions_compared": -1,
     "controls_total": 1,
     "controls_detected": 0,
     "ctrl_perturb_detected": False,
@@ -136,8 +138,21 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
         continue
       for lane in UNTIED_LANES:
         batch = _lane_batch(geom, lane)
+        name = f"{geom['name']}_{lane}"
         if getattr(batch, "groups", None):
-          logger.info("skipping %s/%s: tied lane, out of scope", geom["name"], lane)
+          result["skipped"].append({"case": name, "why": "tied lane, out of scope"})
+          continue
+        # Graph D takes no chain_mask. In the split, fixed positions are handled by
+        # Graph F's override during SAMPLING, not inside the conditional decode, whereas
+        # aminx_conditional_logits feeds chain_mask into the inference bundle. So where
+        # any position is fixed these are different functions and comparing them is
+        # meaningless -- the first run of this gate did exactly that and correctly
+        # disagreed by whole nats. Skipping is a scope correction, not a threshold
+        # relaxation: the 1e-4 bound is untouched and every skip is recorded.
+        if float(np.asarray(batch.fixed_mask).sum()) > 0.0:
+          result["skipped"].append(
+            {"case": name, "why": "fixed_mask non-zero; Graph D has no chain_mask input"}
+          )
           continue
         seed_i = las._seed_for(batch.fixture_name + batch.lane)  # noqa: SLF001
         seq, ref_lp, order, _randn = las.reference_sample_one(
@@ -173,8 +188,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
         (logits,) = run_sess(dec_sess, [node_f, edge_f, nbr, mask, ar_full, seq_oh])
         split_lp = _log_softmax(np.asarray(logits, np.float64))[:length]
 
-        d = float(np.max(np.abs(split_lp - ref_lp.astype(np.float64)[:length])))
-        name = f"{geom['name']}_{lane}"
+        # Compare at the DESIGNED positions only, exactly as B1's _tf_max does
+        # (p07_knobs_gate.py:1666). Comparing all L includes masked and padded rows the
+        # reference never scores, which is the other half of why the first run of this
+        # gate disagreed. Matching B1's choice here is also what makes the two numbers
+        # comparable at all.
+        pos = np.asarray(batch.comparison_positions, dtype=np.int64)
+        if pos.size == 0:
+          pos = np.arange(length, dtype=np.int64)
+        result["n_positions_compared"] = int(pos.size)
+
+        d = float(np.max(np.abs(split_lp[pos] - ref_lp.astype(np.float64)[pos])))
         result["per_case"].append({"case": name, "max_abs_nats": d})
         result["cases_total"] += 1
         if d <= args.bound:
@@ -183,10 +207,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
           result["max_abs_nats_vs_reference"] = d
           result["worst_case"] = name
         if result["cases_total"] == 1:
-          poisoned = split_lp.copy()
+          poisoned = split_lp[pos].copy()
           poisoned.flat[0] += CTRL_PERTURB
           result["ctrl_perturb_detected"] = bool(
-            np.max(np.abs(poisoned - ref_lp.astype(np.float64)[:length])) > args.bound
+            np.max(np.abs(poisoned - ref_lp.astype(np.float64)[pos])) > args.bound
           )
         logger.info("%s: split vs reference max_abs %.4e nats", name, d)
 
