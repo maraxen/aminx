@@ -1,0 +1,37 @@
+{
+  "bound": 0.0001,
+  "bucket": 128,
+  "cases_total": 4,
+  "cases_within_bound": 1,
+  "controls_detected": 1,
+  "controls_total": 1,
+  "ctrl_perturb_detected": true,
+  "failure": "",
+  "git_clean": true,
+  "git_hash": "b8973dead26660cdc5dd4ac138cd8f5d130c90b1",
+  "lanes": [
+    "P08@1.0",
+    "P07@1.0"
+  ],
+  "max_abs_nats_vs_reference": 5.99379026488658,
+  "outcome": "fail",
+  "per_case": [
+    {
+      "case": "5L33_P08@1.0",
+      "max_abs_nats": 2.7979537182254433e-05
+    },
+    {
+      "case": "5L33_P07@1.0",
+      "max_abs_nats": 5.808655524228018
+    },
+    {
+      "case": "tie_lattice_L96_P08@1.0",
+      "max_abs_nats": 1.3246321089999742
+    },
+    {
+      "case": "tie_lattice_L96_P07@1.0",
+      "max_abs_nats": 5.99379026488658
+    }
+  ],
+  "worst_case": "tie_lattice_L96_P07@1.0"
+}
