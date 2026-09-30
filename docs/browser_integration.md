@@ -186,8 +186,8 @@ Linux workstation, 8 RunSpec cells × 5 repetitions.
 
 **The headline is the absolute number, not the ratio: roughly 17–20 seconds per design at
 L=128, single-threaded.** That is what a user waits — and it is why the threading result
-below matters more than the split-vs-monolith gap. L=256 doubles the autoregressive steps
-(256 instead of 128) and has **not** been measured.
+below matters more than the split-vs-monolith gap. L=256 costs about **4×** L=128, not 2×
+— see the browser table below.
 
 Two levers. The first is measured and large; the second is untouched:
 
@@ -195,10 +195,11 @@ Two levers. The first is measured and large; the second is untouched:
   both arms below passed their own timer control (planted 250.0 ms → measured 250.2 ms,
   ratio 1.001) *in the browser*, so these are measurements rather than estimates.
 
-  | Threads | Median per design | Range | Run |
-  | ---: | ---: | :--- | :--- |
-  | 1 | **15.77 s** | 15.48–16.85 | `69bac70f` |
-  | 4 | **6.80 s** | 6.58–7.10 | `7fdb4001` |
+  | Bucket | Threads | Median per design | Range | Run |
+  | ---: | ---: | ---: | :--- | :--- |
+  | 128 | 1 | **15.77 s** | 15.48–16.85 | `69bac70f` |
+  | 128 | 4 | **6.80 s** | 6.58–7.10 | `7fdb4001` |
+  | 256 | 4 | **27.18 s** | 27.03–28.63 | `4669e76f` |
 
   **2.32× faster, at no cost in correctness** — at 4 threads the tokens are identical and
   the log-probs bit-identical to single-threaded (`da02516e`). Session creation for all
@@ -206,6 +207,12 @@ Two levers. The first is measured and large; the second is untouched:
 
   So **enabling COOP/COEP takes an L=128 design from roughly 16 s to under 7 s.** That
   makes those headers the main performance lever rather than a hosting detail.
+
+  **Length costs roughly quadratically, not linearly — size your UI accordingly.** L256 is
+  4.0× L128, not 2×, even though it only doubles the autoregressive steps: each step also
+  does more work, because the encoder's L×K edge features and the wave graph's L² `ar_mask`
+  both grow. A 256-residue design is ~27 s *with* threading. If your page offers the larger
+  bucket, warn the user before they start rather than after.
 
   Worth noting for anyone reproducing this: browsers coarsen `performance.now` under some
   isolation settings — exactly the settings threaded wasm requires — so the clock was
@@ -260,8 +267,13 @@ is *bit-identical* to the single-threaded run. That was worth checking rather th
 assuming: thread count changes float accumulation order, so results could in principle
 have moved, and this guide asks you to enable COOP/COEP.
 
-Remaining gaps, both narrow: L=256 has been validated against the monolith under ORT-CPU
-but not yet in the browser, and WebGPU is untouched (below).
+L=256 is validated in the browser too (`8a3bb1d6`, tokens exact 4/4). Notably the
+log-prob difference is **bit-identical** — 5.7220458984375e-06 — across L128
+single-threaded, L128 at 4 threads, and L256 at 4 threads, which is the signature of a
+fixed float32 rounding floor rather than error that accumulates with depth or varies with
+threading.
+
+Remaining gap: WebGPU is untouched (below).
 
 ## WebGPU
 
