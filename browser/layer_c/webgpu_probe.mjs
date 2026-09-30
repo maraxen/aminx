@@ -7,6 +7,11 @@
 // (xtrax research 260914 S4). This answers only: is WebGPU reachable here at all, does
 // ORT accept the provider, and does the graph load.
 //
+// It lives in layer_c rather than beside the sampler because that is where
+// node_modules is: @playwright/test is not resolvable from browser/aminx-sampler,
+// and deliberately so -- the sampler package a site copies must not depend on
+// Playwright or onnxruntime.
+//
 // It needs its own driver rather than reusing browser/layer_c/run_p07.mjs because
 // headless Chromium requires explicit flags to expose WebGPU, and run_p07.mjs is shared
 // with gates that must not have their launch conditions changed underneath them.
@@ -17,7 +22,7 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "@playwright/test";
 
-import { createStaticServer, listenEphemeral } from "../layer_c/serve.mjs";
+import { createStaticServer, listenEphemeral } from "./serve.mjs";
 
 function arg(name, fallback = undefined) {
   const i = process.argv.indexOf(`--${name}`);
