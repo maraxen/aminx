@@ -658,3 +658,61 @@ class TestKeyIndependenceOfNative:
       stage_set,
     )
     assert np.array_equal(np.asarray(logits_key0), np.asarray(logits_key1))
+
+
+# --------------------------------------------------------------------------------------
+# (f) wave_from_decoding_order's sorts must be tie-free.
+#
+# This function had NO unit coverage before this test, and it is the one baked into the
+# split export's Graph W (spec 260929_p07-split-export.md): its outputs are the wave
+# schedule and ar_mask the JavaScript loop drives. G0c and G1 validate it end to end
+# against JAX, but an end-to-end comparison cannot see a stability regression, because
+# both sides would regress together.
+#
+# It holds TWO sorts (wrappers.py:316 and :328) and both are deliberately tie-free:
+#   - the group-order sort carries an explicit index as a second key
+#   - order_in_wave's key is unique by construction (position vs length + position), so
+#     `stable=False` is safe there
+# IREE does not honour JAX's stable-sort tie order, so a revert to a stable sort on a
+# tied key would change the generated design silently and identically on both sides of
+# every parity comparison. Asserting on the traced jaxpr is the only thing that catches
+# it -- the same reasoning, and the same guard shape, as
+# test_generate_ar_mask_tied_branch_sorts_tie_free in tests/utils/test_autoregression.py.
+# --------------------------------------------------------------------------------------
+
+
+def _all_eqns(closed_jaxpr):
+  """Every eqn in the traced program, descending into nested jaxprs."""
+  from aminx.export.rng_audit import _sub_jaxprs
+
+  out = []
+
+  def walk(jaxpr):
+    for eqn in jaxpr.eqns:
+      out.append(eqn)
+      for value in eqn.params.values():
+        for sub in _sub_jaxprs(value):
+          walk(sub)
+
+  walk(getattr(closed_jaxpr, "jaxpr", closed_jaxpr))
+  return out
+
+
+@pytest.mark.parametrize("length", [8, 32])
+def test_wave_from_decoding_order_sorts_are_tie_free(length: int) -> None:
+  """Every sort Graph W bakes in must be tie-free, not stability-dependent."""
+  from aminx.export.wrappers import wave_from_decoding_order
+
+  decoding_order = jnp.arange(length, dtype=jnp.int32)
+  tie_group_map = jnp.arange(length, dtype=jnp.int32).at[1].set(0).at[3].set(2)
+
+  jaxpr = jax.make_jaxpr(wave_from_decoding_order)(decoding_order, tie_group_map)
+  sorts = [eqn for eqn in _all_eqns(jaxpr) if eqn.primitive.name == "sort"]
+
+  assert sorts, "wave_from_decoding_order traced no sort; this guard would be vacuous"
+  for eqn in sorts:
+    assert eqn.params.get("is_stable") is False, (
+      "wave_from_decoding_order lowered a STABLE sort. Graph W embeds this function, "
+      "and IREE does not honour JAX's stable-sort tie order, so a tied key here would "
+      "change the design silently -- see the comment block above."
+    )
