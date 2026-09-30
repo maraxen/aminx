@@ -99,10 +99,19 @@ def _check_inputs(root: Path, checkpoint: Path) -> None:
         raise SystemExit(msg)
 
 
+# Amended 260929 (user-approved, see the [amendment] block in the sidecar). The original
+# 1e-4 / 1e-3 bands were set before the first run and measured 1.2207e-04 on the clean arm,
+# which is EXACTLY 2^-13, one float32 ULP for magnitudes in [1024, 2048). ddG is
+# E_mut - E_wt, a small difference of large f32 Potts energies, so a few ULP of cancellation
+# is the arithmetic floor rather than a port defect. PASS_BOUND is ~4 such ULP.
+PASS_BOUND = 5e-4
+INCONCLUSIVE_BOUND = 5e-3
+
+
 def _band(max_abs: float) -> str:
-    if max_abs <= 1e-4:
+    if max_abs <= PASS_BOUND:
         return "pass"
-    if max_abs <= 1e-3:
+    if max_abs <= INCONCLUSIVE_BOUND:
         return "inconclusive"
     return "fail"
 
@@ -407,6 +416,12 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
         "n_listed": len(mutants),
         "n_failed": sum(status == "failed" for status in statuses.values()),
         "max_abs_delta": float(measured["clean"].get("max_abs_delta", float("nan"))),
+        # The control's own deviation belongs in the record, not only in a scratch file:
+        # it is what shows the negative control still has margin under the amended band.
+        "mutant_max_abs_delta": {
+            mutant: float(measured[mutant].get("max_abs_delta", float("nan")))
+            for mutant in mutants
+        },
         "n_units": n_units,
         "n_reused": n_reused,
         "n_computed": n_computed,
