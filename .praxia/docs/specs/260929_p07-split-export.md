@@ -430,10 +430,13 @@ bathos run record, not from console output.
 | G0b | Graph F (fuse+sample) converts; tokens exact | **pass** | `b8f413b6` |
 | G0c | Graph W (wave schedule) converts; all 5 outputs exact | **pass** | `a7f62e90` |
 | G1 | split vs monolith AND vs JAX, ORT-CPU, 56 cells, L128 | **pass** | `d2a06073` |
+| G1-256 | same at L256, 32 cells | **pass** | `ed2a2617` |
 | G1n | shipping `split_loop.mjs` vs monolith, ORT-Web wasm under Node | **pass** | `bc8eb3d7` |
-| G1-256 | same as G1 at L256, 32 cells | running | — |
-| G1c | split in Chromium (the real browser environment) | not run | — |
-| G4 | wall time, session create, peak RSS, wasm single-thread | **pass** | `be45e729` |
+| G1c | shipping loop in headless Chromium, L128 | **pass** | `d6be02ea` |
+| G1c-t4 | same at 4 threads — output **bit-identical** to 1 thread | **pass** | `da02516e` |
+| G1c-256 | same in Chromium at L256 | **pass** | `8a3bb1d6` |
+| G4 | wall time, Node, wasm single-thread, timer control 1.001 | **pass** | `be45e729` |
+| G4b | wall time **in browser**, own timer control 1.001 | **pass** | `69bac70f` / `7fdb4001` |
 | G3a | **reference** PyTorch vs split, teacher-forced, DIRECT | **pass** — 3.822e-05 nats | `ed4f0b77` |
 | G3b | reference vs split, recovery/perplexity | not run | — |
 | G2 | WebGPU, ORT-Web EP and @jax-js/onnx | not run | — |
