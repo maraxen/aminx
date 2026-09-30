@@ -1,5 +1,6 @@
 """LASErMPNN family host."""
 
+from aminx.families.laser_mpnn.driver import LaserDriver, LASErMPNN
 from aminx.families.laser_mpnn.featurize import (
   ARRAY_FIELDS,
   JSON_FIELDS,
@@ -12,6 +13,8 @@ from aminx.families.laser_mpnn.featurize import (
 __all__ = [
   "ARRAY_FIELDS",
   "JSON_FIELDS",
+  "LASErMPNN",
+  "LaserDriver",
   "LaserFeatures",
   "LaserInputError",
   "featurize",

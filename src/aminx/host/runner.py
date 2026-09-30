@@ -60,14 +60,16 @@ from aminx.run.specs import (
 
 
 def _family_driver_for(spec: Any) -> FamilyDriver | None:  # noqa: ANN401
-  """Return the driver for ``spec``, importing PottsMPNN the first time it is needed.
+  """Return the driver for ``spec``, importing that family the first time it is needed.
 
-  A driver already registered under ``pottsmpnn`` is left in place so tests can
+  A driver already registered under the family name is left in place so tests can
   install a stand-in before dispatch.
   """
   family = getattr(spec, "model_family", None)
   if family == "pottsmpnn" and FAMILY_DRIVERS.get("pottsmpnn") is None:
     import aminx.families.potts_mpnn as _potts_mpnn  # noqa: F401, PLC0415
+  if family == "lasermpnn" and FAMILY_DRIVERS.get("lasermpnn") is None:
+    import aminx.families.laser_mpnn as _laser_mpnn  # noqa: F401, PLC0415
 
   return FAMILY_DRIVERS.get(family)
 
