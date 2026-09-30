@@ -11,7 +11,7 @@ novel = false
 [outcomes.pass]
 condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
 decision = "Sequence, chi-bin and circular chi degrees are inside the pre-registered pass band, and every negative control failed."
-reasoning = "Exact sequence, chi-bin agreement 1.0 and max circular |delta chi_deg| <= 1e-6 degrees on chi_mask, with reversed order, chi bin +1 and offset := 0 all in the fail band."
+reasoning = "Exact sequence, chi-bin agreement 1.0 and max circular |delta chi_deg| <= 1e-6 degrees on chi_mask, with reversed order, chi bin +1, offset := 0, tied chi2 := chi1 and lambda on logits all in the fail band."
 is_residual = false
 adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
 
@@ -43,7 +43,7 @@ fixtures_manifest = "tests/fixtures/laser/fixtures_manifest.toml"
 pass_rule = "exact sequence AND chi-bin agreement == 1.0 AND max circular |delta chi_deg| <= 1e-6 degrees (f64) on chi_mask"
 inconclusive_band = "none"
 fail_rule = "otherwise"
-negative_controls = "reversed order -> agreement < 1.0; aminx chi bin +1 mod num_chi_bins -> fail; offset := 0 -> fail"
+negative_controls = "reversed order -> agreement < 1.0; aminx chi bin +1 mod num_chi_bins -> fail; offset := 0 -> fail; tied chi2 := chi1 -> fail; lambda on logits -> fail"
 "101m_1.pdb" = "5ee11918c0c71703859cc057cd3225583fb397909ba0e294c1f97f8e39448a9f"
 "102m_1.pdb" = "cfb756a7e48b87344d4c9fb76ff93b29596f6b400c207a0e45f53066358e6ee4"
 "103m_1.pdb" = "f8edd971b7754e0c30f7e3ae56fa64ad120338d50708873aa4019f180210201d"
@@ -66,4 +66,4 @@ negative_controls = "reversed order -> agreement < 1.0; aminx chi bin +1 mod num
 "1a6m_1.pdb" = "cb5dac45f1fbdd6d25a12284c53e702b1c4f38c5f59fdc063a95eca9e877fa1e"
 
 [provenance]
-note = "Graded invocation: uv run --no-sync python3 scripts/parity/laser_decode_e2e.py --mutants reversed_order,chi_bin_plus_one,offset_zero --controls-out $SC/laser_decode_e2e/<git-sha8>/branch_controls.json. Pass is the spec §7.3 line 1179 pre-registration (exact sequence, chi-bin 1.0, max circular |delta chi_deg| <= 1e-6 degrees on chi_mask) and is not adjustable. There is no inconclusive band. The clean arm and each mutant arm run in a fresh subprocess. Not run by the B5b fixer."
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/laser_decode_e2e.py --mutants reversed_order,chi_bin_plus_one,offset_zero,chi2_equals_chi1,lambda_on_logits --controls-out $SC/laser_decode_e2e/<git-sha8>/branch_controls.json. Pass is the spec §7.3 line 1179 pre-registration (exact sequence, chi-bin 1.0, max circular |delta chi_deg| <= 1e-6 degrees on chi_mask, plus the tied fixture) and is not adjustable. There is no inconclusive band. The clean arm and each mutant arm run in a fresh subprocess. Not run by the B7 fixer."

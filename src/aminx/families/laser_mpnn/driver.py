@@ -1,4 +1,4 @@
-"""LASErMPNN family driver for ``score:nll`` and ``score:logits``.
+"""LASErMPNN family driver for scoring and proofreading.
 
 Registration runs when this module is imported. Scoring reuses
 ``score_structure``; the alphabet permutation lives here, at the driver
@@ -30,9 +30,23 @@ from aminx.host.prep import _resolve_local_checkpoint_from_registry
 from aminx.model.laser.decoder import LaserDecoder, score_structure
 from aminx.model.laser.encoders import LaserEncoder
 from aminx.model.laser.graphs import GraphStructure
+from aminx.model.laser.joint_decode import LaserJointDecode
+from aminx.model.laser.proofread import (
+  conditional_focus_probs,
+  focus_rows,
+  reduce_proofread,
+  unconditional_logits,
+)
 from aminx.run.options import LaserOptions
 
-_HANDLED = frozenset({"score:nll", "score:logits"})
+_HANDLED = frozenset(
+  {
+    "score:nll",
+    "score:logits",
+    "score:proofread_unconditional",
+    "score:proofread_conditional",
+  },
+)
 _GRAPH_K = 48
 _LIG_LIG_K = 5
 _LIG_CUTOFF = 20.0
@@ -206,6 +220,42 @@ def _options(spec: Any) -> LaserOptions:  # noqa: ANN401
   return cast("LaserOptions", options)
 
 
+def budget_mask_for(
+  resnums: np.ndarray,
+  ss_code: tuple[str, ...] | list[str],
+  exposed: np.ndarray,
+  *,
+  selection: str | None,
+  constrain_to_exposed_non_ss: bool,
+) -> np.ndarray:
+  """Rows the ALA/GLY budget may floor.
+
+  An empty selection leaves the mask empty, matching upstream's default of
+  zeros. ``constrain_ala_gly_to_exposed_non_ss`` further requires an exposed
+  loop (not helix or sheet).
+  """
+  mask = np.zeros((int(np.asarray(resnums).shape[0]),), dtype=bool)
+  if selection:
+    wanted = {int(part) for part in selection.split(",") if part}
+    mask = np.isin(np.asarray(resnums), list(wanted))
+  if constrain_to_exposed_non_ss:
+    non_ss = np.asarray([code not in {"H", "E"} for code in ss_code])
+    mask = mask & non_ss & np.asarray(exposed, dtype=bool)
+  return mask
+
+
+def _strict(spec: Any) -> bool:  # noqa: ANN401
+  """``strict_load`` applies only when the caller passed ``LaserOptions``.
+
+  Parity scripts load a checkpoint with no options object. Defaulting that
+  path to strict would reject the f64 ``D_mu`` skip and the score wave.
+  """
+  options = getattr(spec, "laser", None)
+  if options is None:
+    return False
+  return bool(getattr(options, "strict_load", True))
+
+
 def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
   raw = spec.inputs
   if isinstance(raw, (str, Path)):
@@ -274,6 +324,97 @@ def _score_prepared(model: LASErMPNN, item: _Prepared, purpose: str) -> jax.Arra
   return jnp.stack(rows)
 
 
+def _proofread_batch(
+  model: LASErMPNN,
+  prepared: tuple[_Prepared, ...],
+  options: LaserOptions,
+  *,
+  purpose: str,
+  scalar_dropout: bool,
+  seed: int,
+) -> Mapping[str, jax.Array]:
+  """Unconditional logits, or the dropout ensemble, on the focus rows."""
+  means: list[np.ndarray] = []
+  stds: list[np.ndarray] = []
+  plus: list[np.ndarray] = []
+  ids: list[np.ndarray] = []
+  structure = _graph(model)
+  period = np.asarray(model.period_index)
+  group = np.asarray(model.group_index)
+  joint = LaserJointDecode(key=jax.random.PRNGKey(seed))
+  for item in prepared:
+    features = item.features
+    rows = focus_rows(
+      np.asarray(features.first_shell_ligand_contact_mask),
+      np.asarray(features.resnum_indices),
+      options.selection_string,
+    )
+    if purpose == "score:proofread_unconditional":
+      logits = unconditional_logits(
+        model.encoder,
+        model.decoder,
+        features.backbone_coords,
+        features.ligand_coords,
+        features.ligand_atomic_numbers,
+        features.ligand_subbatch_indices,
+        period,
+        group,
+        structure,
+        np.asarray(features.sequence_indices),
+        np.asarray(features.chi_angles),
+      )
+      chosen = canonical_logits(jnp.asarray(logits)[rows])
+      means.append(np.asarray(jax.nn.softmax(chosen, axis=-1), dtype=np.float32))
+      ids.append(np.asarray(features.row_to_resindex)[rows].astype(np.int32))
+      continue
+    length = int(features.sequence_indices.shape[0])
+    n_orders = int(options.n_decoding_orders)
+    n_dropouts = int(options.n_dropouts)
+    rng = np.random.default_rng(seed)
+    orders = [rng.permutation(length).astype(np.int32) for _ in range(n_orders)]
+    focus_probs: list[np.ndarray] = []
+    for focus in rows:
+      probs = conditional_focus_probs(
+        model.encoder,
+        model.decoder,
+        joint,
+        features.backbone_coords,
+        features.ligand_coords,
+        features.ligand_atomic_numbers,
+        features.ligand_subbatch_indices,
+        period,
+        group,
+        structure,
+        np.asarray(features.sequence_indices),
+        np.asarray(features.chi_angles),
+        int(focus),
+        orders,
+        [[None] * n_orders for _ in range(n_dropouts)],
+        scalar=bool(options.proofread_dropout) and scalar_dropout,
+        vector=False,
+        repack_all=bool(options.repack_all or options.repack_only),
+      )
+      focus_probs.append(probs)
+    stacked_probs = np.stack(focus_probs, axis=2)
+    mean, std, both = reduce_proofread(jnp.asarray(stacked_probs))
+    # Alphabet order is canonical. mean_plus_std stays a sum, not a softmax.
+    means.append(np.asarray(canonical_logits(mean), dtype=np.float32))
+    stds.append(np.asarray(canonical_logits(std), dtype=np.float32))
+    plus.append(np.asarray(canonical_logits(both), dtype=np.float32))
+    ids.append(np.asarray(features.row_to_resindex)[rows].astype(np.int32))
+  if purpose == "score:proofread_unconditional":
+    return {
+      "proofread_mean": jnp.stack([jnp.asarray(row) for row in means]),
+      "residue_ids": jnp.stack([jnp.asarray(row) for row in ids]),
+    }
+  return {
+    "proofread_mean": jnp.stack([jnp.asarray(row) for row in means]),
+    "proofread_std": jnp.stack([jnp.asarray(row) for row in stds]),
+    "proofread_mean_plus_std": jnp.stack([jnp.asarray(row) for row in plus]),
+    "residue_ids": jnp.stack([jnp.asarray(row) for row in ids]),
+  }
+
+
 class _ScoreStages:
   """Teacher-forced score for one batch. Not an ``eqx.Module`` and not jitted.
 
@@ -281,9 +422,11 @@ class _ScoreStages:
   here stays on the host, where each sequence is a concrete index array.
   """
 
-  def __init__(self, model: LASErMPNN, purpose: str) -> None:
+  def __init__(self, model: LASErMPNN, purpose: str, options: LaserOptions, seed: int) -> None:
     self._model = model
     self._purpose = purpose
+    self._options = options
+    self._seed = seed
 
   def __call__(
     self,
@@ -294,11 +437,27 @@ class _ScoreStages:
     scalar_dropout: bool,
     dropout_key: jax.Array,
   ) -> Mapping[str, jax.Array]:
-    del chunk_start, chunk_count, scalar_dropout, dropout_key
+    del chunk_start, chunk_count, dropout_key
     prepared = cast("tuple[_Prepared, ...]", batch.arrays["prepared"])
+    if self._purpose.startswith("score:proofread_"):
+      return _proofread_batch(
+        self._model,
+        prepared,
+        self._options,
+        purpose=self._purpose,
+        scalar_dropout=scalar_dropout,
+        seed=self._seed,
+      )
     stacked = jnp.stack([_score_prepared(self._model, item, self._purpose) for item in prepared])
     key = "logits" if self._purpose == "score:logits" else "nll"
-    return {key: stacked}
+    payload: dict[str, jax.Array] = {key: stacked}
+    if self._options.output_fasta or self._options.output_fasta_only:
+      payload["fasta"] = jnp.stack(
+        [jnp.asarray(item.canonical_indices[0]) for item in prepared],
+      )
+    if self._options.output_fasta_only:
+      return {"fasta": payload["fasta"]}
+    return payload
 
 
 def _prepare(path: Path, spec: Any, options: LaserOptions) -> _Prepared:  # noqa: ANN401
@@ -397,7 +556,35 @@ def _graph_from_blob(blob: dict[str, Any]) -> GraphStructure:
   )
 
 
-def _load_torch(path: Path) -> LASErMPNN:
+def _assert_strict_keys(
+  module: Any,  # noqa: ANN401
+  state: dict[str, Any],
+  prefixes: tuple[str, ...],
+  dtype: np.dtype[np.floating],
+) -> None:
+  """Reject a checkpoint key the module cannot store.
+
+  ``D_mu`` is skipped on f64 because the encoder rebuilds that linspace. Other
+  prefix keys must name a real field, which is what ``strict_load`` asks for.
+  """
+  for key in state:
+    text = str(key)
+    if not text.startswith(prefixes):
+      continue
+    if dtype == np.dtype(np.float64) and text.endswith("D_mu"):
+      continue
+    obj: Any = module
+    for part in text.split("."):
+      if part.isdigit():
+        obj = obj[int(part)]
+        continue
+      if not hasattr(obj, part):
+        msg = f"strict_load: checkpoint key {text} is not a model field"
+        raise ValueError(msg)
+      obj = getattr(obj, part)
+
+
+def _load_torch(path: Path, *, strict: bool = False) -> LASErMPNN:
   """Build an Equinox LASErMPNN from a torch checkpoint. Torch stays lazy."""
   blob = _torch_blob(path)
   state = blob["model_state_dict"]
@@ -417,6 +604,9 @@ def _load_torch(path: Path) -> LASErMPNN:
     lig_lig_knn_graph_k=graph.lig_lig_knn_graph_k,
     lig_pr_distance_cutoff=graph.lig_pr_distance_cutoff,
   )
+  if strict:
+    _assert_strict_keys(model.encoder, state, _ENCODER_PREFIXES, dtype)
+    _assert_strict_keys(model.decoder, state, _DECODER_PREFIXES, dtype)
   encoder = _assign_state(model.encoder, state, _ENCODER_PREFIXES, dtype)
   decoder = _assign_state(model.decoder, state, _DECODER_PREFIXES, dtype)
   model = eqx.tree_at(lambda module: module.encoder, model, encoder)
@@ -437,7 +627,7 @@ class LaserDriver:
   mpnn_fallback_purposes: frozenset[str] = frozenset()
 
   def handles(self, spec: Any, purpose: str) -> bool:  # noqa: ANN401
-    """True for ``score:nll`` and ``score:logits`` only."""
+    """True for scoring and both proofread purposes."""
     del spec
     return purpose in _HANDLED
 
@@ -452,7 +642,7 @@ class LaserDriver:
     if local is not None:
       path = Path(str(local))
       if path.suffix.lower() == ".pt":
-        return _load_torch(path)
+        return _load_torch(path, strict=_strict(spec))
       return _load_eqx(path)
     artifact = _resolve_local_checkpoint_from_registry(spec)
     if artifact is None:
@@ -460,7 +650,7 @@ class LaserDriver:
       raise ValueError(msg)
     path = Path(artifact)
     if path.suffix.lower() == ".pt":
-      return _load_torch(path)
+      return _load_torch(path, strict=_strict(spec))
     return _load_eqx(path)
 
   def mpnn_core(self, model: eqx.Module) -> None:
@@ -509,23 +699,55 @@ class LaserDriver:
     ]
 
   def stages(self, spec: Any, purpose: str, model: eqx.Module) -> _ScoreStages:  # noqa: ANN401
-    """Per-batch teacher-forced NLL or canonical logits."""
-    del spec
-    return _ScoreStages(cast("LASErMPNN", model), purpose)
+    """Per-batch teacher-forced score, or a proofread reduction."""
+    return _ScoreStages(cast("LASErMPNN", model), purpose, _options(spec), int(spec.random_seed))
 
   def result_schema(self, spec: Any, purpose: str) -> Mapping[str, SinkArraySpec]:  # noqa: ANN401
     """Per-position arrays. ``L_total`` is sliced by the family runner."""
-    del spec
+    options = _options(spec)
+    fasta = {
+      "fasta": SinkArraySpec(dims=("N_cand", "L_total"), dtype="int32", attrs={}),
+    }
     if purpose == "score:logits":
-      return {
+      body = {
         "logits": SinkArraySpec(dims=("N_cand", "L_total", "alphabet"), dtype="float32", attrs={}),
       }
-    if purpose == "score:nll":
-      return {
+    elif purpose == "score:nll":
+      body = {
         "nll": SinkArraySpec(dims=("N_cand", "L_total"), dtype="float32", attrs={}),
       }
-    msg = f"lasermpnn does not support {purpose} in v1"
-    raise ValueError(msg)
+    elif purpose == "score:proofread_unconditional":
+      body = {
+        "proofread_mean": SinkArraySpec(
+          dims=("N_cand", "R", "alphabet"),
+          dtype="float32",
+          attrs={},
+        ),
+        "residue_ids": SinkArraySpec(dims=("N_cand", "R"), dtype="int32", attrs={}),
+      }
+    elif purpose == "score:proofread_conditional":
+      body = {
+        "proofread_mean": SinkArraySpec(
+          dims=("N_cand", "R", "alphabet"),
+          dtype="float32",
+          attrs={},
+        ),
+        "proofread_std": SinkArraySpec(dims=("N_cand", "R", "alphabet"), dtype="float32", attrs={}),
+        "proofread_mean_plus_std": SinkArraySpec(
+          dims=("N_cand", "R", "alphabet"),
+          dtype="float32",
+          attrs={},
+        ),
+        "residue_ids": SinkArraySpec(dims=("N_cand", "R"), dtype="int32", attrs={}),
+      }
+    else:
+      msg = f"lasermpnn does not support {purpose} in v1"
+      raise ValueError(msg)
+    if options.output_fasta_only:
+      return fasta
+    if options.output_fasta:
+      return {**body, **fasta}
+    return body
 
 
 FAMILY_DRIVERS.register("lasermpnn")(LaserDriver())

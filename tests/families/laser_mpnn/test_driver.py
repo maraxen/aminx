@@ -94,13 +94,14 @@ def test_registration_and_handles(registered: LaserDriver, tmp_path: Path) -> No
   assert laser_mpnn.LaserDriver is LaserDriver
   assert driver.handles(None, "score:nll")
   assert driver.handles(None, "score:logits")
+  assert driver.handles(None, "score:proofread_unconditional")
+  assert driver.handles(None, "score:proofread_conditional")
   for purpose in (
     "sample",
     "score:energy",
     "score:ddg",
     "jacobian",
     "inspect",
-    "score:proofread_unconditional",
   ):
     assert not driver.handles(None, purpose)
   model = LASErMPNN(key=jax.random.PRNGKey(1))
