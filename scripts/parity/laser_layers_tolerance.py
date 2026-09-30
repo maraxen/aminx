@@ -157,8 +157,19 @@ def main() -> None:
   if args.payload_out is not None:
     args.payload_out.parent.mkdir(parents=True, exist_ok=True)
     args.payload_out.write_text(payload + "\n", encoding="utf-8")
-  else:
-    print(payload)
+  # The [outcomes] conditions are evaluated against the JSON written here, so a
+  # run that skips it records `outcome = unknown` while still exiting 0 and
+  # printing a confident band. Measured once: run 32aa4486 reported band=pass on
+  # stdout and recorded outcome=unknown, because the payload went only to
+  # --payload-out. Treat a missing $BTH_RESULTS_PATH as fatal rather than
+  # degrading to an untracked run.
+  results_env = os.environ.get("BTH_RESULTS_PATH")
+  if not results_env:
+    msg = "laser_layers_tolerance requires $BTH_RESULTS_PATH; run it under `bth run`"
+    raise SystemExit(msg)
+  results_path = Path(results_env)
+  results_path.parent.mkdir(parents=True, exist_ok=True)
+  results_path.write_text(payload + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":
