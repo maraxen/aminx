@@ -277,12 +277,34 @@ Remaining gap: WebGPU is untouched (below).
 
 ## WebGPU
 
-Not covered in this release. The P07 graph keeps the whole autoregressive loop
-in-graph (ONNX `Loop`/`If`/`Scan`). The ORT WebGPU provider tends to run control-flow
-nodes on the CPU, which forces transfers every step. Any speedup would have to be
-measured, not assumed. The plan is a later pre-registered probe on real GPU hardware
-that checks output against the wasm path before any speed comparison. Until then,
-wasm is the supported path.
+Not covered in this release, and **untested for want of hardware rather than want of
+effort** — worth stating precisely, because "we didn't try" and "we tried and it failed"
+lead somewhere different.
+
+A capability probe ran (`ca0ea202`). Chromium exposes `navigator.gpu`, but **no adapter
+could be obtained** on the development machine even with `--enable-unsafe-swiftshader`
+and `--use-angle=swiftshader`; it is WSL2 with no GPU passthrough. The probe therefore
+stopped before ORT was ever asked to accept the provider, so there is **no evidence
+either way** about whether the WebGPU EP works for these graphs.
+
+What is known, from design rather than measurement:
+
+- The **split removes the larger obstacle.** The monolith keeps the whole autoregressive
+  loop in-graph (`Loop`/`If`/`Scan`), and ORT runs control-flow nodes on CPU, forcing a
+  transfer every step. The four-graph split has no loop in any graph, and Graph D — the
+  per-step hot path — contains no sort and no control flow at all.
+- **One known dtype gap remains, and it is confined.** ONNX mandates `int64` indices for
+  `TopK`, which the k-NN sort lowers to, and the WebGPU EP does not support int64. Under
+  the split that node lives only in the encoder, which runs **once per structure** rather
+  than once per step. Expect a partition with those nodes on CPU; the per-step path should
+  be unaffected.
+
+If you have GPU hardware, the probe (`scripts/browser_validation/p07_webgpu_probe.py`) is
+the cheapest way to find out where the stack actually stops — it records five staged
+checks and makes no claims. Note that tokens must be compared against the wasm path
+before any speed comparison is meaningful: the EP partitioning above means the two
+backends need not agree on tie order for the same file, which a log-prob tolerance cannot
+see.
 
 ## Reproducing the ONNX files
 
