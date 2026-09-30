@@ -156,7 +156,7 @@ Run `fd80f81d-3788-49c1-919f-e86acde3c4eb`, at commit `443c5b4f`, clean tree.
 | Instrument sensitivity | Planted defects that MUST be caught | **4/4 detected** — a bias-frozen wrapper stayed not-live, a non-Gumbel transform and a biased shuffle failed, and a uniform shuffle produced fixed-first violations |
 | JS RunSpec builder vs Python | `runspec_core.mjs` inputs vs the Python builder (PRNG, Gumbel, orders, bias) | Node unit tests pass (`runspec.test.mjs` 11/11, `aminx_sampler.test.mjs` 5/5) |
 | Sampling distribution vs reference | Statistical comparison of aminx samples against LigandMPNN@26ec57ac | **Pending.** Calibration running on titanix; validate shards next on Engaging |
-| Speed / memory profile | Wall time per design, session-create time, peak memory | **Not measured.** The one earlier benchmark failed its own timer control, so no timing number here is trustworthy yet |
+| Speed / memory profile | Wall time per design, session-create time, peak memory | **MEASURED** — see "Performance" below. Run `be45e729`, whose timer control resolved a planted 250 ms delay to 250.2 ms (ratio 1.001) before any number was recorded |
 | WebGPU | — | **Not validated; out of scope for the first release** |
 
 **What that adds up to.** The chain runs reference PyTorch → aminx JAX (teacher-forced,
@@ -168,6 +168,58 @@ it evidence.
 **What it does not cover:** performance, WebGPU, and free-sampling distributional
 agreement with the reference. Those rows say pending or not-measured, and nothing in this
 document should be read as a speed claim.
+
+## Performance
+
+Measured 2026-09-29, bathos run `be45e729`. **Read the control line first:** a deliberately
+planted 250.0 ms delay was measured through the same clock as 250.2 ms (ratio 1.001). An
+earlier benchmark in this project never established that check and its numbers were thrown
+away, so no figure below was recorded until this one passed.
+
+Configuration: L=128, onnxruntime-web 1.30.0, **wasm EP, single-threaded**, Node on one
+Linux workstation, 8 RunSpec cells × 5 repetitions.
+
+| | Median per design | Session create | Peak RSS |
+| :--- | ---: | ---: | ---: |
+| Monolith (the path this guide describes) | **19.96 s** | 589 ms | 550 MB |
+| Four-graph split (see below) | **17.19 s** | 364 ms | 550 MB |
+
+**The headline is the absolute number, not the ratio: roughly 17–20 seconds per design at
+L=128, single-threaded.** That is what a user waits. L=256 doubles the autoregressive
+steps (256 instead of 128) and has **not** been measured.
+
+Two levers exist and neither has been measured, so neither is claimed:
+
+- **Threads.** These numbers are `numThreads = 1`. Multithreaded wasm needs cross-origin
+  isolation (the COOP/COEP headers under "Hosting requirements"). Expect improvement;
+  don't quote a figure until it is run.
+- **WebGPU.** See below. Unvalidated.
+
+## The four-graph split (faster and much smaller; browser validation pending)
+
+The export can be split into four loop-free graphs — encoder, wave schedule, decoder step,
+fuse-and-sample — with the autoregressive loop driven from JavaScript
+(`browser/aminx-sampler/split_loop.mjs`). It is **not** the path this guide's integration
+example uses yet, because it has not been validated in a real browser. It is measurably
+better on both axes that matter for a page:
+
+| | Monolith | Split | |
+| :--- | ---: | ---: | :--- |
+| Download, L128 | 19.43 MB | **6.64 MB** | 2.9× smaller |
+| Download, L256 | 31.52 MB | **6.71 MB** | 4.7× smaller |
+| Median per design, L128 | 19.96 s | **17.19 s** | 14% faster |
+
+The size gap widens with length because the split's graphs are weight-dominated and
+loop-free, while the monolith embeds the unrolled control flow *and* both decoder
+implementations behind a runtime branch.
+
+Correctness so far: the split reproduces the monolith's tokens **exactly** on 56/56 cells
+under native ORT-CPU (run `d2a06073`) and again through the shipping JavaScript loop on
+ORT-Web wasm (run `bc8eb3d7`), with log-probs within 7.4e-06. Since the monolith is itself
+anchored to reference ProteinMPNN, that anchoring carries over.
+
+What is still missing before recommending it: a real-browser run (everything so far is
+Node), and L=256 parity. Use the monolith until those land.
 
 ## WebGPU
 
