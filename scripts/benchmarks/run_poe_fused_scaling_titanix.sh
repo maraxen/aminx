@@ -30,6 +30,9 @@ CELL_TIMEOUT="${POE_CELL_TIMEOUT:-7200}"   # seconds, per cell
 export PATH="${HOME}/.local/bin:${PATH}"
 export CUDA_VISIBLE_DEVICES="${GPU}"
 export XLA_PYTHON_CLIENT_MEM_FRACTION="${FRACTION}"
+# Require the GPU backend outright: an inherited JAX_PLATFORMS=cpu (or a plugin that fails to load)
+# would otherwise fall back to CPU and produce a plausible but meaningless result.
+export JAX_PLATFORMS=cuda
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO}"
