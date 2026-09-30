@@ -502,7 +502,7 @@ In a SLURM batch script, export it before the run line:
 
 ```bash
 #SBATCH --job-name=aminx-score
-export AMINX_WEIGHTS_REVISION=25fb7f6e985724dee7471c3bc18522fe33b9228e
+export AMINX_WEIGHTS_REVISION=<commit-sha>   # a revision compatible with this aminx version
 uv run aminx run score --spec spec.json
 ```
 
