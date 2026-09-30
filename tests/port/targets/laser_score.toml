@@ -1,0 +1,29 @@
+# laser_score: teacher-forced get_logits_for_score.
+# oracle_id hashes tests/port/reference/laser_score/{algo.py,sealed.py}.
+# The npz files stay outside this tree; sealed.load checks oracle_manifest.toml.
+#
+# atol is the house pairing for the declared rtol. It is NOT a measured deviation.
+[port]
+wave_id = "laser_score"
+oracle_id = "ref:tests/port/reference/laser_score:v1:sha256:4bea8c139002d8d6788bf0c75ae6bbe7503f7e32b01dbf3cc7b24aa454ec6b6b"
+symbol_qualname = "aminx.model.laser.decoder.LaserDecoder"
+reference_subtree = "reference/laser_score"
+
+[capabilities]
+stochastic = false
+dynamic_shape = true
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=1e-8,atol=1e-11"
+tolerance_policy_f32 = "rtol=1e-4,atol=1e-7"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true
+
+[tolerance_basis]
+f64_atol_basis = "house-paired and NOT measured"
+f32_atol_basis = "house-paired and NOT measured"

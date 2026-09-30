@@ -3,6 +3,12 @@
 Ports of upstream ``utils/model_generics.py`` over a dense neighbour axis.
 """
 
+from aminx.model.laser.decoder import (
+  LaserDecoder,
+  ScoreForward,
+  binned_degree_basis,
+  score_structure,
+)
 from aminx.model.laser.encoders import LIGAND_ATOMS, LaserEncoder, encode_structure
 from aminx.model.laser.graphs import GraphStructure, build_laser_graphs, knn_graph
 from aminx.model.laser.layers import (
@@ -22,9 +28,13 @@ __all__ = [
   "GraphStructure",
   "HeteroGATv2",
   "HomoGATv2",
+  "LaserDecoder",
   "LaserEncoder",
+  "ScoreForward",
+  "binned_degree_basis",
   "build_laser_graphs",
   "encode_structure",
   "knn_graph",
   "masked_softmax",
+  "score_structure",
 ]

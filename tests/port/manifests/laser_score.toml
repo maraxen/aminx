@@ -1,0 +1,24 @@
+[manifest]
+wave_id = "laser_score"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:ae5d0471121b842ab433cd3cbe0b36b80d657e75372663467dfc3c94995d2611"
+created_at = "2026-09-30T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.model.laser.decoder.binned_degree_basis"
+module_path = "src/aminx/model/laser/decoder.py"
+depends_on = []
+
+[[kernels]]
+order = 2
+qualname = "aminx.model.laser.decoder.LaserDecoder"
+module_path = "src/aminx/model/laser/decoder.py"
+depends_on = ["aminx.model.laser.layers.HeteroGATv2", "aminx.model.laser.layers.DenseMLP", "aminx.model.laser.layers.GVP", "aminx.model.laser.decoder.binned_degree_basis"]
+
+[[kernels]]
+order = 3
+qualname = "aminx.model.laser.decoder.score_structure"
+module_path = "src/aminx/model/laser/decoder.py"
+depends_on = ["aminx.model.laser.decoder.LaserDecoder", "aminx.model.laser.encoders.encode_structure"]
