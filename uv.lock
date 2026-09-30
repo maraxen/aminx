@@ -98,6 +98,7 @@ cuda12 = [
     { name = "jax", extra = ["cuda12"], marker = "sys_platform == 'linux'" },
 ]
 dev = [
+    { name = "ast-grep-cli", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "chex", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "foldcomp", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "jaxlint", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -168,6 +169,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "array-record", specifier = ">=0.8.1" },
+    { name = "ast-grep-cli", marker = "extra == 'dev'", specifier = ">=0.45" },
     { name = "beartype", marker = "extra == 'tests'", specifier = ">=0.18.0" },
     { name = "biopython", marker = "extra == 'tests'", specifier = ">=1.83" },
     { name = "chex", marker = "extra == 'dev'" },
@@ -292,6 +294,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/99/46/1449f2c36f75e563c5bdd59133146a10110bcf3a3cd53d7d74a535579603/array_record-0.8.3-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:14facb713fc55ea612cf853c0abbc602032ae619eb85037af3aa41dc4e27eed6", size = 3989205, upload-time = "2025-11-13T16:15:42.156Z" },
     { url = "https://files.pythonhosted.org/packages/35/ef/f85d329ac6cdcc8c3e8af832c30a9a0b719c6719a09191056ef7342a3627/array_record-0.8.3-cp314-cp314-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:06b17a0a90bc74a80c4ebad0b99f0e039adb01746b673db3d7a5632d8b138ddd", size = 4839320, upload-time = "2025-11-13T16:15:43.617Z" },
     { url = "https://files.pythonhosted.org/packages/f2/89/510594ff506d456d7dc0e8dfa9095f078e5f98da49d1b8f7be1fd9c0717e/array_record-0.8.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:89d2cf5f4709be3c6c2b30c0d366005223375633ffce66dcb13d927a0bdc5228", size = 4995667, upload-time = "2025-11-13T16:15:45.092Z" },
+]
+
+[[package]]
+name = "ast-grep-cli"
+version = "0.45.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/46/35e89cbf27fe8a866796f9cb6ae711b88e0ff67e14e2580ced649b3d6a19/ast_grep_cli-0.45.3.tar.gz", hash = "sha256:d8b527b71655eede16637311bc3ca49624b8198c48bffeb5dcf06a78332bf917", size = 283689, upload-time = "2026-08-31T02:27:07.267Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/58/8d/fded0d3cf2138b56454101e061ba8525bd47c9d022d924fd92320fad4d98/ast_grep_cli-0.45.3-py3-none-macosx_10_12_x86_64.macosx_11_0_arm64.macosx_10_12_universal2.whl", hash = "sha256:ebc1510a6775f65a8681345dd422590fb257fe48036a7c599a5ca9f54dea8801", size = 15743557, upload-time = "2026-08-31T01:50:19.053Z" },
+    { url = "https://files.pythonhosted.org/packages/30/f8/d9b41ae197bf9a41034a03d742d9bb2ca05bf4f7da741c00242019b44d3e/ast_grep_cli-0.45.3-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:7afbe49870d8a34c0b224ac940da1fbf736617fcc81aa846884e377eddf8c1a0", size = 7870417, upload-time = "2026-08-31T01:50:21.881Z" },
+    { url = "https://files.pythonhosted.org/packages/a9/d5/584cc4cf46a751f35fc086e9dca9962c05de2b37f95056f3653dc4736e19/ast_grep_cli-0.45.3-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:ced023ae9fbc7c779570cd8bcc0fa7626d9561afd60369d3c335bfce2ca565b3", size = 7752458, upload-time = "2026-08-31T01:50:23.52Z" },
+    { url = "https://files.pythonhosted.org/packages/c2/20/1445bff6593d492c31904fe309c157cb16bcb73cfd30b4a55718acef5cb1/ast_grep_cli-0.45.3-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:2d151b89c6d45c2640338fe5d24b2ee0810224902d603cb271803bf7418054ea", size = 8027608, upload-time = "2026-08-31T01:50:25.179Z" },
 ]
 
 [[package]]

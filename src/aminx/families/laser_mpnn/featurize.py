@@ -1055,8 +1055,9 @@ def _ligand_arrays(
   sink: _LigandSink,
   *,
   ignore: bool,
+  dtype: np.dtype[np.floating] | type[np.floating],
 ) -> tuple[
-  NDArray[np.float32],
+  NDArray[np.floating],
   NDArray[np.int64],
   NDArray[np.int64],
   NDArray[np.int64],
@@ -1064,13 +1065,13 @@ def _ligand_arrays(
 ]:
   if ignore or not sink.xyz:
     return (
-      np.zeros((0, 3), dtype=np.float32),
+      np.zeros((0, 3), dtype=dtype),
       np.zeros((0,), dtype=np.int64),
       np.zeros((0,), dtype=np.int64),
       np.zeros((0,), dtype=np.int64),
       (),
     )
-  coords = np.concatenate(sink.xyz).astype(np.float32)
+  coords = np.concatenate(sink.xyz).astype(dtype)
   return (
     coords,
     np.concatenate(sink.z),
@@ -1089,6 +1090,7 @@ def featurize(
   ignore_ligand: bool = False,
   lig_pr_knn_k: int = LIG_PR_KNN_K,
   lig_pr_distance_cutoff: float = LIG_PR_DISTANCE_CUTOFF,
+  dtype: np.dtype[np.floating] | type[np.floating] = np.float32,
 ) -> LaserFeatures:
   """Featurize one PDB the way LASEr inference builds ``BatchData`` before the model."""
   pr.confProDy(verbosity="none")
@@ -1170,6 +1172,7 @@ def featurize(
     ignore_ligand=ignore_ligand,
     lig_pr_knn_k=lig_pr_knn_k,
     lig_pr_distance_cutoff=lig_pr_distance_cutoff,
+    dtype=dtype,
   )
 
 
@@ -1189,9 +1192,10 @@ def _assemble(
   ignore_ligand: bool,
   lig_pr_knn_k: int,
   lig_pr_distance_cutoff: float,
+  dtype: np.dtype[np.floating] | type[np.floating],
 ) -> LaserFeatures:
   seq = np.asarray(sequence, dtype=np.int64)
-  heavy_arr = np.stack(heavy).astype(np.float32)
+  heavy_arr = np.stack(heavy).astype(dtype)
   angles_arr = np.stack(phi_psi)
   gathered = heavy_arr[:, [0, 1, 4, 2, 3]]
   backbone = idealize_backbone(gathered, angles_arr)
@@ -1202,6 +1206,7 @@ def _assemble(
   ligand_coords, ligand_z, ligand_batch, ligand_sub, elements = _ligand_arrays(
     sink,
     ignore=ignore_ligand,
+    dtype=dtype,
   )
   fa = build_rotamers(backbone, chi, seq)
   shell = first_shell_contact_mask(

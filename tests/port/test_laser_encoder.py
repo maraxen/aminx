@@ -75,7 +75,7 @@ def _fixture_path(name: str) -> Path:
 
 
 _BLOB_CACHE: dict[str, dict[str, Any]] = {}
-_FEATURE_CACHE: dict[str, Any] = {}
+_FEATURE_CACHE: dict[tuple[str, np.dtype], Any] = {}
 
 
 def _blob(checkpoint: str) -> dict[str, Any]:
@@ -134,6 +134,13 @@ def _load(module: LaserEncoder, state: dict[str, Any], dtype: np.dtype) -> Laser
     text = str(key)
     if not text.startswith(_LOAD_PREFIXES):
       continue
+    # D_mu is a derived linspace, not a learned weight. The f64 oracle is shimmed
+    # (its dump rebuilds RBF centres at the distance dtype); the f32 oracle is not
+    # and expects the stored float32 buffer. jnp.linspace does not match that buffer,
+    # so loading it at float32 is required and skipping it at float64 leaves the
+    # module's own f64 centres in place.
+    if dtype == np.float64 and text.endswith("D_mu"):
+      continue
     array = np.asarray(value.detach().cpu().numpy())
     if np.issubdtype(array.dtype, np.floating):
       array = array.astype(dtype, copy=False)
@@ -141,15 +148,16 @@ def _load(module: LaserEncoder, state: dict[str, Any], dtype: np.dtype) -> Laser
   return module
 
 
-def _features(fixture: str) -> Any:
-  cached = _FEATURE_CACHE.get(fixture)
+def _features(fixture: str, dtype: np.dtype) -> Any:
+  key = (fixture, np.dtype(dtype))
+  cached = _FEATURE_CACHE.get(key)
   if cached is not None:
     return cached
   path = _fixture_path(fixture)
   if not path.is_file():
     pytest.skip(f"LASEr fixture absent: {path}")
-  features = featurize(path)
-  _FEATURE_CACHE[fixture] = features
+  features = featurize(path, dtype=dtype)
+  _FEATURE_CACHE[key] = features
   return features
 
 
@@ -165,7 +173,7 @@ def _predict(
     raise TypeError(msg)
   model = LaserEncoder(key=jax.random.key(0))
   model = _load(model, state, dtype)
-  features = _features(fixture)
+  features = _features(fixture, dtype)
   numpy_dtype = np.float64 if dtype == np.float64 else np.float32
   period = np.asarray(state["ligand_featurizer.atomic_number_idx_to_period_idx"])
   group = np.asarray(state["ligand_featurizer.atomic_number_idx_to_group_idx"])
