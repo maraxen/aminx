@@ -48,12 +48,12 @@ measured</strong> are exactly that — do not cite a number from them.</p>
 </tr>
 <tr>
 <td style="text-align: left;">Model, L ≤ 128</td>
-<td style="text-align: left;"><code>p07_sample_L128.onnx</code> (about 19.4 MB)</td>
-<td style="text-align: left;">Built by the export step below. It isn't checked in yet (<strong>pending</strong>: persisted release files with a sha256 manifest)</td>
+<td style="text-align: left;"><code>p07_sample_L128.onnx</code> (19,374,293 B)</td>
+<td style="text-align: left;">Built by the export step below. Not checked in — "Reproducing" covers building it and verifying its hash</td>
 </tr>
 <tr>
 <td style="text-align: left;">Model, L ≤ 256</td>
-<td style="text-align: left;"><code>p07_sample_L256.onnx</code> (about 31.5 MB)</td>
+<td style="text-align: left;"><code>p07_sample_L256.onnx</code> (33,046,297 B)</td>
 <td style="text-align: left;">Same</td>
 </tr>
 <tr>
@@ -297,8 +297,8 @@ Run <code>fd80f81d-3788-49c1-919f-e86acde3c4eb</code>, at commit <code>443c5b4f<
 </tr>
 <tr>
 <td style="text-align: left;">WebGPU</td>
-<td style="text-align: left;">—</td>
-<td style="text-align: left;"><strong>Not validated; out of scope for the first release</strong></td>
+<td style="text-align: left;">Capability probe: can the EP be reached at all?</td>
+<td style="text-align: left;"><strong>Determined, and negative here</strong> (<code>ca0ea202</code>): <code>navigator.gpu</code> present, but no adapter obtainable on this machine (WSL2, no GPU passthrough), so ORT was never asked. Untested for want of hardware — see "WebGPU" below</td>
 </tr>
 </tbody>
 </table></div>
@@ -307,9 +307,10 @@ Run <code>fd80f81d-3788-49c1-919f-e86acde3c4eb</code>, at commit <code>443c5b4f<
 RunSpec knob at both buckets, with a demonstrably sensitive instrument. Agreement with
 aminx's own JAX alone would only show self-consistency; the reference link is what makes
 it evidence.</p>
-<p><strong>What it does not cover:</strong> performance, WebGPU, and free-sampling distributional
-agreement with the reference. Those rows say pending or not-measured, and nothing in this
-document should be read as a speed claim.</p>
+<p><strong>What it does not cover:</strong> free-sampling distributional agreement with the reference —
+that row is genuinely still pending, and it is the one remaining gap in this table.
+Performance is measured (below, with a timer control) and WebGPU has been probed rather
+than merely deferred.</p>
 <h2>Performance</h2>
 <p>Measured 2026-09-29, bathos run <code>be45e729</code>. <strong>Read the control line first:</strong> a deliberately
 planted 250.0 ms delay was measured through the same clock as 250.2 ms (ratio 1.001). An
@@ -399,12 +400,13 @@ below matters more than the split-vs-monolith gap. L=256 costs about <strong>4×
   isolation settings — exactly the settings threaded wasm requires — so the clock was
   checked under those settings rather than assumed. It was not coarsened here.
 - <strong>WebGPU.</strong> See below. Unvalidated.</p>
-<h2>The four-graph split (faster and much smaller; browser validation pending)</h2>
+<h2>The four-graph split (faster, much smaller, and browser-validated)</h2>
 <p>The export can be split into four loop-free graphs — encoder, wave schedule, decoder step,
 fuse-and-sample — with the autoregressive loop driven from JavaScript
-(<code>browser/aminx-sampler/split_loop.mjs</code>). It is <strong>not</strong> the path this guide's integration
-example uses yet, because it has not been validated in a real browser. It is measurably
-better on both axes that matter for a page:</p>
+(<code>browser/aminx-sampler/split_loop.mjs</code>). The integration example above still shows the
+monolith, because that is the path with the longest validation history — but the split is
+now validated in a real browser at both buckets, and it is measurably better on both axes
+that matter for a page:</p>
 <div class="tw"><table>
 <thead>
 <tr>
@@ -536,10 +538,17 @@ see.</p>
 <p>The gate calls <code>aminx.export.wrappers.make_p07_sample</code> on
 <code>load_model(checkpoint_id="proteinmpnn_v_48_020")</code>, converts with <code>jax2onnx.to_onnx</code>
 for each bucket, and embeds the external data into one file. Export is
-byte-deterministic: repeated exports of the same commit give the same sha256. A
-standalone <code>export</code> entry point with a sha256 manifest is <strong>pending</strong>. Until it
-lands, take the models from a gate run's work directory (<code>browser_L128/</code>,
-<code>browser_L256/</code>).</p>
+byte-deterministic: repeated exports of the same commit give the same sha256.</p>
+<p>For the <strong>four-graph split</strong> there is a standalone entry point, which also writes a
+manifest recording every file's sha256, byte size, input shapes and dtypes alongside the
+commit and checkpoint id:</p>
+<pre><code class="language-bash">uv run --frozen --with jax2onnx==0.16.1 --with onnx --with onnxruntime==1.30.0 \
+  python scripts/browser_validation/p07_split_export.py \
+    --out-dir dist/models --buckets 128 256
+</code></pre>
+<p>Passing <code>--verify-manifest dist/models/MANIFEST.json</code> instead re-hashes the files and
+reports any drift — that is how to confirm the bytes you are serving are the bytes that
+were validated.</p>
 <h2>Licensing</h2>
 <p>The aminx code is MIT. The weights are converted from upstream ProteinMPNN
 (dauparas) and distributed through Hugging Face <code>maraxen/aminx</code>. <strong>Confirm the

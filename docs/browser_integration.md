@@ -15,8 +15,8 @@ measured** are exactly that — do not cite a number from them.
 | :--- | :--- | :--- |
 | Sampler module | `browser/aminx-sampler/aminx_sampler.mjs` | `createSampler`, bucket choice, padding, feeding the session |
 | RunSpec core | `browser/aminx-sampler/runspec_core.mjs` | Builds the 11 input tensors from a structure and a RunSpec: PRNG, Gumbel noise, decoding order, bias/omit, fixed/tied positions. Has no `node:` imports. |
-| Model, L ≤ 128 | `p07_sample_L128.onnx` (about 19.4 MB) | Built by the export step below. It isn't checked in yet (**pending**: persisted release files with a sha256 manifest) |
-| Model, L ≤ 256 | `p07_sample_L256.onnx` (about 31.5 MB) | Same |
+| Model, L ≤ 128 | `p07_sample_L128.onnx` (19,374,293 B) | Built by the export step below. Not checked in — "Reproducing" covers building it and verifying its hash |
+| Model, L ≤ 256 | `p07_sample_L256.onnx` (33,046,297 B) | Same |
 | Runtime | `onnxruntime-web@1.30.0`, wasm build (`ort.wasm.min.mjs`) | Pinned. This is the version and build every parity run used |
 
 "P07" is the internal name of this export: the full autoregressive sampler inside
@@ -157,7 +157,7 @@ Run `fd80f81d-3788-49c1-919f-e86acde3c4eb`, at commit `443c5b4f`, clean tree.
 | JS RunSpec builder vs Python | `runspec_core.mjs` inputs vs the Python builder (PRNG, Gumbel, orders, bias) | Node unit tests pass (`runspec.test.mjs` 11/11, `aminx_sampler.test.mjs` 5/5) |
 | Sampling distribution vs reference | Statistical comparison of aminx samples against LigandMPNN@26ec57ac | **Pending.** Calibration running on titanix; validate shards next on Engaging |
 | Speed / memory profile | Wall time per design, session-create time, peak memory | **MEASURED** — see "Performance" below. Run `be45e729`, whose timer control resolved a planted 250 ms delay to 250.2 ms (ratio 1.001) before any number was recorded |
-| WebGPU | — | **Not validated; out of scope for the first release** |
+| WebGPU | Capability probe: can the EP be reached at all? | **Determined, and negative here** (`ca0ea202`): `navigator.gpu` present, but no adapter obtainable on this machine (WSL2, no GPU passthrough), so ORT was never asked. Untested for want of hardware — see "WebGPU" below |
 
 **What that adds up to.** The chain runs reference PyTorch → aminx JAX (teacher-forced,
 4.48e-05 nats) → ONNX (288/288 bitwise) → ORT-Web wasm (288/288 bitwise), across every
@@ -165,9 +165,10 @@ RunSpec knob at both buckets, with a demonstrably sensitive instrument. Agreemen
 aminx's own JAX alone would only show self-consistency; the reference link is what makes
 it evidence.
 
-**What it does not cover:** performance, WebGPU, and free-sampling distributional
-agreement with the reference. Those rows say pending or not-measured, and nothing in this
-document should be read as a speed claim.
+**What it does not cover:** free-sampling distributional agreement with the reference —
+that row is genuinely still pending, and it is the one remaining gap in this table.
+Performance is measured (below, with a timer control) and WebGPU has been probed rather
+than merely deferred.
 
 ## Performance
 
@@ -219,13 +220,14 @@ Two levers. The first is measured and large; the second is untouched:
   checked under those settings rather than assumed. It was not coarsened here.
 - **WebGPU.** See below. Unvalidated.
 
-## The four-graph split (faster and much smaller; browser validation pending)
+## The four-graph split (faster, much smaller, and browser-validated)
 
 The export can be split into four loop-free graphs — encoder, wave schedule, decoder step,
 fuse-and-sample — with the autoregressive loop driven from JavaScript
-(`browser/aminx-sampler/split_loop.mjs`). It is **not** the path this guide's integration
-example uses yet, because it has not been validated in a real browser. It is measurably
-better on both axes that matter for a page:
+(`browser/aminx-sampler/split_loop.mjs`). The integration example above still shows the
+monolith, because that is the path with the longest validation history — but the split is
+now validated in a real browser at both buckets, and it is measurably better on both axes
+that matter for a page:
 
 | | Monolith | Split | |
 | :--- | ---: | ---: | :--- |
@@ -318,10 +320,21 @@ uv run --frozen --with jax2onnx==0.16.1 --with onnx --with onnxruntime==1.30.0 \
 The gate calls `aminx.export.wrappers.make_p07_sample` on
 `load_model(checkpoint_id="proteinmpnn_v_48_020")`, converts with `jax2onnx.to_onnx`
 for each bucket, and embeds the external data into one file. Export is
-byte-deterministic: repeated exports of the same commit give the same sha256. A
-standalone `export` entry point with a sha256 manifest is **pending**. Until it
-lands, take the models from a gate run's work directory (`browser_L128/`,
-`browser_L256/`).
+byte-deterministic: repeated exports of the same commit give the same sha256.
+
+For the **four-graph split** there is a standalone entry point, which also writes a
+manifest recording every file's sha256, byte size, input shapes and dtypes alongside the
+commit and checkpoint id:
+
+```bash
+uv run --frozen --with jax2onnx==0.16.1 --with onnx --with onnxruntime==1.30.0 \
+  python scripts/browser_validation/p07_split_export.py \
+    --out-dir dist/models --buckets 128 256
+```
+
+Passing `--verify-manifest dist/models/MANIFEST.json` instead re-hashes the files and
+reports any drift — that is how to confirm the bytes you are serving are the bytes that
+were validated.
 
 ## Licensing
 
