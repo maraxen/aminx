@@ -429,10 +429,10 @@ bathos run record, not from console output.
 | G0 | Graph E + Graph D convert, load, agree with JAX | **pass** | `8daaa978` |
 | G0b | Graph F (fuse+sample) converts; tokens exact | **pass** | `b8f413b6` |
 | G0c | Graph W (wave schedule) converts; all 5 outputs exact | **pass** | `a7f62e90` |
-| G1 | split vs monolith AND vs JAX, ORT-CPU, 56 cells, L128 | **pass** | `d2a06073` |
+| G1 | split vs monolith AND vs JAX, ORT-CPU, 56 cells, L128 | **pass** | `fba872ce` |
 | G1-256 | same at L256, 32 cells | **pass** | `ed2a2617` |
 | G1n | shipping `split_loop.mjs` vs monolith, ORT-Web wasm under Node | **pass** | `bc8eb3d7` |
-| G1c | shipping loop in headless Chromium, L128 | **pass** | `d6be02ea` |
+| G1c | shipping loop in headless Chromium, L128 | **pass** | `13e06211` |
 | G1c-t4 | same at 4 threads — output **bit-identical** to 1 thread | **pass** | `da02516e` |
 | G1c-256 | same in Chromium at L256 | **pass** | `8a3bb1d6` |
 | G4 | wall time, Node, wasm single-thread, timer control 1.001 | **pass** | `be45e729` |
@@ -450,7 +450,7 @@ reference↔JAX (B1) with JAX↔split (G1). Run `ed4f0b77` removes the intermedi
 | :--- | :--- | :--- | :--- |
 | **split graphs ↔ reference PyTorch, teacher-forced** | **3.822e-05 nats** | 1e-4 | `ed4f0b77` |
 | reference ↔ aminx JAX (context) | 4.482e-05 nats | 1e-4 | `fd80f81d` |
-| aminx JAX ↔ split (context) | exact / 1.526e-05 | 2e-4 | `d2a06073` |
+| aminx JAX ↔ split (context) | exact / 1.526e-05 | 2e-4 | `fba872ce` |
 
 The exported graphs meet the reference at essentially the same distance aminx's own JAX
 does — 3.8e-05 against 4.5e-05 — which is the strongest form this evidence takes.

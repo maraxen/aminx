@@ -258,10 +258,10 @@ Correctness, all from run records:
 
 | Check | Result | Run |
 | :--- | :--- | :--- |
-| Split vs monolith and vs JAX, ORT-CPU, L128 | tokens **exact** 56/56 | `d2a06073` |
+| Split vs monolith and vs JAX, ORT-CPU, L128 | tokens **exact** 56/56 | `fba872ce` |
 | Same at L256 | tokens **exact** 32/32 | `ed2a2617` |
 | Shipping `split_loop.mjs` on ORT-Web wasm (Node) | tokens **exact** 56/56 | `bc8eb3d7` |
-| **Shipping loop in headless Chromium** | tokens **exact** 8/8 | `d6be02ea` |
+| **Shipping loop in headless Chromium** | tokens **exact** 8/8 | `13e06211` |
 | **Same, 4 threads with COOP/COEP** | tokens **exact** 8/8, log-probs **bit-identical** to 1 thread | `da02516e` |
 | **Split vs reference ProteinMPNN, teacher-forced, direct** | **3.822e-05 nats** (bound 1e-4) | `ed4f0b77` |
 
@@ -270,6 +270,15 @@ against the PyTorch reference, not via aminx's JAX, and land at essentially the 
 distance aminx's own JAX does (3.8e-05 against 4.5e-05). That measurement is scoped to
 untied lanes on fully-designed structures at L=128; fixed-position and tied cases are
 covered instead by the exact-token parity rows above, which run the full sampling loop.
+
+> **On the run ids.** Rows 1 and 4 were re-run after this work was integrated onto
+> `main` (which had moved twice in the meantime — release 0.2.0a2 and PR #168), and cite
+> those post-integration runs. The other rows cite their original runs. That mix is
+> deliberate rather than sloppy: the re-runs reproduced their earlier figures
+> **bit-identically**, and the four graphs re-exported from the integrated tree are
+> **byte-identical** (all 8 sha256s match the pinned manifest), so the remaining rows
+> measure the same bytes and the same behaviour. Had either check moved, every row would
+> have been re-run.
 
 Across both buckets that is 15,360 decoder invocations with zero token mismatches, and
 the error does not grow with length — the L256 log-prob gap (4.768e-06) matches L128's

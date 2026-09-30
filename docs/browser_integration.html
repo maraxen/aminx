@@ -464,7 +464,7 @@ implementations behind a runtime branch.</p>
 <tr>
 <td style="text-align: left;">Split vs monolith and vs JAX, ORT-CPU, L128</td>
 <td style="text-align: left;">tokens <strong>exact</strong> 56/56</td>
-<td style="text-align: left;"><code>d2a06073</code></td>
+<td style="text-align: left;"><code>fba872ce</code></td>
 </tr>
 <tr>
 <td style="text-align: left;">Same at L256</td>
@@ -479,7 +479,7 @@ implementations behind a runtime branch.</p>
 <tr>
 <td style="text-align: left;"><strong>Shipping loop in headless Chromium</strong></td>
 <td style="text-align: left;">tokens <strong>exact</strong> 8/8</td>
-<td style="text-align: left;"><code>d6be02ea</code></td>
+<td style="text-align: left;"><code>13e06211</code></td>
 </tr>
 <tr>
 <td style="text-align: left;"><strong>Same, 4 threads with COOP/COEP</strong></td>
@@ -498,6 +498,16 @@ against the PyTorch reference, not via aminx's JAX, and land at essentially the 
 distance aminx's own JAX does (3.8e-05 against 4.5e-05). That measurement is scoped to
 untied lanes on fully-designed structures at L=128; fixed-position and tied cases are
 covered instead by the exact-token parity rows above, which run the full sampling loop.</p>
+<blockquote>
+<p><strong>On the run ids.</strong> Rows 1 and 4 were re-run after this work was integrated onto
+<code>main</code> (which had moved twice in the meantime — release 0.2.0a2 and PR #168), and cite
+those post-integration runs. The other rows cite their original runs. That mix is
+deliberate rather than sloppy: the re-runs reproduced their earlier figures
+<strong>bit-identically</strong>, and the four graphs re-exported from the integrated tree are
+<strong>byte-identical</strong> (all 8 sha256s match the pinned manifest), so the remaining rows
+measure the same bytes and the same behaviour. Had either check moved, every row would
+have been re-run.</p>
+</blockquote>
 <p>Across both buckets that is 15,360 decoder invocations with zero token mismatches, and
 the error does not grow with length — the L256 log-prob gap (4.768e-06) matches L128's
 exactly, so doubling the autoregressive depth does not accumulate drift.</p>
