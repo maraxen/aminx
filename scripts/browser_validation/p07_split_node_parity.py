@@ -189,28 +189,32 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
     logger.info("dumped %d cells -> %s", len(cells), cells_path)
 
     runner = _REPO_ROOT / "browser" / "aminx-sampler" / "run_split_node.mjs"
-    proc = subprocess.run(  # noqa: S603
-      [
-        node,
-        str(runner),
-        "--cells",
-        str(cells_path),
-        "--models",
-        str(args.release_dir),
-        "--bucket",
-        str(args.bucket),
-        "--out",
-        str(node_out_path),
-        "--ort-dir",
-        str(args.ort_dir),
-      ],
-      capture_output=True,
-      text=True,
-      check=False,
-      timeout=7200,
-    )
+    # Stream the child's stderr rather than capturing it. `capture_output=True` buffers
+    # until the process exits, which made a 20-minute run look stalled at zero cells and
+    # cost a wrong "it's hung" diagnosis. The runner writes one line per cell, so
+    # inheriting stderr makes progress visible in this gate's own log as it happens.
+    # The tail is re-read from that log on failure, so nothing is lost by not capturing.
+    cmd = [
+      node,
+      str(runner),
+      "--cells",
+      str(cells_path),
+      "--models",
+      str(args.release_dir),
+      "--bucket",
+      str(args.bucket),
+      "--out",
+      str(node_out_path),
+      "--ort-dir",
+      str(args.ort_dir),
+    ]
+    logger.info("running node runner: %s", " ".join(cmd))
+    proc = subprocess.run(cmd, check=False, timeout=7200)  # noqa: S603
     if proc.returncode != 0 or not node_out_path.is_file():
-      msg = f"node runner failed rc={proc.returncode}: {proc.stderr[-2000:]}"
+      msg = (
+        f"node runner failed rc={proc.returncode}; its stderr was streamed to this log "
+        f"above, and node_out exists={node_out_path.is_file()}"
+      )
       raise RuntimeError(msg)
     node_out = json.loads(node_out_path.read_text())
     result["node_ok"] = True
