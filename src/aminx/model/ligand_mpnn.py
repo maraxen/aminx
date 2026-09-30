@@ -228,7 +228,10 @@ class PrxteinLigandMPNN(eqx.Module):
     self.w_c = eqx.nn.Linear(node_features, node_features, key=proj_keys[1])
     self.w_nodes_y = eqx.nn.Linear(node_features, node_features, key=proj_keys[2])
     self.w_edges_y = eqx.nn.Linear(node_features, node_features, key=proj_keys[3])
-    self.v_c = eqx.nn.Linear(node_features, node_features, key=proj_keys[4])
+    # Reference ``V_C`` is ``torch.nn.Linear(hidden_dim, hidden_dim, bias=False)`` and the
+    # checkpoint has no ``V_C.bias``. equinox defaults to use_bias=True, and nothing overwrote
+    # that layer's random init, so untrained noise shipped in the .eqx.zst (#163).
+    self.v_c = eqx.nn.Linear(node_features, node_features, use_bias=False, key=proj_keys[4])
     self.v_c_norm = eqx.nn.LayerNorm(node_features)
 
     self.dropout = Dropout(dropout_rate)

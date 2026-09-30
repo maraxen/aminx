@@ -33,13 +33,22 @@ def convert_linear_layer(
     JAX eqx.nn.Linear: weight shape [in, out], computes x @ W + b
     """
     # Use same weight shape: [out, in]
+    # A bias present on exactly one side is a skeleton/checkpoint disagreement, and both
+    # directions used to be silent: a checkpoint bias with no slot was DROPPED (#162), and a
+    # skeleton bias with no checkpoint value KEPT ITS RANDOM INIT and shipped it (#163).
+    # equinox defaults to use_bias=True while several reference layers are bias=False.
+    if (pt_bias is None) != (jax_layer.bias is None):
+        side = "checkpoint has a bias the skeleton has no slot for (trained values would be dropped)" \
+            if pt_bias is not None else \
+            "skeleton has a bias the checkpoint does not (random init would ship as if trained)"
+        raise ValueError(f"bias mismatch converting Linear{tuple(pt_weight.shape)}: {side}")
+
     jax_weight = jnp.array(pt_weight)
-    jax_bias = jnp.array(pt_bias) if pt_bias is not None else jax_layer.bias
 
     # Create new layer with converted weights using eqx.tree_at
     new_layer = eqx.tree_at(lambda l: l.weight, jax_layer, jax_weight)
-    if pt_bias is not None and jax_layer.bias is not None:
-        new_layer = eqx.tree_at(lambda l: l.bias, new_layer, jax_bias)
+    if pt_bias is not None:
+        new_layer = eqx.tree_at(lambda l: l.bias, new_layer, jnp.array(pt_bias))
 
     return new_layer
 
