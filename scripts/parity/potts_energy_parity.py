@@ -68,6 +68,7 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--mutants", default=MUTANT_ID)
     parser.add_argument("--controls-out", type=Path, default=None)
     parser.add_argument("--arm", default=None)
+    parser.add_argument("--payload-out", type=Path, default=None)
     parser.add_argument("--job", type=Path, default=None)
     parser.add_argument("--upstream", type=Path, default=None)
     parser.add_argument("--work-dir", type=Path, default=None)
@@ -410,6 +411,9 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
     n_computed = oracle.n_computed
     for arm in ("clean", *mutants):
         units = _units_from_job(job, arm, checkpoint)
+        payload_out = work / f"payload_{arm}.json"
+        # A payload left by an earlier attempt must never be read as this one's result.
+        payload_out.unlink(missing_ok=True)
         launched = _launch(
             args,
             logger,
@@ -428,6 +432,8 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
                 str(args.potts_root),
                 "--work-dir",
                 str(work),
+                "--payload-out",
+                str(payload_out),
                 resume_flag,
             ],
             units,
@@ -440,13 +446,14 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
             measured[arm] = {"band": "error", "detail": launched.stderr[-500:]}
             continue
         try:
-            measured[arm] = json.loads(launched.stdout)
-        except json.JSONDecodeError:
+            measured[arm] = json.loads(payload_out.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
             # An arm that exits 0 with unparseable stdout must not surface as a bare
             # JSONDecodeError in the parent with the child's stderr discarded.
             logger.error(
-                "arm %s exited 0 but wrote no parseable JSON; stdout=%r stderr=%s",
+                "arm %s exited 0 but left no parseable payload at %s; stdout=%r stderr=%s",
                 arm,
+                payload_out,
                 launched.stdout[:200],
                 launched.stderr[-2000:] or "<empty>",
             )
@@ -580,7 +587,14 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.arm:
         payload = _run_arm(args)
-        sys.stdout.write(json.dumps(payload))
+        payload_json = json.dumps(payload)
+        # Never hand the payload back on stdout: the checkpoint converter prints to
+        # stdout, which silently corrupted every arm that had to build the model
+        # (runs 03992b3d and 35f9a257 both reported "no parseable JSON").
+        if args.payload_out is not None:
+            args.payload_out.write_text(payload_json, encoding="utf-8")
+        else:
+            sys.stdout.write(payload_json)
         return
     logger = _logger()
     results = _parent(args, logger)
