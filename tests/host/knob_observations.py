@@ -161,9 +161,10 @@ OBSERVATIONS: dict[str, Verdict] = {
     value=None,
     reason=(
       "planner enumerates the 2x2 cross product (campaign.py:612-613); base_spec's value is "
-      "ignored. Gates atom_37/atom_37_mask at the bundle (_sampling_helper.py:315-366), but the "
-      "model is still built with sidechains off because prep.py:133,140 never forward "
-      "use_side_chain_context -- see ligand_mpnn_use_side_chain_context."
+      "ignored. Gates atom_37/atom_37_mask at the bundle (_sampling_helper.py:315-366); prep.py "
+      "implies use_side_chain_context from it at load time, and plan_campaign_manifest now also "
+      "states ligand_mpnn_use_side_chain_context on each sidechain-on LigandMPNN row (#115) -- "
+      "see ligand_mpnn_use_side_chain_context."
     ),
   ),
   "backbone_noise": Bundle(param="backbone_noise", reason="per-cell value from the noise axis loop, kernel_dispatch.py:224"),
@@ -177,7 +178,11 @@ OBSERVATIONS: dict[str, Verdict] = {
   "checkpoint_registry_path": LoadModel(param="local_path", reason="resolved at prep.py:129-132"),
   "ligand_mpnn_use_side_chain_context": LoadModel(
     param="use_side_chain_context",
-    reason="SHOULD reach load_model (io/weights.py:160) but prep.py:133,140 never forward it",
+    reason=(
+      "forwarded to load_model by prep.py (model_conditioning), and implied by "
+      "sidechain_conditioning=True there; the campaign planner derives it per sidechain-on "
+      "LigandMPNN row but never overrides an explicit value (campaign.py, #115)"
+    ),
   ),
   "use_electrostatics": LoadModel(
     param="use_electrostatics",

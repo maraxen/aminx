@@ -971,6 +971,21 @@ def plan_campaign_manifest(
     for state_weight_profile, profile_weights in resolved_profiles.items():
       for ligand_on in (False, True):
         for sidechain_on in (False, True):
+          # sidechain_conditioning=True only does anything if the MODEL was built with the
+          # side-chain branch (`ligand_mpnn_use_side_chain_context`) -- two switches for one
+          # capability (#115). The planner owns the sidechain axis, so it owns the derivation
+          # too: a sidechain-on row on a LigandMPNN model states the model-level flag in its
+          # own sampling_spec rather than relying on prep.py to imply it at load time. (prep
+          # still implies it, so sampled output is unchanged; this makes the manifest
+          # self-describing and lets the knob harness observe it.) An EXPLICIT caller value is
+          # never overridden -- a contradiction (False with sidechain on) still raises in
+          # prep_protein_stream_and_model. No CLI flag is exposed for it on purpose: the 2x2
+          # grid always contains both a sidechain-on and a sidechain-off row, and True would
+          # crash the off rows (the branch needs atom_37) while False would contradict the
+          # on rows, so any explicit campaign-wide value could only be wrong for half the grid.
+          side_chain_context = base_spec.ligand_mpnn_use_side_chain_context
+          if sidechain_on and side_chain_context is None and base_spec.model_family == "ligandmpnn":
+            side_chain_context = True
           spec_variant = replace(
             base_spec,
             inputs=_normalize_inputs(base_spec.inputs),
@@ -978,6 +993,7 @@ def plan_campaign_manifest(
             return_logits=False,
             ligand_conditioning=ligand_on,
             sidechain_conditioning=sidechain_on,
+            ligand_mpnn_use_side_chain_context=side_chain_context,
             # THE LINE WHOSE ABSENCE WAS THE ENTIRE BUG.
             #
             # The arm's mask has to land on the SPEC, because `sampling_spec` is the only
