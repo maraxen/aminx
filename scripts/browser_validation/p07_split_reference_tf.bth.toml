@@ -1,0 +1,61 @@
+[metadata]
+title = "G3a-direct: the split graphs vs reference ProteinMPNN, teacher-forced, no intermediary"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On untied lanes (P08@1.0, P07@1.0) at L=128, the SPLIT graphs -- encoder plus one conditional decoder pass through the exported ONNX, run on onnxruntime CPU -- reproduce reference ProteinMPNN's teacher-forced per-position log-probs to within 1e-4 nats. Method mirrors the knobs gate's B1 check (p07_knobs_gate.py:1633) so the two are directly comparable: the PyTorch reference samples a sequence and returns it together with its per-position log-probs and the decoding order used, and the split is then teacher-forced on that same sequence and order. Teacher-forcing requires exactly ONE conditional decoder pass rather than the autoregressive loop, because the whole sequence is known in advance, which is why this gate is cheap despite involving the reference implementation. WHY IT EXISTS: every existing anchoring of the split to the reference is a COMPOSITION -- B1 measured reference against aminx JAX at 4.482e-05 nats (run fd80f81d) and G1 measured aminx JAX against the split at tokens-exact / 1.526e-05 (run d2a06073). Chaining two measured links is legitimate, but a composed claim is only as tight as its weaker link and is strictly weaker evidence than measuring the artifact that ships against the implementation the field trusts. This removes the intermediary. The 1e-4 bound is INHERITED from B1 unchanged, not invented here, so a pass means the split meets the same reference bar aminx JAX already meets. SCOPE, narrower than the parity gates and stated rather than buried: untied lanes only. The tied lane (P09-s) needs the reference-side tie fusion B1 applies via _combine_reference_tied_log_probs, and reproducing that second piece of reference machinery here was judged out of proportion; the tied path stays covered indirectly by B1 composed with G1. What this adds is a direct link for the untied case, which is the one the composed claim leans on hardest."
+stage_name = "validation"
+claim_discriminates = ["H_split_matches_reference", "H_split_diverges_from_reference"]
+claim_isolates = ["C_reference_direct"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling gates).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_blind", "fail"]
+
+# First matching branch wins: incomplete, ctrl_blind, fail, pass.
+
+[outcomes.incomplete]
+condition = "cases_total < 2 OR NOT git_clean OR failure <> ''"
+decision = "Fewer than two cases were graded, the tree was dirty in a code path, or an exception was raised. `failure` carries the text. No reference statement is permitted."
+reasoning = "Two cases is the minimum for the comparison to span more than a single lane, and a single case could pass by coincidence of that lane's numerics. A dirty tree makes the run unreproducible against a recorded commit."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "The planted log-prob offset did not exceed the bound, so the comparator cannot be shown to fail. No reference statement is permitted."
+reasoning = "`max_abs <= bound` passes trivially for a comparator that is not actually comparing the two arms -- a real risk here, where both the reference log-probs and the split log-probs are numpy arrays of the same shape and a wiring error would silently compare one to itself. Planting an offset proves the comparison is live (rules/BATHOS.md)."
+is_residual = true
+
+[outcomes.fail]
+condition = "cases_within_bound < cases_total"
+decision = "The split does not reproduce reference ProteinMPNN teacher-forced within the bound aminx JAX already meets. `worst_case` names the offender. Since G1 showed the split matches aminx JAX, a failure here would implicate the JAX-to-reference link or this gate's own harness rather than the split graphs -- check B1 still passes before concluding anything about the export."
+reasoning = "Stating where to look first matters: the composed evidence says the split equals JAX and JAX equals the reference, so a direct disagreement is informative about which of those is wrong rather than simply red."
+is_residual = true
+
+[outcomes.pass]
+condition = "cases_within_bound = cases_total"
+decision = "The shipped split graphs meet reference ProteinMPNN directly, at the same 1e-4 bar aminx JAX meets, with no intermediary. The advisor-facing claim no longer rests on a composition for the untied case."
+reasoning = "A direct measurement against the reference implementation, at the bound the project already uses for reference parity, with a demonstrably sensitive comparator, is the strongest form this evidence takes. It remains scoped to untied lanes at L=128 on ORT-CPU."
+is_residual = false
+
+[result_schema]
+bucket = "int"
+bound = "float"
+cases_total = "int"
+cases_within_bound = "int"
+max_abs_nats_vs_reference = "float"
+worst_case = "str"
+controls_total = "int"
+controls_detected = "int"
+ctrl_perturb_detected = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+torch_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
