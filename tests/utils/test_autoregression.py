@@ -214,3 +214,64 @@ def test_group_decoding_order_tie_free_matches_stable_argsort(n: int):
   got = _tie_free_group_decoding_order(group_present, group_first_occurrence, n)
   want = _stable_argsort_reference(group_present, group_first_occurrence, n)
   chex.assert_trees_all_equal(got, want)
+
+
+# --------------------------------------------------------------------------------------
+# STRUCTURAL guard on the fix above. The two tests preceding this one reimplement
+# generate_ar_mask's formula inside this file and check the PROPERTY (that a tie-free
+# (key, index) lex sort reproduces a stable argsort). They never call generate_ar_mask,
+# so reverting the function to a bare `jnp.argsort(..., stable=True)` leaves them green
+# -- the property is still true of the copy, and the copy is what they exercise.
+#
+# That gap matters concretely: main (release 0.2.0a2) still carries the argsort version,
+# `git merge-tree` reports a merge of it with this branch as textually CLEAN, and the
+# exported Graph W bakes this function into the .onnx. A silent revert would therefore
+# reach the browser artifacts with no conflict marker and no failing test.
+#
+# So assert on the traced jaxpr instead of on a reimplementation: the sort that orders
+# tie groups must be tie-free (`is_stable=False`, two keys). A revert lowers to
+# `is_stable=True` with one key and fails here.
+# --------------------------------------------------------------------------------------
+
+
+def _walk_eqns(jaxpr):
+  """Every equation in `jaxpr`, descending into sub-jaxprs (cond/scan/pjit bodies)."""
+  from jax.extend.core import ClosedJaxpr, Jaxpr
+
+  for eqn in jaxpr.eqns:
+    yield eqn
+    for value in eqn.params.values():
+      candidates = value if isinstance(value, (tuple, list)) else [value]
+      for candidate in candidates:
+        if isinstance(candidate, ClosedJaxpr):
+          yield from _walk_eqns(candidate.jaxpr)
+        elif isinstance(candidate, Jaxpr):
+          yield from _walk_eqns(candidate)
+
+
+def test_generate_ar_mask_tied_branch_sorts_tie_free() -> None:
+  """The tied branch's group sort must carry an index tiebreak, not rely on stability.
+
+  Guards the exported wave schedule: IREE does not honour JAX's stable-sort tie order,
+  and every absent group shares the sentinel key, so ties are the common case.
+  """
+  length = 8
+  decoding_order = jnp.arange(length, dtype=jnp.int32)
+  # Two real multi-member groups plus singletons, so the tied branch is actually taken.
+  tie_group_map = jnp.array([0, 0, 2, 3, 3, 5, 6, 7], dtype=jnp.int32)
+
+  jaxpr = jax.make_jaxpr(
+    lambda order, ties: generate_ar_mask(order, tie_group_map=ties),
+  )(decoding_order, tie_group_map)
+
+  sorts = [eqn for eqn in _walk_eqns(jaxpr.jaxpr) if str(eqn.primitive) == "sort"]
+  assert sorts, "generate_ar_mask's tied branch traced no sort at all; test is vacuous"
+  for eqn in sorts:
+    assert eqn.params.get("is_stable") is False, (
+      "generate_ar_mask lowered a STABLE sort. The tied branch must sort on "
+      "(key, index) with is_stable=False so the permutation does not depend on the "
+      "backend's tie handling -- see the comment block above."
+    )
+    assert eqn.params.get("num_keys") == 2, (
+      f"expected a two-key (key, index) sort, got num_keys={eqn.params.get('num_keys')}"
+    )
