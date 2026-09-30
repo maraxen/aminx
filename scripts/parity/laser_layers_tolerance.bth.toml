@@ -1,8 +1,11 @@
+[metadata]
+title = "laser_layers f64 tolerance satisfiability"
+created = "260930"
+schema_version = "0.3"
 script_path = "scripts/parity/laser_layers_tolerance.py"
 task_id = "260929_potts-laser-xtrax-compose"
-stage_name = "confirmation"
-novel = false
 
+[experiment]
 hypothesis = """
 The laser_layers f64 tolerance as pre-registered in spec section 7.2 (line 1153,
 `rtol=1e-9 / rtol=1e-5`, with no atol) is unsatisfiable by any implementation,
@@ -23,6 +26,8 @@ control therefore requires that the proposed mixed bound still REJECT a 1e-6
 relative perturbation on at least 90% of elements; if it does not, the amendment
 is refused regardless of the zero-element count.
 """
+stage_name = "confirmation"
+novel = false
 
 [outcomes.pass]
 condition = "band = 'pass'"
