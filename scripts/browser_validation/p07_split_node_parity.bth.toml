@@ -1,0 +1,69 @@
+[metadata]
+title = "G1n: the shipping JavaScript split loop reproduces the monolith under ORT-Web wasm"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Driving the SHIPPING loop -- browser/aminx-sampler/split_loop.mjs, via run_split_node.mjs, on onnxruntime-web's wasm backend under Node, single-threaded -- against the four exported graphs reproduces the monolithic P07 export's tokens EXACTLY on every cell and its per-position log-probs to within 2e-4 nats, and likewise reproduces aminx JAX's tokens exactly within the same bound, on the same real fixtures, knobs and seeds the knobs gate and G1 used. G1 (run d2a06073) already matched the monolith 56/56 by composing the same four graphs in PYTHON, which established that the decomposition is correct but never executed the .mjs a page actually loads. Keeping the two arms separate is the point: a pass in G1 together with a failure here localises the fault to the JavaScript rather than to the cut, which a single combined gate could not distinguish. The 2e-4 bound is inherited from the knobs gate, unchanged, for the same reason it was in G1: it is the measured JAX-vs-ORT envelope for this model at these buckets, and the JS arm adds a transport and a loop driver, not new arithmetic. Thread count is pinned to 1 in the runner because it changes float accumulation order and would otherwise be a second uncontrolled variable between this arm and the ORT-CPU arm. The Node runner grades nothing: it reads inputs, runs the loop and writes outputs, and every comparison and threshold lives in this tracked script, so the artifact under measurement cannot decide what counts as agreement. NAMING, stated so no reader overreads it: this is ORT-Web's wasm module under Node, not a browser. It is the same wasm a page would load but not the same environment (no cross-origin isolation, no browser APIs, different threading); a Chromium run is a separate and stronger gate and this one does not stand in for it."
+stage_name = "validation"
+claim_discriminates = ["H_js_loop_correct", "H_js_loop_diverges"]
+claim_isolates = ["C_js_driver"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling gates).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_blind", "fail"]
+
+# First matching branch wins: incomplete, ctrl_blind, fail, pass.
+
+[outcomes.incomplete]
+condition = "jax_enable_x64 OR NOT node_ok OR cells_total < 32 OR NOT git_clean OR failure <> ''"
+decision = "The comparison did not run at full size: the Node runner failed, fewer than 32 cells were graded, the tree was dirty in a code path, x64 was enabled, or an exception was raised. `failure` carries the text. This run proves nothing either way."
+reasoning = "A Node runner that exits non-zero or writes no output leaves no measurement at all, and a truncated sweep must never borrow the authority of a full one. The 32-cell floor matches G1's so the two arms stay comparable. git_clean covers browser/ here as well as src/ and scripts/, because the .mjs under test lives there and an uncommitted edit would make the result unreproducible."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "The planted log-prob offset did not exceed the bound, so the comparator cannot be shown to fail. No parity statement is permitted."
+reasoning = "`max_abs_diff <= bound` passes trivially for a comparator wired to compare something with itself, and that risk is real here because the JS outputs travel back through JSON and could in principle be confused with the reference arrays; planting an offset proves the comparison is live (rules/BATHOS.md)."
+is_residual = true
+
+[outcomes.fail]
+condition = "cells_tokens_exact_vs_monolith < cells_total OR cells_tokens_exact_vs_jax < cells_total OR max_logprob_abs_diff_vs_monolith > 0.0002 OR max_logprob_abs_diff_vs_jax > 0.0002"
+decision = "The shipping JavaScript loop does not reproduce the monolith. Given G1 passed on the same graphs, the fault is in split_loop.mjs, run_split_node.mjs, or the wasm backend -- NOT in the four-graph cut. `worst_cell` names the worst offender."
+reasoning = "This is the localisation the two-arm design buys. Token inequality is listed first because a changed token is a changed design and a log-prob bound cannot see it."
+is_residual = true
+
+[outcomes.pass]
+condition = "cells_tokens_exact_vs_monolith = cells_total AND cells_tokens_exact_vs_jax = cells_total AND max_logprob_abs_diff_vs_monolith <= 0.0002 AND max_logprob_abs_diff_vs_jax <= 0.0002"
+decision = "The code that ships computes what the monolith computes, under the wasm backend it will run on. Combined with G1 and the knobs gate's reference anchoring, the four-graph browser path is validated from the reference implementation through to the JavaScript driver."
+reasoning = "Exact tokens on every cell from the actual .mjs, with log-probs inside the inherited envelope and a demonstrably sensitive comparator, is what licenses describing the shipped loop as correct rather than merely plausible. It licenses nothing about Chromium specifically, about WebGPU, or about speed."
+is_residual = false
+
+[result_schema]
+bucket = "int"
+logprob_bound = "float"
+cells_total = "int"
+cells_tokens_exact_vs_monolith = "int"
+cells_tokens_exact_vs_jax = "int"
+max_logprob_abs_diff_vs_monolith = "float"
+max_logprob_abs_diff_vs_jax = "float"
+worst_cell = "str"
+node_ok = "bool"
+ort_version = "str"
+num_threads = "int"
+controls_total = "int"
+controls_detected = "int"
+ctrl_perturb_detected = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+git_dirty_paths = "str"
+jax_enable_x64 = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
+onnxruntime_web_version = { type = "string", required = true }
