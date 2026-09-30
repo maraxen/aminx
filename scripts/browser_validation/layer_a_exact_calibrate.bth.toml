@@ -4,7 +4,7 @@ created = "260925"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "On fixture set A (CPU f32, precision highest, noise 0, reference-formula order fed to both sides, SHIPPED .eqx.zst weights), the layer-(a) bars-table engine (layer_a_exact.py) runs to completion with a clean tree, finds a w_out-bias-perturbation magnitude that sizes the P05 sentinel control into [2x, 10x] its bar, tightens the headroom-flagged path list, and measures a differential sensitivity of at least min_effect=1.0 on the pre-registered reduced subset."
+hypothesis = "On fixture set A (CPU f32, precision highest, noise 0, reference-formula order fed to both sides, SHIPPED .eqx.zst weights), the layer-(a) bars-table engine (layer_a_exact.py) runs to completion with a clean tree, finds a w_out-bias-perturbation magnitude that sizes the P05 sentinel control into [2x, 10x] its bar, tightens the headroom-flagged path list, and measures a differential sensitivity of at least min_effect=1.0 on the pre-registered reduced subset. AMENDED 2026-09-29 (BEFORE any run used this revision): per-fixture seeds (`layer_a_exact._seed_for`) are now derived with hashlib.sha256 of the fixture name instead of Python's builtin hash(), which is randomized per process (PYTHONHASHSEED unset), so exact-tier runs are bit-reproducible across processes and machines; no threshold, bar, grid, or count changes."
 stage_name = "calibration"
 novel = true
 # No [reproduction]: novel = true replaces it (Bathos staging: "The calibration twin

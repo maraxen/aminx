@@ -336,7 +336,13 @@ def _convert_bucket(probe: dict[str, Any], out_dir: Path) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("--out-dir", type=Path, required=True)
+  parser.add_argument(
+    "--out-dir",
+    type=Path,
+    default=None,
+    help="where graphs are written; with --verify-manifest, where they are read from "
+    "(defaults to the manifest's own directory)",
+  )
   parser.add_argument("--out", type=Path, default=None, help="result JSON for the sidecar")
   parser.add_argument("--buckets", type=int, nargs="+", default=[128])
   parser.add_argument("--manifest", type=Path, default=None)
@@ -347,6 +353,10 @@ def main(argv: list[str] | None = None) -> int:
     help="re-hash the files named by an existing manifest and report drift; exports nothing",
   )
   args = parser.parse_args(argv)
+  if args.out_dir is None:
+    if args.verify_manifest is None:
+      parser.error("--out-dir is required unless --verify-manifest is given")
+    args.out_dir = args.verify_manifest.parent
 
   logging.basicConfig(
     level=logging.INFO,

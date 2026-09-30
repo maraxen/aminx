@@ -69,6 +69,7 @@ against the reference's OWN parsed `S` catches it.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import logging
 import os
@@ -105,11 +106,18 @@ NEAR_TIE_GAP = 1e-4  # fixtures.py NEAR_TIE_GAP, reused for consistency
 DEFAULT_W_OUT_BIAS_PERTURB_MAGNITUDE = 1e-3
 K_VALUES: tuple[int, ...] = (48, 32)
 
-_SEED_BASE = 20260923  # arbitrary fixed base; per-fixture seed = base + hash(fixture name)
+_SEED_BASE = 20260923  # arbitrary fixed base; per-fixture seed = base + sha256(fixture name)
 
 
 def _seed_for(fixture_name: str) -> int:
-  return (_SEED_BASE + (hash(fixture_name) % 10_000)) & 0xFFFFFFFF
+  """Per-fixture seed, a pure function of ``fixture_name`` stable across processes.
+
+  Was ``hash(fixture_name) % 10_000``: builtin ``str.__hash__`` is SipHash-randomized
+  per process (PYTHONHASHSEED unset), so runs were not bit-reproducible. Same fix as
+  ``layer_a_sampling._seed_for`` (T10g, 680d411e).
+  """
+  digest = hashlib.sha256(fixture_name.encode("utf-8")).digest()
+  return (_SEED_BASE + (int.from_bytes(digest[:8], "big") % 10_000)) & 0xFFFFFFFF
 
 
 def _row(

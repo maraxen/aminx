@@ -4,7 +4,7 @@ created = "260925"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "On fixture set B (CPU f32, precision highest, noise 0, reference-formula order fed to both sides), every deterministic comparison in the layer-(a) bars table is within its bar with the SHIPPED .eqx.zst weights, every path advanced from calibration, and every in-run control exceeds its bar."
+hypothesis = "On fixture set B (CPU f32, precision highest, noise 0, reference-formula order fed to both sides), every deterministic comparison in the layer-(a) bars table is within its bar with the SHIPPED .eqx.zst weights, every path advanced from calibration, and every in-run control exceeds its bar. AMENDED 2026-09-29 (BEFORE any run used this revision): per-fixture seeds (`layer_a_exact._seed_for`) are now derived with hashlib.sha256 of the fixture name instead of Python's builtin hash(), which is randomized per process (PYTHONHASHSEED unset), so exact-tier runs are bit-reproducible across processes and machines; no threshold, bar, grid, or count changes."
 stage_name = "validation"
 claim_discriminates = ["H_exact_within_bar", "H_null_misspec"]
 claim_isolates = ["C_weight_source"]
