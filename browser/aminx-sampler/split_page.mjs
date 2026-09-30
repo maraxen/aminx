@@ -51,7 +51,10 @@ async function runPositional(session, tensors) {
 }
 
 async function main() {
-  ort.env.wasm.wasmPaths = "./ort/";
+  // ABSOLUTE, not "./ort/". ORT resolves wasmPaths relative to its own module URL,
+  // not the page, so a relative "./ort/" from /ort/ort.wasm.min.mjs resolves to
+  // /ort/ort/ and every sibling .wasm 404s with an unhelpful "no available backend".
+  ort.env.wasm.wasmPaths = "/ort/";
   ort.env.wasm.numThreads = numThreads;
   ort.env.logLevel = "error";
 
