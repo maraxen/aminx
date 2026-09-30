@@ -201,7 +201,15 @@ def _build_graphs(length: int) -> tuple[Callable, Callable, dict[str, Any]]:
       key=None,
       inference=True,
     )
-    return jnp.asarray(_project_logits(model, decoded), dtype=jnp.float32)
+    # _project_logits DOUBLE-vmaps w_out and so requires the batched (S, L, H) form: in
+    # production _decode_one_step runs inside state_iterator's vmap over S, so `decoded`
+    # arrives as (S, L, H) (autoregressive.py:540, "(S, L, H) -> (S, L, 21)"). Standalone
+    # it is (L, H), which the double vmap would strip to a scalar. Add and drop a
+    # singleton state axis rather than single-vmapping, so this graph keeps production's
+    # exact projection semantics -- the same S=1 convention make_p07_sample uses when it
+    # batches EncoderOutput with [None, ...].
+    logits = _project_logits(model, decoded[None, ...])[0]
+    return jnp.asarray(logits, dtype=jnp.float32)
 
   return graph_e, graph_d, dict(dropout_stats)
 
