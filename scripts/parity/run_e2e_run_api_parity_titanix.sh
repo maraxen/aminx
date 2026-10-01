@@ -27,7 +27,9 @@ JOBS="${E2E_JOBS:-1}"
 if [[ "${PLATFORM}" == "gpu" ]]; then
   GPU="${E2E_GPU:?E2E_PLATFORM=gpu needs E2E_GPU=<index>; GPUs on this box are shared, so there is no default}"
   FRACTION="${E2E_MEM_FRACTION:-0.35}"
-  export CUDA_VISIBLE_DEVICES="${GPU}" JAX_PLATFORMS=cuda
+  # cuda,cpu -- NOT cuda alone: aminx's sampler uses jax.io_callback, which needs a CPU device in the platform list
+  # (with JAX_PLATFORMS=cuda every sampling cell dies at its first call; the GPU stays the default device).
+  export CUDA_VISIBLE_DEVICES="${GPU}" JAX_PLATFORMS=cuda,cpu
   export XLA_PYTHON_CLIENT_MEM_FRACTION="${FRACTION}" XLA_PYTHON_CLIENT_PREALLOCATE=false
   # Refuse to start unless the GPU has room for every job's cap plus ~1 GiB of CUDA context each.
   read -r TOTAL_MIB FREE_MIB < <(nvidia-smi -i "${GPU}" --query-gpu=memory.total,memory.free --format=csv,noheader,nounits | tr -d ',')
