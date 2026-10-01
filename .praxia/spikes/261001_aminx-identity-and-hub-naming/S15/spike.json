@@ -1,0 +1,28 @@
+{
+  "prereg": {
+    "id": "S15",
+    "claims": {
+      "A30": "`importlib.util.find_spec('pkg.sub.mod')` raises ModuleNotFoundError when `pkg` is not installed, whereas `find_spec('pkg')` returns None, so guards must test the root package first. (Round 2: this covers only the root-absent case; the root-present case is A36.)",
+      "A36": "`importlib.util.find_spec('pkg.sub')` imports the parent package `pkg` (executing its `__init__`) before looking up `sub`, and aminx's `__init__` eagerly imports io, run, sampling and scoring (the JAX stack). So a dotted-name guard is not import-free and any non-ImportError raised by the parent breaks the caller."
+    },
+    "question": "Does a dotted find_spec raise when the root is absent, and does it execute the parent package's __init__ when the root is present (while a root-only find_spec does not)?",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S15/probe.py",
+    "expect_if_true": "find_spec('s15_absent.sub.mod') RAISES ModuleNotFoundError while find_spec('s15_absent') is None; for s15_present, the root-only find_spec reports True and the marker is absent afterwards; the dotted find_spec RAISES RuntimeError 'parent __init__ executed' and the marker exists afterwards.",
+    "expect_if_false": "The dotted call on an absent root returns None (a dotted guard is safe), or the dotted call on a present root does not execute the parent __init__ (the root-only rule in S3-18 is unnecessary), or the root-only call executes __init__ (the guard form must change)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:54:17.169764+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.039456844329833984,
+    "output_sha256": "236032b6fccd2ff6ce3edc5a344eddd95cbced03aebb9e58d4944803df296e6f",
+    "output_full_sha256": "236032b6fccd2ff6ce3edc5a344eddd95cbced03aebb9e58d4944803df296e6f",
+    "output_bytes": 425,
+    "output_truncated": false,
+    "prereg_sha256": "7a22a0d1d251432b587817d3a1cbd1502fc320dff4327b0b91db534c6d4d98c6",
+    "probe_files": {
+      "probe.py": "4f830d96ba1ccd2680cb954e360fa5b9e69660f099a061b32cdcf19b00bc5413"
+    }
+  }
+}

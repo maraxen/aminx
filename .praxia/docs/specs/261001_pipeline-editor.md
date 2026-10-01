@@ -5,11 +5,12 @@ task_id: 261001_aminx-hub-ecosystem-specs
 status: draft
 created: 261001
 owner_repos:
-  - aminx-hub
+  - aminx-hub   # working slug of the separate hub project; final name is a user decision recorded by S3-01
   - pipecanvas
   - praxis
 related_specs:
   - S1
+  - S3
   - S4
   - S5
 ---
@@ -18,10 +19,18 @@ related_specs:
 
 **Status: DRAFT. SPEC ONLY. Nothing here has been built or run.** Working name for the
 component is `pipecanvas` (open question Q1); every tag/package name below is a placeholder
-that lives in one constants module so a rename is mechanical. `owner_repos` lists `aminx-hub` (renamed by
-S5-33; items say `aminx-hub` for the repo as it is called today), `pipecanvas` (the repo the user creates in
-S6-34, populated by S6-20) and `praxis`. S6 lands no xtrax work: round 2 dropped the two xtrax-side items
-(S6-25, S6-26) because S4-06/S4-10/S4-30/S4-31 already own that territory (Revision log).
+that lives in one constants module so a rename is mechanical. `owner_repos` lists `aminx-hub`, `pipecanvas`
+(the repo the user creates in S6-34, populated by S6-20) and `praxis`. **`aminx-hub` is the working slug of the
+hub, a separate project from the `aminx` MPNN package** (user decision 2026-10-01, revised D2: `aminx` keeps its
+name and PyPI identity, nothing is renamed, and the hub holds the combined implementations). The hub's final repo
+name, PyPI policy (S3 recommends none, and never `aminx`) and domain (the user may use `praxia.science`) are
+explicit user decisions recorded by S3-01, which S5-01 is asked to depend on so the slug is known before the repo is
+created. S6 reads the slug in exactly three places, all mechanical to change: `repo = "aminx-hub"` fields and
+`owner_repos`, the `--project-slug` argument of the S6-08/S6-27/S6-36 commands, and the prose that names the hub
+(4.1, 4.12, section 7); `grep -n 'aminx-hub'` on this file lists them, minus the S5 spec's file name
+`261001_aminx-hub.md`, which is a file name and not the slug. S6 itself is unaffected by the choice: the package
+makes no assumption about the hub's repo name, origin or base path (4.1). S6 lands no xtrax work: round 2 dropped
+the two xtrax-side items (S6-25, S6-26) because S4-06/S4-10/S4-30/S4-31 already own that territory (Revision log).
 
 Round 1 re-anchored the document on a graph IR shape; **round 2 found that shape was not the one in S4's
 file** and rebuilt every S4 anchor from S4's current text (`.praxia/docs/specs/261001_xtrax-model-contract.md`,
@@ -95,7 +104,7 @@ Delivered in three stages, each shippable alone:
 - **Document**: one `*.pipeline.json` file (4.2). **Graph**: its executable, layout-free part.
   **Layout**: ignorable view state.
 - **ref**: S4's node identity field. `<manifest id>@<version>` for a model or tool node (for example
-  `molxmpnn/proteinmpnn.sample@0.2.0a4`), or `builtin:code.python`, or `py:<module:symbol>` (Python-only, refused by
+  `aminx/proteinmpnn.sample@0.2.0a4`; illustrative: S4-01 owns the id grammar and S3 fixes the namespace root as `aminx` because the package keeps its name, A60), or `builtin:code.python`, or `py:<module:symbol>` (Python-only, refused by
   the hub). One manifest is one node type, so the palette has one entry per manifest (A43). The manifest hash comes
   from the graph's optional `models` lock table (`{"<id>@<version>": sha256(JCS(manifest))}`). The core treats
   `ref` as an opaque string resolved by the catalog.
@@ -161,7 +170,7 @@ Delivered in three stages, each shippable alone:
   `code.python` capability in S5-43 (import allow-list from the pinned lock, `trusted` flag, sandbox worker with
   `connect-src 'none'`, canary negative test; `:484-489`, item `:1188-1194`), and S5 names the Trust UI as S6-17.
   S5 owns the pipeline runner and the `/pipelines/` page (S5-30, S5-31). The bathos shim check for node/Playwright
-  cells is S5-59, not S5-02 (`:945-950`), and bathos studies run locally or on titanix under slug `aminx-hub`,
+  cells is S5-59, not S5-02 (`:945-950`), and bathos studies run locally or on titanix under the hub's own bathos slug (working value `aminx-hub`, recorded by S3-01; never the `aminx` package's slug),
   never in CI (`:787-795`). S5 binds `S6:graph-document` to S6-03, `S6:pipeline-editor-component` to S6-10 and
   `S6:jupyterlite-blocks` to S6-18 (`:755-758`), and S5-30 already depends on S6-03, S6-07 and S6-11, so those
   item ids and meanings are frozen in this revision.
@@ -273,7 +282,7 @@ Format: five cells; evidence items separated by `;`. `probe_libs.tsv` is shorten
 | A45 | S4's `compat` is `exact \| widen \| reject` with an alphabet rule (two `sequence` ports with different alphabets must not connect); symbolic-dimension unification is reserved (evaluator v1 checks concrete dimensions only, adding it is a corpus version bump); an encoding mismatch is the warning `W_ENCODING_ADAPTER`; `W_NO_EXECUTOR` and `W_TRANSFER_LARGE` belong to S6's pack, not S4's corpus | The type engine would have accepts lists, R3 dimension unification and an `E_DIM_MISMATCH` code | VERIFIED | read: .praxia/docs/specs/261001_xtrax-model-contract.md:489-503 (S4 4.2 "`compat(src, dst) -> exact \| widen \| reject`", alphabet rule, reserved dimension unification, encoding warning); read: .praxia/docs/specs/261001_xtrax-model-contract.md:744-755 (S4 4.6 "Validation": `W_ENCODING_ADAPTER`, `W_NO_EXECUTOR` and `W_TRANSFER_LARGE` belong to S6's pack) |
 | A46 | S4's validator takes the ports of a `builtin:code.python` node from its node-level `ports` table (entries shaped like manifest ports) and S4-31's corpus contains a code-node vector | A code node would be rejected as `E_UNKNOWN_PORT`, or S6 has to carry its own non-normative vector | UNVERIFIED | deferred: S4 shows the node shape (S4 4.6 "Graph IR v2", `:700-702`, `"ports": {"in": [], "out": []}`; re-checked at the convergence check) but states neither the port-entry fields nor the validator's treatment of `builtin:` nodes, and S4-31 is unbuilt; resolved by the S6-16 gate, which reads S4-31's corpus and files the request in Q14 if the vector is absent |
 | A47 | S5 owns `HubExecutionClient` (S5-30, passing S6's `runExecutionClientContract`); S6 owns the `ExecutionClient` port, types and the contract suite (S6-07), and S6-11 publishes the suite with a fake client; S5-30 `depends_on` already lists S6-03, S6-07 and S6-11 | S6 would carry an adapter item and a dependency on S5-30 | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:391-396; read: .praxia/docs/specs/261001_aminx-hub.md:1368-1374; read: .praxia/docs/specs/261001_aminx-hub.md:756 |
-| A48 | The bathos shim check for node/Playwright cells is S5-59 (depends on S5-02 and S5-03); S5's studies run under slug `aminx-hub` with `bth run --project-slug aminx-hub -- uv run --no-sync python3 scripts/studies/<study>.py`, locally or on titanix, never in CI; S5's own A17 (a Python wrapper is needed to resolve the sidecar) is still UNVERIFIED there and S5-59 is its one-run check | S6's bake-off could not rely on the shim, and its sidecar might resolve to nothing | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:945-950; read: .praxia/docs/specs/261001_aminx-hub.md:787-795; read: .praxia/docs/specs/261001_aminx-hub.md:224 |
+| A48 | The bathos shim check for node/Playwright cells is S5-59 (depends on S5-02 and S5-03); S5's studies run under the hub's own bathos slug (working value `aminx-hub`) with `bth run --project-slug <slug> -- uv run --no-sync python3 scripts/studies/<study>.py`, locally or on titanix, never in CI; S5's own A17 (a Python wrapper is needed to resolve the sidecar) is still UNVERIFIED there and S5-59 is its one-run check | S6's bake-off could not rely on the shim, and its sidecar might resolve to nothing | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:1002-1010 (S5-59 item, depends_on S5-02 and S5-03; re-derived in the no-rename revision, the earlier lines 945-950 had drifted); read: .praxia/docs/specs/261001_aminx-hub.md:842-852 (venue local or titanix, never CI; slug `aminx-hub`; stdlib shim; no `bash -c` wrapper); read: .praxia/docs/specs/261001_aminx-hub.md:230 (A17) |
 | A49 | S5 ids with the roles S6 binds: S5-01 repo skeleton and CI with the dependency allow-list guard; S5-02 Playwright harness; S5-03 `hub.toml` and layered path resolvers; S5-04 catalog builder; S5-08 Executor core and PrivacyDescriptor; S5-10 RunStore; S5-17 Pyodide executor; S5-30 runner plus `HubExecutionClient`; S5-31 Pipelines page; S5-33 first public deployment; S5-37 planner and consent; S5-43 `code.python`; S5-59 bathos shim check | A depends_on id points at the wrong item | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:909-912; read: .praxia/docs/specs/261001_aminx-hub.md:927-937; read: .praxia/docs/specs/261001_aminx-hub.md:945-946; read: .praxia/docs/specs/261001_aminx-hub.md:963-964; read: .praxia/docs/specs/261001_aminx-hub.md:1008-1009; read: .praxia/docs/specs/261001_aminx-hub.md:1035-1036; read: .praxia/docs/specs/261001_aminx-hub.md:1044-1045; read: .praxia/docs/specs/261001_aminx-hub.md:1170-1171; read: .praxia/docs/specs/261001_aminx-hub.md:1188-1189; read: .praxia/docs/specs/261001_aminx-hub.md:1368-1369; read: .praxia/docs/specs/261001_aminx-hub.md:1377-1381; read: .praxia/docs/specs/261001_aminx-hub.md:1395-1401 |
 | A50 | S5 emits `dist/catalog/catalog.json` (plus `dist/catalog/models/<id>.json`), byte-deterministic, with `availability[]` per executor carrying the probe `requires` and an evidence level; there is no `index.json`; run-time probe results come from S5-08's capability probe, not from the catalog | The palette input name and the source of `available`/`reasons` change | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:306-310; read: .praxia/docs/specs/261001_aminx-hub.md:322; read: .praxia/docs/specs/261001_aminx-hub.md:352-358 |
 | A51 | S5-04's catalog record passes through the fields the palette needs that its mapping table does not list: the manifest `params` schema, `description`, port `accepts_encodings` and `alphabet`, and the manifest hash for the `models` lock, which is the S4 form sha256(JCS(manifest)), not the sha256 of the release asset bytes that S5's `catalog/sources.toml` pins | The palette has no form model, no encoding warning and no lock entry for model nodes; S6-33 must amend the builder | UNVERIFIED | deferred: S5's mapping table lists ports as (name, direction, type, dtype, shape, required, cardinality) and no params, description, `accepts_encodings`, `alphabet` or manifest hash (`:313-332`); S5 names the hash its wire protocol echoes as `manifest_sha256` (`:513-518`, S5-19) without saying which hash it is, so the JCS form is the contract S6-33 states and S5 must confirm (Q18); S5-04 and S4's `catalog_view` are unbuilt, so S6-33 is the item whose gate settles it (it is a no-op when the fixture already carries the fields) |
@@ -282,6 +291,10 @@ Format: five cells; evidence items separated by `;`. `probe_libs.tsv` is shorten
 | A54 | S5-03 defines `hub.toml` with a `[paths]` table and a derived-data path table (`study_dir`, `build_dir`, `browsers_dir`, `e2e_dir`) resolving explicit argument > environment variable > `hub.toml [paths]` > XDG config > fail loudly, with a malformed file raising | S6 would need a resolver of its own with no hub layer | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:936-941 |
 | A55 | Before extraction the hub can consume the package's built bundle as a hash-pinned vendored input (a `vendor.lock.json` entry whose source is the workspace build), although S5's vendor lock currently lists py2Dmol, ORT-Web, Pyodide and coi-serviceworker as tag-plus-sha256 entries | S5-31 would need the bundle committed to the hub, or the extraction would have to precede the Pipelines page | UNVERIFIED | deferred: S5 names S6 as "a prebuilt ES module" (`:284-285`) and lists the vendor lock content (`:274`) but does not describe a workspace source; filed as Q17, settled by S6-02's gate (the build emits `dist/` plus `checksums.txt`) and the first consumer, S5-31 |
 | A56 | A TypeScript RFC 8785 implementation reproduces S4-30's vectors for the number forms in `params` (0.1, 1e-5, 1e16, 1.0, 2^53 integers), because RFC 8785 number serialization is ECMAScript's | S6-35 hand-writes number formatting, or float params must be string-encoded decimals (S4 decides) | UNVERIFIED | deferred: needs running the vector file in a JS engine (the barred step is installing the package toolchain; the bun-based number-format probe at `probe_rete_jcs.tsv:20,23,25` shows ECMAScript and Python formatting differ, which is why Python needs a real JCS); resolved by the S6-35 gate |
+| A57 | The hub's repo slug, PyPI policy, Pages domain and bathos slug are one user decision, S3-01 (`user_decision = true`, no dependencies); `aminx-hub` is S5's working name; S5-33 already depends on S3-01 while S5-01 (which creates the repo) does not yet, and S3 requests that edge | If S6 had to decide the slug it would need its own decision item; if S3-01 were absent the slug would be undecided when S5-01 creates the repo | VERIFIED | read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:499-507 (S3-01 item); read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:102 (request that S5-01 gains S3-01); read: .praxia/docs/specs/261001_aminx-hub.md:1462-1466 (S5-33 depends_on includes S3-01); read: .praxia/docs/specs/261001_aminx-hub.md:967-973 (S5-01 depends_on is empty today) |
+| A58 | No S6 `depends_on` names an S3 id, and the only S3 id anywhere in the toml block is S3-01 (a kept id), in the S6-36 gate text; so none of S3's retired ids is referenced by S6 and the S3-28 C2 check has nothing to flag in this file | A stale edge would be a to-do for S3-28 and the item would be wrong | VERIFIED | read: .praxia/docs/specs/261001_pipeline-editor.md:1125-1420 (the whole toml block: its `depends_on` values are S4, S5 and S6 ids only); read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:577-599 (S3's retired-ids table) |
+| A59 | S5 builds every hub URL relative to `hub.toml [site] base_path` and its Playwright harness serves the site under three prefixes, so base-path and origin independence of the package can be gated with S5-02's server and a custom domain (S3-29 flipping `base_path`) needs no S6 change | S6-10 would need a prefix-aware server of its own and S6-29's origin handling changes | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:712 (`base_path`-relative, e2e under three prefixes); read: .praxia/docs/specs/261001_aminx-hub.md:986 (S5-02 title: header-controlled dev server under `/`, `/aminx-hub/` and `/aminx/` prefixes) |
+| A60 | The id namespace root of MPNN manifests is `aminx` (S3 fixes the root because the package keeps its name; S4-01 owns the grammar and ids), and S4 now uses the same root (`aminx/proteinmpnn.sample`, `aminx/proteinmpnn.score`) after its no-rename revision | The two example strings in section 2 and 4.2 are wrong; no design change, because `ref` is an opaque string to S6 (section 2) and fixtures re-read S4-19's committed manifest instead of carrying a literal | VERIFIED | S4's text (`.praxia/docs/specs/261001_xtrax-model-contract.md:537,581,896,1507`) now says `aminx/` (read: `261001_xtrax-model-contract.md:557,601`, S4-01 gate) |
 
 ## 4. Design
 
@@ -354,9 +367,22 @@ praxis consume the same release tarball by URL plus sha256 (an npm tarball depen
 Publishing to npm is a separate optional, user-owned item (S6-32) that nothing depends on.
 
 **Records across the move.** Bathos runs made before S6-20 (S6-36, S6-27) live in the hub repo's bathos
-project (slug `aminx-hub`, A48) and are cited by run id; they are not migrated. The `--project-slug` in commands
+project (the hub's slug, working value `aminx-hub`, A48, A57) and are cited by run id; they are not migrated. The `--project-slug` in commands
 is whatever the repo that holds the script has configured at run time, never a slug for a repo that does not
 exist yet.
+
+**Independence from the hub's name, origin and base path.** The hub is a separate project from the `aminx` package,
+and its repo slug, PyPI policy and domain are still open (S3-01, A57). Nothing in `core/` or `elements/` may depend on
+them: no absolute URL, no hub slug and no domain appear in the package; asset URLs resolve from `import.meta.url` or
+host-supplied properties, and the only strings that carry a hub name are the `scripts/studies/` commands of 4.12 and
+the `repo` fields of section 9. Consequences: (a) a different slug, or a custom domain such as `praxia.science` with
+`base_path` flipped by S3-29, needs no S6 edit beyond those strings; (b) S6-10's Playwright gate also loads the demo
+and the built bundle under S5-02's three prefixes (A59), which is the cheap proof; (c) the package never uses
+`praxia` in an identifier (custom-element prefix `pipe-`, npm scope `@pipecanvas`, constants module). **Name
+proximity to flag:** `praxis` in this spec is the lab-automation Angular application, which is neither the user's
+`praxia` agent orchestrator nor a `praxia.science`-derived hub name; if S3-01 picks a `praxia`-derived hub name
+there are three near-identical names in one spec set, so S6 spells `praxis` (the lab app) consistently and S3-01's
+collision policy (Q20) governs the hub name.
 
 ### 4.2 Pipeline document format (`pipecanvas.document` v1)
 
@@ -364,12 +390,12 @@ exist yet.
 {
   "format": "pipecanvas.document",
   "schema_version": 1,                 // int. Load gate below.
-  "domain": { "id": "aminx.hub", "version": 1 },   // which DomainPack interprets it
+  "domain": { "id": "hub.models", "version": 1 },   // which DomainPack interprets it; names the role, not the hub repo, so S3-01 cannot invalidate saved files
   "graph": {                           // hub domain: S4 graph IR v2, EXACTLY as the S4 file section 4.6 defines it
     "schema_version": 2,               // S4's own gate, independent of the envelope's
-    "models": { "molxmpnn/proteinmpnn.sample@0.2.0a4": "<sha256(JCS(manifest)), 64 hex>" },   // optional lock table
+    "models": { "aminx/proteinmpnn.sample@0.2.0a4": "<sha256(JCS(manifest)), 64 hex>" },   // optional lock table
     "nodes": [
-      { "id": "n_k3f9a2qd", "ref": "molxmpnn/proteinmpnn.sample@0.2.0a4",
+      { "id": "n_k3f9a2qd", "ref": "aminx/proteinmpnn.sample@0.2.0a4",
         "params": { "temperature": 0.1, "seed": 7 }, "executor_hint": null,
         "metadata": { "nl_description": "..." }, "frozen": false },
       { "id": "n_p0x7c1mw", "ref": "builtin:code.python",
@@ -857,6 +883,13 @@ verifies against the **live origin** (the origin and `base_path` come from `hub.
 `packages/pipecanvas/docs/checkpoint_criteria.toml`. S6-19 depends on S6-29 and S5-31 (not S6-17: the criteria do not
 need code nodes).
 
+**If the hub's origin changes after `deploy_date` (custom domain, S3-29).** The same site moving to a custom domain
+does not restart the 60-day clock, because the clock counts the editor being live on the public Pipelines page, not a
+particular host name. S6-29 writes the origin it checked next to `deploy_date`; when S3-29 later flips `base_path`,
+the same live-origin check is repeated on the new origin and appended to the criteria file as a second entry, and
+`check_checkpoint.py` requires the latest entry to pass at review time. A fresh deploy of a different bundle is a
+new check, not a new `deploy_date`. S6 does not order itself against S3-29 (both sit behind S5-33).
+
 **A DAG knows "done", not "go".** S6-19 is the *decision* item. Its gate runs `scripts/check_checkpoint.py`, which
 fails unless `review_date >= deploy_date + 60 days` (a 59-day fixture is the negative control), and it writes
 `docs/checkpoint_outcome.toml` with `outcome = "go" | "no-go" | "defer"`, the review date and the evidence links.
@@ -897,8 +930,9 @@ a tracked stdlib-only Python driver, `scripts/studies/pipecanvas_bakeoff.py` and
 `pipecanvas_perf_budget.bth.toml`) stating the hypothesis and `[outcomes]`, **written and committed before the
 run**. S6-08 is the pre-registration PR (harness, resolver, controls, committed sidecar); S6-36 is the run;
 S6-27 commits its own sidecar first and reads its threshold from the S6-36 record id the sidecar names. Run under
-slug `aminx-hub` with the installed `bth` (not `uv run bth`): `bth run --project-slug aminx-hub -- uv run --no-sync
-python3 scripts/studies/pipecanvas_bakeoff.py ...`, so `script_path` resolves to a `.py` and the sidecar resolves
+the hub's own bathos slug (working value `aminx-hub`, recorded by S3-01; **not** the `aminx` package's slug `aminx`,
+whose runs belong to the MPNN package) with the installed `bth` (not `uv run bth`): `bth run --project-slug aminx-hub --
+uv run --no-sync python3 scripts/studies/pipecanvas_bakeoff.py ...`, so `script_path` resolves to a `.py` and the sidecar resolves
 (a `node`, `npx` or `bash -c` wrapper would leave the sidecar unresolved and the record outcome empty). The
 Node-side pieces (the Playwright specs under `packages/pipecanvas/scripts/bakeoff/specs/` that the driver
 launches) are the only JavaScript. **Whether a Python driver reaches a Playwright cell and the sidecar resolves
@@ -937,6 +971,9 @@ recorded in the result. Resume changes scheduling, never the `[outcomes]`.
 | Bake-off or perf runs lose work to a crash/timeout | Per-(candidate, scenario) units, each its own process and timeout; persisted on completion; resume reuses a unit only when candidate lockfile hash and scenario hash match, recording reused units and hashes (4.12) |
 | Canvas inaccessible | List view permanent; keyboard connect flow (S6-14); axe gate |
 | S5's hub CI and deploy shape differ from what S6-02 assumes | S6-02 depends on S5-01 and S5-02; the package adds a job to that CI rather than a parallel workflow |
+| The hub's final name, PyPI policy or domain (S3-01, a user decision) differs from the working slug `aminx-hub`, or a `praxia`-derived name collides with the user's praxia orchestrator or is confused with the `praxis` lab app | The package carries no hub name (4.1) and the three prefixes gate (S6-10) proves base-path independence; the hub-name strings are the `repo` fields and the 4.12 commands (one mechanical pass); the collision policy is S3-01's (Q20); S6 never uses `praxia` in an identifier |
+| A custom domain wired after the first deployment (S3-29) moves the origin under the 60-day praxis clock | The clock counts the editor live on the public page, not a host name; S6-29 records the checked origin, the live check is repeated on the new origin and the latest entry must pass at review (4.10) |
+| S6 studies are recorded under the `aminx` package's bathos slug by habit | The hub has its own slug (S3-01 recommends `aminx-hub`), set in the hub repo before any sidecar runs; 4.12 and the S6-36 gate name it, and S6 never uses slug `aminx` |
 | Rollback | Everything is additive in new packages; the editor reaches the site only through S5-31's page, so reverting that page removes it without touching the packages; praxis items are separate PRs in the praxis repo |
 
 ## 6. Interfaces
@@ -982,6 +1019,7 @@ adds no corpus of its own.
 | `S5:viewer-adapter` | S5 | S5-12 | `mountViewer(el, {structure, scores, overlays})` for preview-node bodies (body slot only, not a hard dependency) |
 | `S5:code-python-capability` + `S5:pyodide-executor` | S5 | S5-17 (executor), S5-43 (`code.python`, trusted flag, sandbox, allow-list) | code-node execution and the executor-side allow-list (A30) |
 | `S5:hub-skeleton`, `S5:e2e-harness`, `S5:paths` | S5 | S5-01 (repo, CI, dependency guard), S5-02 (Playwright harness, pinned Chromium), S5-03 (`hub.toml`, `[paths]`) | where the package starts; browser plumbing; the path table the driver resolver reads |
+| `S3:hub-identity` | S3 | S3-01 (information only: no S6 edge; the dependency is carried by S5-01 once S3's requested edge lands, and by S5-33) | the hub's repo slug, PyPI policy, domain and bathos slug, which S6 reads only as the strings listed in the opening note and 4.12 |
 | `S5:bathos-shim` | S5 | S5-59 (shim check for node/Playwright cells) | proof that a stdlib Python driver reaches a Playwright cell and its sidecar resolves |
 | `S5:pipelines-page` | S5 | S5-31 | the page S6-29 upgrades and S6-19's evidence comes from |
 | `S5:first-deploy` | S5 | S5-33 | the public origin whose live check starts the 60-day clock (4.10) |
@@ -1006,7 +1044,7 @@ JAX suites, and full runs go to CI or titanix. Nothing here is executed by this 
 
 Where things run. Unit and contract suites run in CI (S5-01's CI). Playwright specs use the pinned Chromium
 from S5-02 and run in CI for functional gates. The two number-producing runs (S6-36, S6-27) run on the one named
-host of 4.11 (Q15), under slug `aminx-hub`, never in CI (A48); a frame-time threshold is never compared across
+host of 4.11 (Q15), under the hub's bathos slug (working `aminx-hub`, S3-01), never in CI (A48); a frame-time threshold is never compared across
 hosts. Every number-producing item has a tracked stdlib driver plus a `.bth.toml` sidecar committed **before** the
 run, is verified by its record (`outcome` evaluated), and is chunked and resumable per 4.12. Praxis builds and
 tests (S6-21, S6-22) run in praxis CI or on titanix, never as a whole-suite local run.
@@ -1023,9 +1061,9 @@ tests (S6-21, S6-22) run in praxis CI or on titanix, never as a whole-suite loca
 | S6-06 | Property test: random command sequences followed by full undo restore the exact document (hash-equal via S6-35), with a negative control (a deliberately non-invertible command is caught); patch events replay to the same document |
 | S6-07 | Tests: spec keys stable under layout edits and regenerated edge ids; a param edit changes only the edited node and its descendants (negative control: siblings/upstream unchanged); spec-key input is the `models` lock hash (changing it changes the key); a fake `ExecutionClient` drives run-state transitions from S5-shaped events (progress/unit/done); `runExecutionClientContract` passes the fake and **fails** a seeded-broken client (negative control) |
 | S6-08 | The **pre-registration PR**: harness, the Python output-directory resolver (`pipecanvas_paths.py`) with a malformed-config test and the `hub.toml` cross-check, positive and negative stub engines (the negative fails G1), scenario definitions with their sha256, and the sidecar `pipecanvas_bakeoff.bth.toml` (hypothesis, `[outcomes]`, host, Chromium pin, thresholds) committed **before any run**; the stdlib-only drivers pass S5-01's guard; the smoke of the harness runs in CI |
-| S6-36 | `bth run --project-slug aminx-hub -- uv run --no-sync python3 scripts/studies/pipecanvas_bakeoff.py` on the named host: G1-G5 recorded per candidate; soft metrics recorded; per-(candidate, scenario) units persisted with completion stamps and resumable (reuse only on matching lockfile and scenario sha256, reused units listed); verified by record (`bth compact`, then `bth sql`: `outcome` evaluated, not exit code) |
+| S6-36 | `bth run --project-slug aminx-hub -- uv run --no-sync python3 scripts/studies/pipecanvas_bakeoff.py` (slug = the hub's working slug, S3-01) on the named host: G1-G5 recorded per candidate; soft metrics recorded; per-(candidate, scenario) units persisted with completion stamps and resumable (reuse only on matching lockfile and scenario sha256, reused units listed); verified by record (`bth compact`, then `bth sql`: `outcome` evaluated, not exit code) |
 | S6-09 | User decision recorded in a decision doc: engine confirmed or overridden, with the S6-36 record id cited |
-| S6-10 | Playwright on the in-package demo harness: build structure -> model -> viewer from the palette, including by dragging a palette entry; the inspector edits params and `E_PARAM_SCHEMA` fires on a bad value; document validates; fan-out (two steps pick the same output) and fan-in work; reorder only among valid topological positions; keyboard-only completion; axe reports zero serious violations; cycles unrepresentable |
+| S6-10 | Playwright on the in-package demo harness: build structure -> model -> viewer from the palette, including by dragging a palette entry; the inspector edits params and `E_PARAM_SCHEMA` fires on a bad value; document validates; fan-out (two steps pick the same output) and fan-in work; reorder only among valid topological positions; keyboard-only completion; axe reports zero serious violations; cycles unrepresentable; the demo and the built bundle load and work under each of S5-02's three prefixes (base-path independence, A59) |
 | S6-11 | Playwright on the demo app: a list pipeline runs with the fake `ExecutionClient` and node states render from S5-shaped events; the document survives a URL-fragment round trip with identical graph hash (via S6-35); the published contract suite is importable by a separate package (an S5-30-shaped consumer fixture imports it and fails a seeded-broken client); the catalog fixture is S5-04's emitted one |
 | S6-12 | Playwright: `reject` drop is vetoed before the edge exists (`connect-rejected` emitted, alphabet mismatch reads `E_ALPHABET_MISMATCH`), `exact`/`widen` drop commits, an encoding mismatch commits with the `W_ENCODING_ADAPTER` warning shown; shadow-DOM pointer interaction passes (G2 re-checked on the production adapter); layout round-trips exactly. No performance threshold in this item |
 | S6-13 | Playwright: multi-select move, copy/paste with node and edge id remap (undo restores exactly), group and comment round trip; documents without layout get a deterministic auto-layout (same input, same output) |
@@ -1042,7 +1080,7 @@ tests (S6-21, S6-22) run in praxis CI or on titanix, never as a whole-suite loca
 | S6-23 | (Optional, on user go) in the `/lab/` page a notebook cell renders `<pipe-list>` for a document and a Python-side handle receives edited document JSON; round trip preserves the graph hash |
 | S6-27 | **Pre-registered** bathos run on the same named host as S6-36: sidecar committed first, names the S6-36 record id and the threshold derived from it; 200-node / 400-edge pan/zoom units persisted and resumable; a stub engine with an artificial delay fails the budget (negative control) and a trivial engine passes it (positive control); verified by record |
 | S6-28 | End to end through the editor on the hub page with S5-30's `HubExecutionClient`: an untrusted document is refused (`run-requested.codeTrusted == false` and the executor refuses code nodes); a trusted numpy node runs; a code node that `fetch`es a canary origin fails while the same fetch succeeds in a control without the sandbox (the control proves the canary is reachable). If the canary cannot be made to fail, the item records that and stops for the Q4 user decision |
-| S6-29 | Playwright on the **live public origin** (after S5-33): `<pipe-canvas>` replaces the list as the default with the list view still available; two catalog nodes dragged and wired, run via `HubExecutionClient`, both outputs seen; the served `pipecanvas-elements.js` sha256 equals the release build's `checksums.txt`; `deploy_date` (date of that passing check) and the served sha256 are written to the criteria file |
+| S6-29 | Playwright on the **live public origin** (after S5-33): `<pipe-canvas>` replaces the list as the default with the list view still available; two catalog nodes dragged and wired, run via `HubExecutionClient`, both outputs seen; the served `pipecanvas-elements.js` sha256 equals the release build's `checksums.txt`; `deploy_date` (date of that passing check), the checked origin and the served sha256 are written to the criteria file |
 | S6-30 | Hub CI green with the pipecanvas release tarball vendored: `vendor.lock.json` sha256 matches the tarball, import-map entry resolves, `rg "packages/pipecanvas"` in the hub finds nothing, the Pipelines page Playwright spec still passes |
 | S6-31 | Hub build emits allowed-imports JSON from the pinned Pyodide lock (explicit `--lock`); a test asserts the editor's list equals S5-43's executor-side list for the same lock, and a planted extra package in a copy of the lock changes both |
 | S6-32 | (Optional, user-owned) `npm pack --dry-run` lists only built files and the declared version; publish performed by the user; nothing in the DAG depends on this item |
@@ -1070,6 +1108,7 @@ tests (S6-21, S6-22) run in praxis CI or on titanix, never as a whole-suite loca
 | Q17 | (New.) Change requests to S5: (a) does S5-01's dependency guard scan `package.json`, and if so what is the visible npm allow-list policy for the package's devDependencies; (b) may `vendor.lock.json` carry a workspace-sourced, hash-pinned entry for the package build before extraction (A52, A55)? | Yes to both, as visible changes (one decision with the S5 section 6 row for S6's requests, so S5 answers Q17, Q18 and the hash definition together): the guard stays Python-scoped unless S5 says otherwise, any npm allow-list is a committed file, and the workspace vendoring entry records the sha256 from `checksums.txt`. S6-02's gate is the check. |
 | Q18 | (New.) May S5-04 be amended (S6-33) to pass `params`, `description`, port `accepts_encodings`/`alphabet` and a manifest sha256 through the catalog record? | Yes. They are manifest fields S4 already defines, so no S5 design changes; S6-33 is a no-op if the fixture already has them. The hash is sha256(JCS(manifest)) so the S5-19 echo check and the models lock agree; answered with Q17 in the S5 section 6 row. |
 | Q19 | (New.) `executor_hint` is a field of S4's hashed graph, so changing a hint changes `graph_sha256` and revokes per-hash code trust. Accept? | Accept: it is conservative and keeps one IR. Spec keys ignore hints, so cache prediction is unaffected. The alternative (hints outside the graph) would diverge from S4's shape. |
+| Q20 | (New, no-rename revision.) Which hub name does S6 use in its working strings, and does the hub name affect S6? Hub slug `aminx-hub` (S5's working name), a `praxia.science`-derived name, or another; the praxia orchestrator collision | Keep `aminx-hub` as the working slug; the answer is S3-01's (user decision), not S6's. S6 is name-independent by construction (4.1), so a different answer is a one-pass edit of the `repo` fields and the 4.12 commands. Avoid `praxia` in any S6 identifier; `praxis` in this spec is the lab app. |
 
 ## 9. Backlog items
 
@@ -1078,7 +1117,8 @@ ids were re-read in the current S4 and S5 specs (A47-A49, section 6). `repo = "a
 `packages/pipecanvas/` (and the hub's `scripts/studies/`) for work before S6-20 and the hub repo itself afterwards;
 `pipecanvas` is used only for work whose first commit lands in the new repo (S6-34, S6-32); `praxis` items land in the
 praxis repo. **Retired ids, never reused:** S6-24 (folded into S6-11), S6-25 and S6-26 (superseded by S4-06, S4-10,
-S4-30 and S4-31, as S4 itself records). Ids 33 to 36 are new in round 2. `HubExecutionClient` is S5-30's, not an S6
+S4-30 and S4-31, as S4 itself records). Ids 33 to 36 are new in round 2. The no-rename revision adds, deletes and
+re-edges no S6 item (S6 never had an edge to an S3 id; its S3 dependence is transitive through S5-01 and S5-33). `HubExecutionClient` is S5-30's, not an S6
 item.
 
 ```toml
@@ -1178,7 +1218,7 @@ title = "Run the pre-registered bake-off on one named host and record the bathos
 repo = "aminx-hub"
 size = "M"
 depends_on = ["S6-08"]
-gate = "bth run under slug aminx-hub on the named host; G1-G5 and soft metrics recorded per candidate; units resumable by lockfile and scenario hash with reused units listed; verified by run record outcome after bth compact"
+gate = "bth run under the hub bathos slug (working value aminx-hub, S3-01) on the named host; G1-G5 and soft metrics recorded per candidate; units resumable by lockfile and scenario hash with reused units listed; verified by run record outcome after bth compact"
 user_decision = false
 
 [[item]]
@@ -1196,7 +1236,7 @@ title = "pipe-list element with in-package demo harness: ordered step list, per-
 repo = "aminx-hub"
 size = "L"
 depends_on = ["S6-04", "S6-05", "S6-06", "S5-02"]
-gate = "Playwright on demo harness: structure->model->viewer incl. palette drag, inspector param errors, fan-out and fan-in, keyboard-only completion, axe zero serious violations, cycles unrepresentable"
+gate = "Playwright on demo harness: structure->model->viewer incl. palette drag, inspector param errors, fan-out and fan-in, keyboard-only completion, axe zero serious violations, cycles unrepresentable; demo and built bundle work under each of S5-02's three prefixes"
 user_decision = false
 
 [[item]]
@@ -1304,7 +1344,7 @@ title = "Upgrade the public hub Pipelines page from pipe-list to pipe-canvas (li
 repo = "aminx-hub"
 size = "M"
 depends_on = ["S6-12", "S6-15", "S6-27", "S5-30", "S5-31", "S5-33"]
-gate = "Playwright on the live public origin: canvas default with list available, two catalog nodes dragged, wired and run via HubExecutionClient with both outputs seen, served bundle sha256 equals checksums.txt; deploy_date and served sha256 written to the criteria file"
+gate = "Playwright on the live public origin: canvas default with list available, two catalog nodes dragged, wired and run via HubExecutionClient with both outputs seen, served bundle sha256 equals checksums.txt; deploy_date, checked origin and served sha256 written to the criteria file"
 user_decision = false
 
 [[item]]
@@ -1565,3 +1605,55 @@ that states the fact.
   (3) The matching S4 text fix: S4's risk row said S6-03 runs the TS side of the JCS vectors, which is S6-35; corrected in
   the S4 file in the same pass.
 - No backlog item, `depends_on` or id changed; the single `[[item]]` TOML block is untouched.
+
+### No-rename revision (user decision 2026-10-01, revised D2)
+
+Trigger: the MPNN package keeps the name `aminx` (released on PyPI as `aminx`); there is no rename, no `molxmpnn`, no
+shim distribution, no repo, HF or PyPI move and no consumer migration. The hub is a separate project, working slug
+`aminx-hub`, whose final repo name, PyPI policy and domain (possibly `praxia.science`) are S3-01's user decision. S3's
+file is now `261001_aminx-identity-and-hub-naming.md` (this file cites it by that name). Changes to S6:
+
+- **Hub naming.** The opening note and `owner_repos` state that `aminx-hub` is the working slug of a separate project,
+  not a name the hub inherits from `aminx` and not a repo "renamed by S5-33". The old statement "items say `aminx-hub`
+  for the repo as it is called today" and the declined-C13 reasoning "S5-33 renames the repo later" are void: the hub
+  repo is created once by S5-01 under the slug S3-01 records (A57). S5-33 stays the first public deployment, nothing more.
+- **`molxmpnn` becomes `aminx`.** The example `ref` and `models` key are `aminx/proteinmpnn.sample@0.2.0a4` (section 2
+  and 4.2). The version is illustrative: the real one is whatever alpha S3-12's release rule cuts. The namespace root
+  is S3's, the grammar and ids are S4-01's, and S6 treats the string as opaque (A60, UNVERIFIED until S4's own
+  revision lands). The coherence-round-1 entry C12 above ("the first molxmpnn release is `0.2.0a4`",
+  "`MolxmpnnIdentity` contract") is superseded; it stays as history.
+- **Hub pack id.** `domain.id` in the document example changes from `aminx.hub` to `hub.models`: a persisted file
+  format identifier must not embed a repo name that S3-01 may still change. Only the example in 4.2 used it.
+- **Bathos slug.** The `--project-slug aminx-hub` commands (4.12, S6-36, section 7, A48) are labelled as the hub's working
+  slug recorded by S3-01. S6 studies never run under slug `aminx`, which stays the MPNN package's. A48 was reworded
+  and re-verified against S5's current text (its S5 citations moved: S5-59 at lines 1002-1010, the venue rule at 842-852,
+  S5's A17 at line 230).
+- **New section text.** 4.1 gains "Independence from the hub's name, origin and base path" (no hub name, absolute
+  URL or domain in the package; the S6-10 gate runs the demo and bundle under S5-02's three prefixes; no `praxia` in any
+  identifier; the `praxia`/`praxis`/`praxia.science` proximity is flagged). 4.10 gains the rule for an origin change
+  after `deploy_date` (custom domain wired by S3-29: the clock is not restarted, S6-29 records the checked origin, the
+  check is repeated on the new origin, the latest entry must pass at review). S6-29's gate records the origin; S6-10's
+  gate adds the three-prefix check.
+- **Ledger.** A48 reworded and re-verified; A57 (hub identity is S3-01's), A58 (no S6 edge to an S3 id), A59
+  (base-path independence is gateable with S5-02) added VERIFIED by `read:`; A60 (manifest namespace root) added
+  UNVERIFIED, deferred to the coherence pass because S4 is revised concurrently. No spike was run: nothing here is
+  runnable (the spike harness `scripts/loop/adversarial_metrics.py` does not exist in this worktree, as the opening
+  note says) and every VERIFIED row cites the line that states the fact.
+- **Risks and questions.** Risk rows added for a hub name that differs from the working slug (and the praxia
+  orchestrator collision), for the origin change under the 60-day clock, and for studies recorded under the wrong slug.
+  New question Q20 (hub name in S6's working strings), answered by S3-01. `related_specs` regains S3, because
+  `S3:hub-identity` is consumed (information only, one row in the Consumes table; C13's "S3 dropped" is superseded).
+- **Edges and items.** The map of S3 ids was applied. S6 had no `depends_on` edge to any S3 id (A58), so no edge
+  was rewired and no item was added or deleted; the retired S3-02 to S3-08, S3-10, S3-11, S3-13 to S3-17, S3-19, S3-20,
+  S3-22, S3-23 and S3-25 to S3-27 are not referenced, nor are the kept S3-09, S3-12, S3-18, S3-21, S3-24, S3-28 and
+  S3-29. S6's one S3 dependence is transitive (checked over the toml graph): every S6 item except S6-01 (the pipecanvas
+  name decision, no dependencies) sits behind S5-01, which S3 asks to gain S3-01, and S6-19, S6-20, S6-21, S6-22, S6-29,
+  S6-30, S6-32 and S6-34 sit behind S5-33, which already depends on S3-01. No S6 id was deleted.
+- **Ordering re-check.** Nothing in S6 was ordered against the rename. Restated for the no-rename world: S6 needs
+  (1) the hub skeleton and its CI (S5-01, S5-02, S5-03), created under a slug known from S3-01; (2) S4's manifests, graph
+  IR, JCS vectors and corpus (S4-06, S4-10, S4-30, S4-31), which are independent of any aminx release, of the EBM
+  extraction (S2) and of S1; (3) the first public deployment (S5-33) before the 60-day clock starts, with a possible later
+  origin change by S3-29 handled in 4.10. There is no "rename first or EBM first" decision in S6, and no S6 item runs
+  on `src/molxmpnn/ebm` or on a renamed tree.
+- **Unchanged.** The single toml block's items and edges, the `repo = "aminx-hub"` values (working slug, one
+  mechanical pass if S3-01 decides otherwise), the S4 anchors, and every other ledger row.

@@ -1,12 +1,12 @@
 ---
 title: "xtrax model contract: ports, manifests, schemas, executor-agnostic graph IR, shared ONNX route"
-description: "L1 contract (port types, model manifest, param JSON Schema, graph IR v2 with per-executor bindings, scorer protocols, shared ONNX export route) that lets models compose and be served by the aminx hub without importing each other."
+description: "L1 contract (port types, model manifest, param JSON Schema, graph IR v2 with per-executor bindings, scorer protocols, shared ONNX export route) that lets models compose and be served by the hub (a separate project, working slug aminx-hub, final name pending S3-01) without importing each other."
 task_id: 261001_aminx-hub-ecosystem-specs
 status: draft
 created: 261001
 owner_repos:
   - xtrax
-  - aminx (becomes molxmpnn after S3)
+  - aminx (keeps its name and PyPI identity; there is no rename)
   - proteinsmc
   - plegadx
   - prolix
@@ -45,7 +45,7 @@ other. Concretely: ten deliverables (a)-(j) from the scope, mapped to sections 4
   RunSpec), its pure lowering has golden vectors, and its schema, TS types, constants, defaults
   and validator are generated from it (not hand-written); a planted wrong default is caught.
 - AC5. proteinsmc obtains an MPNN scorer by discovery with no import edge to
-  aminx/molxmpnn and no new runtime dependency (D6).
+  aminx and no new runtime dependency (D6).
 - AC6. The four-graph ONNX split exports through `xtrax.export.onnx` and passes the already
   established parity chain under bounds inherited from earlier runs, under pre-registered
   bathos sidecars.
@@ -57,7 +57,8 @@ other. Concretely: ten deliverables (a)-(j) from the scope, mapped to sections 4
 
 **Non-goals.**
 
-- Executor implementations, catalog, site: S5. Editor UI: S6. Rename: S3. Spec-system
+- Executor implementations, catalog, site: S5. Editor UI: S6. Hub identity, release guard and
+  stale-name cleanup: S3 (the MPNN package keeps the name `aminx`; there is no rename). Spec-system
   unification and the field registry itself: S1 (S1 declares the nested-field metadata; S4 owns
   the browser knob document built on it, S1 decision D10). EBM extraction: S2. This spec defines
   the *shapes* those consume.
@@ -93,6 +94,16 @@ S4-33 (see the Revision log); S4-18 keeps its meaning as the ORT-CPU cell of the
 Round 2 appended S4-43 to S4-49 and narrowed S4-10 (it keeps its id and its S1-facing meaning: the
 contract-side graph wire format plus the `xtrax.run.RunSpec` pin; the live-graph, emitter and
 audit work moved to S4-44 and S4-45).
+
+**No-rename revision (user decision 2026-10-01, revised D2).** The MPNN package keeps the name
+`aminx` (it is released on PyPI as `aminx`), so this spec's earlier assumption that the package
+is renamed after S3 is withdrawn. Manifest ids, entry-point values, factory strings,
+directory names and `repo` fields use `aminx`, and no S4 item depends on a rename, shim or cutover
+item. The hub is a separate project (working slug `aminx-hub`; its final repo name, PyPI policy and
+domain, possibly derived from `praxia.science`, are the user decision S3-01). No manifest, schema or
+discovery rule in this spec contains the hub's name, so S3-01's answer cannot change S4. Ledger rows
+A58 to A63 were added and A36 and A43 reworded in this revision, each re-read on 261001. Revision-log
+entries before the "no-rename revision" entry describe the retired design and are kept as history.
 
 ## 3. Current state
 
@@ -263,7 +274,7 @@ Anchors are into the drafts as of round 1; they are asks, not verified facts abo
 | S1 | **S4-20 owns the browser knob document, its defaults and validators, and the pure lowering** of letter-keyed structure-relative constraints (`bias`, `fixed_mask`, `fixed_tokens`, `tie_group_map`, the `chains_to_design` vs `chain_id` mismatch); it depends on S1-05 and S1-07, and on S1-18 to delete the interim drift test; S1 builds no `DesignConstraints` (decision D10, Q6) (`261001_spec-system-unification.md:481-491`, `:531`, `:547`, `:610`) | 4.7, S4-20, S4-33 |
 | S1 | Keep xtrax `RunSpec` base fields and identity `from_spec` backward compatible (`261001_spec-system-unification.md:545`) | S4-10 pins them |
 | S6 | **Superseded asks.** S6's draft files S6-25 (the `builtin:` scheme and port `required`/`cardinality`, in xtrax) and S6-26 (conformance corpus, JCS vectors, diagnostic codes, in xtrax) and says S4 has none (`261001_pipeline-editor.md:24`, `:83`, `:232`). S4 now provides all of them (`builtin:` in S4-10, `required`/`cardinality` in S4-06, JCS vectors in S4-30, corpus and codes in S4-31). **S4 is the sole owner**; S6-25 and S6-26 are superseded and must be removed by the coherence pass (section 6 lists the re-points) | 4.2, 4.6, S4-06, S4-10, S4-30, S4-31 |
-| S3 | Interim proteinsmc guard `find_spec("molxmpnn.scoring.score")` (S3-18); rename and weights cutover items S3-07, S3-11. S3 provides only the root name `molxmpnn` (`S3:molxmpnn-manifest-namespace`) and the repo/release facts (`S3:molxmpnn-repo`); S4 owns the id and entry-point grammar (4.3, 4.8, C12) | 4.3, 4.8, 4.9, S4-01, S4-22 |
+| S3 | Interim proteinsmc guard (S3-18): a root-only `find_spec("aminx")` guard with its imports deferred into `make_mpnn_score`, closed unmerged if S4-49 answers "supersede"; the release guard and train rule (S3-12); the identity contract `S3:aminx-identity` (nothing is renamed). S3 provides only the root name `aminx`; S4 owns the id and entry-point grammar (4.3, 4.8, C12) | 4.3, 4.8, 4.9, S4-01, S4-22, S4-49 |
 | S5 | **Accepted inbound amendment S5-51 (repo xtrax, `user_decision`)**: G1 `kind: tool` manifest may carry no weights artifact; G2 `external`/`byo` artifacts waive `urls` and the 40-hex rule; G3 `pyodide` entry gains `fs_in`/`fs_out` mappings; G4 `determinism` on every executor kind (`261001_aminx-hub.md`, 4.2 gap table). The hub's earlier G5 (`grid.meaning` in `compat`) is **withdrawn**: 4.2 already defines `energy-map` (alias `gfe-grid`), `count-grid` and `density-grid`, and compat rule 2 rejects a `count-grid` wired to an `energy-map`. The hub's earlier G6 (a `catalog_view` snapshot corpus usable from Node) is S4's own deliverable in S4-09, not an amendment. G1-G4 are S5-51's edits to schemas S4 owns. Decision recorded in 4.3 (additive within `model-manifest.v1`, lands before the first release, S4-34 depends on S5-51) | 4.3, S4-09, S4-34 |
 
 ### 3.6 Assumption Ledger
@@ -308,14 +319,14 @@ a run can settle it (see section 2 for why no spike ran).
 | A33 | The MPNN score function returns a negative log-likelihood (`nll`, lower is better), reduced as a masked mean | none, the contract declares direction and units explicitly rather than assuming | VERIFIED | read: src/aminx/scoring/score.py:209; read: src/aminx/scoring/score.py:86 (r1 C17); S4-21 keeps a sign-flip negative control |
 | A34 | JAX cannot run under Pyodide | none, no item depends on it, the pyodide executor entry is shape-only | UNVERIFIED | deferred: needs a Pyodide session and network, not a design input |
 | A35 | The aminx dependency-groups table exists, so an export-only group is expressible without a new extra | the toolchain would have to ride in an extra | VERIFIED | read: pyproject.toml:264 |
-| A36 | importlib.util.find_spec of a dotted name imports the parent package, so a guard like find_spec("molxmpnn.scoring.score") runs the package __init__ and propagates its exceptions | the interim S3-18 guard is import-free and S4-22 is only a refinement | VERIFIED | read: /home/marielle/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/lib/python3.13/importlib/util.py:80-91 |
+| A36 | importlib.util.find_spec of a dotted name imports the parent package, so a guard like find_spec("aminx.scoring.score") runs the package __init__ and propagates its exceptions | the interim S3-18 guard is import-free and S4-22 is only a refinement | VERIFIED | read: /home/marielle/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/lib/python3.13/importlib/util.py:89-91 (re-read in the no-rename revision; the guard S3-18 actually installs is the root-only find_spec("aminx"), which A44 covers) |
 | A37 | S1 makes the registry the single source, exposes it to S4 as opt-in nested-field metadata on the unified RunSpec (snapshot JSON only for non-Python consumers), and assigns the knob document and lowering to S4-20 | schemagen would have to read the JSON snapshot instead of field metadata | VERIFIED | read: .praxia/docs/specs/261001_spec-system-unification.md:351; read: .praxia/docs/specs/261001_spec-system-unification.md:481-491; read: .praxia/docs/specs/261001_spec-system-unification.md:531 |
 | A38 | S5's catalog needs the manifest field set HUB-REQ 1-10 with ports at the manifest level (one manifest is one node type) | operations[] inside one manifest would be acceptable to the catalog builder | VERIFIED | read: .praxia/docs/specs/261001_aminx-hub.md:276-292 |
 | A39 | S6 needs ref-addressed nodes, port-addressed edges with ids and kind, an inline code node, a declarative port-type table with exact/widen/reject plus a corpus and hash vectors | the IR v2 shape could stay close to HostPrepGraph v1 | VERIFIED | read: .praxia/docs/specs/261001_pipeline-editor.md:295-300; read: .praxia/docs/specs/261001_pipeline-editor.md:319-327; read: .praxia/docs/specs/261001_pipeline-editor.md:674-676 |
 | A40 | Python float formatting via repr followed by ES6-style reformatting reproduces RFC 8785 number text for the vectors S6 lists (0.1, 1e-5, 1e16, 1.0, 2^53 ints) | a vetted JCS library or a hand-written dtoa is needed | UNVERIFIED | deferred: needs running code, S4-30 gate runs the shared vectors with naive json.dumps as the negative control |
 | A41 | S4 item ids can be renumbered freely | none, ids stay stable | REFUTED | read: .praxia/docs/specs/261001_aminx-hub.md:210; read: .praxia/docs/specs/261001_aminx-hub.md:296-297; read: .praxia/docs/specs/261001_spec-system-unification.md:531; changed: S4-04, S4-09, S4-10, S4-14, S4-18, S4-19, S4-20 keep their ids, new work is appended as S4-30 to S4-33, and the part of S1's "S4-20" that is large (the knob document and lowering) is split out as S4-33 which S4-20 depends on, so S1's statement that S4-20 deletes the drift test stays literally true |
 | A42 | `dist.locate_file(<relative path>)` finds package data for every install mode, including editable installs | the entry-point value cannot be a distribution-relative data path | REFUTED | read: /home/marielle/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/lib/python3.13/importlib/metadata/__init__.py:921-922 (`self._path.parent / path`, relative to site-packages); changed: the entry-point value is a top-level package name located with `find_spec`, not a path (4.8); r1 C5 |
-| A43 | Build backends accept a path-valued entry-point value such as `molxmpnn/manifests/x.json` | the entry-point value cannot be a path | REFUTED | read: .venv/lib/python3.13/site-packages/setuptools/config/_validate_pyproject/formats.py:336-358 (module part must be dotted identifiers); read: .venv/lib/python3.13/site-packages/setuptools/config/_validate_pyproject/fastjsonschema_validations.py:35 (entry-point values carry `format: python-entrypoint-reference`); read: pyproject.toml:3 (aminx builds with `setuptools.build_meta`); changed: the value is the bare module form `importable.module` (a top-level package name), which the grammar accepts (4.8); r1 C6 |
+| A43 | Build backends accept a path-valued entry-point value such as `aminx/manifests/x.json` | the entry-point value cannot be a path | REFUTED | read: .venv/lib/python3.13/site-packages/setuptools/config/_validate_pyproject/formats.py:336-358 (module part must be dotted identifiers); read: .venv/lib/python3.13/site-packages/setuptools/config/_validate_pyproject/fastjsonschema_validations.py:35 (entry-point values carry `format: python-entrypoint-reference`); read: pyproject.toml:3 (aminx builds with `setuptools.build_meta`); changed: the value is the bare module form `importable.module` (a top-level package name), which the grammar accepts (4.8); r1 C6 |
 | A44 | `importlib.util.find_spec("<top-level name>")` does not import the package or run its `__init__` (the parent import happens only for dotted names) | the discovery step runs model code and the alphex D5 inversion returns | VERIFIED | read: /home/marielle/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/lib/python3.13/importlib/util.py:89-100 (r1 C5) |
 | A45 | `find_spec` of the top-level package resolves its directory (`submodule_search_locations`) for editable installs (setuptools `.pth` and finder modes), not only for built wheels | pre-stated fallback: PEP 610 `direct_url.json` source root for editable dists, `dist.files` scan for wheel installs | UNVERIFIED | deferred: needs an editable install, which this task forbids; gated by S4-11 (synthetic `.pth` and finder-mode editable fixtures) and S4-21/S4-23 (real editable dev install) (r1 C5) |
 | A46 | import-linter (grimp) treats a function-level `import numpy` as an import edge | n/a: the design avoids the question, `wire.py` imports no array library and numpy conversion lives xtrax-side | UNVERIFIED | deferred: needs running lint-imports; the S4-04 negative control (a planted function-level `import numpy` must fail the lint) settles it (r1 C15) |
@@ -330,6 +341,14 @@ a run can settle it (see section 2 for why no spike ran).
 | A55 | proteinsmc treats a higher fitness as better (it reports `max_fitness` as the maximum of the combined fitness over particles), so a `minimize` NLL must be negated at the adapter | the sign rule in 4.9 would invert the optimisation | UNVERIFIED | deferred: the max-reporting anchor is read (`proteinsmc/sampling/initialization_factory.py:377`) but the SMC weight update that consumes fitness was not traced; S4-48 begins by anchoring it with a `path:line`, and its gate carries a sign-flip negative control (r2 R2-3) |
 | A56 | RFC 8785 sorts object members by UTF-16 code units, which differs from Python's code-point `sorted()` for an astral key against a BMP key above U+D800 (U+FF5E against U+10000) | the extra S4-30 vectors are unnecessary | UNVERIFIED | deferred: the spike harness is absent from this worktree (section 2); an inline probe printed the BMP key first under `sorted()` and the astral key first under a UTF-16-BE key sort, a sanity check and not a citation; the S4-30 vectors settle it against the RFC text (r2 R2-12) |
 | A57 | `node_metadata_schema.toml` defines `nl_description` as required, type string, `min_length = 1`, plus optional slots (`mathjax_label`, `citations`, `script_usage`) | the stdlib validator needs more than one slot rule | VERIFIED | read: xtrax@v0.4.0a11:src/xtrax/composition/node_metadata_schema.toml:8-30 (r2 R2-1) |
+| A58 | The MPNN distribution is named `aminx` (setuptools backend, static `version` string) and its HF weights repo is `maraxen/aminx`, pinned by `HF_REVISION`; no item in this spec renames either | manifest ids, `hf://` URLs and the entry-point value would need a different root | VERIFIED | read: pyproject.toml:3; read: pyproject.toml:6-7; read: src/aminx/io/weights.py:23; read: src/aminx/io/weights.py:34 (no-rename revision) |
+| A59 | `src/aminx/manifests/` does not exist yet, so S4-19 adds new files and the entry-point value `aminx` plus `manifests/<stem>.json` needs no move of existing content | S4-19 would collide with existing files | VERIFIED | read: `ls src/aminx` on 261001 listed no `manifests` entry (the package directory holds `__init__.py`, `cli.py`, `ebm`, `export`, `host`, `inference`, `io`, `model`, `model_params`, `parity`, `potts`, `profiling`, `registry.py`, `run`, `runtime.py`, `sampling`, `scoring`, `tiling`, `training`, `types`, `utils`) |
+| A60 | The browser sampler directory is `browser/aminx-sampler` and S5 keeps that name, so the S4-20 `node --test` path and the generated-module import need no rename | the S4-20 gate path would point at a moved directory | VERIFIED | read: browser/aminx-sampler/runspec_core.mjs:249; read: browser/aminx-sampler/split_driver.mjs:22-65; read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:94 (S3 keeps the directory) |
+| A61 | An entry-point value identifies a provider only by top-level package name (resolution is by name), so a second distribution that installs a top-level package named `aminx` (for example the hub) would be silently taken for the provider | none: this is a constraint on the hub, not a design input to S4, and S3 enforces it | VERIFIED | read: /home/marielle/.local/share/uv/python/cpython-3.13-linux-x86_64-gnu/lib/python3.13/importlib/util.py:89-100 (a dotless name is resolved by name alone); read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:40-42 (S3 Goal 3: the hub never takes `aminx`, enforced by S3-24's reserved-name mode) |
+| A62 | S4 depends on no retired S3 item: S3's retired table (section 10) removes every S3 id the previous S4 toml named (S3-07, S3-11, S3-13), and the only surviving S3 item with an S4 edge is S3-18, which depends on S4-49 (so S4-49 must never depend on S3-18) | a stale edge survives, or S4-49 to S3-18 closes a cycle | VERIFIED | read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:540; read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:577-599 |
+| A64 | aminx CI has an AST inventory test that fails on unmapped and stale public top-level symbols under `src/aminx/{inference,sampling,scoring,model,host,tiling,ebm,potts}` and on every name in `aminx.run.__all__`, with a JSON map and an internal-count baseline file, so S4 items that add such symbols must edit the JSON in the same PR (CH1-02) | S4-19, S4-21 and S4-40 would go red on first push with no gate naming the fix | VERIFIED | read: tests/parity/test_browser_validation_inventory.py:18-29; read: tests/parity/test_browser_validation_inventory.py:101-123; read: tests/parity/test_browser_validation_inventory.py:140; read: src/aminx/run/__init__.py:41 |
+| A65 | aminx cannot read `field_meta.v1.json` from the unreleased xtrax repo on titanix or in aminx CI, so S1-06 must vendor a byte copy by sha256 from the S4-07 commit (CH1-04) | S1-06's subset gate would not be reproducible | VERIFIED | read: .praxia/docs/specs/261001_spec-system-unification.md:501-506 (S1 specifies the vendoring); no S4 import of `xtrax_contract` before S4-35 (4.7) |
+| A63 | S2's protection against lock churn does not depend on the rename: S2 runs its A0/tier-1/B1 items from a detached worktree at a pinned commit and hashes `uv.lock`, so S4-16 and S4-35 need no edge to S2-05..S2-34; the same holds at S2-06's clone point G because S2's check at G is code-only, and S1's lock-sensitive goldens rely on S1's environment stamp, not ordering | S4-16 and S4-35 need an ordering edge against S2 | VERIFIED | read: .praxia/docs/specs/261001_ebm-extraction.md:211; read: .praxia/docs/specs/261001_ebm-extraction.md:414-418 (S2 is being revised concurrently; re-check before declaring the set converged) |
 
 ## 4. Design
 
@@ -380,6 +399,7 @@ xtrax/                                          (repo, unchanged identity)
       canonical.py    RFC 8785 JCS dumps + sha256 (S4-30)
       ports.py        PortSpec, port-type table loader, compat() evaluator
       port_types.v1.json   declarative port-type table (S4-04)
+      field_meta.v1.json   the twelve-key FieldMeta shape (S4-07); stable path S1 vendors by sha256 (CH1-04)
       wire.py         PortValue descriptor + safetensors-layout codec over bytes/memoryview (imports no array library)
       executors.py    ExecutorEntry kinds, ArtifactEntry (+ per-format details)
       manifest.py     ModelManifest, catalog_view()
@@ -534,7 +554,7 @@ test asserts the shared artifact entries are identical. Shape (dataclasses in `m
 ```jsonc
 {
   "schema_version": 1,                          // required, never default-filled
-  "id": "<namespace>/<family>.<op>",            // e.g. molxmpnn/proteinmpnn.sample; grammar owned by S4-01, see below
+  "id": "<namespace>/<family>.<op>",            // e.g. aminx/proteinmpnn.sample; grammar owned by S4-01, see below
   "kind": "model",                              // model | tool (isochore-class entries are tools)
   "role": "sampler",                            // scorer | sampler | predictor | energy | transform | adapter
   "family": "proteinmpnn", "version": "<model package version>",
@@ -574,11 +594,13 @@ test asserts the shared artifact entries are identical. Shape (dataclasses in `m
 ```
 
 **Id, entry-point and directory grammar (owned here, r3 C12).** The S4-01 ADR fixes it; S3
-provides only the root name `molxmpnn` (`S3:molxmpnn-manifest-namespace`) and the repo/release
-facts (`S3:molxmpnn-repo`), and defines no manifest strings. An `id` is
+provides only the root name `aminx` (`S3:aminx-identity`; the package is not renamed) and defines
+no manifest strings. An `id` is
 `<namespace>/<family>.<op>`: `namespace` is the providing project's root name, `family` is the
 model family, `op` is the operation (`sample`, `score`; not the `role` enum). The MPNN ids are
-`molxmpnn/proteinmpnn.sample` and `molxmpnn/proteinmpnn.score`. The `xtrax.models` entry-point
+`aminx/proteinmpnn.sample` and `aminx/proteinmpnn.score`. The namespace is the providing model
+project, never the hub: the hub (a separate project, name pending S3-01) consumes manifests and
+appears in none of these strings, so S3-01's answer cannot change an id. The `xtrax.models` entry-point
 name is the manifest file stem, derived from the id as the part after `/` with `.` replaced by `-`
 (`proteinmpnn-sample`, `proteinmpnn-score`); manifests live in `<package>/manifests/<stem>.json`
 (4.8). S4-19, S4-21 and the S6 `ref` values (`<id>@<version>`) use these strings verbatim, and the
@@ -839,6 +861,16 @@ shape (section 6). S4-32 is the guard against the two sources disagreeing: it va
 that shape for every exposed field and asserts the schema emitted from the classes has exactly
 the properties the committed `run_spec_fields.json` marks portable, keyed by `browser_key`.
 
+**Delivery to aminx before any release (CH1-04).** The file reaches S1-06 as a vendored copy, not as a
+sibling-repo read. S4-07 commits it at the stable path `src/xtrax_contract/field_meta.v1.json` in the
+xtrax repo and records the merge commit SHA and the file's sha256 in its item record (the S4-07 PR
+description and the bathos or backlog note that closes it). S1-06 vendors a byte copy into aminx
+(`tests/golden/spec_system/field_meta.v1.json` with a `.source` header: repo, commit, sha256) guarded by a
+pinned-sha256 test, as S1 specifies, and its subset gate compares against that copy, so the gate is
+reproducible on titanix and in aminx CI with no `xtrax_contract` import and no S4-34 release. The packaged
+file and the vendored copy are compared once S4-35 makes `xtrax_contract` importable (S4-32 does this). The
+path and the key list change only with a `FieldMeta` version bump (`field_meta.v2.json`), never in place.
+
 **Who owns what for the browser (resolves the REFUTED A14).** The letter-keyed knob document the
 browser reads has no Python class and a script-only Python twin (3.2). S1 decided S4-20 owns it
 (D10, Q6), as a projection of the surviving RunSpec so D4's "one spec system" holds:
@@ -893,8 +925,8 @@ hand-written, S4-33, S4-40 to S4-42 and S4-20 shrink to the keys the registry al
   ```text
   # in the model distribution's pyproject.toml (illustrative, not a backlog block)
   [project.entry-points."xtrax.models"]
-  proteinmpnn-sample = "molxmpnn"     # file: molxmpnn/manifests/proteinmpnn-sample.json
-  proteinmpnn-score  = "molxmpnn"     # stems derive from ids by the S4-01 grammar (4.3); "molxmpnn" is S3's root name
+  proteinmpnn-sample = "aminx"     # file: aminx/manifests/proteinmpnn-sample.json (src/aminx/manifests/)
+  proteinmpnn-score  = "aminx"     # stems derive from ids by the S4-01 grammar (4.3); "aminx" is the unchanged root name (S3:aminx-identity)
   ```
   Whether `find_spec` resolves the package directory under every editable mode is A45
   (UNVERIFIED, deferred to the S4-11 fixtures and the real editable dev installs in S4-21/S4-23).
@@ -908,6 +940,11 @@ hand-written, S4-33, S4-40 to S4-42 and S4-20 shrink to the keys the registry al
   distribution yields a recorded `DiscoveryError` for that entry and does not stop the rest.
 - **Collision guard:** two entries claiming the same `id@version` with different manifest hashes
   fail registration (alphex's symbols-collision guard, applied to ids).
+- **Bare-name collision (no-rename revision).** The entry-point value is a top-level package name, so
+  a second distribution installing a top-level package `aminx` would be taken for the provider (A61).
+  The hub is therefore never named or packaged `aminx`: S3-01 records the rule and S3-24's
+  reserved-name mode enforces it in the hub's CI. The hub's own name (aminx-hub, a
+  `praxia.science`-derived name or another) does not appear in any entry point, id or manifest.
 - `NodeTypeRegistry` indexes manifests by `ref`. The hub does not use entry points: it builds a
   static catalog from manifests collected in CI (S5), because the browser has no installed
   distributions (the second alphex reason, A10).
@@ -941,8 +978,8 @@ both cite this list.
 
 1. **`structure` is a path (`str` or `os.PathLike`) to a PDB or mmCIF file, or a `PdbText`
    dict.** Never backbone arrays and never a `PortValue`: those need a structure parser or the
-   contract package, which a D6 consumer has neither of. The provider parses (molxmpnn already
-   depends on proxide); the old `inputs: str | Path | Sequence` of `make_mpnn_score` is a subset
+   contract package, which a D6 consumer has neither of. The provider parses (aminx already
+   depends on proxide, `pyproject.toml:23`); the old `inputs: str | Path | Sequence` of `make_mpnn_score` is a subset
    of this form. `assert_conforms` binds both forms on a tiny shared fixture PDB and requires equal
    scores.
 2. **`sequence` is an integer token array in the alphabet the manifest names on its input port**
@@ -987,7 +1024,7 @@ drift from the code it describes.
    manifest with stdlib `importlib.util.find_spec(ep.value)` plus `manifests/<ep.name>.json` (4.8),
    reads it with stdlib `json`, and filters manifests whose `role == "scorer"` and whose
    ports match what it needs. About 50 lines, no new runtime dependency, no import of
-   `xtrax_contract`, `aminx` or `molxmpnn`. **Version discipline (r2 R2-15).** Because this
+   `xtrax_contract` or `aminx`. **Version discipline (r2 R2-15).** Because this
    reader bypasses the contract package, it carries P4 itself: it accepts exactly
    `schema_version == 1` and a known `role`, and skips, with a logged warning naming the entry
    point, any manifest whose version is missing, `0`, `2` or any other value, or whose `role` is
@@ -995,23 +1032,25 @@ drift from the code it describes.
 2. Only when the user selects that scorer does proteinsmc call
    `importlib.import_module(factory_module)` from the `python` executor entry, the same late
    string binding as `callable_ref`. This replaces the stale `find_spec("prxteinmpnn")` guard,
-   and also the interim guard S3-18 plans (a root-only `find_spec("molxmpnn")` guard in S3's
-   version; the earlier `find_spec("molxmpnn.scoring.score")` form is shown here because it is
-   the one that demonstrates the problem): a dotted `find_spec` imports the
-   parent package `molxmpnn` (A36), so it runs the package `__init__` at proteinsmc import time
-   and raises instead of returning `None` if that import fails. That is the alphex D5 inversion
-   again (Q9).
+   and also the interim guard S3-18 plans (a root-only `find_spec("aminx")` guard with its imports
+   deferred into `make_mpnn_score`; the dotted form `find_spec("aminx.scoring.score")` is not that
+   guard and is shown here because it demonstrates the problem): a dotted `find_spec` imports the
+   parent package `aminx` (A36), so it would run the package `__init__` at proteinsmc import time
+   and raise instead of returning `None` if that import failed. That is the alphex D5 inversion
+   again (Q9). Even the root-only guard still names the provider, and its deferred `import aminx...`
+   lines are import edges the D6 gate below rejects, which is why the manifest-driven guard replaces
+   it when S3-18 is sequenced first.
 3. Conformance is checked on the **provider** side: `xtrax_contract.testing.assert_conforms`
    runs in the MPNN repo's CI. proteinsmc's own tests use a fake scorer written to the
    Protocol by structure. This is alphex's D4 pattern: no coupling edge, and a mechanical check
    against drift.
 
-D6 gate (r1 C18): `rg -n "(import|from) +(aminx|molxmpnn|xtrax_contract)|import_module\(.(aminx|molxmpnn|xtrax_contract)" proteinsmc/src`
-is empty, and a TOML check of `proteinsmc/pyproject.toml` finds no `aminx`, `molxmpnn`, `xtrax` or
+D6 gate (r1 C18): `rg -n "(import|from) +(aminx|xtrax_contract)|import_module\(.(aminx|xtrax_contract)" proteinsmc/src`
+is empty, and a TOML check of `proteinsmc/pyproject.toml` finds no `aminx`, `xtrax` or
 `xtrax-contract` in `[project.dependencies]` or `[project.optional-dependencies]` (the tables a
 published wheel exposes). `[dependency-groups]` is **exempt**: a non-default group is a dev-only
 test dependency, not a coupling edge (alphex D4 pattern, A10), so S3-18's Q13 mechanism and
-S4-23's own group do not trip the check; a planted `molxmpnn` in `[project.dependencies]` or
+S4-23's own group do not trip the check; a planted `aminx` in `[project.dependencies]` or
 `[project.optional-dependencies]` must fail it, a planted one in a `[dependency-groups]` entry
 must pass. The only string-based import is the factory string read from the manifest, bound late
 (step 2).
@@ -1019,7 +1058,7 @@ must pass. The only string-based import is the factory string read from the mani
 **How the provider reaches proteinsmc's test environment (r3 C5).** S4-23 states its own
 mechanism and does not rely on S3-18: a non-default `[dependency-groups]` entry (for example
 `mpnn-e2e`, not installed by `uv sync` or by CI's default job) used by two runs, a wheel arm
-(`uv build` of the molxmpnn checkout, installed from that wheel) and an editable arm (editable
+(`uv build` of the aminx checkout, installed from that wheel) and an editable arm (editable
 install of the same checkout into a throwaway env). If S4-49 answers "supersede" and S3-18 is closed
 unmerged, S4-23 is unaffected.
 
@@ -1104,9 +1143,10 @@ for the MPNN package. Decision item: Q3 and S4-16.
 | `xtrax[onnx]` | unchanged | MPNN repo consumes via group + override (Q3) |
 | `scripts/browser_validation/p07_split_export.py` | moves behind the bundle exporter (S4-17); the other eight `to_onnx` sites are unchanged | sidecars re-registered before re-run; old run ids stay as history |
 | `runspec_core.mjs` | imports generated constants/defaults/validator | kernels untouched; S4-41 golden vectors gate |
-| Distribution/import names | manifest strings (`aminx.contract...`) must follow S3's rename | S4-19 depends on S3-07 and S3-11; every `module:symbol` in a manifest is resolved by a test, so a missed rename fails loudly |
+| Distribution/import names | unchanged: the package stays `aminx` and manifest ids use the root `aminx` (`S3:aminx-identity`); manifest `module:symbol` strings follow later module moves by S1 (spec flip) and S2 (EBM removal), not a rename | every `module:symbol` in a manifest is resolved by a test (S4-19), so a moved module fails loudly |
 | Naming | `xtrax.models` entry-point group | independent of the hub name |
-| Repo naming in this backlog | `repo = "aminx"` for every MPNN-tree item with no S3-07 ancestor: the spikes S4-02, S4-03, S4-43 (which take the package name as an argument) and the two decision notes S4-33 and S4-37, which are dated docs that S3-07 carries across the rename (r2 R2-9); every other MPNN-tree item says `repo = "molxmpnn"` and is ordered after S3-07 by `depends_on` | one rule for pre- and post-rename items, matching S1/S3 |
+| aminx public-symbol inventory (CH1-02) | `tests/parity/test_browser_validation_inventory.py` (`_ROOT_PACKAGES` at `:18-29`, `check_inventory` at `:101-123`) fails on unmapped AND stale public top-level symbols in `src/aminx/{inference,sampling,scoring,model,host,tiling,ebm,potts}` and on every name in `aminx.run.__all__`; `tests/parity/browser_validation_paths.json` maps them (`aminx.run::build_run_spec` and the other `aminx.run` names), and an internal-symbol baseline file can also fail. S4-19, S4-21 and S4-40: if the item adds a public top-level def or class under `src/aminx/{scoring,host,sampling,inference,model,tiling,potts}` or a name to `aminx.run.__all__`, the same PR adds the matching key to the JSON (a P-id, or an `internal` reason, checking the baseline count) and runs the inventory test. An item that adds none states so in its PR. Edits to the JSON by S1-20, S1-07, S1-23 and S2-18 are textual merges with these, which are additive sorted keys, so the later PR rebases and re-runs the test; S4 adds no `depends_on` edge for this | the test goes red on the first unmapped name, so the omission would surface late and as a merge conflict; only S2's spec knew about the test (A1, 3.2, S2-18) |
+| Repo naming in this backlog | every MPNN-tree item says `repo = "aminx"`; no item has a rename, shim or cutover ancestor, so the earlier two-name rule (one repo name for items without an S3-07 ancestor, a second one after it) is withdrawn. Ordering inside the tree comes only from real prerequisites: S2-02 before S4-16, S4-16 before S4-35, S4-35 before the items that import `xtrax_contract` (S4-17 to S4-21, S4-32, S4-40 to S4-42), and S1 items before S4-20, S4-32 and S4-40 | one repo name, matching S1 and S3 |
 
 ## 5. Risks and mitigations
 
@@ -1129,16 +1169,16 @@ for the MPNN package. Decision item: Q3 and S4-16.
 | Knob document turns into a third spec system (D4) | it is a projection of the surviving RunSpec built on S1's field metadata, built by S4-40 per S1 D10; no second authored source of field facts |
 | Generated knob schema and the hand-written JS kernels disagree | S4-41's golden vectors from the Python lowering are the arbiter; planted-default and planted-shuffle controls in S4-20 |
 | JCS number formatting diverges between Python and JS (A40) | shared vector file owned solely by S4-30 (S6-26 superseded), naive `json.dumps` is the negative control, S6-35 runs the TS side |
-| Manifest strings break on S3's rename or S2's extraction | S4-19 depends on S3-07 and S3-11; test resolving every executor `module:symbol`; S3's stale-name guard sweep should include `rg "aminx\.contract"` |
-| Weights license / redistribution mistakes surface in a public hub | `license` and `redistribution` are required manifest fields, hub CI refuses a manifest without them (Q8); one decision (S4-37) with one reviewer and one record in the aminx/molxmpnn tree, consumed by S5-07 and S5-06 so the hub cannot record a second, different answer (r3 C11) |
-| Two owners of the xtrax 0.4.0a11 pin disagree on ordering (r3 C7) | S2-02 owns the merge of draft PR #174; S4-16 is only the Q3 resolution on top of it and depends on S2-02, S3-07 and S4-03 |
+| Manifest strings break when S1 or S2 move modules (spec flip, EBM removal) | test resolving every executor `module:symbol` (S4-19) against the checkout, re-run against the tagged wheel by S5-52 (S3 4.5); consumers can vendor S3-24's stale-name checker |
+| Weights license / redistribution mistakes surface in a public hub | `license` and `redistribution` are required manifest fields, hub CI refuses a manifest without them (Q8); one decision (S4-37) with one reviewer and one record in the aminx tree, consumed by S5-07 and S5-06 so the hub cannot record a second, different answer (r3 C11) |
+| Two owners of the xtrax 0.4.0a11 pin disagree on ordering (r3 C7) | S2-02 owns the merge of draft PR #174; S4-16 is only the Q3 resolution on top of it and depends on S2-02 and S4-03 |
 | Manifest completeness circular between S4-19 and S5-14 (r3 C8) | source mode permits only `driver.url` placeholder and `driver.sha256` pending; S5-14 fills the hash, S5-52 rewrites placeholders and validates in release mode |
 | Hub-requested amendment G1-G4 creates two meanings of `v1` (r3 C9) | additive within `v1` before the first release; S4-34 depends on S5-51; a later amendment is a version bump |
-| molxmpnn version sequence unowned (r3 C14) | S4-19 resolves `version` and every `module:symbol` against the S3 release-train table (S3 4.9, the owner of the molxmpnn version sequence) entry of the tag the manifests are released from; no S4 item publishes molxmpnn itself |
+| aminx version sequence unowned (r3 C14) | S3-12 owns the release guard and train rule (S3 4.5: the next unused alpha is read from PyPI at cut time, 0.2.0a4 on 261001); S4-19's manifest `version` equals the `[project] version` of the checkout under test and S5-52, which cuts the release, re-runs the resolve test against the tagged wheel; no S4 item publishes aminx itself, so no S4 item depends on S3-12 |
 | Remote executor exfiltrates user structures | `remote` is never auto-selected; `requires_network` shown; consent hook is S5's (`261001_aminx-hub.md:338-350` area) |
 | AF3 cannot be bound as a library today (A29) | contract reserves the `npm` shape only; S4-27 is retired and the localfold upstream request, vendored job-json and adapter belong to S5 (S5-25, S5-23, S5-26; Beerware vendoring consent is S5-26's) |
-| Rebase conflicts with S3 (rename) and S1 on `pyproject.toml`, `scripts/browser_validation` | S4 aminx-repo items avoid hard-coded import paths in generated artifacts; the manifest resolve test catches misses; every MPNN-tree item is ordered behind S3-07 by `depends_on` (S4-16, S4-35 directly, the rest through S4-35 or S4-16); S4-16 also depends on S3-13, because it changes base dependencies and `uv.lock` and would otherwise be able to merge between S3-07 and S3-12 and break the S3-13 pinned-tag diff (S3 4.9), so S4-35, S4-17..S4-21, S4-32 and S4-40..S4-42 follow the release, S4-20/S4-40 also behind S1 items; spikes S4-02/S4-03 only add new files |
-| S4-16 and S4-35 change the MPNN lock (base `orbax-checkpoint`, `xtrax[export]` out of base, xtrax bump) after the S2-02 merge, and nothing orders them against S2-05..S2-34 (S2 A0/B1 compare environment stamps; S1-17 may also touch the lock) | intentionally unordered, no dependency edge is added: it is safe only because S2 runs A0 from a pinned F' checkout, not from the moving MPNN tree. The S2 environment stamp should add `orbax-checkpoint` (EBM restore uses it) so any lock difference between A0 and B1 is visible in the record |
+| Rebase conflicts with S1 on `pyproject.toml` and `scripts/browser_validation` | S4 aminx-repo items avoid hard-coded import paths in generated artifacts; the manifest resolve test catches misses; ordering inside the tree comes from real prerequisites only (S2-02 before S4-16, S4-16 before S4-35, S4-35 before S4-17 to S4-21, S4-32 and S4-40 to S4-42; S4-20, S4-32 and S4-40 also behind S1 items); spikes S4-02, S4-03 and S4-43 only add new files. No rename PR exists to rebase on, and no S4 item waits for a release |
+| S4-16 and S4-35 change the MPNN lock (base `orbax-checkpoint`, `xtrax[export]` out of base, xtrax bump) after the S2-02 merge, and nothing orders them against S2-05..S2-34 (S2 A0/B1 compare environment stamps; S1-17 may also touch the lock) | intentionally unordered, no dependency edge is added: it is safe only because S2 runs A0 from a pinned F' checkout, not from the moving MPNN tree (A63). With no rename this is the only ordering question between S4 and S2. The same conclusion covers the clone point G of S2-06: G is a commit on aminx main, so S4-16, S4-35 or S1-17 may land on main between F' and G, and S2 has therefore made its check at G code-only (the EBM tree and consumed files, no lock or dependency-table hashes), so lock churn can neither stop S2-06 nor be read as invalidating A0. S1's bitwise and tolerance equivalence gates are lock-sensitive too (S1-01 captures goldens that S1-07 and S1-15 compare against, with no edge to S4-16, S4-35, S2-02 or S1-17); they are protected by S1's environment stamp (jax, jaxlib, xtrax, device, XLA flags, weights revision) recorded with the goldens and compared before the equivalence check, not by ordering. If S2-18 (EBM removal) lands before S4-16, S4-16 repeats the S4-03 resolution method on the post-removal lock. The S2 environment stamp should add `orbax-checkpoint` (EBM restore uses it) so any lock difference between A0 and B1 is visible in the record |
 | Sibling drafts change under S4 (S5 and S1 already cite S4 ids) | ids frozen, new work appended (A41); the token map in section 6 is the interface ledger the coherence pass reconciles |
 | Local-machine memory limits | contract package tests are stdlib-only and may run locally; every JAX/ONNX gate runs on titanix or CI, never a whole suite locally |
 
@@ -1149,14 +1189,14 @@ for the MPNN package. Decision item: Q3 and S4-16.
 | Contract | What | Items | Consumed by |
 |---|---|---|---|
 | `PortTypes@1` (token `S4:port-types`) | declarative port-type table, `compat` evaluator, port-value wire format, diagnostic code registry, conformance corpus, JCS hash vectors (S4 is sole owner; supersedes S6-25/S6-26) | S4-04, S4-30, S4-31 | S5, S6 |
-| `ModelManifest@1` (token `S4:model-manifest`) | HUB-REQ 1-10 manifest dataclasses, generated JSON Schema, TS types, `catalog_view`; the native MPNN manifests (ids and entry-point stems follow the S4-01 grammar, 4.3); source-mode manifests may carry a `release-asset:` placeholder and a pending driver hash; `catalog_view` snapshot corpus (S4-09); the amended schemas once S5-51 lands (inbound) | S4-01, S4-05, S4-06, S4-09, S4-19 (S5-51 amends; S4-34 releases) | S5 (catalog builder), S6, S2, S3 |
-| `WeightsLicenseDecision@1` | per shipped weight set: license text, `redistribution` value, one named reviewer, one record in the aminx/molxmpnn tree | S4-37 | S4-19, S5-07 (cites it from `catalog/licenses/<model>.review.toml`), S5-06 |
+| `ModelManifest@1` (token `S4:model-manifest`) | HUB-REQ 1-10 manifest dataclasses, generated JSON Schema, TS types, `catalog_view`; the native MPNN manifests (ids and entry-point stems follow the S4-01 grammar, 4.3); source-mode manifests may carry a `release-asset:` placeholder and a pending driver hash; `catalog_view` snapshot corpus (S4-09); the amended schemas once S5-51 lands (inbound) | S4-01, S4-05, S4-06, S4-09, S4-19 (S5-51 amends; S4-34 releases) | S5 (catalog builder), S6, S2 |
+| `WeightsLicenseDecision@1` | per shipped weight set: license text, `redistribution` value, one named reviewer, one record in the aminx tree | S4-37 | S4-19, S5-07 (cites it from `catalog/licenses/<model>.review.toml`), S5-06 |
 | `ExecutorEntry@1` | closed executor kinds, artifact entries with per-format details, driver reference (ABI is S5's) | S4-05 | S5 (executors), S2 |
 | `GraphIR@2` (token `S4:graph-ir`) | v2 document, v1 upgrade rule, `ref` grammar, canonical hash, pure-data validator, `graph-validate` verb | S4-10, S4-44, S4-45, S4-12, S4-30, S4-31 | S5 (runner), S6 (editor read/write) |
-| `ParamProfile@1` | param-schema keyword subset, `x-xtrax` hints, the `FieldMeta` metadata hook (`metadata["xtrax"]`, twelve keys published as `field_meta.v1.json` by S4-07 before S1-06 consumes it), schema emitter, the MPNN knob document with its pure lowering and golden vectors, generated knob schema, TS types, defaults, validator | S4-07, S4-09, S4-47, S4-20, S4-32, S4-33, S4-40, S4-41, S4-42 | S6 (form renderer), S5, S1 (emits `FieldMeta` from its registry) |
+| `ParamProfile@1` | param-schema keyword subset, `x-xtrax` hints, the `FieldMeta` metadata hook (`metadata["xtrax"]`, twelve keys published as `field_meta.v1.json` by S4-07 before S1-06 consumes it: committed at `src/xtrax_contract/field_meta.v1.json` in the xtrax repo at a recorded commit, which S1-06 vendors by sha256, so no release or import is needed), schema emitter, the MPNN knob document with its pure lowering and golden vectors, generated knob schema, TS types, defaults, validator | S4-07, S4-09, S4-47, S4-20, S4-32, S4-33, S4-40, S4-41, S4-42 | S6 (form renderer), S5, S1 (emits `FieldMeta` from its registry) |
 | `Protocols@1` | `Scorer`, `Sampler`, `StructurePredictor`, `EnergyModel`, `assert_conforms`, `check_ports`, the Python-side conventions of 4.9 (structure form, token alphabet, direction) | S4-13, S4-21, S4-48 | proteinsmc (structurally, no import), S2 |
-| `ModelDiscovery@1` | `xtrax.models` group semantics, manifest-as-data entry value (bare package name, file `manifests/<name>.json`) | S4-11, S4-21 | S5 (local dev mode), proteinsmc, S2, S3 |
-| `OnnxBundle@1` (token `S4:onnx-route`) | manifest-fragment artifacts and `export_onnx_bundle`; molxmpnn's parity evidence (ORT-CPU, Node wasm, Chromium) | S4-43, S4-46, S4-14, S4-17, S4-18, S4-38, S4-39 | S5 (S5-14, S5-15), S3 |
+| `ModelDiscovery@1` | `xtrax.models` group semantics, manifest-as-data entry value (bare package name, file `manifests/<name>.json`) | S4-11, S4-21 | S5 (local dev mode), proteinsmc, S2 |
+| `OnnxBundle@1` (token `S4:onnx-route`) | manifest-fragment artifacts and `export_onnx_bundle`; aminx's parity evidence (ORT-CPU, Node wasm, Chromium) | S4-43, S4-46, S4-14, S4-17, S4-18, S4-38, S4-39 | S5 (S5-14, S5-15) |
 | `ContractArtifacts@1` | committed schemas (`model-manifest.v1`, `port-types.v1`, `param-profile.v1`, `graph-ir.v2`), TS package, versioning policy, the released `xtrax-contract` and `xtrax` dists | S4-04, S4-09, S4-28, S4-34 | S5, S6, S1 |
 | `XtraxRunSpecBase` stability | `seed, axes, carry_specs, boundaries, run_id`, identity `from_spec` unchanged | S4-10 | S1 |
 
@@ -1167,10 +1207,10 @@ for the MPNN package. Decision item: Q3 and S4-16.
 | Surviving unified RunSpec with registry-derived field metadata (S1 P1, items S1-05, S1-06, S1-07) | S1 | S4-40 builds the knob document on it, S4-32 cross-checks metadata against the snapshot |
 | `run_spec_fields.json` derived snapshot (S1 P2) | S1 | S4-32 agreement test only (the snapshot is not an authored source) |
 | Key-set drift test (S1-18) | S1 | deleted by S4-20 once the generated schema replaces the hand copy |
-| `S3:molxmpnn-repo` (repo, release URLs, HF weights repo and final revision, PyPI names) and `S3:molxmpnn-manifest-namespace` (the root name `molxmpnn` and the version source only) | S3 (items S3-07 rename, S3-11 weights cutover, S3-13 first versioned release; release-train table S3 4.9) | the namespace for ids and `python` factory strings, `hf://` revision, and the `version` S4-19 records (S4-19). S3 defines no manifest strings: the id/entry-point grammar and manifests directory are S4-01's (4.3) |
+| `S3:aminx-identity` (repo `maraxen/aminx`, HF weights repo `maraxen/aminx` at the `HF_REVISION` of the tree, PyPI `aminx`, the root name `aminx`; nothing is renamed) and `S3:release-guard` (S3-12: `release.yml` refuses a duplicate version, a tag/version mismatch and a bad wheel; the release-train ordering rule) | S3 (two contracts; S3-12 is the only S3 item S4 relies on, and no S4 item depends on it because no S4 item cuts an aminx release) | the namespace for ids and `python` factory strings, the `hf://` revision, and the `version` S4-19 records. S3 defines no manifest strings: the id/entry-point grammar and the manifests directory are S4-01's (4.3) |
 | Interim proteinsmc guard (S3-18) | S3 | the backlog does not decide whether S4-22 supersedes it: decision item S4-49 records the Q9 answer and S4-22 depends on it, so exactly one guard implementation lands (r2 R2-4). S4-22 gains a dependency on S3-18 only when S4-49 answers "sequence" (the S4-49 record adds the edge); S4-23 does not depend on S3-18 either way (4.9) |
 | Hub-requested contract amendment S5-51 (G1-G4) | S5 | accepted as an inbound amendment before the first release (4.3); S4-34 depends on it; S4-09 commits the `catalog_view` snapshot corpus (S4's own deliverable) |
-| Release-train table (molxmpnn version sequence) | S3 | S4-19 resolves its `version` and `module:symbol` strings in the tagged tree it is released from; S4 publishes no molxmpnn version |
+| Release guard and train rule (aminx version sequence) | S3 (S3-12, S3 4.5) | S4-19's manifest `version` equals the `[project] version` of the checkout under test and S5-52 re-runs the resolve test against the tagged wheel; S4 publishes no aminx version |
 | `EbmProjectIdentity` and EBM descriptor facts (`ebm-model-facts`) | S2 | second registrant of `xtrax.models`, later adoption item the DAG integrator adds (no blocking item here) |
 | Driver module ABI `createSession(ctx)` and `Executor` kinds | S5 | `executors[].driver` shape and the kind mapping in 4.5; no item dependency |
 | UI hint vocabulary and S6's evaluator | S6 | extends `x-xtrax` keys, TS evaluator passes the S4-31 corpus; no item dependency |
@@ -1178,7 +1218,7 @@ for the MPNN package. Decision item: Q3 and S4-16.
 **Token map for the coherence pass** (S5 and S6 use tokens in `depends_on`): `S4:model-manifest`
 is satisfied by S4-06 (schema and dataclasses) and, for committed fixtures, S4-09; the native MPNN
 manifests are S4-19. `S4:port-types` is S4-04 (table and `compat`) plus S4-31 (corpus and codes).
-`S4:graph-ir` is S4-10 (wire format) plus S4-44 (live graph) and S4-30 (canonical hash); the composed xtrax schema is S4-45. `S4:onnx-route` is S4-14, with the molxmpnn
+`S4:graph-ir` is S4-10 (wire format) plus S4-44 (live graph) and S4-30 (canonical hash); the composed xtrax schema is S4-45. `S4:onnx-route` is S4-14, with the aminx
 evidence in S4-17, S4-18, S4-38 and S4-39 (one per executor).
 
 ### Edges owed by other specs (coherence-pass actions, r1 C4, C14)
@@ -1187,10 +1227,10 @@ S4 cannot edit another spec's `depends_on`; these are the changes it needs recor
 
 | Owed by | Change | Why |
 |---|---|---|
-| S1 | S1-06 `depends_on` gains `S4-07` (the published `FieldMeta` key list, `field_meta.v1.json`), and S1-06 emits a plain dict of exactly that shape under `metadata["xtrax"]` with no import, so it needs no S4-34 edge; S1's `metadata={"aminx_field": ...}`-style key is replaced or supplemented by it, because schemagen reads nothing else (4.7). S4-32 validates the shape | S1-06 consumes the metadata hook S4 publishes; without the key, S4-32 and S4-40 fail on S1's output. S1 declined this edge in its D4 (S4-32 validates the dict); the row stays owed because without it S1-06 and S1-31 assert the dict shape against prose and a drifted key list is caught only at S4-32 after S1-07 has flipped. The edge is acyclic: S4-07 depends only on S4-01 and S4-02, and S4-02 is the pre-flip spike, so with the edge S4-02 precedes S1-07 by construction |
+| S1 | S1-06 `depends_on` gains `S4-07` (the published `FieldMeta` key list, `field_meta.v1.json`), and S1-06 emits a plain dict of exactly that shape under `metadata["xtrax"]` with no import, so it needs no S4-34 edge, and S1-06 obtains the file by vendoring a byte copy by sha256 from the S4-07 merge commit (`src/xtrax_contract/field_meta.v1.json`, recorded commit SHA and sha256, per S1 CH1-04; no release and no sibling-repo read), with S1-31 and S1-32 comparing against the vendored copy; S1's `metadata={"aminx_field": ...}`-style key is replaced or supplemented by it, because schemagen reads nothing else (4.7). S4-32 validates the shape | S1-06 consumes the metadata hook S4 publishes; without the key, S4-32 and S4-40 fail on S1's output. S1 declined this edge in its D4 (S4-32 validates the dict); the row stays owed because without it S1-06 and S1-31 assert the dict shape against prose and a drifted key list is caught only at S4-32 after S1-07 has flipped. The edge is acyclic: S4-07 depends only on S4-01 and S4-02, and S4-02 is the pre-flip spike, so with the edge S4-02 precedes S1-07 by construction |
 | S5, S6 | Use `manifest_sha256 = sha256(JCS(manifest))` (4.3) for the remote echo (S5-19), the RunStore unit key and S6 spec keys; give the Node builder (S5-04) and the editor (S6-33) the JS canonicaliser (S6-35) by `depends_on`, since they have no edge to it today (S5-04 and S6-33 depend on S4-06 only); both pass the manifest-hash vector in S4-30 | one hash definition across three specs; the release-asset byte hash stays a separate value |
 | S6 | Remove S6-25 and S6-26 (superseded: S4-10 carries `builtin:`, S4-06 carries port `required`/`cardinality`, S4-30 the JCS vectors, S4-31 the corpus and codes). Re-point every S6 item that depends on them (S6-03, S6-04, S6-16 and any other) to S4-06, S4-10, S4-30, S4-31; S6's rows A24, A34, A36 are stale | one owner for one deliverable in one repo |
-| S3 | S3-18 gains `depends_on` on S4-49 (the Q9 decision) and is closed unmerged if S4-49 answers "supersede"; otherwise S4-22 lands after it (S4-49's record adds that S3-18 edge to S4-22). S3's Consumes drops "no contract is consumed from S4" and lists the S4-49 decision. Refresh S3-20's leaf set from this graph (or let S3-28 compute it). Here "leaf" means an S4 item with `repo` molxmpnn or aminx that no other molxmpnn or aminx item depends on; for S4 that set is **S4-20, S4-21, S4-42** (S4-18 is a dependency of S4-19, S4-32 of S4-40, S4-38 and S4-39 of S4-19, S4-48 is a proteinsmc item; S4-33 and S4-37 sit in the aminx tree and are carried by S3-07). Also: S3-05's environment stamp includes the xtrax version and S3-07 refuses to compare across a mismatch (S3 A41), so S3-05 and S3-07 should depend on S2-02 (merged #174) to keep the xtrax version fixed across the capture and the rename | S4-22 replaces the guard S3-18 would write; the S3-20 quiescent window must follow every S4 item that edits the tree |
+| S3 | Nothing is owed that is not already present. S3-18 `depends_on` S4-49 (and S3-24) in S3's toml; S3-18 is closed unmerged if S4-49 answers "supersede", otherwise S4-22 lands after it and replaces its guard and its deferred `aminx` imports (the S4-49 record adds the S3-18 edge to S4-22). **S4-49 must never depend on S3-18**: S3-18 already depends on S4-49, so that edge would be a cycle. S3's Consumes lists the S4-49 decision. The earlier asks (S3-18 edge to S4-49, S3-20 leaf set, S3-05/S3-07 on S2-02) are retired with the rename: S3-20, S3-05 and S3-07 no longer exist. S3-28 (C2, C3) mechanically fails if any S4 item field names a retired S3 id or either retired package name | S4-22 replaces the guard S3-18 would write; the checker keeps this spec honest |
 | S5 | Re-point the ORT-Web comparison (the draft's S5-15 `depends_on` and its prose naming "the S4-18 Node-wasm/Chromium record") to S4-38 (Node wasm) and S4-39 (Chromium); S4-18 is the ORT-CPU cell only. `S4:onnx-route` also means S4-38 and S4-39 (and S4-43 and S4-46 for the exporter's correctness); `S4:model-manifest` fixtures also need S4-09. **Manifest completion (r3 C8):** S5-14 fills `driver.sha256` in the source manifest; S5-52 rewrites `release-asset:` placeholders, fills `driver.url`/`driver.sha256`, and its gate validates in release mode (non-source). **Inbound amendment:** S5-51 stays in the xtrax repo, gains no new S4 dependency beyond S4-06/S4-09, and S5-24, S5-42, S5-45 (through S5-64) pin the S4-34 release (which carries it), not the S4-09 commit; S5-04 deliberately builds against the S4-09 commit and S5-64 re-pins it (4.3). **Weights decision:** S5-07 depends on S4-37 and its `catalog/licenses/<model>.review.toml` cites the S4-37 record (same reviewer, same redistribution value); S5-06 reads that file. **Localfold:** S5-25, S5-23, S5-26 own the AF3 work (S4-27 retired) | evidence per executor; artifact hosting; one answer to the licensing question |
 
 ## 7. Verification gates per item
@@ -1214,13 +1254,13 @@ mutation control.
 
 | Item | Gate (the full command / observable) | Controls and resumability |
 |---|---|---|
-| S4-01 | ADR file exists in xtrax `.praxia/docs/decisions/`, records Q1 and Q4 (discovery shipped now), names, floor, the version and tag policy for the two dists (4.1), the generation toolchain (stdlib generator, Node check-only, one engine per language, 4.1), the manifest id grammar `<namespace>/<family>.<op>`, the entry-point stem rule and the `manifests/` directory (4.3; examples `molxmpnn/proteinmpnn.sample`, `molxmpnn/proteinmpnn.score`), and amends the fork-13 note (one emitter module in the contract package, composed by one in xtrax, 4.6) | n/a |
+| S4-01 | ADR file exists in xtrax `.praxia/docs/decisions/`, records Q1 and Q4 (discovery shipped now), names, floor, the version and tag policy for the two dists (4.1), the generation toolchain (stdlib generator, Node check-only, one engine per language, 4.1), the manifest id grammar `<namespace>/<family>.<op>`, the entry-point stem rule and the `manifests/` directory (4.3; examples `aminx/proteinmpnn.sample`, `aminx/proteinmpnn.score`), and amends the fork-13 note (one emitter module in the contract package, composed by one in xtrax, 4.6) | n/a |
 | S4-02 | bathos record with an evaluated `[outcomes]`: every field of every real spec class (aminx tree at a recorded commit, pre-S1-07) is classified `mapped`, `opaque-flagged` or `unmapped` against the **S4-07 target table written in the sidecar**, the unmapped names are recorded, and any fixed-arity tuple field of the xtrax IR is found by `ast` over the a11 sources at a pinned ref (no xtrax import); outcome is `pass` only if both controls behave. The claim is limited to pre-flip classes (A18 stays UNVERIFIED for the unified ones; S4-32 re-runs it) | positive: a toy dataclass maps fully; negative: a field annotated `Callable` without a ref flag is reported as unmapped. One process per class, per-class result persisted |
 | S4-03 | bathos record: resolved `orbax-checkpoint` per arm for the base install, plus onnx script import smoke per arm | negative control: the unmodified `xtrax[onnx]` arm must reproduce the known downgrade or the instrument is distrusted. One arm per process, per-arm result persisted |
 | S4-04 | on CI or titanix: `cd packages/xtrax-contract && uv run pytest -q tests/test_ports.py tests/test_wire.py` and `uv run lint-imports` (xtrax_contract forbidden from jax, numpy, equinox, xtrax); at the xtrax root `uv lock --check` exits 0 with the workspace member, the `xtrax-contract` dependency and the workspace source in place, and `uv run python -c "import xtrax_contract, xtrax; print(xtrax_contract.__file__)"` prints a path inside `packages/xtrax-contract` (the workspace copy, not a PyPI one); a build of the sub-dist yields a wheel with `requires-python >=3.11` and no `Requires-Dist` | wire test round-trips through the real `safetensors` writer and a pure-Python header reader (settles A20); `compat` table tests include the alphabet-mismatch case; negative control: a planted function-level `import numpy` must fail `lint-imports` (settles A46) |
 | S4-05 | `pytest tests/test_executors.py`: unknown kind rejected, `onnx` with more than one artifact graph and no driver rejected, `iree` level limited to xtrax levels, source mode accepts `driver.url` as a `release-asset:` placeholder with `driver.sha256` `"pending"` and release mode rejects both | planted `"pending"` on a non-driver artifact `sha256` must be rejected in both modes |
 | S4-06 | `pytest tests/test_manifest.py`: schema-validates a fixture, rejects an `hf://` URL without a 40-hex revision, rejects older and newer `schema_version`, accepts `release-asset:` URLs only in source mode (`catalog_view` refuses them unless `allow_placeholders`), port `required`/`cardinality` round-trip, `catalog_view` output matches a snapshot, source mode accepts a pending `driver.sha256` only on an executor `driver` and release mode rejects it, `catalog_view` refuses placeholders and a pending driver hash unless `allow_placeholders` | planted pending `sha256` on an artifact entry must be rejected |
-| S4-07 | `pytest tests/test_schemagen.py`: mapping table for every supported type including `Callable` (via handler), a registered domain-type handler is honoured, both tuple modes tested, unmappable type raises, `Any` rejected unless opaque, only metadata-exposed fields emitted, keywords outside the profile fail emission, the module's mapping table equals the target table committed in the S4-02 sidecar, and `field_meta.v1.json` (the twelve-key `FieldMeta` shape, published for S1-06) is committed and loaded by both `meta()` and schemagen, an unknown key inside `metadata["xtrax"]` fails emission and a metadata key other than `"xtrax"` is ignored | negative: planted `Any` field must raise; a planted extra entry in the table must fail the equality check; a planted unknown `FieldMeta` key must fail emission. S1-06 consumes `field_meta.v1.json` from this item, so the file, not prose, is the shape S1 builds against |
+| S4-07 | `pytest tests/test_schemagen.py`: mapping table for every supported type including `Callable` (via handler), a registered domain-type handler is honoured, both tuple modes tested, unmappable type raises, `Any` rejected unless opaque, only metadata-exposed fields emitted, keywords outside the profile fail emission, the module's mapping table equals the target table committed in the S4-02 sidecar, and `field_meta.v1.json` (the twelve-key `FieldMeta` shape, published for S1-06) is committed at `src/xtrax_contract/field_meta.v1.json` and loaded by both `meta()` and schemagen (the PR records the merge commit SHA and the file's sha256 for S1-06 to vendor), an unknown key inside `metadata["xtrax"]` fails emission and a metadata key other than `"xtrax"` is ignored | negative: planted `Any` field must raise; a planted extra entry in the table must fail the equality check; a planted unknown `FieldMeta` key must fail emission. S1-06 consumes `field_meta.v1.json` from this item, so the file, not prose, is the shape S1 builds against |
 | S4-08 | on titanix or CI: `uv run pytest tests/inference/test_ir_schema.py` passes and the emitted v1 schema JSON is byte-identical before and after the refactor (semantic equivalence plus changelog only if S4-02 recorded a fixed-arity IR field) | n/a |
 | S4-09 | `uv run python -m xtrax_contract.emit --check` exits 0 for all four schemas (`model-manifest.v1`, `port-types.v1`, `param-profile.v1`, `graph-ir.v2`) and the `conformance/catalog_view` snapshots usable from Node (no Python needed to read them); `npx tsc --noEmit -p packages/xtrax-contract/ts` exits 0; `uv run python scripts/audit_ir_schema_single_source.py` and `pytest tests/audit/test_ir_schema_single_source.py` pass with the audit scanning `packages/xtrax-contract/src` and `ts` and allowing `$schema` only in `emit.py` and `schemas/*.json`; the generator is stdlib Python and `package.json` lists only `typescript` as a dev dependency | planted stale schema file must fail `--check`, for the graph schema as well as the manifest schema; a planted `$schema` marker in a contract-package module other than `emit.py` must fail the audit; the `catalog_view` snapshot corpus (`conformance/catalog_view/*.json`) is committed, guarded by `--check`, and a planted altered snapshot must fail it |
 | S4-10 | `cd packages/xtrax-contract && uv run pytest -q tests/test_graphdoc.py` (stdlib only): `GraphDoc`/`NodeDoc`/`EdgeDoc` round-trip, v1 fixtures load through the upgrade rule, v2 round-trips, versions 0 and 3 rejected without default-fill, `ref` grammar (`<id>@<version>`, `builtin:code.python`, `py:`), `metadata.nl_description` constant enforced (`E_NODE_METADATA`), `x-` keys preserved; and on titanix or CI `pytest tests/run/test_runspec_base_pinned.py`: `xtrax.run.RunSpec` field names and identity `from_spec` pinned | planted unknown non-`x-` key must be rejected; planted renamed `RunSpec` field must fail the pin test |
@@ -1231,18 +1271,18 @@ mutation control.
 | S4-13 | `pytest tests/test_protocols.py`: a conforming fake passes, swapped argument order and missing direction/units both fail `assert_conforms`, and on titanix or CI `check_ports` fails a callable whose output names disagree with the declared ports | negative controls built in |
 | S4-14 | on CI or titanix: `uv run pytest tests/export/test_bundle.py` (export extra): toy two-graph bundle has recorded names and hashes, interrupted run resumes with reused units listed, tampered artifact is recomputed, cache root resolves arg then `XTRAX_EXPORT_CACHE` then pyproject then user config, a planted external-data tensor fails the self-contained assertion, and the embed step from S4-46 is used if that item landed | planted tampered artifact must be recomputed, not reused; planted external-data graph must fail; per-unit process and timeout |
 | S4-15 | `pytest tests/export/test_hf_weights.py` with a mocked hub: revision forwarded to `hf_hub_download` and present in the report | mocked hub |
-| S4-16 | after the S3-13 release, on top of the merged #174 pin (S2-02): the recorded resolution (S4-03 record) shows base `orbax-checkpoint >= 0.12`, `xtrax[export]` is out of the base dependencies, the toolchain is in a dependency group, and import smoke of the package and the export scripts passes on titanix | records which option (A, B, D) was applied |
+| S4-16 | on top of the merged #174 pin (S2-02): the recorded resolution (S4-03 record) shows base `orbax-checkpoint >= 0.12`, `xtrax[export]` is out of the base dependencies, the toolchain is in a dependency group, and import smoke of the package and the export scripts passes on titanix | records which option (A, B, D) was applied |
 | S4-17 | sidecar committed first, then on titanix `bth run ... scripts/browser_validation/p07_split_export.py --buckets 128 256`: record shows all graphs exported, `self_contained` true, manifest written, `jax_enable_x64` false; `scripts/browser_validation/lint_sidecars.py` passes. Scope is `p07_split_export.py` only | negative control (r2 R2-11): the S4-43 planted external-data fixture is run through the same assertion in the same sidecar and must make the assertion and the outcome fail; a tampered artifact must be recomputed. Per-bucket per-graph units with completion stamps, reuse only on matching sha256 inputs, reused units listed in the result |
 | S4-18 | pre-registered sidecar for the ORT-CPU cell of the chain (split-vs-reference and split-vs-monolith) against the xtrax-route manifest: tokens exact, log-prob gap within inherited 2e-4 nats, teacher-forced within inherited 1e-4 nats | existing planted-perturbation controls kept and must still be detected; per-cell results persisted, each cell its own process and timeout |
 | S4-38 | pre-registered sidecar for the Node/wasm parity cell on the xtrax-route artifacts, same inherited bounds and controls as S4-18 | one cell per process and timeout, results persisted |
 | S4-39 | pre-registered sidecar for the headless-Chromium parity cell on the xtrax-route artifacts, same inherited bounds and controls as S4-18; this is the record S5-15 compares against | one cell per process and timeout, results persisted |
-| S4-19 | `pytest tests/contract/test_manifest.py` on titanix: both manifests validate, every executor `module:symbol` resolves via `find_spec`, shared artifact entries identical across the two manifests and equal to the S4-17 record, golden-vector entries have sha256, every `validation.evidence[].bathos_id` resolves via `bth sql` to a record with a passing outcome whose executor and scope match the S4-18/S4-38/S4-39 cell, `license.redistribution` equals the S4-37 decision, both manifests validate in source mode (`allow_placeholders`): every `urls` entry is a `release-asset:` placeholder or a pinned `hf://` URL, `driver.url` is a placeholder and `driver.sha256` is `"pending"` (the final `onnx` entry exists only after S5-14 and S5-52), ids and entry-point stems follow the S4-01 grammar (`molxmpnn/proteinmpnn.sample` is `proteinmpnn-sample`), and the manifest `version` and every `module:symbol` resolve in the tree of the tag the manifests are released from, as listed in the S3 release-train table | resolve test is the rename tripwire; a planted evidence entry with a made-up id must fail; a planted id/stem mismatch must fail |
-| S4-20 | sidecar-registered equivalence run: generated JS constants, defaults and validator agree with the S4-41 golden vectors, `node --test browser/molxmpnn-sampler` passes, S1-18's drift test is deleted and its key-set property is now enforced by generation | planted wrong default and planted shuffle off-by-one must both fail |
-| S4-21 | `pytest tests/contract/test_scorer.py` on titanix: `assert_conforms` passes, declared direction and units match the code, sign-flip control fails; discovery works from (a) the wheel built by the repo's actual backend (setuptools), proving the bare-module entry value passes build-time validation, and (b) a real editable install of the dev checkout | negative: a path-valued entry point must be rejected by the build (confirms A43) |
-| S4-22 | proteinsmc `uv run pytest tests/scoring/test_mpnn_discovery.py` with a fake scorer: discovery imports no provider package (sentinel unimported), manifests with `schema_version` 0, 2 or missing, or with a missing or unknown `role`, are skipped with a warning and version 1 is accepted, the extended D6 check (imports, `import_module` of provider names, `[project.dependencies]` and `[project.optional-dependencies]`; `[dependency-groups]` exempt) is empty, and `rg -n "find_spec\(.(molxmpnn|prxteinmpnn)" proteinsmc/src` is empty (exactly one guard implementation survives; if S4-49 answered "sequence", S3-18's root-only guard is replaced here and this item depends on S3-18) | fake scorer, no provider installed; planted version-2 manifest must be skipped, planted `import molxmpnn` must fail the D6 check, a planted `molxmpnn` in `[project.optional-dependencies]` must fail it and in `[dependency-groups]` must pass |
+| S4-19 | `pytest tests/contract/test_manifest.py` on titanix: both manifests validate, every executor `module:symbol` resolves via `find_spec`, shared artifact entries identical across the two manifests and equal to the S4-17 record, golden-vector entries have sha256, every `validation.evidence[].bathos_id` resolves via `bth sql` to a record with a passing outcome whose executor and scope match the S4-18/S4-38/S4-39 cell, `license.redistribution` equals the S4-37 decision, both manifests validate in source mode (`allow_placeholders`): every `urls` entry is a `release-asset:` placeholder or a pinned `hf://` URL, `driver.url` is a placeholder and `driver.sha256` is `"pending"` (the final `onnx` entry exists only after S5-14 and S5-52), ids and entry-point stems follow the S4-01 grammar (`aminx/proteinmpnn.sample` is `proteinmpnn-sample`), the manifest `version` equals the `[project] version` of the checkout under test (read with `tomllib`) and every `module:symbol` resolves there with `find_spec`, the weights `hf://` URL carries the `aminx.io.weights.HF_REVISION` of that tree, and the test runs unchanged against an installed wheel (S5-52 runs it against the tagged wheel), and, if the item adds a public top-level symbol under the inventory's packages or to `aminx.run.__all__`, its key is in `tests/parity/browser_validation_paths.json` with `test_browser_validation_inventory.py` green (4.11, CH1-02) | resolve test is the moved-module tripwire (S1 and S2 module moves); a planted evidence entry with a made-up id must fail; a planted id/stem mismatch must fail |
+| S4-20 | sidecar-registered equivalence run: generated JS constants, defaults and validator agree with the S4-41 golden vectors, `node --test browser/aminx-sampler` passes, S1-18's drift test is deleted and its key-set property is now enforced by generation | planted wrong default and planted shuffle off-by-one must both fail |
+| S4-21 | `pytest tests/contract/test_scorer.py` on titanix: `assert_conforms` passes, declared direction and units match the code, sign-flip control fails; discovery works from (a) the wheel built by the repo's actual backend (setuptools), proving the bare-module entry value passes build-time validation, and (b) a real editable install of the dev checkout; every new public top-level symbol under the inventory's packages has its key in `tests/parity/browser_validation_paths.json` with `test_browser_validation_inventory.py` green (4.11, CH1-02) | negative: a path-valued entry point must be rejected by the build (confirms A43) |
+| S4-22 | proteinsmc `uv run pytest tests/scoring/test_mpnn_discovery.py` with a fake scorer: discovery imports no provider package (sentinel unimported), manifests with `schema_version` 0, 2 or missing, or with a missing or unknown `role`, are skipped with a warning and version 1 is accepted, the extended D6 check (imports, `import_module` of provider names, `[project.dependencies]` and `[project.optional-dependencies]`; `[dependency-groups]` exempt) is empty, and `rg -n "find_spec\(.(aminx|prxteinmpnn)" proteinsmc/src` is empty (exactly one guard implementation survives; if S4-49 answered "sequence", S3-18's root-only guard is replaced here and this item depends on S3-18) | fake scorer, no provider installed; planted version-2 manifest must be skipped, planted `import aminx` must fail the D6 check, a planted `aminx` in `[project.optional-dependencies]` must fail it and in `[dependency-groups]` must pass |
 | S4-48 | proteinsmc `uv run pytest tests/scoring/test_mpnn_adapter.py` with a fake scorer: a path and a `PdbText` structure both reach `bind` unchanged; alphex tokens are mapped to the port's `symbols` by symbol (an unknown symbol raises, a permuted destination ordering changes the mapped tokens); the declared `direction` is applied; a lower NLL yields a higher fitness; `make_mpnn_score` and the `"mpnn"` registry entry follow the Q9 decision; the proteinsmc fitness-sign convention is cited in the test with a `path:line` | negative controls: an adapter that skips the negation fails the ordering test; an adapter that skips the token mapping fails the permutation test |
 | S4-49 | decision recorded (in the S3 or S4 tree, linked from both): supersede S3-18 or sequence S4-22 after it, and the `make_mpnn_score` fate (Q9); if "sequence", the record adds `S3-18` to S4-22's `depends_on` (and S3-18 keeps its S4-49 edge) | n/a |
-| S4-23 | dev-only e2e in proteinsmc: a non-default `[dependency-groups]` entry owned by this item (not S3-18's) installs the MPNN package from a wheel built from the molxmpnn checkout, and a second run uses an editable install of the same checkout; in each, discovery returns the scorer and one `bind` + call through the S4-48 adapter returns a finite scalar; the extended D6 check (groups exempt) and `git diff pyproject.toml` show no new entry in `[project.dependencies]` or `[project.optional-dependencies]` | skipped cleanly when provider absent; a planted `molxmpnn` in `[project.dependencies]` must fail the D6 check |
+| S4-23 | dev-only e2e in proteinsmc: a non-default `[dependency-groups]` entry owned by this item (not S3-18's) installs the MPNN package from a wheel built from the aminx checkout, and a second run uses an editable install of the same checkout; in each, discovery returns the scorer and one `bind` + call through the S4-48 adapter returns a finite scalar; the extended D6 check (groups exempt) and `git diff pyproject.toml` show no new entry in `[project.dependencies]` or `[project.optional-dependencies]` | skipped cleanly when provider absent; a planted `aminx` in `[project.dependencies]` must fail the D6 check |
 | S4-24 | `pytest tests/test_export_shape_contract_ports.py` in plegadx (with `xtrax-contract` pinned by S4-36): every `traced_inputs` entry of every export becomes a valid `PortSpec` (dotted names accepted), and `export(import(entry)) == entry` as parsed JSON with `shape_spec`, `example_shape`, `variability_axis`, `static_arg_required` and the two policy blocks carried under `x-plegadx` (4.2) | planted entry with a malformed `shape_spec` must fail |
 | S4-25 | sidecar-registered differential compile of one fixed StableHLO module under prolix flags and under xtrax `WASM32`: success, size, and whether either flagset is rejected | negative: a deliberately invalid triple must fail in both arms. One flagset per process |
 | S4-26 | prolix tests pass after adoption and the 50 MiB size gate still fails an over-limit artifact | per the S4-25 outcome |
@@ -1256,8 +1296,8 @@ mutation control.
 | S4-34 | `xtrax-contract` and `xtrax` released on the Q11 channel with tags `xtrax-contract-v<ver>` and `v<ver>` (4.1). Two checks: (1) in a clean Python 3.11 venv the released `xtrax-contract` installs with no dependencies and `import xtrax_contract` succeeds; (2) in a clean Python 3.13 venv `pip install xtrax` resolves, and `importlib.metadata.version("xtrax-contract")` lies inside the range pinned by the released `xtrax`; the released schemas include the S5-51 amendments (G1-G4) and the `catalog_view` snapshots, so there is one meaning of `model-manifest.v1` | n/a |
 | S4-35 | on titanix: `uv lock --check` exits 0 with the new `xtrax` and `xtrax-contract`, the lock's base `orbax-checkpoint` is `>= 0.12` (S4-03 record method), and `uv run python -c "import xtrax_contract"` exits 0 | n/a |
 | S4-36 | in plegadx: `uv lock --check` exits 0 after the dependency is added, and `uv run python -c "import xtrax_contract"` exits 0 | n/a |
-| S4-37 | decision recorded in the aminx tree (carried across the rename by S3-07): weights license text and `redistribution` value (allowed/gated/forbidden) for each shipped weight set, with one named reviewer and one record location in the aminx/molxmpnn tree; S5-07 and S5-06 consume this record, and `catalog/licenses/<model>.review.toml` cites it and must agree (same redistribution value and reviewer), which S5's gate tests | n/a |
-| S4-40 | `pytest tests/contract/test_knob_document.py` on titanix: the knob class round-trips its ten browser keys, lowering of simple cases equals hand-computed arrays, the `FieldMeta` exposure set matches S1's snapshot (S4-32 reused) | negative: a planted wrong key mapping must fail |
+| S4-37 | decision recorded in the aminx tree: weights license text and `redistribution` value (allowed/gated/forbidden) for each shipped weight set, with one named reviewer and one record location in the aminx tree; S5-07 and S5-06 consume this record, and `catalog/licenses/<model>.review.toml` cites it and must agree (same redistribution value and reviewer), which S5's gate tests | n/a |
+| S4-40 | `pytest tests/contract/test_knob_document.py` on titanix: the knob class round-trips its ten browser keys, lowering of simple cases equals hand-computed arrays, the `FieldMeta` exposure set matches S1's snapshot (S4-32 reused); every new public top-level symbol under the inventory's packages or name added to `aminx.run.__all__` has its key in `tests/parity/browser_validation_paths.json` with `test_browser_validation_inventory.py` green (4.11, CH1-02) | negative: a planted wrong key mapping must fail |
 | S4-41 | sidecar committed first, then on titanix `bth run` of the lowering gate: Python lowering of every golden knob case equals the vectors, the JS kernels (`node`) equal the same vectors, the script twin `p07_knobs_gate` agrees on the shared cases | planted off-by-one in a shuffle and planted chain-semantics swap (per S4-33) must each fail; per-case results persisted, each case its own process and timeout |
 | S4-42 | `build_p07_inputs` and its test references deleted; `rg build_p07_inputs` is empty; S4-41's gate re-run passes unchanged | n/a |
 | S4-43 | sidecar committed first, then on titanix `bth run` of the spike over the four real MPNN graphs at one bucket: external-data tensor count is 0 for each graph (or the count per graph is recorded and S4-46 is required); per-graph result persisted, one graph per process and timeout | negative control: a planted ModelProto with a tensor stored as external data (fixture in the aminx tree, reused by S4-17) must make the assertion and the sidecar outcome fail; verified by record not exit code |
@@ -1269,8 +1309,8 @@ mutation control.
 1. **Q1. Contract packaging, answered together with Q4 (S4-01).** F2 (separate `xtrax-contract` dist built from the xtrax
    repo, Python >= 3.11, no dependencies, `xtrax.contract` shim) versus F1 (inside xtrax,
    carve out later). *Recommendation: F2*, because xtrax needs Python 3.13 and jax (A7) and the
-   consumers D6 protects do not. Also confirm the names `xtrax-contract` / `xtrax_contract`
-   and the group `xtrax.models`. The same ADR fixes the two-dist version and tag policy and the
+   consumers D6 protects do not. Also confirm the names `xtrax-contract` / `xtrax_contract`,
+   the group `xtrax.models` and the id namespace root `aminx` (the providing project's unchanged name; never the hub's). The same ADR fixes the two-dist version and tag policy and the
    generation toolchain (4.1: stdlib generator, Node check-only, `typescript` as the only dev
    dependency); *recommendation: accept as written*.
 2. **Q2. Owner of the browser knob document, and its chain semantics (S4-33, S4-40, S4-20).** S1 D10 and
@@ -1304,18 +1344,19 @@ mutation control.
    differential result pick; keep prolix's 50 MiB gate regardless.*
 8. **Q8. Weights licensing (S4-37).** Who audits license and redistribution terms of each shipped
    weight set before a public catalog lists it? *Recommendation: required manifest fields plus a
-   hub CI check; a human sign-off for each first listing.* S4-19 depends on the S4-37 decision item. It is one decision with one reviewer and one record in the aminx/molxmpnn tree (r3 C11): S5-07 depends on S4-37 and cites the record from `catalog/licenses/<model>.review.toml`, and S5-06 stages to public tiers only when the manifest value and that record agree, so the hub cannot hold a second, different answer.
+   hub CI check; a human sign-off for each first listing.* S4-19 depends on the S4-37 decision item. It is one decision with one reviewer and one record in the aminx tree (r3 C11): S5-07 depends on S4-37 and cites the record from `catalog/licenses/<model>.review.toml`, and S5-06 stages to public tiers only when the manifest value and that record agree, so the hub cannot hold a second, different answer.
 9. **Q9. S3-18 versus S4-22, and the fate of `make_mpnn_score` (S4-49, S4-22, S4-48).** Both
    S3-18 and S4-22 edit the same proteinsmc guard (S3-18 installs a root-only
-   `find_spec("molxmpnn")` guard, which is import-free; the dotted form that A36 shows importing the
-   parent was S3's earlier draft). If S4-49 answers "supersede", S3-18 is closed unmerged and
+   `find_spec("aminx")` guard with imports deferred into `make_mpnn_score`, which is import-free at
+   proteinsmc import time; the dotted form that A36 shows importing the parent is not that guard). If S4-49 answers "supersede", S3-18 is closed unmerged and
    S4-23 supplies its own non-default dependency group so the end-to-end test does not need S3-18's
    (4.9). Superseding a sibling spec's item is the user's decision, so
    the backlog does **not** bake in an answer (r2 R2-4): decision item S4-49 records it, S4-22
    depends on S4-49 and is `user_decision = true`, and S3-18 is owed a dependency on S4-49
    (section 6). *Recommendation: supersede, so S3-18 is closed unmerged and S4-22 is the only guard
    (one guard, manifest-driven, no name coupling to the provider package).* If the user prefers to keep S3-18, S4-22
-   lands after it and replaces its guard; either way exactly one guard survives (S4-22 gate).
+   lands after it and replaces its guard and its deferred `aminx` imports (the D6 gate in 4.9 rejects any
+   provider import under `proteinsmc/src`); either way exactly one guard survives (S4-22 gate).
    Second half of the question: change the public `make_mpnn_score` signature to
    `(structure, decoding_settings="random", *, scorer_id=None)` and keep the `"mpnn"` registry key
    (recommended: the old form has no working caller, A54), or leave it and add a new key (4.9).
@@ -1346,7 +1387,7 @@ title = "ADR: contract packaging (xtrax-contract dist vs in-xtrax), names, Pytho
 repo = "xtrax"
 size = "S"
 depends_on = []
-gate = "ADR merged under xtrax .praxia/docs/decisions/ recording the Q1 and Q4 answers, dist and import names, python floor 3.11, the entry-point group name, the manifest id grammar <namespace>/<family>.<op> with the entry-point stem rule and manifests/ directory (molxmpnn/proteinmpnn.sample and molxmpnn/proteinmpnn.score as worked examples), the version and tag policy of the two dists, the generation toolchain and the amended fork-13 note"
+gate = "ADR merged under xtrax .praxia/docs/decisions/ recording the Q1 and Q4 answers, dist and import names, python floor 3.11, the entry-point group name, the manifest id grammar <namespace>/<family>.<op> with the entry-point stem rule and manifests/ directory (aminx/proteinmpnn.sample and aminx/proteinmpnn.score as worked examples), the version and tag policy of the two dists, the generation toolchain and the amended fork-13 note"
 user_decision = true
 
 [[item]]
@@ -1400,7 +1441,7 @@ title = "schemagen classes front-end: stdlib-only dataclass / eqx.Module to JSON
 repo = "xtrax"
 size = "M"
 depends_on = ["S4-01", "S4-02"]
-gate = "pytest tests/test_schemagen.py: mapping table per supported type incl. Callable via handler, both tuple modes, unmappable type raises, Any rejected unless opaque, only metadata-exposed fields emitted, keywords outside the profile fail emission, the mapping table equals the target table committed in the S4-02 sidecar (a planted extra entry fails the equality check), and field_meta.v1.json is committed and loaded by meta() and schemagen with a planted unknown FieldMeta key failing emission; S1-06 consumes field_meta.v1.json from this item (an edge owed, section 6), so its key list is the authoritative source for S1-06 and S1-31"
+gate = "pytest tests/test_schemagen.py: mapping table per supported type incl. Callable via handler, both tuple modes, unmappable type raises, Any rejected unless opaque, only metadata-exposed fields emitted, keywords outside the profile fail emission, the mapping table equals the target table committed in the S4-02 sidecar (a planted extra entry fails the equality check), and field_meta.v1.json is committed at src/xtrax_contract/field_meta.v1.json and loaded by meta() and schemagen with a planted unknown FieldMeta key failing emission, and the PR records the merge commit SHA and the file sha256 that S1-06 vendors; S1-06 consumes field_meta.v1.json from this item (an edge owed, section 6), so its key list is the authoritative source for S1-06 and S1-31"
 user_decision = false
 
 [[item]]
@@ -1478,16 +1519,16 @@ user_decision = false
 [[item]]
 id = "S4-16"
 title = "MPNN repo: Q3 resolution on top of merged #174 (dependency group, xtrax[export] out of base; changes the MPNN lock after S2-02, intentionally unordered against S2-05..S2-34, which run A0 from a pinned F' checkout)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
-depends_on = ["S4-03", "S3-07", "S3-13", "S2-02"]
+depends_on = ["S4-03", "S2-02"]
 gate = "on titanix, on top of the merged #174 pin: uv lock keeps base orbax-checkpoint >= 0.12 per the S4-03 record, import smoke of the package and of the export scripts passes, no onnx extra is published"
 user_decision = true
 
 [[item]]
 id = "S4-17"
 title = "MPNN repo: route p07_split_export.py (only) through the xtrax bundle exporter, drop the private jax2onnx wrappers and duplicate RNG walker, re-baseline the sha256 manifest (pre-registered)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "L"
 depends_on = ["S4-14", "S4-16", "S4-35", "S4-43"]
 gate = "sidecar committed first, then on titanix bth run p07_split_export --buckets 128 256: record shows all graphs exported, self_contained true, manifest written, x64 false, lint_sidecars.py passes, reused units listed; the S4-43 planted external-data fixture run through the same assertion makes assertion and outcome fail"
@@ -1496,7 +1537,7 @@ user_decision = false
 [[item]]
 id = "S4-18"
 title = "MPNN repo: ORT-CPU cell of the split parity chain on xtrax-route artifacts under a pre-registered sidecar with inherited bounds"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S4-17"]
 gate = "bth record shows tokens exact, log-prob gap within inherited 2e-4 nats and teacher-forced within inherited 1e-4 nats on ORT-CPU, planted-perturbation controls still detected, verified by record not exit code"
@@ -1504,29 +1545,29 @@ user_decision = false
 
 [[item]]
 id = "S4-19"
-title = "MPNN ModelManifests (sample and score): stdlib-only source-mode manifest files with ids molxmpnn/proteinmpnn.sample and molxmpnn/proteinmpnn.score per the S4-01 grammar, ports, params schema refs, python and onnx executor entries only (driver.url a release-asset: placeholder, driver.sha256 pending; the remote executor entry is added by S5-21), weights pinned at the post-cutover HF revision, golden-vector artifacts, placeholder URLs and validation evidence from S4-18/S4-38/S4-39"
-repo = "molxmpnn"
+title = "MPNN ModelManifests (sample and score): stdlib-only source-mode manifest files with ids aminx/proteinmpnn.sample and aminx/proteinmpnn.score per the S4-01 grammar, ports, params schema refs, python and onnx executor entries only (driver.url a release-asset: placeholder, driver.sha256 pending; the remote executor entry is added by S5-21), weights pinned at the HF_REVISION of the tree (aminx.io.weights), golden-vector artifacts, placeholder URLs and validation evidence from S4-18/S4-38/S4-39"
+repo = "aminx"
 size = "M"
-depends_on = ["S4-06", "S4-17", "S4-18", "S4-38", "S4-39", "S4-37", "S4-35", "S3-07", "S3-11"]
-gate = "pytest tests/contract/test_manifest.py on titanix: both manifests validate in source mode (allow_placeholders; python and onnx entries only, the remote entry is S5-21's) with driver.url a release-asset: placeholder and driver.sha256 explicitly pending (the final onnx entry comes from S5-14 and S5-52), ids and entry-point stems follow the S4-01 grammar, manifest version and every executor module:symbol resolve in the tree of the tag released from as listed in the S3 release-train table (find_spec), shared artifact entries identical and equal to the S4-17 record, golden-vector entries have sha256, every evidence bathos_id resolves via bth sql to a passing record of the matching executor, license matches the S4-37 decision, a planted id/stem mismatch fails"
+depends_on = ["S4-06", "S4-17", "S4-18", "S4-38", "S4-39", "S4-37", "S4-35"]
+gate = "pytest tests/contract/test_manifest.py on titanix: both manifests validate in source mode (allow_placeholders; python and onnx entries only, the remote entry is S5-21's) with driver.url a release-asset: placeholder and driver.sha256 explicitly pending (the final onnx entry comes from S5-14 and S5-52), ids and entry-point stems follow the S4-01 grammar, manifest version equals the [project] version of the checkout under test and every executor module:symbol resolves there (find_spec), the hf:// revision equals aminx.io.weights.HF_REVISION and the test runs unchanged against an installed wheel (S5-52 runs it on the tagged wheel), shared artifact entries identical and equal to the S4-17 record, golden-vector entries have sha256, every evidence bathos_id resolves via bth sql to a passing record of the matching executor, license matches the S4-37 decision, a planted id/stem mismatch fails; if the item adds a public top-level symbol under src/aminx/{scoring,host,sampling,inference,model,tiling,potts} or to aminx.run.__all__, its key is added to tests/parity/browser_validation_paths.json and pytest tests/parity/test_browser_validation_inventory.py is green, otherwise the PR says it adds none"
 user_decision = false
 
 [[item]]
 id = "S4-20"
 title = "Generate the portable MPNN knob schema, TS types, constants, defaults and validator from the knob document via the S4-09 generator and S4-47 engine (no second generator), make runspec_core.mjs import them, delete S1-18's drift test"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S4-09", "S4-47", "S4-41", "S1-18", "S4-35"]
-gate = "sidecar-registered equivalence run: generated JS constants, defaults and validator agree with the S4-41 golden vectors, node --test browser/molxmpnn-sampler passes, S1-18 drift test deleted, planted wrong default and planted shuffle off-by-one both fail"
+gate = "sidecar-registered equivalence run: generated JS constants, defaults and validator agree with the S4-41 golden vectors, node --test browser/aminx-sampler passes, S1-18 drift test deleted, planted wrong default and planted shuffle off-by-one both fail"
 user_decision = false
 
 [[item]]
 id = "S4-21"
 title = "MPNN Scorer provider: bind(structure) to a FitnessFn-shaped ScoreFn, direction and units declared, xtrax.models entry-point registration with bare-package value, conformance test"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S4-01", "S4-11", "S4-13", "S4-19", "S4-35"]
-gate = "on titanix: pytest tests/contract/test_scorer.py: assert_conforms passes, bind accepts a path and a PdbText structure and returns equal scores on the shared fixture PDB, declared direction (minimize) and units match the code, sign-flip control fails, discovery works from the setuptools-built wheel and from an editable install, a path-valued entry point is rejected by the build"
+gate = "on titanix: pytest tests/contract/test_scorer.py: assert_conforms passes, bind accepts a path and a PdbText structure and returns equal scores on the shared fixture PDB, declared direction (minimize) and units match the code, sign-flip control fails, discovery works from the setuptools-built wheel and from an editable install, a path-valued entry point is rejected by the build, and every new public top-level symbol under src/aminx/{scoring,host,sampling,inference,model,tiling,potts} (the bind function and provider class) has its key in tests/parity/browser_validation_paths.json with pytest tests/parity/test_browser_validation_inventory.py green"
 user_decision = false
 
 [[item]]
@@ -1535,12 +1576,12 @@ title = "proteinsmc: discover scorers via the xtrax.models entry-point group wit
 repo = "proteinsmc"
 size = "M"
 depends_on = ["S4-01", "S4-06", "S4-49"]
-gate = "uv run pytest tests/scoring/test_mpnn_discovery.py passes with a fake scorer: no provider package imported, manifests with schema_version 0, 2 or missing and with missing or unknown role are skipped with a warning, version 1 accepted, extended D6 check (imports, import_module of provider names, [project.dependencies] and [project.optional-dependencies]; [dependency-groups] exempt as dev-only, alphex D4) empty, a planted molxmpnn in optional-dependencies fails it and in a dependency group passes, and rg for find_spec of molxmpnn or prxteinmpnn in proteinsmc/src is empty"
+gate = "uv run pytest tests/scoring/test_mpnn_discovery.py passes with a fake scorer: no provider package imported, manifests with schema_version 0, 2 or missing and with missing or unknown role are skipped with a warning, version 1 accepted, extended D6 check (imports, import_module of provider names, [project.dependencies] and [project.optional-dependencies]; [dependency-groups] exempt as dev-only, alphex D4) empty, a planted aminx in optional-dependencies fails it and in a dependency group passes, and rg for find_spec of aminx or prxteinmpnn in proteinsmc/src is empty"
 user_decision = true
 
 [[item]]
 id = "S4-23"
-title = "proteinsmc end-to-end (dev-only, skipped when absent): its own non-default dependency group installs the MPNN package (wheel built from the molxmpnn checkout, and an editable install), discover and call the scorer, verify D6 holds in pyproject; independent of S3-18"
+title = "proteinsmc end-to-end (dev-only, skipped when absent): its own non-default dependency group installs the MPNN package (wheel built from the aminx checkout, and an editable install), discover and call the scorer, verify D6 holds in pyproject; independent of S3-18"
 repo = "proteinsmc"
 size = "S"
 depends_on = ["S4-21", "S4-22", "S4-48"]
@@ -1613,7 +1654,7 @@ user_decision = false
 [[item]]
 id = "S4-32"
 title = "Metadata-versus-snapshot agreement: the schema emitted from the unified RunSpec classes has exactly the properties S1's run_spec_fields.json marks portable, keyed by browser_key"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S4-07", "S1-06", "S1-07", "S4-35"]
 gate = "on titanix: pytest tests/run/test_xtrax_metadata_vs_snapshot.py passes, every exposed field's metadata[xtrax] dict validates against exactly the field_meta.v1.json shape published by S4-07, the S4-02 classifier re-run as a new bathos run on the unified classes reports zero unmapped exposed fields, a planted portable row with no field metadata, a planted exposed field with no row and a planted unknown metadata key each fail"
@@ -1640,9 +1681,9 @@ user_decision = true
 [[item]]
 id = "S4-35"
 title = "MPNN repo: bump xtrax to the S4-34 release and add xtrax-contract as a dependency (changes the MPNN lock after S2-02; intentionally unordered against S2-05..S2-34, which run A0 from a pinned F' checkout)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
-depends_on = ["S4-16", "S4-34", "S3-07"]
+depends_on = ["S4-16", "S4-34"]
 gate = "on titanix: uv lock --check exits 0 with the new xtrax and xtrax-contract, the lock's base orbax-checkpoint is >= 0.12 (S4-03 record method), uv run python -c 'import xtrax_contract' exits 0"
 user_decision = false
 
@@ -1661,13 +1702,13 @@ title = "Decision: weights license text and redistribution value (allowed, gated
 repo = "aminx"
 size = "S"
 depends_on = []
-gate = "decision recorded in the aminx tree (carried across the rename by S3-07) naming license text, redistribution value and one reviewer per weight set, at one record location that S5-07 cites from catalog/licenses/<model>.review.toml and S5-06 reads (the hub holds no second decision)"
+gate = "decision recorded in the aminx tree naming license text, redistribution value and one reviewer per weight set, at one record location that S5-07 cites from catalog/licenses/<model>.review.toml and S5-06 reads (the hub holds no second decision)"
 user_decision = true
 
 [[item]]
 id = "S4-38"
 title = "MPNN repo: Node/wasm cell of the split parity chain on xtrax-route artifacts under a pre-registered sidecar with inherited bounds"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S4-17"]
 gate = "bth record shows tokens exact and the inherited bounds met under Node wasm, planted-perturbation controls still detected, verified by record not exit code"
@@ -1676,7 +1717,7 @@ user_decision = false
 [[item]]
 id = "S4-39"
 title = "MPNN repo: headless-Chromium cell of the split parity chain on xtrax-route artifacts under a pre-registered sidecar with inherited bounds"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S4-17"]
 gate = "bth record shows tokens exact and the inherited bounds met in headless Chromium, planted-perturbation controls still detected, verified by record not exit code"
@@ -1685,16 +1726,16 @@ user_decision = false
 [[item]]
 id = "S4-40"
 title = "Portable MPNN knob document as a projection of the unified RunSpec with field metadata, and the pure library lowering to bias, fixed_mask, fixed_tokens and tie_group_map"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S4-33", "S4-07", "S4-32", "S4-35", "S1-05", "S1-07"]
-gate = "on titanix: pytest tests/contract/test_knob_document.py passes, the ten browser keys round-trip, simple lowering cases equal hand-computed arrays, a planted wrong key mapping fails"
+gate = "on titanix: pytest tests/contract/test_knob_document.py passes, the ten browser keys round-trip, simple lowering cases equal hand-computed arrays, a planted wrong key mapping fails, and every new public top-level symbol under src/aminx/{scoring,host,sampling,inference,model,tiling,potts} or name added to aminx.run.__all__ (the knob class and lowering) has its key in tests/parity/browser_validation_paths.json with pytest tests/parity/test_browser_validation_inventory.py green"
 user_decision = false
 
 [[item]]
 id = "S4-41"
 title = "Golden vectors from the Python lowering and JS kernel cross-check under a pre-registered sidecar (planted shuffle off-by-one and chain-semantics swap as negative controls)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S4-40"]
 gate = "sidecar committed first, then on titanix bth run of the lowering gate: Python lowering equals every golden vector, node-run JS kernels equal the same vectors, the script twin agrees on shared cases, both planted faults fail, per-case results persisted"
@@ -1703,7 +1744,7 @@ user_decision = false
 [[item]]
 id = "S4-42"
 title = "Retire the p07_knobs_gate script twin (build_p07_inputs) once S4-41 agrees on the shared cases"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S4-41"]
 gate = "rg build_p07_inputs over the repo is empty and the S4-41 gate re-run passes unchanged"
@@ -1774,6 +1815,10 @@ user_decision = false
 ```
 
 ## Revision log
+
+Entries before the "no-rename revision" entry (the last one) describe the retired rename design
+(`molxmpnn`, S3-07 and friends) and are kept verbatim as history; they are not a description of
+this spec's current content.
 
 ### Round 1 (adversarial objections C1-C18)
 
@@ -1869,3 +1914,70 @@ Applied to this spec only.
 
 - **S6-35, not S6-03, runs the TypeScript side of the JCS vectors.** Section 5's JCS number-formatting risk row said "S6-03 runs the TS side"; S6 files the TypeScript canonicaliser as S6-35 (S6-03 is the document envelope). Corrected the row. The section 6 "Edges owed" rows already name S6-35. No `depends_on` or id changed.
 - **For S6's reviewers:** this spec grew while S6 re-derived its citations (1854 to 1866 lines during the pass); S6 now cites this file by section and quoted text with line numbers as hints only.
+
+### no-rename revision (user decision 2026-10-01, revised D2)
+
+Decision: the MPNN package keeps the name `aminx` (released on PyPI as `aminx`); there is no rename. The
+hub is a separate project (working slug `aminx-hub`; the final repo name, PyPI policy and a domain
+derived from `praxia.science` are the user decision S3-01, which also flags the collision with the
+user's praxia agent orchestrator). Applied to this spec only. S3 is now
+`261001_aminx-identity-and-hub-naming.md`; this spec never linked the old file name (checked with `grep`),
+so no link needed updating.
+
+- **Names.** `molxmpnn` and "becomes molxmpnn after S3" became `aminx` in the frontmatter, AC5, the
+  3.5 asks table, 4.3 (manifest ids `aminx/proteinmpnn.sample` and `aminx/proteinmpnn.score`), 4.8 (entry
+  points `proteinmpnn-sample = "aminx"`, file `aminx/manifests/proteinmpnn-sample.json`), 4.9 (D6 gate regex,
+  the `find_spec` discussion, S4-23's wheel arm), section 5 risks, section 6 Provides/Consumes, the section
+  7 gate rows and the toml (13 `repo` fields, `node --test browser/aminx-sampler`). The hub is described as
+  a separate project with a pending name and appears in no manifest string, entry point or id.
+- **Edges dropped from the toml.** S4-16: S3-07, S3-13 (now `[S4-03, S2-02]`). S4-19: S3-07, S3-11 (its
+  manifests use the root `aminx` and pin the `HF_REVISION` of the tree; no cutover exists). S4-35: S3-07
+  (now `[S4-16, S4-34]`). No S4 item depends on any S3 id now; in particular none depends on S3-12 (no S4
+  item cuts an aminx release), S3-18 (S4-49 must not, since S3-18 depends on S4-49) or S3-01. The
+  surviving S3 ids (S3-01, S3-09, S3-12, S3-18, S3-21, S3-24, S3-28, S3-29) are all referenced only in prose.
+- **Items deleted.** None. No S4 item existed only for the rename (S4-16 is the Q3 orbax resolution,
+  S4-19 the native manifests, S4-35 the xtrax-contract pin). S4-27 stays retired from coherence round 1.
+- **Text removed.** The two-name repo rule (4.11, `repo = "aminx"` before S3-07, `molxmpnn` after); the
+  "ordered behind S3-07 / S3-13" rebase risk and its pinned-tag diff argument; the section 6 "Edges owed" S3
+  row asking for the S3-20 leaf set and S3-05/S3-07 edges to S2-02; the S3 release-train table dependency
+  of S4-19 (now: the manifest `version` equals the checkout's `[project] version`, and S5-52 re-runs the
+  resolve test on the tagged wheel); "carried across the rename" in S4-37; `S3:molxmpnn-repo` and
+  `S3:molxmpnn-manifest-namespace` (replaced by `S3:aminx-identity` and `S3:release-guard`).
+- **Ordering decisions restated for the no-rename world.** (1) "Rename first": there is no rename, so
+  nothing in the aminx tree waits behind a rename PR; the order inside the tree is S2-02 (merge of #174) then
+  S4-16 then S4-35 then S4-17 to S4-21, S4-32 and S4-40 to S4-42, with S1 items ahead of S4-20, S4-32 and
+  S4-40, and S4-16 no longer waits for a release. (2) S4 versus S2: the only live question is lock churn
+  from S4-16 and S4-35 while S2 runs; the conclusion is unchanged (no edge, S2 executes from a detached
+  worktree at its pinned commit, A63), plus a clause that S4-16 repeats the S4-03 method if S2-18 lands first.
+  (3) Release ordering: S4 owns no release item; S3-12 and S3 4.5 order S5-52 (0.2.0a4 on 261001) and S1-25
+  (0.2.0a5); S4-19 only has to be correct for whichever tag S5-52 cuts.
+- **Ledger.** A36 and A43 reworded (names only, anchors re-read: `importlib/util.py:89-91`; setuptools
+  `python_entrypoint_reference` accepts a bare dotted module, rejects a path). A58 to A63 added, each with a
+  `read:` anchor from this session (no spike harness exists in this worktree, section 2, so none was run).
+- **Unchanged on purpose.** D1 and D3 to D7; the contract design, section 4.1 packaging, the xtrax-side
+  items, the proteinsmc D6 partition, and the S1/S5/S6 owed edges. Q9 is restated (guard text only).
+
+### no-rename coherence r1
+
+Applied to this spec only (S1, S2 and S5 are patched concurrently).
+
+- **CH1-02** aminx CI's `tests/parity/test_browser_validation_inventory.py` (`:18-29`, `:101-137`) and
+  `tests/parity/browser_validation_paths.json` fail on unmapped and stale public top-level symbols and on
+  every name in `aminx.run.__all__`. Added the "aminx public-symbol inventory" row to 4.11 and the same
+  clause to the gates of S4-19, S4-21 and S4-40 (toml and section 7): when an item adds a public top-level
+  symbol under `src/aminx/{scoring,host,sampling,inference,model,tiling,potts}` or to `aminx.run.__all__`, the
+  PR adds the JSON key and the inventory test is green; otherwise the PR says it adds none. The edits made
+  by S1 and S2 to the same JSON are additive keys that merge textually, so no `depends_on` edge was added.
+  Ledger A64.
+- **CH1-04** `field_meta.v1.json` has a delivery path before any release. S4-07 commits it at
+  `src/xtrax_contract/field_meta.v1.json` (added to the 4.1 layout) and records the merge commit SHA and
+  sha256 in its PR; S1-06 vendors a byte copy by sha256 (as S1 specifies). Edited: 4.7, the S4-07 gate (toml
+  and section 7), the section 6 `ParamProfile@1` Provides row and the "Edges owed" S1 row. Ledger A65.
+- No id, `depends_on`, `repo` or `size` changed; the toml is otherwise untouched.
+
+### no-rename coherence r2
+
+Applied to this spec only (other specs are patched concurrently). No id, `depends_on`, `repo` or `size` changed; the toml is untouched.
+
+- **R2-01** The section 5 lock-churn row and ledger A63 now state that the "intentionally unordered" conclusion also covers S2-06's clone point G (a commit on aminx main): S2 made its check at G code-only, so S4-16, S4-35 or S1-17 landing between F' and G can neither stop S2-06 nor invalidate A0. No edge added.
+- **R2-03** The same row now notes that S1's goldens (S1-01) and equivalence gates (S1-07, S1-15) are lock-sensitive and are protected by S1's environment stamp, not by ordering. No edge added.

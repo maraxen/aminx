@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S20",
+    "claims": {
+      "A8": "Bathos run provenance is keyed by a project_slug column (144 runs under aminx) and the runs table has no separate project id column."
+    },
+    "question": "If a bathos project slug were changed after runs exist, would those runs be orphaned (is the slug the only project key on the runs table)? This decides whether the hub's slug must be fixed before its first tracked run.",
+    "command": "bash .praxia/spikes/261001_aminx-identity-and-hub-naming/S20/probe.sh",
+    "expect_if_true": "Rows show aminx with at least 100 runs; the column query returns exactly one column, project_slug.",
+    "expect_if_false": "The column query returns an additional project id column (provenance could survive a slug change via the id, and the decide-the-slug-first ordering in S3-01 is unnecessary), or aminx has far fewer than 100 runs (little provenance at stake). A bth failure is inconclusive: re-run under a new id."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:56:27.916639+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 9.978862762451172,
+    "output_sha256": "5e1158f8467aa58b091b1d9a9b17bb91a5af532eeaab5e2a09323f2015723416",
+    "output_full_sha256": "5e1158f8467aa58b091b1d9a9b17bb91a5af532eeaab5e2a09323f2015723416",
+    "output_bytes": 294,
+    "output_truncated": false,
+    "prereg_sha256": "d6fcf5e86aa95392e13a513a906e0f9e314b7a21cac6bbbc42ee56c9b3968369",
+    "probe_files": {
+      "probe.sh": "8f853f917ea061c9da6ac6be99a3c70a5583e022f270f7b7255978d5db25bac0"
+    }
+  }
+}

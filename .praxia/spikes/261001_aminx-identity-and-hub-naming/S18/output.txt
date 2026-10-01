@@ -1,0 +1,23 @@
+docs[managing] fetch=ok chars=14811
+  phrase 'CNAME': found=True | u are publishing your site from a branch, this will create a commit that adds a CNAME file directly to the root of your source branch. If you are publishing from a custom GitHub Actions workflow, no CNAME file is created
+  phrase 'github.io': found=True | our GitHub Pages default domain. For example, if your site is located at <user>.github.io , you should create a CNAME record that points www.example.com to <user>.github.io Similarly, for an organization site located at 
+  phrase 'apex': found=True |  Windows Linux In this article About custom domain configuration Configuring an apex domain Configuring a subdomain DNS records for your custom domain Removing a custom domain Securing your custom domain Further reading 
+  phrase 'takeover': found=True | n prior to adding it to your repository, in order to improve security and avoid takeover attacks. For more information, see Verifying your custom domain for GitHub Pages . Make sure you add your custom domain to your Git
+  phrase 'verif': found=True | ain for a GitHub Pages site. About custom domain configuration Tip We recommend verifying your custom domain prior to adding it to your repository, in order to improve security and avoid takeover attacks. For more inform
+docs[verifying] fetch=ok chars=7413
+  phrase 'CNAME': found=False | 
+  phrase 'github.io': found=False | 
+  phrase 'apex': found=False | 
+  phrase 'takeover': found=True |  for GitHub Pages You can increase the security of your custom domain and avoid takeover attacks by verifying your domain. Copy markdown Who can use this feature? GitHub Pages is available in public repositories with Git
+  phrase 'verif': found=True | u can increase the security of your custom domain and avoid takeover attacks by verifying your domain. Copy markdown Who can use this feature? GitHub Pages is available in public repositories with GitHub Free and GitHub 
+dns praxia.science A: Status=0 answers=[]
+dns praxia.science AAAA: Status=0 answers=[]
+dns praxia.science CNAME: Status=0 answers=[]
+dns praxia.science NS: Status=0 answers=['carter.ns.cloudflare.com.', 'brenda.ns.cloudflare.com.']
+dns praxia.science TXT: Status=0 answers=[]
+dns hub.praxia.science A: Status=3 answers=[]
+dns hub.praxia.science CNAME: Status=3 answers=[]
+dns aminx.praxia.science A: Status=3 answers=[]
+dns aminx.praxia.science CNAME: Status=3 answers=[]
+dns www.praxia.science A: Status=3 answers=[]
+dns www.praxia.science CNAME: Status=3 answers=[]

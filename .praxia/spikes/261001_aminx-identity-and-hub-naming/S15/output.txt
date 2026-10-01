@@ -1,0 +1,8 @@
+--- root package absent
+find_spec('s15_absent.sub.mod') -> RAISES ModuleNotFoundError: No module named 's15_absent'
+find_spec('s15_absent') -> None
+--- root package present, __init__ has a side effect and raises
+find_spec('s15_present') -> True
+parent __init__ ran after root-only find_spec: False
+find_spec('s15_present.sub') -> RAISES RuntimeError: parent __init__ executed
+parent __init__ ran after dotted find_spec: True

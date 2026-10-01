@@ -23,9 +23,10 @@ related_specs:
 
 Shared inputs: `.praxia/docs/research/261001_ecosystem-hub-recon-brief.md` (decisions D1-D7; D4 is this
 spec's mandate). This spec is SPEC ONLY; nothing in it executes yet (D7). Paths are relative to the aminx
-repo root unless prefixed by a repo name. **Path convention after round 1:** paths are as read in the current
-tree. The S3 rename (S3-07, which every S1 code item now follows, see D7) maps `src/aminx/` to
-`src/molxmpnn/`; the S1 items apply by that mapping and S1-01 re-pins the anchors it records on the renamed tree.
+repo root unless prefixed by a repo name. **Path convention:** paths are as read in the current tree and stay
+valid. The package keeps the name `aminx` (revised D2; no rename), so `src/aminx/` is the package root for every
+S1 item and S1-01 records its anchors on current main. The hub is a separate project (working slug `aminx-hub`,
+name pending S3-01); S1 takes no edge to it.
 
 ## Goal and non-goals
 
@@ -35,8 +36,8 @@ generated from, and no state-sync between two objects; every existing flat-keywo
 file, campaign manifest and manifest-row hash keeps working byte-for-byte.
 
 **Non-goals.**
-- No change to model numerics, sampling behaviour, CLI flags, CLI names, or the `aminx` package name
-  (renaming is S3; extraction of `src/aminx/ebm/` is S2).
+- No change to model numerics, sampling behaviour, CLI flags, CLI names, or the `aminx` package name (the
+  package keeps its name; S3 records the hub's identity; extraction of `src/aminx/ebm/` is S2).
 - No JSON-Schema generator, no JS code generation, no browser knob document and no letter-keyed design-constraint
   lowering (S4 owns generation and, per the C3 resolution, S4-20 owns the knob document and its lowering; S1 only
   provides the registry plus the field-metadata hook they read, and a drift test until then).
@@ -148,9 +149,18 @@ findings; item S1-02 re-measures them under a bathos sidecar.
   repos outside its list): `../mpnn_ext` depends on aminx as a uv workspace member
   (`../mpnn_ext/pyproject.toml:12-15`: `aminx = { workspace = true }`, `members = ["external/aminx"]`, a vendored
   git submodule pinned to a SHA; exploratory: 57 files outside `external/` reference a `*Specification` class);
-  `../asr` has the same shape (`../asr/pyproject.toml:23,94`: `aminx = { workspace = true }`; S3 A1 records its
-  submodule); `../hautespout` is a third vendoring consumer per S3 A1 (*unverified* by S1: only S3's evidence;
-  S1-28 re-reads it); `../tev_design` pins a built wheel (`../tev_design/pyproject.toml:66`,
+  `../asr` has the same shape (`../asr/pyproject.toml:23,94`: `aminx = { workspace = true }`; S3 section 3.1
+  records its submodule); `../hautespout` is a third vendoring consumer per S3 section 3.1 (*unverified* by S1: S3
+  carries that statement without re-verifying it; S1-28 re-reads it). **CH1-03 correction:** hautespout's `main`
+  `pyproject.toml` (`../hautespout/pyproject.toml:8-14`) declares no `aminx` dependency (its `.gitmodules` does list a
+  `vendor/aminx` submodule, `maraxen/aminx`, whose pinned SHA S1 has not read); a WIP worktree (`../hautespout/.claude/worktrees/mellow-exploring-sunbeam/pyproject.toml:8,27,31`)
+  declares `aminx` as a uv workspace member vendored at `vendor/aminx` (`.gitmodules`: `maraxen/aminx`). That vendored
+  aminx carries `src/aminx/ebm/hp_energy.py`, `hp_coarse_sampler.py` and `hp_windowing.py` (an off-lattice HP energy
+  checked by `scripts/validate/hp_lattice_sanity.py`), which exist on the aminx branch `hp-lattice-sanity-check`
+  (local and `origin`) and are not among the 15 EBM modules in S2 section 3.1. S1 does not touch `src/aminx/ebm/`, but
+  S1-28 must therefore name which hautespout branch it migrates (main lists the submodule but declares no workspace
+  dependency; the WIP branch declares and carries the vendored aminx) and S2 owns the stranded-branch question (see the Revision log, CH1-03). The consumers that do
+  import `aminx` keep doing so (no rename); `../tev_design` pins a built wheel (`../tev_design/pyproject.toml:66`,
   `wheels/aminx-0.1.0a24`, far behind; exploratory: 46 files reference a `*Specification` class; its
   `AMINX_PIN.md` names two gate scripts to run before any re-pin). Vendored consumers break **at their submodule
   SHA bump**, not when upstream shims are removed; `tev_design` breaks at its next re-pin, which from 0.1.0a24 is
@@ -211,11 +221,16 @@ and are turned into the gate of item S1-03 / S1-02, which is sequenced before an
 | A28 | `SamplingConfig.multi_state_strategy` and `MultistateConfig.combine_strategy` are both `eqx.field(static=True)`, so merging them keeps that field static; other `SamplingConfig` fields mix static and dynamic and `FieldDef` must record which | If the merged home were dynamic the jit cache key would change | VERIFIED | read: src/aminx/run/spec.py:50; read: src/aminx/run/spec.py:123-135 |
 | A29 | `SamplingSpecification.__post_init__` mutates stored values (noise-bundle merge, `backbone_noise` back-population to a tuple, `use_electrostatics`/`use_vdw` None to bool, tuple-ization of `estat_noise`/`vdw_noise`, scalar `temperature` to tuple) and `dataclasses.replace` re-runs it on the normalised values | If it did not, `to_flat(from_flat(x)) == x` would hold trivially | VERIFIED | read: src/aminx/run/specs.py:420-443; read: src/aminx/run/specs.py:650-652 |
 | A30 | S4's schemagen walks `dataclass`/`eqx.Module` fields and reads opt-in per-field metadata; S4 expects S1 to provide the surviving spec class plus a field-metadata hook and S4-20 owns the knob projection | If S4 changed to consume `run_spec_fields.json`, the hook becomes snapshot-only and no S1 item changes | VERIFIED | read: .praxia/docs/specs/261001_xtrax-model-contract.md:486-493; read: .praxia/docs/specs/261001_xtrax-model-contract.md:689-697 |
-| A31 | S3 recommends rename-first (S3-07 before S1/S2 code items; `molxmpnn` has the API of `aminx 0.2.0a3` before S1 changes) and is the DAG root | If the user chooses S1-first, the S1-01/02/03/17 edges to S3-07 are dropped and S3-07 gains edges to S1-13 and S1-26..S1-28 | VERIFIED | read: .praxia/docs/specs/261001_molxmpnn-rename.md:55; read: .praxia/docs/specs/261001_molxmpnn-rename.md:352; read: .praxia/docs/specs/261001_molxmpnn-rename.md:408 |
+| A31 | S3 recommends rename-first (S3-07 before S1/S2 code items; the renamed package has the API of `aminx 0.2.0a3` before S1 changes) and is the DAG root | Superseded: the rename is retired (revised D2). S1 code items run on current main under the name `aminx`; the S1-01/02/03/05/17 edges to S3-07/S3-13 are dropped and S3-07/S3-13 no longer exist | REFUTED | read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:62-66; read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:76-85; changed: D7 rewritten for the no-rename world, Q10 retired, S1-01/S1-03/S1-17 become roots, S1-02 keeps S1-01, S1-05 keeps S1-02 and S1-04, repo = "aminx" on every S1 item |
 | A32 | The old nested path set is closed and countable: the eight old sub-config classes declare 47 fields (io 5, resource 4, multistate 3, ligand 5, grid 6, precision 1, plan 1, sampling 22) and `RunSpec` adds 5 inherited plus 2 fusion names (54 paths); sub-configs are plain `eqx.Module` children with no parent reference, so a sub-config cannot serve `random_seed` (home: top-level `seed`) or `multi_state_*` (home: `multistate`) | If the set were larger or open-ended (dynamic attributes), the P_old reflection in S1-01 records the real set and the view/row count changes; the view-object decision is unaffected | VERIFIED | read: src/aminx/run/spec.py:26-135; read: src/aminx/run/spec.py:138-150 |
 | A33 | `xtrax.run.derive_sink_spec` reads only `run_spec.run_id` from its argument (xtrax v0.4.0a11, read with `git show`), so a view that passes `run_id` through satisfies the three production call sites that pass `spec.run_spec` | If it read more, the three call sites (`host/runner.py:1551`, `host/streaming.py:91`, `sampling/multistate_poe.py:690`) would pass `as_run_spec(spec)` instead and the view needs no xtrax-facing surface | VERIFIED | read: ../../../../xtrax/src/xtrax/run/sink.py:100; read: src/aminx/host/streaming.py:91 |
 | A34 | No code in src, tests or scripts treats a `spec.run_spec` or `build_run_spec(...)` value as a `RunSpec` instance (`isinstance`, pytree or `eqx` operation, `dataclasses`), apart from the type assertion `isinstance(rs.plan, PlannerTopology)` at `tests/run/test_run_spec.py:141` (satisfied because the view returns the stored `PlannerTopology`); `resolve_decode_mode` takes `run_spec: Any`; tests do alias (`rs = build_run_spec(...)`), which the view serves | If a site exists, the view must become a pytree or a `RunSpec` subclass (rejected as it recreates the two-homes problem) or that site is migrated before S1-06 | UNVERIFIED | read: src/aminx/host/plan.py:818; read: tests/run/test_run_spec.py:141; deferred: the exploratory grep for `isinstance`/tree operations on `run_spec` found none, but a negative grep is not a recorded result and the spike-run harness (`scripts/loop/adversarial_metrics.py`) is absent from this worktree, so S1-02 `view_incompatible_uses` records it and gates S1-06 |
 | A35 | The old `build_run_spec` body reads the spec only through `getattr(spec, <name>, default)`, so, moved verbatim to `legacy_layout.py` and fed the S1-01 recorded flat facade attributes as a `SimpleNamespace`, it reproduces the pre-flip projection and can serve as the S1-07 differential oracle. It must NOT be fed the flipped spec: `seed` (`spec.py:381`) and `precision` (`spec.py:199`) become real unified fields and would be read with new meanings | The oracle falls back to the S1-01 recorded baseline values, which remain a sufficient gate (D3a) | VERIFIED (corrected convergence-check-3) | read: src/aminx/run/spec.py:197-203, 297-393 |
+| A36 | After the no-rename revision S3 leaves S1 exactly one live foreign edge to S3 (S1-25 -> S3-12, the release guard and train rule, which has no dependencies), and S3-28 requires the release items S5-52 and S1-25 to be ordered and S3-12 to be an ancestor of both | If S3 kept a further S1-facing item, that edge is added to the owning S1 item | VERIFIED | read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:76-85; read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:116-117; read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:527 |
+| A37 | Consumers (`mpnn_ext`, `asr`, `hautespout`, `tev_design`) import `aminx` and keep doing so, and the existing `aminx` trusted publisher on PyPI keeps matching because the repo, the distribution and the workflow do not change; so S1 needs no consumer re-pointing, no import migration and no publisher change, only the read migration of its own shims (S1-26..S1-29) | If a consumer imported a renamed path the S1-26..S1-28 items would also carry that edit | VERIFIED | read: ../mpnn_ext/pyproject.toml:12-15; read: ../hautespout/.claude/worktrees/mellow-exploring-sunbeam/pyproject.toml:8,27,31 (hautespout main pyproject, ../hautespout/pyproject.toml:8-14, declares no aminx dependency: see A39); read: ../tev_design/pyproject.toml:66; read: .github/workflows/release.yml:30-41; read: .praxia/docs/specs/261001_aminx-identity-and-hub-naming.md:256-262 |
+| A38 | `tests/parity/test_browser_validation_inventory.py` fails on every unmapped and every stale public top-level symbol of `src/aminx/{inference,sampling,scoring,model,host,tiling,ebm,potts}` and of `aminx.run.__all__`, using `tests/parity/browser_validation_paths.json` (which maps `aminx.run::build_run_spec`, `RunSpec`, `RunSpecification` and the other `aminx.run` names to P-ids) and an internal-symbol count baseline; `build_run_spec` is exported at `src/aminx/run/__init__.py:41` | If it did not, S1-07, S1-20 and S1-23 would need no JSON edit | VERIFIED | read: tests/parity/test_browser_validation_inventory.py:18-29; read: tests/parity/test_browser_validation_inventory.py:101-137; read: tests/parity/browser_validation_paths.json:2-21; read: src/aminx/run/__init__.py:41 |
+| A39 | hautespout `main` `pyproject.toml` declares no `aminx` dependency (its `.gitmodules` lists a `vendor/aminx` submodule); a WIP worktree declares `aminx` as a uv workspace member vendored at `vendor/aminx` (`maraxen/aminx`), and that vendored aminx carries `ebm/hp_energy.py`, `hp_coarse_sampler.py`, `hp_windowing.py`, which exist on the aminx branch `hp-lattice-sanity-check` and are outside the 15 EBM modules of S2 section 3.1 | If hautespout main pyproject did depend on aminx, S1-28 would have a SHA to bump on main and A37's third consumer would be live as stated | VERIFIED | read: ../hautespout/pyproject.toml:8-14; read: ../hautespout/.claude/worktrees/mellow-exploring-sunbeam/pyproject.toml:8,27,31; read: ../hautespout/.gitmodules:1-3; read: ../hautespout/.claude/worktrees/mellow-exploring-sunbeam/vendor/aminx/src/aminx/ebm/hp_energy.py:1-4; changed: S1-28 gate names the migrated hautespout branch, consumer paragraph corrected; the ebm branch question is recorded for S2 (the contents of the branch were not read) |
+| A40 | An aminx test on titanix or in aminx CI cannot read `field_meta.v1.json` from the unreleased xtrax checkout (produced by S4-07 in the xtrax repo, released at S4-34, importable in aminx only from S4-35), so the S1-06 subset gate needs a copy that lives in aminx | If a sibling-repo read were available in CI, the vendored copy would be unnecessary | UNVERIFIED | deferred: depends on how S4-07 lays the file out and whether S4 publishes it as package data, which S4 settles at S4-07/S4-34; vendoring with a pinned sha256 works in either case, and the re-sync check goes live at S4-35 |
 
 ## Design
 
@@ -486,6 +501,16 @@ type_ann, default, static, normalise, denormalise, kind, wire, portable, browser
   `field_meta.v1.json` (twelve keys, S4-07), not S4 section 4.7 prose, so S1-06 `depends_on` S4-07 (S1-31
   inherits it); the S1-06/S1-31 gates assert the dict's keys are a subset of that file. S4-32 still validates
   the dict against the snapshot's portable rows downstream.
+  **Delivery of `field_meta.v1.json` (CH1-04).** The file is produced in the xtrax repo (S4-07) and only becomes a
+  released artifact at S4-34; aminx cannot read an unreleased sibling-repo file from titanix or aminx CI. S1-06
+  therefore **vendors** it: `tests/golden/spec_system/field_meta.v1.json`, a byte copy taken from the S4-07 merge
+  commit, with a sibling `field_meta.v1.json.source` header recording the source repo, commit SHA and the file's
+  sha256, plus a pinned-sha256 test (the TRW pattern: the test fails if the vendored copy or its recorded hash
+  changes without both being updated together). The S1-06 and S1-31 subset gate compares against **this copy**.
+  Re-sync: a test in the same module compares the vendored copy with the packaged file when `xtrax_contract` is
+  importable (skipped, with the reason printed, while it is not); it becomes live at S4-35, which is the first point
+  aminx may import the contract. That check is S4-35's owed gate and is not an S1 edge (no S1 item depends on S4-34
+  or S4-35), so no cycle is created.
   `run_spec_fields.json` is a derived snapshot for non-Python consumers only; there is no second authored source.
 - `wire` in `{serialized, campaign_owned, excluded, derived}` replaces the hand lists in
   `spec_partition.py` (the `EXCLUDED_WITH_REASON` reason text moves into `reason`, with the existing
@@ -542,45 +567,60 @@ Slices are grouped by directory to stay PR-sized: A `src/aminx/host/` (13 files)
 duck-spec and idiom edits only; the seam S1-23 keeps most unchanged); D remaining tests (run, cli, audit, sampling, scoring, utils,
 parity, integration, inference), `scripts/`, `examples/`.
 
-### D7. Ordering relative to S2 and S3 (no double churn, acyclic)
+### D7. Ordering relative to S2, S3 and S5 (no rename, acyclic)
 
-**Round-1 change (C2, C14).** Round 0 recommended S1 before the S3 rename; S3 (the DAG root, A31) recommends the
-opposite and says S1/S2 code items should depend on S3-07. Applying both is a cycle. This spec now **adopts
-rename-first as the default edge** because (a) S3 is the root and its rename is output-equivalent mechanical work
-done once against the `aminx 0.2.0a3` API, so S1 then lands entirely in the final names with no rebase of
-in-flight slices across a rename; (b) the S3 compat shim (`aminx` re-export, S3-10) keeps vendored consumers
-importable while S1 proceeds. The choice is still the user's (Q10) and is encoded only through `depends_on`.
-**Q10, S3 Q4 and S2 Q7 are the same question**, answered once by the user at S3-01; S1 and S3 already encode
-rename-first, and S2 must align to the answer:
-- S1-01, S1-02, S1-03 and S1-17 `depends_on` **S3-07** (the code rename). Everything else follows transitively.
-- **Pinned-tag protection (round 2, CH2-03).** S3-13 cuts its tag from the merge of the last of S3-07..S3-12 and
-  gates that the diff from the S3-07 merge lists only S3-owned paths. Any S1 commit merged inside that window
-  would break the gate, so S1-05 (the first item to add files under `src/.../run`) and S1-17 (potts file) also
-  `depends_on` **S3-13**; S1-06, S1-31, S1-32, S1-07 and S1-18 follow transitively. S1-01, S1-02 and S1-03 are
-  additive-only (tests/golden, scripts, records) and need no S3-13 edge. S1-17's optional mistypotts dev
-  dependency (a uv.lock change) lands on main and does not touch S2's pinned F' checkout, so no S2 edge is
-  needed (CH2-04).
-- The deprecation window is a real item: **S1-25 (release cut)** `depends_on` S1-12, S1-13, S1-14, S1-15, S3-13
-  and **S5-52** (CH2-01: the browser-assets tag is cut first, so the two releases are comparable in the union
-  DAG as S3-28 requires; S1-25 is a tail item, so S5-52 and the first hub deployment never wait on the S1 flip
-  chain), publishing an alpha that carries the flip plus `DeprecationWarning`s. **S1-20 depends on
-  S1-25** (and on the consumer migrations), so shim removal cannot merge before one alpha has shipped. S1-20 then
-  ships in a later alpha, not the S3 rename release; downstream takes the S3 break (name) and the S1 break
-  (reads) separately but each is announced and windowed.
-- If the user chooses S1-first instead: drop the S3-07 edge from S1-01/02/03/17, and S3-07 gains
-  `depends_on = ["S1-13", "S1-26", "S1-27", "S1-28"]`; S1-25 then depends on the S3 release item instead of S3-13
-  (and keeps S5-52).
+**No-rename revision.** Rounds 0-2 argued an ordering between S1 and the S3 package rename (C2: rename-first, with
+S1-01/02/03/17 behind S3-07 and the S1-25 release behind S3-13). The rename is retired (revised D2: the package
+keeps the name `aminx`), so that ordering question, the "pinned-tag protection" rule (CH2-03) and the shared
+Q10 / S3 Q4 / S2 Q7 question no longer exist. What the question reduces to in the no-rename world:
+- **S1 against S3: one edge.** S1-01, S1-03 and S1-17 are roots; S1-02 depends on S1-01; S1-05 depends on S1-02 and
+  S1-04. All S1 code items edit `src/aminx/` on current main in one pass: there is no earlier or later "final name"
+  to rebase across, so the double-churn risk the old order guarded against is gone. The only S1 edge to S3 is
+  **S1-25 -> S3-12** (the release guard and train rule): S1-25 cuts a release through the same `release.yml` as
+  S5-52 and any S2 release, and S3-12 makes a duplicate version, a tag/version mismatch or a bad wheel a build-job
+  failure. S3-28 (assembly check C4/C5) requires S1-25 and S5-52 to be comparable in the union DAG and S3-12 to be an
+  ancestor of both.
+- **Release order against S5-52 (kept from CH2-01, restated).** S1-25 `depends_on` S5-52 (S3 Q22 recommends this
+  order so the first hub deployment does not wait for the S1 flip chain). Under S3's train rule each release item
+  reads the next unused alpha from the PyPI JSON for `aminx` at cut time: `0.2.0a4` for S5-52 and `0.2.0a5` for
+  S1-25 on 261001 (as read; not hard-coded in the item). S5-52 releases what is on main at its tag, so if S1-07 has
+  merged by then the S5-52 tag already carries the flip with its shims intact (downstream keeps working); S1-25 stays
+  the deliberate window item and is still gated on the S1-15 equivalence record. This is a coordination note, not
+  an edge: an S1-07 -> S5-52 edge would couple the S1 flip to the hub schedule (risk row below). If you reverse the
+  order (S5-52 behind S1-25), one edge flips and S5-33 inherits the S1 chain.
+- The deprecation window is a real item: **S1-25 (release cut)** `depends_on` S1-12, S1-13, S1-14, S1-15, S3-12 and
+  S5-52, publishing an alpha that carries the flip plus `DeprecationWarning`s. **S1-20 depends on S1-25** (and on the
+  consumer migrations through S1-21), so shim removal cannot merge before one alpha has shipped. S1-20 ships in a
+  later alpha; downstream takes one break (the S1 read break), announced and windowed. There is no second (name)
+  break.
+- The one ordering question that remains is the release position of S1-25 against S5-52 (Q12 below); it is not an
+  ordering against a rename.
 - S2 (EBM extraction): no spec-field dependency (A17), but S2's A0 freeze window (`git diff F' <sha>` empty over
   `src/aminx/ebm`, `utils`, `io`, `parity`, `scripts/ebm` at S2-32/33/34 and S2-06) must not be disturbed by S1
   edits to those paths. S1-02 therefore records whether any file in S2's consumed-file list reads spec fields
   (expected none, A17); S1-11 and S1-24 **exclude that list** from rewrites. If the S1-02 answer is non-empty,
-  S1-11 gains `depends_on` S2-06 (so the clone at G precedes the rewrite). Otherwise no S1-to-S2 edge exists.
-  Ordering of S3-07 against S2-03..S2-06/S2-32..34 is S2/S3's to encode, not S1's.
-- Consumer inventory is reconciled with S3 A1: `mpnn_ext`, `asr`, `hautespout` (vendored submodules) and
-  `tev_design` (wheel). File counts differ because S1 counts files naming a `*Specification` class (96 in aminx)
-  and S3 counts files mentioning the package name (S3 reports 812); the measures are different, not in conflict.
-- Identifiers frozen by S1 and **not** touched by the rename: `_spec_class` values, manifest schema version
-  strings, flat field names. Class names do not contain the package name.
+  S1-11 gains `depends_on` S2-06 (so the clone at G precedes the rewrite). Otherwise no S1-to-S2 edge exists. The
+  old "rename first vs EBM first" framing is void: with no rename there is no ordering to choose between, S1 and
+  S2 touch disjoint paths (A17), and S1 runs on `src/aminx/` whether or not `src/aminx/ebm/` still exists. The
+  EBM removal's CHANGELOG pointer is S2-18's.
+- S1-17's optional mistypotts dev dependency (a `uv.lock` change) lands on main and does not touch S2's pinned F'
+  checkout, so no S2 edge is needed (CH2-04). It does change the lock S1's bitwise gates run under, and so do S2-02
+  (xtrax a11 pin, #174), S4-16 (orbax/`xtrax[export]`) and S4-35 (xtrax bump), none of which has an edge to an S1 item
+  (and none is added, R2-03). S1 therefore pins the environment instead of ordering against them: S1-01 records an
+  environment stamp (sha256 of `uv.lock`, resolved jax, jaxlib, xtrax, orbax-checkpoint and equinox versions, device,
+  XLA flags) and S1-07 and S1-15 assert stamp equality (from a worktree whose lock hash equals the stamp) or refuse to
+  compare and re-record the baseline on the unchanged pre-flip commit under the new lock.
+- Consumer inventory: `mpnn_ext`, `asr`, `hautespout` (vendored submodules) and `tev_design` (wheel) all import
+  `aminx` and keep doing so (A37). S1 counts files naming a `*Specification` class (96 in aminx); the measure is a
+  different one from any file-mention count in other specs, not a conflict.
+- Identifiers frozen by S1 (unchanged, as nothing is renamed): `_spec_class` values, manifest schema version
+  strings, flat field names, `AMINX_*` environment variables and the `aminx_version` stamp. Class names do not
+  contain the package name.
+- **Hub independence.** The hub is a separate project (working slug `aminx-hub`; final repo name, PyPI policy and
+  domain are S3-01's user decision, possibly derived from praxia.science, which also collides with the user's praxia
+  orchestrator name). S1 places no edge on the hub and no code in it; the hub may read the registry snapshot
+  (`run_spec_fields.json`, P2) through S4/S5 only. The hub never takes the name `aminx`, so `repo = "aminx"` in the
+  toml is unambiguous.
 
 ### D8. Potts specs
 
@@ -660,10 +700,10 @@ copy, at which point S4 deletes it. Q6 records the remaining user call (confirm 
 | Duck-typed spec fixtures break when host reads go nested (C1) | `as_run_spec` seam plus shared factory (S1-23); S1-02 classifies every duck construct; the slice whose gate breaks a fixture migrates it in the same PR |
 | Two read views (raw flat, coalesced nested) collapse into one home (C5) | Raw storage plus named accessors (D9); per-read-site table from S1-02 gates S1-06; goldens cover each coalescing case through both views |
 | FieldDef cannot express per-class defaults/static-ness (C4) | One row per `(task, flat_name)` with `static`, normaliser pair; S1-05 asserts generated defaults and static set equal the current dataclasses |
-| Rename/spec ordering cycle with S3 (C2) | Single encoded edge S1-01/02/03/17 -> S3-07 (D7); flip path documented; Q10 |
+| Release ordering: S1-25, S5-52 and any S2 release share one `release.yml` and one PyPI version namespace | S1-25 `depends_on` S3-12 (release guard: duplicate version, tag/version mismatch and wheel gates fail the build job) and S5-52 (D7); the version is read from PyPI at cut time, never hard-coded; S3-28 C4/C5 checks the ordering |
 | Knob document split across S1 and S4 (C3) | One source (registry), one owner (S4-20); old S1-19 removed |
 | `dataclasses.replace`/`fields` idioms stop working on eqx modules (A20) | `.replace(**flat)` and `RunSpec.field_names()` provided; two production sites plus four introspection sites migrated in S1-08/S1-10; `dataclasses.replace` raises a pointed error |
-| Double churn with S3 rename | D7: S1 follows S3-07; identifiers frozen; S1-25/S1-20 windowing |
+| S5-52 tags main between the S1-07 merge and the S1-15 equivalence pass, publishing an unverified flip | The shims keep downstream working in that release; S1-25 stays gated on S1-15 and may be re-cut; coordination note instead of an S1-07 -> S5-52 edge, which would couple the S1 flip to the hub schedule: the S1-07 PR names the S5-52 schedule and S5-52's owner holds the tag, or S1-15 is re-run on the published wheel, if the tag would fall in that window (Q12) |
 | Large S1-07 PR | It is deliberately mechanical (class bodies replaced by generated inits) behind the S1-06/S1-31/S1-32 shadow test and S1-01 goldens; no read migration in the same PR, because every one of the 54 old nested paths is served by the legacy view (D3a, R2-1) and the gate runs the S1-02 reader-test selection, so a flip that breaks a reader fails in this PR, not in S1-10 or S1-12 |
 | Legacy view diverges from the old nested layout, or something treats `spec.run_spec` as a `RunSpec` (pytree op, `isinstance`) | Three-way path-set equality, corpus value equality and a differential oracle against the moved-verbatim old builder (D3a completeness gate); S1-02 `view_incompatible_uses` must be empty before S1-06; the view is deleted with the other shims in S1-20 |
 | Old and new hierarchies share class names during S1-06..S1-32 | Separate modules (`nested.py` versus untouched `spec.py`); empty `git diff` gate over `spec.py` and `specs.py`; shadow test imports by module path; old classes move verbatim to `legacy_layout.py` at the flip |
@@ -682,21 +722,22 @@ copy, at which point S4 deletes it. Q6 records the remaining user call (confirm 
 | P1b | Compat shims (**removed at S1-20, do not build on them**) | flat read properties, `.run_spec` alias (the legacy nested view, D3a), `legacy_layout.py`, `build_run_spec`, `as_run_spec` duck lifting | in-repo code and migrated consumers during the window only |
 | P2 | `RunSpecFieldRegistry` (single source) + derived `run_spec_fields.json` snapshot | One row per (task, flat_name): home path, type, default, static, normaliser pair, kind, wire class, `portable`, `browser_key`, reason; deterministic, versioned (`registry_version`) | S4 (schemagen reads the same facts through field metadata; snapshot for JS), S5 (forms, catalog), S6 (parameter panels) |
 | P3 | flat-v1 codec | `_spec_class` + flat keys; lenient reader and strict campaign constructor; manifest `sampling_spec` payload | campaign tooling, `mpnn_ext`, `tev_design` |
-| P4 | Conformance kit | Registry-vs-codec exhaustiveness, JS key-set drift test, TRW sha256/field conformance, golden corpus | S4, S3 (rename regression), `mistypotts` |
+| P4 | Conformance kit | Registry-vs-codec exhaustiveness, JS key-set drift test, TRW sha256/field conformance, golden corpus | S4, `mistypotts` |
 | P5 | `PottsTRWRunSpec` single owner | `mistypotts` owns; aminx vendors with sha256 conformance | `mistypotts`, aminx potts |
-| P6 | Consumer migration record | Migrated `mpnn_ext`, `asr`, `hautespout` submodule bumps and the `tev_design` re-pin handoff | S3 (consumer inventory), downstream owners |
+| P6 | Consumer migration record | Migrated `mpnn_ext`, `asr`, `hautespout` submodule bumps and the `tev_design` re-pin handoff | downstream owners |
 
-Edges (the S1 TOML now carries its own foreign edges to S3; the edges below must be declared by the other specs):
-- **S3 has no edge to S1** under rename-first; S1 carries S1-01/02/03/17 -> S3-07 and S1-25 -> S3-13 itself.
-  If the user flips to S1-first (Q10), S3-07 gains `depends_on` S1-13, S1-26..S1-28.
+Edges (the S1 TOML carries its own foreign edges; the ones below must be declared by the other specs):
+- **S1 has one edge to S3, S3 has none to S1.** S1-25 -> S3-12 (release guard and train rule); S1-25 -> S5-52. S3
+  carries no S1-facing item after the no-rename revision (A36), and S3-28 (assembly check) verifies the S1-25/S5-52
+  ordering and that S3-12 is an ancestor of S1-25.
 - S4-20 (knob document, lowering, schema generation over the surviving model) `depends_on` S1-05 and S1-07; to delete
   the drift test it also `depends_on` S1-18.
 - S5/S6 forms and parameter panels `depends_on` S1-05 for the registry snapshot.
-- **Edges owed by other specs (assembly input, R2-8):** S4-20 -> S1-05, S1-07, S1-18 (S4's current `depends_on`
-  is `[S4-02, S4-09, S4-19]` and lacks all three; S4 defers this to DAG assembly). S1-26/27/28 share the consumer
-  branches with S3-14/15/17 and carry those edges themselves. The assembly checklist must verify both.
-- **`repo` convention:** S1 items use `repo = "molxmpnn"` (every one runs after S3-07 renames the repo; consumer
-  items name the consumer). `mistypotts` stays `mistypotts`.
+- **Edges owed by other specs (assembly input, R2-8):** S4-20 -> S1-05, S1-07, S1-18 (S4 defers this to DAG
+  assembly; its toml currently carries S1-18 but not S1-05/S1-07, which S1-18 only covers for S1-05). S1-26/27/28
+  branch from each consumer's own main and carry no edge to S3 (the consumer-branch sharing with S3 is retired).
+- **`repo` convention:** S1 items use `repo = "aminx"`; consumer items name the consumer (`mpnn_ext`, `asr`,
+  `hautespout`); `mistypotts` stays `mistypotts`. No S1 item has `repo = "aminx-hub"`: the hub is a separate project.
 - S2 has no edge to S1.
 
 ### Consumes
@@ -704,8 +745,8 @@ Edges (the S1 TOML now carries its own foreign edges to S3; the edges below must
 | Contract | Providing spec | What S1 needs |
 |---|---|---|
 | xtrax `RunSpec` base and `derive_sink_spec` stable (`seed, axes, carry_specs, boundaries, run_id`, `from_spec`) | S4 (xtrax model contract) | S4 must keep these fields and the identity `from_spec` backward compatible, or announce a change before S1-06; verified unchanged a10 -> main (A13) |
-| `molxmpnn` namespace with the `aminx 0.2.0a3` API (S3-07), the `aminx` compat shim (S3-10) and the first published release (S3-13) | S3 (rename) | S1 code items run on the renamed tree (S3-07); consumers stay importable via the shim during S1; the S1-25 alpha release needs S3-13 (and follows S5-52) |
-| FieldMeta key list (`field_meta.v1.json`, ParamProfile@1) | S4 (S4-07) | Authoritative keys for the registry metadata dict; S1-06 `depends_on` S4-07 and its gate asserts keys are a subset of the file (CH2-02) |
+| `S3:release-guard`: `release.yml` refuses a duplicate version, a tag/version mismatch and a bad wheel; next-free-alpha train rule (S3-12) | S3 (S3-12) | S1-25 `depends_on` S3-12 and follows S5-52; S1 code items need no S3 item (the package keeps its name, `S3:aminx-identity`) |
+| FieldMeta key list (`field_meta.v1.json`, ParamProfile@1) | S4 (S4-07) | Authoritative keys for the registry metadata dict; S1-06 `depends_on` S4-07 and its gate asserts keys are a subset of the file (CH2-02); delivered to aminx as a vendored copy `tests/golden/spec_system/field_meta.v1.json` with a source-sha256 header and pinned-sha256 test (CH1-04, A40) |
 | Browser-assets release tag (S5-52) | S5 | S1-25 `depends_on` S5-52 so the flip-carrying alpha is the next unused alpha after it (CH2-01) |
 | Knob document, lowering and schema generation over the surviving model (S4-20) | S4 | Replaces S1-18's drift test and owns what old S1-19 would have built; S4 reads S1's field-metadata hook (P1/P2) |
 | EBM extraction | S2 | None (A17); stated explicitly so the DAG records the absence of an edge |
@@ -725,30 +766,30 @@ and never inside another project's data directory.
 
 | Item | Gate (how we prove done) |
 |---|---|
-| S1-01 | Sidecar committed first. Outcomes: (1) goldens regenerated twice are byte-identical (determinism); (2) negative control: mutating one field of a probe spec changes flat JSON, row hash and projection (instrument can fail); (3) positive control: a corpus case per D9 row (Q, N1-N5) is present, including `replace()` on an already-normalised spec with `noise` bundles plus a new `backbone_noise`, and each coalescing case read through both the flat and the nested view; (4) a signature fixture of every facade class (`inspect.signature`) is recorded; (5) `legacy_nested_paths.json` (D3a): P_old by reflection over the fields of the unchanged old sub-config classes and `RunSpec` (expected 54 paths), and for every corpus case the baseline value of each path read through the unchanged `build_run_spec(facade)` (canonical encoding, arrays by bytes, `n_devices` on the recorded device); the RunSpec projection golden covers the 51 non-EC paths only (the three expected-change paths are carried solely by `legacy_nested_paths.json`, so byte-identity of the projection at S1-07 cannot contradict the documented changes); for the three expected-change paths (`seed`, `encoding_fusion`, `decoding_fusion`; D3a EC) each case also records `expected_post_flip`, derived from the documented rule applied to the unchanged facade's flat attributes (raw `random_seed`; flat fusion attributes), never from new code, with the corpus required to include non-default seed, `random_seed=0` and non-`None` fusion cases so expected differs from baseline somewhere per EC path; negative control: perturbing one baseline value or one expected value fails the value check. Pinned in the sidecar: device (CPU for the numeric cases unless a recorded titanix GPU is named), XLA flags, and the weights revision (LFS availability on titanix checked first); S1-07 and S1-15 compare on the same device only. Reuse of S3-05's golden fixtures for model-family outputs is allowed when its recorded SHA and device match, otherwise S1-01 records its own (overlap *unverified*; S1-01 reads S3-05's record first). Covers all five task classes, ligand, multi-state PoE, grid/campaign, training, deprecated kwargs, tied positions, portable v2, and small-L fixed-seed numeric outputs. Chunked/resumable: one process and one completion stamp per case, resume skips cases whose input and artifact sha256 match and records which were reused |
+| S1-01 | Sidecar committed first. Outcomes: (1) goldens regenerated twice are byte-identical (determinism); (2) negative control: mutating one field of a probe spec changes flat JSON, row hash and projection (instrument can fail); (3) positive control: a corpus case per D9 row (Q, N1-N5) is present, including `replace()` on an already-normalised spec with `noise` bundles plus a new `backbone_noise`, and each coalescing case read through both the flat and the nested view; (4) a signature fixture of every facade class (`inspect.signature`) is recorded; (5) `legacy_nested_paths.json` (D3a): P_old by reflection over the fields of the unchanged old sub-config classes and `RunSpec` (expected 54 paths), and for every corpus case the baseline value of each path read through the unchanged `build_run_spec(facade)` (canonical encoding, arrays by bytes, `n_devices` on the recorded device); the RunSpec projection golden covers the 51 non-EC paths only (the three expected-change paths are carried solely by `legacy_nested_paths.json`, so byte-identity of the projection at S1-07 cannot contradict the documented changes); for the three expected-change paths (`seed`, `encoding_fusion`, `decoding_fusion`; D3a EC) each case also records `expected_post_flip`, derived from the documented rule applied to the unchanged facade's flat attributes (raw `random_seed`; flat fusion attributes), never from new code, with the corpus required to include non-default seed, `random_seed=0` and non-`None` fusion cases so expected differs from baseline somewhere per EC path; negative control: perturbing one baseline value or one expected value fails the value check. Pinned in the sidecar **and written into `legacy_nested_paths.json`**: the environment stamp (R2-03): sha256 of `uv.lock`, resolved `jax`, `jaxlib`, `xtrax`, `orbax-checkpoint` and `equinox` versions, device and XLA flags, plus the weights revision (LFS availability on titanix checked first); device is CPU for the numeric cases unless a recorded titanix GPU is named; S1-07 and S1-15 compare on the same device only. S1-01 records its own goldens on current main; no other spec supplies a baseline. Covers all five task classes, ligand, multi-state PoE, grid/campaign, training, deprecated kwargs, tied positions, portable v2, and small-L fixed-seed numeric outputs. Chunked/resumable: one process and one completion stamp per case, resume skips cases whose input and artifact sha256 match and records which were reused |
 | S1-02 | AST script emits `spec_field_inventory.json` (per flat field and per task: defining class, flat reads, `run_spec` reads, wire class, name collisions, jit-argument check for A12, post-construction writes for A19, **per-read-site raw-versus-coalesced table**, **duck-construct classification per directory**, **every `<expr>.run_spec.<sub>.<attr>` and aliased `<alias>.<sub>.<attr>` nested read across src, tests, scripts and examples checked to be a member of the S1-01 P_old set, with string-form `getattr` reads listed (D3a), and any reader of `run_spec.seed` / `encoding_fusion` / `decoding_fusion` that depends on the old value (expected none)**, **`view_incompatible_uses`: every `isinstance`, pytree, `dataclasses` or `eqx` use of a `spec.run_spec` or `build_run_spec` value, which must be empty or migrated before S1-06**, **`legacy_layout_constructors`: every direct construction of an old-layout sub-config or `RunSpec`**, and **`reader_tests.json`: every test file that imports, transitively through the src import graph, a module holding a nested read or a `run_spec` parameter, with a recorded reason for any exclusion**). Positive control: a seeded dead field in a fixture is reported; negative control: a live field is not. Replaces the "27 dead" claim with a recorded number |
 | S1-03 | Go/no-go record committed in which **every probe outcome is evaluated and recorded** (a refuted probe is a valid pass of the item): custom flat init plus `__check_init__`; generated read-only properties; flatten/unflatten, `eqx.tree_at`, `eqx.partition`, pickle, `copy`; static-field jit cache-key equality on a toy; `dataclasses.replace` failure mode; equality; hashability of the current facade and the unified class; on the installed equinox and the declared floor. Sidecar outcome: "record exists and each probe outcome evaluated". The decision rule in D1 maps refuted probes to fallback B; the user decides at S1-04 |
 | S1-04 | ADR committed under `.praxia/docs/decisions/` naming the S1-02/S1-03 results it relied on; supersession notes added to the 260611 and 260827 specs; `docs(action="check")` clean; user ratified Q1 |
 | S1-05 | `pytest tests/run/test_field_registry.py` on titanix: every facade field has exactly one row per task and every row names a real field (both directions); **generated flat default and type for every (class, field) equal the current dataclass's** (checked against the unchanged facade); **static-field set equals the current dataclasses'**; generated `__init__` signature equals the S1-01 signature fixture; snapshot freshness; negative control: deleting a row, and altering one default, each fail the test |
-| S1-06 | (a: shared and sampling sub-configs) `DataConfig`, `ModelRef`, `PerturbationConfig` and sampling additions with real defaults, raw storage, `resolved_*` accessors, in the new module `run/nested.py`, plus `run/legacy_view.py` (the `LegacyRunSpecView` mechanism and the `compat_nested` rows for the shared and sampling paths, D3a); unit tests on titanix over hand-built nested specs (the codec arrives in S1-32), including `random_seed=0`, `num_samples=0`, `multi_state_temperature=0.0`: the view's attribute set equals the `compat_nested` rows and the S1-01 `legacy_nested_paths.json` entries for those sub-configs (both directions; negative control: deleting a row fails); `sampling.random_seed` is served from the top-level `seed` and `sampling.multi_state_strategy`/`multi_state_temperature` from `multistate`, with no stored field sharing a name with a view attribute (reflection test); `seed`, `encoding_fusion` and `decoding_fusion` are served from the stored values (EC paths, asserted against the stored value, not against the old baseline of 0 / `None`); writes raise naming `.replace`; the S1-02 `view_incompatible_uses` list is empty; the diff over `src/aminx/run/spec.py` and `src/aminx/run/specs.py` is empty; registry metadata dict keys are a subset of the published `field_meta.v1.json` (S4-07) |
+| S1-06 | (a: shared and sampling sub-configs) `DataConfig`, `ModelRef`, `PerturbationConfig` and sampling additions with real defaults, raw storage, `resolved_*` accessors, in the new module `run/nested.py`, plus `run/legacy_view.py` (the `LegacyRunSpecView` mechanism and the `compat_nested` rows for the shared and sampling paths, D3a); unit tests on titanix over hand-built nested specs (the codec arrives in S1-32), including `random_seed=0`, `num_samples=0`, `multi_state_temperature=0.0`: the view's attribute set equals the `compat_nested` rows and the S1-01 `legacy_nested_paths.json` entries for those sub-configs (both directions; negative control: deleting a row fails); `sampling.random_seed` is served from the top-level `seed` and `sampling.multi_state_strategy`/`multi_state_temperature` from `multistate`, with no stored field sharing a name with a view attribute (reflection test); `seed`, `encoding_fusion` and `decoding_fusion` are served from the stored values (EC paths, asserted against the stored value, not against the old baseline of 0 / `None`); writes raise naming `.replace`; the S1-02 `view_incompatible_uses` list is empty; the diff over `src/aminx/run/spec.py` and `src/aminx/run/specs.py` is empty; registry metadata dict keys are a subset of the **vendored** `tests/golden/spec_system/field_meta.v1.json` (a byte copy of the S4-07 file with a source-sha256 header; the pinned-sha256 test fails if the copy changes alone; the re-sync check against the packaged contract is skipped until S4-35, CH1-04); `tests/parity/test_browser_validation_inventory.py` green on titanix with `browser_validation_paths.json` (and `browser_validation_internal_baseline.txt` if its count changes) updated for every public top-level symbol the PR adds to `aminx.run.__all__` or the root packages (CH1-02) |
 | S1-31 | (b: score/jacobian/inspect/train task configs) same checks for those task classes, completing the `compat_nested` rows so the three-way path-set equality of D3a (rows == S1-01 P_old == view attribute set, 54 paths) holds in full from this item on; registry metadata on every leaf; the diff over `spec.py` and `specs.py` is empty |
 | S1-32 | (c: codec and shadow test) Shadow-equivalence test over the S1-01 corpus: `RunSpec.from_flat(...)` projection equals `build_run_spec(facade)` on every field both have except the three expected-change fields `seed`, `encoding_fusion`, `decoding_fusion` (coalesced fields compared through `resolved_*`; the EC fields are checked against S1-01 `expected_post_flip` instead); `to_flat(from_flat(x))` equals the unchanged facade's flat view of `x`; `from_flat(to_flat(s)) == s` fixpoint; leaf-field registry metadata equals registry rows; **legacy view value gate (D3a, EC-aware): over every S1-01 corpus case and all five tasks, each of the 51 non-EC old nested paths read through the view of `from_flat(...)` equals its S1-01 `baseline` value exactly and warns once, and each of the 3 expected-change paths (`seed`, `encoding_fusion`, `decoding_fusion`) equals its recorded S1-01 `expected_post_flip` value; any path outside that list that differs fails; includes the quirk cases and `sampling.random_seed`/`multi_state_*` served across parent and sibling; negative controls: perturbing one baseline or expected value fails, and a view returning the old `seed` 0 / `None` fusion on a case where expected differs fails**; facade untouched (no diff under `spec.py` or `specs.py`) |
-| S1-07 | Goldens byte-identical (flat JSON, row hash, projection of the 51 non-EC paths); **S1-01 small-L fixed-seed numeric cases (sample, score, jacobian, inspect) sha-equal to baseline, chunked per case**; compat contract tests (setattr error message names `.replace`, `inspect.signature` equal to the fixture, `==` and `hash` behaviour pinned); `pytest tests/run tests/cli` plus the **S1-02 reader-test selection** (`reader_tests.json`: every test file that reaches a nested read in `host/runner`, `streaming`, `plan`, `kernel_dispatch`, `_sampling_helper`, `_sampling_grid_lineage`, `campaign`, `prep`, `sampling/multistate_poe`, `io/sink_provenance`; no `-k` keyword selector), run on titanix one directory per process with its own timeout and completion stamp, exclusions only as recorded in the file with a reason and covered by S1-15; `_sync_run_spec`/`_run_spec_synced` absent from non-shim code; `isinstance` dispatch test; `DeprecationWarning` baseline recorded; changelog entry lists the `run_spec.seed` and `run_spec.encoding_fusion` / `decoding_fusion` changes; **legacy view completeness (D3a)**: `tests/run/test_legacy_view_paths.py` re-run on the flipped tree: path-set equality (rows == S1-01 P_old == view attribute set, 54 paths, both directions), the 51 non-EC paths equal to their S1-01 `baseline` value and the 3 expected-change paths (`seed`, `encoding_fusion`, `decoding_fusion`) equal to their S1-01 `expected_post_flip` value over the whole corpus (including `ligand.model_family`, `multistate.mode/n_states`, `io.manifest_path`, `io.sink_kind`, `resource.sample_batch_size/structure_batch_size`, `grid.grid_mode`, the `or 42` seed case with `seed` 0 and `sampling.random_seed` 42), warn-once, and the differential oracle `legacy_layout.build_run_spec(flat_case)` (flat_case = S1-01 recorded flat facade attributes, D3a) equals `flipped_spec.run_spec` on the 51 non-EC paths while on the 3 EC paths the moved-verbatim builder equals the `baseline` and the view equals `expected_post_flip` (any other difference fails); the old classes and builder in `legacy_layout.py` are content-hash-equal to the baseline definitions (moved verbatim); the S1-02 `legacy_layout_constructors` files import from `legacy_layout` and their tests pass; `derive_sink_spec(spec.run_spec, ...)` yields the explicit or minted `run_id`; `isinstance(rs.plan, PlannerTopology)` holds; `build_run_spec(SimpleNamespace)` and a `_MinimalScoringSpec`-style object route through `as_run_spec` correctly |
+| S1-07 | Goldens byte-identical (flat JSON, row hash, projection of the 51 non-EC paths); **S1-01 small-L fixed-seed numeric cases (sample, score, jacobian, inspect) sha-equal to baseline, chunked per case, after asserting equality of the S1-01 environment stamp (run from a worktree whose `uv.lock` hash equals the stamp, as S2 does with its detached F' worktree) or, on a stamp mismatch, refusing to compare and re-recording the baseline on the unchanged pre-flip commit under the current lock (R2-03)**; compat contract tests (setattr error message names `.replace`, `inspect.signature` equal to the fixture, `==` and `hash` behaviour pinned); `pytest tests/run tests/cli` plus the **S1-02 reader-test selection** (`reader_tests.json`: every test file that reaches a nested read in `host/runner`, `streaming`, `plan`, `kernel_dispatch`, `_sampling_helper`, `_sampling_grid_lineage`, `campaign`, `prep`, `sampling/multistate_poe`, `io/sink_provenance`; no `-k` keyword selector), run on titanix one directory per process with its own timeout and completion stamp, exclusions only as recorded in the file with a reason and covered by S1-15; `_sync_run_spec`/`_run_spec_synced` absent from non-shim code; `isinstance` dispatch test; `DeprecationWarning` baseline recorded; changelog entry lists the `run_spec.seed` and `run_spec.encoding_fusion` / `decoding_fusion` changes; **legacy view completeness (D3a)**: `tests/run/test_legacy_view_paths.py` re-run on the flipped tree: path-set equality (rows == S1-01 P_old == view attribute set, 54 paths, both directions), the 51 non-EC paths equal to their S1-01 `baseline` value and the 3 expected-change paths (`seed`, `encoding_fusion`, `decoding_fusion`) equal to their S1-01 `expected_post_flip` value over the whole corpus (including `ligand.model_family`, `multistate.mode/n_states`, `io.manifest_path`, `io.sink_kind`, `resource.sample_batch_size/structure_batch_size`, `grid.grid_mode`, the `or 42` seed case with `seed` 0 and `sampling.random_seed` 42), warn-once, and the differential oracle `legacy_layout.build_run_spec(flat_case)` (flat_case = S1-01 recorded flat facade attributes, D3a) equals `flipped_spec.run_spec` on the 51 non-EC paths while on the 3 EC paths the moved-verbatim builder equals the `baseline` and the view equals `expected_post_flip` (any other difference fails); the old classes and builder in `legacy_layout.py` are content-hash-equal to the baseline definitions (moved verbatim); the S1-02 `legacy_layout_constructors` files import from `legacy_layout` and their tests pass; `derive_sink_spec(spec.run_spec, ...)` yields the explicit or minted `run_id`; `isinstance(rs.plan, PlannerTopology)` holds; `build_run_spec(SimpleNamespace)` and a `_MinimalScoringSpec`-style object route through `as_run_spec` correctly; `tests/parity/test_browser_validation_inventory.py` green on titanix, with `tests/parity/browser_validation_paths.json` (and `browser_validation_internal_baseline.txt` if the internal count changes) updated in the same PR for every name added to or removed from `aminx.run.__all__` or the root packages (`inference`, `sampling`, `scoring`, `model`, `host`, `tiling`, `ebm`, `potts`) (CH1-02) by the flip |
 | S1-08 | flat-v1 golden unchanged; import-time exhaustiveness now derived from the registry (test: add an unregistered field in a fixture subclass, import fails); portable v2 goldens unchanged plus the new import-direction guard test; the three hand lists it regenerates are deleted (spec_json whitelists, spec_partition lists, the portable-v2 hand parser); the regenerated portable codec builds a unified `RunSpec` through `from_flat` and `run/run_spec_portable_json.py` no longer imports `legacy_layout` (import test); CLI option lists (`cli.py`) and JS key reads (`runspec_core.mjs`) stay hand-maintained (non-goals; JS covered by S1-18 and S4-20); `dataclasses.replace`/introspection sites in host spec_json users are migrated here |
 | S1-09 | `tests/cli` green; golden `emit-*`, `spec validate`, `spec roundtrip`, `spec portable-roundtrip` outputs byte-identical |
-| S1-23 | (built before the flip, against the S1-06 model) `as_run_spec` unit tests: real spec, spec with `.run_spec`, `SimpleNamespace`, hand-rolled class lift correctly; `MagicMock` raises a pointed error; the factory returns specs whose `to_flat` equals the facade's; negative control: a namespace missing a required attribute fails loudly, not silently defaulted |
+| S1-23 | (built before the flip, against the S1-06 model) `as_run_spec` unit tests: real spec, spec with `.run_spec`, `SimpleNamespace`, hand-rolled class lift correctly; `MagicMock` raises a pointed error; the factory returns specs whose `to_flat` equals the facade's; negative control: a namespace missing a required attribute fails loudly, not silently defaulted; `tests/parity/test_browser_validation_inventory.py` green on titanix, with `tests/parity/browser_validation_paths.json` (and `browser_validation_internal_baseline.txt` if the internal count changes) updated in the same PR for every name newly exported from `aminx.run.__all__` or the root packages (`inference`, `sampling`, `scoring`, `model`, `host`, `tiling`, `ebm`, `potts`) (CH1-02) (as_run_spec, nested config classes) |
 | S1-24 | Codemod fixtures: positive (each rewrite class: `run_spec.sampling.<f>`, flat read, `dataclasses.replace`, `fields`, accessor rewrite for the five coalesced fields) and negative (look-alike attribute on an unrelated class is not rewritten); idempotent on second run; `scripts/spec/deprecation_paths.py` reports per-path warning counts and is the single measuring script for S1-10..S1-13 |
 | S1-10..S1-13 | After each slice: goldens byte-identical; the slice's directories green on titanix; **the slice's own paths report zero deprecation warnings via `scripts/spec/deprecation_paths.py`** and `-W error::DeprecationWarning` passes for migrated paths; no global-count clause. S1-13 additionally lists and migrates the scripts/benchmarks attribute writers |
 | S1-14 | Docs and examples render; `rg` finds no mention of `_sync_run_spec` or `build_run_spec` in README, `docs/` or `examples/` outside the migration note (the repo-wide check is S1-20's) |
-| S1-15 | Pre-registered bathos sidecar: for each case (sample, score, jacobian, inspect, campaign row) new-path outputs equal the S1-01 baseline sha256 (tokens bitwise, logits within the S1-01 recorded tolerance, on the S1-01 recorded device); negative control: a different seed must differ; chunked, one process and timeout per case, per-case result file with completion stamp, resume reuses only cases whose input and artifact hashes match, reuse recorded in the result |
+| S1-15 | Pre-registered bathos sidecar: for each case (sample, score, jacobian, inspect, campaign row) new-path outputs equal the S1-01 baseline sha256 (tokens bitwise, logits within the S1-01 recorded tolerance, on the S1-01 recorded device) after asserting equality of the S1-01 environment stamp (`uv.lock` hash, jax, jaxlib, xtrax, orbax-checkpoint, equinox, device, XLA flags; otherwise refuse to compare and re-record the baseline on the unchanged pre-flip commit under the current lock, R2-03); negative control: a different seed must differ; chunked, one process and timeout per case, per-case result file with completion stamp, resume reuses only cases whose input and artifact hashes match, reuse recorded in the result |
 | S1-16 | Re-run of S1-02 inventory on the fully migrated tree, **excluding legacy-view reads and counting only direct nested reads and wire roles**; the prune list is the recorded set of fields with zero reads and no wire role; user sign-off item by item; tests green |
 | S1-17 | In aminx: conformance test green on the real vendored file and red on a temp copy mutated by a pytest fixture (recorded control); sha256 header present; if the dev-dependency option is taken, `uv lock --check` passes |
 | S1-18 | Drift test fails when a key is added to `runspec_core.mjs` without a registry row (negative control) and passes otherwise; Node test suite `browser/aminx-sampler` unchanged |
-| S1-20 | Shims removed, including `run/legacy_view.py` and `run/legacy_layout.py` (files absent, no import of either); repo-wide `rg` for removed names returns only the allowlist (`CHANGELOG.md` and the migration note); goldens byte-identical; the S1-21 rehearsal re-run on the merged tree is green |
-| S1-21 | Rehearsal on a throwaway aminx worktree with shims deleted (never merged): each migrated consumer's narrow spec-constructing tests run on titanix in a scratch checkout of the consumer whose aminx submodule path is pointed at the rehearsal tree by a local-only override; scratch root resolves explicit arg > `AMINX_CANARY_ROOT` (`none` disables) > `[tool.aminx.canary]` > `~/.config/aminx/config.toml` > off, with a `canary_root_source()` reporter; nothing is written to the consumer's tracked state or to another project's data directory; negative control: an unmigrated consumer commit fails the rehearsal; a consumer recorded as moot by the S3-17 decision (S1-28) is excluded and named in the record |
+| S1-20 | Shims removed, including `run/legacy_view.py` and `run/legacy_layout.py` (files absent, no import of either); repo-wide `rg` for removed names returns only the allowlist (`CHANGELOG.md` and the migration note); goldens byte-identical; the S1-21 rehearsal re-run on the merged tree is green; `build_run_spec` and every other removed export are unmapped from `tests/parity/browser_validation_paths.json` (`aminx.run::build_run_spec` is mapped to P26 today) and `tests/parity/test_browser_validation_inventory.py` is green on titanix with no stale entry (CH1-02) |
+| S1-21 | Rehearsal on a throwaway aminx worktree with shims deleted (never merged): each migrated consumer's narrow spec-constructing tests run on titanix in a scratch checkout of the consumer whose aminx submodule path is pointed at the rehearsal tree by a local-only override; scratch root resolves explicit arg > `AMINX_CANARY_ROOT` (`none` disables) > `[tool.aminx.canary]` > `~/.config/aminx/config.toml` > off, with a `canary_root_source()` reporter; nothing is written to the consumer's tracked state or to another project's data directory; negative control: an unmigrated consumer commit fails the rehearsal; a consumer recorded as moot by the S1-28 decision (hautespout left pinned) is excluded and named in the record |
 | S1-22 | Decision recorded; if "fix", a separate golden diff shows exactly the seed-0 and zero-valued-knob cases change and nothing else |
-| S1-25 | (S1-15 equivalence record must be a pass before the cut) A published alpha (`molxmpnn`) containing the S1-07 flip and deprecation warnings exists on the index; changelog names the warning schedule and S1-20 timing; install smoke on titanix imports a flat-constructed spec and sees the warning |
-| S1-26..S1-28 | Per consumer: spec-constructing narrow tests green on titanix after the submodule bump to a SHA containing S1-13 and the migrated reads; work is stacked on the S3-14 / S3-15 / S3-17 consumer branches (the same branches, not new ones off main), and S1-28 is also satisfied by a recorded "moot" outcome when the S3-17 decision leaves hautespout pinned; consumer branch only, no push to main without owner; `hautespout` item first re-reads its pyproject and `.gitmodules` (S1's A-row is S3's evidence only) |
+| S1-25 | (S1-15 equivalence record must be a pass before the cut) A published alpha (`aminx`, the next unused version per the S3-12 train rule) containing the S1-07 flip and deprecation warnings exists on the index; changelog names the warning schedule and S1-20 timing; install smoke on titanix imports a flat-constructed spec and sees the warning |
+| S1-26..S1-28 | Per consumer: spec-constructing narrow tests green on titanix after the submodule bump to a SHA containing S1-13 and the migrated reads; work is a branch off each consumer's own main (no stacking on any other spec's branch), and S1-28 owns the bump-or-leave-pinned decision and is also satisfied by a recorded "moot" outcome when hautespout is left pinned; consumer branch only, no push to main without owner; `hautespout` item first re-reads its pyproject and `.gitmodules` and records which branch it migrates: `main`'s pyproject declares no aminx dependency, the WIP worktree declares and vendors aminx at `vendor/aminx` (CH1-03; A39); S1-28 `depends_on` S2-03 and cites its recorded disposition of `hp-lattice-sanity-check`; the SHA bump must not drop files the consumer imports: if the migrated branch vendors `ebm/hp_*` modules (which exist only on that unrelated-history branch, not on any main-line SHA containing S1-13) and the S2-03 disposition has not merged or ported them, the item records "moot, hp disposition pending" instead of bumping (R2-04) |
 | S1-29 | `tev_design` re-pin handoff note committed in aminx docs (wheel 0.1.0a24 to a post-S1 release: gap list, the two `AMINX_PIN.md` gate scripts, checklist); execution is the downstream owner's |
 | S1-30 | mistypotts ownership note committed; mistypotts spec tests green on titanix |
 
@@ -782,52 +823,57 @@ and never inside another project's data directory.
 9. **Q9 `RunSpec.run_id`.** Never populated today, so every `derive_sink_spec` call mints a fresh id.
    Recommend a follow-on (outside S1) deriving it deterministically from the canonical flat payload plus code
    SHA; S1 only keeps the field wired.
-10. **Q10 Rename ordering (reversed from round 0).** The DAG encodes **rename-first**: S1-01/02/03/17 depend on
-    S3-07, matching S3's own recommendation and avoiding a cycle (D7). Recommend keeping it. If you want S1
-    first, drop those four edges and add `depends_on = ["S1-13", "S1-26", "S1-27", "S1-28"]` to S3-07; S1-25
-    then depends on the S3 release item instead of S3-13. This is your call because it fixes which break
-    (name or spec reads) downstream sees first.
+10. **Q10 (retired).** Rename ordering. The rename is retired (revised D2: the package keeps the name `aminx`), so
+    the shared S1 Q10 / S3 Q4 / S2 Q7 question no longer exists and S1 has no ordering edge against any rename.
+    The number is kept so references stay readable.
 11. **Q11 Consumer migration scope.** Recommend S1 owns migration branches for `mpnn_ext`, `asr`, `hautespout`
-    (S1-26..S1-28) and only a handoff for `tev_design` (S1-29, wheel 0.1.0a24 is a re-pin project that belongs to
-    its owner). Alternative: leave all four to their owners, in which case S1-20 depends on an acknowledgement
-    instead. S1 and S3 **share the same consumer branches**: S3-14/15/17 rename the submodule URL, path and
-    workspace member, then S1-26/27/28 bump the SHA on that branch, so each S1 item depends on its S3 twin. If
-    S3-17 chooses "leave hautespout pinned", S1-28 is moot, hence S1-28 is `user_decision = true`.
+    (S1-26..S1-28), each a branch off the consumer's own main (nothing is renamed, so there is no shared branch with
+    S3) that bumps the submodule SHA to a commit containing S1-13 and migrates spec reads, and only a handoff for
+    `tev_design` (S1-29, wheel 0.1.0a24 is a re-pin project that belongs to its owner). Alternative: leave all four
+    to their owners, in which case S1-20 depends on an acknowledgement instead. S1-28 is `user_decision = true`
+    because it also owns whether hautespout is bumped or deliberately left pinned (then the item is recorded moot).
+12. **Q12 Release position of the flip (replaces the rename-ordering question).** The DAG encodes S5-52 (browser
+    assets, `0.2.0a4` as read on 261001) before S1-25 (the flip-carrying release, `0.2.0a5`), matching S3 Q22 so the
+    first hub deployment never waits for the S1 flip chain. Recommend keeping it, and keeping the coordination
+    note (D7) that the S5-52 tag should not fall between the S1-07 merge and the S1-15 equivalence pass. Reversing
+    it flips one edge (S5-52 `depends_on` S1-25) and S5-33 then inherits the S1 chain. The hub's repo name, PyPI
+    policy and domain (including a praxia.science-derived name or a hub.praxia.science subdomain) are S3-01's
+    decisions, not S1's; S1 is independent of the answer.
 
 ## Backlog items
 
 ```toml
 [[item]]
 id = "S1-01"
-title = "Pre-register and record characterization goldens (flat JSON, manifest row hash, RunSpec projection, portable v2, facade signature fixtures, the 54-path legacy nested-path baseline, D9 quirk and normalisation cases, small-L fixed-seed outputs) on the renamed but otherwise unchanged code"
-repo = "molxmpnn"
+title = "Pre-register and record characterization goldens (flat JSON, manifest row hash, RunSpec projection, portable v2, facade signature fixtures, the 54-path legacy nested-path baseline, D9 quirk and normalisation cases, small-L fixed-seed outputs) on current main (unchanged code)"
+repo = "aminx"
 size = "M"
-depends_on = ["S3-07"]
-gate = "bathos record shows determinism outcome pass (two generations byte-identical) and negative-control outcome pass; goldens including legacy_nested_paths.json (reflected path set, per-case baseline values, and per-case expected_post_flip values for the three expected-change paths seed, encoding_fusion, decoding_fusion derived from the documented rule) committed under tests/golden/spec_system/"
+depends_on = []
+gate = "bathos record shows determinism outcome pass (two generations byte-identical) and negative-control outcome pass; goldens including legacy_nested_paths.json (reflected path set, per-case baseline values, and per-case expected_post_flip values for the three expected-change paths seed, encoding_fusion, decoding_fusion derived from the documented rule) committed under tests/golden/spec_system/; the sidecar and legacy_nested_paths.json carry the environment stamp (sha256 of uv.lock, resolved jax, jaxlib, xtrax, orbax-checkpoint and equinox versions, device, XLA flags)"
 user_decision = false
 
 [[item]]
 id = "S1-02"
 title = "Tracked AST script emitting spec_field_inventory.json (per-task reads, dead fields, name collisions, jit-argument and post-construction-write checks, per-read-site raw-vs-coalesced table, duck-construct classification, every nested run_spec path read in src/tests/scripts/examples checked against the S1-01 path set, view-incompatible uses, legacy-layout constructors, reader-test selection) with positive and negative controls"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
-depends_on = ["S3-07", "S1-01"]
+depends_on = ["S1-01"]
 gate = "bathos record outcome pass; inventory JSON and reader_tests.json committed; seeded dead field reported and live field not reported; a seeded nested read of a path outside the S1-01 set is reported and an in-set read is not"
 user_decision = false
 
 [[item]]
 id = "S1-03"
 title = "Feasibility probes for design A on installed equinox (custom flat init, generated properties, pytree ops, static-key jit cache equality, replace/eq/hash) producing a go/no-go record"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
-depends_on = ["S3-07"]
+depends_on = []
 gate = "bathos record exists with every probe outcome evaluated and recorded (a refuted probe is a valid result); decision rule from D1 applied in the record"
 user_decision = false
 
 [[item]]
 id = "S1-04"
 title = "ADR recording the unification decision from the S1-02 and S1-03 records; mark 260611 three-layer clause amended and 260827 WS-A deletions superseded; close superseded backlog items"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-02", "S1-03"]
 gate = "ADR committed under .praxia/docs/decisions and docs check clean; user ratified Q1"
@@ -836,34 +882,34 @@ user_decision = true
 [[item]]
 id = "S1-05"
 title = "Field registry (src/aminx/run/fields.py, one row per task and flat name with default, type, static, normaliser pair) plus derived run_spec_fields.json and both-direction conformance test against the current facade"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
-depends_on = ["S1-02", "S1-04", "S3-13"]
+depends_on = ["S1-02", "S1-04"]
 gate = "pytest tests/run/test_field_registry.py green on titanix: rows both directions, generated defaults, static set and init signatures equal the current facade; negative controls and snapshot-freshness test"
 user_decision = false
 
 [[item]]
 id = "S1-06"
 title = "Additive nested RunSpec layout, part a: new modules run/nested.py and run/legacy_view.py with DataConfig, ModelRef, PerturbationConfig and sampling/shared sub-configs (real defaults, raw storage, resolved_* accessors), the LegacyRunSpecView mechanism with compat_nested rows for the shared and sampling paths, and registry field metadata; spec.py and specs.py unchanged"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-01", "S1-02", "S1-05", "S4-07"]
-gate = "unit tests green on titanix over hand-built nested specs: view attribute set equals compat_nested rows and the S1-01 path set for these sub-configs (both directions, negative control); random_seed served from top-level seed and multi_state_* from multistate; seed/encoding_fusion/decoding_fusion served from stored values; no stored field shares a name with a view attribute; registry metadata dict keys are a subset of the published field_meta.v1.json; empty diff over spec.py and specs.py"
+gate = "unit tests green on titanix over hand-built nested specs: view attribute set equals compat_nested rows and the S1-01 path set for these sub-configs (both directions, negative control); random_seed served from top-level seed and multi_state_* from multistate; seed/encoding_fusion/decoding_fusion served from stored values; no stored field shares a name with a view attribute; registry metadata dict keys are a subset of the vendored tests/golden/spec_system/field_meta.v1.json (source-sha256 header, pinned-sha256 test; re-sync check skipped until S4-35); tests/parity/test_browser_validation_inventory.py green on titanix with browser_validation_paths.json updated for every public name added to the root packages; empty diff over spec.py and specs.py"
 user_decision = false
 
 [[item]]
 id = "S1-31"
 title = "Additive nested RunSpec layout, part b: score, jacobian, inspect and train task configs with real defaults, raw storage, accessors, the remaining compat_nested rows (full 54-path set) and registry field metadata"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-06"]
-gate = "unit tests green on titanix: task-config defaults equal the unchanged facade's; compat_nested rows equal the S1-01 54-path set and the view attribute set (three-way, both directions); empty diff over spec.py and specs.py"
+gate = "unit tests green on titanix: task-config defaults equal the unchanged facade's; compat_nested rows equal the S1-01 54-path set and the view attribute set (three-way, both directions); registry metadata keys a subset of the vendored field_meta.v1.json; tests/parity/test_browser_validation_inventory.py green with browser_validation_paths.json updated for every public name added; empty diff over spec.py and specs.py"
 user_decision = false
 
 [[item]]
 id = "S1-32"
 title = "Additive nested RunSpec layout, part c: from_flat/to_flat codec for all task classes, the shadow-equivalence test against the unchanged facade, and the legacy-view value gate over all 54 old nested paths"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-06", "S1-31"]
 gate = "shadow-equivalence, normalised round-trip and fixpoint tests green over the S1-01 corpus on titanix; on every corpus case the 51 non-EC old nested paths read through the view equal their S1-01 baseline value and the three expected-change paths (seed, encoding_fusion, decoding_fusion) equal their S1-01 expected_post_flip value, any other difference fails; empty diff over spec.py and specs.py"
@@ -872,16 +918,16 @@ user_decision = false
 [[item]]
 id = "S1-07"
 title = "Flip: old layout classes and old build_run_spec move verbatim to run/legacy_layout.py, spec.py re-exports the unified model; facade classes become thin RunSpec subclasses with generated flat init, replace(), flat read properties and setattr error; run_spec returns the legacy nested view; sync machinery becomes a shim and build_run_spec delegates to as_run_spec"
-repo = "molxmpnn"
+repo = "aminx"
 size = "L"
 depends_on = ["S1-06", "S1-31", "S1-32", "S1-23"]
-gate = "goldens and S1-01 numeric small-L cases byte-identical on the recorded device; compat contract tests pass; test_legacy_view_paths.py green (54-path set equality, 51 non-EC paths equal their S1-01 baseline and seed/encoding_fusion/decoding_fusion equal their S1-01 expected_post_flip, differential oracle: the moved-verbatim legacy_layout.build_run_spec applied to the S1-01 recorded flat facade attributes (not to the flipped spec) equal on the 51 non-EC paths and differing on the 3 EC paths exactly as recorded); build_run_spec shim probed for duck objects; tests/run, tests/cli and the S1-02 reader-test selection (no keyword selector) green on titanix, chunked per directory; warning baseline recorded"
+gate = "environment stamp equal to the S1-01 stamp (else the baseline is re-recorded on the unchanged pre-flip commit under the new lock before comparing); goldens and S1-01 numeric small-L cases byte-identical on the recorded device; compat contract tests pass; test_legacy_view_paths.py green (54-path set equality, 51 non-EC paths equal their S1-01 baseline and seed/encoding_fusion/decoding_fusion equal their S1-01 expected_post_flip, differential oracle: the moved-verbatim legacy_layout.build_run_spec applied to the S1-01 recorded flat facade attributes (not to the flipped spec) equal on the 51 non-EC paths and differing on the 3 EC paths exactly as recorded); build_run_spec shim probed for duck objects; tests/run, tests/cli and the S1-02 reader-test selection (no keyword selector) green on titanix, chunked per directory; tests/parity/test_browser_validation_inventory.py green on titanix with tests/parity/browser_validation_paths.json (and browser_validation_internal_baseline.txt if needed) updated for every name added to or removed from aminx.run.__all__ or the root packages by the flip (as_run_spec, nested config classes, anything newly exported); warning baseline recorded"
 user_decision = false
 
 [[item]]
 id = "S1-08"
 title = "Regenerate spec_json whitelists, spec_partition classification and the portable v2 hand parser (with import-direction guard) and knob_matrix from the registry; delete those three hand lists (CLI option lists and JS key reads stay hand-maintained)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-07"]
 gate = "flat-v1 and portable-v2 goldens unchanged; import-time exhaustiveness fails for an unregistered fixture field; the three generated lists are deleted; the portable codec no longer imports legacy_layout"
@@ -890,7 +936,7 @@ user_decision = false
 [[item]]
 id = "S1-09"
 title = "CLI: build specs through the registry-backed constructors and keep spec validate/roundtrip/portable-roundtrip/emit-* output unchanged"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-07"]
 gate = "tests/cli green on titanix and CLI golden outputs byte-identical"
@@ -899,16 +945,16 @@ user_decision = false
 [[item]]
 id = "S1-23"
 title = "Duck-spec seam as_run_spec(obj) and shared test factory tests/_support/spec_factory.py (make_spec, make_duck_spec), with controls"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-06", "S1-31"]
-gate = "seam and factory unit tests green on titanix; MagicMock raises a pointed error; namespace missing a required attribute fails loudly"
+gate = "seam and factory unit tests green on titanix; MagicMock raises a pointed error; namespace missing a required attribute fails loudly; tests/parity/test_browser_validation_inventory.py green on titanix with tests/parity/browser_validation_paths.json updated if as_run_spec is exported from aminx.run or a root package"
 user_decision = false
 
 [[item]]
 id = "S1-24"
 title = "Registry-driven codemod tool (nested-read, flat-read, replace/fields and resolved_* accessor rewrites) plus scripts/spec/deprecation_paths.py measuring per-path warning counts, with positive and negative fixtures"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-05", "S1-07"]
 gate = "codemod fixtures green (positive, look-alike negative, idempotent second run); deprecation_paths.py reports counts on a fixture tree"
@@ -917,7 +963,7 @@ user_decision = false
 [[item]]
 id = "S1-10"
 title = "Read-migration slice A (via seam and S1-24 codemod): src/aminx/host/ spec.run_spec.X and flat reads to nested reads, dataclasses.replace to spec.replace; migrates the fixtures its own gate breaks"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-08", "S1-23", "S1-24"]
 gate = "goldens byte-identical; host tests green on titanix; deprecation_paths.py reports zero warnings for src/aminx/host"
@@ -926,7 +972,7 @@ user_decision = false
 [[item]]
 id = "S1-11"
 title = "Read-migration slice B (via seam and S1-24 codemod): src io, sampling, tiling, training, utils, run/_exports, package __init__; migrates the fixtures its own gate breaks"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-23", "S1-24"]
 gate = "goldens byte-identical; affected test dirs green on titanix; deprecation_paths.py reports zero warnings for the slice paths"
@@ -935,7 +981,7 @@ user_decision = false
 [[item]]
 id = "S1-12"
 title = "Read-migration slice C: remaining tests/host fixtures and idioms (duck specs to factory, fields/replace, run_spec access, spec equality assertions)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-10", "S1-23", "S1-24"]
 gate = "tests/host green on titanix with -W error::DeprecationWarning; goldens byte-identical"
@@ -944,7 +990,7 @@ user_decision = false
 [[item]]
 id = "S1-13"
 title = "Read-migration slice D: remaining tests, scripts/ (including the benchmark attribute writers and build_run_spec users), examples/"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-09", "S1-10", "S1-11", "S1-23", "S1-24"]
 gate = "narrow test dirs green on titanix with -W error::DeprecationWarning; deprecation_paths.py reports zero warnings for tests (excluding tests/host), scripts and examples"
@@ -953,7 +999,7 @@ user_decision = false
 [[item]]
 id = "S1-14"
 title = "Docs: README, CHANGELOG (incl. run_spec.seed and run_spec.encoding_fusion/decoding_fusion changes), COMPOSITION_GUIDE, examples text and the downstream migration note"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-10", "S1-11", "S1-13"]
 gate = "docs and examples render; rg finds no _sync_run_spec or build_run_spec in README, docs/ or examples/ outside the migration note"
@@ -962,16 +1008,16 @@ user_decision = false
 [[item]]
 id = "S1-15"
 title = "Pre-registered bathos behavioural-equivalence run (sample, score, jacobian, inspect, campaign row) new path vs S1-01 baseline, chunked per case and resumable"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-01", "S1-10", "S1-11"]
-gate = "bathos record outcome pass: every case sha256-equal to baseline, negative control differs, reuse of prior cases recorded"
+gate = "bathos record outcome pass: environment stamp equal to the S1-01 stamp (or baseline re-recorded on the unchanged pre-flip commit under the current lock); every case sha256-equal to baseline, negative control differs, reuse of prior cases recorded"
 user_decision = false
 
 [[item]]
 id = "S1-16"
 title = "Prune dead fields from the re-measured inventory on the fully migrated tree (scaffolding deleted; inert public kwargs through warn-and-ignore)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-12", "S1-13", "S1-15"]
 gate = "S1-02 inventory re-run recorded excluding legacy-view reads; prune list signed off item by item; tests green on titanix"
@@ -980,9 +1026,9 @@ user_decision = true
 [[item]]
 id = "S1-17"
 title = "PottsTRWRunSpec single owner in aminx: vendored copy with sha256 header and a no-import conformance test with a mutate-a-copy negative control (dev-dependency variant only if uv lock --check passes)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
-depends_on = ["S3-07", "S3-13"]
+depends_on = []
 gate = "conformance test green on the real vendored file and red on a mutated temp copy via pytest fixture; sha256 header present"
 user_decision = true
 
@@ -998,7 +1044,7 @@ user_decision = false
 [[item]]
 id = "S1-18"
 title = "Key-set drift test between runspec_core.mjs spec reads and registry browser_key rows, with a negative control (deleted by S4-20 once the generated schema replaces the hand copy)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-05"]
 gate = "drift test fails when a JS key is added without a registry row and passes otherwise; browser/aminx-sampler Node tests unchanged"
@@ -1006,44 +1052,44 @@ user_decision = false
 
 [[item]]
 id = "S1-25"
-title = "Release cut: publish a molxmpnn alpha carrying the flip, deprecation warnings and the changelog warning schedule (the deprecation window as an item)"
-repo = "molxmpnn"
+title = "Release cut: publish an aminx alpha carrying the flip, deprecation warnings and the changelog warning schedule (the deprecation window as an item)"
+repo = "aminx"
 size = "S"
-depends_on = ["S1-12", "S1-13", "S1-14", "S1-15", "S3-13", "S5-52"]
-gate = "alpha present on the index at the version the S3 release table assigns to the flip-carrying alpha (the next unused molxmpnn alpha after S5-52's tag, 0.2.0a6 under S3's table; S3-13 is 0.2.0a4 and S5-52 takes 0.2.0a5), whose tag contains S5-52's work, and the S1-15 equivalence pass precedes the cut; titanix install smoke imports a flat-constructed spec and observes the DeprecationWarning"
+depends_on = ["S1-12", "S1-13", "S1-14", "S1-15", "S3-12", "S5-52"]
+gate = "alpha present on the index (the S3-12 workflow guard passed) at the next unused aminx alpha read from the PyPI JSON at cut time and stated in the PR (0.2.0a5 on 261001 if S5-52 took 0.2.0a4), whose tag contains S5-52's work, and the S1-15 equivalence pass precedes the cut; titanix install smoke imports a flat-constructed spec and observes the DeprecationWarning"
 user_decision = false
 
 [[item]]
 id = "S1-26"
-title = "Migrate mpnn_ext to the post-S1 surface: on the S3-14 consumer branch (stacked on it, not a new branch off main), bump its external/aminx submodule SHA and migrate spec reads"
+title = "Migrate mpnn_ext to the post-S1 surface: on a branch off mpnn_ext main, bump its external/aminx submodule SHA to a commit containing S1-13 and migrate spec reads"
 repo = "mpnn_ext"
 size = "S"
-depends_on = ["S1-13", "S3-10", "S3-14"]
-gate = "mpnn_ext narrow spec-constructing tests green on titanix on the S3-14 consumer branch (stacked on its commits); no push to main without the owner"
+depends_on = ["S1-13"]
+gate = "mpnn_ext narrow spec-constructing tests green on titanix on the consumer branch; no push to main without the owner"
 user_decision = false
 
 [[item]]
 id = "S1-27"
-title = "Migrate asr to the post-S1 surface: on the S3-15 consumer branch (stacked on it, not a new branch off main), bump its aminx submodule SHA and migrate spec reads"
+title = "Migrate asr to the post-S1 surface: on a branch off asr main, bump its aminx submodule SHA to a commit containing S1-13 and migrate spec reads"
 repo = "asr"
 size = "S"
-depends_on = ["S1-13", "S3-10", "S3-15"]
-gate = "asr narrow spec-constructing tests green on titanix on the S3-15 consumer branch (stacked on its commits); no push to main without the owner"
+depends_on = ["S1-13"]
+gate = "asr narrow spec-constructing tests green on titanix on the consumer branch; no push to main without the owner"
 user_decision = false
 
 [[item]]
 id = "S1-28"
-title = "Migrate hautespout (re-read its pyproject and .gitmodules first): on the S3-17 consumer branch (stacked on it, not a new branch off main), bump its aminx submodule SHA and migrate spec reads, or record the item as moot if S3-17 leaves hautespout pinned"
+title = "Migrate hautespout (re-read its pyproject and .gitmodules first): on a branch off hautespout main, bump its aminx submodule SHA to a commit containing S1-13 and migrate spec reads, or record the item as moot if the owner leaves hautespout pinned (this item owns that bump-or-pin decision)"
 repo = "hautespout"
 size = "S"
-depends_on = ["S1-13", "S3-10", "S3-17"]
-gate = "hautespout narrow spec-constructing tests green on titanix on the S3-17 consumer branch (stacked on its commits), or the item is recorded as moot by the S3-17 decision (hautespout left pinned); no push to main without the owner"
+depends_on = ["S1-13", "S2-03"]
+gate = "the record cites the S2-03 disposition of the aminx branch hp-lattice-sanity-check (merge before F, abandon, or port into ebmx) and the SHA bump does not drop any file hautespout imports (if the migrated branch vendors ebm/hp_* modules that no main-line SHA contains and the disposition has not carried them, the item is recorded as moot, hp disposition pending, and nothing is bumped); the record names the hautespout branch migrated (main's pyproject declares no aminx dependency; the WIP worktree declares and vendors aminx at vendor/aminx with EBM hp_* modules); hautespout narrow spec-constructing tests green on titanix on the consumer branch, or the item is recorded as moot with the owner's recorded decision to leave hautespout pinned; no push to main without the owner"
 user_decision = true
 
 [[item]]
 id = "S1-29"
 title = "tev_design re-pin handoff note (wheel 0.1.0a24 to a post-S1 release: gap list, the two AMINX_PIN.md gate scripts, checklist)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-25"]
 gate = "handoff note committed under .praxia/docs/handoffs and docs check clean"
@@ -1052,25 +1098,25 @@ user_decision = false
 [[item]]
 id = "S1-21"
 title = "Shim-removal rehearsal: on a throwaway aminx worktree with shims deleted, run migrated consumers' narrow tests in scratch checkouts via a local-only submodule override (config-resolved scratch root, no writes to consumer tracked state)"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-13", "S1-26", "S1-27", "S1-28"]
-gate = "all migrated consumers' narrow tests green on titanix against the shim-less tree (a consumer recorded as moot by the S3-17 decision is excluded and named in the record); negative control (an unmigrated consumer commit) fails; canary_root_source() reports the deciding layer"
+gate = "all migrated consumers' narrow tests green on titanix against the shim-less tree (a consumer recorded as moot by the S1-28 decision is excluded and named in the record); negative control (an unmigrated consumer commit) fails; canary_root_source() reports the deciding layer"
 user_decision = false
 
 [[item]]
 id = "S1-20"
 title = "Remove compat shims: flat read properties, run_spec alias and legacy_view.py, legacy_layout.py, build_run_spec, as_run_spec duck lifting, _sync_run_spec, dataclasses.replace guard, facade remnants"
-repo = "molxmpnn"
+repo = "aminx"
 size = "M"
 depends_on = ["S1-12", "S1-13", "S1-14", "S1-15", "S1-21", "S1-25", "S1-29"]
-gate = "legacy_view.py and legacy_layout.py absent and not imported; repo-wide rg for removed names returns only the allowlist (CHANGELOG.md, migration note); goldens byte-identical; S1-21 rehearsal re-run green on the merged tree"
+gate = "legacy_view.py and legacy_layout.py absent and not imported; repo-wide rg for removed names returns only the allowlist (CHANGELOG.md, migration note); goldens byte-identical; S1-21 rehearsal re-run green on the merged tree; build_run_spec and every other removed export are unmapped from tests/parity/browser_validation_paths.json (aminx.run::build_run_spec is currently mapped to P26) and tests/parity/test_browser_validation_inventory.py is green on titanix (no stale entry)"
 user_decision = true
 
 [[item]]
 id = "S1-22"
 title = "Decide and (if approved) fix the or-coalescing quirks (random_seed 0, zero-valued knobs) as an isolated behaviour change"
-repo = "molxmpnn"
+repo = "aminx"
 size = "S"
 depends_on = ["S1-15"]
 gate = "decision recorded; if fix approved, golden diff shows only the seed-0 and zero-valued-knob cases change"
@@ -1078,6 +1124,10 @@ user_decision = true
 ```
 
 ## Revision log
+
+Entries before "No-rename revision" describe the retired rename design (S3-07, S3-13, `molxmpnn`, the `aminx` shim,
+shared consumer branches). They are kept verbatim as history and are not a description of this spec's current
+content; S3-28 may list their prose mentions as warnings.
 
 ### Coherence round 1 (cross-spec fixes C1, C3, C10, C14)
 
@@ -1237,3 +1287,106 @@ kept (an alternative, making the view return the old 0 / `None`, would defeat D9
   fixed corpus sentinel (two lambdas share a qualname); "after the facade's normalisation" is vacuous for fusion
   (no normalisation exists); the unified model needs explicit `axes=[]` / `carry_specs` defaults, since
   `xtrax.run.RunSpec.axes` and `seed` are required fields.
+
+### No-rename revision (261001, user decision revising D2)
+
+Trigger: the user decided that the MPNN package, released on PyPI as `aminx`, keeps that name; there is no rename and
+the hub is a separate project (working slug `aminx-hub`; the user also floated a name derived from praxia.science,
+which works with any repo slug, and which collides with the user's praxia orchestrator name; final name is S3-01's).
+S3 was rewritten (retired items listed in its section 10); this revision applies its section 2.1 edge map to S1.
+
+- **`molxmpnn` -> `aminx`.** `repo = "molxmpnn"` became `repo = "aminx"` on all 27 aminx-repo S1 items that carried it (S1-29, the
+  tev_design handoff note, included); "publish a molxmpnn alpha" became "publish an aminx alpha"; the path
+  convention paragraph, Non-goals, Current state (consumer paragraph) and the `repo` convention no longer map
+  `src/aminx/` to `src/molxmpnn/`. S1-01's title now says "on current main".
+- **Edges dropped (ordering against the rename only, no replacement):** S1-01 (`S3-07`; now a root), S1-02 (`S3-07`;
+  keeps `S1-01`), S1-03 (`S3-07`; now a root), S1-05 (`S3-13` pinned-tag content rule; keeps `S1-02`, `S1-04`),
+  S1-17 (`S3-07`, `S3-13`; now a root), S1-26 (`S3-10`, `S3-14`; keeps `S1-13`), S1-27 (`S3-10`, `S3-15`; keeps
+  `S1-13`), S1-28 (`S3-10`, `S3-17`; keeps `S1-13`).
+- **Edge re-pointed:** S1-25 `S3-13` -> `S3-12` (release guard and train rule); S1-25 is now
+  `["S1-12", "S1-13", "S1-14", "S1-15", "S3-12", "S5-52"]`. Its gate no longer hard-codes a version: it reads the
+  next unused alpha from PyPI at cut time (0.2.0a5 on 261001 if S5-52 took 0.2.0a4; the earlier 0.2.0a6 assumed a
+  shim release in front). S3-01, S3-24, S3-09, S3-18, S3-21, S3-28, S3-29 are not referenced by any S1 item; the only
+  S3 ids in the S1 toml are `S3-12`.
+- **Items deleted:** none. S1 had no item whose only purpose was the rename; the S3 ids it depended on were not S1
+  items. No S1 id was removed from the toml. (Ids S1-19 and the numbers skipped in earlier rounds stay unused.)
+- **Consumer branches (S1-26/27/28, Q11):** no longer stacked on S3-14/15/17 consumer branches; each is a branch off
+  the consumer's own main that bumps the aminx submodule SHA. S1-28 owns the bump-or-leave-pinned decision itself
+  (it was already `user_decision = true`), and its "moot" outcome and the S1-21 exclusion now refer to that decision
+  instead of "the S3-17 decision". S1-26/27/28 `depends_on` is `["S1-13"]` each.
+- **D7 rewritten** for the no-rename world: the "rename first vs S1 first" ordering, the pinned-tag protection rule
+  (CH2-03), the "if the user chooses S1-first" branch and the shared Q10 / S3 Q4 / S2 Q7 question are removed. Restated
+  decisions: (1) S1 runs on `src/aminx/` on current main in one pass, with no rebase across a rename; (2) S1 against
+  S2: still no edge (A17), the A0 freeze window and the S1-11/S1-24 exclusion list are unchanged, and "rename first vs
+  EBM first" has no meaning because S1 and S2 touch disjoint paths and S1 does not care whether `src/aminx/ebm/`
+  still exists; (3) release order S5-52 before S1-25 is kept, now stated against S3 Q22 and S3-12, with a
+  coordination note (not an edge) for an S5-52 tag falling between the S1-07 merge and the S1-15 pass; (4) the hub is
+  a separate project with no S1 edge and never takes the name `aminx`.
+- **Removed or rewritten text that existed only for the rename:** the S3 compat-shim assumption in the Consumes
+  table (replaced by the `S3:release-guard` row), "S3 (rename regression)" and "S3 (consumer inventory)" in P4/P6, the
+  "S3 has no edge to S1 under rename-first" edge paragraph, the S1-01 gate clause about reusing S3-05 fixtures, the
+  "consumer migration re-pointing" and "shared consumer branches" statements, and the risk rows "Rename/spec
+  ordering cycle with S3 (C2)" and "Double churn with S3 rename" (replaced by two release-ordering rows).
+  The S1-owned shims (flat read properties, legacy view, `legacy_layout.py`, `build_run_spec`, `as_run_spec`
+  duck lifting) are untouched: they are not rename shims.
+- **Ledger:** A31 -> REFUTED (rename-first premise void, `changed:` recorded; id kept, not reused); A36 added (S1's
+  single remaining S3 edge, S1-25 -> S3-12) and A37 added (consumers keep importing `aminx`, existing trusted
+  publisher keeps matching), both with `read:` evidence, no spikes needed. A14's consumer model is unchanged.
+- **Questions:** Q10 retired (number kept); Q11 reworded; Q12 added (release position of the flip against S5-52).
+- **Cross-spec references to repair elsewhere (not edited here):** S3-28 will list prose hits in S2 and S4/S5 of the
+  S1 ids and flat edges; S4 should drop any `S3-07`/`S3-13` edge to S1 items it had written; the S1 note that
+  S4-20's `depends_on` still lacks S1-05/S1-07 (it carries S1-18 only) stands as an owed edge.
+- **Graph:** acyclic; every `depends_on` resolves to an existing id (S1 ids, `S3-12`, `S4-07`, `S5-52`); the only S3
+  id in any S1 item field is `S3-12`; no field contains `molxmpnn`, `mpnnx` or a retired S3 id.
+- **Not done, by design:** no code, test or commit; no hub name, PyPI name or domain decided; goldens (S1-01) are
+  not captured yet; no spike run (no new design-changing unverified row).
+
+### No-rename coherence r1 (261001, CH1-02, CH1-03, CH1-04)
+
+- **CH1-02 (inventory test).** aminx CI fails on unmapped and stale public symbols
+  (`tests/parity/test_browser_validation_inventory.py`, `browser_validation_paths.json`, internal baseline file;
+  A38). S1-06, S1-31, S1-07, S1-23 and S1-20 (toml gates and Verification gates rows) now require that test green on
+  titanix with the JSON (and the baseline file if its count changes) updated in the same PR for every name added to or
+  removed from `aminx.run.__all__` or the root packages. S1-20 explicitly unmaps `build_run_spec` (mapped to P26
+  today) and any other removed export. Ordering note: S2-18 edits the same JSON; the edits are textual merges in
+  different keys and are not ordered by an edge, so whichever PR lands second rebases the JSON and re-runs the test.
+  S4-21, S4-40 and S5-21 may add public defs under `scoring`, `run` or a new runtime; that is for those specs to carry
+  (not edited here).
+- **CH1-03 (hautespout and the EBM branch).** Consumer paragraph and A37 evidence corrected: hautespout `main`
+  `pyproject.toml` declares no aminx dependency (its `.gitmodules` lists a `vendor/aminx` submodule); a WIP
+  worktree declares and vendors aminx whose `ebm/hp_energy.py`, `hp_coarse_sampler.py` and `hp_windowing.py` are
+  outside S2's 15 modules and exist on the aminx branch `hp-lattice-sanity-check` (A39; branch contents not read).
+  S1-28's gate now requires the record to name the hautespout branch migrated. Owed to S2 (not edited here): S2-06 and
+  S2-18 must account for that branch and its consumer (S2-06 `git clone --no-local` carries every ref; S2-18 deletes
+  `src/aminx/ebm` on main and strands the branch); S1 itself touches nothing under `src/aminx/ebm/`.
+- **CH1-04 (`field_meta.v1.json` delivery).** D4 now specifies that S1-06 vendors the file into
+  `tests/golden/spec_system/field_meta.v1.json` with a source-sha256 header (`.source` sibling) and a pinned-sha256
+  test, and the S1-06/S1-31 subset gate reads that copy. A re-sync test against the packaged contract is skipped
+  until `xtrax_contract` is importable and goes live at S4-35, as S4-35's owed gate, not an S1 edge. A40 added
+  (UNVERIFIED, deferred to the S4-07/S4-34 layout). S1-06 `depends_on` is unchanged (S4-07).
+- **Ledger:** A38, A39 (VERIFIED by reads), A40 (UNVERIFIED, deferred) added; A37's hautespout evidence repointed.
+- **Graph:** `depends_on` values unchanged, so still acyclic with every id resolving; the toml block is still the
+  single block of `[[item]]` tables. No spike run (no spike harness in this worktree, as noted in the ledger header);
+  no code, test or commit.
+
+### No-rename coherence r2 (261001, R2-03, R2-04)
+
+- **R2-03 (environment pin for the bitwise gates).** The retired S3-05 used to order golden capture and comparison on
+  one xtrax a11 stack; S1-01 is now a root and S2-02 (#174), S4-16, S4-35 and S1-17 all change `uv.lock` on main with
+  no edge to S1. No edge is added (in particular none to S2-02). Instead S1-01 records an environment stamp in its
+  sidecar and in `legacy_nested_paths.json` (sha256 of `uv.lock`, resolved jax, jaxlib, xtrax, orbax-checkpoint and
+  equinox versions, device, XLA flags); S1-07 and S1-15 assert stamp equality (from a worktree whose lock hash equals
+  the stamp) or refuse to compare and re-record the baseline on the unchanged pre-flip commit under the new lock.
+  Changed: S1-01, S1-07, S1-15 (Verification gates rows and toml gates) and D7 (sentence next to the S1-17 lock note).
+- **R2-04 (hp-lattice-sanity-check owner).** S1-28 `depends_on` gains `S2-03` (the item that inventories non-main
+  refs and records the disposition of `hp-lattice-sanity-check`: merge before F, abandon, or port into ebmx). Its gate
+  and Verification row now require citing that disposition and forbid a SHA bump that drops files the consumer
+  imports: when the migrated hautespout branch vendors `ebm/hp_*` modules that no main-line SHA contains and the
+  disposition has not carried them, the item records "moot, hp disposition pending". The three-module list (S1
+  A39) versus the S2 A46 list (one module plus a test and a script) is a discrepancy neither spec resolved by reading
+  the branch tree; it is owed to S2-03, whose inventory should settle it. Owed to S2 (not edited here): S2-03 is
+  `user_decision = false` yet its disposition is a user decision (S2 Q4), and no S2 item migrates a consumer import of
+  `hp_*` or ports it into ebmx; S1-28 only records the outcome.
+- **Graph:** one new edge (S1-28 -> S2-03). S2-03 depends only on S2-02, which depends on nothing, and no S2 item
+  depends on an S1 item, so no cycle; every id resolves; the toml block is still the single block of `[[item]]`
+  tables. No spike run; no code, test or commit.
