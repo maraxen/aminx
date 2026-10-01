@@ -51,6 +51,11 @@ logs/
 .praxia/pytest_errors/
 .praxia/*_console*.log
 .praxia/fast_pytest*.log
+# `praxia dispatch` writes its own envelope.json here, INSIDE the worktree it is
+# about to materialize into, and then refuses the dispatch because that same file
+# makes the tree unclean. Untracked-and-ignored is the only state that satisfies
+# its precondition, so this entry is what lets a surface dispatch run at all.
+.praxia/dispatch/
 venv/
 scratch/
 
