@@ -144,6 +144,9 @@ class DenseMLP(eqx.Module):
   """
 
   layers: tuple[eqx.nn.Linear | None, ...]
+  # Static so a filter_jit rebuild keeps it. A plain attribute is dropped, and
+  # the dropout replay then misses every recorded mask.
+  proofread_path: str = eqx.field(static=True)
 
   def __init__(
     self,
@@ -163,6 +166,7 @@ class DenseMLP(eqx.Module):
       None,
       eqx.nn.Linear(latent_dim, output_dim, key=keys[2]),
     )
+    self.proofread_path = ""
 
   def __call__(self, features: Float[Array, "*batch f"]) -> Float[Array, "*batch o"]:
     hidden = jax.nn.gelu(apply_linear(_linear_at(self.layers, 0), features), approximate=False)
@@ -378,9 +382,13 @@ class EquivariantDropout(eqx.Module):
   """Combined scalar and vector dropout. Eval (``inference=True``) is the identity."""
 
   vdropout: _VDropout
+  # Static so a filter_jit rebuild keeps it. A plain attribute is dropped, and
+  # the dropout replay then misses every recorded mask.
+  proofread_path: str = eqx.field(static=True)
 
   def __init__(self, drop_rate: float) -> None:
     self.vdropout = _VDropout(drop_rate)
+    self.proofread_path = ""
 
   def __call__(
     self,
@@ -415,6 +423,9 @@ class HomoGATv2(eqx.Module):
   update_edges: bool = eqx.field(static=True)
   use_mlp_node_update: bool = eqx.field(static=True)
   dropout_rate: float = eqx.field(static=True)
+  # Static so a filter_jit rebuild keeps it. A plain attribute is dropped, and
+  # the dropout replay then misses every recorded mask.
+  proofread_path: str = eqx.field(static=True)
 
   def __init__(
     self,
@@ -494,6 +505,7 @@ class HomoGATv2(eqx.Module):
       key=keys[5],
     )
     self.equivariant_layer_norm = EquivariantLayerNorm((node_dim, num_vectors))
+    self.proofread_path = ""
 
   def messages(
     self,
@@ -582,6 +594,9 @@ class HeteroGATv2(eqx.Module):
   compute_edge_updates: bool = eqx.field(static=True)
   num_vectors: int = eqx.field(static=True)
   node_dim: int = eqx.field(static=True)
+  # Static so a filter_jit rebuild keeps it. A plain attribute is dropped, and
+  # the dropout replay then misses every recorded mask.
+  proofread_path: str = eqx.field(static=True)
 
   def __init__(
     self,
@@ -659,6 +674,7 @@ class HeteroGATv2(eqx.Module):
       key=keys[-1],
     )
     self.equivariant_layer_norm = EquivariantLayerNorm((node_dim, num_vectors), vector_only=True)
+    self.proofread_path = ""
 
   def __call__(
     self,
