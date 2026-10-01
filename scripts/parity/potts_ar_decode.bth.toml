@@ -53,6 +53,8 @@ checkpoint_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc362
 "4jox.pdb" = "c16543717793ced9e9475df6213a52054d05b70dd02069d41fac82e164f09ee8"
 "6w25.pdb" = "4a9a6dc228bf3953a746d09f29e6116f07c1f2cfc152030fe878728c65cca086"
 "swe1_ligand.pdb" = "493352b8c64c02c133f1143c1705e7b5217e0f67127bd22e6b3964319b6445c6"
+fixed_positions_json = "scripts/parity/fixtures/potts_ar_fixed_positions.json"
+fixed_positions_sha256 = "d4a3cd25332b65ced7a0874288336cacd952a992a6db9673a055b869712f8a0a"
 pass_band = "token match = 1.0"
 inconclusive_band = "[0.99, 1.0)"
 fail_band = "< 0.99"

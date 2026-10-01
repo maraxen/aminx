@@ -5,7 +5,9 @@ Example PDBs, 50 seeds, f64, exact token match. Pass is 1.0, inconclusive is
 
 Negative controls, each of which must fail because it moved the measured
 tokens: ``ar_mask_present_chain_m_pos``, ``wrong_partition_sign``,
-``ntoc_refine_order``. Payload via ``--payload-out``.
+``ntoc_refine_order``. The mask control needs the pinned fixed-position
+sidecar; on these PDBs ``chain_M_pos`` is otherwise identically 1. Payload
+via ``--payload-out``.
 """
 
 from __future__ import annotations
@@ -134,13 +136,8 @@ def _units(job: dict[str, Any], arm: str, checkpoint: Path) -> list[graded_resum
 
 
 def _build_job(root: Path) -> dict[str, Any]:
-  folder = root / "inputs" / "example_pdbs"
-  structures: dict[str, Any] = {}
-  for name, digest in EXAMPLE_SHA256.items():
-    path = folder / name
-    common.check_pdb(path, digest)
-    structures[path.stem] = {"pdb": str(path), "sha256": digest}
-  return {"structures": structures}
+  # Same sidecar as potts_ar_decode. chain_M_pos has to be non-degenerate here too.
+  return {"structures": common.example_structures(root, EXAMPLE_SHA256)}
 
 
 def _load_oracle(root: Path, checkpoint: Path) -> dict[str, Any]:
@@ -154,7 +151,7 @@ def _bank(root: Path, job: dict[str, Any], work: Path) -> dict[str, common.Oracl
   feats: dict[str, common.OracleFeat] = {}
   cells: dict[str, dict[str, Any]] = {}
   for name, payload in job["structures"].items():
-    feat = common.featurize_upstream(root, Path(payload["pdb"]))
+    feat = common.featurize_upstream(root, Path(payload["pdb"]), common.structure_fixed(payload))
     feats[str(name)] = feat
     width = common.refine_width(feat.mask, feat.chain_m, feat.chain_m_pos)
     for seed in range(N_SEEDS):
@@ -170,7 +167,9 @@ def _bank(root: Path, job: dict[str, Any], work: Path) -> dict[str, common.Oracl
 
 
 def _oracle_one(
-  prepared: dict[str, Any], feat: common.OracleFeat, cell: dict[str, Any]
+  prepared: dict[str, Any],
+  feat: common.OracleFeat,
+  cell: dict[str, Any],
 ) -> list[int]:
   import numpy as np
   import potts_mpnn_utils as potts
@@ -450,7 +449,10 @@ def _run_arm(args: Any) -> dict[str, Any]:
     loaded = PottsMPNNDriver().load(SimpleNamespace(model_local_path=checkpoint))
     model = cast_floating(loaded, jnp.float64)
     for name, payload in job["structures"].items():
-      encoded[str(name)] = _encoded(model, _cast_ready(common.prepare_aminx(Path(payload["pdb"]))))
+      encoded[str(name)] = _encoded(
+        model,
+        _cast_ready(common.prepare_aminx(Path(payload["pdb"]), common.structure_fixed(payload))),
+      )
 
   def compute(unit: graded_resume.Unit) -> list[int]:
     if model is None:
