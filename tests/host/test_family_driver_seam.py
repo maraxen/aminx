@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterator, Mapping
+from types import SimpleNamespace
 from typing import Any
 
 import equinox as eqx
@@ -285,3 +286,71 @@ def test_fallback_purpose_loads_mpnn_core(monkeypatch: pytest.MonkeyPatch) -> No
         assert model.tag == "mpnn-core"
     finally:
         _unregister()
+
+
+def _purge_family(key: str, module: str) -> None:
+    """Drop a registered driver and its package so the lazy import must run again."""
+    FAMILY_DRIVERS.discard(key)
+    for name in [n for n in sys.modules if n == module or n.startswith(f"{module}.")]:
+        del sys.modules[name]
+
+
+@pytest.mark.parametrize(
+    ("family", "module"),
+    [
+        ("pottsmpnn", "aminx.families.potts_mpnn"),
+        ("lasermpnn", "aminx.families.laser_mpnn"),
+    ],
+)
+def test_family_driver_for_lazy_imports_every_driver_backed_family(
+    family: str, module: str
+) -> None:
+    """Dispatch must resolve a driver WITHOUT the caller importing the family first.
+
+    The observable that would have caught debt #2403: with the family package absent
+    from sys.modules, _family_driver_for must still return a driver. Only pottsmpnn
+    was imported here, so lasermpnn resolved to None -- and because every call site
+    reads ``if (d := _family_driver_for(spec)) is not None:``, that None skipped the
+    block's own guards and fell through to the stock ProteinMPNN path, returning
+    ProteinMPNN numbers for a LASEr request with no error.
+
+    This test must NOT import the family module itself. A test that imports the
+    module under test cannot catch a missing import in the caller, which is exactly
+    why the existing seam tests were blind to this.
+    """
+    from aminx.host.runner import _family_driver_for  # noqa: PLC0415
+
+    _purge_family(family, module)
+    assert FAMILY_DRIVERS.get(family) is None, "precondition: driver must start unregistered"
+
+    driver = _family_driver_for(SimpleNamespace(model_family=family))
+
+    assert driver is not None, f"{family} did not resolve a driver; dispatch would fall through"
+    assert driver.name == family
+
+
+def test_family_driver_for_raises_rather_than_falling_back(monkeypatch: Any) -> None:
+    """A driver-backed family with no driver must RAISE, never return None.
+
+    Returning None is indistinguishable at the call site from "this spec is a stock
+    MPNN spec", so the request is served by the wrong model instead of failing.
+    """
+    from aminx.host import runner as _runner  # noqa: PLC0415
+
+    monkeypatch.setitem(
+        _runner._DRIVER_BACKED_FAMILIES,  # noqa: SLF001
+        "lasermpnn",
+        "aminx.host.family_driver",  # imports fine, registers no lasermpnn driver
+    )
+    _purge_family("lasermpnn", "aminx.families.laser_mpnn")
+
+    with pytest.raises(RuntimeError, match="requires a registered FamilyDriver"):
+        _runner._family_driver_for(SimpleNamespace(model_family="lasermpnn"))  # noqa: SLF001
+
+
+def test_stock_families_still_return_none_without_raising() -> None:
+    """proteinmpnn/ligandmpnn have no driver BY DESIGN and must keep falling through."""
+    from aminx.host.runner import _family_driver_for  # noqa: PLC0415
+
+    for family in ("proteinmpnn", "ligandmpnn", None):
+        assert _family_driver_for(SimpleNamespace(model_family=family)) is None

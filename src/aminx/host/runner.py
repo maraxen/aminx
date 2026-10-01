@@ -59,17 +59,50 @@ from aminx.run.specs import (
 )
 
 
-def _family_driver_for(spec: Any) -> FamilyDriver | None:  # noqa: ANN401
-  """Return the driver for ``spec``, importing PottsMPNN the first time it is needed.
+# Families whose dispatch REQUIRES a registered FamilyDriver. The stock MPNN path
+# cannot serve these, so a missing driver is an error, never a silent fallback.
+# Keyed by family so adding a third family is a one-line table entry rather than
+# another hand-written branch that the next family forgets to add.
+_DRIVER_BACKED_FAMILIES: dict[str, str] = {
+  "pottsmpnn": "aminx.families.potts_mpnn",
+  "lasermpnn": "aminx.families.laser_mpnn",
+}
 
-  A driver already registered under ``pottsmpnn`` is left in place so tests can
+
+def _family_driver_for(spec: Any) -> FamilyDriver | None:  # noqa: ANN401
+  """Return the driver for ``spec``, importing its family package on first use.
+
+  A driver already registered under the family key is left in place so tests can
   install a stand-in before dispatch.
+
+  A driver-backed family RAISES when no driver resolves, and that is the whole
+  point of this function's shape. Every call site reads
+
+      if (d := _family_driver_for(spec)) is not None:
+          ... guards that raise for unsupported purposes ...
+          return run_family_driver(d, spec, purpose)
+
+  so returning None skips the entire block -- including those guards -- and falls
+  through to the stock ProteinMPNN path. Only ``pottsmpnn`` was ever imported here,
+  so ``model_family="lasermpnn"`` resolved to None and silently returned ProteinMPNN
+  numbers labelled as LASEr output, with no error anywhere (debt #2403).
   """
   family = getattr(spec, "model_family", None)
-  if family == "pottsmpnn" and FAMILY_DRIVERS.get("pottsmpnn") is None:
-    import aminx.families.potts_mpnn as _potts_mpnn  # noqa: F401, PLC0415
+  module = _DRIVER_BACKED_FAMILIES.get(family) if isinstance(family, str) else None
+  if module is not None and FAMILY_DRIVERS.get(family) is None:
+    import importlib  # noqa: PLC0415
 
-  return FAMILY_DRIVERS.get(family)
+    importlib.import_module(module)
+
+  driver = FAMILY_DRIVERS.get(family)
+  if driver is None and module is not None:
+    msg = (
+      f"model_family={family!r} requires a registered FamilyDriver, but none resolved "
+      f"after importing {module!r}. Refusing to fall back to the stock MPNN path, "
+      f"which would silently return ProteinMPNN results for a {family} request."
+    )
+    raise RuntimeError(msg)
+  return driver
 
 
 from .prep import prep_protein_stream_and_model
