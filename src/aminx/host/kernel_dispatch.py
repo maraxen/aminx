@@ -44,6 +44,14 @@ if TYPE_CHECKING:
   from aminx.utils.data_structures import Protein
 
 
+def _is_unit_axis(xs: object) -> bool:
+  """True when every leaf of ``xs`` has a leading axis of exactly 1 (so ``jax.vmap`` over it is a size-1 batch)."""
+  leaves = jax.tree_util.tree_leaves(xs)
+  return bool(leaves) and all(
+    getattr(leaf, "ndim", 0) >= 1 and leaf.shape[0] == 1 for leaf in leaves
+  )
+
+
 def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
   """Dispatch iteration over an axis using the declared AxisStrategy.
 
@@ -71,6 +79,15 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
   strategy_name = type(strategy).__name__
 
   if strategy_name == "Vmap":
+    if _is_unit_axis(xs):
+      # A size-1 vmap is the body on the lone element with the axis put back, so skip it. Not an
+      # optimisation: on XLA GPU a jitted *size-1* batch axis can miscompile a matmul whose
+      # intermediate is square (the encoder's 512-wide `dense` at max_length=512), returning
+      # ~0.2-wrong activations with no error (aminx #2391; scripts/parity/repro_gpu_nested_vmap_mlp.py).
+      # The runner's default noise/temperature axes are exactly this size-1 case.
+      return jax.tree_util.tree_map(
+        lambda y: y[None], body(jax.tree_util.tree_map(lambda x: x[0], xs))
+      )
     return jax.vmap(body)(xs)
   if strategy_name in ("SafeMap", "ChunkedMap"):
     # aminx.tiling.strategy.SafeMap uses .tile; xtrax's chunked strategy uses
