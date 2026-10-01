@@ -41,6 +41,7 @@ from aminx.model.laser.proofread import (
   proofread_dropout,
   reduce_proofread,
 )
+import aminx.model.laser.tied as tied_mod
 from aminx.model.laser.tied import (
   TiedDecodeResult,
   mix_sequence_probabilities,
@@ -576,6 +577,99 @@ def test_knob_semantics_tied_uniform_order() -> None:
   assert int(decoded.chi_bins_1[1, 0]) == 0
   assert int(decoded.chi_bins_1[0, 0]) != 0
   assert int(decoded.chi_bins_2[1, 0]) != 0
+
+
+def _sample_at(lineno: int) -> Any:
+  """A ``Categorical.sample`` whose frame is ``model.py`` at ``lineno``.
+
+  The uniform shim keys off that filename and the tied draw lines. A call from
+  this test file would be ignored, which is the same miss the e2e recorder hits.
+  """
+  lines = ["import torch", "def site():"]
+  while len(lines) < lineno - 1:
+    lines.append("    pass")
+  lines.append("    return torch.distributions.Categorical(probs=torch.ones(8) / 8).sample()")
+  namespace: dict[str, Any] = {}
+  exec(compile("\n".join(lines) + "\n", "model.py", "exec"), namespace)  # noqa: S102
+  return namespace["site"]
+
+
+def test_knob_semantics_tied_draw_order_matches_upstream(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Upstream ``tied_sample`` draws sequence, then chi index by structure.
+
+  ``utils/model.py`` calls ``Categorical.sample`` at :627 once per column, then
+  at :676 and :677 inside the chi loop (structure 1, then structure 2). That is
+  nine draws, not the non-tied five. The e2e recorder wraps ``sample`` before
+  ``tied_sample`` runs. A one-frame lookback sees the wrapper, not :627, so
+  upstream keeps torch's RNG.
+
+  The observable that would have caught this defect is the tied arm of
+  ``laser_decode_e2e``: probability rows match only for residues with no
+  previously decoded neighbour. Under seed 42 that set has three members and
+  the second decoded residue is index 1, which agrees to ~1e-16, while the
+  token at index 1 mismatches.
+  """
+  torch = pytest.importorskip("torch")
+  from scripts.parity.oracle_shims.laser import injected_uniform_draws
+
+  n_res = 2
+  seq_u = np.asarray([0.17, 0.83])
+  chi_u = np.arange(n_res * 4 * 2, dtype=np.float64).reshape(n_res, 4, 2)
+  chi_u = 0.05 + 0.9 * chi_u / float(chi_u.max())
+  expected: list[float] = []
+  for step in range(n_res):
+    expected.append(float(seq_u[step]))
+    for chi in range(4):
+      expected.append(float(chi_u[step, chi, 0]))
+      expected.append(float(chi_u[step, chi, 1]))
+
+  consumed: list[float] = []
+  real_draw = tied_mod.categorical_draw
+
+  def _record(probs: jax.Array, uniform: jax.Array) -> jax.Array:
+    consumed.append(float(uniform))
+    return real_draw(probs, uniform)
+
+  monkeypatch.setattr(tied_mod, "categorical_draw", _record)
+  _tied(
+    seq_u=seq_u,
+    chi_u=chi_u,
+    chi_temperature=1.0,
+    sequence_temperature=1.0,
+    order=np.asarray([1, 0], dtype=np.int32),
+  )
+  assert consumed == pytest.approx(expected)
+
+  # The recorder is what laser_decode_e2e installs around the shim. Without a
+  # stack walk, none of these calls consume the stream.
+  stream = np.zeros((1, n_res, 9), dtype=np.float64)
+  stream[0, :, 0] = seq_u
+  for chi in range(4):
+    stream[0, :, 1 + 2 * chi] = chi_u[:, chi, 0]
+    stream[0, :, 2 + 2 * chi] = chi_u[:, chi, 1]
+  sequence_site = _sample_at(627)
+  chi_site_1 = _sample_at(676)
+  chi_site_2 = _sample_at(677)
+  drawn: list[int] = []
+  with injected_uniform_draws(stream):
+    shimmed = torch.distributions.Categorical.sample
+
+    def _collect(self: Any, sample_shape: Any = None) -> Any:
+      out = shimmed(self, torch.Size() if sample_shape is None else sample_shape)
+      drawn.append(int(out.reshape(-1)[0]))
+      return out
+
+    torch.distributions.Categorical.sample = _collect  # type: ignore[method-assign]
+    for _step in range(n_res):
+      sequence_site()
+      for _chi in range(4):
+        chi_site_1()
+        chi_site_2()
+  # Equal mass over 8 bins: inverse-CDF of u lands in bin floor(u * 8), and a
+  # missed injection draws from torch instead, which does not follow `expected`.
+  bins = [min(int(np.floor(value * 8.0)), 7) for value in expected]
+  assert drawn == bins
+
 
 def test_knob_semantics_chi_temp() -> None:
   letters = "ARNDCEQGHILKMFPSTWYVX"

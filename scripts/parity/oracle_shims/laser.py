@@ -211,8 +211,18 @@ def _take_uniform(cursor: DrawCursor, n_rows: int) -> torch.Tensor:
   return column.reshape(n_rows)
 
 
-def _caller() -> inspect.FrameInfo:
-  return inspect.stack()[2]
+def _draw_site() -> inspect.FrameInfo | None:
+  """The ``model.py`` draw, even when a recorder wraps ``Categorical.sample``.
+
+  ``laser_decode_e2e`` records bins by replacing ``sample`` with a closure that
+  calls this shim. That closure is the immediate caller, so a one-frame
+  lookback never sees ``utils/model.py:627``. The tied sites then fall through
+  to torch's RNG while aminx still reads the injected stream.
+  """
+  for frame in inspect.stack():
+    if Path(frame.filename).name == "model.py" and frame.lineno in _DRAW_LINES:
+      return frame
+  return None
 
 
 def _site(frame: inspect.FrameInfo) -> tuple[str, int]:
@@ -224,9 +234,9 @@ def _shim_sample(
   sample_shape: torch.Size | None = None,
 ) -> torch.Tensor:
   cursor = _DRAWS
-  frame = _caller()
+  frame = _draw_site()
   shape = torch.Size() if sample_shape is None else sample_shape
-  if cursor is None or Path(frame.filename).name != "model.py" or frame.lineno not in _DRAW_LINES:
+  if cursor is None or frame is None:
     return _ORIGINAL_SAMPLE(self, shape)
   if shape not in (torch.Size(), torch.Size([])):
     msg = "LASEr inverse-CDF shim implements a scalar sample_shape only"
