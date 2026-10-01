@@ -32,6 +32,8 @@ import jax
 import numpy as np
 
 _SPEC = importlib.util.spec_from_file_location("e2e", Path(__file__).with_name("e2e_run_api_parity.py"))
+assert _SPEC is not None
+assert _SPEC.loader is not None
 e2e = importlib.util.module_from_spec(_SPEC)
 sys.modules["e2e"] = e2e
 _SPEC.loader.exec_module(e2e)
