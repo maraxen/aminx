@@ -81,12 +81,15 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
   if strategy_name == "Vmap":
     if _is_unit_axis(xs):
       # A size-1 vmap is the body on the lone element with the axis put back, so skip it. Not an
-      # optimisation: on XLA GPU a jitted *size-1* batch axis can miscompile a matmul whose
-      # intermediate is square (the encoder's 512-wide `dense` at max_length=512), returning
-      # ~0.2-wrong activations with no error (aminx #2391; scripts/parity/repro_gpu_nested_vmap_mlp.py).
-      # The runner's default noise/temperature axes are exactly this size-1 case.
+      # optimisation: observed on one XLA GPU stack (TITAN RTX, jax 0.10.2, CUDA 12.9), a jitted
+      # *size-1* batch axis around a matmul whose intermediate is square (the encoder's 512-wide
+      # `dense` at max_length=512) returned wrong activations with no error (aminx #2391;
+      # scripts/parity/repro_gpu_nested_vmap_mlp.py -- exploratory, not yet a registered result).
+      # The runner's default noise/temperature axes are exactly this size-1 case. Only the Vmap
+      # branch is guarded: chunked (batch_size=1), legacy and fusion K-axis paths are not.
       return jax.tree_util.tree_map(
-        lambda y: y[None], body(jax.tree_util.tree_map(lambda x: x[0], xs))
+        lambda y: jnp.asarray(y)[None],
+        body(jax.tree_util.tree_map(lambda x: x[0], xs)),
       )
     return jax.vmap(body)(xs)
   if strategy_name in ("SafeMap", "ChunkedMap"):

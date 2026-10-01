@@ -34,6 +34,11 @@ ACTIVATIONS = {
 NESTINGS = [(), (1,), (2,), (1, 1), (1, 2), (2, 1), (2, 2), (1, 1, 1)]
 
 
+def _env_flag(name: str) -> bool:
+  """True for 1/true/yes/on; QUICK=0 or DIAGNOSE=0 must mean off, not any-non-empty-string."""
+  return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def build_mlp(width: int, hidden: int, activation: Callable[[jax.Array], jax.Array]) -> eqx.nn.MLP:
   """The aminx EncoderLayer.dense shape: in=out=128, one hidden layer of 512."""
   return eqx.nn.MLP(in_size=width, out_size=width, width_size=hidden, depth=1, activation=activation, key=jax.random.PRNGKey(0))
@@ -92,7 +97,7 @@ def main() -> None:
   parser.add_argument("--length", type=int, default=int(os.environ.get("LENGTH", 512)), help="residue axis length (the failing case used 512)")
   parser.add_argument("--width", type=int, default=int(os.environ.get("WIDTH", 128)))
   parser.add_argument("--hidden", type=int, default=int(os.environ.get("HIDDEN", 512)))
-  parser.add_argument("--quick", action="store_true", default=bool(os.environ.get("QUICK")), help="identity + exact GELU, nestings (), (1,), (2,), jitted only")
+  parser.add_argument("--quick", action="store_true", default=_env_flag("QUICK"), help="identity + exact GELU, nestings (), (1,), (2,), jitted only")
   args = parser.parse_args()
   logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -102,7 +107,7 @@ def main() -> None:
     raise SystemExit(msg)
   logger.info("devices: %s vs %s | jax %s | length %d", gpu, cpu, jax.__version__, args.length)
 
-  if os.environ.get("DIAGNOSE"):
+  if _env_flag("DIAGNOSE"):
     diagnose(gpu, cpu, args.width, args.hidden)
     return
   rng = np.random.default_rng(0)
@@ -110,7 +115,7 @@ def main() -> None:
   logger.info("%-11s %-10s %-6s  max|GPU-CPU|", "activation", "nesting", "jit")
   acts = {k: v for k, v in ACTIVATIONS.items() if k in ("identity", "gelu_exact")} if args.quick else ACTIVATIONS
   nestings = [(), (1,), (2,)] if args.quick else NESTINGS
-  if os.environ.get("NESTINGS"):  # e.g. NESTINGS="1,512" -> [(1,), (512,)]: one single-axis vmap per size
+  if os.environ.get("NESTINGS"):  # e.g. NESTINGS="1,512" -> [(), (1,), (512,)]: the un-vmapped baseline plus one single-axis vmap per size
     nestings = [(), *[(int(v),) for v in os.environ["NESTINGS"].split(",")]]
   for act_name, act in acts.items():
     mlp = build_mlp(args.width, args.hidden, act)

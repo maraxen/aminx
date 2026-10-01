@@ -59,16 +59,64 @@ def test_unit_axis_matches_plain_vmap_for_pytrees():
         np.testing.assert_array_equal(g, w)
 
 
-def test_unit_axis_runs_body_on_the_unbatched_element():
+def test_unit_axis_runs_body_on_a_concrete_element_not_a_batch_tracer():
+    """Under jax.vmap the body sees a BatchTracer (and the same shape), so shape alone cannot tell the guard from vmap."""
     seen = []
 
     def body(x):
-        seen.append(x.shape)
+        seen.append(isinstance(x, jax.core.Tracer))
         return x * 2
 
     out = _dispatch_axis(Vmap(), body, jnp.ones((1, 4, 3)))
-    assert seen == [(4, 3)]
+    assert seen == [False], "the guard must call the body on the concrete element"
     assert out.shape == (1, 4, 3)
+    seen.clear()
+    _dispatch_axis(Vmap(), body, jnp.ones((2, 4, 3)))
+    assert seen == [True], "control: a real vmap hands the body a tracer"
+
+
+def _dot_lhs_shapes(jaxpr) -> list:
+    """lhs operand shapes of every dot_general, recursing into sub-jaxprs."""
+    shapes = []
+    for eqn in jaxpr.eqns:
+        if eqn.primitive.name == "dot_general":
+            shapes.append(tuple(eqn.invars[0].aval.shape))
+        for value in eqn.params.values():
+            for item in value if isinstance(value, (list, tuple)) else [value]:
+                sub = getattr(item, "jaxpr", item)
+                if hasattr(sub, "eqns"):
+                    shapes.extend(_dot_lhs_shapes(sub))
+    return shapes
+
+
+def test_closed_over_weights_matmul_has_no_leading_unit_axis():
+    """The encoder's `dense` is x @ W with W closed over: a size-1 vmap gives lhs (1, L, C) with NO batch dimension,
+    which a 'batched dot_general' check cannot see. Compare against the control (plain vmap) in the same test."""
+    w = jnp.ones((3, 3))
+
+    def body(x):
+        return x @ w
+
+    guarded = jax.make_jaxpr(lambda x: _dispatch_axis(Vmap(), body, x))(jnp.ones((1, 4, 3)))
+    plain = jax.make_jaxpr(jax.vmap(body))(jnp.ones((1, 4, 3)))
+    assert _dot_lhs_shapes(plain.jaxpr) == [(1, 4, 3)], "control: plain vmap leaves a leading size-1 operand axis"
+    assert _dot_lhs_shapes(guarded.jaxpr) == [(4, 3)], "guard must hand XLA the unbatched operand"
+
+
+def test_xtrax_vmap_strategy_is_guarded_too():
+    """Dispatch is by class NAME, and the production planner emits xtrax-native strategies."""
+    from xtrax.tiling import Vmap as XtraxVmap
+
+    out = jax.make_jaxpr(lambda x: _dispatch_axis(XtraxVmap(), lambda v: v @ jnp.ones((3, 3)), x))(jnp.ones((1, 4, 3)))
+    assert _dot_lhs_shapes(out.jaxpr) == [(4, 3)]
+
+
+def test_non_array_output_leaves_still_work_on_a_unit_axis():
+    """jax.vmap broadcasts a Python scalar leaf; the guard must not raise on it only when the axis has size 1."""
+    got = _dispatch_axis(Vmap(), lambda x: {"v": x.sum(), "flag": 1.0}, jnp.ones((1, 3)))
+    want = jax.vmap(lambda x: {"v": x.sum(), "flag": 1.0})(jnp.ones((1, 3)))
+    assert got["flag"].shape == want["flag"].shape == (1,)
+    np.testing.assert_array_equal(got["v"], want["v"])
 
 
 def test_unit_axis_emits_no_batched_dot_but_larger_axes_still_vmap():
