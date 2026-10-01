@@ -24,10 +24,15 @@ export REFERENCE_PATH="${REFERENCE_PATH:-/home/solab/bv/ref/LigandMPNN}"
 # Persistent XLA compilation cache, shared by every cell process and surviving a preemption/re-run: the
 # sampler's first compile is minutes under load, and 20 separate processes would otherwise each repeat it.
 # Numerics are unaffected (the key covers the HLO, jaxlib version and device); the dir is recorded per cell.
-export JAX_COMPILATION_CACHE_DIR="${E2E_JAX_CACHE:-${HOME}/.cache/e2e-run-api-parity-jax}"
-export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0
+# Location: E2E_JAX_CACHE (explicit) > this default; E2E_JAX_CACHE=none disables the cache.
+if [[ "${E2E_JAX_CACHE:-}" == "none" ]]; then
+  unset JAX_COMPILATION_CACHE_DIR
+else
+  export JAX_COMPILATION_CACHE_DIR="${E2E_JAX_CACHE:-${HOME}/.cache/e2e-run-api-parity-jax}"
+  export JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0
+  mkdir -p "${JAX_COMPILATION_CACHE_DIR}"
+fi
 export PYTHONUNBUFFERED=1
-mkdir -p "${JAX_COMPILATION_CACHE_DIR}"
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${REPO}"
@@ -50,7 +55,9 @@ CELLS="${E2E_CELLS:-$("${PY}" scripts/parity/e2e_run_api_parity.py --dry-run | "
 # split so the jobs do not oversubscribe the box.
 JOBS="${E2E_JOBS:-1}"
 export OUT_DIR CODE_COMMIT SMOKE CELL_TIMEOUT PY
-export OMP_NUM_THREADS=$(( ${OMP_NUM_THREADS:-8} / JOBS > 0 ? ${OMP_NUM_THREADS:-8} / JOBS : 1 ))
+PER_JOB=$(( ${OMP_NUM_THREADS:-8} / JOBS > 0 ? ${OMP_NUM_THREADS:-8} / JOBS : 1 ))
+# torch/numpy BLAS honour OPENBLAS/MKL, not just OMP, so divide all three or the box is oversubscribed.
+export OMP_NUM_THREADS="${PER_JOB}" OPENBLAS_NUM_THREADS="${PER_JOB}" MKL_NUM_THREADS="${PER_JOB}"
 run_one() {
   local CELL="$1" rc
   echo "[e2e] $(date -Is) starting ${CELL} (timeout ${CELL_TIMEOUT}s)"

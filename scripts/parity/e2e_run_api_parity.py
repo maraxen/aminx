@@ -369,7 +369,7 @@ def aminx_sample(kw: dict[str, Any], *, num_samples: int, seed: int, order: np.n
 
 
 # --------------------------------------------------------------------------- statistics
-def chisq_test(counts: np.ndarray, probs: np.ndarray, *, min_expected: float = 5.0) -> dict[str, float]:
+def chisq_test(counts: np.ndarray, probs: np.ndarray, *, min_expected: float = 5.0) -> dict[str, Any]:
   from scipy.stats import chi2
 
   n = float(counts.sum())
@@ -378,6 +378,12 @@ def chisq_test(counts: np.ndarray, probs: np.ndarray, *, min_expected: float = 5
   obs_b = np.append(counts[keep], counts[~keep].sum())
   exp_b = np.append(exp[keep], exp[~keep].sum())
   if exp_b[-1] <= 0:
+    if obs_b[-1] > 0:
+      # draws landed on tokens the reference gives EXACTLY zero probability (omit_AA, underflow): that is a
+      # rejection, not an empty bin to drop -- dropping it would let a forbidden token pass lane D unseen.
+      return {"chi2": None, "dof": max(len(obs_b) - 1, 1), "p_value": 0.0,
+              "tv": float(0.5 * np.abs(counts / n - probs).sum()), "n_bins": int(len(obs_b)),
+              "forbidden_token_draws": float(obs_b[-1])}
     obs_b, exp_b = obs_b[:-1], exp_b[:-1]
   stat = float(((obs_b - exp_b) ** 2 / np.maximum(exp_b, 1e-12)).sum())
   dof = max(len(obs_b) - 1, 1)
@@ -654,16 +660,26 @@ def _run_cell_body(cell: str, out_dir: Path, smoke: bool) -> dict[str, Any]:
   return {"kind": "control", "model": model_key, "lanes": {"control": lane}, "rejected": lane["rejected"]}
 
 
+def _can_reuse(done: Path, result_path: Path, inputs_hash: str) -> bool:
+  """A prior cell is reusable only if it COMPLETED (status ok) with matching inputs and an unmodified result file.
+
+  An errored record is a harness failure (OOM, import error, a killed process that still wrote a record), not a
+  measurement, so it is retried instead of being frozen in by its own stamp.
+  """
+  stamp = json.loads(done.read_text())
+  return bool(stamp.get("status") == "ok" and stamp.get("inputs_hash") == inputs_hash
+              and stamp.get("result_sha256") == _sha256_file(result_path))
+
+
 def run_cell(cell: str, out_dir: Path, *, code_commit: str, smoke: bool) -> int:
   out_dir.mkdir(parents=True, exist_ok=True)
   result_path, started, done = out_dir / f"{cell}.json", out_dir / f"{cell}.started", out_dir / f"{cell}.done"
   inputs_hash = _inputs_hash(cell, code_commit, smoke)
   if done.exists() and result_path.exists():
-    stamp = json.loads(done.read_text())
-    if stamp.get("inputs_hash") == inputs_hash and stamp.get("result_sha256") == _sha256_file(result_path):
-      print(json.dumps({"reused": cell, "from": str(result_path), **stamp}))
+    if _can_reuse(done, result_path, inputs_hash):
+      print(json.dumps({"reused": cell, "from": str(result_path), **json.loads(done.read_text())}))
       return 0
-    LOG.warning("stale or mismatched stamp for %s; recomputing", cell)
+    LOG.warning("stale, mismatched or errored stamp for %s; recomputing", cell)
   for stale in (done, result_path):
     stale.unlink(missing_ok=True)
   started.write_text(json.dumps({"cell": cell, "pid": os.getpid(), "t": time.time()}))
@@ -699,6 +715,17 @@ def _cell_record(out_dir: Path, cell: str) -> dict[str, Any]:
     return {"cell": cell, "state": "crashed_or_killed" if (out_dir / f"{cell}.started").exists() else "absent"}
   rec = json.loads(path.read_text())
   rec["state"] = rec.get("status", "error")
+  # A verdict rests only on records that are (a) from a counted run, not --smoke, and (b) verified against their own
+  # .done stamp, so a smoke record, a record without a stamp, or a hand-edited file cannot contribute to a pass.
+  done = out_dir / f"{cell}.done"
+  stamp_ok = False
+  if done.exists():
+    stamp = json.loads(done.read_text())
+    stamp_ok = stamp.get("result_sha256") == _sha256_file(path)
+  if rec.get("smoke") or not stamp_ok:
+    rec["state"] = "invalid_record"
+    rec["passed"] = None
+    rec["rejected"] = None
   return rec
 
 
