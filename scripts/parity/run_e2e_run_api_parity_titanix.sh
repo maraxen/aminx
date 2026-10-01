@@ -63,7 +63,8 @@ run_one() {
   echo "[e2e] $(date -Is) starting ${CELL} (timeout ${CELL_TIMEOUT}s)"
   timeout --kill-after=60 "${CELL_TIMEOUT}" \
     "${PY}" scripts/parity/e2e_run_api_parity.py \
-      --cell "${CELL}" --out-dir "${OUT_DIR}" --code-commit "${CODE_COMMIT}" ${SMOKE:+--smoke} 2>&1 | grep -v -i warn
+      --cell "${CELL}" --out-dir "${OUT_DIR}" --code-commit "${CODE_COMMIT}" ${SMOKE:+--smoke} 2>&1 \
+    | grep -v -E '(User|Deprecation|Future|Runtime)Warning'   # drop library warning classes only; keep the harness's own WARNING lines
   rc=${PIPESTATUS[0]}
   echo "[e2e] $(date -Is) ${CELL} exited rc=${rc}$([[ ${rc} -eq 124 ]] && echo ' (TIMEOUT: no record; counts as failure)')"
 }
