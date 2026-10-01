@@ -43,7 +43,8 @@ assert jax.devices()[0].platform == 'cpu', jax.devices()
 print('[e2e] aminx:', aminx.__file__, '| device:', jax.devices()[0])
 "
 
-CELLS=$("${PY}" scripts/parity/e2e_run_api_parity.py --dry-run | "${PY}" -c "import json,sys; print(' '.join(json.load(sys.stdin)['cells']))")
+# E2E_CELLS restricts the run to the named cells (e.g. a documented re-run of the cells a fix affects).
+CELLS="${E2E_CELLS:-$("${PY}" scripts/parity/e2e_run_api_parity.py --dry-run | "${PY}" -c "import json,sys; print(' '.join(json.load(sys.stdin)['cells']))")}"
 
 # Cells are independent processes, so E2E_JOBS of them can run at once (default 1).  Each gets OMP threads
 # split so the jobs do not oversubscribe the box.
