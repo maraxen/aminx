@@ -16,8 +16,13 @@ file:line they make load-bearing (anchors can drift); do not re-derive what is h
 
 - **D1.** The *user-facing* one-stop shop is a hub (static site + catalog + executors + editor).
   Model code stays in separate repos; it is not absorbed into one monorepo.
-- **D2.** The current aminx MPNN package is renamed — proposed name **`molxmpnn`** (earlier
-  working name `mpnnx`). The name **`aminx` is kept and becomes the hub.**
+- **D2 (REVISED 2026-10-01, supersedes the earlier rename decision).** The MPNN package **keeps the
+  name `aminx`** — it is released on PyPI as `aminx`, so there is **no rename** (no `molxmpnn`, no
+  `mpnnx`, no shim distribution, no repo/HF/PyPI cutover). The hub is a **separate** project holding
+  the combined implementations; working slug **`aminx-hub`**. Alternative the user raised: name it
+  after the domain **praxia.science** the user owns. Note a GitHub Pages custom domain works with any
+  repo slug, so domain and repo name are independent choices; also note the name collision with the
+  user's existing praxia agent orchestrator. Final hub name/domain is a user decision.
 - **D3.** ProteinEBM (`src/aminx/ebm/`) moves out of aminx into **its own project** (name TBD;
   molxmpnn is NOT the EBM name). Filed as praxia tech debt **#2369**.
 - **D4.** aminx's two spec systems must become **one**, regardless of anything else.
@@ -140,11 +145,11 @@ file:line they make load-bearing (anchors can drift); do not re-derive what is h
 
 | ID | Spec file (`.praxia/docs/specs/`) | Owner repo(s) |
 |---|---|---|
-| S1 | `261001_spec-system-unification.md` | aminx (→ molxmpnn); mistypotts for the TRW dedupe |
+| S1 | `261001_spec-system-unification.md` | aminx; mistypotts for the TRW dedupe |
 | S2 | `261001_ebm-extraction.md` | aminx → new EBM repo |
-| S3 | `261001_molxmpnn-rename.md` | aminx → molxmpnn; aminx name freed |
+| S3 | `261001_molxmpnn-rename.md` → retitled "aminx identity kept: hub naming + stale-name cleanup" (rename retired per revised D2) | aminx, hub |
 | S4 | `261001_xtrax-model-contract.md` | xtrax (+ adopters) |
-| S5 | `261001_aminx-hub.md` | new aminx hub (site, catalog, executors) |
+| S5 | `261001_aminx-hub.md` | new hub repo (working slug aminx-hub; site, catalog, executors) |
 | S6 | `261001_pipeline-editor.md` | shared editor component (hub + praxis) |
 
 Backlog item ids are `S<n>-<two digits>` (e.g. `S4-03`) and may depend on other specs' ids.
