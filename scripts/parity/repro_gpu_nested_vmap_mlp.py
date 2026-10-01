@@ -89,7 +89,7 @@ def diagnose(gpu: jax.Device, cpu: jax.Device, width: int, hidden: int) -> None:
 
 def main() -> None:
   parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-  parser.add_argument("--length", type=int, default=512, help="residue axis length (the failing case used 512)")
+  parser.add_argument("--length", type=int, default=int(os.environ.get("LENGTH", 512)), help="residue axis length (the failing case used 512)")
   parser.add_argument("--width", type=int, default=int(os.environ.get("WIDTH", 128)))
   parser.add_argument("--hidden", type=int, default=int(os.environ.get("HIDDEN", 512)))
   parser.add_argument("--quick", action="store_true", default=bool(os.environ.get("QUICK")), help="identity + exact GELU, nestings (), (1,), (2,), jitted only")
@@ -110,6 +110,8 @@ def main() -> None:
   logger.info("%-11s %-10s %-6s  max|GPU-CPU|", "activation", "nesting", "jit")
   acts = {k: v for k, v in ACTIVATIONS.items() if k in ("identity", "gelu_exact")} if args.quick else ACTIVATIONS
   nestings = [(), (1,), (2,)] if args.quick else NESTINGS
+  if os.environ.get("NESTINGS"):  # e.g. NESTINGS="1,512" -> [(1,), (512,)]: one single-axis vmap per size
+    nestings = [(), *[(int(v),) for v in os.environ["NESTINGS"].split(",")]]
   for act_name, act in acts.items():
     mlp = build_mlp(args.width, args.hidden, act)
     for nesting in nestings:
