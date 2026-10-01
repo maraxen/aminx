@@ -633,9 +633,13 @@ def conditional_focus_probs(
 
   Each order is one decode with only that residue designable. Masks are the
   injected scalar-dropout keeps for that rep and order. ``uniforms`` lines up
-  with ``mask_sets``: one ``length * 5 + 4`` buffer per (dropout, order) cell,
-  consumed in that order. The decode runs eager so the host cursor can hand a
-  different mask to each call; a warmed jit would replay the first mask.
+  with ``mask_sets``: one ``length * 5 + 4`` buffer per (dropout, order) cell.
+  Upstream ``sample`` consumes that buffer in call order, and the calls follow
+  ``decoding_order``, five draws per residue. The first draw of a reversed
+  order therefore belongs to the last residue; indexing the buffer by residue
+  number assigns it to residue 0 instead. The decode runs eager so the host
+  cursor can hand a different mask to each call; a warmed jit would replay
+  the first mask.
   """
   n_res = int(np.asarray(sequence_indices).shape[0])
   if len(uniforms) != len(mask_sets):

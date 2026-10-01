@@ -166,8 +166,10 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
   checkpoint = _checkpoint(args)
   mean_gaps: list[float] = []
   std_gaps: list[float] = []
+  cells: dict[str, Any] = {}
   for payload in job["structures"]:
     measured = _aminx_one(payload, checkpoint, args.arm, masks, catalog, draws, draw_catalog)
+    cells[str(payload["name"])] = measured["cells"]
     ref = upstream[payload["name"]]
     mean_gaps.append(float(np.max(np.abs(np.asarray(measured["mean"]) - np.asarray(ref["mean"])))))
     std_delta = np.abs(np.asarray(measured["std"], dtype=np.float64) - np.asarray(ref["std"]))
@@ -179,6 +181,7 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
   max_std = float(np.nanmax(np.asarray(std_gaps, dtype=np.float64))) if std_gaps else float("inf")
   if any(gap != gap for gap in std_gaps):
     max_std = float("nan")
+  _write_cells(args, cells, upstream)
   return {"band": _band(max_mean, max_std), "max_abs_mean": max_mean, "max_abs_std": max_std}
 
 
@@ -203,6 +206,52 @@ def _cell_draws(
       raise RuntimeError(msg)
     cell.append(draws[str(matched[0]["key"])])
   return cell
+
+
+def _write_cells(
+  args: argparse.Namespace,
+  aminx_cells: dict[str, Any],
+  upstream: dict[str, Any],
+) -> None:
+  """Per-complex, per-dropout, per-order probabilities from both arms.
+
+  The graded payload keeps only the reduced mean and std. This file is what
+  makes a later miss localizable to one decoding order without another run.
+  """
+  import numpy as np
+
+  per_order: list[dict[str, Any]] = []
+  upstream_cells: dict[str, Any] = {}
+  for name, aminx in aminx_cells.items():
+    ref = upstream.get(name, {})
+    got = ref.get("cells") if isinstance(ref, dict) else None
+    upstream_cells[name] = got
+    if got is None:
+      continue
+    left = np.asarray(aminx, dtype=np.float64)
+    right = np.asarray(got, dtype=np.float64)
+    if left.shape != right.shape:
+      per_order.append({"name": name, "agree": False, "detail": f"{left.shape} != {right.shape}"})
+      continue
+    # axes: dropout, order, class
+    for dropout in range(left.shape[0]):
+      for order in range(left.shape[1]):
+        delta = float(np.max(np.abs(left[dropout, order] - right[dropout, order])))
+        per_order.append(
+          {
+            "name": name,
+            "dropout": dropout,
+            "order": order,
+            "max_abs": delta,
+          },
+        )
+  payload = {
+    "aminx": aminx_cells,
+    "upstream": upstream_cells,
+    "per_order_max_abs": per_order,
+  }
+  path = Path(args.work_dir) / f"cells_{args.arm}.json"
+  path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _aminx_one(
@@ -285,7 +334,12 @@ def _aminx_one(
   ddof = 0 if arm == "ddof_0" else 1
   std_over = "reps" if arm == "reduction_swap" else "orders"
   mean, std, _both = reduce_proofread(jnp.asarray(probs), ddof=ddof, std_over=std_over)
-  return {"mean": np.asarray(mean).reshape(-1).tolist(), "std": np.asarray(std).reshape(-1).tolist()}
+  return {
+    "mean": np.asarray(mean).reshape(-1).tolist(),
+    "std": np.asarray(std).reshape(-1).tolist(),
+    # (n_dropouts, n_orders, 21), before the reduction the band is computed on.
+    "cells": np.asarray(probs).tolist(),
+  }
 
 
 def _oracle_python(args: argparse.Namespace) -> str:
@@ -553,9 +607,12 @@ def _oracle_worker(args: argparse.Namespace) -> None:
       stacked = torch.stack(probs, dim=0).double()
       mean = stacked.mean(dim=0)
       std = stacked.std(dim=0, unbiased=True)
+      # (n_dropouts, n_orders, 21). This vehicle uses one dropout.
+      cells = stacked.detach().cpu().unsqueeze(0)
       stats[payload["name"]] = {
         "mean": mean.detach().cpu().tolist(),
         "std": std.detach().cpu().tolist(),
+        "cells": cells.tolist(),
       }
   np.savez_compressed(Path(args.work_dir) / "masks.npz", **blobs)  # ty: ignore[invalid-argument-type]
   (Path(args.work_dir) / "masks.json").write_text(json.dumps(catalog), encoding="utf-8")

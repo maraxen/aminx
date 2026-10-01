@@ -375,7 +375,18 @@ def _decode_tied(payload: dict[str, Any], checkpoint: Path, arm: str | None) -> 
     "chi_bins_1": np.asarray(decoded.chi_bins_1).tolist(),
     "chi_bins_2": bins2.tolist(),
     "chi_logits_2": logits2.tolist(),
+    "sequence_probs_1": _softmax_rows(decoded.sequence_logits_1).tolist(),
+    "sequence_probs_2": _softmax_rows(decoded.sequence_logits_2).tolist(),
   }
+
+
+def _softmax_rows(logits: Any) -> Any:  # noqa: ANN401
+  import numpy as np
+
+  values = np.asarray(logits, dtype=np.float64)
+  shifted = values - np.max(values, axis=-1, keepdims=True)
+  exp = np.exp(shifted)
+  return exp / np.sum(exp, axis=-1, keepdims=True)
 
 
 def _tied_metrics(aminx: dict[str, Any], upstream: dict[str, Any]) -> dict[str, float | bool]:
@@ -483,6 +494,8 @@ def _oracle_tied(model: Any, model_params: dict[str, Any], payload: dict[str, An
     "chi_degrees_2": second.sampled_chi_degrees.detach().cpu().tolist(),
     "chi_bins_1": residue_bins1,
     "chi_bins_2": residue_bins2,
+    "sequence_probs_1": torch.softmax(first.sequence_logits, dim=-1).detach().cpu().tolist(),
+    "sequence_probs_2": torch.softmax(second.sequence_logits, dim=-1).detach().cpu().tolist(),
   }
 
 
@@ -536,6 +549,7 @@ def _decode_one(payload: dict[str, Any], checkpoint: Path, arm: str | None) -> d
     "sequence": [int(index) for index in decoded.sequence],
     "chi_degrees": np.asarray(decoded.chi_degrees).tolist(),
     "chi_logits": np.asarray(decoded.chi_logits).tolist(),
+    "sequence_probs": _softmax_rows(decoded.sequence_logits).tolist(),
   }
 
 
@@ -581,12 +595,44 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
   upstream = json.loads(args.upstream.read_text(encoding="utf-8"))
   checkpoint = _checkpoint(args)
   rows: list[dict[str, float | bool]] = []
+  cells: dict[str, Any] = {"structures": {}, "tied": None}
   for name, payload in job["structures"].items():
     decoded = _decode_one(payload, checkpoint, args.arm)
     rows.append(_metrics(decoded, upstream[name]))
+    cells["structures"][name] = {
+      "orders": [
+        {
+          "order": 0,
+          "dropout": 0,
+          "aminx": decoded.get("sequence_probs"),
+          "upstream": upstream[name].get("sequence_probs"),
+        },
+      ],
+    }
   if "tied" in job and "tied" in upstream:
     tied = _decode_tied(job["tied"], checkpoint, args.arm)
     rows.append(_tied_metrics(tied, upstream["tied"]))
+    cells["tied"] = {
+      "orders": [
+        {
+          "order": 0,
+          "dropout": 0,
+          "aminx": {
+            "sequence_probs_1": tied.get("sequence_probs_1"),
+            "sequence_probs_2": tied.get("sequence_probs_2"),
+            "sequence": tied.get("sequence"),
+          },
+          "upstream": {
+            "sequence_probs_1": upstream["tied"].get("sequence_probs_1"),
+            "sequence_probs_2": upstream["tied"].get("sequence_probs_2"),
+            "sequence": upstream["tied"].get("sequence"),
+          },
+        },
+      ],
+    }
+  if args.work_dir is not None:
+    path = Path(args.work_dir) / f"cells_{args.arm}.json"
+    path.write_text(json.dumps(cells), encoding="utf-8")
   exact = all(bool(row["exact_seq"]) for row in rows)
   seq_agree = float(np.min([row["sequence_agreement"] for row in rows])) if rows else 0.0
   chi_agree = float(np.min([row["chi_bin_agreement"] for row in rows])) if rows else 0.0
@@ -826,6 +872,7 @@ def _oracle_worker(args: argparse.Namespace) -> None:
         "sequence": [int(index) for index in sampled.sampled_sequence_indices.detach().cpu()],
         "chi_degrees": sampled.sampled_chi_degrees.detach().cpu().tolist(),
         "chi_logits": sampled.chi_logits.detach().cpu().tolist(),
+        "sequence_probs": torch.softmax(sampled.sequence_logits, dim=-1).detach().cpu().tolist(),
       }
     if "tied" in job:
       decoded["tied"] = _oracle_tied(model, model_params, job["tied"])

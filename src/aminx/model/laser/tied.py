@@ -109,6 +109,27 @@ def tied_chi_index(step: int, chi: int, structure: int, *, n_chi: int = 4) -> in
   return (step * n_chi + chi) * 2 + structure
 
 
+def _pack_chi_uniforms(chi_uniforms: np.ndarray, n_res: int) -> np.ndarray:
+  """``(decode_step, χ, structure)``, structure varying fastest.
+
+  Upstream ``tied_sample`` walks columns of ``decoding_order`` and, in each
+  column, draws χ for structure 1 then structure 2. The injected stream's step
+  axis is that column, not the residue number: under a reversed order the
+  first eight χ draws belong to the last residue. A ``(length, 4, 2)`` buffer
+  is already one row per column. Taking ``array[0]`` because the array is
+  3-D keeps only the first residue and zero-fills every later step.
+  """
+  chi_u = np.asarray(chi_uniforms, dtype=np.float64)
+  if chi_u.ndim == 4 and int(chi_u.shape[0]) == 1:
+    chi_u = chi_u[0]
+  if tuple(int(dim) for dim in chi_u.shape) == (n_res, 4, 2):
+    return np.ascontiguousarray(chi_u)
+  flat = np.zeros((n_res, 4, 2), dtype=np.float64)
+  usable = min(int(flat.size), int(chi_u.size))
+  flat.reshape(-1)[:usable] = np.reshape(chi_u, (-1,))[:usable]
+  return flat
+
+
 _LASER_ALPHABET = "ARNDCEQGHILKMFPSTWYVX"
 
 
@@ -535,14 +556,7 @@ def tied_decode(
   seq_u = np.asarray(sequence_uniforms, dtype=np.float64).reshape(-1)
   if seq_u.shape[0] < n_res:
     seq_u = np.pad(seq_u, (0, n_res - seq_u.shape[0]))
-  chi_u = np.asarray(chi_uniforms, dtype=np.float64)
-  if chi_u.ndim == 3:
-    chi_u = chi_u[0]
-  if chi_u.shape != (n_res, 4, 2):
-    flat = np.zeros((n_res, 4, 2), dtype=np.float64)
-    usable = min(flat.size, chi_u.size)
-    flat.reshape(-1)[:usable] = np.reshape(chi_u, (-1,))[:usable]
-    chi_u = flat
+  chi_u = _pack_chi_uniforms(chi_uniforms, n_res)
   final = _scan_tied(
     decoder,
     joint,

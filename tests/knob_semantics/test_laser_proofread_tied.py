@@ -44,7 +44,6 @@ from aminx.model.laser.proofread import (
 from aminx.model.laser.tied import (
   TiedDecodeResult,
   mix_sequence_probabilities,
-  tied_chi_index,
   tied_decode,
 )
 from aminx.run.options import LaserOptions
@@ -162,6 +161,73 @@ def test_knob_semantics_proofread_uniforms_change_focus_probs(monkeypatch: pytes
   np.testing.assert_array_equal(seen[0], left.reshape(-1))
   np.testing.assert_array_equal(seen[1], right.reshape(-1))
   assert not np.allclose(probs_left[0, 0], probs_right[0, 0])
+
+
+def _focus_probs(
+  uniforms: np.ndarray,
+  order: np.ndarray,
+  focus: int,
+) -> np.ndarray:
+  n_res = int(order.shape[0])
+  encoder, decoder, joint = _models()
+  backbone, ligand, atomic, sub = _coords(n_res)
+  period = np.zeros((118,), dtype=np.int32)
+  sequence = np.ones((n_res,), dtype=np.int32)
+  chi = np.zeros((n_res, 4), dtype=np.float32)
+  return conditional_focus_probs(
+    encoder, decoder, joint,
+    backbone, ligand, atomic, sub,
+    period, period, _structure(),
+    sequence, chi,
+    focus,
+    [order],
+    [[None]],
+    [[uniforms]],
+    scalar=False,
+    repack_all=True,
+  )
+
+
+def test_knob_semantics_proofread_draw_follows_upstream_call_order() -> None:
+  """Upstream ``sample`` reads the flat buffer in call order, five draws per step.
+
+  ``utils/model.py`` iterates columns of ``decoding_order`` and calls
+  ``Categorical.sample`` once for the sequence and once per χ. The shim's
+  cursor advances on those calls, so draw ``5 * step`` is the sequence sample
+  of ``order[step]``, not of residue ``step``.
+
+  The observable that would have caught the original defect is the reversed
+  order's focus probabilities in ``laser_proofread_parity``: a residue-index
+  read gives the last residue the block at ``5 * residue`` while upstream
+  gives it the first five draws, and the proofread mean is taken over the two
+  orders, so that one swapped order leaves a mean residual with a partly
+  recovered std.
+  """
+  n_res = 3
+  need = n_res * 5 + 4
+  baseline = np.full((1, need), 1e-6, dtype=np.float64)
+  # Order 0 is identity, so residue index and decode step name the same block.
+  # The focus is last, and the block that builds its context is the first step.
+  forward = np.arange(n_res, dtype=np.int32)
+  forward_context = baseline.copy()
+  forward_context[0, 0:5] = 1.0 - 1e-6
+  forward_base = _focus_probs(baseline, forward, n_res - 1)
+  forward_hit = _focus_probs(forward_context, forward, n_res - 1)
+  assert not np.allclose(forward_base[0, 0], forward_hit[0, 0])
+  # Order 1 decodes residue 2 first and the focus (residue 0) last.
+  # Upstream's first five draws are residue 2's samples and change the focus.
+  # Residue 2's index block sits at draws[10:15], which is the focus's own
+  # step under call order and cannot move the focus logits.
+  reverse = forward[::-1]
+  call_order = baseline.copy()
+  call_order[0, 0:5] = 1.0 - 1e-6
+  residue_index = baseline.copy()
+  residue_index[0, 2 * 5 : 2 * 5 + 5] = 1.0 - 1e-6
+  reverse_base = _focus_probs(baseline, reverse, 0)
+  reverse_call = _focus_probs(call_order, reverse, 0)
+  reverse_residue = _focus_probs(residue_index, reverse, 0)
+  assert not np.allclose(reverse_base[0, 0], reverse_call[0, 0])
+  np.testing.assert_allclose(reverse_base[0, 0], reverse_residue[0, 0])
 
 
 def test_knob_semantics_proofread_std_single_order() -> None:
@@ -363,6 +429,7 @@ def _tied(  # noqa: PLR0913
   shift: float = 0.0,
   disabled: tuple[str, ...] = ("X",),
   repack_all: bool = False,
+  order: np.ndarray | None = None,
 ) -> TiedDecodeResult:
   encoder, decoder, joint = _models()
   n_res = 2
@@ -402,7 +469,7 @@ def _tied(  # noqa: PLR0913
       chi1,
       chi2,
       chain_mask,
-      np.arange(n_res, dtype=np.int32),
+      np.arange(n_res, dtype=np.int32) if order is None else order,
       seq_u,
       chi_u,
       sequence_temperature=sequence_temperature,
@@ -477,8 +544,24 @@ def test_knob_semantics_tied_chi_nan_fixed() -> None:
 
 
 def test_knob_semantics_tied_uniform_order() -> None:
+  """Upstream ``tied_sample`` consumes χ in decoding-column order, not residue order.
+
+  ``utils/model.py`` samples, per column of ``decoding_order``, the shared
+  sequence and then χ index × structure (structure 1 before structure 2).
+  The shim stores that as stream step = column. A ``(length, 4, 2)`` buffer
+  is one row per column. Reading ``buffer[0]`` as a sample axis drops every
+  row after the first.
+
+  The observable that would have caught the original defect is the tied arm of
+  ``laser_decode_e2e``: χ-bin agreement fell to 0.042 because later steps drew
+  the zero-filled tail, and the wrong χ context then moved the sequence
+  (agreement 0.374). Pinning ``tied_chi_index`` against itself cannot see that.
+  """
   letters = "ARNDCEQGHILKMFPSTWYVX"
   disabled = tuple(letter for letter in letters if letter != "V")
+  # Column 0 is residue 1. Its structure-1 χ0 draw is 0, so that bin is 0.
+  # Residue 0 is column 1 and must see the 0.99 draw, not a zero-filled tail
+  # and not column 0's draw.
   chi_u = np.full((2, 4, 2), 0.99)
   chi_u[0, 0, 0] = 0.0
   decoded = _tied(
@@ -487,11 +570,12 @@ def test_knob_semantics_tied_uniform_order() -> None:
     sequence_temperature=1.0,
     disabled=disabled,
     seq_u=np.zeros((2,)),
+    order=np.asarray([1, 0], dtype=np.int32),
   )
-  assert int(decoded.sequence[0]) == _VAL  # (step, χ, structure) with structure fastest. Slot 0 is the zero uniform.
-  assert tied_chi_index(0, 0, 0) == 0
-  assert int(decoded.chi_bins_1[0, 0]) == 0
-  assert int(decoded.chi_bins_2[0, 0]) != 0
+  assert int(decoded.sequence[1]) == _VAL
+  assert int(decoded.chi_bins_1[1, 0]) == 0
+  assert int(decoded.chi_bins_1[0, 0]) != 0
+  assert int(decoded.chi_bins_2[1, 0]) != 0
 
 def test_knob_semantics_chi_temp() -> None:
   letters = "ARNDCEQGHILKMFPSTWYVX"
