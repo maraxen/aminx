@@ -47,6 +47,13 @@ MUTANTS = (
 )
 SEED = 42
 PASS_DEG = 1e-6
+# Decode step on 4jnj-1_prot at SEED whose seeded uniform (0.18947) misses the
+# interval where a λ=0.5 logit mix and a probability mix select different tokens.
+_TIED_FLIP_STEP = 35
+# Midpoint of that interval, (0.20394987639688245, 0.29076886601989627). It is
+# 0.043 from either CDF knot. The probability mix still draws token 9, which is
+# the seeded draw, so the clean trajectory is unchanged. The logit mix draws 10.
+_TIED_FLIP_UNIFORM = 0.24735937120838936
 CHECKPOINT_NAME = "laser_weights_0p1A_nothing_heldout.pt"
 CHECKPOINT_SHA256 = "304fe02a4807c310bdd9d68c988ae87619da3cf2025d5c223fb31030aa411173"
 EXAMPLE_SHA256 = "0a933729c4915cfee14ff34408a57e1d65fd98845df189ba79ad4f4d8470ae7e"
@@ -275,6 +282,11 @@ def _tied_payload(root: Path, work: Path) -> dict[str, Any]:
   rng = np.random.default_rng(SEED)
   seq_u = rng.random(length)
   chi_u = rng.random((length, 4, 2))
+  # The seeded uniform at this step lands in the same probability-mix bin as
+  # _TIED_FLIP_UNIFORM and in a different logit-mix bin. One replaced draw makes
+  # lambda_on_logits cross a token edge without moving the clean arm.
+  if seq_u.shape[0] > _TIED_FLIP_STEP:
+    seq_u[_TIED_FLIP_STEP] = _TIED_FLIP_UNIFORM
   return {
     "pdb1": str(source),
     "pdb2": str(shifted),
