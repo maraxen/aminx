@@ -18,7 +18,7 @@ from aminx.host.output_sinks import (
 from aminx.inference.sample_autoregressive import SampleResult
 from aminx.run.specs import SamplingSpecification
 from aminx.utils.data_structures import Protein
-from xtrax.tiling import SafeMap
+from xtrax.tiling import ChunkedMap
 
 
 def _patch_decision_for(monkeypatch) -> None:
@@ -35,7 +35,7 @@ def _patch_decision_for(monkeypatch) -> None:
     """
     monkeypatch.setattr(
         "aminx.host.kernel_dispatch.decision_for",
-        lambda plan, name: MagicMock(strategy=SafeMap(batch_size=1)),
+        lambda plan, name: MagicMock(strategy=ChunkedMap(batch_size=1)),
     )
 
 
