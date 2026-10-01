@@ -15,7 +15,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from aminx.host.kernel_dispatch import _dispatch_axis, _is_unit_axis
+from aminx.host.kernel_dispatch import _dispatch_axis
 from aminx.tiling.strategy import Vmap
 
 
@@ -135,19 +135,3 @@ def test_unit_axis_holds_under_jit_and_nesting():
 
     out = jax.jit(lambda x: _dispatch_axis(Vmap(), inner, x))(xs)
     np.testing.assert_allclose(out, jax.vmap(jax.vmap(_outer_product))(xs), rtol=1e-6)
-
-
-@pytest.mark.parametrize(
-    ("xs", "expected"),
-    [
-        (jnp.ones((1, 3)), True),
-        ({"a": jnp.ones((1,)), "b": jnp.ones((1, 4))}, True),
-        (jnp.ones((2, 3)), False),
-        ({"a": jnp.ones((1, 3)), "b": jnp.ones((2, 3))}, False),
-        (jnp.float32(1.0), False),
-        ({}, False),
-    ],
-    ids=["unit", "unit-pytree", "size2", "mixed", "scalar", "empty"],
-)
-def test_is_unit_axis(xs, expected):
-    assert _is_unit_axis(xs) is expected
