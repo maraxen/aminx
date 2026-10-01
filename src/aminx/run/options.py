@@ -14,9 +14,7 @@ class PottsMPNNOptions:
   optimization_temperature: float = 0.0
   binding_energy_optimization: Literal["none", "both", "only"] = "none"
   binding_energy_json: str | None = None
-  binding_energy_cutoff: float = 8.0
   mean_norm: bool = False
-  filter_nan: bool = False
   mutant_fasta: str | None = None
   mutant_csv: str | None = None
   exclude_chains: str | None = None
@@ -31,7 +29,6 @@ class PottsMPNNOptions:
   skip_gaps: bool = False
   optimize_pdb: bool = False
   optimize_fasta: str | None = None
-  write_pdb: bool = True
   emit_etab: bool = False
   emit_dense_hJ: bool = False  # noqa: N815 -- upstream knob name
   chain_design_mask_json: str | None = None

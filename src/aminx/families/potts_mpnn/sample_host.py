@@ -34,6 +34,7 @@ from aminx.families.potts_mpnn.featurize import PottsFeatures, pad
 from aminx.families.potts_mpnn.model import PottsMPNN, _encoder_states, cast_floating
 from aminx.families.potts_mpnn.refine import BindingTables, PottsRefine, check_tied_only_groups
 from aminx.host.family_driver import FamilyBatch, SinkArraySpec
+from aminx.host.omit_aa_bias import omit_letter_indices
 from aminx.run.options import PottsMPNNOptions
 from aminx.tiling.buckets import LENGTH_BUCKETS
 
@@ -130,18 +131,53 @@ def seq_to_ints(sequence: str) -> np.ndarray:
     raise ValueError(msg) from exc
 
 
+def parse_fasta_records(text: str) -> tuple[tuple[str, str], ...]:
+  """``(header, sequence)`` records. Wrapped sequence lines are joined.
+
+  Blank lines are skipped. A non-header line before the first ``>`` is an
+  error, so a leading comment cannot shift later records off the header/sequence
+  pairs the way ``lines[::2]`` / ``lines[1::2]`` does.
+  """
+  records: list[tuple[str, str]] = []
+  header: str | None = None
+  chunks: list[str] = []
+
+  def flush() -> None:
+    nonlocal header, chunks
+    if header is None:
+      return
+    if not chunks:
+      msg = f"FASTA header {header!r} has no sequence"
+      raise ValueError(msg)
+    records.append((header, "".join(chunks)))
+    header = None
+    chunks = []
+
+  for line_no, raw in enumerate(text.splitlines(), start=1):
+    line = raw.strip()
+    if not line:
+      continue
+    if line.startswith(">"):
+      flush()
+      header = line[1:].strip()
+      chunks = []
+      continue
+    if header is None:
+      msg = f"FASTA line {line_no} is not a header: {line!r}"
+      raise ValueError(msg)
+    chunks.append(line)
+  flush()
+  return tuple(records)
+
+
 def load_optimize_fasta(path: Path, pdb_name: str) -> tuple[str, ...]:
   """FASTA entries whose header ``startswith(pdb_name)``, file order, ``:`` stripped."""
   if not path.is_file():
     msg = f"optimize_fasta does not exist: {path}"
     raise ValueError(msg)
-  lines = path.read_text(encoding="utf-8").splitlines()
   found: list[str] = []
-  for header, seq in zip(lines[::2], lines[1::2], strict=False):
-    key = header.strip()
-    if key.startswith(">"):
-      key = key[1:].strip()
-    if key.startswith(pdb_name):
+  for header, seq in parse_fasta_records(path.read_text(encoding="utf-8")):
+    if header.startswith(pdb_name):
       found.append(seq.strip().replace(":", ""))
   if not found:
     msg = f"optimize_fasta has no entry starting with {pdb_name}"
@@ -202,6 +238,35 @@ def build_tie_groups_np(
   return table
 
 
+def _split_bias(
+  bias_spec: Any,  # noqa: ANN401
+  length: int,
+  bias_by_res: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+  """Split ``spec.bias`` into a global amino-acid vector and a per-residue table.
+
+  A 1-D vector whose length is the chain is per-position, including when that
+  length is also 21. Rank-2 ``(L, 21)`` is per-position too. Flattening it and
+  keeping the first 21 entries would publish position 0 as a global bias.
+  """
+  alphabet = len(_ALPHABET)
+  global_bias = np.zeros((alphabet,), dtype=np.float32)
+  by_res = np.array(bias_by_res, dtype=np.float32, copy=True)
+  if bias_spec is None:
+    return global_bias, by_res
+  arr = np.asarray(bias_spec, dtype=np.float32)
+  if arr.ndim == 1 and arr.shape[0] == length:
+    by_res[:length] += arr[:, None]
+    return global_bias, by_res
+  if arr.ndim == 1 and arr.shape[0] == alphabet:
+    return np.asarray(arr, dtype=np.float32), by_res
+  if arr.shape == (length, alphabet):
+    by_res[:length] += arr
+    return global_bias, by_res
+  msg = f"bias shape {arr.shape} is not ({alphabet},), ({length},), or ({length}, {alphabet})"
+  raise ValueError(msg)
+
+
 def prepare_sample(
   features: PottsFeatures,
   parsed_chains: tuple[tuple[str, str], ...],
@@ -211,21 +276,22 @@ def prepare_sample(
   """Pad one featurized structure and resolve optimize-path sequences."""
   l_pad = int(features.L_total)
   padded, pad_valid = pad(features, l_pad)
-  chain_m_pos = np.asarray(padded.chain_m_pos, dtype=np.float32)
+  # ``pad`` returns the caller's arrays when nothing is appended. Copy before
+  # writing fixed positions so the featurized structure stays unchanged.
+  chain_m_pos = np.asarray(padded.chain_m_pos, dtype=np.float32).copy()
   fixed = getattr(spec, "fixed_positions", None)
   if fixed is not None:
     for index in np.asarray(fixed, dtype=np.int32).reshape(-1):
       if 0 <= int(index) < chain_m_pos.shape[0]:
         chain_m_pos[int(index)] = 0.0
   omit = np.zeros((len(_ALPHABET),), dtype=np.float32)
-  for letter in tuple(getattr(spec, "omit_aa", ()) or ()):
-    if letter in _ALPHABET:
-      omit[_ALPHABET.index(letter)] = 1.0
-  bias_spec = getattr(spec, "bias", None)
-  bias = np.zeros((len(_ALPHABET),), dtype=np.float32)
-  if bias_spec is not None:
-    bias_array = np.asarray(bias_spec, dtype=np.float32).reshape(-1)
-    bias[: bias_array.shape[0]] = bias_array[: len(_ALPHABET)]
+  for index in omit_letter_indices(tuple(getattr(spec, "omit_aa", ()) or ())):
+    omit[index] = 1.0
+  bias, bias_by_res = _split_bias(
+    getattr(spec, "bias", None),
+    features.L_total,
+    np.asarray(padded.bias_by_res, dtype=np.float32),
+  )
   threshold = float(options.pssm_threshold)
   log_odds = np.asarray(padded.pssm_log_odds, dtype=np.float32)
   native = "".join(sequence for _letter, sequence in parsed_chains)
@@ -260,7 +326,7 @@ def prepare_sample(
     tied_beta=np.asarray(padded.tied_beta, dtype=np.float32),
     omit=omit,
     bias=bias,
-    bias_by_res=np.asarray(padded.bias_by_res, dtype=np.float32),
+    bias_by_res=bias_by_res,
     pssm_coef=np.asarray(padded.pssm_coef, dtype=np.float32),
     pssm_bias=np.asarray(padded.pssm_bias, dtype=np.float32),
     pssm_log_odds_mask=(log_odds > threshold).astype(np.float32),
@@ -379,7 +445,12 @@ class SampleStages:
     optimizing = bool(options.optimize_pdb or options.optimize_fasta) and (
       options.optimization_mode != "none"
     )
-    tables = _dummy_binding(h_v.shape[0], energy_table.shape[-1], energy_table.dtype)
+    tables = sample_binding_tables(
+      options,
+      h_v.shape[0],
+      energy_table.shape[-1],
+      energy_table.dtype,
+    )
     if optimizing:
       refined = _refine_loaded(
         self._model,
@@ -510,7 +581,7 @@ def _decode_chunk(
             tables,
             options,
             order,
-            jax.random.uniform(refine_key, (8, length), dtype=h_v.dtype),
+            _refine_uniforms(refine_key, length, options.optimization_mode, h_v.dtype),
             opt_temperature,
           ),
         )
@@ -565,7 +636,7 @@ def _refine_loaded(
         tables,
         options,
         order,
-        jax.random.uniform(key, (8, length), dtype=h_v.dtype),
+        _refine_uniforms(key, length, options.optimization_mode, h_v.dtype),
         opt_temperature,
       ),
     )
@@ -593,17 +664,8 @@ def _run_refine(
       tied_epistasis=False,
       binding="only",
     )
-  # Converge's 1000-sweep cap is the default. Callers that need a short loop
-  # pass ``max_iters`` on ``PottsRefine`` directly; the driver keeps 1000.
-  max_iters = 1000 if options.optimization_mode == "potts_converge" else 1
-  if uniforms.shape[0] < max_iters:
-    uniforms = jnp.concatenate(
-      [
-        uniforms,
-        jnp.zeros((max_iters - uniforms.shape[0], uniforms.shape[1]), dtype=uniforms.dtype),
-      ],
-      axis=0,
-    )
+  max_iters = _refine_sweep_cap(options.optimization_mode)
+  uniforms = _require_refine_uniforms(uniforms, options.optimization_mode)
   result = refiner(
     options.optimization_mode,
     sequence.astype(jnp.int32),
@@ -663,6 +725,55 @@ def _encode(
   forward = merge_pair(raw, neighbor_indices, valid, denom=2, exclude_self=False)
   table = merge_pair(forward, neighbor_indices, valid, denom=4, exclude_self=True)
   return nodes[-1], edges[-1], neighbor_indices, forward, pad_etab_energy(table)
+
+
+def _refine_sweep_cap(mode: str) -> int:
+  """``potts_converge`` is capped at 1000 sweeps; every other mode is one sweep."""
+  return 1000 if mode == "potts_converge" else 1
+
+
+def _require_refine_uniforms(uniforms: Array, mode: str) -> Array:
+  """Reject a uniform table shorter than the sweep cap.
+
+  Zero-padding the tail makes ``categorical_draw`` see ``u=0``, which selects
+  the first positive bin for every later sweep.
+  """
+  max_iters = _refine_sweep_cap(mode)
+  if int(uniforms.shape[0]) < max_iters:
+    msg = (
+      f"refine uniforms have {int(uniforms.shape[0])} rows but "
+      f"optimization_mode={mode!r} runs up to {max_iters} sweeps"
+    )
+    raise ValueError(msg)
+  return uniforms
+
+
+def _refine_uniforms(key: jax.Array, length: int, mode: str, dtype: jnp.dtype) -> Array:
+  """One uniform row per sweep. Converge indexes ``uniforms[iteration, cursor]``."""
+  rows = _refine_sweep_cap(mode) if mode == "potts_converge" else 8
+  return jax.random.uniform(key, (rows, length), dtype=dtype)
+
+
+def sample_binding_tables(
+  options: PottsMPNNOptions,
+  length: int,
+  alphabet: int,
+  dtype: jnp.dtype,
+) -> BindingTables:
+  """Binding tables for one sample.
+
+  ``none`` keeps a zero interface so refine uses the complex energy. ``both``
+  and ``only`` need partition etabs; a zero table would leave ``both`` identical
+  to ``none`` and would update no positions under ``only``.
+  """
+  if options.binding_energy_optimization == "none":
+    return _dummy_binding(length, alphabet, dtype)
+  msg = (
+    "binding_energy_optimization="
+    f"{options.binding_energy_optimization!r} needs partition etabs and an "
+    "interface mask; the sample path will not refine against a zero binding table"
+  )
+  raise ValueError(msg)
 
 
 def _dummy_binding(length: int, alphabet: int, dtype: jnp.dtype) -> BindingTables:

@@ -1241,10 +1241,10 @@ def classify(knob: Knob) -> AliasRow:
   if _dest_is(dest, "filter"):
     return AliasRow(
       ref=ref,
-      targets=("filter_nan",),
-      equivalence="semantic",
-      reason="",
-      note="no-op quirk; maps to filter_nan",
+      targets=(),
+      equivalence="exclusion",
+      reason="upstream_noop",
+      note="upstream filter drops nothing; it is not a PottsMPNN option",
     )
   if _dest_is(dest, "optimize_fasta"):
     return AliasRow(

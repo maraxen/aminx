@@ -59,11 +59,11 @@ def test_base_spec_kwargs_parses_options_json() -> None:
         multi_state_temperature=1.0,
         input_type="auto",
         input_cache_dir=None,
-        potts_options_json=json.dumps({"optimization_mode": "nodes", "write_pdb": False}),
+        potts_options_json=json.dumps({"optimization_mode": "nodes", "mean_norm": True}),
         laser_options_json=None,
     )
     kwargs = _base_spec_kwargs(base)
-    assert kwargs["potts_mpnn"] == PottsMPNNOptions(optimization_mode="nodes", write_pdb=False)
+    assert kwargs["potts_mpnn"] == PottsMPNNOptions(optimization_mode="nodes", mean_norm=True)
     assert kwargs["laser"] is None
 
 

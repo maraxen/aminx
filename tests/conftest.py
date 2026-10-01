@@ -15,10 +15,14 @@ from aminx.types.arrays import ModelParameters
 
 
 def _hf_hub_reachable() -> bool:
+  """True when huggingface.co:443 accepts a TCP connection.
+
+  The timeout is per socket. ``setdefaulttimeout`` would stick for the rest of
+  the process, including a later multi-hundred-MB ``hf_hub_download``.
+  """
   try:
-    socket.setdefaulttimeout(5)
-    socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect(("huggingface.co", 443))
-    return True
+    with socket.create_connection(("huggingface.co", 443), timeout=5):
+      return True
   except OSError:
     return False
 
