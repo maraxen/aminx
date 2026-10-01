@@ -72,10 +72,13 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
 
   if strategy_name == "Vmap":
     return jax.vmap(body)(xs)
-  if strategy_name == "SafeMap":
-    # aminx.tiling.strategy.SafeMap uses .tile; xtrax.tiling.strategy.SafeMap
-    # uses .batch_size for the same tile-size concept (EPIC #1541 T-PLANNER.4
-    # finding, 2026-07-06).
+  if strategy_name in ("SafeMap", "ChunkedMap"):
+    # aminx.tiling.strategy.SafeMap uses .tile; xtrax's chunked strategy uses
+    # .batch_size for the same tile-size concept (EPIC #1541 T-PLANNER.4
+    # finding, 2026-07-06). xtrax 0.4.0a11 renamed it SafeMap -> ChunkedMap
+    # (xtrax #3644), and its deprecated SafeMap alias IS ChunkedMap, so an
+    # xtrax plan now always reports "ChunkedMap". Matching only "SafeMap" would
+    # drop to the unchunked fallback below.
     tile = getattr(strategy, "tile", None)
     if tile is None:
       tile = strategy.batch_size
