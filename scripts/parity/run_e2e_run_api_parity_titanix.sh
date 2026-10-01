@@ -44,14 +44,23 @@ print('[e2e] aminx:', aminx.__file__, '| device:', jax.devices()[0])
 "
 
 CELLS=$("${PY}" scripts/parity/e2e_run_api_parity.py --dry-run | "${PY}" -c "import json,sys; print(' '.join(json.load(sys.stdin)['cells']))")
-for CELL in ${CELLS}; do
+
+# Cells are independent processes, so E2E_JOBS of them can run at once (default 1).  Each gets OMP threads
+# split so the jobs do not oversubscribe the box.
+JOBS="${E2E_JOBS:-1}"
+export OUT_DIR CODE_COMMIT SMOKE CELL_TIMEOUT PY
+export OMP_NUM_THREADS=$(( ${OMP_NUM_THREADS:-8} / JOBS > 0 ? ${OMP_NUM_THREADS:-8} / JOBS : 1 ))
+run_one() {
+  local CELL="$1" rc
   echo "[e2e] $(date -Is) starting ${CELL} (timeout ${CELL_TIMEOUT}s)"
   timeout --kill-after=60 "${CELL_TIMEOUT}" \
     "${PY}" scripts/parity/e2e_run_api_parity.py \
       --cell "${CELL}" --out-dir "${OUT_DIR}" --code-commit "${CODE_COMMIT}" ${SMOKE:+--smoke} 2>&1 | grep -v -i warn
   rc=${PIPESTATUS[0]}
   echo "[e2e] $(date -Is) ${CELL} exited rc=${rc}$([[ ${rc} -eq 124 ]] && echo ' (TIMEOUT: no record; counts as failure)')"
-done
+}
+export -f run_one
+printf '%s\n' ${CELLS} | xargs -P "${JOBS}" -I{} bash -c 'run_one {}'
 
 "${PY}" scripts/parity/e2e_run_api_parity.py --aggregate "${OUT_DIR}" > "${OUT_DIR}/aggregate.json"
 echo "[e2e] aggregate written to ${OUT_DIR}/aggregate.json"

@@ -123,6 +123,8 @@ KNOBS_DECLARED_UNVARIED = (
   "bias_AA_per_residue", "omit_AA_per_residue", "ligand_mpnn_cutoff_for_score",
   "ligand_mpnn_use_atom_context", "ligand_mpnn_use_side_chain_context", "pack_side_chains",
   "global_transmembrane_label", "checkpoints: solublempnn/membrane/sc", "structures other than 1BC8 chain C",
+  "ligand parsing/atom selection/cutoff from PDB HETATM (aminx is GIVEN the reference's featurized per-residue "
+  "ligand windows through ligand_context_path, because ligand_conditioning=True refuses to run without them)",
 )
 KNOBS_VARIED = ("temperature", "omit_AA", "bias_AA", "fixed_residues", "redesigned_residues",
                 "model_type+checkpoint (protein_mpnn, ligand_mpnn)", "decoding order (injected)",
@@ -141,7 +143,7 @@ OTHER_CELLS = ("cli_equivalence", "instrument")
 ALL_CELLS = (*KNOB_CELLS, *SCORE_CELLS, *CONTROL_CELLS, *OTHER_CELLS)
 
 CLI_KNOBS = {"checkpoint_id": "proteinmpnn_v_48_020", "num_samples": 4, "temperature": 0.3,
-             "chain_id": CHAIN, "random_seed": 5}
+             "chain_id": CHAIN, "random_seed": 5, "max_length": N_PAD}
 
 
 # --------------------------------------------------------------------------- hashing / provenance
@@ -243,7 +245,32 @@ def ref_context(model_key: str, knob: str, *, temperature: float | None = None, 
   finally:
     os.chdir(cwd)
     model_utils.ProteinMPNN.sample = orig
+  if spec["ligand"] and not all(k in cap["fd"] for k in ("Y", "Y_t", "Y_m")):
+    msg = "ligand_mpnn reference run exposed no ligand tensors (Y/Y_t/Y_m); cannot build a ligand context"
+    raise RuntimeError(msg)
   return cap
+
+
+def ligand_npz(ctx: dict[str, Any], pad: int) -> str:
+  """A ligand_context_path file holding the reference's own per-residue ligand windows, zero-padded to ``pad``.
+
+  aminx's loader wants Y (N, L, M, 3), Y_t and Y_m (N, L, M) at the PADDED length plus structure_ids.  Handing it
+  the reference's featurized windows means ligand PARSING and atom selection are not compared (declared).
+  """
+  cache = ctx.setdefault("_ligand_npz", {})
+  if pad not in cache:
+    fd = ctx["fd"]
+    arrays = {k: fd[k].numpy() for k in ("Y", "Y_t", "Y_m")}
+    width = pad - arrays["Y"].shape[1]
+
+    def pad_len(a: np.ndarray) -> np.ndarray:
+      return np.pad(a, [(0, 0), (0, width)] + [(0, 0)] * (a.ndim - 2))
+
+    path = Path(tempfile.mkdtemp(prefix="e2e_ligand_")) / f"{PDB_NAME[:-4]}.ligand.npz"
+    np.savez(path, Y=pad_len(arrays["Y"]).astype(np.float32), Y_t=pad_len(arrays["Y_t"]).astype(np.int32),
+             Y_m=pad_len(arrays["Y_m"]).astype(np.float32), structure_ids=np.array([PDB_NAME[:-4]]))
+    cache[pad] = str(path)
+  return cache[pad]
 
 
 def ref_full_context_logits(model, fd, seq_tensor):  # noqa: ANN001
@@ -327,6 +354,7 @@ def aminx_kwargs(model_key: str, ctx: dict[str, Any], *, temperature: float, bia
     kw["bias"] = bias
   if MODELS[model_key]["ligand"]:
     kw["ligand_conditioning"] = True
+    kw["ligand_context_path"] = ligand_npz(ctx, pad)
   return kw
 
 
@@ -454,6 +482,7 @@ def lane_score(model_key: str, ctx: dict[str, Any], *, vs_stock: bool) -> dict[s
                         "sequences_to_score": strings, "return_logits": True, "max_length": N_PAD}
   if MODELS[model_key]["ligand"]:
     kw["ligand_conditioning"] = True
+    kw["ligand_context_path"] = ligand_npz(ctx, N_PAD)
   res = score(ScoringSpecification(**kw))
   lg = np.asarray(res["logits"])[0]  # (n_seq, N_PAD, 21) raw logits
   scores = np.asarray(res["scores"])[0]
@@ -483,10 +512,13 @@ def lane_score(model_key: str, ctx: dict[str, Any], *, vs_stock: bool) -> dict[s
 def lane_cli() -> dict[str, Any]:
   """`aminx run sample --emit-json` must carry every CLI-reachable knob into the spec."""
   root = _ref_root()
-  cmd = [sys.executable, "-c", "from aminx.cli import main; main()", "run", "sample",
-         "--inputs", str(root / "inputs" / PDB_NAME), "--checkpoint-id", str(CLI_KNOBS["checkpoint_id"]),
+  # Base options (checkpoint, chain, seed, max_length, ...) live on the `run` GROUP; sampling options on `sample`.
+  cmd = [sys.executable, "-c", "from aminx.cli import main; main()", "run",
+         "--checkpoint-id", str(CLI_KNOBS["checkpoint_id"]), "--chain-id", str(CLI_KNOBS["chain_id"]),
+         "--random-seed", str(CLI_KNOBS["random_seed"]), "--max-length", str(CLI_KNOBS["max_length"]),
+         "sample", "--inputs", str(root / "inputs" / PDB_NAME),
          "--num-samples", str(CLI_KNOBS["num_samples"]), "--temperature", str(CLI_KNOBS["temperature"]),
-         "--chain-id", str(CLI_KNOBS["chain_id"]), "--random-seed", str(CLI_KNOBS["random_seed"]), "--emit-json"]
+         "--emit-json"]
   proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
   record: dict[str, Any] = {"returncode": proc.returncode, "stderr_tail": proc.stderr[-400:]}
   if proc.returncode != 0:
@@ -559,11 +591,16 @@ def _persist_fixture(out_dir: Path, cell: str, ctx: dict[str, Any]) -> dict[str,
   fx.mkdir(parents=True, exist_ok=True)
   path = fx / f"{cell}.ref.npz"
   fd, out = ctx["fd"], ctx["out"]
+  extra: dict[str, str] = {}
+  if "Y" in fd:  # persist the exact ligand windows both sides were given (the padded file aminx reads)
+    lig_path = fx / f"{cell}.ligand.npz"
+    lig_path.write_bytes(Path(ligand_npz(ctx, N_PAD)).read_bytes())
+    extra["ligand_path"], extra["ligand_sha256"] = str(lig_path), _sha256_file(lig_path)
   np.savez_compressed(
     path, randn=ctx["randn_row"].numpy(), S=out["S"].numpy(), log_probs=out["log_probs"].numpy(),
     sampling_probs=out["sampling_probs"].numpy(), decoding_order=out["decoding_order"].numpy(),
     chain_mask=fd["chain_mask"].numpy(), mask=fd["mask"].numpy(), bias=fd["bias"].numpy(), native=fd["S"].numpy())
-  return {"path": str(path), "sha256": _sha256_file(path)}
+  return {"path": str(path), "sha256": _sha256_file(path), **extra}
 
 
 def _run_cell_body(cell: str, out_dir: Path, smoke: bool) -> dict[str, Any]:
