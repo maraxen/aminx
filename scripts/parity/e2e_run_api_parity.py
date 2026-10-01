@@ -196,9 +196,25 @@ def _weights_sha(checkpoint: str) -> str:
   return weight_provenance(checkpoint).sha256
 
 
+def expected_platform() -> str:
+  """The hardware this run is registered against: E2E_PLATFORM = cpu (default) or gpu."""
+  value = os.environ.get("E2E_PLATFORM", "cpu").lower()
+  if value not in ("cpu", "gpu"):
+    msg = f"E2E_PLATFORM must be cpu or gpu, got {value!r}"
+    raise ValueError(msg)
+  return value
+
+
+def check_platform(expected: str, actual: str) -> None:
+  """Refuse a silent fallback: a run registered for one platform must execute on it, or it records an error."""
+  if expected != actual:
+    msg = f"expected {expected} but JAX is running on {actual}"
+    raise RuntimeError(msg)
+
+
 def _inputs_hash(cell: str, code_commit: str, smoke: bool) -> str:
   payload: dict[str, Any] = {"cell": cell, "code_commit": code_commit, "smoke": smoke,
-                             "script_sha256": _sha256_file(Path(__file__)), "src_tree_sha256": _src_tree_sha256(),
+                             "script_sha256": _sha256_file(Path(__file__)), "src_tree_sha256": _src_tree_sha256(), "platform": expected_platform(),
                              "thresholds": [TOL_LOGPROB, TOL_SCORE, ALPHA, TIE_GAP, N_DIST, N_TEACHER]}
   spec = KNOB_CELLS.get(cell) or SCORE_CELLS.get(cell) or CONTROL_CELLS.get(cell)
   if spec:
@@ -224,6 +240,10 @@ def _import_reference_torch():
   if str(root) not in sys.path:
     sys.path.insert(0, str(root))
   import torch  # noqa: PLC0415
+
+  # The ORACLE stays on CPU in every mode: upstream run.py picks CUDA whenever torch can see a GPU, which would change
+  # the oracle's numerics (and take GPU memory) in GPU mode. Only aminx's JAX side moves to the GPU.
+  torch.cuda.is_available = lambda: False
 
   import model_utils  # noqa: PLC0415  (upstream)
 
@@ -812,8 +832,16 @@ def run_cell(cell: str, out_dir: Path, *, code_commit: str, smoke: bool) -> int:
 
     import aminx
 
+    device = jax.devices()[0]
+    check_platform(expected_platform(), device.platform)
+    try:
+      bytes_limit = (device.memory_stats() or {}).get("bytes_limit")
+    except Exception:  # noqa: BLE001 - not all backends expose it
+      bytes_limit = None
     record.update({"aminx_file": aminx.__file__, "jax_version": jax.__version__, "src_tree_sha256": _src_tree_sha256(),
-                   "device": str(jax.devices()[0]), "ref_head": _ref_head(_ref_root()),
+                   "platform": device.platform, "device": str(device), "device_kind": getattr(device, "device_kind", "?"),
+                   "device_bytes_limit": bytes_limit, "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                   "xla_mem_fraction": os.environ.get("XLA_PYTHON_CLIENT_MEM_FRACTION"), "ref_head": _ref_head(_ref_root()),
                    "jax_compilation_cache_dir": os.environ.get("JAX_COMPILATION_CACHE_DIR")})
     record.update(_run_cell_body(cell, out_dir, smoke))
     record["status"] = "ok"
@@ -868,6 +896,7 @@ def aggregate(out_dir: Path) -> dict[str, Any]:
   inst = recs["instrument"]
   commits = {r.get("code_commit") for r in recs.values() if r.get("code_commit")}
   src_trees = {r.get("src_tree_sha256") for r in recs.values() if r.get("src_tree_sha256")}
+  platforms = sorted({r.get("platform") for r in recs.values() if r.get("platform")})
   return {
     "cells_ok": len(ok_cells) == len(real),
     "n_cells_ok": len(ok_cells),
@@ -876,7 +905,9 @@ def aggregate(out_dir: Path) -> dict[str, Any]:
     "n_controls_rejected": sum(controls.values()),
     "instrument_ok": bool(inst["state"] == "ok" and inst.get("instrument", {}).get("passed") is True),
     "cli_ok": bool(cli["state"] == "ok" and cli.get("cli", {}).get("passed") is True),
-    "single_code_commit": len(commits) <= 1 and len(src_trees) <= 1,
+    "single_code_commit": len(commits) <= 1 and len(src_trees) <= 1 and len(platforms) <= 1,
+    "single_platform": len(platforms) <= 1,
+    "platforms": platforms,
     "knobs_varied": list(KNOBS_VARIED),
     "knobs_declared_unvaried": list(KNOBS_DECLARED_UNVARIED),
     "failing_cells": failing,

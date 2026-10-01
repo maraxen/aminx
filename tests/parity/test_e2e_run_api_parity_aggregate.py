@@ -254,6 +254,27 @@ def test_different_aminx_source_trees_are_not_one_code_state(tmp_path: Path) -> 
   assert mod.aggregate(tmp_path)["single_code_commit"]
 
 
+def test_a_cpu_run_cannot_pass_as_a_gpu_run() -> None:
+  """GPU mode must fail loudly rather than fall back to CPU and produce a plausible, wrongly-labelled record."""
+  mod.check_platform("gpu", "gpu")
+  mod.check_platform("cpu", "cpu")
+  with pytest.raises(RuntimeError, match="expected gpu"):
+    mod.check_platform("gpu", "cpu")
+  with pytest.raises(RuntimeError, match="expected cpu"):
+    mod.check_platform("cpu", "gpu")
+
+
+def test_mixed_hardware_in_one_directory_is_reported_and_refused(tmp_path: Path) -> None:
+  _full_pass(tmp_path)
+  assert mod.aggregate(tmp_path)["single_platform"]
+  _write(tmp_path, "pmpnn__base", passed=True, lanes={}, platform="cpu")
+  _write(tmp_path, "pmpnn__temp05", passed=True, lanes={}, platform="gpu")
+  agg = mod.aggregate(tmp_path)
+  assert not agg["single_platform"]
+  assert not agg["single_code_commit"], "mixed hardware must not be able to produce a pass"
+  assert agg["platforms"] == ["cpu", "gpu"]
+
+
 def test_a_directory_from_before_the_amendment_is_judged_by_its_own_four_controls(tmp_path: Path) -> None:
   """The registered runs (protocol 1) have no CLI control; they must still re-aggregate from their own records."""
   _full_pass(tmp_path)

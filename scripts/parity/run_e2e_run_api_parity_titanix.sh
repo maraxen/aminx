@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Run the e2e run-API parity cells on titanix CPU, one process per cell.
+# Run the e2e run-API parity cells on titanix (CPU by default, or one shared GPU), one process per cell.
 #
 # Pre-registered: scripts/parity/e2e_run_api_parity.bth.toml.  Usage, from the repo root on titanix:
 #
 #   bash scripts/parity/run_e2e_run_api_parity_titanix.sh <out-dir> <code-commit> [--smoke]
 #
-# CPU on purpose: the upstream reference is driven in-process with torch, and GPU 3 is held by the #2158 run.
+# E2E_PLATFORM=cpu (default): aminx's JAX side on CPU.  E2E_PLATFORM=gpu: aminx's JAX side on ONE titanix GPU, named
+# explicitly with E2E_GPU (there is no default: the GPUs here are shared with vLLM and long production jobs), with the
+# JAX pool capped by E2E_MEM_FRACTION (default 0.35 per job).  The upstream reference oracle always runs on CPU.
+# The platform is part of each cell's inputs hash and is asserted at run time, so a cell cannot silently fall back.
 # Chunking / recovery: each cell is its own process under its own `timeout`; e2e_run_api_parity.py writes
 # hash-verified .started/.done stamps, so re-running skips finished cells and recomputes stale ones.  The
 # launcher never stops early on a failed cell: a failure IS data.  The verdict is computed from the files.
@@ -18,7 +21,25 @@ SMOKE="${3:-}"
 CELL_TIMEOUT="${E2E_CELL_TIMEOUT:-7200}"   # seconds, per cell
 
 export PATH="${HOME}/.local/bin:${PATH}"
-export JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES=
+PLATFORM="${E2E_PLATFORM:-cpu}"
+export E2E_PLATFORM="${PLATFORM}"
+JOBS="${E2E_JOBS:-1}"
+if [[ "${PLATFORM}" == "gpu" ]]; then
+  GPU="${E2E_GPU:?E2E_PLATFORM=gpu needs E2E_GPU=<index>; GPUs on this box are shared, so there is no default}"
+  FRACTION="${E2E_MEM_FRACTION:-0.35}"
+  export CUDA_VISIBLE_DEVICES="${GPU}" JAX_PLATFORMS=cuda
+  export XLA_PYTHON_CLIENT_MEM_FRACTION="${FRACTION}" XLA_PYTHON_CLIENT_PREALLOCATE=false
+  # Refuse to start unless the GPU has room for every job's cap plus ~1 GiB of CUDA context each.
+  read -r TOTAL_MIB FREE_MIB < <(nvidia-smi -i "${GPU}" --query-gpu=memory.total,memory.free --format=csv,noheader,nounits | tr -d ',')
+  NEED_MIB=$(python3 -c "print(int(${TOTAL_MIB} * ${FRACTION} * ${JOBS}) + 1024 * ${JOBS})")
+  echo "[e2e] gpu=${GPU} total=${TOTAL_MIB}MiB free=${FREE_MIB}MiB cap=${FRACTION} jobs=${JOBS} need>=${NEED_MIB}MiB"
+  if (( FREE_MIB < NEED_MIB )); then
+    echo "[e2e] REFUSING: GPU ${GPU} has ${FREE_MIB} MiB free, need ${NEED_MIB}. Lower E2E_MEM_FRACTION/E2E_JOBS or pick another GPU." >&2
+    exit 3
+  fi
+else
+  export JAX_PLATFORMS=cpu CUDA_VISIBLE_DEVICES=
+fi
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}" OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-8}" MKL_NUM_THREADS="${MKL_NUM_THREADS:-8}"
 export REFERENCE_PATH="${REFERENCE_PATH:-/home/solab/bv/ref/LigandMPNN}"
 # Persistent XLA compilation cache, shared by every cell process and surviving a preemption/re-run: the
@@ -44,7 +65,7 @@ PY="${E2E_PYTHON:?set E2E_PYTHON to a python with jax, torch, scipy and equinox}
 "${PY}" -c "
 import aminx, jax
 assert aminx.__file__.startswith('${REPO}/'), f'aminx imported from {aminx.__file__}'
-assert jax.devices()[0].platform == 'cpu', jax.devices()
+assert jax.devices()[0].platform == '${PLATFORM}', f'expected ${PLATFORM}, got {jax.devices()}'
 print('[e2e] aminx:', aminx.__file__, '| device:', jax.devices()[0])
 "
 
@@ -53,7 +74,6 @@ CELLS="${E2E_CELLS:-$("${PY}" scripts/parity/e2e_run_api_parity.py --dry-run | "
 
 # Cells are independent processes, so E2E_JOBS of them can run at once (default 1).  Each gets OMP threads
 # split so the jobs do not oversubscribe the box.
-JOBS="${E2E_JOBS:-1}"
 export OUT_DIR CODE_COMMIT SMOKE CELL_TIMEOUT PY
 PER_JOB=$(( ${OMP_NUM_THREADS:-8} / JOBS > 0 ? ${OMP_NUM_THREADS:-8} / JOBS : 1 ))
 # torch/numpy BLAS honour OPENBLAS/MKL, not just OMP, so divide all three or the box is oversubscribed.
