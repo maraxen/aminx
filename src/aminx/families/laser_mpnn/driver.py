@@ -373,7 +373,14 @@ def _proofread_batch(
     rng = np.random.default_rng(seed)
     orders = [rng.permutation(length).astype(np.int32) for _ in range(n_orders)]
     focus_probs: list[np.ndarray] = []
+    # Five inverse-CDF draws per residue plus the four-slot tail upstream
+    # allocates. A fresh stream per (focus, dropout, order) cell is what
+    # temperature 1 actually samples; one shared zero draw would freeze every chi.
+    draw_count = length * 5 + 4
     for focus in rows:
+      uniforms = [
+        [rng.random((1, draw_count)) for _order in range(n_orders)] for _rep in range(n_dropouts)
+      ]
       probs = conditional_focus_probs(
         model.encoder,
         model.decoder,
@@ -390,6 +397,7 @@ def _proofread_batch(
         int(focus),
         orders,
         [[None] * n_orders for _ in range(n_dropouts)],
+        uniforms,
         scalar=bool(options.proofread_dropout) and scalar_dropout,
         vector=False,
         repack_all=bool(options.repack_all or options.repack_only),

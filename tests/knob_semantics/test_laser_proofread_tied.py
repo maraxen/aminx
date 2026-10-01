@@ -10,6 +10,7 @@ from __future__ import annotations
 import functools
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import equinox as eqx
 import jax
@@ -32,8 +33,10 @@ from aminx.model.laser.joint_decode import (
   decode_order,
   minp_warp_logits,
 )
+import aminx.model.laser.proofread as proofread
 from aminx.model.laser.proofread import (
   closed_form_std,
+  conditional_focus_probs,
   focus_rows,
   proofread_dropout,
   reduce_proofread,
@@ -94,6 +97,71 @@ def test_knob_semantics_closed_form_proofread_std() -> None:
     assert gap <= np.finfo(np.float64).eps
   finally:
     jax.config.update("jax_enable_x64", previous)
+
+
+def test_knob_semantics_proofread_uniforms_change_focus_probs(monkeypatch: pytest.MonkeyPatch) -> None:
+  """A sampler handed a length-1 zero array cannot vary with its input.
+
+  The conditional decode was called with ``np.zeros((1,))``. Inverse-CDF at
+  u = 0 picks the first class at every sequence and chi site, so the focus
+  probabilities did not depend on the caller's uniforms. This fails on that
+  placeholder: the decode must receive the full ``length * 5 + 4`` buffer, and
+  two buffers that share only the first draw must not yield the same focus row.
+  """
+  n_res = 3
+  need = n_res * 5 + 4
+  encoder, decoder, joint = _models()
+  backbone, ligand, atomic, sub = _coords(n_res)
+  period = np.zeros((118,), dtype=np.int32)
+  # Arginine, so every chi is rotatable. Alanine would store NaN angles and
+  # the focus residue would see zeros no matter which uniform it was handed.
+  sequence = np.ones((n_res,), dtype=np.int32)
+  chi = np.zeros((n_res, 4), dtype=np.float32)
+  left = np.full((1, need), 1e-6, dtype=np.float64)
+  right = left.copy()
+  # The first draw is residue 0's sequence sample, which a fixed residue
+  # discards. The remaining per-residue draws are the chi context the focus
+  # residue reads. A length-1 consumer never sees them. The two tails sit
+  # near 0 and near 1 so inverse-CDF cannot land in the same bin.
+  right[0, 1 : n_res * 5] = 1.0 - 1e-6
+  seen: list[np.ndarray] = []
+  original = proofread.decode_order
+
+  def _spy(*args: Any, **kwargs: Any) -> Any:
+    seen.append(np.asarray(args[-1], dtype=np.float64).reshape(-1))
+    return original(*args, **kwargs)
+
+  monkeypatch.setattr(proofread, "decode_order", _spy)
+  orders = [np.arange(n_res, dtype=np.int32)]
+  structure = _structure()
+  probs_left = conditional_focus_probs(
+    encoder, decoder, joint,
+    backbone, ligand, atomic, sub,
+    period, period, structure,
+    sequence, chi,
+    n_res - 1,
+    orders,
+    [[None]],
+    [[left]],
+    scalar=False,
+    repack_all=True,
+  )
+  probs_right = conditional_focus_probs(
+    encoder, decoder, joint,
+    backbone, ligand, atomic, sub,
+    period, period, structure,
+    sequence, chi,
+    n_res - 1,
+    orders,
+    [[None]],
+    [[right]],
+    scalar=False,
+    repack_all=True,
+  )
+  assert [int(row.shape[0]) for row in seen] == [need, need]
+  np.testing.assert_array_equal(seen[0], left.reshape(-1))
+  np.testing.assert_array_equal(seen[1], right.reshape(-1))
+  assert not np.allclose(probs_left[0, 0], probs_right[0, 0])
 
 
 def test_knob_semantics_proofread_std_single_order() -> None:

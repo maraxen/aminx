@@ -588,6 +588,25 @@ def softmax_rows(logits: np.ndarray) -> np.ndarray:
   return exp / np.sum(exp, axis=-1, keepdims=True)
 
 
+def _uniform_draws(draws: np.ndarray, n_res: int) -> np.ndarray:
+  """One cell's inverse-CDF stream, shaped the way the decode indexes it.
+
+  Upstream allocates ``length * 5 + 4``: five draws per residue (the sequence
+  class, then four chi bins) and four tail slots the step cursor never reads.
+  A shorter buffer is zero-padded inside the decode, and a zero uniform is the
+  first class at every site, so the length check is what keeps that placeholder
+  from sampling a frozen context.
+  """
+  array = np.asarray(draws)
+  if array.ndim == 2 and int(array.shape[0]) == 1:
+    array = array[0]
+  need = n_res * 5 + 4
+  if array.ndim != 1 or int(array.shape[0]) != need:
+    msg = f"uniform draws length {array.size} != {need} (length*5+4)"
+    raise ValueError(msg)
+  return array
+
+
 def conditional_focus_probs(
   encoder: LaserEncoder,
   decoder: LaserDecoder,
@@ -604,6 +623,7 @@ def conditional_focus_probs(
   focus: int,
   orders: Sequence[np.ndarray],
   mask_sets: Sequence[Sequence[Mapping[str, Sequence[np.ndarray]] | None]],
+  uniforms: Sequence[Sequence[np.ndarray]],
   *,
   scalar: bool,
   vector: bool = False,
@@ -612,16 +632,23 @@ def conditional_focus_probs(
   """``(n_dropouts, n_orders, 21)`` softmax rows at ``focus``.
 
   Each order is one decode with only that residue designable. Masks are the
-  injected scalar-dropout keeps for that rep and order. The decode runs eager
-  so the host cursor can hand a different mask to each call; a warmed jit
-  would replay the first mask.
+  injected scalar-dropout keeps for that rep and order. ``uniforms`` lines up
+  with ``mask_sets``: one ``length * 5 + 4`` buffer per (dropout, order) cell,
+  consumed in that order. The decode runs eager so the host cursor can hand a
+  different mask to each call; a warmed jit would replay the first mask.
   """
   n_res = int(np.asarray(sequence_indices).shape[0])
+  if len(uniforms) != len(mask_sets):
+    msg = f"{len(uniforms)} uniform blocks != {len(mask_sets)} dropout reps"
+    raise ValueError(msg)
   stacked: list[np.ndarray] = []
   offsets = tuple(joint.chi_offset_prediction_layers)
-  for drop_masks in mask_sets:
+  for drop_masks, drop_draws in zip(mask_sets, uniforms, strict=True):
+    if len(drop_draws) != len(orders):
+      msg = f"{len(drop_draws)} uniform rows != {len(orders)} decoding orders"
+      raise ValueError(msg)
     order_rows: list[np.ndarray] = []
-    for order, masks in zip(orders, drop_masks, strict=True):
+    for order, masks, draws in zip(orders, drop_masks, drop_draws, strict=True):
       chain = np.ones((n_res,), dtype=bool)
       chain[int(focus)] = False
       with proofread_dropout(
@@ -648,7 +675,7 @@ def conditional_focus_probs(
           chain,
           np.zeros((n_res,), dtype=bool),
           np.asarray(order, dtype=np.int32),
-          np.zeros((1,), dtype=np.float64),
+          _uniform_draws(draws, n_res),
           sequence_temperature=1.0,
           chi_temperature=1.0,
           disabled_residues=("X",),

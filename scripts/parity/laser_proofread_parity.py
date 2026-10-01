@@ -161,11 +161,13 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
   upstream = json.loads(args.upstream.read_text(encoding="utf-8"))
   masks = np.load(Path(args.work_dir) / "masks.npz")
   catalog = json.loads((Path(args.work_dir) / "masks.json").read_text(encoding="utf-8"))
+  draws = np.load(Path(args.work_dir) / "draws.npz")
+  draw_catalog = json.loads((Path(args.work_dir) / "draws.json").read_text(encoding="utf-8"))
   checkpoint = _checkpoint(args)
   mean_gaps: list[float] = []
   std_gaps: list[float] = []
   for payload in job["structures"]:
-    measured = _aminx_one(payload, checkpoint, args.arm, masks, catalog)
+    measured = _aminx_one(payload, checkpoint, args.arm, masks, catalog, draws, draw_catalog)
     ref = upstream[payload["name"]]
     mean_gaps.append(float(np.max(np.abs(np.asarray(measured["mean"]) - np.asarray(ref["mean"])))))
     std_delta = np.abs(np.asarray(measured["std"], dtype=np.float64) - np.asarray(ref["std"]))
@@ -180,12 +182,37 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
   return {"band": _band(max_mean, max_std), "max_abs_mean": max_mean, "max_abs_std": max_std}
 
 
+def _cell_draws(
+  name: str,
+  n_orders: int,
+  draws: Any,  # noqa: ANN401
+  draw_catalog: list[dict[str, Any]],
+) -> list[Any]:
+  """The uniform buffer each order consumed, in copy order.
+
+  The oracle draws ``length * 5 + 4`` once per (complex, order) before that
+  cell's dropout masks, and injects that array into ``sample``. Replaying a
+  fresh generator here would diverge as soon as dropout consumed the shared
+  RNG, so the arm reads the saved buffer instead.
+  """
+  cell: list[Any] = []
+  for copy in range(n_orders):
+    matched = [row for row in draw_catalog if row["name"] == name and int(row["copy"]) == copy]
+    if len(matched) != 1:
+      msg = f"{name} order {copy} has {len(matched)} uniform buffers"
+      raise RuntimeError(msg)
+    cell.append(draws[str(matched[0]["key"])])
+  return cell
+
+
 def _aminx_one(
   payload: dict[str, Any],
   checkpoint: Path,
   arm: str | None,
   masks: Any,  # noqa: ANN401
   catalog: list[dict[str, Any]],
+  draws: Any,  # noqa: ANN401
+  draw_catalog: list[dict[str, Any]],
 ) -> dict[str, list[float]]:
   from types import SimpleNamespace
 
@@ -250,6 +277,7 @@ def _aminx_one(
     int(payload["focus"]),
     orders,
     [order_masks],
+    [_cell_draws(str(payload["name"]), len(orders), draws, draw_catalog)],
     scalar=arm != "scalar_off",
     vector=arm == "vector_on",
     repack_all=True,
@@ -450,6 +478,8 @@ def _oracle_worker(args: argparse.Namespace) -> None:
   stats: dict[str, dict[str, list[float]]] = {}
   blobs: dict[str, np.ndarray] = {}
   catalog: list[dict[str, Any]] = []
+  draw_blobs: dict[str, np.ndarray] = {}
+  draw_catalog: list[dict[str, Any]] = []
   model_params = params["model_params"]
   rng = np.random.default_rng(0)
   with f64_runtime(RBF_Encoding), torch.no_grad():
@@ -482,6 +512,11 @@ def _oracle_worker(args: argparse.Namespace) -> None:
         batch.chain_mask = torch.ones_like(batch.chain_mask)  # type: ignore[attr-defined]
         batch.chain_mask[focus] = False  # type: ignore[attr-defined]
         draws = rng.random((1, length * 5 + 4))
+        # Saved before dropout consumes the same generator, so the aminx arm
+        # can inject this buffer rather than a later draw from the stream.
+        draw_key = f"u{len(draw_blobs)}"
+        draw_blobs[draw_key] = np.asarray(draws)
+        draw_catalog.append({"key": draw_key, "name": payload["name"], "copy": copy})
         touched = []
         for module in model.modules():
           if isinstance(module, torch.nn.Dropout) and module.p > 0:
@@ -524,6 +559,8 @@ def _oracle_worker(args: argparse.Namespace) -> None:
       }
   np.savez_compressed(Path(args.work_dir) / "masks.npz", **blobs)  # ty: ignore[invalid-argument-type]
   (Path(args.work_dir) / "masks.json").write_text(json.dumps(catalog), encoding="utf-8")
+  np.savez_compressed(Path(args.work_dir) / "draws.npz", **draw_blobs)  # ty: ignore[invalid-argument-type]
+  (Path(args.work_dir) / "draws.json").write_text(json.dumps(draw_catalog), encoding="utf-8")
   args.job.write_text(json.dumps(job), encoding="utf-8")
   args.upstream.write_text(json.dumps(stats), encoding="utf-8")
 
