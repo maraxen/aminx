@@ -1,0 +1,53 @@
+npm	rete	2.0.6	MIT	2025-06-30T15:10:59.921Z	@babel/runtime	
+npm	rete-area-plugin	2.3.2	MIT	2026-07-08T17:22:19.270Z	@babel/runtime	rete
+npm	rete-connection-plugin	2.0.5	MIT	2024-08-30T17:11:04.046Z	@babel/runtime	rete,rete-area-plugin
+npm	rete-lit-plugin	2.0.3	MIT	2023-08-21T20:06:35.716Z	@babel/runtime,fast-equals	rete,rete-area-plugin,rete-render-utils
+npm	rete-angular-plugin	2.7.1	MIT	2026-07-10T11:14:05.661Z	tslib	@angular/common,@angular/core,@angular/elements,rete,rete-area-plugin,rete-render-utils,rxjs,zone.js
+npm	litegraph.js	0.7.18	MIT	2024-01-08T12:53:03.092Z		
+npm	@comfyorg/litegraph	0.17.2	MIT	2025-08-06T03:32:44.679Z		
+npm	@xyflow/react	12.12.0	MIT	2026-09-24T12:41:36.171Z	@xyflow/system,classcat,zustand	@types/react,@types/react-dom,react,react-dom
+npm	@xyflow/svelte	1.7.0	MIT	2026-09-24T12:41:13.124Z	@svelte-put/shortcut,@xyflow/system	svelte
+npm	@xyflow/system	0.0.83	MIT	2026-09-24T12:43:01.347Z	@types/d3-drag,@types/d3-interpolate,@types/d3-selection,@types/d3-transition,@types/d3-zoom,d3-drag	
+npm	@vue-flow/core	1.48.2	MIT	2026-01-28T11:32:24.404Z	@vueuse/core,d3-drag,d3-interpolate,d3-selection,d3-zoom	vue
+npm	baklavajs	2.8.1	MIT	2025-11-02T20:35:53.818Z	@baklavajs/core,@baklavajs/engine,@baklavajs/interface-types,@baklavajs/renderer-vue,@baklavajs/themes	
+npm	drawflow	0.0.60	MIT	2024-09-03T14:28:46.660Z		
+npm	@joint/core	4.3.3	MPL-2.0	2026-09-04T12:02:04.135Z		
+npm	@antv/x6	3.1.8	MIT	2026-08-11T03:25:45.730Z	dom-align,lodash-es,mousetrap,utility-types	
+npm	blockly	13.3.0	Apache-2.0	2026-09-10T19:47:40.366Z		jsdom
+npm	@angular/elements	22.2.1	MIT	2026-09-30T18:36:33.672Z	tslib	@angular/core,rxjs
+repo	Comfy-Org/ComfyUI_frontend		GPL-3.0	2026-10-01T16:24:40Z	archived=False	stars=2046
+repo	Comfy-Org/litegraph.js		MIT	2026-01-14T01:30:47Z	archived=False	stars=254
+repo	retejs/rete		MIT	2026-09-27T01:54:55Z	archived=False	stars=12282
+repo	xyflow/xyflow		MIT	2026-09-29T11:30:06Z	archived=False	stars=38565
+repo	jagenjo/litegraph.js		MIT	2024-08-01T08:49:24Z	archived=False	stars=8159
+repo	antvis/X6		MIT	2026-08-11T03:28:07Z	archived=False	stars=6714
+pyodide-lock	/home/marielle/projects/praxis/praxis/web-client/node_modules/pyodide/pyodide-lock.json	3.13.2	emscripten_4_0_9			
+pyodide-pkg	web-client	jax	None			
+pyodide-pkg	web-client	jaxlib	None			
+pyodide-pkg	web-client	onnx	None			
+pyodide-pkg	web-client	onnxruntime	None			
+pyodide-pkg	web-client	torch	None			
+pyodide-pkg	web-client	numpy	2.2.5			
+pyodide-pkg	web-client	scipy	1.14.1			
+pyodide-pkg	web-client	pandas	2.3.3			
+pyodide-pkg	web-client	scikit-learn	1.7.0			
+pyodide-pkg	web-client	biopython	1.85			
+pyodide-pkg	web-client	ml-dtypes	0.5.4			
+pyodide-pkg	web-client	micropip	0.11.0			
+pyodide-pkg	web-client	pydantic	2.12.5			
+pyodide-pkg	web-client	sympy	1.13.3			
+pyodide-lock	/home/marielle/projects/praxis/web-repl/dist/static/pyodide/pyodide-lock.json	3.14.0	emscripten_5_0_3			
+pyodide-pkg	web-repl	jax	None			
+pyodide-pkg	web-repl	jaxlib	None			
+pyodide-pkg	web-repl	onnx	None			
+pyodide-pkg	web-repl	onnxruntime	None			
+pyodide-pkg	web-repl	torch	None			
+pyodide-pkg	web-repl	numpy	2.4.3			
+pyodide-pkg	web-repl	scipy	1.17.1			
+pyodide-pkg	web-repl	pandas	3.0.2			
+pyodide-pkg	web-repl	scikit-learn	1.8.0			
+pyodide-pkg	web-repl	biopython	1.87			
+pyodide-pkg	web-repl	ml-dtypes	0.5.4			
+pyodide-pkg	web-repl	micropip	0.11.1			
+pyodide-pkg	web-repl	pydantic	2.12.5			
+pyodide-pkg	web-repl	sympy	1.14.0			

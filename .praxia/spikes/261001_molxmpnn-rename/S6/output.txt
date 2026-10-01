@@ -1,0 +1,23 @@
+--- runs per project_slug for the aminx project and its consumer mpnn_ext
+{
+  "rows": [
+    [
+      "aminx",
+      144
+    ],
+    [
+      "mpnn_ext",
+      19
+    ]
+  ],
+  "count": 2
+}
+--- columns of runs whose name mentions project
+{
+  "rows": [
+    [
+      "project_slug"
+    ]
+  ],
+  "count": 1
+}

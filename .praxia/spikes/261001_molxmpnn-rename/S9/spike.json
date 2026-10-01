@@ -1,0 +1,30 @@
+{
+  "prereg": {
+    "id": "S9",
+    "claims": {
+      "A1": "mpnn_ext, asr and tev_design declare aminx as a dependency, and mpnn_ext, asr and hautespout vendor it as git submodules; the recon brief's 'none import aminx' is wrong for this partition.",
+      "A10": "asr, mpnn_ext and hautespout fetch the aminx submodule from https://github.com/maraxen/aminx.git.",
+      "A20": "asr's vendored proteinsmc guards find_spec('aminx'), and proteinsmc main guards the dead name find_spec('prxteinmpnn').",
+      "A23": "Claude auto-memory is keyed by the checkout path (-home-marielle-projects-aminx), so renaming the checkout directory orphans it."
+    },
+    "question": "Do the sibling repos' own files (outside this workspace) show the dependency declarations, submodule URLs, find_spec guards and path-keyed memory directory that the rename design leans on?",
+    "command": "bash .praxia/spikes/261001_molxmpnn-rename/S9/probe.sh",
+    "expect_if_true": "grep shows an aminx dependency line in mpnn_ext, asr and tev_design pyproject files; .gitmodules in asr, mpnn_ext and hautespout each show url = https://github.com/maraxen/aminx.git; find_spec('aminx') in asr's vendored proteinsmc and find_spec('prxteinmpnn') in proteinsmc main; the -home-marielle-projects-aminx memory directory exists.",
+    "expect_if_false": "Any of those lines is absent (a consumer does not depend on or vendor aminx, a URL differs, a guard names another package, or the memory directory is not path-keyed), which would shrink or reshape items S3-14..S3-20."
+  },
+  "result": {
+    "ran_at": "2026-10-01T16:39:09.368634+00:00",
+    "git_head": "cb8ea2c6ce59d9382251cdbe27b052900c89a2f4",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.1270601749420166,
+    "output_sha256": "df0e8a32cc7f4e919b0c90ca7f99fffb30799856451ccd816245d90ea8a6f712",
+    "output_full_sha256": "df0e8a32cc7f4e919b0c90ca7f99fffb30799856451ccd816245d90ea8a6f712",
+    "output_bytes": 1786,
+    "output_truncated": false,
+    "prereg_sha256": "7f83cf92f51a687c5069d8db655455332dd20178bed2e64ea9df36daf8cf9676",
+    "probe_files": {
+      "probe.sh": "41b0b295208491473641d6a50b05ae4e077442b9df92b137140463178db2fb64"
+    }
+  }
+}

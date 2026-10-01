@@ -1,0 +1,34 @@
+r1 C11 re-read, 2026-10-01. Throwaway probe, output transcribed from the terminal (not a spike-run record).
+command: cd ~/projects/praxis/plr-sema/tests/fixtures && jq -r '[input_filename, (.operations|length), (.execution_order|length), (children not in operations ids | length), (execution_order ids not in operations | length)] | @tsv' *_graph.json
+columns: file, n_operations, n_execution_order, n_child_ids_unresolved (foreach_body+true_branch+false_branch not in operations ids), n_order_ids_unresolved
+all_fields_graph.json	5	4	0	0
+aspirate_after_drop_graph.json	3	3	0	0
+aspirate_no_setup_graph.json	1	1	0	0
+branch_join_graph.json	4	3	0	0
+branchy_graph.json	3	3	0	0
+call_before_unowned_region_graph.json	4	3	0	0
+conditional_protocol_graph.json	5	3	0	0
+dead_loop_body_graph.json	4	3	0	0
+double_pickup_graph.json	2	2	0	0
+lidded_plate_aspirate_graph.json	2	2	0	0
+loop_double_pickup_graph.json	4	2	0	0
+loop_protocol_graph.json	5	3	0	0
+nested_regions_graph.json	8	1	0	0
+pickup_then_aspirate_graph.json	2	2	0	0
+proved_trip_graph.json	16	8	0	0
+self_attr_graph.json	1	1	0	0
+setup_then_aspirate_graph.json	2	2	0	0
+simple_transfer_graph.json	4	4	0	0
+transfer_after_pickup_graph.json	4	4	0	0
+trip_20_graph.json	4	3	0	0
+volume_overdraw_graph.json	5	5	0	0
+volume_overfill_graph.json	3	3	0	0
+volume_retip_graph.json	7	7	0	0
+volume_safe_graph.json	5	5	0	0
+volume_top_graph.json	5	5	0	0
+volume_two_channel_one_well_graph.json	3	3	0	0
+volume_while_graph.json	6	5	0	0
+while_alternating_graph.json	3	2	0	0
+earlier command (ls *_graph.json | wc -l): 28; every one of the 28 has keys operations and execution_order (a python check printed no NOT line).
+conclusion: 28 graph fixtures; all child ids resolve to operations entries; execution_order is a SUBSET of operations in 12 files (it omits nested nodes, e.g. nested_regions_graph.json 8 operations, 1 in execution_order); derived_contracts_pre_increment.json is not matched by *_graph.json.
+source of the models: praxis/backend/utils/plr_static_analysis/models.py lines 504-511 (GraphNodeType), 525-569 (OperationNode), 572-596 (ResourceNode), 623-671 (ProtocolComputationGraph).

@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S10",
+    "claims": {
+      "A30": "importlib.util.find_spec('pkg.sub.mod') raises ModuleNotFoundError when pkg is not installed, whereas find_spec('pkg') returns None, so a guard must test the root package first."
+    },
+    "question": "With the root package absent, does find_spec on a dotted name raise, and does a parent-first guard avoid the raise?",
+    "command": "python3.13 .praxia/spikes/261001_molxmpnn-rename/S10/probe.py",
+    "expect_if_true": "dotted_find_spec_absent_parent shows RAISES ModuleNotFoundError; parent_find_spec_absent shows None; guard_parent_first shows False without raising.",
+    "expect_if_false": "dotted_find_spec_absent_parent returns None (the simple guard is safe) or guard_parent_first raises."
+  },
+  "result": {
+    "ran_at": "2026-10-01T16:47:45.291945+00:00",
+    "git_head": "cb8ea2c6ce59d9382251cdbe27b052900c89a2f4",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.04087233543395996,
+    "output_sha256": "4e4616e403ff5968e7dbec36f103b27c91ebbd69dae1d55e72191f82c81655c5",
+    "output_full_sha256": "4e4616e403ff5968e7dbec36f103b27c91ebbd69dae1d55e72191f82c81655c5",
+    "output_bytes": 165,
+    "output_truncated": false,
+    "prereg_sha256": "1258a3324f6c6dd93253369c2ea53c9a6d73ce705c94ef137addf6a00cd846ce",
+    "probe_files": {
+      "probe.py": "0976798a253f9840e99893d44a80f75878635e605bfcbf151d45b0d9bb87249b"
+    }
+  }
+}

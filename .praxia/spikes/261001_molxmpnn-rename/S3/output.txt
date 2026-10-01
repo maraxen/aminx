@@ -1,0 +1,8 @@
+{
+  "blob_embeds_old_path": true,
+  "plain_error": "No module named 'oldpkg'",
+  "plain_loads_fails": true,
+  "remap_class_module": "newpkg.potts.calibration",
+  "remap_leaves_stdlib_alone": true,
+  "remap_loads": true
+}

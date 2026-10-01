@@ -1,0 +1,108 @@
+### xtrax@v0.4.0a11 src/xtrax/composition/graph.py
+
+    id: str
+    callable_ref: Callable[..., Any]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+@dataclass(frozen=True, slots=True)
+class GraphEdge:
+    """A directed edge between two HostPrepGraphNode ids."""
+
+    src: str
+    dst: str
+
+    """
+
+    nodes: tuple[HostPrepGraphNode, ...]
+    edges: tuple[GraphEdge, ...] = ()
+### xtrax@v0.4.0a11 src/xtrax/composition/serialize.py
+    return {
+        "id": node.id,
+        "callable_ref": _callable_to_import_path(node.callable_ref),
+        "metadata": dict(node.metadata),
+def serialize_graph(graph: HostPrepGraph) -> dict[str, Any]:
+    """Serialize a HostPrepGraph to a JSON-able dict, tagged with GRAPH_SCHEMA_VERSION."""
+    return {
+        "schema_version": GRAPH_SCHEMA_VERSION,
+        "nodes": [serialize_node(node) for node in graph.nodes],
+        "edges": [{"src": edge.src, "dst": edge.dst} for edge in graph.edges],
+    }
+    if version > GRAPH_SCHEMA_VERSION:
+        msg = (
+            f"schema_version {version} is unknown -- newer than the current version "
+### xtrax@v0.4.0a11 src/xtrax/export/targets.py
+  that would once have raised ``vulkan-spirv`` to ``VALIDATED`` was falsified
+  before it was built (see ``xtrax.export.spirv``).
+- ``onnx`` is converted AND executed on ONNX Runtime's CPU execution provider,
+  with integer outputs compared exactly. That is evidence about ORT CPU only:
+  the same file on ORT Web (wasm or WebGPU) is not executed here.
+### xtrax@v0.4.0a11 src/xtrax/export/onnx.py
+            the main graph and every subgraph. ``"unknown"`` counts outputs whose
+            type shape inference could not resolve.
+        int64_producers: Count of int64-producing nodes per op type. Non-empty
+            means ORT Web's WebGPU EP (which has no int64) would have to place
+            those nodes on another EP.
+        graph_inputs: Dtype of each graph input, in order.
+### praxis backend/utils/plr_static_analysis/models.py (504-530,555,568)
+class GraphNodeType(str, Enum):
+  """Classification of computation graph nodes."""
+
+  STATIC = "static"  # Can be pre-computed/evaluated at analysis time
+  DYNAMIC = "dynamic"  # Requires runtime data
+  CONDITIONAL = "conditional"  # Branches based on runtime value
+  FOREACH = "foreach"  # Loop over collection
+  REGION = "region"  # A for/while/if region-header node; emits no CALL (spec §12.2.2)
+class OperationNode(BaseModel):
+  """A single operation in the protocol execution graph.
+
+  Represents a method call like `lh.aspirate(source, 100)` with its
+  arguments, preconditions, and metadata.
+  """
+  foreach_body: list[str] = Field(default_factory=list, description="Child node IDs in loop body")
+  true_branch: list[str] = Field(default_factory=list, description="True branch node IDs")
+### praxis backend/utils/plr_static_analysis/models.py (623-644)
+class ProtocolComputationGraph(BaseModel):
+  """Complete computational graph for a protocol.
+
+  This is the main output of the graph extraction process, containing
+  execution_order: list[str] = Field(
+    default_factory=list, description="Operation IDs in execution order"
+  )
+### praxis backend/models/domain/schedule.py (49,63,132-133,141)
+  estimated_duration_ms: int | None = Field(default=None, description="Estimated duration")
+  max_retries: int = Field(default=3)
+class AssetReservationBase(PraxisBase):
+  """Base schema for AssetReservation - shared fields for create/update/response."""
+  released_at: datetime | None = Field(
+### praxis web-client/package.json (46,65)
+    "@angular/core": "^21.0.0",
+    "pyodide": "^0.29.0",
+### praxis web-client/package.json (10)
+    "jupyterlite:build": "cd ../.. && uv run jupyter lite build --config praxis/web-client/jupyterlite-config.json --output-dir praxis/web-client/src/assets/jupyterlite",
+### praxis web-repl/jupyter-lite.json (23)
+      "@jupyterlite/pyodide-kernel-extension:kernel": {
+### praxis backend/models/domain/protocol.py (320)
+  graph_cached_at: datetime | None = Field(default=None)
+### praxis computation_graph_extractor.py (880)
+  def build_graph(self) -> ProtocolComputationGraph:
+### aminx site/index.html (12-14,25-29)
+  Multithreaded wasm needs COOP/COEP response headers (see
+  browser_integration.md's "Hosting requirements"). GitHub Pages cannot set
+  custom response headers, so a deployment there runs single-threaded
+<script type="importmap">
+{
+  "imports": {
+    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs"
+  }
+### aminx site/app.js (1)
+// aminx ProteinMPNN, in the browser. Plain ES modules, no bundler.
+### aminx browser/aminx-sampler/runspec_core.mjs (1-8)
+// RunSpec -> P07 input tensors: browser-safe core (no node: imports).
+//
+// This module holds the numeric logic shared by the Node CLI/test harness
+// (browser/layer_c/runspec.mjs, which re-exports everything here and adds
+// node:fs/node:path-based file helpers on top) and the browser-only sampler
+// (browser/aminx-sampler/aminx_sampler.mjs). Keeping the PRNG, gumbel,
+// shuffle/fixedFirstShuffle, tieGroupMap and buildP07Inputs logic in exactly
+// ONE place means the two callers can never diverge by hand-copying.
+### aminx .praxia/docs/specs/260929_p07-split-export.md (2)
+title: "P07 split export: encoder graph + per-step decoder graph, loop in JS"

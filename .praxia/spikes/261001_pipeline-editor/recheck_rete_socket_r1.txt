@@ -1,0 +1,18 @@
+r1 C14 re-read, 2026-10-01. Throwaway probe, output transcribed from the terminal (not a spike-run record).
+command 1: curl -sL https://registry.npmjs.org/rete/-/rete-2.0.6.tgz | tar -xzO package/_types/presets/classic.d.ts | sed -n 8,24p
+output 1 (rete@2.0.6 package/_types/presets/classic.d.ts, file lines 8-19 shown here as lines 3-14):
+/**
+ * The socket class
+ * @priority 7
+ */
+export declare class Socket {
+    name: string;
+    /**
+     * @constructor
+     * @param name Name of the socket
+     */
+    constructor(name: string);
+}
+command 2: curl -sL https://registry.npmjs.org/rete/-/rete-2.0.6.tgz | tar -xzO --wildcards 'package/_types/*' | grep -c isCompatibleWith
+output 2: 0
+conclusion: the Socket class declares only `name` and a constructor, and no file under package/_types of rete@2.0.6 contains the string isCompatibleWith (negative result, NOHIT).

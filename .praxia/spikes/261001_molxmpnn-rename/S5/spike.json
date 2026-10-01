@@ -1,0 +1,29 @@
+{
+  "prereg": {
+    "id": "S5",
+    "claims": {
+      "A7": "The rename touches at least 800 tracked files (case-insensitive word aminx), about 140 of them under src.",
+      "A18": "No file under src outside src/aminx/ebm imports aminx.ebm.",
+      "A19": "The previous rename left stale names: 64 tracked files still contain prxteinmpnn and scripts/check_model_boundary.sh guards only the dead name."
+    },
+    "question": "How many tracked files does an aminx -> molxmpnn rename touch, is the EBM package still self-contained, and how much residue did the previous prxteinmpnn -> aminx rename leave (including a boundary-check script that guards only the dead name)?",
+    "command": "bash .praxia/spikes/261001_molxmpnn-rename/S5/probe.sh",
+    "expect_if_true": "Total tracked files >= 800 with src between 130 and 150; importers of aminx.ebm outside src/aminx/ebm is 0; prxteinmpnn files is 64 (+/-3) and check_model_boundary.sh has >0 dead-name lines and 0 live-name lines.",
+    "expect_if_false": "Total below 800 or src far from 140 (sizing is wrong); a nonzero ebm importer count (S2's decoupling assumption breaks); prxteinmpnn residue small or the script already names aminx (the 'previous rename left guards dead' premise is wrong)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T16:30:54.308378+00:00",
+    "git_head": "cb8ea2c6ce59d9382251cdbe27b052900c89a2f4",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.9958138465881348,
+    "output_sha256": "16e428d1a915854c2cac7510cb3630010fd10b7d4c11e9fc1e2186ecea1d04ac",
+    "output_full_sha256": "16e428d1a915854c2cac7510cb3630010fd10b7d4c11e9fc1e2186ecea1d04ac",
+    "output_bytes": 797,
+    "output_truncated": false,
+    "prereg_sha256": "3031f12a8ec1a37b2b654a549844b2bceff3ab085fa3ad28fe35fca4eceaf190",
+    "probe_files": {
+      "probe.sh": "e4f74217dec991ea83ea7ebc2625b80d5f30408ad803f05c327fc7226bbeab4a"
+    }
+  }
+}
