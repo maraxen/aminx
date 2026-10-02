@@ -11,6 +11,13 @@ Negative controls, each of which must land in fail:
   scalar dropout off
   vector dropout on
 
+Positive control ``scalar_both_off`` (optional, not a negative, not part of
+the pre-registered outcomes): upstream ``nn.Dropout`` stays in eval and the
+aminx plan uses ``scalar=False``. It must report near-zero. A non-zero result
+means instrument floor rather than a port defect. Pass ``--mutants
+reduction_swap,ddof_0,scalar_off,vector_on,scalar_both_off`` to run it beside
+the four negatives. It is excluded from ``n_listed`` and ``n_failed``.
+
 The clean arm and each mutant arm are separate subprocesses. A missing
 ``$BTH_RESULTS_PATH`` is fatal.
 """
@@ -29,10 +36,14 @@ import logging
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 MUTANTS = ("reduction_swap", "ddof_0", "scalar_off", "vector_on")
+# Optional arm. Not a member of MUTANTS: those four must fail, and this one
+# must agree. Counting it in n_listed would change the pre-registered outcomes.
+POSITIVE_ARM = "scalar_both_off"
 PASS_MAX = 1e-4
 INCONCLUSIVE_MAX = 1e-3
 CHECKPOINT_NAME = "laser_weights_0p1A_nothing_heldout.pt"
@@ -72,7 +83,115 @@ def _parse(argv: list[str]) -> argparse.Namespace:
   parser.add_argument("--work-dir", type=Path, default=None)
   parser.add_argument("--arm-timeout", type=float, default=86400.0)
   parser.add_argument("--oracle-worker", action="store_true")
+  parser.add_argument(
+    "--scalar-eval",
+    action="store_true",
+    help="oracle only: leave nn.Dropout in eval and write the positive-control reference",
+  )
   return parser.parse_args(argv)
+
+
+@dataclass(frozen=True, slots=True)
+class ArmPlan:
+  """How one proofread arm reduces, and whether upstream dropout stays off."""
+
+  scalar: bool
+  vector: bool
+  ddof: int
+  std_over: str
+  scalar_eval: bool
+
+
+def scalar_both_off_plan() -> ArmPlan:
+  """Positive control: both sides have scalar dropout genuinely disabled.
+
+  Upstream ``nn.Dropout`` modules are left in eval (not switched to train)
+  and the aminx plan uses ``scalar=False``, so the proofread computation
+  reduces to the plain conditional decode.
+  This arm must report near-zero max_abs_mean and max_abs_std.
+  A non-zero result means instrument floor rather than a port defect.
+  """
+  return ArmPlan(
+    scalar=False,
+    vector=False,
+    ddof=1,
+    std_over="orders",
+    scalar_eval=True,
+  )
+
+
+def arm_plan(arm: str | None) -> ArmPlan:
+  """Reduction and dropout flags for ``arm``.
+
+  ``scalar_off`` disables only the aminx plan. Upstream for that arm is still
+  the train-mode reference, which is why it is a negative control.
+  """
+  if arm == POSITIVE_ARM:
+    return scalar_both_off_plan()
+  return ArmPlan(
+    scalar=arm != "scalar_off",
+    vector=arm == "vector_on",
+    ddof=0 if arm == "ddof_0" else 1,
+    std_over="reps" if arm == "reduction_swap" else "orders",
+    scalar_eval=False,
+  )
+
+
+def split_mutants(raw: str) -> tuple[list[str], bool]:
+  """Negative controls, and whether the positive-control arm was requested.
+
+  The positive arm is not returned in the negative list, so ``n_listed`` stays
+  the count of controls that must fail.
+  """
+  requested = [item for item in raw.split(",") if item]
+  unknown = [item for item in requested if item not in (*MUTANTS, POSITIVE_ARM)]
+  if unknown:
+    msg = f"unknown mutant {unknown[0]}"
+    raise SystemExit(msg)
+  negatives = [item for item in requested if item in MUTANTS]
+  return negatives, POSITIVE_ARM in requested
+
+
+def _replay_paths(work: Path, *, scalar_eval: bool) -> tuple[Path, Path, Path, Path]:
+  """Mask npz, mask catalog, draw npz, draw catalog.
+
+  The train-mode names are the ones the negative controls already read.
+  """
+  if scalar_eval:
+    return (
+      work / "masks_eval.npz",
+      work / "masks_eval.json",
+      work / "draws_eval.npz",
+      work / "draws_eval.json",
+    )
+  return (
+    work / "masks.npz",
+    work / "masks.json",
+    work / "draws.npz",
+    work / "draws.json",
+  )
+
+
+def _touch_scalar_dropout(model: Any, *, scalar_eval: bool) -> list[Any]:  # noqa: ANN401
+  """Switch ``p > 0`` dropout to train, or require that it stay in eval.
+
+  The positive control passes ``scalar_eval=True`` and gets an empty list.
+  A module already in train mode is then an instrument error, not a port defect.
+  """
+  import torch
+
+  if scalar_eval:
+    for module in model.modules():
+      if isinstance(module, torch.nn.Dropout) and module.p > 0 and module.training:
+        msg = "positive control requires nn.Dropout to stay in eval"
+        raise RuntimeError(msg)
+    return []
+  touched: list[Any] = []
+  for module in model.modules():
+    if isinstance(module, torch.nn.Dropout) and module.p > 0:
+      module.train()
+      touched.append(module)
+  return touched
 
 
 def _checkpoint(args: argparse.Namespace) -> Path:
@@ -159,10 +278,16 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
 
   job = json.loads(args.job.read_text(encoding="utf-8"))
   upstream = json.loads(args.upstream.read_text(encoding="utf-8"))
-  masks = np.load(Path(args.work_dir) / "masks.npz")
-  catalog = json.loads((Path(args.work_dir) / "masks.json").read_text(encoding="utf-8"))
-  draws = np.load(Path(args.work_dir) / "draws.npz")
-  draw_catalog = json.loads((Path(args.work_dir) / "draws.json").read_text(encoding="utf-8"))
+  # The positive control reads the eval-mode capture. Every other arm reads
+  # the train-mode files the negative controls already use.
+  masks_path, catalog_path, draws_path, draw_catalog_path = _replay_paths(
+    Path(args.work_dir),
+    scalar_eval=arm_plan(args.arm).scalar_eval,
+  )
+  masks = np.load(masks_path)
+  catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+  draws = np.load(draws_path)
+  draw_catalog = json.loads(draw_catalog_path.read_text(encoding="utf-8"))
   checkpoint = _checkpoint(args)
   mean_gaps: list[float] = []
   std_gaps: list[float] = []
@@ -274,6 +399,7 @@ def _aminx_one(
   from aminx.model.laser.joint_decode import LaserJointDecode
   from aminx.model.laser.proofread import conditional_focus_probs, reduce_proofread
 
+  plan = arm_plan(arm)
   model = LaserDriver().load(SimpleNamespace(model_local_path=str(checkpoint)))
   import jax
 
@@ -336,12 +462,12 @@ def _aminx_one(
     [order_masks],
     [_cell_draws(str(payload["name"]), len(orders), draws, draw_catalog)],
     [order_edges],
-    scalar=arm != "scalar_off",
-    vector=arm == "vector_on",
+    scalar=plan.scalar,
+    vector=plan.vector,
     repack_all=True,
   )
-  ddof = 0 if arm == "ddof_0" else 1
-  std_over = "reps" if arm == "reduction_swap" else "orders"
+  ddof = plan.ddof
+  std_over = plan.std_over
   mean, std, _both = reduce_proofread(jnp.asarray(probs), ddof=ddof, std_over=std_over)
   return {
     "mean": np.asarray(mean).reshape(-1).tolist(),
@@ -360,6 +486,103 @@ def _oracle_python(args: argparse.Namespace) -> str:
     msg = "set LASER_ORACLE_PYTHON to the torch oracle interpreter"
     raise SystemExit(msg) from None
   return sys.executable
+
+
+def _oracle_command(
+  args: argparse.Namespace,
+  *,
+  script: str,
+  checkpoint: Path,
+  job_path: Path,
+  upstream_path: Path,
+  work: Path,
+  scalar_eval: bool,
+) -> list[str]:
+  """Argv for one oracle worker. ``scalar_eval`` is the positive-control reference."""
+  command = [
+    _oracle_python(args),
+    script,
+    "--oracle-worker",
+    "--laser-root",
+    str(args.laser_root),
+    "--checkpoint",
+    str(checkpoint),
+    "--job",
+    str(job_path),
+    "--upstream",
+    str(upstream_path),
+    "--work-dir",
+    str(work),
+  ]
+  if scalar_eval:
+    command.append("--scalar-eval")
+  return command
+
+
+def _arm_command(
+  *,
+  script: str,
+  arm: str,
+  checkpoint: Path,
+  job_path: Path,
+  upstream_path: Path,
+  work: Path,
+  laser_root: Path,
+  payload_out: Path,
+) -> list[str]:
+  return [
+    sys.executable,
+    script,
+    "--arm",
+    arm,
+    "--job",
+    str(job_path),
+    "--upstream",
+    str(upstream_path),
+    "--checkpoint",
+    str(checkpoint),
+    "--laser-root",
+    str(laser_root),
+    "--work-dir",
+    str(work),
+    "--payload-out",
+    str(payload_out),
+  ]
+
+
+def _consume_arm(
+  logger: logging.Logger,
+  *,
+  arm: str,
+  command: list[str],
+  payload_out: Path,
+  timeout: float,
+) -> dict[str, Any]:
+  payload_out.unlink(missing_ok=True)
+  try:
+    launched = _launch(command, timeout)
+  except subprocess.TimeoutExpired as exc:
+    logger.error("arm %s timed out", arm)
+    return {"band": "error", "detail": str(exc)}
+  if launched.returncode != 0:
+    return {"band": "error", "detail": launched.stderr[-500:]}
+  try:
+    loaded: dict[str, Any] = json.loads(payload_out.read_text(encoding="utf-8"))
+  except (OSError, json.JSONDecodeError):
+    return {"band": "error", "detail": launched.stderr[-500:] or "empty payload"}
+  return loaded
+
+
+def _positive_payload(row: dict[str, Any]) -> dict[str, Any]:
+  payload: dict[str, Any] = {
+    "arm": POSITIVE_ARM,
+    "band": row.get("band"),
+    "max_abs_mean": row.get("max_abs_mean"),
+    "max_abs_std": row.get("max_abs_std"),
+  }
+  if "detail" in row:
+    payload["detail"] = row["detail"]
+  return payload
 
 
 def _launch(command: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
@@ -381,11 +604,7 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
   if float(args.arm_timeout) <= 0:
     msg = "--arm-timeout must be positive"
     raise SystemExit(msg)
-  mutants = [item for item in args.mutants.split(",") if item]
-  unknown = [item for item in mutants if item not in MUTANTS]
-  if unknown:
-    msg = f"unknown mutant {unknown[0]}"
-    raise SystemExit(msg)
+  negatives, run_positive = split_mutants(args.mutants)
   work = _work_dir(args)
   job = _build_job(args.laser_root)
   job_path = work / "job.json"
@@ -393,65 +612,94 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
   job_path.write_text(json.dumps(job), encoding="utf-8")
   script = str(Path(__file__).resolve())
   oracle = _launch(
-    [
-      _oracle_python(args),
-      script,
-      "--oracle-worker",
-      "--laser-root",
-      str(args.laser_root),
-      "--checkpoint",
-      str(checkpoint),
-      "--job",
-      str(job_path),
-      "--upstream",
-      str(upstream_path),
-      "--work-dir",
-      str(work),
-    ],
+    _oracle_command(
+      args,
+      script=script,
+      checkpoint=checkpoint,
+      job_path=job_path,
+      upstream_path=upstream_path,
+      work=work,
+      scalar_eval=False,
+    ),
     float(args.arm_timeout),
   )
   if oracle.returncode != 0:
     logger.error("oracle worker failed: %s", oracle.stderr[-500:])
     raise SystemExit(oracle.stderr[-500:])
   # The oracle writes the focus into the job so both sides share it.
-  job_path.write_text(upstream_path.with_name("job.json").read_text(encoding="utf-8"), encoding="utf-8")
+  job_path.write_text(
+    upstream_path.with_name("job.json").read_text(encoding="utf-8"), encoding="utf-8"
+  )
   measured: dict[str, dict[str, Any]] = {}
-  for arm in ("clean", *mutants):
+  for arm in ("clean", *negatives):
     payload_out = work / f"payload_{arm}.json"
-    payload_out.unlink(missing_ok=True)
-    try:
-      launched = _launch(
-        [
-          sys.executable,
-          script,
-          "--arm",
-          arm,
-          "--job",
-          str(job_path),
-          "--upstream",
-          str(upstream_path),
-          "--checkpoint",
-          str(checkpoint),
-          "--laser-root",
-          str(args.laser_root),
-          "--work-dir",
-          str(work),
-          "--payload-out",
-          str(payload_out),
-        ],
-        float(args.arm_timeout),
+    measured[arm] = _consume_arm(
+      logger,
+      arm=arm,
+      command=_arm_command(
+        script=script,
+        arm=arm,
+        checkpoint=checkpoint,
+        job_path=job_path,
+        upstream_path=upstream_path,
+        work=work,
+        laser_root=args.laser_root,
+        payload_out=payload_out,
+      ),
+      payload_out=payload_out,
+      timeout=float(args.arm_timeout),
+    )
+  positive_row: dict[str, Any] | None = None
+  if run_positive:
+    # Separate capture. The train-mode upstream.json stays the reference for
+    # clean and the four negatives.
+    eval_upstream = work / "upstream_eval.json"
+    logger.info("positive control oracle: nn.Dropout left in eval")
+    eval_oracle = _launch(
+      _oracle_command(
+        args,
+        script=script,
+        checkpoint=checkpoint,
+        job_path=job_path,
+        upstream_path=eval_upstream,
+        work=work,
+        scalar_eval=True,
+      ),
+      float(args.arm_timeout),
+    )
+    if eval_oracle.returncode != 0:
+      logger.error("positive-control oracle failed: %s", eval_oracle.stderr[-500:])
+      positive_row = {"band": "error", "detail": eval_oracle.stderr[-500:]}
+    else:
+      payload_out = work / f"payload_{POSITIVE_ARM}.json"
+      positive_row = _consume_arm(
+        logger,
+        arm=POSITIVE_ARM,
+        command=_arm_command(
+          script=script,
+          arm=POSITIVE_ARM,
+          checkpoint=checkpoint,
+          job_path=job_path,
+          upstream_path=eval_upstream,
+          work=work,
+          laser_root=args.laser_root,
+          payload_out=payload_out,
+        ),
+        payload_out=payload_out,
+        timeout=float(args.arm_timeout),
       )
-    except subprocess.TimeoutExpired as exc:
-      logger.error("arm %s timed out", arm)
-      measured[arm] = {"band": "error", "detail": str(exc)}
-      continue
-    if launched.returncode != 0:
-      measured[arm] = {"band": "error", "detail": launched.stderr[-500:]}
-      continue
-    try:
-      measured[arm] = json.loads(payload_out.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-      measured[arm] = {"band": "error", "detail": launched.stderr[-500:] or "empty payload"}
+    report = _positive_payload(positive_row)
+    (work / "positive_control.json").write_text(
+      json.dumps(report, indent=2) + "\n",
+      encoding="utf-8",
+    )
+    logger.info(
+      "positive control %s max_abs_mean=%s max_abs_std=%s band=%s",
+      POSITIVE_ARM,
+      report.get("max_abs_mean"),
+      report.get("max_abs_std"),
+      report.get("band"),
+    )
   clean = str(measured["clean"]["band"])
   statuses = {
     mutant: "failed"
@@ -459,23 +707,23 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
     else "passed"
     if measured[mutant]["band"] in {"pass", "inconclusive"}
     else "error"
-    for mutant in mutants
+    for mutant in negatives
   }
   if args.controls_out is not None:
     args.controls_out.parent.mkdir(parents=True, exist_ok=True)
-    args.controls_out.write_text(
-      json.dumps(
-        {"clean": clean, "mutants": statuses, "weights": {str(checkpoint): _sha256(checkpoint)}},
-        indent=2,
-      )
-      + "\n",
-      encoding="utf-8",
-    )
+    controls: dict[str, Any] = {
+      "clean": clean,
+      "mutants": statuses,
+      "weights": {str(checkpoint): _sha256(checkpoint)},
+    }
+    if positive_row is not None:
+      controls["positive_control"] = _positive_payload(positive_row)
+    args.controls_out.write_text(json.dumps(controls, indent=2) + "\n", encoding="utf-8")
   n_failed = sum(status == "failed" for status in statuses.values())
   clean_row = measured["clean"]
   return {
     "clean": clean,
-    "n_listed": len(mutants),
+    "n_listed": len(negatives),
     "n_failed": n_failed,
     "max_abs_mean": float(clean_row.get("max_abs_mean", float("nan"))),
     "max_abs_std": float(clean_row.get("max_abs_std", float("nan"))),
@@ -580,11 +828,7 @@ def _oracle_worker(args: argparse.Namespace) -> None:
         draw_key = f"u{len(draw_blobs)}"
         draw_blobs[draw_key] = np.asarray(draws)
         draw_catalog.append({"key": draw_key, "name": payload["name"], "copy": copy})
-        touched = []
-        for module in model.modules():
-          if isinstance(module, torch.nn.Dropout) and module.p > 0:
-            module.train()
-            touched.append(module)
+        touched = _touch_scalar_dropout(model, scalar_eval=bool(args.scalar_eval))
         assert_vector_dropout_eval(model)
         try:
           with injected_scalar_dropout(model, rng=rng) as dropout, injected_uniform_draws(draws):
@@ -596,9 +840,12 @@ def _oracle_worker(args: argparse.Namespace) -> None:
               disable_pbar=True,
               repack_all=True,
             )
-            for path, rows in dropout.recorded.items():
+            # Eval mode records nothing: dropout never fires, and replaying an
+            # empty catalog with scalar=False is the plain conditional decode.
+            recorded = () if args.scalar_eval else tuple(dropout.recorded.items())
+            for path, recorded_rows in recorded:
               identities = dropout.edges.get(path, [])
-              for index, row in enumerate(rows):
+              for index, row in enumerate(recorded_rows):
                 key = f"m{len(blobs)}"
                 blobs[key] = np.asarray(row)
                 identity = identities[index] if index < len(identities) else None
@@ -619,6 +866,8 @@ def _oracle_worker(args: argparse.Namespace) -> None:
         finally:
           for module in touched:
             module.eval()
+        if args.scalar_eval:
+          _touch_scalar_dropout(model, scalar_eval=True)
         probs.append(torch.softmax(sampled.sequence_logits[focus], dim=-1))
       stacked = torch.stack(probs, dim=0).double()
       mean = stacked.mean(dim=0)
@@ -630,10 +879,18 @@ def _oracle_worker(args: argparse.Namespace) -> None:
         "std": std.detach().cpu().tolist(),
         "cells": cells.tolist(),
       }
-  np.savez_compressed(Path(args.work_dir) / "masks.npz", **blobs)  # ty: ignore[invalid-argument-type]
-  (Path(args.work_dir) / "masks.json").write_text(json.dumps(catalog), encoding="utf-8")
-  np.savez_compressed(Path(args.work_dir) / "draws.npz", **draw_blobs)  # ty: ignore[invalid-argument-type]
-  (Path(args.work_dir) / "draws.json").write_text(json.dumps(draw_catalog), encoding="utf-8")
+  masks_path, catalog_path, draws_path, draw_catalog_path = _replay_paths(
+    Path(args.work_dir),
+    scalar_eval=bool(args.scalar_eval),
+  )
+  if blobs:
+    np.savez_compressed(masks_path, **blobs)  # ty: ignore[invalid-argument-type]
+  else:
+    # Eval mode records no keeps. savez rejects an empty archive.
+    np.savez_compressed(masks_path, _empty=np.zeros((0,), dtype=np.float64))
+  catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+  np.savez_compressed(draws_path, **draw_blobs)  # ty: ignore[invalid-argument-type]
+  draw_catalog_path.write_text(json.dumps(draw_catalog), encoding="utf-8")
   args.job.write_text(json.dumps(job), encoding="utf-8")
   args.upstream.write_text(json.dumps(stats), encoding="utf-8")
 
