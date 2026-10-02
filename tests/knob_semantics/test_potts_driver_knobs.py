@@ -219,3 +219,119 @@ def test_knob_semantics_exclude_chains(
   assert colon.shape == only_a.shape, (
     "colon and whitespace are documented separators alongside comma (driver.py:645)"
   )
+
+
+def test_knob_semantics_mutant_csv(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``mutant_csv`` supplies the ddG candidate set from a table of substitutions.
+
+  ``driver.py:424-425`` routes to ``_from_csv`` (``:494-531``), which is three
+  behaviours, not one, so all three are asserted:
+
+  * the ``pdb`` column selects rows (``:508``), so a shared table holding many
+    structures contributes only its own rows;
+  * ``chain`` and ``mut_type`` are colon-separated and zipped (``:515``), so one row
+    carrying two chains is ONE candidate with both edits, not two candidates;
+  * the wild-type letter is checked against the structure (``:519-524``), which is
+    the only assertion here that proves the parser reads the PDB at all rather than
+    taking the table's word for the sequence.
+
+  Positions are 0-based into the gap-filled chain (spec "Index space",
+  ``run_utils.py:737``), so ``A1D`` edits the SECOND residue. The table reads like
+  1-based notation, which is why it is restated here.
+  """
+  del registered
+  pdb = tmp_path / "one.pdb"
+  _write_pdb(pdb, {"A": "AAA", "B": "CCC"})
+  table = tmp_path / "mutants.csv"
+  table.write_text(
+    "pdb,chain,mut_type,ddG_expt\n"
+    "one,A,A1D,0.5\n"
+    "one,A:B,A2C:C0E,1.5\n"
+    "other,A,A1D,2.5\n",
+    encoding="utf-8",
+  )
+
+  ddg = _ddg(pdb, model_path, PottsMPNNOptions(mutant_csv=str(table)))
+
+  # Two rows, not three: the `other` row belongs to a different structure. Not
+  # four either: the two-chain row is a single double mutant.
+  assert ddg.shape == (2,), (
+    "expected one candidate per matching row; the `other` row must be filtered by "
+    "pdb name and the A:B row must stay a single double mutant"
+  )
+
+  native, single, double = _energies(pdb, model_path, ["ADACCC", "AACECC"])
+  np.testing.assert_allclose(ddg[0], single - native, rtol=1e-5, atol=1e-5)
+  np.testing.assert_allclose(ddg[1], double - native, rtol=1e-5, atol=1e-5)
+  assert abs(float(double - single)) > 1e-6, (
+    "the two rows must land on different sequences, or this comparison cannot "
+    "distinguish them from each other"
+  )
+
+  # The wild-type letter is validated against the structure, so a table that
+  # disagrees with the PDB is rejected rather than silently applied.
+  wrong = tmp_path / "wrong.csv"
+  wrong.write_text(
+    "pdb,chain,mut_type,ddG_expt\none,A,W1D,0.5\n", encoding="utf-8",
+  )
+  with pytest.raises(ValueError, match="does not match chain A"):
+    _ddg(pdb, model_path, PottsMPNNOptions(mutant_csv=str(wrong)))
+
+
+def test_knob_semantics_mutant_fasta(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``mutant_fasta`` gives the candidates as whole sequences, and outranks the CSV.
+
+  ``driver.py:422-425`` checks the FASTA field FIRST, so when both are set the CSV
+  is never opened. The spec writes the resolution as "mutant_fasta / mutant_csv
+  else single-mutant DMS" (tables at :511-512), so that order is the contract and
+  not an accident of the ``if`` chain -- which is why it is asserted here rather
+  than left to a reader of the source.
+
+  ``_from_fasta`` (``:446-491``) names chains in the header, so a header listing
+  one chain replaces only that chain and the rest stay wild-type. Omitting the
+  chain list means the record must spell out every chain (``:478-480``).
+  """
+  del registered
+  pdb = tmp_path / "one.pdb"
+  _write_pdb(pdb, {"A": "AAA", "B": "CCC"})
+  records = tmp_path / "mutants.fasta"
+  records.write_text(
+    ">one|A|0.5\nADA\n>other|A|1.5\nDDD\n", encoding="utf-8",
+  )
+
+  ddg = _ddg(pdb, model_path, PottsMPNNOptions(mutant_fasta=str(records)))
+  assert ddg.shape == (1,), "the `other` record belongs to a different structure"
+
+  # The header named chain A only, so chain B must still be the structure's own
+  # CCC -- a parser that dropped the unnamed chain would give a different energy.
+  native, mutant = _energies(pdb, model_path, ["ADACCC"])
+  np.testing.assert_allclose(ddg[0], mutant - native, rtol=1e-5, atol=1e-5)
+  assert abs(float(mutant - native)) > 1e-6, (
+    "the record must change the energy, or this holds trivially for an "
+    "implementation that returns zeros"
+  )
+
+  # Precedence: both fields set, and the CSV's two rows do not appear.
+  table = tmp_path / "mutants.csv"
+  table.write_text(
+    "pdb,chain,mut_type,ddG_expt\none,A,A1D,0.5\none,B,C0E,1.5\n",
+    encoding="utf-8",
+  )
+  both = _ddg(
+    pdb, model_path,
+    PottsMPNNOptions(mutant_fasta=str(records), mutant_csv=str(table)),
+  )
+  assert both.shape == (1,), (
+    "mutant_fasta outranks mutant_csv (driver.py:422-425, spec :511-512); a shape "
+    "of (2,) would mean the CSV won and (3,) that both were read"
+  )
+
+  # With no chain list in the header the record must cover every chain.
+  partial = tmp_path / "partial.fasta"
+  partial.write_text(">one\nADA\n", encoding="utf-8")
+  with pytest.raises(ValueError, match="must list every chain"):
+    _ddg(pdb, model_path, PottsMPNNOptions(mutant_fasta=str(partial)))

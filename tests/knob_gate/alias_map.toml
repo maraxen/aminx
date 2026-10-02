@@ -2967,15 +2967,23 @@ note = "MSA vocab-22 deferred (aminx tech debt 2067)"
 ref = "pottsmpnn_cfg__mutant_csv"
 targets = ["mutant_csv"]
 equivalence = "identical"
-parity_test_ids = []
-note = ""
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_mutant_csv"]
+note = """\
+Table of substitutions resolved by driver.py:_from_csv. The `pdb` column selects \
+rows, `chain`/`mut_type` are colon-zipped so one row with two chains is one double \
+mutant, and the wild-type letter is checked against the structure. Positions are \
+0-based (spec "Index space", run_utils.py:737)."""
 
 [[row]]
 ref = "pottsmpnn_cfg__mutant_fasta"
 targets = ["mutant_fasta"]
 equivalence = "identical"
-parity_test_ids = []
-note = ""
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_mutant_fasta"]
+note = """\
+Candidates as whole sequences, resolved by driver.py:_from_fasta. The header names \
+the chains it replaces, so unnamed chains keep the structure's own sequence; with no \
+chain list the record must spell out every chain. Outranks mutant_csv \
+(driver.py:422-425), which is the order the spec gives at :511-512."""
 
 [[row]]
 ref = "pottsmpnn_cfg__out_dir"
