@@ -64,20 +64,33 @@ class _Plan:
     self.calls: dict[str, int] = {}
     self.masks = {} if masks is None else {key: list(rows) for key, rows in masks.items()}
     self.chi_ids: set[int] = set()
+    # Hetero edge updates look up ``subgats.{i}.dropout``. Upstream records no
+    # such path, so a non-zero count means those calls were live misses.
+    self.subgat_dropout_lookups = 0
 
   def take(self, path: str, like: jax.Array) -> jax.Array:
-    """Next keep-mask for ``path``, broadcast onto ``like``."""
+    """Next keep-mask for ``path``, broadcast onto ``like``.
+
+    A missing scalar mask raises. Substituting ones and still dividing by
+    ``1 - p`` scales the activation by ``1/0.9`` and is indistinguishable
+    from a correct replay. ``.vdropout`` stays the vector-dropout control:
+    upstream never injects those masks.
+    """
     rows = self.masks.get(path, [])
     call = self.calls.get(path, 0)
     self.calls[path] = call + 1
     if call < len(rows):
       keep = jnp.asarray(rows[call], dtype=like.dtype)
-    elif path.endswith(".vdropout") and self.vector:
-      # No injected vector mask means drop every component. Oracle eval never
-      # drops vectors, so this is the "vector dropout on" control.
-      keep = jnp.zeros(like.shape, dtype=like.dtype)
+    elif path.endswith(".vdropout"):
+      # Vector-on drops every component. Vector-off keeps every component.
+      # Both are controls, not a silent scalar-mask miss.
+      if self.vector:
+        keep = jnp.zeros(like.shape, dtype=like.dtype)
+      else:
+        keep = jnp.ones(like.shape, dtype=like.dtype)
     else:
-      keep = jnp.ones(like.shape, dtype=like.dtype)
+      msg = f"no injected dropout mask for {path} call {call}"
+      raise RuntimeError(msg)
     return _fit_keep(keep, like)
 
   def scale(self, path: str, value: jax.Array) -> jax.Array:
@@ -85,6 +98,38 @@ class _Plan:
       return value
     keep = self.take(path, value)
     return value * keep / jnp.asarray(1.0 - self.drop_p, dtype=value.dtype)
+
+  def consumption(self) -> dict[str, tuple[int, int]]:
+    """``path -> (consumed, recorded)`` for every path either side touched."""
+    paths = set(self.masks) | set(self.calls)
+    return {
+      path: (self.calls.get(path, 0), len(self.masks.get(path, []))) for path in sorted(paths)
+    }
+
+  def reconcile(self) -> None:
+    """Demand each recorded scalar mask was consumed once.
+
+    Scalar-off leaves the injected catalog unread on purpose, so it does not
+    reconcile. ``.vdropout`` is the vector control and is not a scalar mask.
+    """
+    if not self.scalar:
+      return
+    problems: list[str] = []
+    seen: set[str] = set()
+    for path, rows in self.masks.items():
+      if path.endswith(".vdropout"):
+        continue
+      seen.add(path)
+      used = self.calls.get(path, 0)
+      if used != len(rows):
+        problems.append(f"{path} call {used}: consumed {used}, recorded {len(rows)}")
+    for path, used in self.calls.items():
+      if path.endswith(".vdropout") or path in seen:
+        continue
+      problems.append(f"{path} call {used}: consumed {used}, recorded 0")
+    if problems:
+      msg = "dropout replay reconciliation failed: " + "; ".join(problems)
+      raise RuntimeError(msg)
 
 
 _PLAN: ContextVar[_Plan | None] = ContextVar("laser_proofread_dropout", default=None)
@@ -376,6 +421,7 @@ def _hetero_call(
       features = jnp.concatenate((src_table[neigh], attr, sink_feat), axis=-1)
       delta = subgat.linear_edge_updates(features)
       if plan is not None:
+        plan.subgat_dropout_lookups += 1
         delta = plan.scale(path + f".subgats.{index}.dropout", delta)
       if subgat.edge_norm is not None:
         revised = apply_layer_norm(subgat.edge_norm, attr + delta)
@@ -406,7 +452,7 @@ def _residual_call(
   return apply_layer_norm(self.node_norm2, hidden + delta)
 
 
-def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
+def _install_patches() -> None:
   """Bind path-tagged forwards. The originals are restored when the plan exits.
 
   A warmed jit would keep the unpatched trace, so proofreading runs this under
@@ -431,7 +477,7 @@ def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
     *,
     inference: bool = True,
   ) -> tuple[jax.Array, jax.Array, jax.Array]:
-    path = getattr(self, "_proofread_path", "homo.dropout")
+    path = self.proofread_path
     if plan_holder.get() is None:
       return _ORIGINALS["homo"](
         self,
@@ -442,6 +488,11 @@ def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
         mask,
         inference=inference,
       )
+    if path == "":
+      # filter_jit used to drop a non-field stamp, and this call fell through
+      # to a name upstream never recorded.
+      msg = "no proofread path on HomoGATv2"
+      raise RuntimeError(msg)
     return _homo_call(
       self,
       scalars,
@@ -465,7 +516,7 @@ def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
     *,
     inference: bool = True,
   ) -> tuple[jax.Array, jax.Array, tuple[jax.Array, ...]]:
-    path = getattr(self, "_proofread_path", "hetero")
+    path = self.proofread_path
     if plan_holder.get() is None:
       return _ORIGINALS["hetero"](
         self,
@@ -478,6 +529,9 @@ def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
         source_is_sink,
         inference=inference,
       )
+    if path == "":
+      msg = "no proofread path on HeteroGATv2"
+      raise RuntimeError(msg)
     return _hetero_call(
       self,
       sink_scalars,
@@ -501,7 +555,10 @@ def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
     plan = plan_holder.get()
     if plan is None:
       return _ORIGINALS["eqdrop"](self, scalars, vectors, inference=inference)
-    path = getattr(self, "_proofread_path", "equivariant.sdropout")
+    path = self.proofread_path
+    if path == "":
+      msg = "no proofread path on EquivariantDropout"
+      raise RuntimeError(msg)
     # Scalar dropout is the nn.Dropout child. Vector dropout stays off unless
     # the plan asks for it; upstream leaves _VDropout in eval.
     if plan.scalar:
@@ -513,9 +570,11 @@ def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
 
   def mlp(self: DenseMLP, features: jax.Array) -> jax.Array:
     plan = plan_holder.get()
-    if plan is None or id(self) not in plan.chi_ids:
+    # Identity is not stable across filter_jit: the rebuilt module is a new
+    # object, so chi heads are marked by the static path instead of ``id``.
+    path = self.proofread_path
+    if plan is None or path == "":
       return _ORIGINALS["mlp"](self, features)
-    path = getattr(self, "_proofread_path", "chi")
     hidden = apply_linear(_linear_at(self.layers, 0), features)
     hidden = plan.scale(path + ".layers.1", hidden)
     hidden = jax.nn.gelu(hidden, approximate=False)
@@ -529,31 +588,30 @@ def _install_patches(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
   HeteroGATv2.__call__ = hetero  # ty: ignore[invalid-assignment]
   EquivariantDropout.__call__ = eqdrop  # ty: ignore[invalid-assignment]
   DenseMLP.__call__ = mlp  # ty: ignore[invalid-assignment]
-  _stamp(encoder, decoder)
   _PATCHED = True
 
 
 def _stamp(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
   for index, gat in enumerate(encoder.ligand_encoder.gat_layers):
-    object.__setattr__(gat, "_proofread_path", f"ligand_encoder.gat_layers.{index}.dropout")
+    object.__setattr__(gat, "proofread_path", f"ligand_encoder.gat_layers.{index}.dropout")
   object.__setattr__(
     encoder.ligand_encoder_output_gvp.dropout,
-    "_proofread_path",
+    "proofread_path",
     "ligand_encoder_output_gvp.dropout.sdropout",
   )
   for index, layer in enumerate(encoder.protein_encoder_layers):
-    object.__setattr__(layer.hetgat, "_proofread_path", f"protein_encoder_layers.{index}.hetgat")
+    object.__setattr__(layer.hetgat, "proofread_path", f"protein_encoder_layers.{index}.hetgat")
   for index, layer in enumerate(decoder.protein_decoder_layers):
-    object.__setattr__(layer.hetgat, "_proofread_path", f"protein_decoder_layers.{index}.hetgat")
+    object.__setattr__(layer.hetgat, "proofread_path", f"protein_decoder_layers.{index}.hetgat")
   for index, layer in enumerate(decoder.chi_prediction_layers):
-    object.__setattr__(layer, "_proofread_path", f"chi_prediction_layers.{index}")
+    object.__setattr__(layer, "proofread_path", f"chi_prediction_layers.{index}")
 
 
 def _chi_ids(decoder: LaserDecoder, joint_offsets: tuple[DenseMLP, ...]) -> set[int]:
   ids = {id(layer) for layer in decoder.chi_prediction_layers}
   ids.update(id(layer) for layer in joint_offsets)
   for index, layer in enumerate(joint_offsets):
-    object.__setattr__(layer, "_proofread_path", f"chi_offset_prediction_layers.{index}")
+    object.__setattr__(layer, "proofread_path", f"chi_offset_prediction_layers.{index}")
   return ids
 
 
@@ -569,13 +627,18 @@ def proofread_dropout(
   drop_p: float = _DROPOUT_P,
 ) -> Iterator[_Plan]:
   """Apply injected scalar dropout for one eager decode. Vector dropout defaults off."""
-  _install_patches(encoder, decoder)
+  _install_patches()
+  # Restamp on every entry. The class patch is process-global, but each
+  # encoder carries its own static paths.
+  _stamp(encoder, decoder)
   plan = _Plan(scalar=scalar, vector=vector, masks=masks, drop_p=drop_p)
   plan.chi_ids = _chi_ids(decoder, joint_offsets)
   token = _PLAN.set(plan)
   try:
     with jax.disable_jit():
       yield plan
+    # One decode is done. Leftover masks are calls the replay never made.
+    plan.reconcile()
   finally:
     _PLAN.reset(token)
 
