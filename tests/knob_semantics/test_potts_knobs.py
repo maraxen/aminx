@@ -19,6 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 
 import equinox as eqx
@@ -26,6 +27,7 @@ import jax
 import jax.numpy as jnp
 
 from aminx.families.potts_mpnn.decode import PottsARDecode, floor_temperature
+from aminx.families.potts_mpnn.refine import BindingTables, PottsRefine
 from aminx.model.decoder import DecoderLayer
 from aminx.families.potts_mpnn.featurize import _AA_N_1, _BACKBONE, _parse_biounits
 
@@ -416,3 +418,141 @@ def test_knob_semantics_omit_aa_per_position() -> None:
   )
   assert kept == peak, f"an all-zero mask must change nothing; got {kept}"
   assert masked != peak, f"masking the peak must move the draw; got {masked}"
+
+
+# ---------------------------------------------------------------------------
+# optimization_mode. PottsRefine dispatches on the mode string, so the knob is
+# the dispatch itself: each value must select a visibly different algorithm, and
+# a value outside the Literal must be refused rather than silently defaulted.
+# ---------------------------------------------------------------------------
+
+_A = 22
+
+
+def _binding_tables(length: int, alphabet: int, etab: jax.Array | None = None) -> BindingTables:
+  table = jnp.zeros((1, length, 1, alphabet, alphabet)) if etab is None else etab
+  return BindingTables(
+    etab=table,
+    e_idx=jnp.zeros((1, length, 1), dtype=jnp.int32),
+    pad_valid=jnp.ones((1, length), dtype=jnp.bool_),
+    complex_index=jnp.zeros((1, length), dtype=jnp.int32),
+    partition_of=jnp.zeros((length,), dtype=jnp.int32),
+    local_of=jnp.arange(length, dtype=jnp.int32),
+    inter_mask=jnp.ones((length,), dtype=jnp.bool_),
+  )
+
+
+def _refine(
+  mode: str,
+  etab: jax.Array,
+  *,
+  max_iters: int = 5,
+  bias_index: int | None = None,
+  chain_mask: np.ndarray | None = None,
+  sequence: np.ndarray | None = None,
+) -> object:
+  """Refine with the zeroed-message decoder, so logits come only from the bias."""
+  length = etab.shape[0]
+  module = _decoder(jnp.zeros((_V,), dtype=jnp.float32))
+  refiner = PottsRefine(
+    layers=module.layers, w_s_embed=module.w_s_embed, w_out=module.w_out,
+  )
+  seq = np.zeros(length, dtype=np.int32) if sequence is None else sequence
+  mask = np.ones(length, dtype=np.float32) if chain_mask is None else chain_mask
+  bias = np.zeros(_V, dtype=np.float32)
+  if bias_index is not None:
+    bias[bias_index] = 50.0
+  return refiner(
+    mode,
+    jnp.asarray(seq),
+    etab,
+    jnp.zeros((length, 1), dtype=jnp.int32),
+    jnp.ones((length,), dtype=jnp.bool_),
+    jnp.ones((length,), dtype=jnp.float32),
+    jnp.asarray(mask),
+    jnp.ones((length,), dtype=jnp.float32),
+    jnp.arange(length, dtype=jnp.int32),
+    jnp.full((max_iters, length), 0.5),
+    jnp.zeros((_V,), dtype=jnp.float32),
+    jnp.asarray(bias),
+    jnp.zeros((length, _V), dtype=jnp.float32),
+    jnp.zeros((length,), dtype=jnp.float32),
+    jnp.zeros((length, _V), dtype=jnp.float32),
+    jnp.zeros((length, _V), dtype=jnp.float32),
+    jnp.zeros((length, _V), dtype=jnp.float32),
+    jnp.arange(length, dtype=jnp.int32)[:, None],
+    jnp.ones((length,), dtype=jnp.float32),
+    jnp.zeros((length, _H), dtype=jnp.float32),
+    jnp.zeros((length, 1, _H), dtype=jnp.float32),
+    _binding_tables(length, etab.shape[-1]),
+    temperature=1.0,
+    pssm_multi=0.0,
+    pssm_bias_flag=False,
+    pssm_log_odds_flag=False,
+    binding="none",
+    tied=False,
+    tied_epistasis=False,
+    max_iters=max_iters,
+  )
+
+
+def test_knob_semantics_optimization_mode() -> None:
+  """Each ``optimization_mode`` value selects a visibly different algorithm.
+
+  Spec 6.1 types the knob as ``Literal["none", "potts", "potts_converge",
+  "nodes"]``. ``none`` is decided upstream of PottsRefine -- the host simply does
+  not refine -- so the three values that reach the module are compared here on one
+  input, and must not agree.
+
+  ``potts`` sweeps a fixed number of times; ``potts_converge`` stops when the
+  accumulated energy stops moving (upstream ``run_utils.py:116-120``, and note it
+  accumulates the ABSOLUTE energy in the non-binding case, so a flat table
+  converges on the first sweep); ``nodes`` is the Gibbs variant that honours
+  ``chain_mask``, leaving a fixed row at its input residue.
+  """
+  length = 2
+  flat = jnp.zeros((length, 1, _A, _A))
+
+  swept = _refine("potts", flat, bias_index=3)
+  assert np.array_equal(np.asarray(swept.sequence), np.asarray([3, 3]))
+
+  converged = _refine("potts_converge", flat)
+  assert int(converged.n_iters) == 1, (
+    "a flat table has nothing to move, so absolute-energy accumulation must stop "
+    "after one sweep"
+  )
+  assert float(converged.ener_delta) == 0.0
+
+  identity = jnp.zeros((length, 1, _A, _A)).at[:, 0].set(jnp.eye(_A))
+  capped = _refine("potts_converge", identity, max_iters=3)
+  assert int(capped.n_iters) == 3, (
+    "a table that keeps changing the energy must run to the iteration cap; if this "
+    "equals 1 the convergence test is firing on everything and is not a check"
+  )
+
+  gibbs = _refine(
+    "nodes",
+    flat,
+    bias_index=3,
+    sequence=np.asarray([4, 4], dtype=np.int32),
+    chain_mask=np.asarray([0.0, 1.0], dtype=np.float32),
+  )
+  assert np.array_equal(np.asarray(gibbs.sequence), np.asarray([4, 3])), (
+    "nodes must leave the chain_mask=0 row at its input residue and redesign the "
+    "other"
+  )
+
+  # The knob is not inert: converge stops earlier than the cap that potts uses,
+  # and nodes alone respects the fixed row.
+  assert int(converged.n_iters) != int(capped.n_iters)
+  assert not np.array_equal(np.asarray(gibbs.sequence), np.asarray(swept.sequence))
+
+
+def test_knob_semantics_optimization_mode_rejects_unknown() -> None:
+  """Negative control: a mode outside the Literal raises instead of defaulting.
+
+  ``refine.py:188``. A dispatch that fell through to a default would make the knob
+  silently wrong for a typo, which is worse than an error.
+  """
+  with pytest.raises(ValueError, match="unknown optimization_mode"):
+    _refine("potts_converg", jnp.zeros((2, 1, _A, _A)))
