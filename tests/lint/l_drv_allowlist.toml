@@ -58,3 +58,18 @@ reason = "sequential_dependency"
 path = "src/aminx/families/potts_mpnn/refine.py"
 qualname = "_average_member_energy"
 reason = "sequential_dependency"
+
+# Each decoded residue is readable by later residues only after this step
+# writes its sequence embedding, χ RBF and decoder row.
+[[entries]]
+path = "src/aminx/model/laser/joint_decode.py"
+qualname = "_scan_residues"
+reason = "sequential_dependency"
+
+# Tied step t reads the shared sequence embedding and each structure's χ RBF
+# that step t-1 wrote. Structure 2's χ draw also waits on structure 1's draw
+# so the (step, χ, structure) uniform stream stays in upstream order.
+[[entries]]
+path = "src/aminx/model/laser/tied.py"
+qualname = "_scan_tied"
+reason = "sequential_dependency"

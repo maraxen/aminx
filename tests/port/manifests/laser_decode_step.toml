@@ -1,0 +1,30 @@
+[manifest]
+wave_id = "laser_decode_step"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:27879314f7113221ed722ff8014e26f844e7cae590b8b85e19f82f513bfc4b06"
+created_at = "2026-09-30T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.model.laser.joint_decode.categorical_draw"
+module_path = "src/aminx/model/laser/joint_decode.py"
+depends_on = []
+
+[[kernels]]
+order = 2
+qualname = "aminx.model.laser.joint_decode.minp_warp_logits"
+module_path = "src/aminx/model/laser/joint_decode.py"
+depends_on = []
+
+[[kernels]]
+order = 3
+qualname = "aminx.model.laser.joint_decode.LaserJointDecode"
+module_path = "src/aminx/model/laser/joint_decode.py"
+depends_on = ["aminx.model.laser.decoder.LaserDecoder", "aminx.model.laser.decoder.binned_degree_basis", "aminx.model.laser.joint_decode.minp_warp_logits", "aminx.model.laser.joint_decode.categorical_draw"]
+
+[[kernels]]
+order = 4
+qualname = "aminx.model.laser.joint_decode.decode_residue"
+module_path = "src/aminx/model/laser/joint_decode.py"
+depends_on = ["aminx.model.laser.joint_decode.LaserJointDecode", "aminx.model.laser.encoders.encode_structure"]

@@ -1,0 +1,36 @@
+[manifest]
+wave_id = "laser_encoder"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:97fbbdb06e0b3e7c99a035c77c12162c78fa77f85bf12a94ead8f403887f4fef"
+created_at = "2026-09-30T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.model.laser.graphs.knn_graph"
+module_path = "src/aminx/model/laser/graphs.py"
+depends_on = []
+
+[[kernels]]
+order = 2
+qualname = "aminx.model.laser.graphs.build_laser_graphs"
+module_path = "src/aminx/model/laser/graphs.py"
+depends_on = ["aminx.model.laser.graphs.knn_graph"]
+
+[[kernels]]
+order = 3
+qualname = "aminx.model.laser.encoders.ligand_atom_bucket"
+module_path = "src/aminx/model/laser/encoders.py"
+depends_on = []
+
+[[kernels]]
+order = 4
+qualname = "aminx.model.laser.encoders.LaserEncoder"
+module_path = "src/aminx/model/laser/encoders.py"
+depends_on = ["aminx.model.laser.graphs.build_laser_graphs", "aminx.model.laser.encoders.ligand_atom_bucket"]
+
+[[kernels]]
+order = 5
+qualname = "aminx.model.laser.encoders.encode_structure"
+module_path = "src/aminx/model/laser/encoders.py"
+depends_on = ["aminx.model.laser.encoders.LaserEncoder"]

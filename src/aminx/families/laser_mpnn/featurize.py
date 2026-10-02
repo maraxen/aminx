@@ -347,12 +347,17 @@ class LaserFeatures:
   budget_residue_mask: Bool[np.ndarray, " L"]
 
 
+# Working precision for the protein path. float32 stays the default so the f32 tiers
+# keep today's casts; float64 is opt-in via featurize(..., dtype=np.float64).
+_FloatDtype = np.dtype[np.floating] | type[np.floating]
+
+
 def _as_f64(value: NDArray[np.generic]) -> NDArray[np.float64]:
   return np.asarray(value, dtype=np.float64)
 
 
-def _f32(value: NDArray[np.generic]) -> NDArray[np.float32]:
-  return np.asarray(value, dtype=np.float32)
+def _as_float(value: NDArray[np.generic], dtype: _FloatDtype) -> NDArray[np.floating]:
+  return np.asarray(value, dtype=dtype)
 
 
 def _geometry() -> dict[str, NDArray[np.generic]]:
@@ -360,12 +365,19 @@ def _geometry() -> dict[str, NDArray[np.generic]]:
     return {key: blob[key] for key in blob.files}
 
 
+def _tables(dtype: _FloatDtype = np.float32) -> dict[str, NDArray[np.generic]]:
+  # Cache key is the dtype string so an f32 caller and an f64 caller each keep
+  # their own tables and neither cast poisons the other.
+  return _tables_cached(np.dtype(dtype).str)
+
+
 @functools.cache
-def _tables() -> dict[str, NDArray[np.generic]]:
+def _tables_cached(dtype_key: str) -> dict[str, NDArray[np.generic]]:
+  dtype = np.dtype(dtype_key)
   raw = _geometry()
-  ideal = _f32(raw["ideal_aa"])
-  lengths = _f32(raw["bond_lengths"])
-  angles = _f32(raw["bond_angles"])
+  ideal = _as_float(raw["ideal_aa"], dtype)
+  lengths = _as_float(raw["bond_lengths"], dtype)
+  angles = _as_float(raw["bond_angles"], dtype)
   alignment = np.array(raw["alignment"], dtype=np.int64, copy=True)
   alignment[alignment < 0] = MAX_ATOMS
   chi_index = np.full((20, 4, 4), MAX_ATOMS, dtype=np.int64)
@@ -399,37 +411,45 @@ def _tables() -> dict[str, NDArray[np.generic]]:
   needs = ~(alignment == MAX_ATOMS).all(axis=-1)
   needs_x = np.concatenate([needs, np.array([False])])
   return {
-    "ideal": _pad_atoms(_f32(_cat_row(ideal))),
-    "lengths": _f32(_cat_row(lengths)),
-    "angles": _f32(_cat_row(angles)),
+    "ideal": _pad_atoms(_as_float(_cat_row(ideal), dtype), dtype),
+    "lengths": _as_float(_cat_row(lengths), dtype),
+    "angles": _as_float(_cat_row(angles), dtype),
     "chi_index": np.asarray(_cat_row(chi_index), dtype=np.int64),
     "alignment": np.asarray(_cat_row(alignment), dtype=np.int64),
     "leftover": np.asarray(_cat_row(leftover), dtype=np.int64),
     "needs": np.asarray(needs_x, dtype=bool),
-    "ideal_prot": _f32(raw["ideal_prot"]),
+    "ideal_prot": _as_float(raw["ideal_prot"], dtype),
   }
 
 
-def _pad_atoms(coords: NDArray[np.floating]) -> NDArray[np.float32]:
-  nan = np.full((*coords.shape[:-2], 1, 3), np.nan, dtype=np.float32)
-  return np.concatenate([_f32(coords), nan], axis=-2)
+def _pad_atoms(
+  coords: NDArray[np.floating],
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
+  nan = np.full((*coords.shape[:-2], 1, 3), np.nan, dtype=dtype)
+  return np.concatenate([_as_float(coords, dtype), nan], axis=-2)
 
 
-def _gather(coords: NDArray[np.floating], index: NDArray[np.integer]) -> NDArray[np.float32]:
+def _gather(
+  coords: NDArray[np.floating],
+  index: NDArray[np.integer],
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
   rows = np.arange(index.shape[0])[:, None]
-  return np.asarray(coords[rows, index], dtype=np.float32)
+  return np.asarray(coords[rows, index], dtype=dtype)
 
 
 def _kabsch(
   fixed: NDArray[np.floating],
   mobile: NDArray[np.floating],
-) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
-  fixed32 = _f32(fixed)
-  mobile32 = _f32(mobile)
-  fixed_com = fixed32.mean(axis=1, keepdims=True)
-  mobile_com = mobile32.mean(axis=1, keepdims=True)
-  centered_m = mobile32 - mobile_com
-  centered_f = fixed32 - fixed_com
+  dtype: _FloatDtype = np.float32,
+) -> tuple[NDArray[np.floating], NDArray[np.floating], NDArray[np.floating]]:
+  fixed_w = _as_float(fixed, dtype)
+  mobile_w = _as_float(mobile, dtype)
+  fixed_com = fixed_w.mean(axis=1, keepdims=True)
+  mobile_com = mobile_w.mean(axis=1, keepdims=True)
+  centered_m = mobile_w - mobile_com
+  centered_f = fixed_w - fixed_com
   if np.isnan(centered_m).any() or np.isnan(centered_f).any():
     msg = "NaNs in alignment matrices"
     raise LaserInputError(msg)
@@ -450,8 +470,11 @@ def _apply(
   rotation: NDArray[np.floating],
   mobile_com: NDArray[np.floating],
   fixed_com: NDArray[np.floating],
-) -> NDArray[np.float32]:
-  return ((_f32(coords) - _f32(mobile_com)) @ _f32(rotation)) + _f32(fixed_com)
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
+  return (
+    (_as_float(coords, dtype) - _as_float(mobile_com, dtype)) @ _as_float(rotation, dtype)
+  ) + _as_float(fixed_com, dtype)
 
 
 def _extend(
@@ -459,64 +482,76 @@ def _extend(
   bond_lengths: NDArray[np.floating],
   bond_angles: NDArray[np.floating],
   dihedral: NDArray[np.floating],
-) -> NDArray[np.float32]:
-  prev32 = _f32(prev)
-  if prev32.shape[0] == 0:
-    return np.zeros((0, 3), dtype=np.float32)
-  eps = np.float32(1e-6)
-  bc = prev32[:, 1] - prev32[:, 2]
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
+  prev_w = _as_float(prev, dtype)
+  if prev_w.shape[0] == 0:
+    return np.zeros((0, 3), dtype=dtype)
+  # Same 1e-6 magnitude as upstream build_rotamers; only the scalar's dtype follows.
+  eps = np.dtype(dtype).type(1e-6)
+  bc = prev_w[:, 1] - prev_w[:, 2]
   bc = bc / (np.linalg.norm(bc, axis=-1, keepdims=True) + eps)
-  ba = np.cross(prev32[:, 1] - prev32[:, 0], bc)
+  ba = np.cross(prev_w[:, 1] - prev_w[:, 0], bc)
   ba = ba / (np.linalg.norm(ba, axis=-1, keepdims=True) + eps)
   tangent = np.cross(ba, bc)
-  length = _f32(bond_lengths)
-  angle = _f32(bond_angles)
-  dihedral32 = _f32(dihedral)
+  length = _as_float(bond_lengths, dtype)
+  angle = _as_float(bond_angles, dtype)
+  dihedral_w = _as_float(dihedral, dtype)
   d1 = length * np.cos(angle)
-  d2 = length * np.sin(angle) * np.cos(dihedral32)
-  d3 = -length * np.sin(angle) * np.sin(dihedral32)
-  return prev32[:, 2] + bc * d1 + tangent * d2 + ba * d3
+  d2 = length * np.sin(angle) * np.cos(dihedral_w)
+  d3 = -length * np.sin(angle) * np.sin(dihedral_w)
+  return prev_w[:, 2] + bc * d1 + tangent * d2 + ba * d3
 
 
 def idealize_backbone(
   backbone: NDArray[np.floating],
   phi_psi: NDArray[np.floating],
-) -> NDArray[np.float32]:
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
   """Ideal N, CA, CB, C, O frames. ``backbone`` is (L, 5, 3) as N, CA, CB, C, O."""
   count = backbone.shape[0]
   frames = np.array(
-    np.broadcast_to(_tables()["ideal_prot"][_A, [0, 1, 2]], (count, 3, 3)),
-    dtype=np.float32,
+    np.broadcast_to(_tables(dtype)["ideal_prot"][_A, [0, 1, 2]], (count, 3, 3)),
+    dtype=dtype,
     copy=True,
   )
-  rotation, mobile_com, fixed_com = _kabsch(_f32(backbone)[:, [0, 1, 3]], frames)
-  placed = _apply(frames, rotation, mobile_com, fixed_com)
+  rotation, mobile_com, fixed_com = _kabsch(
+    _as_float(backbone, dtype)[:, [0, 1, 3]],
+    frames,
+    dtype,
+  )
+  placed = _apply(frames, rotation, mobile_com, fixed_com, dtype)
   nitrogen, ca, carbon = placed[:, 0], placed[:, 1], placed[:, 2]
   bond_c = carbon - ca
   bond_n = ca - nitrogen
   normal = np.cross(bond_n, bond_c)
   cb = -0.58273431 * normal + 0.56802827 * bond_n - 0.54067466 * bond_c + ca
-  psi = np.asarray(phi_psi[:, 1], dtype=np.float32)
-  dihedral = np.deg2rad(np.nan_to_num(psi + np.float32(180.0)))[:, None]
+  psi = np.asarray(phi_psi[:, 1], dtype=dtype)
+  dihedral = np.deg2rad(np.nan_to_num(psi + np.dtype(dtype).type(180.0)))[:, None]
   oxygen = _extend(
     np.stack([nitrogen, ca, carbon], axis=1),
-    np.full((count, 1), 1.23),
-    np.full((count, 1), np.deg2rad(120.8)),
+    np.full((count, 1), 1.23, dtype=dtype),
+    np.full((count, 1), np.deg2rad(120.8), dtype=dtype),
     dihedral,
+    dtype,
   )
   return np.stack([nitrogen, ca, cb, carbon, oxygen], axis=1)
 
 
-def _chi_angles(heavy: NDArray[np.floating], sequence: NDArray[np.integer]) -> NDArray[np.float32]:
-  output = np.full((heavy.shape[0], 4), np.nan, dtype=np.float32)
+def _chi_angles(
+  heavy: NDArray[np.floating],
+  sequence: NDArray[np.integer],
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
+  output = np.full((heavy.shape[0], 4), np.nan, dtype=dtype)
   keep = sequence != _X
   if not np.any(keep):
     return output
-  coords = _pad_atoms(_f32(heavy)[keep])
+  coords = _pad_atoms(_as_float(heavy, dtype)[keep], dtype)
   seq = sequence[keep]
-  index = _tables()["chi_index"][seq]
+  index = _tables(dtype)["chi_index"][seq]
   flat = index.reshape(seq.shape[0], -1)
-  gathered = _gather(coords, flat).reshape(seq.shape[0], 4, 4, 3)
+  gathered = _gather(coords, flat, dtype).reshape(seq.shape[0], 4, 4, 3)
   b0 = gathered[:, :, 0] - gathered[:, :, 1]
   b1 = gathered[:, :, 1] - gathered[:, :, 2]
   b2 = gathered[:, :, 2] - gathered[:, :, 3]
@@ -524,31 +559,33 @@ def _chi_angles(heavy: NDArray[np.floating], sequence: NDArray[np.integer]) -> N
   n2 = np.cross(b1, b2)
   m1 = np.cross(n1, b1 / np.linalg.norm(b1, axis=-1, keepdims=True))
   angle = np.rad2deg(np.arctan2(np.sum(m1 * n2, axis=-1), np.sum(n1 * n2, axis=-1)))
-  output[keep] = angle.astype(np.float32)
+  output[keep] = angle.astype(dtype)
   return output
 
 
 def _generate_ideal(
   sequence: NDArray[np.integer],
   chi: NDArray[np.floating],
-) -> tuple[NDArray[np.float32], NDArray[np.float32]]:
-  tables = _tables()
-  ideal = np.array(tables["ideal"][sequence], dtype=np.float32, copy=True)
+  dtype: _FloatDtype = np.float32,
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
+  tables = _tables(dtype)
+  ideal = np.array(tables["ideal"][sequence], dtype=dtype, copy=True)
   unadjusted = np.array(ideal, copy=True)
   chi_index = np.asarray(tables["chi_index"][sequence], dtype=np.int64)
-  lengths = _f32(tables["lengths"][sequence])
-  angles = np.deg2rad(_f32(tables["angles"][sequence]))
-  chi64 = np.deg2rad(_f32(chi))
+  lengths = _as_float(tables["lengths"][sequence], dtype)
+  angles = np.deg2rad(_as_float(tables["angles"][sequence], dtype))
+  chi_rad = np.deg2rad(_as_float(chi, dtype))
   for chi_i in range(4):
     rows = np.nonzero(~np.isnan(chi[:, chi_i]))[0]
     if rows.size == 0:
       continue
-    prev = _gather(ideal[rows], chi_index[rows, chi_i, :3])
+    prev = _gather(ideal[rows], chi_index[rows, chi_i, :3], dtype)
     nxt = _extend(
       prev,
       lengths[rows, chi_i, None],
       angles[rows, chi_i, None],
-      chi64[rows, chi_i, None],
+      chi_rad[rows, chi_i, None],
+      dtype,
     )
     ideal[rows, chi_index[rows, chi_i, 3]] = nxt
   return ideal, unadjusted
@@ -558,16 +595,18 @@ def _place_tyr(
   coords: NDArray[np.floating],
   sequence: NDArray[np.integer],
   chi3: NDArray[np.floating],
-) -> NDArray[np.float32]:
-  tables = _tables()
-  out = np.array(coords, dtype=np.float32, copy=True)
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
+  tables = _tables(dtype)
+  out = np.array(coords, dtype=dtype, copy=True)
   index = np.asarray(tables["chi_index"][sequence], dtype=np.int64)
-  prev = _gather(out, index[:, 2, :3])
+  prev = _gather(out, index[:, 2, :3], dtype)
   nxt = _extend(
     prev,
-    _f32(tables["lengths"][sequence, 2, None]),
-    np.deg2rad(_f32(tables["angles"][sequence, 2, None])),
-    np.deg2rad(_f32(chi3)[:, None]),
+    _as_float(tables["lengths"][sequence, 2, None], dtype),
+    np.deg2rad(_as_float(tables["angles"][sequence, 2, None], dtype)),
+    np.deg2rad(_as_float(chi3, dtype)[:, None]),
+    dtype,
   )
   out[np.arange(out.shape[0]), index[:, 2, 3]] = nxt
   return out
@@ -577,44 +616,51 @@ def build_rotamers(
   backbone: NDArray[np.floating],
   chi: NDArray[np.floating],
   sequence: NDArray[np.integer],
-) -> NDArray[np.float32]:
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
   """Full-atom coordinates in dataset atom order, NaN-padded to ``MAX_ATOMS``."""
-  tables = _tables()
-  ideal, unadjusted = _generate_ideal(sequence, chi)
+  tables = _tables(dtype)
+  ideal, unadjusted = _generate_ideal(sequence, chi, dtype)
   needs = tables["needs"][sequence]
   if np.any(needs):
     align_index = tables["alignment"][sequence[needs]]
     leftover = tables["leftover"][sequence[needs]]
-    fixed = _gather(ideal[needs], align_index)
-    mobile = _gather(unadjusted[needs], align_index)
+    fixed = _gather(ideal[needs], align_index, dtype)
+    mobile = _gather(unadjusted[needs], align_index, dtype)
     rows, cols = np.nonzero(leftover != MAX_ATOMS)
     atom_index = leftover[rows, cols]
     leftover_coords = unadjusted[needs][rows, atom_index]
-    rotation, mobile_com, fixed_com = _kabsch(fixed, mobile)
-    moved = _apply(leftover_coords[:, None, :], rotation[rows], mobile_com[rows], fixed_com[rows])[
-      :,
-      0,
-    ]
+    rotation, mobile_com, fixed_com = _kabsch(fixed, mobile, dtype)
+    moved = _apply(
+      leftover_coords[:, None, :],
+      rotation[rows],
+      mobile_com[rows],
+      fixed_com[rows],
+      dtype,
+    )[:, 0]
     subset = np.array(ideal[needs], copy=True)
     subset[rows, atom_index] = moved
     ideal[needs] = subset
   is_tyr = sequence == _Y
   if np.any(is_tyr):
-    ideal[is_tyr] = _place_tyr(ideal[is_tyr], sequence[is_tyr], chi[is_tyr, 2])
+    ideal[is_tyr] = _place_tyr(ideal[is_tyr], sequence[is_tyr], chi[is_tyr, 2], dtype)
   not_gly = (sequence != _G) & (sequence != _X)
   fixed_index = np.where(not_gly[:, None], np.array([0, 1, 2]), np.array([0, 1, 3]))
   mobile_index = np.where(not_gly[:, None], np.array([0, 1, 4]), np.array([0, 1, 2]))
-  fixed = _gather(_f32(backbone), fixed_index)
-  mobile = _gather(ideal, mobile_index)
-  rotation, mobile_com, fixed_com = _kabsch(fixed, mobile)
+  fixed = _gather(_as_float(backbone, dtype), fixed_index, dtype)
+  mobile = _gather(ideal, mobile_index, dtype)
+  rotation, mobile_com, fixed_com = _kabsch(fixed, mobile, dtype)
   present = ~np.isnan(ideal[:, :, 0])
   rows, cols = np.nonzero(present)
-  moved = _apply(ideal[rows, cols][:, None, :], rotation[rows], mobile_com[rows], fixed_com[rows])[
-    :,
-    0,
-  ]
+  moved = _apply(
+    ideal[rows, cols][:, None, :],
+    rotation[rows],
+    mobile_com[rows],
+    fixed_com[rows],
+    dtype,
+  )[:, 0]
   ideal[rows, cols] = moved
-  ideal[:, :4] = _f32(backbone)[:, [0, 1, 3, 4]]
+  ideal[:, :4] = _as_float(backbone, dtype)[:, [0, 1, 3, 4]]
   return ideal[:, :MAX_ATOMS]
 
 
@@ -636,9 +682,13 @@ def _lig_prot_edges(
   return np.stack([nearest.reshape(-1).astype(np.int64), np.repeat(connected, kk).astype(np.int64)])
 
 
-def _pairwise_ras(ligand: NDArray[np.floating], atoms: NDArray[np.floating]) -> NDArray[np.float32]:
-  delta = atoms.astype(np.float32)[:, None, :, :] - ligand.astype(np.float32)[None, :, None, :]
-  return np.linalg.norm(delta, axis=-1).astype(np.float32)
+def _pairwise_ras(
+  ligand: NDArray[np.floating],
+  atoms: NDArray[np.floating],
+  dtype: _FloatDtype = np.float32,
+) -> NDArray[np.floating]:
+  delta = _as_float(atoms, dtype)[:, None, :, :] - _as_float(ligand, dtype)[None, :, None, :]
+  return np.linalg.norm(delta, axis=-1).astype(dtype)
 
 
 def _contact_rows(
@@ -646,11 +696,12 @@ def _contact_rows(
   atoms: NDArray[np.floating],
   hydrogen: NDArray[np.bool_],
   threshold: float,
+  dtype: _FloatDtype = np.float32,
 ) -> NDArray[np.bool_]:
   if atoms.shape[0] == 0:
     return np.zeros((0,), dtype=bool)
-  distances = _pairwise_ras(ligand, atoms)
-  close = np.asarray(np.nan_to_num(distances, nan=np.inf) < np.float32(threshold))
+  distances = _pairwise_ras(ligand, atoms, dtype)
+  close = np.asarray(np.nan_to_num(distances, nan=np.inf) < np.dtype(dtype).type(threshold))
   per_atom = np.asarray(close.any(axis=-1), dtype=bool)
   return np.asarray(per_atom[:, ~hydrogen].any(axis=-1), dtype=bool)
 
@@ -663,6 +714,7 @@ def first_shell_contact_mask(
   *,
   lig_pr_knn_k: int = LIG_PR_KNN_K,
   lig_pr_distance_cutoff: float = LIG_PR_DISTANCE_CUTOFF,
+  dtype: _FloatDtype = np.float32,
 ) -> NDArray[np.bool_]:
   """Post-``construct_graphs`` first shell.
 
@@ -695,12 +747,14 @@ def first_shell_contact_mask(
     putative[~is_gly, 4:],
     hydrogen,
     HEAVY_ATOM_CONTACT_A,
+    dtype,
   )
   contact[is_gly] = _contact_rows(
     ligand_coords,
     putative[is_gly, 1:2],
     hydrogen,
     HEAVY_ATOM_CONTACT_A + GLY_CONTACT_PAD_A,
+    dtype,
   )
   mask[protein[contact]] = True
   return mask
@@ -959,7 +1013,7 @@ def _all_gly(view: pr.HierView) -> dict[tuple[str, str, int, str], pr.Residue]:
   return found
 
 
-def _phi_psi(residue: pr.Residue) -> NDArray[np.float32]:
+def _phi_psi(residue: pr.Residue, dtype: _FloatDtype = np.float32) -> NDArray[np.floating]:
   try:
     phi = float(calcPhi(residue))
   except ValueError:
@@ -968,7 +1022,7 @@ def _phi_psi(residue: pr.Residue) -> NDArray[np.float32]:
     psi = float(calcPsi(residue))
   except ValueError:
     psi = float(np.nan)
-  return np.asarray([phi, psi], dtype=np.float32)
+  return np.asarray([phi, psi], dtype=dtype)
 
 
 def _cap_names(numbers: NDArray[np.integer]) -> list[str]:
@@ -1012,10 +1066,10 @@ def _append_protein(
   letter: str,
   chain_index: int,
   coords: NDArray[np.float64],
-  angles: NDArray[np.float32],
+  angles: NDArray[np.floating],
   sequence: list[int],
   heavy: list[NDArray[np.float64]],
-  phi_psi: list[NDArray[np.float32]],
+  phi_psi: list[NDArray[np.floating]],
   chains: list[int],
   fixed: list[bool],
   resindex: list[int],
@@ -1038,7 +1092,7 @@ def _append_protein(
 def _push_ncaa_ligand(
   residue: pr.Residue,
   coords: NDArray[np.float64],
-  angles: NDArray[np.float32],
+  angles: NDArray[np.floating],
   sink: _LigandSink,
 ) -> None:
   cap, cap_z = _methyl_caps(angles, coords, _X)
@@ -1055,8 +1109,9 @@ def _ligand_arrays(
   sink: _LigandSink,
   *,
   ignore: bool,
+  dtype: np.dtype[np.floating] | type[np.floating],
 ) -> tuple[
-  NDArray[np.float32],
+  NDArray[np.floating],
   NDArray[np.int64],
   NDArray[np.int64],
   NDArray[np.int64],
@@ -1064,13 +1119,13 @@ def _ligand_arrays(
 ]:
   if ignore or not sink.xyz:
     return (
-      np.zeros((0, 3), dtype=np.float32),
+      np.zeros((0, 3), dtype=dtype),
       np.zeros((0,), dtype=np.int64),
       np.zeros((0,), dtype=np.int64),
       np.zeros((0,), dtype=np.int64),
       (),
     )
-  coords = np.concatenate(sink.xyz).astype(np.float32)
+  coords = np.concatenate(sink.xyz).astype(dtype)
   return (
     coords,
     np.concatenate(sink.z),
@@ -1089,6 +1144,7 @@ def featurize(
   ignore_ligand: bool = False,
   lig_pr_knn_k: int = LIG_PR_KNN_K,
   lig_pr_distance_cutoff: float = LIG_PR_DISTANCE_CUTOFF,
+  dtype: np.dtype[np.floating] | type[np.floating] = np.float32,
 ) -> LaserFeatures:
   """Featurize one PDB the way LASEr inference builds ``BatchData`` before the model."""
   pr.confProDy(verbosity="none")
@@ -1106,7 +1162,7 @@ def featurize(
   gly = _all_gly(view)
   sequence: list[int] = []
   heavy: list[NDArray[np.float64]] = []
-  phi_psi: list[NDArray[np.float32]] = []
+  phi_psi: list[NDArray[np.floating]] = []
   chains: list[int] = []
   fixed: list[bool] = []
   resindex: list[int] = []
@@ -1131,7 +1187,7 @@ def featurize(
         sink.push(residue.getCoords(), _elements(residue))
         continue
       coords = _residue_coords(residue, letter)
-      angles = _phi_psi(gly[key])
+      angles = _phi_psi(gly[key], dtype)
       if noncanonical_aa_ligand and letter == "X":
         _push_ncaa_ligand(residue, coords, angles, sink)
         continue
@@ -1170,6 +1226,7 @@ def featurize(
     ignore_ligand=ignore_ligand,
     lig_pr_knn_k=lig_pr_knn_k,
     lig_pr_distance_cutoff=lig_pr_distance_cutoff,
+    dtype=dtype,
   )
 
 
@@ -1177,7 +1234,7 @@ def _assemble(
   pdb_path: Path,
   sequence: list[int],
   heavy: list[NDArray[np.float64]],
-  phi_psi: list[NDArray[np.float32]],
+  phi_psi: list[NDArray[np.floating]],
   chains: list[int],
   fixed: list[bool],
   resindex: list[int],
@@ -1189,21 +1246,23 @@ def _assemble(
   ignore_ligand: bool,
   lig_pr_knn_k: int,
   lig_pr_distance_cutoff: float,
+  dtype: np.dtype[np.floating] | type[np.floating],
 ) -> LaserFeatures:
   seq = np.asarray(sequence, dtype=np.int64)
-  heavy_arr = np.stack(heavy).astype(np.float32)
-  angles_arr = np.stack(phi_psi)
+  heavy_arr = np.stack(heavy).astype(dtype)
+  angles_arr = np.stack(phi_psi).astype(dtype)
   gathered = heavy_arr[:, [0, 1, 4, 2, 3]]
-  backbone = idealize_backbone(gathered, angles_arr)
+  backbone = idealize_backbone(gathered, angles_arr, dtype)
   heavy_arr = np.array(heavy_arr, copy=True)
   heavy_arr[:, :5] = backbone[:, [0, 1, 3, 4, 2]]
-  chi = _chi_angles(heavy_arr, seq)
+  chi = _chi_angles(heavy_arr, seq, dtype)
   length = seq.shape[0]
   ligand_coords, ligand_z, ligand_batch, ligand_sub, elements = _ligand_arrays(
     sink,
     ignore=ignore_ligand,
+    dtype=dtype,
   )
-  fa = build_rotamers(backbone, chi, seq)
+  fa = build_rotamers(backbone, chi, seq, dtype)
   shell = first_shell_contact_mask(
     fa,
     seq,
@@ -1211,6 +1270,7 @@ def _assemble(
     ligand_z,
     lig_pr_knn_k=lig_pr_knn_k,
     lig_pr_distance_cutoff=lig_pr_distance_cutoff,
+    dtype=dtype,
   )
   crystal = np.stack(crystal_bb)
   ss = secondary_structure(crystal)
@@ -1235,7 +1295,7 @@ def _assemble(
     sidechain_contact_number=np.zeros((length,), dtype=np.int64),
     residue_burial_counts=np.zeros((length,), dtype=np.int64),
     sampled_chain_mask=np.zeros((length,), dtype=bool),
-    msa_depth_weight=np.zeros((length,), dtype=np.float32),
+    msa_depth_weight=np.zeros((length,), dtype=dtype),
     sc_mediated_hbond_counts=np.zeros((length,), dtype=np.int64),
     ligand_coords=ligand_coords,
     ligand_atomic_numbers=ligand_z,

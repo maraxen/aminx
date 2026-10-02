@@ -62,7 +62,8 @@ from aminx.run.specs import (
 # Families whose dispatch REQUIRES a registered FamilyDriver. The stock MPNN path
 # cannot serve these, so a missing driver is an error, never a silent fallback.
 # Keyed by family so adding a third family is a one-line table entry rather than
-# another hand-written branch that the next family forgets to add.
+# another hand-written branch that the next family forgets to add -- which is the
+# shape this replaced, one `if family == ...` per family.
 _DRIVER_BACKED_FAMILIES: dict[str, str] = {
   "pottsmpnn": "aminx.families.potts_mpnn",
   "lasermpnn": "aminx.families.laser_mpnn",
@@ -75,17 +76,24 @@ def _family_driver_for(spec: Any) -> FamilyDriver | None:  # noqa: ANN401
   A driver already registered under the family key is left in place so tests can
   install a stand-in before dispatch.
 
-  A driver-backed family RAISES when no driver resolves, and that is the whole
-  point of this function's shape. Every call site reads
+  A driver-backed family RAISES when no driver resolves, rather than returning
+  None. That distinction is the point: every call site reads
 
       if (d := _family_driver_for(spec)) is not None:
           ... guards that raise for unsupported purposes ...
           return run_family_driver(d, spec, purpose)
 
-  so returning None skips the entire block -- including those guards -- and falls
-  through to the stock ProteinMPNN path. Only ``pottsmpnn`` was ever imported here,
-  so ``model_family="lasermpnn"`` resolved to None and silently returned ProteinMPNN
-  numbers labelled as LASEr output, with no error anywhere (debt #2403).
+  so a None skips the entire block -- including those guards -- and falls through
+  to the stock ProteinMPNN path, answering the request with a different model.
+
+  ON DEBT #2403, CORRECTED. That debt was filed against a tree where only
+  ``pottsmpnn`` was imported here, and claimed a lasermpnn request silently
+  returned ProteinMPNN results. That overstated it: the lasermpnn import was
+  added by 2f95e187, the SAME commit that introduced LaserDriver, so no tree ever
+  had the driver without its import. What was real is narrower -- a branch
+  carrying the LASEr featurizer but not the driver resolved None and fell
+  through silently instead of saying so. The table and the raise fix that, and
+  keep a third family from re-introducing it.
   """
   family = getattr(spec, "model_family", None)
   module = _DRIVER_BACKED_FAMILIES.get(family) if isinstance(family, str) else None

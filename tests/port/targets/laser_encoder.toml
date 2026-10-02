@@ -1,0 +1,30 @@
+# laser_encoder: protein and ligand stacks from apply_encoding_layers.
+# oracle_id hashes tests/port/reference/laser_encoder/{algo.py,sealed.py}.
+# The npz files stay outside this tree; sealed.load checks oracle_manifest.toml.
+#
+# atol is the house pairing for the declared rtol (assert_close / potts_head style).
+# It is NOT a measured deviation. The orchestrator sets it from the graded run.
+[port]
+wave_id = "laser_encoder"
+oracle_id = "ref:tests/port/reference/laser_encoder:v1:sha256:9d0d5ff3eff58efc78be552cfaae7f585b9710bc09382d2c64ad045c4183c473"
+symbol_qualname = "aminx.model.laser.encoders.LaserEncoder"
+reference_subtree = "reference/laser_encoder"
+
+[capabilities]
+stochastic = false
+dynamic_shape = true
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=1e-8,atol=1e-11"
+tolerance_policy_f32 = "rtol=1e-4,atol=1e-7"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true
+
+[tolerance_basis]
+f64_atol_basis = "house-paired and NOT measured"
+f32_atol_basis = "house-paired and NOT measured"
