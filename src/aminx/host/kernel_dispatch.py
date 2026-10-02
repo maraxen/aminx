@@ -71,7 +71,9 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
   strategy_name = type(strategy).__name__
 
   if strategy_name == "Vmap":
-    return jax.vmap(body)(xs)
+    # Via safe_map, not a bare jax.vmap: it never compiles a vmapped chunk of size 1, which
+    # miscompiles silently on one XLA GPU stack (aminx #2391; see aminx.utils.safe_map).
+    return _safe_map(body, xs, batch_size=None)
   if strategy_name in ("SafeMap", "ChunkedMap"):
     # aminx.tiling.strategy.SafeMap uses .tile; xtrax's chunked strategy uses
     # .batch_size for the same tile-size concept (EPIC #1541 T-PLANNER.4

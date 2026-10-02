@@ -25,6 +25,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+import pytest
+
+# Skip loudly, with the fix, where the ONNX toolchain is absent. CI installs it (--extra onnx) so these RUN there
+# (aminx debt #2392); without this guard a missing package is a collection ERROR that reds the whole job.
+for _mod in ('onnx', 'onnxruntime', 'jax2onnx'):
+  pytest.importorskip(_mod, reason="needs the ONNX toolchain: uv sync --extra onnx (aminx debt #2392)")
+
 from scripts.browser_validation.layer_b_build import _synthetic_inputs, ort_execution_check
 from scripts.browser_validation.layer_b_ort_calibrate import P04_LOGPROB_BAR
 
