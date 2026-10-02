@@ -1,0 +1,18 @@
+tracked files containing prxteinmpnn (case-insens), all paths: 75
+  outside dated history (.praxia/, outputs/, .claude/):     32
+--- those paths, grouped by first two components
+     24 scripts/engaging
+      2 src/aminx
+      1 scripts/test_refactoring_validation.sh
+      1 scripts/recapture
+      1 scripts/cluster
+      1 scripts/check_model_boundary.sh
+      1 examples/colab_inference_demo.ipynb
+      1 docs/parity
+--- src/ occurrences
+src/aminx/potts/__init__.py:31:  # poe may not be available if prxteinmpnn or other deps are not installed
+src/aminx/sampling/__init__.py:1:"""Sampling utilities for PrXteinMPNN."""
+--- scripts/check_model_boundary.sh
+lines naming the dead package prxteinmpnn: 6
+lines naming the live package aminx:       0
+src/aminx/model/_inference exists: no

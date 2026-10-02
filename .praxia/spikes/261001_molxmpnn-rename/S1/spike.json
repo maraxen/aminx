@@ -1,0 +1,28 @@
+{
+  "prereg": {
+    "id": "S1",
+    "claims": {
+      "A2": "PyPI project name molxmpnn is unregistered (the JSON API returns 404).",
+      "A3": "Every published aminx release on PyPI is an alpha or other pre-release version."
+    },
+    "question": "Is the PyPI name molxmpnn free today, and is every existing aminx release a pre-release (which bounds who a repurposed or shimmed aminx name can surprise)?",
+    "command": "python3.13 .praxia/spikes/261001_molxmpnn-rename/S1/probe.py",
+    "expect_if_true": "molxmpnn_status is 404; aminx_status is 200 and aminx_all_prerelease is True.",
+    "expect_if_false": "molxmpnn_status is 200 (name taken) or aminx_all_prerelease is False (a stable aminx release exists). A transport-failure status means the probe is inconclusive and must be re-run under a new id."
+  },
+  "result": {
+    "ran_at": "2026-10-01T16:30:41.556964+00:00",
+    "git_head": "cb8ea2c6ce59d9382251cdbe27b052900c89a2f4",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.41944265365600586,
+    "output_sha256": "823cf1f4ec537b95468e52b3deeee7da559ce3b7cef6add404944a16dafbf665",
+    "output_full_sha256": "823cf1f4ec537b95468e52b3deeee7da559ce3b7cef6add404944a16dafbf665",
+    "output_bytes": 211,
+    "output_truncated": false,
+    "prereg_sha256": "9d3139775dfe1beedc9271e0eccde037db634f1eb14b69fa14b7b46838e07fcb",
+    "probe_files": {
+      "probe.py": "f43d61c4b69f797e51a70cbfdfa6d2cfc11bd478a9e8f8b51015ab86650e265f"
+    }
+  }
+}

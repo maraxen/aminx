@@ -1,0 +1,9 @@
+--- ruff version
+ruff 0.15.16
+--- before_rename.py (positive control: must be flagged)
+[1mbefore_rename.py[0m[36m:[0m1[36m:[0m8[36m:[0m [1m[31mTID251[0m `oldx.bad` is banned: banned
+Found 1 error.
+exit=1
+--- after_rename.py (rename victim: flagged only if ruff follows renames)
+[1;32mAll checks passed![0m
+exit=0

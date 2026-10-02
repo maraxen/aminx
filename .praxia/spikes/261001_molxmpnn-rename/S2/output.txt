@@ -1,0 +1,15 @@
+{
+  "A_class_identity": true,
+  "A_class_module_attr": "molx.host.runner",
+  "A_deprecation_warning_count": 1,
+  "A_gone_module_raises": true,
+  "A_isinstance_cross": true,
+  "A_module_identity": true,
+  "A_pickle_loads": true,
+  "A_pickle_records_real_path": true,
+  "A_real_spec_name_intact": true,
+  "A_toplevel_attr_forward": true,
+  "B_class_identity": false,
+  "B_isinstance_cross": false,
+  "B_module_identity": false
+}

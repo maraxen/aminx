@@ -1,0 +1,12 @@
+--- ruff version
+ruff 0.15.16
+--- imports_banned_literal.py (positive control: must be flagged)
+[1mimports_banned_literal.py[0m[36m:[0m1[36m:[0m8[36m:[0m [1m[31mTID251[0m `deadpkg.old` is banned: banned
+Found 1 error.
+exit=1
+--- imports_moved_module.py (the module was renamed or moved: flagged only if ruff follows moves)
+[1;32mAll checks passed![0m
+exit=0
+--- clean.py (dead key present in config, no code imports it: any warning about the unmatched ban?)
+[1;32mAll checks passed![0m
+exit=0

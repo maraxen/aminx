@@ -1,0 +1,7 @@
+praxia-cli [[bin]] names: ['praxia', 'verify_ephemeral', 'create_templates', 'seed_test', 'perf_baseline']
+praxia origin url: ['https://github.com/maraxen/praxia.git']
+praxia workspace crates named praxia-*: 138
+bathos project slugs that are praxia-like or aminx-like: ['aminx', 'praxia', 'praxis']
+slug aminx-hub present: False
+projects with a .praxia directory: 55
+sibling project named praxis present: True

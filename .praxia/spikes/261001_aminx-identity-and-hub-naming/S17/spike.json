@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S17",
+    "claims": {
+      "A49": "The previous rename (prxteinmpnn to aminx) left stale names: tracked files outside dated history (.praxia/, outputs/, .claude/) still contain prxteinmpnn, and scripts/check_model_boundary.sh names only the dead package."
+    },
+    "question": "How much of the previous rename's residue is in live code and scripts rather than in dated history, and does the boundary script still name only the dead package?",
+    "command": "bash .praxia/spikes/261001_aminx-identity-and-hub-naming/S17/probe.sh",
+    "expect_if_true": "The count outside dated history is greater than zero, src/ shows at least one occurrence, the boundary script has dead-name lines greater than zero and live-name lines equal to zero.",
+    "expect_if_false": "The count outside dated history is zero and the boundary script names aminx (the residue is only history and S3-09 reduces to a note), or the script names both packages."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:54:18.659047+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.41724181175231934,
+    "output_sha256": "b6013a61ea11c06295b0c73e818492773a24d857086acf37ff95c27f7d33a67e",
+    "output_full_sha256": "b6013a61ea11c06295b0c73e818492773a24d857086acf37ff95c27f7d33a67e",
+    "output_bytes": 789,
+    "output_truncated": false,
+    "prereg_sha256": "d443186fc19ae1a2be568905d54b4236267dd942e8a12c26486ce40a8fc53939",
+    "probe_files": {
+      "probe.sh": "55f2c6457a206a8324bc699db72968c414e43938a6393ed4d6b3e010d0fb5c78"
+    }
+  }
+}

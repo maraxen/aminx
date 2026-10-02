@@ -1,0 +1,31 @@
+=== declared dependencies on aminx
+/home/marielle/projects/mpnn_ext/pyproject.toml:8:    "aminx",
+/home/marielle/projects/asr/pyproject.toml:23:    "aminx",
+/home/marielle/projects/asr/pyproject.toml:134:members = ["aminx", "vendor/prolix", "vendor/proteinsmc", "vendor/trex"]
+/home/marielle/projects/tev_design/pyproject.toml:9:    "aminx>=0.1.0a5",
+=== git submodule declarations
+--- asr
+1:[submodule "aminx"]
+2:	path = aminx
+3:	url = https://github.com/maraxen/aminx.git
+--- mpnn_ext
+1:[submodule "external/aminx"]
+2:	path = external/aminx
+3:	url = https://github.com/maraxen/aminx.git
+--- hautespout
+1:[submodule "vendor/aminx"]
+2:	path = vendor/aminx
+3:	url = https://github.com/maraxen/aminx.git
+=== find_spec guards on package names
+/home/marielle/projects/asr/vendor/proteinsmc/src/proteinsmc/scoring/mpnn.py:14:AMINX_AVAILABLE = importlib.util.find_spec("aminx") is not None
+/home/marielle/projects/proteinsmc/src/proteinsmc/scoring/mpnn.py:14:PRXTEINMPNN_AVAILABLE = importlib.util.find_spec("prxteinmpnn") is not None
+=== proteinsmc's own note on the dead name
+  # NOTE: `prxteinmpnn` was removed 2026-08-13. The package was renamed `aminx` and no
+  # longer resolves, which made this project's requirements unsatisfiable — nothing could
+  # be installed or imported at all. It is deliberately NOT replaced with `aminx`: that
+  # would create a proteinsmc -> aminx dependency edge, which the ecosystem partition
+  # exists to flip. `scoring/mpnn.py` already guards on `find_spec("prxteinmpnn")` and
+  # degrades to unavailable, exactly as it did before this line was dropped.
+=== Claude auto-memory directory keyed by checkout path
+/home/marielle/.claude/projects/-home-marielle-projects-aminx
+/home/marielle/.claude/projects/-home-marielle-projects-aminx/memory/MEMORY.md
