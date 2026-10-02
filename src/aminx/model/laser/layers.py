@@ -70,6 +70,36 @@ def masked_softmax(
   return jnp.where(denom > 0, exp / safe, jnp.zeros_like(exp))
 
 
+def _attention_dropout(
+  weights: Float[Array, "n k *c"],
+  drop_rate: float,
+  *,
+  inference: bool,
+  key: PRNGKeyArray | None,
+) -> Float[Array, "n k *c"]:
+  """Inverted dropout on post-softmax attention weights.
+
+  ``inference=True`` is the identity, matching ``nn.Dropout`` in eval. Train mode
+  keeps each weight with probability ``1 - p`` and rescales by ``1 / (1 - p)``,
+  the same scale the proofread mask replay applies after the softmax. A missing
+  key at train time raises: returning ``weights`` would accept ``inference=False``
+  and discard it.
+  """
+  if inference or drop_rate == 0.0:
+    return weights
+  if key is None:
+    msg = "attention dropout requires a PRNG key when inference is False"
+    raise ValueError(msg)
+  keep_prob = 1.0 - drop_rate
+  if keep_prob == 0.0:
+    return jnp.zeros_like(weights)
+  # Bernoulli draws a keep-mask. The scale stays in the activation dtype so a
+  # Python float does not promote the traced weights.
+  keep = jax.random.bernoulli(key, keep_prob, weights.shape)
+  scale = jnp.asarray(keep_prob, dtype=weights.dtype)
+  return jnp.where(keep, weights / scale, jnp.zeros_like(weights))
+
+
 def apply_linear(layer: eqx.nn.Linear, features: Float[Array, "... f"]) -> Float[Array, "... o"]:
   """Batched ``x @ W.T + b`` without ``vmap``.
 
@@ -550,9 +580,9 @@ class HomoGATv2(eqx.Module):
     mask: Bool[Array, "n k"],
     *,
     inference: bool = True,
+    key: PRNGKeyArray | None = None,
   ) -> tuple[Float[Array, "n h"], Float[Array, "n v 3"], Float[Array, "n k e"]]:
-    """One homogeneous step. ``inference`` keeps attention dropout as the identity."""
-    del inference
+    """One homogeneous step. ``inference=True`` leaves attention weights unchanged."""
     source = scalars[neighbours]
     sink = jnp.broadcast_to(
       scalars[:, None, :],
@@ -560,6 +590,12 @@ class HomoGATv2(eqx.Module):
     )
     values, scores = self.messages(source, sink, edge_attr)
     weights = masked_softmax(scores, mask)
+    weights = _attention_dropout(
+      weights,
+      self.dropout_rate,
+      inference=inference,
+      key=key,
+    )
     mixed = values * weights[..., None]
     mixed = jnp.where(mask[..., None, None], mixed, jnp.zeros_like(mixed))
     pooled = jnp.sum(mixed, axis=1)
@@ -687,9 +723,14 @@ class HeteroGATv2(eqx.Module):
     source_is_sink: tuple[bool, ...],
     *,
     inference: bool = True,
+    key: PRNGKeyArray | None = None,
   ) -> tuple[Float[Array, "n h"], Float[Array, "n v 3"], tuple[Float[Array, "n k e"], ...]]:
-    """Joint attention over every subgraph, then one GVP and vector-only norm."""
-    del inference
+    """Joint attention over every subgraph, then one GVP and vector-only norm.
+
+    ``inference=True`` leaves the joint attention weights unchanged. Train mode
+    drops those weights once, after the subgraphs are concatenated, using the
+    shared subgraph drop rate.
+    """
     values: list[Float[Array, "n k heads d"]] = []
     scores: list[Float[Array, "n k heads"]] = []
     masks: list[Bool[Array, "n k"]] = []
@@ -717,6 +758,8 @@ class HeteroGATv2(eqx.Module):
       masks.append(row_mask)
     combined_mask = jnp.concatenate(tuple(masks), axis=1)
     weights = masked_softmax(jnp.concatenate(tuple(scores), axis=1), combined_mask)
+    drop_rate = self.subgats[0].dropout_rate if self.subgats else 0.0
+    weights = _attention_dropout(weights, drop_rate, inference=inference, key=key)
     mixed = jnp.concatenate(tuple(values), axis=1) * weights[..., None]
     mixed = jnp.where(combined_mask[..., None, None], mixed, jnp.zeros_like(mixed))
     pooled = jnp.sum(mixed, axis=1)
