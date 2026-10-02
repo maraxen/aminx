@@ -39,7 +39,7 @@ jobs:
       - name: Install dependencies
         run: |
           cd aminx
-          uv sync --extra cpu --extra dev --extra tests --group dev
+          uv sync --extra cpu --extra dev --extra tests --extra onnx --group dev
 
       - name: Download reference PyTorch weights
         run: |

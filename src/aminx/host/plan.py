@@ -14,7 +14,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, MemoryBudget, SafeMap
+from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, ChunkedMap, MemoryBudget
 from xtrax.tiling import BudgetInfeasibleError as _XtraxBudgetInfeasibleError
 
 from aminx.tiling.axes import N_NOISES, N_SAMPLES, N_STRUCTURES, N_TEMPERATURES
@@ -112,7 +112,7 @@ def _plan_with_joint_budget(
           "(aminx wrapper, EPIC #1541 T-PLANNER.2 -- xtrax's joint-budget "
           "mode has no automatic heterogeneous-axis guard)"
         ),
-        strategy=SafeMap(batch_size=ax.default_batch_size),
+        strategy=ChunkedMap(batch_size=ax.default_batch_size),
       )
     else:
       remaining_axes.append(ax)

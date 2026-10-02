@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import jax
 from xtrax.tiling import AxisSpec, BatchPlanner, MemoryBudget
-from xtrax.tiling import SafeMap as XtraxSafeMap
+from xtrax.tiling import ChunkedMap as XtraxChunkedMap
 from xtrax.tiling import Vmap as XtraxVmap
 
 from aminx.tiling.strategy import SafeMap, Vmap
@@ -120,7 +120,7 @@ def plan_axis_strategy(
   # make_axis_dispatch_via_xtrax expects aminx-native strategy objects (it
   # translates to xtrax-native internally via _strategy_to_xtrax) -- BatchPlanner
   # itself is xtrax-native, so translate its decision back before returning.
-  if isinstance(xtrax_strategy, XtraxSafeMap):
+  if isinstance(xtrax_strategy, XtraxChunkedMap):
     return SafeMap(tile=xtrax_strategy.batch_size)
   if isinstance(xtrax_strategy, XtraxVmap):
     return Vmap()
