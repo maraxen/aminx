@@ -33,8 +33,18 @@
 
 [sidecar]
 
-# VERIFIED: check_branch_coverage returns "pass" for these two against their
-# manifest rows. Run at 6cb81d49 with the stable artifact key.
+# EVERY ID BELOW IS STALE AS OF 23aa6b1f. All three were run at 6cb81d49, and
+# 23aa6b1f / ea23104e (src/aminx/) and aa8cf83b (scripts/parity/) have landed
+# since, so _touches_scoped rejects all of them -- including the two that had
+# been verified. check_branch_coverage does NOT return "pass" on this file
+# right now, and that is expected, not a regression. The ids are kept because
+# they still name the runs that produced the measurements; they are not
+# evidence of a green gate. Replace all five after the wave
+# (scripts/redsox/launch_wave.sh), which is the only point at which this file
+# can be made true.
+
+# WAS VERIFIED at 6cb81d49: check_branch_coverage returned "pass" for these two
+# against their manifest rows. Invalidated by the later scoped commits above.
 [sidecar.potts_ar_decode]
 # clean pass, exact token match 1.0; ar_mask_present_chain_m_pos failed at
 # 0.8668714797747056. weights key PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt
@@ -52,8 +62,11 @@ bth_run_id = "1117a297-9cfc-4cdd-a8d7-244b76cc58a8"
 [sidecar.laser_decode_e2e]
 bth_run_id = "9c8c5dce-d8d0-4b6c-9fb9-32c847603017"
 
-# NOT YET LISTED, awaiting their first runs under 6cb81d49:
+# NOT YET LISTED, awaiting the wave:
 #   potts_ar_refine_exact   3 mutants, clean previously 1.0 over 50 seeds
-#   laser_proofread_parity  4 negative controls; scalar_both_off is a POSITIVE
-#                           control, excluded from n_listed, and must NOT get a
-#                           manifest row.
+#   laser_proofread_parity  4 negative controls. The 6cb81d49 run of this slug
+#                           was launched with scalar_both_off appended to
+#                           --mutants and is ineligible for that reason alone
+#                           (trap 4), on top of the scoped-commit invalidation
+#                           above. Its verdict is still worth reading; its id
+#                           must not be written here.
