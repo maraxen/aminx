@@ -408,3 +408,103 @@ def test_decoder_attention_keep_follows_masked_first_slots() -> None:
     )
     got = np.asarray(placed[1, :, 0])
     np.testing.assert_array_equal(got, np.asarray([1.0, 1.0, 0.0], dtype=np.float32))
+
+
+def test_a_mask_miss_without_a_key_still_raises() -> None:
+  """The parity vehicle's strictness survives the production draw path.
+
+  A vehicle injects a full catalog and passes no key, so a miss there means
+  the replay broke. Substituting ones and still dividing by ``1 - p`` scales
+  the activation by ``1 / 0.9`` and reads as a correct replay.
+  """
+  plan = _Plan(scalar=True, vector=False, masks={}, drop_p=0.1)
+  with pytest.raises(RuntimeError, match="no dropout key"):
+    plan.take("protein_encoder_layers.0.hetgat.dropout", jnp.ones((4, 8)))
+
+
+def test_a_mask_miss_with_a_key_draws_a_bernoulli_keep() -> None:
+  """Production injects nothing, so every call draws at ``1 - p``."""
+  plan = _Plan(
+    scalar=True,
+    vector=False,
+    masks=None,
+    drop_p=0.1,
+    dropout_key=jax.random.PRNGKey(0),
+  )
+  keep = np.asarray(plan.take("protein_encoder_layers.0.hetgat.dropout", jnp.ones((256, 64))))
+  assert keep.shape == (256, 64)
+  assert set(np.unique(keep)).issubset({0.0, 1.0})
+  # 16384 draws at p=0.9. The band is wide enough that a correct rate never
+  # trips it and an all-ones substitution (rate 1.0) always does.
+  assert 0.88 < float(keep.mean()) < 0.92
+
+
+def test_drawn_keeps_differ_across_calls_and_repeat_for_a_key() -> None:
+  """Two calls on one path must not share a mask, and a key must reproduce.
+
+  A per-path key with no call index would hand every layer call the same
+  mask, which is dropout in name only.
+  """
+  shape = (64, 32)
+
+  def _draws(seed: int) -> list[np.ndarray]:
+    plan = _Plan(
+      scalar=True,
+      vector=False,
+      masks=None,
+      drop_p=0.1,
+      dropout_key=jax.random.PRNGKey(seed),
+    )
+    path = "protein_encoder_layers.0.hetgat.dropout"
+    return [np.asarray(plan.take(path, jnp.ones(shape))) for _ in range(2)]
+
+  first, second = _draws(0)
+  assert not np.array_equal(first, second)
+  repeat_first, repeat_second = _draws(0)
+  np.testing.assert_array_equal(first, repeat_first)
+  np.testing.assert_array_equal(second, repeat_second)
+  other_first, _other = _draws(1)
+  assert not np.array_equal(first, other_first)
+
+
+def test_reconcile_discounts_drawn_calls_but_still_catches_a_short_catalog() -> None:
+  """A production decode records nothing and must still reconcile.
+
+  Reconciliation exists to catch a replay that consumed the wrong number of
+  recorded masks. Counting drawn calls as unrecorded replays would fail every
+  real decode; discounting them must not also excuse a catalog that ran out
+  mid-replay, which is a genuinely broken replay.
+  """
+  drawn = _Plan(
+    scalar=True,
+    vector=False,
+    masks=None,
+    drop_p=0.1,
+    dropout_key=jax.random.PRNGKey(0),
+  )
+  drawn.take("protein_encoder_layers.0.hetgat.dropout", jnp.ones((4, 8)))
+  drawn.reconcile()
+  # One recorded row, two calls, and a key. The second call draws, so the
+  # recorded row is still fully consumed and this reconciles.
+  path = "chi_prediction_layers.0.layers.1"
+  mixed = _Plan(
+    scalar=True,
+    vector=False,
+    masks={path: [np.ones((4, 8), dtype=np.float32)]},
+    drop_p=0.1,
+    dropout_key=jax.random.PRNGKey(0),
+  )
+  mixed.take(path, jnp.ones((4, 8)))
+  mixed.take(path, jnp.ones((4, 8)))
+  mixed.reconcile()
+  # An unconsumed recorded row is a broken replay whichever way the tail went.
+  short = _Plan(
+    scalar=True,
+    vector=False,
+    masks={path: [np.ones((4, 8), dtype=np.float32)] * 2},
+    drop_p=0.1,
+    dropout_key=jax.random.PRNGKey(0),
+  )
+  short.take(path, jnp.ones((4, 8)))
+  with pytest.raises(RuntimeError, match="reconciliation failed"):
+    short.reconcile()

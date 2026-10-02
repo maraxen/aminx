@@ -16,6 +16,7 @@ sample.
 
 from __future__ import annotations
 
+import zlib
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -58,11 +59,19 @@ class _Plan:
     masks: Mapping[str, Sequence[np.ndarray]] | None,
     drop_p: float,
     edges: Mapping[str, Sequence[np.ndarray | None]] | None = None,
+    dropout_key: jax.Array | None = None,
   ) -> None:
     self.scalar = scalar
     self.vector = vector
     self.drop_p = drop_p
+    # Production has no injected catalog and draws its own keeps from this key.
+    # The parity vehicle passes None, which is what makes a mask miss raise
+    # there instead of being papered over by a fresh draw.
+    self.dropout_key = dropout_key
     self.calls: dict[str, int] = {}
+    # Calls satisfied by a draw rather than a recorded row, per path. Keeps
+    # ``reconcile`` from reading a drawn call as an unrecorded replay.
+    self.drawn: dict[str, int] = {}
     self.masks = {} if masks is None else {key: list(rows) for key, rows in masks.items()}
     # Parallel to ``masks``. ``None`` is an MLP keep; a ``(3, E)`` array is
     # source, sink, and neighbour-block for a sparse GAT keep.
@@ -82,11 +91,16 @@ class _Plan:
   ) -> jax.Array:
     """Next keep-mask for ``path``, placed onto ``like``.
 
-    A missing scalar mask raises. Substituting ones and still dividing by
-    ``1 - p`` scales the activation by ``1/0.9`` and is indistinguishable
-    from a correct replay. ``.vdropout`` stays the vector-dropout control:
-    upstream never injects those masks. A recorded ``(3, E)`` edge index
-    scatters by identity; without one, only element-for-element shapes fit.
+    A miss is resolved by the two callers' opposite expectations. The parity
+    vehicle injects a full catalog and passes no key, so a miss there is a
+    broken replay and raises -- substituting ones while still dividing by
+    ``1 - p`` scales the activation by ``1/0.9`` and is indistinguishable from
+    a correct replay. Production injects nothing and passes a key, so a miss
+    is the normal case and draws a fresh bernoulli keep at ``1 - p``.
+
+    ``.vdropout`` stays the vector-dropout control: upstream never injects
+    those masks. A recorded ``(3, E)`` edge index scatters by identity;
+    without one, only element-for-element shapes fit.
     """
     rows = self.masks.get(path, [])
     call = self.calls.get(path, 0)
@@ -104,8 +118,11 @@ class _Plan:
         keep = jnp.zeros(like.shape, dtype=like.dtype)
       else:
         keep = jnp.ones(like.shape, dtype=like.dtype)
+    elif self.dropout_key is not None:
+      keep = self._draw(path, call, like)
+      self.drawn[path] = self.drawn.get(path, 0) + 1
     else:
-      msg = f"no injected dropout mask for {path} call {call}"
+      msg = f"no injected dropout mask for {path} call {call} and no dropout key to draw one from"
       raise RuntimeError(msg)
     if edge is not None:
       return _scatter_keep(
@@ -118,6 +135,22 @@ class _Plan:
         call=call,
       )
     return _fit_keep(keep, like)
+
+  def _draw(self, path: str, call: int, like: jax.Array) -> jax.Array:
+    """A fresh bernoulli keep at ``1 - drop_p``, shaped like ``like``.
+
+    Each call site gets its own stream, keyed by the path and the call index,
+    so two calls on the same layer do not share a mask. ``crc32`` is the hash,
+    not ``hash()``: the builtin is salted per process, which would make a run
+    unreproducible from its seed alone.
+    """
+    if self.dropout_key is None:  # pragma: no cover - guarded by the caller
+      msg = f"no dropout key to draw {path} call {call}"
+      raise RuntimeError(msg)
+    stream = zlib.crc32(path.encode("utf-8")) & 0x7FFFFFFF
+    key = jax.random.fold_in(jax.random.fold_in(self.dropout_key, stream), call)
+    keep = jax.random.bernoulli(key, 1.0 - self.drop_p, shape=like.shape)
+    return jnp.asarray(keep, dtype=like.dtype)
 
   def scale(
     self,
@@ -144,6 +177,8 @@ class _Plan:
 
     Scalar-off leaves the injected catalog unread on purpose, so it does not
     reconcile. ``.vdropout`` is the vector control and is not a scalar mask.
+    Drawn calls are discounted: production records nothing and draws every
+    keep, so counting those as unconsumed rows would fail every real decode.
     """
     if not self.scalar:
       return
@@ -153,13 +188,15 @@ class _Plan:
       if path.endswith(".vdropout"):
         continue
       seen.add(path)
-      used = self.calls.get(path, 0)
-      if used != len(rows):
-        problems.append(f"{path} call {used}: consumed {used}, recorded {len(rows)}")
+      replayed = self.calls.get(path, 0) - self.drawn.get(path, 0)
+      if replayed != len(rows):
+        problems.append(f"{path} call {replayed}: consumed {replayed}, recorded {len(rows)}")
     for path, used in self.calls.items():
       if path.endswith(".vdropout") or path in seen:
         continue
-      problems.append(f"{path} call {used}: consumed {used}, recorded 0")
+      replayed = used - self.drawn.get(path, 0)
+      if replayed != 0:
+        problems.append(f"{path} call {replayed}: consumed {replayed}, recorded 0")
     if problems:
       msg = "dropout replay reconciliation failed: " + "; ".join(problems)
       raise RuntimeError(msg)
@@ -811,13 +848,27 @@ def proofread_dropout(
   masks: Mapping[str, Sequence[np.ndarray]] | None = None,
   edges: Mapping[str, Sequence[np.ndarray | None]] | None = None,
   drop_p: float = _DROPOUT_P,
+  dropout_key: jax.Array | None = None,
 ) -> Iterator[_Plan]:
-  """Apply injected scalar dropout for one eager decode. Vector dropout defaults off."""
+  """Apply scalar dropout for one eager decode. Vector dropout defaults off.
+
+  Pass ``masks`` to replay a recorded catalog (the parity vehicle) or
+  ``dropout_key`` to draw fresh keeps (production). Neither makes every call a
+  miss, and a miss with no key raises rather than silently running dropout-free
+  while still rescaling by ``1 / (1 - p)``.
+  """
   _install_patches()
   # Restamp on every entry. The class patch is process-global, but each
   # encoder carries its own static paths.
   _stamp(encoder, decoder)
-  plan = _Plan(scalar=scalar, vector=vector, masks=masks, drop_p=drop_p, edges=edges)
+  plan = _Plan(
+    scalar=scalar,
+    vector=vector,
+    masks=masks,
+    drop_p=drop_p,
+    edges=edges,
+    dropout_key=dropout_key,
+  )
   plan.chi_ids = _chi_ids(decoder, joint_offsets)
   token = _PLAN.set(plan)
   try:
@@ -878,6 +929,7 @@ def conditional_focus_probs(
   scalar: bool,
   vector: bool = False,
   repack_all: bool = True,
+  dropout_key: jax.Array | None = None,
 ) -> np.ndarray:
   """``(n_dropouts, n_orders, 21)`` softmax rows at ``focus``.
 
@@ -915,6 +967,17 @@ def conditional_focus_probs(
       chain = np.ones((n_res,), dtype=bool)
       chain[int(focus)] = False
       edges = None if drop_edges is None else drop_edges[order_index]
+      # Each (rep, order) cell gets its own stream. Sharing one key would make
+      # every dropout rep identical, and the reduction over reps would collapse
+      # to zero standard deviation -- a pass that measures nothing.
+      cell_key = (
+        None
+        if dropout_key is None
+        else jax.random.fold_in(
+          jax.random.fold_in(dropout_key, drop_index),
+          order_index,
+        )
+      )
       with proofread_dropout(
         encoder,
         decoder,
@@ -923,6 +986,7 @@ def conditional_focus_probs(
         vector=vector,
         masks=masks,
         edges=edges,
+        dropout_key=cell_key,
       ):
         decoded = decode_order(
           encoder,

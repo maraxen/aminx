@@ -158,3 +158,67 @@ def test_nll_matches_gathered_log_softmax(registered: LaserDriver, tmp_path: Pat
     index = np.asarray([ALPHABET.index(letter) for letter in sequence], dtype=np.int32)
     gathered = -log_prob[row, np.arange(index.shape[0]), index]
     np.testing.assert_allclose(nll_rows[row], gathered, rtol=0, atol=0)
+
+
+def _proofread(model_path: Path, pdb: Path, *, dropout: bool, seed: int = 3) -> np.ndarray:
+  """``proofread_mean`` for one tiny complex. Two orders, two reps."""
+  result = score(
+    ScoringSpecification(
+      inputs=str(pdb),
+      model_family="lasermpnn",
+      checkpoint_id="lasermpnn_test",
+      model_local_path=model_path,
+      output_kind="proofread_conditional",
+      sequences_to_score=["AA"],
+      random_seed=seed,
+      laser=LaserOptions(
+        n_decoding_orders=2,
+        n_dropouts=2,
+        proofread_dropout=dropout,
+      ),
+    ),
+  )
+  return np.asarray(result["structures"]["0"]["arrays"]["proofread_mean"])
+
+
+def test_proofread_conditional_runs_without_an_injected_mask_catalog(
+  registered: LaserDriver,
+  tmp_path: Path,
+  model_path: Path,
+) -> None:
+  """Production proofreading injects no masks and must still run.
+
+  Regression for debt #2422. The parity vehicle replays a recorded catalog, so
+  a mask miss there is a broken replay and raises; production records nothing,
+  so every call is a miss and the same raise took the whole purpose down. No
+  test drove this path, which is why a raise on the default options survived.
+  """
+  del registered
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb)
+  mean = _proofread(model_path, pdb, dropout=True)
+  assert mean.ndim >= 2
+  assert np.isfinite(mean).all()
+
+
+def test_proofread_dropout_actually_perturbs_the_ensemble(
+  registered: LaserDriver,
+  tmp_path: Path,
+  model_path: Path,
+) -> None:
+  """Dropout on and off must disagree at one seed.
+
+  The seed fixes the decoding orders and the inverse-CDF draws, so the only
+  thing left to differ is the keep-masks. An all-ones keep -- the shape a
+  missing mask used to take -- would make these two runs identical, which is
+  the silent failure a bare does-it-crash check cannot see.
+  """
+  del registered
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb)
+  live = _proofread(model_path, pdb, dropout=True)
+  off = _proofread(model_path, pdb, dropout=False)
+  assert live.shape == off.shape
+  assert not np.allclose(live, off)
+  # Same seed twice is the same answer: the draws are keyed, not ambient.
+  np.testing.assert_array_equal(live, _proofread(model_path, pdb, dropout=True))

@@ -332,8 +332,13 @@ def _proofread_batch(
   purpose: str,
   scalar_dropout: bool,
   seed: int,
+  dropout_key: jax.Array,
 ) -> Mapping[str, jax.Array]:
-  """Unconditional logits, or the dropout ensemble, on the focus rows."""
+  """Unconditional logits, or the dropout ensemble, on the focus rows.
+
+  ``dropout_key`` is what makes production proofreading run at all: nothing
+  here injects a mask catalog, so without a key every dropout call is a miss.
+  """
   means: list[np.ndarray] = []
   stds: list[np.ndarray] = []
   plus: list[np.ndarray] = []
@@ -342,7 +347,10 @@ def _proofread_batch(
   period = np.asarray(model.period_index)
   group = np.asarray(model.group_index)
   joint = LaserJointDecode(key=jax.random.PRNGKey(seed))
-  for item in prepared:
+  for item_index, item in enumerate(prepared):
+    # Each batch member gets its own dropout stream. Sharing one would apply an
+    # identical keep pattern to every structure in the batch.
+    item_key = jax.random.fold_in(dropout_key, item_index)
     features = item.features
     rows = focus_rows(
       np.asarray(features.first_shell_ligand_contact_mask),
@@ -401,6 +409,7 @@ def _proofread_batch(
         scalar=bool(options.proofread_dropout) and scalar_dropout,
         vector=False,
         repack_all=bool(options.repack_all or options.repack_only),
+        dropout_key=jax.random.fold_in(item_key, int(focus)),
       )
       focus_probs.append(probs)
     stacked_probs = np.stack(focus_probs, axis=2)
@@ -445,7 +454,7 @@ class _ScoreStages:
     scalar_dropout: bool,
     dropout_key: jax.Array,
   ) -> Mapping[str, jax.Array]:
-    del chunk_start, chunk_count, dropout_key
+    del chunk_start, chunk_count
     prepared = cast("tuple[_Prepared, ...]", batch.arrays["prepared"])
     if self._purpose.startswith("score:proofread_"):
       return _proofread_batch(
@@ -455,6 +464,7 @@ class _ScoreStages:
         purpose=self._purpose,
         scalar_dropout=scalar_dropout,
         seed=self._seed,
+        dropout_key=dropout_key,
       )
     stacked = jnp.stack([_score_prepared(self._model, item, self._purpose) for item in prepared])
     key = "logits" if self._purpose == "score:logits" else "nll"
