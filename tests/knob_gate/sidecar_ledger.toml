@@ -60,42 +60,76 @@
 # can be made true. Run verify_wave.py BEFORE writing a row: it reports each
 # condition separately, which is the only way to tell these cases apart.
 
-# WAS VERIFIED at 6cb81d49: check_branch_coverage returned "pass" for these two
-# against their manifest rows. Invalidated by the later scoped commits above.
+# THE LEDGER WAVE, 261002. Five of the six slugs below were run at a frozen
+# scoped tree and verified by scripts/redsox/verify_wave.py, which reports each of
+# step 1c's conditions separately: every one of the five returned "would grade"
+# with no condition failing. Two trees are involved and that is deliberate --
+# group 1 ran at 21321ce4 and wave 2 at 7c3dd246, and `git diff --name-only
+# 21321ce4 7c3dd246` touches NO path under src/aminx/, scripts/parity/,
+# scripts/recapture/, tests/port/, aminx-oracles/, pyproject.toml or uv.lock, so
+# _touches_scoped is empty across the pair and all five rows stand together.
+#
+# Every id below is the FULL uuid. An 8-character prefix does not resolve
+# (trap 4), and verify_wave.py's _resolve_hint exists because that failure
+# previously looked like a missing record.
+
+[sidecar.laser_proofread_parity]
+# 21321ce4. clean pass at max_abs_mean 4.218847493575595e-15 / max_abs_std
+# 9.499345754448996e-15; all four controls failed -- ddof_0 at std
+# 0.04827089407674459, reduction_swap at std NaN, scalar_off at mean
+# 0.17539788075343654, vector_on at mean 0.053736772932204274.
+# Supersedes the 6cb81d49 run of this slug, which was launched with
+# scalar_both_off appended to --mutants and was ineligible on trap 4 alone.
+bth_run_id = "4e259930-fb3c-4b07-8849-dec72588b522"
+
+[sidecar.laser_decode_e2e]
+# 21321ce4. clean pass at sequence_agreement 1.0, chi_bin_agreement 1.0,
+# max_circular_delta 5.684341886080802e-14; all five controls failed.
+# Supersedes 9c8c5dce, whose branch_controls.json predated the stable artifact
+# key and carried an absolute weights path (trap 3).
+bth_run_id = "69901085-6af9-4690-8883-6c8e1fd6c5de"
+
 [sidecar.potts_ar_decode]
-# clean pass, exact token match 1.0; ar_mask_present_chain_m_pos failed at
-# 0.8668714797747056. weights key PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt
-bth_run_id = "1859bdcc-5736-4363-b18e-d7821c0763e5"
+# 7c3dd246. clean pass at exact token match 1.0; ar_mask_present_chain_m_pos
+# failed at 0.8668714797747056. weights key
+# PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt
+# Supersedes 1859bdcc, which verified at 6cb81d49 and was invalidated by the
+# later scoped commits.
+bth_run_id = "6a245342-aed3-40df-b046-73631b9cd29e"
 
 [sidecar.potts_energy_parity]
-# clean pass, max_abs_delta 0.000732421875, analytic_abs_err 0.0;
-# permute_etab_out_rows failed at 1218.31494140625.
-bth_run_id = "1117a297-9cfc-4cdd-a8d7-244b76cc58a8"
+# 7c3dd246. clean pass at max_abs_delta 0.000732421875 with analytic_abs_err
+# exactly 0.0; permute_etab_out_rows failed at 1218.31494140625.
+# Supersedes 1117a297, invalidated the same way as potts_ar_decode above.
+bth_run_id = "3f8e4f99-e7ce-464f-becb-54e1d79d5357"
 
-# PENDING a re-run at 6cb81d49. The run below PASSED and all five controls fired,
-# but its branch_controls.json predates the stable artifact key and so carries an
-# absolute path that the registry cannot resolve. The row is correct; the
-# controls it points at are stale. Replace the id when the current run lands.
-[sidecar.laser_decode_e2e]
-bth_run_id = "9c8c5dce-d8d0-4b6c-9fb9-32c847603017"
+[sidecar.laser_score_parity]
+# 7c3dd246. clean pass at max_abs_delta 2.3499874934884701e-07;
+# permute_decoder_layer failed at 0.548412062403438.
+# NOT the earlier f11f2bf1 run. That one passed too, which is exactly why it was
+# tempting: it is an ANCESTOR of 6cb81d49 ("key oracle weights by a stable
+# identifier, not an absolute path"), so its controls carry
+# /home/solab/repos/LASErMPNN/... and verify_wave.py measured it FAILING both
+# "weights key resolves" and "no scoped path since" on 261002. "It already
+# passed" is the mistake that comment existed to stop, and the fix was to re-run
+# the slug, not to relax the row.
+#
+# This slug also had no entry in launch_wave.sh's MUT map and appeared in no
+# group, so no invocation of the wave would ever have run it and the manifest
+# could not have been satisfied (fixed in ff4fe017, which added a check_coverage
+# assertion against the manifest itself).
+bth_run_id = "cd56063e-d6b0-458c-9400-b3845c8f7bd6"
 
-# NOT YET LISTED, awaiting the wave:
-#   potts_ar_refine_exact   3 mutants, clean previously 1.0 over 50 seeds
-#   laser_proofread_parity  4 negative controls. The 6cb81d49 run of this slug
-#                           was launched with scalar_both_off appended to
-#                           --mutants and is ineligible for that reason alone
-#                           (trap 4), on top of the scoped-commit invalidation
-#                           above. Its verdict is still worth reading; its id
-#                           must not be written here.
-#   laser_score_parity      1 mutant (permute_decoder_layer). Gained a manifest
-#                           row in 7d51d4cc because it had already PASSED and
-#                           was never required. That passing run is f11f2bf1,
-#                           which is an ANCESTOR of 6cb81d49 ("key oracle
-#                           weights by a stable identifier, not an absolute
-#                           path"), so its controls carry
-#                           /home/solab/repos/LASErMPNN/... and fail trap 3.
-#                           Measured with verify_wave.py 261002: FAIL on both
-#                           "weights key resolves" and "no scoped path since".
-#                           It is in wave group 2 for that reason. Listing
-#                           f11f2bf1 here because "it already passed" is
-#                           exactly the mistake this comment exists to stop.
+# NOT YET LISTED:
+#   potts_ar_refine_exact   3 mutants (ar_mask_present_chain_m_pos,
+#                           wrong_partition_sign, ntoc_refine_order), clean
+#                           previously 1.0 over 50 seeds. Launched at 7c3dd246
+#                           alongside the three rows above and still running --
+#                           run ef4df8ff-7b0d-44bb-999b-35b5c7a6207c, which the
+#                           cool-tier record shows at exit_code -1 because it has
+#                           not finished. Its refine sweeps are far slower than
+#                           any other vehicle: the other three wave-2 slugs
+#                           completed within ten minutes while this one had not
+#                           produced its first payload. Write the row only after
+#                           verify_wave.py reports it, and only with the full
+#                           uuid.
