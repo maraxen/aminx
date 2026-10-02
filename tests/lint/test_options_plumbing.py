@@ -3,20 +3,24 @@
 
 A field declared on ``PottsMPNNOptions`` or ``LaserOptions`` and read nowhere else
 is accepted by the public surface and forwarded to nothing: a caller setting it
-gets default behaviour and no error. Nine such fields exist today (aminx debt
-2435), frozen in ``options_plumbing_allowlist.toml``.
+gets default behaviour and no error. Those fields are frozen in
+``options_plumbing_allowlist.toml`` (aminx debt 2435).
 
 The guard is the same shape as the x64-leak guard: lock in the measured state so a
-tenth cannot appear unnoticed, and make the allowlist the unit of work so paying
+new one cannot appear unnoticed, and make the allowlist the unit of work so paying
 the debt is a deletion. It fails in BOTH directions -- a new inert field, and an
 allowlist row that is no longer inert -- so the list cannot rot into a permanent
 excuse.
 
-Reads are collected by an ast walk over exact identifier tokens, never a substring
-search. That is load-bearing rather than fastidious: ``chi_temp`` is implemented
-correctly in ``model/laser/`` under the parameter name ``chi_temperature``, and a
-substring search credits the rename as a read, hiding the one case where the
-plumbing stops at a rename (see the allowlist note).
+A READ IS COUNTED ONLY OFF AN OPTIONS OBJECT, which is the whole difficulty. An
+earlier revision collected every identifier token in the tree and matched field
+names against it. Matching exact tokens rather than substrings is necessary --
+``chi_temp`` is implemented in ``model/laser/`` under the name ``chi_temperature``
+and a substring search credits the rename as a read -- but it is not sufficient,
+because a token matches wherever it appears, on any object or none. Measured
+261002, that hid nine inert fields behind same-named parameters and locals, and
+reported one plumbed field as inert because its read goes through ``getattr`` with
+a string constant. See ``_fields_read`` for both cases.
 """
 
 from __future__ import annotations
@@ -35,8 +39,48 @@ _ALLOWLIST = Path(__file__).with_name("options_plumbing_allowlist.toml")
 _CLASSES = {"LaserOptions": LaserOptions, "PottsMPNNOptions": PottsMPNNOptions}
 
 
-def _names(path: Path) -> set[str]:
-    """Identifiers, attribute names, keyword names and parameter names in one file."""
+#: Variable names that hold a family Options object. A read counts only when it
+#: comes off one of these, so an unrelated identifier that merely shares a field's
+#: name cannot be mistaken for plumbing. Only the last dotted segment is compared,
+#: so ``self._options`` matches via ``_options`` and ``spec.laser`` via ``laser``.
+#: Adding a carrier is a deliberate edit; a read through some other variable shows
+#: up as a false "inert", which fails loudly rather than passing silently.
+_CARRIERS = frozenset({"options", "_options", "opts", "laser", "potts_mpnn"})
+
+
+def _carrier(node: ast.expr) -> bool:
+    """Is this expression one of the known Options carriers?"""
+    if isinstance(node, ast.Name):
+        return node.id in _CARRIERS
+    if isinstance(node, ast.Attribute):
+        return node.attr in _CARRIERS
+    return False
+
+
+def _fields_read(path: Path) -> set[str]:
+    """Field names read OFF AN OPTIONS OBJECT in one file.
+
+    Two shapes count, and nothing else:
+
+    * ``<carrier>.<field>`` -- the ordinary read.
+    * ``getattr(<carrier>, "<field>", ...)`` -- used where the caller may have
+      passed a different Options class (e.g. ``laser_mpnn/driver.py:256``).
+
+    Earlier this collected every ``Name``/``Attribute``/``keyword``/``arg`` token
+    in the file, which matched a field's name regardless of what object it
+    belonged to. That was wrong in BOTH directions and both were measured on
+    261002:
+
+    * ``tied_beta`` was credited as plumbed although ``options.tied_beta`` appears
+      nowhere in ``src/`` -- the name belongs to a per-position array built by
+      ``featurize._tied_groups`` and read off ``features``/``padded``/``ready``.
+      Eight LaserOptions fields were hidden the same way, by parameters of the
+      same name in ``model/laser/`` that nothing passes the Options field to.
+      That is the ``chi_temp`` failure the allowlist already describes, repeated.
+    * ``strict_load`` was reported inert although it IS read, because
+      ``getattr(options, "strict_load", True)`` carries the name as a string
+      constant, which no token kind above matches.
+    """
     try:
         tree = ast.parse(path.read_text(encoding="utf-8"))
     except (SyntaxError, UnicodeDecodeError):  # pragma: no cover - a parse failure
@@ -46,14 +90,19 @@ def _names(path: Path) -> set[str]:
         raise AssertionError(msg) from None
     out: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name):
-            out.add(node.id)
-        elif isinstance(node, ast.Attribute):
+        if isinstance(node, ast.Attribute) and _carrier(node.value):
             out.add(node.attr)
-        elif isinstance(node, ast.keyword) and node.arg:
-            out.add(node.arg)
-        elif isinstance(node, ast.arg):
-            out.add(node.arg)
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if (
+                isinstance(func, ast.Name)
+                and func.id == "getattr"
+                and len(node.args) >= 2
+                and _carrier(node.args[0])
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            ):
+                out.add(node.args[1].value)
     return out
 
 
@@ -62,7 +111,7 @@ def _read_outside_options() -> set[str]:
     for path in sorted(_SRC.rglob("*.py")):
         if "__pycache__" in path.parts or path.resolve() == _OPTIONS_FILE:
             continue
-        names |= _names(path)
+        names |= _fields_read(path)
     return names
 
 

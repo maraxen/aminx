@@ -1,8 +1,31 @@
 # Family Options fields that are declared but read nowhere outside
 # src/aminx/run/options.py, i.e. accepted by the public surface and forwarded to
-# nothing. Measured by bathos run b04a224d-c014-413a-bec0-a8de10dec24e at commit
-# 10f5b537 (scripts/analysis/alias_claim_reachability.py revision 2, outcome
+# nothing. Originally measured by bathos run
+# b04a224d-c014-413a-bec0-a8de10dec24e at commit 10f5b537
+# (scripts/analysis/alias_claim_reachability.py revision 2, outcome
 # inert_option_fields); filed as aminx debt 2435.
+#
+# REVISED 261002: this list was nine rows and is now seventeen. Nothing regressed
+# -- the detector did. test_options_plumbing counted a field as read if its name
+# appeared as any identifier token anywhere in src/, which matches a name on any
+# object or none, so nine inert fields were hidden behind same-named function
+# parameters and locals, and one plumbed field (strict_load) was listed because
+# its read goes through getattr with a string constant that no token kind matched.
+#
+# Both directions are now measured off the OPTIONS OBJECT (see _fields_read), and
+# every row below was confirmed by reading the source, not only by the detector:
+# for each, `grep -rn "<field>" src/aminx/` outside the field's own dataclass
+# yields either nothing at all or only same-named parameters in model/laser/.
+#
+#   added   fs_sequence_temp, seq_min_p, chi_min_p, disabled_residues,
+#           disable_charged_fs, ala_budget, gly_budget, ignore_chain_mask_zeros
+#           (LaserOptions; model/laser/ implements each as a parameter of the
+#           same name and nothing passes the Options field to it -- the chi_temp
+#           failure, repeated eight times)
+#   added   tied_beta (PottsMPNNOptions; the name belongs to a per-position array
+#           from featurize._tied_groups, read off features/padded/ready)
+#   removed strict_load (IS read: laser_mpnn/driver.py:256 via getattr, enforced
+#           at :600 -- the row was always wrong)
 #
 # This file is a FREEZE OF A KNOWN DEFECT, not a permission. Every row is work to
 # do. test_options_plumbing fails both ways -- on a tenth field going inert, and on
@@ -37,12 +60,6 @@ reason = "not_plumbed"
 note = "upstream --constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
 
 [[entries]]
-field = "strict_load"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "upstream --ignore_statedict_mismatch / --ignore_key_mismatch, store_false; checkpoint loading does not consult this field"
-
-[[entries]]
 field = "tied_interpolation_lambda"
 options_class = "LaserOptions"
 reason = "not_plumbed"
@@ -71,3 +88,60 @@ field = "emit_dense_hJ"
 options_class = "PottsMPNNOptions"
 reason = "not_plumbed"
 note = "aminx-defined; spec line 638 says it converts host-side only. No live alias row targets it, so the reachability probe did not report it, but it is inert all the same."
+
+# --- added 261002, all eight the same failure: model/laser/ implements the knob
+# --- as a parameter of the same name, and nothing passes the Options field to it.
+
+[[entries]]
+field = "fs_sequence_temp"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "model/laser/tied.py takes fs_sequence_temp as a parameter (:86, :508) and flags it (:96-97), but no caller passes options.fs_sequence_temp; outside model/laser/ the name appears only in its own dataclass"
+
+[[entries]]
+field = "seq_min_p"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "upstream sequence min-p nucleus cutoff; implemented in model/laser/ under the same parameter name, unreachable from Options"
+
+[[entries]]
+field = "chi_min_p"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "upstream chi min-p nucleus cutoff; the chi-angle sibling of seq_min_p and inert for the same reason"
+
+[[entries]]
+field = "disabled_residues"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "default ('X','C'); a non-default value changes nothing, which is the dangerous shape -- the default looks deliberate"
+
+[[entries]]
+field = "disable_charged_fs"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "upstream --disable_charged_residues_in_fs; model/laser/ has the parameter, Options does not reach it"
+
+[[entries]]
+field = "ala_budget"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "model/laser/tied.py:293,386,511,579 implements the budget correctly as a parameter; options.ala_budget is read nowhere, so the default 4 is always used"
+
+[[entries]]
+field = "gly_budget"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "the glycine sibling of ala_budget, inert in the same way"
+
+[[entries]]
+field = "ignore_chain_mask_zeros"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "upstream --ignore_chain_mask_zeros; outside its dataclass the name appears nowhere in src/aminx"
+
+[[entries]]
+field = "tied_beta"
+options_class = "PottsMPNNOptions"
+reason = "not_plumbed"
+note = "`options.tied_beta` appears nowhere in src/. The 31 other occurrences are a per-position array built by featurize._tied_groups from tied_positions weights and read off features/padded/ready -- a different object with the same name, which is exactly what hid this field from the old token-based detector"
