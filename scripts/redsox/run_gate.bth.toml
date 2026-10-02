@@ -1,0 +1,32 @@
+[metadata]
+title = "redsox knob gate"
+created = "260930"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Step 1 collects a non-empty id set and exits 0, and step 2 (superset, parity ids, branch coverage) passes."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "rc = 0 AND step2_passed = true AND n_ids > 0"
+decision = "The redsox gate graded the tree and every graded check passed with a non-empty id set."
+reasoning = "rc is the step-1 pytest status, step2_passed is the knob_gate session, and n_ids > 0 rejects a run that selected nothing."
+is_residual = false
+adversarial_check = "NOT (rc = 0 AND step2_passed = true AND n_ids > 0)"
+
+[outcomes.fail]
+condition = "NOT (rc = 0 AND step2_passed = true AND n_ids > 0)"
+decision = "Do not treat the tree as knob-complete; step 1, step 2, or the id count failed."
+reasoning = "The two outcome conditions are disjoint. A graded fail still exits 0 from run_gate.py; this label is what the results JSON decides."
+is_residual = true
+adversarial_check = "rc = 0 AND step2_passed = true AND n_ids > 0"
+
+[result_schema]
+rc = "int"
+step2_passed = "bool"
+n_ids = "int"
+n_mutant_runs = "int"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }

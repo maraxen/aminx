@@ -76,3 +76,7 @@ scripts/scratch/
 # Claude Code background-job scratch space (per-job tmp dirs; should never
 # land under the repo, but a relative path can resolve here by mistake).
 .claude/jobs/
+
+# Gate output. Bathos also creates outputs/<id8>/ after it has captured git
+# state (runner.py), so a tracked tree would look dirty the moment a run starts.
+/outputs/
