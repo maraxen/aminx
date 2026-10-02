@@ -35,6 +35,7 @@ coverage_ok = "bool"
 controls_ok = "bool"
 unmodified_copy_matches = "bool"
 negative_control_changed = "bool"
+negative_control_mode = "str"
 xtrax_version = "str"
 
 [result_schema.provenance]

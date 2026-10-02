@@ -95,10 +95,17 @@ def run_controls(source: tuple[int, Path, str] | None) -> dict[str, Any]:
     data = bytearray(target.read_bytes())
     data[len(data) // 2] ^= 0xFF
     target.write_bytes(bytes(data))
+    # A flipped byte in a compressed chunk can make the decoder raise instead of yielding a different digest; either way the
+    # store is rejected, which is what the negative control must show. Record which one happened.
+    try:
+      changed, mode = zarr_content_digest(copy) != recorded, "digest_differs"
+    except Exception as exc:  # noqa: BLE001 - any decode failure on the corrupted copy means the store was rejected
+      changed, mode = True, f"digest_raised:{type(exc).__name__}"
     return {
       "controls_ran": True,
       "unmodified_copy_matches": unmodified_matches,
-      "negative_control_changed": zarr_content_digest(copy) != recorded,
+      "negative_control_changed": changed,
+      "negative_control_mode": mode,
     }
   finally:
     shutil.rmtree(tmp, ignore_errors=True)
