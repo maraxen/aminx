@@ -7,8 +7,9 @@ member is decoded in the fixed block.
 
 On main the default order that does this is :func:`random_design_order`, used by the unified runner path
 (``with_decoding_order``) and by ``aminx.sampling.sample``. :func:`random_decoding_order` is the mask-free legacy
-order and is still what ``make_score_fn``, ``STEMode`` and ``optimize_ste`` draw by default: those gaps are pinned
-below as strict xfails, so fixing one makes its marker fail loudly and forces the marker's removal.
+order and is still what ``STEMode`` and ``optimize_ste`` draw by default: those two gaps are pinned below as strict
+xfails, so fixing one makes its marker fail loudly and forces the marker's removal. ``make_score_fn`` also draws it,
+but scoring ignores that order (it uses the order-free ``full_context_ar_mask``), so it is not a gap and is not pinned.
 
 Ported from the closed-out PR #164 (``tests/utils/test_decoding_order_fixed_first_2017.py``), adapted to main's
 API. One assertion is deliberately NOT ported: #164 treats a tie group with mixed members as *designed* if any
@@ -215,9 +216,9 @@ def test_tensor_sample_threads_the_fixed_mask_into_the_order(monkeypatch):
         assert _non_designed_precede(np.asarray(order), designed), f"sample() ignored fixed positions (seed={seed})"
 
 
-# Sites that still draw the mask-free legacy order by default (#164 fixed them with a design-mask argument).
+# Sites that still draw the mask-free legacy order by default AND use it to build the AR mask the loss conditions on
+# (#164 fixed them with a design-mask argument). scoring.score is deliberately absent: it draws an order it ignores.
 _LEGACY_DEFAULT_SITES = [
-    ("aminx.scoring.score", "make_score_fn / make_*score* draw decoding_order_fn(key, L, None, None)"),
     ("aminx.inference.decode.ste", "STEMode draws self.decoding_order_fn"),
     ("aminx.inference.optimize_ste", "optimize_ste draws decoding_order_fn"),
 ]
