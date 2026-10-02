@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **xtrax pinned to `0.4.0a11`** (was `0.4.0a10`). xtrax renamed its chunked strategy
+  `SafeMap` to `ChunkedMap` (`SafeMapIterator` to `ChunkedMapIterator`; xtrax #3644).
+  Every aminx use of *xtrax's* names now uses the new ones; aminx's own
+  `aminx.tiling.strategy.SafeMap` (`.tile`) is unchanged here, and is slated for
+  deprecation in favour of xtrax's (debt #2371).
+
+### Fixed
+
+- **`host.kernel_dispatch._dispatch_axis` keeps xtrax plans chunked after the rename.** It
+  dispatches on `type(strategy).__name__` to serve both strategy origins and matched only
+  `"SafeMap"`. Under xtrax 0.4.0a11 an xtrax plan reports `"ChunkedMap"` (the deprecated
+  alias is the same class), so it fell through to the fallback, `batch_size=0`: no
+  chunking, no error, no warning. It now accepts both names
+  (`tests/host/test_kernel_dispatch_chunked_map.py`, red on the old code).
+
 ## 0.2.0a3 (2026-09-30)
 
 **Browser inference.** ProteinMPNN sampling now runs in a page, validated against the
