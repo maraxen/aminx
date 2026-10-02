@@ -485,9 +485,10 @@ def _run_base(
   model_family: Annotated[
     str | None,
     _OPT(
-      help="Model family: proteinmpnn or ligandmpnn. Leave unset to auto-derive from "
-      "checkpoint_id (RunSpecification.__post_init__); an explicit value here is always "
-      "respected even if it disagrees with checkpoint_id.",
+      help="Model family: proteinmpnn, ligandmpnn, pottsmpnn or lasermpnn. The last two "
+      "dispatch through a FamilyDriver rather than the stock MPNN path. Leave unset to "
+      "auto-derive from checkpoint_id (RunSpecification.__post_init__); an explicit value "
+      "here is always respected even if it disagrees with checkpoint_id.",
     ),
   ] = None,
   checkpoint_id: Annotated[str | None, _OPT(help="Checkpoint identifier")] = None,
@@ -1085,9 +1086,10 @@ def _spec_base(
   model_family: Annotated[
     str | None,
     _OPT(
-      help="Model family: proteinmpnn or ligandmpnn. Leave unset to auto-derive from "
-      "checkpoint_id (RunSpecification.__post_init__); an explicit value here is always "
-      "respected even if it disagrees with checkpoint_id.",
+      help="Model family: proteinmpnn, ligandmpnn, pottsmpnn or lasermpnn. The last two "
+      "dispatch through a FamilyDriver rather than the stock MPNN path. Leave unset to "
+      "auto-derive from checkpoint_id (RunSpecification.__post_init__); an explicit value "
+      "here is always respected even if it disagrees with checkpoint_id.",
     ),
   ] = None,
   checkpoint_id: Annotated[str | None, _OPT(help="Checkpoint identifier")] = None,
