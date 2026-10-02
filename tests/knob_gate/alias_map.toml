@@ -2515,10 +2515,11 @@ note = ""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__filter"
-targets = ["filter_nan"]
-equivalence = "semantic"
+targets = []
+equivalence = "exclusion"
+reason = "upstream_noop"
 parity_test_ids = []
-note = "no-op quirk; maps to filter_nan"
+note = "upstream filter drops nothing; it is not a PottsMPNN option"
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__fix_decoding_order"

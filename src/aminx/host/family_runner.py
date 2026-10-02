@@ -56,11 +56,15 @@ def _dropout_key(base_key: jax.Array, purpose: str, chunk_start: int) -> jax.Arr
 
   Unconditional proofreading is ``fold_in(key, 0)``. Conditional proofreading
   receives the base key; the stage folds focus, dropout, and order indices.
+  Sampling receives the base key too: the stage folds the global sample index.
+  Folding ``chunk_start`` again would make that index depend on the chunk size.
   Other purposes fold the chunk start so chunks do not share a dropout mask.
   """
   if purpose == "score:proofread_unconditional":
     return jax.random.fold_in(base_key, 0)
   if purpose == "score:proofread_conditional":
+    return base_key
+  if purpose == "sample":
     return base_key
   return jax.random.fold_in(base_key, int(chunk_start))
 

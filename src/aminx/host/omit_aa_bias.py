@@ -62,6 +62,14 @@ def compile_omit_aa_bias(
   return _broadcast_bias(bias, seq_len) + penalty
 
 
+def omit_letter_indices(omit_aa: Sequence[str]) -> list[int]:
+  """Alphabet indices for every letter in each omit token.
+
+  ``"CW"`` omits C and W. A letter outside the MPNN alphabet raises.
+  """
+  return [_aa_index(letter) for letter in _letters(omit_aa)]
+
+
 def _letters(omit_aa: Sequence[str]) -> list[str]:
   letters: list[str] = []
   for token in omit_aa:
@@ -81,8 +89,11 @@ def _broadcast_bias(bias: Any, seq_len: int) -> Any:  # noqa: ANN401
   if bias is None:
     return jnp.zeros((seq_len, _ALPHABET_SIZE), dtype=jnp.float32)
   arr = jnp.asarray(bias, dtype=jnp.float32)
-  if arr.ndim == 1 and arr.shape[0] == _ALPHABET_SIZE:
-    return jnp.broadcast_to(arr, (seq_len, _ALPHABET_SIZE))
+  # Host bias is per-position ``(L,)`` or ``(L, 21)``. A chain of length 21
+  # has a 1-D vector that is also the alphabet width; treating that as
+  # per-amino-acid repeats one residue's value across every letter.
   if arr.ndim == 1 and arr.shape[0] == seq_len:
     return arr[:, None]
+  if arr.ndim == 1 and arr.shape[0] == _ALPHABET_SIZE:
+    return jnp.broadcast_to(arr, (seq_len, _ALPHABET_SIZE))
   return arr

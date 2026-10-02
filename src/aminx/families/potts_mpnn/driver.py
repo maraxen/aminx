@@ -41,6 +41,7 @@ from aminx.families.potts_mpnn.model import PottsMPNN, _encoder_states, cast_flo
 from aminx.families.potts_mpnn.sample_host import (
   SampleStages,
   force_optimize_num_samples,
+  parse_fasta_records,
   prepare_sample,
   sample_axes,
   sample_schema,
@@ -451,15 +452,11 @@ def _from_fasta(
   name: str,
   chains: tuple[_ChainSeq, ...],
 ) -> tuple[_Candidate, ...]:
-  text = path.read_text(encoding="utf-8").splitlines()
   found: list[_Candidate] = []
   by_letter = {chain.letter: chain.sequence for chain in chains}
   order = [chain.letter for chain in chains]
-  for raw_header, seq in zip(text[::2], text[1::2], strict=False):
-    header = raw_header.strip()
-    if not header.startswith(">"):
-      continue
-    body = header[1:]
+  for header, seq in parse_fasta_records(path.read_text(encoding="utf-8")):
+    body = header.strip()
     pdb = body.split("|", 1)[0].strip()
     if pdb != name:
       continue
@@ -666,8 +663,28 @@ def _load_eqx(path: Path) -> PottsMPNN:
   return cast("PottsMPNN", loaded)
 
 
+def _converter_script(anchor: Path | None = None) -> Path:
+  """Find the torch converter by walking ancestors of ``anchor``.
+
+  ``parents[4] / "scripts"`` is the repo root only in this source layout. A
+  wheel, or a checkout nested deeper than four parents, does not have the
+  script there.
+  """
+  here = (Path(__file__) if anchor is None else anchor).resolve()
+  relative = Path("scripts") / "recapture" / "pottsmpnn_model_to_eqx.py"
+  for parent in here.parents:
+    candidate = parent / relative
+    if candidate.is_file():
+      return candidate
+  msg = (
+    "cannot find scripts/recapture/pottsmpnn_model_to_eqx.py above "
+    f"{here}; .pt conversion ships with a source checkout, not the wheel"
+  )
+  raise ImportError(msg)
+
+
 def _converter_module() -> Any:  # noqa: ANN401
-  path = Path(__file__).resolve().parents[4] / "scripts" / "recapture" / "pottsmpnn_model_to_eqx.py"
+  path = _converter_script()
   spec = importlib.util.spec_from_file_location("pottsmpnn_model_to_eqx", path)
   if spec is None or spec.loader is None:
     msg = f"cannot load {path}"
