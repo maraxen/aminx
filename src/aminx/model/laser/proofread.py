@@ -382,7 +382,7 @@ def _all_masked_edges(
   sequence_indices: jax.Array,
   chi_flat: jax.Array,
   decoding_order: jax.Array,
-) -> tuple[jax.Array, jax.Array]:
+) -> tuple[jax.Array, jax.Array, jax.Array]:
   """Teacher edges with the unmasked branch forced off.
 
   ``_teacher_edges`` selects that branch from the decoding order. Unconditional
@@ -404,7 +404,10 @@ def _all_masked_edges(
   index = jnp.broadcast_to(order[:, :, None], features.shape)
   features = jnp.take_along_axis(features, index, axis=1)
   mask = jnp.take_along_axis(pr_mask, order, axis=1)
-  return features, mask
+  # Same slot order as the features. Padding moves to the end; the replay
+  # looks source ids up here, not in the knn grid.
+  neighbours = jnp.take_along_axis(pr_neighbours, order, axis=1)
+  return features, mask, neighbours
 
 
 class _UnconditionalView:
@@ -416,7 +419,7 @@ class _UnconditionalView:
   def __getattr__(self, name: str) -> Any:  # noqa: ANN401
     return getattr(self._decoder, name)
 
-  def _teacher_edges(self, *args: Any, **kwargs: Any) -> tuple[jax.Array, jax.Array]:  # noqa: ANN401
+  def _teacher_edges(self, *args: Any, **kwargs: Any) -> tuple[jax.Array, jax.Array, jax.Array]:  # noqa: ANN401
     return _all_masked_edges(self._decoder, *args, **kwargs)
 
 

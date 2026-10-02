@@ -280,7 +280,7 @@ def _run_joint_step(  # noqa: PLR0915 — χ loop stays in this traced body so L
   node_v = inputs.node_vectors
   for index in range(3):
     # Masked branch keeps node_scalars[0], the encoder snapshot banked at init.
-    features, row_mask = decoder._teacher_edges(  # noqa: SLF001
+    features, row_mask, slot_neighbours = decoder._teacher_edges(  # noqa: SLF001
       node_s[index],
       node_s[0],
       inputs.pr_edges,
@@ -295,7 +295,7 @@ def _run_joint_step(  # noqa: PLR0915 — χ loop stays in this traced body so L
       node_s[index],
       node_v[index],
       (features, inputs.ligand_scalars),
-      (inputs.pr_neighbours, inputs.lp_neighbours),
+      (slot_neighbours, inputs.lp_neighbours),
       (empty, inputs.lp_edges),
       (row_mask, inputs.lp_mask),
       (False, False),

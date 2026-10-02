@@ -190,7 +190,7 @@ def _write_layers(
     (chi_degrees.shape[0], _CHI_ANGLES * _CHI_BINS),
   )
   for index in range(3):
-    features, row_mask = decoder._teacher_edges(  # noqa: SLF001
+    features, row_mask, slot_neighbours = decoder._teacher_edges(  # noqa: SLF001
       node_s[index],
       node_s[0],
       pr_edges,
@@ -205,7 +205,7 @@ def _write_layers(
       node_s[index],
       node_v[index],
       (features, lig_s),
-      (pr_neighbours, lp_neighbours),
+      (slot_neighbours, lp_neighbours),
       (empty, lp_edges),
       (row_mask, lp_mask),
       (False, False),
