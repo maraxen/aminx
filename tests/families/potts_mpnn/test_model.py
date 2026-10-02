@@ -144,8 +144,36 @@ def test_jit_matches_eager() -> None:
 
   eager = _call(model, coords, mask)
   compiled = _run(model, coords, mask)
-  np.testing.assert_allclose(np.asarray(compiled.log_probs), np.asarray(eager.log_probs), atol=1e-6, rtol=1e-6)
-  np.testing.assert_allclose(np.asarray(compiled.etab_raw), np.asarray(eager.etab_raw), atol=1e-6, rtol=1e-6)
+  # atol is 2e-5, not 1e-6, and rtol is deliberately UNCHANGED. Debt #2432: this
+  # assertion was green only while a leaked jax_enable_x64 (#2419/#2431)
+  # promoted the intermediates to float64, where 1e-6 is ~4.5e9 eps and cannot
+  # fail. At float32 it is ~8 eps, so this path had never been checked at the
+  # precision production uses -- and float64 is not an option, it would cost the
+  # GPU performance the port exists to get.
+  #
+  # atol is the term that binds: for the element that first failed
+  # (0.1259099543094635 vs 0.12590882182121277) the band was
+  # 1e-6 + 1e-6*0.126 = 1.126e-06 against a deviation of 1.1325e-06, so rtol
+  # contributed 0.1% of it. Moving rtol too would be widening for its own sake.
+  #
+  # 2e-5 is derived, not chosen: ceil_one_significant_figure(10 * floor), where
+  # floor = 1.4305e-06 is the max absolute jit-vs-eager deviation over 24
+  # independently seeded models. Measured by
+  # scripts/analysis/potts_jit_eager_f32_floor.py under its sidecar; bathos run
+  # 412d3dc4-bdbe-4602-b158-cd6156886857 at 8dca6e85, outcome "pass".
+  #
+  # The band still has teeth, which is the half that matters: a 1e-3 relative
+  # defect injected into the largest element is rejected with 86x margin, and
+  # 2e-5 is 5x TIGHTER than the 1e-4 absolute term of potts_energy_parity's
+  # correctness band, so jit/eager consistency is held to a finer standard than
+  # parity against upstream.
+  #
+  # Calibrated for THIS input: a 5-residue synthetic backbone with |etab_raw|
+  # up to ~1.9. All 24 seeds were admitted by a real assert_allclose at this
+  # band, but an atol-dominated tolerance does not automatically transfer to
+  # inputs whose magnitudes are orders larger.
+  np.testing.assert_allclose(np.asarray(compiled.log_probs), np.asarray(eager.log_probs), atol=2e-5, rtol=1e-6)
+  np.testing.assert_allclose(np.asarray(compiled.etab_raw), np.asarray(eager.etab_raw), atol=2e-5, rtol=1e-6)
 
 
 def test_registry_excludes_proteinmpnn_compatible() -> None:
