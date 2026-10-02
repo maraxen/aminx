@@ -73,12 +73,58 @@ ledger ids and this tooling can be edited freely before or after the wave.
 3. **The weights key must be the stable identifier**, not an absolute path;
    `scripts/parity/artifact_key.py` derives it. Controls written before 6cb81d49
    carry `/home/solab/repos/...` and never validate.
-4. **A positive control must not ride along on a graded run.** `_argv_mutants`
+4. **A run id must be the FULL uuid.** `default_resolve_run` stats
+   `run_<id>.parquet` by exact filename, but every place you read an id from —
+   a vehicle log, a `bth` listing — shows the 8-char prefix. `verify_wave.py`
+   now globs the prefix and prints the full id; before that it reported
+   "no cool-tier parquet (try: bth compact)", which blames a subsystem that
+   was never involved.
+5. **A positive control must not ride along on a graded run.** `_argv_mutants`
    reads the raw string, so `scalar_both_off` lands in `listed` even though
    `laser_proofread_parity` excludes it from `n_listed`, `n_failed` and the
    controls dict. It has no manifest row (it must PASS; every manifest row must
    report `failed`), so `listed != row_ids` and the run is thrown out. The
    launcher now refuses this before anything starts.
+
+## What the verifier measured, 261002
+
+Run against real runs before the wave landed, so every result is a negative
+control (nothing can be eligible until the freeze holds):
+
+| slug | sha | weights key | verdict |
+| :--- | :--- | :--- | :--- |
+| `laser_score_parity` | `f11f2bf1` | absolute path | **FAIL** weights key resolves |
+| `potts_energy_parity` | `6cb81d49` | `PottsMPNN/...pottsmpnn_20.pt` | PASS weights key resolves |
+| `potts_ar_decode` | `6cb81d49` | `PottsMPNN/...pottsmpnn_20.pt` | PASS weights key resolves |
+
+The same condition passing for one family and failing for the other is what
+shows it discriminates. The three potts runs pass **eight of nine** conditions;
+only `no scoped path since` fails, which is the freeze and is exactly what the
+wave re-run is for.
+
+Consequence: **`laser_score_parity`'s only passing run is ineligible.**
+`f11f2bf1` is an ancestor of `6cb81d49` ("key oracle weights by a stable
+identifier, not an absolute path"), so it predates the fix. Its run id must NOT
+be written to the ledger as "already passed" — group 2 re-runs it. The stale
+`laser_decode_e2e` id already sitting in `sidecar_ledger.toml` is ineligible for
+the same two reasons and must be replaced, not kept.
+
+All six vehicles do route weights through `stable_artifact_key`, directly or via
+`potts_graded_common.py`, so every run at the frozen tree emits a resolvable
+key. Verified by reading the sources, not inferred from the two that pass.
+
+### The weights requirement is inert
+
+`_weights_required(slug)` is `slug.startswith(("pottsmpnn_", "lasermpnn_"))`.
+**No vehicle slug matches it** — all six are `potts_*` or `laser_*`; the only
+`pottsmpnn_*` slug in the repo is `pottsmpnn_cfg`, a knob slug from a different
+namespace. So the gate never *requires* a weights map; a run declaring none
+passes step 1c. The per-key check is separate and unconditional, so weights
+that are present must still resolve — which is the trap that actually fires.
+
+Not changed here. Tightening a pre-registered pass criterion days before
+writing ledger rows is the mirror image of loosening a tolerance to make a run
+pass, and belongs in a deliberate decision, not a drive-by edit.
 
 ## Known coverage gaps
 

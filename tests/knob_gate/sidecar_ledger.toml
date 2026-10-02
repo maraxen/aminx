@@ -7,7 +7,7 @@
 # ids, --output-paths containing /<slug>/<git sha8>/branch_controls.json, and
 # every weights key resolving in tests/knob_gate/checkpoint_registry.json.
 #
-# FOUR TRAPS, each of which produces a run that looks entirely successful and
+# FIVE TRAPS, each of which produces a run that looks entirely successful and
 # fails step 1c for a reason unrelated to the measurement:
 #   1. --mutants MUST BE IN ARGV. _argv_mutants returns None when the flag is
 #      absent, so a run relying on the script's default mutant list fails.
@@ -24,6 +24,10 @@
 #      manifest row (it must PASS, and every manifest row must report
 #      "failed"), so listed != row_ids and the run is ineligible. Run the
 #      positive control as its own separate invocation.
+#   5. THE ID BELOW MUST BE THE FULL UUID. default_resolve_run stats
+#      run_<id>.parquet by exact filename, so the 8-char prefix that every log
+#      line and bth listing prints does not resolve. verify_wave.py globs the
+#      prefix and prints the full id rather than blaming the catalog.
 #
 # AND ONE SCHEDULING CONSTRAINT that is not a per-run trap: _touches_scoped is
 # GLOBAL, not per-slug, so ONE commit under src/aminx/ (or scripts/parity/,
@@ -51,7 +55,7 @@
 # check_branch_coverage does NOT return "pass" on this file right now, and that
 # is expected rather than a regression. The ids are kept because they still
 # name the runs that produced the measurements; they are not evidence of a
-# green gate. Replace all five after the wave
+# green gate. Replace all six after the wave
 # (scripts/redsox/launch_wave.sh), which is the only point at which this file
 # can be made true. Run verify_wave.py BEFORE writing a row: it reports each
 # condition separately, which is the only way to tell these cases apart.
@@ -83,3 +87,15 @@ bth_run_id = "9c8c5dce-d8d0-4b6c-9fb9-32c847603017"
 #                           (trap 4), on top of the scoped-commit invalidation
 #                           above. Its verdict is still worth reading; its id
 #                           must not be written here.
+#   laser_score_parity      1 mutant (permute_decoder_layer). Gained a manifest
+#                           row in 7d51d4cc because it had already PASSED and
+#                           was never required. That passing run is f11f2bf1,
+#                           which is an ANCESTOR of 6cb81d49 ("key oracle
+#                           weights by a stable identifier, not an absolute
+#                           path"), so its controls carry
+#                           /home/solab/repos/LASErMPNN/... and fail trap 3.
+#                           Measured with verify_wave.py 261002: FAIL on both
+#                           "weights key resolves" and "no scoped path since".
+#                           It is in wave group 2 for that reason. Listing
+#                           f11f2bf1 here because "it already passed" is
+#                           exactly the mistake this comment exists to stop.
