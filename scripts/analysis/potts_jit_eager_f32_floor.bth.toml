@@ -1,0 +1,83 @@
+[metadata]
+title = "PottsMPNN jit-vs-eager float32 reproducibility floor"
+created = "261002"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The jit-vs-eager relative deviation of PottsMPNN etab_raw and log_probs on identical float32 inputs has a floor ABOVE the 1e-6 rtol that tests/families/potts_mpnn/test_model.py::test_jit_matches_eager asserts, so that assertion was unfalsifiable only while a leaked jax_enable_x64 promoted the intermediates to float64, and a tolerance derived as next_power_of_ten(10 * measured_floor) both admits every clean seed and still rejects a 1e-3 relative defect."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.pass]
+condition = "floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale"
+decision = "Set the test's tolerance to the derived proposed_rtol/proposed_atol, citing this run. The current 1e-6 is below the float32 floor and was never a meaningful check at production precision."
+reasoning = "A floor above 1e-6 shows the assertion cannot hold at float32 for reasons intrinsic to XLA reassociation rather than to any defect. Admitting every clean seed shows the derived band is not fitted to the one seed that failed. Rejecting an injected 1e-3 relative defect, with proposed_rtol strictly below 1e-3, shows the widened band still has teeth."
+is_residual = false
+adversarial_check = "NOT (floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale)"
+
+[outcomes.tolerance_was_fine]
+condition = "NOT floor_above_current"
+decision = "Do NOT change the test. Investigate test_jit_matches_eager's single failing element as a genuine, seed-specific divergence instead."
+reasoning = "If 24 independently seeded models all stay inside 1e-6, then the floor is not the explanation and the observed failure is specific to that model's weights -- which is a defect to find, not a band to widen. This outcome exists so the run can refute its own hypothesis."
+is_residual = true
+adversarial_check = "floor_above_current"
+
+[outcomes.noise_reaches_defect_scale]
+condition = "floor_above_current AND NOT below_control_scale"
+decision = "Escalate. Do not widen the tolerance. float32 jit-vs-eager noise in this model is as large as a defect worth catching, which is a numerical-stability question about the model, not a test-tolerance question."
+reasoning = "A derived rtol at or above 1e-3 would mean no tolerance can separate reassociation noise from a real error in etab_raw. Widening the band there would delete the assertion's value rather than calibrate it, so the run must stop and say so."
+is_residual = true
+adversarial_check = "NOT floor_above_current OR below_control_scale"
+
+[outcomes.fail]
+condition = "NOT (floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale) AND floor_above_current AND below_control_scale"
+decision = "Do not change the test. The derivation rule did not produce a usable band."
+reasoning = "Either a clean seed falls outside a band derived with 10x headroom over the measured maximum -- meaning the floor is not stable across seeds and a single maximum does not characterise it -- or the injected 1e-3 defect was admitted, meaning the band is too wide to test anything."
+is_residual = true
+adversarial_check = "floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale"
+
+[result_schema]
+verdict = "str"
+n_seeds = "int"
+n_reused = "int"
+n_computed = "int"
+current_rtol = "float"
+floor_rel = "float"
+floor_abs = "float"
+float32_eps = "float"
+floor_in_eps = "float"
+headroom = "float"
+proposed_rtol = "float"
+proposed_atol = "float"
+floor_above_current = "bool"
+clean_seeds_admitted = "bool"
+control_rejected = "bool"
+control_relative = "float"
+below_control_scale = "bool"
+script_sha256 = "str"
+work_dir = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+model = "aminx.families.potts_mpnn.model.PottsMPNN, randomly initialised per seed; no checkpoint, so no weights to pin"
+inputs = "the test's own synthetic 5-residue backbone (_backbone), duplicated verbatim into this script rather than imported"
+duplication_rationale = "importing _backbone from the test module would make this measurement depend on a file that may be edited in response to this measurement"
+dtype = "float32 throughout; jax_enable_x64 is never set, which is the whole point"
+n_seeds = 24
+arrays_compared = "etab_raw (L K 20 20) and log_probs, both eager vs eqx.filter_jit on identical inputs"
+relative_denominator = "the EAGER magnitude, matching numpy assert_allclose's atol + rtol*|desired|; elements whose eager value is exactly zero are excluded from the relative figure and covered by the absolute one"
+derivation_rule = "proposed_rtol = next_power_of_ten(10 * floor_rel); proposed_atol = next_power_of_ten(10 * floor_abs). Fixed BEFORE the run; the value is not chosen."
+negative_control = "one element (the largest in magnitude) perturbed by 1e-3 relative; assert_allclose at the proposed band must raise"
+control_rationale = "1e-3 is fixed in advance and NOT scaled to the floor. A floor-scaled control is near-circular: next_power_of_ten(10*F) <= 100*F makes '100*F is rejected' true by construction with as little as 1x margin."
+admission_check = "assert_allclose is re-run per seed at the proposed band. Reconstructing numpy's verdict from the recorded maxima is unsound -- the max-relative and max-absolute elements need not be the same element, so neither maximum constrains the other."
+
+[provenance]
+note = "Ungraded diagnostic for debt #2432, which was uncovered by fixing the two jax_enable_x64 leaks of #2419/#2431. It is NOT a redsox vehicle and has no manifest row. It lives in scripts/analysis/ specifically because scripts/parity/ is a _touches_scoped path: adding a file there during the ledger freeze would invalidate every sidecar_ledger.toml row at once. Invocation: bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/potts_jit_eager_f32_floor.py --work-dir <dir> --out <json>."
+
+[resume]
+unit = "one seed"
+cache_key = "sha256 of the script bytes, the seed, and the residue length"
+stamp_order = "the per-seed JSON body is written first and its stamp second, so a crash between them leaves an unstamped body that is recomputed rather than trusted"
+max_attempts = 1
