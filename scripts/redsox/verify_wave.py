@@ -8,8 +8,15 @@ measured (a tracked file dirtied by pytest, a mutant string that does not
 match the manifest, a weights key written as an absolute path).
 
 So this reports every condition separately, with the observed value next to
-the expected one. It imports the real resolvers from ``tests/knob_gate``
-rather than restating the rules, so it cannot drift from the gate it explains.
+the expected one.
+
+Every VERDICT is the gate's own predicate, imported from ``tests/knob_gate``,
+so a verdict here cannot drift from the gate it explains. Only the explanatory
+detail is restated -- e.g. the gate's ``_touches_scoped`` answers yes/no, and
+the list of offending paths printed beside it is computed here purely to make
+the "no" actionable. An earlier revision restated the predicates themselves,
+including ``_weights_required``, which is how it came to report a gradeable
+run as ungradeable (see ``weights`` below).
 
 Usage:
     uv run python3 scripts/redsox/verify_wave.py
@@ -44,21 +51,17 @@ REPO = _repo()
 sys.path.insert(0, str(REPO / "tests" / "knob_gate"))
 
 from _coverage import (  # noqa: E402
+  _SCOPED_FILES,
+  _SCOPED_PREFIXES,
+  _argv_mutants,
+  _touches_scoped,
+  _weights_required,
   default_changed_paths,
   default_is_ancestor,
   default_registry_sha256,
   default_resolve_run,
   default_sidecar_digest,
 )
-
-_SCOPED_PREFIXES = (
-  "src/aminx/",
-  "scripts/parity/",
-  "scripts/recapture/",
-  "tests/port/",
-  "aminx-oracles/",
-)
-_SCOPED_FILES = frozenset({"pyproject.toml", "uv.lock"})
 
 
 def _manifest_rows() -> dict[str, set[str]]:
@@ -79,18 +82,13 @@ def _ledger_ids() -> dict[str, str]:
   return {slug: body["bth_run_id"] for slug, body in table.items() if "bth_run_id" in body}
 
 
-def _argv_mutants(argv: object) -> set[str] | None:
-  parts = list(argv) if isinstance(argv, (list, tuple)) else str(argv).split()
-  try:
-    index = parts.index("--mutants")
-  except ValueError:
-    return None
-  if index + 1 >= len(parts):
-    return None
-  return {item for item in str(parts[index + 1]).split(",") if item}
+def _scoped_hits(paths: list[str]) -> list[str]:
+  """The offending paths, for the message only.
 
-
-def _touches_scoped(paths) -> list[str]:
+  The VERDICT comes from the gate's ``_touches_scoped``; this just names which
+  paths made it say yes, because "a scoped path landed since that run" is
+  unactionable without knowing which commit did it.
+  """
   hits = []
   for raw in paths:
     path = str(raw).replace("\\", "/").lstrip("./")
@@ -121,11 +119,12 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   ok &= _report("git_hash present", bool(git_hash), str(git_hash)[:12])
   if git_hash:
     ok &= _report("ancestor of HEAD", default_is_ancestor(git_hash))
-    touched = _touches_scoped(default_changed_paths(git_hash))
+    changed = default_changed_paths(git_hash)
+    hits = _scoped_hits(changed)
     ok &= _report(
       "no scoped path since",
-      not touched,
-      f"{len(touched)} scoped: {sorted(set(touched))[:3]}" if touched else "",
+      not _touches_scoped(changed),
+      f"{len(hits)} scoped: {sorted(set(hits))[:3]}" if hits else "",
     )
 
   try:
@@ -170,8 +169,22 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
     "every control failed", not not_failed, f"not failed: {not_failed}" if not_failed else ""
   )
 
+  # The gate requires a non-empty weights map only for slugs matching
+  # _WEIGHT_PREFIXES ("pottsmpnn_", "lasermpnn_") -- which NO vehicle slug in
+  # branch_manifest.toml matches, so the requirement is inert here (debt: the
+  # prefixes read like knob slugs, not vehicle slugs). Reporting it as a hard
+  # FAIL, as this script first did, condemns a run the gate would have graded.
+  # The per-key check below is NOT conditional: weights that are present must
+  # resolve in checkpoint_registry.json, and that is the trap that actually
+  # fires -- controls written before 6cb81d49 key by absolute path and never
+  # validate.
   weights = controls.get("weights", {})
-  ok &= _report("weights present", bool(weights), "")
+  required = _weights_required(slug)
+  ok &= _report(
+    "weights present",
+    bool(weights) or not required,
+    "" if weights else f"empty; required={required}",
+  )
   for artifact, sha in weights.items():
     resolved = default_registry_sha256(artifact)
     ok &= _report(
