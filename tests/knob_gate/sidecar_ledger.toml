@@ -120,16 +120,25 @@ bth_run_id = "3f8e4f99-e7ce-464f-becb-54e1d79d5357"
 # assertion against the manifest itself).
 bth_run_id = "cd56063e-d6b0-458c-9400-b3845c8f7bd6"
 
-# NOT YET LISTED:
-#   potts_ar_refine_exact   3 mutants (ar_mask_present_chain_m_pos,
-#                           wrong_partition_sign, ntoc_refine_order), clean
-#                           previously 1.0 over 50 seeds. Launched at 7c3dd246
-#                           alongside the three rows above and still running --
-#                           run ef4df8ff-7b0d-44bb-999b-35b5c7a6207c, which the
-#                           cool-tier record shows at exit_code -1 because it has
-#                           not finished. Its refine sweeps are far slower than
-#                           any other vehicle: the other three wave-2 slugs
-#                           completed within ten minutes while this one had not
-#                           produced its first payload. Write the row only after
-#                           verify_wave.py reports it, and only with the full
-#                           uuid.
+[sidecar.potts_ar_refine_exact]
+# 7c3dd246, the same tree as the three rows above. Exact sequence match over 50
+# seeds on the clean arm, and all three negative controls separated hard:
+#   clean                        pass  match 1.0
+#   ar_mask_present_chain_m_pos  fail  match 0.8356272401433692
+#   ntoc_refine_order            fail  match 0.6720839733742959
+#   wrong_partition_sign         fail  match 0.20894009216589862
+# The spread matters as much as the failures: a control that merely grazed the
+# band would leave the vehicle's resolution unmeasured, and the weakest of these
+# is 0.164 below a clean 1.0 with the strongest 0.79 below it.
+#
+# This is the slowest vehicle in the wave by a wide margin -- the other three
+# wave-2 slugs finished inside ten minutes while this one took 59 (17:06-18:05)
+# across its four arms, so its arms are serial 300-unit sweeps, not a hung job.
+# The run's own adversarial_check_result is "fired".
+#
+# verify_wave.py reports 14 of 14 conditions PASS, which is what this row waited
+# for; the id is the FULL uuid, since an 8-character prefix does not resolve.
+bth_run_id = "ef4df8ff-7b0d-44bb-999b-35b5c7a6207c"
+
+# NOT YET LISTED: nothing. All six manifest vehicle slugs now carry a verified
+# row, so check_branch_coverage should leave instrument_invalid.
