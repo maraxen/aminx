@@ -23,7 +23,7 @@ dependencies = [
     "proxide>=0.1.0a17",
     "typer>=0.12.0",
     "huggingface-hub>=0.23.0",
-    "xtrax[io,export]==0.4.0a10",
+    "xtrax[io,export]==0.4.0a11",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -66,6 +66,13 @@ tests = [
     "biopython>=1.83",
     # Reference LigandMPNN `sc_utils` does `import tree` (DeepMind `dm-tree`).
     "dm-tree>=0.1.8",
+]
+# The ONNX export/parity toolchain (onnx, onnxruntime, jax2onnx). Declared through xtrax so its pins and the
+# reason for them live in one place. Tests that need it (tests/export/test_layer_b_ort_parity.py,
+# tests/parity/test_layer_b_ort_*.py, test_onnx_audit.py, test_p07_sample_export.py) skip with a message
+# when it is absent, and CI installs it so they RUN there (aminx debt #2392).
+onnx = [
+    "xtrax[onnx]==0.4.0a11",
 ]
 dev = [
   "ruff",

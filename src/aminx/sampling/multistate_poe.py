@@ -47,7 +47,7 @@ import jax.numpy as jnp
 import numpy as np
 from xtrax.run import ZarrStagingSink, derive_sink_spec
 from xtrax.tiling import BatchPlanner
-from xtrax.tiling import SafeMap as _XtraxSafeMap
+from xtrax.tiling import ChunkedMap as _XtraxChunkedMap
 from xtrax.tiling import Vmap as _XtraxVmap
 from xtrax.tiling.estimators import lowered_memory_estimate
 
@@ -207,7 +207,7 @@ def sample_states_fused(
   # union before handing it to aminx call sites (make_axis_dispatch_via_xtrax
   # expects aminx-native instances -- mirrors _plan_axis_strategy's identical
   # translation for the samples axis below).
-  if isinstance(xtrax_state_strategy, _XtraxSafeMap):
+  if isinstance(xtrax_state_strategy, _XtraxChunkedMap):
     state_strategy = SafeMap(tile=xtrax_state_strategy.batch_size)
   elif isinstance(xtrax_state_strategy, _XtraxVmap):
     state_strategy = Vmap()
