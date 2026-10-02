@@ -21,13 +21,16 @@ def _x64() -> Iterator[None]:
 
   This used to set the flag and never restore it. ``jax.config`` is process
   global, so every test that ran after this module in the same session built
-  its arrays in float64 -- which is invisible until something deserialises a
-  float32 checkpoint into a freshly constructed float64 ``like`` and dies with
-  "has changed dtype from float64 in `like` to float32 on disk". That is the
-  dtype half of the order-dependent pollution in debt #2419, and it reproduces
-  under ``-p no:randomly`` because the leak depends on order, not randomness.
-  Restoring matches tests/ebm/conftest.py and tests/port/conftest.py, which
-  both already scope the flag.
+  its arrays in float64. Restoring matches tests/ebm/conftest.py and
+  tests/port/conftest.py, which both already scope the flag.
+
+  NOT a fix for debt #2419, despite the resemblance. An earlier version of
+  this docstring claimed the leak caused the 18 tests/host failures that look
+  exactly like it ("Deserialised leaf ... has changed dtype from float64 in
+  `like` to float32 on disk"). Measured both ways on the same selection: 18
+  failed / 799 passed before the fix, 18 failed / 799 passed after, the same
+  18 node ids. The leak is real and worth closing on its own; it is not that
+  cause. See #2426.
   """
   previous = jax.config.jax_enable_x64
   jax.config.update("jax_enable_x64", True)
