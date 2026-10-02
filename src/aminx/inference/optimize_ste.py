@@ -42,7 +42,11 @@ if TYPE_CHECKING:
 
 
 from aminx.utils.autoregression import ar_mask_from_decoding_order
-from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
+from aminx.utils.decoding_order import (
+  DecodingOrderFn,
+  random_decoding_order,
+  resolve_decoding_order_fn,
+)
 from aminx.utils.ste import gumbel_softmax, straight_through_estimator
 
 _DEFAULT_DECODING_ORDER_FN = cast("DecodingOrderFn", random_decoding_order)
@@ -111,6 +115,8 @@ def make_optimize_sequence_fn(
     num_groups = bundle.geometry.n_canonical
 
     fixed_mask = bundle.conditioning.fixed_mask
+    # Fixed positions first by default (aminx #2017), like the sampler; a caller's own function is untouched.
+    order_fn = resolve_decoding_order_fn(decoding_order_fn, fixed_mask)
     fixed_tokens = bundle.conditioning.fixed_tokens
     tie_group_map = bundle.conditioning.tie_group_map
 
@@ -147,7 +153,7 @@ def make_optimize_sequence_fn(
         key_decoding_orders, next_key = jax.random.split(current_key)
 
       keys_for_decoding = jax.random.split(key_decoding_orders, batch_size)
-      decoding_orders, _ = jax.vmap(decoding_order_fn, in_axes=(0, None, None, None))(
+      decoding_orders, _ = jax.vmap(order_fn, in_axes=(0, None, None, None))(
         keys_for_decoding,
         num_residues,
         tie_group_map[0]
@@ -282,7 +288,7 @@ def make_optimize_sequence_fn(
       jax.experimental.io_callback(_save_logits, None, final_logits, ordered=False)
       jax.effects_barrier()
 
-    final_decoding_order, _ = decoding_order_fn(
+    final_decoding_order, _ = order_fn(
       final_key, num_residues, tie_group_map[0] if tie_group_map is not None else None, num_groups,
     )
     final_ar_mask = ar_mask_from_decoding_order(

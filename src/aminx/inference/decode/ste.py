@@ -28,7 +28,11 @@ from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 from aminx.types.stages import StageSet
 from aminx.utils.autoregression import ar_mask_from_decoding_order
-from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
+from aminx.utils.decoding_order import (
+  DecodingOrderFn,
+  random_decoding_order,
+  resolve_decoding_order_fn,
+)
 from aminx.utils.ste import gumbel_softmax, straight_through_estimator
 
 _DEFAULT_DECODING_ORDER_FN = cast("DecodingOrderFn", random_decoding_order)
@@ -181,6 +185,8 @@ class STEDecode(eqx.Module):
     num_groups = bundle.geometry.n_canonical
 
     fixed_mask = bundle.conditioning.fixed_mask
+    # Fixed positions first by default (aminx #2017), like the sampler; a caller's own function is untouched.
+    order_fn = resolve_decoding_order_fn(self.decoding_order_fn, fixed_mask)
     fixed_tokens = bundle.conditioning.fixed_tokens
     tie_group_map = bundle.conditioning.tie_group_map
 
@@ -251,7 +257,7 @@ class STEDecode(eqx.Module):
 
       # Generate batch_size decoding orders
       decoding_orders, _ = jax.vmap(
-        self.decoding_order_fn, in_axes=(0, None, None, None),
+        order_fn, in_axes=(0, None, None, None),
       )(
         keys_for_decoding,
         num_residues,
@@ -376,7 +382,7 @@ class STEDecode(eqx.Module):
     final_sequence = final_one_hot.argmax(axis=-1).astype(jnp.int8)
 
     # Generate final decoding order
-    final_decoding_order, _ = self.decoding_order_fn(
+    final_decoding_order, _ = order_fn(
       final_key,
       num_residues,
       tie_group_map[0] if tie_group_map is not None else None,
