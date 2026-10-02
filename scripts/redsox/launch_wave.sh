@@ -111,12 +111,33 @@ case "$GROUP" in
   2)
     SLUGS=(potts_ar_refine_exact potts_ar_decode potts_energy_parity laser_score_parity) ;;
   positive)
-    nohup setsid env JAX_PLATFORMS=cpu uv run --no-sync python3 \
+    # THIS ARM COULD NEVER HAVE RUN. It called the parity script directly,
+    # while every graded arm goes through `bth run` (launch(), :95) -- and
+    # `$BTH_RESULTS_PATH` is set by bth, not by the script. Launched as it was,
+    # it died in under a second with
+    #     laser_proofread_parity requires $BTH_RESULTS_PATH
+    # and wrote no payload at all. Measured 261002 on b5272b07.
+    #
+    # So it goes through `bth run` too. It stays ungraded by what it OMITS:
+    # no --controls-out, so it writes no branch_controls.json, and no
+    # --output-paths into $HOME/.aminx/sidecars/<slug>/<sha>/, which is the
+    # directory the ledger and step 1c read. Its work-dir is /tmp/positive_$H,
+    # well clear of the graded /tmp/<slug>_$H.
+    #
+    # EXPECT THE RECORD'S OUTCOME TO READ `fail`, and do not "fix" it. The
+    # sidecar's criteria are written for a graded run, where every mutant must
+    # be killed; scalar_both_off is a no-op that must SURVIVE. An outcome of
+    # `fail` here is therefore the positive control succeeding, and an outcome
+    # of `pass` would mean a no-op mutation changed the result. Read the
+    # payloads under the work-dir, not the outcome column.
+    nohup setsid env JAX_PLATFORMS=cpu bth run --project-slug aminx \
+      -- uv run --no-sync python3 \
       scripts/parity/laser_proofread_parity.py \
       --mutants scalar_both_off --work-dir "/tmp/positive_$H" \
       > "$HOME/positive_$H.log" 2>&1 < /dev/null &
     echo "launched positive control, ungraded, no --controls-out"
     echo "it must report near-zero; a non-zero result is instrument floor"
+    echo "expect the bathos outcome to read 'fail' -- see the comment above"
     exit 0 ;;
   *)
     echo "usage: $0 [1|2|3|positive]" >&2; exit 2 ;;
