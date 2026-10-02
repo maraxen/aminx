@@ -73,6 +73,18 @@ def test_superset() -> None:
   # aborting collection of the rest of tests/knob_gate.
   from redsox.checkers.superset import check_superset  # noqa: PLC0415
 
+  # A live row with no targets used to surface here as a bare
+  # "IndexError: list index out of range" from the [0] below, which names
+  # neither the row nor how many there are. That is the alias skeleton still
+  # being unfinished -- the condition this test exists to catch -- so it should
+  # read as a work list, not as a crash. Same pass/fail, more signal.
+  unmapped = [str(row["ref"]) for row in LIVE if not row.get("targets")]
+  assert not unmapped, (
+    f"{len(unmapped)} of {len(LIVE)} live rows have empty targets; every row must be "
+    f"classified identical/semantic/divergence with a target, or excluded with a "
+    f"reason (spec 6.3). First 5: {unmapped[:5]}"
+  )
+
   alias = {str(row["ref"]): cast("list[str]", row["targets"])[0] for row in LIVE}
   filtered = [
     make_dataclass(

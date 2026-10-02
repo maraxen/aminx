@@ -2517,9 +2517,9 @@ note = ""
 ref = "pottsmpnn_cfg__inference__filter"
 targets = []
 equivalence = "exclusion"
-reason = "upstream_noop"
+reason = "no_op"
 parity_test_ids = []
-note = "upstream filter drops nothing; it is not a PottsMPNN option"
+note = "Verified 261002: cfg.inference.filter IS read (run_utils.py:886 -> etab_utils.calc_eners(..., filter=cfg.inference.filter)), but it drops nothing. calc_eners builds its mask as `nrgs != torch.nan` (etab_utils.py:311), and x != NaN is True for every x under IEEE semantics, NaN included, so the mask is all-True. The docstring claims it filters sequences with NaN reference energies; `~torch.isnan(nrgs)` would. An upstream defect, not a design choice -- but the knob is still a no-op, so there is nothing for aminx to mirror. Was reason='upstream_noop', which is not in the harness vocabulary and failed test_exclusions; the mechanism belongs in this note, not in a one-off reason word."
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__fix_decoding_order"
