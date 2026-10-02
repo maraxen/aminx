@@ -1900,6 +1900,33 @@ def campaign_run(
     raise typer.Exit(code=1)
 
 
+@campaign_app.command("adopt-legacy")
+def campaign_adopt_legacy(
+  manifest_path: Annotated[
+    Path,
+    _OPT("--manifest-path", help="Path to campaign manifest JSON (required)"),
+  ] = ...,  # ty: ignore[invalid-parameter-default]
+  row_hash: Annotated[list[str], _OPT("--row-hash", help="Row hash filter (repeatable)")] = [],  # noqa: B006
+  dry_run: Annotated[
+    bool,
+    _OPT("--dry-run", help="Report what would be adopted without changing anything"),
+  ] = False,
+  summary_path: Annotated[
+    Path | None,
+    _OPT("--summary-path", help="Path to write the adoption report JSON"),
+  ] = None,
+) -> None:
+  """Upgrade valid v2 done markers to v3. The operator attests the outputs match the current manifest."""
+  from aminx.host.campaign import _emit_json, adopt_legacy_done_markers  # noqa: PLC0415
+
+  report = adopt_legacy_done_markers(
+    manifest_path,
+    row_hashes=tuple(row_hash) if row_hash else None,
+    dry_run=dry_run,
+  )
+  _emit_json(report, str(summary_path) if summary_path else None)
+
+
 @campaign_app.command("gates")
 def campaign_gates(
   manifest_path: Annotated[
