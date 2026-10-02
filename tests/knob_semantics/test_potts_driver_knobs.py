@@ -139,3 +139,83 @@ def test_knob_semantics_mean_norm(
     "no-op; pick mutants whose raw ddG mean is nonzero"
   )
   assert not np.allclose(raw, centred), "mean_norm must not be inert"
+
+
+def _energies(pdb: Path, weights: Path, sequences: list[str]) -> np.ndarray:
+  spec = ScoringSpecification(
+    inputs=str(pdb),
+    model_family="pottsmpnn",
+    checkpoint_id="pottsmpnn_vanilla_20",
+    model_local_path=weights,
+    output_kind="energy",
+    sequences_to_score=sequences,
+    potts_mpnn=PottsMPNNOptions(),
+  )
+  return np.asarray(
+    score(spec)["structures"]["0"]["arrays"]["energy"], dtype=np.float64,
+  )
+
+
+def test_knob_semantics_output_kind(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``output_kind`` picks absolute energy or the difference from the reference.
+
+  Spec 6.3: upstream's ``ddG`` flag maps here, True being ``ddg`` and False
+  ``energy``. The difference is not merely which key appears in the output --
+  ``driver.py:206-208`` returns the raw block for ``energy`` and
+  ``block[1:] - block[0]`` for ``ddg`` -- so this asserts the arithmetic relation
+  between the two modes rather than that both merely run.
+  """
+  del registered
+  pdb = tmp_path / "one.pdb"
+  _write_pdb(pdb, {"A": "AAA"})
+  table = tmp_path / "mutants.csv"
+  table.write_text("pdb,chain,mut_type,ddG_expt\none,A,A1D,0.5\n", encoding="utf-8")
+
+  ddg = _ddg(pdb, model_path, PottsMPNNOptions(mutant_csv=str(table)))
+  assert ddg.shape == (1,)
+
+  # mut_type positions are ZERO-based (driver.py:518, matching upstream
+  # run_utils.py:737), so A1D edits the SECOND residue: AAA -> ADA.
+  #
+  # The energy path prepends the NATIVE reference to the scored sequences
+  # (include_reference_in_output, driver.py:206-207), so asking for the mutant
+  # alone returns exactly the (reference, mutant) pair this comparison needs.
+  # Passing ["AAA", "ADA"] returns three values, not two.
+  native, mutant = _energies(pdb, model_path, ["ADA"])
+  np.testing.assert_allclose(ddg[0], mutant - native, rtol=1e-5, atol=1e-5)
+  assert abs(float(mutant - native)) > 1e-6, (
+    "the mutation must change the energy, or this comparison holds trivially for "
+    "any implementation that returns zeros"
+  )
+
+
+def test_knob_semantics_exclude_chains(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``exclude_chains`` drops a chain from the deep mutational scan entirely.
+
+  ``driver.py:534-541``: with no mutant table the driver enumerates every single
+  mutant, and a chain named here contributes none. The separator is any of comma,
+  colon or whitespace (``:645``).
+
+  Counting is the observable. Each 2-residue chain yields 2 x 19 = 38 single
+  mutants, so two chains give 76 and excluding one gives 38.
+  """
+  del registered
+  pdb = tmp_path / "two.pdb"
+  _write_pdb(pdb, {"A": "AA", "B": "CC"})
+
+  both = _ddg(pdb, model_path, PottsMPNNOptions())
+  only_a = _ddg(pdb, model_path, PottsMPNNOptions(exclude_chains="B"))
+
+  assert both.shape == (76,), both.shape
+  assert only_a.shape == (38,), only_a.shape
+  assert both.shape != only_a.shape, "exclude_chains must not be inert"
+
+  # The separator set is part of the contract, so exercise one of the others.
+  colon = _ddg(pdb, model_path, PottsMPNNOptions(exclude_chains=":B:"))
+  assert colon.shape == only_a.shape, (
+    "colon and whitespace are documented separators alongside comma (driver.py:645)"
+  )

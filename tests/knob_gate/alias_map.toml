@@ -2699,7 +2699,7 @@ note = "Per-chain inclusive 1-indexed residue ranges (run_utils.py:925,1010-1011
 ref = "pottsmpnn_cfg__inference__ddG"
 targets = ["output_kind"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_kind"]
 note = "True ≡ output_kind ddg; False ≡ energy"
 
 [[row]]
@@ -2713,7 +2713,7 @@ note = "seeded-order test; order source is the driver, not decoding_order_fn"
 ref = "pottsmpnn_cfg__inference__exclude_chains"
 targets = ["exclude_chains"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_exclude_chains"]
 note = ""
 
 [[row]]
