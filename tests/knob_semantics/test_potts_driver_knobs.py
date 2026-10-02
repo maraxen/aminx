@@ -447,3 +447,141 @@ def test_knob_semantics_binding_energy_optimization(
   for mode in ("both", "only"):
     with pytest.raises(ValueError, match="needs partition etabs"):
       _sample(mode)
+
+
+_OPT_NATIVE = "ACDEFG"
+
+
+def _refined(
+  pdb: Path, weights: Path, options: PottsMPNNOptions, num_samples: int = 1,
+) -> dict:
+  spec = SamplingSpecification(
+    inputs=str(pdb),
+    model_family="pottsmpnn",
+    checkpoint_id="pottsmpnn_vanilla_20",
+    model_local_path=weights,
+    num_samples=num_samples,
+    samples_chunk_size=1,
+    return_logits=False,
+    potts_mpnn=options,
+  )
+  return sample(spec)["structures"]["0"]["arrays"]
+
+
+def test_knob_semantics_optimize_pdb(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``optimize_pdb`` refines FROM the structure's own sequence instead of decoding.
+
+  ``sample_host.py:299-301``: ``optimizing`` is
+  ``(optimize_pdb or optimize_fasta) and optimization_mode != "none"``, so the
+  mode VETOES the seed -- with ``none`` the sampler decodes autoregressively and
+  emits ``sequence``/``sample_energy``/``sample_rank``, and with a refine mode it
+  emits ``refined_sequence`` alone. Both halves of that ``and`` are exercised,
+  because a knob that was ignored and a knob that could not be switched off look
+  identical from one call.
+
+  ``:308-312`` seeds the refinement from the native sequence, and
+  ``force_optimize_num_samples`` (``:93-104``) pins ``num_samples`` to 1 because
+  refining one seed many times is the same work repeated.
+
+  ``test_sample.py:307`` already covers ``force_optimize_num_samples`` and
+  ``sample_schema``, but it never calls ``sample()``, so it would pass if the
+  sample path ignored the seed entirely. This runs it end to end.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": _OPT_NATIVE})
+
+  vetoed = _refined(
+    pdb, model_path,
+    PottsMPNNOptions(optimize_pdb=True, optimization_mode="none"),
+  )
+  assert "refined_sequence" not in vetoed, (
+    "optimization_mode='none' must veto the seed (the `and` at :299-301)"
+  )
+  assert vetoed["sequence"].shape == (1, len(_OPT_NATIVE))
+
+  refined = _refined(
+    pdb, model_path,
+    PottsMPNNOptions(optimize_pdb=True, optimization_mode="potts"),
+  )
+  assert "refined_sequence" in refined, "a refine mode must take the seeded path"
+  assert "sequence" not in refined, (
+    "the refine path replaces the decode outputs rather than adding to them"
+  )
+
+  # num_samples is forced to 1 END TO END, not just by the helper that does it.
+  many = _refined(
+    pdb, model_path,
+    PottsMPNNOptions(optimize_pdb=True, optimization_mode="potts"),
+    num_samples=4,
+  )
+  assert many["refined_sequence"].shape == (1, len(_OPT_NATIVE)), (
+    "optimize_pdb forces num_samples=1 (:93-104); a shape of (4, L) means the "
+    "forcing never reached the sample path"
+  )
+  np.testing.assert_array_equal(many["refined_sequence"], refined["refined_sequence"])
+
+
+def test_knob_semantics_optimize_fasta(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``optimize_fasta`` supplies the refine seed, and outranks ``optimize_pdb``.
+
+  ``sample_host.py:302-312`` is an ``if``/``elif``: with both fields set the
+  FASTA is read and the native is not. The seed is observable because a different
+  seed refines to a different answer -- measured on this fixture, the native
+  seeds to ``[9 5 16 3 2 2]`` and the FASTA's ``WWWWWW`` to ``[4 4 3 2 0 0]``.
+  That difference is what makes the precedence assertion meaningful; without it,
+  "both set equals fasta-only" would hold trivially for an implementation that
+  ignored both.
+
+  ``load_optimize_fasta`` (``:173-184``) selects entries whose header starts with
+  the structure name, so another structure's record is not this one's, and a
+  sequence of the wrong length is rejected against ``L_total`` rather than
+  silently padded.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": _OPT_NATIVE})
+  fasta = tmp_path / "opt.fasta"
+  # `other` must differ from `toy`, or the name filter would be untested.
+  fasta.write_text(">other\nYYYYYY\n>toy\nWWWWWW\n", encoding="utf-8")
+
+  from_native = _refined(
+    pdb, model_path,
+    PottsMPNNOptions(optimize_pdb=True, optimization_mode="potts"),
+  )["refined_sequence"]
+  from_fasta = _refined(
+    pdb, model_path,
+    PottsMPNNOptions(optimize_fasta=str(fasta), optimization_mode="potts"),
+  )["refined_sequence"]
+
+  assert from_fasta.shape == (1, len(_OPT_NATIVE)), (
+    "only the `toy` record is this structure's; (2, L) would mean `other` was "
+    "loaded too"
+  )
+  assert not np.array_equal(from_native, from_fasta), (
+    "a different seed must refine to a different answer, or the seed is inert "
+    "and the precedence check below proves nothing"
+  )
+
+  both = _refined(
+    pdb, model_path,
+    PottsMPNNOptions(
+      optimize_pdb=True, optimize_fasta=str(fasta), optimization_mode="potts",
+    ),
+  )["refined_sequence"]
+  np.testing.assert_array_equal(both, from_fasta)
+  assert not np.array_equal(both, from_native), (
+    "optimize_fasta outranks optimize_pdb (the if/elif at :302-312)"
+  )
+
+  short = tmp_path / "short.fasta"
+  short.write_text(">toy\nWWW\n", encoding="utf-8")
+  with pytest.raises(ValueError, match="!= L_total"):
+    _refined(
+      pdb, model_path,
+      PottsMPNNOptions(optimize_fasta=str(short), optimization_mode="potts"),
+    )

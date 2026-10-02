@@ -2815,15 +2815,25 @@ note = ""
 ref = "pottsmpnn_cfg__inference__optimize_fasta"
 targets = ["optimize_fasta"]
 equivalence = "divergence"
-parity_test_ids = []
-note = "upstream asserts optimize_fasta then reads out_dir/out_name.fasta (§6.5b)"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_optimize_fasta"]
+note = """\
+upstream asserts optimize_fasta then reads out_dir/out_name.fasta (6.5b); aminx \
+takes the path directly. The DIVERGENCE is where the file comes from, not what \
+is done with it, so the test covers the shared semantics: records are selected \
+by header prefix (sample_host.py:173-184), seed the refinement, outrank \
+optimize_pdb at the if/elif (:302-312), and are rejected against L_total."""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__optimize_pdb"
 targets = ["optimize_pdb"]
 equivalence = "identical"
-parity_test_ids = []
-note = ""
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_optimize_pdb"]
+note = """\
+Refine from the structure's own sequence instead of decoding. Gated by \
+optimization_mode: `optimizing` is (optimize_pdb or optimize_fasta) and mode != \
+"none" (sample_host.py:299-301), and the copy of that predicate at :376 is what \
+chooses refined_sequence over sequence/sample_energy/sample_rank. Forces \
+num_samples=1 (:93-104)."""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__pssm_bias_flag"
