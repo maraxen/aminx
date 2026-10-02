@@ -786,3 +786,71 @@ def test_pssm_knobs_cannot_bite_until_pssm_json_is_plumbed(
         f"pssm_threshold, pssm_multi, pssm_log_odds_flag and pssm_bias_flag."
       ),
     )
+
+
+def test_knob_semantics_checkpoint_id_and_model_local_path(
+  registered: PottsMPNNDriver, tmp_path: Path,
+) -> None:
+  """An upstream weights path maps onto the PAIR (checkpoint_id, model_local_path).
+
+  Nine alias rows carry this one rule -- every upstream entry point spells the
+  argument differently (``model_weights``, ``model_weights_path``, ``weights``,
+  ``check_path``) and all of them resolve here. Covering it means showing what
+  each half of the pair is worth, not merely that a run with both set succeeds.
+
+  Three measured facts, all on this fixture:
+
+  * ``model_local_path`` selects WHICH weights load. Two random-init files give
+    completely different energies, so the field is not decorative.
+  * ``model_local_path`` WINS OUTRIGHT. A checkpoint_id that names nothing in the
+    registry, paired with a valid local path, produces byte-identical output to
+    the real id -- the id is not validated when a local path is given.
+  * Neither half alone suffices: with no local path and no registry entry
+    carrying a sha256, the driver refuses rather than guessing or downloading.
+    That refusal is also why this test cannot touch the network.
+
+  THE SECOND FACT IS A PROVENANCE HAZARD, recorded here because the gate depends
+  on the opposite assumption: a ledger row's weights key is meant to identify the
+  weights a run used (trap 3, which disqualified two runs for carrying an
+  absolute path). Since checkpoint_id is accepted unchecked whenever
+  model_local_path is set, that key can name one checkpoint while the numbers
+  come from another file entirely. Nothing in this sprint relies on it -- the
+  wave's keys were verified against the registry sha256 -- but a future reader
+  should not infer that checkpoint_id alone is evidence of what ran.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+  first = tmp_path / "seed0.eqx"
+  second = tmp_path / "seed1.eqx"
+  eqx.tree_serialise_leaves(first, PottsMPNN(key=jax.random.PRNGKey(0)))
+  eqx.tree_serialise_leaves(second, PottsMPNN(key=jax.random.PRNGKey(1)))
+
+  def _energy(**kwargs: object) -> np.ndarray:
+    spec = ScoringSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      output_kind="energy",
+      sequences_to_score=["ADDEFG"],
+      potts_mpnn=PottsMPNNOptions(),
+      **kwargs,
+    )
+    return np.asarray(
+      score(spec)["structures"]["0"]["arrays"]["energy"], dtype=np.float64,
+    )
+
+  from_first = _energy(checkpoint_id="pottsmpnn_vanilla_20", model_local_path=first)
+  from_second = _energy(checkpoint_id="pottsmpnn_vanilla_20", model_local_path=second)
+  assert not np.allclose(from_first, from_second), (
+    "two different weight files must give different energies, or "
+    "model_local_path is not selecting anything"
+  )
+
+  # Same local file, a checkpoint_id that names nothing: the file is what loads.
+  bogus = _energy(checkpoint_id="not_a_real_checkpoint", model_local_path=first)
+  np.testing.assert_allclose(bogus, from_first, rtol=1e-6, atol=1e-6)
+
+  # Neither half alone. The message names both routes, so a caller missing one
+  # is told which to supply rather than being sent to the network.
+  with pytest.raises(ValueError, match="model_local_path or a checkpoint registry"):
+    _energy(checkpoint_id="pottsmpnn_vanilla_20")

@@ -462,7 +462,7 @@ note = "output-invariance test; maps to batch_size"
 ref = "laser_run_batch_inference__model_weights_path"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "Follows the model_weights / check_path rule (spec 6.3)."
 
 [[row]]
@@ -680,7 +680,7 @@ note = "output-invariance test; maps to batch_size"
 ref = "laser_run_batch_inference_ligandmpnn__model_weights_path"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "Follows the model_weights / check_path rule (spec 6.3)."
 
 [[row]]
@@ -843,7 +843,7 @@ note = "Input structure."
 ref = "laser_run_inference__model_weights"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "weights path maps to checkpoint_id and model_local_path"
 
 [[row]]
@@ -970,7 +970,7 @@ note = "Input structure."
 ref = "laser_run_inference_ligandmpnn__model_weights"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "weights path maps to checkpoint_id and model_local_path"
 
 [[row]]
@@ -1440,7 +1440,7 @@ note = "Second tied input structure; the aminx knob that selects it."
 ref = "laser_run_inference_tied__model_weights"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "weights path maps to checkpoint_id and model_local_path"
 
 [[row]]
@@ -1653,7 +1653,7 @@ note = "Input structure path. Mapped rather than excluded for consistency with t
 ref = "laser_run_predict_partial_charges__model_weights"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "weights path maps to checkpoint_id and model_local_path"
 
 [[row]]
@@ -1732,7 +1732,7 @@ note = ""
 ref = "laser_run_proofreading__weights"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "Follows the model_weights / check_path rule (spec 6.3)."
 
 [[row]]
@@ -1760,7 +1760,7 @@ note = ""
 ref = "laser_thread_and_score_sequences__weights"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "Follows the model_weights / check_path rule (spec 6.3)."
 
 [[row]]
@@ -2938,7 +2938,7 @@ note = "Input-list file; see the pottsmpnn_input_list surface."
 ref = "pottsmpnn_cfg__model__check_path"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
 note = "weights path maps to checkpoint_id and model_local_path"
 
 [[row]]
