@@ -1,0 +1,73 @@
+# Family Options fields that are declared but read nowhere outside
+# src/aminx/run/options.py, i.e. accepted by the public surface and forwarded to
+# nothing. Measured by bathos run b04a224d-c014-413a-bec0-a8de10dec24e at commit
+# 10f5b537 (scripts/analysis/alias_claim_reachability.py revision 2, outcome
+# inert_option_fields); filed as aminx debt 2435.
+#
+# This file is a FREEZE OF A KNOWN DEFECT, not a permission. Every row is work to
+# do. test_options_plumbing fails both ways -- on a tenth field going inert, and on
+# a row here that is no longer inert -- so the list cannot silently rot, and
+# shrinking it is how the debt gets paid.
+#
+# `reason` must be "not_plumbed". A field that should genuinely never be read
+# outside its dataclass does not belong in an Options class at all.
+#
+# Two related cases deliberately NOT listed, because they are a different shape:
+#   noise          -- IS read (utils/coordinates.py:44) but only by the generic
+#                     per-atom rule, which spec 6.3 calls LASEr's negative
+#                     control; the LASEr subtree never reads it. Debt 2434.
+#   emit_etab      -- read outside options.py, so not inert.
+
+[[entries]]
+field = "budget_residue_selection"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "upstream --budget_residue_sele_string; test_knob_semantics_budget_residue_selection passes but drives the mask parameter, not this field"
+
+[[entries]]
+field = "chi_temp"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "model/laser/{tied,joint_decode,proofread}.py implement this correctly as `chi_temperature`; the rename is where the plumbing stops, so the fix is wiring and not new semantics. A substring grep cannot see this -- it credits chi_temperature to chi_temp."
+
+[[entries]]
+field = "constrain_ala_gly_to_exposed_non_ss"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "upstream --constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
+
+[[entries]]
+field = "strict_load"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "upstream --ignore_statedict_mismatch / --ignore_key_mismatch, store_false; checkpoint loading does not consult this field"
+
+[[entries]]
+field = "tied_interpolation_lambda"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "model/laser/tied.py takes an interpolation weight but not from here; spec 6.5 default 0.0 means structure 2 only"
+
+[[entries]]
+field = "tied_second_input"
+options_class = "LaserOptions"
+reason = "not_plumbed"
+note = "selects the second tied structure; nothing reads it, so the tied path cannot be driven through Options"
+
+[[entries]]
+field = "bias_by_res_json"
+options_class = "PottsMPNNOptions"
+reason = "not_plumbed"
+note = "upstream cfg.inference.bias_by_res_json, materialised to bias_by_res at sample_seqs.py:231"
+
+[[entries]]
+field = "pssm_json"
+options_class = "PottsMPNNOptions"
+reason = "not_plumbed"
+note = "upstream cfg.inference.pssm_json, materialised to pssm_coef / pssm_bias / pssm_log_odds_mask"
+
+[[entries]]
+field = "emit_dense_hJ"
+options_class = "PottsMPNNOptions"
+reason = "not_plumbed"
+note = "aminx-defined; spec line 638 says it converts host-side only. No live alias row targets it, so the reachability probe did not report it, but it is inert all the same."
