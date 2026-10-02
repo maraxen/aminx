@@ -57,30 +57,46 @@ class _Plan:
     vector: bool,
     masks: Mapping[str, Sequence[np.ndarray]] | None,
     drop_p: float,
+    edges: Mapping[str, Sequence[np.ndarray | None]] | None = None,
   ) -> None:
     self.scalar = scalar
     self.vector = vector
     self.drop_p = drop_p
     self.calls: dict[str, int] = {}
     self.masks = {} if masks is None else {key: list(rows) for key, rows in masks.items()}
+    # Parallel to ``masks``. ``None`` is an MLP keep; a ``(3, E)`` array is
+    # source, sink, and neighbour-block for a sparse GAT keep.
+    self.edges = {} if edges is None else {key: list(rows) for key, rows in edges.items()}
     self.chi_ids: set[int] = set()
     # Hetero edge updates look up ``subgats.{i}.dropout``. Upstream records no
     # such path, so a non-zero count means those calls were live misses.
     self.subgat_dropout_lookups = 0
 
-  def take(self, path: str, like: jax.Array) -> jax.Array:
-    """Next keep-mask for ``path``, broadcast onto ``like``.
+  def take(
+    self,
+    path: str,
+    like: jax.Array,
+    *,
+    neighbours: jax.Array | tuple[jax.Array, ...] | None = None,
+    valid: jax.Array | tuple[jax.Array, ...] | None = None,
+  ) -> jax.Array:
+    """Next keep-mask for ``path``, placed onto ``like``.
 
     A missing scalar mask raises. Substituting ones and still dividing by
     ``1 - p`` scales the activation by ``1/0.9`` and is indistinguishable
     from a correct replay. ``.vdropout`` stays the vector-dropout control:
-    upstream never injects those masks.
+    upstream never injects those masks. A recorded ``(3, E)`` edge index
+    scatters by identity; without one, only element-for-element shapes fit.
     """
     rows = self.masks.get(path, [])
     call = self.calls.get(path, 0)
     self.calls[path] = call + 1
+    edge: np.ndarray | None = None
     if call < len(rows):
       keep = jnp.asarray(rows[call], dtype=like.dtype)
+      edge_rows = self.edges.get(path, [])
+      if call < len(edge_rows):
+        edge = edge_rows[call]
     elif path.endswith(".vdropout"):
       # Vector-on drops every component. Vector-off keeps every component.
       # Both are controls, not a silent scalar-mask miss.
@@ -91,12 +107,29 @@ class _Plan:
     else:
       msg = f"no injected dropout mask for {path} call {call}"
       raise RuntimeError(msg)
+    if edge is not None:
+      return _scatter_keep(
+        keep,
+        edge,
+        like,
+        neighbours,
+        valid,
+        path=path,
+        call=call,
+      )
     return _fit_keep(keep, like)
 
-  def scale(self, path: str, value: jax.Array) -> jax.Array:
+  def scale(
+    self,
+    path: str,
+    value: jax.Array,
+    *,
+    neighbours: jax.Array | tuple[jax.Array, ...] | None = None,
+    valid: jax.Array | tuple[jax.Array, ...] | None = None,
+  ) -> jax.Array:
     if not self.scalar:
       return value
-    keep = self.take(path, value)
+    keep = self.take(path, value, neighbours=neighbours, valid=valid)
     return value * keep / jnp.asarray(1.0 - self.drop_p, dtype=value.dtype)
 
   def consumption(self) -> dict[str, tuple[int, int]]:
@@ -138,21 +171,151 @@ _ORIGINALS: dict[str, Any] = {}
 
 
 def _fit_keep(keep: jax.Array, value: jax.Array) -> jax.Array:
-  """Place a torch keep-mask on a dense tensor of the same number of elements.
+  """Place a keep whose elements already correspond one-for-one with ``value``.
 
-  Valid-edge masks are shorter than a padded neighbour axis. They fill the
-  leading True-sized prefix in C order and the padded tail stays kept, so a
-  mask recorded on the sparse edge list still lines up with the dense slots
-  the layer port already uses for those edges.
+  Exact shape is that correspondence. So is an equal element count at rank
+  <= 2: the MLP masks ``(1, 256)``, ``(115, 256)`` and ``(31, 256)`` are the
+  chi, residual-node, and ligand-scalar tensors, sometimes with a leading
+  singleton, and a reshape hits the same elements. A length-1 keep is one
+  draw broadcast onto every element, including a padded attention grid: the
+  consumption fixture records ``ones((1,))`` and does not build an edge list.
+  A sparse GAT mask is none of these. Its edge axis is not a prefix of the
+  padded ``(node, slot)`` grid; ``_scatter_keep`` places it.
   """
   if keep.shape == value.shape:
     return keep
-  if keep.size == value.size:
+  if keep.ndim <= 2 and value.ndim <= 2 and keep.size == value.size:
     return jnp.reshape(keep, value.shape)
-  flat = jnp.ones(value.size, dtype=value.dtype)
-  n = min(int(keep.size), int(value.size))
-  flat = flat.at[:n].set(jnp.reshape(keep, (-1,))[:n])
-  return jnp.reshape(flat, value.shape)
+  if keep.ndim <= 2 and keep.size == 1:
+    return jnp.broadcast_to(jnp.reshape(keep, ()), value.shape)
+  msg = (
+    f"keep shape {keep.shape} ({keep.size} elements) and value shape "
+    f"{value.shape} ({value.size} elements) are not element-for-element; "
+    "a sparse edge mask needs an edge index"
+  )
+  raise RuntimeError(msg)
+
+
+def _grids(grid: jax.Array | tuple[jax.Array, ...]) -> tuple[jax.Array, ...]:
+  # jax.Array satisfies enough of the tuple protocol that a bare isinstance
+  # does not narrow the return to ``tuple[Array, ...]``.
+  if isinstance(grid, tuple):
+    return cast("tuple[jax.Array, ...]", grid)
+  return (grid,)
+
+
+def _dense_slots(
+  edge: np.ndarray,
+  value: jax.Array,
+  neighbours: jax.Array | tuple[jax.Array, ...],
+  valid: jax.Array | tuple[jax.Array, ...],
+  *,
+  path: str,
+  call: int,
+) -> tuple[np.ndarray, np.ndarray]:
+  """Map each ``(source, sink, block)`` column onto one free dense slot."""
+  identity = np.asarray(edge)
+  if identity.ndim != 2 or int(identity.shape[0]) != 3:
+    msg = f"{path} call {call}: edge identity shape {identity.shape} is not (3, E)"
+    raise RuntimeError(msg)
+  source = identity[0].astype(np.int64, copy=False)
+  sink = identity[1].astype(np.int64, copy=False)
+  block = identity[2].astype(np.int64, copy=False)
+  neigh_grids = _grids(neighbours)
+  valid_grids = _grids(valid)
+  if len(neigh_grids) != len(valid_grids):
+    msg = f"{path} call {call}: {len(neigh_grids)} neighbour grids and {len(valid_grids)} masks"
+    raise RuntimeError(msg)
+  neigh_np = [np.asarray(grid) for grid in neigh_grids]
+  valid_np = [np.asarray(grid).astype(bool, copy=False) for grid in valid_grids]
+  widths = [int(grid.shape[1]) for grid in neigh_np]
+  if sum(widths) != int(value.shape[1]):
+    msg = f"{path} call {call}: neighbour width {sum(widths)} != value slots {int(value.shape[1])}"
+    raise RuntimeError(msg)
+  offsets = np.cumsum([0, *widths[:-1]]).astype(np.int64, copy=False) if widths else np.zeros((0,))
+  slots = np.empty((int(source.shape[0]),), dtype=np.int64)
+  used = [np.zeros(grid.shape, dtype=bool) for grid in neigh_np]
+  for index in range(int(source.shape[0])):
+    which = int(block[index])
+    row = int(sink[index])
+    if which < 0 or which >= len(neigh_np):
+      msg = f"{path} call {call}: edge {index} block {which} outside {len(neigh_np)} grids"
+      raise RuntimeError(msg)
+    n_nodes = int(neigh_np[which].shape[0])
+    if row < 0 or row >= n_nodes:
+      msg = f"{path} call {call}: edge {index} sink {row} outside {n_nodes} nodes"
+      raise RuntimeError(msg)
+    free = valid_np[which][row] & ~used[which][row]
+    hits = np.flatnonzero(free & (neigh_np[which][row] == int(source[index])))
+    if int(hits.size) == 0:
+      msg = (
+        f"{path} call {call}: edge {index} source {int(source[index])} "
+        f"sink {row} block {which} has no dense slot"
+      )
+      raise RuntimeError(msg)
+    choice = int(hits[0])
+    used[which][row, choice] = True
+    slots[index] = int(offsets[which]) + choice
+  return sink, slots
+
+
+def _paint_keep(
+  placed: np.ndarray,
+  keep_np: np.ndarray,
+  sink: np.ndarray,
+  slots: np.ndarray,
+  *,
+  path: str,
+  call: int,
+) -> None:
+  """Write an attention ``(heads, edges, 1)`` or residual ``(edges, feat)`` keep."""
+  n_edges = int(sink.shape[0])
+  attention = keep_np.ndim == 3 and int(keep_np.shape[1]) == n_edges and int(keep_np.shape[-1]) == 1
+  if attention:
+    heads = int(keep_np.shape[0])
+    if placed.ndim != 3 or int(placed.shape[-1]) != heads:
+      msg = (
+        f"{path} call {call}: attention keep {keep_np.shape} does not match value {placed.shape}"
+      )
+      raise RuntimeError(msg)
+    placed[sink, slots, :] = np.reshape(keep_np, (heads, n_edges)).T
+    return
+  residual = keep_np.ndim == 2 and int(keep_np.shape[0]) == n_edges
+  if residual:
+    if placed.ndim != 3 or int(placed.shape[-1]) != int(keep_np.shape[1]):
+      msg = f"{path} call {call}: edge keep {keep_np.shape} does not match value {placed.shape}"
+      raise RuntimeError(msg)
+    placed[sink, slots, :] = keep_np
+    return
+  msg = f"{path} call {call}: keep shape {keep_np.shape} does not align with {n_edges} edges"
+  raise RuntimeError(msg)
+
+
+def _scatter_keep(
+  keep: jax.Array,
+  edge: np.ndarray,
+  value: jax.Array,
+  neighbours: jax.Array | tuple[jax.Array, ...] | None,
+  valid: jax.Array | tuple[jax.Array, ...] | None,
+  *,
+  path: str,
+  call: int,
+) -> jax.Array:
+  """Scatter a sparse keep onto ``value`` by ``(source, sink, block)``.
+
+  Padded slots stay kept: they are not edges, and the neighbour mask zeros
+  them. A recorded edge with no free slot raises. Matching the edge count
+  is not enough, so this never fills a C-order prefix.
+  """
+  if neighbours is None or valid is None:
+    msg = f"{path} call {call}: edge index has no dense neighbourhood to scatter onto"
+    raise RuntimeError(msg)
+  sink, slots = _dense_slots(edge, value, neighbours, valid, path=path, call=call)
+  # Host array in the activation dtype. A float64 scratch would promote the
+  # attention multiply under the eager decode.
+  placed = np.ones(value.shape, dtype=np.dtype(value.dtype))
+  _paint_keep(placed, np.asarray(keep), sink, slots, path=path, call=call)
+  return jnp.asarray(placed, dtype=value.dtype)
 
 
 def reduce_proofread(
@@ -329,7 +492,7 @@ def _homo_call(
   values, scores = self.messages(source, sink, edge_attr)
   weights = masked_softmax(scores, mask)
   if plan is not None:
-    weights = plan.scale(path, weights)
+    weights = plan.scale(path, weights, neighbours=neighbours, valid=mask)
   mixed = values * weights[..., None]
   mixed = jnp.where(mask[..., None, None], mixed, jnp.zeros_like(mixed))
   pooled = jnp.sum(mixed, axis=1)
@@ -348,7 +511,7 @@ def _homo_call(
     delta = self.linear_edge_updates(
       jnp.concatenate((source_out, edge_attr, sink_out), axis=-1),
     )
-    delta = plan.scale(path, delta)
+    delta = plan.scale(path, delta, neighbours=neighbours, valid=mask)
     updated_edges = apply_layer_norm(self.edge_norm, edge_attr + delta)
     edges_out = jnp.where(mask[..., None], updated_edges, jnp.zeros_like(updated_edges))
   return scalars_out, vectors_out, edges_out
@@ -393,7 +556,7 @@ def _hetero_call(
   combined_mask = jnp.concatenate(tuple(masks), axis=1)
   weights = masked_softmax(jnp.concatenate(tuple(scores), axis=1), combined_mask)
   if plan is not None:
-    weights = plan.scale(path + ".dropout", weights)
+    weights = plan.scale(path + ".dropout", weights, neighbours=neighbours, valid=mask)
   mixed = jnp.concatenate(tuple(values), axis=1) * weights[..., None]
   mixed = jnp.where(combined_mask[..., None, None], mixed, jnp.zeros_like(mixed))
   pooled = jnp.sum(mixed, axis=1)
@@ -624,6 +787,7 @@ def proofread_dropout(
   scalar: bool,
   vector: bool = False,
   masks: Mapping[str, Sequence[np.ndarray]] | None = None,
+  edges: Mapping[str, Sequence[np.ndarray | None]] | None = None,
   drop_p: float = _DROPOUT_P,
 ) -> Iterator[_Plan]:
   """Apply injected scalar dropout for one eager decode. Vector dropout defaults off."""
@@ -631,7 +795,7 @@ def proofread_dropout(
   # Restamp on every entry. The class patch is process-global, but each
   # encoder carries its own static paths.
   _stamp(encoder, decoder)
-  plan = _Plan(scalar=scalar, vector=vector, masks=masks, drop_p=drop_p)
+  plan = _Plan(scalar=scalar, vector=vector, masks=masks, drop_p=drop_p, edges=edges)
   plan.chi_ids = _chi_ids(decoder, joint_offsets)
   token = _PLAN.set(plan)
   try:
@@ -687,6 +851,7 @@ def conditional_focus_probs(
   orders: Sequence[np.ndarray],
   mask_sets: Sequence[Sequence[Mapping[str, Sequence[np.ndarray]] | None]],
   uniforms: Sequence[Sequence[np.ndarray]],
+  edge_sets: Sequence[Sequence[Mapping[str, Sequence[np.ndarray | None]] | None]] | None = None,
   *,
   scalar: bool,
   vector: bool = False,
@@ -708,16 +873,26 @@ def conditional_focus_probs(
   if len(uniforms) != len(mask_sets):
     msg = f"{len(uniforms)} uniform blocks != {len(mask_sets)} dropout reps"
     raise ValueError(msg)
+  if edge_sets is not None and len(edge_sets) != len(mask_sets):
+    msg = f"{len(edge_sets)} edge blocks != {len(mask_sets)} dropout reps"
+    raise ValueError(msg)
   stacked: list[np.ndarray] = []
   offsets = tuple(joint.chi_offset_prediction_layers)
-  for drop_masks, drop_draws in zip(mask_sets, uniforms, strict=True):
+  for drop_index, (drop_masks, drop_draws) in enumerate(zip(mask_sets, uniforms, strict=True)):
     if len(drop_draws) != len(orders):
       msg = f"{len(drop_draws)} uniform rows != {len(orders)} decoding orders"
       raise ValueError(msg)
+    drop_edges = None if edge_sets is None else edge_sets[drop_index]
+    if drop_edges is not None and len(drop_edges) != len(orders):
+      msg = f"{len(drop_edges)} edge rows != {len(orders)} decoding orders"
+      raise ValueError(msg)
     order_rows: list[np.ndarray] = []
-    for order, masks, draws in zip(orders, drop_masks, drop_draws, strict=True):
+    for order_index, (order, masks, draws) in enumerate(
+      zip(orders, drop_masks, drop_draws, strict=True),
+    ):
       chain = np.ones((n_res,), dtype=bool)
       chain[int(focus)] = False
+      edges = None if drop_edges is None else drop_edges[order_index]
       with proofread_dropout(
         encoder,
         decoder,
@@ -725,6 +900,7 @@ def conditional_focus_probs(
         scalar=scalar,
         vector=vector,
         masks=masks,
+        edges=edges,
       ):
         decoded = decode_order(
           encoder,

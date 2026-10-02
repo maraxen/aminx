@@ -295,14 +295,22 @@ def _aminx_one(
   length = int(features.sequence_indices.shape[0])
   orders = [np.arange(length, dtype=np.int32), np.arange(length, dtype=np.int32)[::-1]]
   order_masks: list[dict[str, list[np.ndarray]]] = []
+  order_edges: list[dict[str, list[np.ndarray | None]]] = []
   for copy in range(2):
     grouped: dict[str, list[tuple[int, np.ndarray]]] = {}
+    edge_grouped: dict[str, list[tuple[int, np.ndarray | None]]] = {}
     for row in catalog:
       if row["name"] != payload["name"] or int(row["copy"]) != copy:
         continue
       grouped.setdefault(str(row["path"]), []).append((int(row["call"]), masks[str(row["key"])]))
+      edge_key = row.get("edge_key")
+      edge_array = None if edge_key is None else np.asarray(masks[str(edge_key)])
+      edge_grouped.setdefault(str(row["path"]), []).append((int(row["call"]), edge_array))
     order_masks.append(
       {path: [array for _call, array in sorted(rows)] for path, rows in grouped.items()},
+    )
+    order_edges.append(
+      {path: [array for _call, array in sorted(rows)] for path, rows in edge_grouped.items()},
     )
   structure = GraphStructure(
     pr_pr_knn_graph_k=int(model.pr_pr_knn_graph_k),
@@ -327,6 +335,7 @@ def _aminx_one(
     orders,
     [order_masks],
     [_cell_draws(str(payload["name"]), len(orders), draws, draw_catalog)],
+    [order_edges],
     scalar=arm != "scalar_off",
     vector=arm == "vector_on",
     repack_all=True,
@@ -588,9 +597,15 @@ def _oracle_worker(args: argparse.Namespace) -> None:
               repack_all=True,
             )
             for path, rows in dropout.recorded.items():
+              identities = dropout.edges.get(path, [])
               for index, row in enumerate(rows):
                 key = f"m{len(blobs)}"
                 blobs[key] = np.asarray(row)
+                identity = identities[index] if index < len(identities) else None
+                edge_key = None
+                if identity is not None:
+                  edge_key = f"e{key[1:]}"
+                  blobs[edge_key] = np.asarray(identity, dtype=np.int64)
                 catalog.append(
                   {
                     "key": key,
@@ -598,6 +613,7 @@ def _oracle_worker(args: argparse.Namespace) -> None:
                     "copy": copy,
                     "path": path,
                     "call": index,
+                    "edge_key": edge_key,
                   },
                 )
         finally:

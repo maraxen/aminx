@@ -18,6 +18,8 @@ in ascending row index, matching the three ``torch.rand`` calls in that function
 
 Shim 3 replaces ``nn.Dropout.forward`` with ``x * mask / (1 - p)`` while the module
 is in train mode and ``p > 0``. Masks are keyed by ``(module path, call index)``.
+A GAT keep also records ``(source, sink, block)`` from the caller's ``e_idx`` or
+``edge_index_list``, because the replay grid is dense and padded.
 ``_VDropout`` is never patched; dumps assert every ``_VDropout.training is False``.
 
 Shim 4 (f64 dumps) redirects hardcoded ``.float()`` calls listed in ``SHIM_SITES``
@@ -155,6 +157,9 @@ class _DropoutCursor:
     self.rng = rng
     self.calls: dict[str, int] = {}
     self.recorded: dict[str, list[np.ndarray]] = {}
+    # Aligned with ``recorded``. ``None`` is an MLP keep. A GAT keep stores
+    # ``(3, E)`` as source, sink, and neighbour block.
+    self.edges: dict[str, list[np.ndarray | None]] = {}
 
 
 _DRAWS: DrawCursor | None = None
@@ -273,6 +278,92 @@ def _shim_rand(*args: object, **kwargs: object) -> torch.Tensor:
   return drawn
 
 
+def _tensor_edge_index(value: object) -> np.ndarray | None:
+  if not isinstance(value, torch.Tensor):
+    return None
+  if value.ndim != 2 or int(value.shape[0]) != 2:
+    return None
+  return value.detach().to(device="cpu", dtype=torch.int64).numpy()
+
+
+def _accept_edge_count(mask_shape: tuple[int, ...], n_edges: int, *, edge_update: bool) -> bool:
+  """Attention keeps are ``(heads, edges, 1)``. Edge residuals are ``(edges, feat)``."""
+  attention = (
+    not edge_update
+    and len(mask_shape) == 3
+    and mask_shape[-1] == 1
+    and mask_shape[1] == n_edges
+  )
+  residual = edge_update and len(mask_shape) == 2 and mask_shape[0] == n_edges
+  return attention or residual
+
+
+def _pack_edge_identity(columns: list[np.ndarray], blocks: list[int]) -> np.ndarray:
+  edge = np.concatenate(columns, axis=1)
+  block_rows = [
+    np.full((int(column.shape[1]),), item, dtype=np.int64)
+    for column, item in zip(columns, blocks, strict=True)
+  ]
+  block = np.concatenate(block_rows)
+  return np.concatenate((edge, block.reshape(1, -1)), axis=0)
+
+
+def _identity_from_locals(
+  locals_: dict[str, object],
+  mask_shape: tuple[int, ...],
+  *,
+  edge_update: bool,
+) -> np.ndarray | None:
+  e_idx = _tensor_edge_index(locals_.get("e_idx"))
+  n_edges = 0 if e_idx is None else int(e_idx.shape[1])
+  if e_idx is not None and _accept_edge_count(mask_shape, n_edges, edge_update=edge_update):
+    return _pack_edge_identity([e_idx], [0])
+  listing = locals_.get("edge_index_list")
+  if not isinstance(listing, list) or not listing:
+    return None
+  columns: list[np.ndarray] = []
+  for item in listing:
+    column = _tensor_edge_index(item)
+    if column is None:
+      return None
+    columns.append(column)
+  n_edges = sum(int(column.shape[1]) for column in columns)
+  if not _accept_edge_count(mask_shape, n_edges, edge_update=edge_update):
+    return None
+  return _pack_edge_identity(columns, list(range(len(columns))))
+
+
+def _capture_edge_identity(mask_shape: tuple[int, ...]) -> np.ndarray | None:
+  """Read the GAT edge list that this dropout is applied to, if it has one.
+
+  Node and chi MLPs sit inside the same forward and must not inherit that
+  list: a ``(nodes, hidden)`` keep does not match ``(heads, edges, 1)``.
+  """
+  frame = inspect.currentframe()
+  walker = frame.f_back if frame is not None else None
+  seen_edge_update = False
+  found: np.ndarray | None = None
+  try:
+    while walker is not None:
+      name = walker.f_code.co_name
+      if name == "compute_edge_update":
+        seen_edge_update = True
+      gat_frame = name in {
+        "forward",
+        "preexpanded_edges_forward",
+        "aggregate_node_update",
+        "compute_edge_update",
+      }
+      if gat_frame:
+        found = _identity_from_locals(walker.f_locals, mask_shape, edge_update=seen_edge_update)
+        if found is not None:
+          break
+      walker = walker.f_back
+  finally:
+    del frame, walker
+  return found
+
+
 def _shim_dropout(self: torch.nn.Dropout, x: torch.Tensor) -> torch.Tensor:
   cursor = _DROPOUT
   if cursor is None or (not self.training) or self.p == 0:
@@ -289,6 +380,8 @@ def _shim_dropout(self: torch.nn.Dropout, x: torch.Tensor) -> torch.Tensor:
     keep = cursor.rng.random(tuple(x.shape)) >= float(self.p)
     mask = torch.as_tensor(keep, device=x.device, dtype=x.dtype)
     cursor.recorded.setdefault(path, []).append(keep.astype(np.float64))
+    # Same call index as ``recorded``. MLP keeps store None.
+    cursor.edges.setdefault(path, []).append(_capture_edge_identity(tuple(int(dim) for dim in x.shape)))
   else:
     msg = f"no injected dropout mask for {path} call {call}"
     raise RuntimeError(msg)
