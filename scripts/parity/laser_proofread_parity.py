@@ -11,12 +11,21 @@ Negative controls, each of which must land in fail:
   scalar dropout off
   vector dropout on
 
+NEVER append ``scalar_both_off`` to a graded run's ``--mutants``. Redsox step
+1c compares the RAW argv string against this slug's manifest rows by exact set
+equality (``tests/knob_gate/_coverage.py:309``), and the positive control has
+no manifest row -- every manifest row must report ``failed``, which a control
+that must pass never will. This script drops the positive arm from
+``n_listed``, ``n_failed`` and the controls ``mutants`` dict, but it cannot
+rewrite its own argv, so appending it silently costs the run its ledger
+eligibility. Run it as its own separate, ungraded invocation.
+
 Positive control ``scalar_both_off`` (optional, not a negative, not part of
 the pre-registered outcomes): upstream ``nn.Dropout`` stays in eval and the
 aminx plan uses ``scalar=False``. It must report near-zero. A non-zero result
-means instrument floor rather than a port defect. Pass ``--mutants
-reduction_swap,ddof_0,scalar_off,vector_on,scalar_both_off`` to run it beside
-the four negatives. It is excluded from ``n_listed`` and ``n_failed``.
+means instrument floor rather than a port defect. Run it on its own with
+``--mutants scalar_both_off`` and no ``--controls-out``; it is excluded from
+``n_listed`` and ``n_failed``, and must not ride along on a graded run.
 
 The clean arm and each mutant arm are separate subprocesses. A missing
 ``$BTH_RESULTS_PATH`` is fatal.

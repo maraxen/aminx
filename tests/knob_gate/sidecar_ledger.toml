@@ -7,7 +7,7 @@
 # ids, --output-paths containing /<slug>/<git sha8>/branch_controls.json, and
 # every weights key resolving in tests/knob_gate/checkpoint_registry.json.
 #
-# THREE TRAPS, each of which produces a run that looks entirely successful and
+# FOUR TRAPS, each of which produces a run that looks entirely successful and
 # fails step 1c for a reason unrelated to the measurement:
 #   1. --mutants MUST BE IN ARGV. _argv_mutants returns None when the flag is
 #      absent, so a run relying on the script's default mutant list fails.
@@ -17,6 +17,19 @@
 #   3. THE WEIGHTS KEY MUST BE THE STABLE IDENTIFIER, not an absolute path.
 #      scripts/parity/artifact_key.py derives it; controls written before
 #      6cb81d49 carry absolute paths and will never validate.
+#   4. A POSITIVE CONTROL MUST NOT RIDE ALONG ON A GRADED RUN. _argv_mutants
+#      reads the RAW --mutants string, so laser_proofread_parity's
+#      scalar_both_off lands in `listed` even though the script excludes it
+#      from n_listed, n_failed and the controls mutants dict. It has no
+#      manifest row (it must PASS, and every manifest row must report
+#      "failed"), so listed != row_ids and the run is ineligible. Run the
+#      positive control as its own separate invocation.
+#
+# AND ONE SCHEDULING CONSTRAINT that is not a per-run trap: _touches_scoped is
+# GLOBAL, not per-slug, so ONE commit under src/aminx/ (or scripts/parity/,
+# scripts/recapture/, tests/port/, aminx-oracles/, pyproject.toml, uv.lock)
+# invalidates EVERY row in this file at once. Ledger rows cannot be collected
+# incrementally: the whole vehicle wave runs after the last such commit.
 
 [sidecar]
 
