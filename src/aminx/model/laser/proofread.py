@@ -174,13 +174,22 @@ def _fit_keep(keep: jax.Array, value: jax.Array) -> jax.Array:
   """Place a keep whose elements already correspond one-for-one with ``value``.
 
   Exact shape is that correspondence. So is an equal element count at rank
-  <= 2: the MLP masks ``(1, 256)``, ``(115, 256)`` and ``(31, 256)`` are the
-  chi, residual-node, and ligand-scalar tensors, sometimes with a leading
-  singleton, and a reshape hits the same elements. A length-1 keep is one
-  draw broadcast onto every element, including a padded attention grid: the
-  consumption fixture records ``ones((1,))`` and does not build an edge list.
-  A sparse GAT mask is none of these. Its edge axis is not a prefix of the
-  padded ``(node, slot)`` grid; ``_scatter_keep`` places it.
+  <= 2: the MLP masks ``(1, 256)`` and ``(115, 256)`` are the chi and
+  residual-node tensors, sometimes with a leading singleton, and a reshape
+  hits the same elements. A length-1 keep is one draw broadcast onto every
+  element, including a padded attention grid: the consumption fixture records
+  ``ones((1,))`` and does not build an edge list.
+
+  A NODE-indexed keep may also be SHORTER along the leading axis, and that is
+  still element-for-element. Upstream's ligand scalars are ``(31, 256)`` for
+  31 real ligand nodes while aminx pads that axis to ``(32, 256)``; row i is
+  node i on both sides and the padded tail is not a node at all, so it stays
+  kept. This branch requires the trailing dims to match EXACTLY, which is what
+  distinguishes it from the sparse case -- a GAT edge axis shares no trailing
+  shape with the padded ``(node, slot)`` grid, so it cannot reach here.
+
+  A sparse GAT mask is none of these. Its edge axis is not a prefix of that
+  grid in any sense; ``_scatter_keep`` places it by edge identity.
   """
   if keep.shape == value.shape:
     return keep
@@ -188,6 +197,16 @@ def _fit_keep(keep: jax.Array, value: jax.Array) -> jax.Array:
     return jnp.reshape(keep, value.shape)
   if keep.ndim <= 2 and keep.size == 1:
     return jnp.broadcast_to(jnp.reshape(keep, ()), value.shape)
+  if (
+    keep.ndim == value.ndim
+    and keep.ndim >= 1
+    and keep.shape[1:] == value.shape[1:]
+    and 0 < keep.shape[0] < value.shape[0]
+  ):
+    # Node-indexed prefix: real nodes first, padding after. Padded rows stay
+    # kept, matching an eval-mode dropout that never touches them.
+    ones = jnp.ones(value.shape, dtype=value.dtype)
+    return ones.at[: keep.shape[0]].set(jnp.asarray(keep, dtype=value.dtype))
   msg = (
     f"keep shape {keep.shape} ({keep.size} elements) and value shape "
     f"{value.shape} ({value.size} elements) are not element-for-element; "
