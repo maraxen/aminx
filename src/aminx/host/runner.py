@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import warnings
 from typing import Any, cast
 
@@ -61,48 +62,87 @@ from aminx.run.specs import (
 
 from .prep import prep_protein_stream_and_model
 
-
-# Padding more than this many times the longest real chain triggers the once-per-run warning (aminx #2358).
+# Padding more than this many times the longest real chain triggers the once-per-run warning (aminx debt #2358).
 _PADDING_WARN_RATIO = 2.0
-_PADDING_BUCKET = 32  # suggested max_length is rounded up to a multiple of this
+_PADDING_BUCKET = 32  # the suggested max_length is rounded up to a multiple of this (an example, not a bucket ladder)
+
+_PADDING_COST_TEXT = {
+  "sample": (
+    "Autoregressive decode cost grows roughly with the square of the padded length, so this does about "
+    "{ratio_sq:.0f}x the work needed. Sampling draws random numbers at the padded shape, so changing "
+    "max_length may change the sampled sequences for the same seed."
+  ),
+  "score": (
+    "Scoring is a single forward pass over the padded length, so it also pays for the padding (the scaling "
+    "was not measured). Scores themselves do not depend on max_length."
+  ),
+}
+
+
+def _is_aminx_module(name: str) -> bool:
+  return name == "aminx" or name.startswith("aminx.")
 
 
 class _PaddingCheck:
-  """Warn once per run when a batch is padded to far more than its longest real chain.
+  """Warn once per run when a batch is padded to far more than the span of its longest chain.
 
-  Structures are padded to ``max_length`` (default 512) by the loader, and autoregressive decode cost
-  grows roughly with the square of the padded length, so a 93-residue chain at the default does about
-  (512/93)^2 ~ 30x the work it needs (measured ~86 s/sample on CPU, aminx #2358). The warning changes
-  no numbers; it only tells the caller. It cannot fire on a batch whose mask is unavailable.
+  Structures are padded to ``max_length`` (default 512) by the loader, and autoregressive decode cost grows
+  with the padded length, so a short chain at the default pays a large factor with no signal. An exploratory
+  timing in aminx debt #2358 saw ~86 s/sample on CPU for a 93-resolved-residue chain at the default (no
+  registered run). The warning changes no numbers and never raises from its own computation.
+
+  The length compared is the SPAN of the chain (index of the last valid residue + 1), not the count of valid
+  residues: structures with unresolved residues have gaps in the mask, and ``max_length`` below the span makes
+  the loader crop at random (default ``random_crop``, not reproducible) or raise (``truncation_strategy="none"``).
+  The suggestion is therefore never below the span, and the message says to size it to the longest chain across
+  ALL inputs, since only the first offending batch is examined.
   """
 
-  def __init__(self) -> None:
+  def __init__(self, entry: str) -> None:
+    self._entry = entry
     self._warned = False
 
   def __call__(self, batched_ensemble: Any) -> None:  # noqa: ANN401
     if self._warned:
       return
-    mask = getattr(batched_ensemble, "mask", None)
-    if mask is None:
+    try:
+      mask = getattr(batched_ensemble, "mask", None)
+      if mask is None:
+        return
+      mask_np = np.asarray(mask)
+      if mask_np.ndim < 2 or mask_np.shape[-1] == 0:  # expects (batch, length)
+        return
+      padded = int(mask_np.shape[-1])
+      valid = mask_np.reshape(-1, padded) > 0
+      if valid.size == 0 or not valid.any():
+        return
+      # span per row = index of the last valid residue + 1 (0 for an all-masked row)
+      last_from_end = np.argmax(valid[:, ::-1], axis=-1)
+      span = np.where(valid.any(axis=-1), padded - last_from_end, 0)
+      real = int(span.max())
+    except (TypeError, ValueError):  # advisory only: a malformed batch is never worth failing a run
       return
-    mask_np = np.asarray(mask)
-    if mask_np.ndim < 2:  # expects (batch, length)
-      return
-    padded = int(mask_np.shape[-1])
-    real = int(np.max(np.sum(mask_np > 0, axis=-1)))
-    if real <= 0 or padded <= _PADDING_WARN_RATIO * real:
+    suggested = -(-real // _PADDING_BUCKET) * _PADDING_BUCKET
+    if real <= 0 or padded <= _PADDING_WARN_RATIO * real or suggested >= padded:
       return
     self._warned = True
-    suggested = -(-real // _PADDING_BUCKET) * _PADDING_BUCKET
+    # Attribute the warning to the caller's code (first frame outside aminx), so filters keyed on the caller's
+    # module work and Python's default once-per-location dedup is per call site, not one aminx line.
+    frame = sys._getframe(0)  # noqa: SLF001
+    level = 1
+    while frame is not None and _is_aminx_module(frame.f_globals.get("__name__", "")):
+      frame = frame.f_back
+      level += 1
+    if frame is None:
+      level -= 1
+    cost = _PADDING_COST_TEXT[self._entry].format(ratio_sq=(padded / real) ** 2)
     warnings.warn(
-      f"structures are padded to max_length={padded} but the longest real chain in this batch has "
-      f"{real} residues. Autoregressive decode cost grows roughly with the square of the padded length, "
-      f"so this does about {(padded / real) ** 2:.0f}x the work needed; pass max_length close to your "
-      f"longest chain (for example max_length={suggested}) to avoid it. Sampling draws random numbers at "
-      f"the padded shape, so changing max_length may change the sampled sequences for the same seed. "
-      f"(aminx #2358)",
+      f"structures are padded to max_length={padded} but the longest chain in this batch spans {real} residues. "
+      f"{cost} Pass max_length close to your longest chain, for example max_length={suggested} if this is the "
+      f"longest. Set it to at least the longest chain across ALL your inputs: chains longer than max_length are "
+      f"cropped at random or rejected, depending on truncation_strategy.",
       UserWarning,
-      stacklevel=3,
+      stacklevel=level,
     )
 
 
@@ -269,7 +309,7 @@ def sample(
   structure_batch_count = StreamingBatchHost.structure_batch_count(protein_iterator)
   grid_lineage = _resolve_grid_lineage(spec)
 
-  padding_check = _PaddingCheck()
+  padding_check = _PaddingCheck("sample")
   with streaming_tensor_sink_session():
     for batch_idx, batched_ensemble in enumerate(protein_iterator):
       padding_check(batched_ensemble)
@@ -799,7 +839,7 @@ def score(  # noqa: PLR0915
   # that is host-side streaming-iterator drainage, not JAX computation, the same
   # exemption generate_multistate_conditional_logits.py's own docstring gives its
   # result-writing loop.
-  padding_check = _PaddingCheck()
+  padding_check = _PaddingCheck("score")
   for _batch_idx, batched_ensemble in enumerate(protein_iterator):
     padding_check(batched_ensemble)
     batch_size = batched_ensemble.coordinates.shape[0]
@@ -1541,7 +1581,6 @@ def jacobian(
     )
     raise NotImplementedError(msg)
 
-  import numpy as np  # noqa: PLC0415
   from xtrax.run import ZarrStagingSink, derive_sink_spec  # noqa: PLC0415
 
   from aminx.utils.apc import apc_corrected_frobenius_norm  # noqa: PLC0415
