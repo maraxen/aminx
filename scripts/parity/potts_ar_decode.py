@@ -4,8 +4,10 @@ Exact-token match against upstream ``decoder`` on the example PDBs. Pass when
 every token matches. ``[0.99, 1)`` is inconclusive. Below ``0.99`` is fail.
 
 Negative control ``ar_mask_present_chain_m_pos`` multiplies the autoregressive
-mask by ``chain_M_pos`` and must land in the fail band on its own. Results go
-to ``--payload-out`` (never stdout) and ``$BTH_RESULTS_PATH``.
+mask by ``chain_M_pos`` and must land in the fail band on its own. The example
+PDBs have no fixed positions, so the job applies the pinned sidecar in
+``fixtures/potts_ar_fixed_positions.json``; otherwise that product is the
+identity. Results go to ``--payload-out`` (never stdout) and ``$BTH_RESULTS_PATH``.
 """
 
 from __future__ import annotations
@@ -85,13 +87,8 @@ def _units(job: dict[str, Any], arm: str, checkpoint: Path) -> list[graded_resum
 
 
 def _build_job(root: Path) -> dict[str, Any]:
-  folder = root / "inputs" / "example_pdbs"
-  structures: dict[str, Any] = {}
-  for name, digest in EXAMPLE_SHA256.items():
-    path = folder / name
-    common.check_pdb(path, digest)
-    structures[path.stem] = {"pdb": str(path), "sha256": digest}
-  return {"structures": structures}
+  # The sidecar is what makes chain_M_pos drop rows. The PDBs alone cannot.
+  return {"structures": common.example_structures(root, EXAMPLE_SHA256)}
 
 
 def _load_oracle(root: Path, checkpoint: Path) -> dict[str, Any]:
@@ -102,7 +99,7 @@ def _bank(root: Path, job: dict[str, Any], work: Path) -> dict[str, common.Oracl
   feats: dict[str, common.OracleFeat] = {}
   cells: dict[str, dict[str, Any]] = {}
   for name, payload in job["structures"].items():
-    feat = common.featurize_upstream(root, Path(payload["pdb"]))
+    feat = common.featurize_upstream(root, Path(payload["pdb"]), common.structure_fixed(payload))
     feats[str(name)] = feat
     rng = common.draw_rng(str(name))
     cells[str(name)] = {
@@ -114,7 +111,9 @@ def _bank(root: Path, job: dict[str, Any], work: Path) -> dict[str, common.Oracl
 
 
 def _oracle_one(
-  prepared: dict[str, Any], feat: common.OracleFeat, cell: dict[str, Any]
+  prepared: dict[str, Any],
+  feat: common.OracleFeat,
+  cell: dict[str, Any],
 ) -> list[int]:
   import numpy as np
   import torch
@@ -271,7 +270,10 @@ def _run_arm(args: Any) -> dict[str, Any]:
   if remaining > 0:
     model = PottsMPNNDriver().load(SimpleNamespace(model_local_path=checkpoint))
     for name, payload in job["structures"].items():
-      ready[str(name)] = _encoded(model, common.prepare_aminx(Path(payload["pdb"])))
+      ready[str(name)] = _encoded(
+        model,
+        common.prepare_aminx(Path(payload["pdb"]), common.structure_fixed(payload)),
+      )
 
   def compute(unit: graded_resume.Unit) -> list[int]:
     global _CONTROL_CHAIN_M_POS  # noqa: PLW0603

@@ -171,6 +171,91 @@ def check_pdb(path: Path, expected: str) -> None:
     raise SystemExit(msg)
 
 
+# Every 5th chain-local slot. One fixed site left some draws at match 1.0 on
+# the longer example chains, so the AR-mask control could still land in pass.
+FIXED_POSITIONS_JSON = (
+  Path(__file__).resolve().parent / "fixtures" / "potts_ar_fixed_positions.json"
+)
+FIXED_POSITIONS_SHA256 = "d4a3cd25332b65ced7a0874288336cacd952a992a6db9673a055b869712f8a0a"
+
+
+def load_fixed_positions() -> tuple[dict[str, dict[str, list[int]]], str]:
+  """Pinned chain-local indexes that make ``chain_M_pos`` non-degenerate.
+
+  The example PDBs themselves have no fixed positions, so ``chain_M_pos`` is
+  identically 1 and scaling the AR mask by it is the identity. The sidecar
+  marks real slots on those PDBs; it does not add coordinates.
+  """
+  digest = sha256(FIXED_POSITIONS_JSON)
+  if digest != FIXED_POSITIONS_SHA256:
+    msg = f"{FIXED_POSITIONS_JSON} sha256 {digest} != {FIXED_POSITIONS_SHA256}"
+    raise SystemExit(msg)
+  raw = json.loads(FIXED_POSITIONS_JSON.read_text(encoding="utf-8"))
+  parsed: dict[str, dict[str, list[int]]] = {}
+  for name, chains in raw.items():
+    parsed[str(name)] = {
+      str(letter): [int(index) for index in indexes] for letter, indexes in chains.items()
+    }
+  return parsed, digest
+
+
+def input_sha(pdb_sha256: str, fixed_sha256: str) -> str:
+  """Unit identity covers the PDB and the fixed-position sidecar.
+
+  A PDB-only key would reuse units featurized when ``chain_M_pos`` was identically 1.
+  """
+  blob = json.dumps(
+    {"fixed_positions_sha256": fixed_sha256, "pdb_sha256": pdb_sha256},
+    sort_keys=True,
+    separators=(",", ":"),
+  )
+  return hashlib.sha256(blob.encode()).hexdigest()
+
+
+def fixed_position_dict(
+  stem: str,
+  positions: dict[str, list[int]],
+) -> dict[str, dict[str, list[int]]]:
+  """``tied_featurize`` keys the dict by the PDB stem."""
+  return {stem: positions}
+
+
+def structure_fixed(payload: dict[str, Any]) -> dict[str, dict[str, list[int]]]:
+  """Fixed-position dict for one job entry."""
+  stem = Path(str(payload["pdb"])).stem
+  positions = payload["fixed_positions"]
+  return fixed_position_dict(
+    stem,
+    {str(letter): [int(index) for index in indexes] for letter, indexes in positions.items()},
+  )
+
+
+def example_structures(root: Path, pdb_sha256: dict[str, str]) -> dict[str, dict[str, Any]]:
+  """Example PDBs plus the pinned fixed-position sidecar.
+
+  ``sha256`` is the unit-cache identity (PDB digest and sidecar digest). The
+  PDB file is still checked against ``pdb_sha256`` on its own.
+  """
+  fixed, fixed_sha = load_fixed_positions()
+  expected = {Path(name).stem for name in pdb_sha256}
+  if set(fixed) != expected:
+    msg = f"fixed-position keys {sorted(fixed)} != example PDBs {sorted(expected)}"
+    raise SystemExit(msg)
+  folder = root / "inputs" / "example_pdbs"
+  structures: dict[str, dict[str, Any]] = {}
+  for name, digest in pdb_sha256.items():
+    path = folder / name
+    check_pdb(path, digest)
+    stem = path.stem
+    structures[stem] = {
+      "pdb": str(path),
+      "sha256": input_sha(digest, fixed_sha),
+      "pdb_sha256": digest,
+      "fixed_positions": fixed[stem],
+    }
+  return structures
+
+
 def draw_rng(cell: str) -> Any:
   """Deterministic stream for one cell. Re-banking after a resume does not move it."""
   import numpy as np
@@ -263,8 +348,16 @@ def load_potts_oracle(root: Path, checkpoint: Path, *, double: bool) -> dict[str
   }
 
 
-def featurize_upstream(root: Path, pdb: Path) -> OracleFeat:
-  """``parse_PDB`` + ``tied_featurize`` with no chain dict. All chains are designed."""
+def featurize_upstream(
+  root: Path,
+  pdb: Path,
+  fixed_positions: dict[str, dict[str, list[int]]] | None = None,
+) -> OracleFeat:
+  """``parse_PDB`` + ``tied_featurize`` with no chain dict. All chains are designed.
+
+  ``fixed_positions`` is the upstream dict (structure name → chain → 1-based
+  indexes). Omit it and ``chain_M_pos`` stays 1 on every row of these PDBs.
+  """
   import torch
 
   sys.path.insert(0, str(root))
@@ -297,7 +390,7 @@ def featurize_upstream(root: Path, pdb: Path) -> OracleFeat:
     [parsed[0]],
     torch.device("cpu"),
     None,
-    None,
+    fixed_positions,
     None,
     None,
     None,
@@ -334,7 +427,10 @@ def _np(value: Any) -> Any:
   return array
 
 
-def prepare_aminx(pdb: Path) -> dict[str, Any]:
+def prepare_aminx(
+  pdb: Path,
+  fixed_positions: dict[str, dict[str, list[int]]] | None = None,
+) -> dict[str, Any]:
   """Featurize one PDB with the aminx port. The arm replays draws; it does not reseed."""
   import numpy as np
 
@@ -342,7 +438,7 @@ def prepare_aminx(pdb: Path) -> dict[str, Any]:
   from aminx.families.potts_mpnn.sample_host import build_tie_groups_np
 
   parsed = parse_pdb_upstream(pdb)[0]
-  features = tied_featurize_port([parsed], None)[0]
+  features = tied_featurize_port([parsed], None, fixed_position_dict=fixed_positions)[0]
   padded, pad_valid = pad(features, int(features.L_total))
   length = int(features.L_total)
   log_odds = np.asarray(padded.pssm_log_odds, dtype=np.float32)
