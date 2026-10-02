@@ -585,3 +585,122 @@ def test_knob_semantics_optimize_fasta(
       pdb, model_path,
       PottsMPNNOptions(optimize_fasta=str(short), optimization_mode="potts"),
     )
+
+
+def test_knob_semantics_emit_etab(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``emit_etab`` adds the Potts energy table and its neighbour index to the output.
+
+  Two sites must agree or the output is malformed: ``sample_host.py:394-400``
+  declares ``potts_etab`` / ``potts_E_idx`` in the schema, and ``:483-486``
+  produces them. Asserting presence alone would pass for a schema that promised
+  arrays the sampler never wrote, so the shapes are checked against the declared
+  dims.
+
+  ``K`` is 6 for a 6-residue chain and 48 for a 60-residue one, so both regimes
+  are exercised; with only the short fixture the cap would be invisible.
+
+  THE 48 DOES NOT COME FROM ``min(48, ready.l_total)`` AT ``:484``, although it
+  reads that way. ``forward`` already carries at most 48 neighbour columns from
+  the encoder and a slice past the end clamps, so that ``min`` is redundant:
+  measured 261002, replacing it with ``ready.l_total`` -- or with 999 -- changes
+  no output and this test still passes. Narrowing it to 2 IS caught, so the
+  assertion does pin the slice; it just does not pin the line it appears to.
+  """
+  del registered
+
+  def _arrays(chains: dict[str, str], *, emit: bool) -> dict:
+    pdb = tmp_path / f"etab_{len(chains)}_{sum(map(len, chains.values()))}.pdb"
+    _write_pdb(pdb, chains)
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=1,
+      samples_chunk_size=1,
+      return_logits=False,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none", emit_etab=emit),
+    )
+    return sample(spec)["structures"]["0"]["arrays"]
+
+  off = _arrays({"A": "ACDEFG"}, emit=False)
+  assert "potts_etab" not in off, "the default must not pay for the table"
+  assert "potts_E_idx" not in off
+
+  short = _arrays({"A": "ACDEFG"}, emit=True)
+  assert short["potts_etab"].shape == (6, 6, 20, 20), short["potts_etab"].shape
+  assert short["potts_E_idx"].shape == (6, 6)
+  assert short["potts_etab"].dtype == np.float32
+  assert short["potts_E_idx"].dtype == np.int32
+
+  # K is capped at 48, which only a structure longer than 48 can show.
+  long_ = _arrays({"A": "AC" * 30}, emit=True)
+  assert long_["potts_etab"].shape == (60, 48, 20, 20), long_["potts_etab"].shape
+  assert long_["potts_E_idx"].shape == (60, 48)
+
+
+def test_knob_semantics_chain_design_mask_json(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``chain_design_mask_json`` names designed/fixed chains, which sets A0 row order.
+
+  ``driver.py:618-628`` (``_chain_dict``) feeds ``tied_featurize_port``'s chain
+  dict, and A0 row order is "sorted designed chains then sorted fixed chains"
+  (spec :511, ``tied_featurize :327``). So marking B designed and A fixed SWAPS
+  the order, and the same physical assignment must then be written B-first.
+
+  That gives an exact identity rather than a "something changed" check: with
+  A='AAA' and B='CC', assigning A=DDD and B=EE is written ``DDDEE`` unmasked and
+  ``EEDDD`` under the mask, and the two must score identically. Measured on this
+  fixture both are -8.244517 while ``DDDEE`` UNDER the mask is -8.570608, so the
+  mask is not a no-op either.
+
+  THE CHAINS MUST DIFFER IN LENGTH. ``_write_pdb`` places chain L at
+  ``y=ord(L)``, so two equal-length chains sit 1A apart with identical x and z
+  and swapping their sequences is nearly an exact symmetry -- with 'AAA'/'CCC'
+  all three energies above agreed to 1e-6 and the test could not have failed.
+  """
+  del registered
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb, {"A": "AAA", "B": "CC"})
+  mask = tmp_path / "mask.json"
+  mask.write_text('{"complex": [["B"], ["A"]]}\n', encoding="utf-8")
+  other = tmp_path / "other.json"
+  other.write_text('{"not_this_one": [["B"], ["A"]]}\n', encoding="utf-8")
+
+  def _energy(seq: str, mask_path: str | None) -> float:
+    kwargs = {"chain_design_mask_json": mask_path} if mask_path else {}
+    spec = ScoringSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      output_kind="energy",
+      sequences_to_score=[seq],
+      potts_mpnn=PottsMPNNOptions(**kwargs),
+    )
+    values = np.asarray(
+      score(spec)["structures"]["0"]["arrays"]["energy"], dtype=np.float64,
+    )
+    # index 0 is the prepended native reference (include_reference_in_output).
+    return float(values[1])
+
+  # The fixture has to respond to BOTH chains, or a swap could not be seen.
+  native = _energy("AAACC", None)
+  assert not np.isclose(native, _energy("DDDCC", None)), "chain A must matter"
+  assert not np.isclose(native, _energy("AAAEE", None)), "chain B must matter"
+
+  plain = _energy("DDDEE", None)
+  swapped = _energy("EEDDD", str(mask))
+  unswapped = _energy("DDDEE", str(mask))
+
+  np.testing.assert_allclose(swapped, plain, rtol=1e-6, atol=1e-6)
+  assert not np.isclose(plain, unswapped, rtol=1e-6, atol=1e-6), (
+    "the mask must reinterpret the row order; equal values mean it was ignored"
+  )
+
+  # Keyed by structure name, like the mutant table and the binding partitions.
+  np.testing.assert_allclose(_energy("DDDEE", str(other)), plain,
+                             rtol=1e-6, atol=1e-6)

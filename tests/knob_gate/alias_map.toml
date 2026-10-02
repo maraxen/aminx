@@ -2634,8 +2634,13 @@ note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterp
 ref = "pottsmpnn_cfg__chain_dict_json"
 targets = ["fixed_mask", "chain_design_mask_json"]
 equivalence = "semantic"
-parity_test_ids = []
-note = "chain dict JSON maps onto fixed_mask and chain_design_mask_json"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
+note = """\
+chain dict JSON maps onto fixed_mask and chain_design_mask_json. _chain_dict \
+(driver.py:618-628) feeds tied_featurize_port, and A0 row order is sorted \
+designed chains then sorted fixed chains (spec :511), so naming B designed and A \
+fixed SWAPS the row order -- the test pins that as an exact identity on the \
+scored energy rather than as a "something changed" check."""
 
 [[row]]
 ref = "pottsmpnn_cfg__dev"
@@ -2696,8 +2701,8 @@ scoring is selected by binding_energy_json alone."""
 ref = "pottsmpnn_cfg__inference__chain_dict"
 targets = ["fixed_mask", "chain_design_mask_json"]
 equivalence = "semantic"
-parity_test_ids = []
-note = "Follows the *__chain_dict_json rule (spec 6.3)."
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
+note = "Follows the *__chain_dict_json rule (spec 6.3); same test, same semantics."
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__chain_ranges"
