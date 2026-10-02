@@ -179,8 +179,8 @@ class LaserDecoder(eqx.Module):
     sequence_indices: Int[Array, " l"],
     chi_flat: Float[Array, "l chi"],
     decoding_order: Int[Array, " l"],
-  ) -> tuple[Float[Array, "l k feat"], Bool[Array, "l k"]]:
-    """Dense edge features. One ``where`` selects the unmasked branch.
+  ) -> tuple[Float[Array, "l k feat"], Bool[Array, "l k"], Int[Array, "l k"]]:
+    """Dense edge features plus neighbour ids in that same slot order.
 
     Masked edges read ``encoder_s``, the protein scalars captured once before
     the decoder loop. Unmasked edges read ``prot_s``, which each decoder layer
@@ -211,7 +211,11 @@ class LaserDecoder(eqx.Module):
     index = jnp.broadcast_to(order[:, :, None], features.shape)
     features = jnp.take_along_axis(features, index, axis=1)
     mask = jnp.take_along_axis(pr_mask, order, axis=1)
-    return features, mask
+    # The dropout replay looks source ids up in this grid. The recorded keep
+    # is in masked-first order, the same order as ``features``, so the knn
+    # grid would paint the keep onto the pre-permutation slot.
+    neighbours = jnp.take_along_axis(pr_neighbours, order, axis=1)
+    return features, mask, neighbours
 
   def __call__(
     self,
@@ -245,7 +249,7 @@ class LaserDecoder(eqx.Module):
     n_res = prot_s.shape[0]
     chi_flat = jnp.reshape(chi_angle_encoding, (n_res, _CHI_FLAT))
     for layer in self.protein_decoder_layers:
-      expanded, row_mask = self._teacher_edges(
+      expanded, row_mask, slot_neighbours = self._teacher_edges(
         prot_s,
         encoder_s,
         pr_edges,
@@ -260,7 +264,7 @@ class LaserDecoder(eqx.Module):
         prot_s,
         prot_v,
         (expanded, lig_s),
-        (pr_neighbours, lp_neighbours),
+        (slot_neighbours, lp_neighbours),
         (empty, lp_edges),
         (row_mask, lp_mask),
         (False, False),

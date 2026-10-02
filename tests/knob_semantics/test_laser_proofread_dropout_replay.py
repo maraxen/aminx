@@ -353,3 +353,58 @@ def test_shim_records_gat_edge_identity() -> None:
   with injected_scalar_dropout(mlp, rng=rng) as cursor:
     mlp.forward(torch.ones(5, 8), e_idx)
   assert cursor.edges["dropout"][0] is None
+
+
+def test_decoder_attention_keep_follows_masked_first_slots() -> None:
+    """A recorded edge lands on the weight slot, which is masked-first order.
+
+    Upstream concatenates masked edges in front of unmasked ones and drops
+    that list (``model.py`` edge cat, ``model_generics.py`` ``self.dropout``
+    on the joint attention). ``_teacher_edges`` permutes the dense features
+    to the same order. The neighbour ids have to move with those features:
+    looking the source up in the knn grid writes the keep onto a different
+    slot, and a count check accepts both placements.
+    """
+    _encoder, decoder, _joint = _models()
+    n_res = 3
+    width = 3
+    # Sink 1. Sources [2, 0, 1]: 0 is already decoded, 2 and the self-edge are not.
+    neighbours = np.zeros((n_res, width), dtype=np.int32)
+    neighbours[1] = np.asarray([2, 0, 1], dtype=np.int32)
+    mask = np.zeros((n_res, width), dtype=bool)
+    mask[1] = True
+    node = int(decoder.sequence_label_embedding.weight.shape[1])
+    edge = jnp.zeros((n_res, width, 128), dtype=jnp.float32)
+    chi = jnp.zeros((n_res, 4 * 72), dtype=jnp.float32)
+    _features, row_mask, aligned = decoder._teacher_edges(
+        jnp.zeros((n_res, node), dtype=jnp.float32),
+        jnp.zeros((n_res, node), dtype=jnp.float32),
+        edge,
+        jnp.asarray(neighbours),
+        jnp.asarray(mask),
+        jnp.zeros((n_res,), dtype=jnp.int32),
+        chi,
+        jnp.asarray([0, 1, 2], dtype=jnp.int32),
+    )
+    # Masked sources 2 and 1, then the decoded source 0.
+    np.testing.assert_array_equal(np.asarray(aligned[1]), np.asarray([2, 1, 0], dtype=np.int32))
+    assert not np.array_equal(np.asarray(aligned[1]), neighbours[1])
+    # One recorded edge: source 0 into sink 1. Its weight is the last real slot.
+    keep = np.zeros((1, 1, 1), dtype=np.float32)
+    identity = np.asarray([[0], [1], [0]], dtype=np.int64)
+    value = jnp.ones((n_res, width, 1), dtype=jnp.float32)
+    plan = _Plan(
+        scalar=True,
+        vector=False,
+        masks={"protein_decoder_layers.0.hetgat.dropout": [keep]},
+        edges={"protein_decoder_layers.0.hetgat.dropout": [identity]},
+        drop_p=0.1,
+    )
+    placed = plan.take(
+        "protein_decoder_layers.0.hetgat.dropout",
+        value,
+        neighbours=aligned,
+        valid=row_mask,
+    )
+    got = np.asarray(placed[1, :, 0])
+    np.testing.assert_array_equal(got, np.asarray([1.0, 1.0, 0.0], dtype=np.float32))
