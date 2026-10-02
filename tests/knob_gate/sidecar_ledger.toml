@@ -1,2 +1,33 @@
-# T0.4 ships no rows. Owning tasks record [sidecar.<slug>] after the vehicle run.
+# T0.4 shipped no rows. Owning tasks record [sidecar.<slug>] after the vehicle run.
+#
+# Every id below is a bathos run that was verified against the step 1c conditions
+# BEFORE being written here: outcome == 'pass', status 'completed', git_dirty
+# FALSE, git_hash an ancestor of HEAD, sidecar_sha256 matching the sidecar on
+# disk, and --output-paths containing /<slug>/<git sha8>/branch_controls.json.
+#
+# Two traps cost real time here and are worth stating, because both produce runs
+# that look entirely successful and fail step 1c for reasons unrelated to the
+# measurement:
+#   1. --mutants must be PRESENT IN ARGV. _argv_mutants returns None when the
+#      flag is absent, so a run that relies on the script's default mutant list
+#      fails outright. Three Potts vehicles passed this way and had to be re-run.
+#   2. The tree must be CLEAN. .praxia/audits.jsonl is TRACKED and is appended to
+#      by anything that runs pytest, so a gate run leaves the tree dirty and every
+#      vehicle run after it records git_dirty = true until it is restored.
+
 [sidecar]
+
+[sidecar.laser_decode_e2e]
+# clean pass: sequence 1.0, chi-bin 1.0, max_circular_delta 5.684341886080802e-14
+# all five controls failed. git_hash f5c44847.
+bth_run_id = "9c8c5dce-d8d0-4b6c-9fb9-32c847603017"
+
+[sidecar.potts_ar_decode]
+# clean pass: exact token match 1.0; control ar_mask_present_chain_m_pos failed
+# at 0.8668714797747056. git_hash fd0fbac7.
+bth_run_id = "7b13f203-0244-4e98-98a2-740af692c802"
+
+[sidecar.potts_energy_parity]
+# clean pass: max_abs_delta 0.000732421875, analytic_abs_err 0.0; control
+# permute_etab_out_rows failed at 1218.31494140625. git_hash fd0fbac7.
+bth_run_id = "7b8d77ac-891a-4b24-b5ee-a0b7dc6bc6d6"

@@ -1,2 +1,74 @@
-# T0.4 ships no rows. Each stage task appends its own [[branch]] entries.
-branch = []
+# T0.4 shipped no rows. Each stage task appends its own [[branch]] entries.
+#
+# For a sidecar-backed vehicle the row `id` MUST equal the mutant name:
+# _coverage.py:427 collects sidecar_ids[slug] from the `id` field, and :309
+# requires that set to equal _argv_mutants(run.argv). So a row whose id differs
+# from the mutant it names silently fails step 1c with no other symptom.
+#
+# A row only grades once its vehicle has a run that is outcome == 'pass',
+# status 'completed', NOT git_dirty, at a commit that is an ancestor of HEAD and
+# does not touch scoped paths, whose sidecar_sha256 still matches the sidecar on
+# disk, and whose --output-paths include /<slug>/<git sha8>/branch_controls.json.
+
+[[branch]]
+id = "reversed_order"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "reversed_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "chi_bin_plus_one"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "chi_bin_plus_one"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "offset_zero"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "offset_zero"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "chi2_equals_chi1"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "chi2_equals_chi1"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "lambda_on_logits"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "lambda_on_logits"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "ar_mask_present_chain_m_pos"
+stage = "A5"
+fixture = "potts_example_pdbs"
+mutant = "ar_mask_present_chain_m_pos"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_decode"
+
+[[branch]]
+id = "permute_etab_out_rows"
+stage = "A5"
+fixture = "potts_example_pdbs"
+mutant = "permute_etab_out_rows"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_energy_parity"
