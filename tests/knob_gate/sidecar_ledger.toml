@@ -1,33 +1,46 @@
 # T0.4 shipped no rows. Owning tasks record [sidecar.<slug>] after the vehicle run.
 #
-# Every id below is a bathos run that was verified against the step 1c conditions
-# BEFORE being written here: outcome == 'pass', status 'completed', git_dirty
-# FALSE, git_hash an ancestor of HEAD, sidecar_sha256 matching the sidecar on
-# disk, and --output-paths containing /<slug>/<git sha8>/branch_controls.json.
+# Every id here is a bathos run checked against the step 1c conditions BEFORE
+# being written: outcome == 'pass', status 'completed', git_dirty FALSE, git_hash
+# an ancestor of HEAD that does not touch scoped paths, sidecar_sha256 matching
+# the sidecar on disk, --mutants present in argv and equal to the manifest row
+# ids, --output-paths containing /<slug>/<git sha8>/branch_controls.json, and
+# every weights key resolving in tests/knob_gate/checkpoint_registry.json.
 #
-# Two traps cost real time here and are worth stating, because both produce runs
-# that look entirely successful and fail step 1c for reasons unrelated to the
-# measurement:
-#   1. --mutants must be PRESENT IN ARGV. _argv_mutants returns None when the
-#      flag is absent, so a run that relies on the script's default mutant list
-#      fails outright. Three Potts vehicles passed this way and had to be re-run.
-#   2. The tree must be CLEAN. .praxia/audits.jsonl is TRACKED and is appended to
-#      by anything that runs pytest, so a gate run leaves the tree dirty and every
-#      vehicle run after it records git_dirty = true until it is restored.
+# THREE TRAPS, each of which produces a run that looks entirely successful and
+# fails step 1c for a reason unrelated to the measurement:
+#   1. --mutants MUST BE IN ARGV. _argv_mutants returns None when the flag is
+#      absent, so a run relying on the script's default mutant list fails.
+#   2. THE TREE MUST BE CLEAN. .praxia/audits.jsonl is TRACKED and is appended to
+#      by anything running pytest, so a gate run leaves every later vehicle run
+#      recording git_dirty = true until it is restored.
+#   3. THE WEIGHTS KEY MUST BE THE STABLE IDENTIFIER, not an absolute path.
+#      scripts/parity/artifact_key.py derives it; controls written before
+#      6cb81d49 carry absolute paths and will never validate.
 
 [sidecar]
 
-[sidecar.laser_decode_e2e]
-# clean pass: sequence 1.0, chi-bin 1.0, max_circular_delta 5.684341886080802e-14
-# all five controls failed. git_hash f5c44847.
-bth_run_id = "9c8c5dce-d8d0-4b6c-9fb9-32c847603017"
-
+# VERIFIED: check_branch_coverage returns "pass" for these two against their
+# manifest rows. Run at 6cb81d49 with the stable artifact key.
 [sidecar.potts_ar_decode]
-# clean pass: exact token match 1.0; control ar_mask_present_chain_m_pos failed
-# at 0.8668714797747056. git_hash fd0fbac7.
-bth_run_id = "7b13f203-0244-4e98-98a2-740af692c802"
+# clean pass, exact token match 1.0; ar_mask_present_chain_m_pos failed at
+# 0.8668714797747056. weights key PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt
+bth_run_id = "1859bdcc-5736-4363-b18e-d7821c0763e5"
 
 [sidecar.potts_energy_parity]
-# clean pass: max_abs_delta 0.000732421875, analytic_abs_err 0.0; control
-# permute_etab_out_rows failed at 1218.31494140625. git_hash fd0fbac7.
-bth_run_id = "7b8d77ac-891a-4b24-b5ee-a0b7dc6bc6d6"
+# clean pass, max_abs_delta 0.000732421875, analytic_abs_err 0.0;
+# permute_etab_out_rows failed at 1218.31494140625.
+bth_run_id = "1117a297-9cfc-4cdd-a8d7-244b76cc58a8"
+
+# PENDING a re-run at 6cb81d49. The run below PASSED and all five controls fired,
+# but its branch_controls.json predates the stable artifact key and so carries an
+# absolute path that the registry cannot resolve. The row is correct; the
+# controls it points at are stale. Replace the id when the current run lands.
+[sidecar.laser_decode_e2e]
+bth_run_id = "9c8c5dce-d8d0-4b6c-9fb9-32c847603017"
+
+# NOT YET LISTED, awaiting their first runs under 6cb81d49:
+#   potts_ar_refine_exact   3 mutants, clean previously 1.0 over 50 seeds
+#   laser_proofread_parity  4 negative controls; scalar_both_off is a POSITIVE
+#                           control, excluded from n_listed, and must NOT get a
+#                           manifest row.
