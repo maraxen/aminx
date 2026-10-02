@@ -27,9 +27,9 @@ import pytest
 from aminx.families.potts_mpnn.driver import PottsMPNNDriver
 from aminx.families.potts_mpnn.model import PottsMPNN
 from aminx.host.family_driver import FAMILY_DRIVERS
-from aminx.host.runner import score
+from aminx.host.runner import sample, score
 from aminx.run.options import PottsMPNNOptions
-from aminx.run.specs import ScoringSpecification
+from aminx.run.specs import SamplingSpecification, ScoringSpecification
 
 _THREE = {
   "A": "ALA", "C": "CYS", "D": "ASP", "E": "GLU", "F": "PHE", "G": "GLY",
@@ -335,3 +335,115 @@ def test_knob_semantics_mutant_fasta(
   partial.write_text(">one\nADA\n", encoding="utf-8")
   with pytest.raises(ValueError, match="must list every chain"):
     _ddg(pdb, model_path, PottsMPNNOptions(mutant_fasta=str(partial)))
+
+
+def test_knob_semantics_binding_energy_json(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``binding_energy_json`` turns the ddG into a BINDING ddG over partitions.
+
+  ``driver.py:632-640`` (``_binding_partitions``) reads a mapping from structure
+  name to a list of partitions, each a list of chain letters, and
+  ``_partition_graphs`` then subtracts the partitions' own energies from the
+  complex. Spec :512 -- "binding: axis ``partition``".
+
+  "Setting the knob changed the number" would pass for any implementation that
+  perturbed the result at all, so the load-bearing assertion here is structural
+  and independent of the random weights: a SINGLE partition covering every chain
+  is the complex, so it must cancel to exactly zero. Measured on this fixture it
+  is 0.0, not approximately -- the subtraction is of identical graphs.
+
+  The third assertion is the name keying: a payload for some other structure is
+  not this structure's, so it is ignored and the result is the plain complex ddG,
+  the same ``payload.get(name)`` selection the mutant table uses.
+  """
+  del registered
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb, {"A": "AAA", "B": "CCC"})
+  table = tmp_path / "mutants.csv"
+  table.write_text(
+    "pdb,chain,mut_type,ddG_expt\ncomplex,A,A1D,0.5\ncomplex,B,C1E,1.5\n",
+    encoding="utf-8",
+  )
+
+  def _with(partitions: str | None) -> np.ndarray:
+    kwargs = {}
+    if partitions is not None:
+      path = tmp_path / f"binding_{len(partitions)}_{partitions.count('[')}.json"
+      path.write_text(partitions, encoding="utf-8")
+      kwargs["binding_energy_json"] = str(path)
+    return _ddg(pdb, model_path, PottsMPNNOptions(mutant_csv=str(table), **kwargs))
+
+  plain = _with(None)
+  split = _with('{"complex": [["A"], ["B"]]}')
+  whole = _with('{"complex": [["A", "B"]]}')
+  mismatch = _with('{"some_other_structure": [["A"], ["B"]]}')
+
+  # A partition per chain is a real binding decomposition, so it must not agree
+  # with the complex ddG -- otherwise the knob is inert.
+  assert not np.allclose(plain, split), (
+    "binding_energy_json must change the ddG; identical values mean the "
+    "partitions were never subtracted"
+  )
+
+  # One partition that IS the complex subtracts the complex from itself.
+  np.testing.assert_allclose(whole, 0.0, atol=1e-6)
+
+  # Keyed by structure name, so another structure's entry is not ours.
+  np.testing.assert_allclose(mismatch, plain, rtol=1e-6, atol=1e-6)
+  assert not np.allclose(mismatch, whole), (
+    "the fixture must have non-zero complex ddG, or the name-keying assertion "
+    "would hold trivially against the zero case"
+  )
+
+
+def test_knob_semantics_binding_energy_optimization(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``binding_energy_optimization`` is refused by the sample path, by design.
+
+  ``sample_host.py:757-775``: ``none`` returns a zero interface so refine uses
+  the complex energy, while ``both`` and ``only`` raise -- "a zero table would
+  leave ``both`` identical to ``none`` and would update no positions under
+  ``only``". Refusing is the implemented contract, so that is what gets asserted;
+  a test demanding a binding-refined sample would be asserting a feature that
+  deliberately does not exist.
+
+  THE KNOB IS INERT IN THE SCORE PATH. Measured 261002 on this fixture:
+  ``none``, ``both`` and ``only`` give bit-identical ``score:ddg`` output, with
+  and without a binding_energy_json. Binding in scoring is selected by
+  binding_energy_json alone (:512); this field belongs to design. That is why
+  this test drives ``sample()`` and not ``score()``.
+
+  ``test_review_findings.py:96-111`` already asserts the same three outcomes, but
+  it calls ``sample_binding_tables`` directly with a hand-built Options, so it
+  would still pass if the driver never forwarded the field. This one goes through
+  a real ``SamplingSpecification``, which is the part that can regress.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "AC"})
+
+  def _sample(mode: str) -> dict:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=1,
+      samples_chunk_size=1,
+      return_logits=False,
+      potts_mpnn=PottsMPNNOptions(
+        optimization_mode="none", binding_energy_optimization=mode,
+      ),
+    )
+    return sample(spec)["structures"]["0"]["arrays"]
+
+  arrays = _sample("none")
+  assert arrays["sequence"].shape == (1, 2), (
+    "the default must still sample, or the refusals below prove nothing"
+  )
+
+  for mode in ("both", "only"):
+    with pytest.raises(ValueError, match="needs partition etabs"):
+      _sample(mode)

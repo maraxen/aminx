@@ -2671,15 +2671,26 @@ note = "Specced as a PottsMPNNOptions field (spec 6.1) but absent from src/aminx
 ref = "pottsmpnn_cfg__inference__binding_energy_json"
 targets = ["binding_energy_json"]
 equivalence = "identical"
-parity_test_ids = []
-note = ""
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_binding_energy_json"]
+note = """\
+Structure name -> list of partitions, each a list of chain letters \
+(driver.py:632-640); _partition_graphs subtracts the partitions' own energies \
+from the complex, giving a binding ddG (spec :512). A single partition covering \
+every chain therefore cancels to exactly 0, which is how the test pins the \
+subtraction rather than merely observing the number move."""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__binding_energy_optimization"
 targets = ["binding_energy_optimization"]
-equivalence = "identical"
-parity_test_ids = []
-note = ""
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_binding_energy_optimization"]
+note = """\
+NOT identical to upstream: the sample path implements "none" and REFUSES "both" \
+and "only" (sample_host.py:757-775), because a zero binding table would leave \
+"both" equal to "none" and update no positions under "only". The refusal is the \
+implemented contract and is what the test asserts. Measured 261002: the field is \
+inert in score:ddg -- all three values give bit-identical output -- so binding in \
+scoring is selected by binding_energy_json alone."""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__chain_dict"
