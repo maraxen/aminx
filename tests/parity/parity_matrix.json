@@ -229,12 +229,13 @@
       "id": "end-to-end-run-apis",
       "tier": "parity_fast",
       "code_paths": ["src/aminx/run/_exports.py", "src/aminx/host/runner.py", "src/aminx/scoring/score.py", "src/aminx/sampling/sample.py", "src/aminx/inference/sample_autoregressive.py"],
-      "reference": "Internal user-facing API contract",
-      "method": "fixture-driven API parity",
+      "reference": "None: run_sample(spec) is compared with a second run_sample(spec) on a mock protein (self-consistency); no reference implementation is involved",
+      "method": "self-consistency of the run API against itself (NOT reference parity)",
       "metrics": ["output shape", "score contract", "pseudo-perplexity contract"],
       "acceptance": {
         "tensor_tolerance": {"atol": 1e-06, "rtol": 1e-06}
-      }
+      },
+      "note": "this path passing says the API is deterministic and shaped as documented, not that it matches upstream LigandMPNN. Reference parity through the run API is measured by scripts/parity/e2e_run_api_parity.py (CPU pass: bathos 55ce2877; GPU run failed: bathos 239505fd, aminx #2391) with the knobs it varies and does not vary listed in aminx debt #2326"
     },
     {
       "id": "checkpoint-family-load",

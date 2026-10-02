@@ -160,6 +160,14 @@ def build_inference_bundle(
     f"Expected chain_index.ndim == 2 after normalization, got {chain_index.ndim}"
   )
 
+  if coords.shape[2] < 4:
+    # Refuse at the boundary rather than let the featuriser's indexing clamp silently (aminx #2152).
+    msg = (
+      f"coords must have at least 4 atoms per residue (N, CA, C, O); got atom axis of size "
+      f"{coords.shape[2]} in shape {coords.shape}"
+    )
+    raise ValueError(msg)
+
   num_states, seq_len = coords.shape[0], coords.shape[1]
 
   # 2. Geometry
