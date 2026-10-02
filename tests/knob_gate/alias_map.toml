@@ -2749,7 +2749,7 @@ note = "output-invariance test; maps to batch_size"
 ref = "pottsmpnn_cfg__inference__mean_norm"
 targets = ["mean_norm"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_mean_norm"]
 note = ""
 
 [[row]]
