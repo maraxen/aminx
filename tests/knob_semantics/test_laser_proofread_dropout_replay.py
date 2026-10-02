@@ -18,7 +18,12 @@ from aminx.model.laser.decoder import LaserDecoder
 from aminx.model.laser.encoders import LaserEncoder
 from aminx.model.laser.graphs import GraphStructure
 from aminx.model.laser.joint_decode import LaserJointDecode
-from aminx.model.laser.proofread import _Plan, conditional_focus_probs, proofread_dropout
+from aminx.model.laser.proofread import (
+    _Plan,
+    _fit_keep,
+    conditional_focus_probs,
+    proofread_dropout,
+)
 
 
 @functools.cache
@@ -164,3 +169,187 @@ class _Capture:
   def __init__(self) -> None:
     self.lookups = -1
     self.table: dict[str, tuple[int, int]] = {}
+
+
+def _prefix_fill(keep: np.ndarray, shape: tuple[int, ...]) -> np.ndarray:
+  """The placement ``_fit_keep`` used to invent: leading C-order slots."""
+  flat = np.ones(int(np.prod(shape)), dtype=np.float32)
+  values = np.reshape(keep, (-1,)).astype(np.float32, copy=False)
+  flat[: values.size] = values
+  return flat.reshape(shape)
+
+
+def test_fit_keep_rejects_a_shorter_edge_list() -> None:
+  """A shorter keep is not a prefix of a padded neighbour axis.
+
+  MLP masks match element-for-element, so they still reshape. A GAT mask
+  whose edge count is the leading part of ``(node, slot)`` must not.
+  """
+  with pytest.raises(RuntimeError, match="element-for-element"):
+    _fit_keep(jnp.asarray([0.0, 1.0, 0.0]), jnp.ones((3, 2)))
+  reshaped = _fit_keep(jnp.asarray([[0.0, 1.0, 0.0, 1.0]]), jnp.ones((4,)))
+  np.testing.assert_array_equal(np.asarray(reshaped), np.asarray([0.0, 1.0, 0.0, 1.0]))
+
+
+def test_gat_keep_scatters_by_edge_identity_not_prefix() -> None:
+  """Prefix fill and identity scatter disagree; a count check accepts both.
+
+  Three nodes, width 2, three real edges. The sparse order is not the
+  leading C-order prefix, and a padded slot sits inside that prefix.
+  Consuming one mask of three values reconciles either placement.
+  """
+  neighbours = np.asarray([[1, 0], [0, 0], [0, 1]], dtype=np.int32)
+  valid = np.asarray([[True, False], [False, False], [True, True]])
+  # source, sink, block. Order is sink 2, then the early node — not C order.
+  edge = np.asarray([[0, 1, 1], [2, 2, 0], [0, 0, 0]], dtype=np.int64)
+  keep = np.asarray([0.0, 1.0, 0.0], dtype=np.float32).reshape(1, 3, 1)
+  value = jnp.ones((3, 2, 1), dtype=jnp.float32)
+  plan = _Plan(
+    scalar=True,
+    vector=False,
+    masks={"ligand_encoder.gat_layers.0.dropout": [keep]},
+    edges={"ligand_encoder.gat_layers.0.dropout": [edge]},
+    drop_p=0.1,
+  )
+  placed = plan.take(
+    "ligand_encoder.gat_layers.0.dropout",
+    value,
+    neighbours=jnp.asarray(neighbours),
+    valid=jnp.asarray(valid),
+  )
+  identity = np.ones((3, 2, 1), dtype=np.float32)
+  identity[2, 0, 0] = 0.0
+  identity[2, 1, 0] = 1.0
+  identity[0, 0, 0] = 0.0
+  prefix = _prefix_fill(keep, (3, 2, 1))
+  assert not np.array_equal(identity, prefix)
+  np.testing.assert_array_equal(np.asarray(placed), identity)
+  # Both placements consume the one recorded mask. The array above is the check.
+  assert plan.consumption()["ligand_encoder.gat_layers.0.dropout"] == (1, 1)
+
+
+def test_edge_identity_stays_inside_its_neighbour_block() -> None:
+  """Ligand atom 0 and protein residue 0 are different edges.
+
+  Searching the concatenated slot axis would give the ligand edge the first
+  protein slot, because that slot's stored source is also 0.
+  """
+  protein = np.asarray([[0, 0], [0, 0]], dtype=np.int32)
+  ligand = np.asarray([[0], [0]], dtype=np.int32)
+  protein_valid = np.asarray([[True, False], [False, False]])
+  ligand_valid = np.asarray([[True], [False]])
+  # Ligand edge first, so a block-blind search hits the protein slot.
+  edge = np.asarray([[0, 0], [0, 0], [1, 0]], dtype=np.int64)
+  keep = np.asarray([0.0, 1.0], dtype=np.float32).reshape(1, 2, 1)
+  value = jnp.ones((2, 3, 1), dtype=jnp.float32)
+  plan = _Plan(
+    scalar=True,
+    vector=False,
+    masks={"protein_encoder_layers.0.hetgat.dropout": [keep]},
+    edges={"protein_encoder_layers.0.hetgat.dropout": [edge]},
+    drop_p=0.1,
+  )
+  placed = plan.take(
+    "protein_encoder_layers.0.hetgat.dropout",
+    value,
+    neighbours=(jnp.asarray(protein), jnp.asarray(ligand)),
+    valid=(jnp.asarray(protein_valid), jnp.asarray(ligand_valid)),
+  )
+  got = np.asarray(placed)
+  np.testing.assert_array_equal(got[0, :, 0], np.asarray([1.0, 1.0, 0.0], dtype=np.float32))
+  np.testing.assert_array_equal(got[1, :, 0], np.ones((3,), dtype=np.float32))
+
+
+def test_missing_dense_slot_raises() -> None:
+  """An edge with no slot must fail the replay, not stay silently kept."""
+  edge = np.asarray([[4], [0], [0]], dtype=np.int64)
+  keep = np.ones((1, 1, 1), dtype=np.float32)
+  plan = _Plan(
+    scalar=True,
+    vector=False,
+    masks={"ligand_encoder.gat_layers.0.dropout": [keep]},
+    edges={"ligand_encoder.gat_layers.0.dropout": [edge]},
+    drop_p=0.1,
+  )
+  with pytest.raises(RuntimeError, match="no dense slot"):
+    plan.take(
+      "ligand_encoder.gat_layers.0.dropout",
+      jnp.ones((1, 2, 1), dtype=jnp.float32),
+      neighbours=jnp.asarray([[0, 1]], dtype=np.int32),
+      valid=jnp.asarray([[True, True]]),
+    )
+
+
+def test_shim_records_gat_edge_identity() -> None:
+  """The dropout shim banks ``(source, sink, block)`` beside a GAT mask."""
+  import torch
+
+  from scripts.parity.oracle_shims.laser import injected_scalar_dropout
+
+  class _GAT(torch.nn.Module):
+    def __init__(self) -> None:
+      super().__init__()
+      self.dropout = torch.nn.Dropout(0.5)
+
+    def forward(
+      self,
+      x: torch.Tensor,
+      e_idx: torch.Tensor,
+      *,
+      residual: bool = False,
+    ) -> torch.Tensor:
+      # The residual dropout's own frame has no edge list. The parent
+      # forward does, which is where upstream HomoGATv2 keeps ``e_idx``.
+      if residual:
+        return self.compute_edge_update(x)
+      return self.dropout(x)
+
+    def compute_edge_update(self, x: torch.Tensor) -> torch.Tensor:
+      return self.dropout(x)
+
+  class _Het(torch.nn.Module):
+    def __init__(self) -> None:
+      super().__init__()
+      self.dropout = torch.nn.Dropout(0.5)
+
+    def forward(
+      self,
+      x: torch.Tensor,
+      edge_index_list: list[torch.Tensor],
+    ) -> torch.Tensor:
+      return self.dropout(x)
+
+  class _MLP(torch.nn.Module):
+    def __init__(self) -> None:
+      super().__init__()
+      self.dropout = torch.nn.Dropout(0.5)
+
+    def forward(self, x: torch.Tensor, e_idx: torch.Tensor) -> torch.Tensor:
+      del e_idx
+      return self.dropout(x)
+
+  gat = _GAT()
+  het = _Het()
+  mlp = _MLP()
+  rng = np.random.default_rng(0)
+  e_idx = torch.tensor([[0, 1, 1], [2, 2, 0]], dtype=torch.int64)
+  with injected_scalar_dropout(gat, rng=rng) as cursor:
+    gat.forward(torch.ones(1, 3, 1), e_idx)
+    gat.forward(torch.ones(3, 4), e_idx, residual=True)
+  attention = cursor.edges["dropout"][0]
+  residual = cursor.edges["dropout"][1]
+  assert attention is not None and residual is not None
+  np.testing.assert_array_equal(attention[:2], e_idx.numpy())
+  np.testing.assert_array_equal(attention[2], np.zeros((3,), dtype=np.int64))
+  np.testing.assert_array_equal(residual[:2], e_idx.numpy())
+  parts = [torch.tensor([[0, 1], [0, 0]]), torch.tensor([[2], [1]])]
+  with injected_scalar_dropout(het, rng=rng) as cursor:
+    het.forward(torch.ones(1, 3, 1), parts)
+  hetero = cursor.edges["dropout"][0]
+  assert hetero is not None
+  np.testing.assert_array_equal(hetero[0], np.asarray([0, 1, 2]))
+  np.testing.assert_array_equal(hetero[1], np.asarray([0, 0, 1]))
+  np.testing.assert_array_equal(hetero[2], np.asarray([0, 0, 1]))
+  with injected_scalar_dropout(mlp, rng=rng) as cursor:
+    mlp.forward(torch.ones(5, 8), e_idx)
+  assert cursor.edges["dropout"][0] is None

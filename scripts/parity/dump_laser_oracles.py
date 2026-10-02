@@ -643,6 +643,7 @@ def _proofread_one_focus(
           repack_all=True,
         )
         for path, rows in dropout.recorded.items():
+          identities = dropout.edges.get(path, [])
           for index, row in enumerate(rows):
             mask_blobs.append(np.asarray(row))
             _put(
@@ -651,6 +652,14 @@ def _proofread_one_focus(
               prefix + f"proofread_mask__{copy}__{path.replace('.', '_')}__{index}",
               row,
             )
+            identity = identities[index] if index < len(identities) else None
+            if identity is not None:
+              _put(
+                buckets,
+                ("laser_score",),
+                prefix + f"proofread_edge__{copy}__{path.replace('.', '_')}__{index}",
+                np.asarray(identity, dtype=np.int64),
+              )
     finally:
       for module in touched:
         module.eval()
