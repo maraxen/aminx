@@ -7,7 +7,7 @@
 # per-slug, so any later scoped commit invalidates every ledger row at once.
 # tests/knob_gate/ is NOT scoped, so ledger ids may be written afterwards.
 #
-# Usage:  launch_wave.sh 1 | 2 | positive
+# Usage:  launch_wave.sh 1 | 2 | 3 | positive
 #
 # The --mutants string for each slug is CHECKED against that slug's rows in
 # tests/knob_gate/branch_manifest.toml before anything launches, because step
@@ -40,7 +40,7 @@ if [ "$DIRTY" -ne 0 ]; then
 fi
 
 GROUP=${1:-}
-[ -n "$GROUP" ] || { echo "usage: $0 [1|2|positive]" >&2; exit 2; }
+[ -n "$GROUP" ] || { echo "usage: $0 [1|2|3|positive]" >&2; exit 2; }
 
 # slug -> the exact mutant string for its graded run.
 declare -A MUT=(
@@ -119,8 +119,50 @@ case "$GROUP" in
     echo "it must report near-zero; a non-zero result is instrument floor"
     exit 0 ;;
   *)
-    echo "usage: $0 [1|2|positive]" >&2; exit 2 ;;
+    echo "usage: $0 [1|2|3|positive]" >&2; exit 2 ;;
 esac
+
+# check_mutants only inspects the slugs handed to it, so it could not see a slug
+# missing from MUT or from every group. laser_score_parity was exactly that: it
+# has a manifest row (permute_decoder_layer) and appeared in no group, so no
+# invocation of this script would ever have run it and the manifest could never
+# have been satisfied. Checked here against the manifest itself.
+check_coverage () {
+  python3 - "$@" <<'PY'
+import pathlib
+import sys
+import tomllib
+
+known = set(sys.argv[1:])
+rows = tomllib.loads(
+    pathlib.Path("tests/knob_gate/branch_manifest.toml").read_text()
+)["branch"]
+sidecar = [r for r in rows if r.get("vehicle", {}).get("kind") == "sidecar"]
+slugs = {r["vehicle"]["slug"] for r in sidecar}
+missing = sorted(slugs - known)
+extra = sorted(known - slugs)
+if missing:
+    print(
+        f"REFUSING: {len(missing)} manifest sidecar slug(s) are in no launch "
+        f"group, so the manifest could never be satisfied: {missing}",
+        file=sys.stderr,
+    )
+if extra:
+    print(
+        f"REFUSING: {len(extra)} launched slug(s) have no manifest rows: {extra}",
+        file=sys.stderr,
+    )
+if missing or extra:
+    sys.exit(1)
+print(f"ok coverage: {len(slugs)} manifest slugs all reachable from a group")
+PY
+}
+
+# Every slug any group can launch, so the check is about the SCRIPT rather than
+# about whichever group happens to be running.
+check_coverage laser_proofread_parity laser_decode_e2e \
+               potts_ar_refine_exact potts_ar_decode potts_energy_parity \
+               laser_score_parity
 
 ARGS=()
 for s in "${SLUGS[@]}"; do ARGS+=("$s=${MUT[$s]}"); done
