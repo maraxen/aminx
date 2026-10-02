@@ -142,3 +142,26 @@ bth_run_id = "ef4df8ff-7b0d-44bb-999b-35b5c7a6207c"
 
 # NOT YET LISTED: nothing. All six manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
+
+# POSITIVE CONTROL, run 56b0ddaa-572c-49da-99ae-f5b4cb9402d1 at 7aee0c01.
+# Deliberately NOT a row here: it is ungraded, writes no branch_controls.json and
+# must never be mistaken for a ledger run (trap 4). Recorded because it is the
+# instrument floor the negative controls are read against.
+#
+#   clean              band pass  max_abs_mean 4.218847e-15  max_abs_std 9.499346e-15
+#   scalar_both_off    band pass  max_abs_mean 7.327472e-15  max_abs_std 7.546914e-15
+#
+# scalar_both_off is a no-op mutation, so it must SURVIVE, and it does -- at the
+# same 1e-15 order as the clean arm. The clean arm reproduces the graded run's
+# numbers to every digit (4.218847493575595e-15 / 9.499345754448996e-15), which
+# is a separate fact worth having: the vehicle is deterministic across runs and
+# across commits.
+#
+# THE RECORD READS outcome=fail AND THAT IS THE CONTROL PASSING. The sidecar's
+# criteria are written for a graded run, where every mutant must be killed; here
+# the single mutant is one that must not be. sidecar_sha256 is present on the
+# record, so the sidecar resolved -- this is not the wrapper trap that leaves
+# outcome empty. adversarial_check_result: fired.
+#
+# So the vehicle's floor is ~1e-14 while its graded negative controls failed at
+# 1e-2 and larger, which is the separation the gate depends on.

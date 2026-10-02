@@ -448,7 +448,7 @@ note = "Device selection (spec 6.3: device -> exclusion device)."
 ref = "laser_run_batch_inference__input_pdb_directory"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Directory of input structures."
 
 [[row]]
@@ -666,7 +666,7 @@ note = "Device selection (spec 6.3: device -> exclusion device)."
 ref = "laser_run_batch_inference_ligandmpnn__input_pdb_directory"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Directory of input structures."
 
 [[row]]
@@ -836,7 +836,7 @@ note = ""
 ref = "laser_run_inference__input_pdb_code"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Input structure."
 
 [[row]]
@@ -963,7 +963,7 @@ note = ""
 ref = "laser_run_inference_ligandmpnn__input_pdb_code"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Input structure."
 
 [[row]]
@@ -1426,7 +1426,7 @@ note = ""
 ref = "laser_run_inference_tied__input_pdb_code_1"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "First tied input structure."
 
 [[row]]
@@ -1646,7 +1646,7 @@ note = ""
 ref = "laser_run_predict_partial_charges__input_pdb"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Input structure path. Mapped rather than excluded for consistency with the already-filled __model_weights row on this surface; note the tension with spec 6.4, which lists run_predict_partial_charges.* as deferred -- that deferral concerns the partial-charge model, not the path plumbing."
 
 [[row]]
@@ -1703,7 +1703,7 @@ note = ""
 ref = "laser_run_proofreading__pdb_file"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Input structure."
 
 [[row]]
@@ -1739,7 +1739,7 @@ note = "Follows the model_weights / check_path rule (spec 6.3)."
 ref = "laser_thread_and_score_sequences__backbone"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Input backbone structure."
 
 [[row]]
@@ -2924,14 +2924,14 @@ note = "Specced as a PottsMPNNOptions field (spec 6.1) but absent from src/aminx
 ref = "pottsmpnn_cfg__input_dir"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Directory of input structures."
 
 [[row]]
 ref = "pottsmpnn_cfg__input_list"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Input-list file; see the pottsmpnn_input_list surface."
 
 [[row]]
@@ -3044,5 +3044,5 @@ note = "input-list fixed chains map onto fixed_mask and chain_design_mask_json"
 ref = "pottsmpnn_input_list__pdb"
 targets = ["inputs"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Per-line structure path in the MANUAL input-list format (pdb|designed:chains|fixed:chains, sample_seqs.py:81-94)."

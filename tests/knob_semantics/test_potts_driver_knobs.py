@@ -854,3 +854,79 @@ def test_knob_semantics_checkpoint_id_and_model_local_path(
   # is told which to supply rather than being sent to the network.
   with pytest.raises(ValueError, match="model_local_path or a checkpoint registry"):
     _energy(checkpoint_id="pottsmpnn_vanilla_20")
+
+
+def test_knob_semantics_inputs(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``inputs`` takes one structure or many, and the result is keyed by position.
+
+  Eleven alias rows map onto this field, in two sub-rules that meet here: a
+  SINGLE structure (``input_pdb_code``, ``pdb_file``, ``backbone``,
+  ``input_pdb``) and a SET of them (an input directory, or the manual input-list
+  file). ``driver._inputs`` wraps a str or Path into a one-element list and
+  otherwise takes the sequence as given, so both spellings land on the same code
+  path -- which is the claim the rows make and the reason one test covers them.
+
+  Four things are asserted, because the cheap version of this test -- "two inputs
+  give two entries" -- would pass for an implementation that ran the first
+  structure twice:
+
+  * a bare string and a one-element list are equivalent;
+  * two structures give two entries, keyed "0" and "1";
+  * the keys follow the ORDER GIVEN -- reversing the list swaps the results, so
+    the mapping is positional and not, say, sorted by name;
+  * each entry equals that structure scored ALONE, which is what rules out the
+    first-structure-twice implementation.
+
+  The fixtures differ in sequence (ACDEFG against WWWWWW) and share a backbone,
+  so the reference energies differ sharply (-4.775694 against 8.999121) while the
+  scored sequence is the same in both -- the contrast is in the structure, which
+  is what is being keyed.
+  """
+  del registered
+  alpha = tmp_path / "alpha.pdb"
+  beta = tmp_path / "beta.pdb"
+  _write_pdb(alpha, {"A": "ACDEFG"})
+  _write_pdb(beta, {"A": "WWWWWW"})
+
+  def _structures(inputs: object) -> dict:
+    spec = ScoringSpecification(
+      inputs=inputs,
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      output_kind="energy",
+      sequences_to_score=["ADDEFG"],
+      potts_mpnn=PottsMPNNOptions(),
+    )
+    return score(spec)["structures"]
+
+  def _energy(entry: dict) -> np.ndarray:
+    return np.asarray(entry["arrays"]["energy"], dtype=np.float64)
+
+  bare = _structures(str(alpha))
+  listed = _structures([str(alpha)])
+  assert sorted(bare) == ["0"], sorted(bare)
+  assert sorted(listed) == ["0"], sorted(listed)
+  np.testing.assert_allclose(_energy(bare["0"]), _energy(listed["0"]))
+
+  alone_alpha = _energy(bare["0"])
+  alone_beta = _energy(_structures(str(beta))["0"])
+  assert not np.allclose(alone_alpha, alone_beta), (
+    "the two fixtures must score differently, or nothing below can tell which "
+    "structure landed in which slot"
+  )
+
+  both = _structures([str(alpha), str(beta)])
+  assert sorted(both) == ["0", "1"], sorted(both)
+  np.testing.assert_allclose(_energy(both["0"]), alone_alpha)
+  np.testing.assert_allclose(_energy(both["1"]), alone_beta)
+  assert both["0"]["structure_id"] == "alpha"
+  assert both["1"]["structure_id"] == "beta"
+
+  # Positional, not sorted: reversing the list reverses the slots.
+  reversed_ = _structures([str(beta), str(alpha)])
+  np.testing.assert_allclose(_energy(reversed_["0"]), alone_beta)
+  np.testing.assert_allclose(_energy(reversed_["1"]), alone_alpha)
+  assert reversed_["0"]["structure_id"] == "beta"
