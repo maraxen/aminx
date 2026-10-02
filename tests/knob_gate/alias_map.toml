@@ -49,7 +49,7 @@ note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
 ref = "laser_model_LASErMPNN_sample__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
@@ -72,14 +72,14 @@ note = "Boolean mask materialised from the --budget_residue_sele_string selectio
 ref = "laser_model_LASErMPNN_sample__chi_angle_sample_temperature"
 targets = ["chi_temp"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
 note = "Model-level spelling of the chi sampling temperature."
 
 [[row]]
 ref = "laser_model_LASErMPNN_sample__chi_min_p"
 targets = ["chi_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
 note = ""
 
 [[row]]
@@ -102,28 +102,31 @@ note = ""
 ref = "laser_model_LASErMPNN_sample__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_model_LASErMPNN_sample__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_model_LASErMPNN_sample__ignore_chain_mask_zeros"
 targets = ["ignore_chain_mask_zeros"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
 note = ""
 
 [[row]]
 ref = "laser_model_LASErMPNN_sample__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
@@ -138,7 +141,7 @@ note = "Analysis-only side output: returns raw encoder node/edge tensors (prot_n
 ref = "laser_model_LASErMPNN_sample__seq_min_p"
 targets = ["seq_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
 note = ""
 
 [[row]]
@@ -152,7 +155,7 @@ note = "Model-level spelling; follows the __sequence_temp -> temperature rule (s
 ref = "laser_model_LASErMPNN_tied_sample__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
@@ -183,7 +186,7 @@ note = "Boolean mask materialised from the --budget_residue_sele_string selectio
 ref = "laser_model_LASErMPNN_tied_sample__chi_angle_sample_temperature"
 targets = ["chi_temp"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
 note = "Model-level spelling of the chi sampling temperature."
 
 [[row]]
@@ -198,28 +201,31 @@ note = ""
 ref = "laser_model_LASErMPNN_tied_sample__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_model_LASErMPNN_tied_sample__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_model_LASErMPNN_tied_sample__lambda_"
 targets = ["tied_interpolation_lambda"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_interpolation_lambda",
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_lambda",
+]
 note = "Model-level spelling of the tied mixing weight (utils/model.py:626)."
 
 [[row]]
 ref = "laser_model_LASErMPNN_tied_sample__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
@@ -257,21 +263,24 @@ note = ""
 ref = "laser_model_ligandmpnn_LigandMPNN_sample__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_model_ligandmpnn_LigandMPNN_sample__ignore_chain_mask_zeros"
 targets = ["ignore_chain_mask_zeros"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
 note = ""
 
 [[row]]
 ref = "laser_model_ligandmpnn_LigandMPNN_sample__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
@@ -286,7 +295,7 @@ note = "Analysis-only side output: returns raw encoder node/edge tensors (prot_n
 ref = "laser_model_ligandmpnn_LigandMPNN_sample__seq_min_p"
 targets = ["seq_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
 note = ""
 
 [[row]]
@@ -300,35 +309,35 @@ note = "Model-level spelling; follows the __sequence_temp -> temperature rule (s
 ref = "laser_run_batch_inference__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__budget_residue_sele_string"
 targets = ["budget_residue_selection"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_budget_residue_selection"]
 note = "Selection string for the ala/gly budget residues."
 
 [[row]]
 ref = "laser_run_batch_inference__chi_min_p"
 targets = ["chi_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__chi_temp"
 targets = ["chi_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
 targets = ["constrain_ala_gly_to_exposed_non_ss"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_constrain_ala_gly_to_exposed_non_ss"]
 note = "Abbreviated on the aminx side; same knob."
 
 [[row]]
@@ -349,28 +358,28 @@ note = "Designs produced per input structure."
 ref = "laser_run_batch_inference__disable_charged_fs"
 targets = ["disable_charged_fs"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__first_shell_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = "Batch-CLI spelling of the first-shell sequence temperature."
 
 [[row]]
 ref = "laser_run_batch_inference__fix_beta"
 targets = ["fix_from_bfactor"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
 note = "Fixes positions from the B-factor column; renamed for clarity."
 
 [[row]]
@@ -401,21 +410,21 @@ note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construc
 ref = "laser_run_batch_inference__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__ignore_key_mismatch"
 targets = ["strict_load"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
 note = "store_false, passed as strict= (run_batch_inference.py:250,379); dest True ≡ strict_load=True; name/polarity inversion"
 
 [[row]]
 ref = "laser_run_batch_inference__ignore_ligand"
 targets = ["ignore_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
 note = ""
 
 [[row]]
@@ -451,21 +460,21 @@ note = "Follows the model_weights / check_path rule (spec 6.3)."
 ref = "laser_run_batch_inference__noncanonical_aa_ligand"
 targets = ["noncanonical_aa_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__output_fasta"
 targets = ["output_fasta"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__output_fasta_only"
 targets = ["output_fasta_only"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta_only"]
 note = ""
 
 [[row]]
@@ -479,21 +488,21 @@ note = "Directory for written structures."
 ref = "laser_run_batch_inference__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference__repack_only_input_sequence"
 targets = ["repack_only"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
 note = "repack_only_input_sequence maps to repack_only"
 
 [[row]]
 ref = "laser_run_batch_inference__seq_min_p"
 targets = ["seq_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
 note = ""
 
 [[row]]
@@ -507,7 +516,7 @@ note = "family default None; maps to temperature"
 ref = "laser_run_batch_inference__use_water"
 targets = ["use_water"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_use_water"]
 note = ""
 
 [[row]]
@@ -522,28 +531,28 @@ note = ""
 ref = "laser_run_batch_inference_ligandmpnn__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__budget_residue_sele_string"
 targets = ["budget_residue_selection"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_budget_residue_selection"]
 note = "Selection string for the ala/gly budget residues."
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__chi_min_p"
 targets = ["chi_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__chi_temp"
 targets = ["chi_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
 note = ""
 
 [[row]]
@@ -564,28 +573,28 @@ note = "Designs produced per input structure."
 ref = "laser_run_batch_inference_ligandmpnn__disable_charged_fs"
 targets = ["disable_charged_fs"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__first_shell_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = "Batch-CLI spelling of the first-shell sequence temperature."
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__fix_beta"
 targets = ["fix_from_bfactor"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
 note = "Fixes positions from the B-factor column; renamed for clarity."
 
 [[row]]
@@ -616,21 +625,21 @@ note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construc
 ref = "laser_run_batch_inference_ligandmpnn__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__ignore_key_mismatch"
 targets = ["strict_load"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
 note = "store_false, passed as strict= (run_batch_inference.py:250,379); dest True ≡ strict_load=True; name/polarity inversion"
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__ignore_ligand"
 targets = ["ignore_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
 note = ""
 
 [[row]]
@@ -666,21 +675,21 @@ note = "Follows the model_weights / check_path rule (spec 6.3)."
 ref = "laser_run_batch_inference_ligandmpnn__noncanonical_aa_ligand"
 targets = ["noncanonical_aa_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__output_fasta"
 targets = ["output_fasta"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__output_fasta_only"
 targets = ["output_fasta_only"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta_only"]
 note = ""
 
 [[row]]
@@ -694,21 +703,21 @@ note = "Directory for written structures."
 ref = "laser_run_batch_inference_ligandmpnn__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__repack_only_input_sequence"
 targets = ["repack_only"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
 note = "repack_only_input_sequence maps to repack_only"
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__seq_min_p"
 targets = ["seq_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
 note = ""
 
 [[row]]
@@ -722,7 +731,7 @@ note = "family default None; maps to temperature"
 ref = "laser_run_batch_inference_ligandmpnn__use_water"
 targets = ["use_water"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_use_water"]
 note = ""
 
 [[row]]
@@ -752,7 +761,7 @@ note = ""
 ref = "laser_run_inference__disable_charged_fs"
 targets = ["disable_charged_fs"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
@@ -767,7 +776,7 @@ note = "entropy_decoder deferred (aminx tech debt 2069)"
 ref = "laser_run_inference__fix_beta"
 targets = ["fix_from_bfactor"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
 note = "Fixes positions from the B-factor column; renamed for clarity."
 
 [[row]]
@@ -798,14 +807,14 @@ note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construc
 ref = "laser_run_inference__fs_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference__ignore_ligand"
 targets = ["ignore_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
 note = ""
 
 [[row]]
@@ -826,7 +835,7 @@ note = "weights path maps to checkpoint_id and model_local_path"
 ref = "laser_run_inference__noncanonical_aa_ligand"
 targets = ["noncanonical_aa_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
 note = ""
 
 [[row]]
@@ -840,7 +849,7 @@ note = "Where outputs are written."
 ref = "laser_run_inference__repack_only"
 targets = ["repack_only"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
 note = ""
 
 [[row]]
@@ -854,7 +863,7 @@ note = "family default None; maps to temperature"
 ref = "laser_run_inference__strict_load"
 targets = ["strict_load"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
 note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
 
 [[row]]
@@ -876,7 +885,7 @@ note = ""
 ref = "laser_run_inference_ligandmpnn__disable_charged_fs"
 targets = ["disable_charged_fs"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
@@ -891,7 +900,7 @@ note = "entropy_decoder deferred (aminx tech debt 2069)"
 ref = "laser_run_inference_ligandmpnn__fix_beta"
 targets = ["fix_from_bfactor"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
 note = "Fixes positions from the B-factor column; renamed for clarity."
 
 [[row]]
@@ -922,14 +931,14 @@ note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construc
 ref = "laser_run_inference_ligandmpnn__fs_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn__ignore_ligand"
 targets = ["ignore_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
 note = ""
 
 [[row]]
@@ -950,7 +959,7 @@ note = "weights path maps to checkpoint_id and model_local_path"
 ref = "laser_run_inference_ligandmpnn__noncanonical_aa_ligand"
 targets = ["noncanonical_aa_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
 note = ""
 
 [[row]]
@@ -964,7 +973,7 @@ note = "Where outputs are written."
 ref = "laser_run_inference_ligandmpnn__repack_only"
 targets = ["repack_only"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
 note = ""
 
 [[row]]
@@ -978,14 +987,14 @@ note = "family default None; maps to temperature"
 ref = "laser_run_inference_ligandmpnn__strict_load"
 targets = ["strict_load"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
 note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
@@ -1015,21 +1024,21 @@ note = "Boolean mask materialised from the --budget_residue_sele_string selectio
 ref = "laser_run_inference_ligandmpnn_sample_model__chi_min_p"
 targets = ["chi_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__chi_temp"
 targets = ["chi_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__disable_charged_fs"
 targets = ["disable_charged_fs"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
@@ -1044,28 +1053,31 @@ note = ""
 ref = "laser_run_inference_ligandmpnn_sample_model__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__fs_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__ignore_chain_mask_zeros"
 targets = ["ignore_chain_mask_zeros"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
 note = ""
 
 [[row]]
@@ -1088,14 +1100,14 @@ note = "The loaded checkpoint params dict, not a knob."
 ref = "laser_run_inference_ligandmpnn_sample_model__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__seq_min_p"
 targets = ["seq_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
 note = ""
 
 [[row]]
@@ -1125,7 +1137,7 @@ note = ""
 ref = "laser_run_inference_sample_model__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
@@ -1155,21 +1167,21 @@ note = "Boolean mask materialised from the --budget_residue_sele_string selectio
 ref = "laser_run_inference_sample_model__chi_min_p"
 targets = ["chi_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_sample_model__chi_temp"
 targets = ["chi_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_sample_model__disable_charged_fs"
 targets = ["disable_charged_fs"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
@@ -1184,28 +1196,31 @@ note = ""
 ref = "laser_run_inference_sample_model__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_sample_model__fs_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_sample_model__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_sample_model__ignore_chain_mask_zeros"
 targets = ["ignore_chain_mask_zeros"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
 note = ""
 
 [[row]]
@@ -1228,14 +1243,14 @@ note = "The loaded checkpoint params dict, not a knob."
 ref = "laser_run_inference_sample_model__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_sample_model__seq_min_p"
 targets = ["seq_min_p"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
 note = ""
 
 [[row]]
@@ -1265,7 +1280,7 @@ note = ""
 ref = "laser_run_inference_tied__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
@@ -1279,14 +1294,14 @@ note = "LASEr bb_noise / CLI dest backbone_noise maps to noise"
 ref = "laser_run_inference_tied__budget_residue_sele_string"
 targets = ["budget_residue_selection"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_budget_residue_selection"]
 note = "Selection string for the ala/gly budget residues."
 
 [[row]]
 ref = "laser_run_inference_tied__constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
 targets = ["constrain_ala_gly_to_exposed_non_ss"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_constrain_ala_gly_to_exposed_non_ss"]
 note = "Abbreviated on the aminx side; same knob."
 
 [[row]]
@@ -1332,7 +1347,7 @@ note = "entropy_decoder deferred (aminx tech debt 2069)"
 ref = "laser_run_inference_tied__fix_beta"
 targets = ["fix_from_bfactor"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
 note = "Fixes positions from the B-factor column; renamed for clarity."
 
 [[row]]
@@ -1363,21 +1378,21 @@ note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construc
 ref = "laser_run_inference_tied__fs_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_tied__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_tied__ignore_ligand"
 targets = ["ignore_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
 note = ""
 
 [[row]]
@@ -1391,7 +1406,7 @@ note = "First tied input structure."
 ref = "laser_run_inference_tied__input_pdb_code_2"
 targets = ["tied_second_input"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_second_input"]
 note = "Second tied input structure; the aminx knob that selects it."
 
 [[row]]
@@ -1405,7 +1420,7 @@ note = "weights path maps to checkpoint_id and model_local_path"
 ref = "laser_run_inference_tied__noncanonical_aa_ligand"
 targets = ["noncanonical_aa_ligand"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
 note = ""
 
 [[row]]
@@ -1419,7 +1434,7 @@ note = "Where outputs are written."
 ref = "laser_run_inference_tied__repack_only"
 targets = ["repack_only"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
 note = ""
 
 [[row]]
@@ -1433,21 +1448,24 @@ note = "family default None; maps to temperature"
 ref = "laser_run_inference_tied__strict_load"
 targets = ["strict_load"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
 note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
 
 [[row]]
 ref = "laser_run_inference_tied__tied_probability_interpolation_lambda"
 targets = ["tied_interpolation_lambda"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_interpolation_lambda",
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_lambda",
+]
 note = "Tied-CLI spelling of the two-structure mixing weight; weights structure 1, default 0.0 = structure 2 only (spec 6.5)."
 
 [[row]]
 ref = "laser_run_inference_tied_sample_model__ala_budget"
 targets = ["ala_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
 note = ""
 
 [[row]]
@@ -1485,7 +1503,7 @@ note = "Boolean mask materialised from the --budget_residue_sele_string selectio
 ref = "laser_run_inference_tied_sample_model__chi_temp"
 targets = ["chi_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
 note = ""
 
 [[row]]
@@ -1508,35 +1526,41 @@ note = ""
 ref = "laser_run_inference_tied_sample_model__disabled_residues"
 targets = ["disabled_residues"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_tied_sample_model__fs_sequence_temp"
 targets = ["fs_sequence_temp"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_tied_sample_model__gly_budget"
 targets = ["gly_budget"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_tied_sample_model__ignore_chain_mask_zeros"
 targets = ["ignore_chain_mask_zeros"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
 note = ""
 
 [[row]]
 ref = "laser_run_inference_tied_sample_model__interpolation_lambda"
 targets = ["tied_interpolation_lambda"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_interpolation_lambda",
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_lambda",
+]
 note = "sample_model spelling of the tied mixing weight."
 
 [[row]]
@@ -1559,7 +1583,7 @@ note = "The loaded checkpoint params dict, not a knob."
 ref = "laser_run_inference_tied_sample_model__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
@@ -1618,21 +1642,21 @@ note = ""
 ref = "laser_run_proofreading__disable_inference_dropout"
 targets = ["proofread_dropout"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_proofread_dropout"]
 note = "inverted relative to proofread_dropout"
 
 [[row]]
 ref = "laser_run_proofreading__n_decoding_orders"
 targets = ["n_decoding_orders"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_n_decoding_orders"]
 note = ""
 
 [[row]]
 ref = "laser_run_proofreading__n_dropouts"
 targets = ["n_dropouts"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_n_dropouts"]
 note = ""
 
 [[row]]
@@ -1653,14 +1677,14 @@ note = "Input structure."
 ref = "laser_run_proofreading__repack_all"
 targets = ["repack_all"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
 note = ""
 
 [[row]]
 ref = "laser_run_proofreading__selection_string"
 targets = ["selection_string"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_selection_string"]
 note = ""
 
 [[row]]

@@ -114,9 +114,31 @@ def test_exclusions() -> None:
 
 def test_parity_ids_passed() -> None:
   passed = passed_nodeids(os.environ["AMINX_REDSOX_OUTCOMES_READ"])
-  for row in LIVE:
-    parity_ids = cast("list[str]", row["parity_test_ids"])
-    assert parity_ids and set(parity_ids) <= passed, row
+
+  # This used to assert per row and die on the first offender with a bare dict
+  # dump, which names one row and neither the scale nor the shape of what is
+  # left. The three conditions below are the same pass/fail, reported as three
+  # work lists: rows with no test at all, rows naming a test that did not pass,
+  # and Options fields no passing knob test reaches.
+  unwired = [str(row["ref"]) for row in LIVE if not row["parity_test_ids"]]
+  assert not unwired, (
+    f"{len(unwired)} of {len(LIVE)} live rows have no parity_test_ids; every live "
+    f"row must name a knob test that passed in this gate's own outcomes "
+    f"(spec 6.3). First 5: {unwired[:5]}"
+  )
+
+  not_passed = {
+    str(row["ref"]): sorted(set(cast("list[str]", row["parity_test_ids"])) - passed)
+    for row in LIVE
+    if not set(cast("list[str]", row["parity_test_ids"])) <= passed
+  }
+  assert not not_passed, (
+    f"{len(not_passed)} live rows name a test that did not pass in this gate's "
+    f"outcomes ({len(passed)} nodeids passed). An id missing from the outcomes "
+    f"file counts as not passed, so check it was collected by gate_ids first. "
+    f"First 5: {dict(list(not_passed.items())[:5])}"
+  )
+
   covered = {
     target
     for row in LIVE
@@ -126,7 +148,11 @@ def test_parity_ids_passed() -> None:
       for nodeid in cast("list[str]", row["parity_test_ids"])
     )
   }
-  assert covered >= NEW_FIELDS
+  uncovered = sorted(NEW_FIELDS - covered)
+  assert not uncovered, (
+    f"{len(uncovered)} of {len(NEW_FIELDS)} new Options fields are not reached by "
+    f"any passing test_knob_semantics_* test: {uncovered}"
+  )
 
 
 def test_u1_reachability_present() -> None:
