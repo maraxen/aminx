@@ -33,15 +33,28 @@
 
 [sidecar]
 
-# EVERY ID BELOW IS STALE AS OF 23aa6b1f. All three were run at 6cb81d49, and
-# 23aa6b1f / ea23104e (src/aminx/) and aa8cf83b (scripts/parity/) have landed
-# since, so _touches_scoped rejects all of them -- including the two that had
-# been verified. check_branch_coverage does NOT return "pass" on this file
-# right now, and that is expected, not a regression. The ids are kept because
-# they still name the runs that produced the measurements; they are not
-# evidence of a green gate. Replace all five after the wave
+# EVERY ID BELOW IS STALE, AND THE FIRST ONE TO BREAK THEM WAS A DOCSTRING.
+#
+# Measured with scripts/redsox/verify_wave.py: both Potts runs fail exactly one
+# of the nine conditions -- "no scoped path since" -- and pass the other eight.
+# The scoped commit it names first is 04d689b3, "--model-family help listed
+# only two of the four families": a one-line change to a help string in
+# src/aminx/cli.py. _touches_scoped is path-based and does not care that the
+# change was documentation, so that commit alone discarded three hours of
+# parity evidence, before any of the later fixes landed. The rows were already
+# dead when the "VERIFIED" comment below was read into this file.
+#
+# laser_decode_e2e fails a second condition too: its controls carry an absolute
+# /home/solab/repos/LASErMPNN/... weights key, which the registry cannot
+# resolve (trap 3). It ran at f5c44847, older still.
+#
+# check_branch_coverage does NOT return "pass" on this file right now, and that
+# is expected rather than a regression. The ids are kept because they still
+# name the runs that produced the measurements; they are not evidence of a
+# green gate. Replace all five after the wave
 # (scripts/redsox/launch_wave.sh), which is the only point at which this file
-# can be made true.
+# can be made true. Run verify_wave.py BEFORE writing a row: it reports each
+# condition separately, which is the only way to tell these cases apart.
 
 # WAS VERIFIED at 6cb81d49: check_branch_coverage returned "pass" for these two
 # against their manifest rows. Invalidated by the later scoped commits above.
