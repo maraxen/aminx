@@ -1,0 +1,37 @@
+[experiment]
+hypothesis = "On a production-shaped fused PoE bead (S=4 states, L=512, K=48, proteinmpnn_v_48_020), the shipped sample_states_fused completes with valid output at sample_count 128, 512 and 2048 on a shared titanix TITAN RTX (one GPU, JAX pool capped so the BatchPlanner budgets against the memory actually granted), whereas the pre-#127 configuration (state axis and sample axis both unbounded vmap) fails at 128 -- i.e. debt #2158's crash is fixed by #127's BatchPlanner state axis plus lowered_memory_estimate, and this experiment can tell a fix from a configuration that simply never failed on this hardware"
+stage_name = "confirmation"
+novel = false
+task_id = "260930_resolve-issues-debt"
+
+[outcomes.pass]
+condition = "planned_cells_ok = true AND negative_control_failed = true AND single_code_commit = true"
+decision = "Close debt #2158 for titanix, which is where the production sampling campaigns run: the shipped path completes at production shapes, and the pre-fix configuration demonstrably fails here. State in the closing note which failure the control showed (see negative_control_error_type) and that the claim covers this hardware and memory cap only."
+reasoning = "A pass with a failing negative control is the only pass that distinguishes a fixed bug from one that never occurred here. Caveat built into the claim: the original crash was an XLA autotuning error after an 809 s compile; on a capped TITAN RTX the control may instead fail by out-of-memory. That still shows the unbounded configuration does not fit while the planner's tiling does (the planner's whole job), but it is weaker evidence about the autotuning error specifically, and the closing note must say which one occurred. planned_cells_ok requires all three planned cells to have a record with status ok, correct output shapes, in-vocabulary tokens, finite logits and more than one distinct sequence; absence, or a started-but-unrecorded cell (crash, OOM-kill, timeout), counts as failure."
+is_residual = false
+
+[outcomes.marginal]
+condition = "planned_cells_ok = true AND negative_control_failed = false"
+decision = "Do NOT close #2158 on this evidence. The shipped path works, but the pre-fix configuration also worked on this hardware and memory cap, so the run cannot show the fix mattered. Keep the debt open with this result attached, or repeat on hardware where the crash was originally seen (record which)."
+reasoning = "If the negative control does not fail, the experiment has no power against the original bug: a planned-path pass is equally consistent with the crash being specific to other hardware or XLA builds."
+is_residual = false
+
+[outcomes.fail]
+condition = "planned_cells_ok = false OR single_code_commit = false"
+decision = "Debt #2158 stands: at least one planned cell crashed, was killed, timed out, or produced invalid output at production shape (or the cells ran against different code). Read the cell records' error_type, error_head, planner and device_bytes_limit fields, and fix the named cause."
+reasoning = "Any planned-path failure at a production sample count is the defect the debt describes. A mix of code commits makes the cells incomparable, so it is refused rather than averaged over."
+is_residual = true
+
+[result_schema]
+planned_cells_ok = "bool"
+n_planned_ok = "int"
+negative_control_failed = "bool"
+negative_control_state = "str"
+negative_control_error_type = "str"
+single_code_commit = "bool"
+
+[result_schema.provenance]
+script_commit = "git log --oneline -1"
+related_debt = "#2158 (this), #942/#945 (praxia-side records of the original crash and the estimator fix); fix under test: commit 29af8302 (PR #127)"
+hardware_targets = ["titanix GPU 3 (TITAN RTX, 24 GB, shared with a vLLM server), XLA_PYTHON_CLIENT_MEM_FRACTION=0.45"]
+notes = "AMENDED BEFORE ANY RUN: the first draft targeted an Engaging H200 array; Engaging was under contention, the L3 smoke job was cancelled without ever starting, and no cell result from any hardware had been seen when this sidecar was changed. Runs on titanix via scripts/benchmarks/run_poe_fused_scaling_titanix.sh: one process per cell under its own timeout, hash-verified .started/.done stamps for resume, verdict computed from files by `poe_fused_scaling.py --aggregate` under bth run. The GPU is shared, so the JAX pool is capped and the launcher refuses to start if the GPU lacks the free memory; the cap is recorded per cell (device_bytes_limit) because the planner budgets against it. Backbones are synthetic (random-walk CA trace) at real size: the debt's failing tensor f32[128,12582912] equals 4*512*48*128. No timing or memory number from this run is a performance claim; first_call_seconds includes compile and exists only to tell a timeout from a crash."
