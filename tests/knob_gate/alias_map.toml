@@ -2876,7 +2876,7 @@ note = ""
 ref = "pottsmpnn_cfg__inference__tied_epistasis"
 targets = ["tied_epistasis"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_tied_epistasis_leaked_pos"]
 note = ""
 
 [[row]]

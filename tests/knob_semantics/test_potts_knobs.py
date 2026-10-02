@@ -450,6 +450,10 @@ def _refine(
   bias_index: int | None = None,
   chain_mask: np.ndarray | None = None,
   sequence: np.ndarray | None = None,
+  tie_groups: np.ndarray | None = None,
+  tied: bool = False,
+  tied_epistasis: bool = False,
+  e_idx: np.ndarray | None = None,
 ) -> object:
   """Refine with the zeroed-message decoder, so logits come only from the bias."""
   length = etab.shape[0]
@@ -466,7 +470,9 @@ def _refine(
     mode,
     jnp.asarray(seq),
     etab,
-    jnp.zeros((length, 1), dtype=jnp.int32),
+    jnp.zeros((length, 1), dtype=jnp.int32)
+    if e_idx is None
+    else jnp.asarray(e_idx, dtype=jnp.int32),
     jnp.ones((length,), dtype=jnp.bool_),
     jnp.ones((length,), dtype=jnp.float32),
     jnp.asarray(mask),
@@ -480,7 +486,9 @@ def _refine(
     jnp.zeros((length, _V), dtype=jnp.float32),
     jnp.zeros((length, _V), dtype=jnp.float32),
     jnp.zeros((length, _V), dtype=jnp.float32),
-    jnp.arange(length, dtype=jnp.int32)[:, None],
+    jnp.arange(length, dtype=jnp.int32)[:, None]
+    if tie_groups is None
+    else jnp.asarray(tie_groups, dtype=jnp.int32),
     jnp.ones((length,), dtype=jnp.float32),
     jnp.zeros((length, _H), dtype=jnp.float32),
     jnp.zeros((length, 1, _H), dtype=jnp.float32),
@@ -490,8 +498,8 @@ def _refine(
     pssm_bias_flag=False,
     pssm_log_odds_flag=False,
     binding="none",
-    tied=False,
-    tied_epistasis=False,
+    tied=tied,
+    tied_epistasis=tied_epistasis,
     max_iters=max_iters,
   )
 
@@ -556,3 +564,71 @@ def test_knob_semantics_optimization_mode_rejects_unknown() -> None:
   """
   with pytest.raises(ValueError, match="unknown optimization_mode"):
     _refine("potts_converg", jnp.zeros((2, 1, _A, _A)))
+
+
+def _tied_pair_refine(first_member_pull: float, *, epistasis: bool) -> np.ndarray:
+  """Refine one tied group of two rows, varying ONLY the first member's table.
+
+  The energy a member contributes for candidate ``aa`` is
+  ``etab[member, 0, aa, aa]``: ``positional_potts_energy`` takes
+  ``jnp.diagonal(etab[pos, 0])`` for slot 0 and draws pair terms from
+  ``e_idx[pos, 1:]`` (etab.py:173-174), so with ``K == 1`` there are no neighbour
+  couplings and only the slot-0 DIAGONAL is read. Lower energy is preferred. The
+  last member pulls towards token 5; the first member pulls towards token 7 by
+  ``first_member_pull``, which is the only thing that varies between runs.
+
+  Two earlier fixtures failed here and both failures were mine, not the code's:
+  off-diagonal entries are never read with ``K == 1``, and ``eye(_A) * scale``
+  perturbs a single candidate while leaving the other 21 exactly tied, so the draw
+  lands on the tie midpoint however the scale moves.
+  """
+  length = 2
+  etab = jnp.zeros((length, 1, _A, _A))
+  etab = etab.at[0, 0, 7, 7].set(first_member_pull)
+  etab = etab.at[1, 0, 5, 5].set(-10.0)
+  result = _refine(
+    "potts",
+    etab,
+    max_iters=1,
+    tie_groups=np.asarray([[0, 1]], dtype=np.int32),
+    tied=True,
+    tied_epistasis=epistasis,
+  )
+  return np.asarray(result.sequence)
+
+
+def test_knob_semantics_tied_epistasis_leaked_pos() -> None:
+  """``tied_epistasis`` reads the group's energy at the LAST member only.
+
+  Spec 6.5, upstream ``run_utils.py:349-361``. Mutants are set across the whole
+  tied group jointly, but the positional energy is read at the loop variable left
+  over from the member loop -- so it is the last listed member's, not the group's.
+  aminx keeps this at ``refine.py:782``: set, the energy comes from
+  ``_energy_vector(..., last_safe, ...)``; unset, from
+  ``_average_member_energy(..., members, ...)``.
+
+  The discriminator needs no prediction of which token is drawn. Vary ONLY the
+  FIRST member's table between two runs:
+
+    set    the first member's energy is never read, so the result must not move
+    unset  the average includes it, so the result must move
+
+  The second leg is the first one's control: together they rule out both a port
+  that always averages and a port that always reads one member, without this test
+  having to recompute an energy itself.
+  """
+  epistasis_low = _tied_pair_refine(0.0, epistasis=True)
+  epistasis_high = _tied_pair_refine(-40.0, epistasis=True)
+  assert np.array_equal(epistasis_low, epistasis_high), (
+    f"with tied_epistasis the first member's table must be ignored, but changing "
+    f"it moved the result: {epistasis_low} -> {epistasis_high}"
+  )
+
+  averaged_low = _tied_pair_refine(0.0, epistasis=False)
+  averaged_high = _tied_pair_refine(-40.0, epistasis=False)
+  assert not np.array_equal(averaged_low, averaged_high), (
+    f"without tied_epistasis the energy is averaged over members, so changing the "
+    f"first member's table must move the result; got {averaged_low} both times. If "
+    f"this ever holds, the test above is passing for the wrong reason -- both "
+    f"branches would be ignoring the member."
+  )
