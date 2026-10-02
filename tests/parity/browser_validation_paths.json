@@ -104,6 +104,9 @@
   "src/aminx/host/_sampling_helper.py::fixed_provenance_outputs": {
     "internal": "sampling-result helper utilities for host runner sample(), covered through P26"
   },
+  "src/aminx/host/_sampling_helper.py::ligand_conditioning_mode": {
+    "internal": "sampling-result helper utilities for host runner sample(), covered through P26"
+  },
   "src/aminx/host/_sampling_helper.py::resolve_native_tokens": {
     "internal": "sampling-result helper utilities for host runner sample(), covered through P26"
   },
@@ -114,12 +117,16 @@
   "src/aminx/host/campaign.py::ManifestGateState": "P28",
   "src/aminx/host/campaign.py::StaleDoneMarkerSchemaError": "P28",
   "src/aminx/host/campaign.py::build_manifest_row": "P28",
+  "src/aminx/host/campaign.py::campaign_residue_overrides": "P28",
   "src/aminx/host/campaign.py::evaluate_campaign_gates": "P28",
   "src/aminx/host/campaign.py::evaluate_scale_ramp_reports": "P28",
   "src/aminx/host/campaign.py::execute_manifest": "P28",
+  "src/aminx/host/campaign.py::load_campaign_bias": "P28",
+  "src/aminx/host/campaign.py::load_campaign_tie_group_map": "P28",
   "src/aminx/host/campaign.py::load_manifest": "P28",
   "src/aminx/host/campaign.py::main": "P28",
   "src/aminx/host/campaign.py::parse_fixed_arms": "P28",
+  "src/aminx/host/campaign.py::parse_state_weight_profiles": "P28",
   "src/aminx/host/campaign.py::plan_campaign_manifest": "P28",
   "src/aminx/host/campaign.py::plan_scale_ramp": "P28",
   "src/aminx/host/campaign.py::run_manifest_row": "P28",
@@ -283,6 +290,12 @@
   "src/aminx/inference/bundle_builder.py::build_inference_bundle": {
     "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
   },
+  "src/aminx/inference/bundle_builder.py::decoding_order_key": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
+  "src/aminx/inference/bundle_builder.py::with_decoding_order": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
   "src/aminx/inference/decode/autoregressive.py::AutoregressiveDecode": {
     "internal": "AutoregressiveMode decode dispatch, covered through P07"
   },
@@ -336,6 +349,7 @@
   },
   "src/aminx/inference/optimize_ste.py::make_optimize_sequence_fn": "P16",
   "src/aminx/inference/sample_autoregressive.py::SampleResult": "P07",
+  "src/aminx/inference/sample_autoregressive.py::gumbel_noise_for_key": "P07",
   "src/aminx/inference/sample_autoregressive.py::kernel": "P07",
   "src/aminx/inference/schedule_selector.py::assert_model_adj_subset": "P20",
   "src/aminx/inference/schedule_selector.py::build_position_adjacency": "P20",
@@ -355,6 +369,7 @@
   "src/aminx/inference/score_conditional.py::kernel": "P05",
   "src/aminx/inference/score_conditional.py::score_averaged": "P05",
   "src/aminx/inference/score_conditional.py::score_from_encoding": "P05",
+  "src/aminx/inference/score_conditional.py::split_keys": "P05",
   "src/aminx/inference/score_unconditional.py::kernel": "P04",
   "src/aminx/model/capabilities.py::ModelCapabilities": {
     "internal": "model capability flags consulted across P00-P14, no dedicated P-ID"
@@ -386,6 +401,7 @@
   },
   "src/aminx/model/features.py::ProteinEdgeStageTensors": "P03",
   "src/aminx/model/features.py::ProteinFeatures": "P03",
+  "src/aminx/model/features.py::select_neighbors": "P03",
   "src/aminx/model/features.py::top_k": "P03",
   "src/aminx/model/ligand_features.py::PositionalEncodings": "P11",
   "src/aminx/model/ligand_features.py::ProteinFeaturesLigand": "P11",
@@ -454,7 +470,9 @@
   "src/aminx/sampling/multistate_poe.py::sample_multistate_poe_campaign_row": "P10",
   "src/aminx/sampling/multistate_poe.py::sample_states_fused": "P10",
   "src/aminx/sampling/sample.py::make_sample_sequences": "P07",
+  "src/aminx/scoring/score.py::ScoreSplitFns": "P06",
   "src/aminx/scoring/score.py::make_score_fn": "P06",
+  "src/aminx/scoring/score.py::make_score_split_fns": "P06",
   "src/aminx/scoring/score.py::score": "P06",
   "src/aminx/tiling/bucketing.py::BucketAssignment": "P27",
   "src/aminx/tiling/bucketing.py::BucketingConfig": "P27",

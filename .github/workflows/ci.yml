@@ -43,7 +43,11 @@ jobs:
         run: npm install -g @ast-grep/cli
       - name: Install dependencies and run tests
         run: |
-          uv sync --extra cpu --extra dev --extra tests
+          uv sync --extra cpu --extra dev --extra tests --extra onnx
+
+          # The ONNX parity tests skip (rather than error) when the toolchain is absent, so a broken install
+          # would quietly turn them into skips. Fail the job instead (aminx debt #2392).
+          uv run python -c "import onnx, onnxruntime, jax2onnx; print('onnx', onnx.__version__, '| onnxruntime', onnxruntime.__version__, '| jax2onnx ok')"
 
           # Determine marker expression based on event type
           if [ "${{ github.event_name }}" == "pull_request" ]; then

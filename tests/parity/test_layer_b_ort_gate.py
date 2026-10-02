@@ -24,6 +24,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pytest
+
+# Skip loudly, with the fix, where the ONNX toolchain is absent. CI installs it (--extra onnx) so these RUN there
+# (aminx debt #2392); without this guard a missing package is a collection ERROR that reds the whole job.
+for _mod in ('onnx',):
+  pytest.importorskip(_mod, reason="needs the ONNX toolchain: uv sync --extra onnx (aminx debt #2392)")
+
 import onnx
 from onnx import TensorProto, helper
 
