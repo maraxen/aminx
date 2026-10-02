@@ -222,3 +222,38 @@ def test_proofread_dropout_actually_perturbs_the_ensemble(
   assert not np.allclose(live, off)
   # Same seed twice is the same answer: the draws are keyed, not ambient.
   np.testing.assert_array_equal(live, _proofread(model_path, pdb, dropout=True))
+
+
+def test_proofread_unconditional_matches_its_declared_schema(
+  registered: LaserDriver,
+  tmp_path: Path,
+  model_path: Path,
+) -> None:
+  """The cheaper proofread purpose carried the same stray candidate axis.
+
+  One forward pass, no dropout ensemble, so this fails on the result-schema
+  mismatch alone rather than on anything to do with mask replay.
+  """
+  del registered
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb)
+  result = score(
+    ScoringSpecification(
+      inputs=str(pdb),
+      model_family="lasermpnn",
+      checkpoint_id="lasermpnn_test",
+      model_local_path=model_path,
+      output_kind="proofread_unconditional",
+      sequences_to_score=["AA"],
+      random_seed=3,
+    ),
+  )
+  arrays = result["structures"]["0"]["arrays"]
+  mean = np.asarray(arrays["proofread_mean"])
+  ids = np.asarray(arrays["residue_ids"])
+  assert mean.ndim == 2
+  assert mean.shape[-1] == 21
+  assert ids.shape == (mean.shape[0],)
+  assert np.isfinite(mean).all()
+  # Softmax rows, so each focus row sums to one.
+  np.testing.assert_allclose(mean.sum(axis=-1), np.ones(mean.shape[0]), atol=1e-5)

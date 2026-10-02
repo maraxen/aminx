@@ -735,28 +735,24 @@ class LaserDriver:
         "nll": SinkArraySpec(dims=("N_cand", "L_total"), dtype="float32", attrs={}),
       }
     elif purpose == "score:proofread_unconditional":
+      # No candidate axis. Proofreading reads the structure's own sequence, so
+      # there is one ensemble per structure, not one per scored candidate.
+      # Spec 5.6 is "proofread_mean (R,21)"; the stray N_cand here was copied
+      # from the nll/logits block and made the purpose unreachable end to end.
       body = {
-        "proofread_mean": SinkArraySpec(
-          dims=("N_cand", "R", "alphabet"),
-          dtype="float32",
-          attrs={},
-        ),
-        "residue_ids": SinkArraySpec(dims=("N_cand", "R"), dtype="int32", attrs={}),
+        "proofread_mean": SinkArraySpec(dims=("R", "alphabet"), dtype="float32", attrs={}),
+        "residue_ids": SinkArraySpec(dims=("R",), dtype="int32", attrs={}),
       }
     elif purpose == "score:proofread_conditional":
       body = {
-        "proofread_mean": SinkArraySpec(
-          dims=("N_cand", "R", "alphabet"),
-          dtype="float32",
-          attrs={},
-        ),
-        "proofread_std": SinkArraySpec(dims=("N_cand", "R", "alphabet"), dtype="float32", attrs={}),
+        "proofread_mean": SinkArraySpec(dims=("R", "alphabet"), dtype="float32", attrs={}),
+        "proofread_std": SinkArraySpec(dims=("R", "alphabet"), dtype="float32", attrs={}),
         "proofread_mean_plus_std": SinkArraySpec(
-          dims=("N_cand", "R", "alphabet"),
+          dims=("R", "alphabet"),
           dtype="float32",
           attrs={},
         ),
-        "residue_ids": SinkArraySpec(dims=("N_cand", "R"), dtype="int32", attrs={}),
+        "residue_ids": SinkArraySpec(dims=("R",), dtype="int32", attrs={}),
       }
     else:
       msg = f"lasermpnn does not support {purpose} in v1"
