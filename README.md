@@ -7,7 +7,7 @@
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](http://maraxen.github.io/Aminx)
 
 > [!WARNING]
-> **Alpha release.** aminx is under active development. The API is functional and validated against the LigandMPNN reference, but may change between releases. You may encounter bugs or rough edges — please open an issue if something breaks.
+> **Alpha release.** aminx is under active development. The API is functional, but parity with the LigandMPNN reference is only partly established (see below), and the API may change between releases. You may encounter bugs or rough edges — please open an issue if something breaks.
 
 Aminx is a JAX/Equinox reimplementation of the [LigandMPNN](https://github.com/dauparas/LigandMPNN) codebase. A graded literature-parity audit against LigandMPNN@`26ec57ac` (2026-09-26) found several paths that match the reference to within 1e-4 nats, and confirmed defects in the ligand, membrane and conditional-scoring paths. The global grade is **FAIL** for now; see the [verdict](.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md) and the per-path table below. It runs 8–61× faster on a single structure (H200) by trading eager dispatch for `jit`/`vmap`/`scan` kernels.
 
@@ -15,7 +15,7 @@ What you get:
 
 - A functional `sample()` / `score()` API — no model objects to wire up, no inference loop to write.
 - A composable inference layer (`StageSet`) for swapping logit transforms, encode paths, and decode variants without touching kernel math.
-- Numerical parity with upstream LigandMPNN, validated across unconditional, conditional, autoregressive, membrane, and side-chain-packer paths.
+- Numerical parity with upstream LigandMPNN is measured per path and is **not complete**: some paths match to within 1e-4 nats and the audit found defects in others (see the verdict above). Through the public run API, a pre-registered end-to-end experiment (`scripts/parity/e2e_run_api_parity.py`) passes on CPU for one structure (1BC8 chain C) with ProteinMPNN and LigandMPNN checkpoints, varying temperature, omit/bias amino acids, fixed and redesigned residues, decoding order and checkpoint family. It does not vary batch size, symmetry, ligand parsing, side-chain packing, membrane labels or other structures. The same experiment failed on a GPU (aminx #2391, still open: a workaround covers one cause, another shape is unexplained) and has not been re-run there.
 - Native batching across temperatures, backbones, and sequence lengths — operations you'd normally write as Python loops are compiled into single JAX kernels, so there's no recompilation penalty and no padding waste.
 
 The batching point is worth unpacking: in vanilla JAX, running N temperatures requires either a Python loop (N separate compiled calls, or worse, N retraces) or manually writing a `vmap`. aminx has already done that work. Passing `temperature=[0.1, 0.3, 0.7]` vmaps over the temperature axis in one compiled call; scoring a mixed-length library reuses a compiled kernel per length bucket rather than recompiling per structure. The speedups in the tables below come from applying this pattern consistently to the operations most commonly written as loops in protein design workflows.
