@@ -1,0 +1,45 @@
+[experiment]
+hypothesis = "Every existing campaign done marker in the sibling tev_design outputs (all campaign_done_marker_v2 as far as an exploratory look showed) verifies under the installed xtrax's zarr_content_digest: the digest recorded in the marker equals the digest recomputed today from the store. A private copy of one small store must still match its marker, and the same copy with one flipped byte must NOT (instrument controls)."
+stage_name = "confirmation"
+novel = false
+task_id = "261002_streaming-xtrax-migration"
+
+[outcomes.pass]
+condition = "all_checked_match = true AND coverage_ok = true AND controls_ok = true"
+decision = "The `adopt-legacy` path is viable for the existing corpus: v2 markers' recorded digests still equal what the current xtrax computes, so adoption's digest verification will accept intact outputs and reject altered ones. Proceed with the v3 stamp migration as built; no digest-compat shim is needed for these markers."
+reasoning = "Zero mismatches over at least 95% of the markers, with a negative control that provably changes the digest and a positive control that provably matches, means the verification instrument is live and the recorded digests are current. Scope stays narrow: this says nothing about stores written under a pre-a10 xtrax digest that carry run_id/git provenance attributes, none of which are in this corpus."
+is_residual = false
+
+[outcomes.marginal]
+condition = "all_checked_match = true AND (coverage_ok = false OR controls_ok = false)"
+decision = "Do NOT conclude the corpus verifies. Either too few markers were checked (large or missing stores) or the controls did not both behave, so the zero-mismatch count carries no weight. Fix coverage or the control source and re-run before relying on adopt-legacy."
+reasoning = "A clean count from an instrument whose negative control was not shown to fail, or from a small fraction of the corpus, is indistinguishable from an instrument that always agrees."
+is_residual = false
+
+[outcomes.fail]
+condition = "all_checked_match = false"
+decision = "At least one existing v2 marker no longer verifies under the installed xtrax digest. adopt-legacy would reject those outputs and a plain resume would hard-error on them. Read result.mismatches to see which stores and whether they share a producer (e.g. older xtrax digest semantics), then add a digest-compat path before relying on adoption."
+reasoning = "Any mismatch among markers that were written by a completed run is a digest-semantics drift, which is the specific risk this check exists to detect."
+is_residual = true
+
+[result_schema]
+markers_found = "int"
+n_checked = "int"
+n_match = "int"
+n_mismatch = "int"
+n_store_missing = "int"
+n_skipped_large = "int"
+checked_fraction = "float"
+all_checked_match = "bool"
+coverage_ok = "bool"
+controls_ok = "bool"
+unmodified_copy_matches = "bool"
+negative_control_changed = "bool"
+negative_control_mode = "str"
+xtrax_version = "str"
+
+[result_schema.provenance]
+script_commit = "git log --oneline -1"
+related_debt = "#2421 (stamp v3 / adopt-legacy), #2148"
+hardware_targets = ["local WSL2 CPU, read-only on /home/marielle/projects/tev_design/outputs and tests/fixtures"]
+notes = "DISCLOSURE: an exploratory, unregistered run of the same logic happened BEFORE this registration and saw 660 v2 markers, 660 matching, 0 mismatches, controls behaving. The criteria above were not tuned to it: zero mismatches and a 95% coverage bar are the natural criteria, and the controls are the point of re-running under a sidecar. This registration does not cover cluster-side stores, which were not checked."

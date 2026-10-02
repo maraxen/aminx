@@ -16,6 +16,9 @@ import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, fields, replace
+from functools import lru_cache
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,8 +33,12 @@ from xtrax.run import (
 )
 
 # campaign manifest functions are implemented in this module (see build_manifest_row et al.)
+from aminx.host._sampling_grid_lineage import _SEED_HASH_SCHEMA_PIN
 from aminx.host.runner import sample
+from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
 from aminx.host.spec_partition import campaign_sampling_spec_payload
+from aminx.io.sink_provenance import resolve_aminx_version
+from aminx.io.weights import REVISION_ENV, WEIGHTS_DIR_ENV, weight_provenance
 from aminx.run.spec_json import _coerce_field_value
 from aminx.run.specs import SamplingSpecification, pop_deprecated_spec_kwargs
 from aminx.runtime import configure_multiprocessing
@@ -43,7 +50,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 LOCK_SCHEMA_VERSION = "campaign_lock_v1"
-DONE_MARKER_SCHEMA_VERSION = "campaign_done_marker_v2"
+DONE_MARKER_SCHEMA_VERSION = "campaign_done_marker_v3"
+LEGACY_DONE_MARKER_SCHEMA_VERSION = "campaign_done_marker_v2"
+ADOPT_LEGACY_REPORT_SCHEMA_VERSION = "campaign_adopt_legacy_report_v1"
+# Bump BY HAND when a change moves the sampled numbers for a given spec and seed (e.g. a decode or key-derivation
+# change). It is part of every unit's input hash, so a bump invalidates stamps written before it instead of letting a
+# resumed campaign mix outputs from two numerics (aminx #2421).
+SAMPLING_NUMERICS_EPOCH = 1
+_MAX_HASHED_DIR_FILES = 5000
 MANIFEST_ROW_SCHEMA_VERSION = "campaign_manifest_row_v1"
 MANIFEST_SCHEMA_VERSION = "campaign_manifest_v1"
 DEFAULT_LOCK_LEASE_SECONDS = 1800
@@ -562,13 +576,192 @@ def _invalidate_stale_output(*, marker_path: Path, output_h5_path: Path) -> None
   marker_path.unlink(missing_ok=True)
 
 
+class LegacyV2DoneMarkerError(StaleDoneMarkerSchemaError):
+  """A valid-looking v2 marker. Its output may be perfectly good, so it is quarantined, never deleted.
+
+  v1 (pre-Zarr) outputs were unusable, which is why :class:`StaleDoneMarkerSchemaError` handling deletes them. v2 outputs
+  are real, digest-verified Zarr stores, and v2 carries no input hash, so reusing one would be an unverifiable claim.
+  The default is therefore recompute (keeping the old store aside); ``adopt-legacy`` is the explicit, auditable way
+  to keep it.
+  """
+
+
+class InputHashMismatchError(ValueError):
+  """A v3 stamp was written for different inputs than this run's: the artifact is for another computation."""
+
+
+class InputHashUnavailableError(RuntimeError):
+  """The unit's inputs cannot be hashed here (e.g. the checkpoint cannot be resolved), so reuse cannot be judged.
+
+  Raised rather than guessed: reusing on an unverifiable claim, or discarding a good artifact because the environment
+  could not resolve weights, are both worse than stopping.
+  """
+
+
+def _sha256_file(path: Path) -> str:
+  digest = hashlib.sha256()
+  with path.open("rb") as handle:
+    for block in iter(lambda: handle.read(1 << 20), b""):
+      digest.update(block)
+  return digest.hexdigest()
+
+
+@lru_cache(maxsize=64)
+def _sha256_file_cached(path_str: str, size: int, mtime_ns: int) -> str:  # noqa: ARG001 -- size/mtime key the cache
+  return _sha256_file(Path(path_str))
+
+
+def _file_identity(path: str | Path) -> str:
+  resolved = Path(path).expanduser()
+  try:
+    stat = resolved.stat()
+    return _sha256_file_cached(str(resolved.resolve()), stat.st_size, stat.st_mtime_ns)
+  except OSError as exc:
+    msg = f"cannot read {str(path)!r} to hash it: {exc}"
+    raise InputHashUnavailableError(msg) from exc
+
+
+def _hash_input_entry(entry: str) -> dict[str, Any]:
+  """Identify one ``inputs`` entry by content when it is a file or directory, else by its string alone."""
+  path = Path(entry).expanduser()
+  try:
+    if path.is_file():
+      return {"value": entry, "kind": "file", "bytes": path.stat().st_size, "sha256": _file_identity(path)}
+    if path.is_dir():
+      files = sorted(f for f in path.rglob("*") if f.is_file())
+      if len(files) > _MAX_HASHED_DIR_FILES:
+        return {"value": entry, "kind": "dir_unhashed", "files": len(files)}
+      digest = hashlib.sha256()
+      for f in files:
+        digest.update(f.relative_to(path).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(_file_identity(f).encode())
+        digest.update(b"\n")
+      return {"value": entry, "kind": "dir", "files": len(files), "sha256": digest.hexdigest()}
+  except OSError as exc:
+    msg = f"cannot read input {entry!r} to hash it: {exc}"
+    raise InputHashUnavailableError(msg) from exc
+  return {"value": entry, "kind": "unresolved"}  # an id, a URL, or a path that does not exist: identity by string only
+
+
+@lru_cache(maxsize=16)
+def _checkpoint_id_identity(checkpoint_id: str, weights_dir_env: str | None, revision_env: str | None) -> dict[str, Any]:  # noqa: ARG001
+  try:
+    wp = weight_provenance(checkpoint_id)
+  except Exception as exc:  # any resolution failure means the identity is unavailable, not a crash
+    msg = f"cannot resolve checkpoint {checkpoint_id!r} to hash its weights: {exc}"
+    raise InputHashUnavailableError(msg) from exc
+  return {
+    "route": "checkpoint_id",
+    "checkpoint_id": checkpoint_id,
+    "filename": wp.filename,
+    "source": wp.source,
+    "sha256": wp.sha256,
+    "hub_revision": wp.hub_revision,
+  }
+
+
+def _checkpoint_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
+  """Which weights this unit would run on, identified by their bytes where a file is reachable."""
+  local = payload.get("model_local_path")
+  registry = payload.get("checkpoint_registry_path")
+  checkpoint_id = payload.get("checkpoint_id")
+  if local:
+    return {"route": "local_path", "path": str(local), "sha256": _file_identity(local)}
+  if registry:
+    return {
+      "route": "registry",
+      "path": str(registry),
+      "registry_sha256": _file_identity(registry),
+      "checkpoint_id": checkpoint_id,
+    }
+  if checkpoint_id:
+    return _checkpoint_id_identity(str(checkpoint_id), os.environ.get(WEIGHTS_DIR_ENV), os.environ.get(REVISION_ENV))
+  return {
+    "route": "model_weights_version",
+    "model_weights": payload.get("model_weights", "original"),
+    "model_version": payload.get("model_version", "v_48_020"),
+    "sha256": None,  # packaged-resource route with no checkpoint_id: named, not hashed
+  }
+
+
+def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+  """Hash everything that determines a unit's output, so reuse can be refused when any of it changed.
+
+  The manifest row hash does NOT cover this: it omits the input structures, ``checkpoint_id``, ``random_seed``, the
+  fixed mask/tokens and the bias, and the output path is derived from it, so a re-planned or patched manifest used to
+  resolve to the same path and be reported ``already_done`` (aminx #2421).
+
+  Covers: the whole sampling spec except ``output_h5_path`` (which differs between the partial and final path),
+  the content hash of each input structure, the checkpoint (bytes where a file is reachable), the schema pins that
+  feed the seed, and :data:`SAMPLING_NUMERICS_EPOCH`. It does NOT include the git SHA: code identity is recorded in the
+  stamp's ``producer`` for audit but is deliberately not part of the hash (a numerics-neutral commit must not
+  invalidate a finished campaign; bump the epoch when numerics move).
+
+  Returns ``(input_hash, components)``; ``components`` are the inputs to the hash, stored in the stamp so a mismatch
+  can be explained.
+  """
+  spec_without_output = {k: v for k, v in sampling_spec_payload.items() if k != "output_h5_path"}
+  components: dict[str, Any] = {
+    "spec_sha256": hashlib.sha256(canonical_json_bytes(spec_without_output)).hexdigest(),
+    "inputs": [_hash_input_entry(entry) for entry in _normalize_inputs(sampling_spec_payload.get("inputs", []))]
+    if sampling_spec_payload.get("inputs")
+    else [],
+    "checkpoint": _checkpoint_identity(sampling_spec_payload),
+    "versions": {
+      "manifest_row_schema": MANIFEST_ROW_SCHEMA_VERSION,
+      "sampling_schema": SAMPLING_SCHEMA_VERSION,
+      "grid_schema": GRID_SCHEMA_VERSION,
+      "seed_hash_schema_pin": _SEED_HASH_SCHEMA_PIN,
+      "numerics_epoch": SAMPLING_NUMERICS_EPOCH,
+    },
+  }
+  return hashlib.sha256(canonical_json_bytes(components)).hexdigest(), components
+
+
+def _producer_info() -> dict[str, str]:
+  try:
+    aminx_version = resolve_aminx_version()
+  except PackageNotFoundError:
+    aminx_version = "unknown"
+  try:
+    xtrax_version = _package_version("xtrax")
+  except PackageNotFoundError:
+    xtrax_version = "unknown"
+  return {"aminx": aminx_version, "xtrax": xtrax_version}
+
+
+def _quarantine_output(*, marker_path: Path, output_h5_path: Path, reason: str) -> dict[str, str | None]:
+  """Move a superseded output and its marker aside (never delete): the operator decides when to reclaim the space."""
+  suffix = f".superseded.{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.{uuid.uuid4().hex[:6]}"
+  moved: dict[str, str | None] = {"output": None, "marker": None, "reason": reason}
+  if output_h5_path.exists():
+    target = output_h5_path.with_name(output_h5_path.name + suffix)
+    output_h5_path.replace(target)
+    moved["output"] = str(target)
+  if marker_path.exists():
+    target = marker_path.with_name(marker_path.name + suffix)
+    marker_path.replace(target)
+    moved["marker"] = str(target)
+  fsync_directory(output_h5_path.parent)
+  return moved
+
+
 def _validate_done_marker(
   *,
   marker: dict[str, Any],
   marker_path: Path,
   output_h5_path: Path,
   manifest_row_hash: str,
+  input_hash: str | None = None,
 ) -> None:
+  if marker.get("schema_version") == LEGACY_DONE_MARKER_SCHEMA_VERSION:
+    msg = (
+      f"Done marker at {marker_path} is schema {LEGACY_DONE_MARKER_SCHEMA_VERSION!r}: it carries no input hash, "
+      f"so its output cannot be verified against this run's inputs. Recomputing (the old output is kept aside); "
+      f"run `adopt-legacy` first to keep outputs you know were produced from the current manifest."
+    )
+    raise LegacyV2DoneMarkerError(msg)
   if marker.get("schema_version") != DONE_MARKER_SCHEMA_VERSION:
     msg = (
       f"Done marker schema mismatch at {marker_path}: "
@@ -584,6 +777,12 @@ def _validate_done_marker(
   if not output_h5_path.exists():
     msg = f"Done marker exists at {marker_path} but output store is missing: {output_h5_path}."
     raise ValueError(msg)
+  if input_hash is not None and marker.get("input_hash") != input_hash:
+    msg = (
+      f"Done marker at {marker_path} was written for different inputs: "
+      f"stamped input_hash {marker.get('input_hash')!r}, this run {input_hash!r}."
+    )
+    raise InputHashMismatchError(msg)
   observed_content_digest = zarr_content_digest(output_h5_path)
   expected_content_digest = marker.get("content_digest_sha256")
   if observed_content_digest != expected_content_digest:
@@ -602,16 +801,29 @@ def _write_done_marker(
   attempt_id: str,
   content_digest_sha256: str,
   lock_backend: str,
+  input_hash: str | None = None,
+  input_hash_components: dict[str, Any] | None = None,
+  adopted_from: dict[str, Any] | None = None,
+  completed_at_unix_s: float | None = None,
 ) -> None:
-  marker_payload = {
+  marker_payload: dict[str, Any] = {
     "schema_version": DONE_MARKER_SCHEMA_VERSION,
     "manifest_row_hash": manifest_row_hash,
     "attempt_id": attempt_id,
     "output_h5_path": str(output_h5_path.resolve()),
     "content_digest_sha256": content_digest_sha256,
     "lock_backend": lock_backend,
-    "completed_at_unix_s": time.time(),
+    "completed_at_unix_s": time.time() if completed_at_unix_s is None else completed_at_unix_s,
   }
+  if input_hash is not None:
+    producer = _producer_info()
+    marker_payload["input_hash"] = input_hash
+    marker_payload["input_hash_components"] = input_hash_components
+    marker_payload["digest_algo"] = f"xtrax.run.zarr_content_digest@{producer['xtrax']}"
+    marker_payload["producer"] = producer
+  if adopted_from is not None:
+    marker_payload["adopted_from_v2"] = True
+    marker_payload["adopted_from"] = adopted_from
   tmp_marker_path = marker_path.with_name(f"{marker_path.name}.tmp.{attempt_id}")
   tmp_marker_path.write_bytes(canonical_json_bytes(marker_payload))
   fsync_file(tmp_marker_path)
@@ -1133,6 +1345,33 @@ def _select_row(
   return rows[resolved_index]
 
 
+def _already_done_result(
+  marker: dict[str, Any],
+  *,
+  output_h5_path: Path,
+  done_marker_path: Path,
+  manifest_hash: str,
+  input_hash: str,
+) -> dict[str, Any]:
+  return {
+    "status": "already_done",
+    "output_h5_path": str(output_h5_path),
+    "manifest_row_hash": manifest_hash,
+    "done_marker_path": str(done_marker_path),
+    "attempt_id": marker.get("attempt_id"),
+    "input_hash": input_hash,
+    "reuse": {
+      "decision": "reused",
+      "reason": "stamp_verified",
+      "input_hash": input_hash,
+      "artifact_digest": marker.get("content_digest_sha256"),
+      "stamp_attempt_id": marker.get("attempt_id"),
+      "completed_at_unix_s": marker.get("completed_at_unix_s"),
+      "adopted_from_v2": bool(marker.get("adopted_from_v2", False)),
+    },
+  }
+
+
 def run_manifest_row(  # noqa: PLR0915
   manifest_path: str | Path,
   *,
@@ -1166,8 +1405,12 @@ def run_manifest_row(  # noqa: PLR0915
   done_marker_path = _done_marker_path(output_h5_path)
   manifest_hash = str(row["manifest_row_hash"])
 
+  # Everything that determines this unit's output, hashed up front: reuse is only valid if it matches the stamp.
+  input_hash, input_hash_components = compute_unit_input_hash(sampling_spec_payload)
+  reuse: dict[str, Any] = {"decision": "computed", "reason": "no_prior_artifact", "input_hash": input_hash}
+
   existing_marker = _read_done_marker(done_marker_path)
-  marker_is_stale = False
+  marker_needs_replacement = False
   if existing_marker is not None:
     try:
       _validate_done_marker(
@@ -1175,18 +1418,19 @@ def run_manifest_row(  # noqa: PLR0915
         marker_path=done_marker_path,
         output_h5_path=output_h5_path,
         manifest_row_hash=manifest_hash,
+        input_hash=input_hash,
       )
-    except StaleDoneMarkerSchemaError:
-      marker_is_stale = True
+    except (StaleDoneMarkerSchemaError, InputHashMismatchError):
+      marker_needs_replacement = True
     else:
-      return {
-        "status": "already_done",
-        "output_h5_path": str(output_h5_path),
-        "manifest_row_hash": manifest_hash,
-        "done_marker_path": str(done_marker_path),
-        "attempt_id": existing_marker.get("attempt_id"),
-      }
-  if not marker_is_stale and output_h5_path.exists():
+      return _already_done_result(
+        existing_marker,
+        output_h5_path=output_h5_path,
+        done_marker_path=done_marker_path,
+        manifest_hash=manifest_hash,
+        input_hash=input_hash,
+      )
+  if not marker_needs_replacement and output_h5_path.exists():
     msg = (
       f"Output file already exists without done marker for manifest row {manifest_hash}: "
       f"{output_h5_path}"
@@ -1214,7 +1458,29 @@ def run_manifest_row(  # noqa: PLR0915
           marker_path=done_marker_path,
           output_h5_path=output_h5_path,
           manifest_row_hash=manifest_hash,
+          input_hash=input_hash,
         )
+      except LegacyV2DoneMarkerError as exc:
+        logger.warning("Recomputing manifest row %s: %s", manifest_hash, exc)
+        reuse = {
+          "decision": "recomputed",
+          "reason": "legacy_v2_marker",
+          "input_hash": input_hash,
+          "quarantined": _quarantine_output(
+            marker_path=done_marker_path, output_h5_path=output_h5_path, reason="legacy_v2_marker",
+          ),
+        }
+      except InputHashMismatchError as exc:
+        logger.warning("Recomputing manifest row %s: %s", manifest_hash, exc)
+        reuse = {
+          "decision": "recomputed",
+          "reason": "input_hash_mismatch",
+          "input_hash": input_hash,
+          "stamped_input_hash": existing_marker.get("input_hash"),
+          "quarantined": _quarantine_output(
+            marker_path=done_marker_path, output_h5_path=output_h5_path, reason="input_hash_mismatch",
+          ),
+        }
       except StaleDoneMarkerSchemaError as exc:
         logger.warning(
           "Discarding stale done marker for manifest row %s, recomputing: %s",
@@ -1222,14 +1488,15 @@ def run_manifest_row(  # noqa: PLR0915
           exc,
         )
         _invalidate_stale_output(marker_path=done_marker_path, output_h5_path=output_h5_path)
+        reuse = {"decision": "recomputed", "reason": "stale_marker_schema", "input_hash": input_hash}
       else:
-        return {
-          "status": "already_done",
-          "output_h5_path": str(output_h5_path),
-          "manifest_row_hash": manifest_hash,
-          "done_marker_path": str(done_marker_path),
-          "attempt_id": existing_marker.get("attempt_id"),
-        }
+        return _already_done_result(
+          existing_marker,
+          output_h5_path=output_h5_path,
+          done_marker_path=done_marker_path,
+          manifest_hash=manifest_hash,
+          input_hash=input_hash,
+        )
     if output_h5_path.exists():
       msg = (
         f"Output file already exists without done marker for manifest row {manifest_hash}: "
@@ -1293,7 +1560,10 @@ def run_manifest_row(  # noqa: PLR0915
         attempt_id=attempt_id,
         content_digest_sha256=content_digest_sha256,
         lock_backend=lock_backend,
+        input_hash=input_hash,
+        input_hash_components=input_hash_components,
       )
+      reuse["artifact_digest"] = content_digest_sha256
     finally:
       if partial_path.exists():
         shutil.rmtree(partial_path)
@@ -1309,6 +1579,8 @@ def run_manifest_row(  # noqa: PLR0915
       "attempt_id": attempt_id,
       "done_marker_path": str(done_marker_path),
       "lock_backend": lock_backend,
+      "input_hash": input_hash,
+      "reuse": reuse,
     },
   )
   return result_payload
@@ -1376,6 +1648,7 @@ def execute_manifest(
           "manifest_row_hash": row_hash,
           "status": row_status,
           "output_h5_path": result.get("output_h5_path"),
+          "reuse": result.get("reuse"),
         },
       )
       if row_status in success_statuses:
@@ -1401,7 +1674,90 @@ def execute_manifest(
     "selected_rows": len(selected_rows),
     "successful_rows": successful_rows,
     "failed_rows": failed_rows,
+    "reused_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "reused"),
+    "recomputed_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "recomputed"),
     "row_results": row_results,
+  }
+
+
+def adopt_legacy_done_markers(
+  manifest_path: str | Path,
+  *,
+  row_hashes: Sequence[str] | None = None,
+  dry_run: bool = False,
+) -> dict[str, Any]:
+  """Upgrade valid v2 done markers to v3 so their outputs are reused instead of recomputed.
+
+  For each selected row with a v2 marker it checks that the row hash matches, the store exists and its
+  ``zarr_content_digest`` equals the marker's. Only then does it compute the input hash from the CURRENT manifest and
+  write a v3 marker flagged ``adopted_from_v2`` (the old marker is kept as ``<marker>.v2.bak``).
+
+  **This is an attestation by the operator, not a proof.** A v2 marker records no inputs, so adoption asserts that the
+  existing output was produced from the inputs this manifest now names. Run it only for campaigns you know were not
+  re-planned or patched after they ran. Adopted units show ``adopted_from_v2: true`` in every reuse report.
+  """
+  rows = _manifest_rows(manifest_path)
+  wanted = set(row_hashes or ())
+  entries: list[dict[str, Any]] = []
+  for row in rows:
+    row_hash = str(row["manifest_row_hash"])
+    if wanted and row_hash not in wanted:
+      continue
+    entry: dict[str, Any] = {"manifest_row_hash": row_hash, "adopted": False}
+    entries.append(entry)
+    spec_payload = row.get("sampling_spec")
+    raw_output = spec_payload.get("output_h5_path") if isinstance(spec_payload, dict) else None
+    if raw_output is None:
+      entry["skipped"] = "no_output_path"
+      continue
+    output_h5_path = Path(raw_output).resolve()
+    marker_path = _done_marker_path(output_h5_path)
+    entry["output_h5_path"] = str(output_h5_path)
+    marker = _read_done_marker(marker_path)
+    if marker is None:
+      entry["skipped"] = "no_marker"
+    elif marker.get("schema_version") == DONE_MARKER_SCHEMA_VERSION:
+      entry["skipped"] = "already_v3"
+    elif marker.get("schema_version") != LEGACY_DONE_MARKER_SCHEMA_VERSION:
+      entry["skipped"] = f"not_v2:{marker.get('schema_version')}"
+    elif marker.get("manifest_row_hash") != row_hash:
+      entry["skipped"] = "manifest_row_hash_mismatch"
+    elif not output_h5_path.exists():
+      entry["skipped"] = "output_missing"
+    elif zarr_content_digest(output_h5_path) != marker.get("content_digest_sha256"):
+      entry["skipped"] = "artifact_digest_mismatch"
+    else:
+      try:
+        input_hash, components = compute_unit_input_hash(spec_payload)
+      except InputHashUnavailableError as exc:
+        entry["skipped"] = f"input_hash_unavailable: {exc}"
+        continue
+      entry["input_hash"] = input_hash
+      if not dry_run:
+        backup = marker_path.with_name(marker_path.name + ".v2.bak")
+        marker_path.replace(backup)
+        _write_done_marker(
+          marker_path=marker_path,
+          output_h5_path=output_h5_path,
+          manifest_row_hash=row_hash,
+          attempt_id=str(marker.get("attempt_id", "adopted")),
+          content_digest_sha256=str(marker["content_digest_sha256"]),
+          lock_backend=str(marker.get("lock_backend", "local_fs")),
+          input_hash=input_hash,
+          input_hash_components=components,
+          adopted_from=marker,
+          completed_at_unix_s=marker.get("completed_at_unix_s"),
+        )
+        entry["backup"] = str(backup)
+      entry["adopted"] = True
+  return {
+    "schema_version": ADOPT_LEGACY_REPORT_SCHEMA_VERSION,
+    "manifest_path": str(Path(manifest_path).resolve()),
+    "dry_run": dry_run,
+    "selected_rows": len(entries),
+    "adopted_rows": sum(1 for e in entries if e["adopted"]),
+    "skipped_rows": sum(1 for e in entries if not e["adopted"]),
+    "rows": entries,
   }
 
 
@@ -2029,6 +2385,17 @@ def _add_run_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPars
   )
 
 
+def _add_adopt_legacy_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+  parser = subparsers.add_parser(
+    "adopt-legacy",
+    help="Upgrade valid v2 done markers to v3 (operator attests the outputs match the current manifest).",
+  )
+  parser.add_argument("--manifest-path", required=True)
+  parser.add_argument("--row-hash", action="append", default=[], help="Row hash filter (repeatable)")
+  parser.add_argument("--dry-run", action="store_true", help="Report what would be adopted without changing anything")
+  parser.add_argument("--summary-path", default=None)
+
+
 def _add_gates_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
   parser = subparsers.add_parser("gates", help="Evaluate pilot campaign gates.")
   parser.add_argument("--manifest-path", required=True)
@@ -2126,6 +2493,16 @@ def _handle_run_command(args: argparse.Namespace) -> int:
   return 0 if summary["failed_rows"] == 0 else 1
 
 
+def _handle_adopt_legacy_command(args: argparse.Namespace) -> int:
+  report = adopt_legacy_done_markers(
+    args.manifest_path,
+    row_hashes=tuple(args.row_hash),
+    dry_run=args.dry_run,
+  )
+  _emit_json(report, args.summary_path)
+  return 0
+
+
 def _handle_gates_command(args: argparse.Namespace) -> int:
   report = evaluate_campaign_gates(
     args.manifest_path,
@@ -2172,25 +2549,26 @@ def main(argv: list[str] | None = None) -> int:
   _add_plan_parser(subparsers)
   _add_worker_parser(subparsers)
   _add_run_parser(subparsers)
+  _add_adopt_legacy_parser(subparsers)
   _add_gates_parser(subparsers)
   _add_ramp_plan_parser(subparsers)
   _add_ramp_eval_parser(subparsers)
 
   args = parser.parse_args(argv)
-  if args.command == "plan":
-    return _handle_plan_command(args)
-  if args.command == "worker":
-    return _handle_worker_command(args)
-  if args.command == "run":
-    return _handle_run_command(args)
-  if args.command == "gates":
-    return _handle_gates_command(args)
-  if args.command == "ramp-plan":
-    return _handle_ramp_plan_command(args)
-  if args.command == "ramp-evaluate":
-    return _handle_ramp_eval_command(args)
-  msg = f"Unsupported command: {args.command!r}"
-  raise ValueError(msg)
+  handlers = {
+    "plan": _handle_plan_command,
+    "worker": _handle_worker_command,
+    "run": _handle_run_command,
+    "adopt-legacy": _handle_adopt_legacy_command,
+    "gates": _handle_gates_command,
+    "ramp-plan": _handle_ramp_plan_command,
+    "ramp-evaluate": _handle_ramp_eval_command,
+  }
+  handler = handlers.get(args.command)
+  if handler is None:
+    msg = f"Unsupported command: {args.command!r}"
+    raise ValueError(msg)
+  return handler(args)
 
 
 if __name__ == "__main__":  # pragma: no cover
