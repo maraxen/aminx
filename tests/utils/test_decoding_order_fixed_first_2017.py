@@ -5,11 +5,13 @@ fixed / not-designed positions are decoded first and every designed position is 
 is then placed at the step where its FIRST member (in that order) appears -- so a group containing ANY fixed
 member is decoded in the fixed block.
 
-On main the default order that does this is :func:`random_design_order`, used by the unified runner path
-(``with_decoding_order``) and by ``aminx.sampling.sample``. :func:`random_decoding_order` is the mask-free legacy
-order and is still what ``STEMode`` and ``optimize_ste`` draw by default: those two gaps are pinned below as strict
-xfails, so fixing one makes its marker fail loudly and forces the marker's removal. ``make_score_fn`` also draws it,
-but scoring ignores that order (it uses the order-free ``full_context_ar_mask``), so it is not a gap and is not pinned.
+The unified runner path (``with_decoding_order``) and ``aminx.sampling.sample`` use :func:`random_design_order`.
+``STEMode`` and ``optimize_ste`` used to draw the mask-free legacy :func:`random_decoding_order` and condition their
+loss on masks built from it, so a designed position could be decoded before a fixed one -- unlike the sampler. They now
+draw :func:`fixed_first_decoding_order` by default (a caller's own ``decoding_order_fn`` is untouched), which is
+bit-identical to the legacy draw when no position is fixed, so existing no-fixed results do not move.
+``make_score_fn`` also draws the legacy order, but scoring ignores it (it uses the order-free ``full_context_ar_mask``),
+so it is not a gap.
 
 Ported from the closed-out PR #164 (``tests/utils/test_decoding_order_fixed_first_2017.py``), adapted to main's
 API. One assertion is deliberately NOT ported: #164 treats a tie group with mixed members as *designed* if any
@@ -27,7 +29,12 @@ import pytest
 from aminx.inference.bundle_builder import build_inference_bundle, with_decoding_order
 from aminx.sampling import sample
 from aminx.utils.autoregression import decoding_order_from_wave
-from aminx.utils.decoding_order import random_decoding_order, random_design_order
+from aminx.utils.decoding_order import (
+    fixed_first_decoding_order,
+    random_decoding_order,
+    random_design_order,
+    resolve_decoding_order_fn,
+)
 
 SEEDS = (0, 1, 2, 7, 99)
 
@@ -216,18 +223,187 @@ def test_tensor_sample_threads_the_fixed_mask_into_the_order(monkeypatch):
         assert _non_designed_precede(np.asarray(order), designed), f"sample() ignored fixed positions (seed={seed})"
 
 
-# Sites that still draw the mask-free legacy order by default AND use it to build the AR mask the loss conditions on
-# (#164 fixed them with a design-mask argument). scoring.score is deliberately absent: it draws an order it ignores.
-_LEGACY_DEFAULT_SITES = [
-    ("aminx.inference.decode.ste", "STEMode draws self.decoding_order_fn"),
-    ("aminx.inference.optimize_ste", "optimize_ste draws decoding_order_fn"),
-]
+# --------------------------------------------------------------------------------------------------------------
+# fixed_first_decoding_order / resolve_decoding_order_fn: what STEMode and optimize_ste now draw by default
+# --------------------------------------------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="aminx #2017 gap: these paths still default to the mask-free random_decoding_order (fixed in #164 only)")
-@pytest.mark.parametrize(("module_name", "what"), _LEGACY_DEFAULT_SITES, ids=[m for m, _ in _LEGACY_DEFAULT_SITES])
-def test_legacy_default_sites_use_a_fixed_first_order(module_name, what):
-    """Structural pin: the module's default decoding-order function must not be the mask-free legacy one.
-    Strict xfail -- when a site is fixed this XPASSes and the marker must be removed for that site."""
-    module = importlib.import_module(module_name)
-    assert module._DEFAULT_DECODING_ORDER_FN is not random_decoding_order, what
+@pytest.mark.parametrize("tied", [False, True])
+def test_no_fixed_positions_is_bit_identical_to_the_legacy_draw(tied):
+    """Existing no-fixed results must not move: with nothing fixed the legacy permutation is returned unchanged."""
+    length = 9
+    tie = jnp.array([0, 1, 0, 2, 1, 3, 3, 4, 2], dtype=jnp.int32) if tied else None
+    n_groups = 5 if tied else None
+    none_fixed = jnp.zeros((length,), jnp.float32)
+    for seed in range(12):
+        key = jax.random.PRNGKey(seed)
+        got = fixed_first_decoding_order(key, length, tie, n_groups, none_fixed)
+        want, _ = random_decoding_order(key, length, tie, n_groups)
+        np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+        assert got.dtype == want.dtype
+
+
+@pytest.mark.parametrize("tied", [False, True])
+def test_fixed_positions_come_first_and_match_the_design_order(tied):
+    length = 9
+    tie = jnp.array([0, 1, 0, 2, 1, 3, 3, 4, 2], dtype=jnp.int32) if tied else None
+    fixed = jnp.array([1, 0, 0, 1, 0, 0, 0, 1, 0], dtype=jnp.float32)
+    tie_for_design = tie if tied else jnp.arange(length, dtype=jnp.int32)
+    for seed in range(12):
+        key = jax.random.PRNGKey(seed)
+        got = np.asarray(fixed_first_decoding_order(key, length, tie, 5 if tied else None, fixed))
+        np.testing.assert_array_equal(got, np.asarray(random_design_order(key, tie_for_design, fixed)))
+        assert sorted(got.tolist()) == list(range(length))
+    # In position order the fixed and designed positions interleave, so the check above is not vacuous.
+    assert not _non_designed_precede(np.arange(length), 1.0 - np.asarray(fixed))
+
+
+def test_state_batched_fixed_mask_uses_the_first_state():
+    key = jax.random.PRNGKey(3)
+    fixed = jnp.array([1, 0, 1, 0, 0, 1], dtype=jnp.float32)
+    one = fixed_first_decoding_order(key, 6, None, None, fixed)
+    two = fixed_first_decoding_order(key, 6, None, None, jnp.stack([fixed, 1.0 - fixed]))
+    np.testing.assert_array_equal(np.asarray(one), np.asarray(two))
+
+
+def test_helper_works_under_jit_and_vmap_over_keys():
+    """STE draws a batch of orders with vmap over keys inside jit, with the mask closed over."""
+    length = 8
+    fixed = jnp.array([0, 1, 0, 0, 1, 0, 0, 1], dtype=jnp.float32)
+    designed = 1.0 - np.asarray(fixed)
+    keys = jax.random.split(jax.random.PRNGKey(0), 6)
+    batch = jax.jit(jax.vmap(lambda k: fixed_first_decoding_order(k, length, None, None, fixed)))(keys)
+    assert batch.shape == (6, length)
+    for row in np.asarray(batch):
+        assert _non_designed_precede(row, designed)
+    # And the no-fixed branch under the same transforms stays the legacy permutation.
+    none_fixed = jnp.zeros((length,), jnp.float32)
+    legacy_batch = jax.jit(jax.vmap(lambda k: fixed_first_decoding_order(k, length, None, None, none_fixed)))(keys)
+    want = np.stack([np.asarray(random_decoding_order(k, length)[0]) for k in keys])
+    np.testing.assert_array_equal(np.asarray(legacy_batch), want)
+
+
+def test_resolver_upgrades_only_the_default():
+    fixed = jnp.array([1, 0, 0, 1, 0], dtype=jnp.float32)
+
+    def custom(key, num_residues, tie_group_map=None, num_groups=None):
+        return jnp.arange(num_residues, dtype=jnp.int32), key
+
+    assert resolve_decoding_order_fn(custom, fixed) is custom, "a caller's own function must be left alone"
+    assert resolve_decoding_order_fn(random_decoding_order, None) is random_decoding_order, "no mask -> unchanged"
+    upgraded = resolve_decoding_order_fn(random_decoding_order, fixed)
+    assert upgraded is not random_decoding_order
+    order, next_key = upgraded(jax.random.PRNGKey(1), 5, None, None)
+    assert _non_designed_precede(np.asarray(order), 1.0 - np.asarray(fixed))
+    assert next_key.shape == jax.random.PRNGKey(0).shape
+
+
+def _recording_order_fn(sink: list, base):
+    """Wrap an order function so every order drawn at run time (inside jit/fori_loop/vmap) lands in ``sink``."""
+
+    def wrapped(key, num_residues, tie_group_map=None, num_groups=None):
+        order, next_key = base(key, num_residues, tie_group_map, num_groups)
+        jax.debug.callback(lambda o: sink.append(np.asarray(o).reshape(-1, num_residues)), order)
+        return order, next_key
+
+    return wrapped
+
+
+def _run_straight_through(monkeypatch, model_inputs, rng_key, *, custom_fn):
+    """Run optimize_ste's straight-through sampler with a fixed mask; return (orders drawn, fixed mask)."""
+    from aminx.model.mpnn import Aminx
+    from aminx.sampling import make_sample_sequences
+
+    optimize_module = importlib.import_module("aminx.inference.optimize_ste")
+    sink: list[np.ndarray] = []
+    real_resolve = optimize_module.resolve_decoding_order_fn
+
+    def spy_resolve(decoding_order_fn, fixed_mask):
+        return _recording_order_fn(sink, real_resolve(decoding_order_fn, fixed_mask))
+
+    monkeypatch.setattr(optimize_module, "resolve_decoding_order_fn", spy_resolve)
+    length = int(model_inputs["mask"].shape[0])
+    fixed = jnp.array([1.0 if i % 3 == 0 else 0.0 for i in range(length)], dtype=jnp.float32)
+    model = Aminx(
+        node_features=32, edge_features=32, hidden_features=32, num_encoder_layers=1, num_decoder_layers=1, k_neighbors=16, key=rng_key,
+    )
+    kwargs = {} if custom_fn is None else {"decoding_order_fn": custom_fn}
+    fn = make_sample_sequences(model, sampling_strategy="straight_through", **kwargs)
+    jax.block_until_ready(
+        fn(
+            rng_key,
+            model_inputs["structure_coordinates"],
+            model_inputs["mask"],
+            model_inputs["residue_index"],
+            model_inputs["chain_index"],
+            fixed_mask=fixed,
+            fixed_tokens=jnp.zeros((length,), jnp.int32),
+            iterations=2,
+        ),
+    )
+    jax.effects_barrier()
+    return sink, np.asarray(fixed)
+
+
+def test_optimize_ste_default_draws_fixed_first_orders(monkeypatch, model_inputs, rng_key):
+    sink, fixed = _run_straight_through(monkeypatch, model_inputs, rng_key, custom_fn=None)
+    assert sink, "no decoding order was drawn at run time"
+    rows = np.concatenate(sink)
+    assert rows.shape[0] >= 3, "expected the per-iteration batch plus the final order"
+    for row in rows:
+        assert _non_designed_precede(row, 1.0 - fixed), f"optimize_ste conditioned on an order that decodes designed before fixed: {row.tolist()}"
+
+
+def test_optimize_ste_callers_own_order_fn_is_untouched(monkeypatch, model_inputs, rng_key):
+    """Negative control: a caller-supplied order (here the identity, which interleaves fixed and designed) reaches the
+    loss unchanged, so the recorder can see a non-fixed-first order and the test above can fail."""
+
+    def identity(key, num_residues, tie_group_map=None, num_groups=None):
+        return jnp.arange(num_residues, dtype=jnp.int32), key
+
+    sink, fixed = _run_straight_through(monkeypatch, model_inputs, rng_key, custom_fn=identity)
+    rows = np.concatenate(sink)
+    assert rows.size
+    assert all(np.array_equal(row, np.arange(rows.shape[1])) for row in rows)
+    assert not _non_designed_precede(rows[0], 1.0 - fixed)
+
+
+def test_ste_decode_default_draws_fixed_first_orders(monkeypatch, rng_key):
+    """STEMode's decode (STEDecode) conditions its loss on fixed-first orders by default; nothing else runs it."""
+    from aminx.inference.decode.factory import make_decode_fn
+    from aminx.inference.decode.mode import ConditionalMode, STEMode
+    from aminx.model.mpnn import Aminx
+    from aminx.tiling.strategy import Vmap
+
+    length = 24
+    model = Aminx(node_features=32, edge_features=32, hidden_features=32, num_encoder_layers=1, num_decoder_layers=1, k_neighbors=8, key=rng_key)
+    coords = jax.random.normal(jax.random.PRNGKey(1), (length, 4, 3)) * 3.0 + jnp.arange(length, dtype=jnp.float32)[:, None, None] * 3.8
+    fixed = jnp.array([1.0 if i % 3 == 0 else 0.0 for i in range(length)], dtype=jnp.float32)
+    bundle, config = build_inference_bundle(
+        coords=coords,
+        mask=jnp.ones((length,)),
+        residue_index=jnp.arange(length, dtype=jnp.int32),
+        chain_index=jnp.zeros((length,), jnp.int32),
+        fixed_mask=fixed,
+        fixed_tokens=jnp.zeros((length,), jnp.int32),
+        mode="score_conditional",
+        inference=True,
+        sequence=jnp.zeros((length,), jnp.int32),
+    )
+    ste_module = importlib.import_module("aminx.inference.decode.ste")
+    sink: list[np.ndarray] = []
+    real_resolve = ste_module.resolve_decoding_order_fn
+    monkeypatch.setattr(ste_module, "resolve_decoding_order_fn", lambda fn, mask: _recording_order_fn(sink, real_resolve(fn, mask)))
+
+    decode = make_decode_fn(model, STEMode(inner_mode=ConditionalMode(), iterations=2), Vmap(), random_decoding_order)
+    out = decode(rng_key, bundle, config)
+    jax.block_until_ready(out)
+    jax.effects_barrier()
+
+    assert sink, "STEDecode never drew an order through resolve_decoding_order_fn"
+    rows = np.concatenate(sink)
+    assert rows.shape[0] >= 9, "expected 2 iterations x batch of 4, plus the final order"
+    designed = 1.0 - np.asarray(fixed)
+    assert not _non_designed_precede(np.arange(length), designed), "fixture must interleave fixed/designed"
+    for row in rows:
+        assert _non_designed_precede(row, designed), f"STEDecode conditioned on an order that decodes designed before fixed: {row.tolist()}"

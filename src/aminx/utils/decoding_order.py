@@ -159,6 +159,73 @@ def random_design_order(
   return order.astype(jnp.int32)
 
 
+def fixed_first_decoding_order(
+  prng_key: PRNGKeyArray,
+  num_residues: int,
+  tie_group_map: jnp.ndarray | None,
+  num_groups: int | None,
+  fixed_mask: jnp.ndarray,
+) -> DecodingOrder:
+  """Fixed positions first when any position is fixed; otherwise the legacy draw, bit for bit.
+
+  The optimizers (``STEMode``, ``optimize_ste``) condition their loss on an autoregressive mask built
+  from a drawn order. To optimise under the conditioning the sampler will use, that order must put
+  fixed positions first, as :func:`random_design_order` does (aminx #2017). But
+  ``random_design_order`` draws uniform scores where :func:`random_decoding_order` draws a
+  permutation, so switching unconditionally would change RNG-dependent outputs even for runs with no
+  fixed positions. The bundle's ``fixed_mask`` is always an array (zeros by default), so "no fixed
+  positions" is only known at run time: ``lax.cond`` selects the legacy draw then, which keeps every
+  existing no-fixed result unchanged.
+
+  Args:
+    prng_key: Key for the order draw.
+    num_residues: Number of residues.
+    tie_group_map: Optional (L,) tie group ids; ``None`` means untied.
+    num_groups: Number of tie groups, required by the legacy draw when ``tie_group_map`` is given.
+    fixed_mask: (L,) or (S, L) mask, > 0.5 where the token is fixed (first state is used).
+
+  Returns:
+    (L,) int32 ORDER array.
+  """
+  fixed = jnp.asarray(fixed_mask)
+  if fixed.ndim == 2:
+    fixed = fixed[0]
+  tie = jnp.arange(num_residues, dtype=jnp.int32) if tie_group_map is None else jnp.asarray(tie_group_map, dtype=jnp.int32)
+
+  def legacy(_: None) -> DecodingOrder:
+    return random_decoding_order(prng_key, num_residues, tie_group_map, num_groups)[0]
+
+  def design(_: None) -> DecodingOrder:
+    return random_design_order(prng_key, tie, fixed)
+
+  return jax.lax.cond(jnp.any(fixed > 0.5), design, legacy, None)
+
+
+def resolve_decoding_order_fn(
+  decoding_order_fn: DecodingOrderFn,
+  fixed_mask: jnp.ndarray | None,
+) -> DecodingOrderFn:
+  """The order function an optimizer should call: fixed-first by default, the caller's own if given.
+
+  ``decoding_order_fn is random_decoding_order`` means the caller did not choose one (it is the
+  default everywhere), so it is upgraded to :func:`fixed_first_decoding_order` bound to
+  ``fixed_mask``. Any other callable, or a missing ``fixed_mask``, returns ``decoding_order_fn`` untouched.
+  """
+  if decoding_order_fn is not random_decoding_order or fixed_mask is None:
+    return decoding_order_fn
+
+  def fixed_first(
+    key: PRNGKeyArray,
+    num_residues: int,
+    tie_group_map: jnp.ndarray | None = None,
+    num_groups: int | None = None,
+  ) -> DecodingOrderOutputs:
+    order = fixed_first_decoding_order(key, num_residues, tie_group_map, num_groups, fixed_mask)
+    return order, jax.random.split(key)[1]
+
+  return fixed_first
+
+
 def single_decoding_order(
   key: PRNGKeyArray,
   num_residues: int,
