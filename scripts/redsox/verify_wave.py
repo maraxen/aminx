@@ -97,6 +97,28 @@ def _scoped_hits(paths: list[str]) -> list[str]:
   return hits
 
 
+def _resolve_hint(run_id: str) -> str:
+  """Why ``run_<run_id>.parquet`` was not found, distinguishing the two causes.
+
+  An abbreviated id and a genuinely absent run produce the same ``None`` from
+  ``default_resolve_run``, but need opposite responses: re-run with the full
+  uuid, versus compact the catalog. Globbing the prefix tells them apart.
+  """
+  from _coverage import default_catalog_dir  # noqa: PLC0415
+
+  pattern = f"run_{run_id}*.parquet"
+  try:
+    hits = sorted((default_catalog_dir() / "runs" / "aminx").glob(pattern))
+  except OSError:
+    hits = []
+  if len(hits) == 1:
+    return f"abbreviated id; use the full one: {hits[0].stem.removeprefix('run_')}"
+  if hits:
+    names = ", ".join(h.stem.removeprefix("run_") for h in hits[:4])
+    return f"{len(hits)} runs share this prefix: {names}"
+  return "no cool-tier parquet for this id (and no prefix match; try: bth compact)"
+
+
 def _report(label: str, ok: bool, detail: str = "") -> bool:
   mark = "PASS" if ok else "FAIL"
   logger.info("    [%s] %-34s %s", mark, label, detail)
@@ -108,7 +130,11 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   logger.info("=== %s  run %s", slug, run_id)
   run = default_resolve_run(run_id)
   if run is None:
-    return _report("run resolves", False, "no cool-tier parquet (try: bth compact)")
+    # default_resolve_run builds run_<id>.parquet and stats it, so the id must
+    # be the FULL uuid. An abbreviated one (the form every log line and `bth`
+    # listing shows) misses, and the honest-looking "try: bth compact" sends
+    # you compacting a catalog that was never the problem. Name the full id.
+    return _report("run resolves", False, _resolve_hint(run_id))
 
   ok = True
   ok &= _report("status == completed", run["status"] == "completed", repr(run["status"]))
