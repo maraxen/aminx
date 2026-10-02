@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 import jax
 import numpy as np
 
+from aminx.tiling._deprecation import warn_deprecated
+
 if TYPE_CHECKING:
   from aminx.types.tiling_protocols import DedupFn, GatherFn, ScanTransition
 
@@ -50,9 +52,17 @@ class SafeMap:
   Elements are processed in tiles of `tile` elements at a time.
   No carry state; elements are independent. Use for memory-constrained
   axes where vmap would OOM.
+
+  .. deprecated::
+     Use ``xtrax.tiling.ChunkedMap(batch_size=...)`` -- the same strategy with the tile
+     size named ``batch_size``. aminx debt #2371; aminx's own class will be removed.
   """
 
   tile: int
+
+  def __post_init__(self) -> None:
+    """Warn (attributed to the caller) that this class is deprecated."""
+    warn_deprecated("aminx.tiling.SafeMap", "xtrax.tiling.ChunkedMap(batch_size=<tile>)")
 
 
 @dataclass(frozen=True)
