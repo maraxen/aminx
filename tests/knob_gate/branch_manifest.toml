@@ -146,3 +146,35 @@ mutant = "ntoc_refine_order"
 [branch.vehicle]
 kind = "sidecar"
 slug = "potts_ar_refine_exact"
+
+# B4 laser_score_parity. This vehicle was built, pre-registered and run to a
+# clean pass with its control firing (run at f11f2bf1: clean "pass",
+# permute_decoder_layer "failed") and then never listed here, so the gate did
+# not require it. Listed now; it needs a re-run at the frozen tree because the
+# f11f2bf1 controls carry an absolute weights key (trap 3).
+
+[[branch]]
+id = "permute_decoder_layer"
+stage = "B4"
+fixture = "laser_score_examples"
+mutant = "permute_decoder_layer"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_score_parity"
+
+# STILL UNLISTED, deliberately, both spec-listed sidecar vehicles:
+#
+#   potts_ddg_megascale  built, sidecar + control skip_transpose_merge_pair,
+#                        but has NEVER been run -- no branch_controls.json
+#                        exists for it at any sha. Listing it would make the
+#                        gate red on a vehicle nobody has exercised. Run it
+#                        first, then list it.
+#
+#   potts_refine         clean arm FAILS at match 0.9539 (debt #2417, P1), and
+#                        it sits in the spec's WAVE table rather than the
+#                        sidecar table, so whether it owes a row here is a
+#                        genuine question rather than an oversight. Its control
+#                        unmasked_x_logit returns a result bit-identical to the
+#                        clean arm, which is ambiguous while clean is failing
+#                        (see #2370) -- it can mean the control is inert OR
+#                        that one defect swamps both. Resolve #2417 first.

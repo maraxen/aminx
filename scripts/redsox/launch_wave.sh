@@ -49,6 +49,7 @@ declare -A MUT=(
   [potts_ar_refine_exact]="ar_mask_present_chain_m_pos,wrong_partition_sign,ntoc_refine_order"
   [potts_ar_decode]="ar_mask_present_chain_m_pos"
   [potts_energy_parity]="permute_etab_out_rows"
+  [laser_score_parity]="permute_decoder_layer"
 )
 
 # Fail before burning hours, not after. Compares every string above to the
@@ -108,7 +109,7 @@ case "$GROUP" in
   1)
     SLUGS=(laser_proofread_parity laser_decode_e2e) ;;
   2)
-    SLUGS=(potts_ar_refine_exact potts_ar_decode potts_energy_parity) ;;
+    SLUGS=(potts_ar_refine_exact potts_ar_decode potts_energy_parity laser_score_parity) ;;
   positive)
     nohup setsid env JAX_PLATFORMS=cpu uv run --no-sync python3 \
       scripts/parity/laser_proofread_parity.py \
