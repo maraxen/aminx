@@ -211,7 +211,7 @@ def _decoder(readout_bias: jax.Array) -> PottsARDecode:
   return PottsARDecode(layers=(layer,), w_s_embed=embed, w_out=readout)
 
 
-def _decode_with_pssm(
+def _decode_one(
   readout_bias: jax.Array,
   *,
   pssm_bias_row: jax.Array,
@@ -220,6 +220,8 @@ def _decode_with_pssm(
   pssm_bias_flag: bool,
   pssm_log_odds_row: jax.Array | None = None,
   pssm_log_odds_flag: bool = False,
+  omit_row: jax.Array | None = None,
+  omit_aa_mask_row: jax.Array | None = None,
 ) -> int:
   """Decode one residue and return the token drawn."""
   length = 1
@@ -237,13 +239,13 @@ def _decode_with_pssm(
     jnp.ones((length,), dtype=jnp.float32),
     jnp.zeros((length,), dtype=jnp.float32),
     jnp.full((length,), 0.5, dtype=jnp.float32),
-    jnp.zeros((_V,), dtype=jnp.float32),
+    jnp.zeros((_V,), dtype=jnp.float32) if omit_row is None else omit_row,
     jnp.zeros((_V,), dtype=jnp.float32),
     zeros_lv,
     jnp.full((length,), pssm_coef_value, dtype=jnp.float32),
     pssm_bias_row[None, :],
     zeros_lv if pssm_log_odds_row is None else pssm_log_odds_row[None, :],
-    zeros_lv,
+    zeros_lv if omit_aa_mask_row is None else omit_aa_mask_row[None, :],
     temperature=1.0,
     pssm_multi=pssm_multi,
     pssm_bias_flag=pssm_bias_flag,
@@ -281,7 +283,7 @@ def test_knob_semantics_pssm_precedence() -> None:
   observable and this test discriminates between them.
   """
   intended_reading_token = 3
-  drawn = _decode_with_pssm(
+  drawn = _decode_one(
     _peaked(intended_reading_token),
     pssm_bias_row=_onehot(7),
     pssm_coef_value=1.0,
@@ -303,7 +305,7 @@ def test_knob_semantics_pssm_precedence_latent_without_weight() -> None:
   stay on the readout peak, which shows the previous test turns on the weight
   rather than on mixing being hard-wired.
   """
-  drawn = _decode_with_pssm(
+  drawn = _decode_one(
     _peaked(3),
     pssm_bias_row=_onehot(7),
     pssm_coef_value=1.0,
@@ -320,11 +322,11 @@ def test_knob_semantics_pssm_multi() -> None:
   (``potts_mpnn_utils.py:1395``). Swept at the extremes with the flag set, so the
   knob alone moves the draw: 0 keeps the readout peak, 1 replaces it entirely.
   """
-  kept = _decode_with_pssm(
+  kept = _decode_one(
     _peaked(3), pssm_bias_row=_onehot(7), pssm_coef_value=1.0,
     pssm_multi=0.0, pssm_bias_flag=True,
   )
-  replaced = _decode_with_pssm(
+  replaced = _decode_one(
     _peaked(3), pssm_bias_row=_onehot(7), pssm_coef_value=1.0,
     pssm_multi=1.0, pssm_bias_flag=True,
   )
@@ -346,15 +348,71 @@ def test_knob_semantics_pssm_log_odds_flag() -> None:
   bias = jnp.full((_V,), -50.0, dtype=jnp.float32).at[3].set(1.0).at[7].set(0.0)
   mask = _onehot(7)
 
-  without = _decode_with_pssm(
+  without = _decode_one(
     bias, pssm_bias_row=jnp.zeros((_V,), dtype=jnp.float32), pssm_coef_value=0.0,
     pssm_multi=0.0, pssm_bias_flag=False,
     pssm_log_odds_row=mask, pssm_log_odds_flag=False,
   )
-  with_flag = _decode_with_pssm(
+  with_flag = _decode_one(
     bias, pssm_bias_row=jnp.zeros((_V,), dtype=jnp.float32), pssm_coef_value=0.0,
     pssm_multi=0.0, pssm_bias_flag=False,
     pssm_log_odds_row=mask, pssm_log_odds_flag=True,
   )
   assert without == 3, f"unset, the readout peak wins; got {without}"
   assert with_flag == 7, f"set, the mask moves the draw; got {with_flag}"
+
+
+def test_knob_semantics_omit_aa() -> None:
+  """``omit_aa`` subtracts a large constant from the omitted letters' logits.
+
+  Upstream ``potts_mpnn_utils.py:1392`` builds the softmax argument as
+  ``logits - constant*1e8 + ...``, where ``constant`` is the omit indicator, so an
+  omitted letter is pushed far below every other before the softmax rather than
+  being removed afterwards. The global ``--omit_AAs`` list is this vector
+  (spec 6.3: ``inference__omit_AAs`` -> ``omit_aa``).
+
+  The readout peaks at token 3; omitting 3 must move the draw off it.
+  """
+  peak = 3
+  kept = _decode_one(
+    _peaked(peak), pssm_bias_row=jnp.zeros((_V,), dtype=jnp.float32),
+    pssm_coef_value=0.0, pssm_multi=0.0, pssm_bias_flag=False,
+  )
+  omitted = _decode_one(
+    _peaked(peak), pssm_bias_row=jnp.zeros((_V,), dtype=jnp.float32),
+    pssm_coef_value=0.0, pssm_multi=0.0, pssm_bias_flag=False,
+    omit_row=_onehot(peak),
+  )
+  assert kept == peak, f"without omit the peak wins; got {kept}"
+  assert omitted != peak, (
+    f"omitting the peak must move the draw off it; got {omitted}. If this ever "
+    f"equals the peak, the omit vector is not reaching the softmax argument."
+  )
+
+
+def test_knob_semantics_omit_aa_per_position() -> None:
+  """``omit_aa_per_position`` zeroes letters AFTER the softmax, then renormalises.
+
+  A different mechanism from ``omit_aa``, and the ordering is the point. Upstream
+  applies ``probs*(1 - mask)`` and renormalises at the end of the chain
+  (``potts_mpnn_utils.py:1401-1405``), i.e. after PSSM mixing and log-odds, where
+  ``omit_aa`` acts on the logits before the softmax. Spec 6.3:
+  ``inference__omit_AA_json`` -> ``omit_aa_per_position``.
+
+  aminx always materialises the mask as an ``(L, V)`` array, so the gate
+  ``omit_aa_mask.size > 0`` (decode.py:299) is always open; an all-zero mask is
+  what makes it a no-op, which the first leg below pins.
+  """
+  peak = 3
+  kept = _decode_one(
+    _peaked(peak), pssm_bias_row=jnp.zeros((_V,), dtype=jnp.float32),
+    pssm_coef_value=0.0, pssm_multi=0.0, pssm_bias_flag=False,
+    omit_aa_mask_row=jnp.zeros((_V,), dtype=jnp.float32),
+  )
+  masked = _decode_one(
+    _peaked(peak), pssm_bias_row=jnp.zeros((_V,), dtype=jnp.float32),
+    pssm_coef_value=0.0, pssm_multi=0.0, pssm_bias_flag=False,
+    omit_aa_mask_row=_onehot(peak),
+  )
+  assert kept == peak, f"an all-zero mask must change nothing; got {kept}"
+  assert masked != peak, f"masking the peak must move the draw; got {masked}"
