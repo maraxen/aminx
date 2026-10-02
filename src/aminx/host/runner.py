@@ -5,10 +5,12 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from aminx.host._sampling_grid_lineage import (
   _grid_iteration_arrays,
@@ -58,6 +60,50 @@ from aminx.run.specs import (
 )
 
 from .prep import prep_protein_stream_and_model
+
+
+# Padding more than this many times the longest real chain triggers the once-per-run warning (aminx #2358).
+_PADDING_WARN_RATIO = 2.0
+_PADDING_BUCKET = 32  # suggested max_length is rounded up to a multiple of this
+
+
+class _PaddingCheck:
+  """Warn once per run when a batch is padded to far more than its longest real chain.
+
+  Structures are padded to ``max_length`` (default 512) by the loader, and autoregressive decode cost
+  grows roughly with the square of the padded length, so a 93-residue chain at the default does about
+  (512/93)^2 ~ 30x the work it needs (measured ~86 s/sample on CPU, aminx #2358). The warning changes
+  no numbers; it only tells the caller. It cannot fire on a batch whose mask is unavailable.
+  """
+
+  def __init__(self) -> None:
+    self._warned = False
+
+  def __call__(self, batched_ensemble: Any) -> None:  # noqa: ANN401
+    if self._warned:
+      return
+    mask = getattr(batched_ensemble, "mask", None)
+    if mask is None:
+      return
+    mask_np = np.asarray(mask)
+    if mask_np.ndim < 2:  # expects (batch, length)
+      return
+    padded = int(mask_np.shape[-1])
+    real = int(np.max(np.sum(mask_np > 0, axis=-1)))
+    if real <= 0 or padded <= _PADDING_WARN_RATIO * real:
+      return
+    self._warned = True
+    suggested = -(-real // _PADDING_BUCKET) * _PADDING_BUCKET
+    warnings.warn(
+      f"structures are padded to max_length={padded} but the longest real chain in this batch has "
+      f"{real} residues. Autoregressive decode cost grows roughly with the square of the padded length, "
+      f"so this does about {(padded / real) ** 2:.0f}x the work needed; pass max_length close to your "
+      f"longest chain (for example max_length={suggested}) to avoid it. Sampling draws random numbers at "
+      f"the padded shape, so changing max_length may change the sampled sequences for the same seed. "
+      f"(aminx #2358)",
+      UserWarning,
+      stacklevel=3,
+    )
 
 
 def _fixed_mask_has_fixed_positions(fixed_mask: object) -> bool:
@@ -223,8 +269,10 @@ def sample(
   structure_batch_count = StreamingBatchHost.structure_batch_count(protein_iterator)
   grid_lineage = _resolve_grid_lineage(spec)
 
+  padding_check = _PaddingCheck()
   with streaming_tensor_sink_session():
     for batch_idx, batched_ensemble in enumerate(protein_iterator):
+      padding_check(batched_ensemble)
       batch_size = batched_ensemble.coordinates.shape[0]
       batch_structure_ids = _structure_ids_for_batch(
         canonical_structure_ids,
@@ -751,7 +799,9 @@ def score(  # noqa: PLR0915
   # that is host-side streaming-iterator drainage, not JAX computation, the same
   # exemption generate_multistate_conditional_logits.py's own docstring gives its
   # result-writing loop.
+  padding_check = _PaddingCheck()
   for _batch_idx, batched_ensemble in enumerate(protein_iterator):
+    padding_check(batched_ensemble)
     batch_size = batched_ensemble.coordinates.shape[0]
     batch_structure_ids = _structure_ids_for_batch(
       canonical_structure_ids,
