@@ -424,6 +424,21 @@ left alpha.
   aminx before this (praxia debt #945 tracks auditing every other hand-typed estimate
   in aminx for the same migration).
 
+  **Tried and reverted (same investigation):** a `jax.profiler` trace of the working code
+  showed the GPU ~98% busy but firing ~12,000 kernel launches for 8 samples at
+  `num_states=4`, so an attempt was made to measure (via `lowered_memory_estimate` +
+  `xtrax.tiling.estimators.device_memory_budget`) whether `Vmap` across states fits the
+  device budget, preferring it over `SafeMap(1)` when it does, on the hypothesis that fewer
+  larger fused kernels would be faster than many small sequential ones. **Empirically
+  false for this workload**: production-scale re-validation (`sample_count` 8/32/128/512,
+  real L40S GPU) showed `Vmap`-across-states was consistently 40-70% *slower* than
+  `SafeMap(1)` at every size tested (e.g. `n=512`: 0.93s/sample with `SafeMap(1)` vs
+  1.58s/sample with the measured-fits `Vmap`) — kernel count was not the bottleneck for
+  this architecture; something about the larger fused/batched execution pattern (likely
+  memory-bandwidth-bound, not launch-overhead-bound) is genuinely slower. Reverted; kept
+  the unconditional `SafeMap(1)` default. Do not re-attempt this without new evidence that
+  the underlying bottleneck has changed.
+
 ### Changed
 
 - **`xtrax` pin bumped `0.4.0a1` → `0.4.0a2`** (`pyproject.toml`): picks up xtrax's
