@@ -59,7 +59,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
-from xtrax.tiling import AxisDecision, AxisSpec, BatchPlanner, SafeMap, Scan, Vmap
+from xtrax.tiling import AxisDecision, AxisSpec, BatchPlanner, ChunkedMap, Scan, Vmap
 
 from aminx.ebm.contracts import Energy
 from aminx.utils.safe_map import safe_map
@@ -196,7 +196,7 @@ def dispatch_axis[T, U](
   """
   if isinstance(strategy, Vmap):
     return jax.vmap(body)(xs)
-  if isinstance(strategy, SafeMap):
+  if isinstance(strategy, ChunkedMap):
     return safe_map(body, xs, batch_size=strategy.batch_size)
   if isinstance(strategy, Scan):
 

@@ -68,7 +68,7 @@ def test_planner_demotes_from_vmap_when_real_cardinality_exceeds_budget():
         activation_multiplier=50.0,
     )
     large_decision = decision_for(large_plan, AxisNames.N_SAMPLES)
-    assert type(large_decision.strategy).__name__ == "SafeMap"
+    assert type(large_decision.strategy).__name__ == "ChunkedMap"
     assert large_decision.spec.cardinality == 50_000_000
 
 

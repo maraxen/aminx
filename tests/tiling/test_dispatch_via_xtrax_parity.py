@@ -39,7 +39,7 @@ class TestMakeAxisDispatchViaXtraxHappyPath:
     def test_safemap_dispatch_returns_safemap_iterator(self) -> None:
         result = make_axis_dispatch_via_xtrax(SafeMap(tile=4))
         assert result is not None
-        assert type(result).__name__ == "SafeMapIterator"
+        assert type(result).__name__ == "ChunkedMapIterator"  # xtrax's iterator (xtrax #3644)
         assert result.tile == 4
 
 

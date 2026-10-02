@@ -14,7 +14,7 @@ import jax.numpy as jnp
 
 from aminx.model.features import top_k
 from aminx.model.ligand_tiling import map_chunks_axis0
-from aminx.utils.coordinates import apply_noise_to_coordinates
+from aminx.utils.coordinates import apply_noise_to_coordinates, compute_backbone_coordinates
 
 if TYPE_CHECKING:
   from aminx.types.arrays import (
@@ -295,11 +295,14 @@ class ProteinFeaturesLigand(eqx.Module):
       structure_coordinates,
     )
 
-    # N, CA, C, O
-    N = structure_coordinates[:, 0, :]
-    Ca = structure_coordinates[:, 1, :]
-    C = structure_coordinates[:, 2, :]
-    O = structure_coordinates[:, 3, :]
+    # N, CA, C, O -- read BY NAME through the layout-aware helper, never by raw column. Parsed structures
+    # arrive in atom37 order (N, CA, C, CB, O, ...), where column 3 is CB; the compact export layout is
+    # (N, CA, C, O). Indexing columns 0-3 directly read CB as O for every parsed structure (aminx #2326).
+    backbone = compute_backbone_coordinates(structure_coordinates)  # (L, 5, 3): N, CA, C, O, CB
+    N = backbone[:, 0, :]
+    Ca = backbone[:, 1, :]
+    C = backbone[:, 2, :]
+    O = backbone[:, 3, :]
 
     # Virtual Cb
     b = Ca - N
