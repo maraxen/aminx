@@ -704,3 +704,85 @@ def test_knob_semantics_chain_design_mask_json(
   # Keyed by structure name, like the mutant table and the binding partitions.
   np.testing.assert_allclose(_energy("DDDEE", str(other)), plain,
                              rtol=1e-6, atol=1e-6)
+
+
+_PSSM_SETTINGS: tuple[tuple[str, dict], ...] = (
+  ("pssm_threshold below the fill", {"pssm_threshold": -1.0, "pssm_log_odds_flag": True}),
+  ("pssm_threshold above the fill", {"pssm_threshold": 20000.0, "pssm_log_odds_flag": True}),
+  ("pssm_log_odds_flag alone", {"pssm_log_odds_flag": True}),
+  ("pssm_bias_flag alone", {"pssm_bias_flag": True}),
+  ("pssm_multi alone", {"pssm_multi": 1.0}),
+  ("pssm_multi with bias_flag", {"pssm_multi": 1.0, "pssm_bias_flag": True}),
+  (
+    "all four at once",
+    {
+      "pssm_multi": 1.0, "pssm_bias_flag": True,
+      "pssm_log_odds_flag": True, "pssm_threshold": 20000.0,
+    },
+  ),
+)
+
+
+def test_pssm_knobs_cannot_bite_until_pssm_json_is_plumbed(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """Every pssm knob is read, and none of them can change an output (debt 2440).
+
+  THIS TEST ASSERTS A DEFECT, deliberately, and is named so the knob gate does
+  NOT credit it as coverage -- ``test_knob_semantics_*`` is the crediting prefix
+  and this is not one. It exists so the day the defect is fixed, it fails and
+  says what to do.
+
+  ``pssm_threshold``, ``pssm_multi``, ``pssm_log_odds_flag`` and
+  ``pssm_bias_flag`` are all read off ``options`` (``sample_host.py:295``,
+  ``:332``), so the plumbing lint correctly counts them as wired. They still
+  cannot do anything, because their only input is unreachable: ``pssm_json`` is
+  inert, and no driver call site passes ``pssm_dict`` to ``tied_featurize_port``
+  (``driver.py:572``, ``:727``, ``:765`` pass batch and chain_dict only). Without
+  it ``featurize.py:403-405`` fills ``pssm_coef`` and ``pssm_bias`` with zeros and
+  ``pssm_log_odds`` with a uniform 10000.0 -- so the log-odds mask is a constant
+  array, and multiplying every amino acid by the same constant leaves the
+  distribution alone.
+
+  THE CONTROL IS THE POINT. A test asserting "nothing changed" passes trivially
+  when the fixture is dead, and this fixture's output is nearly constant, so the
+  null result is worthless without it. ``omit_aa`` drives the same
+  per-amino-acid masking the log-odds mask feeds (``decode.py:107``), and
+  forbidding the residue the sampler keeps choosing must visibly move the output
+  before any "unchanged" claim below is allowed to mean anything.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+
+  def _sequence(omit: tuple[str, ...] = (), **options: object) -> np.ndarray:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=4,
+      samples_chunk_size=2,
+      return_logits=False,
+      omit_aa=omit,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none", **options),
+    )
+    return np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])
+
+  default = _sequence()
+  assert not np.array_equal(default, _sequence(omit=("S",))), (
+    "control failed: forbidding an amino acid did not change the sampled "
+    "sequence, so this fixture cannot detect per-residue masking and the "
+    "unchanged-output assertions below would pass for any reason at all"
+  )
+
+  for label, options in _PSSM_SETTINGS:
+    np.testing.assert_array_equal(
+      _sequence(**options), default,
+      err_msg=(
+        f"{label}: a pssm knob changed the output. If pssm_json has now been "
+        f"plumbed through tied_featurize_port, that is the fix for debt 2440 -- "
+        f"delete this test and write real test_knob_semantics_* tests for "
+        f"pssm_threshold, pssm_multi, pssm_log_odds_flag and pssm_bias_flag."
+      ),
+    )
