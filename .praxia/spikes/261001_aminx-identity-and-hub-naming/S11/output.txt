@@ -1,0 +1,10 @@
+pypi aminx status=200 releases=10 all_prerelease=True latest_info_version=0.2.0a3 versions=['0.1.0a1', '0.1.0a2', '0.1.0a28', '0.1.0a3', '0.1.0a4', '0.1.0a5', '0.1.0a7', '0.2.0a1', '0.2.0a2', '0.2.0a3']
+pypi aminx-hub status=404
+pypi praxia-science status=404
+pypi praxia-hub status=404
+pypi praxia status=200 latest=0.1.0a0 author='GenArch, Praxia Contributors' summary='Specialized multi-agent orchestrator with cyclic personal/organizational memory and skills'
+github maraxen/aminx status=200
+github maraxen/praxia status=404
+github maraxen/aminx-hub status=404
+github maraxen/praxia-science status=404
+github maraxen/praxia.science status=404

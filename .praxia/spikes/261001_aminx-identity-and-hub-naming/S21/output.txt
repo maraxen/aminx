@@ -1,0 +1,23 @@
+--- runs per project_slug for aminx, the hub working slug, and praxia
+{
+  "rows": [
+    [
+      "aminx",
+      145
+    ],
+    [
+      "praxia",
+      61
+    ]
+  ],
+  "count": 2
+}
+--- columns of runs whose name mentions project
+{
+  "rows": [
+    [
+      "project_slug"
+    ]
+  ],
+  "count": 1
+}

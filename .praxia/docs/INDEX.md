@@ -1,20 +1,33 @@
-# browser-validation Internal Docs
+# 261001-xtrax-a11-pin Internal Docs
 
 ## Daily
+- [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
 
 ## Handoffs
+- [260930_advisor-message-final](handoffs/260930_advisor-message-final.md) — The Slack message handed to the advisor for v0.2.0a3, with the claim-to-run-id mapping behind every figure it quotes.
+- [260930_browser-split-merge-readiness](handoffs/260930_browser-split-merge-readiness.md) — What actually blocks merging feat/t11d-session-release, measured rather than assumed — including an export-safety fix the branch has and main does not.
+- [260930_reference-parity-coverage-debt](handoffs/260930_reference-parity-coverage-debt.md) — The direct split-vs-reference measurement is the narrowest link in the browser validation chain; what it skips, why, and the cheapest order to close it.
 - [260924_aminx-browser-validation-execute-pickup](handoffs/260924_aminx-browser-validation-execute-pickup.md) — Pickup for a new session in this worktree: approved spec + plan, gates passed, titanix/bathos facts, how to start EXECUTE
 - [260601_benchmark-staging-handoff](handoffs/260601_benchmark-staging-handoff.md) — Wave 0 done; Waves 1-5 implementation ready; spec oracle-approved
 - [260601_benchmark-wave2-complete](handoffs/260601_benchmark-wave2-complete.md)
 - [260601_benchmark-wave2-ready](handoffs/260601_benchmark-wave2-ready.md)
 
 ## Plans
+- [261001_ecosystem-backlog-dag](plans/261001_ecosystem-backlog-dag.md) — Combined backlog DAG of the six 261001 ecosystem specs (S1-S6) after the no-rename decision: 213 PR-sized items, mermaid graph, topological order, critical path, startable items, consolidated user questions (hub identity first), what the no-rename decision removed, and a code-checked acyclicity result.
 - [260709_proteinebm-epic-backlog-dag](plans/260709_proteinebm-epic-backlog-dag.md) — **PROPOSAL, gated on user review before praxia filing** (task `260709_aminxtension`) — EPIC + backlog DAG for the ProteinEBM energy/score path, output of the compose→brainstorm→adversarial-critique pipeline (challenger `not_ready` + defender `needs_revision`, both resolved). Resolves design forks 1–11 (readout = additive `StageSet` peer slots; 2nd-order AD via nested `jax.grad`+`checkpoint` + new invariant gate; orbax weight-port + validation-retrain; buckets `(64,128,256,512)`; Langevin = outer `CarrySpec`+`Scan` / inner `while_loop` + net-new model-swap; Engine for E8 only). Corrected DAG (E0–E12 + gates E3.5/E4.5, E11a–d) fixing the 2 BLOCKERs (schedule_selector/`AxisBoundary` model-swap; scalar-energy≠`DecodeOutput`) + 5 MAJORs. Includes bathos parity/claim(Union Gate)/throughput instruments. Filing plan in §5 (not executed).
 - [260614_runspec-migration-map](plans/260614_runspec-migration-map.md) — RS-1 host-field inventory: 67 fields, 22 migrated, 16 to migrate, 9 RS-gaps, 21 protein-only
 - [260525_comp-unified-encoder-fusion](plans/260525_comp-unified-encoder-fusion.md) — COMP-UNIFIED: encoder fusion via InferencePlan; eliminate averaged-path branch
 - [260522_comp-new-sink-unify](plans/260522_comp-new-sink-unify.md) — COMP-NEW: unify result-sink topology; streaming_tensor_sink_session for non-streaming path
 
 ## Specs
+- [261001_aminx-hub](specs/261001_aminx-hub.md) — A hub project separate from the aminx package (aminx keeps its name; working slug aminx-hub, final repo name, PyPI policy and domain are the S3-01 user decision): a static GitHub Pages site whose catalog is generated from S4 manifests, with ORT-Web, Pyodide, localfold and remote executors and py2Dmol as the viewer.
+- [261001_aminx-identity-and-hub-naming](specs/261001_aminx-identity-and-hub-naming.md) — aminx keeps its name and PyPI identity (no rename). S3 records the separate hub's identity (repo slug, PyPI policy, praxia.science domain, bathos slug, orchestrator-name collision), cleans the previous rename's stale names, guards release uniqueness, and checks the spec set's assembly mechanically.
+- [261001_ebm-extraction](specs/261001_ebm-extraction.md) — Move the ProteinEBM JAX port (src/aminx/ebm, ~6.6k LOC) with its tests, scripts, evidence, bathos provenance and history into a new standalone project with no runtime edge to aminx, proving the move changed nothing via pre-registered accuracy parity. The MPNN package keeps the name aminx (no rename).
+- [261001_pipeline-editor](specs/261001_pipeline-editor.md) — A framework-neutral custom-element node-graph editor (list view first, DAG canvas second, praxis adoption gated) over a versioned pipeline document whose hub graph is S4's graph IR v2 verbatim, with a TypeScript evaluator of S4's compat rules, a catalog-generated palette (one node per manifest) and Pyodide code-block nodes.
+- [261001_spec-system-unification](specs/261001_spec-system-unification.md) — Collapse the RunSpec pytree and the RunSpecification dataclass facade (synced via _sync_run_spec) into one nested RunSpec model with a field registry and generated codecs, migrated in PR-sized slices behind byte-identical goldens.
+- [261001_xtrax-model-contract](specs/261001_xtrax-model-contract.md) — L1 contract (port types, model manifest, param JSON Schema, graph IR v2 with per-executor bindings, scorer protocols, shared ONNX export route) that lets models compose and be served by the hub (a separate project, working slug aminx-hub, final name pending S3-01) without importing each other.
+- [260929_p07-split-export](specs/260929_p07-split-export.md) — Split the monolithic P07 ONNX export into an encoder graph and a per-step decoder graph so the AR loop and its branch decision move to JavaScript, enabling one implementation across wasm (CPU) and WebGPU.
+- [260926_aminx-browser-export-phase2a](specs/260926_aminx-browser-export-phase2a.md) — Sprint spec: RNG-free export wrappers for P03/P04, jax2onnx→ORT-CPU and IREE-native layer-(b) parity, ORT Web layer-(c) parity in headless Chromium, ORT/JAX profiling incl. a loop-body scaling report, a Playwright benchmark with an interleaved native arm, and an independent track that fixes the batched sampling harness and re-estimates the Phase-1 sampling budget on titanix GPU 2.
 - [260923_aminx-browser-validation-carry-forward](specs/260923_aminx-browser-validation-carry-forward.md) — Mechanical, fail-closed amendments from the final adversarial round that ride in the Phase-1 fixer prompts, plus upstream bathos bugs to file
 - [260923_aminx-browser-validation](specs/260923_aminx-browser-validation.md) — aminx MPNN browser validation — layered parity (PyTorch → JAX → exported artifact → browser) and in-browser benchmarking for every inference path
 - [260827_runspec-scaffolding-remediation-migration-map-re-authoring-and-xtrax-transforms-adoption](specs/260827_runspec-scaffolding-remediation-migration-map-re-authoring-and-xtrax-transforms-adoption.md) — Implementable remediation spec for the 260707 audit's three remaining workstreams (delete 2 dead RunSpec sub-configs, re-author the stale migration map + anti-drift gate, xtrax safe_scan/safe_map/Engine.fit() adoption decisions); reviewed through one full adversarial challenger/defender cycle.
@@ -45,10 +58,14 @@
 ## Actuation Surfaces
 
 ## Audits
+- [260928_t5a-calibrate-attempt-history](audits/260928_t5a-calibrate-attempt-history.md) — All four tracked runs of layer_c_calibrate (one pass, three prior), and the one post-registration sidecar edit
+- [260928_t8-layer-c-bench-verdict](audits/260928_t8-layer-c-bench-verdict.md) — T8 tracked run edf8926e graded ctrl_blind; planted 5 ms control reads ~16 ms systematically; timing sentences not citable; v2 needs a dose-response instrument check
+- [260926_mpnn-reference-parity-verdict](audits/260926_mpnn-reference-parity-verdict.md) — Browser-validation Phase 1 literature-parity verdict: global FAIL (sampling prerequisite missing + 8 confirmed core defects); 3/17 paths advance
 - [260817_aminx-deeper-work-assessment](audits/260817_aminx-deeper-work-assessment.md) — State-of-play assessment against actual code: P4's remaining work is gate measurement not migration; the standing T2.GATE was re-run against xtrax 0.4.0a5 and its throughput leg found unusable (noise straddles all three outcome bands); RS-1 blocks T4.1 on an unmade decision; ruff UP037 + fix=true was silently corrupting jaxtyping shape specs.
 - [260716_proteinebm-parity-report](audits/260716_proteinebm-parity-report.md) — Reviews what "parity" means for the merged ProteinEBM epic: throughput parity is real+strong (11–92× vs PyTorch); numerical port parity (E3.5) freshly re-confirmed today across 20 synthetic trials (cosine similarity ≥0.999999998); real-world validation (E7 LplA, 101 real mutants) gives Spearman 0.402 (p=3.1e-5); the paper's own headline Spearman targets (0.838 decoy, 0.686 ΔΔG) remain **not measured** by deliberate scope decision. `tests/ebm/` freshly re-run: 261 passed, 4 skipped, 0 failed.
 
 ## Research
+- [261001_ecosystem-hub-recon-brief](research/261001_ecosystem-hub-recon-brief.md) — Verified facts, user decisions and open questions shared by the six 261001 ecosystem specs (spec unification, EBM extraction, molxmpnn rename, xtrax contract, aminx hub, pipeline editor).
 - [260712_jax-xla-scf-if-gradient-regression-bug-report](research/260712_jax-xla-scf-if-gradient-regression-bug-report.md) — DRAFT, not yet filed: jax.grad scf.if crash, jaxlib 0.9.2→0.10.2 regression, cross-arch confirmed, repro needs an unpushed-branch fix before submission
 - [260622_1203_proxide-heterogeneous-inputs](research/260622_1203_proxide-heterogeneous-inputs.md) — Proxide Adapter Surface and Aminx CLI Integration
 - [260617_xtrax-tiling-prolix-compat](research/260617_xtrax-tiling-prolix-compat.md) — xtrax.tiling CORE — prolix 6-axis planner compatibility

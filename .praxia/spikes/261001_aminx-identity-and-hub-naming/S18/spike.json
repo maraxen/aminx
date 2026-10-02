@@ -1,0 +1,28 @@
+{
+  "prereg": {
+    "id": "S18",
+    "claims": {
+      "A51": "GitHub's Pages documentation describes a custom domain as a per-site setting with a DNS CNAME record (for a subdomain) pointing at <owner>.github.io, and describes domain verification as protection against domain takeover; none of this ties the domain to the repository name.",
+      "A52": "praxia.science is a live DNS zone (it has NS records), and the subdomains hub.praxia.science and aminx.praxia.science have no A or CNAME records today, so a hub subdomain would not displace an existing service."
+    },
+    "question": "What do GitHub's docs say about custom domains and verification, and what do the public DNS records for praxia.science, hub.praxia.science and aminx.praxia.science look like today?",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S18/probe.py",
+    "expect_if_true": "Both docs pages fetch ok; the managing page has CNAME and github.io; the verifying page has verif and takeover; dns praxia.science NS has answers with Status=0; hub.praxia.science and aminx.praxia.science A and CNAME have empty answers (Status 0 with no data, or 3 NXDOMAIN).",
+    "expect_if_false": "A docs fetch is ERR (inconclusive: A51 stays deferred), the phrases are absent (A51 REFUTED, the S3-29 order of operations is rewritten from what the page says), praxia.science has no NS answers (the domain is not delegated: the DNS step cannot work as designed), or a hub or aminx subdomain already has records (it would displace something: the recommendation moves to another label)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:54:22.750325+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 2.3658225536346436,
+    "output_sha256": "3f2c3c219c11941263682c9c4e7d5bde83e17cbc1b1b336c8f48b29a30ae833c",
+    "output_full_sha256": "3f2c3c219c11941263682c9c4e7d5bde83e17cbc1b1b336c8f48b29a30ae833c",
+    "output_bytes": 2515,
+    "output_truncated": false,
+    "prereg_sha256": "35cad6d44b37e79f47f75aa5c0ac7f3606d60fd9bfc28c91c2bf9d0d205533fe",
+    "probe_files": {
+      "probe.py": "44ed75ee1038b92dd8db2f0d543835ffd8b6a990d050048babc8017aae2e7359"
+    }
+  }
+}

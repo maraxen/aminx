@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S16",
+    "claims": {
+      "A48": "ruff banned-api matches the literal module string and emits no warning for a ban key that no code imports, so a dead key (a module path that no longer exists) never fires and is never reported."
+    },
+    "question": "If a banned-api key in pyproject names a module that has been moved or deleted, does ruff warn, fail, or stay silent?",
+    "command": "bash .praxia/spikes/261001_aminx-identity-and-hub-naming/S16/probe.sh",
+    "expect_if_true": "imports_banned_literal.py reports one TID251 violation and exit=1 (positive control); imports_moved_module.py and clean.py both report 'All checks passed!' with exit=0 and no message about the unmatched ban.",
+    "expect_if_false": "The moved-module file is flagged or ruff warns about the unmatched ban key (dead keys are self-announcing and the guard-name check in S3-24 is unnecessary for banned-api), or the positive control is not flagged (probe invalid)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:54:17.726581+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.05720853805541992,
+    "output_sha256": "b8c38e5ece0e89ade22b6f6767ff55595b8c922fa8f281ac46aa69239e9b420d",
+    "output_full_sha256": "b8c38e5ece0e89ade22b6f6767ff55595b8c922fa8f281ac46aa69239e9b420d",
+    "output_bytes": 508,
+    "output_truncated": false,
+    "prereg_sha256": "d0ee56210f01b828d0a25431e4cbc7ce18e07ecdba814dbd830515ab0cef192a",
+    "probe_files": {
+      "probe.sh": "d299f83a4d8a4dc5210dea850ec7a5e8f85c44e5784c4a6964ad5491e5f8feeb"
+    }
+  }
+}

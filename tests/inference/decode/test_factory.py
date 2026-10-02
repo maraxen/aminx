@@ -59,7 +59,7 @@ class TestMakeDecodeFnConditional:
         result = make_decode_fn(model, mode, strategy)
 
         assert isinstance(result, ConditionalDecode)
-        assert type(result.state_iterator).__name__ == "SafeMapIterator"
+        assert type(result.state_iterator).__name__ == "ChunkedMapIterator"
         assert result.state_iterator.tile == 4
         assert result.model is model
 
@@ -88,7 +88,7 @@ class TestMakeDecodeFnUnconditional:
         result = make_decode_fn(model, mode, strategy)
 
         assert isinstance(result, UnconditionalDecode)
-        assert type(result.state_iterator).__name__ == "SafeMapIterator"
+        assert type(result.state_iterator).__name__ == "ChunkedMapIterator"
         assert result.state_iterator.tile == 2
 
 
@@ -125,7 +125,7 @@ class TestMakeDecodeFnAutoregressive:
         from aminx.inference.decode.autoregressive import AutoregressiveDecode
 
         assert isinstance(result, AutoregressiveDecode)
-        assert type(result.state_iterator).__name__ == "SafeMapIterator"
+        assert type(result.state_iterator).__name__ == "ChunkedMapIterator"
         assert result.state_iterator.tile == 4
         assert type(result.wave_iterator).__name__ == "JaxScanIterator"
 
@@ -157,7 +157,7 @@ class TestMakeDecodeFnSTE:
         assert isinstance(result, STEDecode)
         assert result.iterations == 100
         assert isinstance(result.inner, ConditionalDecode)
-        assert type(result.inner.state_iterator).__name__ == "SafeMapIterator"
+        assert type(result.inner.state_iterator).__name__ == "ChunkedMapIterator"
         assert result.inner.state_iterator.tile == 3
 
     def test_ste_default_iterations(self):

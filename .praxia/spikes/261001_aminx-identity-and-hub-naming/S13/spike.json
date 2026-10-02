@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S13",
+    "claims": {
+      "A6": "A find_spec('aminx') availability guard returns True for any installed package named aminx, including a hub with no scoring module, so the guard's friendly ImportError path is bypassed."
+    },
+    "question": "If a hub project ever installed a top-level Python package named aminx, would the real find_spec('aminx') guard used by asr's vendored proteinsmc report MPNN as available and then fail late? (This is the reason the hub must never take the import name aminx.)",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S13/probe.py",
+    "expect_if_true": "control_no_aminx has AMINX_AVAILABLE false and a ModuleNotFoundError at the call site; toy_hub_named_aminx_present has AMINX_AVAILABLE true and a ModuleNotFoundError naming aminx.scoring at the call site.",
+    "expect_if_false": "The toy hub leaves AMINX_AVAILABLE false (the guard is already robust and the reserved-name rule in S3-24 is unnecessary), or the control reports true (probe invalid), or the guard line is not found."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:54:15.724908+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.1223456859588623,
+    "output_sha256": "b39c65ad44f3cdc7451c29e59cf72be904ff586db24d2724d564948377cd0e3b",
+    "output_full_sha256": "b39c65ad44f3cdc7451c29e59cf72be904ff586db24d2724d564948377cd0e3b",
+    "output_bytes": 346,
+    "output_truncated": false,
+    "prereg_sha256": "8bb2748e68ae5997c92dcca54f63852a30e1c5d4e9840627a48181e0d80ad959",
+    "probe_files": {
+      "probe.py": "a8c342daeb058e67ef4c9459527dd555fb082a2ce0aff177ad65734ee871420f"
+    }
+  }
+}

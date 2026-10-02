@@ -1,0 +1,8 @@
+proteinsmc main guard lines: ['PRXTEINMPNN_AVAILABLE = importlib.util.find_spec("prxteinmpnn") is not None']
+asr vendored guard lines:    ['AMINX_AVAILABLE = importlib.util.find_spec("aminx") is not None']
+main imports (prxteinmpnn): {'module_level_runtime': ['prxteinmpnn.scoring.score@18', 'prxteinmpnn.utils.decoding_order@19'], 'type_checking': ['prxteinmpnn.utils.types@28'], 'in_function': []}
+vendored imports (aminx):   {'module_level_runtime': [], 'type_checking': ['aminx.types@30'], 'in_function': ['aminx.scoring.score@82', 'aminx.utils.decoding_order@83']}
+asr .gitmodules paths: ['aminx', 'vendor/euclidean_fast_attention']
+vendor/proteinsmc listed as submodule: False
+asr/vendor/proteinsmc has its own .git entry: True
+main and vendored mpnn.py byte-identical: False

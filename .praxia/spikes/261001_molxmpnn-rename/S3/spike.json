@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S3",
+    "claims": {
+      "A5": "An old aminx.* class path embedded in a pickle fails to load with ModuleNotFoundError after the rename, and a find_class prefix remap restores loading."
+    },
+    "question": "After the package rename, do pickled calibration checkpoints that embed the old module path fail to load, and does a find_class prefix remap fix that without touching unrelated modules?",
+    "command": "python3.13 .praxia/spikes/261001_molxmpnn-rename/S3/probe.py",
+    "expect_if_true": "blob_embeds_old_path true; plain_loads_fails true with a ModuleNotFoundError naming oldpkg; remap_loads true; remap_class_module equals newpkg.potts.calibration; remap_leaves_stdlib_alone true.",
+    "expect_if_false": "plain_loads_fails false (pickle resolves the old path some other way, so no remap item is needed) or remap_loads false (a find_class remap is insufficient and the checkpoints must be re-serialised)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T16:30:45.827859+00:00",
+    "git_head": "cb8ea2c6ce59d9382251cdbe27b052900c89a2f4",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.24208498001098633,
+    "output_sha256": "788a7ee054f98b10a267580e375a588350659c6f443268e9ff83dd518ad2f0ea",
+    "output_full_sha256": "788a7ee054f98b10a267580e375a588350659c6f443268e9ff83dd518ad2f0ea",
+    "output_bytes": 221,
+    "output_truncated": false,
+    "prereg_sha256": "dc9fb24585d364925203a9c320cfa282b150b5cc84203d5a2e089d72e94ff5b1",
+    "probe_files": {
+      "probe.py": "0faac187826ed6430cf4a2f0066da98b189108812389c3df78d01529e0cc8daf"
+    }
+  }
+}

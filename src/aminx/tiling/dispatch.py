@@ -28,7 +28,7 @@ if TYPE_CHECKING:
   # Type-check-only: satisfies ty without a runtime top-level xtrax import
   # (the actual imports below stay lazy/function-local, matching this file's
   # existing circular-import-avoidance convention for aminx.tiling.iterator).
-  from xtrax.tiling import SafeMap as XtraxSafeMap
+  from xtrax.tiling import ChunkedMap as XtraxChunkedMap
   from xtrax.tiling import Scan as XtraxScan
   from xtrax.tiling import Vmap as XtraxVmap
 
@@ -132,7 +132,7 @@ def make_axis_dispatch(strategy: AxisStrategy, *, axis: str = "state") -> object
 _DISPATCH_HETEROGENEOUS_AXES = frozenset({"state"})
 
 
-def _strategy_to_xtrax(strategy: AxisStrategy) -> XtraxVmap | XtraxSafeMap | XtraxScan:
+def _strategy_to_xtrax(strategy: AxisStrategy) -> XtraxVmap | XtraxChunkedMap | XtraxScan:
   """Translate an aminx-native AxisStrategy into its xtrax-native equivalent.
 
   aminx's and xtrax's Vmap/SafeMap/Scan classes are structurally similar but
@@ -141,14 +141,14 @@ def _strategy_to_xtrax(strategy: AxisStrategy) -> XtraxVmap | XtraxSafeMap | Xtr
   xtrax.tiling.dispatch.make_axis_dispatch without this translation. See
   tests/tiling/test_t2_4_xtrax_dispatch_compat.py for the empirical finding.
   """
-  from xtrax.tiling import SafeMap as _XtraxSafeMap
+  from xtrax.tiling import ChunkedMap as _XtraxChunkedMap
   from xtrax.tiling import Scan as _XtraxScan
   from xtrax.tiling import Vmap as _XtraxVmap
 
   if isinstance(strategy, Vmap):
     return _XtraxVmap()
   if isinstance(strategy, SafeMap):
-    return _XtraxSafeMap(batch_size=strategy.tile)
+    return _XtraxChunkedMap(batch_size=strategy.tile)
   if isinstance(strategy, Scan):
     return _XtraxScan(
       transition=strategy.transition,

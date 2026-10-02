@@ -1,0 +1,29 @@
+{
+  "prereg": {
+    "id": "S11",
+    "claims": {
+      "A3": "Every published aminx release on PyPI is an alpha or other pre-release version.",
+      "A46": "PyPI project names aminx-hub and praxia-science are unregistered (the JSON API returns 404).",
+      "A47": "No public GitHub repository exists at maraxen/aminx-hub or maraxen/praxia-science (HTTP 404; a private repository would also return 404, so this proves only that no public repo exists)."
+    },
+    "question": "Are the two hub name candidates (aminx-hub, and a praxia.science-derived praxia-science) free on PyPI and as public GitHub repos, and is every existing aminx release a pre-release (which bounds who a release-train mistake can surprise)?",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S11/probe.py",
+    "expect_if_true": "pypi aminx status=200 with all_prerelease=True; pypi aminx-hub and pypi praxia-science status=404; github maraxen/aminx-hub and maraxen/praxia-science status=404 (and maraxen/aminx status=200 as the positive control that github lookups work).",
+    "expect_if_false": "Any candidate name returns 200 (taken: the S3-01 recommendation moves to the next candidate), or aminx lists a stable release (all_prerelease=False), or the positive control maraxen/aminx is not 200 (probe invalid). Any ERR status means transport failure: inconclusive, re-run under a new id."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:53:44.261885+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 3.4252865314483643,
+    "output_sha256": "1aad56e471d6baf1c11ac749a723a1e2256c01aaa44dc9479afa3412bb801aab",
+    "output_full_sha256": "1aad56e471d6baf1c11ac749a723a1e2256c01aaa44dc9479afa3412bb801aab",
+    "output_bytes": 647,
+    "output_truncated": false,
+    "prereg_sha256": "e1fdcecbb56efe379f1942baa4fa62f117e94e31a10e05fbc7438306e5b2ccce",
+    "probe_files": {
+      "probe.py": "117505faa113cd43f95f3952f29d5b2b20dc24f7ddb49487665d2a3547901878"
+    }
+  }
+}

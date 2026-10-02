@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S22",
+    "claims": {
+      "A62": "GitHub's Pages documentation states that when a site is published from a custom GitHub Actions workflow no CNAME file is created, so the custom domain is a repository setting rather than a file in the deployed artifact."
+    },
+    "question": "Does the public GitHub Pages docs page on managing a custom domain say that an Actions-published site gets no CNAME file? (S18 showed a snippet; this records the sentence under its own claim.)",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S22/probe.py",
+    "expect_if_true": "phrase 'no CNAME file is created' found=True, with context mentioning publishing from a custom GitHub Actions workflow.",
+    "expect_if_false": "The phrase is absent or the context contradicts it (S3-29 must add the CNAME file to the deploy artifact instead of using the repository setting). A fetch error is inconclusive: re-run under a new id."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:57:30.754632+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.1649308204650879,
+    "output_sha256": "8ff5fb6f94b2585a845a1ce1988b8aca18af3b52d17e24a4f5cb496cbb1015ba",
+    "output_full_sha256": "8ff5fb6f94b2585a845a1ce1988b8aca18af3b52d17e24a4f5cb496cbb1015ba",
+    "output_bytes": 1101,
+    "output_truncated": false,
+    "prereg_sha256": "baaabb9a2c5190f58979f0a4a2a436a36a791dbcf38129a558fc0ccf1f2c8be0",
+    "probe_files": {
+      "probe.py": "551ce0223daf509a2eea3942fecfd7bea091e676bfc9a87cdc54418f77ae5812"
+    }
+  }
+}

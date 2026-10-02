@@ -1,0 +1,4 @@
+guard_line_as_read: AMINX_AVAILABLE = importlib.util.find_spec("aminx") is not None
+call_site_found_in_source: True
+control_no_aminx: {"AMINX_AVAILABLE": false, "call_site": "ModuleNotFoundError: No module named 'aminx'"}
+hub_aminx_present: {"AMINX_AVAILABLE": true, "call_site": "ModuleNotFoundError: No module named 'aminx.scoring'"}
