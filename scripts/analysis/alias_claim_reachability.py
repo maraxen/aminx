@@ -3,25 +3,40 @@
 
 ``tests/knob_gate/alias_map.toml`` records, for every upstream knob, the aminx
 field it corresponds to. ``test_parity_ids_passed`` then enshrines those claims by
-requiring each live row to name a passing test. A row whose target field is never
-read by the family it is mapped from asserts a correspondence the code does not
-make -- the knob is accepted and ignored.
+requiring each live row to name a passing test. A row whose target field the
+implementation never consumes asserts a correspondence the code does not make --
+the knob is accepted and silently ignored.
 
-One such row class is already confirmed by hand: the seven ``backbone_noise`` /
-``bb_noise`` rows map to ``noise``, and the LASEr path never reads it (aminx debt
-2434). This probe exists to find whether that is an isolated case or a pattern,
-and to enumerate it exhaustively rather than one grep at a time. The known
-instance is declared in the sidecar so it cannot be mistaken for a prediction.
+REVISION 2. Revision 1 is void by its own pre-registered adversarial check: it
+fired ``family_knob_handled_generically`` while ``noise`` -- the one instance
+declared in advance as already confirmed -- was absent from its hit list, and the
+sidecar said that means the probe is broken, not the codebase sound. The check
+found two defects:
 
-Two questions, deliberately separated because only the first is mechanical:
+  * A false negative. Revision 1 asked its family question only of fields mapped
+    from exactly ONE family, and ``noise`` is mapped from both
+    (``pottsmpnn_cfg__inference__noise`` and the LASEr ``backbone_noise`` rows),
+    so it was skipped outright. Revision 2 asks it of every (family, field) PAIR
+    a row creates, which is what the claim is actually about.
+  * A missing question, and the sharpest one. Chasing a suspected false positive
+    on ``chi_temp`` showed the opposite: the laser subtree handles the chi
+    temperature under the parameter name ``chi_temperature``, while the exact
+    token ``chi_temp`` appears nowhere but its own dataclass line
+    (``run/options.py:42``). The rename is where the plumbing stops, so the
+    Options field is inert. Neither of revision 1's questions could see that.
+
+Three questions, ordered by how little judgement each needs:
 
   A. Is the target field read ANYWHERE under ``src/aminx/``? Zero reads means the
-     claim is unsupported outright, with no judgement needed.
-  B. Is a field that is mapped ONLY from one family's reference surfaces read
-     inside that family's own subtree? Reads only outside it are the ``noise``
-     shape: handled by the generic path, which the spec says is the wrong rule for
-     LASEr. Genuinely generic runner knobs (paths, batching, device) legitimately
-     live outside, so these are reported for review, not failed on.
+     claim names a consumer that does not exist. No judgement.
+  B. Is a family Options field (``LaserOptions`` / ``PottsMPNNOptions``) read
+     anywhere outside ``run/options.py``? Zero reads means the knob is declared
+     and inert: accepted by the API, forwarded to nothing. No judgement.
+  C. For each (family, field) pair, is the field read inside that family's own
+     subtree? Reads only outside it are the ``noise`` shape -- handled by the
+     generic path, which spec 6.3 says is the wrong rule for LASEr. Genuinely
+     generic runner knobs legitimately live outside, so C is reported for review
+     rather than failed on.
 
 task_id 260929_potts-laser-xtrax-compose
 """
@@ -35,20 +50,19 @@ import logging
 import sys
 import tomllib
 from collections import defaultdict
+from dataclasses import fields
 from pathlib import Path
 
 logger = logging.getLogger("alias_claim_reachability")
 
-# Family implementation subtrees. A field "belongs" to a family when every
-# reference row that maps to it comes from that family's surfaces.
 _FAMILY_TREES: dict[str, tuple[str, ...]] = {
   "laser": ("src/aminx/families/laser_mpnn", "src/aminx/model/laser"),
-  "potts": ("src/aminx/families/potts_mpnn", "src/aminx/potts", "src/aminx/model/potts"),
+  "potts": ("src/aminx/families/potts_mpnn", "src/aminx/potts"),
 }
 
-# Runner-level concerns that are correctly handled outside any family subtree:
-# the host resolves them before a driver is reached. Listed explicitly so the
-# question-B report is interpretable instead of being dominated by them.
+# Runner-level concerns the host resolves before any driver runs, so living
+# outside a family subtree is correct for them. Excluded from question C only,
+# never from A or B, and recorded in the payload so the call can be audited.
 _RUNNER_KNOBS = frozenset({
   "inputs", "output_dir", "output_h5_path", "cache_path", "overwrite_cache",
   "batch_size", "samples_batch_size", "noise_batch_size", "temperature_batch_size",
@@ -73,10 +87,10 @@ def _family_of(ref: str) -> str | None:
 def _read_names(path: Path) -> set[str]:
   """Every identifier and attribute name mentioned in one Python file.
 
-  An AST walk, not a substring grep: ``noise`` must not be credited to a file
-  that only says ``backbone_noise_mode`` or mentions it in prose. Attribute
-  access (``spec.noise``), plain names and keyword arguments (``noise=``) all
-  count as a read, since any of them is the field being consumed.
+  An ast walk, not a substring grep. The distinction is load-bearing twice over:
+  a grep for ``noise`` credits any file saying ``backbone_noise_mode``, and a grep
+  for ``chi_temp`` credits ``chi_temperature`` -- which is precisely the rename
+  that hides an unplumbed field.
   """
   try:
     tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -96,7 +110,7 @@ def _read_names(path: Path) -> set[str]:
   return names
 
 
-def _names_in(root: Path, subtrees: tuple[str, ...] | None = None) -> set[str]:
+def _names_in(root: Path, subtrees: tuple[str, ...] | None, skip: Path | None) -> set[str]:
   bases = [root / sub for sub in subtrees] if subtrees else [root / "src" / "aminx"]
   names: set[str] = set()
   for base in bases:
@@ -104,7 +118,7 @@ def _names_in(root: Path, subtrees: tuple[str, ...] | None = None) -> set[str]:
       logger.warning("missing subtree %s", base)
       continue
     for path in sorted(base.rglob("*.py")):
-      if "__pycache__" in path.parts:
+      if "__pycache__" in path.parts or (skip and path.resolve() == skip):
         continue
       names |= _read_names(path)
   return names
@@ -118,67 +132,102 @@ def main(argv: list[str] | None = None) -> int:
   logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
   repo: Path = args.repo
+  sys.path.insert(0, str(repo / "src"))
+  from aminx.run.options import LaserOptions, PottsMPNNOptions  # noqa: PLC0415
+
   alias = repo / "tests" / "knob_gate" / "alias_map.toml"
   rows = tomllib.loads(alias.read_text(encoding="utf-8"))["row"]
   live = [r for r in rows if r["equivalence"] != "exclusion"]
 
-  # target field -> set of families whose rows map to it
-  families_of: dict[str, set[str]] = defaultdict(set)
+  pairs: set[tuple[str, str]] = set()
   rows_of: dict[str, list[str]] = defaultdict(list)
+  targets: set[str] = set()
   for row in live:
     family = _family_of(str(row["ref"]))
-    for target in row["targets"]:
-      families_of[str(target)].add(family or "?")
-      rows_of[str(target)].append(str(row["ref"]))
+    for raw in row["targets"]:
+      target = str(raw)
+      targets.add(target)
+      rows_of[target].append(str(row["ref"]))
+      if family:
+        pairs.add((family, target))
 
-  everywhere = _names_in(repo)
-  per_family = {fam: _names_in(repo, trees) for fam, trees in _FAMILY_TREES.items()}
+  options_file = (repo / "src" / "aminx" / "run" / "options.py").resolve()
+  everywhere = _names_in(repo, None, None)
+  outside_options = _names_in(repo, None, options_file)
+  per_family = {
+    fam: _names_in(repo, trees, None) for fam, trees in _FAMILY_TREES.items()
+  }
 
-  unreachable = sorted(t for t in families_of if t not in everywhere)
+  option_fields = {
+    "laser": {f.name for f in fields(LaserOptions)},
+    "potts": {f.name for f in fields(PottsMPNNOptions)},
+  }
+
+  unreachable = sorted(t for t in targets if t not in everywhere)
+  inert_options = sorted(
+    {
+      target
+      for fam, members in option_fields.items()
+      for target in members & targets
+      if target not in outside_options
+      for _ in (fam,)
+    },
+  )
   outside_family = sorted(
-    target
-    for target, fams in families_of.items()
-    if target in everywhere
-    and target not in _RUNNER_KNOBS
-    and len(fams) == 1
-    and (fam := next(iter(fams))) in per_family
-    and target not in per_family[fam]
+    {
+      f"{fam}:{target}"
+      for fam, target in pairs
+      if target in everywhere
+      and target not in _RUNNER_KNOBS
+      and fam in per_family
+      and target not in per_family[fam]
+    },
   )
 
-  if unreachable and outside_family:
-    outcome = "both"
-  elif unreachable:
+  if unreachable:
     outcome = "unreachable_targets"
+  elif inert_options:
+    outcome = "inert_option_fields"
   elif outside_family:
     outcome = "family_knob_handled_generically"
   else:
-    outcome = "no_unreachable"
+    outcome = "all_claims_reachable"
 
   payload = {
     "outcome": outcome,
+    "revision": 2,
     "n_rows": len(rows),
     "n_live_rows": len(live),
-    "n_target_fields": len(families_of),
+    "n_target_fields": len(targets),
+    "n_family_field_pairs": len(pairs),
     "n_unreachable": len(unreachable),
+    "n_inert_options": len(inert_options),
     "n_outside_family": len(outside_family),
-    "unreachable": {t: sorted(families_of[t]) for t in unreachable},
-    "unreachable_rows": {t: rows_of[t] for t in unreachable},
-    "outside_family": {
-      t: {"family": sorted(families_of[t]), "rows": rows_of[t]}
-      for t in outside_family
+    "unreachable": {t: rows_of[t] for t in unreachable},
+    "inert_options": {t: rows_of[t] for t in inert_options},
+    "inert_options_by_family": {
+      fam: sorted(m & set(inert_options)) for fam, m in option_fields.items()
     },
-    "runner_knobs_excluded_from_question_b": sorted(_RUNNER_KNOBS),
+    "outside_family": {
+      key: rows_of[key.split(":", 1)[1]] for key in outside_family
+    },
+    "noise_is_a_hit": any(k.endswith(":noise") for k in outside_family),
+    "runner_knobs_excluded_from_question_c": sorted(_RUNNER_KNOBS),
   }
   args.payload_out.parent.mkdir(parents=True, exist_ok=True)
   args.payload_out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
   logger.info(
-    "outcome=%s target_fields=%d unreachable=%d outside_family=%d",
-    outcome, len(families_of), len(unreachable), len(outside_family),
+    "outcome=%s pairs=%d unreachable=%d inert_options=%d outside_family=%d "
+    "noise_is_a_hit=%s",
+    outcome, len(pairs), len(unreachable), len(inert_options),
+    len(outside_family), payload["noise_is_a_hit"],
   )
   for target in unreachable:
-    logger.info("UNREACHABLE %s <- %s", target, rows_of[target][:3])
-  for target in outside_family:
-    logger.info("OUTSIDE-FAMILY %s <- %s", target, rows_of[target][:3])
+    logger.info("UNREACHABLE      %s <- %s", target, rows_of[target][:3])
+  for target in inert_options:
+    logger.info("INERT-OPTION     %s <- %s", target, rows_of[target][:3])
+  for key in outside_family:
+    logger.info("OUTSIDE-FAMILY   %s", key)
   return 0
 
 
