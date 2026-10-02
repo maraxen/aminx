@@ -7,7 +7,7 @@
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](http://maraxen.github.io/Aminx)
 
 > [!WARNING]
-> **Alpha release (v0.1.0a1).** aminx is under active development. The API is functional and validated against the LigandMPNN reference, but may change between releases. You may encounter bugs or rough edges — please open an issue if something breaks.
+> **Alpha release.** aminx is under active development. The API is functional and validated against the LigandMPNN reference, but may change between releases. You may encounter bugs or rough edges — please open an issue if something breaks.
 
 Aminx is a JAX/Equinox reimplementation of the [LigandMPNN](https://github.com/dauparas/LigandMPNN) codebase. A graded literature-parity audit against LigandMPNN@`26ec57ac` (2026-09-26) found several paths that match the reference to within 1e-4 nats, and confirmed defects in the ligand, membrane and conditional-scoring paths. The global grade is **FAIL** for now; see the [verdict](.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md) and the per-path table below. It runs 8–61× faster on a single structure (H200) by trading eager dispatch for `jit`/`vmap`/`scan` kernels.
 
@@ -332,7 +332,16 @@ aminx run sample --inputs structure.pdb --emit-json --out sample_spec.json
 aminx run score --inputs structure.pdb --sequences-to-score ACDEFGHIKLMNPQRSTVWY --emit-json
 ```
 
-All four subcommands (`sample`, `score`, `jacobian`, `inspect`) share the same base option surface: `--inputs`, `--model-weights`, `--model-version`, `--model-family`, `--batch-size`, `--backbone-noise`, `--random-seed`, and the full `RunSpecification` field set. Spec construction failures exit 1; an unwired runner exits 2.
+The base options are shared by all four subcommands (`sample`, `score`, `jacobian`, `inspect`) but belong to the **`run` group, so they go before the subcommand**: `--checkpoint-id`, `--chain-id`, `--max-length`, `--model-weights`, `--model-version`, `--model-family`, `--batch-size`, `--backbone-noise`, `--random-seed`, and the rest of the `RunSpecification` field set. Options specific to a subcommand (`--inputs`, `--num-samples`, `--temperature`, ...) go after it:
+
+```bash
+aminx run --checkpoint-id proteinmpnn_v_48_020 --chain-id C --random-seed 5 --max-length 96 \
+  sample --inputs structure.pdb --num-samples 4 --temperature 0.3
+```
+
+`aminx run sample --chain-id C ...` is rejected (`No such option`). Fields that are not JSON-serialisable (`bias`, `fixed_positions`, `fixed_tokens`, `fixed_mask`, `state_weights`, `decode_fn`) cannot be set from the CLI; use the Python API. Spec construction failures exit 1; an unwired runner exits 2.
+
+`--max-length` is the length every per-position array is padded to (default 512) and the autoregressive decode runs at that **padded** length, so for a short chain it dominates the cost: on one CPU, a 93-residue chain took roughly 86 s/sample at 512 and a small fraction of that at 96. Set it near your real chain length.
 
 ##### Heterogeneous inputs — local files and remote structures
 
@@ -491,6 +500,13 @@ determine which weights execute. Resolution order, and it stops at the first hit
 Because the pin is a full commit SHA, a warm cache resolves with **no network request at
 all** — measured at ~0.7 ms against ~236 ms for the unpinned form, which issued a HEAD on
 every call. Pinning is faster *and* reproducible, not a tradeoff between them.
+
+The Hub's `main` branch carries the **newest** weight layout. `HF_REVISION` is the revision this
+code can load: the LigandMPNN and membrane checkpoints were regenerated with the reference's
+bias layout (#162, #163), and because deserialisation is positional, code from before that change
+cannot load the new files (nor new code the old ones). Released wheels stay correct by pinning
+the revision that matches their code. Never re-point a pin to a revision whose layout does not
+match the code, and do not resolve the Hub's `main` from an older checkout.
 
 ### Recording which weights ran
 
