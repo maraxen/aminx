@@ -26,6 +26,8 @@ _PARITY_DIR = str(Path(__file__).resolve().parent)
 if _PARITY_DIR not in sys.path:
     sys.path.insert(0, _PARITY_DIR)
 
+from artifact_key import stable_artifact_key
+
 import graded_resume
 
 MUTANT_ID = "permute_etab_out_rows"
@@ -479,7 +481,7 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
                 {
                     "clean": clean,
                     "mutants": statuses,
-                    "weights": {str(checkpoint): _sha256(checkpoint)},
+                    "weights": {stable_artifact_key(checkpoint): _sha256(checkpoint)},
                 },
                 indent=2,
             )

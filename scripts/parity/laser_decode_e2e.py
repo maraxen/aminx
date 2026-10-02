@@ -38,6 +38,15 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
+# The parity dir on sys.path mirrors the convention in the potts scripts, so
+# the shared stable_artifact_key helper imports at module scope rather than
+# depending on the sys.path insert that main() does later.
+_PARITY_DIR = str(Path(__file__).resolve().parent)
+if _PARITY_DIR not in sys.path:
+  sys.path.insert(0, _PARITY_DIR)
+
+from artifact_key import stable_artifact_key
+
 MUTANTS = (
   "reversed_order",
   "chi_bin_plus_one",
@@ -779,7 +788,7 @@ def _parent(args: argparse.Namespace, logger: logging.Logger) -> dict[str, Any]:
         {
           "clean": clean,
           "mutants": statuses,
-          "weights": {str(checkpoint): _sha256(checkpoint)},
+          "weights": {stable_artifact_key(checkpoint): _sha256(checkpoint)},
         },
         indent=2,
       )

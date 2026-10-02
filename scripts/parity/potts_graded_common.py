@@ -20,6 +20,8 @@ _PARITY_DIR = str(Path(__file__).resolve().parent)
 if _PARITY_DIR not in sys.path:
   sys.path.insert(0, _PARITY_DIR)
 
+from artifact_key import stable_artifact_key
+
 import graded_resume
 
 # Temperatures recorded by dump_potts_oracles. The graded vehicles sample the
@@ -593,7 +595,7 @@ def parent(
       {
         "clean": clean,
         "mutants": statuses,
-        "weights": {str(checkpoint): sha256(checkpoint)},
+        "weights": {stable_artifact_key(checkpoint): sha256(checkpoint)},
       },
     )
   n_failed = sum(status == "failed" for status in statuses.values())

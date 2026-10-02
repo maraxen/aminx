@@ -1,0 +1,32 @@
+{
+  "comment": [
+    "Oracle checkpoint identities for redsox gate step 1c.",
+    "tests/knob_gate/_coverage.py:default_registry_sha256 globs the repo for files",
+    "named checkpoint_registry.json and matches artifact_path EXACTLY against the",
+    "keys that a vehicle writes into branch_controls.json.",
+    "",
+    "Those keys are STABLE IDENTIFIERS, not filesystem paths: scripts/parity/",
+    "artifact_key.py anchors the path at the vendored upstream repository, so",
+    "/home/solab/repos/LASErMPNN/model_weights/x.pt and a clone anywhere else",
+    "both key as LASErMPNN/model_weights/x.pt. An absolute path cannot be used",
+    "here -- it would make this file correct on exactly one machine.",
+    "",
+    "A sha256 below is the file's own digest, so changing a checkpoint without",
+    "updating this entry fails step 1c rather than silently grading against the",
+    "wrong weights."
+  ],
+  "entries": [
+    {
+      "artifact_path": "LASErMPNN/model_weights/laser_weights_0p1A_nothing_heldout.pt",
+      "sha256": "304fe02a4807c310bdd9d68c988ae87619da3cf2025d5c223fb31030aa411173",
+      "family": "lasermpnn",
+      "upstream": "LASErMPNN"
+    },
+    {
+      "artifact_path": "PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt",
+      "sha256": "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c",
+      "family": "pottsmpnn",
+      "upstream": "PottsMPNN"
+    }
+  ]
+}
