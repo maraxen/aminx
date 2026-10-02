@@ -1,40 +1,40 @@
 [metadata]
-title = "PottsMPNN jit-vs-eager float32 reproducibility floor"
+title = "PottsMPNN jit-vs-eager float32 reproducibility floor (revision 2)"
 created = "261002"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "The jit-vs-eager relative deviation of PottsMPNN etab_raw and log_probs on identical float32 inputs has a floor ABOVE the 1e-6 rtol that tests/families/potts_mpnn/test_model.py::test_jit_matches_eager asserts, so that assertion was unfalsifiable only while a leaked jax_enable_x64 promoted the intermediates to float64, and a tolerance derived as next_power_of_ten(10 * measured_floor) both admits every clean seed and still rejects a 1e-3 relative defect."
+hypothesis = "The ABSOLUTE jit-vs-eager deviation of PottsMPNN etab_raw and log_probs on identical float32 inputs has a floor above the atol=1e-6 that tests/families/potts_mpnn/test_model.py::test_jit_matches_eager asserts -- atol being the term that actually binds, since for the observed failing element the rtol term contributed 0.1% of the band -- so that assertion was satisfiable only while a leaked jax_enable_x64 promoted the intermediates to float64, and an atol derived as ceil_one_significant_figure(10 * measured_absolute_floor), with rtol left untouched, both admits every clean seed and still rejects an injected 1e-3 relative defect."
 stage_name = "diagnosis"
 novel = true
 
 [outcomes.pass]
 condition = "floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale"
-decision = "Set the test's tolerance to the derived proposed_rtol/proposed_atol, citing this run. The current 1e-6 is below the float32 floor and was never a meaningful check at production precision."
-reasoning = "A floor above 1e-6 shows the assertion cannot hold at float32 for reasons intrinsic to XLA reassociation rather than to any defect. Admitting every clean seed shows the derived band is not fitted to the one seed that failed. Rejecting an injected 1e-3 relative defect, with proposed_rtol strictly below 1e-3, shows the widened band still has teeth."
+decision = "Raise ONLY atol in the test to the derived proposed_atol, leaving rtol at 1e-6, citing this run. The current atol is below the float32 absolute floor and was never a meaningful check at production precision."
+reasoning = "An absolute floor above 1e-6 shows the assertion cannot hold at float32 for reasons intrinsic to XLA reassociation rather than to any defect. Admitting every clean seed shows the derived band is not fitted to the one seed that failed. Rejecting an injected 1e-3 relative defect, with proposed_atol strictly below that defect's absolute size, shows the widened band still has teeth."
 is_residual = false
 adversarial_check = "NOT (floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale)"
 
 [outcomes.tolerance_was_fine]
 condition = "NOT floor_above_current"
-decision = "Do NOT change the test. Investigate test_jit_matches_eager's single failing element as a genuine, seed-specific divergence instead."
-reasoning = "If 24 independently seeded models all stay inside 1e-6, then the floor is not the explanation and the observed failure is specific to that model's weights -- which is a defect to find, not a band to widen. This outcome exists so the run can refute its own hypothesis."
+decision = "Do NOT change the test. Investigate test_jit_matches_eager's failing element as a genuine, seed-specific divergence instead."
+reasoning = "If 24 independently seeded models all keep their absolute deviation inside 1e-6, the floor is not the explanation and the observed failure is specific to that model's weights -- a defect to find, not a band to widen. This outcome exists so the run can refute its own hypothesis."
 is_residual = true
 adversarial_check = "floor_above_current"
 
 [outcomes.noise_reaches_defect_scale]
 condition = "floor_above_current AND NOT below_control_scale"
-decision = "Escalate. Do not widen the tolerance. float32 jit-vs-eager noise in this model is as large as a defect worth catching, which is a numerical-stability question about the model, not a test-tolerance question."
-reasoning = "A derived rtol at or above 1e-3 would mean no tolerance can separate reassociation noise from a real error in etab_raw. Widening the band there would delete the assertion's value rather than calibrate it, so the run must stop and say so."
+decision = "Escalate. Do not widen. float32 jit-vs-eager noise in this model is as large as a defect worth catching, which is a numerical-stability question about the model, not a test-tolerance question."
+reasoning = "A derived atol at or above the injected defect's absolute size would mean no band can separate reassociation noise from a real error. Widening there deletes the assertion's value rather than calibrating it, so the run must stop and say so. THIS IS THE OUTCOME REVISION 1 RETURNED, and it is why revision 1's numbers are not reused."
 is_residual = true
 adversarial_check = "NOT floor_above_current OR below_control_scale"
 
 [outcomes.fail]
-condition = "NOT (floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale) AND floor_above_current AND below_control_scale"
+condition = "floor_above_current AND below_control_scale AND NOT (clean_seeds_admitted AND control_rejected)"
 decision = "Do not change the test. The derivation rule did not produce a usable band."
-reasoning = "Either a clean seed falls outside a band derived with 10x headroom over the measured maximum -- meaning the floor is not stable across seeds and a single maximum does not characterise it -- or the injected 1e-3 defect was admitted, meaning the band is too wide to test anything."
+reasoning = "Either a clean seed falls outside a band derived with 10x headroom over the measured maximum -- meaning the floor is not stable across seeds and a single maximum does not characterise it -- or the injected defect was admitted, meaning the band is too wide to test anything."
 is_residual = true
-adversarial_check = "floor_above_current AND clean_seeds_admitted AND control_rejected AND below_control_scale"
+adversarial_check = "NOT floor_above_current OR NOT below_control_scale OR (clean_seeds_admitted AND control_rejected)"
 
 [result_schema]
 verdict = "str"
@@ -42,10 +42,14 @@ n_seeds = "int"
 n_reused = "int"
 n_computed = "int"
 current_rtol = "float"
-floor_rel = "float"
+current_atol = "float"
 floor_abs = "float"
+floor_rel = "float"
+floor_rel_conditioned = "float"
+condition_threshold = "float"
 float32_eps = "float"
-floor_in_eps = "float"
+floor_rel_in_eps = "float"
+floor_rel_conditioned_in_eps = "float"
 headroom = "float"
 proposed_rtol = "float"
 proposed_atol = "float"
@@ -67,17 +71,20 @@ duplication_rationale = "importing _backbone from the test module would make thi
 dtype = "float32 throughout; jax_enable_x64 is never set, which is the whole point"
 n_seeds = 24
 arrays_compared = "etab_raw (L K 20 20) and log_probs, both eager vs eqx.filter_jit on identical inputs"
-relative_denominator = "the EAGER magnitude, matching numpy assert_allclose's atol + rtol*|desired|; elements whose eager value is exactly zero are excluded from the relative figure and covered by the absolute one"
-derivation_rule = "proposed_rtol = next_power_of_ten(10 * floor_rel); proposed_atol = next_power_of_ten(10 * floor_abs). Fixed BEFORE the run; the value is not chosen."
+derivation_rule = "proposed_atol = ceil_one_significant_figure(10 * floor_abs); proposed_rtol = 1e-6, UNCHANGED. Fixed BEFORE this run; the value is not chosen."
+why_only_atol = "numpy's band is atol + rtol*|eager|. For the observed failing element (0.1259099543094635 vs 0.12590882182121277) the band was 1e-6 + 1e-6*0.126 = 1.126e-06 against a deviation of 1.1325e-06: the rtol term is 0.1% of it. Moving a parameter that is not violated would be widening for its own sake."
+why_one_significant_figure = "revision 1 rounded to the next power of ten, turning a 1.43e-06 floor into 1e-04 -- a 70x jump that would leave every element below 1e-04 unchecked. The headroom factor is 10 in both; only the rounding changed."
+relative_statistics = "floor_rel divides by every nonzero eager value and is reported for CONTEXT ONLY; floor_rel_conditioned restricts the denominator to |eager| > 0.1. Neither derives a tolerance."
 negative_control = "one element (the largest in magnitude) perturbed by 1e-3 relative; assert_allclose at the proposed band must raise"
-control_rationale = "1e-3 is fixed in advance and NOT scaled to the floor. A floor-scaled control is near-circular: next_power_of_ten(10*F) <= 100*F makes '100*F is rejected' true by construction with as little as 1x margin."
+control_rationale = "1e-3 is fixed in advance and NOT scaled to the measured floor, because a floor-scaled control is near-circular when the band is also derived from the floor."
 admission_check = "assert_allclose is re-run per seed at the proposed band. Reconstructing numpy's verdict from the recorded maxima is unsound -- the max-relative and max-absolute elements need not be the same element, so neither maximum constrains the other."
 
 [provenance]
-note = "Ungraded diagnostic for debt #2432, which was uncovered by fixing the two jax_enable_x64 leaks of #2419/#2431. It is NOT a redsox vehicle and has no manifest row. It lives in scripts/analysis/ specifically because scripts/parity/ is a _touches_scoped path: adding a file there during the ledger freeze would invalidate every sidecar_ledger.toml row at once. Invocation: bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/potts_jit_eager_f32_floor.py --work-dir <dir> --out <json>."
+note = "Ungraded diagnostic for debt #2432, uncovered by fixing the two jax_enable_x64 leaks of #2419/#2431. NOT a redsox vehicle; no manifest row. Lives in scripts/analysis/ because scripts/parity/ is a _touches_scoped path and a new file there would invalidate every sidecar_ledger.toml row mid-freeze. REVISION 2: revision 1 derived the band from the maximum RELATIVE deviation and returned noise_reaches_defect_scale on a relative floor of 5.1e-02 (430,185x f32 eps) against an absolute floor of 1.43e-06. Those cannot both describe reassociation noise, and the cause was an ill-conditioned statistic -- etab_raw holds many near-zero entries, so the ratio measured its denominator. Confirmed on seed 0: the worst-relative element is |diff| 5.29e-07 over |eager| 4.22e-04, and the figure collapses to 6.54e-06 once |eager| > 0.1. Revision 1's verdict stands as recorded and none of its values are reused; what it established is the FORM of the metric, which is what changed here. Invocation: bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/potts_jit_eager_f32_floor.py --work-dir <dir> --out <json>."
 
 [resume]
 unit = "one seed"
 cache_key = "sha256 of the script bytes, the seed, and the residue length"
 stamp_order = "the per-seed JSON body is written first and its stamp second, so a crash between them leaves an unstamped body that is recomputed rather than trusted"
+invalidation = "the script hash is part of the key, so revision 2 recomputes every seed rather than reusing revision 1's"
 max_attempts = 1

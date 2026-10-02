@@ -13,29 +13,72 @@ So the test had never checked this path at the precision production uses, and
 float64 is not available as a fix -- it would cost the GPU performance the whole
 port exists to get.
 
-The one observed violation was 8.99e-06 relative on a value of 0.126, i.e. ~75x
-float32 eps. That is the ordinary cost of XLA fusing and reassociating
-reductions differently from the eager path, not a correctness defect. But "75
-eps looks normal" is an assertion, and a tolerance chosen after seeing the
-number it has to admit is exactly how a band gets fitted to its data.
+REVISION 2, AND WHY THE FIRST RUN DOES NOT COUNT
+
+Revision 1 derived a tolerance from the maximum RELATIVE deviation. It returned
+``noise_reaches_defect_scale`` -- the outcome that forbids widening -- on a
+measured relative floor of 5.1e-02, i.e. 430,185x float32 eps, while the
+absolute floor was only 1.43e-06. Those two cannot both describe reassociation
+noise, and the pre-registered scale guard refusing to proceed is the only reason
+a proposed rtol of 1.0 did not get written into a test.
+
+The cause was a defect in the MEASUREMENT, not in the model. Relative deviation
+divides by the eager magnitude, and ``etab_raw`` holds many near-zero entries,
+so the statistic was dominated by its denominator. Measured on seed 0: the
+worst-relative element is |diff| 5.29e-07 over |eager| 4.22e-04, and restricting
+the denominator collapses the figure monotonically --
+
+    |eager| > 0      1.25e-03
+    |eager| > 0.01   4.22e-05
+    |eager| > 0.1    6.54e-06
+
+-- which is the signature of an ill-conditioned ratio, not of a model that
+disagrees with itself by 5%.
+
+The first run's verdict stands as recorded: its criteria were NOT met, and none
+of its numbers are reused to choose a tolerance. What it legitimately
+established is the FORM of the metric, which is what this revision changes.
+
+WHAT ACTUALLY FAILS, AND SO WHAT ACTUALLY CHANGES
+
+numpy's band is ``atol + rtol*|eager|``. For the element that failed --
+0.1259099543094635 vs 0.12590882182121277 -- the band was
+1e-6 + 1e-6*0.126 = 1.126e-06 against a deviation of 1.1325e-06. The rtol term
+contributes 0.1% of that band. **atol is the binding constraint**, and it sits
+below the measured absolute floor of 1.43e-06.
+
+So only atol moves. rtol stays at 1e-6: changing a parameter that is not
+violated would be widening for its own sake.
 
 WHAT MAKES THE RESULTING TOLERANCE LEGITIMATE
 
-The VALUE is not chosen here; a RULE fixed before the run derives it:
+The VALUE is not chosen here; a RULE fixed before this run derives it:
 
-    floor    F = max relative deviation over N independently seeded models
-    proposed rtol = the next power of ten at or above 10 * F
+    floor    A = max ABSOLUTE deviation over N independently seeded models
+    proposed atol = 10 * A, rounded up to one significant figure
+    proposed rtol = unchanged
 
-and the run then has to clear three bars, two of which can fail:
+Rounding up to one significant figure rather than to the next power of ten is
+deliberate: the power-of-ten form turned a 1.43e-06 floor into 1e-04, a 70x
+jump, which would have left every element below 1e-04 effectively unchecked.
+The headroom factor is fixed at 10 either way.
 
-  1. F > 1e-6, or the current tolerance was fine and the single failure was
-     seed-specific -- in which case do NOT touch the test. This is a real
-     possible outcome, not a formality.
-  2. Every clean seed is admitted at the proposed rtol.
-  3. A perturbation of relative size 100 * F injected into one element is
-     REJECTED at the proposed rtol. Without this the "fix" is indistinguishable
-     from deleting the assertion: a tolerance that admits everything is not a
-     test, and a positive control that can only pass is not a check.
+and the run then has to clear four bars, three of which can fail:
+
+  1. A > the current atol, or the current tolerance was fine and the single
+     failure was seed-specific -- in which case do NOT touch the test. This is
+     a real possible outcome, not a formality.
+  2. Every clean seed is admitted at the proposed band.
+  3. A fixed 1e-3 relative defect injected into one element is REJECTED at the
+     proposed band. Without this the "fix" is indistinguishable from deleting
+     the assertion: a tolerance that admits everything is not a test, and a
+     positive control that can only pass is not a check.
+  4. The proposed atol stays well below that defect's ABSOLUTE size, so the
+     band cannot swallow the thing it is supposed to catch.
+
+The conditioned relative floor (|eager| > 0.1) is reported for context and is
+deliberately NOT used to set rtol -- having been burned once by a statistic
+chosen for availability rather than for meaning.
 
 Each seed is written as its own JSON plus a completion stamp before the next
 starts, and a re-run reuses a seed only when the script hash and shape key
@@ -61,21 +104,31 @@ from aminx.families.potts_mpnn.model import PottsMPNN, PottsMPNNOutput
 
 logger = logging.getLogger("potts_jit_eager_f32_floor")
 
-# The test's current tolerance, and the threshold outcome 1 is measured against.
+# The test's current tolerances. atol is the one outcome 1 is measured against,
+# because atol is the term that actually binds: for the element that failed, the
+# rtol term contributed 0.1% of the 1.126e-06 band.
 _CURRENT_RTOL = 1e-6
-# Fixed before the run: proposed rtol is the next power of ten >= this * floor.
+_CURRENT_ATOL = 1e-6
+# Fixed before the run: proposed atol = this * absolute floor, rounded up to one
+# significant figure. Revision 1 rounded to the next power of ten, which turned a
+# 1.43e-06 floor into 1e-04 -- a 70x jump that would leave every element below
+# 1e-04 unchecked. The headroom factor is 10 either way; only the rounding moved.
 _HEADROOM = 10.0
+# Denominator floor for the CONTEXT-ONLY conditioned relative statistic. Revision
+# 1 divided by every nonzero eager value and produced 5.1e-02, which is an
+# artifact of near-zero denominators rather than a property of the model. This
+# figure is reported, never used to derive a tolerance.
+_CONDITION_THRESHOLD = 0.1
 # Fixed before the run: the relative size of the defect the tolerance must still
 # catch. NOT derived from the measured floor -- a control scaled to the floor is
-# very nearly circular, since proposed_rtol is also derived from it, and
-# next_power_of_ten(10*F) <= 100*F makes "100*F is rejected" true by
-# construction with as little as 1x margin. 1e-3 is instead the scale of a
-# defect we would actually care about: three orders above float32 eps, far below
-# the 1218-absolute deviation that permute_etab_out_rows produces, and the
-# region where a genuine numerical error would live. If the measured floor ever
-# forces proposed_rtol up to 1e-3, that is a finding in its own right -- it
-# would mean jit-vs-eager noise is the size of a real defect -- and this run is
-# designed to FAIL rather than quietly widen past it.
+# very nearly circular, since the proposed band is also derived from it. 1e-3 is
+# instead the scale of a defect we would actually care about: three orders above
+# float32 eps, far below the 1218-absolute deviation that permute_etab_out_rows
+# produces, and the region where a genuine numerical error would live. If the
+# measured floor ever forces the band up to this scale, that is a finding in its
+# own right -- jit-vs-eager noise as large as a real defect -- and this run is
+# designed to FAIL rather than quietly widen past it. That is exactly what
+# happened in revision 1, and it is why revision 1's numbers are not reused.
 _CONTROL_RELATIVE = 1e-3
 
 
@@ -120,26 +173,39 @@ class SeedResult:
   seed: int
   etab_max_abs: float
   etab_max_rel: float
+  etab_rel_conditioned: float
   logp_max_abs: float
   logp_max_rel: float
+  logp_rel_conditioned: float
 
 
-def _deviation(compiled: np.ndarray, eager: np.ndarray) -> tuple[float, float]:
-  """Max absolute and max relative deviation, relative to the EAGER value.
+def _deviation(compiled: np.ndarray, eager: np.ndarray) -> tuple[float, float, float]:
+  """Max absolute, max relative, and max CONDITIONED relative deviation.
 
   numpy's assert_allclose compares against ``atol + rtol*|desired|`` with the
-  eager array as ``desired``, so the relative denominator has to be the eager
-  magnitude to mean the same thing the test means. Elements whose eager value is
-  exactly zero are excluded from the relative figure and are covered by the
-  absolute one, because a relative deviation from zero is not defined.
+  eager array as ``desired``, so a relative denominator has to be the eager
+  magnitude to mean the same thing the test means.
+
+  The unconditioned relative figure is kept only so the two can be compared:
+  it divides by every nonzero eager value, and ``etab_raw`` is full of near-zero
+  entries, so it measures its own denominator more than it measures the model.
+  The conditioned figure restricts to ``|eager| > _CONDITION_THRESHOLD``, where
+  the ratio is actually informative. Neither drives the proposed tolerance --
+  only the absolute deviation does.
   """
   delta = np.abs(compiled - eager)
   max_abs = float(delta.max()) if delta.size else 0.0
+
   nonzero = np.abs(eager) > 0.0
-  if not nonzero.any():
-    return max_abs, 0.0
-  max_rel = float((delta[nonzero] / np.abs(eager[nonzero])).max())
-  return max_abs, max_rel
+  max_rel = float((delta[nonzero] / np.abs(eager[nonzero])).max()) if nonzero.any() else 0.0
+
+  well_conditioned = np.abs(eager) > _CONDITION_THRESHOLD
+  conditioned = (
+    float((delta[well_conditioned] / np.abs(eager[well_conditioned])).max())
+    if well_conditioned.any()
+    else 0.0
+  )
+  return max_abs, max_rel, conditioned
 
 
 def _measure(seed: int, length: int) -> SeedResult:
@@ -154,22 +220,37 @@ def _measure(seed: int, length: int) -> SeedResult:
 
   eager = _call(model, coords, mask)
   compiled = run(model, coords, mask)
-  etab_abs, etab_rel = _deviation(
+  etab_abs, etab_rel, etab_cond = _deviation(
     np.asarray(compiled.etab_raw),
     np.asarray(eager.etab_raw),
   )
-  logp_abs, logp_rel = _deviation(
+  logp_abs, logp_rel, logp_cond = _deviation(
     np.asarray(compiled.log_probs),
     np.asarray(eager.log_probs),
   )
-  return SeedResult(seed, etab_abs, etab_rel, logp_abs, logp_rel)
+  return SeedResult(
+    seed,
+    etab_abs,
+    etab_rel,
+    etab_cond,
+    logp_abs,
+    logp_rel,
+    logp_cond,
+  )
 
 
-def _next_power_of_ten(value: float) -> float:
-  """Smallest power of ten >= ``value``; 0 maps to 0."""
+def _ceil_one_significant_figure(value: float) -> float:
+  """Round ``value`` UP to one significant figure; 0 maps to 0.
+
+  Used instead of rounding to the next power of ten, which inflates by up to
+  10x. On the revision-1 floor that turned 1.43e-06 into 1e-04 and would have
+  left everything below 1e-04 unchecked; this gives 2e-05.
+  """
   if value <= 0.0:
     return 0.0
-  return float(10.0 ** math.ceil(math.log10(value)))
+  exponent = math.floor(math.log10(value))
+  scale = 10.0**exponent
+  return float(math.ceil(value / scale) * scale)
 
 
 def _admits(seed: int, length: int, rtol: float, atol: float) -> bool:
@@ -310,22 +391,26 @@ def main(argv: list[str] | None = None) -> int:
   # derived from either alone would not cover what the test checks.
   floor_rel = max(max(r.etab_max_rel, r.logp_max_rel) for r in results)
   floor_abs = max(max(r.etab_max_abs, r.logp_max_abs) for r in results)
+  floor_rel_conditioned = max(max(r.etab_rel_conditioned, r.logp_rel_conditioned) for r in results)
 
-  # The RULE, fixed before the run. The value falls out of it.
-  proposed_rtol = _next_power_of_ten(_HEADROOM * floor_rel)
-  proposed_atol = _next_power_of_ten(_HEADROOM * floor_abs)
+  # The RULE, fixed before the run. Only atol moves: it is the term that binds,
+  # and rtol is not violated. floor_rel plays no part in the derivation -- it is
+  # reported so the ill-conditioning that sank revision 1 stays visible.
+  proposed_atol = _ceil_one_significant_figure(_HEADROOM * floor_abs)
+  proposed_rtol = _CURRENT_RTOL
 
-  floor_above_current = floor_rel > _CURRENT_RTOL
+  floor_above_current = floor_abs > _CURRENT_ATOL
   not_admitted = [
     r.seed for r in results if not _admits(r.seed, args.length, proposed_rtol, proposed_atol)
   ]
   control = _control_rejected(args.length, proposed_rtol, proposed_atol)
 
-  # The derived tolerance must stay BELOW the defect scale it has to catch.
-  # If the floor ever pushes it up to _CONTROL_RELATIVE, the honest answer is
+  # The derived band must stay well BELOW the defect it has to catch. The band
+  # here is atol-dominated, so the comparison is against the control's ABSOLUTE
+  # size, not its relative one. If atol ever reaches that, the honest answer is
   # "f32 jit-vs-eager noise is the size of a real defect here", which needs a
   # decision, not a wider band.
-  below_control_scale = proposed_rtol < _CONTROL_RELATIVE
+  below_control_scale = proposed_atol < control["injected_absolute"]
 
   # Named to match the sidecar's four outcomes, which are mutually exclusive
   # and exhaustive, so a reader is not left deciding whether "fail" meant the
@@ -345,10 +430,14 @@ def main(argv: list[str] | None = None) -> int:
     "n_reused": reused,
     "n_computed": len(results) - reused,
     "current_rtol": _CURRENT_RTOL,
-    "floor_rel": floor_rel,
+    "current_atol": _CURRENT_ATOL,
     "floor_abs": floor_abs,
+    "floor_rel": floor_rel,
+    "floor_rel_conditioned": floor_rel_conditioned,
+    "condition_threshold": _CONDITION_THRESHOLD,
     "float32_eps": float(np.finfo(np.float32).eps),
-    "floor_in_eps": floor_rel / float(np.finfo(np.float32).eps),
+    "floor_rel_in_eps": floor_rel / float(np.finfo(np.float32).eps),
+    "floor_rel_conditioned_in_eps": floor_rel_conditioned / float(np.finfo(np.float32).eps),
     "headroom": _HEADROOM,
     "proposed_rtol": proposed_rtol,
     "proposed_atol": proposed_atol,
