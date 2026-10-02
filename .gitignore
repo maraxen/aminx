@@ -80,3 +80,8 @@ scripts/scratch/
 # Gate output. Bathos also creates outputs/<id8>/ after it has captured git
 # state (runner.py), so a tracked tree would look dirty the moment a run starts.
 /outputs/
+
+# xtrax scratch/cache written beside the checkout during a run. Left untracked
+# it dirties the tree, and the section 1c ledger REJECTS a run whose record says
+# git_dirty -- so an ignorable cache can silently cost a gate-eligible result.
+.xtrax/
