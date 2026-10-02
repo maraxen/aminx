@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -25,8 +27,24 @@ pytestmark = pytest.mark.usefixtures("_x64")
 
 
 @pytest.fixture
-def _x64() -> None:
+def _x64() -> Iterator[None]:
+  """Enable ``jax_enable_x64`` for one test, then put it back.
+
+  This used to set the flag and never restore it, and ``pytestmark`` applies it
+  to the whole module, so every test running later in the same session built
+  float64 arrays. The damage lands far from the cause: a float32 checkpoint
+  refusing to deserialise into a freshly built float64 ``like``, or a
+  ``lax.cond`` whose branches disagree int64 vs int32. That is debt #2419, and
+  this file was the second of two identical leaks -- the first
+  (test_potts_head.py, 1f84782a) was fixed alone and moved nothing, because a
+  truncated grep hid this one.
+  """
+  previous = jax.config.jax_enable_x64
   jax.config.update("jax_enable_x64", True)
+  try:
+    yield
+  finally:
+    jax.config.update("jax_enable_x64", previous)
 
 
 def _pair_graph() -> tuple[jax.Array, jax.Array, jax.Array]:
