@@ -1,0 +1,67 @@
+script_path = "scripts/analysis/alias_claim_reachability.py"
+project_slug = "aminx"
+task_id = "260929_potts-laser-xtrax-compose"
+
+[hypothesis]
+statement = """
+The alias map records, for each upstream knob, the aminx field it corresponds to,
+and test_parity_ids_passed enshrines those claims. A row whose target field is
+never read by the family it is mapped from asserts a correspondence the code does
+not make: the knob is accepted and silently ignored.
+
+ONE INSTANCE IS ALREADY KNOWN, found by hand before this probe was written, and
+is declared here so it cannot be mistaken for a prediction: the seven
+backbone_noise / bb_noise rows map to `noise`, and grep over
+src/aminx/families/laser_mpnn/ and src/aminx/model/laser/ returns zero hits for
+it (aminx debt 2434, filed 261002). `noise` IS read elsewhere in src/aminx
+(utils/coordinates.py:44), so it is an instance of question B below, not A.
+
+The open question -- what this probe is for -- is whether that is isolated or a
+pattern, and what the complete list is. The prediction is that question A finds
+nothing (every target field exists somewhere in the codebase, since the fields
+were taken from real dataclasses) and that question B finds `noise` plus an
+unknown number of others.
+"""
+
+[method]
+summary = """
+For every live alias row, attribute its target fields to the family the reference
+surface belongs to (ref prefix laser_ -> laser, potts_/pottsmpnn_ -> potts). Then:
+
+  A. Is the target field read anywhere under src/aminx/ ? Zero reads means the
+     claim is unsupported outright; no judgement required.
+  B. For a field mapped from exactly ONE family, is it read inside that family's
+     own implementation subtree (families/<f>_mpnn, model/<f>, potts/)? Reads only
+     outside it are the `noise` shape -- handled by the generic path, which spec
+     6.3 says is the wrong rule for LASEr.
+
+Reads are collected by an ast walk over every .py file (Name, Attribute, keyword
+and arg nodes), NOT by substring grep, so `noise` cannot be credited to a file
+that only mentions backbone_noise_mode or names it in a docstring.
+
+Genuinely runner-level knobs (paths, batching, device, checkpoint resolution,
+seeds) are resolved by the host before any driver runs, so living outside a family
+subtree is correct for them. They are excluded from question B via an explicit
+list recorded in the payload, so the report is interpretable rather than being
+swamped by them. They are NOT excluded from question A.
+"""
+limitation = """
+Question B's exclusion list is a judgement about which knobs are runner-level. It
+is recorded verbatim in the payload so the call can be audited and re-run with a
+different list. A field read inside a family subtree is credited as handled there;
+this probe does not check that the handling is CORRECT, only that it exists --
+so it can show a claim is unsupported, never that one is sound.
+"""
+
+[outcomes]
+no_unreachable = "every target field is read somewhere in src/aminx AND every single-family, non-runner field is read inside its own family subtree"
+unreachable_targets = "at least one target field has zero reads anywhere under src/aminx; those rows assert a field that does not exist in the implementation"
+family_knob_handled_generically = "every target field is read somewhere, but at least one single-family non-runner field is read only outside its family's subtree (the noise shape)"
+both = "at least one of each"
+condition = "exactly one of the four fires; outcome is the payload's `outcome` key"
+
+[data]
+why_ast_not_grep = "a substring match credits `noise` to any file mentioning backbone_noise_mode; the claim under test is about a field actually being consumed"
+known_instance = "noise, 7 rows (laser_run_inference__backbone_noise, laser_run_inference_ligandmpnn__backbone_noise, laser_run_inference_tied__backbone_noise, and four *_sample_model__bb_noise) -- aminx debt 2434"
+upstream_rule_for_noise = "pdb_dataset.py:412-415 -- round coords to 2 decimals, then one randn((N,1,3)) per residue shared by all 5 backbone atoms; aminx's only noise is iid per atom (utils/coordinates.py:44), which is the spec's negative control"
+freeze_safety = "scripts/analysis/ is not in _SCOPED_PREFIXES, so this probe does not invalidate the running sidecar ledger wave"
