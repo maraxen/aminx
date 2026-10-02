@@ -430,3 +430,52 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
   with path.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(record, sort_keys=True))
     handle.write("\n")
+
+
+# --- jax_enable_x64 leak guard (debt #2419, #2431) --------------------------
+# Two modules once set this process-global flag and never restored it, so every
+# test running afterwards built float64 arrays. The damage lands far from the
+# cause -- a float32 checkpoint refusing to deserialise into a freshly built
+# float64 `like`, or a lax.cond whose branches disagree int64 vs int32 -- and it
+# cost 17 of the 18 tests/host failures in #2419 plus a wrong root-cause filing
+# before it was found.
+#
+# This restores the flag after any test that changes it, which is what actually
+# stops the cascade, and names every offender at session end. It deliberately
+# does NOT fail the leaking test: pytest_runtest_logfinish fires after fixture
+# finalizers, so a correctly-restoring fixture will not trip it, but making a
+# global-state check fatal on a suite this large is a bigger change than the
+# bug warrants. The printed summary is the signal to go fix the fixture.
+_X64_BASELINE: list[bool] = []
+_X64_LEAKS: list[str] = []
+
+
+def pytest_sessionstart(session: object) -> None:  # noqa: ARG001
+  """Record the flag as the session found it."""
+  import jax  # noqa: PLC0415
+
+  _X64_BASELINE.append(bool(jax.config.jax_enable_x64))
+
+
+def pytest_runtest_logfinish(nodeid: str, location: object) -> None:  # noqa: ARG001
+  """After the whole test, including fixture teardown, put the flag back."""
+  import jax  # noqa: PLC0415
+
+  if not _X64_BASELINE:
+    return
+  baseline = _X64_BASELINE[0]
+  if bool(jax.config.jax_enable_x64) != baseline:
+    _X64_LEAKS.append(nodeid)
+    jax.config.update("jax_enable_x64", baseline)
+
+
+def pytest_sessionfinish(session: object, exitstatus: object) -> None:  # noqa: ARG001
+  """Name the leakers, so the fixture gets fixed rather than papered over."""
+  if not _X64_LEAKS:
+    return
+  print(  # noqa: T201
+    f"\njax_enable_x64 LEAKED by {len(_X64_LEAKS)} test(s); the flag was restored "
+    "after each, but scope it in the fixture (see tests/ebm/conftest.py):",
+  )
+  for nodeid in _X64_LEAKS:
+    print(f"  {nodeid}")  # noqa: T201
