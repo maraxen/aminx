@@ -72,3 +72,77 @@ mutant = "permute_etab_out_rows"
 [branch.vehicle]
 kind = "sidecar"
 slug = "potts_energy_parity"
+
+# B7 laser_proofread_parity. FOUR rows, the four negative controls.
+# scalar_both_off is the POSITIVE control and deliberately has no row here:
+# every row above must report "failed" (_coverage.py:328) and a positive
+# control must pass. It must also stay out of the graded run's --mutants,
+# because :309 compares the raw argv string to exactly this set of ids.
+
+[[branch]]
+id = "reduction_swap"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "reduction_swap"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+[[branch]]
+id = "ddof_0"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "ddof_0"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+[[branch]]
+id = "scalar_off"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "scalar_off"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+[[branch]]
+id = "vector_on"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "vector_on"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+# A6 potts_ar_refine_exact. Three rows. ar_mask_present_chain_m_pos is also a
+# potts_ar_decode mutant, but the id lives under this slug's own set: :427
+# keys sidecar_ids by slug, so the same mutant name under two slugs is two
+# independent rows and each slug's --mutants must match its own set.
+
+[[branch]]
+id = "ar_mask_present_chain_m_pos"
+stage = "A6"
+fixture = "potts_example_pdbs"
+mutant = "ar_mask_present_chain_m_pos"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_refine_exact"
+
+[[branch]]
+id = "wrong_partition_sign"
+stage = "A6"
+fixture = "potts_ar_refine_examples"
+mutant = "wrong_partition_sign"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_refine_exact"
+
+[[branch]]
+id = "ntoc_refine_order"
+stage = "A6"
+fixture = "potts_ar_refine_examples"
+mutant = "ntoc_refine_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_refine_exact"
