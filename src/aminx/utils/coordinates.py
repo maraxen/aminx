@@ -17,6 +17,9 @@ from aminx.types.arrays import (
 )
 
 
+_MIN_BACKBONE_ATOMS = 4  # N, CA, C, O
+
+
 @jax.jit
 def apply_noise_to_coordinates(
   key: PRNGKeyArray,
@@ -97,6 +100,14 @@ def compute_backbone_coordinates(
   #     `[L, 0, 3]` slice (`ShapeInferenceError`, node `node_Squeeze_24`). Index the
   #     compact layout by its own in-range positions instead of relying on the clamp,
   #     so both JAX and any export target agree, and no `dynamic_slice` is ever traced.
+  if coordinates.shape[-2] < _MIN_BACKBONE_ATOMS:
+    # N, CA, C and O are needed. With fewer, `atom_order["O"] == 4` is out of range and JAX
+    # silently clamps the read to the last column, so O quietly becomes C (aminx #2152).
+    msg = (
+      f"coordinates must have at least {_MIN_BACKBONE_ATOMS} atoms per residue (N, CA, C, O); "
+      f"got atom axis of size {coordinates.shape[-2]} in shape {coordinates.shape}"
+    )
+    raise ValueError(msg)
   if coordinates.shape[-2] == 4:
     nitrogen = coordinates[:, 0, :]
     alpha_carbon = coordinates[:, 1, :]

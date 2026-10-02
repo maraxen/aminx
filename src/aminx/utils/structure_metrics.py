@@ -9,6 +9,9 @@ def _extract_ca_coordinates(coordinates: jnp.ndarray) -> jnp.ndarray:
   if coordinates.ndim == 2:
     return coordinates
   if coordinates.ndim == 3:
+    if coordinates.shape[1] < 2:
+      msg = f"coordinates need a CA column (atom axis >= 2); got shape {coordinates.shape}"
+      raise ValueError(msg)
     return coordinates[:, 1, :]
   msg = f"coordinates must be (L, 3) or (L, A, 3); got shape {coordinates.shape}"
   raise ValueError(msg)
@@ -19,6 +22,10 @@ def _extract_cb_coordinates(coordinates: jnp.ndarray) -> jnp.ndarray:
     return coordinates
   if coordinates.ndim == 3:
     # MPNN atom order: N=0, CA=1, C=2, CB=3 (glycine may lack CB; caller supplies CA fallback)
+    if coordinates.shape[1] < 4:
+      # JAX would silently clamp the read to the last column and return a wrong atom (aminx #2152).
+      msg = f"coordinates need a CB column (atom axis >= 4); got shape {coordinates.shape}"
+      raise ValueError(msg)
     return coordinates[:, 3, :]
   msg = f"coordinates must be (L, 3) or (L, A, 3); got shape {coordinates.shape}"
   raise ValueError(msg)
