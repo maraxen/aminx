@@ -474,6 +474,9 @@
   "src/aminx/scoring/score.py::make_score_fn": "P06",
   "src/aminx/scoring/score.py::make_score_split_fns": "P06",
   "src/aminx/scoring/score.py::score": "P06",
+  "src/aminx/tiling/_deprecation.py::warn_deprecated": {
+    "internal": "caller-attributed DeprecationWarning helper for aminx's deprecated tiling types (debt #2371); no browser surface"
+  },
   "src/aminx/tiling/bucketing.py::BucketAssignment": "P27",
   "src/aminx/tiling/bucketing.py::BucketingConfig": "P27",
   "src/aminx/tiling/bucketing.py::group_by_bucket": "P27",
