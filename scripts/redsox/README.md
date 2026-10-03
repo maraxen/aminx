@@ -42,7 +42,25 @@ They are installed by hand and survive because everything here runs
    Venv-only; `git status` stays empty afterwards, so the freeze survives.
    Check it with `uv run --no-sync python3 -c 'import redsox'` before a gate run.
 
-2. **`$POTTS_ORACLE_PYTHON` must point at the oracles venv.**
+2. **The gate needs a GPU, and must not use GPUs 0 or 1.**
+   Run it with `CUDA_VISIBLE_DEVICES=2,3`.
+
+   Two separate facts, both measured 261002:
+
+   * It needs the GPU. Forcing `JAX_PLATFORMS=cpu` fails `declayer_f64` — the
+     wave compares against a SEALED f64 dump and misses `rtol=1e-12` by
+     `1.13e-12` on one element of 512. Same wave, same ids, default backend:
+     3 passed. Do **not** copy `JAX_PLATFORMS=cpu` from `launch_wave.sh`; that
+     is there because the parity *vehicles* compare against a CPU torch oracle,
+     which is a different job.
+   * It must avoid GPUs 0 and 1. They are held by the vLLM backend
+     (`VLLM::Worker_TP0/TP1`, ~21.5 GB each), leaving GPU 0 at 24022/24576 MiB.
+     JAX defaults to device 0 and preallocates, so an unpinned run dies with
+     `CUDA_ERROR_OUT_OF_MEMORY` across the whole `__nonport__` wave — fifteen
+     tests, one cause, none of them a numeric failure. GPUs 2 and 3 are the
+     compute pair on this box.
+
+3. **`$POTTS_ORACLE_PYTHON` must point at the oracles venv.**
    `launch_wave.sh:100-102` exports it (and `LASER_ORACLE_PYTHON`,
    `AMINX_POTTS_ROOT`), so vehicles launched through the script are fine. A
    hand-rolled `bth run` is **not**: `potts_ddg_megascale`'s oracle arm imports
@@ -120,7 +138,21 @@ comparison of anything the gate does.
    "the runs are stale" from "the manifest is malformed".
 
 5. **Write the ledger**, one `[sidecar.<slug>] bth_run_id = "..."` per slug, and
-   run the gate.
+   run the gate:
+
+       ssh titanix 'cd ~/projects/aminx-sprint-git && \
+         git checkout -- .praxia/audits.jsonl && \
+         CUDA_VISIBLE_DEVICES=2,3 bth run --project-slug aminx \
+           -- uv run --no-sync python3 scripts/redsox/run_gate.py'
+
+   Through `bth run … -- uv run …`, never `bash -c` (that records `script_path`
+   as bash and leaves the outcome empty). `CUDA_VISIBLE_DEVICES=2,3` and the
+   `audits.jsonl` restore are both load-bearing — see the prerequisites and
+   trap 2 above.
+
+   **`run_gate.py` exits 0 whenever it GRADED, fail included.** The verdict is
+   the bathos `outcome` plus `{rc, step2_passed}`; exit status says only that
+   the harness did not crash.
 
 ## Traps, each of which yields a run that looks perfect and is discarded
 
