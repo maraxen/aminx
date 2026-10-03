@@ -112,6 +112,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import tomllib
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -398,7 +399,30 @@ def main() -> int:
     ],
   }
   args.out.parent.mkdir(parents=True, exist_ok=True)
-  args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+  payload = json.dumps(result, indent=2) + "\n"
+  args.out.write_text(payload, encoding="utf-8")
+
+  # ALSO emit to $BTH_RESULTS_PATH, which is how bathos actually finds a result.
+  # Revision 2's first run (94e0bfde) recorded outcome 'unknown' with
+  # output_paths = [] despite every count being present in --out: bathos reads
+  # the emission from $BTH_RESULTS_PATH, else an adjacent
+  # <stem>.bth-results.json, else a single path REGISTERED via `bth run
+  # --output-file` (runner.py:_read_result_emission). A bare `--out` is none of
+  # those, so the sidecar's own [outcomes] conditions were never evaluated --
+  # an ungraded run that still exits 0, which is the shape the verify-by-record
+  # rule exists to catch. Writing both makes the grading independent of
+  # remembering a flag at the call site.
+  bth_results = os.environ.get("BTH_RESULTS_PATH")
+  if bth_results:
+    Path(bth_results).parent.mkdir(parents=True, exist_ok=True)
+    Path(bth_results).write_text(payload, encoding="utf-8")
+    logger.info("emitted result to BTH_RESULTS_PATH=%s", bth_results)
+  else:
+    logger.warning(
+      "BTH_RESULTS_PATH is unset; this run will not be graded by its sidecar "
+      "unless the path is registered with `bth run --output-file`",
+    )
+
   logger.info(
     "%d of %d fields reachable; %d unreached (%d test debt, %d kind mismatch); "
     "%d inert credits, %d unsafeguarded; controls=%s -> %s",
