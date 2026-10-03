@@ -51,6 +51,31 @@ They are installed by hand and survive because everything here runs
    Launched by hand it died in under a minute; through the launcher it just
    works. Prefer the launcher, and export these three if you must not.
 
+## Running ONE port wave by hand
+
+Do not `pytest tests/port/<file>.py` bare. `_resolve_port_target_path`
+(`tests/port/conftest.py:71-81`) uses `AMINX_PORT_WAVE` when set and otherwise
+falls back to `[tool.port] target` in `pyproject.toml` — a single default — so a
+bare run silently gives every test the **wrong oracle**. It then fails as
+
+    AttributeError: module 'port_reference_reference_port_selftest'
+                    has no attribute 'OracleAbsentError'
+
+which names neither the cause nor the fix (`a1_compare.open_dump` references
+`oracle.OracleAbsentError` in its `except` clause, and the selftest reference
+exports neither that nor `load()`). Filed as debt 2444.
+
+Reproduce a wave exactly as the gate runs it, reusing its emitted lists:
+
+    OUT=outputs/gate/<timestamp>        # or any dir gate_ids.py wrote
+    files=$(cat $OUT/files_<wave>.txt | tr '\n' ' ')
+    AMINX_PORT_WAVE=<wave> AMINX_REDSOX_SELECT=$OUT/ids_<wave>.txt \
+      uv run --no-sync python3 -m pytest $files -o addopts= -q
+
+Measured 261002: `test_declayer_f64.py` bare gives an `AttributeError`; the same
+file under those two variables gives 3 passed. A comparison run bare is not a
+comparison of anything the gate does.
+
 ## Sequence
 
 1. **Freeze.** Land every scoped change. Confirm local == remote and nothing
