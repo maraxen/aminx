@@ -102,16 +102,22 @@ They are installed by hand and survive because everything here runs
 1. **`--mutants` must be in argv.** `_argv_mutants` returns `None` when the flag
    is absent, so a run relying on the script's default mutant list fails.
 2. **The tree must be clean**, or every run records `git_dirty = true`.
+   `.praxia/audits.jsonl` is TRACKED and **the port tier appends to it**.
 
-   This used to add "`.praxia/audits.jsonl` is TRACKED and anything running
-   pytest appends to it". The file is tracked; the rest is **false**, measured
-   261002 either side of a pytest run over `tests/knob_gate` and `tests/lint`:
-   sha256 `44642583f94f5d94` before and after, 206 lines both times, porcelain
-   empty for that path — matching ~15 other pytest invocations that day. What
-   dirties `.praxia/*.jsonl` is a praxia **agent session's** own hooks, in the
-   authoring checkout, not pytest on the box running the gate. `launch_wave.sh`
-   still restores before launching, because the trap is real even though this
-   cause was not.
+   Measured 261002, after getting it wrong in both directions, so the scope is
+   worth stating exactly. `tests/knob_gate` + `tests/lint` leave the file
+   byte-identical — sha256 `44642583f94f5d94` before and after, 206 lines both
+   times — which is what made "anything running pytest appends to it" look
+   false. But `tests/port/` appends heavily: a gate run plus two `tests/port/`
+   invocations added **259** lines, each a
+   `{"domain": "port", "rule_id": "parity_tier_1", …}` finding written by the
+   port harness itself.
+
+   So neither blanket claim holds. The operative rule: **any run of
+   `tests/port/` dirties a tracked file**, and the gate runs exactly that. This
+   also means a gate run leaves the tree dirty for whatever comes next —
+   `launch_wave.sh` restores before launching for this reason, and a gate
+   re-run needs `git checkout -- .praxia/audits.jsonl` first.
 3. **The weights key must be the stable identifier**, not an absolute path;
    `scripts/parity/artifact_key.py` derives it. Controls written before 6cb81d49
    carry `/home/solab/repos/...` and never validate.

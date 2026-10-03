@@ -25,19 +25,20 @@ set -euo pipefail
 REPO=${AMINX_WAVE_REPO:-$HOME/projects/aminx-sprint-git}
 cd "$REPO"
 
-# A dirty tree makes every run ineligible (git_dirty=true), so restore first.
+# .praxia/audits.jsonl is TRACKED and the PORT TIER appends to it, so a dirty
+# tree makes every later run ineligible (git_dirty=true). Restore first.
 #
-# This used to say ".praxia/audits.jsonl is TRACKED and anything running pytest
-# appends to it". The file IS tracked, but the second half is FALSE and was
-# worth knowing: measured 261002 in the b7i checkout, a pytest run over
-# tests/knob_gate and tests/lint left it byte-identical -- same sha256, same 206
-# lines, `git status --porcelain` on that path empty -- as did roughly fifteen
-# other pytest invocations across the tier that day.
+# Measured 261002, and I got this wrong in both directions before measuring it
+# properly, so the scope is written out: running `tests/knob_gate` and
+# `tests/lint` leaves the file byte-identical (same sha256, same 206 lines),
+# which is what misled me into deleting this comment as false. Running the PORT
+# tier appends hundreds of records -- a gate run plus two `tests/port/` runs
+# added 259 lines, each a `{"domain": "port", "rule_id": "parity_tier_1", ...}`
+# finding emitted by the port harness itself.
 #
-# What does dirty it is a praxia agent session's own hooks, which append to
-# .praxia/*.jsonl as they run. That happens in the orchestrating checkout, not
-# on the box running the gate. The restore stays: it costs nothing, and the
-# dirty-tree trap is real even though this particular cause was not.
+# So: "anything running pytest" is too strong, "pytest never touches it" is
+# false, and the rule that matters here is that ANY run of tests/port/ dirties
+# a tracked file. That is exactly what this script runs next to.
 git checkout -- . 2>/dev/null || true
 git fetch -q https://github.com/maraxen/aminx.git wt/260929-potts-laser-main
 git checkout -q FETCH_HEAD
