@@ -1,0 +1,56 @@
+[metadata]
+title = "LASEr unconditional proofread parity with injected dropout masks (debt #2424)"
+created = "261003"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "After #2424's fix, aminx's score:proofread_unconditional applies inference dropout exactly as upstream run_proofreading.py does -- load_model (:20-28) switches every nn.Dropout to train mode, and compute_unconditional_probs (:66-67) makes ONE forward pass with return_unconditional_probabilities=True and softmaxes it over the focus rows. With the same dropout masks injected on both sides through the existing oracle shim (scripts/parity/oracle_shims/laser.py, shim 3), aminx's proofread_mean matches upstream's unconditional probabilities within the spec section 7.3 line 1181 proofread band (max |delta| <= 1e-4), on the same five complexes and checkpoint as laser_proofread_parity; and each negative control -- including the #2424 defect itself reintroduced -- lands above 1e-3."
+stage_name = "parity"
+novel = true
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Unconditional proofreading is at parity with upstream under injected dropout, and every negative control failed. The #2424 fix stands; list this slug in the ledger."
+reasoning = "max |delta proofread_mean| <= 1e-4 over all five complexes, and no_dropout (the #2424 behaviour), scalar dropout off and vector dropout on all land in fail. The no_dropout control is what makes this sharp: it is exactly the pre-fix code path, so a pass here shows the vehicle can see the defect it was built to close."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Clean arm inside (1e-4, 1e-3] with every control failing. Not parity; investigate before listing."
+reasoning = "Same inconclusive band as the conditional arm's pre-registration."
+is_residual = true
+adversarial_check = "NOT (clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed)"
+decision = "Do not treat unconditional proofreading as parity: the band or a negative control failed."
+reasoning = "A clean miss above 1e-3, a non-finite value, an empty mutant list, or any negative control that does not fail falsifies the vehicle. In particular, if no_dropout does NOT fail, injected dropout is not reaching one side and a clean pass would mean nothing."
+is_residual = true
+adversarial_check = "clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+max_abs_mean = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+laser_root_env = "AMINX_LASER_ROOT (defaults to ~/repos/LASErMPNN)"
+checkpoint = "model_weights/laser_weights_0p1A_nothing_heldout.pt"
+checkpoint_sha256 = "304fe02a4807c310bdd9d68c988ae87619da3cf2025d5c223fb31030aa411173"
+fixtures = "the same five as laser_proofread_parity: 4jnj-1_prot.pdb plus 101m_1, 102m_1, 103m_1, 104m_1, sha256-pinned there"
+upstream_semantics = "ONE forward pass, unconditional=True, every nn.Dropout in train mode, softmax over first-shell (or selection) rows. No repetitions, so there is no std and no reduction to compare; proofread_mean over one pass is the probability array."
+pass_rule = "max |delta proofread_mean| <= 1e-4"
+inconclusive_band = "(1e-4, 1e-3]"
+fail_rule = "> 1e-3"
+band_source = "spec section 7.3 line 1181 (the proofread band), which spec line 1271 assigns to 'Proofread (both)'; reused unchanged, not re-chosen for this arm"
+negative_controls = "unc_no_dropout: aminx unconditional run with NO dropout context, i.e. the #2424 pre-fix behaviour -> must fail; unc_scalar_off: scalar dropout off in the aminx plan -> must fail; unc_vector_on: vector dropout on -> must fail"
+positive_control = "unc_both_off (optional, ungraded, own invocation, NO manifest row): upstream dropout stays eval and aminx runs without dropout; must report near-zero. Non-zero means instrument floor, not a port defect. Never appended to a graded run's --mutants: redsox step 1c compares the raw argv mutant string to this slug's manifest rows by exact set equality (tests/knob_gate/_coverage.py:309), and every manifest row must report failed (:328)."
+why_new_slug = "laser_proofread_parity's [outcomes] are the live spec line 1181 pre-registration for the CONDITIONAL metrics (mean and std over repetitions). Adding an unconditional band to it would edit a live pre-registration; a separate slug gets its own."
+
+[provenance]
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/laser_proofread_unconditional_parity.py --mutants unc_no_dropout,unc_scalar_off,unc_vector_on --controls-out $SC/laser_proofread_unconditional_parity/<git-sha8>/branch_controls.json. Written and committed BEFORE the vehicle script or the #2424 fix existed, so neither the band nor the controls were fitted to a result."
