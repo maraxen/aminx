@@ -13,3 +13,4 @@ df35e378cde3225e32978f00c259797f37d44a7e33908c1b79c0d91481cef8fb  ./potts_ar_dec
 0fe956b3e4b4e151df4eea5924f6975a7fdf020abacec41d03b6cfcffb981e85  ./pottsmpnn_full/oracle_f64.npz
 bddd54f33fa60428ad7c68f323792717dee3ea1327f207d31675d51fe84ea546  ./potts_refine/oracle_f32.npz
 b3eaf178636e7ebc68f5b8e84d3d87eebfaf6e8ac8fc5e7c8ca89cc7448c0bbf  ./potts_refine/oracle_f64.npz
+b0a1f4b8743d757fa809af88da5faf58c0b92449e4e63c9158d9c315d8e20760  ./potts_order/order_f64.npz

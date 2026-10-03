@@ -11,6 +11,11 @@ and numpy only (never aminx)::
 (bit-identical decoder tokens). Distributional shim-vs-unshimmed sampling is a
 later sidecar and is not run here.
 
+``--only order`` writes ``<out>/potts_order/order_f64.npz`` and appends new sha
+entries (the out-dir manifest, and one new line in ``oracles.sha256``). It does
+not regenerate any existing npz or rewrite any existing sha line. Orders are
+integers, so the f64 dump is the whole batch.
+
 Writes ``<out>/<wave>/oracle_<prec>.npz`` for each §7.2 Potts wave, ``<out>/declayer_f64.npz``,
 and ``<out>/oracle_manifest.toml``.
 """
@@ -1314,15 +1319,437 @@ def _run_dumps(
   )
 
 
+def _rows(value: torch.Tensor) -> torch.Tensor:
+  """Drop a leading batch of 1. ``E_idx`` / masks arrive as ``(1, L, ...)``."""
+  array = value.detach().cpu()
+  if array.ndim >= 1 and array.shape[0] == 1 and array.ndim >= 2:
+    array = array[0]
+  return array
+
+
+def _e_idx_rows(value: torch.Tensor) -> torch.Tensor:
+  array = _rows(value).to(dtype=torch.int64)
+  if array.ndim != 2:
+    msg = f"E_idx must be (L, K) after squeezing the batch, got {tuple(array.shape)}"
+    raise RuntimeError(msg)
+  return array
+
+
+def _same_neighbour_sets(left: torch.Tensor, right: torch.Tensor) -> bool:
+  if left.shape[0] != right.shape[0]:
+    return False
+  for index in range(int(left.shape[0])):
+    if set(int(v) for v in left[index].tolist()) != set(int(v) for v in right[index].tolist()):
+      return False
+  return True
+
+
+def _order_mask_backward(decoding_order: torch.Tensor, length: int) -> torch.Tensor:
+  """Upstream ``order_mask_backward`` (``potts_mpnn_utils.py:1423-1424``)."""
+  order = decoding_order.detach().to(dtype=torch.long).reshape(1, length)
+  lower = 1.0 - torch.triu(torch.ones(length, length, dtype=torch.float64))
+  perm = torch.nn.functional.one_hot(order, num_classes=length).to(dtype=torch.float64)
+  mask = torch.einsum("ij,biq,bjp->bqp", lower, perm, perm)
+  return mask[0]
+
+
+def _append_text_line(path: Path, line: str, *, identity: str) -> None:
+  """Append ``line`` unless ``identity`` is already recorded. Never rewrite a line."""
+  text = path.read_text(encoding="utf-8") if path.is_file() else ""
+  for existing in text.splitlines():
+    stripped = existing.strip()
+    if not stripped:
+      continue
+    if stripped == line.strip():
+      return
+    tokens = stripped.split()
+    if identity in tokens or stripped == identity:
+      msg = f"refusing to modify existing sha entry {identity} in {path}"
+      raise SystemExit(msg)
+  prefix = "" if text.endswith("\n") or text == "" else "\n"
+  path.parent.mkdir(parents=True, exist_ok=True)
+  with path.open("a", encoding="utf-8") as handle:
+    handle.write(prefix + line + "\n")
+
+
+def _append_dump_row(path: Path, row: dict[str, object]) -> None:
+  """Append one ``[[dump]]`` table. An existing path keeps its recorded sha."""
+  rel = str(row["path"])
+  digest = str(row["sha256"])
+  if path.is_file():
+    text = path.read_text(encoding="utf-8")
+    needle = f"path = {_toml_str(rel)}"
+    if needle in text:
+      if f"sha256 = {_toml_str(digest)}" not in text:
+        msg = f"refusing to modify existing manifest sha for {rel}"
+        raise SystemExit(msg)
+      return
+  else:
+    text = ""
+  block = "\n".join(
+    [
+      "[[dump]]",
+      f"wave = {_toml_str(str(row['wave']))}",
+      f"precision = {_toml_str(str(row['precision']))}",
+      f"path = {_toml_str(rel)}",
+      f"sha256 = {_toml_str(digest)}",
+      f"shimmed = {'true' if row['shimmed'] else 'false'}",
+      "",
+    ],
+  )
+  prefix = "" if text.endswith("\n") or text == "" else "\n"
+  path.parent.mkdir(parents=True, exist_ok=True)
+  with path.open("a", encoding="utf-8") as handle:
+    handle.write(prefix + block)
+
+
+def _write_chain(path: Path, residues: list[tuple[str, int, str, float, float]]) -> str:
+  rows: list[str] = []
+  serial = 1
+  for chain, resseq, resname, x, y in residues:
+    rows.extend(_backbone(chain, resseq, resname, x, y, serial=serial))
+    serial += 4
+  path.parent.mkdir(parents=True, exist_ok=True)
+  path.write_text("\n".join(rows) + "\n")
+  return _sha256_file(path)
+
+
+def _write_order_pdbs(work: Path) -> dict[str, tuple[Path, str]]:
+  """Synthetic PDBs for the order batch. Straight chains so kNN distances are unique."""
+  written: dict[str, tuple[Path, str]] = {}
+
+  def straight(
+    length: int,
+    *,
+    chain: str = "A",
+    y: float = 0.0,
+  ) -> list[tuple[str, int, str, float, float]]:
+    return [(chain, index + 1, "ALA", float(index) * 3.8, y) for index in range(length)]
+
+  specs: dict[str, list[tuple[str, int, str, float, float]]] = {
+    "L30": straight(30),
+    "L48": straight(48),
+    "L49": straight(49),
+    "partition_a": straight(20),
+    "binding": straight(20) + straight(12, chain="B", y=6.0),
+    # resseq 1,2,4,5 leaves residue 3 as a gap row. Residue 1 is fixed below.
+    "gap_fixed": [
+      ("A", resseq, "ALA", float(index) * 3.8, 0.0) for index, resseq in enumerate((1, 2, 4, 5))
+    ],
+    "tied": straight(6),
+  }
+  for name, residues in specs.items():
+    path = work / f"{name}.pdb"
+    written[name] = (path, _write_chain(path, residues))
+  return written
+
+
+def _record_graph(
+  payload: dict[str, np.ndarray],
+  potts: object,
+  model: torch.nn.Module,
+  *,
+  name: str,
+  path: Path,
+  pdb_sha: str,
+) -> torch.Tensor:
+  fixture = Fixture(name=name, path=path, skip_gaps=False)
+  feat = _featurize(potts, fixture)
+  encoded = _encode(potts, model, feat)
+  e_idx = _e_idx_rows(encoded.e_idx)
+  coords = _rows(feat.x).to(dtype=torch.float64)
+  if coords.ndim != 3 or coords.shape[-2:] != (4, 3):
+    msg = f"{name} coords have shape {tuple(coords.shape)}, expected (L, 4, 3)"
+    raise RuntimeError(msg)
+  if int(coords.shape[0]) != int(e_idx.shape[0]):
+    msg = f"{name} L={coords.shape[0]} but E_idx has {e_idx.shape[0]} rows"
+    raise RuntimeError(msg)
+  payload[f"{name}__coords"] = coords.numpy()
+  payload[f"{name}__mask"] = _rows(feat.mask).to(dtype=torch.float64).numpy()
+  payload[f"{name}__residue_idx"] = _rows(feat.residue_idx).to(dtype=torch.int64).numpy()
+  payload[f"{name}__chain_encoding"] = _rows(feat.chain_encoding).to(dtype=torch.int64).numpy()
+  payload[f"{name}__E_idx"] = e_idx.numpy()
+  payload[f"{name}__pdb_sha256"] = np.asarray(pdb_sha)
+  return e_idx
+
+
+def _tied_randn(length: int, group: list[int], non_member: int, scale: float) -> np.ndarray:
+  """Raw order visits the listing-last member, then ``non_member``, then the rest of the group."""
+  used = [group[-1], non_member, *group[:-1]]
+  if len(set(used)) != len(used):
+    msg = f"tied randn reused a row in {used}"
+    raise RuntimeError(msg)
+  tail = [index for index in range(length) if index not in used]
+  order = used + tail
+  if len(order) != length:
+    msg = f"tied randn order covers {len(order)} of {length}"
+    raise RuntimeError(msg)
+  values = np.zeros(length, dtype=np.float64)
+  for rank, index in enumerate(order):
+    values[index] = scale * float(rank + 1)
+  return values
+
+
+def _assert_tie_separates(raw: torch.Tensor, group: list[int]) -> None:
+  rank = torch.empty(raw.numel(), dtype=torch.long)
+  rank[raw.to(dtype=torch.long)] = torch.arange(raw.numel())
+  by_rank = sorted(group, key=lambda index: int(rank[index]))
+  if list(group) == by_rank:
+    msg = "tied listing order matches raw-rank order; the raw-rank control would not fire"
+    raise RuntimeError(msg)
+  member_ranks = [int(rank[index]) for index in group]
+  lo, hi = min(member_ranks), max(member_ranks)
+  between = [
+    index
+    for index in range(int(raw.numel()))
+    if index not in set(group) and lo < int(rank[index]) < hi
+  ]
+  if not between:
+    msg = "no non-member raw rank lies between two tied members"
+    raise RuntimeError(msg)
+
+
+def _run_order_dumps(
+  potts: object,
+  run_utils: object,
+  args: argparse.Namespace,
+  commit: str,
+  pin_weights: dict[str, str],
+) -> None:
+  """Neighbour sets, tied rank, and AR/refine orders. New files only."""
+  if args.out is None:
+    msg = "--out is required"
+    raise SystemExit(msg)
+  out = Path(args.out)
+  out.mkdir(parents=True, exist_ok=True)
+  checkpoint_id = "vanilla_20"
+  rel = CHECKPOINTS[checkpoint_id]
+  weights = Path(args.potts_root) / rel
+  digest = _sha256_file(weights)
+  if digest != pin_weights[rel]:
+    msg = f"sha256 mismatch for {rel}: file {digest} pin {pin_weights[rel]}"
+    raise SystemExit(msg)
+  pdbs = _write_order_pdbs(out / "_order_generated")
+  model, _missing, _unexpected = _load_model(potts, weights, precision="f64")
+  payload: dict[str, np.ndarray] = {
+    "precision": np.asarray("f64"),
+    "upstream_commit": np.asarray(commit),
+    "checkpoint_id": np.asarray(checkpoint_id),
+    "weights_sha256": np.asarray(digest),
+    "neighbour_cases": np.asarray(["L30", "L48", "L49", "partition_Lp20"]),
+  }
+  expected_length = {"L30": 30, "L48": 48, "L49": 49}
+  # The same f64 shims the main dump applies (see _run_dumps): upstream's
+  # PositionalEncodings hardcodes .float() and its RBF centres are f32, so an
+  # f64 model without them dies in F.linear on a Float/Double mismatch.
+  with contextlib.ExitStack() as precision_shims, torch.no_grad():
+    precision_shims.enter_context(
+      weight_dtype_positional_encodings(potts.PositionalEncodings),  # ty: ignore[unresolved-attribute]
+    )
+    precision_shims.enter_context(rbf_follows_input_dtype(potts.ProteinFeatures))  # ty: ignore[unresolved-attribute]
+    for name, length in expected_length.items():
+      path, pdb_sha = pdbs[name]
+      e_idx = _record_graph(payload, potts, model, name=name, path=path, pdb_sha=pdb_sha)
+      if int(e_idx.shape[0]) != length:
+        msg = f"{name} featurized to L={e_idx.shape[0]}, expected {length}"
+        raise RuntimeError(msg)
+    solo_path, solo_sha = pdbs["partition_a"]
+    solo_idx = _record_graph(
+      payload,
+      potts,
+      model,
+      name="partition_Lp20",
+      path=solo_path,
+      pdb_sha=solo_sha,
+    )
+    binding_path, binding_sha = pdbs["binding"]
+    binding = Fixture(
+      name="order_binding",
+      path=binding_path,
+      skip_gaps=False,
+      run_binding=True,
+      binding_partitions=[["A"], ["B"]],
+    )
+    binding_feat = _featurize(potts, binding)
+    partition_etabs, _partition_index, _inter = _binding_context(
+      run_utils,
+      model,
+      binding_feat,
+      binding,
+    )
+    partition_idx = _e_idx_rows(partition_etabs[0][1])
+    if int(partition_idx.shape[0]) >= 48:
+      msg = f"binding partition L_p={partition_idx.shape[0]} is not < 48"
+      raise RuntimeError(msg)
+    if not _same_neighbour_sets(partition_idx, solo_idx):
+      msg = "get_etab partition E_idx does not match the chain-A encoder graph"
+      raise RuntimeError(msg)
+    payload["partition_Lp20__E_idx"] = partition_idx.numpy()
+    payload["partition_Lp20__binding_pdb_sha256"] = np.asarray(binding_sha)
+    payload["partition_Lp20__L_p"] = np.asarray(partition_idx.shape[0])
+
+    gap_path, gap_sha = pdbs["gap_fixed"]
+    gap = Fixture(
+      name="order_gap_fixed",
+      path=gap_path,
+      skip_gaps=False,
+      fixed_positions={"A": [1]},
+    )
+    gap_feat = _featurize(potts, gap)
+    gap_randn = torch.linspace(0.2, 1.1, int(gap_feat.s.shape[1]), dtype=torch.float64).view(1, -1)
+    present = gap_feat.mask
+    chain_m = gap_feat.chain_m
+    chain_m_pos = gap_feat.chain_m_pos
+    ar = _order_from_randn(chain_m * chain_m_pos * present, gap_randn)
+    refine = _order_from_randn(chain_m, gap_randn)
+    dropped = _order_from_randn(chain_m * present, gap_randn)
+    if not bool((present == 0).any()):
+      msg = "gap fixture has no mask==0 row"
+      raise RuntimeError(msg)
+    fixed_present = (chain_m_pos == 0) & (present == 1)
+    if not bool(fixed_present.any()):
+      msg = "gap fixture has no fixed present row (chain_M_pos==0); drop-chain_M_pos would not fire"
+      raise RuntimeError(msg)
+    if torch.equal(ar, refine) or torch.equal(ar, dropped):
+      msg = "AR / refine / dropped-chain_M_pos orders are not separated"
+      raise RuntimeError(msg)
+    payload["knob_randn"] = _rows(gap_randn).numpy()
+    payload["knob_chain_M"] = _rows(chain_m).to(dtype=torch.float64).numpy()
+    payload["knob_chain_M_pos"] = _rows(chain_m_pos).to(dtype=torch.float64).numpy()
+    payload["knob_mask"] = _rows(present).to(dtype=torch.float64).numpy()
+    payload["knob_ar_order"] = _rows(ar).to(dtype=torch.int64).numpy()
+    payload["knob_refine_order"] = _rows(refine).to(dtype=torch.int64).numpy()
+    payload["knob_pdb_sha256"] = np.asarray(gap_sha)
+
+    tied_path, tied_sha = pdbs["tied"]
+    tied = Fixture(
+      name="order_tied",
+      path=tied_path,
+      skip_gaps=False,
+      tied_positions=[{"A": [3, 1]}],
+      run_tied_decode=True,
+    )
+    tied_feat = _featurize(potts, tied)
+    tied_encoded = _encode(potts, model, tied_feat)
+    groups = [group for group in tied_feat.tied_pos if len(group) > 1]
+    if len(groups) != 1:
+      msg = f"expected one multi-member tied group, got {tied_feat.tied_pos}"
+      raise RuntimeError(msg)
+    group = [int(index) for index in groups[0]]
+    length = int(tied_feat.s.shape[1])
+    score = _rows(tied_feat.chain_m * tied_feat.chain_m_pos * tied_feat.mask)
+    if not bool(torch.all(score == score.reshape(-1)[0])) or float(score.reshape(-1)[0]) == 0.0:
+      msg = f"tied fixture score is not a positive constant: {score}"
+      raise RuntimeError(msg)
+    non_members = [index for index in range(length) if index not in group]
+    if len(non_members) < 2:
+      msg = "tied fixture needs two non-members so the three seeds can move the between-row"
+      raise RuntimeError(msg)
+    randn_rows = [
+      _tied_randn(length, group, non_members[0], 0.10),
+      _tied_randn(length, group, non_members[1], 0.13),
+      _tied_randn(length, group, non_members[0], 0.17),
+    ]
+    orders: list[np.ndarray] = []
+    masks: list[np.ndarray] = []
+    dtype = torch.float64
+    kwargs = _decoder_kwargs(tied_feat, dtype, pssm=False)
+    for values in randn_rows:
+      randn = torch.as_tensor(values, dtype=dtype).view(1, -1)
+      raw = _order_from_randn(
+        tied_feat.chain_m * tied_feat.chain_m_pos * tied_feat.mask,
+        randn,
+      )[0]
+      _assert_tie_separates(raw, group)
+      uniforms = np.full((1, length * 4), 0.5, dtype=np.float64)
+      model_cls = getattr(potts, "PottsMPNN")
+      with (
+        injected_uniform_draws(uniforms),
+        injected_tied_randn(model_cls, randn) as recorded,
+      ):
+        tied_feat_mask = tied_feat.mask.to(dtype=dtype)
+        # Look the method up inside the shim, or the captured original skips it.
+        tied_decoder = getattr(model, "tied_decoder")
+        tied_decoder(
+          tied_encoded.h_v,
+          tied_encoded.e_idx,
+          tied_encoded.h_e,
+          randn,
+          tied_feat.s,
+          tied_feat.chain_m.to(dtype=dtype),
+          tied_feat.chain_encoding,
+          tied_feat.residue_idx,
+          mask=tied_feat_mask,
+          tied_pos=tied_feat.tied_pos,
+          tied_beta=tied_feat.tied_beta.to(dtype=dtype),
+          **kwargs,
+        )
+      if len(recorded) != 1:
+        msg = f"tied_decoder recorded {len(recorded)} orders"
+        raise RuntimeError(msg)
+      flat = recorded[0].detach().to(dtype=torch.long).reshape(-1)
+      if int(flat.numel()) != length:
+        msg = f"flattened decoding_order has length {flat.numel()}, expected {length}"
+        raise RuntimeError(msg)
+      if torch.equal(flat, raw.to(dtype=torch.long)):
+        msg = "grouped decoding order equals the raw order; the control would not fire"
+        raise RuntimeError(msg)
+      orders.append(flat.cpu().numpy())
+      masks.append(_order_mask_backward(flat, length).numpy())
+    payload["tied_randn"] = np.stack(randn_rows, axis=0)
+    payload["tied_decoding_order"] = np.stack(orders, axis=0)
+    payload["tied_order_mask_backward"] = np.stack(masks, axis=0)
+    payload["tied_E_idx"] = _e_idx_rows(tied_encoded.e_idx).numpy()
+    payload["tied_chain_M"] = _rows(tied_feat.chain_m).to(dtype=torch.float64).numpy()
+    payload["tied_chain_M_pos"] = _rows(tied_feat.chain_m_pos).to(dtype=torch.float64).numpy()
+    payload["tied_mask"] = _rows(tied_feat.mask).to(dtype=torch.float64).numpy()
+    payload["tied_group"] = np.asarray(group, dtype=np.int64)
+    payload["tied_pdb_sha256"] = np.asarray(tied_sha)
+
+  dest = out / "potts_order" / "order_f64.npz"
+  file_digest = _save_npz(dest, payload)
+  relative = "potts_order/order_f64.npz"
+  sidecar = dest.with_suffix(".npz.sha256")
+  if sidecar.is_file() and sidecar.read_text(encoding="utf-8").strip() != file_digest:
+    msg = f"refusing to modify existing sha entry {sidecar}"
+    raise SystemExit(msg)
+  if not sidecar.is_file():
+    sidecar.write_text(file_digest + "\n", encoding="utf-8")
+  repo_sha = Path(__file__).resolve().parents[2] / "tests/port/reference/a1_potts/oracles.sha256"
+  _append_text_line(
+    repo_sha,
+    f"{file_digest}  ./{relative}",
+    identity=f"./{relative}",
+  )
+  _append_dump_row(
+    out / "oracle_manifest.toml",
+    {
+      "wave": "potts_order",
+      "precision": "f64",
+      "path": relative,
+      "sha256": file_digest,
+      "shimmed": True,
+    },
+  )
+  logger.info("wrote %s (%s)", dest, file_digest)
+
+
 def main() -> None:
   logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--potts-root", type=Path, required=True)
-  parser.add_argument("--fixtures-dir", type=Path, required=True)
+  parser.add_argument("--fixtures-dir", type=Path)
   parser.add_argument("--out", type=Path)
   parser.add_argument("--checkpoints", nargs="*", default=list(CHECKPOINTS))
   parser.add_argument("--precisions", nargs="+", default=["f64", "f32"], choices=["f64", "f32"])
   parser.add_argument("--selfcheck", action="store_true")
+  parser.add_argument(
+    "--only",
+    choices=("order",),
+    help=(
+      "Write potts_order/order_f64.npz and new sha entries, and do not regenerate existing dumps."
+    ),
+  )
   args = parser.parse_args()
   potts_root = Path(args.potts_root).resolve()
   sys.path.insert(0, str(potts_root))
@@ -1332,8 +1759,17 @@ def main() -> None:
   pin_commit, pin_weights = _load_pin(potts_root)
   commit = _upstream_commit(potts_root, pin_commit)
   if args.selfcheck:
+    if args.fixtures_dir is None:
+      msg = "--fixtures-dir is required for --selfcheck"
+      raise SystemExit(msg)
     _selfcheck(potts, potts_root, Path(args.fixtures_dir).resolve())
     return
+  if args.only == "order":
+    _run_order_dumps(potts, run_utils, args, commit, pin_weights)
+    return
+  if args.fixtures_dir is None:
+    msg = "--fixtures-dir is required unless --only order is set"
+    raise SystemExit(msg)
   _run_dumps(potts, run_utils, args, commit, pin_weights)
 
 

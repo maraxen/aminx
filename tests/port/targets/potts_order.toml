@@ -1,0 +1,21 @@
+# Integer decoding orders and neighbour sets. Equality is exact; there is no band.
+[port]
+wave_id = "potts_order"
+oracle_id = "ref:tests/port/reference/potts_order:v1"
+symbol_qualname = "aminx.families.potts_mpnn.decode.schedule_groups"
+reference_subtree = "reference/potts_order"
+
+[capabilities]
+stochastic = false
+dynamic_shape = false
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "exact"
+tolerance_policy_f32 = "exact"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true

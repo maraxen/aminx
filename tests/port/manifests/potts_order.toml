@@ -1,0 +1,24 @@
+[manifest]
+wave_id = "potts_order"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:0582a3a0a729834504752a7f0d9b333d25d568b91f9a8bbe9b7aeab86a132aea"
+created_at = "2026-10-03T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.families.potts_mpnn.decode.neighbor_valid"
+module_path = "src/aminx/families/potts_mpnn/decode.py"
+depends_on = []
+
+[[kernels]]
+order = 2
+qualname = "aminx.families.potts_mpnn.decode.schedule_groups"
+module_path = "src/aminx/families/potts_mpnn/decode.py"
+depends_on = []
+
+[[kernels]]
+order = 3
+qualname = "aminx.families.potts_mpnn.sample_host.fresh_refine_order"
+module_path = "src/aminx/families/potts_mpnn/sample_host.py"
+depends_on = []

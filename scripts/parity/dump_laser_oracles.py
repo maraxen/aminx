@@ -12,6 +12,11 @@ original callable, and (when the default checkpoint and ``4jnj-1_prot.pdb`` are
 present) that an unshimmed encoder forward is bit-identical across two seeded
 repeats. It does not write dumps.
 
+``--only order`` writes ``<out>/laser_order/order_f64.npz`` and appends one new
+``[[dump]]`` sha entry. It does not regenerate any existing npz or rewrite any
+existing sha line. ``torch.rand`` inside ``_masked_sort_for_decoding_order`` is
+the shim in ``oracle_shims/laser.py``. Orders are integers, so f64 is enough.
+
 Writes ``<out>/<wave>/oracle_<prec>.npz`` for each §7.2 LASEr wave
 (``laser_layers``, ``laser_encoder``, ``laser_score``, ``laser_decode_step``,
 ``laser_rotamers``) and ``<out>/oracle_manifest.toml`` (upstream commit via
@@ -915,6 +920,217 @@ def _run_dumps(
   )
 
 
+def _append_dump_row(path: Path, row: dict[str, object]) -> None:
+  """Append one ``[[dump]]`` table. An existing path keeps its recorded sha."""
+  rel = str(row["path"])
+  digest = str(row["sha256"])
+  text = path.read_text(encoding="utf-8") if path.is_file() else ""
+  needle = f"path = {_toml_str(rel)}"
+  if needle in text:
+    if f"sha256 = {_toml_str(digest)}" not in text:
+      msg = f"refusing to modify existing manifest sha for {rel}"
+      raise SystemExit(msg)
+    return
+  block = "\n".join(
+    [
+      "[[dump]]",
+      f"wave = {_toml_str(str(row['wave']))}",
+      f"precision = {_toml_str(str(row['precision']))}",
+      f"path = {_toml_str(rel)}",
+      f"sha256 = {_toml_str(digest)}",
+      f"shimmed = {'true' if row['shimmed'] else 'false'}",
+      "",
+    ],
+  )
+  prefix = "" if text.endswith("\n") or text == "" else "\n"
+  path.parent.mkdir(parents=True, exist_ok=True)
+  with path.open("a", encoding="utf-8") as handle:
+    handle.write(prefix + block)
+
+
+def _tier_stream(chain_mask: np.ndarray, contact: np.ndarray) -> np.ndarray:
+  """Tier-0, tier-1, tier-2 uniforms in ascending row index. Values sit in (0, 1).
+
+  Fixed rows sit near 0.9 and designable rows near 0.05, so dropping the tier
+  offset reverses them. Contact rows sit near 0.4, between those two.
+  """
+  fixed = np.asarray(chain_mask, dtype=bool)
+  designable = ~fixed
+  touched = np.asarray(contact, dtype=bool) & designable
+  plain = designable & ~touched
+  parts: list[np.ndarray] = []
+  for mask, base in ((fixed, 0.90), (plain, 0.05), (touched, 0.40)):
+    count = int(mask.sum())
+    if count == 0:
+      continue
+    parts.append(base + np.linspace(0.0, 0.04, count, dtype=np.float64))
+  if not parts:
+    return np.zeros(0, dtype=np.float64)
+  return np.concatenate(parts)
+
+
+def _scatter_stream(stream: np.ndarray, chain_mask: np.ndarray, contact: np.ndarray) -> np.ndarray:
+  """Map the concatenated tier stream back onto rows (ascending index within a tier)."""
+  fixed = np.asarray(chain_mask, dtype=bool)
+  designable = ~fixed
+  touched = np.asarray(contact, dtype=bool) & designable
+  plain = designable & ~touched
+  out = np.zeros(fixed.shape[0], dtype=np.float64)
+  offset = 0
+  for mask in (fixed, plain, touched):
+    index = np.flatnonzero(mask)
+    count = int(index.size)
+    out[index] = stream[offset : offset + count]
+    offset += count
+  if offset != int(stream.shape[0]):
+    msg = f"tier stream length {stream.shape[0]} != consumed {offset}"
+    raise RuntimeError(msg)
+  return out
+
+
+def _residue_mask(value: np.ndarray, *, name: str) -> np.ndarray:
+  """Collapse a leading or trailing batch of 1 so masks are ``(L,)``."""
+  array = np.squeeze(np.asarray(value))
+  if array.ndim != 1:
+    msg = f"{name} has shape {tuple(np.asarray(value).shape)}, expected a residue vector"
+    raise RuntimeError(msg)
+  return np.asarray(array, dtype=bool)
+
+
+def _assign_mask(batch: object, name: str, value: np.ndarray) -> None:
+  current = getattr(batch, name)
+  flat = np.asarray(value, dtype=bool).reshape(-1)
+  if flat.size != int(current.numel()):
+    msg = f"{name} has {int(current.numel())} entries, got {flat.size}"
+    raise RuntimeError(msg)
+  tensor = torch.as_tensor(flat, device=current.device)
+  tensor = tensor.to(dtype=current.dtype).reshape(tuple(current.shape))
+  setattr(batch, name, tensor)
+
+
+def _decoding_order_from_batch(
+  batch: object,
+  chain_mask: np.ndarray,
+  contact: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+  stream = _tier_stream(chain_mask, contact)
+  _assign_mask(batch, "chain_mask", chain_mask)
+  _assign_mask(batch, "extra_atom_contact_mask", contact)
+  with injected_decoding_order_uniforms(stream) as cursor:
+    generate = getattr(batch, "generate_decoding_order")
+    generate(stack_tensors=False)
+  if cursor.offset != int(stream.shape[0]):
+    msg = f"decoding-order shim consumed {cursor.offset} of {stream.shape[0]} uniforms"
+    raise RuntimeError(msg)
+  order_tensor = getattr(batch, "decoding_order")
+  order = order_tensor.detach().cpu().to(dtype=torch.int64).reshape(-1).numpy()
+  row_u = _scatter_stream(stream, chain_mask, contact)
+  tier = np.where(chain_mask.astype(bool), 0.0, np.where(contact.astype(bool), 2.0, 1.0))
+  reconstructed = np.argsort(row_u + tier, kind="stable")
+  if not np.array_equal(order, reconstructed):
+    msg = "upstream decoding order disagrees with argsort(u + tier) on the injected stream"
+    raise RuntimeError(msg)
+  if np.array_equal(order, np.argsort(row_u, kind="stable")):
+    msg = "dropping the tier offset leaves the order unchanged; the control would not fire"
+    raise RuntimeError(msg)
+  return order, stream
+
+
+def _mixed_fixed(chain_mask: np.ndarray) -> np.ndarray:
+  """Keep a featurizer mask that already mixes tiers. Otherwise fix a prefix."""
+  mask = np.asarray(chain_mask, dtype=bool).copy()
+  if bool(mask.any()) and bool((~mask).any()):
+    return mask
+  count = max(1, int(mask.shape[0]) // 5)
+  mask[:] = False
+  mask[:count] = True
+  return mask
+
+
+def _run_order_dumps(
+  args: argparse.Namespace,
+  package: Path,
+  commit: str,
+  pin_weights: dict[str, str],
+) -> None:
+  """Inference order (tier 2 empty) and a hand-set 3-tier order. New files only."""
+  if args.out is None:
+    msg = "--out is required"
+    raise SystemExit(msg)
+  out = Path(args.out)
+  out.mkdir(parents=True, exist_ok=True)
+  rel = CHECKPOINTS["nothing_heldout"]
+  weights = package / rel
+  digest = _sha256_file(weights)
+  pinned = pin_weights[Path(rel).name]
+  if digest != pinned:
+    msg = f"sha256 mismatch for {rel}: file {digest} pin {pinned}"
+    raise SystemExit(msg)
+  example = package / "example_pdbs" / "4jnj-1_prot.pdb"
+  if not example.is_file():
+    msg = f"missing upstream example pdb {example}"
+    raise SystemExit(msg)
+  pdb_sha = _sha256_file(example)
+  batch = _featurize(example, dtype=torch.float64)
+  base_chain = _residue_mask(getattr(batch, "chain_mask").detach().cpu().numpy(), name="chain_mask")
+  base_contact = _residue_mask(
+    getattr(batch, "extra_atom_contact_mask").detach().cpu().numpy(),
+    name="extra_atom_contact_mask",
+  )
+  if bool(base_contact.any()):
+    msg = "inference featurizer produced a non-empty extra_atom_contact_mask"
+    raise RuntimeError(msg)
+  length = int(base_chain.shape[0])
+  if length < 6:
+    msg = f"inference fixture length {length} is too short for three tiers"
+    raise RuntimeError(msg)
+  infer_chain = _mixed_fixed(np.asarray(base_chain, dtype=bool))
+  infer_contact = np.zeros(length, dtype=bool)
+  with torch.no_grad():
+    infer_order, infer_stream = _decoding_order_from_batch(batch, infer_chain, infer_contact)
+    hand_chain = np.zeros(length, dtype=bool)
+    hand_chain[:2] = True
+    hand_contact = np.zeros(length, dtype=bool)
+    hand_contact[2:4] = True
+    hand_order, hand_stream = _decoding_order_from_batch(batch, hand_chain, hand_contact)
+  payload = {
+    "precision": np.asarray("f64"),
+    "upstream_commit": np.asarray(commit),
+    "checkpoint_id": np.asarray("nothing_heldout"),
+    "weights_sha256": np.asarray(digest),
+    "fixture_name": np.asarray("4jnj-1_prot"),
+    "pdb_sha256": np.asarray(pdb_sha),
+    "infer_chain_mask": infer_chain,
+    "infer_contact": infer_contact,
+    "infer_uniforms": infer_stream,
+    "infer_order": infer_order,
+    "hand_chain_mask": hand_chain,
+    "hand_contact": hand_contact,
+    "hand_uniforms": hand_stream,
+    "hand_order": hand_order,
+  }
+  dest = out / "laser_order" / "order_f64.npz"
+  file_digest = _save_npz(dest, payload)
+  relative = "laser_order/order_f64.npz"
+  sidecar = dest.with_suffix(".npz.sha256")
+  if sidecar.is_file() and sidecar.read_text(encoding="utf-8").strip() != file_digest:
+    msg = f"refusing to modify existing sha entry {sidecar}"
+    raise SystemExit(msg)
+  if not sidecar.is_file():
+    sidecar.write_text(file_digest + "\n", encoding="utf-8")
+  _append_dump_row(
+    out / "oracle_manifest.toml",
+    {
+      "wave": "laser_order",
+      "precision": "f64",
+      "path": relative,
+      "sha256": file_digest,
+      "shimmed": True,
+    },
+  )
+  logger.info("wrote %s (%s)", dest, file_digest)
+
+
 def main() -> None:
   logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
   parser = argparse.ArgumentParser(description=__doc__)
@@ -925,6 +1141,13 @@ def main() -> None:
   parser.add_argument("--precisions", nargs="+", default=["f64", "f32"], choices=["f64", "f32"])
   parser.add_argument("--selftest", action="store_true")
   parser.add_argument("--proofread-conditional", action="store_true")
+  parser.add_argument(
+    "--only",
+    choices=("order",),
+    help=(
+      "Write laser_order/order_f64.npz and a new sha entry, and do not regenerate existing dumps."
+    ),
+  )
   args = parser.parse_args()
   package = _package_dir(args.laser_root)
   # The pinned checkout directory is named LASErMPNN, so its parent is the import root.
@@ -938,8 +1161,11 @@ def main() -> None:
     fixtures = args.fixtures_dir
     _selftest(package, Path(fixtures) if fixtures is not None else package)
     return
+  if args.only == "order":
+    _run_order_dumps(args, package, commit, pin_weights)
+    return
   if args.fixtures_dir is None:
-    msg = "--fixtures-dir is required unless --selftest is set"
+    msg = "--fixtures-dir is required unless --selftest or --only order is set"
     raise SystemExit(msg)
   _run_dumps(args, package, commit, pin_weights)
 
