@@ -490,7 +490,7 @@ note = ""
 ref = "laser_run_batch_inference__output_pdb_directory"
 targets = ["output_dir"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = "Directory for written structures."
 
 [[row]]
@@ -708,7 +708,7 @@ note = ""
 ref = "laser_run_batch_inference_ligandmpnn__output_pdb_directory"
 targets = ["output_dir"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = "Directory for written structures."
 
 [[row]]
@@ -857,7 +857,7 @@ note = ""
 ref = "laser_run_inference__output_path"
 targets = ["output_dir"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = "Where outputs are written."
 
 [[row]]
@@ -984,7 +984,7 @@ note = ""
 ref = "laser_run_inference_ligandmpnn__output_path"
 targets = ["output_dir"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = "Where outputs are written."
 
 [[row]]
@@ -1454,7 +1454,7 @@ note = ""
 ref = "laser_run_inference_tied__output_path"
 targets = ["output_dir"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = "Where outputs are written."
 
 [[row]]
@@ -1660,7 +1660,7 @@ note = "weights path maps to checkpoint_id and model_local_path"
 ref = "laser_run_predict_partial_charges__output_pdb"
 targets = ["output_dir"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = "Output structure path; see the __input_pdb note on this surface."
 
 [[row]]
@@ -1696,7 +1696,7 @@ note = ""
 ref = "laser_run_proofreading__output_dir"
 targets = ["output_dir"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = ""
 
 [[row]]
@@ -1753,7 +1753,7 @@ note = "Sequences threaded onto the backbone and scored."
 ref = "laser_thread_and_score_sequences__output_dir"
 targets = ["output_dir"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = ""
 
 [[row]]
@@ -3015,7 +3015,7 @@ chain list the record must spell out every chain. Outranks mutant_csv \
 ref = "pottsmpnn_cfg__out_dir"
 targets = ["output_dir"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
 note = "Where outputs are written."
 
 [[row]]

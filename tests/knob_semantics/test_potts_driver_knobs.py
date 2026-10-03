@@ -930,3 +930,60 @@ def test_knob_semantics_inputs(
   np.testing.assert_allclose(_energy(reversed_["0"]), alone_beta)
   np.testing.assert_allclose(_energy(reversed_["1"]), alone_alpha)
   assert reversed_["0"]["structure_id"] == "beta"
+
+
+def test_knob_semantics_output_dir(tmp_path: Path) -> None:
+  """``output_dir`` overrides every inferred output root.
+
+  Nine alias rows map an upstream output argument here and all nine say only
+  "where outputs are written", so a test that set the field and read it back
+  would assert nothing. The substance is the OVERRIDE, documented at
+  ``specs.py:217-222`` and implemented as a four-step chain in
+  ``spec.py:305-316``:
+
+      explicit output_dir  ->  output_h5_path.parent  ->  cache_path  ->  None
+
+  with ``cache_path`` contributing its PARENT when it looks like a file (it has a
+  suffix) and itself when it looks like a directory. Every step is exercised,
+  including both cache_path shapes, because the one that matters in practice --
+  explicit beats everything -- is only meaningful if the things it beats would
+  otherwise have won. So each lower rung is first shown to win on its own, then
+  shown to lose.
+
+  No model and no weights: this resolves at spec construction, so it is cheap.
+  """
+  explicit = tmp_path / "explicit"
+  streamed = tmp_path / "streamed" / "out.zarr"
+  cache_file = tmp_path / "cached" / "store.h5"
+  cache_dir = tmp_path / "cachedir"
+
+  def _resolved(**kwargs: object) -> Path | None:
+    spec = SamplingSpecification(
+      inputs="a.pdb",
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      num_samples=1,
+      return_logits=False,
+      potts_mpnn=PottsMPNNOptions(),
+      **kwargs,
+    )
+    return spec.run_spec.io.output_dir
+
+  # Each rung wins when it is the only one set.
+  assert _resolved() is None
+  assert _resolved(cache_path=str(cache_dir)) == cache_dir
+  assert _resolved(cache_path=str(cache_file)) == cache_file.parent
+  assert _resolved(output_h5_path=str(streamed)) == streamed.parent
+
+  # The streaming parent outranks cache_path.
+  assert _resolved(
+    output_h5_path=str(streamed), cache_path=str(cache_file),
+  ) == streamed.parent
+
+  # And an explicit output_dir outranks both, which is the documented override.
+  assert _resolved(output_dir=str(explicit)) == explicit
+  assert _resolved(
+    output_dir=str(explicit),
+    output_h5_path=str(streamed),
+    cache_path=str(cache_file),
+  ) == explicit
