@@ -272,10 +272,19 @@ def prepare_sample(
   parsed_chains: tuple[tuple[str, str], ...],
   options: PottsMPNNOptions,
   spec: Any,  # noqa: ANN401
+  *,
+  l_pad: int | None = None,
 ) -> _Ready:
-  """Pad one featurized structure and resolve optimize-path sequences."""
-  l_pad = int(features.L_total)
-  padded, pad_valid = pad(features, l_pad)
+  """Pad one featurized structure and resolve optimize-path sequences.
+
+  ``l_pad is None`` keeps ``L_total``, which is what every existing caller
+  passes. A shorter length is rejected before ``pad``.
+  """
+  resolved = int(features.L_total) if l_pad is None else int(l_pad)
+  if resolved < int(features.L_total):
+    msg = f"l_pad ({resolved}) is shorter than L_total ({int(features.L_total)})"
+    raise ValueError(msg)
+  padded, pad_valid = pad(features, resolved)
   # ``pad`` returns the caller's arrays when nothing is appended. Copy before
   # writing fixed positions so the featurized structure stays unchanged.
   chain_m_pos = np.asarray(padded.chain_m_pos, dtype=np.float32).copy()
@@ -311,8 +320,16 @@ def prepare_sample(
       raise ValueError(msg)
     loaded_rows.append(seq_to_ints(native))
   loaded = (
-    np.stack(loaded_rows).astype(np.int32) if loaded_rows else np.zeros((0, l_pad), dtype=np.int32)
+    np.stack(loaded_rows).astype(np.int32)
+    if loaded_rows
+    else np.zeros((0, resolved), dtype=np.int32)
   )
+  n_pad = resolved - int(features.L_total)
+  if loaded_rows and n_pad:
+    # ``seq_to_ints`` is the etab alphabet (X=21). ``pad`` fills S with the
+    # model index of X, which is a different slot.
+    tail = np.full((loaded.shape[0], n_pad), _ETAB_INDEX["X"], dtype=np.int32)
+    loaded = np.concatenate([loaded, tail], axis=1)
   return _Ready(
     coords=np.asarray(padded.x, dtype=np.float32),
     present=np.asarray(padded.present, dtype=np.float32),
@@ -322,7 +339,7 @@ def prepare_sample(
     s_true=np.asarray(padded.s, dtype=np.int32),
     chain_mask=np.asarray(padded.chain_m, dtype=np.float32),
     chain_m_pos=chain_m_pos,
-    tie_groups=build_tie_groups_np(features.tied_pos, features.L_total, l_pad),
+    tie_groups=build_tie_groups_np(features.tied_pos, features.L_total, resolved),
     tied_beta=np.asarray(padded.tied_beta, dtype=np.float32),
     omit=omit,
     bias=bias,
