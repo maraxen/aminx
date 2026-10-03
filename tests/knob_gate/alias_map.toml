@@ -761,9 +761,9 @@ note = ""
 ref = "laser_run_inference__backbone_noise"
 targets = ["noise"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
 note = """\
-LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: pdb_dataset.py:412-415 rounds coordinates to 2 decimals then applies one randn((N,1,3)) translation per residue shared by all 5 backbone atoms -- a rigid per-residue shift. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and debt 2434 records that aminx applies exactly that generic rule. UNWIRED deliberately: test_knob_semantics_laser_noise (spec 6.3: per-residue rigid translation + rounding vs oracle with injected randn) cannot pass until 2434 is fixed, and the Potts noise test must not be named here because it asserts the other rule."""
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
 
 [[row]]
 ref = "laser_run_inference__device"
@@ -889,9 +889,9 @@ note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); d
 ref = "laser_run_inference_ligandmpnn__backbone_noise"
 targets = ["noise"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
 note = """\
-LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: pdb_dataset.py:412-415 rounds coordinates to 2 decimals then applies one randn((N,1,3)) translation per residue shared by all 5 backbone atoms -- a rigid per-residue shift. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and debt 2434 records that aminx applies exactly that generic rule. UNWIRED deliberately: test_knob_semantics_laser_noise (spec 6.3: per-residue rigid translation + rounding vs oracle with injected randn) cannot pass until 2434 is fixed, and the Potts noise test must not be named here because it asserts the other rule."""
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn__device"
@@ -1032,9 +1032,9 @@ note = "BatchData featurizer output, not a knob."
 ref = "laser_run_inference_ligandmpnn_sample_model__bb_noise"
 targets = ["noise"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
 note = """\
-LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: pdb_dataset.py:412-415 rounds coordinates to 2 decimals then applies one randn((N,1,3)) translation per residue shared by all 5 backbone atoms -- a rigid per-residue shift. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and debt 2434 records that aminx applies exactly that generic rule. UNWIRED deliberately: test_knob_semantics_laser_noise (spec 6.3: per-residue rigid translation + rounding vs oracle with injected randn) cannot pass until 2434 is fixed, and the Potts noise test must not be named here because it asserts the other rule."""
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
 
 [[row]]
 ref = "laser_run_inference_ligandmpnn_sample_model__budget_residue_mask"
@@ -1179,9 +1179,9 @@ note = "BatchData featurizer output, not a knob."
 ref = "laser_run_inference_sample_model__bb_noise"
 targets = ["noise"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
 note = """\
-LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: pdb_dataset.py:412-415 rounds coordinates to 2 decimals then applies one randn((N,1,3)) translation per residue shared by all 5 backbone atoms -- a rigid per-residue shift. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and debt 2434 records that aminx applies exactly that generic rule. UNWIRED deliberately: test_knob_semantics_laser_noise (spec 6.3: per-residue rigid translation + rounding vs oracle with injected randn) cannot pass until 2434 is fixed, and the Potts noise test must not be named here because it asserts the other rule."""
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
 
 [[row]]
 ref = "laser_run_inference_sample_model__budget_residue_mask"
@@ -1318,9 +1318,9 @@ note = ""
 ref = "laser_run_inference_tied__backbone_noise"
 targets = ["noise"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
 note = """\
-LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: pdb_dataset.py:412-415 rounds coordinates to 2 decimals then applies one randn((N,1,3)) translation per residue shared by all 5 backbone atoms -- a rigid per-residue shift. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and debt 2434 records that aminx applies exactly that generic rule. UNWIRED deliberately: test_knob_semantics_laser_noise (spec 6.3: per-residue rigid translation + rounding vs oracle with injected randn) cannot pass until 2434 is fixed, and the Potts noise test must not be named here because it asserts the other rule."""
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
 
 [[row]]
 ref = "laser_run_inference_tied__budget_residue_sele_string"
@@ -1523,9 +1523,9 @@ note = "BatchData for the second tied structure; the knob that selects it is __i
 ref = "laser_run_inference_tied_sample_model__bb_noise"
 targets = ["noise"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
 note = """\
-LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: pdb_dataset.py:412-415 rounds coordinates to 2 decimals then applies one randn((N,1,3)) translation per residue shared by all 5 backbone atoms -- a rigid per-residue shift. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and debt 2434 records that aminx applies exactly that generic rule. UNWIRED deliberately: test_knob_semantics_laser_noise (spec 6.3: per-residue rigid translation + rounding vs oracle with injected randn) cannot pass until 2434 is fixed, and the Potts noise test must not be named here because it asserts the other rule."""
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
 
 [[row]]
 ref = "laser_run_inference_tied_sample_model__budget_residue_mask"

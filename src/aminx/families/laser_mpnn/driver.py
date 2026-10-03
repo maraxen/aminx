@@ -8,6 +8,7 @@ plausible sequences.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, cast
@@ -478,6 +479,62 @@ class _ScoreStages:
     return payload
 
 
+def backbone_noise_level(spec: Any) -> float:  # noqa: ANN401
+  """The backbone noise level this spec asks for, or 0.0.
+
+  ``spec.noise`` is a list of ``FeatureNoiseBundle``; ``backbone_noise`` is the
+  scalar the caller sets and ``specs.py:361-365`` turns into one. Only the first
+  level is used: upstream takes a single ``protein_training_noise`` float, so a
+  schedule of several levels has no meaning on this path.
+  """
+  for bundle in getattr(spec, "noise", ()) or ():
+    if bundle.feature_type == "backbone" and bundle.enabled and bundle.noise_levels:
+      return float(bundle.noise_levels[0])
+  return 0.0
+
+
+def apply_backbone_noise(
+  coords: Float[np.ndarray, "L 5 3"],
+  level: float,
+  draws: Float[np.ndarray, "L 1 3"] | None = None,
+  key: jax.Array | None = None,
+) -> Float[np.ndarray, "L 5 3"]:
+  """LASEr's backbone noise: round to 2 decimals, then ONE shift per residue.
+
+  Port of ``utils/pdb_dataset.py:411-413``::
+
+      if protein_training_noise > 0.0:
+          noised = torch.round(self.backbone_coords, decimals=2) + (
+              protein_training_noise * torch.randn((shape[0], 1, 3), ...))
+
+  THE SHAPE IS THE SEMANTICS. The draw is ``(L, 1, 3)`` and broadcasts across
+  the atom axis, so every one of a residue's five backbone atoms moves by the
+  SAME vector -- a rigid per-residue translation, not independent per-atom
+  jitter. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL precisely
+  because the two are easy to confuse and only one is upstream's.
+
+  The rounding is not cosmetic either: it happens BEFORE the shift and so is
+  visible in the output even at a noise level small enough to be invisible
+  itself.
+
+  ``draws`` exists so a parity test can inject the same normal variates both
+  sides; no cross-framework RNG agreement is possible otherwise. With neither
+  ``draws`` nor ``key`` the call is a no-op rather than a silent unseeded draw.
+  """
+  if level <= 0.0:
+    return coords
+  rounded = np.round(np.asarray(coords), 2)
+  if draws is None:
+    if key is None:
+      return coords
+    draws = np.asarray(jax.random.normal(key, (rounded.shape[0], 1, 3)))
+  shift = np.asarray(draws, dtype=rounded.dtype)
+  if shift.shape != (rounded.shape[0], 1, 3):
+    msg = f"backbone noise draws must be (L, 1, 3), got {shift.shape}"
+    raise ValueError(msg)
+  return rounded + float(level) * shift
+
+
 def _prepare(path: Path, spec: Any, options: LaserOptions) -> _Prepared:  # noqa: ANN401
   features = featurize(
     path,
@@ -487,6 +544,20 @@ def _prepare(path: Path, spec: Any, options: LaserOptions) -> _Prepared:  # noqa
     ignore_ligand=options.ignore_ligand,
     dtype=_working_dtype(),
   )
+  level = backbone_noise_level(spec)
+  if level > 0.0:
+    # Keyed off random_seed so a run is reproducible, and folded with a constant
+    # so the noise draw cannot coincide with the decoding-order draw below,
+    # which reads the same seed.
+    noise_key = jax.random.fold_in(jax.random.PRNGKey(int(spec.random_seed)), 0x6262)
+    # LaserFeatures is a frozen dataclass, not a NamedTuple, so dataclasses
+    # .replace rather than ._replace.
+    features = dataclasses.replace(
+      features,
+      backbone_coords=apply_backbone_noise(
+        features.backbone_coords, level, key=noise_key,
+      ),
+    )
   length = int(features.sequence_indices.shape[0])
   rows = [_letters(sequence) for sequence in _spec_sequences(spec)]
   for index, row in enumerate(rows):
