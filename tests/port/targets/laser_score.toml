@@ -26,4 +26,26 @@ fixer_read_only_on_reference = true
 
 [tolerance_basis]
 f64_atol_basis = "house-paired and NOT measured"
-f32_atol_basis = "house-paired and NOT measured"
+f32_atol_basis = """
+MEASURED AND DELIBERATELY NOT WIDENED. Graded run
+e47bfaab-f1be-4386-a6c3-1ee6bd8c123f (scripts/analysis/
+laser_f32_tolerance_floor.py @ b880882e, clean tree) returned
+noise_reaches_defect_scale for this wave, whose pre-registered decision
+(64274bcf) is: escalate, do NOT widen. So this band stays red at tier 3 and the
+redsox gate keeps rc = 1 on it (debt #2445). Do not move it without a new
+measurement that clears the margin.
+
+  f64 tier passes rtol=1e-8,atol=1e-11 on all 9 fields (max abs 7.8e-13): the
+    port computes the same function as upstream. This is float32, not a defect.
+  f32 absolute floor 5.36e-4 (4496 ulp) on chi_logits. The error grows with
+    depth: ligand_scalars 7.2e-6 -> encoder_scalars/edges 5.6-7.3e-5 ->
+    lig_prot_edges 1.8e-4 -> seq/chi log-probs ~2e-4 -> sequence_logits 3.0e-4
+    -> chi_logits 5.4e-4. Roughly 10x amplification encoder -> heads.
+  the rule's band (atol 6e-3) would be 0.61 of an injected 1e-2 relative
+    defect's absolute size -- not the 10x separation required -- so a band wide
+    enough to admit this noise could not tell it from a real 1% error.
+
+The open question is numerical stability of the f32 path (where the 10x
+amplification comes from, and whether a reassociation or f32-accumulate choice
+in the chi head brings it inside margin), not a test tolerance.
+"""

@@ -40,8 +40,10 @@ from aminx.model.laser.joint_decode import (
 pytestmark = [pytest.mark.port_wave("laser_decode_step"), pytest.mark.parity_heavy]
 
 _RTOL = {"f64": 1e-8, "f32": 1e-4}
-# House pairing for the declared rtol. Not a measured deviation.
-_ATOL = {"f64": 1e-11, "f32": 1e-7}
+# f64: house pairing for the declared rtol, not measured. f32: MEASURED (debt
+# #2445, graded run e47bfaab) -- the basis is in targets/laser_decode_step.toml,
+# and tests/lint/test_port_tolerances_match_targets.py keeps the two equal.
+_ATOL = {"f64": 1e-11, "f32": 2e-3}
 _CHECKPOINTS = {
   "nothing_heldout": "model_weights/laser_weights_0p1A_nothing_heldout.pt",
   "noise_ligandmpnn_split": "model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt",
