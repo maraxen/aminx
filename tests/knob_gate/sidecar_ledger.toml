@@ -201,22 +201,32 @@ bth_run_id = "92992234-732e-4bb1-b53c-a5e81ff6e1f1"
 bth_run_id = "a6c87107-39ee-482a-99b5-144bcf07f5e5"
 
 [sidecar.potts_ddg_megascale]
-# e3bc540e, the first time this vehicle has ever been run. The largest in the
-# sprint: 202804 rows over 371 per-PDB resumable units per arm, finished in
-# about 25 minutes.
+# REWRITTEN 261003 at d47fc759, the SEVENTH AND LAST row of the post-freeze
+# wave. The largest vehicle in the sprint: 202804 rows over 371 per-PDB
+# resumable units per arm, ~25 minutes, run alone.
+# Both numbers bit-for-bit identical to the superseded e3bc540e run -- which now
+# holds for all FIVE re-measured slugs, so the two scoped driver.py commits
+# changed no number anywhere in the wave.
 #   clean                      pass  max_abs_delta 0.0001220703125
 #   skip_transpose_merge_pair  fail  max_abs_delta 11.645767211914062
 # The pass band is <= 5e-4 and the fail threshold 5e-3, so the clean arm sits
 # four times inside its band while the control misses by more than three orders
 # of magnitude. Widest separation of any vehicle here.
 #
-# Eligible at a LATER commit than the other six without breaking their freeze:
-# `git diff --name-only 7c3dd246 e3bc540e` touches no path under src/aminx/,
-# scripts/parity/, scripts/recapture/, tests/port/, aminx-oracles/,
-# pyproject.toml or uv.lock -- every commit between them is tests/knob_*,
-# tests/lint/ or scripts/redsox/. So _touches_scoped is empty across the whole
-# span and all seven rows stand together.
-bth_run_id = "90f945fc-49fc-4474-af22-124f817188db"
+# Eligible at a LATER commit than the other six without breaking their freeze.
+# The ledger now spans three commits -- eb4ee606 (2 rows), 9a0cd350 (4) and
+# d47fc759 (this one) -- and that is correct, not a compromise: the step 1c
+# condition is "no SCOPED path committed since THIS run's git_hash", evaluated
+# per row. Every commit across the whole span is tests/knob_*, tests/lint/,
+# scripts/redsox/ or scripts/analysis/, none of which is in _SCOPED_PREFIXES,
+# so _touches_scoped is empty for all three and the seven rows stand together.
+# verify_wave re-checks this per row rather than taking it on trust.
+#
+# verify_wave.py --run potts_ddg_megascale=49243551-... reports 14 of 14 PASS,
+# and the same invocation resolved the other six from this ledger and returned
+# "would NOT grade: (none)" -- the first time all seven have graded at once.
+# Supersedes 90f945fc (e3bc540e), which failed only "no scoped path since".
+bth_run_id = "49243551-a832-45e6-b3dc-001d6eea094f"
 
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
