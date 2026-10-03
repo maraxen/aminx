@@ -154,6 +154,38 @@ comparison of anything the gate does.
    the bathos `outcome` plus `{rc, step2_passed}`; exit status says only that
    the harness did not crash.
 
+## What the gate measured, 261003 (run at `9e2ba84f`, GPUs 2,3)
+
+    {'n_ids': 694, 'n_mutant_runs': 0, 'rc': 1, 'step2_passed': False}
+
+`n_mutant_runs = 0` is correct, not a miss: all 16 manifest rows are
+`kind = "sidecar"`, and step 1b only iterates `kind = "pytest"` rows.
+
+**`check_branch_coverage` returns `pass`.** Verified directly against the run's
+own `outcomes.jsonl`, not inferred from a green test. All 16 rows graded, all
+seven sidecar vehicles accepted — every clean arm passed and every negative
+control failed. The ledger work is done and the gate agrees.
+
+Ten of twelve waves exit 0, including `__nonport__` at 87 passed / 1 skipped
+(the golden device-skip) and all five potts waves. Two things stand between
+this and a gate PASS, both filed, neither environmental:
+
+| what | where | status |
+| :--- | :--- | :--- |
+| `rc = 1` | `laser_decode_step` and `laser_score` tier-3 **f32** | debt 2445 |
+| `step2_passed = False` | `test_parity_ids_passed`, 6 unwired alias rows | debt 2434 |
+
+`test_branch_coverage` and 30 other `knob_gate` tests pass; the single step-2
+failure is the `unwired` list, which is the six LASEr `bb_noise` rows that
+cannot be wired until 2434 is fixed.
+
+The f32 failures miss `rtol=1e-4, atol=1e-7` by ~4.2e-5 and are
+**device-independent** — identical on CPU and on GPUs 2,3 — so they are not the
+device-numerics artefact that explained two earlier gate failures. The target
+file declares `f32_atol_basis = "house-paired and NOT measured"`, so the band
+itself was never derived from a measurement. Do not widen it to make the gate
+pass; measure the floor as debt 2432 did elsewhere.
+
 ## Traps, each of which yields a run that looks perfect and is discarded
 
 1. **`--mutants` must be in argv.** `_argv_mutants` returns `None` when the flag
