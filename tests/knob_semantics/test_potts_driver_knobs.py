@@ -1771,25 +1771,44 @@ def test_knob_semantics_pssm_json(
   assert _sampled(pssm_json=path) == baseline
 
 
-def test_pssm_log_odds_half_is_still_unreachable(
+
+
+def test_knob_semantics_pssm_threshold(
   registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
 ) -> None:
-  """``pssm_threshold`` still cannot change a sample (debt 2440, part).
+  """``pssm_threshold`` cuts the log-odds into a mask that SUPPRESSES residues.
 
-  Asserts a defect, so it is not a ``test_knob_semantics_*`` name. Narrower than
-  the original tripwire: ``pssm_json`` and ``pssm_bias_flag`` now work, and only
-  the log-odds mask does not.
+  ``sample_host.py:295,332`` builds ``pssm_log_odds_mask = (log_odds >
+  threshold)`` and ``decode.py:107`` applies it as
 
-  The thresholds STRADDLE the log-odds values (+10 for G, -10 elsewhere), so
-  -20 would keep every amino acid, 0 only G, and 20 none. All three return the
-  same sequence, which is what makes this a reach failure rather than a badly
-  chosen fixture -- the first attempt used 0 and 5, which select the same mask
-  and would have proved nothing.
+      logged = probs * (pssm_log_odds_mask + 0.001)
+
+  then renormalises. MULTIPLICATION, NOT PROHIBITION -- a masked-out residue
+  keeps a thousandth of its probability rather than none, so it can still win if
+  the model wanted it overwhelmingly, and a favoured residue the model never
+  wants still loses. That single detail dictates how the fixture must be built.
+
+  THE FIXTURE MASKS OUT THE WINNER, NOT IN A LOSER. The unbiased sampler returns
+  all-S here, so the log-odds give S -10 and everything else +10. Three
+  thresholds then straddle those values and produce three different mask
+  regimes, only one of which can change anything:
+
+      -20   every residue kept        mask all ones   -> no-op (uniform)
+        0   only S cut                mask excludes S -> S suppressed, X wins
+       20   no residue kept           mask all zeros  -> no-op (uniform)
+
+  Both no-ops are uniform scalings of every probability, which renormalisation
+  undoes -- so "threshold changed nothing" is the CORRECT answer at -20 and 20,
+  and only the middle case is evidence the knob works. An earlier version of
+  this test favoured G instead and saw no change at any threshold; it concluded
+  the mask never reached this path, which was wrong. The mask reaches it; G was
+  simply a residue this model assigns almost no probability, and 1.001x nearly
+  zero still loses to 0.001x a near-certainty.
   """
   del registered
   pdb = tmp_path / "toy.pdb"
   _write_pdb(pdb, {"A": "ACDEFG"})
-  gly = _ALPHA.index("G")
+  ser = _ALPHA.index("S")
   path = _json_file(
     tmp_path / "pssm.json",
     {
@@ -1798,14 +1817,14 @@ def test_pssm_log_odds_half_is_still_unreachable(
           "pssm_coef": [1.0] * 6,
           "pssm_bias": [[0.0] * 21 for _ in range(6)],
           "pssm_log_odds": [
-            [10.0 if i == gly else -10.0 for i in range(21)] for _ in range(6)
+            [-10.0 if i == ser else 10.0 for i in range(21)] for _ in range(6)
           ],
         },
       },
     },
   )
 
-  def _sampled(threshold: float) -> str:
+  def _sampled(**options: object) -> str:
     spec = SamplingSpecification(
       inputs=str(pdb),
       model_family="pottsmpnn",
@@ -1815,20 +1834,28 @@ def test_pssm_log_odds_half_is_still_unreachable(
       samples_chunk_size=1,
       return_logits=False,
       random_seed=0,
-      potts_mpnn=PottsMPNNOptions(
-        optimization_mode="none",
-        pssm_json=path,
-        pssm_log_odds_flag=True,
-        pssm_threshold=threshold,
-      ),
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none", **options),
     )
     return _letters(
       np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])[0],
     )
 
-  outcomes = {_sampled(t) for t in (-20.0, 0.0, 20.0)}
-  assert len(outcomes) == 1, (
-    f"pssm_threshold changed the sample: {outcomes}. If the log-odds mask now "
-    f"reaches this path, that is the rest of debt 2440 -- delete this test and "
-    f"write test_knob_semantics_pssm_threshold."
+  baseline = _sampled()
+  assert set(baseline) == {"S"}, (
+    f"the fixture assumes the sampler picks S unaided; got {baseline}. If the "
+    f"model changed, re-pick the masked residue -- masking out a residue the "
+    f"sampler does not choose proves nothing."
   )
+
+  cut = _sampled(pssm_json=path, pssm_log_odds_flag=True, pssm_threshold=0.0)
+  assert "S" not in cut, f"threshold 0.0 must suppress S; got {cut}"
+
+  # Both uniform regimes are no-ops, and that is the correct behaviour rather
+  # than a failure to apply the mask.
+  for threshold in (-20.0, 20.0):
+    assert _sampled(
+      pssm_json=path, pssm_log_odds_flag=True, pssm_threshold=threshold,
+    ) == baseline, f"a uniform mask at {threshold} must not change the sample"
+
+  # Without the flag, the same file and threshold do nothing.
+  assert _sampled(pssm_json=path, pssm_threshold=0.0) == baseline

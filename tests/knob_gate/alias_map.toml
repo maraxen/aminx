@@ -2893,7 +2893,7 @@ note = ""
 ref = "pottsmpnn_cfg__inference__pssm_threshold"
 targets = ["pssm_threshold"]
 equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_pssm_log_odds_half_is_still_unreachable"]
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_pssm_threshold"]
 note = """\
 IS read -- sample_host.py:295 feeds it to (log_odds > threshold) at :332 -- and \
 still cannot change anything, because pssm_json above is unplumbed and leaves \
