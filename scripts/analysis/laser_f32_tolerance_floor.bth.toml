@@ -1,0 +1,114 @@
+[metadata]
+title = "LASEr float32 parity floor for laser_score and laser_decode_step (debt #2445)"
+created = "261003"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The two waves that make the redsox gate exit rc=1 -- laser_score and laser_decode_step at tier 3 -- fail a float32 band (rtol=1e-4, atol=1e-7) whose own target TOML declares it 'house-paired and NOT measured', while both pass the ~1e4x tighter f64 band (rtol=1e-8, atol=1e-11); so the deviation is float32 accumulation rather than an algorithmic defect, and a band derived per wave by moving ONLY the term the measurement shows to bind -- atol to ceil_one_significant_figure(10 * measured absolute floor), or rtol to ceil_one_significant_figure(10 * relative floor conditioned on |ref| > 0.1) -- will admit every element of every pair and field while still rejecting an injected 1e-2 relative defect with a 10x margin."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.pass]
+condition = "self_test_passed AND f64_passes AND f32_violated AND all_admitted AND control_rejected AND below_control_scale"
+decision = "Amend [parity] tolerance_policy_f32 and [tolerance_basis] f32_atol_basis in tests/port/targets/laser_score.toml and laser_decode_step.toml to the per-wave proposed band, citing this run, and move ONLY the term this run identifies as binding. tests/port/ is a _touches_scoped path, so this amendment lands AFTER the ledger wave and the gate, never during."
+reasoning = "f64 passing at 1e-8 while f32 fails at 1e-4 localises the disagreement to float32 accumulation: math that agrees to one part in 1e8 in double is not computing something else. Admitting every element at the proposed band shows the band is a floor and not a fit to the single worst element. Rejecting a 1e-2 relative defect, with the proposed band at least 10x below that defect's absolute size, shows the widened band still has teeth."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND f64_passes AND f32_violated AND all_admitted AND control_rejected AND below_control_scale)"
+
+[outcomes.defect_not_tolerance]
+condition = "self_test_passed AND NOT f64_passes"
+decision = "Do NOT touch any tolerance. Escalate: the f64 tier is also failing, so the port disagrees with upstream for a reason float32 does not explain. Fix the port."
+reasoning = "This is the outcome that stops a real defect being laundered into a tolerance, and it is the whole reason f64 is re-measured here instead of assumed from a previous gate run. A floor measured over a defect describes the defect. This is a live possible result, not a formality: the two waves' f64 tiers are believed green but that belief is from a different tree than this run."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR f64_passes"
+
+[outcomes.tolerance_was_fine]
+condition = "self_test_passed AND f64_passes AND NOT f32_violated"
+decision = "Do NOT change the tolerance. The gate's rc=1 on these two waves came from something other than the numeric band -- a tier-1 dtype or shape mismatch, an exact-field mismatch, or the tier-5 trace budget. Go read the gate's own outcomes file and find it."
+reasoning = "If no element is outside atol + rtol*|ref| then the band is not what failed, and widening it would both be unjustified and leave the real failure in place. This outcome exists so the run can refute its own hypothesis, and it is reachable: 'rc = 1 on these two waves' was read off a wave-level exit code, not off a per-assertion breakdown."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR f32_violated"
+
+[outcomes.noise_reaches_defect_scale]
+condition = "self_test_passed AND f64_passes AND f32_violated AND NOT below_control_scale"
+decision = "Escalate. Do NOT widen. float32 noise in this wave is within 10x of a defect worth catching, which is a numerical-stability question about the port, not a test-tolerance question."
+reasoning = "A proposed band within 10x of a 1e-2 relative defect cannot separate accumulation noise from a real error, so widening there deletes the assertion's value instead of calibrating it. This is the outcome #2432 revision 1 returned, and it is the only reason that revision's proposed rtol of 1.0 did not reach a test file."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR NOT f32_violated OR below_control_scale"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "The 22 synthetic checks include two negative controls that force the grader to refuse -- an f64 violation must grade defect_not_tolerance and a clean f32 must grade tolerance_was_fine, both proposing nothing. If any check fails, the instrument is not known to be able to return a non-pass, and a measured floor from such an instrument is exactly the #2432 revision 1 failure."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[outcomes.oracle_absent]
+condition = "self_test_passed AND oracle_absent != []"
+decision = "No conclusion. Re-run where the sealed dumps resolve."
+reasoning = "The dumps live outside the tree and are checked by oracle_manifest.toml; their absence is an environment fact and must not be reported as a measurement."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR oracle_absent == []"
+
+[outcomes.fail]
+condition = "self_test_passed AND f64_passes AND f32_violated AND below_control_scale AND NOT (all_admitted AND control_rejected)"
+decision = "Do not change the tolerance. The derivation rule did not produce a usable band."
+reasoning = "Either an element falls outside a band derived with 10x headroom over the measured floor -- meaning one maximum does not characterise the population, which is the specific risk of proposing from a CONDITIONED relative floor while admitting against every element -- or the injected defect was admitted, meaning the band is too wide to test anything. Both say the rule failed, not that the band should move anyway."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR NOT f32_violated OR NOT below_control_scale OR (all_admitted AND control_rejected)"
+
+[result_schema]
+verdict = "str"
+per_wave_verdict = "dict"
+oracle_absent = "list"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+f64_passes = "bool"
+f32_violated = "bool"
+all_admitted = "bool"
+control_rejected = "bool"
+below_control_scale = "bool"
+float32_eps = "float"
+condition_threshold = "float"
+headroom = "float"
+control_graded_relative = "float"
+control_reported_relative = "float"
+control_scale_margin = "float"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+work_dir = "str"
+waves = "list"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+waves = "laser_score and laser_decode_step, graded INDEPENDENTLY. They are different computations and a shared band would be the looser of the two."
+model = "aminx.model.laser encoder/decoder (+ LaserJointDecode for laser_decode_step), weights loaded from the LASErMPNN checkpoints the port tests already name"
+reference = "the sealed upstream dumps resolved by tests/port/reference/<wave>/algo.load(precision); the npz files live outside the tree and are checked against oracle_manifest.toml"
+pairs = "every (checkpoint, fixture) pair the dump declares, read from the test module's own _PAIRS at import time"
+fields = "every field in the test module's own _FLOATS tuple; the _EXACT fields are compared by the test but are not float bands and are not measured here"
+precisions = "f64 AND f32. f64 is not optional: it is the precondition that separates float32 accumulation from an algorithmic defect."
+derivation_rule = "Per wave: e* = the violating element with the largest |err|/band; binding = 'atol' if atol >= rtol*|ref(e*)| else 'rtol'. If atol binds, proposed_atol = ceil_one_significant_figure(10 * max absolute deviation) and rtol is UNCHANGED. If rtol binds, proposed_rtol = ceil_one_significant_figure(10 * max relative deviation over |ref| > 0.1) and atol is UNCHANGED. Fixed BEFORE this run; neither value is chosen."
+why_only_one_term_moves = "numpy's band is atol + rtol*|ref|. Moving a term that is not violated is widening for its own sake. Unlike #2432, where atol obviously bound, which term binds here is genuinely unknown in advance -- atol=1e-7 is below one float32 ulp for |ref| > ~1 -- so it is read off the measurement rather than assumed."
+why_conditioned_relative = "Unconditioned relative deviation divides by a magnitude that is sometimes near zero, so it measures its own denominator. #2432 revision 1 returned a relative floor of 5.1e-02 against an absolute floor of 1.43e-06 for exactly that reason. The threshold is 0.1, inherited unchanged."
+why_one_significant_figure = "#2432 revision 1 rounded to the next power of ten, turning a 1.43e-06 floor into 1e-04 -- a 70x jump leaving everything below 1e-04 unchecked. The headroom factor is 10 either way; only the rounding differs."
+admission_is_exact = "Because exactly one term moves and the other stays at its current value, admission has a closed form per field over EVERY element: if atol moves, admitted iff atol_new >= max(err - rtol_cur*|ref|) (abs_excess); if rtol moves, admitted iff rtol_new >= max over |ref|>0 of (err - atol_cur)/|ref| (rel_excess) AND max over |ref|=0 of err <= atol_cur (zero_mag_worst). Both are maxima over all elements, so neither depends on which element was worst by some other statistic -- the unsoundness #2432 avoided by re-running per candidate band, avoided here in one pass instead."
+zero_magnitude_failure_mode = "An element whose reference is exactly zero cannot be admitted by any rtol. Counted as n_zero_mag_blocked and it forces all_admitted false, because no rtol closes that wave."
+negative_control_graded = "A 1e-2 relative defect injected at the largest-magnitude element of each float field; the proposed band must reject it AND stay at least 10x below its absolute size."
+why_the_graded_control_is_1e2_not_1e3 = "DISCLOSED DEVIATION FROM #2432, which graded on 1e-3. Against a 1e-3 relative defect a band of rtol*|ref| clears a 10x margin only when rtol <= 1e-4, and the CURRENT rtol is already exactly 1e-4 -- so any rtol this run could propose would fail a 1e-3 margin, making the bar unsatisfiable by construction in the rtol branch and demanding of the new band something the old band never had. The graded defect is therefore 1e-2, the order of a genuine algorithmic divergence in logits, with the same 10x margin. The 1e-3 margin is still computed and reported per wave as control_1e3_margin so the weaker guarantee is visible; this run does NOT claim a 1e-3 defect would be caught with margin."
+control_rationale = "Both defect sizes are fixed in advance and NOT scaled to the measured floor, because a floor-scaled control is near-circular when the band is also derived from the floor."
+instrument_self_test = "22 synthetic checks run before any oracle is touched: hand-computed rounding, identical-array invariants, a known single deviation with hand-computed abs_excess and rel_excess, both closed admission forms checked to admit and reject exactly at their boundary, the zero-magnitude block, shared-vs-one-sided NaN, the control margin pinned at three rtol values including the boundary where the atol term alone fails it, and TWO NEGATIVE CONTROLS on the grader itself (an f64 violation must grade defect_not_tolerance and propose nothing; a clean f32 must grade tolerance_was_fine and propose nothing). A failure sets verdict=instrument_unverified and discards every measured number."
+measurement_reuses_the_test = "Deviations come from each test module's OWN _run, by wrapping its _rows_over with a recorder that delegates to the original. No checkpoint loading, feature plumbing, decoding-order feed or dump key layout is re-expressed. The recorder asserts exactly one call per declared float field, in order, so a change to the test's plumbing fails loudly rather than silently measuring something else."
+
+[provenance]
+note = "Ungraded diagnostic for debt #2445, the surviving step-1 blocker on the redsox Z1 gate. NOT a redsox vehicle; no manifest row. Lives in scripts/analysis/ because scripts/parity/ and tests/port/ are _touches_scoped paths and a new file in either would invalidate every sidecar_ledger.toml row mid-freeze; scripts/analysis/ is outside _SCOPED_PREFIXES (verified at tests/knob_gate/_coverage.py:21-28). Follows the shape of potts_jit_eager_f32_floor.py, which closed #2432, with one structural addition (f64 as a hard precondition) and one disclosed deviation (the graded control is 1e-2, not 1e-3 -- see why_the_graded_control_is_1e2_not_1e3). Reading the measurement does NOT require amending any scoped file, so the measurement can run before the gate and the amendment land after it. Invocation: bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/laser_f32_tolerance_floor.py --work-dir <dir> --out <json>."
+
+[resume]
+unit = "one (wave, pair, precision) triple"
+cache_key = "sha256 of the script bytes, the wave, the pair and the precision"
+stamp_order = "the per-unit JSON body is written first and its .done stamp second, so a crash between them leaves an unstamped body that is recomputed rather than trusted"
+invalidation = "the script hash is part of the key, so editing the derivation rule recomputes every unit; a body that no longer matches the FieldStats dataclass is also recomputed rather than coerced"
+max_attempts = 1
