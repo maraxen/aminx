@@ -2,8 +2,38 @@
 # One row per reference field; test_rows_bijective enforces the bijection.
 # Every row carries its own evidence in `note` -- spec section, upstream
 # file:line, or the generated reference_surfaces.py comment it rests on.
-# parity_test_ids are still empty for every live row; the Potts
-# knob_semantics suite does not exist yet, so they cannot be filled.
+#
+# The header used to say "parity_test_ids are still empty for every live row;
+# the Potts knob_semantics suite does not exist yet". Both halves are stale as
+# of 261003: the suite exists and `unwired` measures 0 of 212 live rows.
+#
+# TWO OPTIONAL MARKERS, ADDED 261003, EACH DOING EXACTLY ONE JOB. They are
+# orthogonal and a row may carry both, which is why they are not one enum --
+# emit_dense_hJ is aminx-only AND inert.
+#
+#   upstream = false   This field has no upstream analogue, so no reference
+#                      surface names it. Exempts the row from
+#                      test_rows_bijective's `== REF_F` and from the
+#                      superset hypothesis (there is no upstream side to map
+#                      from). The ref must be spelled `__aminx_only__<field>`
+#                      and must not collide with a real reference field.
+#                      Default: true.
+#
+#   kind = "inert"     This knob reaches nothing, so it has no semantics to
+#                      pin and a test_knob_semantics_ test would be a false
+#                      claim. Coverage is instead satisfied by a
+#                      test_knob_inert_ test, which PROVES the inertness.
+#                      Default: "semantics".
+#
+#                      SAFEGUARDED, so this is not a way to wave a knob
+#                      through: every inert target that the gate actually
+#                      demands coverage for (i.e. is in NEW_FIELDS) must ALSO
+#                      be listed not_plumbed in
+#                      tests/lint/options_plumbing_allowlist.toml, and
+#                      test_allowlist_has_no_fixed_entries deletes that row
+#                      the moment the field becomes plumbed. So the credit
+#                      cannot outlive the defect. The defect stays tracked as
+#                      debt either way -- the gate is not what tracks defects.
 
 [[row]]
 ref = "laser_checkpoint__build_hydrogens"
@@ -2465,8 +2495,9 @@ note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at
 ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__tied_beta"
 targets = ["tied_beta"]
 equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_fixed_mask_and_tied_beta_are_still_inert"]
-note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row. This is the only reference field naming tied_beta, so it must stay live for PottsMPNNOptions.tied_beta to be coverable."
+kind = "inert"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_fixed_mask_and_tied_beta"]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row. This is the only reference field naming tied_beta, so it must stay live for PottsMPNNOptions.tied_beta to be coverable. 261003: kind = 'inert'. PottsMPNNOptions.tied_beta is read nowhere in src/ and is allowlisted not_plumbed, so there are no semantics to pin and a test_knob_semantics_ test would be a false claim; the inert kind credits the test that PROVES it inert instead. THE TERMINAL FIX IS DELETION, NOT PLUMBING: upstream's tied_beta is not a config value at all -- potts_mpnn_utils.py:444 inits it as np.ones(L_max), :456 fills it per position from the tied_positions JSON weights, :1571 indexes it as tied_beta[t] -- so it is DERIVED from tied_positions, a derivation featurize._tied_groups already reproduces. Plumbing a scalar would invent semantics upstream does not have. Deleting the field touches src/aminx/run/options.py, which is _touches_scoped, so it waits for the gate."
 
 [[row]]
 ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__tied_pos"
@@ -2714,8 +2745,9 @@ note = "Follows the *__chain_dict_json rule (spec 6.3); same test, same semantic
 ref = "pottsmpnn_cfg__inference__chain_ranges"
 targets = ["fixed_mask"]
 equivalence = "semantic"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_fixed_mask_and_tied_beta_are_still_inert"]
-note = "Per-chain inclusive 1-indexed residue ranges (run_utils.py:925,1010-1011); expressed in aminx as a fixed mask over everything outside the range."
+kind = "inert"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_fixed_mask_and_tied_beta"]
+note = "Per-chain inclusive 1-indexed residue ranges (run_utils.py:925,1010-1011); expressed in aminx as a fixed mask over everything outside the range. 261003: kind = 'inert'. spec.fixed_mask is read nowhere on this path -- Potts featurize builds a LOCAL fixed_mask from fixed_position_dict (featurize.py:388-392) that the driver never passes (debt 2443). fixed_mask is a RunSpecification field rather than an Options field, so it is not in NEW_FIELDS and the gate demands no coverage for it; the kind is set for consistency with the test it names, and the allowlist safeguard applies only to inert targets the gate actually demands."
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__ddG"
@@ -3081,3 +3113,31 @@ targets = ["inputs"]
 equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
 note = "Per-line structure path in the MANUAL input-list format (pdb|designed:chains|fixed:chains, sample_seqs.py:81-94)."
+
+# --- AMINX-ONLY ROWS, added 261003 (upstream = false). ------------------------
+# Two PottsMPNNOptions fields had NO row at all and could not have one: every
+# ref must be a reference_surfaces.py field name, and neither `etab` nor
+# `dense_hJ` appears anywhere in that file. So `covered` could never contain
+# them however many tests existed, and `uncovered` reported them as a coverage
+# hole that no test could close. emit_etab in particular was already
+# implemented AND already tested and the gate still could not see it.
+#
+# Reading that list as a test backlog would have generated work that could not
+# have closed the blocker, which is the whole reason the two markers exist.
+
+[[row]]
+ref = "__aminx_only__emit_etab"
+upstream = false
+targets = ["emit_etab"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_emit_etab"]
+note = "aminx-only: emits the Potts energy table and its neighbour index into the output (sample_host.py:394-400 declares potts_etab / potts_E_idx, :483-486 produces them). Upstream has no analogue -- it writes etab to disk from sample_seqs.py rather than exposing a knob -- so no reference surface names it. NOT inert: read outside options.py, which the plumbing allowlist header calls out explicitly as the contrast case. The existing test_knob_semantics_emit_etab pins both declared shapes (6,6,20,20) and (60,48,20,20), so this row needed only to exist."
+
+[[row]]
+ref = "__aminx_only__emit_dense_hJ"
+upstream = false
+kind = "inert"
+targets = ["emit_dense_hJ"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_emit_dense_hJ"]
+note = "aminx-only AND inert, which is why upstream and kind are separate markers rather than one enum. Declared at run/options.py:33 and read NOWHERE in src/; allowlisted not_plumbed, whose note says it 'is inert all the same'; spec line 638 says it converts host-side only. Covered by test_knob_inert_emit_dense_hJ, which uses emit_etab=True on the same harness as its control -- so 'adds no keys' cannot be confused with a test that cannot detect keys. Credit is tied to the allowlist row and dies with it (debt 2435)."

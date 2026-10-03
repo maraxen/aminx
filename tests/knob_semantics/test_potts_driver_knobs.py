@@ -1611,7 +1611,7 @@ def test_tied_positions_is_ignored_by_the_potts_driver(
     _sampled(tied_positions="auto")
 
 
-def test_fixed_mask_and_tied_beta_are_still_inert(
+def test_knob_inert_fixed_mask_and_tied_beta(
   registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
 ) -> None:
   """Two fields that still reach nothing (debt 2435).
@@ -1621,7 +1621,27 @@ def test_fixed_mask_and_tied_beta_are_still_inert(
   and it has a real knob test above. This test fired when that landed, which is
   what it was for, and the field was removed rather than the assertion relaxed.
 
-  A THIRD TEST THAT ASSERTS DEFECTS, named so the gate does not credit it.
+  A THIRD TEST THAT ASSERTS DEFECTS, and the NAME is what tells the gate how to
+  read it. This used to be ``test_fixed_mask_and_tied_beta_are_still_inert``,
+  deliberately carrying neither recognised prefix so the gate credited it for
+  nothing. That was right about ``test_knob_semantics_``, which marks a test
+  that pins a knob's SEMANTICS -- and these knobs have none, so claiming that
+  prefix would have the gate certify semantics that do not exist.
+
+  But it left ``tied_beta`` permanently uncoverable, which read as a coverage
+  hole and is not one: the knob is inert, and a test PROVING it inert is the
+  correct coverage for it. So as of 261003 the prefix is
+  ``test_knob_inert_``, a second recognised marker that means exactly that, and
+  the gate credits it ONLY for an alias row marked ``kind = "inert"`` whose
+  demanded fields are also listed in ``tests/lint/
+  options_plumbing_allowlist.toml``.
+
+  That allowlist tie is the safeguard, and it is the reason this is not a way to
+  wave a knob through. ``test_allowlist_has_no_fixed_entries`` deletes an
+  allowlist row the moment its field becomes plumbed, so the credit cannot
+  outlive the defect -- the day someone wires ``tied_beta``, the allowlist row
+  goes, the inert credit goes with it, and this test fires. The debt stays open
+  and tracked either way; the gate is not the thing that tracks defects.
 
   * ``spec.fixed_mask`` -- the Potts featurize builds a LOCAL called
     ``fixed_mask`` from ``fixed_position_dict`` (``featurize.py:388-392``), which
@@ -1703,6 +1723,70 @@ def test_fixed_mask_and_tied_beta_are_still_inert(
   for value in (0.0, 5.0, 100.0):
     got = _sampled(options={"tied_beta": value})
     assert got == baseline, f"tied_beta={value} changed the sample to {got}. {reason}"
+
+
+def test_knob_inert_emit_dense_hJ(  # noqa: N802 -- upstream knob name
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``emit_dense_hJ`` reaches nothing, and ``emit_etab`` is the control.
+
+  ``PottsMPNNOptions.emit_dense_hJ`` is declared at ``run/options.py:33`` and
+  read NOWHERE in ``src/``. It is allowlisted ``not_plumbed`` in
+  ``tests/lint/options_plumbing_allowlist.toml``, whose own note says it "is
+  inert all the same", and spec line 638 says it converts host-side only.
+
+  THE CONTROL AND THE SUBJECT ARE THE SAME EXPERIMENT RUN TWICE, which is what
+  makes this sharp rather than merely negative. Both knobs claim to add arrays
+  to the output; both are set the same way on the same spec through the same
+  harness. ``emit_etab=True`` adds ``potts_etab`` and ``potts_E_idx``, so the
+  harness demonstrably CAN see a knob add a key. ``emit_dense_hJ=True`` adds
+  nothing. Same intent, same route, opposite outcome -- and without the control
+  "no new keys" would equally well describe a test that cannot detect keys.
+
+  Named ``test_knob_inert_`` rather than ``test_knob_semantics_`` because there
+  are no semantics here to pin; see
+  ``test_knob_inert_fixed_mask_and_tied_beta`` for what that prefix means to
+  the gate and why the credit is tied to the allowlist row.
+  """
+  del registered
+  pdb = tmp_path / "dense_hj.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+
+  def _arrays(*, etab: bool = False, dense: bool = False) -> dict:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=1,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      potts_mpnn=PottsMPNNOptions(
+        optimization_mode="none",
+        emit_etab=etab,
+        emit_dense_hJ=dense,
+      ),
+    )
+    return sample(spec)["structures"]["0"]["arrays"]
+
+  baseline = set(_arrays())
+
+  # CONTROL: the sibling emit_* knob, by the route that works.
+  control = set(_arrays(etab=True))
+  assert control - baseline == {"potts_etab", "potts_E_idx"}, (
+    f"control failed: emit_etab did not add its two arrays (added "
+    f"{sorted(control - baseline)}), so 'emit_dense_hJ adds nothing' below "
+    f"cannot be read as a knob failing"
+  )
+
+  added = set(_arrays(dense=True)) - baseline
+  assert not added, (
+    f"emit_dense_hJ added {sorted(added)}. If the field has been plumbed "
+    f"(debt 2435), delete this test, drop its allowlist row, and write "
+    f"test_knob_semantics_emit_dense_hJ asserting the dense h/J shapes the way "
+    f"test_knob_semantics_emit_etab does."
+  )
 
 
 def _json_file(path: Path, payload: dict) -> str:

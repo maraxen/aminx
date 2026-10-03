@@ -38,9 +38,41 @@ _REASONS = frozenset(
   },
 )
 
+_PLUMBING_ALLOWLIST = _GATE.parent / "lint" / "options_plumbing_allowlist.toml"
+_EQUIVALENCES = frozenset(
+  {"identical", "semantic", "divergence", "exclusion", "aminx_extension"},
+)
+_KINDS = frozenset({"semantics", "inert"})
+_SEMANTICS_PREFIX = "test_knob_semantics_"
+_INERT_PREFIX = "test_knob_inert_"
+_AMINX_ONLY_PREFIX = "__aminx_only__"
+
 ROWS = cast("list[dict[str, object]]", tomllib.loads(_ALIAS.read_text(encoding="utf-8"))["row"])
 REFS = [cls for cls in vars(reference_surfaces).values() if is_dataclass(cls)]
 REF_F = {field.name for cls in REFS for field in fields(cls)}
+
+
+def _kind(row: dict[str, object]) -> str:
+  """``kind`` defaults to ``semantics``; see the alias_map.toml header."""
+  return str(row.get("kind", "semantics"))
+
+
+def _is_upstream(row: dict[str, object]) -> bool:
+  """``upstream`` defaults to true; false means no reference surface names it."""
+  return bool(row.get("upstream", True))
+
+
+def _not_plumbed() -> frozenset[str]:
+  """Fields the plumbing lint records as inert.
+
+  This is the safeguard behind ``kind = "inert"``: a knob may only be credited
+  by an inertness test while the repo separately, explicitly records it as
+  not-plumbed debt. ``test_allowlist_has_no_fixed_entries`` deletes a row the
+  moment its field becomes plumbed, so the credit cannot outlive the defect.
+  """
+  raw = tomllib.loads(_PLUMBING_ALLOWLIST.read_text(encoding="utf-8"))
+  entries = cast("list[dict[str, object]]", raw.get("entries", []))
+  return frozenset(str(entry["field"]) for entry in entries)
 TGT = (
   RunSpecification,
   SamplingSpecification,
@@ -62,10 +94,38 @@ NEW_FIELDS = (
 )
 
 
+AMINX_ONLY = {str(row["ref"]) for row in ROWS if not _is_upstream(row)}
+
+
 def test_rows_bijective() -> None:
-  refs = [row["ref"] for row in ROWS]
+  """One row per reference field, PLUS the declared aminx-only rows.
+
+  The bijection used to be ``set(refs) == REF_F`` flat, which made an
+  aminx-only Options field structurally unnameable: a row could exist only
+  where an upstream analogue did. ``emit_etab`` was the proof that this was a
+  gate construction and not a coverage hole -- implemented, tested, and
+  invisible. Aminx-only rows are admitted by exemption, not by relaxation: they
+  must be spelled ``__aminx_only__<field>`` and must not collide with a real
+  reference field, so the exemption cannot quietly absorb a missing upstream
+  row.
+  """
+  refs = [str(row["ref"]) for row in ROWS]
   assert len(refs) == len(set(refs))
-  assert set(refs) == REF_F
+  assert set(refs) == REF_F | AMINX_ONLY, {
+    "missing_upstream_rows": sorted(REF_F - set(refs)),
+    "unexpected_rows": sorted(set(refs) - REF_F - AMINX_ONLY),
+  }
+  shadowed = sorted(AMINX_ONLY & REF_F)
+  assert not shadowed, (
+    f"{len(shadowed)} rows are marked upstream = false but name a real "
+    f"reference field: {shadowed}. A field with an upstream analogue is not "
+    f"aminx-only, and the marker would hide a genuine mapping."
+  )
+  misnamed = sorted(ref for ref in AMINX_ONLY if not ref.startswith(_AMINX_ONLY_PREFIX))
+  assert not misnamed, (
+    f"{len(misnamed)} aminx-only refs are not spelled {_AMINX_ONLY_PREFIX}<field>: "
+    f"{misnamed}. The convention is what keeps the exemption auditable by eye."
+  )
 
 
 def test_superset() -> None:
@@ -85,7 +145,15 @@ def test_superset() -> None:
     f"reason (spec 6.3). First 5: {unmapped[:5]}"
   )
 
-  alias = {str(row["ref"]): cast("list[str]", row["targets"])[0] for row in LIVE}
+  # Upstream rows only. The superset hypothesis maps a reference surface onto
+  # the aminx surface, and an aminx-only field has no upstream side to map
+  # from -- its ref is not a field of any REF class, so it would be a key in
+  # `alias` that `filtered` can never contain.
+  alias = {
+    str(row["ref"]): cast("list[str]", row["targets"])[0]
+    for row in LIVE
+    if _is_upstream(row)
+  }
   filtered = [
     make_dataclass(
       cls.__name__,
@@ -110,6 +178,73 @@ def test_exclusions() -> None:
     assert reason in _REASONS or reason.startswith("deferred:")
     if reason.startswith("deferred:"):
       assert reason[9:] in DEFERRED_IDS
+
+
+def test_row_markers_are_declared() -> None:
+  """Both optional markers use a declared vocabulary, and inert is safeguarded.
+
+  Four separate conditions, reported separately, because they fail for
+  unrelated reasons and a combined message would name the wrong one.
+  """
+  bad_equivalence = sorted(
+    {
+      f"{row['ref']}={row['equivalence']!r}"
+      for row in ROWS
+      if str(row["equivalence"]) not in _EQUIVALENCES
+    },
+  )
+  assert not bad_equivalence, (
+    f"{len(bad_equivalence)} rows use an undeclared equivalence; add it to "
+    f"_EQUIVALENCES deliberately rather than relying on 'anything that is not "
+    f"exclusion is live'. First 5: {bad_equivalence[:5]}"
+  )
+
+  bad_kind = sorted(
+    {f"{row['ref']}={_kind(row)!r}" for row in ROWS if _kind(row) not in _KINDS},
+  )
+  assert not bad_kind, (
+    f"{len(bad_kind)} rows use an undeclared kind (expected one of "
+    f"{sorted(_KINDS)}): {bad_kind[:5]}"
+  )
+
+  # An inert row must name ONLY inert tests. A test_knob_semantics_ id on an
+  # inert row is the exact false claim the marker exists to avoid.
+  mismarked = {
+    str(row["ref"]): sorted(
+      nodeid
+      for nodeid in cast("list[str]", row["parity_test_ids"])
+      if not nodeid.split("::")[-1].startswith(_INERT_PREFIX)
+    )
+    for row in ROWS
+    if _kind(row) == "inert" and row.get("parity_test_ids")
+  }
+  mismarked = {ref: ids for ref, ids in mismarked.items() if ids}
+  assert not mismarked, (
+    f"{len(mismarked)} inert rows name a test that is not {_INERT_PREFIX}*: "
+    f"{mismarked}. An inert knob has no semantics to pin, so crediting a "
+    f"semantics test for it would certify something that does not exist."
+  )
+
+  # THE SAFEGUARD. Scoped to the fields the gate actually demands coverage for:
+  # fixed_mask is inert too but is a RunSpecification field, not an Options
+  # field, so it is not in NEW_FIELDS and the Options allowlist cannot list it.
+  not_plumbed = _not_plumbed()
+  unlisted = sorted(
+    {
+      target
+      for row in ROWS
+      if _kind(row) == "inert"
+      for target in cast("list[str]", row.get("targets") or [])
+      if target in NEW_FIELDS and target not in not_plumbed
+    },
+  )
+  assert not unlisted, (
+    f"{len(unlisted)} fields are credited by an inertness test but are NOT "
+    f"listed not_plumbed in {_PLUMBING_ALLOWLIST.name}: {unlisted}. Without "
+    f"that row the inert credit has nothing policing it -- "
+    f"test_allowlist_has_no_fixed_entries is what deletes the credit when the "
+    f"knob gets plumbed. Either list the field or stop marking the row inert."
+  )
 
 
 def test_parity_ids_passed() -> None:
@@ -139,19 +274,29 @@ def test_parity_ids_passed() -> None:
     f"First 5: {dict(list(not_passed.items())[:5])}"
   )
 
+  # A field is covered by a passing test whose prefix matches the row's kind:
+  # test_knob_semantics_ pins a knob's SEMANTICS, test_knob_inert_ PROVES it
+  # has none. The second is only accepted on a row marked kind = "inert",
+  # which test_row_markers_are_declared requires to be allowlisted
+  # not_plumbed -- so an inertness credit is always backed by tracked debt
+  # that a separate test retires the moment the knob is wired.
   covered = {
     target
     for row in LIVE
     for target in cast("list[str]", row["targets"])
     if any(
-      nodeid.split("::")[-1].startswith("test_knob_semantics_") and nodeid in passed
+      nodeid.split("::")[-1].startswith(
+        _INERT_PREFIX if _kind(row) == "inert" else _SEMANTICS_PREFIX,
+      )
+      and nodeid in passed
       for nodeid in cast("list[str]", row["parity_test_ids"])
     )
   }
   uncovered = sorted(NEW_FIELDS - covered)
   assert not uncovered, (
     f"{len(uncovered)} of {len(NEW_FIELDS)} new Options fields are not reached by "
-    f"any passing test_knob_semantics_* test: {uncovered}"
+    f"any passing {_SEMANTICS_PREFIX}* test (or {_INERT_PREFIX}* on a row marked "
+    f"kind = 'inert'): {uncovered}"
   )
 
 
