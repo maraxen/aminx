@@ -629,6 +629,79 @@ def _chain_dict(
   return {name: ([str(letter) for letter in designed], [str(letter) for letter in fixed])}
 
 
+def _jsonl_last(path: str | None) -> dict[str, Any] | None:
+  """Upstream's JSONL reader: the LAST object in the file wins.
+
+  ``run_utils.py:556-604`` opens each of these files, iterates its lines and
+  rebinds the dict every time, so a multi-line file keeps only the last object.
+  That is not obviously intended, but it is the behaviour the oracle has, and a
+  port that merged instead would disagree on any file with more than one line.
+
+  A missing path is ``None``, not an error -- upstream guards every one of these
+  with ``os.path.isfile``.
+  """
+  if not path:
+    return None
+  file = Path(path)
+  if not file.is_file():
+    return None
+  found: dict[str, Any] | None = None
+  for line in file.read_text(encoding="utf-8").splitlines():
+    if line.strip():
+      found = json.loads(line)
+  return found
+
+
+def _jsonl_merged(path: str | None) -> dict[str, Any] | None:
+  """``pssm_json`` alone MERGES across lines (``run_utils.py:564-566``).
+
+  It builds ``pssm_dict = {}`` and calls ``.update()`` per line, where every
+  other loader in that function rebinds. Keeping the distinction matters for a
+  file holding one structure per line, which is the shape these are written in.
+  """
+  if not path:
+    return None
+  file = Path(path)
+  if not file.is_file():
+    return None
+  merged: dict[str, Any] = {}
+  for line in file.read_text(encoding="utf-8").splitlines():
+    if line.strip():
+      merged.update(json.loads(line))
+  return merged or None
+
+
+def _featurize_one(
+  parsed: dict[str, Any],
+  options: PottsMPNNOptions,
+  name: str,
+) -> PottsFeatures:
+  """One structure, with every optional dict the Options actually carry.
+
+  THE POINT OF THIS HELPER IS THE KEYWORDS. ``tied_featurize_port`` takes five
+  optional dicts (``featurize.py:329-338``) and all three call sites used to
+  pass only ``batch`` and ``chain_dict`` positionally, leaving the rest ``None``
+  forever. That single omission is why ``pssm_json`` and ``bias_by_res_json``
+  were inert (aminx debt 2435/2443): the fields parsed fine and reached nothing.
+
+  Centralising the call means a future dict is added once rather than at each
+  site, which is how the previous three drifted into agreeing on silence.
+
+  ``fixed_position_dict``, ``omit_aa_dict`` and ``tied_positions_dict`` stay
+  unset HERE deliberately: ``fixed_positions`` and ``omit_aa`` are already
+  applied host-side in ``sample_host`` (``:282-288``) and routing them through
+  featurize as well would apply them twice; ``tied_positions`` is a spec-level
+  sequence of global indices and needs a per-chain conversion that does not
+  exist yet (debt 2443 covers it separately).
+  """
+  return tied_featurize_port(
+    [parsed],
+    _chain_dict(options, name),
+    pssm_dict=_jsonl_merged(options.pssm_json),
+    bias_by_res_dict=_jsonl_last(options.bias_by_res_json),
+  )[0]
+
+
 def _binding_partitions(options: PottsMPNNOptions, name: str) -> list[list[str]] | None:
   if not options.binding_energy_json:
     return None
@@ -724,7 +797,7 @@ def _sample_batches(spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
       parsed_list = parse_pdb_upstream(path, skip_gaps=options.skip_gaps)
       parsed = parsed_list[0]
       name = str(parsed["name"])
-      features = tied_featurize_port([parsed], _chain_dict(options, name))[0]
+      features = _featurize_one(parsed, options, name)
       if knn_boundary_tie(features.present, features.L_total):
         log.warning("knn_boundary_tie for %s (L_total=%s)", name, features.L_total)
       chains = _chain_sequences(parsed, features)
@@ -762,7 +835,7 @@ def _prepare_from_spec(item: Any, spec: Any) -> _Prepared:  # noqa: ANN401
   parsed_list = parse_pdb_upstream(path, skip_gaps=options.skip_gaps)
   parsed = parsed_list[0]
   name = str(parsed["name"])
-  features = tied_featurize_port([parsed], _chain_dict(options, name))[0]
+  features = _featurize_one(parsed, options, name)
   if knn_boundary_tie(features.present, features.L_total):
     log.warning("knn_boundary_tie for %s (L_total=%s)", name, features.L_total)
   chains = _chain_sequences(parsed, features)

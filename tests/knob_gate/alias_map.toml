@@ -2465,7 +2465,7 @@ note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at
 ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__tied_beta"
 targets = ["tied_beta"]
 equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_fixed_mask_bias_by_res_json_and_tied_beta_are_all_inert"]
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_fixed_mask_and_tied_beta_are_still_inert"]
 note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row. This is the only reference field naming tied_beta, so it must stay live for PottsMPNNOptions.tied_beta to be coverable."
 
 [[row]]
@@ -2667,7 +2667,7 @@ note = "Per-amino-acid logit bias; aminx carries it as the generic bias input."
 ref = "pottsmpnn_cfg__inference__bias_by_res_json"
 targets = ["bias_by_res_json"]
 equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_fixed_mask_bias_by_res_json_and_tied_beta_are_all_inert"]
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_bias_by_res_json"]
 note = ""
 
 [[row]]
@@ -2714,7 +2714,7 @@ note = "Follows the *__chain_dict_json rule (spec 6.3); same test, same semantic
 ref = "pottsmpnn_cfg__inference__chain_ranges"
 targets = ["fixed_mask"]
 equivalence = "semantic"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_fixed_mask_bias_by_res_json_and_tied_beta_are_all_inert"]
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_fixed_mask_and_tied_beta_are_still_inert"]
 note = "Per-chain inclusive 1-indexed residue ranges (run_utils.py:925,1010-1011); expressed in aminx as a fixed mask over everything outside the range."
 
 [[row]]
@@ -2866,7 +2866,7 @@ note = ""
 ref = "pottsmpnn_cfg__inference__pssm_json"
 targets = ["pssm_json"]
 equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_pssm_knobs_cannot_bite_until_pssm_json_is_plumbed"]
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_pssm_json"]
 note = """\
 NOT PLUMBED (debt 2435, allowlisted): nothing reads options.pssm_json, so no \
 driver call site ever passes a pssm_dict to tied_featurize_port and \
@@ -2893,7 +2893,7 @@ note = ""
 ref = "pottsmpnn_cfg__inference__pssm_threshold"
 targets = ["pssm_threshold"]
 equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_pssm_knobs_cannot_bite_until_pssm_json_is_plumbed"]
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_pssm_log_odds_half_is_still_unreachable"]
 note = """\
 IS read -- sample_host.py:295 feeds it to (log_odds > threshold) at :332 -- and \
 still cannot change anything, because pssm_json above is unplumbed and leaves \

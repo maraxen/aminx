@@ -16,6 +16,7 @@ consumed in host code rather than in a pure function.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -723,15 +724,25 @@ _PSSM_SETTINGS: tuple[tuple[str, dict], ...] = (
 )
 
 
-def test_pssm_knobs_cannot_bite_until_pssm_json_is_plumbed(
+def test_pssm_knobs_do_nothing_without_a_pssm_file(
   registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
 ) -> None:
-  """Every pssm knob is read, and none of them can change an output (debt 2440).
+  """With no ``pssm_json`` supplied, every pssm knob is inert -- and that is CORRECT.
 
-  THIS TEST ASSERTS A DEFECT, deliberately, and is named so the knob gate does
-  NOT credit it as coverage -- ``test_knob_semantics_*`` is the crediting prefix
-  and this is not one. It exists so the day the defect is fixed, it fails and
-  says what to do.
+  THIS TEST CHANGED MEANING ON 261003 AND WAS RENAMED RATHER THAN DELETED. It
+  was written as a defect tripwire, when ``pssm_dict`` was never passed to
+  ``tied_featurize_port`` and the knobs could not work even WITH a file (debts
+  2440, 2443). That is fixed -- ``pssm_json`` now reaches the featurizer and has
+  its own ``test_knob_semantics_pssm_json`` above.
+
+  What survives is narrower and is NOT a defect: with no pssm file,
+  ``pssm_coef`` and ``pssm_bias`` are zero-filled (``featurize.py:403-404``), so
+  scaling or gating them changes nothing. A caller who sets these knobs and
+  supplies no PSSM gets default behaviour, which is the only sensible outcome.
+  Pinning it stops a future change from making the knobs act on an absent PSSM.
+
+  Still not a ``test_knob_semantics_*`` name: it asserts an absence, and the
+  gate should not read that as the knobs being covered.
 
   ``pssm_threshold``, ``pssm_multi``, ``pssm_log_odds_flag`` and
   ``pssm_bias_flag`` are all read off ``options`` (``sample_host.py:295``,
@@ -1545,10 +1556,15 @@ def test_tied_positions_is_ignored_by_the_potts_driver(
     _sampled(tied_positions="auto")
 
 
-def test_fixed_mask_bias_by_res_json_and_tied_beta_are_all_inert(
+def test_fixed_mask_and_tied_beta_are_still_inert(
   registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
 ) -> None:
-  """Three more fields that reach nothing (debts 2443 and 2435).
+  """Two fields that still reach nothing (debt 2435).
+
+  WAS THREE. ``bias_by_res_json`` was here until 261003 and is now plumbed --
+  the driver passes ``bias_by_res_dict`` to ``tied_featurize_port`` (debt 2443)
+  and it has a real knob test above. This test fired when that landed, which is
+  what it was for, and the field was removed rather than the assertion relaxed.
 
   A THIRD TEST THAT ASSERTS DEFECTS, named so the gate does not credit it.
 
@@ -1629,10 +1645,190 @@ def test_fixed_mask_bias_by_res_json_and_tied_beta_are_all_inert(
     got = _sampled(fixed_mask=np.asarray(mask, dtype=np.float32))
     assert got == baseline, f"fixed_mask={mask} changed the sample to {got}. {reason}"
 
-  # bias_by_res_json: the control's bias, by the route that does not work.
-  got = _sampled(options={"bias_by_res_json": str(bias_json)})
-  assert got == baseline, f"bias_by_res_json changed the sample to {got}. {reason}"
-
   for value in (0.0, 5.0, 100.0):
     got = _sampled(options={"tied_beta": value})
     assert got == baseline, f"tied_beta={value} changed the sample to {got}. {reason}"
+
+
+def _json_file(path: Path, payload: dict) -> str:
+  """Upstream reads these as JSONL -- one object per line."""
+  path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+  return str(path)
+
+
+def test_knob_semantics_bias_by_res_json(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``bias_by_res_json`` adds a per-residue, per-amino-acid bias.
+
+  ``bias_by_res_dict[name][chain]`` is an ``(L, 21)`` table that
+  ``featurize.py:406-409`` folds into the per-residue bias. It was INERT until
+  261003 -- the driver never passed ``bias_by_res_dict`` to
+  ``tied_featurize_port`` at all (debt 2443) -- so this test is new coverage of
+  a field that previously parsed and reached nothing.
+
+  THE SAME EXPERIMENT BY TWO ROUTES is what makes the assertion sharp rather
+  than merely positive: an identical G-favouring per-residue bias is supplied
+  as ``spec.bias`` and as ``bias_by_res_json``, and both must now move the
+  sample. Before the fix the first worked and the second did nothing, which is
+  exactly the asymmetry the old tripwire recorded.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+  gly = _ALPHA.index("G")
+  table = [[50.0 if i == gly else 0.0 for i in range(21)] for _ in range(6)]
+
+  def _sampled(**options: object) -> str:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=2,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none", **options),
+    )
+    return _letters(
+      np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])[0],
+    )
+
+  baseline = _sampled()
+  assert "G" not in baseline, f"fixture must not already be G: {baseline}"
+
+  path = _json_file(tmp_path / "bias.json", {"toy": {"A": table}})
+  assert _sampled(bias_by_res_json=path) == "GGGGGG"
+
+  # A payload for another structure RAISES, and that is upstream-faithful.
+  # potts_mpnn_utils.py:436-437 does `bias_by_res_dict[b['name']][letter]` with
+  # no membership check, so a file that does not cover this structure is an
+  # error rather than a no-op. That is the OPPOSITE of mutant_csv and
+  # chain_design_mask_json, which filter on the name and silently contribute
+  # nothing -- a difference worth pinning, since "keyed by structure name"
+  # describes both and predicts the wrong behaviour for one of them.
+  other = _json_file(tmp_path / "other.json", {"not_toy": {"A": table}})
+  with pytest.raises(KeyError, match="toy"):
+    _sampled(bias_by_res_json=other)
+
+
+def test_knob_semantics_pssm_json(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``pssm_json`` supplies pssm_coef / pssm_bias / pssm_log_odds per chain.
+
+  Also inert until 261003 for the same reason (debt 2443): ``pssm_dict`` was
+  never passed. With it passed, the coefficient-and-bias half demonstrably
+  reaches the sampler.
+
+  NOT ALL OF IT IS REACHABLE YET. ``pssm_log_odds`` feeds a mask that this
+  sampling path does not consume -- measured, with log-odds of +10 for G and
+  -10 elsewhere and thresholds of -20, 0 and 20 straddling them, all three give
+  the identical sequence. So ``pssm_threshold`` and ``pssm_log_odds_flag``
+  remain uncovered and keep their tripwire; this test deliberately claims only
+  the half that works, rather than asserting a pass the implementation does not
+  earn.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+  gly = _ALPHA.index("G")
+  payload = {
+    "toy": {
+      "A": {
+        "pssm_coef": [1.0] * 6,
+        "pssm_bias": [[1.0 if i == gly else 0.0 for i in range(21)] for _ in range(6)],
+        "pssm_log_odds": [[10.0 if i == gly else -10.0 for i in range(21)] for _ in range(6)],
+      },
+    },
+  }
+
+  def _sampled(**options: object) -> str:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=2,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none", **options),
+    )
+    return _letters(
+      np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])[0],
+    )
+
+  baseline = _sampled()
+  assert "G" not in baseline, f"fixture must not already be G: {baseline}"
+
+  path = _json_file(tmp_path / "pssm.json", payload)
+  assert _sampled(pssm_json=path, pssm_bias_flag=True, pssm_multi=1.0) == "GGGGGG"
+
+  # Without the flag that consumes it, the same file changes nothing -- so the
+  # effect above is the BIAS being applied, not merely the file being read.
+  assert _sampled(pssm_json=path) == baseline
+
+
+def test_pssm_log_odds_half_is_still_unreachable(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``pssm_threshold`` still cannot change a sample (debt 2440, part).
+
+  Asserts a defect, so it is not a ``test_knob_semantics_*`` name. Narrower than
+  the original tripwire: ``pssm_json`` and ``pssm_bias_flag`` now work, and only
+  the log-odds mask does not.
+
+  The thresholds STRADDLE the log-odds values (+10 for G, -10 elsewhere), so
+  -20 would keep every amino acid, 0 only G, and 20 none. All three return the
+  same sequence, which is what makes this a reach failure rather than a badly
+  chosen fixture -- the first attempt used 0 and 5, which select the same mask
+  and would have proved nothing.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+  gly = _ALPHA.index("G")
+  path = _json_file(
+    tmp_path / "pssm.json",
+    {
+      "toy": {
+        "A": {
+          "pssm_coef": [1.0] * 6,
+          "pssm_bias": [[0.0] * 21 for _ in range(6)],
+          "pssm_log_odds": [
+            [10.0 if i == gly else -10.0 for i in range(21)] for _ in range(6)
+          ],
+        },
+      },
+    },
+  )
+
+  def _sampled(threshold: float) -> str:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=2,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      potts_mpnn=PottsMPNNOptions(
+        optimization_mode="none",
+        pssm_json=path,
+        pssm_log_odds_flag=True,
+        pssm_threshold=threshold,
+      ),
+    )
+    return _letters(
+      np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])[0],
+    )
+
+  outcomes = {_sampled(t) for t in (-20.0, 0.0, 20.0)}
+  assert len(outcomes) == 1, (
+    f"pssm_threshold changed the sample: {outcomes}. If the log-odds mask now "
+    f"reaches this path, that is the rest of debt 2440 -- delete this test and "
+    f"write test_knob_semantics_pssm_threshold."
+  )

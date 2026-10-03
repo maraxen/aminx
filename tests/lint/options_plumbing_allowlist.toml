@@ -71,17 +71,13 @@ options_class = "LaserOptions"
 reason = "not_plumbed"
 note = "selects the second tied structure; nothing reads it, so the tied path cannot be driven through Options"
 
-[[entries]]
-field = "bias_by_res_json"
-options_class = "PottsMPNNOptions"
-reason = "not_plumbed"
-note = "upstream cfg.inference.bias_by_res_json, materialised to bias_by_res at sample_seqs.py:231"
-
-[[entries]]
-field = "pssm_json"
-options_class = "PottsMPNNOptions"
-reason = "not_plumbed"
-note = "upstream cfg.inference.pssm_json, materialised to pssm_coef / pssm_bias / pssm_log_odds_mask"
+# PAID OFF 261003, removed rather than relaxed: bias_by_res_json and pssm_json.
+# The Potts driver now passes bias_by_res_dict and pssm_dict to
+# tied_featurize_port (debt 2443 -- all three call sites had passed only batch
+# and chain_dict positionally, leaving five optional dicts permanently None).
+# Both fields have real knob tests, and test_allowlist_has_no_fixed_entries is
+# what demanded these rows go: it named them within minutes of the fix landing.
+# 17 rows -> 15.
 
 [[entries]]
 field = "emit_dense_hJ"
