@@ -23,6 +23,34 @@ So ledger rows **cannot be accumulated incrementally**. The vehicle wave runs
 `tests/knob_gate/` and `scripts/redsox/` are **not** scoped, so manifests,
 ledger ids and this tooling can be edited freely before or after the wave.
 
+## Environment the gate box needs, which is not in `pyproject.toml`
+
+Two prerequisites live only in the venv and the launcher. Neither is declared as
+a dependency, and that is deliberate: `pyproject.toml` and `uv.lock` are both
+**scoped**, so declaring either would invalidate all seven ledger rows at once.
+They are installed by hand and survive because everything here runs
+`uv run --no-sync` — a bare `uv run` re-syncs and drops them.
+
+1. **`redsox` must be importable in the venv the gate runs in.**
+   `tests/knob_gate/test_knob_superset.py::test_u1_reachability_present` imports
+   `redsox.checkers`. Measured 261002: the b7i checkout had it and the **sprint**
+   checkout — the one the gate runs in — did not, so that test would have failed
+   under the gate while passing everywhere it was tried.
+
+       ssh titanix 'cd ~/projects/aminx-sprint-git && uv pip install -e ~/projects/redsox'
+
+   Venv-only; `git status` stays empty afterwards, so the freeze survives.
+   Check it with `uv run --no-sync python3 -c 'import redsox'` before a gate run.
+
+2. **`$POTTS_ORACLE_PYTHON` must point at the oracles venv.**
+   `launch_wave.sh:100-102` exports it (and `LASER_ORACLE_PYTHON`,
+   `AMINX_POTTS_ROOT`), so vehicles launched through the script are fine. A
+   hand-rolled `bth run` is **not**: `potts_ddg_megascale`'s oracle arm imports
+   upstream `run_utils`, which imports `seaborn` at module scope, and
+   `_oracle_python` falls back to `sys.executable` when the variable is unset.
+   Launched by hand it died in under a minute; through the launcher it just
+   works. Prefer the launcher, and export these three if you must not.
+
 ## Sequence
 
 1. **Freeze.** Land every scoped change. Confirm local == remote and nothing
@@ -34,6 +62,12 @@ ledger ids and this tooling can be edited freely before or after the wave.
        ssh titanix 'cd ~/projects/aminx-sprint-git && bash scripts/redsox/launch_wave.sh 1'
        # when group 1 has exited:
        ssh titanix 'cd ~/projects/aminx-sprint-git && bash scripts/redsox/launch_wave.sh 2'
+       # when group 2 has exited:
+       ssh titanix 'cd ~/projects/aminx-sprint-git && bash scripts/redsox/launch_wave.sh 3'
+
+   Group 3 is `potts_ddg_megascale` alone — the largest vehicle, 202804 rows
+   over 371 per-PDB resumable units per arm, ~25 minutes at `e3bc540e`. It is
+   isolated for CPU contention, not for duration.
 
    The launcher fetches and checks out the branch itself, refuses to start on a
    dirty tree, and checks every `--mutants` string against the manifest before
@@ -47,7 +81,7 @@ ledger ids and this tooling can be edited freely before or after the wave.
    `run_id`:
 
        ssh titanix 'for v in laser_proofread_parity laser_decode_e2e potts_ar_refine_exact \
-         potts_ar_decode potts_energy_parity laser_score_parity; do
+         potts_ar_decode potts_energy_parity laser_score_parity potts_ddg_megascale; do
            echo "$v $(grep -o "\"run_id\": \"[^\"]*\"" ~/${v}_<sha8>.log | tail -1)"; done'
 
 4. **Verify BEFORE writing a row.** This is the step the ledger header asks for
@@ -67,9 +101,17 @@ ledger ids and this tooling can be edited freely before or after the wave.
 
 1. **`--mutants` must be in argv.** `_argv_mutants` returns `None` when the flag
    is absent, so a run relying on the script's default mutant list fails.
-2. **The tree must be clean.** `.praxia/audits.jsonl` is TRACKED and anything
-   running pytest appends to it, so a gate run leaves later vehicle runs
-   recording `git_dirty = true`.
+2. **The tree must be clean**, or every run records `git_dirty = true`.
+
+   This used to add "`.praxia/audits.jsonl` is TRACKED and anything running
+   pytest appends to it". The file is tracked; the rest is **false**, measured
+   261002 either side of a pytest run over `tests/knob_gate` and `tests/lint`:
+   sha256 `44642583f94f5d94` before and after, 206 lines both times, porcelain
+   empty for that path — matching ~15 other pytest invocations that day. What
+   dirties `.praxia/*.jsonl` is a praxia **agent session's** own hooks, in the
+   authoring checkout, not pytest on the box running the gate. `launch_wave.sh`
+   still restores before launching, because the trap is real even though this
+   cause was not.
 3. **The weights key must be the stable identifier**, not an absolute path;
    `scripts/parity/artifact_key.py` derives it. Controls written before 6cb81d49
    carry `/home/solab/repos/...` and never validate.
@@ -128,13 +170,20 @@ pass, and belongs in a deliberate decision, not a drive-by edit.
 
 ## Known coverage gaps
 
-`tests/knob_gate/branch_manifest.toml` documents these inline. Two spec-listed
-sidecar vehicles are deliberately unlisted:
+`tests/knob_gate/branch_manifest.toml` documents these inline. **One**
+spec-listed sidecar vehicle is deliberately unlisted:
 
-- `potts_ddg_megascale` — never run at any sha; run it before listing it.
 - `potts_refine` — clean arm fails at 0.9539 (debt #2417), and it sits in the
   spec's wave table rather than the sidecar table, so whether it owes a row is
   a real question rather than an oversight.
+
+`potts_ddg_megascale` was the other, and is now **listed**: first run 261002,
+`90f945fc-49fc-4474-af22-124f817188db` at `e3bc540e`, clean `max_abs_delta`
+1.2207e-4 against a `<= 5e-4` band, control `skip_transpose_merge_pair` failing
+at 11.6458 against a 5e-3 threshold. Listing it needed **three** edits, not one:
+the manifest row, the `MUT` entry, and a group — `check_coverage` refuses to
+launch if a manifest slug is reachable from no group, so the row alone would
+have made every later `launch_wave.sh` exit 1.
 
 `test_manifest_can_pass.py` asserts the manifest *can* grade to `pass` under
 flawless stubbed runs, with a negative control that a mutant-set mismatch is
