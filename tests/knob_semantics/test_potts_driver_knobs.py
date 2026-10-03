@@ -1097,3 +1097,121 @@ def test_knob_semantics_num_samples(
       arrays["sample_energy"].shape
     )
     assert arrays["sample_rank"].shape == (requested,), arrays["sample_rank"].shape
+
+
+def _write_pdb_jittered(
+  path: Path, sequence: str, jitter: float, seed: int,
+) -> None:
+  """``_write_pdb`` for one chain, with each atom displaced by ``jitter``.
+
+  Needed because ``_write_pdb`` lays atoms out purely by residue index, so two
+  structures with different SEQUENCES have identical coordinates. A control for
+  a coordinate knob has to move the coordinates.
+  """
+  rng = np.random.default_rng(seed)
+  lines: list[str] = []
+  serial = 1
+  for index, amino in enumerate(sequence, start=1):
+    for offset, atom in enumerate(("N", "CA", "C", "O")):
+      shift = rng.normal(scale=jitter, size=3) if jitter else np.zeros(3)
+      lines.append(
+        _atom(
+          serial, atom, _THREE[amino], "A", index,
+          x=float(index * 3 + offset) + float(shift[0]),
+          y=float(ord("A")) + float(shift[1]),
+          z=float(offset) + float(shift[2]),
+        ),
+      )
+      serial += 1
+  lines.append("END")
+  path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_backbone_noise_is_ignored_on_the_potts_path(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``backbone_noise`` reaches the spec and then nothing (debt 2442).
+
+  THIS TEST ASSERTS A DEFECT, like the pssm one, and is named so the knob gate
+  does not credit it as coverage. It exists so the day the defect is fixed, it
+  fails and says what to do.
+
+  Spec 6.3: Potts ``noise`` is eval ``augment_eps``, applied to all backbone
+  atoms whenever ``augment_eps > 0`` INCLUDING at eval
+  (``potts_mpnn_utils.py:1170-1171``), as iid Gaussian per atom. aminx builds the
+  bundle correctly -- ``backbone_noise=1.0`` yields
+  ``FeatureNoiseBundle(feature_type='backbone', noise_levels=(1.0,),
+  mode='direct', enabled=True)`` -- and then consumes it nowhere on this path.
+  ``apply_noise_to_coordinates`` (``utils/coordinates.py:42-46``) implements the
+  rule, but its only callers live under ``model/``; nothing under ``families/``
+  calls it.
+
+  THE CONTROL IS WHAT MAKES THE NULL MEAN ANYTHING, and here it is unusually
+  sharp: displacing the same coordinates ON DISK changes the energy at a sigma of
+  0.02, which is a five-hundredth of the largest value the knob is given below.
+  So the path is not merely sensitive to geometry, it is sensitive far below the
+  scale at which the knob does nothing.
+
+  Debt 2434 records the LASEr half of this. There the generic per-atom rule would
+  have been WRONG anyway -- spec 6.3 calls iid-per-atom LASEr's negative control,
+  since LASEr's own rule is a rigid per-residue translation plus 2-decimal
+  rounding. On the Potts side the generic rule is the CORRECT one, and it still
+  is not applied.
+  """
+  del registered
+  clean = tmp_path / "clean.pdb"
+  _write_pdb_jittered(clean, "ACDEFG", 0.0, 0)
+
+  def _energy(path: Path, **kwargs: object) -> np.ndarray:
+    spec = ScoringSpecification(
+      inputs=str(path),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      output_kind="energy",
+      sequences_to_score=["ADDEFG"],
+      potts_mpnn=PottsMPNNOptions(),
+      **kwargs,
+    )
+    return np.asarray(
+      score(spec)["structures"]["0"]["arrays"]["energy"], dtype=np.float64,
+    )
+
+  baseline = _energy(clean)
+
+  # Control: the smallest displacement tested already moves the energy.
+  jittered = tmp_path / "jittered.pdb"
+  _write_pdb_jittered(jittered, "ACDEFG", 0.02, 7)
+  assert not np.allclose(baseline, _energy(jittered)), (
+    "control failed: displacing the coordinates by sigma=0.02 did not change "
+    "the energy, so this fixture cannot detect a coordinate perturbation and "
+    "the assertions below would hold for any reason at all"
+  )
+
+  # The bundle is built, so the spec half of the plumbing works.
+  spec = ScoringSpecification(
+    inputs=str(clean),
+    model_family="pottsmpnn",
+    checkpoint_id="pottsmpnn_vanilla_20",
+    model_local_path=model_path,
+    output_kind="energy",
+    sequences_to_score=["ADDEFG"],
+    backbone_noise=1.0,
+    potts_mpnn=PottsMPNNOptions(),
+  )
+  assert len(spec.noise) == 1, spec.noise
+  assert spec.noise[0].feature_type == "backbone"
+  assert spec.noise[0].noise_levels == (1.0,)
+  assert spec.noise[0].enabled is True
+
+  # And it changes nothing, at any magnitude, including 500x the control's.
+  for level in (0.02, 0.5, 1.0, 2.0, 10.0):
+    np.testing.assert_array_equal(
+      _energy(clean, backbone_noise=level), baseline,
+      err_msg=(
+        f"backbone_noise={level} changed the energy. If the Potts path now "
+        f"applies augment_eps, that is the fix for debt 2442 -- delete this "
+        f"test and write test_knob_semantics_noise asserting iid Gaussian "
+        f"N/CA/C/O per atom against an oracle with injected randn (spec 6.3)."
+      ),
+    )
