@@ -2660,7 +2660,7 @@ note = "Device selection (spec 6.3: device -> exclusion device)."
 ref = "pottsmpnn_cfg__inference__bias_AA_json"
 targets = ["bias"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_bias"]
 note = "Per-amino-acid logit bias; aminx carries it as the generic bias input."
 
 [[row]]
@@ -2757,7 +2757,7 @@ note = "seeded-order test; order source is the driver, not decoding_order_fn"
 ref = "pottsmpnn_cfg__inference__fixed_positions_json"
 targets = ["fixed_positions"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_fixed_positions"]
 note = "Per-chain fixed-position lists, taken as json by aminx."
 
 [[row]]

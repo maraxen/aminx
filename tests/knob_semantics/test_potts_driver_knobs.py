@@ -1278,3 +1278,138 @@ def test_knob_semantics_random_seed(
       f"random_seed={other} produced the same samples as random_seed=0; the "
       f"seed is not reaching the decoding order (spec :786)"
     )
+
+
+_ALPHA = "ACDEFGHIKLMNPQRSTVWYX"
+
+
+def _letters(row: np.ndarray) -> str:
+  return "".join(_ALPHA[int(i)] for i in row)
+
+
+def test_knob_semantics_bias(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``bias`` has three accepted shapes, and the two 1-D ones can collide.
+
+  ``_split_bias`` (``sample_host.py:241-267``) accepts ``(21,)`` as a global
+  per-amino-acid bias, ``(L,)`` as per-position, and ``(L, 21)`` as per-position
+  per-amino-acid.
+
+  THE COLLISION IS THE POINT. Its docstring says a 1-D vector whose length is the
+  chain is per-position "including when that length is also 21" -- so on a
+  21-residue chain a length-21 vector must NOT be read as the global bias. The
+  branch ORDER is what implements that, and swapping the two ``if``s would be
+  invisible on every chain whose length is not 21. Both sides are therefore
+  exercised on fixtures of length 6 and length 21.
+
+  A one-hot bias separates the readings sharply. Read globally, that amino acid
+  is favoured at EVERY position; read per-position, every amino acid at ONE
+  position is shifted by the same amount, which changes nothing about which wins
+  there. Measured: on L=6 a one-hot on G turns SSSSSS into GGGGGG; on L=21 the
+  identical vector leaves the sequence untouched.
+  """
+  del registered
+  short = tmp_path / "short.pdb"
+  long_ = tmp_path / "long.pdb"
+  _write_pdb(short, {"A": "ACDEFG"})
+  _write_pdb(long_, {"A": "ACDEFGHIKLMNPQRSTVWYA"})  # L == 21, == len(alphabet)
+
+  def _sampled(pdb: Path, **kwargs: object) -> np.ndarray:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=2,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none"),
+      **kwargs,
+    )
+    return np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])
+
+  gly = _ALPHA.index("G")
+  one_hot = np.zeros(21, dtype=np.float32)
+  one_hot[gly] = 50.0
+
+  # (21,) on a chain that is NOT 21 long: global, so G wins everywhere.
+  unbiased = _sampled(short)
+  assert "G" not in _letters(unbiased[0]), (
+    f"the unbiased sample is {_letters(unbiased[0])}; it must not already be G "
+    f"or the global-bias assertion proves nothing"
+  )
+  assert _letters(_sampled(short, bias=one_hot)[0]) == "GGGGGG"
+
+  # (L, 21) is per-position per-amino-acid and reaches the same place here.
+  grid = np.zeros((6, 21), dtype=np.float32)
+  grid[:, gly] = 50.0
+  assert _letters(_sampled(short, bias=grid)[0]) == "GGGGGG"
+
+  # The collision: on L == 21 the SAME vector is per-position, so biasing
+  # position 5 equally across all amino acids changes nothing.
+  base_long = _sampled(long_)
+  assert base_long.shape == (2, 21), base_long.shape
+  np.testing.assert_array_equal(_sampled(long_, bias=one_hot), base_long)
+  # ...and the reading really is the per-position one, not "bias does nothing on
+  # long chains": the same vector reshaped to (21, 21) with a G column IS
+  # per-position per-amino-acid, and that does bias towards G.
+  long_grid = np.zeros((21, 21), dtype=np.float32)
+  long_grid[:, gly] = 50.0
+  assert _letters(_sampled(long_, bias=long_grid)[0]) == "G" * 21
+
+  # An unusable shape names all three accepted ones rather than guessing.
+  with pytest.raises(ValueError, match=r"bias shape \(7,\) is not"):
+    _sampled(short, bias=np.zeros(7, dtype=np.float32))
+
+
+def test_knob_semantics_fixed_positions(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``fixed_positions`` holds those positions at their native residue.
+
+  ``sample_host.py:282-285`` zeroes ``chain_m_pos`` at each listed index, so the
+  sampler does not design there. Indices are 0-based and out-of-range entries are
+  skipped rather than raising.
+
+  Measured on native ACDEFG: unconstrained the sampler returns SSSSSS, and fixing
+  [0, 1, 2] returns ACDSSS -- the first three positions are exactly the native
+  residues and the rest still move. Asserting both halves matters: an
+  implementation that froze the WHOLE sequence would also keep the native prefix.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+
+  def _sampled(**kwargs: object) -> str:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=2,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none"),
+      **kwargs,
+    )
+    return _letters(
+      np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])[0],
+    )
+
+  free = _sampled()
+  assert free[:3] != "ACD", (
+    f"the free sample is {free}; it must not already start with the native ACD "
+    f"or fixing those positions would be indistinguishable from not fixing them"
+  )
+
+  fixed = _sampled(fixed_positions=[0, 1, 2])
+  assert fixed[:3] == "ACD", fixed
+  assert fixed[3:] == free[3:], (
+    f"unfixed positions must be unaffected: {fixed} vs {free}"
+  )
+
+  # An empty list fixes nothing, so it must match the free sample exactly.
+  assert _sampled(fixed_positions=[]) == free
