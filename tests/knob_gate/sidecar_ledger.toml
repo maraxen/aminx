@@ -115,22 +115,53 @@ bth_run_id = "87098798-18ee-4e55-8be7-0a8ace926309"
 bth_run_id = "8647668d-0f77-449b-adcb-1e9d5ae5a740"
 
 [sidecar.potts_ar_decode]
-# 7c3dd246. clean pass at exact token match 1.0; ar_mask_present_chain_m_pos
-# failed at 0.8668714797747056. weights key
+# REWRITTEN 261003 at 9a0cd350, group 2 of the post-freeze wave.
+# clean pass at exact token match 1.0; ar_mask_present_chain_m_pos failed at
+# 0.8668714797747056. weights key
 # PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt
-# Supersedes 1859bdcc, which verified at 6cb81d49 and was invalidated by the
-# later scoped commits.
-bth_run_id = "6a245342-aed3-40df-b046-73631b9cd29e"
+# Both numbers are BIT-FOR-BIT IDENTICAL to the superseded 7c3dd246 run, which
+# is the same thing laser_decode_e2e showed: the two scoped driver.py commits
+# that invalidated the old rows changed no number here. The invalidation was
+# bookkeeping, not drift -- but it still had to be re-run, because "the number
+# did not move" is a conclusion you can only reach AFTER re-measuring, and the
+# step 1c condition is about the commit the run was pinned to, not about
+# whether we expect the code to matter.
+# verify_wave.py --run potts_ar_decode=28f8d7a2-... returns "would grade" with
+# all 14 conditions PASS.
+# Supersedes 6a245342 (7c3dd246, failed "no scoped path since") and 1859bdcc
+# (6cb81d49, invalidated the same way).
+bth_run_id = "28f8d7a2-6fec-446a-a3e6-65a20ff8a9f1"
 
 [sidecar.potts_energy_parity]
-# 7c3dd246. clean pass at max_abs_delta 0.000732421875 with analytic_abs_err
-# exactly 0.0; permute_etab_out_rows failed at 1218.31494140625.
-# Supersedes 1117a297, invalidated the same way as potts_ar_decode above.
-bth_run_id = "3f8e4f99-e7ce-464f-becb-54e1d79d5357"
+# REWRITTEN 261003 at 9a0cd350, group 2 of the post-freeze wave.
+# clean pass at max_abs_delta 0.000732421875 with analytic_abs_err exactly 0.0;
+# permute_etab_out_rows failed at 1218.31494140625 -- a 1.7-million-fold
+# separation, which is what a reduction-order mutant should look like on an
+# energy sum and is the reason this control is worth keeping cheap.
+# analytic_abs_err 0.0 is EXACT, not merely in-band: the closed-form energy and
+# the assembled etab agree bitwise, so the 7.3e-4 is the Potts etab against
+# upstream's and nothing else.
+# All three values are bit-for-bit identical to the superseded 7c3dd246 run.
+# verify_wave.py --run potts_energy_parity=bf6244f3-... returns "would grade"
+# with all 14 conditions PASS.
+# Supersedes 3f8e4f99 (7c3dd246) and 1117a297, both invalidated by the scoped
+# driver commits.
+bth_run_id = "bf6244f3-49e3-4b5d-b9c6-5fd3dab1cef2"
 
 [sidecar.laser_score_parity]
-# 7c3dd246. clean pass at max_abs_delta 2.3499874934884701e-07;
-# permute_decoder_layer failed at 0.548412062403438.
+# REWRITTEN 261003 at 9a0cd350, group 2 of the post-freeze wave.
+# clean pass at max_abs_delta 2.3499874934884701e-07; permute_decoder_layer
+# failed at 0.548412062403438. Both bit-for-bit identical to the superseded
+# 7c3dd246 run.
+# NOTE THE CLEAN NUMBER IS 2.35e-07 AGAINST AN f32 BAND OF atol 1e-7 / rtol
+# 1e-4. It passes on the rtol term, not the atol one, which is exactly the
+# regime #2445 exists to measure: atol 1e-7 is below one f32 ulp for |ref| > 1,
+# so the band's absolute term is doing no work here and was never measured.
+# scripts/analysis/laser_f32_tolerance_floor.py is pre-registered to replace it
+# with a measured floor; until that runs this row grades on a tolerance whose
+# basis is an assumption. The run is sound -- the deviation is real and
+# in-band -- but do not cite 2.35e-07 as evidence the band is right-sized.
+# Superseded id: cd56063e (7c3dd246, failed "no scoped path since").
 # NOT the earlier f11f2bf1 run. That one passed too, which is exactly why it was
 # tempting: it is an ANCESTOR of 6cb81d49 ("key oracle weights by a stable
 # identifier, not an absolute path"), so its controls carry
@@ -143,7 +174,7 @@ bth_run_id = "3f8e4f99-e7ce-464f-becb-54e1d79d5357"
 # group, so no invocation of the wave would ever have run it and the manifest
 # could not have been satisfied (fixed in ff4fe017, which added a check_coverage
 # assertion against the manifest itself).
-bth_run_id = "cd56063e-d6b0-458c-9400-b3845c8f7bd6"
+bth_run_id = "92992234-732e-4bb1-b53c-a5e81ff6e1f1"
 
 [sidecar.potts_ar_refine_exact]
 # 7c3dd246, the same tree as the three rows above. Exact sequence match over 50
