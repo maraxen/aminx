@@ -115,6 +115,39 @@ mutant = "vector_on"
 kind = "sidecar"
 slug = "laser_proofread_parity"
 
+# B7 laser_proofread_unconditional_parity. THREE rows, the three negative
+# controls. unc_both_off is the POSITIVE control and deliberately has no row
+# here: every row must report "failed" (_coverage.py:328) and a positive
+# control must pass. It must also stay out of the graded run's --mutants,
+# because :309 compares the raw argv string to exactly this set of ids.
+
+[[branch]]
+id = "unc_no_dropout"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "unc_no_dropout"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_unconditional_parity"
+
+[[branch]]
+id = "unc_scalar_off"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "unc_scalar_off"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_unconditional_parity"
+
+[[branch]]
+id = "unc_vector_on"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "unc_vector_on"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_unconditional_parity"
+
 # A6 potts_ar_refine_exact. Three rows. ar_mask_present_chain_m_pos is also a
 # potts_ar_decode mutant, but the id lives under this slug's own set: :427
 # keys sidecar_ids by slug, so the same mutant name under two slugs is two

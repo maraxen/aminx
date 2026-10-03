@@ -54,14 +54,11 @@ def _scalar_dropout(spec: Any, purpose: str) -> bool:  # noqa: ANN401
 def _dropout_key(base_key: jax.Array, purpose: str, chunk_start: int) -> jax.Array:
   """Host key handed to the stage.
 
-  Unconditional proofreading is ``fold_in(key, 0)``. That key is currently
-  DISCARDED: the stage runs ``unconditional_logits`` outside any dropout plan,
-  so the purpose applies no dropout at all, while upstream keeps every
-  ``nn.Dropout`` in train mode for that forward
-  (``run_proofreading.py:20-28,58,205``). Debt #2424; it needs a parity vehicle
-  before the wiring lands, because the purpose has never been compared to the
-  oracle. Conditional proofreading receives the base key; the stage folds item,
-  focus, dropout, and order indices.
+  Unconditional proofreading is ``fold_in(key, 0)``. The stage folds the
+  structure index into that key and hands it to the same dropout plan the
+  conditional purpose uses, so one forward applies scalar dropout when
+  ``proofread_dropout`` is on. Conditional proofreading receives the base key;
+  the stage folds item, focus, dropout, and order indices.
   Sampling receives the base key too: the stage folds the global sample index.
   Folding ``chunk_start`` again would make that index depend on the chunk size.
   Other purposes fold the chunk start so chunks do not share a dropout mask.

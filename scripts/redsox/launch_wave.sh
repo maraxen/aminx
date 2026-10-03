@@ -57,6 +57,7 @@ GROUP=${1:-}
 # slug -> the exact mutant string for its graded run.
 declare -A MUT=(
   [laser_proofread_parity]="reduction_swap,ddof_0,scalar_off,vector_on"
+  [laser_proofread_unconditional_parity]="unc_no_dropout,unc_scalar_off,unc_vector_on"
   [laser_decode_e2e]="reversed_order,chi_bin_plus_one,offset_zero,chi2_equals_chi1,lambda_on_logits"
   [potts_ar_refine_exact]="ar_mask_present_chain_m_pos,wrong_partition_sign,ntoc_refine_order"
   [potts_ar_decode]="ar_mask_present_chain_m_pos"
@@ -120,7 +121,7 @@ launch () {
 # cores and slowed every one of them. Run group 2 after group 1 has exited.
 case "$GROUP" in
   1)
-    SLUGS=(laser_proofread_parity laser_decode_e2e) ;;
+    SLUGS=(laser_proofread_parity laser_proofread_unconditional_parity laser_decode_e2e) ;;
   2)
     SLUGS=(potts_ar_refine_exact potts_ar_decode potts_energy_parity laser_score_parity) ;;
   3)
@@ -206,7 +207,8 @@ PY
 
 # Every slug any group can launch, so the check is about the SCRIPT rather than
 # about whichever group happens to be running.
-check_coverage laser_proofread_parity laser_decode_e2e \
+check_coverage laser_proofread_parity laser_proofread_unconditional_parity \
+               laser_decode_e2e \
                potts_ar_refine_exact potts_ar_decode potts_energy_parity \
                laser_score_parity potts_ddg_megascale
 

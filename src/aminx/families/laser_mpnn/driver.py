@@ -9,7 +9,7 @@ plausible sequences.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, NamedTuple, cast
 
@@ -35,6 +35,7 @@ from aminx.model.laser.joint_decode import LaserJointDecode
 from aminx.model.laser.proofread import (
   conditional_focus_probs,
   focus_rows,
+  proofread_dropout,
   reduce_proofread,
   unconditional_logits,
 )
@@ -334,20 +335,48 @@ def _proofread_batch(
   scalar_dropout: bool,
   seed: int,
   dropout_key: jax.Array,
+  masks: Mapping[str, Sequence[np.ndarray]] | None = None,
+  edges: Mapping[str, Sequence[np.ndarray | None]] | None = None,
+  vector: bool = False,
+  force_no_dropout: bool = False,
 ) -> Mapping[str, jax.Array]:
   """Unconditional logits, or the dropout ensemble, on the focus rows.
 
   ``dropout_key`` is what makes production proofreading run at all: nothing
   here injects a mask catalog, so without a key every dropout call is a miss.
+  The unconditional purpose uses that key in the same plan as the conditional
+  one when ``options.proofread_dropout`` is on. ``masks`` is the parity replay
+  for a single structure; a replay passes no key, so a miss raises. Vector
+  dropout stays off unless a caller turns it on. ``force_no_dropout`` is the
+  pre-fix unconditional path and ignores the option.
   """
   means: list[np.ndarray] = []
   stds: list[np.ndarray] = []
   plus: list[np.ndarray] = []
   ids: list[np.ndarray] = []
+  if masks is not None and len(prepared) != 1:
+    msg = "an injected dropout catalog covers one structure"
+    raise ValueError(msg)
   structure = _graph(model)
   period = np.asarray(model.period_index)
   group = np.asarray(model.group_index)
   joint = LaserJointDecode(key=jax.random.PRNGKey(seed))
+
+  def _unconditional(features: LaserFeatures) -> np.ndarray:
+    return unconditional_logits(
+      model.encoder,
+      model.decoder,
+      features.backbone_coords,
+      features.ligand_coords,
+      features.ligand_atomic_numbers,
+      features.ligand_subbatch_indices,
+      period,
+      group,
+      structure,
+      np.asarray(features.sequence_indices),
+      np.asarray(features.chi_angles),
+    )
+
   for item_index, item in enumerate(prepared):
     # Each batch member gets its own dropout stream. Sharing one would apply an
     # identical keep pattern to every structure in the batch.
@@ -359,19 +388,25 @@ def _proofread_batch(
       options.selection_string,
     )
     if purpose == "score:proofread_unconditional":
-      logits = unconditional_logits(
-        model.encoder,
-        model.decoder,
-        features.backbone_coords,
-        features.ligand_coords,
-        features.ligand_atomic_numbers,
-        features.ligand_subbatch_indices,
-        period,
-        group,
-        structure,
-        np.asarray(features.sequence_indices),
-        np.asarray(features.chi_angles),
-      )
+      # Same scalar flag and per-structure key as the conditional arm. One
+      # forward, so the key is not folded again per focus. A catalog replay
+      # passes no key: a miss must raise rather than draw a fresh keep.
+      scalar = bool(options.proofread_dropout) and scalar_dropout
+      enter = (not force_no_dropout) and (scalar or vector or masks is not None)
+      if enter:
+        with proofread_dropout(
+          model.encoder,
+          model.decoder,
+          tuple(joint.chi_offset_prediction_layers),
+          scalar=scalar,
+          vector=vector,
+          masks=masks,
+          edges=edges,
+          dropout_key=None if masks is not None else item_key,
+        ):
+          logits = _unconditional(features)
+      else:
+        logits = _unconditional(features)
       chosen = canonical_logits(jnp.asarray(logits)[rows])
       means.append(np.asarray(jax.nn.softmax(chosen, axis=-1), dtype=np.float32))
       ids.append(np.asarray(features.row_to_resindex)[rows].astype(np.int32))
@@ -555,7 +590,9 @@ def _prepare(path: Path, spec: Any, options: LaserOptions) -> _Prepared:  # noqa
     features = dataclasses.replace(
       features,
       backbone_coords=apply_backbone_noise(
-        features.backbone_coords, level, key=noise_key,
+        features.backbone_coords,
+        level,
+        key=noise_key,
       ),
     )
   length = int(features.sequence_indices.shape[0])
