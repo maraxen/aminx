@@ -186,6 +186,35 @@ file declares `f32_atol_basis = "house-paired and NOT measured"`, so the band
 itself was never derived from a measurement. Do not widen it to make the gate
 pass; measure the floor as debt 2432 did elsewhere.
 
+## Killing a gate run: kill the GROUP, not the script
+
+`run_gate.py` spawns one `uv run pytest` per wave, and those children survive a
+`pkill -f run_gate.py`. Measured 261003: killing the parent that way left
+
+    uv run --no-sync pytest -o addopts= tests/port/test_laser_decode_step.py
+
+orphaned for **10.5 hours**, holding a **48 GB deleted file** on `/tmp` (tmpfs,
+so 48 GB of RAM) plus 2.4 GB of GPU 0. `df` showed `/tmp` at 50G used while `du`
+saw 2.3G — that gap IS the signature, since a deleted-but-open file has no path
+left to walk. Everything on the box then failed with
+`OSError: [Errno 122] Disk quota exceeded`, which looks nothing like its cause
+and reads like a full disk needing someone's checkouts deleted.
+
+The launcher uses `setsid`, so each run is its own process group. Kill that:
+
+    ssh titanix "ps -eo pgid,args | grep '[r]un_gate.py'"   # get the PGID
+    ssh titanix "kill -- -<PGID>"                            # whole group
+
+To find a leak after the fact, the deleted file is only visible through
+`/proc`:
+
+    for p in $(ls /proc | grep -E '^[0-9]+$'); do
+      ls -l /proc/$p/fd 2>/dev/null | grep -q deleted && echo "$p"; done
+
+SIGTERM did not end it — it took `kill -9`. Check the process is actually gone
+rather than trusting the kill, and do not kill PIDs you did not start: the vLLM
+workers on GPUs 0 and 1 share this box.
+
 ## Traps, each of which yields a run that looks perfect and is discarded
 
 1. **`--mutants` must be in argv.** `_argv_mutants` returns `None` when the flag
