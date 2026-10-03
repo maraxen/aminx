@@ -1215,3 +1215,66 @@ def test_backbone_noise_is_ignored_on_the_potts_path(
         f"N/CA/C/O per atom against an oracle with injected randn (spec 6.3)."
       ),
     )
+
+
+def test_knob_semantics_random_seed(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``random_seed`` fixes the sampling, and different seeds genuinely diverge.
+
+  Spec :786 derives the decoding order from it --
+  ``u = jax.random.uniform(key_order, (L,))`` -- and :879 maps upstream
+  ``fix_decoding_order`` and ``decoding_order_offset`` onto it as a "seeded-order
+  test", noting that the order source is the DRIVER and not ``decoding_order_fn``.
+  :1173 states the same requirement from the golden side: ``random_seed=1`` must
+  differ.
+
+  Both halves are asserted, because each alone is satisfiable by a wrong
+  implementation:
+
+  * reproducibility alone holds for an implementation that ignores the seed
+    entirely and samples deterministically;
+  * divergence alone holds for one that reseeds from entropy every call, which
+    would also make the goldens unreproducible.
+
+  A SIXTEEN-RESIDUE CHAIN, NOT THE USUAL SIX. On the short fixture this model is
+  peaked enough that every seed can agree, and the test would then be asserting
+  that two constants are equal. The guard is explicit rather than implicit: the
+  four samples drawn in a single run must not be identical to each other, which
+  is what establishes the sampler is stochastic here at all.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFGHIKLMNPQRS"})
+
+  def _sampled(**kwargs: object) -> np.ndarray:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=4,
+      samples_chunk_size=2,
+      return_logits=False,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none"),
+      **kwargs,
+    )
+    return np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])
+
+  zero = _sampled(random_seed=0)
+  assert zero.shape == (4, 16), zero.shape
+
+  # The sampler must actually be stochastic on this fixture, or "different seeds
+  # give different answers" is a statement about nothing.
+  assert len({tuple(row) for row in zero.tolist()}) > 1, (
+    "all four samples in one run are identical, so this fixture cannot show "
+    "that a seed changed anything"
+  )
+
+  np.testing.assert_array_equal(_sampled(random_seed=0), zero)
+
+  for other in (1, 7):
+    assert not np.array_equal(_sampled(random_seed=other), zero), (
+      f"random_seed={other} produced the same samples as random_seed=0; the "
+      f"seed is not reaching the decoding order (spec :786)"
+    )
