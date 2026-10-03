@@ -161,67 +161,55 @@ comparison of anything the gate does.
    the bathos `outcome` plus `{rc, step2_passed}`; exit status says only that
    the harness did not crash.
 
-## What the gate measured, 261003 (run at `9e2ba84f`, GPUs 2,3)
+## What the gate measured, 261003 (run `fdd64720` at `b880882e`, GPUs 2,3)
+
+    {'n_ids': 723, 'n_mutant_runs': 0, 'rc': 1, 'step2_passed': True}
+
+Read from the cool-tier record, not the console: `status=completed`,
+`outcome=fail`, `git_dirty=False`, sidecar resolved, adversarial check fired.
+
+**Step 2 now passes.** Every knob test the alias map names was collected and
+passed. The three `uncovered` fields from the previous run are closed:
+`emit_etab` / `emit_dense_hJ` by explicit row kinds, and `tied_beta` first by an
+`inert` row kind and then by deleting the field outright (`6a024d56`: upstream
+derives it from the tied-positions weights and never takes it as config).
+
+**`rc = 1` is exactly debt #2445**, the two LASEr tier-3 **f32** waves
+(`laser_decode_step`, `laser_score`); every other wave exits 0. The
+pre-registered floor measurement (run `e47bfaab`, `64274bcf`) split them:
+
+| wave | f64 tier | f32 floor | verdict | action |
+| :--- | :--- | :--- | :--- | :--- |
+| `laser_decode_step` | passes 1e-8 | 1.08e-4 (904 ulp) | **pass** | atol 1e-7 -> **2e-3** (`2a4442d1`) |
+| `laser_score` | passes 1e-8 | 5.36e-4 (4496 ulp) | `noise_reaches_defect_scale` | **held**, not widened |
+
+Both waves compute the same function as upstream (f64 agrees to <8e-13). For
+`laser_score`, a band wide enough to admit the f32 disagreement would be 0.61 of
+an injected 1e-2 defect, so no band can separate them, and the pre-registered
+decision was "escalate, do not widen". Whether that means aminx's f32 path is
+less stable than upstream's, or that two f32 implementations simply disagree
+this much, is the pre-registered attribution run
+`scripts/analysis/laser_score_f32_attribution.py` (`6a24c7a7`).
+
+**WHERE THE BANDS ACTUALLY LIVE -- the previous version of this section was
+wrong.** It said the bands live in `tests/port/targets/<wave>.toml`. The
+ASSERTED band is the test module's own `_RTOL` / `_ATOL`; `conftest.py` reads the
+TOML policy only to stamp it into emitted tier verdicts. An amendment to the
+TOML alone changes no assertion -- a CPU run of `laser_decode_step`'s
+`test_tier_3_f32` after a TOML-only edit still reported `atol=1e-07`. Edit
+both, and `tests/lint/test_port_tolerances_match_targets.py` now fails if they
+disagree. Both are under `tests/port/`, a **scoped** path: one commit there
+invalidates every ledger row.
+
+### The previous run, at `9e2ba84f`
 
     {'n_ids': 694, 'n_mutant_runs': 0, 'rc': 1, 'step2_passed': False}
 
-`n_mutant_runs = 0` is correct, not a miss: all 16 manifest rows are
-`kind = "sidecar"`, and step 1b only iterates `kind = "pytest"` rows.
-
-**`check_branch_coverage` returns `pass`.** Verified directly against the run's
-own `outcomes.jsonl`, not inferred from a green test. All 16 rows graded, all
-seven sidecar vehicles accepted — every clean arm passed and every negative
-control failed. The ledger work is done and the gate agrees.
-
-Ten of twelve waves exit 0, including `__nonport__` at 87 passed / 1 skipped
-(the golden device-skip) and all five potts waves. Two things stand between
-this and a gate PASS, both filed, neither environmental:
-
-| what | where | status |
-| :--- | :--- | :--- |
-| `rc = 1` | `laser_decode_step` and `laser_score` tier-3 **f32** | debt 2445 |
-| `step2_passed = False` | `test_parity_ids_passed`, `uncovered` list | 3 scope decisions |
-
-`test_branch_coverage` and 30 other `knob_gate` tests pass.
-
-**The step-2 row above is CORRECTED as of 261003.** It used to read "6 unwired
-alias rows, debt 2434", and both halves of that are now wrong: 2434 is resolved
-(the LASEr noise is implemented), and `test_parity_ids_passed` fails three
-independent conditions, of which `unwired` is no longer one. Measured on the
-current tree — `unwired` 0 of 212, `unmapped` 0 of 212, `not_passed` 0 of 68,
-`uncovered` **3 of 51**. So the surviving step-2 failure is `uncovered`, and it
-is not a test backlog: zero of the three is a missing test.
-
-  `emit_dense_hJ`, `emit_etab` — no alias row can ever name them.
-  `test_rows_bijective` pins `{row.ref} == REF_F`, the **upstream**
-  reference-surface field names, and `reference_surfaces.py` has no `etab` or
-  `dense_hJ`. `emit_etab` is already implemented and already tested and the
-  gate still cannot see it.
-
-  `tied_beta` — one rename from green, and deliberately not renamed. Its only
-  naming test is `test_fixed_mask_and_tied_beta_are_still_inert`; the prefix
-  `test_knob_semantics_` is the gate's marker for a test that pins knob
-  *semantics*, and that test asserts the knob is **inert**.
-
-All three remedies (narrow `NEW_FIELDS`, add an aminx-only row kind, or accept
-the `tied_beta` rename) change pre-registered gate scope, so they are the
-user's call rather than an edit to make here. Full anatomy, with the tracked
-run id and its negative control:
+Same `rc = 1` cause. `step2_passed` failed on `uncovered` 3 of 51 (`emit_etab`,
+`emit_dense_hJ`, `tied_beta`), none of them a missing test; full anatomy in
 `.praxia/docs/research/261003_z1-gate-blocker-anatomy.md`.
-
-The f32 failures miss `rtol=1e-4, atol=1e-7` by ~4.2e-5 and are
-**device-independent** — identical on CPU and on GPUs 2,3 — so they are not the
-device-numerics artefact that explained two earlier gate failures. The target
-file declares `f32_atol_basis = "house-paired and NOT measured"`, so the band
-itself was never derived from a measurement. Do not widen it to make the gate
-pass; measure the floor as debt 2432 did elsewhere.
-
-The bands live in `tests/port/targets/laser_decode_step.toml:29` and
-`laser_score.toml:29` (`laser_encoder.toml:29` carries the same unmeasured
-basis). `tests/port/` is a **scoped** path, so the amendment cannot be
-committed while a ledger wave is in flight — one commit there invalidates every
-ledger row. Measuring the floor does not touch those files, so the measurement
-can run first and the amendment can land after the gate.
+`n_mutant_runs = 0` is correct in both runs: all 16 manifest rows are
+`kind = "sidecar"`, and step 1b only iterates `kind = "pytest"` rows.
 
 ## Killing a gate run: kill the GROUP, not the script
 
