@@ -79,8 +79,25 @@
 # 0.04827089407674459, reduction_swap at std NaN, scalar_off at mean
 # 0.17539788075343654, vector_on at mean 0.053736772932204274.
 # Supersedes the 6cb81d49 run of this slug, which was launched with
-# scalar_both_off appended to --mutants and was ineligible on trap 4 alone.
-bth_run_id = "4e259930-fb3c-4b07-8849-dec72588b522"
+# REWRITTEN 261003 at eb4ee606, the second row of the post-freeze wave.
+# clean pass; all four controls failed (reduction_swap, ddof_0, scalar_off,
+# vector_on). verify_wave.py --run laser_proofread_parity=87098798-... returns
+# "would grade" with every condition PASS.
+#
+# READ THIS RUN OFF THE COOL-TIER PARQUET, NOT THE WARM INDEX. After the arms
+# exited and branch_controls.json was written, `bth compact` followed by
+# `bth sql` still reported status='running', outcome=NULL, exit_code=-1 for
+# this id. The parquet at ~/.bth/catalog/runs/aminx/run_87098798-....parquet
+# said status='completed', outcome='pass', exit_code=0, git_dirty=False,
+# outcome_is_residual=False, outcome_error_reason='',
+# adversarial_check_status='present'. The warm row was simply stale; nothing
+# was lost. Taking the warm index at face value here would have read a clean
+# graded pass as an unfinished run.
+#
+# Supersedes 4e259930, which was ineligible because scalar_both_off -- the
+# POSITIVE control, which must pass while every manifest row must fail -- was
+# appended to its --mutants string (trap 4).
+bth_run_id = "87098798-18ee-4e55-8be7-0a8ace926309"
 
 [sidecar.laser_decode_e2e]
 # REWRITTEN 261003 at eb4ee606, the first row of the post-freeze wave.
