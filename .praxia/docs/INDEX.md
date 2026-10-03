@@ -1,4 +1,4 @@
-# aminx Internal Docs
+# 260929_potts-laser-xtrax-compose Internal Docs
 
 ## Daily
 
@@ -48,7 +48,9 @@
 - [260716_proteinebm-parity-report](audits/260716_proteinebm-parity-report.md) — Reviews what "parity" means for the merged ProteinEBM epic: throughput parity is real+strong (11–92× vs PyTorch); numerical port parity (E3.5) freshly re-confirmed today across 20 synthetic trials (cosine similarity ≥0.999999998); real-world validation (E7 LplA, 101 real mutants) gives Spearman 0.402 (p=3.1e-5); the paper's own headline Spearman targets (0.838 decoy, 0.686 ΔΔG) remain **not measured** by deliberate scope decision. `tests/ebm/` freshly re-run: 261 passed, 4 skipped, 0 failed.
 
 ## Research
+- [261003_spec-named-tests-triage](research/261003_spec-named-tests-triage.md) — Triage of every test name the potts/laser spec cites but that does not exist, into genuinely-missing, covered-under-another-name, blocked, and false-positive
 - [260929_potts-laser-t02-probe-report](research/260929_potts-laser-t02-probe-report.md) — Resolution of every T0.2 open item in the potts/laser xtrax-composition spec (runner helpers, model_family consumers, torch checkpoint key audits, verbatim upstream transcriptions, LASEr graph/scatter/draw/dropout enumerations, aminx float32 and self-slot behaviour) plus spec corrections found while probing
+- [260929_potts-laser-t02b-xtrax-a10-reverify](research/260929_potts-laser-t02b-xtrax-a10-reverify.md) — Claim-by-claim re-check of every xtrax-derived and aminx-anchor fact in the spec against installed xtrax 0.4.0a10 and main's 9e6c340a/#160, after the r13 rebase
 - [260712_jax-xla-scf-if-gradient-regression-bug-report](research/260712_jax-xla-scf-if-gradient-regression-bug-report.md) — DRAFT, not yet filed: jax.grad scf.if crash, jaxlib 0.9.2→0.10.2 regression, cross-arch confirmed, repro needs an unpushed-branch fix before submission
 - [260622_1203_proxide-heterogeneous-inputs](research/260622_1203_proxide-heterogeneous-inputs.md) — Proxide Adapter Surface and Aminx CLI Integration
 - [260617_xtrax-tiling-prolix-compat](research/260617_xtrax-tiling-prolix-compat.md) — xtrax.tiling CORE — prolix 6-axis planner compatibility
@@ -61,6 +63,7 @@
 - [260605_caliby-nature-and-dataset](research/260605_caliby-nature-and-dataset.md) — Caliby nature and dataset investigation
 
 ## Decisions
+- [260929_pottsmpnn-lasermpnn-family-drivers](decisions/260929_pottsmpnn-lasermpnn-family-drivers.md) — PottsMPNN and LASErMPNN are xtrax-composed FamilyDrivers; 260605 governs only aminx.potts
 - [260713_no-real-multistate-sampling-path-exists](decisions/260713_no-real-multistate-sampling-path-exists.md) — **MVP implemented 2026-07-13**: no campaign-reachable path ever built a genuine `num_states>1` bundle for AR sampling — every necklace "PoE" row was 4 independent unfused single-state decodes. Related silent-corruption bug fixed in PR #100 (merged). New `aminx.sampling.multistate_poe` module (branch `feat-poe-stacked-bundle-sampling`) ships genuine cross-state fusion, confirmed end-to-end against real reference PDBs; the general xtrax-composable dispatch-axis version remains real tech debt — see debt #589.
 - [260709_n-states-heterogeneous-flag-unenforced](decisions/260709_n-states-heterogeneous-flag-unenforced.md) — **Open, deferred**: `N_STATES.heterogeneous=True` is unwired from the real encode path and currently unenforceable (bundle can't hold ragged states at all); zero blast radius today, decision needed (relabel vs. implement) is out of scope for PR #92.
 - [260706_bucketing-pad-stay-local-epic-1541-p3-scope-closed](decisions/260706_bucketing-pad-stay-local-epic-1541-p3-scope-closed.md) — **Accepted 2026-07-06**: EPIC #1541 P3 scoping closed — `bucketing.py`/`pad.py` stay local (planner companion / pure domain logic). `aminx.tiling` will NOT be fully deletable as originally envisioned; recommends updating backlog #1483 accordingly.
@@ -76,6 +79,7 @@
 ## Preregistration
 
 ## Reference
+- [261002_using-aminx-driver-families](reference/261002_using-aminx-driver-families.md) — The PottsMPNN/LASErMPNN section for the using-aminx skill, plus the frontmatter edits, staged here because ~/.claude/skills is sandbox-write-protected
 
 ## Roadmaps
 - [260508_active-roadmap](roadmaps/260508_active-roadmap.md) — **Active** — MODELINPUTS PR-4/5, EncoderPreFn/PostFn, multi_state_temperature
