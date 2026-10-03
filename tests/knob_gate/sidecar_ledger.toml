@@ -177,8 +177,10 @@ bth_run_id = "bf6244f3-49e3-4b5d-b9c6-5fd3dab1cef2"
 bth_run_id = "92992234-732e-4bb1-b53c-a5e81ff6e1f1"
 
 [sidecar.potts_ar_refine_exact]
-# 7c3dd246, the same tree as the three rows above. Exact sequence match over 50
-# seeds on the clean arm, and all three negative controls separated hard:
+# REWRITTEN 261003 at 9a0cd350, the last arm of group 2 and the sixth of seven
+# rows. Exact sequence match over 50 seeds on the clean arm, and all three
+# negative controls separated hard -- every value bit-for-bit identical to the
+# superseded 7c3dd246 run, which now holds for all four re-measured slugs:
 #   clean                        pass  match 1.0
 #   ar_mask_present_chain_m_pos  fail  match 0.8356272401433692
 #   ntoc_refine_order            fail  match 0.6720839733742959
@@ -192,9 +194,11 @@ bth_run_id = "92992234-732e-4bb1-b53c-a5e81ff6e1f1"
 # across its four arms, so its arms are serial 300-unit sweeps, not a hung job.
 # The run's own adversarial_check_result is "fired".
 #
-# verify_wave.py reports 14 of 14 conditions PASS, which is what this row waited
-# for; the id is the FULL uuid, since an 8-character prefix does not resolve.
-bth_run_id = "ef4df8ff-7b0d-44bb-999b-35b5c7a6207c"
+# verify_wave.py --run potts_ar_refine_exact=a6c87107-... reports 14 of 14
+# conditions PASS, including "no scoped path since"; the id is the FULL uuid,
+# since an 8-character prefix does not resolve.
+# Supersedes ef4df8ff (7c3dd246), which failed only "no scoped path since".
+bth_run_id = "a6c87107-39ee-482a-99b5-144bcf07f5e5"
 
 [sidecar.potts_ddg_megascale]
 # e3bc540e, the first time this vehicle has ever been run. The largest in the
