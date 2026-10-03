@@ -2778,14 +2778,24 @@ note = ""
 ref = "pottsmpnn_cfg__inference__noise"
 targets = ["noise"]
 equivalence = "semantic"
-parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_backbone_noise_is_ignored_on_the_potts_path"]
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_noise",
+  "tests/knob_semantics/test_potts_driver_knobs.py::test_potts_noise_is_per_atom_and_not_a_rigid_shift",
+  "tests/knob_semantics/test_potts_driver_knobs.py::test_potts_backbone_noise_level_reads_the_bundle",
+]
 note = """\
 eval augment_eps on all backbone atoms; knob test is iid Gaussian N/CA/C/O. \
-NOT IMPLEMENTED (debt 2442): the bundle is built from backbone_noise and then \
-consumed nowhere on the Potts path -- measured 261002, the energy is identical \
-at 0.02 through 10.0 while displacing the same coordinates on disk by 0.02 \
-moves it. The named test asserts that defect and fires when it is fixed, so it \
-is deliberately not a test_knob_semantics_* name and this row is not coverage."""
+IMPLEMENTED 261003, closing debt 2442. Until then the bundle was built from \
+backbone_noise and consumed nowhere on the Potts path -- measured 261002, the \
+energy was identical at 0.02 through 10.0 while displacing the same \
+coordinates on disk by 0.02 moved it -- and this row named a tripwire that \
+asserted the defect. driver.apply_potts_backbone_noise now implements \
+X = X + augment_eps * randn_like(X) per potts_mpnn_utils.py:1169-1171, applied \
+after featurize so masks still see clean coordinates as upstream's ordering \
+requires. The per-atom shape is the load-bearing half: a (L,1,3) rigid draw is \
+REFUSED rather than broadcast, because broadcasting it is LASEr's rule and \
+would otherwise pass silently (spec 6.3 names each family's rule as the \
+other's negative control)."""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__num_samples"

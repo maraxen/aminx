@@ -9,6 +9,7 @@ Registration runs when this module is imported.
 from __future__ import annotations
 
 import csv
+import dataclasses
 import importlib.util
 import json
 import logging
@@ -671,6 +672,82 @@ def _jsonl_merged(path: str | None) -> dict[str, Any] | None:
   return merged or None
 
 
+def potts_backbone_noise_level(spec: Any) -> float:  # noqa: ANN401
+  """``augment_eps`` for this run, read off the spec's backbone noise bundle.
+
+  Mirrors ``laser_mpnn.driver.backbone_noise_level``; the two families read the
+  same spec field and differ only in what they then DO with it (see
+  ``apply_potts_backbone_noise``).
+  """
+  for bundle in getattr(spec, "noise", ()) or ():
+    if bundle.feature_type == "backbone" and bundle.enabled and bundle.noise_levels:
+      return float(bundle.noise_levels[0])
+  return 0.0
+
+
+def apply_potts_backbone_noise(
+  coords: np.ndarray,
+  level: float,
+  draws: np.ndarray | None = None,
+  key: jax.Array | None = None,
+) -> np.ndarray:
+  """Upstream ``X = X + augment_eps * randn_like(X)``.
+
+  ``potts_mpnn_utils.py:1169-1171`` applies this inside
+  ``ProteinFeatures.forward``, UNCONDITIONALLY on ``augment_eps > 0`` -- there
+  is no train/eval guard, so a non-zero ``augment_eps`` perturbs inference too.
+
+  ``randn_like(X)`` draws ONE SAMPLE PER ELEMENT of an ``(L, 4, 3)`` tensor, so
+  every atom of every residue moves independently along every axis. That is the
+  whole difference from LASEr, whose rule is a single rigid ``(L, 1, 3)`` shift
+  broadcast across a residue's atoms: here the backbone is DEFORMED, not
+  displaced, and N/CA/C/O geometry is not preserved. Spec 6.3 names this
+  per-atom rule as LASEr's negative control, and it is Potts' actual one.
+
+  Upstream also does NOT round before adding (LASEr does, to 2dp); the raw
+  coordinates are perturbed as they arrive.
+
+  PLACEMENT. Upstream noises ``X`` after ``tied_featurize`` has already built
+  its masks from clean coordinates, so this is applied to a featurized
+  ``PottsFeatures.x`` rather than to the parsed coordinates -- noising earlier
+  would let gap detection and chain masks see the perturbation, which upstream's
+  ordering rules out.
+
+  ``draws`` is the injection seam the knob test uses to compare against an
+  oracle given the identical randn; with neither ``draws`` nor ``key`` this is a
+  no-op, so a caller that forgets the key gets clean coordinates rather than
+  silent nondeterminism.
+  """
+  if level <= 0.0:
+    return coords
+  base = np.asarray(coords)
+  if draws is None:
+    if key is None:
+      return coords
+    draws = np.asarray(jax.random.normal(key, base.shape))
+  shift = np.asarray(draws, dtype=base.dtype)
+  if shift.shape != base.shape:
+    msg = f"backbone noise draws must be {base.shape}, got {shift.shape}"
+    raise ValueError(msg)
+  return base + float(level) * shift
+
+
+def _noised(features: PottsFeatures, spec: Any) -> PottsFeatures:  # noqa: ANN401
+  """Apply the spec's backbone noise to featurized coordinates, if any.
+
+  Returns ``features`` unchanged when the knob is off, which is the default, so
+  every run that does not ask for noise is bit-identical to before this existed.
+  """
+  level = potts_backbone_noise_level(spec)
+  if level <= 0.0:
+    return features
+  key = jax.random.fold_in(jax.random.PRNGKey(int(spec.random_seed)), 0x9077)
+  return dataclasses.replace(
+    features,
+    x=apply_potts_backbone_noise(features.x, level, key=key),
+  )
+
+
 def _featurize_one(
   parsed: dict[str, Any],
   options: PottsMPNNOptions,
@@ -797,7 +874,7 @@ def _sample_batches(spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
       parsed_list = parse_pdb_upstream(path, skip_gaps=options.skip_gaps)
       parsed = parsed_list[0]
       name = str(parsed["name"])
-      features = _featurize_one(parsed, options, name)
+      features = _noised(_featurize_one(parsed, options, name), spec)
       if knn_boundary_tie(features.present, features.L_total):
         log.warning("knn_boundary_tie for %s (L_total=%s)", name, features.L_total)
       chains = _chain_sequences(parsed, features)
@@ -835,7 +912,7 @@ def _prepare_from_spec(item: Any, spec: Any) -> _Prepared:  # noqa: ANN401
   parsed_list = parse_pdb_upstream(path, skip_gaps=options.skip_gaps)
   parsed = parsed_list[0]
   name = str(parsed["name"])
-  features = _featurize_one(parsed, options, name)
+  features = _noised(_featurize_one(parsed, options, name), spec)
   if knn_boundary_tie(features.present, features.L_total):
     log.warning("knn_boundary_tie for %s (L_total=%s)", name, features.L_total)
   chains = _chain_sequences(parsed, features)

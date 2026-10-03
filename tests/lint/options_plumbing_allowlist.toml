@@ -36,9 +36,13 @@
 # outside its dataclass does not belong in an Options class at all.
 #
 # Two related cases deliberately NOT listed, because they are a different shape:
-#   noise          -- IS read (utils/coordinates.py:44) but only by the generic
-#                     per-atom rule, which spec 6.3 calls LASEr's negative
-#                     control; the LASEr subtree never reads it. Debt 2434.
+#   noise          -- IS read, and as of 261003 by BOTH families with their own
+#                     rules, closing debt 2434 (LASEr) and 2442 (Potts). The
+#                     generic utils/coordinates.py:44 per-atom rule is what spec
+#                     6.3 calls LASEr's negative control, so neither family uses
+#                     it: laser_mpnn/driver.apply_backbone_noise does the rigid
+#                     (L,1,3) shift with 2dp rounding, potts_mpnn/driver.
+#                     apply_potts_backbone_noise does iid (L,4,3) randn_like.
 #   emit_etab      -- read outside options.py, so not inert.
 
 [[entries]]

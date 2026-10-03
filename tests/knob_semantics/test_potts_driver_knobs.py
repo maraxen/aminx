@@ -25,7 +25,11 @@ import jax
 import numpy as np
 import pytest
 
-from aminx.families.potts_mpnn.driver import PottsMPNNDriver
+from aminx.families.potts_mpnn.driver import (
+  PottsMPNNDriver,
+  apply_potts_backbone_noise,
+  potts_backbone_noise_level,
+)
 from aminx.families.potts_mpnn.model import PottsMPNN
 from aminx.host.family_driver import FAMILY_DRIVERS
 from aminx.host.runner import sample, score
@@ -1138,36 +1142,97 @@ def _write_pdb_jittered(
   path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def test_backbone_noise_is_ignored_on_the_potts_path(
+
+def test_potts_noise_is_per_atom_and_not_a_rigid_shift() -> None:
+  """Potts noise DEFORMS the backbone; LASEr's DISPLACES it. That is the whole knob.
+
+  ``potts_mpnn_utils.py:1169-1171`` is ``X = X + augment_eps * randn_like(X)``
+  on an ``(L, 4, 3)`` tensor, so every N/CA/C/O of every residue gets its own
+  draw along every axis. LASEr's rule (spec 6.3, ``laser_mpnn/driver.py``) is a
+  single ``(L, 1, 3)`` translation broadcast across a residue's four atoms,
+  which preserves internal geometry. Spec 6.3 names each family's rule as the
+  OTHER's negative control, so this test pins the contrast rather than merely
+  checking that something moved: a rigid implementation would make the four
+  per-atom deltas within a residue identical, and that is what is asserted
+  against.
+  """
+  coords = np.zeros((3, 4, 3), dtype=np.float32)
+  draws = np.arange(3 * 4 * 3, dtype=np.float32).reshape(3, 4, 3)
+
+  out = apply_potts_backbone_noise(coords, 1.0, draws=draws)
+  np.testing.assert_allclose(out, draws)
+
+  # The four atoms of a residue moved DIFFERENTLY -- the rigid rule is refuted.
+  delta = out - coords
+  for residue in range(3):
+    atoms = delta[residue]
+    assert not np.allclose(atoms, atoms[0]), (
+      f"residue {residue} moved rigidly ({atoms.tolist()}); the Potts rule is "
+      f"iid per atom, so a per-residue broadcast is the LASEr rule applied to "
+      f"the wrong family"
+    )
+
+  # Scaling is linear in the level, and level<=0 is a no-op rather than a draw.
+  np.testing.assert_allclose(
+    apply_potts_backbone_noise(coords, 0.5, draws=draws), 0.5 * draws,
+  )
+  for level in (0.0, -1.0):
+    np.testing.assert_array_equal(
+      apply_potts_backbone_noise(coords, level, draws=draws), coords,
+    )
+
+  # No rounding. Upstream Potts perturbs raw coordinates; only LASEr rounds to
+  # 2dp first, so a Potts implementation that rounded would quietly be LASEr's.
+  fine = np.full((1, 4, 3), 0.123456, dtype=np.float32)
+  np.testing.assert_allclose(
+    apply_potts_backbone_noise(fine, 1.0, draws=np.zeros((1, 4, 3), np.float32)),
+    fine,
+    rtol=0,
+    atol=0,
+  )
+
+  # A LASEr-shaped (L, 1, 3) draw is REFUSED rather than broadcast, because
+  # broadcasting it is precisely the wrong rule and would pass silently.
+  with pytest.raises(ValueError, match=r"backbone noise draws must be"):
+    apply_potts_backbone_noise(coords, 1.0, draws=np.zeros((3, 1, 3), np.float32))
+
+  # Without draws AND without a key there is nothing to apply, so clean
+  # coordinates come back instead of an unseeded perturbation.
+  np.testing.assert_array_equal(apply_potts_backbone_noise(coords, 1.0), coords)
+
+
+def test_potts_backbone_noise_level_reads_the_bundle(model_path: Path) -> None:
+  """The level comes off the spec's backbone bundle, and only that bundle."""
+  base = {
+    "inputs": "x.pdb",
+    "model_family": "pottsmpnn",
+    "checkpoint_id": "pottsmpnn_vanilla_20",
+    "model_local_path": model_path,
+    "output_kind": "energy",
+    "sequences_to_score": ["ADDEFG"],
+    "potts_mpnn": PottsMPNNOptions(),
+  }
+  assert potts_backbone_noise_level(ScoringSpecification(**base)) == 0.0
+  spec = ScoringSpecification(**base, backbone_noise=0.25)
+  assert spec.noise[0].feature_type == "backbone"
+  assert potts_backbone_noise_level(spec) == pytest.approx(0.25)
+
+
+def test_knob_semantics_noise(
   registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
 ) -> None:
-  """``backbone_noise`` reaches the spec and then nothing (debt 2442).
+  """``backbone_noise`` is eval ``augment_eps`` and it reaches the energy.
 
-  THIS TEST ASSERTS A DEFECT, like the pssm one, and is named so the knob gate
-  does not credit it as coverage. It exists so the day the defect is fixed, it
-  fails and says what to do.
+  Spec 6.3: upstream applies ``augment_eps`` whenever it is positive, with no
+  train/eval guard (``potts_mpnn_utils.py:1169-1171``), so this perturbs
+  INFERENCE. This test replaces the tripwire that asserted the opposite while
+  debt 2442 was open; the per-atom shape of the perturbation is pinned by
+  ``test_potts_noise_is_per_atom_and_not_a_rigid_shift`` above, and what is
+  asserted here is that the knob reaches a real forward at all.
 
-  Spec 6.3: Potts ``noise`` is eval ``augment_eps``, applied to all backbone
-  atoms whenever ``augment_eps > 0`` INCLUDING at eval
-  (``potts_mpnn_utils.py:1170-1171``), as iid Gaussian per atom. aminx builds the
-  bundle correctly -- ``backbone_noise=1.0`` yields
-  ``FeatureNoiseBundle(feature_type='backbone', noise_levels=(1.0,),
-  mode='direct', enabled=True)`` -- and then consumes it nowhere on this path.
-  ``apply_noise_to_coordinates`` (``utils/coordinates.py:42-46``) implements the
-  rule, but its only callers live under ``model/``; nothing under ``families/``
-  calls it.
-
-  THE CONTROL IS WHAT MAKES THE NULL MEAN ANYTHING, and here it is unusually
-  sharp: displacing the same coordinates ON DISK changes the energy at a sigma of
-  0.02, which is a five-hundredth of the largest value the knob is given below.
-  So the path is not merely sensitive to geometry, it is sensitive far below the
-  scale at which the knob does nothing.
-
-  Debt 2434 records the LASEr half of this. There the generic per-atom rule would
-  have been WRONG anyway -- spec 6.3 calls iid-per-atom LASEr's negative control,
-  since LASEr's own rule is a rigid per-residue translation plus 2-decimal
-  rounding. On the Potts side the generic rule is the CORRECT one, and it still
-  is not applied.
+  The control is the same one the tripwire used, and it is what makes a null
+  meaningful: displacing the coordinates on disk at sigma 0.02 already moves the
+  energy, so this fixture can detect a perturbation far below the levels tested.
   """
   del registered
   clean = tmp_path / "clean.pdb"
@@ -1190,7 +1255,6 @@ def test_backbone_noise_is_ignored_on_the_potts_path(
 
   baseline = _energy(clean)
 
-  # Control: the smallest displacement tested already moves the energy.
   jittered = tmp_path / "jittered.pdb"
   _write_pdb_jittered(jittered, "ACDEFG", 0.02, 7)
   assert not np.allclose(baseline, _energy(jittered)), (
@@ -1199,33 +1263,24 @@ def test_backbone_noise_is_ignored_on_the_potts_path(
     "the assertions below would hold for any reason at all"
   )
 
-  # The bundle is built, so the spec half of the plumbing works.
-  spec = ScoringSpecification(
-    inputs=str(clean),
-    model_family="pottsmpnn",
-    checkpoint_id="pottsmpnn_vanilla_20",
-    model_local_path=model_path,
-    output_kind="energy",
-    sequences_to_score=["ADDEFG"],
-    backbone_noise=1.0,
-    potts_mpnn=PottsMPNNOptions(),
-  )
-  assert len(spec.noise) == 1, spec.noise
-  assert spec.noise[0].feature_type == "backbone"
-  assert spec.noise[0].noise_levels == (1.0,)
-  assert spec.noise[0].enabled is True
+  # Explicitly off is bit-identical: every run that does not ask for noise is
+  # unaffected by this knob existing.
+  np.testing.assert_array_equal(_energy(clean, backbone_noise=0.0), baseline)
 
-  # And it changes nothing, at any magnitude, including 500x the control's.
-  for level in (0.02, 0.5, 1.0, 2.0, 10.0):
-    np.testing.assert_array_equal(
-      _energy(clean, backbone_noise=level), baseline,
-      err_msg=(
-        f"backbone_noise={level} changed the energy. If the Potts path now "
-        f"applies augment_eps, that is the fix for debt 2442 -- delete this "
-        f"test and write test_knob_semantics_noise asserting iid Gaussian "
-        f"N/CA/C/O per atom against an oracle with injected randn (spec 6.3)."
-      ),
+  for level in (0.02, 0.5, 1.0):
+    assert not np.allclose(_energy(clean, backbone_noise=level), baseline), (
+      f"backbone_noise={level} left the energy untouched; augment_eps is "
+      f"applied at eval upstream, so it must reach this forward"
     )
+
+  # Seeded, so it is reproducible; and the seed genuinely selects the draw.
+  assert _energy(clean, backbone_noise=0.5, random_seed=3) == pytest.approx(
+    _energy(clean, backbone_noise=0.5, random_seed=3),
+  )
+  assert not np.allclose(
+    _energy(clean, backbone_noise=0.5, random_seed=3),
+    _energy(clean, backbone_noise=0.5, random_seed=4),
+  ), "two seeds gave the same perturbation, so the draw is not seed-dependent"
 
 
 def test_knob_semantics_random_seed(
