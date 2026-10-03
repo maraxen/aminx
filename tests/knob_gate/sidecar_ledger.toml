@@ -83,11 +83,19 @@
 bth_run_id = "4e259930-fb3c-4b07-8849-dec72588b522"
 
 [sidecar.laser_decode_e2e]
-# 21321ce4. clean pass at sequence_agreement 1.0, chi_bin_agreement 1.0,
-# max_circular_delta 5.684341886080802e-14; all five controls failed.
-# Supersedes 9c8c5dce, whose branch_controls.json predated the stable artifact
-# key and carried an absolute weights path (trap 3).
-bth_run_id = "69901085-6af9-4690-8883-6c8e1fd6c5de"
+# REWRITTEN 261003 at eb4ee606, the first row of the post-freeze wave.
+# clean pass at sequence_agreement 1.0, chi_bin_agreement 1.0,
+# max_circular_delta 5.684341886080802e-14 -- identical to the 21321ce4 run, so
+# the two driver.py commits that invalidated the old rows changed no number
+# here. All five controls failed (reversed_order, chi_bin_plus_one,
+# offset_zero, chi2_equals_chi1, lambda_on_logits), the last at
+# sequence_agreement 0.948 / chi_bin_agreement 0.812.
+# verify_wave.py --run laser_decode_e2e=8647668d-... returns "would grade" with
+# all 14 conditions PASS, including "no scoped path since" -- which is the one
+# that killed every row of the previous wave.
+# Supersedes 69901085 (ran at 21321ce4, invalidated by the scoped driver
+# commits) and 9c8c5dce (absolute weights path, trap 3).
+bth_run_id = "8647668d-0f77-449b-adcb-1e9d5ae5a740"
 
 [sidecar.potts_ar_decode]
 # 7c3dd246. clean pass at exact token match 1.0; ar_mask_present_chain_m_pos
