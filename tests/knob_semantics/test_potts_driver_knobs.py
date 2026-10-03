@@ -1543,3 +1543,96 @@ def test_tied_positions_is_ignored_by_the_potts_driver(
   # Validated, then discarded: the check still fires.
   with pytest.raises(ValueError, match="pass_mode must be 'inter'"):
     _sampled(tied_positions="auto")
+
+
+def test_fixed_mask_bias_by_res_json_and_tied_beta_are_all_inert(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """Three more fields that reach nothing (debts 2443 and 2435).
+
+  A THIRD TEST THAT ASSERTS DEFECTS, named so the gate does not credit it.
+
+  * ``spec.fixed_mask`` -- the Potts featurize builds a LOCAL called
+    ``fixed_mask`` from ``fixed_position_dict`` (``featurize.py:388-392``), which
+    the driver never passes (debt 2443). The spec field of the same name is read
+    nowhere on this path, so it is a fourth symptom of that one omission, not a
+    separate bug.
+  * ``options.bias_by_res_json`` -- allowlisted inert (debt 2435), and inert for
+    the same reason: ``bias_by_res_dict`` is another of the five arguments the
+    driver never passes.
+  * ``options.tied_beta`` -- allowlisted inert for a different reason:
+    ``options.tied_beta`` appears nowhere in ``src/``. The name belongs to a
+    per-position array built by ``featurize._tied_groups`` and read off
+    ``features``/``padded``/``ready``, which is exactly what hid it from the
+    old token-based plumbing lint.
+
+  THE CONTROL AND THE BIAS_BY_RES CASE ARE THE SAME EXPERIMENT RUN TWICE, which
+  is what makes this sharp rather than merely negative. A per-residue bias
+  favouring W is supplied two ways: as ``spec.bias``, where it moves the sample
+  from SSSSSS to WSSSSS, and as ``options.bias_by_res_json``, where it does
+  nothing. Same intent, same magnitude, different route, opposite outcome.
+
+  ``fixed_mask`` all-zeros is the sharpest of the three on its own terms: if
+  honoured it would mean nothing is designable, so the sample would have to stay
+  at the native ACDEFG. It comes back SSSSSS.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+
+  w_column = [
+    [50.0 if i == _ALPHA.index("W") else 0.0 for i in range(21)] for _ in range(6)
+  ]
+  bias_json = tmp_path / "bias_by_res.json"
+  bias_json.write_text(f'{{"toy": {{"A": {w_column}}}}}', encoding="utf-8")
+
+  def _sampled(options: dict | None = None, **kwargs: object) -> str:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=2,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none", **(options or {})),
+      **kwargs,
+    )
+    return _letters(
+      np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])[0],
+    )
+
+  native = "ACDEFG"
+  baseline = _sampled()
+  assert baseline != native, (
+    f"the sampler must redesign the native, or 'fixed_mask does nothing' and "
+    f"'fixed_mask fixes everything' look the same. Got {baseline}"
+  )
+
+  # CONTROL: the identical per-residue W bias, by the route that works.
+  grid = np.zeros((6, 21), dtype=np.float32)
+  grid[0, _ALPHA.index("W")] = 40.0
+  assert _sampled(bias=grid) != baseline, (
+    "control failed: a per-residue bias did not move the sample, so nothing "
+    "below can be read as a knob failing"
+  )
+
+  reason = (
+    "If this now differs, the driver has started passing the dicts to "
+    "tied_featurize_port (debt 2443) or the field has been plumbed (2435) -- "
+    "delete this case and write a real test_knob_semantics_* test for it."
+  )
+
+  # fixed_mask: all-zeros would mean nothing is designable.
+  for mask in ([0.0] * 6, [1.0] * 6, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]):
+    got = _sampled(fixed_mask=np.asarray(mask, dtype=np.float32))
+    assert got == baseline, f"fixed_mask={mask} changed the sample to {got}. {reason}"
+
+  # bias_by_res_json: the control's bias, by the route that does not work.
+  got = _sampled(options={"bias_by_res_json": str(bias_json)})
+  assert got == baseline, f"bias_by_res_json changed the sample to {got}. {reason}"
+
+  for value in (0.0, 5.0, 100.0):
+    got = _sampled(options={"tied_beta": value})
+    assert got == baseline, f"tied_beta={value} changed the sample to {got}. {reason}"
