@@ -33,10 +33,28 @@ def passed_nodeids(outcomes_path: str | Path) -> set[str]:
   common = _gate_common()
   repo = common.repo_root(Path(__file__))
   grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
-  for line in path.read_text(encoding="utf-8").splitlines():
+  for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
     if not line.strip():
       continue
-    raw = json.loads(line)
+    try:
+      raw = json.loads(line)
+    except json.JSONDecodeError as exc:
+      # FAIL CLOSED, LOUDLY. A truncated record means the evidence is
+      # incomplete, and skipping it would drop an id that may well have passed
+      # -- turning a disk-full event into a manufactured gate failure that
+      # looks like a port defect. So this still refuses to grade; it just says
+      # which file and line, and why, instead of a bare JSONDecodeError.
+      #
+      # Seen 261003: titanix hit a per-user disk quota mid-run and conftest's
+      # appender left a half-written line, after which every reader of this
+      # file died pointing at json/decoder.py.
+      msg = (
+        f"{path}:{number} is not valid JSON, so the outcomes are incomplete and "
+        f"must not be graded. A partial final line usually means the writing run "
+        f"was interrupted or the disk filled. Re-run the wave rather than "
+        f"deleting the line. ({exc})"
+      )
+      raise ValueError(msg) from exc
     if not isinstance(raw, dict):
       continue
     mutant = raw.get("mutant")
