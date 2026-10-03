@@ -45,7 +45,30 @@ measurement that clears the margin.
     defect's absolute size -- not the 10x separation required -- so a band wide
     enough to admit this noise could not tell it from a real 1% error.
 
-The open question is numerical stability of the f32 path (where the 10x
-amplification comes from, and whether a reassociation or f32-accumulate choice
-in the chi head brings it inside margin), not a test tolerance.
+ATTRIBUTED (261003): NOT A PORT DEFECT, AND NOT FIXABLE BY A BAND. Graded run
+18b97f4f-968d-4417-91e8-ede3dbf01258 (scripts/analysis/
+laser_score_f32_attribution.py @ 6a24c7a7, pre-registered there) measured each
+f32 implementation against an f64 truth (aminx-f64, matching upstream-f64 to
+6e-14) over all 63 pairs. Outcome aminx_no_worse_than_upstream: on every field
+E_aminx / E_upstream is 0.9987-1.0008. Scale-relative maxima:
+
+  field              aminx-vs-truth  upstream-vs-truth  aminx-vs-upstream
+  ligand_scalars     2.88e-2         2.88e-2            1.3e-6
+  sequence_logits    5.47e-3         5.47e-3            2.5e-5
+  chi_logits         3.67e-3         3.67e-3            2.8e-5
+
+The two f32 implementations agree with EACH OTHER ~200x more tightly than
+either agrees with f64: they make the same error. It is largest at
+ligand_scalars, the earliest field measured, and shrinks downstream, so it is
+not accumulation through depth. That points at a shared f32 effect early in the
+pipeline; this run localises it to a field, not to a specific op (the "10x
+amplification" above describes the aminx-vs-upstream difference, which is a
+different quantity). So there is no stability target in aminx.
+
+What this leaves is a TEST-DESIGN question, which is the user's: this tier
+compares two f32 implementations with a pairwise band, and the pre-registered
+10x defect margin cannot be met on these magnitudes by any band. Options to
+put to the user, not decided here: keep the band and accept tier 3 red for
+this wave; grade aminx-f32 against the f64 reference with a measured band; or
+compare on a scale-relative basis. No tolerance changes from this run.
 """
