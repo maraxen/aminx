@@ -123,14 +123,75 @@ ask for a larger pad. That touches `src/aminx/` — a `_SCOPED_PREFIXES` path �
 so it must land **after** the ledger wave and its gate, or it invalidates all
 seven rows again.
 
-## Carry-over
+## Carry-over — worked through 261003 (41 → 29 missing names)
 
-Not yet triaged, in rough priority order: the six `test_divergence_*` rows
-(§6.5b divergence register), `test_knob_semantics_laser_bias_minp` /
-`_laser_stored_logits_minp` / `_laser_bias_single_aa` / `_laser_score_order`,
-`test_knob_semantics_nodes_gibbs`, `test_knob_semantics_binding_converge_stop`,
-`test_knob_semantics_order_generation`, `test_score_energy_gapped_alignment`,
-`test_laser_score_chi_candidate_mismatch`,
-`test_tied_rank_flat_matches_upstream`, and
-`test_valid_neighbour_set_matches_upstream` (needs the upstream oracle, so it
-belongs in `tests/port/` — itself a scoped path).
+Everything below was triaged by reading the implementation, not by matching
+names. Three of the rows turned out to be **already covered**, one surfaced a
+**spec/implementation conflict**, and three were **unexecuted code paths** that
+no existing fixture could reach.
+
+### Written
+
+| Spec name | Landed as | What was actually missing |
+|---|---|---|
+| `test_divergence_refine_order_json` | `b370b852` | `upstream_refine_order` had two tests, **both** passing `stored_orders_present=True`. The `False` branch — the one the optimize path takes, and the entire divergence — had never executed. |
+| `test_score_energy_gapped_alignment` | `e67ae52c` | Both *rejection* halves were covered; **acceptance** was not. Tightening the validator to the 20 canonical residues would have passed the whole suite while making every gapped alignment unscoreable. |
+| `test_knob_semantics_nodes_gibbs` | `e9557307` | The spec states this as a negative control in words ("AR-order `h_EXV_fw` must fail") and it did not exist. The Gibbs and AR contexts diverge in **two** independent ways — slot support, and `m = present·chain_M_pos` vs `m = present` — so each is pinned separately. |
+| `test_laser_score_chi_candidate_mismatch` | `cb9f068c` | `_chi_for_candidate` had zero coverage. **Found debt #2460** — see below. |
+| `test_divergence_optimize_pdb_chain_order` | `0687fa52` | Silent failure: both chain orderings are the same *length*, and the length check is all there is. Fixture must make the designed chain alphabetically second, or the two orders coincide. |
+| `test_knob_semantics_laser_bias_minp`, `test_knob_semantics_laser_stored_logits_minp` | `6dccf3bf` | Order is bias → min-p → `/T`. With bias *after* min-p the promoted token is already `-inf`, and `-inf + bias` is still `-inf`. |
+| `test_knob_semantics_laser_bias_single_aa` | `0049923f` | The existing bijection test proves the index **tables** are right but not that `canonical_logits` applies them in the right **direction** — both directions are bijections from both correct tables. |
+| `test_knob_semantics_binding_converge_stop` (binding half) | `f2bcbd7c` | **Every** refine fixture in the suite builds `inter_mask=ones`, so `jnp.where(inter_mask, adjusted, base)` had only ever taken its True branch. |
+
+### Already covered — do not write these
+
+- **`test_divergence_optimize_fasta_path`.** `test_potts_driver_knobs.py:555`
+  reads a file named `opt.fasta` for a structure named `toy`, which is exactly
+  the case that fails if aminx derived `out_dir/<name>.fasta` instead of
+  reading the path it was given.
+- **`test_knob_semantics_binding_converge_stop`** (converge half).
+  `test_refine_modes_and_converge_stop` (`test_sample.py:253`) pins `n_iters==1`
+  on a no-change sweep, the `max_iters` cap, and a `binding="both"` converge.
+  Only the binding half needed writing.
+- **`test_laser_alphabet_roundtrip`** — see "Covered under another name" above.
+
+### Found while writing: debt #2460 (spec vs implementation)
+
+Spec :800 (ii) defines the teacher-forced χ rule **per slot**, keyed on the
+**candidate's** mask. `_chi_for_candidate` (`driver.py:287`) keys on whether the
+**letter changed** and NaNs the whole row. Both cases the spec names for this
+test (A→K, K→G) agree under either rule, so the spec's own test cases are
+structurally blind to the conflict. Measured: LYS and ARG both carry
+`[True, True, True, True]`, so native K→R separates them — spec keeps lysine's
+four angles, the code returns NaN. There is **no upstream oracle to appeal to**:
+LASErMPNN has no candidate-scoring entry point, teacher-forced scoring being an
+aminx surface. Needs a decision, not a patch.
+
+### Blocked on the scoped `tests/port/` oracle
+
+`test_knob_semantics_order_generation` (needs `torch.rand` shimmed in
+`_masked_sort_for_decoding_order` plus an oracle batch),
+`test_tied_rank_flat_matches_upstream` (compares against oracle
+`decoding_order` / `order_mask_backward`),
+`test_valid_neighbour_set_matches_upstream`, and the oracle halves of the two
+min-p rows (their analytic halves are written). These wait for the gate — the
+`tests/port/` prefix is scoped and a commit there invalidates all seven ledger
+rows.
+
+### No surface to test
+
+`test_knob_semantics_laser_bias_single_aa`'s inbound `bias`/`omit_aa*` column
+conversion has no implementation path: `LaserDriver._HANDLED`
+(`driver.py:43-50`) is four **score** purposes and carries no sampling surface,
+so no inbound bias ever reaches a LASEr decode. The single-amino-acid property
+is pinned at the alphabet boundary that does exist.
+
+### Still open
+
+`test_knob_semantics_laser_score_order` (the "seeds differ" half is analytic;
+the "injected oracle order matches" half is scoped),
+`test_divergence_proofread_resindex_identity` (the `row_to_resindex` build is
+covered by `test_featurize.py:158`, which uses a water residue preceding the
+protein so identity genuinely fails; the untested half is the driver reporting
+`row_to_resindex[rows]` as `residue_ids`, which needs a real checkpoint), and
+`test_decode_invariant_to_padding` (blocked on #27).
