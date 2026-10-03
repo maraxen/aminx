@@ -1611,6 +1611,71 @@ def test_tied_positions_is_ignored_by_the_potts_driver(
     _sampled(tied_positions="auto")
 
 
+def test_binding_partitions_get_their_own_noise_draw(model_path: Path, tmp_path: Path) -> None:
+  """Unbound partitions are noised, independently of the complex, as upstream does.
+
+  Upstream scores each partition through a full ``score_seqs`` forward
+  (``energy_prediction.py:72``), and ``ProteinFeatures.forward`` adds fresh
+  ``augment_eps * randn`` on every call with no ``self.training`` guard
+  (``potts_mpnn_utils.py:1170-1171``). Before 261003 aminx noised the complex
+  and left every partition clean, so a noised binding ddG subtracted clean
+  unbound energies from a noised bound one.
+
+  A partition covering EVERY chain is the control that makes the comparison
+  meaningful: with noise off it must reproduce the complex geometry exactly,
+  so any difference with noise on is the noise and nothing else.
+  """
+  from aminx.families.potts_mpnn import driver as potts_driver  # noqa: PLC0415
+  from aminx.families.potts_mpnn.featurize import parse_pdb_upstream  # noqa: PLC0415
+
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb, {"A": "AAA", "B": "CCC"})
+  binding = tmp_path / "binding.json"
+  binding.write_text('{"complex": [["A", "B"]]}', encoding="utf-8")
+  options = PottsMPNNOptions(binding_energy_json=str(binding))
+  parsed = parse_pdb_upstream(pdb)[0]
+  name = str(parsed["name"])
+  clean = potts_driver._featurize_one(parsed, options, name)  # noqa: SLF001
+  chains = potts_driver._chain_sequences(parsed, clean)  # noqa: SLF001
+  rows = ("".join(chain.sequence for chain in chains),)
+  base = {
+    "inputs": str(pdb),
+    "model_family": "pottsmpnn",
+    "checkpoint_id": "pottsmpnn_vanilla_20",
+    "model_local_path": model_path,
+    "output_kind": "energy",
+    "sequences_to_score": [rows[0]],
+    "potts_mpnn": options,
+    "random_seed": 0,
+  }
+  noise_off = ScoringSpecification(**base)
+  noise_on = ScoringSpecification(**base, backbone_noise=0.25)
+
+  def _partition_coords(spec: ScoringSpecification) -> np.ndarray:
+    graphs = potts_driver._partition_graphs(  # noqa: SLF001
+      parsed, chains, options, name, rows, {"A", "B"}, spec=spec,
+    )
+    assert len(graphs) == 1
+    return np.asarray(graphs[0].coords, dtype=np.float64)
+
+  off = _partition_coords(noise_off)
+  np.testing.assert_allclose(
+    off, np.asarray(clean.x, dtype=np.float64), rtol=0, atol=1e-6,
+    err_msg="control: a whole-complex partition must reproduce the complex geometry",
+  )
+  on = _partition_coords(noise_on)
+  assert not np.allclose(on, off), (
+    "backbone_noise=0.25 left the partition coordinates untouched: the unbound "
+    "partition is being scored clean while the complex is noised"
+  )
+  complex_on = np.asarray(potts_driver._noised(clean, noise_on).x, dtype=np.float64)  # noqa: SLF001
+  assert not np.allclose(on, complex_on), (
+    "the partition reused the complex's noise draw; upstream draws fresh noise "
+    "on every forward, so the unbound state must be an independent sample"
+  )
+  np.testing.assert_array_equal(on, _partition_coords(noise_on))
+
+
 def test_knob_inert_fixed_mask(
   registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
 ) -> None:

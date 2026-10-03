@@ -379,6 +379,8 @@ def _pack(
   options: PottsMPNNOptions,
   purpose: str,
   name: str,
+  *,
+  spec: Any = None,  # noqa: ANN401
 ) -> _Prepared:
   reference = "".join(chain.sequence for chain in chains)
   if purpose == "score:energy":
@@ -396,7 +398,7 @@ def _pack(
     raise ValueError(msg)
   rows = (reference, *[item.sequence for item in candidates])
   touched = set().union(*(item.chains for item in candidates))
-  partitions = _partition_graphs(parsed, chains, options, name, rows, touched)
+  partitions = _partition_graphs(parsed, chains, options, name, rows, touched, spec=spec)
   expt = np.asarray([item.expt for item in candidates], dtype=np.float32)
   return _Prepared(
     graph=_graph(features, rows),
@@ -560,17 +562,30 @@ def _partition_graphs(
   name: str,
   rows: tuple[str, ...],
   touched: set[str],
+  *,
+  spec: Any = None,  # noqa: ANN401
 ) -> tuple[_Graph, ...]:
-  """Re-featurize each flagged partition and score those chains only."""
+  """Re-featurize each flagged partition and score those chains only.
+
+  Each partition gets its OWN backbone-noise draw when noise is on. Upstream
+  scores every partition through a full ``score_seqs`` forward
+  (``energy_prediction.py:72``), and ``ProteinFeatures.forward`` adds fresh
+  ``augment_eps * randn`` on every call (``potts_mpnn_utils.py:1170-1171``,
+  no ``self.training`` guard), so the unbound partitions are noised
+  independently of the complex. ``stream`` is the partition's position in the
+  binding spec plus one, so stream 0 stays the complex's own draw.
+  """
   spec_parts = _binding_partitions(options, name)
   if not spec_parts:
     return ()
   graphs: list[_Graph] = []
-  for partition in spec_parts:
+  for stream, partition in enumerate(spec_parts, start=1):
     if not set(partition).intersection(touched):
       continue
     designed = sorted(partition)
     part_features = tied_featurize_port([parsed], {name: (designed, [])})[0]
+    if spec is not None:
+      part_features = _noised(part_features, spec, stream=stream)
     part_rows = tuple(_project(row, chains, designed) for row in rows)
     graphs.append(_graph(part_features, part_rows))
   return tuple(graphs)
@@ -732,16 +747,20 @@ def apply_potts_backbone_noise(
   return base + float(level) * shift
 
 
-def _noised(features: PottsFeatures, spec: Any) -> PottsFeatures:  # noqa: ANN401
+def _noised(features: PottsFeatures, spec: Any, *, stream: int = 0) -> PottsFeatures:  # noqa: ANN401
   """Apply the spec's backbone noise to featurized coordinates, if any.
 
   Returns ``features`` unchanged when the knob is off, which is the default, so
   every run that does not ask for noise is bit-identical to before this existed.
+  ``stream`` separates independent draws (binding partitions); stream 0 is the
+  complex and keeps exactly the key it always had.
   """
   level = potts_backbone_noise_level(spec)
   if level <= 0.0:
     return features
   key = jax.random.fold_in(jax.random.PRNGKey(int(spec.random_seed)), 0x9077)
+  if stream:
+    key = jax.random.fold_in(key, stream)
   return dataclasses.replace(
     features,
     x=apply_potts_backbone_noise(features.x, level, key=key),
@@ -923,7 +942,7 @@ def _prepare_from_spec(item: Any, spec: Any) -> _Prepared:  # noqa: ANN401
     )
   else:
     candidates = _candidates(name, chains, options, purpose, ())
-  return _pack(parsed, features, chains, candidates, options, purpose, name)
+  return _pack(parsed, features, chains, candidates, options, purpose, name, spec=spec)
 
 
 FAMILY_DRIVERS.register("pottsmpnn")(PottsMPNNDriver())
