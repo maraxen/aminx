@@ -1413,3 +1413,133 @@ def test_knob_semantics_fixed_positions(
 
   # An empty list fixes nothing, so it must match the free sample exactly.
   assert _sampled(fixed_positions=[]) == free
+
+
+def test_knob_semantics_sequences_to_score(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``sequences_to_score`` names the sequences to evaluate on this backbone.
+
+  Three things, each of which a careless implementation gets wrong differently:
+
+  * the NATIVE reference is prepended, so N sequences give N+1 energies
+    (``include_reference_in_output``, ``driver.py:206-207``) and the reference is
+    the same value whatever is scored alongside it;
+  * every entry must have length ``L_total`` in A0 chain order, and the error
+    names both the expected length and the chain order (spec :511) rather than
+    failing somewhere downstream on a shape;
+  * residues outside the etab alphabet are rejected by name.
+
+  Measured on native ACDEFG: one sequence gives 2 energies, three give 4, and the
+  first entry is the native in both -- which is what pins "prepended reference"
+  rather than "first requested sequence".
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+
+  def _energies(sequences: list[str]) -> np.ndarray:
+    spec = ScoringSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      output_kind="energy",
+      sequences_to_score=sequences,
+      potts_mpnn=PottsMPNNOptions(),
+    )
+    return np.asarray(
+      score(spec)["structures"]["0"]["arrays"]["energy"], dtype=np.float64,
+    )
+
+  one = _energies(["ADDEFG"])
+  three = _energies(["ADDEFG", "AWDEFG", "ACDEFW"])
+  assert one.shape == (2,), one.shape
+  assert three.shape == (4,), three.shape
+
+  # The reference is prepended, so it does not depend on what else was asked
+  # for, and the first requested sequence keeps its slot behind it.
+  np.testing.assert_allclose(three[0], one[0], rtol=1e-6, atol=1e-6)
+  np.testing.assert_allclose(three[1], one[1], rtol=1e-6, atol=1e-6)
+  assert len(np.unique(three.round(6))) == 4, (
+    f"the four energies must differ, or ordering cannot be checked: {three}"
+  )
+
+  with pytest.raises(ValueError, match=r"has length 5; expected 6 in chain order"):
+    _energies(["ADDEF"])
+  with pytest.raises(ValueError, match="residue outside"):
+    _energies(["ADDEFZ"])
+
+
+def test_tied_positions_is_ignored_by_the_potts_driver(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``spec.tied_positions`` is validated and then discarded (debt 2443).
+
+  ANOTHER TEST THAT ASSERTS A DEFECT, named so the gate does not credit it.
+
+  ``tied_featurize_port`` takes a ``tied_positions_dict`` (``featurize.py:335``)
+  and all three call sites in the Potts driver (``:572``, ``:727``, ``:765``)
+  pass only ``batch`` and ``chain_dict``, so that argument is always ``None``.
+  The same omission is why ``pssm_json`` and ``bias_by_res_json`` are inert --
+  one root cause, three symptoms that each look like an isolated bug.
+
+  THE CONTROL IS A BIAS THAT MAKES THE TIED POSITIONS DISAGREE. Tying is only
+  observable if the positions would otherwise differ, so a (6, 21) bias drives
+  position 0 to W and position 3 to K; untied they come back W..K.., and if the
+  tie were honoured they would have to agree. Every accepted form of the field
+  is tried, because "the tuple form is unsupported" and "the field is discarded"
+  look identical from one of them.
+
+  The VALIDATION still fires -- ``tied_positions='auto'`` without
+  ``pass_mode='inter'`` raises -- which is the detail that makes this field look
+  wired from the outside.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+  grid = np.zeros((6, 21), dtype=np.float32)
+  grid[0, _ALPHA.index("W")] = 40.0
+  grid[3, _ALPHA.index("K")] = 40.0
+
+  def _sampled(**kwargs: object) -> str:
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=2,
+      samples_chunk_size=1,
+      return_logits=False,
+      random_seed=0,
+      bias=grid,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none"),
+      **kwargs,
+    )
+    return _letters(
+      np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])[0],
+    )
+
+  untied = _sampled()
+  assert untied[0] != untied[3], (
+    f"control failed: the bias must make positions 0 and 3 disagree, else a tie "
+    f"would be undetectable. Got {untied}"
+  )
+
+  for label, kwargs in (
+    ("list of tuples", {"tied_positions": [(0, 3)]}),
+    ("tuple of tuples", {"tied_positions": ((0, 3),)}),
+    ("auto", {"tied_positions": "auto", "pass_mode": "inter"}),
+    ("direct", {"tied_positions": "direct", "pass_mode": "inter"}),
+  ):
+    got = _sampled(**kwargs)
+    assert got == untied, (
+      f"tied_positions ({label}) changed the sample to {got}. If the driver now "
+      f"passes a tied_positions_dict to tied_featurize_port, that is the fix for "
+      f"debt 2443 -- delete this test and write test_knob_semantics_tied_positions "
+      f"asserting that tied positions take the same residue."
+    )
+
+  # Validated, then discarded: the check still fires.
+  with pytest.raises(ValueError, match="pass_mode must be 'inter'"):
+    _sampled(tied_positions="auto")
