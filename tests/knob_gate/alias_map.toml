@@ -353,14 +353,14 @@ note = "Abbreviated on the aminx side; same knob."
 ref = "laser_run_batch_inference__designs_per_batch"
 targets = ["batch_size"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
 note = "output-invariance test; maps to batch_size"
 
 [[row]]
 ref = "laser_run_batch_inference__designs_per_input"
 targets = ["num_samples"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
 note = "Designs produced per input structure."
 
 [[row]]
@@ -455,7 +455,7 @@ note = "Directory of input structures."
 ref = "laser_run_batch_inference__inputs_processed_simultaneously"
 targets = ["batch_size"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
 note = "output-invariance test; maps to batch_size"
 
 [[row]]
@@ -571,14 +571,14 @@ note = ""
 ref = "laser_run_batch_inference_ligandmpnn__designs_per_batch"
 targets = ["batch_size"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
 note = "output-invariance test; maps to batch_size"
 
 [[row]]
 ref = "laser_run_batch_inference_ligandmpnn__designs_per_input"
 targets = ["num_samples"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
 note = "Designs produced per input structure."
 
 [[row]]
@@ -673,7 +673,7 @@ note = "Directory of input structures."
 ref = "laser_run_batch_inference_ligandmpnn__inputs_processed_simultaneously"
 targets = ["batch_size"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
 note = "output-invariance test; maps to batch_size"
 
 [[row]]
@@ -1335,7 +1335,7 @@ note = "Abbreviated on the aminx side; same knob."
 ref = "laser_run_inference_tied__designs_per_input"
 targets = ["num_samples"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
 note = "Designs produced per input structure."
 
 [[row]]
@@ -2758,7 +2758,7 @@ note = "Per-chain fixed-position lists, taken as json by aminx."
 ref = "pottsmpnn_cfg__inference__max_tokens"
 targets = ["batch_size"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
 note = "output-invariance test; maps to batch_size"
 
 [[row]]
@@ -2779,7 +2779,7 @@ note = "eval augment_eps on all backbone atoms; knob test is iid Gaussian N/CA/C
 ref = "pottsmpnn_cfg__inference__num_samples"
 targets = ["num_samples"]
 equivalence = "identical"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
 note = ""
 
 [[row]]

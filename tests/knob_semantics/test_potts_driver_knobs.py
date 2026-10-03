@@ -987,3 +987,113 @@ def test_knob_semantics_output_dir(tmp_path: Path) -> None:
     output_h5_path=str(streamed),
     cache_path=str(cache_file),
   ) == explicit
+
+
+def test_knob_semantics_batch_size(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``batch_size`` partitions the work and must not change the answer.
+
+  All five alias rows say so in their own notes -- "output-invariance test; maps
+  to batch_size" -- so the test the rows ask for is an invariance, not a
+  behaviour.
+
+  An invariance assertion is trivially satisfied by an output that never varies,
+  so the work is set up to vary first: two structures and five scored sequences,
+  twelve energies in all, and the test refuses to interpret the invariance unless
+  those twelve are not all the same number.
+
+  THE SAMPLING HALF IS THE STRONGER CLAIM. ``samples_chunk_size`` partitions six
+  samples into chunks of 1, 2, 3 and 6, and the sampled sequences come back
+  bit-identical every way round. That only holds if each sample's randomness is
+  keyed by its own index rather than by its position within a chunk -- an
+  implementation that drew per chunk would give four different answers here, and
+  would look perfectly reasonable in a single-chunk test.
+  """
+  del registered
+  alpha = tmp_path / "a.pdb"
+  beta = tmp_path / "b.pdb"
+  _write_pdb(alpha, {"A": "ACDEFG"})
+  _write_pdb(beta, {"A": "WWWWWW"})
+  sequences = ["ADDEFG", "AWDEFG", "ACDEFW", "WWDEFG", "ACWEFG"]
+
+  def _scores(batch_size: int) -> np.ndarray:
+    spec = ScoringSpecification(
+      inputs=[str(alpha), str(beta)],
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      output_kind="energy",
+      sequences_to_score=sequences,
+      batch_size=batch_size,
+      potts_mpnn=PottsMPNNOptions(),
+    )
+    out = score(spec)["structures"]
+    return np.concatenate([
+      np.asarray(out[key]["arrays"]["energy"], dtype=np.float64)
+      for key in sorted(out)
+    ])
+
+  baseline = _scores(1)
+  assert baseline.size == 12, baseline.size
+  assert np.unique(baseline.round(6)).size > 1, (
+    "the scored energies must vary, or invariance across batch_size holds "
+    "trivially for any implementation that returns a constant"
+  )
+  for batch_size in (2, 3, 32):
+    np.testing.assert_array_equal(_scores(batch_size), baseline)
+
+  def _sampled(chunk: int) -> np.ndarray:
+    spec = SamplingSpecification(
+      inputs=str(alpha),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=6,
+      samples_chunk_size=chunk,
+      return_logits=False,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none"),
+    )
+    return np.asarray(sample(spec)["structures"]["0"]["arrays"]["sequence"])
+
+  one_at_a_time = _sampled(1)
+  assert one_at_a_time.shape == (6, 6), one_at_a_time.shape
+  for chunk in (2, 3, 6):
+    np.testing.assert_array_equal(_sampled(chunk), one_at_a_time)
+
+
+def test_knob_semantics_num_samples(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """``num_samples`` is how many designs come back per input structure.
+
+  The opposite shape to batch_size: this one MUST change the output, and the
+  change is the cardinality rather than the values. Every per-sample array grows
+  together -- ``sequence`` gains a row and ``sample_energy`` an entry -- so an
+  implementation that resized one and not the other is caught.
+
+  ``samples_chunk_size`` is held at 2 throughout, so the counts cannot be an
+  artefact of the chunking: 1 is below it, 3 straddles it unevenly and 6 is a
+  multiple, and all three come back exact.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+
+  for requested in (1, 3, 6):
+    spec = SamplingSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      num_samples=requested,
+      samples_chunk_size=2,
+      return_logits=False,
+      potts_mpnn=PottsMPNNOptions(optimization_mode="none"),
+    )
+    arrays = sample(spec)["structures"]["0"]["arrays"]
+    assert arrays["sequence"].shape == (requested, 6), arrays["sequence"].shape
+    assert arrays["sample_energy"].shape == (requested,), (
+      arrays["sample_energy"].shape
+    )
+    assert arrays["sample_rank"].shape == (requested,), arrays["sample_rank"].shape
