@@ -25,8 +25,19 @@ set -euo pipefail
 REPO=${AMINX_WAVE_REPO:-$HOME/projects/aminx-sprint-git}
 cd "$REPO"
 
-# .praxia/audits.jsonl is TRACKED and anything running pytest appends to it.
-# A dirty tree makes every run ineligible, so restore before launching.
+# A dirty tree makes every run ineligible (git_dirty=true), so restore first.
+#
+# This used to say ".praxia/audits.jsonl is TRACKED and anything running pytest
+# appends to it". The file IS tracked, but the second half is FALSE and was
+# worth knowing: measured 261002 in the b7i checkout, a pytest run over
+# tests/knob_gate and tests/lint left it byte-identical -- same sha256, same 206
+# lines, `git status --porcelain` on that path empty -- as did roughly fifteen
+# other pytest invocations across the tier that day.
+#
+# What does dirty it is a praxia agent session's own hooks, which append to
+# .praxia/*.jsonl as they run. That happens in the orchestrating checkout, not
+# on the box running the gate. The restore stays: it costs nothing, and the
+# dirty-tree trap is real even though this particular cause was not.
 git checkout -- . 2>/dev/null || true
 git fetch -q https://github.com/maraxen/aminx.git wt/260929-potts-laser-main
 git checkout -q FETCH_HEAD
