@@ -61,6 +61,7 @@ declare -A MUT=(
   [potts_ar_decode]="ar_mask_present_chain_m_pos"
   [potts_energy_parity]="permute_etab_out_rows"
   [laser_score_parity]="permute_decoder_layer"
+  [potts_ddg_megascale]="skip_transpose_merge_pair"
 )
 
 # Fail before burning hours, not after. Compares every string above to the
@@ -121,6 +122,18 @@ case "$GROUP" in
     SLUGS=(laser_proofread_parity laser_decode_e2e) ;;
   2)
     SLUGS=(potts_ar_refine_exact potts_ar_decode potts_energy_parity laser_score_parity) ;;
+  3)
+    # Alone: the largest vehicle in the sprint, 202804 rows over 371 per-PDB
+    # resumable units per arm. It took ~25 min at e3bc540e, so the isolation is
+    # about CPU contention with the other groups, not about duration.
+    #
+    # It is also the vehicle that proves the exports at :100-102 are load-
+    # bearing rather than belt-and-braces. Launched by hand with an otherwise
+    # identical `bth run`, it died in under a minute: its oracle arm imports
+    # upstream run_utils, which imports seaborn at module scope, and the sprint
+    # venv has none -- _oracle_python falls back to sys.executable when
+    # POTTS_ORACLE_PYTHON is unset. Through this script it just works.
+    SLUGS=(potts_ddg_megascale) ;;
   positive)
     # THIS ARM COULD NEVER HAVE RUN. It called the parity script directly,
     # while every graded arm goes through `bth run` (launch(), :95) -- and
@@ -194,7 +207,7 @@ PY
 # about whichever group happens to be running.
 check_coverage laser_proofread_parity laser_decode_e2e \
                potts_ar_refine_exact potts_ar_decode potts_energy_parity \
-               laser_score_parity
+               laser_score_parity potts_ddg_megascale
 
 ARGS=()
 for s in "${SLUGS[@]}"; do ARGS+=("$s=${MUT[$s]}"); done

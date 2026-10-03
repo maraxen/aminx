@@ -162,13 +162,31 @@ mutant = "permute_decoder_layer"
 kind = "sidecar"
 slug = "laser_score_parity"
 
-# STILL UNLISTED, deliberately, both spec-listed sidecar vehicles:
+# A6 potts_ddg_megascale. Listed 261002, after being run for the first time:
+# run 90f945fc-49fc-4474-af22-124f817188db at e3bc540e, outcome pass, 202804
+# rows across 371 per-PDB resumable units per arm, finished in ~25 minutes.
 #
-#   potts_ddg_megascale  built, sidecar + control skip_transpose_merge_pair,
-#                        but has NEVER been run -- no branch_controls.json
-#                        exists for it at any sha. Listing it would make the
-#                        gate red on a vehicle nobody has exercised. Run it
-#                        first, then list it.
+#   clean                      pass  max_abs_delta 1.2207e-4   (band <= 5e-4)
+#   skip_transpose_merge_pair  fail  max_abs_delta 11.6458     (fail above 5e-3)
+#
+# The control misses by more than three orders of magnitude above its own fail
+# threshold, against a clean arm four times inside the pass band, so the vehicle
+# separates by a wide margin on the largest fixture in the sprint.
+#
+# The note that used to sit here said to run it before listing it, because
+# listing a vehicle nobody had exercised would make the gate red on it. That has
+# now happened in the stated order.
+
+[[branch]]
+id = "skip_transpose_merge_pair"
+stage = "A6"
+fixture = "megascale_test_subset"
+mutant = "skip_transpose_merge_pair"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ddg_megascale"
+
+# STILL UNLISTED, deliberately, one spec-listed sidecar vehicle:
 #
 #   potts_refine         clean arm FAILS at match 0.9539 (debt #2417, P1), and
 #                        it sits in the spec's WAVE table rather than the

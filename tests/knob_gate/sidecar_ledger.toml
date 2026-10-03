@@ -140,7 +140,25 @@ bth_run_id = "cd56063e-d6b0-458c-9400-b3845c8f7bd6"
 # for; the id is the FULL uuid, since an 8-character prefix does not resolve.
 bth_run_id = "ef4df8ff-7b0d-44bb-999b-35b5c7a6207c"
 
-# NOT YET LISTED: nothing. All six manifest vehicle slugs now carry a verified
+[sidecar.potts_ddg_megascale]
+# e3bc540e, the first time this vehicle has ever been run. The largest in the
+# sprint: 202804 rows over 371 per-PDB resumable units per arm, finished in
+# about 25 minutes.
+#   clean                      pass  max_abs_delta 0.0001220703125
+#   skip_transpose_merge_pair  fail  max_abs_delta 11.645767211914062
+# The pass band is <= 5e-4 and the fail threshold 5e-3, so the clean arm sits
+# four times inside its band while the control misses by more than three orders
+# of magnitude. Widest separation of any vehicle here.
+#
+# Eligible at a LATER commit than the other six without breaking their freeze:
+# `git diff --name-only 7c3dd246 e3bc540e` touches no path under src/aminx/,
+# scripts/parity/, scripts/recapture/, tests/port/, aminx-oracles/,
+# pyproject.toml or uv.lock -- every commit between them is tests/knob_*,
+# tests/lint/ or scripts/redsox/. So _touches_scoped is empty across the whole
+# span and all seven rows stand together.
+bth_run_id = "90f945fc-49fc-4474-af22-124f817188db"
+
+# NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
 
 # POSITIVE CONTROL, run 56b0ddaa-572c-49da-99ae-f5b4cb9402d1 at 7aee0c01.
