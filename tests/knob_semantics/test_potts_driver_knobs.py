@@ -1914,3 +1914,71 @@ def test_knob_semantics_pssm_threshold(
 
   # Without the flag, the same file and threshold do nothing.
   assert _sampled(pssm_json=path, pssm_threshold=0.0) == baseline
+
+
+def test_score_energy_gapped_alignment(
+  registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
+) -> None:
+  """A ``sequences_to_score`` row may carry gap positions, and they score as zero.
+
+  Spec :511 says entries arrive "in A0 row order ... with gap rows as ``-``/``X``".
+  The sibling test above pins the two REJECTION halves -- wrong length, and a
+  residue outside the alphabet -- but nothing pinned the acceptance half, which
+  is the one this row is named for. A validator tightened to the 20 canonical
+  amino acids would satisfy every existing assertion while making every gapped
+  alignment unscoreable.
+
+  WHY ZERO, read not assumed: ``pad_etab_energy`` (``etab.py:50-57``) pads the
+  20x20 pair table to 22x22, and the two added slots -- ``-`` and ``X`` -- are
+  zeros, matching upstream's ``F.pad(etab, (0, 2, 0, 2))``. A gap position
+  therefore contributes nothing to any pair it takes part in.
+
+  THE DISCRIMINATING ASSERTION is that ``-`` and ``X`` at the same position give
+  the SAME energy. Both index zero slots, so they must. That is what separates
+  "the gap alphabet is padding" from "``X`` was quietly folded onto a real amino
+  acid" -- a comparison against one hardcoded number would not catch it.
+
+  THE CONTROL is that two real residues at that position give DIFFERENT
+  energies. Without it every assertion here is satisfied by a scorer that
+  ignores the sequence and returns a constant.
+  """
+  del registered
+  pdb = tmp_path / "toy.pdb"
+  _write_pdb(pdb, {"A": "ACDEFG"})
+
+  def _energy(sequence: str) -> float:
+    spec = ScoringSpecification(
+      inputs=str(pdb),
+      model_family="pottsmpnn",
+      checkpoint_id="pottsmpnn_vanilla_20",
+      model_local_path=model_path,
+      output_kind="energy",
+      sequences_to_score=[sequence],
+      potts_mpnn=PottsMPNNOptions(),
+    )
+    # Row 0 is the prepended native reference; row 1 is what was asked for.
+    return float(
+      np.asarray(score(spec)["structures"]["0"]["arrays"]["energy"], dtype=np.float64)[1],
+    )
+
+  # Acceptance: neither gap character raises, in the middle or at either end.
+  dash_mid = _energy("AC-EFG")
+  ex_mid = _energy("ACXEFG")
+  both_ends = _energy("-CDEFX")
+
+  # The two gap characters are the same zero slot, so they cannot disagree.
+  assert dash_mid == pytest.approx(ex_mid, rel=0, abs=1e-6), (
+    f"'-' and 'X' are both zero pad slots and must score alike: {dash_mid} vs {ex_mid}"
+  )
+
+  # A gap is not a no-op: zeroing a position's pair terms moves the energy.
+  real = _energy("ACDEFG")
+  assert dash_mid != pytest.approx(real, rel=0, abs=1e-6), (
+    "a gap at position 2 must change the energy, or the gap slot is being ignored"
+  )
+  assert both_ends != pytest.approx(real, rel=0, abs=1e-6)
+
+  # CONTROL: the scorer does respond to ordinary substitutions at that position,
+  # so the equality above is a statement about the gap alphabet rather than
+  # about a scorer that returns the same number whatever it is handed.
+  assert _energy("ACWEFG") != pytest.approx(_energy("ACKEFG"), rel=0, abs=1e-6)
