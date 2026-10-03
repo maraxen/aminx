@@ -2,8 +2,15 @@
 
 The gate grades `tests/knob_gate/branch_manifest.toml` against the gate's
 outcomes and `tests/knob_gate/sidecar_ledger.toml`. Every sidecar-backed row
-needs a bathos run that satisfies all nine step-1c conditions
+needs a bathos run that satisfies all **14** step-1c conditions
 (`tests/knob_gate/_coverage.py:287-340`).
+
+This file used to say **nine**, and that number was stale rather than wrong at
+the time: the weights and branch-controls conditions were added after it was
+written, and nothing re-counted. Do not trust a count in prose here — run
+`verify_wave.py`, which imports the gate's own predicates from
+`tests/knob_gate` so its report cannot drift from what the gate actually
+checks, and which names every condition separately.
 
 ## The ordering constraint, which is the thing that bites
 
@@ -132,7 +139,7 @@ comparison of anything the gate does.
 
        uv run python3 scripts/redsox/verify_wave.py --run <slug>=<run_id> ...
 
-   It reports all nine conditions separately with observed vs expected, and
+   It reports all 14 conditions separately with observed vs expected, and
    prints argv-only / rows-only on a mutant mismatch. `check_branch_coverage`
    only ever says `pass` or `instrument_invalid`, which cannot distinguish
    "the runs are stale" from "the manifest is malformed".
@@ -294,9 +301,11 @@ control (nothing can be eligible until the freeze holds):
 | `potts_ar_decode` | `6cb81d49` | `PottsMPNN/...pottsmpnn_20.pt` | PASS weights key resolves |
 
 The same condition passing for one family and failing for the other is what
-shows it discriminates. The three potts runs pass **eight of nine** conditions;
-only `no scoped path since` fails, which is the freeze and is exactly what the
-wave re-run is for.
+shows it discriminates. The three potts runs fail **exactly one** condition --
+`no scoped path since` -- and pass every other, which is the freeze and is
+exactly what the wave re-run is for. (This read "eight of nine" when written;
+the substance is unchanged, but the count was stale, so it is stated as
+"exactly one failure" rather than re-pinned to a number that drifts.)
 
 Consequence: **`laser_score_parity`'s only passing run is ineligible.**
 `f11f2bf1` is an ancestor of `6cb81d49` ("key oracle weights by a stable

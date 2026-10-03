@@ -40,7 +40,9 @@
 # EVERY ID BELOW IS STALE, AND THE FIRST ONE TO BREAK THEM WAS A DOCSTRING.
 #
 # Measured with scripts/redsox/verify_wave.py: both Potts runs fail exactly one
-# of the nine conditions -- "no scoped path since" -- and pass the other eight.
+# condition -- "no scoped path since" -- and pass every other. (Written when
+# verify_wave reported nine; it reports 14 now. The count in prose drifts as
+# conditions are added, the "exactly one failure" does not.)
 # The scoped commit it names first is 04d689b3, "--model-family help listed
 # only two of the four families": a one-line change to a help string in
 # src/aminx/cli.py. _touches_scoped is path-based and does not care that the
