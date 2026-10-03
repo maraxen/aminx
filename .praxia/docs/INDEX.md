@@ -49,6 +49,7 @@
 
 ## Research
 - [261003_spec-named-tests-triage](research/261003_spec-named-tests-triage.md) — Triage of every test name the potts/laser spec cites but that does not exist, into genuinely-missing, covered-under-another-name, blocked, and false-positive
+- [261003_z1-gate-blocker-anatomy](research/261003_z1-gate-blocker-anatomy.md) — The redsox step-2 knob blocker reduces to 3 fields of decision debt and 0 of test debt; every other condition of test_parity_ids_passed is measured empty
 - [260929_potts-laser-t02-probe-report](research/260929_potts-laser-t02-probe-report.md) — Resolution of every T0.2 open item in the potts/laser xtrax-composition spec (runner helpers, model_family consumers, torch checkpoint key audits, verbatim upstream transcriptions, LASEr graph/scatter/draw/dropout enumerations, aminx float32 and self-slot behaviour) plus spec corrections found while probing
 - [260929_potts-laser-t02b-xtrax-a10-reverify](research/260929_potts-laser-t02b-xtrax-a10-reverify.md) — Claim-by-claim re-check of every xtrax-derived and aminx-anchor fact in the spec against installed xtrax 0.4.0a10 and main's 9e6c340a/#160, after the r13 rebase
 - [260712_jax-xla-scf-if-gradient-regression-bug-report](research/260712_jax-xla-scf-if-gradient-regression-bug-report.md) — DRAFT, not yet filed: jax.grad scf.if crash, jaxlib 0.9.2→0.10.2 regression, cross-arch confirmed, repro needs an unpushed-branch fix before submission
