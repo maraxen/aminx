@@ -253,6 +253,29 @@ def test_chain_order_masks_residue_idx_and_annotations(tmp_path: Path) -> None:
   assert int(feat.lengths) == feat.L_total
 
 
+def test_tied_beta_is_derived_and_not_an_option() -> None:
+  """``tied_beta`` comes from the tied-positions weights, never from an option.
+
+  Upstream never takes it as configuration: ``potts_mpnn_utils.py:444`` starts it
+  as ``np.ones(L_max)``, ``:456`` fills it per position from the tied_positions
+  JSON weights, and ``:1571`` indexes it. The test above pins that derivation.
+  ``PottsMPNNOptions.tied_beta`` used to exist anyway, was read nowhere in
+  ``src/``, and was deleted (261003) rather than plumbed, because plumbing a
+  scalar would invent semantics upstream does not have. An old config naming it
+  must fail loudly, not be silently ignored.
+  """
+  from typing import Any
+
+  from aminx.run.options import PottsMPNNOptions
+  from aminx.run.spec_json import SpecJSONDecodeError, options_from_json_value
+
+  stale_config: dict[str, Any] = {"tied_beta": 1.0}
+  with pytest.raises(SpecJSONDecodeError, match="tied_beta"):
+    options_from_json_value(PottsMPNNOptions, stale_config)
+  with pytest.raises(TypeError, match="tied_beta"):
+    PottsMPNNOptions(**stale_config)
+
+
 def test_chains_argument_keeps_requested_order_and_drops_others(tmp_path: Path) -> None:
   path = _write(
     tmp_path,

@@ -24,7 +24,6 @@ class PottsMPNNOptions:
   pssm_log_odds_flag: bool = False
   pssm_bias_flag: bool = False
   bias_by_res_json: str | None = None
-  tied_beta: float | None = None
   tied_epistasis: bool = False
   skip_gaps: bool = False
   optimize_pdb: bool = False

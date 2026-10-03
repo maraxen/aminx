@@ -843,7 +843,7 @@ PDB (hydrogens per checkpoint `build_hydrogens`); FASTA (`output_fasta`, `output
 `binding_energy_json`, `binding_energy_cutoff=8.0`, `mean_norm=False`,
 `filter_nan=False` (no-op quirk), `mutant_fasta`, `mutant_csv`, `exclude_chains`, `pssm_json`,
 `pssm_threshold`, `pssm_multi`, `pssm_log_odds_flag`, `pssm_bias_flag`, `bias_by_res_json`,
-`tied_beta`, `tied_epistasis`, `skip_gaps`, `optimize_pdb`, `optimize_fasta`, `write_pdb=True`,
+~~`tied_beta`~~ **(DELETED 261003, not plumbed: upstream never takes it as config — `potts_mpnn_utils.py:444` inits `np.ones(L_max)`, `:456` fills it from the tied_positions JSON weights — and `featurize._tied_groups` already reproduces that derivation; a scalar option would invent semantics upstream lacks)**, `tied_epistasis`, `skip_gaps`, `optimize_pdb`, `optimize_fasta`, `write_pdb=True`,
 `emit_etab=False`, `emit_dense_hJ=False`, `chain_design_mask_json`. Path-valued fields are
 `str | None`. (Upstream `ddG` maps to `output_kind`, §6.3.)
 

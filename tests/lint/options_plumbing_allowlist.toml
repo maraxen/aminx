@@ -24,6 +24,9 @@
 #           failure, repeated eight times)
 #   added   tied_beta (PottsMPNNOptions; the name belongs to a per-position array
 #           from featurize._tied_groups, read off features/padded/ready)
+#   removed tied_beta (261003: the FIELD was deleted, not plumbed -- upstream
+#           derives tied_beta from tied_positions weights and never takes it as
+#           config; PottsMPNNOptions was never released, so nothing breaks)
 #   removed strict_load (IS read: laser_mpnn/driver.py:256 via getattr, enforced
 #           at :600 -- the row was always wrong)
 #
@@ -139,9 +142,3 @@ field = "ignore_chain_mask_zeros"
 options_class = "LaserOptions"
 reason = "not_plumbed"
 note = "upstream --ignore_chain_mask_zeros; outside its dataclass the name appears nowhere in src/aminx"
-
-[[entries]]
-field = "tied_beta"
-options_class = "PottsMPNNOptions"
-reason = "not_plumbed"
-note = "`options.tied_beta` appears nowhere in src/. The 31 other occurrences are a per-position array built by featurize._tied_groups from tied_positions weights and read off features/padded/ready -- a different object with the same name, which is exactly what hid this field from the old token-based detector. 261003, READ FROM UPSTREAM: this field should probably not exist. tied_beta upstream is NOT a config value -- potts_mpnn_utils.py:444 initialises it as np.ones(L_max), :456 fills it per position from the tied_positions JSON's weights, and :1571 indexes it as tied_beta[t]. It is DERIVED from tied_positions, and aminx already reproduces that derivation faithfully in featurize._tied_groups. So plumbing the scalar would mean inventing a semantics upstream does not have (a global override? a default fill, where upstream hardcodes 1.0?), which is why this stays listed rather than being 'fixed'. The real options are to delete the field or to document it as an aminx extension; both are design decisions, not wiring."

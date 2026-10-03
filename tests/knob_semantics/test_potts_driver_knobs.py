@@ -1611,71 +1611,48 @@ def test_tied_positions_is_ignored_by_the_potts_driver(
     _sampled(tied_positions="auto")
 
 
-def test_knob_inert_fixed_mask_and_tied_beta(
+def test_knob_inert_fixed_mask(
   registered: PottsMPNNDriver, model_path: Path, tmp_path: Path,
 ) -> None:
-  """Two fields that still reach nothing (debt 2435).
+  """``spec.fixed_mask`` still reaches nothing on the Potts path (debt 2443).
 
-  WAS THREE. ``bias_by_res_json`` was here until 261003 and is now plumbed --
-  the driver passes ``bias_by_res_dict`` to ``tied_featurize_port`` (debt 2443)
-  and it has a real knob test above. This test fired when that landed, which is
-  what it was for, and the field was removed rather than the assertion relaxed.
+  WAS THREE FIELDS, NOW ONE. Both departures were this test doing its job:
 
-  A THIRD TEST THAT ASSERTS DEFECTS, and the NAME is what tells the gate how to
-  read it. This used to be ``test_fixed_mask_and_tied_beta_are_still_inert``,
-  deliberately carrying neither recognised prefix so the gate credited it for
-  nothing. That was right about ``test_knob_semantics_``, which marks a test
-  that pins a knob's SEMANTICS -- and these knobs have none, so claiming that
-  prefix would have the gate certify semantics that do not exist.
+  * ``options.bias_by_res_json`` became plumbed -- the driver passes
+    ``bias_by_res_dict`` to ``tied_featurize_port`` (debt 2443) and it has a real
+    knob test above. This test fired when that landed, and the field was removed
+    rather than the assertion relaxed.
+  * ``options.tied_beta`` was DELETED (261003), not plumbed. Upstream's
+    ``tied_beta`` is never configuration: ``potts_mpnn_utils.py:444`` starts it
+    as ``np.ones(L_max)`` and ``:456`` fills it from the tied_positions JSON
+    weights, a derivation ``featurize._tied_groups`` already reproduces. A
+    scalar option for it would have invented semantics upstream does not have.
+    ``test_tied_beta_is_derived_and_not_an_option`` pins both halves.
 
-  But it left ``tied_beta`` permanently uncoverable, which read as a coverage
-  hole and is not one: the knob is inert, and a test PROVING it inert is the
-  correct coverage for it. So as of 261003 the prefix is
-  ``test_knob_inert_``, a second recognised marker that means exactly that, and
-  the gate credits it ONLY for an alias row marked ``kind = "inert"`` whose
-  demanded fields are also listed in ``tests/lint/
-  options_plumbing_allowlist.toml``.
+  A TEST THAT ASSERTS A DEFECT, and the NAME is what tells the gate how to read
+  it. ``test_knob_semantics_`` marks a test that pins a knob's SEMANTICS, and
+  this knob has none, so claiming that prefix would have the gate certify
+  semantics that do not exist. ``test_knob_inert_`` means exactly what this
+  proves, and the gate credits it ONLY for an alias row marked
+  ``kind = "inert"`` whose demanded fields are also listed in
+  ``tests/lint/options_plumbing_allowlist.toml``. ``fixed_mask`` is a
+  RunSpecification field, not an Options field, so the gate demands no coverage
+  for it; its row carries the inert kind for consistency with this test.
 
-  That allowlist tie is the safeguard, and it is the reason this is not a way to
-  wave a knob through. ``test_allowlist_has_no_fixed_entries`` deletes an
-  allowlist row the moment its field becomes plumbed, so the credit cannot
-  outlive the defect -- the day someone wires ``tied_beta``, the allowlist row
-  goes, the inert credit goes with it, and this test fires. The debt stays open
-  and tracked either way; the gate is not the thing that tracks defects.
+  ``spec.fixed_mask`` -- the Potts featurize builds a LOCAL called ``fixed_mask``
+  from ``fixed_position_dict`` (``featurize.py:388-392``), which the driver never
+  passes (debt 2443). The spec field of the same name is read nowhere on this
+  path.
 
-  * ``spec.fixed_mask`` -- the Potts featurize builds a LOCAL called
-    ``fixed_mask`` from ``fixed_position_dict`` (``featurize.py:388-392``), which
-    the driver never passes (debt 2443). The spec field of the same name is read
-    nowhere on this path, so it is a fourth symptom of that one omission, not a
-    separate bug.
-  * ``options.bias_by_res_json`` -- allowlisted inert (debt 2435), and inert for
-    the same reason: ``bias_by_res_dict`` is another of the five arguments the
-    driver never passes.
-  * ``options.tied_beta`` -- allowlisted inert for a different reason:
-    ``options.tied_beta`` appears nowhere in ``src/``. The name belongs to a
-    per-position array built by ``featurize._tied_groups`` and read off
-    ``features``/``padded``/``ready``, which is exactly what hid it from the
-    old token-based plumbing lint.
-
-  THE CONTROL AND THE BIAS_BY_RES CASE ARE THE SAME EXPERIMENT RUN TWICE, which
-  is what makes this sharp rather than merely negative. A per-residue bias
-  favouring W is supplied two ways: as ``spec.bias``, where it moves the sample
-  from SSSSSS to WSSSSS, and as ``options.bias_by_res_json``, where it does
-  nothing. Same intent, same magnitude, different route, opposite outcome.
-
-  ``fixed_mask`` all-zeros is the sharpest of the three on its own terms: if
-  honoured it would mean nothing is designable, so the sample would have to stay
-  at the native ACDEFG. It comes back SSSSSS.
+  THE CONTROL MAKES THIS SHARP RATHER THAN MERELY NEGATIVE: a per-residue bias
+  through ``spec.bias`` must move the sample, so the harness demonstrably can
+  see a knob work. All-zeros ``fixed_mask`` is the sharpest case: if honoured it
+  would mean nothing is designable and the sample would have to stay at the
+  native ACDEFG. It comes back redesigned.
   """
   del registered
   pdb = tmp_path / "toy.pdb"
   _write_pdb(pdb, {"A": "ACDEFG"})
-
-  w_column = [
-    [50.0 if i == _ALPHA.index("W") else 0.0 for i in range(21)] for _ in range(6)
-  ]
-  bias_json = tmp_path / "bias_by_res.json"
-  bias_json.write_text(f'{{"toy": {{"A": {w_column}}}}}', encoding="utf-8")
 
   def _sampled(options: dict | None = None, **kwargs: object) -> str:
     spec = SamplingSpecification(
@@ -1720,9 +1697,6 @@ def test_knob_inert_fixed_mask_and_tied_beta(
     got = _sampled(fixed_mask=np.asarray(mask, dtype=np.float32))
     assert got == baseline, f"fixed_mask={mask} changed the sample to {got}. {reason}"
 
-  for value in (0.0, 5.0, 100.0):
-    got = _sampled(options={"tied_beta": value})
-    assert got == baseline, f"tied_beta={value} changed the sample to {got}. {reason}"
 
 
 def test_knob_inert_emit_dense_hJ(  # noqa: N802 -- upstream knob name
@@ -1745,7 +1719,7 @@ def test_knob_inert_emit_dense_hJ(  # noqa: N802 -- upstream knob name
 
   Named ``test_knob_inert_`` rather than ``test_knob_semantics_`` because there
   are no semantics here to pin; see
-  ``test_knob_inert_fixed_mask_and_tied_beta`` for what that prefix means to
+  ``test_knob_inert_fixed_mask`` for what that prefix means to
   the gate and why the credit is tied to the allowlist row.
   """
   del registered
