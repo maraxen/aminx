@@ -186,12 +186,52 @@ conversion has no implementation path: `LaserDriver._HANDLED`
 so no inbound bias ever reaches a LASEr decode. The single-amino-acid property
 is pinned at the alphabet boundary that does exist.
 
-### Still open
+### Also written
 
-`test_knob_semantics_laser_score_order` (the "seeds differ" half is analytic;
-the "injected oracle order matches" half is scoped),
-`test_divergence_proofread_resindex_identity` (the `row_to_resindex` build is
-covered by `test_featurize.py:158`, which uses a water residue preceding the
-protein so identity genuinely fails; the untested half is the driver reporting
-`row_to_resindex[rows]` as `residue_ids`, which needs a real checkpoint), and
-`test_decode_invariant_to_padding` (blocked on #27).
+| Spec name | Landed as | What was actually missing |
+|---|---|---|
+| `test_divergence_proofread_resindex_identity` | `d417ae0e` | The featurizer half was covered; the **driver** half — reporting `row_to_resindex[rows]` as `residue_ids` — was not. Writable after all: the proofread purposes run on the tiny `LASErMPNN(key=...)` fixture, no real checkpoint needed. |
+| `test_knob_semantics_laser_score_order` (analytic half) | `3b2e6627` | `decoding_order` had **no** coverage. Grepping the name is misleading — every hit under `tests/sampling/` is `random_decoding_order` / `ar_mask_from_decoding_order` in `aminx.utils.autoregression`, a different function in a different module. |
+
+## Final accounting — 41 → 27, and zero writable gaps remain
+
+The 27 names still absent break down as:
+
+- **20 are not tests to write.** 15 are fragments, pytest hooks, or file stems
+  (`test_coverage`, `test_knob_semantics_`, `test_runtest_makereport`, …). The
+  other 5 are the spec citing **existing files by path** —
+  `tests/parity/test_full_model_parity.py:273`,
+  `tests/parity/test_packer_parity.py:120`,
+  `tests/model/test_ligandmpnn_equivalence.py:348`,
+  `tests/host/test_multistate_poe_campaign_integration.py` (all four verified
+  present), plus `test_parity_safe_map.py`, which is in **xtrax's own** `port/`
+  tests and which the spec itself notes aminx cannot import because it pins the
+  wheel.
+- **3 are covered under another name** (listed above, with the covering
+  `file:line`).
+- **3 are blocked on the scoped `tests/port/` oracle**:
+  `test_knob_semantics_order_generation`,
+  `test_tied_rank_flat_matches_upstream`,
+  `test_valid_neighbour_set_matches_upstream`.
+- **1 is blocked on #27** (`test_decode_invariant_to_padding`, needs an `l_pad`
+  parameter on `prepare_sample`, which is in scoped `src/aminx/`).
+
+So every spec-named test that can be written without touching a scoped path
+now exists. The remaining four are gated on the ledger wave and gate
+completing, not on effort.
+
+### What the exercise was actually worth
+
+Counting names would have put the gap at 41. The real figure was **11
+writable gaps**, and three of those were not missing tests but **unexecuted
+code paths** that no existing fixture could reach:
+
+- `upstream_refine_order`'s `stored_orders_present=False` branch — both
+  existing tests passed `True`.
+- `jnp.where(inter_mask, adjusted, base)`'s False branch — **every** refine
+  fixture in the suite builds `inter_mask=ones`.
+- `_chi_for_candidate` — zero callers in tests, and reading it against the spec
+  produced debt #2460 rather than a test.
+
+A name-matching pass finds none of those three, and would have written a
+duplicate of `test_laser_alphabet_roundtrip` instead.
