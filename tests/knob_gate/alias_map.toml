@@ -2866,8 +2866,14 @@ note = ""
 ref = "pottsmpnn_cfg__inference__pssm_json"
 targets = ["pssm_json"]
 equivalence = "identical"
-parity_test_ids = []
-note = ""
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_pssm_knobs_cannot_bite_until_pssm_json_is_plumbed"]
+note = """\
+NOT PLUMBED (debt 2435, allowlisted): nothing reads options.pssm_json, so no \
+driver call site ever passes a pssm_dict to tied_featurize_port and \
+featurize.py:403-405 fills pssm_coef/pssm_bias with zeros and pssm_log_odds with \
+a uniform 10000.0. The named test asserts that the whole pssm group is therefore \
+inert (debt 2440) and fires when it is fixed; it is NOT a knob_semantics name and \
+this row is not coverage."""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__pssm_log_odds_flag"
@@ -2887,8 +2893,15 @@ note = ""
 ref = "pottsmpnn_cfg__inference__pssm_threshold"
 targets = ["pssm_threshold"]
 equivalence = "identical"
-parity_test_ids = []
-note = ""
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_pssm_knobs_cannot_bite_until_pssm_json_is_plumbed"]
+note = """\
+IS read -- sample_host.py:295 feeds it to (log_odds > threshold) at :332 -- and \
+still cannot change anything, because pssm_json above is unplumbed and leaves \
+log_odds a uniform fill, so the mask is all-true or all-false together and \
+scales every amino acid alike. Measured 261002 under a control: seven pssm \
+settings, including all four on at once, give output identical to the default \
+while omit_aa moves it. Debt 2440. The named test asserts that and fires when it \
+is fixed; this row is not coverage."""
 
 [[row]]
 ref = "pottsmpnn_cfg__inference__skip_gaps"
@@ -3042,14 +3055,14 @@ note = "Output filename stem; naming only, no behaviour."
 ref = "pottsmpnn_input_list__designed_chains"
 targets = ["fixed_mask", "chain_design_mask_json"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
 note = "input-list designed chains map onto fixed_mask and chain_design_mask_json"
 
 [[row]]
 ref = "pottsmpnn_input_list__fixed_chains"
 targets = ["fixed_mask", "chain_design_mask_json"]
 equivalence = "semantic"
-parity_test_ids = []
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
 note = "input-list fixed chains map onto fixed_mask and chain_design_mask_json"
 
 [[row]]
