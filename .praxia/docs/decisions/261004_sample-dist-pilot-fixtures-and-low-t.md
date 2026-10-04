@@ -56,6 +56,11 @@ m = 1.1 / 1.25 / 1.5 -- tiny and not monotone. At T=0.1 the sampler is near
 argmax, so scaling T by 1.1-1.5 barely moves the distribution, and the
 near-margin negative control cannot clear delta + 2h.
 
+**Now seen in BOTH families.** The LASEr pilot driver (`00ef0203`) smoke cell
+`min_p0@T=0.1` escalated the same way: Delta_neg 0.0022 / 0.0081 / 0.0006 for
+m = 1.1 / 1.25 / 1.5 (again n=50 -- indicative, not a finding). LASEr has no
+fixture gap, so for LASEr this lane is the only open question.
+
 **This is the same mechanism the user ruled on 260929** for ProteinMPNN sampling
 (memory `project_sampling-drop-p07-low-temp-lane`): the P07@0.1 lane's margin
 was below estimator noise, and the lane was dropped because T=0.1 stays
