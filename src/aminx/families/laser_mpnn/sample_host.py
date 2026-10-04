@@ -584,6 +584,7 @@ class SampleStages:
       ala_budget=int(options.ala_budget),
       gly_budget=int(options.gly_budget),
       budget_mask=_budget(features, options),
+      bias=_logit_bias(self._spec, item.chain_mask),
     )
     laser_index = np.asarray(decoded.sequence)
     produced: dict[str, np.ndarray] = {

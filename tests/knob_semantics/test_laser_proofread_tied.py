@@ -431,6 +431,7 @@ def _tied(  # noqa: PLR0913
   disabled: tuple[str, ...] = ("X",),
   repack_all: bool = False,
   order: np.ndarray | None = None,
+  bias: np.ndarray | None = None,
 ) -> TiedDecodeResult:
   encoder, decoder, joint = _models()
   n_res = 2
@@ -478,6 +479,7 @@ def _tied(  # noqa: PLR0913
       lambda_=lambda_,
       disabled_residues=disabled,
       repack_all=repack_all,
+      bias=bias,
     )
 
 
@@ -697,3 +699,83 @@ def test_knob_semantics_repack_only() -> None:
   assert kept.chi_degrees_1[0, 0] == pytest.approx(0.0)
   assert np.isfinite(replaced.chi_degrees_1[0, 0])
   assert LaserOptions(repack_only=True).repack_only is True
+
+
+def _assert_bit_identical(left: TiedDecodeResult, right: TiedDecodeResult) -> None:
+  names = (
+    "sequence",
+    "sequence_logits_1",
+    "sequence_logits_2",
+    "chi_degrees_1",
+    "chi_degrees_2",
+    "chi_logits_1",
+    "chi_logits_2",
+    "chi_bins_1",
+    "chi_bins_2",
+  )
+  for name in names:
+    got = np.asarray(getattr(left, name))
+    exp = np.asarray(getattr(right, name))
+    assert got.shape == exp.shape and got.dtype == exp.dtype
+    np.testing.assert_array_equal(got.view(np.uint8), exp.view(np.uint8), err_msg=name)
+
+
+def test_tied_decode_zero_bias_matches_omitted_bias() -> None:
+  """(a) An omitted bias and an explicit zero row are the same decode."""
+  omitted = _tied()
+  zeros = _tied(bias=np.zeros((2, 21), dtype=np.float32))
+  _assert_bit_identical(omitted, zeros)
+
+
+def test_tied_decode_positive_bias_forces_token() -> None:
+  """(b) A large positive bias on one designable site wins for every uniform."""
+  token = 3
+  position = 0
+  bias = np.zeros((2, 21), dtype=np.float32)
+  bias[position, token] = np.float32(1.0e6)
+  for uniform in (0.0, 1.0e-12, 0.25, 0.5, 0.75, 1.0 - 1.0e-12):
+    decoded = _tied(bias=bias, seq_u=np.asarray([uniform, 0.5], dtype=np.float64))
+    assert int(decoded.sequence[position]) == token
+
+
+def test_tied_decode_omit_bias_is_never_drawn() -> None:
+  """(c) An omitted letter (-1e8) is never drawn at that position."""
+  omitted = 4
+  position = 0
+  bias = np.zeros((2, 21), dtype=np.float32)
+  bias[position, omitted] = np.float32(-1.0e8)
+  for uniform in np.linspace(0.0, 1.0, num=11, endpoint=False):
+    decoded = _tied(bias=bias, seq_u=np.asarray([uniform, 0.5], dtype=np.float64))
+    assert int(decoded.sequence[position]) != omitted
+
+
+def test_tied_decode_step_probabilities_match_biased_mix(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """(d) Step 0 mixes ``λ softmax((l1+b)/T) + (1-λ) softmax((l2+b)/T)``."""
+  lam = 0.35
+  temperature = 1.0
+  bias = np.zeros((2, 21), dtype=np.float32)
+  bias[0, 1] = np.float32(1.5)
+  bias[0, 5] = np.float32(-0.75)
+  bias[0, 11] = np.float32(0.4)
+  unbiased = _tied(lambda_=lam, sequence_temperature=temperature, disabled=())
+  seen: list[np.ndarray] = []
+  original = tied_mod.categorical_draw
+
+  def _spy(probs: jax.Array, uniform: jax.Array) -> jax.Array:
+    seen.append(np.asarray(probs, dtype=np.float64))
+    return original(probs, uniform)
+
+  monkeypatch.setattr(tied_mod, "categorical_draw", _spy)
+  _tied(lambda_=lam, sequence_temperature=temperature, disabled=(), bias=bias)
+  assert len(seen) == 2
+  l1 = np.asarray(unbiased.sequence_logits_1[0], dtype=np.float32) + bias[0]
+  l2 = np.asarray(unbiased.sequence_logits_2[0], dtype=np.float32) + bias[0]
+
+  def _softmax(logits: np.ndarray) -> np.ndarray:
+    scaled = jnp.asarray(logits, dtype=jnp.float32) / jnp.float32(temperature)
+    return np.asarray(jax.nn.softmax(scaled), dtype=np.float64)
+
+  expected = lam * _softmax(l1) + (1.0 - lam) * _softmax(l2)
+  np.testing.assert_allclose(seen[0], expected, rtol=1e-5, atol=1e-5)
