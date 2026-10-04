@@ -98,6 +98,15 @@ def _parse(argv: list[str]) -> Any:
   parser = common.build_parser(__doc__)
   parser.add_argument("--out", type=Path, default=None)
   parser.add_argument("--smoke", action="store_true")
+  parser.add_argument(
+    "--cells",
+    default=None,
+    help=(
+      "comma-separated cell keys (e.g. plain@0.3,refine@0.3) to run a SUBSET of "
+      "the spec grid; all_cells_derived then covers only these, and the selection "
+      "is recorded as cells_selected so a subset run cannot pass for the full grid"
+    ),
+  )
   return parser.parse_args(argv)
 
 
@@ -860,6 +869,17 @@ def _parent(args: Any) -> None:
   work = common.work_dir(args, _WORK)
   structures = _structures(root, smoke=bool(args.smoke))
   conditions = _conditions(smoke=bool(args.smoke))
+  selected: list[str] | None = None
+  if args.cells:
+    selected = [cell.strip() for cell in str(args.cells).split(",") if cell.strip()]
+    known = {_cell_key(c["name"], c["temperature"]) for c in conditions}
+    unknown = sorted(set(selected) - known)
+    if unknown:
+      msg = f"--cells names cells this grid cannot run: {unknown}; runnable: {sorted(known)}"
+      raise SystemExit(msg)
+    conditions = [
+      c for c in conditions if _cell_key(c["name"], c["temperature"]) in set(selected)
+    ]
   n_boot = 50 if args.smoke else stats.DEFAULT_N_BOOT
   n_pilot = 50 if args.smoke else _N
   used: set[int] = set()
@@ -917,6 +937,8 @@ def _parent(args: Any) -> None:
       graded["seeds_n1000"] = seeds_n1000
     cells[key] = graded
   required = _required_cells(smoke=bool(args.smoke))
+  if selected is not None:
+    required = [key for key in required if key in set(selected)]
   missing = [key for key in required if key not in cells]
   shim_failures = [
     key for key, cell in cells.items() if bool(cell["shim_check"]["instrument_invalid"])
@@ -929,6 +951,7 @@ def _parent(args: Any) -> None:
     "n_reused": n_reused,
     "n_computed": n_computed,
     "smoke": bool(args.smoke),
+    "cells_selected": selected,
     "n_boot": n_boot,
     "structures": structures,
     "open_questions": _questions(),

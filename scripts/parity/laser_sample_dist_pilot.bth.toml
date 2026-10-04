@@ -1,0 +1,46 @@
+[metadata]
+title = "LASEr distributional PILOT -- uncontested cells (min_p0@0.3, min_p0@1.0, min_p0.05@0.3)"
+created = "261004"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "For the LASEr distributional cells that do not depend on the user's open decision (min_p=0 at T=0.3 and T=1.0; min_p=0.05 at T=0.3), the spec's pilot derivation (Delta0_s, h_hat, q_hat, delta = clip(max(2 h_hat, q_hat/2), 0.01, 0.05), smallest m in {1.1, 1.25, 1.5} with Delta_neg(m) >= delta + 2 h_hat, n=4000 re-pilot then instrument_invalid; sequence TV plus the chi1 variant with delta_chi = 0.05) yields a usable delta and m for every selected cell at n=1000 on the two pinned pilot structures, and the shim check passes."
+stage_name = "pilot"
+novel = true
+
+[outcomes.derived]
+condition = "all_cells_derived AND shim_ok AND NOT any_instrument_invalid"
+decision = "Carry each selected cell's delta, m and n into the confirmatory sidecar for those cells, committed before the confirmatory run. Per spec this pilot is exploratory and cites nothing itself."
+reasoning = "Every selected cell produced a clipped delta and a qualifying near-margin m, and the shim does not distort upstream sampling."
+is_residual = false
+adversarial_check = "NOT (all_cells_derived AND shim_ok AND NOT any_instrument_invalid)"
+
+[outcomes.instrument_invalid]
+condition = "any_instrument_invalid OR NOT shim_ok"
+decision = "No confirmatory run for the affected cells; report which."
+reasoning = "Spec: shim check failure or a failed re-pilot is instrument_invalid."
+is_residual = true
+adversarial_check = "NOT (any_instrument_invalid OR NOT shim_ok)"
+
+[outcomes.not_derived]
+condition = "shim_ok AND NOT any_instrument_invalid AND NOT all_cells_derived"
+decision = "Some selected cell has no usable delta/m; report it per cell. No confirmatory run for it."
+reasoning = "Residual: neither cleanly derived nor flagged invalid."
+is_residual = true
+adversarial_check = "NOT (shim_ok AND NOT any_instrument_invalid AND NOT all_cells_derived)"
+
+[result_schema]
+all_cells_derived = "bool"
+any_instrument_invalid = "bool"
+shim_ok = "bool"
+cells = "dict"
+cells_selected = "list"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+
+[data]
+cells_selected = "min_p0@0.3,min_p0@1.0,min_p0.05@0.3 -- passed as --cells. EXCLUDED on purpose: min_p0@0.1 (the T=0.1 lane is a pending user decision, .praxia/docs/decisions/261004_sample-dist-pilot-fixtures-and-low-t.md). This run says nothing about that cell."
+structures = "entries 1-2 of the laser_score_parity list, pinned by SHA-256 in the driver (101m_1 sha 5ee11918...)"
+prior_exposure = "Only an n=50, B=50 smoke cell (min_p0@0.1) has been seen, and it is not in this selection."
+cost = "3 cells x 2 structures x 6 upstream runs x n=1000; LASEr upstream sampling is slow (the n=50 smoke took >10 min), so this is likely many hours; per-unit resume, no whole-run timeout."
