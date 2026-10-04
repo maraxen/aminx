@@ -29,9 +29,11 @@ from aminx.families.laser_mpnn.featurize import (
   LaserInputError,
   build_rotamers,
   featurize,
+  residue_identifiers,
 )
 from aminx.host.family_driver import FamilyBatch, SinkArraySpec
 from aminx.host.omit_aa_bias import compile_omit_aa_bias, omit_aa_is_active
+from aminx.io.laser_pdb import LigandAtoms, write_laser_pdb
 from aminx.model.laser.graphs import GraphStructure
 from aminx.model.laser.joint_decode import chi_position_mask, decode_order
 from aminx.model.laser.tied import tied_decode
@@ -612,3 +614,37 @@ class SampleStages:
       produced["seq_logits_2"] = np.asarray(decoded.sequence_logits_2, dtype=np.float32)
       produced["chi_logits_2"] = np.asarray(decoded.chi_logits_2, dtype=np.float32)
     return produced
+
+
+def format_sample_pdb(
+  features: LaserFeatures,
+  sequence_indices: np.ndarray,
+  sidechain_coords: np.ndarray,
+  *,
+  bfactors: np.ndarray | None = None,
+  ligand: LigandAtoms | None = None,
+) -> str:
+  """PDB text for one sample. The sample purpose's array outputs stay as they are.
+
+  ``sequence_indices`` are LASEr alphabet indices, the same vector
+  ``build_rotamers`` used for ``sidechain_coords``. ``bfactors`` defaults to 0;
+  pass the sampled-token probability to fill the B-factor column the way
+  upstream does. ``ligand`` is appended as HETATM when the caller has the
+  input ligand atoms.
+  """
+  chains: list[str] = []
+  numbers: list[int] = []
+  icodes: list[str] = []
+  for chain, number, icode in residue_identifiers(features):
+    chains.append(chain)
+    numbers.append(number)
+    icodes.append(icode)
+  return write_laser_pdb(
+    sidechain_coords,
+    sequence_indices,
+    chains,
+    numbers,
+    icodes,
+    bfactors=bfactors,
+    ligand=ligand,
+  )

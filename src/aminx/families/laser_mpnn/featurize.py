@@ -224,6 +224,21 @@ def _hydrogen_extended(letter: str) -> tuple[str, ...]:
   return _ATOM_ORDER[letter] + _NONROTATABLE_H[letter]
 
 
+def residue_atom_names(letter: str, *, protonated: bool) -> tuple[str, ...]:
+  """Upstream atom names for one residue, heavy or protonated layout.
+
+  Heavy names are ``dataset_atom_order``. Protonated names are
+  ``hydrogen_extended_dataset_atom_order``. ``X`` uses alanine's non-rotatable
+  hydrogens, matching the layout ``build_rotamers`` pads.
+  """
+  if letter not in _ATOM_ORDER:
+    msg = f"unknown LASEr residue {letter!r}"
+    raise ValueError(msg)
+  if protonated:
+    return _hydrogen_extended(letter)
+  return _ATOM_ORDER[letter]
+
+
 def _build_hydrogen_tables() -> tuple[NDArray[np.int64], NDArray[np.int64]]:
   """Triad and hydrogen indices, including the glycine row reused for ``X``."""
   n_triads = max(len(triads) for triads in _HYDROGEN_ALIGNMENT.values())
@@ -484,6 +499,19 @@ class LaserFeatures:
   ligand_elements: tuple[str, ...]
   exposed_mask: Bool[np.ndarray, " L"]
   budget_residue_mask: Bool[np.ndarray, " L"]
+  # Input PDB identifiers. ``resnum_indices`` stays the dense 0..L-1 model index.
+  pdb_chain_ids: tuple[str, ...]
+  pdb_resnums: Int[np.ndarray, " L"]
+  pdb_icodes: tuple[str, ...]
+
+
+def residue_identifiers(features: LaserFeatures) -> tuple[tuple[str, int, str], ...]:
+  """``(chain id, residue number, insertion code)`` recorded from the input PDB."""
+  numbers = np.asarray(features.pdb_resnums, dtype=np.int64)
+  rows: list[tuple[str, int, str]] = []
+  for index, chain in enumerate(features.pdb_chain_ids):
+    rows.append((chain, int(numbers[index]), features.pdb_icodes[index]))
+  return tuple(rows)
 
 
 # Working precision for the protein path. float32 stays the default so the f32 tiers
@@ -1356,6 +1384,9 @@ def featurize(
   chains: list[int] = []
   fixed: list[bool] = []
   resindex: list[int] = []
+  chain_ids: list[str] = []
+  pdb_resnums: list[int] = []
+  icodes: list[str] = []
   crystal_bb: list[NDArray[np.float64]] = []
   exposure_probe: list[NDArray[np.float64]] = []
   sink = _LigandSink()
@@ -1398,6 +1429,9 @@ def featurize(
         crystal_bb,
         exposure_probe,
       )
+      chain_ids.append(str(chain.getChid()).strip())
+      pdb_resnums.append(int(residue.getResnum()))
+      icodes.append(str(residue.getIcode()).strip())
   if not sequence:
     msg = f"no protein residues in {pdb_path}"
     raise LaserInputError(msg)
@@ -1409,6 +1443,9 @@ def featurize(
     chains,
     fixed,
     resindex,
+    chain_ids,
+    pdb_resnums,
+    icodes,
     crystal_bb,
     exposure_probe,
     sink,
@@ -1428,6 +1465,9 @@ def _assemble(
   chains: list[int],
   fixed: list[bool],
   resindex: list[int],
+  chain_ids: list[str],
+  pdb_resnums: list[int],
+  icodes: list[str],
   crystal_bb: list[NDArray[np.float64]],
   exposure_probe: list[NDArray[np.float64]],
   sink: _LigandSink,
@@ -1498,6 +1538,9 @@ def _assemble(
     ligand_elements=elements,
     exposed_mask=exposed,
     budget_residue_mask=np.isin(ss, np.array(["H", "E"])) & exposed,
+    pdb_chain_ids=tuple(chain_ids),
+    pdb_resnums=np.asarray(pdb_resnums, dtype=np.int64),
+    pdb_icodes=tuple(icodes),
   )
 
 
