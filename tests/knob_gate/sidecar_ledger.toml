@@ -76,30 +76,30 @@
 # previously looked like a missing record.
 
 [sidecar.laser_proofread_parity]
-# 21321ce4. clean pass at max_abs_mean 4.218847493575595e-15 / max_abs_std
-# 9.499345754448996e-15; all four controls failed -- ddof_0 at std
-# 0.04827089407674459, reduction_swap at std NaN, scalar_off at mean
-# 0.17539788075343654, vector_on at mean 0.053736772932204274.
-# Supersedes the 6cb81d49 run of this slug, which was launched with
-# REWRITTEN 261003 at eb4ee606, the second row of the post-freeze wave.
-# clean pass; all four controls failed (reduction_swap, ddof_0, scalar_off,
-# vector_on). verify_wave.py --run laser_proofread_parity=87098798-... returns
-# "would grade" with every condition PASS.
+# REWRITTEN 261004 at 719c33e0 (wave group 1 of the re-wave after the scoped
+# batch). Run 182ab6d4, read from the cool-tier parquet: completed, outcome
+# pass, git_dirty False, adversarial check fired, 3.46 h. clean pass at
+# max_abs_mean 4.218847493575595e-15 / max_abs_std 9.499345754448996e-15 --
+# BIT-IDENTICAL to the superseded 87098798. That settles a real question:
+# #2424 (37df972b) modified _proofread_batch, which this conditional path
+# shares, and the conditional numbers did not move by one bit. All four
+# controls failed (reduction_swap, ddof_0, scalar_off, vector_on).
+# verify_wave.py --run laser_proofread_parity=182ab6d4-... : would grade, all
+# 14 conditions PASS.
 #
-# READ THIS RUN OFF THE COOL-TIER PARQUET, NOT THE WARM INDEX. After the arms
-# exited and branch_controls.json was written, `bth compact` followed by
-# `bth sql` still reported status='running', outcome=NULL, exit_code=-1 for
-# this id. The parquet at ~/.bth/catalog/runs/aminx/run_87098798-....parquet
-# said status='completed', outcome='pass', exit_code=0, git_dirty=False,
-# outcome_is_residual=False, outcome_error_reason='',
-# adversarial_check_status='present'. The warm row was simply stale; nothing
-# was lost. Taking the warm index at face value here would have read a clean
-# graded pass as an unfinished run.
-#
-# Supersedes 4e259930, which was ineligible because scalar_both_off -- the
-# POSITIVE control, which must pass while every manifest row must fail -- was
-# appended to its --mutants string (trap 4).
-bth_run_id = "87098798-18ee-4e55-8be7-0a8ace926309"
+# THE FIRST GROUP-1 RUN OF THIS SLUG (f7887e2f) WAS OOM-KILLED, NOT FAILED BY
+# CODE. It recorded outcome fail with clean "error" / NaN and no traceback:
+# titanix hit a global OOM at 20:18-20:29 (three wave arms plus another
+# session's ColabFold + AF3 memory harness; journalctl -k shows a 3.9 GB
+# python3 killed at 20:19:27, alongside a vLLM worker and other users'
+# desktops). Evidence it was the environment: no cells_clean.json while every
+# mutant arm wrote one; a solo reproduction ran clean; and this re-run --
+# same commit, same code, alone, fresh work dir /tmp/..._719c33e0_r2 -- passes
+# bit-identically. Also: this vehicle drops arm stderr
+# (laser_proofread_parity.py:585, unlike the unconditional vehicle since
+# 37df972b), which is why the failure carried no cause; fixing that is
+# scoped and waits for the next scoped batch.
+bth_run_id = "182ab6d4-4814-4516-8c94-97f9900216f1"
 
 [sidecar.laser_proofread_unconditional_parity]
 # NEW SLUG (#2424). First graded run, at 719c33e0, pre-registered in aef77a56
