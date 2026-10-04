@@ -101,6 +101,19 @@
 # appended to its --mutants string (trap 4).
 bth_run_id = "87098798-18ee-4e55-8be7-0a8ace926309"
 
+[sidecar.laser_proofread_unconditional_parity]
+# NEW SLUG (#2424). First graded run, at 719c33e0, pre-registered in aef77a56
+# BEFORE the vehicle or the fix existed. Record (cool-tier parquet):
+# status=completed, outcome=pass, git_dirty=False, adversarial_check=fired;
+# recorded result {clean: pass, n_listed: 3, n_failed: 3,
+# max_abs_mean: 2.976243740349105e-08} -- >3000x inside the 1e-4 band, at the
+# instrument floor (the ungraded unc_both_off positive control read 2.96e-8).
+# All three controls failed, including unc_no_dropout, which IS the pre-fix
+# #2424 code path. verify_wave.py --run
+# laser_proofread_unconditional_parity=30ca082e-... returns "would grade" with
+# all 14 conditions PASS.
+bth_run_id = "30ca082e-f118-45d6-8a57-e98612da3b8b"
+
 [sidecar.laser_decode_e2e]
 # REWRITTEN 261003 at eb4ee606, the first row of the post-freeze wave.
 # clean pass at sequence_agreement 1.0, chi_bin_agreement 1.0,
