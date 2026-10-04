@@ -18,9 +18,11 @@ f64 uses rtol=0, atol=1e-9. f32 uses rtol=0, atol=1e-4. Both bounds are the
 spec table's absolute angstrom limits, not a measured deviation.
 
 The dump passes ``add_nonrotatable_hydrogens=model_params["build_hydrogens"]``.
-The three LASEr checkpoints set that flag true, so the sealed tensor is the
-protonated atom axis. ``build_rotamers`` in aminx has no such flag and returns
-the 14-atom axis. This wave compares the full ``sidechain_coords`` array.
+The rotamer npz does not store that flag. When a pair key or a dump-level
+``build_hydrogens`` array is present it is read; otherwise the comparison
+uses true, which is the value on all three LASEr checkpoints. The sealed
+tensor is the protonated atom axis. This wave compares the full
+``sidechain_coords`` array.
 """
 
 from __future__ import annotations
@@ -91,11 +93,26 @@ def _host_rotamers(
   )
 
 
+def _build_hydrogens(data: np.lib.npyio.NpzFile, prefix: str) -> bool:
+  """Flag for this pair. Absent keys follow the sealed checkpoints (true)."""
+  for key in (prefix + "build_hydrogens", "build_hydrogens"):
+    if key not in data.files:
+      continue
+    flag = np.asarray(data[key]).reshape(-1)
+    if flag.size != 1:
+      msg = f"{key} should be a scalar flag"
+      raise AssertionError(msg)
+    return bool(flag[0])
+  return True
+
+
 def _predict(
   data: np.lib.npyio.NpzFile,
   prefix: str,
   fixture: str,
   precision: str,
+  *,
+  add_nonrotatable_hydrogens: bool,
 ) -> np.ndarray:
   backbone_key = prefix + "backbone_coords"
   chi_key = prefix + "chi_angles"
@@ -111,9 +128,25 @@ def _predict(
       f"dumped backbone length {backbone.shape[0]}"
     )
     raise AssertionError(msg)
-  numpy_dtype = np.float64 if precision == "f64" else np.float32
+  # Upstream's RotamerBuilder computes in DOUBLE whatever the model precision:
+  # build_rotamers aligns with fixed_backbone_coords.double()
+  # (utils/build_rotamers.py ~:373) and the hydrogen pass with
+  # ideal_prot_aa_coords.double() (:168), so its output is float64 in BOTH
+  # sealed dumps -- the f32 dump's sidechain_coords is float64 too. For this
+  # wave the precision axis is therefore the INPUT precision (backbone and chi
+  # from an f32 vs an f64 model run), not the builder's arithmetic, and aminx
+  # builds in float64 at both tiers to match. `precision` still selects which
+  # dump's inputs and which tolerance apply.
+  del precision
+  numpy_dtype = np.float64
   return np.asarray(
-    build_rotamers(backbone, chi, sequence, numpy_dtype),
+    build_rotamers(
+      backbone,
+      chi,
+      sequence,
+      numpy_dtype,
+      add_nonrotatable_hydrogens=add_nonrotatable_hydrogens,
+    ),
     dtype=numpy_dtype,
   )
 
@@ -168,7 +201,13 @@ def _run(
     if key not in data.files:
       msg = f"laser_rotamers dump has no {key}"
       raise AssertionError(msg)
-    got = _predict(data, prefix, fixture, precision)
+    got = _predict(
+      data,
+      prefix,
+      fixture,
+      precision,
+      add_nonrotatable_hydrogens=_build_hydrogens(data, prefix),
+    )
     ref = np.asarray(data[key])
     _compare(
       got,
