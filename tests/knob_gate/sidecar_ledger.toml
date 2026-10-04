@@ -173,28 +173,18 @@ bth_run_id = "06f329d4-b12d-4fad-945e-fb61f5b703db"
 bth_run_id = "d29f813c-fb26-41e2-a76e-4d63f31cf539"
 
 [sidecar.potts_ar_refine_exact]
-# REWRITTEN 261003 at 9a0cd350, the last arm of group 2 and the sixth of seven
-# rows. Exact sequence match over 50 seeds on the clean arm, and all three
-# negative controls separated hard -- every value bit-for-bit identical to the
-# superseded 7c3dd246 run, which now holds for all four re-measured slugs:
-#   clean                        pass  match 1.0
-#   ar_mask_present_chain_m_pos  fail  match 0.8356272401433692
-#   ntoc_refine_order            fail  match 0.6720839733742959
-#   wrong_partition_sign         fail  match 0.20894009216589862
-# The spread matters as much as the failures: a control that merely grazed the
-# band would leave the vehicle's resolution unmeasured, and the weakest of these
-# is 0.164 below a clean 1.0 with the strongest 0.79 below it.
-#
-# This is the slowest vehicle in the wave by a wide margin -- the other three
-# wave-2 slugs finished inside ten minutes while this one took 59 (17:06-18:05)
-# across its four arms, so its arms are serial 300-unit sweeps, not a hung job.
-# The run's own adversarial_check_result is "fired".
-#
-# verify_wave.py --run potts_ar_refine_exact=a6c87107-... reports 14 of 14
-# conditions PASS, including "no scoped path since"; the id is the FULL uuid,
-# since an 8-character prefix does not resolve.
-# Supersedes ef4df8ff (7c3dd246), which failed only "no scoped path since".
-bth_run_id = "a6c87107-39ee-482a-99b5-144bcf07f5e5"
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Run
+# 1a98f24f, read from the cool-tier parquet: completed, outcome pass,
+# git_dirty False, adversarial check fired, 1.0 h. clean pass at match 1.0
+# over 1500 units (0 reused), BIT-IDENTICAL to the superseded a6c87107; all
+# three controls failed (ar_mask_present_chain_m_pos, ntoc_refine_order,
+# wrong_partition_sign -- this run records their status, not their values).
+# The refine path is where tied_beta, l_pad and the partition-noise stream
+# could plausibly have leaked in; none moved it.
+# verify_wave.py with all eight re-measured ids: would grade ALL EIGHT,
+# would NOT grade (none).
+bth_run_id = "1a98f24f-1085-4076-a64c-358f6e9aa374"
 
 [sidecar.potts_ddg_megascale]
 # REWRITTEN 261003 at 124f6e9e (wave group 3 of the re-wave after the scoped
