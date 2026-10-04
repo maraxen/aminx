@@ -64,6 +64,7 @@
 - [260605_caliby-nature-and-dataset](research/260605_caliby-nature-and-dataset.md) — Caliby nature and dataset investigation
 
 ## Decisions
+- [261004_sample-dist-pilot-fixtures-and-low-t](decisions/261004_sample-dist-pilot-fixtures-and-low-t.md) — Decision request before the Potts sample_dist pilot runs: spec names no pssm or tied fixture, and the T=0.1 near-margin control looks unworkable (as with ProteinMPNN 260929)
 - [261003_laser-score-tier3-f32-design](decisions/261003_laser-score-tier3-f32-design.md) — Decision request: aminx and upstream make the same f32 error vs f64, so no pairwise f32 band can separate noise from a 1% defect; three options for the user
 - [260929_pottsmpnn-lasermpnn-family-drivers](decisions/260929_pottsmpnn-lasermpnn-family-drivers.md) — PottsMPNN and LASErMPNN are xtrax-composed FamilyDrivers; 260605 governs only aminx.potts
 - [260713_no-real-multistate-sampling-path-exists](decisions/260713_no-real-multistate-sampling-path-exists.md) — **MVP implemented 2026-07-13**: no campaign-reachable path ever built a genuine `num_states>1` bundle for AR sampling — every necklace "PoE" row was 4 independent unfused single-state decodes. Related silent-corruption bug fixed in PR #100 (merged). New `aminx.sampling.multistate_poe` module (branch `feat-poe-stacked-bundle-sampling`) ships genuine cross-state fusion, confirmed end-to-end against real reference PDBs; the general xtrax-composable dispatch-axis version remains real tech debt — see debt #589.
