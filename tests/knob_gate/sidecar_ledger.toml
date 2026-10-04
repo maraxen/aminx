@@ -115,19 +115,18 @@ bth_run_id = "87098798-18ee-4e55-8be7-0a8ace926309"
 bth_run_id = "30ca082e-f118-45d6-8a57-e98612da3b8b"
 
 [sidecar.laser_decode_e2e]
-# REWRITTEN 261003 at eb4ee606, the first row of the post-freeze wave.
-# clean pass at sequence_agreement 1.0, chi_bin_agreement 1.0,
-# max_circular_delta 5.684341886080802e-14 -- identical to the 21321ce4 run, so
-# the two driver.py commits that invalidated the old rows changed no number
-# here. All five controls failed (reversed_order, chi_bin_plus_one,
-# offset_zero, chi2_equals_chi1, lambda_on_logits), the last at
-# sequence_agreement 0.948 / chi_bin_agreement 0.812.
-# verify_wave.py --run laser_decode_e2e=8647668d-... returns "would grade" with
-# all 14 conditions PASS, including "no scoped path since" -- which is the one
-# that killed every row of the previous wave.
-# Supersedes 69901085 (ran at 21321ce4, invalidated by the scoped driver
-# commits) and 9c8c5dce (absolute weights path, trap 3).
-bth_run_id = "8647668d-0f77-449b-adcb-1e9d5ae5a740"
+# REWRITTEN 261003 at 719c33e0 (wave group 1 of the re-wave after the #2445 /
+# #2424 / tied_beta / l_pad / partition-noise / order-oracle scoped batch).
+# Run 5b2c16ee, read from the cool-tier parquet: status completed, outcome pass,
+# git_dirty False, adversarial check fired, 3.14 h. Recorded result: clean pass
+# at sequence_agreement 1.0, chi_bin_agreement 1.0, max_circular_delta
+# 5.684341886080802e-14 -- BIT-IDENTICAL to the superseded 8647668d run at
+# eb4ee606, so no commit in the scoped batch moved a number on this vehicle.
+# All five controls failed (reversed_order, chi_bin_plus_one, offset_zero,
+# chi2_equals_chi1, lambda_on_logits). verify_wave.py --run
+# laser_decode_e2e=5b2c16ee-... returns "would grade", all 14 conditions PASS.
+# Supersedes 8647668d (eb4ee606, invalidated by the scoped batch).
+bth_run_id = "5b2c16ee-a65d-4735-a4e1-27f945e91e5f"
 
 [sidecar.potts_ar_decode]
 # REWRITTEN 261003 at 9a0cd350, group 2 of the post-freeze wave.
