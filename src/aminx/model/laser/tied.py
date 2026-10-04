@@ -284,6 +284,7 @@ def _scan_tied(  # noqa: PLR0915
   budget_mask: Bool[Array, " l"],
   seq_uniforms: Float[Array, " l"],
   chi_uniforms: Float[Array, "l 4 2"],
+  bias: Float[Array, "l 21"],
   *,
   sequence_temperature: float,
   chi_temperature: float | None,
@@ -377,6 +378,11 @@ def _scan_tied(  # noqa: PLR0915
     )
     raw1 = apply_linear(decoder.sequence_output_layer, ns1[_N_DECODER, residue])
     raw2 = apply_linear(decoder.sequence_output_layer, ns2[_N_DECODER, residue])
+    # Same row on both structures, before the tempered mix. Disabled and
+    # budget floors run after, so those positions stay masked.
+    step_bias = bias[residue]
+    raw1 = raw1 + step_bias
+    raw2 = raw2 + step_bias
     sampling = ~chain_mask[residue]
     floor = jnp.finfo(raw1.dtype).min
     raw1 = jnp.where(sampling & disabled, floor, raw1)
@@ -511,8 +517,13 @@ def tied_decode(
   ala_budget: int = 4,
   gly_budget: int = 0,
   budget_mask: np.ndarray | None = None,
+  bias: np.ndarray | None = None,
 ) -> TiedDecodeResult:
-  """Encode both structures and scan one shared order."""
+  """Encode both structures and scan one shared order.
+
+  ``bias`` is an ``(L, 21)`` row added to each structure's sequence logits
+  before its tempered softmax and before the λ mix. ``None`` is zeros.
+  """
   _refuse_tied_knobs(
     seq_min_p=seq_min_p,
     chi_min_p=chi_min_p,
@@ -553,6 +564,14 @@ def tied_decode(
     structure,
   )
   n_res = int(np.asarray(decoding_order).shape[0])
+  scalar_dtype = packed1[0].dtype
+  if bias is None:
+    logit_bias = np.zeros((n_res, 21), dtype=scalar_dtype)
+  else:
+    logit_bias = np.asarray(bias, dtype=scalar_dtype)
+    if logit_bias.shape != (n_res, 21):
+      msg = f"bias shape {logit_bias.shape} != ({n_res}, 21)"
+      raise ValueError(msg)
   seq_u = np.asarray(sequence_uniforms, dtype=np.float64).reshape(-1)
   if seq_u.shape[0] < n_res:
     seq_u = np.pad(seq_u, (0, n_res - seq_u.shape[0]))
@@ -571,6 +590,7 @@ def tied_decode(
     jnp.asarray(np.zeros((n_res,), dtype=bool) if budget_mask is None else budget_mask),
     jnp.asarray(seq_u[:n_res]),
     jnp.asarray(chi_u),
+    jnp.asarray(logit_bias),
     sequence_temperature=_tied_temperature(sequence_temperature),
     chi_temperature=chi_temperature,
     lambda_=lambda_,

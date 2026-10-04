@@ -1,0 +1,30 @@
+# laser_rotamers: sidechain coordinates from build_rotamers.
+# The npz files stay outside this tree. reference/laser_rotamers/algo.py
+# checks each file against oracle_manifest.toml, same as laser_order.
+#
+# The spec table gives an absolute angstrom bound only. rtol stays 0.
+# These atols are NOT measured.
+[port]
+wave_id = "laser_rotamers"
+oracle_id = "ref:tests/port/reference/laser_rotamers:v1"
+symbol_qualname = "aminx.families.laser_mpnn.featurize.build_rotamers"
+reference_subtree = "reference/laser_rotamers"
+
+[capabilities]
+stochastic = false
+dynamic_shape = true
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=0,atol=1e-9"
+tolerance_policy_f32 = "rtol=0,atol=1e-4"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true
+
+[tolerance_basis]
+f64_atol_basis = "spec table section 7.2 laser_rotamers atol 1e-9 Å; NOT measured"
+f32_atol_basis = "spec table section 7.2 laser_rotamers atol 1e-4 Å; NOT measured"

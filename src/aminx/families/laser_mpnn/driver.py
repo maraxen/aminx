@@ -1,4 +1,4 @@
-"""LASErMPNN family driver for scoring and proofreading.
+"""LASErMPNN family driver for scoring, proofreading, and sampling.
 
 Registration runs when this module is imported. Scoring reuses
 ``score_structure``; the alphabet permutation lives here, at the driver
@@ -26,7 +26,13 @@ from aminx.families.laser_mpnn.featurize import (
   LaserInputError,
   featurize,
 )
-from aminx.host.family_driver import ALPHABET, FAMILY_DRIVERS, FamilyBatch, SinkArraySpec
+from aminx.host.family_driver import (
+  ALPHABET,
+  FAMILY_DRIVERS,
+  FamilyBatch,
+  FamilyStages,
+  SinkArraySpec,
+)
 from aminx.host.prep import _resolve_local_checkpoint_from_registry
 from aminx.model.laser.decoder import LaserDecoder, score_structure
 from aminx.model.laser.encoders import LaserEncoder
@@ -43,6 +49,7 @@ from aminx.run.options import LaserOptions
 
 _HANDLED = frozenset(
   {
+    "sample",
     "score:nll",
     "score:logits",
     "score:proofread_unconditional",
@@ -165,6 +172,7 @@ class LASErMPNN(eqx.Module):
   lig_pr_knn_graph_k: Int[Array, ""]
   lig_lig_knn_graph_k: Int[Array, ""]
   lig_pr_distance_cutoff: Float[Array, ""]
+  build_hydrogens: bool = eqx.field(static=True)
 
   def __init__(
     self,
@@ -176,6 +184,7 @@ class LASErMPNN(eqx.Module):
     lig_pr_knn_graph_k: int = _GRAPH_K,
     lig_lig_knn_graph_k: int = _LIG_LIG_K,
     lig_pr_distance_cutoff: float = _LIG_CUTOFF,
+    build_hydrogens: bool = False,
   ) -> None:
     keys = jax.random.split(key, 2)
     self.encoder = LaserEncoder(key=keys[0])
@@ -195,6 +204,7 @@ class LASErMPNN(eqx.Module):
     self.lig_lig_knn_graph_k = jnp.asarray(lig_lig_knn_graph_k, dtype=jnp.int32)
     cutoff_dtype = jnp.float64 if _x64_enabled() else jnp.float32
     self.lig_pr_distance_cutoff = jnp.asarray(lig_pr_distance_cutoff, dtype=cutoff_dtype)
+    self.build_hydrogens = bool(build_hydrogens)
 
 
 class _Prepared(NamedTuple):
@@ -729,6 +739,7 @@ def _load_torch(path: Path, *, strict: bool = False) -> LASErMPNN:
     lig_pr_knn_graph_k=graph.lig_pr_knn_graph_k,
     lig_lig_knn_graph_k=graph.lig_lig_knn_graph_k,
     lig_pr_distance_cutoff=graph.lig_pr_distance_cutoff,
+    build_hydrogens=_checkpoint_build_hydrogens(blob),
   )
   if strict:
     _assert_strict_keys(model.encoder, state, _ENCODER_PREFIXES, dtype)
@@ -739,6 +750,41 @@ def _load_torch(path: Path, *, strict: bool = False) -> LASErMPNN:
   return eqx.tree_at(lambda module: module.decoder, model, decoder)
 
 
+def _checkpoint_build_hydrogens(blob: dict[str, Any]) -> bool:
+  """``model_params['build_hydrogens']``. Absent means heavy atoms only."""
+  params = blob.get("params")
+  if not isinstance(params, dict):
+    return False
+  model_params = params.get("model_params")
+  if not isinstance(model_params, dict):
+    return False
+  return bool(model_params.get("build_hydrogens", False))
+
+
+def load_joint_decode(spec: Any) -> LaserJointDecode:  # noqa: ANN401
+  """χ-offset heads from a torch checkpoint, or a seed-initialized module."""
+  local = getattr(spec, "model_local_path", None)
+  if local is not None and Path(str(local)).suffix.lower() == ".pt":
+    blob = _torch_blob(Path(str(local)))
+    state = blob["model_state_dict"]
+    if not isinstance(state, dict):
+      msg = "model_state_dict is not a dict"
+      raise TypeError(msg)
+    loaded = _assign_state(
+      LaserJointDecode(key=jax.random.PRNGKey(0)),
+      state,
+      ("chi_offset_prediction_layers.",),
+      _working_dtype(),
+    )
+    return cast("LaserJointDecode", loaded)
+  return LaserJointDecode(key=jax.random.PRNGKey(int(spec.random_seed)))
+
+
+def _is_sample(spec: Any) -> bool:  # noqa: ANN401
+  """Sampling specs have no ``output_kind``. Scoring specs always do."""
+  return not hasattr(spec, "output_kind")
+
+
 def _load_eqx(path: Path) -> LASErMPNN:
   skeleton = LASErMPNN(key=jax.random.PRNGKey(0))
   loaded = eqx.tree_deserialise_leaves(path, skeleton)
@@ -746,14 +792,14 @@ def _load_eqx(path: Path) -> LASErMPNN:
 
 
 class LaserDriver:
-  """Score LASErMPNN through the family-driver seam."""
+  """Score and sample LASErMPNN through the family-driver seam."""
 
   name = "lasermpnn"
   options_type = LaserOptions
   mpnn_fallback_purposes: frozenset[str] = frozenset()
 
   def handles(self, spec: Any, purpose: str) -> bool:  # noqa: ANN401
-    """True for scoring and both proofread purposes."""
+    """True for ``sample``, scoring, and both proofread purposes."""
     del spec
     return purpose in _HANDLED
 
@@ -785,6 +831,11 @@ class LaserDriver:
 
   def batches(self, spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
     """One structure per batch, featurized by the B0 host port."""
+    if _is_sample(spec):
+      from aminx.families.laser_mpnn.sample_host import sample_batches  # noqa: PLC0415
+
+      yield from sample_batches(spec)
+      return
     options = _options(spec)
     pending: list[tuple[int, str]] = []
     for index, item in enumerate(_inputs(spec)):
@@ -813,7 +864,11 @@ class LaserDriver:
       )
 
   def axes(self, spec: Any, purpose: str, batch: FamilyBatch) -> list[AxisSpec]:  # noqa: ANN401
-    """One structure axis. Candidates stay inside the stage."""
+    """Structure axis, or samples and temperatures for ``sample``."""
+    if purpose == "sample":
+      from aminx.families.laser_mpnn.sample_host import sample_axes  # noqa: PLC0415
+
+      return sample_axes(spec, batch)
     del spec, purpose
     return [
       AxisSpec(
@@ -824,12 +879,20 @@ class LaserDriver:
       ),
     ]
 
-  def stages(self, spec: Any, purpose: str, model: eqx.Module) -> _ScoreStages:  # noqa: ANN401
-    """Per-batch teacher-forced score, or a proofread reduction."""
+  def stages(self, spec: Any, purpose: str, model: eqx.Module) -> FamilyStages:  # noqa: ANN401
+    """Per-batch sample, teacher-forced score, or a proofread reduction."""
+    if purpose == "sample":
+      from aminx.families.laser_mpnn.sample_host import SampleStages  # noqa: PLC0415
+
+      return SampleStages(model, spec)
     return _ScoreStages(cast("LASErMPNN", model), purpose, _options(spec), int(spec.random_seed))
 
   def result_schema(self, spec: Any, purpose: str) -> Mapping[str, SinkArraySpec]:  # noqa: ANN401
     """Per-position arrays. ``L_total`` is sliced by the family runner."""
+    if purpose == "sample":
+      from aminx.families.laser_mpnn.sample_host import sample_schema  # noqa: PLC0415
+
+      return sample_schema(spec)
     options = _options(spec)
     fasta = {
       "fasta": SinkArraySpec(dims=("N_cand", "L_total"), dtype="int32", attrs={}),

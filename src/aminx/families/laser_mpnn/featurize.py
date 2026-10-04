@@ -107,6 +107,145 @@ _CHI_ATOMS: dict[str, dict[int, tuple[str, ...]]] = {
   "W": {1: ("N", "CA", "CB", "CG"), 2: ("CA", "CB", "CG", "CD1")},
   "Y": {1: ("N", "CA", "CB", "CG"), 2: ("CA", "CB", "CG", "CD1"), 3: ("CE1", "CZ", "OH", "HH")},
 }
+# Non-rotatable hydrogens appended after ``_ATOM_ORDER``, same lists upstream
+# builds ``hydrogen_extended_dataset_atom_order`` from. ``X`` copies alanine.
+_NONROTATABLE_H: dict[str, tuple[str, ...]] = {
+  "G": ("HA2", "HA3"),
+  "A": ("HA", "HB1", "HB2", "HB3"),
+  "S": ("HA", "HB2", "HB3"),
+  "C": ("HA", "HB2", "HB3"),
+  "T": ("HA", "HB", "HG21", "HG22", "HG23"),
+  "P": ("HA", "HB2", "HB3", "HG2", "HG3", "HD2", "HD3"),
+  "V": ("HA", "HB", "HG11", "HG12", "HG13", "HG21", "HG22", "HG23"),
+  "M": ("HA", "HB2", "HB3", "HG2", "HG3", "HE1", "HE2", "HE3"),
+  "N": ("HA", "HB2", "HB3", "HD21", "HD22"),
+  "I": ("HA", "HB", "HG21", "HG22", "HG23", "HD11", "HD12", "HD13", "HG12", "HG13"),
+  "L": ("HA", "HB2", "HB3", "HG", "HD11", "HD12", "HD13", "HD21", "HD22", "HD23"),
+  "D": ("HA", "HB2", "HB3"),
+  "E": ("HA", "HB2", "HB3", "HG2", "HG3"),
+  "K": ("HA", "HB2", "HB3", "HG2", "HG3", "HD2", "HD3", "HE2", "HE3", "HZ1", "HZ2", "HZ3"),
+  "Q": ("HA", "HB2", "HB3", "HG2", "HG3", "HE21", "HE22"),
+  "H": ("HA", "HB2", "HB3", "HE1", "HD2"),
+  "F": ("HA", "HB2", "HB3", "HD1", "HD2", "HE1", "HE2", "HZ"),
+  "R": ("HA", "HB2", "HB3", "HG2", "HG3", "HD2", "HD3", "HE", "HH21", "HH22", "HH12", "HH11"),
+  "Y": ("HA", "HB2", "HB3", "HD1", "HD2", "HE1", "HE2"),
+  "W": ("HA", "HB2", "HB3", "HD1", "HE1", "HE3", "HZ2", "HZ3", "HH2"),
+  "X": ("HA", "HB1", "HB2", "HB3"),
+}
+# Heavy-atom triads used to place those hydrogens. Insertion order is the
+# upstream triad order. Backbone amide hydrogens are not in this map.
+_HYDROGEN_ALIGNMENT: dict[str, dict[tuple[str, str, str], tuple[str, ...]]] = {
+  "G": {("N", "CA", "C"): ("HA2", "HA3")},
+  "A": {("N", "CA", "CB"): ("HA", "HB1", "HB2", "HB3")},
+  "S": {("N", "CA", "CB"): ("HA",), ("CA", "CB", "OG"): ("HB2", "HB3")},
+  "C": {("N", "CA", "CB"): ("HA",), ("CA", "CB", "SG"): ("HB2", "HB3")},
+  "T": {("N", "CA", "CB"): ("HA",), ("CA", "CB", "CG2"): ("HB", "HG21", "HG22", "HG23")},
+  "P": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CB", "CG", "CD"): ("HG2", "HG3"),
+    ("CG", "CD", "N"): ("HD2", "HD3"),
+  },
+  "V": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CG2", "CB", "CG1"): ("HB", "HG11", "HG12", "HG13", "HG21", "HG22", "HG23"),
+  },
+  "M": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CB", "CG", "SD"): ("HG2", "HG3"),
+    ("CG", "SD", "CE"): ("HE1", "HE2", "HE3"),
+  },
+  "N": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("OD1", "CG", "ND2"): ("HD21", "HD22"),
+  },
+  "I": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CG1", "CB", "CG2"): ("HB", "HG21", "HG22", "HG23"),
+    ("CB", "CG1", "CD1"): ("HG12", "HG13", "HD11", "HD12", "HD13"),
+  },
+  "L": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CD1", "CG", "CD2"): ("HG", "HD11", "HD12", "HD13", "HD21", "HD22", "HD23"),
+  },
+  "D": {("N", "CA", "CB"): ("HA",), ("CA", "CB", "CG"): ("HB2", "HB3")},
+  "E": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CB", "CG", "CD"): ("HG2", "HG3"),
+  },
+  "K": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CB", "CG", "CD"): ("HG2", "HG3"),
+    ("CG", "CD", "CE"): ("HD2", "HD3"),
+    ("CD", "CE", "NZ"): ("HE2", "HE3", "HZ1", "HZ2", "HZ3"),
+  },
+  "Q": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CB", "CG", "CD"): ("HG2", "HG3"),
+    ("OE1", "CD", "NE2"): ("HE21", "HE22"),
+  },
+  "H": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CE1", "NE2", "CD2"): ("HE1", "HD2"),
+  },
+  "F": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CE1", "CZ", "CE2"): ("HD1", "HD2", "HE1", "HE2", "HZ"),
+  },
+  "R": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CB", "CG", "CD"): ("HG2", "HG3"),
+    ("CG", "CD", "NE"): ("HD2", "HD3"),
+    ("NE", "CZ", "NH2"): ("HE", "HH21", "HH22", "HH12", "HH11"),
+  },
+  "Y": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CE1", "CZ", "CE2"): ("HE1", "HE2", "HD1", "HD2"),
+  },
+  "W": {
+    ("N", "CA", "CB"): ("HA",),
+    ("CA", "CB", "CG"): ("HB2", "HB3"),
+    ("CD1", "CG", "CD2"): ("HD1", "HE1", "HE3", "HZ2", "HZ3", "HH2"),
+  },
+}
+
+
+def _hydrogen_extended(letter: str) -> tuple[str, ...]:
+  return _ATOM_ORDER[letter] + _NONROTATABLE_H[letter]
+
+
+def _build_hydrogen_tables() -> tuple[NDArray[np.int64], NDArray[np.int64]]:
+  """Triad and hydrogen indices, including the glycine row reused for ``X``."""
+  n_triads = max(len(triads) for triads in _HYDROGEN_ALIGNMENT.values())
+  n_h = max(len(names) for triads in _HYDROGEN_ALIGNMENT.values() for names in triads.values())
+  sentinel = max(len(_hydrogen_extended(letter)) for letter in _NONROTATABLE_H)
+  triad = np.full((20, n_triads, 3), sentinel, dtype=np.int64)
+  align = np.full((20, n_triads, n_h), sentinel, dtype=np.int64)
+  for aa_idx, letter in enumerate(LASER_ALPHABET[:20]):
+    order = _hydrogen_extended(letter)
+    for triad_idx, (atoms, hydros) in enumerate(_HYDROGEN_ALIGNMENT[letter].items()):
+      triad[aa_idx, triad_idx] = np.asarray([order.index(name) for name in atoms], dtype=np.int64)
+      align[aa_idx, triad_idx, : len(hydros)] = np.asarray(
+        [order.index(name) for name in hydros],
+        dtype=np.int64,
+      )
+  triad = np.concatenate([triad, triad[_G : _G + 1]], axis=0)
+  align = np.concatenate([align, align[_G : _G + 1]], axis=0)
+  return triad, align
+
+
+_H_TRIAD, _H_ALIGN = _build_hydrogen_tables()
+MAX_PROTONATED_ATOMS = max(len(_hydrogen_extended(letter)) for letter in _NONROTATABLE_H)
 _SYMBOLS = [
   "H",
   "He",
@@ -419,6 +558,8 @@ def _tables_cached(dtype_key: str) -> dict[str, NDArray[np.generic]]:
     "leftover": np.asarray(_cat_row(leftover), dtype=np.int64),
     "needs": np.asarray(needs_x, dtype=bool),
     "ideal_prot": _as_float(raw["ideal_prot"], dtype),
+    # One NaN slot past the longest protonated residue, then the glycine row for X.
+    "ideal_prot_h": _cat_row(_pad_atoms(_as_float(raw["ideal_prot"], dtype), dtype)),
   }
 
 
@@ -612,13 +753,59 @@ def _place_tyr(
   return out
 
 
+def _add_nonrotatable_hydrogens(
+  heavy: NDArray[np.floating],
+  sequence: NDArray[np.integer],
+) -> NDArray[np.floating]:
+  """Place non-rotatable hydrogens on a heavy-atom rotamer build.
+
+  Pads the atom axis to ``MAX_PROTONATED_ATOMS + 1`` with NaN, then Kabsch-aligns
+  each ideal protonated triad onto the built heavy atoms. Alignment runs in
+  float64. Backbone amide hydrogens are left absent.
+  """
+  width = MAX_PROTONATED_ATOMS + 1
+  if heavy.shape[0] == 0:
+    return np.empty((0, width, 3), dtype=heavy.dtype)
+  output = np.full((heavy.shape[0], width, 3), np.nan, dtype=heavy.dtype)
+  output[:, : heavy.shape[1]] = heavy
+  output_f64 = np.asarray(output, dtype=np.float64)
+  ideal = np.asarray(_tables(np.float64)["ideal_prot_h"][sequence], dtype=np.float64)
+  triads = _H_TRIAD[sequence]
+  hydrogens = _H_ALIGN[sequence]
+  for idx in range(triads.shape[1]):
+    curr_h = hydrogens[:, idx]
+    resindex, _hydr_slot = np.nonzero(curr_h != MAX_PROTONATED_ATOMS)
+    if resindex.size == 0:
+      continue
+    hydr_idx = curr_h[resindex, _hydr_slot]
+    fixed = _gather(output_f64, triads[:, idx], np.float64)[resindex]
+    mobile = _gather(ideal, triads[:, idx], np.float64)[resindex]
+    count = resindex.shape[0]
+    ideal_h = ideal[resindex][np.arange(count)[:, None], hydr_idx[:, None]]
+    rotation, mobile_com, fixed_com = _kabsch(fixed, mobile, np.float64)
+    aligned = _apply(ideal_h, rotation, mobile_com, fixed_com, np.float64)[:, 0]
+    if aligned.size and not np.any(~np.isnan(aligned)):
+      msg = "Failed to align non-rotatable hydrogens..."
+      raise ValueError(msg)
+    output[resindex, hydr_idx] = aligned
+    output_f64[resindex, hydr_idx] = aligned
+  return output
+
+
 def build_rotamers(
   backbone: NDArray[np.floating],
   chi: NDArray[np.floating],
   sequence: NDArray[np.integer],
   dtype: _FloatDtype = np.float32,
+  *,
+  add_nonrotatable_hydrogens: bool = False,
 ) -> NDArray[np.floating]:
-  """Full-atom coordinates in dataset atom order, NaN-padded to ``MAX_ATOMS``."""
+  """Full-atom coordinates in dataset atom order.
+
+  The default keeps the heavy-atom axis (``MAX_ATOMS``).
+  ``add_nonrotatable_hydrogens=True`` returns the protonated axis
+  (``MAX_PROTONATED_ATOMS + 1``) with NaN padding and no backbone amide H.
+  """
   tables = _tables(dtype)
   ideal, unadjusted = _generate_ideal(sequence, chi, dtype)
   needs = tables["needs"][sequence]
@@ -661,7 +848,10 @@ def build_rotamers(
   )[:, 0]
   ideal[rows, cols] = moved
   ideal[:, :4] = _as_float(backbone, dtype)[:, [0, 1, 3, 4]]
-  return ideal[:, :MAX_ATOMS]
+  heavy = ideal[:, :MAX_ATOMS]
+  if not add_nonrotatable_hydrogens:
+    return heavy
+  return _add_nonrotatable_hydrogens(heavy, sequence)
 
 
 def _lig_prot_edges(
