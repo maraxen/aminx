@@ -92,12 +92,12 @@ def test_registration_and_handles(registered: LaserDriver, tmp_path: Path) -> No
   assert driver.options_type is LaserOptions
   assert driver.mpnn_fallback_purposes == frozenset()
   assert laser_mpnn.LaserDriver is LaserDriver
+  assert driver.handles(None, "sample")
   assert driver.handles(None, "score:nll")
   assert driver.handles(None, "score:logits")
   assert driver.handles(None, "score:proofread_unconditional")
   assert driver.handles(None, "score:proofread_conditional")
   for purpose in (
-    "sample",
     "score:energy",
     "score:ddg",
     "jacobian",

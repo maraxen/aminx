@@ -24,6 +24,13 @@
 #           failure, repeated eight times)
 #   added   tied_beta (PottsMPNNOptions; the name belongs to a per-position array
 #           from featurize._tied_groups, read off features/padded/ready)
+#   removed ala_budget, budget_residue_selection, chi_min_p, chi_temp,
+#           constrain_ala_gly_to_exposed_non_ss, disable_charged_fs,
+#           disabled_residues, fs_sequence_temp, gly_budget,
+#           ignore_chain_mask_zeros, seq_min_p, tied_interpolation_lambda,
+#           tied_second_input (261004: the LaserDriver `sample` purpose now reads
+#           all thirteen and passes them to decode_order / tied_decode; each
+#           already had a test_knob_semantics_ alias row, none was inert-kind)
 #   removed tied_beta (261003: the FIELD was deleted, not plumbed -- upstream
 #           derives tied_beta from tied_positions weights and never takes it as
 #           config; PottsMPNNOptions was never released, so nothing breaks)
@@ -49,44 +56,6 @@
 #   emit_etab      -- read outside options.py, so not inert.
 
 [[entries]]
-field = "budget_residue_selection"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "upstream --budget_residue_sele_string; test_knob_semantics_budget_residue_selection passes but drives the mask parameter, not this field"
-
-[[entries]]
-field = "chi_temp"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "model/laser/{tied,joint_decode,proofread}.py implement this correctly as `chi_temperature`; the rename is where the plumbing stops, so the fix is wiring and not new semantics. A substring grep cannot see this -- it credits chi_temperature to chi_temp."
-
-[[entries]]
-field = "constrain_ala_gly_to_exposed_non_ss"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "upstream --constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
-
-[[entries]]
-field = "tied_interpolation_lambda"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "model/laser/tied.py takes an interpolation weight but not from here; spec 6.5 default 0.0 means structure 2 only"
-
-[[entries]]
-field = "tied_second_input"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "selects the second tied structure; nothing reads it, so the tied path cannot be driven through Options"
-
-# PAID OFF 261003, removed rather than relaxed: bias_by_res_json and pssm_json.
-# The Potts driver now passes bias_by_res_dict and pssm_dict to
-# tied_featurize_port (debt 2443 -- all three call sites had passed only batch
-# and chain_dict positionally, leaving five optional dicts permanently None).
-# Both fields have real knob tests, and test_allowlist_has_no_fixed_entries is
-# what demanded these rows go: it named them within minutes of the fix landing.
-# 17 rows -> 15.
-
-[[entries]]
 field = "emit_dense_hJ"
 options_class = "PottsMPNNOptions"
 reason = "not_plumbed"
@@ -94,51 +63,3 @@ note = "aminx-defined; spec line 638 says it converts host-side only. No live al
 
 # --- added 261002, all eight the same failure: model/laser/ implements the knob
 # --- as a parameter of the same name, and nothing passes the Options field to it.
-
-[[entries]]
-field = "fs_sequence_temp"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "model/laser/tied.py takes fs_sequence_temp as a parameter (:86, :508) and flags it (:96-97), but no caller passes options.fs_sequence_temp; outside model/laser/ the name appears only in its own dataclass"
-
-[[entries]]
-field = "seq_min_p"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "upstream sequence min-p nucleus cutoff; implemented in model/laser/ under the same parameter name, unreachable from Options"
-
-[[entries]]
-field = "chi_min_p"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "upstream chi min-p nucleus cutoff; the chi-angle sibling of seq_min_p and inert for the same reason"
-
-[[entries]]
-field = "disabled_residues"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "default ('X','C'); a non-default value changes nothing, which is the dangerous shape -- the default looks deliberate"
-
-[[entries]]
-field = "disable_charged_fs"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "upstream --disable_charged_residues_in_fs; model/laser/ has the parameter, Options does not reach it"
-
-[[entries]]
-field = "ala_budget"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "model/laser/tied.py:293,386,511,579 implements the budget correctly as a parameter; options.ala_budget is read nowhere, so the default 4 is always used"
-
-[[entries]]
-field = "gly_budget"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "the glycine sibling of ala_budget, inert in the same way"
-
-[[entries]]
-field = "ignore_chain_mask_zeros"
-options_class = "LaserOptions"
-reason = "not_plumbed"
-note = "upstream --ignore_chain_mask_zeros; outside its dataclass the name appears nowhere in src/aminx"
