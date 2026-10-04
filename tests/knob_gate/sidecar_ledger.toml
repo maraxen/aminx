@@ -129,66 +129,48 @@ bth_run_id = "30ca082e-f118-45d6-8a57-e98612da3b8b"
 bth_run_id = "5b2c16ee-a65d-4735-a4e1-27f945e91e5f"
 
 [sidecar.potts_ar_decode]
-# REWRITTEN 261003 at 9a0cd350, group 2 of the post-freeze wave.
-# clean pass at exact token match 1.0; ar_mask_present_chain_m_pos failed at
-# 0.8668714797747056. weights key
-# PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt
-# Both numbers are BIT-FOR-BIT IDENTICAL to the superseded 7c3dd246 run, which
-# is the same thing laser_decode_e2e showed: the two scoped driver.py commits
-# that invalidated the old rows changed no number here. The invalidation was
-# bookkeeping, not drift -- but it still had to be re-run, because "the number
-# did not move" is a conclusion you can only reach AFTER re-measuring, and the
-# step 1c condition is about the commit the run was pinned to, not about
-# whether we expect the code to matter.
-# verify_wave.py --run potts_ar_decode=28f8d7a2-... returns "would grade" with
-# all 14 conditions PASS.
-# Supersedes 6a245342 (7c3dd246, failed "no scoped path since") and 1859bdcc
-# (6cb81d49, invalidated the same way).
-bth_run_id = "28f8d7a2-6fec-446a-a3e6-65a20ff8a9f1"
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
+# the cool-tier parquet: completed, outcome pass, git_dirty False,
+# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
+# Run 7dfb9a68. clean pass at exact token match 1.0 over 18 units, BIT-
+# IDENTICAL to the superseded 28f8d7a2; ar_mask_present_chain_m_pos failed
+# (this run's recorded result carries the status, not the control's value).
+# None of tied_beta's deletion, l_pad, partition noise or the order oracles
+# moved the AR decode.
+bth_run_id = "7dfb9a68-aecf-4d48-8bc3-17a007b91893"
 
 [sidecar.potts_energy_parity]
-# REWRITTEN 261003 at 9a0cd350, group 2 of the post-freeze wave.
-# clean pass at max_abs_delta 0.000732421875 with analytic_abs_err exactly 0.0;
-# permute_etab_out_rows failed at 1218.31494140625 -- a 1.7-million-fold
-# separation, which is what a reduction-order mutant should look like on an
-# energy sum and is the reason this control is worth keeping cheap.
-# analytic_abs_err 0.0 is EXACT, not merely in-band: the closed-form energy and
-# the assembled etab agree bitwise, so the 7.3e-4 is the Potts etab against
-# upstream's and nothing else.
-# All three values are bit-for-bit identical to the superseded 7c3dd246 run.
-# verify_wave.py --run potts_energy_parity=bf6244f3-... returns "would grade"
-# with all 14 conditions PASS.
-# Supersedes 3f8e4f99 (7c3dd246) and 1117a297, both invalidated by the scoped
-# driver commits.
-bth_run_id = "bf6244f3-49e3-4b5d-b9c6-5fd3dab1cef2"
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
+# the cool-tier parquet: completed, outcome pass, git_dirty False,
+# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
+# Run 06f329d4. clean pass at max_abs_delta 0.000732421875 with
+# analytic_abs_err exactly 0.0 over 21 units -- BIT-IDENTICAL to the
+# superseded bf6244f3. analytic_abs_err 0.0 is exact, not merely in-band: the
+# closed-form energy and the assembled etab agree bitwise, so the 7.3e-4 is the
+# Potts etab against upstream's and nothing else. permute_etab_out_rows failed
+# (1218.3 in the previous run; this run records the status only).
+bth_run_id = "06f329d4-b12d-4fad-945e-fb61f5b703db"
 
 [sidecar.laser_score_parity]
-# REWRITTEN 261003 at 9a0cd350, group 2 of the post-freeze wave.
-# clean pass at max_abs_delta 2.3499874934884701e-07; permute_decoder_layer
-# failed at 0.548412062403438. Both bit-for-bit identical to the superseded
-# 7c3dd246 run.
-# NOTE THE CLEAN NUMBER IS 2.35e-07 AGAINST AN f32 BAND OF atol 1e-7 / rtol
-# 1e-4. It passes on the rtol term, not the atol one, which is exactly the
-# regime #2445 exists to measure: atol 1e-7 is below one f32 ulp for |ref| > 1,
-# so the band's absolute term is doing no work here and was never measured.
-# scripts/analysis/laser_f32_tolerance_floor.py is pre-registered to replace it
-# with a measured floor; until that runs this row grades on a tolerance whose
-# basis is an assumption. The run is sound -- the deviation is real and
-# in-band -- but do not cite 2.35e-07 as evidence the band is right-sized.
-# Superseded id: cd56063e (7c3dd246, failed "no scoped path since").
-# NOT the earlier f11f2bf1 run. That one passed too, which is exactly why it was
-# tempting: it is an ANCESTOR of 6cb81d49 ("key oracle weights by a stable
-# identifier, not an absolute path"), so its controls carry
-# /home/solab/repos/LASErMPNN/... and verify_wave.py measured it FAILING both
-# "weights key resolves" and "no scoped path since" on 261002. "It already
-# passed" is the mistake that comment existed to stop, and the fix was to re-run
-# the slug, not to relax the row.
-#
-# This slug also had no entry in launch_wave.sh's MUT map and appeared in no
-# group, so no invocation of the wave would ever have run it and the manifest
-# could not have been satisfied (fixed in ff4fe017, which added a check_coverage
-# assertion against the manifest itself).
-bth_run_id = "92992234-732e-4bb1-b53c-a5e81ff6e1f1"
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
+# the cool-tier parquet: completed, outcome pass, git_dirty False,
+# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
+# Run d29f813c. clean pass at max_abs_delta 2.3499874934884701e-07, BIT-
+# IDENTICAL to the superseded 92992234; permute_decoder_layer failed.
+# THE OLD CAVEAT IS NOW RESOLVED, NOT JUST REPEATED. The previous row said this
+# clean number passes on the rtol term against an unmeasured atol, pending the
+# floor measurement. Both measurements have since run: e47bfaab (floor, outcome
+# noise_reaches_defect_scale for the laser_score PORT tier) and 18b97f4f
+# (attribution: aminx's f32 error equals upstream's to 0.1%, ratios
+# 0.9987-1.0008). This vehicle's own band was never the problem -- it passes.
+# The open item is the port wave's tier-3 test design, which is the user's
+# decision: .praxia/docs/decisions/261003_laser-score-tier3-f32-design.md.
+# Older history of this row (the f11f2bf1 absolute weights path; the missing
+# launch_wave.sh entry fixed in ff4fe017) is in this file's commit history.
+bth_run_id = "d29f813c-fb26-41e2-a76e-4d63f31cf539"
 
 [sidecar.potts_ar_refine_exact]
 # REWRITTEN 261003 at 9a0cd350, the last arm of group 2 and the sixth of seven
