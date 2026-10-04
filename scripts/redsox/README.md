@@ -161,6 +161,41 @@ comparison of anything the gate does.
    the bathos `outcome` plus `{rc, step2_passed}`; exit status says only that
    the harness did not crash.
 
+## What the gate measured, 261004 (run `fb898d24` at `feade020`, GPUs 2,3)
+
+    {'n_ids': 728, 'n_mutant_runs': 0, 'rc': 1, 'step2_passed': True}
+
+Read from the cool-tier record: `status=completed`, `outcome=fail`,
+`git_dirty=False`, adversarial check fired; tree still clean afterwards.
+
+**Every wave exits 0 except `laser_score`, and its failures are exactly the 63
+`test_tier_3_f32` cases (one per checkpoint x fixture pair) and nothing else** --
+its other 189 tests pass, including the f64 tier. New since the 261003 gate:
+
+- `laser_decode_step` now exits 0: its f32 band was measured (#2445, run
+  `e47bfaab`) and applied to BOTH the target TOML and the test's own
+  `_RTOL`/`_ATOL` (`2a4442d1`; see "where the bands actually live" below).
+- `potts_order` (3 tests) and `laser_order` (1) -- the last three spec-named
+  oracle tests, new waves in `719c33e0` -- pass inside the gate.
+- All eight ledger rows were re-measured after the scoped batch and grade
+  together (`feade020`); every pre-existing slug came back bit-identical, and
+  the new `laser_proofread_unconditional_parity` (#2424) passed on its first
+  graded run.
+
+**The only thing between this gate and a PASS is a decision that is the user's**:
+how to grade `laser_score`'s tier-3 f32 test. aminx and upstream make the same
+f32 error against f64 (run `18b97f4f`), so no element-wise pairwise band can
+separate that noise from a 1% defect. Options and a recommendation:
+`.praxia/docs/decisions/261003_laser-score-tier3-f32-design.md`.
+
+**Overnight incident, recorded so a later reader does not misread a ledger
+id.** Titanix hit a global OOM at 20:18-20:29 on 261003 (wave group 1 plus
+another session's AF3 memory harness). It killed `laser_proofread_parity`'s
+clean arm, so run `f7887e2f` recorded `fail` with no cause; the re-run
+`182ab6d4` passes bit-identically. It also killed a vLLM worker (the
+`titanix-vllm-primary` server went down). Before a multi-arm wave, check
+`free -g` and other sessions' RSS, and do not stack wave groups.
+
 ## What the gate measured, 261003 (run `fdd64720` at `b880882e`, GPUs 2,3)
 
     {'n_ids': 723, 'n_mutant_runs': 0, 'rc': 1, 'step2_passed': True}
