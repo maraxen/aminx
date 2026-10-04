@@ -1067,7 +1067,7 @@ def assemble_result(
     "cells": cells,
     "cells_selected": list(cells_selected),
     "structures": structures,
-    "pilot_run_id": PILOT_RUN_ID,
+    "pilot_run_id": PILOT_RUN_ID if PILOT_RUN_ID is not None else "none (smoke)",
     "n_reused": n_reused,
     "n_computed": n_computed,
     "script_sha256": script_sha256,
