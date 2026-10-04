@@ -582,11 +582,17 @@ def _consume_arm(
   except subprocess.TimeoutExpired as exc:
     logger.error("arm %s timed out", arm)
     return {"band": "error", "detail": str(exc)}
+  # An arm that errors must say why in the run log. Until 261004 the detail was
+  # kept only in the returned dict, so graded run f7887e2f (its clean arm
+  # OOM-killed at 20:19 on 261003) recorded clean = "error" with no cause
+  # anywhere. Same fix the unconditional vehicle got in 37df972b.
   if launched.returncode != 0:
+    logger.error("arm %s exited %s:\n%s", arm, launched.returncode, launched.stderr[-4000:])
     return {"band": "error", "detail": launched.stderr[-500:]}
   try:
     loaded: dict[str, Any] = json.loads(payload_out.read_text(encoding="utf-8"))
   except (OSError, json.JSONDecodeError):
+    logger.error("arm %s wrote no readable payload:\n%s", arm, launched.stderr[-4000:])
     return {"band": "error", "detail": launched.stderr[-500:] or "empty payload"}
   return loaded
 
