@@ -85,6 +85,7 @@
 - [260605_caliby-nature-and-dataset](research/260605_caliby-nature-and-dataset.md) — Caliby nature and dataset investigation
 
 ## Decisions
+- [261005_tiling-plan-discarded-stage2-2371](decisions/261005_tiling-plan-discarded-stage2-2371.md) — Measured evidence that BatchPlanner says Vmap+Bucket for the sample axes while execution is a Python loop, plus the T2.GATE blocker on deleting aminx's duplicate strategy types
 - [261004_laser-pdb-output-scope](decisions/261004_laser-pdb-output-scope.md) — Decision request: upstream LASEr writes PDBs through backbone N-H imputation, titratable-H cleanup with a geometric H-bond detector, and probability B-factors -- none of which the spec names; choose minimal writer vs full parity port
 - [261004_sample-dist-pilot-fixtures-and-low-t](decisions/261004_sample-dist-pilot-fixtures-and-low-t.md) — Decision request before the Potts sample_dist pilot runs: spec names no pssm or tied fixture, and the T=0.1 near-margin control looks unworkable (as with ProteinMPNN 260929)
 - [261003_laser-score-tier3-f32-design](decisions/261003_laser-score-tier3-f32-design.md) — Decision request: aminx and upstream make the same f32 error vs f64, so no pairwise f32 band can separate noise from a 1% defect; three options for the user
