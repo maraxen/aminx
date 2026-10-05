@@ -43,6 +43,18 @@ both `bc3f1950` (*merge origin/main into the sprint lineage*, 10-05 08:48, bring
 `scripts/parity/`, 10-05 07:20) exist on `wt/260929-laser-confirm` and its remote, and nowhere
 else. The sprint branch has had no scoped commit since the measurement.
 
+**"Live" was checked against every tree-dependent 1c condition, not just the scoped one.**
+A scoped-path check alone would be a weak basis for this section, because several other
+conditions read files that are *not* scoped and could therefore break silently without
+tripping `_touches_scoped` — notably `tests/knob_gate/checkpoint_registry.json` (the
+weights-key condition), the manifests under `tests/port/manifests/` (argv mutants must equal
+the row ids) and each vehicle's `.bth.toml` (`sidecar_sha256` is compared to the file's
+*current* digest). `git diff --name-only feade020..origin/wt/260929-potts-laser-main --
+tests/knob_gate/ scripts/redsox/` returns exactly one path: `scripts/redsox/README.md`. The
+registry, the manifests and the sidecars are all untouched, and the run records themselves are
+historical facts that the ledger header says were checked against 1c before being written. So
+the rows are live on every condition, not merely on the one that is easy to check.
+
 **The consequence is a sequencing constraint, not a composition one.** The main merge is
 wanted — it is the user's standing directive to use xtrax natively, and it carries xtrax
 0.4.0a11 plus the ChunkedMap dispatch fix. The moment that merge (or this branch) reaches the
