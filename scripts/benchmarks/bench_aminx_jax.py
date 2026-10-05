@@ -491,7 +491,7 @@ def create_inference_plan(model: Any, task: str, spec: _BenchmarkSpec | None = N
     if task == "ar_sample":
         from aminx.host.plan import InferenceComponents, InferencePlan
         from aminx.inference.decode.factory import make_decode_fn
-        from aminx.inference.decode.mode import AutoregressiveMode
+        from aminx.inference.decode.mode import AutoregressiveConfig, AutoregressiveMode
         from aminx.inference.encode import make_encode_fn
         from aminx.inference.logits import make_stage_set
         from aminx.tiling.strategy import Vmap
@@ -502,7 +502,17 @@ def create_inference_plan(model: Any, task: str, spec: _BenchmarkSpec | None = N
             spec.state_weights,
         )
         encode_fn = make_encode_fn(model, use_rolling_state=spec.use_rolling_state)
-        decode_fn = make_decode_fn(model, mode=AutoregressiveMode(inference_only=True), strategy=Vmap())
+        # inference_only moved from AutoregressiveMode to AutoregressiveConfig; passing it
+        # to the mode raised TypeError. Dropping it instead of relocating it would have
+        # silently reverted the wave axis to lax.scan (the config default is False), which
+        # is not what a benchmark should measure -- AutoregressiveConfig's own docstring
+        # says to set it True for inference/benchmarking.
+        decode_fn = make_decode_fn(
+            model,
+            mode=AutoregressiveMode(),
+            strategy=Vmap(),
+            autoregressive_config=AutoregressiveConfig(inference_only=True),
+        )
         components = InferenceComponents(encode_fn=encode_fn, stage_set=stage_set)
         return InferencePlan(model=model, components=components, decode_fn=decode_fn)
     else:
