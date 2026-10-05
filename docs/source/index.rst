@@ -14,6 +14,7 @@ Welcome to Aminx's documentation! This project provides a functional interface f
   :caption: Contents:
 
   ../COMPOSITION_GUIDE
+  ../MODEL_FAMILIES
   api/index
   tutorials/index
   examples/index
