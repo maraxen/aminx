@@ -89,7 +89,43 @@ only its commit, which the wave re-measures anyway.
 
 | # | item | files | size | notes |
 | :-- | :-- | :-- | :-- | :-- |
-| A1 | **laser_score option 3** | `tests/port/test_laser_score.py`, `tests/port/targets/laser_score.toml` (+ `tests/lint/test_port_tolerances_match_targets.py`, unscoped) | small | **The only gate-clearing item.** Band already measured: 4e-4 of field scale, 100x margin, run `3af3be02`. Gated on the user picking option 3. |
+| A1 | **laser_score option 3** | `tests/port/test_laser_score.py`, `tests/port/targets/laser_score.toml` (+ `tests/lint/test_port_tolerances_match_targets.py`, unscoped) | small | **The only gate-clearing item.** Band measured: `proposed_tol` 4e-4 over a floor of 3.63e-5, **10x headroom** — see §2a. Gated on the user picking option 3. |
+
+### 2a. A1's band, verified by its own record rather than carried forward
+
+Run `3af3be02` reads `status=completed, outcome=pass, exit_code=0, git_dirty=False`, from
+`scripts/analysis/laser_score_scale_relative_floor.py` at `0e642d44`, 458 s, sidecar
+`c40240fe…`. Its claimed artifact resolves
+(`outputs/laser_score_scale_relative_floor/0e642d44/result.json`) and contains:
+
+```
+proposed_tol             = 0.0004        floor_scale_relative = 3.6297e-05
+headroom                 = 10.0          control_scale_margin = 10.0
+control_rejected         = true          below_control_scale  = true
+f32_violated_elementwise = true          f64_passes           = true
+n_pairs = 63   n_fields = 9   loo_all_admitted = true   loo_worst_ratio = 0.121
+floor_field = seq_log_prob               floor_pair = soluble_65000__107m_1
+```
+
+**Correction:** earlier revisions of this doc (and `92bdab20`'s message) said "100x margin".
+The record says **10x** — `headroom = 10.0`, and 4e-4 ÷ 3.63e-5 ≈ 11. The band itself, 4e-4,
+was right.
+
+Three things in that artifact strengthen the case for option 3 beyond the headline:
+
+- **`n_pairs = 63`** — the band was measured over exactly as many pairs as there are failing
+  clean-arm cases in `tests/port/test_laser_score.py` (§1). The measurement covers the
+  population it would license, not a sample of it.
+- **`control_rejected = true`** with `control_scale_ratio = 0.04` — the negative control fails,
+  so the instrument is tested rather than merely agreeable.
+- **`loo_all_admitted = true`, `n_loo_not_admitted = 0`, `loo_worst_ratio = 0.121`** —
+  leave-one-out: no single pair props the floor up. A band that only holds because of one
+  outlier would show here, and does not.
+
+And `f32_violated_elementwise = true` with `f64_passes = true` is the attribution restated in
+the artifact's own terms: this is f32 precision, not a logic defect. Note the vehicle lives in
+`scripts/analysis/`, which is **not** under `_SCOPED_PREFIXES`, so this evidence is not exposed
+to the freeze and does not need re-measuring with the wave.
 | A2 | #2483 missing-`laser`-extra message | `src/aminx/host/runner.py` | one block | Wrap the `importlib.import_module` so a missing extra names the family and the extra instead of raising a bare `prody` ImportError. |
 | A3 | #2484 unknown-`model_family` validation | `src/aminx/run/specs.py`, `src/aminx/host/runner.py` | small | Makes `None` mean "stock handles this" rather than "nothing matched". Changes no number **for a valid family** — but see §4. |
 | A4 | #2417 `--double` flag | `scripts/parity/potts_refine.py` | one line + argparse | Diagnostic only. Unlocks the run that decides whether the 0.9539 refine gap is f32 precision or a logic defect. |
