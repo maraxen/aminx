@@ -522,6 +522,33 @@ class RunSpecification:
     self._sync_run_spec()
 
 
+def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
+  """Check a user-supplied scoring ``ar_mask`` and return it as a float32 ``(L, L)`` array.
+
+  Refuses what has silently produced wrong numbers before: a non-square or non-2D mask, a
+  non-binary one, and a nonzero diagonal. A residue that sees its own token is handed the
+  answer it is being scored on (measured at +0.036 nats on 1LVB, see ``scoring/score.py``), so
+  the diagonal is checked here rather than trusted.
+  """
+  import numpy as np  # noqa: PLC0415
+
+  mask = np.asarray(ar_mask, dtype=np.float32)
+  if mask.ndim != 2 or mask.shape[0] != mask.shape[1]:
+    msg = f"ScoringSpecification.ar_mask must be a square (L, L) array, got shape {mask.shape}."
+    raise ValueError(msg)
+  if not np.all((mask == 0.0) | (mask == 1.0)):
+    msg = "ScoringSpecification.ar_mask must be binary (0/1): ar_mask[i, j] == 1 iff i sees j."
+    raise ValueError(msg)
+  if np.any(np.diagonal(mask) != 0.0):
+    msg = (
+      "ScoringSpecification.ar_mask must have a zero diagonal: a position that sees its own "
+      "token is scored on the answer it was given. Use a self-excluding mask "
+      "(e.g. aminx.utils.autoregression.ar_mask_from_decoding_order)."
+    )
+    raise ValueError(msg)
+  return mask
+
+
 @register_spec
 @dataclass
 class ScoringSpecification(RunSpecification):
@@ -542,6 +569,17 @@ class ScoringSpecification(RunSpecification):
           neither, ``score()`` raises rather than scoring ligand-free.
       ligand_context_path: Ligand context file (same format as sampling's).
       multi_state_temperature: N/A for scoring; score() returns negative log-likelihood of a fixed sequence, invariant to temperature. Accepted for API symmetry but does not affect output.
+      ar_mask: Optional ``(L, L)`` visibility mask, ``ar_mask[i, j] == 1`` iff position ``i``
+          SEES the sequence token at ``j`` (the same convention the sampler uses). ``None``
+          (the default) scores every position under full context minus self,
+          ``p(s_i | s_{-i}, X)``, exactly as before. Set it to score under an
+          autoregressive factorisation instead: with a causal, self-excluding mask for an
+          order, the per-position logits are ``p(s_i | s_{earlier}, X)`` and their summed
+          log-probs are ``log p_order(s)``. This is a different estimand from the default,
+          not a refinement of it: the full-context conditionals do not multiply into a
+          normalised joint. Must be binary with a zero diagonal. Every sequence scored must
+          have exactly ``L`` residues. Supported on the plain per-structure path only;
+          ``average_node_features`` and ``state_position_map`` raise.
 
   """
 
@@ -559,6 +597,7 @@ class ScoringSpecification(RunSpecification):
   # scored with NO ligand and nothing said so (#167).
   ligand_conditioning: bool = False
   ligand_context_path: str | Path | None = None
+  ar_mask: ArrayLike | None = None
 
   def __post_init__(self) -> None:
     """Post-initialization processing."""
@@ -574,6 +613,8 @@ class ScoringSpecification(RunSpecification):
       object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
+    if self.ar_mask is not None:
+      object.__setattr__(self, "ar_mask", _validated_scoring_ar_mask(self.ar_mask))
     self._sync_run_spec()
 
 

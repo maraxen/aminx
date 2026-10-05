@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`ScoringSpecification.ar_mask`: score under a caller-chosen visibility pattern.**
+  `runner.score` scores every position under full context minus self, `p(s_i | s_{-i}, X)`,
+  a pseudo-likelihood whose conditionals do not multiply into a normalised joint. `ar_mask`
+  (`(L, L)`, `ar_mask[i, j] == 1` iff `i` sees `j`, the sampler's convention) scores under an
+  autoregressive factorisation instead: with a causal, self-excluding mask for an order the
+  returned logits are `p(s_i | s_{earlier}, X)` and their summed log-probs are
+  `log p_order(s)`. That is the quantity staged-order comparisons need, and it was not
+  reachable from the production surface (`score_sequence` took an `ar_mask`; the runner never
+  forwarded one). Validated at construction (square, binary, zero diagonal). Supported on the
+  plain per-structure path; `average_node_features` and `state_position_map` raise rather
+  than score under the default mask unannounced. **`ar_mask=None` (the default) is unchanged:**
+  scores and logits are bit-identical to `v0.2.0a3` on a real structure.
+  `make_score_split_fns(...).score_candidate` gains the matching optional `ar_mask`.
+
 ## 0.2.0a3 (2026-09-30)
 
 **Browser inference.** ProteinMPNN sampling now runs in a page, validated against the

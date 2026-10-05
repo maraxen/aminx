@@ -567,6 +567,37 @@ def _candidate_activation_bytes(
   return int(per_structure) * batch_size
 
 
+def _pad_scoring_ar_mask(
+  ar_mask: Any,  # noqa: ANN401 -- the validated (L, L) float32 ndarray from ScoringSpecification
+  sequence_indices: list[jax.Array],
+  struct_len: int,
+) -> jax.Array:
+  """Pad a caller's ``(L, L)`` scoring ``ar_mask`` to the loader's padded structure length.
+
+  The structure may be padded to ``max_length`` and each candidate is X-padded to match, so the
+  mask must cover ``struct_len`` positions. Padded rows and columns are zero (invisible); those
+  positions are masked out of the NLL and the encoder by the structure mask regardless.
+
+  Every candidate must have exactly the mask's ``L`` residues: one mask names positions, and a
+  shorter candidate would leave some of those positions scoring against X padding.
+  """
+  mask_len = int(ar_mask.shape[0])
+  bad = sorted({int(s.shape[0]) for s in sequence_indices if int(s.shape[0]) != mask_len})
+  if bad:
+    msg = (
+      f"score runner: spec.ar_mask is ({mask_len}, {mask_len}) but candidate sequence lengths "
+      f"{bad} differ; every sequence scored under an ar_mask must have exactly {mask_len} residues."
+    )
+    raise ValueError(msg)
+  if mask_len > struct_len:
+    msg = (
+      f"score runner: spec.ar_mask covers {mask_len} positions but the structure batch has "
+      f"{struct_len}."
+    )
+    raise ValueError(msg)
+  return jnp.pad(jnp.asarray(ar_mask, dtype=jnp.float32), ((0, struct_len - mask_len),) * 2)
+
+
 def score(  # noqa: PLR0915
   spec: ScoringSpecification | None = None,
   **kwargs: Any,  # noqa: ANN401
@@ -638,6 +669,18 @@ def score(  # noqa: PLR0915
       "runner.sample honours fixed_mask (via host/_sampling_helper.py's "
       "_prepare_fixed_controls); this surface does not yet. Omit fixed_mask when calling "
       "score(), or use runner.sample if you need fixed-position-aware behavior."
+    )
+    raise NotImplementedError(msg)
+
+  # spec.ar_mask: a caller-chosen visibility pattern, honoured on the plain per-structure path
+  # only (the encode-once split scorer). The averaged-feature and fused multi-state scorers build
+  # their own bundles and would drop it, so refuse them rather than score under the default mask
+  # while the caller believes they scored under theirs.
+  if spec.ar_mask is not None and (spec.average_node_features or spec.state_position_map is not None):
+    msg = (
+      "score runner: spec.ar_mask is only supported on the plain per-structure scoring path; "
+      "average_node_features=True and state_position_map would silently score under the default "
+      "full-context mask instead. Score per structure, or leave ar_mask None."
     )
     raise NotImplementedError(msg)
 
@@ -787,6 +830,12 @@ def score(  # noqa: PLR0915
       padded_seqs.append(seq_idx)
     stacked_sequences = jnp.stack(padded_seqs, axis=0)  # (C, struct_len)
     n_candidates = stacked_sequences.shape[0]
+    # None unless the caller chose a visibility pattern; None keeps the full-context default.
+    batch_ar_mask = (
+      None
+      if spec.ar_mask is None
+      else _pad_scoring_ar_mask(spec.ar_mask, sequence_indices_list, struct_len)
+    )
 
     # Pre-derive one key per (structure, candidate) pair via the SAME sequential
     # jax.random.split chain the pre-refactor loop used (struct outer, candidate
@@ -854,6 +903,7 @@ def score(  # noqa: PLR0915
       struct_ligand: tuple[jax.Array | None, jax.Array | None, jax.Array | None],
       _candidate_iterator: Any = candidate_iterator,  # noqa: ANN401
       _stacked_sequences: jax.Array = stacked_sequences,
+      _ar_mask: jax.Array | None = batch_ar_mask,
     ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
       ligand_kwargs = (
         {}
@@ -888,6 +938,7 @@ def score(  # noqa: PLR0915
             struct_residue_index,
             struct_chain_index,
             multi_state_strategy=spec.multi_state_strategy,
+            ar_mask=_ar_mask,
           )
 
       else:

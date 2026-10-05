@@ -236,9 +236,11 @@ def make_score_split_fns(
     ligand_atom_types=None, ligand_mask=None) -> EncoderOutput``. Takes the ligand tensors
     because the ligand conditions the ENCODER; ``score_candidate`` never sees them.
   - ``score_candidate(prng_key, sequence, enc, coords, mask, residue_index, chain_index, *,
-    multi_state_strategy="arithmetic_mean", multi_state_temperature=1.0) -> (nll, logits,
-    decoding_order)`` -- the same three outputs as ``make_score_fn``'s function, with the
-    same key derivation (decoding-order draw, then ``score_conditional.split_keys``).
+    multi_state_strategy="arithmetic_mean", multi_state_temperature=1.0, ar_mask=None) ->
+    (nll, logits, decoding_order)`` -- the same three outputs as ``make_score_fn``'s function,
+    with the same key derivation (decoding-order draw, then ``score_conditional.split_keys``).
+    ``ar_mask=None`` scores under full context minus self; an ``(L, L)`` array scores under
+    that visibility pattern instead (``ar_mask[i, j] == 1`` iff i sees j, zero diagonal).
 
   ``encode_structure`` has no PRNG key and no ``backbone_noise`` on purpose. Sharing one
   encoding across candidates is only valid when the encoding does not depend on the
@@ -249,8 +251,8 @@ def make_score_split_fns(
 
   Args:
     model: Protein or Ligand Equinox checkpoint.
-    decoding_order_fn: Decoding order (drawn for key parity with ``make_score_fn``; the
-      full-context scoring mask does not depend on it).
+    decoding_order_fn: Decoding order (drawn for key parity with ``make_score_fn``; neither the
+      full-context default mask nor a caller-supplied ``ar_mask`` depends on it).
     inference: Use ``eqx.nn.inference_mode`` when True.
 
   Returns:
@@ -302,10 +304,13 @@ def make_score_split_fns(
       "product",
     ] = "arithmetic_mean",
     multi_state_temperature: float = 1.0,
+    ar_mask: jax.Array | None = None,
   ) -> tuple[jax.Array, jax.Array, jax.Array]:
     L = sequence.shape[0]
     # Same key path as score_sequence: the order draw advances the key, then the kernel's split.
     decoding_order, prng_key = decoding_order_fn(prng_key, L, None, None)
+    # ``ar_mask=None`` keeps the full-context default, so a caller that passes nothing traces the
+    # exact program it always did. A supplied (L, L) mask replaces it -- see ScoringSpecification.
     bundle, config = build_inference_bundle(
       coords=structure_coordinates,
       mask=mask,
@@ -313,7 +318,7 @@ def make_score_split_fns(
       chain_index=chain_index,
       sequence=sequence,
       backbone_noise=0.0,
-      ar_mask=full_context_ar_mask(L),
+      ar_mask=full_context_ar_mask(L) if ar_mask is None else ar_mask,
       mode="score_conditional",
       inference=True,
     )
