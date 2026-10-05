@@ -49,6 +49,9 @@ CELLS: dict[str, dict[str, float | int]] = {
   },
 }
 N_BOOT = 2000
+CONFIRM_ROUND = 2
+# Round 1 claimed seeds with this prefix. Round 2 must stay disjoint from it.
+_ROUND1_PREFIX = "confirm|"
 STRUCTURES = {
   "inputs/example_pdbs/3gg7.pdb": (
     "2203e4a69287a5b968a78df5fb80b29f10fbdb37f73f64363cefbee8f1899712"
@@ -64,8 +67,8 @@ STRUCTURES = {
   ),
 }
 _EXCLUDED_CELL = "plain@0.3"
-_WORK = "potts_sample_dist_confirm"
-_WORK_SMOKE = "potts_sample_dist_confirm_smoke"
+_WORK = "potts_sample_dist_confirm_r2"
+_WORK_SMOKE = "potts_sample_dist_confirm_smoke_r2"
 _SMOKE_N = 50
 _SMOKE_BOOT = 50
 _SMOKE_STRUCTURE = "3gg7"
@@ -82,6 +85,7 @@ _TOP_LEVEL = (
   "n_computed",
   "script_sha256",
   "smoke",
+  "confirm_round",
 )
 
 
@@ -165,11 +169,12 @@ def _unit_id(cell: str, structure: str, run: str, n: int) -> str:
 
 
 def _assign_seeds(labels: list[str], used: set[int]) -> list[int]:
-  """Pilot hash of ``confirm|label``, skipping the pilot seed of ``label``."""
+  """Pilot hash of ``confirm{CONFIRM_ROUND}|label``, skipping the pilot seed."""
+  prefix = f"confirm{CONFIRM_ROUND}|"
   for label in labels:
     used.add(pilot._hash_seed(label))
   return [
-    pilot._claim(pilot._hash_seed(f"confirm|{label}"), used) for label in labels
+    pilot._claim(pilot._hash_seed(f"{prefix}{label}"), used) for label in labels
   ]
 
 
@@ -319,9 +324,15 @@ def _upstream_worker(args: Any) -> None:
   graded_resume.run_units(units, compute, cache, resume=bool(args.resume))
 
 
-def _prng_seed(seed: int) -> int:
-  """uint32 seed for ``jax.random.PRNGKey``, derived from the unit seed."""
-  digest = hashlib.sha256(f"confirm-prng|{seed}".encode()).digest()
+def _prng_seed(seed: int, index: int | None = None) -> int:
+  """uint32 seed for ``jax.random.PRNGKey``, derived from the unit seed.
+
+  ``index`` is the refine draw. Each draw hashes ``confirm-prng|{seed}|{index}``
+  so the ``n`` calls do not share a key. The plain path omits ``index`` and
+  keeps the single-call derivation ``confirm-prng|{seed}``.
+  """
+  label = f"confirm-prng|{seed}" if index is None else f"confirm-prng|{seed}|{index}"
+  digest = hashlib.sha256(label.encode()).digest()
   return int.from_bytes(digest[:4], "little")
 
 
@@ -433,7 +444,19 @@ def _potts_options(kind: str) -> Any:
 
 
 def _sample_aminx(spec: UnitSpec, checkpoint: Path) -> dict[str, Any]:
-  """Production sample path. Randomness comes from the unit seed only."""
+  """Production sample path. Randomness comes from the unit seed only.
+
+  Refine arms (A and CTRL_m) draw ``n`` sequences as ``n`` separate
+  ``runner.sample`` calls with ``num_samples=1`` and ``samples_chunk_size=1``.
+  Spec ``.praxia/docs/specs/260929_pottsmpnn-lasermpnn-xtrax-composition.md``
+  (~line 937) records a refine-order lookup key mismatch (``str(i)`` vs
+  ``"_i"``) that sends ``upstream_refine_order`` down an N→C sweep when
+  ``num_samples>1``. The pilot ``_refine`` refines each sample in that
+  sample's own autoregressive decoding order, which is upstream's
+  ``num_samples==1`` semantics. Per-draw ``num_samples=1`` is the
+  like-for-like aminx arm. Plain stays one call with ``num_samples=n``.
+  CTRL_ntoc is unchanged and only exists on the plain cell.
+  """
   import jax
 
   from aminx.host.runner import sample as runner_sample
@@ -443,29 +466,48 @@ def _sample_aminx(spec: UnitSpec, checkpoint: Path) -> dict[str, Any]:
   if spec["ntoc"]:
     _install_ntoc()
   options = _potts_options(spec["kind"])
-  sampling = SamplingSpecification(
-    inputs=spec["pdb"],
-    model_family="pottsmpnn",
-    model_local_path=checkpoint,
-    num_samples=spec["n"],
-    samples_chunk_size=8,
-    return_logits=False,
-    random_seed=_prng_seed(spec["seed"]),
-    temperature=spec["sample_temperature"],
-    backbone_noise=0.0,
-    potts_mpnn=options,
-  )
-  result = runner_sample(sampling)
-  _assert_float32(result)
-  arrays = result["structures"]["0"]["arrays"]
-  key = "refined_sequence" if spec["kind"] == "refine" else "sequence"
-  if key not in arrays:
-    msg = f"production sample did not emit {key}"
-    raise SystemExit(msg)
-  sequences = _map_tokens(arrays[key])
-  if len(sequences) != spec["n"]:
-    msg = f"aminx drew {len(sequences)} sequences, expected {spec['n']}"
-    raise SystemExit(msg)
+
+  def _call(num_samples: int, chunk: int, random_seed: int) -> dict[str, Any]:
+    sampling = SamplingSpecification(
+      inputs=spec["pdb"],
+      model_family="pottsmpnn",
+      model_local_path=checkpoint,
+      num_samples=num_samples,
+      samples_chunk_size=chunk,
+      return_logits=False,
+      random_seed=random_seed,
+      temperature=spec["sample_temperature"],
+      backbone_noise=0.0,
+      potts_mpnn=options,
+    )
+    result = runner_sample(sampling)
+    _assert_float32(result)
+    return result
+
+  sequences: list[list[int]]
+  if spec["kind"] == "refine":
+    sequences = []
+    for index in range(spec["n"]):
+      result = _call(1, 1, _prng_seed(spec["seed"], index))
+      arrays = result["structures"]["0"]["arrays"]
+      if "refined_sequence" not in arrays:
+        msg = "production sample did not emit refined_sequence"
+        raise SystemExit(msg)
+      drawn = _map_tokens(arrays["refined_sequence"])
+      if len(drawn) != 1:
+        msg = f"refine draw {index} returned {len(drawn)} sequences, expected 1"
+        raise SystemExit(msg)
+      sequences.append(drawn[0])
+  else:
+    result = _call(spec["n"], 8, _prng_seed(spec["seed"]))
+    arrays = result["structures"]["0"]["arrays"]
+    if "sequence" not in arrays:
+      msg = "production sample did not emit sequence"
+      raise SystemExit(msg)
+    sequences = _map_tokens(arrays["sequence"])
+    if len(sequences) != spec["n"]:
+      msg = f"aminx drew {len(sequences)} sequences, expected {spec['n']}"
+      raise SystemExit(msg)
   mask = _design_mask_from_pdb(Path(spec["pdb"]), options)
   if len(mask) != len(sequences[0]):
     msg = "aminx design mask length does not match the sampled sequences"
@@ -753,6 +795,7 @@ def assemble_result(
     "n_computed": n_computed,
     "script_sha256": script_sha256,
     "smoke": smoke,
+    "confirm_round": CONFIRM_ROUND,
   }
   if tuple(payload) != _TOP_LEVEL:
     msg = f"result keys {tuple(payload)} != {_TOP_LEVEL}"

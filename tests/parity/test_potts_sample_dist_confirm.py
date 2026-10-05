@@ -48,6 +48,7 @@ _TOP_LEVEL = {
   "n_computed",
   "script_sha256",
   "smoke",
+  "confirm_round",
 }
 _CELL_KEYS = {
   "verdict",
@@ -263,3 +264,108 @@ def test_assemble_result_keys_and_control_failure() -> None:
   assert matched["controls_all_fail"] is False
   assert matched["cells"]["plain@1.0"]["controls"]["CTRL_ntoc"]["verdict"] != "fail"
   assert matched["cells"]["plain@1.0"]["controls"]["CTRL_m"]["verdict"] == "fail"
+
+
+def _unit(kind: str, n: int, *, run: str) -> dict[str, Any]:
+  temperature = 0.3 if kind == "refine" else 1.0
+  return {
+    "unit_id": f"{kind}|{temperature:.1f}|3gg7|{run}|{n}",
+    "cell": f"{kind}@{temperature:.1f}",
+    "condition": kind,
+    "cell_temperature": temperature,
+    "sample_temperature": temperature,
+    "structure": "3gg7",
+    "run": run,
+    "m": None,
+    "shim": False,
+    "kind": kind,
+    "n": n,
+    "seed": 17,
+    "pdb": "/pdbs/3gg7.pdb",
+    "pdb_sha256": "abc",
+    "ntoc": False,
+  }
+
+
+def test_refine_draws_one_sample_per_call_and_plain_draws_once(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  import aminx.host.runner as runner
+
+  length = 3
+  calls: list[Any] = []
+
+  def _fake(sampling: Any) -> dict[str, Any]:
+    calls.append(sampling)
+    n = int(sampling.num_samples)
+    token = len(calls)
+    key = "refined_sequence" if n == 1 else "sequence"
+    return {
+      "structures": {
+        "0": {
+          "arrays": {
+            key: np.full((n, length), token, dtype=np.int32),
+            "score": np.zeros((n, length), dtype=np.float32),
+          },
+        },
+      },
+    }
+
+  monkeypatch.setattr(runner, "sample", _fake)
+  monkeypatch.setattr(confirm, "_design_mask_from_pdb", lambda _pdb, _options: [True] * length)
+
+  n = 4
+  for run in ("A", "CTRL_m"):
+    calls.clear()
+    drawn = confirm._sample_aminx(_unit("refine", n, run=run), Path("/ckpt.pt"))
+    assert len(calls) == n
+    assert [int(call.num_samples) for call in calls] == [1] * n
+    assert [int(call.samples_chunk_size) for call in calls] == [1] * n
+    seeds = [int(call.random_seed) for call in calls]
+    assert seeds == [confirm._prng_seed(17, index) for index in range(n)]
+    assert len(set(seeds)) == n
+    assert len(drawn["sequences"]) == n
+    assert [row[0] for row in drawn["sequences"]] == list(range(1, n + 1))
+
+  calls.clear()
+  plain = confirm._sample_aminx(_unit("plain", n, run="A"), Path("/ckpt.pt"))
+  assert len(calls) == 1
+  assert int(calls[0].num_samples) == n
+  assert int(calls[0].samples_chunk_size) == 8
+  assert int(calls[0].random_seed) == confirm._prng_seed(17)
+  assert len(plain["sequences"]) == n
+
+
+def _claimed(labels: list[str], prefix: str) -> list[int]:
+  used: set[int] = set()
+  for label in labels:
+    used.add(confirm.pilot._hash_seed(label))
+  return [
+    confirm.pilot._claim(confirm.pilot._hash_seed(f"{prefix}{label}"), used)
+    for label in labels
+  ]
+
+
+def test_round2_unit_seeds_are_disjoint_from_round1_and_the_pilot() -> None:
+  assert confirm.CONFIRM_ROUND == 2
+  assert confirm._ROUND1_PREFIX == "confirm|"
+  assert confirm._WORK == "potts_sample_dist_confirm_r2"
+  used: set[int] = set()
+  specs = confirm.unit_specs(_structures(), ["plain@1.0", "refine@0.3"], 1000, used)
+  labels = [spec["unit_id"] for spec in specs]
+  round2 = [spec["seed"] for spec in specs]
+  round1 = _claimed(labels, confirm._ROUND1_PREFIX)
+  pilot_seeds = [confirm.pilot._hash_seed(label) for label in labels]
+  assert round2 == _claimed(labels, f"confirm{confirm.CONFIRM_ROUND}|")
+  assert set(round2).isdisjoint(round1)
+  assert set(round2).isdisjoint(pilot_seeds)
+
+
+def test_result_json_carries_confirm_round() -> None:
+  import json
+
+  n = 8
+  payload = _assemble(_samples(n=n, length=4, control_token=3, ntoc_token=4), n=n)
+  decoded = json.loads(json.dumps(payload))
+  assert decoded["confirm_round"] == 2
+  assert isinstance(decoded["confirm_round"], int)
