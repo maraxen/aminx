@@ -11,11 +11,16 @@ deleted via `del use_rolling_state, multi_state_strategy` in the inner kernel, m
 the field completely inert. The fix makes this failure explicit via NotImplementedError.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 
-PDB = "/home/marielle/projects/aminx/tests/data/1ubq.pdb"
+# Resolved from this file, not from an absolute path into the main checkout:
+# a worktree is an isolated copy, so an absolute path silently reads main's
+# fixture while the tree under test is the worktree's.
+PDB = str(Path(__file__).resolve().parents[2] / "tests/data/1ubq.pdb")
 
 
 def _build_spec(strategy: str, L: int = 76, seed: int = 42):

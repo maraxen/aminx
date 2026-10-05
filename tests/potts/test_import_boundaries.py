@@ -389,15 +389,18 @@ class TestXtraxBoundaries:
         to aminx and should not appear in xtrax implementation. This enforces
         the separation that xtrax operates on generic structures.
 
+        Resolved from the INSTALLED xtrax, not a checkout. A hardcoded
+        /home/<user>/projects/xtrax path skipped this check on every other
+        machine (titanix among them), and even where it existed it scanned a
+        source tree that is not the xtrax aminx actually imports. xtrax is a
+        core dependency, so there is nothing to skip for.
+
         Raises:
             AssertionError: If any forbidden field name is found in xtrax source.
-            pytest.skip: If xtrax source is not available at expected path.
         """
-        xtrax_root = Path("/home/marielle/projects/xtrax/src/xtrax")
+        import xtrax
 
-        # Skip if xtrax is not available (allowed in some CI environments)
-        if not xtrax_root.exists():
-            pytest.skip("xtrax source not found at expected path")
+        xtrax_root = Path(xtrax.__file__).parent
 
         violations = {}
         for py_file in xtrax_root.rglob("*.py"):
