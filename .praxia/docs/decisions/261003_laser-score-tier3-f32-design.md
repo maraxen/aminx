@@ -88,3 +88,54 @@ this wave needs.
 No option here changes the f64 tier, which passes at `rtol=1e-8, atol=1e-11` and
 remains the actual correctness check for this port.
 
+## Amendment 261005: option 3's first condition is satisfied -- the band is measured
+
+Still proposed. **This measurement does not choose between the three options and
+has amended no scoped file.** It supplies the band option 3 would need *if* the
+user picks it, which is the one thing that could be prepared without the choice.
+
+Pre-registered at `4a103bf8` (amended once at `203eed88`, before any run, to say
+the injected control is analytic rather than a second measurement arm);
+implemented at `0e642d44`. Graded run `3af3be02` at that SHA, read from its
+record, not its console: `outcome = pass`, `status = completed`,
+`git_dirty = false`, `sidecar_mode = declared`, `outcome_is_residual = false`,
+`adversarial_check_status = present`, 457.8 s, 126 forward passes, 0 reused.
+
+| quantity | measured |
+| :--- | :--- |
+| worst scale-relative deviation over all 63 pairs | **3.63e-5** (`soluble_65000 / 107m_1`, `seq_log_prob`) |
+| runner-up | 2.84e-5 (`chi_logits`) |
+| **proposed band** = ceil-1sf(10 x floor) | **4e-4 of field scale** |
+| injected 1e-2 defect, as a scale-relative ratio | 0.04 -- **100x the band**, rejected |
+| leave-one-out: pairs admitted by a band derived from the other 62 | **63 / 63** |
+| worst LOO ratio (worst pair vs band from the rest) | 0.121 |
+| degenerate fields (no scale to be relative to) | none |
+
+The doc predicted ~3e-4 and ~33x below a 1e-2 defect; the measurement gives 4e-4
+and 100x. The margin is better than predicted because the control's *scale-relative*
+ratio lands at 0.04, not 1e-2 -- a 1% element-wise defect is larger than 1% of a
+field's maximum once it is read against that field's scale.
+
+**Why leave-one-out, and not "every pair is admitted".** Plain admission is true
+by construction: the floor *is* the maximum of exactly the quantity being
+admitted, so it holds at any headroom >= 1 and could never have failed. It is not
+a criterion. Deriving the band from 62 pairs and requiring the 63rd to satisfy it,
+for all 63 choices, fails precisely when the worst pair is an outlier rather than a
+ceiling -- and at 0.121 worst-case it is a ceiling, with the runner-up only 1.28x
+behind the leader.
+
+Both premises were re-measured in this tree rather than inherited: f64 still
+passes, and the element-wise band is still violated (first established at
+`b880882e`; this tree also carries `bc3f1950`, `2f9e49e0`, `c97288ec`). So a real
+defect cannot be laundered into a rule change. Instrument self-test: 30 checks,
+all green, including five negative controls on the grader itself -- an f64
+violation, a clean element-wise f32, a planted 1e4x outlier, a degenerate field
+and a failed self-test must each force their own non-pass verdict, none of them
+proposing a band.
+
+**Still outstanding, and still the user's:** the choice itself, and option 3's
+second condition -- changing the assertion's *form* in
+`tests/port/test_laser_score.py` plus teaching
+`tests/lint/test_port_tolerances_match_targets.py` the new form. That edit is
+scoped, so it lands in the single re-wave, not on its own.
+
