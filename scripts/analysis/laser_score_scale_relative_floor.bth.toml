@@ -1,0 +1,141 @@
+[metadata]
+title = "laser_score float32 SCALE-RELATIVE parity floor (debt #2445, option 3 of the 261003 decision)"
+created = "261005"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "For laser_score at tier 3, a per-(field, pair) SCALE-RELATIVE band -- max|aminx - upstream| <= tol * max|ref| over that pair's field, one tolerance instead of numpy's atol + rtol*|ref| -- has a measured floor far enough below a 1e-2 relative defect that a band derived as ceil_one_significant_figure(10 * floor) both (a) admits every held-out pair when the band is derived from the other 62, and (b) rejects an injected 1e-2 relative defect while staying at least 10x below its scale-relative size. The element-wise rule cannot do this: run e47bfaab graded noise_reaches_defect_scale because the worst violations sit on near-zero elements, which makes atol bind and pushes it to 0.61 of the injected defect. This run measures whether changing the RULE, not the value, restores the margin."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.pass]
+condition = "self_test_passed AND f64_passes AND f32_violated_elementwise AND loo_all_admitted AND control_rejected AND below_control_scale AND degenerate_fields == []"
+decision = "Report the measured band to the user as the concrete value option 3 of .praxia/docs/decisions/261003_laser-score-tier3-f32-design.md would adopt. Do NOT amend tests/port/targets/laser_score.toml or tests/port/test_laser_score.py on the strength of this run alone: option 3 is a RECOMMENDATION awaiting the user's decision, and this run supplies its first condition (a band from its own pre-registered measurement), not the decision itself. The amendment also changes the assertion's FORM and must teach tests/lint/test_port_tolerances_match_targets.py the new form in the same change, and tests/port/ is a _touches_scoped path so it lands after the ledger wave and the gate."
+reasoning = "Leave-one-out admission is what makes this a floor rather than a fit: the band is derived from 62 pairs and must admit the 63rd, for every choice of held-out pair. Rejecting a 1e-2 relative defect, with the band at least 10x below that defect's scale-relative size, shows the rule change did not buy the margin by deleting the assertion's teeth."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND f64_passes AND f32_violated_elementwise AND loo_all_admitted AND control_rejected AND below_control_scale AND degenerate_fields == [])"
+
+[outcomes.defect_not_tolerance]
+condition = "self_test_passed AND NOT f64_passes"
+decision = "Do NOT touch any tolerance and do NOT report a band. Escalate: the f64 tier is also failing, so the port disagrees with upstream for a reason float32 does not explain. Fix the port."
+reasoning = "Re-measuring f64 here rather than inheriting it from a previous gate run is what stops a real defect being laundered into a rule change. A floor measured over a defect describes the defect. Live, not a formality: laser_score's f64 tier is believed green, but from a different tree than this run -- and this tree carries a merge of 180 commits of main (bc3f1950) that this wave has not been re-measured against."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR f64_passes"
+
+[outcomes.elementwise_was_fine]
+condition = "self_test_passed AND f64_passes AND NOT f32_violated_elementwise"
+decision = "Do NOT change the rule. The element-wise band is not violated in this tree, so there is nothing for a rule change to fix; the gate's rc=1 on this wave came from something else. Go read the gate's own outcomes file."
+reasoning = "This run's whole premise is that the element-wise rule fails here. If it does not fail in this tree, switching rules would be unjustified and would leave the real failure in place. Reachable precisely because the premise was established at b880882e, before the main merge."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR f32_violated_elementwise"
+
+[outcomes.noise_reaches_defect_scale]
+condition = "self_test_passed AND f64_passes AND f32_violated_elementwise AND NOT below_control_scale"
+decision = "Escalate. Do NOT adopt the scale-relative rule either. If the scale-relative floor is also within 10x of a 1e-2 defect, the problem is numerical stability in the port, not the shape of the band, and option 3 fails on the same ground option 2 does."
+reasoning = "This is the outcome that stops the rule change being a dressed-up widening. The 261003 attribution table suggests the pairwise difference is <=3.6e-5 of scale and so ~33x clear, but that table came from a run NOT designed to derive a band, which is exactly why its numbers are not reused here. If the properly derived floor lands differently, this outcome fires and option 3 dies."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR NOT f32_violated_elementwise OR below_control_scale"
+
+[outcomes.scale_is_degenerate]
+condition = "self_test_passed AND f64_passes AND degenerate_fields != []"
+decision = "Do NOT adopt the rule for the degenerate fields. A field whose max|ref| over a pair is at or near zero has no scale to be relative to, and dividing by it reproduces, in a new place, the near-zero denominator problem that made atol bind under the element-wise rule."
+reasoning = "This is the scale-relative rule's own version of the failure it is meant to cure, and it must be a declared outcome rather than a surprise discovered while reading results. A field is degenerate when max|ref| <= 1e-6 of the largest field scale in that pair; the threshold is fixed here, before the run."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR degenerate_fields == []"
+
+[outcomes.band_does_not_generalise]
+condition = "self_test_passed AND f64_passes AND f32_violated_elementwise AND below_control_scale AND NOT loo_all_admitted"
+decision = "Do NOT adopt the measured band. One pair's maximum does not characterise the population, so a band derived from the observed worst case is a fit to it."
+reasoning = "Under a single scale-relative statistic, admitting the same pairs the floor was derived from is TRUE BY CONSTRUCTION -- the floor is the maximum of exactly the quantity admission tests -- so plain all_admitted is not a check and is deliberately not an outcome term here. Leave-one-out is the version that can fail: derive from 62 pairs, admit the 63rd, for all 63 choices. This outcome firing means the worst pair is an outlier rather than a ceiling."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR NOT f32_violated_elementwise OR NOT below_control_scale OR loo_all_admitted"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "The synthetic checks include negative controls that force the grader to refuse: an f64 violation must grade defect_not_tolerance, a clean element-wise f32 must grade elementwise_was_fine, a planted outlier pair must grade band_does_not_generalise, and a zero-scale field must grade scale_is_degenerate -- none of them proposing a band. If any check fails, the instrument is not known to be able to return a non-pass, and a measured floor from such an instrument is the #2432 revision 1 failure repeated."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[outcomes.oracle_absent]
+condition = "self_test_passed AND oracle_absent != []"
+decision = "No conclusion. Re-run where the sealed dumps resolve."
+reasoning = "The dumps live outside the tree and are checked against oracle_manifest.toml; their absence is an environment fact and must not be reported as a measurement."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR oracle_absent == []"
+
+[outcomes.fail]
+condition = "self_test_passed AND f64_passes AND f32_violated_elementwise AND below_control_scale AND loo_all_admitted AND degenerate_fields == [] AND NOT control_rejected"
+decision = "Do not adopt the band. The derivation produced a band that admits the injected defect."
+reasoning = "A band that stays 10x below the defect's scale-relative size but still admits the defect when it is actually injected means the admission arithmetic and the margin arithmetic disagree, which is an instrument fault surfacing as a result. Report it rather than reconciling it by hand."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR NOT f32_violated_elementwise OR NOT below_control_scale OR NOT loo_all_admitted OR degenerate_fields != [] OR control_rejected"
+
+[result_schema]
+verdict = "str"
+oracle_absent = "list"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+f64_passes = "bool"
+f32_violated_elementwise = "bool"
+loo_all_admitted = "bool"
+n_loo_not_admitted = "int"
+loo_worst_pair = "str"
+loo_worst_ratio = "float"
+control_rejected = "bool"
+below_control_scale = "bool"
+degenerate_fields = "list"
+floor_scale_relative = "float"
+floor_scale_relative_per_field = "dict"
+floor_pair = "str"
+floor_field = "str"
+second_worst_scale_relative = "float"
+proposed_tol = "float"
+control_scale_ratio = "float"
+float32_eps = "float"
+headroom = "float"
+degenerate_scale_threshold = "float"
+control_graded_relative = "float"
+control_scale_margin = "float"
+n_pairs = "int"
+n_fields = "int"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+work_dir = "str"
+wave = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+wave = "laser_score ONLY. laser_decode_step is deliberately out of scope: it PASSED the element-wise rule (2a4442d1), and the 261003 decision records that moving every LASEr f32 tier to the scale-relative rule 'is a larger change than this wave needs'. Grading a wave that already passes would invite replacing a working assertion."
+model = "aminx.model.laser encoder/decoder, weights loaded from the LASErMPNN checkpoints the port tests already name"
+reference = "the sealed upstream dumps resolved by tests/port/reference/laser_score/algo.load(precision); the npz files live outside the tree and are checked against oracle_manifest.toml"
+pairs = "every (checkpoint, fixture) pair the dump declares, read from the test module's own _PAIRS at import time; 63 for this wave"
+fields = "every field in the test module's own _FLOATS tuple; the _EXACT fields are compared by the test but are not float bands and are not measured here"
+precisions = "f64 AND f32. f64 is not optional: it is the precondition separating float32 accumulation from an algorithmic defect, and it is re-measured in THIS tree rather than inherited."
+the_rule = "max|aminx - upstream| <= tol * max|ref|, evaluated per (pair, field), where max|ref| is that pair's field maximum absolute reference magnitude. ONE tolerance. This is the same reading already applied to the decode padding test (f97d99b6), so it is not a new concept in this repo."
+derivation_rule = "floor = max over (pair, field) of max_abs_deviation / max_ref_magnitude. proposed_tol = ceil_one_significant_figure(10 * floor). Fixed BEFORE this run; the value is not chosen. Rounding to one significant figure rather than the next power of ten is inherited from #2432, where power-of-ten rounding turned a 1.43e-06 floor into 1e-04 and left everything below unchecked."
+why_plain_admission_is_not_a_criterion = "DISCLOSED WEAKNESS OF THIS RULE. Under the element-wise rule, the floor was a maximum over a CONDITIONED subset while admission ran over every element, so all_admitted could fail and was real evidence. Here the floor is the maximum of exactly the quantity admission tests, so admitting the same pairs is true by construction at any headroom >= 1. all_admitted is therefore NOT an outcome term; it would be a check that cannot fail, which is the thing rules/BATHOS.md names as not a check at all."
+generalisation_is_the_real_admission = "Leave-one-out over pairs: for each of the 63 pairs p, derive tol from the other 62 and require p admitted at that tol. loo_all_admitted is the conjunction over all 63. This can fail -- it fails exactly when the worst pair is an outlier rather than a ceiling -- and it needs no extra forward passes, being a second pass over the same per-unit statistics. second_worst_scale_relative is reported alongside so the gap between the worst and the runner-up is visible rather than inferred."
+degenerate_scale_threshold = "A (pair, field) is degenerate when its max|ref| <= 1e-6 times the largest field scale in that pair. Fixed here, before the run. Such a field has no scale to be relative to, and dividing by it recreates the near-zero-denominator problem that made atol bind under the element-wise rule; it forces scale_is_degenerate rather than being silently carried into a maximum."
+negative_control_graded = "A 1e-2 relative defect injected at the largest-magnitude element of each float field; the proposed band must reject it AND stay at least 10x below its scale-relative size."
+why_the_graded_control_is_1e2 = "Inherited unchanged from laser_f32_tolerance_floor.bth.toml, where 1e-2 was adopted over #2432's 1e-3 because a 1e-3 margin was unsatisfiable by construction against a current rtol already at 1e-4. Keeping the same defect size is what makes this run's margin directly comparable to e47bfaab's, which is the entire point of changing only the rule."
+control_rationale = "The defect size is fixed in advance and NOT scaled to the measured floor, because a floor-scaled control is near-circular when the band is also derived from the floor."
+elementwise_premise_is_re_measured = "f32_violated_elementwise re-checks, in THIS tree, that the current element-wise band is actually violated. The premise was established at b880882e; this tree additionally carries the main merge (bc3f1950) and two fixes (2f9e49e0, c97288ec). An unverified premise would let this run propose a rule change for a problem that no longer exists -- hence outcome elementwise_was_fine."
+instrument_self_test = "Synthetic checks run before any oracle is touched: hand-computed one-significant-figure rounding; identical-array invariants; a known single deviation with a hand-computed scale-relative ratio; the leave-one-out derivation checked to admit a uniform population and to REFUSE a planted outlier pair; the degenerate-scale detector checked at and either side of its threshold; shared-vs-one-sided NaN; the control margin pinned at three tolerances including the boundary; and FOUR NEGATIVE CONTROLS on the grader itself (f64 violation -> defect_not_tolerance; clean element-wise f32 -> elementwise_was_fine; planted outlier -> band_does_not_generalise; zero-scale field -> scale_is_degenerate), none proposing a band. A failure sets verdict=instrument_unverified and discards every measured number."
+measurement_reuses_the_test = "Deviations come from the test module's OWN _run, by wrapping its _rows_over with a recorder that delegates to the original, exactly as laser_f32_tolerance_floor.py does. No checkpoint loading, feature plumbing or dump key layout is re-expressed. The recorder asserts exactly one call per declared float field, in order, so a change to the test's plumbing fails loudly rather than silently measuring something else."
+relationship_to_the_attribution_table = "The 261003 decision doc tabulates aminx-vs-upstream scale-relative maxima (<=3.6e-5) from run 18b97f4f. Those numbers are NOT used to derive anything here. 18b97f4f was an attribution run, designed to answer whether aminx is worse than upstream, not to derive a band; reusing its numbers to set one would be choosing a criterion after seeing data, which is the specific failure the 261003 recommendation's first condition exists to prevent. This run measures its own floor and may disagree with that table."
+cost = "63 pairs x 2 precisions = 126 forward passes for the clean arm, plus the injected-control arm. Same order as what the gate already runs for this wave's tier-2 and tier-3 assertions. NOT subsampled: leave-one-out has to run over the population the test actually checks. The run gets NO whole-run timeout -- per-unit resume bounds an interruption to the single in-flight unit."
+
+[provenance]
+note = "Ungraded diagnostic for debt #2445, the surviving step-1 blocker on the redsox Z1 gate, and specifically the first of the two conditions the 261003 decision attaches to its option-3 recommendation. NOT a redsox vehicle; no manifest row. It does NOT decide between the three options and does NOT amend any scoped file -- it supplies the band that option 3 would need IF the user chooses it, and reports noise_reaches_defect_scale if option 3 fails on the same ground option 2 does. Lives in scripts/analysis/ because scripts/parity/ and tests/port/ are _touches_scoped paths and a new file in either would invalidate every sidecar_ledger.toml row mid-freeze; scripts/analysis/ is outside _SCOPED_PREFIXES (tests/knob_gate/_coverage.py:21-28). Invocation: bth run --project-slug aminx --output-paths <json> -- uv run --no-sync python3 scripts/analysis/laser_score_scale_relative_floor.py --work-dir <dir> --out <json>."
+
+[resume]
+unit = "one (pair, precision) tuple for the clean arm, or (pair, precision, 'control') for the injected arm"
+cache_key = "sha256 of the script bytes, the pair, the precision and the arm"
+stamp_order = "the per-unit JSON body is written first and its .done stamp second, so a crash between them leaves an unstamped body that is recomputed rather than trusted"
+invalidation = "the script hash is part of the key, so editing the derivation rule recomputes every unit; a body that no longer matches the FieldStats dataclass is also recomputed rather than coerced"
+max_attempts = 1
