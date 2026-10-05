@@ -53,7 +53,7 @@ Tier B — changes measured numbers. Each needs its effect attributable.
 | :-- | :-- | :-- | :-- | :-- |
 | B1 | #2475 refine key split | `src/aminx/families/potts_mpnn/sample_host.py` | `optimize_pdb` / `optimize_fasta`, and the sample path **only when a chain suffix is set** | No gate slug exercises those paths, so plausibly zero rows move. Confirm before assuming. |
 | B2 | #2371 stage 2 step 3 (dispatched sample loop) | `src/aminx/families/potts_mpnn/sample_host.py`, `src/aminx/host/family_runner.py` | the sample chunk path — **which includes refine@0.3** | See §3. This is the expensive one. |
-| B3 | #2480(b) padded-vs-real length | likely `src/aminx/` | unknown | Not yet diagnosed. `(128,1)` vs `(76,21)`; same shape as #2135 / #2081. Size unknown, so do not commit to it blind. |
+| B3 | #2480(b) `state_position_map` not bucket-padded | `src/aminx/inference/bundle_builder.py` (one field) | **small, now diagnosed** | See §3a. One conditioning field escapes bucket padding; everything else in the bundle is padded correctly. |
 
 Tier C — larger, and each wants its own decision first, so listed for completeness rather than
 proposed: #2459 (`tied_positions` inert), #2443 (Potts optional dicts), #2435 (eight unread
@@ -61,6 +61,56 @@ Options fields), #2433 (three unimplemented Potts fields — note its own impact
 `test_superset` cannot pass while two alias rows have no mappable target), #2311 (LASEr RBF
 `D_mu` dtype), #2309 (`laser_layers` pure-rtol tolerance), #2321 (`categorical_draw` f64 CDF),
 #2444 (`AMINX_PORT_WAVE` loads the wrong oracle), #2371 steps 1/2/4/5.
+
+## 3a. B3 is now diagnosed: one conditioning field escapes bucket padding
+
+Measured by instrumenting the benchmark smoke on titanix (`--smoke --hardware CPU`, L=76
+fixture, `BucketingConfig()` whose default buckets are `(64, 128, 256, 512)`, so 76 buckets
+up to **128**). Printing the bundle at the failing call site:
+
+```
+state_position_map = (1, 76)      <- REAL length, not padded
+bias               = (128, 21)    <- bucket-padded
+sequence_oh        = (128, 21)    <- bucket-padded
+tie_group_map      = (1, 128)     <- bucket-padded
+geometry.coords    = (1, 128, 4, 3)
+geometry.mask      = (1, 128)
+```
+
+The padding is otherwise uniform and correct. `state_position_map` alone keeps the real
+length. `_apply_logit_transform` (`inference/decode/_base.py:122-123`) then calls
+`_realign_states_to_reference`, whose signature is `("S L V", "S L") -> "S L V"`
+(`inference/decode/_kernel.py:173-176`): it **gathers the logits along L into the map's
+frame**, silently turning `(S, 128, 21)` into `(S, 76, 21)`. The next line adds the still-padded
+`bias`, giving the reported
+
+```
+TypeError: add got incompatible shapes for broadcasting: (76, 21), (128, 21)
+```
+
+Traceback, for whoever implements: `bench_aminx_jax.py:539` -> `host/plan.py:791` (score) ->
+`:709` (decode) -> `inference/decode/conditional.py:154` -> `_base.py:126` ->
+`inference/logits.py:104` (`result = result + bias`).
+
+**Two reasons this is larger than a benchmark artifact.** (1) The map is an *identity* map by
+default -- the realignment docstring says so explicitly -- so it is non-None on an ordinary
+single-structure score, and therefore **every bucket-padded conditional score takes this
+path**, not just multi-state designs. (2) A second mismatch sits immediately behind it:
+`conditional.py:159` passes `cond.tie_group_map[0]` (length 128) to `_apply_tie_group_fuse`
+alongside fused logits that are now length 76.
+
+**Not fixed here**, because `src/aminx/` is scoped and a commit there invalidates all eight
+ledger rows (§0). The fix is one field in the bundle's padding step, and the convention
+question -- pad `state_position_map` to the bucket like every sibling field, or slice `bias`
+and `tie_group_map` down to the real length -- should be answered the way the rest of the
+bundle already answers it: pad.
+
+**Corrects two earlier mischaracterisations of mine.** `c18062d6`'s message called 128 "a
+padded length" and guessed the failure was in `ar_sample`; and a later reading of mine called
+128 a sample-axis cardinality. Both wrong. The failing cell is `score_conditional`, which goes
+through `make_inference_plan` normally, and 128 is a *length bucket ceiling* --
+`max_length` defaults to 512 and `N_SAMPLES.cardinality` merely happens to also be 128
+(`tiling/axes.py:66`), which is a coincidence that made the wrong reading look plausible.
 
 ## 3. The load-bearing constraint: B2 costs a Potts re-run
 
