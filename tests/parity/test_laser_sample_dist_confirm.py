@@ -1,8 +1,8 @@
 # ruff: noqa: S101
 """CPU checks for the LASEr confirmatory distributional script.
 
-No oracle interpreter and no checkpoint: refusal until the pilot constants
-exist, cell refusal, unit seeds, and result assembly on synthetic tokens.
+No oracle interpreter and no checkpoint: derived pilot constants, cell
+refusal, unit seeds, and result assembly on synthetic tokens.
 """
 
 from __future__ import annotations
@@ -63,25 +63,49 @@ def _load() -> Any:
 confirm = _load()
 
 
-def test_refuses_until_the_pilot_constants_are_committed() -> None:
-  assert confirm.PILOT_RUN_ID is None
-  assert confirm.CELLS == {}
+_DERIVED_CELLS = {
+  "min_p0@0.3": {
+    "delta": 0.01,
+    "delta_chi": 0.05,
+    "m": 1.25,
+    "h_hat": 0.001560551948051945,
+    "n": 1000,
+  },
+  "min_p0@1.0": {
+    "delta": 0.01,
+    "delta_chi": 0.05,
+    "m": 1.1,
+    "h_hat": 0.0017875000000000252,
+    "n": 1000,
+  },
+}
+
+
+def test_pilot_constants_match_the_derived_run() -> None:
+  assert confirm.PILOT_RUN_ID == "e0cefaa7-e027-4efe-bf63-07d78bcfabff"
   assert confirm.LASER_CELLS == ("min_p0@0.3", "min_p0@1.0", "min_p0.05@0.3")
-  with pytest.raises(SystemExit, match="PILOT_RUN_ID"):
-    confirm.selected_cells(None, smoke=False)
-  with pytest.raises(SystemExit, match="PILOT_RUN_ID"):
-    confirm.main([])
+  assert tuple(confirm.CELLS) == ("min_p0@0.3", "min_p0@1.0")
+  for cell, row in _DERIVED_CELLS.items():
+    assert tuple(confirm.CELLS[cell]) == ("delta", "delta_chi", "m", "h_hat", "n")
+    for key, value in row.items():
+      assert confirm.CELLS[cell][key] == value
+      assert type(confirm.CELLS[cell][key]) is type(value)
+  assert confirm.selected_cells(None, smoke=False) == ["min_p0@0.3", "min_p0@1.0"]
   assert confirm.selected_cells(None, smoke=True) == ["min_p0@1.0"]
 
 
-def test_cells_rejects_min_p0_at_0_1_and_unknown() -> None:
+def test_cells_rejects_excluded_and_unknown() -> None:
   with pytest.raises(SystemExit, match="min_p0@0.1"):
     confirm.selected_cells("min_p0@0.1", smoke=False)
   with pytest.raises(SystemExit, match="min_p0@0.1"):
     confirm.selected_cells("min_p0@0.1", smoke=True)
-  with pytest.raises(SystemExit, match="unknown cell"):
+  with pytest.raises(SystemExit, match=r"min_p0\.05@0\.3"):
+    confirm.selected_cells("min_p0.05@0.3", smoke=False)
+  with pytest.raises(SystemExit, match=r"min_p0\.05@0\.3"):
+    confirm.selected_cells("min_p0.05@0.3", smoke=True)
+  with pytest.raises(SystemExit, match="unknown cell plain@1.0"):
     confirm.selected_cells("plain@1.0", smoke=False)
-  with pytest.raises(SystemExit, match="unknown cell"):
+  with pytest.raises(SystemExit, match="unknown cell min_p0@0.2"):
     confirm.selected_cells("min_p0@0.2", smoke=False)
 
 

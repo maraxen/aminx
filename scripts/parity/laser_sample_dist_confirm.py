@@ -1,8 +1,8 @@
 """Confirmatory LASEr distributional protocol.
 
-The pilot has not committed δ, δ_χ, m, ĥ, or n yet, so ``PILOT_RUN_ID`` is
-``None`` and ``CELLS`` is empty. A non-smoke run refuses to start until both
-are filled. ``min_p0@0.1`` stays excluded.
+Pilot constants come from bathos run e0cefaa7-e027-4efe-bf63-07d78bcfabff.
+``CELLS`` holds the two derived cells. The selector refuses ``min_p0@0.1``
+and ``min_p0.05@0.3``; ``LASER_CELLS`` still names all three spec cells.
 
 One resumable unit is one (cell, structure, run). Upstream units (U1 shimmed,
 U2 unshimmed) call the pilot sampler. Aminx units (A at T, CTRL_m at m·T) call
@@ -38,8 +38,23 @@ import graded_resume
 import laser_sample_dist_pilot as pilot
 import sample_dist_stats as stats
 
-PILOT_RUN_ID: str | None = None
-CELLS: dict[str, dict[str, float | int]] = {}
+PILOT_RUN_ID: str = "e0cefaa7-e027-4efe-bf63-07d78bcfabff"
+CELLS: dict[str, dict[str, float | int]] = {
+  "min_p0@0.3": {
+    "delta": 0.01,
+    "delta_chi": 0.05,
+    "m": 1.25,
+    "h_hat": 0.001560551948051945,
+    "n": 1000,
+  },
+  "min_p0@1.0": {
+    "delta": 0.01,
+    "delta_chi": 0.05,
+    "m": 1.1,
+    "h_hat": 0.0017875000000000252,
+    "n": 1000,
+  },
+}
 LASER_CELLS = ("min_p0@0.3", "min_p0@1.0", "min_p0.05@0.3")
 N_BOOT = 2000
 # 4jnj-1_prot.pdb lives in the vendored LASEr repo. Entries 3-6 of
@@ -62,7 +77,22 @@ STRUCTURES = {
   ),
 }
 _CELL_KEYS = ("delta", "delta_chi", "m", "h_hat", "n")
-_EXCLUDED_CELL = "min_p0@0.1"
+_EXCLUDED_CELLS = ("min_p0@0.1", "min_p0.05@0.3")
+_EXCLUSION_REASONS = {
+  "min_p0@0.1": (
+    "min_p0@0.1 is excluded pending the user's decision doc "
+    ".praxia/docs/decisions/261004_sample-dist-pilot-fixtures-and-low-t.md; "
+    "this confirmatory run refuses it"
+  ),
+  "min_p0.05@0.3": (
+    "min_p0.05@0.3 is excluded because UPSTREAM LASErMPNN cannot produce it "
+    "at all (debt 2476: utils/model.py:897-903 feeds the min_p-masked -inf "
+    "logits into chi_offset_prediction_layers, giving a NaN offset that "
+    "poisons chi_prev and makes the next chi layer's logits all NaN, so "
+    "torch Categorical raises; measured on 101m_1 at chi_min_p=0.05, T=0.3); "
+    "this confirmatory run refuses it"
+  ),
+}
 _WORK = "laser_sample_dist_confirm"
 _WORK_SMOKE = "laser_sample_dist_confirm_smoke"
 _SMOKE_CELL_KEY = "min_p0@1.0"
@@ -128,7 +158,10 @@ def _parse(argv: list[str]) -> Any:
   parser.add_argument(
     "--cells",
     default=None,
-    help="comma-separated subset of the LASEr cells; min_p0@0.1 is refused",
+    help=(
+      "comma-separated subset of the LASEr cells; "
+      "min_p0@0.1 and min_p0.05@0.3 are refused"
+    ),
   )
   return parser.parse_args(argv)
 
@@ -147,23 +180,23 @@ def _require_cell_row(cell: str, row: dict[str, float | int]) -> None:
 
 
 def selected_cells(raw: str | None, *, smoke: bool) -> list[str]:
-  """Cells this process will run. ``min_p0@0.1`` and unknown keys are refused."""
+  """Cells this process will run.
+
+  An omitted ``--cells`` selects the derived cells. ``min_p0@0.1``,
+  ``min_p0.05@0.3``, and unknown keys are refused.
+  """
   if smoke and raw is None:
     chosen = [_SMOKE_CELL_KEY]
   elif raw is None:
-    chosen = list(LASER_CELLS)
+    chosen = [cell for cell in LASER_CELLS if cell not in _EXCLUDED_CELLS]
   else:
     chosen = _split_cells(raw)
   if not chosen:
     msg = "--cells selected nothing; allowed: " + ",".join(LASER_CELLS)
     raise SystemExit(msg)
   for cell in chosen:
-    if cell == _EXCLUDED_CELL:
-      msg = (
-        "min_p0@0.1 is excluded (pending user decision); "
-        "this confirmatory run refuses it"
-      )
-      raise SystemExit(msg)
+    if cell in _EXCLUDED_CELLS:
+      raise SystemExit(_EXCLUSION_REASONS[cell])
     if cell not in LASER_CELLS:
       msg = f"unknown cell {cell}; allowed: {','.join(LASER_CELLS)}"
       raise SystemExit(msg)
@@ -173,9 +206,9 @@ def selected_cells(raw: str | None, *, smoke: bool) -> list[str]:
       msg = "smoke runs min_p0@1.0 on 103m_1 only"
       raise SystemExit(msg)
     return ordered
-  if PILOT_RUN_ID is None or not CELLS:
+  if not CELLS:
     msg = (
-      "refusing confirmatory run: PILOT_RUN_ID is unset and CELLS is empty "
+      "refusing confirmatory run: CELLS is empty "
       "until the LASEr pilot constants are committed"
     )
     raise SystemExit(msg)
