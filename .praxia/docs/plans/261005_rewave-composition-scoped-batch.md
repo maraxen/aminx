@@ -26,6 +26,41 @@ were landed tonight without touching a row): `tests/knob_gate/`, `tests/lint/`, 
 `tests/audit/`, `tests/benchmarks/`, `scripts/benchmarks/`, `scripts/redsox/`, `docs/`,
 `.praxia/docs/`.
 
+## 0a. Sequencing: run the wave AFTER the main merge, or pay for it twice
+
+The eight rows are **currently live**, and the frame you evaluate that in decides the answer —
+which is worth stating because evaluating it in the wrong frame gives the opposite result.
+
+| frame | scoped commits since `feade020` | rows |
+| :-- | :-- | :-- |
+| `origin/wt/260929-potts-laser-main` (the sprint branch — **the gate's frame**) | **0** | **live** |
+| `wt/260929-laser-confirm` (this confirmatory branch) | **41** | would fail 1c |
+
+`feade020` is dated 2026-10-04 01:34, *"redsox: all eight ledger rows re-measured and grading"*.
+Those 41 scoped commits are **only on this branch** — verified with `git branch --contains`:
+both `bc3f1950` (*merge origin/main into the sprint lineage*, 10-05 08:48, bringing xtrax
+0.4.0a11 + the ChunkedMap dispatch fix) and `5c625b00` (*Potts confirmatory round 2*,
+`scripts/parity/`, 10-05 07:20) exist on `wt/260929-laser-confirm` and its remote, and nowhere
+else. The sprint branch has had no scoped commit since the measurement.
+
+**The consequence is a sequencing constraint, not a composition one.** The main merge is
+wanted — it is the user's standing directive to use xtrax natively, and it carries xtrax
+0.4.0a11 plus the ChunkedMap dispatch fix. The moment that merge (or this branch) reaches the
+sprint lineage, its 41 scoped commits invalidate all eight rows at once by §0's rule. So:
+
+- **Wave before the merge** → eight rows re-measured, then the merge kills them again, and you
+  run a **second** wave. Two re-measurement cycles.
+- **Wave after the merge** → one cycle, which is also the cycle that picks up whatever scoped
+  items are chosen from §2.
+
+So the re-wave is **elective in composition but not in timing**: once the merge lands it is
+forced regardless of which Tier A/B items ride along. Deferring a scoped item to "protect" the
+current rows only works while the sprint branch stays free of this branch and of main.
+
+A corollary worth stating because it is easy to get backwards: the rows being live right now is
+*not* an argument for keeping them. They were measured against a pre-merge tree, so after the
+merge they would describe code that no longer exists even if 1c somehow still accepted them.
+
 ## 1. What the gate is actually waiting on
 
 Gate run `fb898d24` @ `feade020`, from its own `outcomes.jsonl`: **586 passed, 63 failed, 6
