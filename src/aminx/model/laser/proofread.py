@@ -204,6 +204,11 @@ class _Plan:
 
 _PLAN: ContextVar[_Plan | None] = ContextVar("laser_proofread_dropout", default=None)
 _PATCHED = False
+#: Nesting depth of live ``proofread_dropout`` contexts. The class patches are process-global, so
+#: an inner context exiting must NOT unpatch an outer one still running; only the outermost exit
+#: restores. Counted rather than boolean because ``_PATCHED`` alone cannot tell one live context
+#: from two.
+_PATCH_DEPTH = 0
 _ORIGINALS: dict[str, Any] = {}
 
 
@@ -680,7 +685,8 @@ def _install_patches() -> None:
   A warmed jit would keep the unpatched trace, so proofreading runs this under
   ``jax.disable_jit`` and each parity arm is a fresh process.
   """
-  global _PATCHED  # noqa: PLW0603
+  global _PATCHED, _PATCH_DEPTH  # noqa: PLW0603
+  _PATCH_DEPTH += 1
   if _PATCHED:
     return
   _ORIGINALS["homo"] = HomoGATv2.__call__
@@ -813,6 +819,38 @@ def _install_patches() -> None:
   _PATCHED = True
 
 
+def _remove_patches() -> None:
+  """Put the four production methods back when the outermost plan exits.
+
+  ``_install_patches`` has always documented that "the originals are restored when the plan
+  exits", but nothing restored them: ``proofread_dropout``'s ``finally`` reset only the ``_PLAN``
+  ContextVar, so once any proofread context had been entered the four class patches stayed on the
+  classes for the life of the process. Nothing looked broken because each patched method
+  delegates to ``_ORIGINALS[...]`` when no plan is active, which preserves behaviour -- it just
+  preserves it through an extra Python frame and a ContextVar lookup on four hot methods, for
+  every later caller in that process, forever.
+
+  It also blinded a regression test. ``tests/model/test_laser_attention_dropout_2404.py`` asserts
+  that ``HomoGATv2.__call__``/``HeteroGATv2.__call__`` are still the ones defined in
+  ``aminx.model.laser.layers``, precisely because (its own docstring) "the proofread patches
+  replace those methods, so a parity vehicle on the patched path cannot see this defect". Any
+  earlier test in the same worker that entered a proofread context made debt #2404's guard
+  unable to reach the production path at all.
+
+  That is how this surfaced: the a10->a11 xtrax pin had been breaking collection of these tests,
+  and fixing the pin let them run beside a proofread test for the first time.
+  """
+  global _PATCHED, _PATCH_DEPTH  # noqa: PLW0603
+  _PATCH_DEPTH = max(0, _PATCH_DEPTH - 1)
+  if _PATCH_DEPTH > 0 or not _PATCHED:
+    return
+  HomoGATv2.__call__ = _ORIGINALS["homo"]  # ty: ignore[invalid-assignment]
+  HeteroGATv2.__call__ = _ORIGINALS["hetero"]  # ty: ignore[invalid-assignment]
+  EquivariantDropout.__call__ = _ORIGINALS["eqdrop"]  # ty: ignore[invalid-assignment]
+  DenseMLP.__call__ = _ORIGINALS["mlp"]  # ty: ignore[invalid-assignment]
+  _PATCHED = False
+
+
 def _stamp(encoder: LaserEncoder, decoder: LaserDecoder) -> None:
   for index, gat in enumerate(encoder.ligand_encoder.gat_layers):
     object.__setattr__(gat, "proofread_path", f"ligand_encoder.gat_layers.{index}.dropout")
@@ -858,26 +896,31 @@ def proofread_dropout(
   while still rescaling by ``1 / (1 - p)``.
   """
   _install_patches()
-  # Restamp on every entry. The class patch is process-global, but each
-  # encoder carries its own static paths.
-  _stamp(encoder, decoder)
-  plan = _Plan(
-    scalar=scalar,
-    vector=vector,
-    masks=masks,
-    drop_p=drop_p,
-    edges=edges,
-    dropout_key=dropout_key,
-  )
-  plan.chi_ids = _chi_ids(decoder, joint_offsets)
-  token = _PLAN.set(plan)
+  # The install/remove pair straddles everything below, so a raise in _stamp or _Plan cannot
+  # leave the classes patched and the depth counter stranded above zero.
   try:
-    with jax.disable_jit():
-      yield plan
-    # One decode is done. Leftover masks are calls the replay never made.
-    plan.reconcile()
+    # Restamp on every entry. The class patch is process-global while a context is live, but
+    # each encoder carries its own static paths.
+    _stamp(encoder, decoder)
+    plan = _Plan(
+      scalar=scalar,
+      vector=vector,
+      masks=masks,
+      drop_p=drop_p,
+      edges=edges,
+      dropout_key=dropout_key,
+    )
+    plan.chi_ids = _chi_ids(decoder, joint_offsets)
+    token = _PLAN.set(plan)
+    try:
+      with jax.disable_jit():
+        yield plan
+      # One decode is done. Leftover masks are calls the replay never made.
+      plan.reconcile()
+    finally:
+      _PLAN.reset(token)
   finally:
-    _PLAN.reset(token)
+    _remove_patches()
 
 
 def softmax_rows(logits: np.ndarray) -> np.ndarray:
