@@ -22,3 +22,8 @@
   "plan": "",
   "ts": "2026-05-26T18:32:58Z"
 }
+{"agent_id":"a0e0b750ae5d6c185","agent_type":"claude","verdict":"unparsed","commit":"","commit_source":"","plan":"","ts":"2026-10-04T16:50:43Z"}
+{"agent_id":"ad72b017721cc3fb0","agent_type":"claude","verdict":"unparsed","commit":"","commit_source":"","plan":"","ts":"2026-10-04T17:01:29Z"}
+{"agent_id":"a327bedf910e598c6","agent_type":"claude","verdict":"unparsed","commit":"","commit_source":"","plan":"","ts":"2026-10-04T17:09:32Z"}
+{"agent_id":"a2730647ebb4a84b6","agent_type":"claude","verdict":"pass","verdict_raw":"PASS","commit":"","commit_source":"","plan":"","ts":"2026-10-04T17:10:38Z"}
+{"agent_id":"aa2d339f244c6c407","agent_type":"claude","verdict":"unparsed","commit":"","commit_source":"","plan":"","ts":"2026-10-04T17:14:34Z"}
