@@ -68,21 +68,22 @@ The refine@0.3 confirmatory run is in flight **pinned to `5c625b00`**, a tree th
 contain B2. B2 changes the sample chunk path, and refine@0.3 goes through that path. So:
 
 - **Land B2 → tonight's refine@0.3 result no longer describes the final tree**, and it has to be
-  re-run. Cost measured from this very run, from its own stamp mtimes: **~8–8.5 h, serial**.
+  re-run. Cost measured from this very run, from its own stamp mtimes: **~8.5–9 h, serial**.
 - **Leave B2 out → the run stands**, and stage 2 of #2371 waits for a later wave.
 
 That is the single biggest lever in the composition, and it is not a correctness question —
-both answers are defensible. It is a question of whether stage 2 is worth ~8 h of re-measurement
+both answers are defensible. It is a question of whether stage 2 is worth ~8.75 h of re-measurement
 now or later.
 
-**Where the ~8 h comes from** (read off the in-flight run's own stamp mtimes in
+**Where the ~8.75 h comes from** (read off the in-flight run's own stamp mtimes in
 `/tmp/potts_sample_dist_confirm_r2/units`, so it is measured, not projected from a sidecar):
 twelve stamps at 10:34 10:47 10:53 10:59 11:36 12:19 13:16 14:09 14:46 15:23 15:54 16:24,
 i.e. gaps of 13 6 6 37 43 57 53 37 37 31 30 min. **Per-unit cost is bimodal** — four fast
 upstream-arm units at ~6–14 min and eight aminx-arm units averaging **40.6 min** — and the
 work is **serial**: exactly one `--aminx-worker` process exists at a time and no two stamps
-overlap. Sixteen units therefore cost ~8–8.5 h end to end; this run started 10:20 and projects
-to finish ~18:35.
+overlap. A re-run pays twelve *slow* units, not twelve average ones, so the arithmetic is
+12 × 40.6 + 4 × 9.75 ≈ **8.75 h**; call it **~8.5–9 h**. This run started 10:20, has three
+aminx-arm units left behind the one in flight, and projects to finish ~19:05 — consistent.
 
 An earlier revision of this section said "~5–6 h at the current 4-way concurrency". **Both
 halves were wrong**: there is no 4-way concurrency, and averaging the fast upstream units into
