@@ -171,3 +171,25 @@ only if §3's diagnosis has happened first. B2 is the deliberate ~6 h decision.
 Either way the wave is followed by one re-measurement of all eight rows, and **redsox has to be
 re-provisioned first** or step 2 cannot run at all — see debt #2319, which also records that
 the install must survive a `uv sync` rather than being repeated by hand.
+
+### 5a. Redsox re-provisioning splits into a cheap half and a scoped half
+
+Checked on titanix 261005: the **source is already there** — `/home/solab/projects/redsox`,
+a normal installable package (`name = "redsox"`, `version = "0.1.0a1"`, with `src/` and
+`pyproject.toml`). It is simply not installed: `find_spec("redsox")` is `None` in the confirm
+venv and nothing named `redsox` is on `PATH`. So this is a local install, not a fetch or a
+clone, and that splits the blocker in two:
+
+| | what it buys | scope |
+| :-- | :-- | :-- |
+| (a) hand-install from the local checkout | step 2 can run **now**; no repo file changes | **not scoped** — no ledger row touched |
+| (b) declare it so it survives `uv sync` | the durable fix #2319 actually asks for | **scoped** (`pyproject.toml` is in `_SCOPED_FILES`) → rides the wave |
+
+Useful consequence: **(a) unblocks a gate run without a scoped commit.** The gate can be
+re-run to confirm the remaining red is only `laser_score` before anyone commits to the wave.
+(b) is the real fix and must ride the wave, because touching `pyproject.toml` invalidates all
+eight rows by itself.
+
+**Do not do (a) into `aminx-confirm-git/.venv` while the Potts confirmatory run is in
+flight** — that run uses that interpreter, and installing into a venv underneath a live
+measured process is not worth the risk for a step that can wait an hour.
