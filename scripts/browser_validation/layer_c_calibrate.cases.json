@@ -1,0 +1,170 @@
+[
+  {
+    "name": "blocked_no_path_available",
+    "expect": "blocked",
+    "result": {
+      "n_paths_available": 0,
+      "converted_by_path": {"p03": false, "p04": false},
+      "n_measurements_expected": 0,
+      "n_measurements_computed": 0,
+      "git_hash": "0000000000000000000000000000000000000a",
+      "git_clean": true,
+      "harness_ok": false,
+      "cross_origin_isolated": false,
+      "delta_c04": null,
+      "delta_c03": null,
+      "controls_total": 2,
+      "controls_sized": 0,
+      "params_written": false,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
+    "name": "incomplete_dirty_tree_wins_over_ctrl_unsized",
+    "expect": "incomplete",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 7,
+      "git_hash": "0000000000000000000000000000000000000b",
+      "git_clean": false,
+      "harness_ok": true,
+      "cross_origin_isolated": true,
+      "delta_c04": 0.00004,
+      "delta_c03": null,
+      "controls_total": 2,
+      "controls_sized": 1,
+      "params_written": false,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
+    "name": "incomplete_harness_did_not_produce_a_result",
+    "expect": "incomplete",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 0,
+      "git_hash": "0000000000000000000000000000000000000c",
+      "git_clean": true,
+      "harness_ok": false,
+      "cross_origin_isolated": false,
+      "delta_c04": null,
+      "delta_c03": null,
+      "controls_total": 2,
+      "controls_sized": 0,
+      "params_written": false,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
+    "name": "incomplete_measurement_cell_missing",
+    "expect": "incomplete",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 6,
+      "git_hash": "0000000000000000000000000000000000000d",
+      "git_clean": true,
+      "harness_ok": true,
+      "cross_origin_isolated": true,
+      "delta_c04": 0.00004,
+      "delta_c03": 0.000008,
+      "controls_total": 2,
+      "controls_sized": 2,
+      "params_written": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
+    "name": "not_isolated_harness_ran_without_coop_coep",
+    "expect": "not_isolated",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 7,
+      "git_hash": "0000000000000000000000000000000000000e",
+      "git_clean": true,
+      "harness_ok": true,
+      "cross_origin_isolated": false,
+      "delta_c04": 0.00004,
+      "delta_c03": 0.000008,
+      "controls_total": 2,
+      "controls_sized": 2,
+      "params_written": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
+    "name": "ctrl_unsized_delta_search_failed",
+    "expect": "ctrl_unsized",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 7,
+      "git_hash": "0000000000000000000000000000000000000f",
+      "git_clean": true,
+      "harness_ok": true,
+      "cross_origin_isolated": true,
+      "delta_c04": 0.00004,
+      "delta_c03": null,
+      "controls_total": 2,
+      "controls_sized": 1,
+      "params_written": false,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
+    "name": "ctrl_unsized_deltas_sized_but_manifest_rebuild_failed",
+    "expect": "ctrl_unsized",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 7,
+      "git_hash": "00000000000000000000000000000000000011",
+      "git_clean": true,
+      "harness_ok": true,
+      "cross_origin_isolated": true,
+      "delta_c04": 0.00004,
+      "delta_c03": 0.000008,
+      "controls_total": 2,
+      "controls_sized": 2,
+      "params_written": false,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  },
+  {
+    "name": "pass_fully_clean_with_not_advanced_headroom",
+    "expect": "pass",
+    "result": {
+      "n_paths_available": 2,
+      "converted_by_path": {"p03": true, "p04": true},
+      "n_measurements_expected": 7,
+      "n_measurements_computed": 7,
+      "git_hash": "00000000000000000000000000000000000010",
+      "git_clean": true,
+      "harness_ok": true,
+      "cross_origin_isolated": true,
+      "delta_c04": 0.00004,
+      "delta_c03": 0.000008,
+      "controls_total": 2,
+      "controls_sized": 2,
+      "params_written": true,
+      "artifact_subdir": "abcdef123456",
+      "versions": {"jax": "0.10.2"}
+    }
+  }
+]

@@ -17,6 +17,9 @@ from aminx.types.arrays import (
 )
 
 
+_MIN_BACKBONE_ATOMS = 4  # N, CA, C, O
+
+
 @jax.jit
 def apply_noise_to_coordinates(
   key: PRNGKeyArray,
@@ -78,12 +81,43 @@ def compute_backbone_coordinates(
     (10, 5, 3)
 
   """
-  # Coordinates are in Atom37 format from proxide (N, CA, C, CB, O, ...)
-  # But we want to return them in PDB format (N, CA, C, O, CB)
-  nitrogen = coordinates[:, atom_order["N"], :]
-  alpha_carbon = coordinates[:, atom_order["CA"], :]
-  carbon = coordinates[:, atom_order["C"], :]
-  oxygen = coordinates[:, atom_order["O"], :]
+  # Two callers pass two different layouts on this same "atom" axis (260926_browser-
+  # export-loop, T2b):
+  #   - The normal (>= 5-atom) path: full Atom37 format from proxide
+  #     (N, CA, C, CB, O, ...), where `atom_order["O"] == 4` is a genuine in-range
+  #     column. We want to return atoms in PDB format (N, CA, C, O, CB).
+  #   - The compact export-wrapper path (`aminx.export.wrappers`, D-B): a
+  #     pre-extracted, backbone-only ``(L, 4, 3)`` array in the LITERAL column order
+  #     (N, CA, C, O) -- there is no CB column to index at all. `atom_order["O"] == 4`
+  #     is OUT OF RANGE for a 4-wide axis (valid indices 0..3). JAX's basic-indexing
+  #     lowering silently falls back to `lax.dynamic_slice` for that read, and XLA
+  #     clamps the out-of-range start index to the last valid one (3) at runtime -- by
+  #     coincidence this recovers the correct value here, because column 3 in the
+  #     compact (N, CA, C, O) layout genuinely IS the oxygen atom, so no numerical
+  #     output was ever wrong. But `jax2onnx` lowers the same computation to a literal,
+  #     UNCLAMPED ONNX `Slice(start=4)` on a dim of size 4, which onnxruntime rejects at
+  #     `InferenceSession` construction: `Squeeze` downstream sees a genuinely empty
+  #     `[L, 0, 3]` slice (`ShapeInferenceError`, node `node_Squeeze_24`). Index the
+  #     compact layout by its own in-range positions instead of relying on the clamp,
+  #     so both JAX and any export target agree, and no `dynamic_slice` is ever traced.
+  if coordinates.shape[-2] < _MIN_BACKBONE_ATOMS:
+    # N, CA, C and O are needed. With fewer, `atom_order["O"] == 4` is out of range and JAX
+    # silently clamps the read to the last column, so O quietly becomes C (aminx #2152).
+    msg = (
+      f"coordinates must have at least {_MIN_BACKBONE_ATOMS} atoms per residue (N, CA, C, O); "
+      f"got atom axis of size {coordinates.shape[-2]} in shape {coordinates.shape}"
+    )
+    raise ValueError(msg)
+  if coordinates.shape[-2] == 4:
+    nitrogen = coordinates[:, 0, :]
+    alpha_carbon = coordinates[:, 1, :]
+    carbon = coordinates[:, 2, :]
+    oxygen = coordinates[:, 3, :]
+  else:
+    nitrogen = coordinates[:, atom_order["N"], :]
+    alpha_carbon = coordinates[:, atom_order["CA"], :]
+    carbon = coordinates[:, atom_order["C"], :]
+    oxygen = coordinates[:, atom_order["O"], :]
 
   alpha_to_nitrogen = alpha_carbon - nitrogen
   carbon_to_alpha = carbon - alpha_carbon

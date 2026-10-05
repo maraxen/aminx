@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>aminx browser validation - Phase 0 T3 ORT Web smoke</title>
+  </head>
+  <body>
+    <!--
+      Loaded headless by run_smoke.mjs (Playwright, Chromium) via serve.mjs,
+      which sets Cross-Origin-Opener-Policy: same-origin and
+      Cross-Origin-Embedder-Policy: require-corp -- required for
+      `self.crossOriginIsolated` and multi-threaded wasm, even though this
+      smoke pins `numThreads = 1` (AC-3).
+    -->
+    <script type="module" src="./smoke.mjs"></script>
+  </body>
+</html>

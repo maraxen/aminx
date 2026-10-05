@@ -40,7 +40,7 @@ from aminx.run.specs import SamplingSpecification
 from aminx.types.bundles import EncoderOutput
 from aminx.types.stages import ConditionalDecodeStep, StageSet
 from aminx.utils.data_structures import Protein
-from xtrax.tiling import SafeMap
+from xtrax.tiling import ChunkedMap
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +112,7 @@ def _make_dispatch_monkeypatches(monkeypatch, *, noise_dim: int = 1):
         # execution; Vmap's _dispatch_axis branch calls jax.vmap directly and
         # bypasses that mock, reaching real body execution against fixture
         # gaps these tests never intended to exercise.
-        lambda plan, name: MagicMock(strategy=SafeMap(batch_size=1)),
+        lambda plan, name: MagicMock(strategy=ChunkedMap(batch_size=1)),
     )
     monkeypatch.setattr(
         "aminx.host.kernel_dispatch.extract_batch_sizes",

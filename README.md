@@ -7,15 +7,15 @@
 [![Documentation](https://img.shields.io/badge/docs-online-blue.svg)](http://maraxen.github.io/Aminx)
 
 > [!WARNING]
-> **Alpha release (v0.1.0a1).** aminx is under active development. The API is functional and validated against the LigandMPNN reference, but may change between releases. You may encounter bugs or rough edges — please open an issue if something breaks.
+> **Alpha release.** aminx is under active development. The API is functional, but parity with the LigandMPNN reference is only partly established (see below), and the API may change between releases. You may encounter bugs or rough edges — please open an issue if something breaks.
 
-Aminx is a JAX/Equinox reimplementation of the [LigandMPNN](https://github.com/dauparas/LigandMPNN) codebase. It reproduces the PyTorch reference to ≥ 0.999 Pearson correlation across all five decoding paths, and runs 8–61× faster on a single structure (H200) by trading eager dispatch for `jit`/`vmap`/`scan` kernels.
+Aminx is a JAX/Equinox reimplementation of the [LigandMPNN](https://github.com/dauparas/LigandMPNN) codebase. A graded literature-parity audit against LigandMPNN@`26ec57ac` (2026-09-26) found several paths that match the reference to within 1e-4 nats, and confirmed defects in the ligand, membrane and conditional-scoring paths. The global grade is **FAIL** for now; see the [verdict](.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md) and the per-path table below. It runs 8–61× faster on a single structure (H200) by trading eager dispatch for `jit`/`vmap`/`scan` kernels.
 
 What you get:
 
 - A functional `sample()` / `score()` API — no model objects to wire up, no inference loop to write.
 - A composable inference layer (`StageSet`) for swapping logit transforms, encode paths, and decode variants without touching kernel math.
-- Numerical parity with upstream LigandMPNN, validated across unconditional, conditional, autoregressive, membrane, and side-chain-packer paths.
+- Numerical parity with upstream LigandMPNN is measured per path and is **not complete**: some paths match to within 1e-4 nats and the audit found defects in others (see the verdict above). Through the public run API, a pre-registered end-to-end experiment (`scripts/parity/e2e_run_api_parity.py`) passes on CPU for one structure (1BC8 chain C) with ProteinMPNN and LigandMPNN checkpoints, varying temperature, omit/bias amino acids, fixed and redesigned residues, decoding order and checkpoint family. It does not vary batch size, symmetry, ligand parsing, side-chain packing, membrane labels or other structures. The same experiment failed on a GPU (aminx #2391, still open: a workaround covers one cause, another shape is unexplained) and has not been re-run there.
 - Native batching across temperatures, backbones, and sequence lengths — operations you'd normally write as Python loops are compiled into single JAX kernels, so there's no recompilation penalty and no padding waste.
 
 The batching point is worth unpacking: in vanilla JAX, running N temperatures requires either a Python loop (N separate compiled calls, or worse, N retraces) or manually writing a `vmap`. aminx has already done that work. Passing `temperature=[0.1, 0.3, 0.7]` vmaps over the temperature axis in one compiled call; scoring a mixed-length library reuses a compiled kernel per length bucket rather than recompiling per structure. The speedups in the tables below come from applying this pattern consistently to the operations most commonly written as loops in protein design workflows.
@@ -52,20 +52,38 @@ The 8× floor holds across hardware; ceilings reach 84–91× depending on the o
 - [Parity Validation](docs/parity/parity_report.html) — numerical parity report vs the LigandMPNN reference
 
 ## Validation
-
+Aminx is audited against the upstream [LigandMPNN](https://github.com/dauparas/LigandMPNN) reference (which includes ProteinMPNN behavior):
 Aminx is validated against the upstream [LigandMPNN](https://github.com/dauparas/LigandMPNN) reference (which includes ProteinMPNN behavior):
 
-| Decoding Path | Tolerance | Status |
-|---------------|-----------|---------|
-| **Unconditional** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Conditional** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Autoregressive** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Membrane** | atol/rtol 1e-4, corr ≥ 0.999 | Validated |
-| **Side-chain packer** | atol 1e-4/1e-3, corr ≥ 0.999 | Validated |
+Latest graded audit (browser-validation Phase 1, run `e3d3ffa2`, HEAD `e4b86a0c`): **global grade FAIL**.
+Two things force it. The audit's stricter distributional sampling test could not be run
+(its calibration was `budget_exceeded`: 435–483 h projected, because the sampler recomputed the
+decoder over every position at each step). Autoregressive sampling itself is validated by the
+`parity_heavy` suite (`test_autoregressive_sampling_parity`: ≥ 95% token agreement, log-prob
+corr ≥ 0.95). And 8 core defects were confirmed adversarially. 8/8
+reference-derived invariants pass, and each goes red on an injected defect. Pre-registered clause
+parity is 19/33 core clauses (0.576). Full details:
+[`.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md`](.praxia/docs/audits/260926_mpnn-reference-parity-verdict.md).
 
-Full parity suite: **30/30 `parity_heavy` tests pass** on the Engaging cluster (job 14203624). 575 fast tests pass locally (575 passed, 6 skipped, 2 xfailed).
+| Path | Exact-tier worst ratio to bar (1e-4 nats) | Advances to Phase 2 | Blocking |
+|------|------------------------------------------|---------------------|----------|
+| P00 unconditional score | 0 | yes | – |
+| P01 weight conversion | 0 | no | bias-handling / topology defects |
+| P02 input parsing | 0 (exact) | no | null-bar informational row classified over_bar (harness quirk) |
+| P03 k-NN graph | 0 | yes | – |
+| P04 conditional score (ProteinMPNN) | 0.36 | yes | – |
+| P05/P06 conditional score (context) | 0.47 / 0.48 | no | 2-hop self-identity leak |
+| P07/P08 sampling | – | no | distributional sampling test not run (budget); AR parity test passes |
+| P09 tied sampling | 0.64 | no | distributional sampling test not run; fixed-position log-probs |
+| P11 LigandMPNN | 2221 (0.22 nats) | no | atom_context 16 vs 25; `v_c` bias; ligand positional bias |
+| P12 side-chain context | 0.44 | no | not-advanced rows |
+| P13 membrane | ≈ 5 × 10⁴ (≈ 5 nats) | no | random-init `physics_projection` bias |
+| P14 packer | not implemented | no | – |
 
-Canonical parity docs (source of truth):
+Earlier claim, superseded by the audit above: 30/30 `parity_heavy` tests pass on Engaging (job
+14203624). That suite never tested the defects the audit found.
+
+Older parity reports (predate the 2026-09-26 audit):
 
 - [Parity report (HTML)](docs/parity/parity_report.html)
 - [Parity report (PDF)](docs/parity/parity_report.pdf)
@@ -315,7 +333,16 @@ aminx run score --inputs structure.pdb --sequences-to-score ACDEFGHIKLMNPQRSTVWY
 aminx run score --inputs structure.pdb --sequences-to-score ACDEFGHIKLMNPQRSTVWY --emit-json
 ```
 
-All four subcommands (`sample`, `score`, `jacobian`, `inspect`) share the same base option surface: `--inputs`, `--model-weights`, `--model-version`, `--model-family`, `--batch-size`, `--backbone-noise`, `--random-seed`, and the full `RunSpecification` field set. Spec construction failures exit 1; an unwired runner exits 2.
+The base options are shared by all four subcommands (`sample`, `score`, `jacobian`, `inspect`) but belong to the **`run` group, so they go before the subcommand**: `--checkpoint-id`, `--chain-id`, `--max-length`, `--model-weights`, `--model-version`, `--model-family`, `--batch-size`, `--backbone-noise`, `--random-seed`, and the rest of the `RunSpecification` field set. Options specific to a subcommand (`--inputs`, `--num-samples`, `--temperature`, ...) go after it:
+
+```bash
+aminx run --checkpoint-id proteinmpnn_v_48_020 --chain-id C --random-seed 5 --max-length 96 \
+  sample --inputs structure.pdb --num-samples 4 --temperature 0.3
+```
+
+`aminx run sample --chain-id C ...` is rejected (`No such option`). Fields that are not JSON-serialisable (`bias`, `fixed_positions`, `fixed_tokens`, `fixed_mask`, `state_weights`, `decode_fn`) cannot be set from the CLI; use the Python API. Spec construction failures exit 1; an unwired runner exits 2.
+
+`--max-length` is the length every per-position array is padded to (default 512) and the autoregressive decode runs at that **padded** length, so for a short chain it dominates the cost: on one CPU, a 93-residue chain took roughly 86 s/sample at 512 and a small fraction of that at 96. Set it near your real chain length.
 
 #### Driver families — PottsMPNN and LASErMPNN
 
@@ -554,6 +581,13 @@ Because the pin is a full commit SHA, a warm cache resolves with **no network re
 all** — measured at ~0.7 ms against ~236 ms for the unpinned form, which issued a HEAD on
 every call. Pinning is faster *and* reproducible, not a tradeoff between them.
 
+The Hub's `main` branch carries the **newest** weight layout. `HF_REVISION` is the revision this
+code can load: the LigandMPNN and membrane checkpoints were regenerated with the reference's
+bias layout (#162, #163), and because deserialisation is positional, code from before that change
+cannot load the new files (nor new code the old ones). Released wheels stay correct by pinning
+the revision that matches their code. Never re-point a pin to a revision whose layout does not
+match the code, and do not resolve the Hub's `main` from an older checkout.
+
 ### Recording which weights ran
 
 ```python
@@ -582,7 +616,7 @@ In a SLURM batch script, export it before the run line:
 
 ```bash
 #SBATCH --job-name=aminx-score
-export AMINX_WEIGHTS_REVISION=25fb7f6e985724dee7471c3bc18522fe33b9228e
+export AMINX_WEIGHTS_REVISION=<commit-sha>   # a revision compatible with this aminx version
 uv run aminx run score --spec spec.json
 ```
 
@@ -602,7 +636,7 @@ the failure mode this replaces.
 |---------|---------|
 | `uv run pytest` | Fast test suite (excludes `parity_heavy`) |
 | `uv run ruff check src` | Lint |
-| `uv run ty check` | Type check (ty strict) |
+| `uv run --extra dev ty check` | Type check (advisory: not a CI gate, and it currently reports many diagnostics) |
 | `uv run ruff format .` | Auto-format |
 
 All five decoding paths are validated via `parity_heavy` tests — see [Validation Reference](#validation-reference) below.
@@ -638,7 +672,7 @@ source .venv/bin/activate
 
 # Checkout reference implementation (pinned commit used in CI)
 git clone https://github.com/dauparas/LigandMPNN.git reference_ligandmpnn_clone
-cd reference_ligandmpnn_clone && git checkout 3870631 && cd ..
+cd reference_ligandmpnn_clone && git checkout 26ec57ac976ade5379920dbd43c7f97a91cf82de && cd ..  # pin: scripts/browser_validation/reference_pins.json (3870631 is not an upstream commit)
 
 # Optional strict preflight per parity tier
 REFERENCE_PATH=./reference_ligandmpnn_clone \

@@ -1,0 +1,93 @@
+name: Deploy browser ProteinMPNN demo
+
+# Manual dispatch ONLY. Publishing model weights (when
+# AMINX_MODELS_RELEASE_TAG is set) is a deliberate act, not something a push
+# to main should trigger silently -- see the redistribution-rights note on
+# the "Fetch released model weights" step below.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No node, no npm, no install step: the page loads site/*.mjs and
+      # site/*.js as written, so assembling the site is a copy with an
+      # allow-list (tools/build_site.py). python3 is already on the runner.
+      - name: Verify the site allow-list matches the tree
+        run: python3 tools/build_site.py --check
+
+      - name: Build the site (no model weights yet)
+        run: python3 tools/build_site.py --out dist
+
+      # 🔴 WEIGHTS REDISTRIBUTION IS A DELIBERATE, OPT-IN ACT. ProteinMPNN's
+      # checkpoint license must be confirmed to cover public redistribution
+      # via GitHub Pages BEFORE this variable is ever set -- do not set
+      # AMINX_MODELS_RELEASE_TAG "to see if it works." When it is unset (the
+      # default), the site ships with no bundled weights and instead points
+      # at AMINX_MODEL_BASE_URL, if that is set.
+      - name: Fetch released model weights
+        if: ${{ vars.AMINX_MODELS_RELEASE_TAG != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p models
+          gh release download "${{ vars.AMINX_MODELS_RELEASE_TAG }}" \
+            -p 'p07_sample_L*.onnx' -D models/
+          # Rebuild WITH the fetched weights; --models-dir only ever copies
+          # the two exact filenames tools/build_site.py allow-lists
+          # (p07_sample_L128.onnx / p07_sample_L256.onnx), never a stray
+          # *.onnx.data.
+          python3 tools/build_site.py --out dist --models-dir models
+
+      # No release tag configured: point the built site at a remote model
+      # base instead of shipping weights inline (e.g. a release asset URL,
+      # or another host's CDN). One line rewritten in the ALREADY-BUILT
+      # dist/config.js, so the site source (site/config.js) stays the
+      # bundler-free "./models" default for local dev.
+      - name: Point the built site at a remote model base
+        if: ${{ vars.AMINX_MODELS_RELEASE_TAG == '' && vars.AMINX_MODEL_BASE_URL != '' }}
+        run: |
+          python3 - "$AMINX_MODEL_BASE_URL" <<'PY'
+          import sys
+          from pathlib import Path
+          base_url = sys.argv[1]
+          path = Path("dist/config.js")
+          text = path.read_text(encoding="utf-8")
+          rewritten = text.replace(
+              'export const MODEL_BASE = "./models";',
+              f'export const MODEL_BASE = {base_url!r};',
+          )
+          if rewritten == text:
+              raise SystemExit("dist/config.js did not contain the expected MODEL_BASE line")
+          path.write_text(rewritten, encoding="utf-8")
+          PY
+        env:
+          AMINX_MODEL_BASE_URL: ${{ vars.AMINX_MODEL_BASE_URL }}
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,5 @@
+molxmpnn_status 404
+aminx_status 200
+aminx_versions ['0.1.0a1', '0.1.0a2', '0.1.0a28', '0.1.0a3', '0.1.0a4', '0.1.0a5', '0.1.0a7', '0.2.0a1', '0.2.0a2', '0.2.0a3']
+aminx_all_prerelease True
+aminx_latest 0.2.0a3

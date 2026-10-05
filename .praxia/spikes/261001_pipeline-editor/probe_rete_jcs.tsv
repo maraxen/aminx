@@ -1,0 +1,30 @@
+rete	rete@2.0.6	package/_types/presets/classic.d.ts:12	export declare class Socket {
+rete	rete@2.0.6	package/_types/editor.d.ts:22	type: 'connectioncreate';
+rete	rete-connection-plugin@2.0.5	package/_types/flow/builtin/classic/index.d.ts:9	canMakeConnection: (from: SocketData, to: SocketData) => boolean | undefined;
+rete	rete-connection-plugin@2.0.5	package/_types/index.d.ts:34	* @emits connectionpick
+rete	rete-connection-plugin@2.0.5	package/_types/index.d.ts:35	* @emits connectiondrop
+rete	rete-connection-plugin@2.0.5	package/_types/types.d.ts:24	type: 'connectionpick';
+rete	rete-connection-plugin@2.0.5	package/_types/types.d.ts:29	type: 'connectiondrop';
+rete	rete-connection-plugin@2.0.5	package/_types/flow/utils.d.ts:15	export declare function canMakeConnection(initial: SocketData, socket: SocketData): boolean;
+rete	rete-area-plugin@2.3.2	package/_types/area.d.ts:23	translated: (params: TranslateEventParams) => Promise<unknown>;
+rete	rete-area-plugin@2.3.2	package/_types/base.d.ts:28	type: 'nodepicked';
+rete	rete-area-plugin@2.3.2	package/_types/base.d.ts:41	type: 'nodetranslated';
+rete	rete-area-plugin@2.3.2	package/_types/index.d.ts:25	type: 'translated';
+rete	rete-area-plugin@2.3.2	package/_types/node-view.d.ts:12	translated: (params: NodeTranslateEventParams) => Promise<unknown>;
+rete	rete-area-plugin@2.3.2	package/_types/extensions/restrictor.d.ts:28	* @listens translated
+rete	rete-area-plugin@2.3.2	package/_types/extensions/selectable.d.ts:53	* @listens nodepicked
+rete	rete-area-plugin@2.3.2	package/_types/extensions/selectable.d.ts:54	* @listens nodetranslated
+rete	rete-area-plugin@2.3.2	package/_types/extensions/order/simple.d.ts:7	* @listens nodepicked
+rete	rete-area-plugin@2.3.2	package/_types/extensions/order/z-index.d.ts:8	* @listens nodepicked
+numfmt	0.1	js=0.1	py=0.1	SAME
+numfmt	1e-5	js=0.00001	py=1e-05	DIFF
+numfmt	1e-7	js=1e-7	py=1e-07	DIFF
+numfmt	1e21	js=1e+21	py=1e+21	SAME
+numfmt	1e16	js=10000000000000000	py=1e+16	DIFF
+numfmt	100	js=100	py=100.0	DIFF
+numfmt	1.0	js=1	py=1.0	DIFF
+numfmt	123456789012345680000	js=123456789012345680000	py=1.2345678901234568e+20	DIFF
+numfmt	0.000001	js=0.000001	py=1e-06	DIFF
+numfmt	5e-324	js=5e-324	py=5e-324	SAME
+praxis-zone	angular.json polyfills occurrences=0
+praxis-zone	src files mentioning zone.js/provideZone*: ['src/test-setup.ts']

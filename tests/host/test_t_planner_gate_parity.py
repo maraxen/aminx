@@ -57,7 +57,7 @@ def test_heterogeneous_axis_always_safemap_regardless_of_budget():
     incorrectly (T-PLANNER.2 finding)."""
     plan = _plan(_axes(), budget_bytes=int(8e9))
     shape = _shape(plan)
-    assert shape["n_structures"][0] == "SafeMap"
+    assert shape["n_structures"][0] == "ChunkedMap"
 
 
 def test_comfortable_budget_keeps_homogeneous_axes_vmap():
@@ -75,7 +75,7 @@ def test_tight_budget_demotes_exactly_one_axis_in_order():
     there -- n_temperatures/n_noises stay Vmap."""
     plan = _plan(_axes(), budget_bytes=5000)
     shape = _shape(plan)
-    assert shape["n_samples"] == ("SafeMap", 1)
+    assert shape["n_samples"] == ("ChunkedMap", 1)
     assert shape["n_temperatures"][0] == "Vmap"
     assert shape["n_noises"][0] == "Vmap"
 
@@ -95,4 +95,4 @@ def test_small_cardinalities_need_no_demotion():
     assert shape["n_samples"][0] == "Vmap"
     assert shape["n_temperatures"][0] == "Vmap"
     assert shape["n_noises"][0] == "Vmap"
-    assert shape["n_structures"][0] == "SafeMap"
+    assert shape["n_structures"][0] == "ChunkedMap"

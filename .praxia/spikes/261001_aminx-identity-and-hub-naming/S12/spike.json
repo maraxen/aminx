@@ -1,0 +1,28 @@
+{
+  "prereg": {
+    "id": "S12",
+    "claims": {
+      "A27": "asr's `vendor/proteinsmc` is not a git submodule and its `scoring/mpnn.py` differs from proteinsmc main (AMINX_AVAILABLE/find_spec('aminx') vs PRXTEINMPNN_AVAILABLE/find_spec('prxteinmpnn')).",
+      "A57": "asr's vendored proteinsmc defers its aminx imports into the body of make_mpnn_score (none at module level outside TYPE_CHECKING), so importing the module does not import aminx."
+    },
+    "question": "What do proteinsmc main and asr's vendored copy actually guard, is the vendored copy a submodule, and does the vendored copy import aminx at module import time?",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S12/probe.py",
+    "expect_if_true": "main guard line contains find_spec(\"prxteinmpnn\") and the vendored one find_spec(\"aminx\"); 'vendor/proteinsmc' is not in asr .gitmodules paths and there is no .git entry in the vendored directory; the files are not byte-identical; the vendored aminx imports have an empty module_level_runtime list (entries only under type_checking or in_function).",
+    "expect_if_false": "The vendored copy is a submodule, or the files are identical, or the main guard already names aminx (S3-18 is then unnecessary), or the vendored copy lists aminx imports under module_level_runtime (the deferred-import claim A57 is false and S3-18 must not copy that form)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:53:44.858653+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.03508949279785156,
+    "output_sha256": "5e89425222f77515f0fbb17d008b9b492f8bf55eac28485c12a22525381967a9",
+    "output_full_sha256": "5e89425222f77515f0fbb17d008b9b492f8bf55eac28485c12a22525381967a9",
+    "output_bytes": 782,
+    "output_truncated": false,
+    "prereg_sha256": "0a374aa81b9a7420c99328e634f5d8033f73e2e1e022a2bd2b8ee004c6271746",
+    "probe_files": {
+      "probe.py": "d9d330aa4574ba22169e2f1cb2ca21f285c60aa85f5de3dfa2d61828a56ac45e"
+    }
+  }
+}

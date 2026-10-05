@@ -147,6 +147,16 @@ def generate_ar_mask(
 ) -> AutoRegressiveMask:
   """Get the self-excluding autoregressive mask for the given decoding order.
 
+  **Argument convention -- read before passing a deliberate order.** The untied branch
+  compares ``decoding_order`` VALUES as a RANK array (``decoding_order[i]`` = the decode
+  step of position ``i``), whereas everything in ``utils.decoding_order`` returns an ORDER
+  array (``order[t]`` = the position decoded at step ``t``); the tied branch indexes it as an
+  ORDER array. For a uniformly random permutation the two readings are identically
+  distributed, so the mix-up is invisible until someone supplies a structured order (blocks,
+  a rotation, a counterfactual schedule), which silently yields the mask of a different
+  order. ColabDesign applies ``order.argsort()`` first for this reason. To turn an ORDER
+  array into a mask use :func:`ar_mask_from_decoding_order` (#166).
+
   **The diagonal is 0: no position ever reads its own slot.** This matches both
   independent reference implementations, verified against primary source:
 
@@ -204,7 +214,24 @@ def generate_ar_mask(
 
     # Sort groups by their first occurrence in the decoding order
     # We only care about present groups
-    group_decoding_order = jnp.argsort(jnp.where(group_present, group_first_occurrence, N + 1))
+    #
+    # IREE does not honour JAX's stable-sort tie order (xtrax export safety rule
+    # `sort-stability`), and `jnp.argsort` defaults to `stable=True`. Every absent
+    # group shares the SAME sentinel key (N + 1) here, so ties are the common
+    # case, not an edge case. Fold the group index into the sort key instead of
+    # relying on the default's tie order -- same fix as `model.features.top_k`
+    # (PR #156) and `utils.decoding_order.random_decoding_order`: sort
+    # lexicographically on (key, index) with `num_keys=2`, a strict total order
+    # (no two indices are equal), so every correct sort returns this permutation
+    # whether or not it is stable.
+    group_sort_key = jnp.where(group_present, group_first_occurrence, N + 1)
+    group_index = jax.lax.broadcasted_iota(jnp.int32, group_sort_key.shape, 0)
+    _, group_decoding_order = jax.lax.sort(
+      (group_sort_key, group_index),
+      dimension=0,
+      is_stable=False,
+      num_keys=2,
+    )
 
     # If num_groups is provided, we can use it to mask the decoding steps
     # but for now, we just use the full order found.

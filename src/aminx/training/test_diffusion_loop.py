@@ -12,6 +12,7 @@ from proxide.ops.dataset import create_protein_dataset
 from aminx.model.diffusion_mpnn import DiffusionAminx
 from aminx.training.diffusion import NoiseSchedule
 from aminx.training.train_diffusion import train_step
+from aminx.utils.aa_convert import training_labels
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, stream=sys.stdout, force=True)
@@ -64,7 +65,7 @@ def test_diffusion_training() -> None:
     mask = jnp.array(batch.mask)
     residue_index = jnp.array(batch.residue_index)
     chain_index = jnp.array(batch.chain_index)
-    sequence = jnp.array(batch.aatype)
+    sequence = training_labels(batch.aatype)  # AF -> MPNN (issue #109)
     physics_features = jnp.array(batch.physics_features)
 
     step_key = jax.random.fold_in(train_key, i)

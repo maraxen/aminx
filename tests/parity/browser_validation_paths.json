@@ -1,0 +1,540 @@
+{
+  "aminx.run::InspectionSpecification": "P18",
+  "aminx.run::JacobianSpecification": "P17",
+  "aminx.run::PORTABLE_RUN_SPEC_VERSION": "P26",
+  "aminx.run::RunSpec": "P26",
+  "aminx.run::RunSpecification": "P26",
+  "aminx.run::SamplingDriver": "P26",
+  "aminx.run::SamplingSpecification": "P26",
+  "aminx.run::ScoringSpecification": "P26",
+  "aminx.run::SpecJSONDecodeError": "P26",
+  "aminx.run::SpecJSONEncodeError": "P26",
+  "aminx.run::build_run_spec": "P26",
+  "aminx.run::run_spec_portable_from_dict": "P26",
+  "aminx.run::run_spec_portable_to_dict": "P26",
+  "aminx.run::run_specification_from_json": "P26",
+  "aminx.run::run_specification_from_json_dict": "P26",
+  "aminx.run::run_specification_to_json": "P26",
+  "aminx.run::run_specification_to_json_dict": "P26",
+  "aminx.run::sample": "P26",
+  "aminx.run::score": "P26",
+  "aminx.run::topology_hash": "P26",
+  "src/aminx/ebm/checkpoint.py::CheckpointPortReport": "P24",
+  "src/aminx/ebm/checkpoint.py::load_pytorch_checkpoint": "P24",
+  "src/aminx/ebm/conformational_biasing.py::ConformationalStates": "P24",
+  "src/aminx/ebm/conformational_biasing.py::align_conformational_states": "P24",
+  "src/aminx/ebm/conformational_biasing.py::load_conformational_states": "P24",
+  "src/aminx/ebm/conformational_biasing.py::score_conformational_bias": "P24",
+  "src/aminx/ebm/conformational_biasing.py::sequence_to_af_aatype": "P24",
+  "src/aminx/ebm/ddg_stability.py::DDGResult": "P24",
+  "src/aminx/ebm/ddg_stability.py::WildtypeStructure": "P24",
+  "src/aminx/ebm/ddg_stability.py::compute_ddg_stability": "P24",
+  "src/aminx/ebm/ddg_stability.py::generate_real_unfolded_ensemble": "P24",
+  "src/aminx/ebm/ddg_stability.py::generate_synthetic_unfolded_ensemble": "P24",
+  "src/aminx/ebm/ddg_stability.py::identify_buried_hydrophobic_positions": "P24",
+  "src/aminx/ebm/ddg_stability.py::load_ca_backbone_from_pdb": "P24",
+  "src/aminx/ebm/ddg_stability.py::make_point_mutants": "P24",
+  "src/aminx/ebm/ddg_stability.py::random_point_mutants": "P24",
+  "src/aminx/ebm/ddg_stability.py::unfolded_state_correction": "P24",
+  "src/aminx/ebm/decoy_ranking.py::NoiseTimeSweepResult": "P24",
+  "src/aminx/ebm/decoy_ranking.py::rank_decoys_over_noise_time": "P24",
+  "src/aminx/ebm/decoy_ranking.py::rmsd_to_reference": "P24",
+  "src/aminx/ebm/decoy_ranking.py::spearman_energy_quality_correlation": "P24",
+  "src/aminx/ebm/decoy_ranking.py::sweep_noise_time_energies": "P24",
+  "src/aminx/ebm/diffusion.py::VPSchedule": "P24",
+  "src/aminx/ebm/diffusion.py::beta_t": "P24",
+  "src/aminx/ebm/diffusion.py::calc_trans_0": "P24",
+  "src/aminx/ebm/diffusion.py::conditional_var": "P24",
+  "src/aminx/ebm/diffusion.py::diffusion_coef": "P24",
+  "src/aminx/ebm/diffusion.py::drift_coef": "P24",
+  "src/aminx/ebm/diffusion.py::forward_marginal": "P24",
+  "src/aminx/ebm/diffusion.py::marginal_b_t": "P24",
+  "src/aminx/ebm/diffusion.py::score_target": "P24",
+  "src/aminx/ebm/dispatch.py::score_decoy_batch": "P24",
+  "src/aminx/ebm/dispatch.py::score_mutant_ensemble": "P24",
+  "src/aminx/ebm/dispatch.py::score_state_difference": "P24",
+  "src/aminx/ebm/langevin.py::langevin_step": "P24",
+  "src/aminx/ebm/langevin.py::metropolis_hastings_step": "P24",
+  "src/aminx/ebm/langevin.py::run_langevin_equilibration": "P24",
+  "src/aminx/ebm/langevin_schedule.py::run_annealing_schedule": "P24",
+  "src/aminx/ebm/langevin_schedule.py::select_model_for_t": "P24",
+  "src/aminx/ebm/model.py::InputEmbeddings": "P24",
+  "src/aminx/ebm/model.py::ProteinEBMModel": "P24",
+  "src/aminx/ebm/plan.py::DifferenceFuse": "P24",
+  "src/aminx/ebm/plan.py::EBMAxisNames": "P24",
+  "src/aminx/ebm/plan.py::MeanFuse": "P24",
+  "src/aminx/ebm/plan.py::dispatch_axis": "P24",
+  "src/aminx/ebm/plan.py::plan_axis": "P24",
+  "src/aminx/ebm/readout.py::AuxScoreReadout": "P24",
+  "src/aminx/ebm/readout.py::EnergyReadout": "P24",
+  "src/aminx/ebm/readout.py::ScoreReadout": "P24",
+  "src/aminx/ebm/structure_prediction.py::resample_ensemble": "P24",
+  "src/aminx/ebm/structure_prediction.py::run_structure_prediction": "P24",
+  "src/aminx/ebm/training.py::EBMTrainStep": "P24",
+  "src/aminx/ebm/training.py::build_optimizer": "P24",
+  "src/aminx/ebm/training.py::checkpointed_aux_score": "P24",
+  "src/aminx/ebm/training.py::checkpointed_score": "P24",
+  "src/aminx/ebm/training.py::checkpointed_trunk_fn": "P24",
+  "src/aminx/ebm/training.py::get_ebm_checkpoint_manager": "P24",
+  "src/aminx/ebm/training.py::init_training_state": "P24",
+  "src/aminx/ebm/training.py::load_ebm_checkpoint": "P24",
+  "src/aminx/ebm/training.py::make_engine": "P24",
+  "src/aminx/ebm/training.py::masked_mse": "P24",
+  "src/aminx/ebm/training.py::save_ebm_checkpoint": "P24",
+  "src/aminx/ebm/training.py::score_matching_loss": "P24",
+  "src/aminx/ebm/training.py::self_conditioning_estimate": "P24",
+  "src/aminx/ebm/trunk.py::AdaLN": "P24",
+  "src/aminx/ebm/trunk.py::AttentionPairBias": "P24",
+  "src/aminx/ebm/trunk.py::ConditionedTransitionBlock": "P24",
+  "src/aminx/ebm/trunk.py::DiffusionTransformer": "P24",
+  "src/aminx/ebm/trunk.py::DiffusionTransformerLayer": "P24",
+  "src/aminx/ebm/trunk.py::FourierEmbedding": "P24",
+  "src/aminx/ebm/trunk.py::PairwiseConditioning": "P24",
+  "src/aminx/ebm/trunk.py::RelativePositionEncoder": "P24",
+  "src/aminx/ebm/trunk.py::SingleConditioning": "P24",
+  "src/aminx/ebm/trunk.py::Transition": "P24",
+  "src/aminx/ebm/trunk.py::batched_center_random_augmentation": "P24",
+  "src/aminx/ebm/trunk.py::center_random_augmentation": "P24",
+  "src/aminx/ebm/trunk.py::quaternion_to_matrix": "P24",
+  "src/aminx/ebm/trunk.py::random_quaternions": "P24",
+  "src/aminx/ebm/trunk.py::random_rotations": "P24",
+  "src/aminx/host/_base_driver.py::BaseDriver": {
+    "internal": "shared driver base class for host/runner.py entrypoints, covered through P26"
+  },
+  "src/aminx/host/_sampling_helper.py::fixed_provenance_outputs": {
+    "internal": "sampling-result helper utilities for host runner sample(), covered through P26"
+  },
+  "src/aminx/host/_sampling_helper.py::ligand_conditioning_mode": {
+    "internal": "sampling-result helper utilities for host runner sample(), covered through P26"
+  },
+  "src/aminx/host/_sampling_helper.py::resolve_native_tokens": {
+    "internal": "sampling-result helper utilities for host runner sample(), covered through P26"
+  },
+  "src/aminx/host/averaging.py::ArithmeticMeanEncodingFusion": "P15",
+  "src/aminx/host/averaging.py::IdentityEncodingFusion": "P15",
+  "src/aminx/host/averaging.py::get_averaged_encodings": "P15",
+  "src/aminx/host/averaging.py::make_encoding_sampling_split_fn": "P15",
+  "src/aminx/host/campaign.py::InputHashMismatchError": "P28",
+  "src/aminx/host/campaign.py::InputHashUnavailableError": "P28",
+  "src/aminx/host/campaign.py::LegacyV2DoneMarkerError": "P28",
+  "src/aminx/host/campaign.py::ManifestGateState": "P28",
+  "src/aminx/host/campaign.py::StaleDoneMarkerSchemaError": "P28",
+  "src/aminx/host/campaign.py::adopt_legacy_done_markers": "P28",
+  "src/aminx/host/campaign.py::build_manifest_row": "P28",
+  "src/aminx/host/campaign.py::campaign_residue_overrides": "P28",
+  "src/aminx/host/campaign.py::compute_unit_input_hash": "P28",
+  "src/aminx/host/campaign.py::evaluate_campaign_gates": "P28",
+  "src/aminx/host/campaign.py::evaluate_scale_ramp_reports": "P28",
+  "src/aminx/host/campaign.py::execute_manifest": "P28",
+  "src/aminx/host/campaign.py::load_campaign_bias": "P28",
+  "src/aminx/host/campaign.py::load_campaign_tie_group_map": "P28",
+  "src/aminx/host/campaign.py::load_manifest": "P28",
+  "src/aminx/host/campaign.py::main": "P28",
+  "src/aminx/host/campaign.py::parse_fixed_arms": "P28",
+  "src/aminx/host/campaign.py::parse_state_weight_profiles": "P28",
+  "src/aminx/host/campaign.py::plan_campaign_manifest": "P28",
+  "src/aminx/host/campaign.py::plan_scale_ramp": "P28",
+  "src/aminx/host/campaign.py::run_manifest_row": "P28",
+  "src/aminx/host/campaign.py::validate_manifest_rows": "P28",
+  "src/aminx/host/campaign.py::write_campaign_manifest": "P28",
+  "src/aminx/host/campaign.py::write_manifest": "P28",
+  "src/aminx/host/logit_aggregation.py::LogitFingerprint": {
+    "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
+  },
+  "src/aminx/host/logit_aggregation.py::aggregate_logits": {
+    "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
+  },
+  "src/aminx/host/logit_aggregation.py::aggregate_pseudo_perplexities": {
+    "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
+  },
+  "src/aminx/host/logit_aggregation.py::compute_logit_fingerprint": {
+    "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
+  },
+  "src/aminx/host/logit_aggregation.py::compute_pseudo_perplexity": {
+    "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
+  },
+  "src/aminx/host/logit_aggregation.py::pad_to_max": {
+    "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::EncoderIntermediateStagingSink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::IoCallbackEncoderSink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::JacobianAccumulationSink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::NoopDesignSink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::StreamingTensorStagingSink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::active_encoder_staging_sink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::active_jacobian_sink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::active_sampling_staging_sink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::active_scoring_sink": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::encoder_sink_session": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::jacobian_sink_session": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::scoring_tensor_sink_session": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::stage_jacobian_io": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::streaming_tensor_sink_session": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::take_encoder_intermediates": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/output_sinks.py::take_staging_sequences_logits": {
+    "internal": "streaming output-sink plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/plan.py::AxisNames": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::InferenceComponents": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::InferencePlan": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::PlanBudgetInfeasibleError": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::PlanTopologyError": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::compute_sample_keys": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::decision_for": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::extract_batch_sizes": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::make_inference_plan": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::make_sampling_planner": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::plan_bucketed": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::resolve_chunk_size": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::resolve_decode_mode": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::resolve_sample_start": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/plan.py::resolve_target_samples": {
+    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
+  },
+  "src/aminx/host/prep.py::prep_protein_stream_and_model": {
+    "internal": "protein-stream + model prep helper for host runner, covered through P26"
+  },
+  "src/aminx/host/runner.py::inspect": "P18",
+  "src/aminx/host/runner.py::jacobian": "P17",
+  "src/aminx/host/runner.py::sample": "P26",
+  "src/aminx/host/runner.py::score": "P26",
+  "src/aminx/host/sampling_driver.py::SamplingDriver": {
+    "internal": "SamplingDriver orchestration class for host runner, covered through P26"
+  },
+  "src/aminx/host/spec_partition.py::SpecPartitionError": {
+    "internal": "spec partitioning validation for host runner, covered through P26"
+  },
+  "src/aminx/host/spec_partition.py::assert_partition_is_exhaustive": {
+    "internal": "spec partitioning validation for host runner, covered through P26"
+  },
+  "src/aminx/host/spec_partition.py::campaign_sampling_spec_payload": {
+    "internal": "spec partitioning validation for host runner, covered through P26"
+  },
+  "src/aminx/host/stage_adapter.py::StageBundleAdapter": {
+    "internal": "stage-bundle adapter plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/streaming_host.py::StreamingBatchHost": {
+    "internal": "streaming batch host plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/streaming_host.py::iter_streaming_chunks": {
+    "internal": "streaming batch host plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/streaming_host.py::sink_barrier": {
+    "internal": "streaming batch host plumbing for host runner, covered through P26"
+  },
+  "src/aminx/host/streaming_host.py::structure_batch_count_for_iterator": {
+    "internal": "streaming batch host plumbing for host runner, covered through P26"
+  },
+  "src/aminx/inference/bundle_builder.py::BiasLengthError": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
+  "src/aminx/inference/bundle_builder.py::ConditioningLengthError": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
+  "src/aminx/inference/bundle_builder.py::StatePositionMapLengthError": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
+  "src/aminx/inference/bundle_builder.py::build_inference_bundle": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
+  "src/aminx/inference/bundle_builder.py::decoding_order_key": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
+  "src/aminx/inference/bundle_builder.py::with_decoding_order": {
+    "internal": "InferenceBundle assembly shared by P04-P14 kernels; covered through their P-IDs"
+  },
+  "src/aminx/inference/decode/autoregressive.py::AutoregressiveDecode": {
+    "internal": "AutoregressiveMode decode dispatch, covered through P07"
+  },
+  "src/aminx/inference/decode/conditional.py::ConditionalDecode": {
+    "internal": "ConditionalMode decode dispatch, covered through P05"
+  },
+  "src/aminx/inference/decode/factory.py::make_decode_fn": {
+    "internal": "decode-mode factory dispatch shared across P04-P07/P16, no dedicated P-ID"
+  },
+  "src/aminx/inference/decode/mode.py::AutoregressiveConfig": {
+    "internal": "decode mode marker dataclasses shared across P04-P07/P16, no dedicated P-ID"
+  },
+  "src/aminx/inference/decode/mode.py::AutoregressiveMode": {
+    "internal": "decode mode marker dataclasses shared across P04-P07/P16, no dedicated P-ID"
+  },
+  "src/aminx/inference/decode/mode.py::ConditionalMode": {
+    "internal": "decode mode marker dataclasses shared across P04-P07/P16, no dedicated P-ID"
+  },
+  "src/aminx/inference/decode/mode.py::STEMode": {
+    "internal": "decode mode marker dataclasses shared across P04-P07/P16, no dedicated P-ID"
+  },
+  "src/aminx/inference/decode/mode.py::UnconditionalMode": {
+    "internal": "decode mode marker dataclasses shared across P04-P07/P16, no dedicated P-ID"
+  },
+  "src/aminx/inference/decode/ste.py::STEDecode": {
+    "internal": "STEMode decode dispatch, covered through P16"
+  },
+  "src/aminx/inference/decode/unconditional.py::UnconditionalDecode": {
+    "internal": "UnconditionalMode decode dispatch, covered through P04"
+  },
+  "src/aminx/inference/decode/unfused.py::decode_states_unfused": {
+    "internal": "unfused multi-state decode fallback path, covered through P10"
+  },
+  "src/aminx/inference/driver.py::decode": {
+    "internal": "generic topology/decode driver dispatch shared across P04-P07, no dedicated P-ID"
+  },
+  "src/aminx/inference/driver.py::infer_topology": {
+    "internal": "generic topology/decode driver dispatch shared across P04-P07, no dedicated P-ID"
+  },
+  "src/aminx/inference/encode.py::make_encode_fn": {
+    "internal": "shared encoder entrypoint feeding P03-P14 kernels, no dedicated P-ID"
+  },
+  "src/aminx/inference/logits.py::ARLogitFuse": "P07",
+  "src/aminx/inference/logits.py::ArithmeticMeanLogits": "P10",
+  "src/aminx/inference/logits.py::GeometricMeanLogits": "P10",
+  "src/aminx/inference/logits.py::ProductOfProbabilities": "P10",
+  "src/aminx/inference/logits.py::TieGroupLogsumexpMean": "P09",
+  "src/aminx/inference/logits.py::TieGroupProductOfExperts": "P09",
+  "src/aminx/inference/logits.py::make_stage_set": {
+    "internal": "StageSet construction helper feeding P04-P14 decode kernels, covered through their P-IDs"
+  },
+  "src/aminx/inference/optimize_ste.py::make_optimize_sequence_fn": "P16",
+  "src/aminx/inference/sample_autoregressive.py::SampleResult": "P07",
+  "src/aminx/inference/sample_autoregressive.py::gumbel_noise_for_key": "P07",
+  "src/aminx/inference/sample_autoregressive.py::kernel": "P07",
+  "src/aminx/inference/schedule_selector.py::assert_model_adj_subset": "P20",
+  "src/aminx/inference/schedule_selector.py::build_position_adjacency": "P20",
+  "src/aminx/inference/schedule_selector.py::build_wave_schedule": "P19",
+  "src/aminx/inference/schedule_selector.py::build_wave_schedule_per_sample": {
+    "internal": "per-sample wave-schedule construction for P07 host WaveScheduleBundle, covered through P07"
+  },
+  "src/aminx/inference/schedule_selector.py::color_positions": "P20",
+  "src/aminx/inference/schedule_selector.py::schedule_consumes_key": {
+    "internal": "PRNG-key policy query for P07 host wave-schedule dispatch, covered through P07"
+  },
+  "src/aminx/inference/schedule_selector.py::schedule_key_policy": {
+    "internal": "PRNG-key policy query for P07 host wave-schedule dispatch, covered through P07"
+  },
+  "src/aminx/inference/schedule_selector.py::select_decoding_order": "P19",
+  "src/aminx/inference/score_conditional.py::encode": "P05",
+  "src/aminx/inference/score_conditional.py::kernel": "P05",
+  "src/aminx/inference/score_conditional.py::score_averaged": "P05",
+  "src/aminx/inference/score_conditional.py::score_from_encoding": "P05",
+  "src/aminx/inference/score_conditional.py::split_keys": "P05",
+  "src/aminx/inference/score_unconditional.py::kernel": "P04",
+  "src/aminx/model/capabilities.py::ModelCapabilities": {
+    "internal": "model capability flags consulted across P00-P14, no dedicated P-ID"
+  },
+  "src/aminx/model/decoder.py::Decoder": "P05",
+  "src/aminx/model/decoder.py::DecoderLayer": "P05",
+  "src/aminx/model/decoder.py::DecoderLayerJ": "P05",
+  "src/aminx/model/decoder.py::conditional_decoder_layer_edge_features": "P05",
+  "src/aminx/model/decoder.py::pack_conditional_decoder_static_edges": "P05",
+  "src/aminx/model/decoder.py::pack_decoder_unconditional_layer_edge_features": "P04",
+  "src/aminx/model/diffusion_mpnn.py::DiffusionAminx": "P23",
+  "src/aminx/model/diffusion_mpnn.py::SinusoidalEmbedding": "P23",
+  "src/aminx/model/diffusion_mpnn.py::SwiGLU": "P23",
+  "src/aminx/model/dropout.py::Dropout": {
+    "internal": "shared dropout layer used by encoder/decoder stacks across all P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/model/encoder.py::Encoder": {
+    "internal": "shared encoder stack feeding P00-P14 kernels, no dedicated P-ID"
+  },
+  "src/aminx/model/encoder.py::EncoderLayer": {
+    "internal": "shared encoder stack feeding P00-P14 kernels, no dedicated P-ID"
+  },
+  "src/aminx/model/encoder.py::PhysicsEncoder": "P13",
+  "src/aminx/model/encoder.py::encoder_forward_with_int_neighbors": {
+    "internal": "shared encoder stack feeding P00-P14 kernels, no dedicated P-ID"
+  },
+  "src/aminx/model/encoder.py::pack_encoder_context": {
+    "internal": "shared encoder stack feeding P00-P14 kernels, no dedicated P-ID"
+  },
+  "src/aminx/model/features.py::ProteinEdgeStageTensors": "P03",
+  "src/aminx/model/features.py::ProteinFeatures": "P03",
+  "src/aminx/model/features.py::select_neighbors": "P03",
+  "src/aminx/model/features.py::top_k": "P03",
+  "src/aminx/model/ligand_features.py::PositionalEncodings": "P11",
+  "src/aminx/model/ligand_features.py::ProteinFeaturesLigand": "P11",
+  "src/aminx/model/ligand_mpnn.py::PrxteinLigandMPNN": "P11",
+  "src/aminx/model/ligand_tiling.py::map_chunks_axis0": {
+    "internal": "ligand-context batch tiling helper for P11, covered through P11"
+  },
+  "src/aminx/model/ligand_tiling.py::map_chunks_axis0_multi": {
+    "internal": "ligand-context batch tiling helper for P11, covered through P11"
+  },
+  "src/aminx/model/ligand_tiling.py::pad_axis_to_multiple": {
+    "internal": "ligand-context batch tiling helper for P11, covered through P11"
+  },
+  "src/aminx/model/mpnn.py::Aminx": "P00",
+  "src/aminx/model/mpnn_core.py::autoregressive_decoding_context": {
+    "internal": "autoregressive edge-feature/context helper for P07, covered through P07"
+  },
+  "src/aminx/model/mpnn_core.py::edge_sequence_features_autoregressive": {
+    "internal": "autoregressive edge-feature/context helper for P07, covered through P07"
+  },
+  "src/aminx/model/packer.py::Packer": "P14",
+  "src/aminx/model/packer.py::PackerProteinFeatures": "P14",
+  "src/aminx/model/packer.py::PositionalEncodings": "P14",
+  "src/aminx/model/packer.py::compute_rbf": "P14",
+  "src/aminx/model/packer.py::gather_edges": "P14",
+  "src/aminx/model/packer.py::gather_nodes": "P14",
+  "src/aminx/potts/_spectral.py::laplacian_from_adjacency": "P22",
+  "src/aminx/potts/_trw.py::DifferentiableTRW": "P22",
+  "src/aminx/potts/_trw.py::lcp_regularizer": "P22",
+  "src/aminx/potts/_trw.py::rho_from_edge_cg": "P22",
+  "src/aminx/potts/_trw.py::rho_from_l_pinv": "P22",
+  "src/aminx/potts/_trw.py::rho_uniform": "P22",
+  "src/aminx/potts/_trw.py::spectral_rho_dense": "P22",
+  "src/aminx/potts/_trw_flashmd.py::prod_pow_messages_axis0_tiled": "P22",
+  "src/aminx/potts/_trw_spec.py::PottsTRWRunSpec": "P22",
+  "src/aminx/potts/calibration.py::IdentityCalibration": "P22",
+  "src/aminx/potts/calibration.py::LearnedCalibration": "P22",
+  "src/aminx/potts/calibration.py::load_calibration": "P22",
+  "src/aminx/potts/cli.py::potts_emit": "P22",
+  "src/aminx/potts/cli.py::potts_run": "P22",
+  "src/aminx/potts/designer.py::DesignResult": "P22",
+  "src/aminx/potts/designer.py::MpnnPottsDesigner": "P22",
+  "src/aminx/potts/model.py::PottsModel": "P22",
+  "src/aminx/potts/model.py::PottsParams": "P22",
+  "src/aminx/potts/poe.py::PoeModel": "P22",
+  "src/aminx/potts/poe.py::PoeOutput": "P22",
+  "src/aminx/potts/poe.py::PoeParams": "P22",
+  "src/aminx/potts/runner.py::PottsResult": "P22",
+  "src/aminx/potts/runner.py::run_potts": "P22",
+  "src/aminx/potts/sampling.py::dlmc_sweep": "P22",
+  "src/aminx/potts/sampling.py::gibbs_empirical_marginals": "P22",
+  "src/aminx/potts/sampling.py::gibbs_sweep": "P22",
+  "src/aminx/potts/sampling.py::log_energy": "P22",
+  "src/aminx/potts/sampling.py::parallel_tempering": "P22",
+  "src/aminx/potts/sampling.py::parallel_tempering_round": "P22",
+  "src/aminx/potts/spec.py::PottsRunSpec": "P22",
+  "src/aminx/sampling/__init__.py::sample": "P07",
+  "src/aminx/sampling/conditional_logits.py::make_batched_conditional_logits_fn": "P05",
+  "src/aminx/sampling/conditional_logits.py::make_batched_conditional_logits_split_fn": "P05",
+  "src/aminx/sampling/conditional_logits.py::make_conditional_logits_fn": "P05",
+  "src/aminx/sampling/conditional_logits.py::make_encoding_conditional_logits_split_fn": "P05",
+  "src/aminx/sampling/mbr_consensus.py::average_cross_state_scores": "P21",
+  "src/aminx/sampling/mbr_consensus.py::mbr_rerank": "P21",
+  "src/aminx/sampling/mbr_consensus.py::select_mbr_candidates": "P21",
+  "src/aminx/sampling/multistate_poe.py::sample_multistate_poe_bead": "P10",
+  "src/aminx/sampling/multistate_poe.py::sample_multistate_poe_campaign_row": "P10",
+  "src/aminx/sampling/multistate_poe.py::sample_states_fused": "P10",
+  "src/aminx/sampling/sample.py::make_sample_sequences": "P07",
+  "src/aminx/scoring/score.py::ScoreSplitFns": "P06",
+  "src/aminx/scoring/score.py::make_score_fn": "P06",
+  "src/aminx/scoring/score.py::make_score_split_fns": "P06",
+  "src/aminx/scoring/score.py::score": "P06",
+  "src/aminx/tiling/_deprecation.py::warn_deprecated": {
+    "internal": "caller-attributed DeprecationWarning helper for aminx's deprecated tiling types (debt #2371); no browser surface"
+  },
+  "src/aminx/tiling/bucketing.py::BucketAssignment": "P27",
+  "src/aminx/tiling/bucketing.py::BucketingConfig": "P27",
+  "src/aminx/tiling/bucketing.py::group_by_bucket": "P27",
+  "src/aminx/tiling/bucketing.py::select_bucket": "P27",
+  "src/aminx/tiling/buckets.py::create_residue_mask": "P27",
+  "src/aminx/tiling/buckets.py::get_length_bucket": "P27",
+  "src/aminx/tiling/buckets.py::masked_mean": "P27",
+  "src/aminx/tiling/buckets.py::pad_length_bucket_128": "P27",
+  "src/aminx/tiling/buckets.py::pad_to_bucket": "P27",
+  "src/aminx/tiling/dispatch.py::DispatchRejected": {
+    "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/dispatch.py::make_axis_dispatch": {
+    "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/dispatch.py::make_axis_dispatch_via_xtrax": {
+    "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/errors.py::TilingError": {
+    "internal": "shared tiling error type, no dedicated P-ID"
+  },
+  "src/aminx/tiling/iterator.py::JaxScanIterator": {
+    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/iterator.py::MapIterator": {
+    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/iterator.py::SafeMapIterator": {
+    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/iterator.py::ScanIterator": {
+    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/iterator.py::VmapIterator": {
+    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/pad.py::pad_bundle": "P27",
+  "src/aminx/tiling/planner.py::estimate_memory_theoretical": {
+    "internal": "memory/axis strategy planning shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/planner.py::plan_axis_strategy": {
+    "internal": "memory/axis strategy planning shared across P-IDs, no dedicated P-ID"
+  },
+  "src/aminx/tiling/strategy.py::DedupGather": {
+    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  },
+  "src/aminx/tiling/strategy.py::SafeMap": {
+    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  },
+  "src/aminx/tiling/strategy.py::Scan": {
+    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  },
+  "src/aminx/tiling/strategy.py::Vmap": {
+    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  }
+}

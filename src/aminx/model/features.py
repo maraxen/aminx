@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, NamedTuple
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, Int
 from proxide.physics.constants import BOLTZMANN_KCAL
 
 from aminx.utils.coordinates import (
@@ -36,6 +37,7 @@ from aminx.utils.radial_basis import compute_radial_basis
 if TYPE_CHECKING:
   from aminx.types.arrays import (
     AlphaCarbonMask,
+    ArrayLike,
     BackboneNoise,
     ChainIndex,
     EdgeFeatures,
@@ -55,7 +57,12 @@ MAXIMUM_RELATIVE_FEATURES = 32
 POS_EMBED_DIM = 16
 
 
-def top_k(x: jax.Array, k: int) -> tuple[jax.Array, jax.Array]:
+def top_k(
+  x: jax.Array,
+  k: int,
+  *,
+  row_chunk: int | None = None,
+) -> tuple[jax.Array, jax.Array]:
   """Select the ``k`` largest entries along the last axis, descending.
 
   Deliberately NOT ``jax.lax.top_k``: JAX lowers that to a ``stablehlo.composite``
@@ -92,16 +99,146 @@ def top_k(x: jax.Array, k: int) -> tuple[jax.Array, jax.Array]:
   ``False`` here: it is genuinely irrelevant, and asking for it would imply
   otherwise.
 
+  ``row_chunk`` (T4, IREE stack-allocation fix): ``None`` (the default) runs the
+  single batched ``lax.sort`` below exactly as before -- byte-identical trace, zero
+  risk to any existing caller. When set, the leading (batch) axes are flattened,
+  padded up to a multiple of ``row_chunk``, and processed ``row_chunk`` rows at a
+  time inside a ``jax.lax.map`` loop instead of one call covering every row at once.
+
+  This exists because IREE's llvm-cpu codegen for the ``lax.sort`` below stack-
+  allocates a scratch buffer whose size is driven by an internal, undocumented
+  interaction between the batch-axis extent and the sort-axis extent -- NOT simply
+  the sort length ``k`` or ``x.shape[-1]`` alone. Measured 260928 compiling this
+  exact function in isolation at ``x.shape == (L, L)`` (``aminx.model.features.
+  select_neighbors``'s own shape, batch axis and sort axis both ``L``): IREE's
+  default 32768-byte limit is exceeded starting around ``L=360-400`` and the
+  reported allocation grows with ``L`` once it does (131072 bytes at ``L=512``,
+  262144 at ``L=1024``), while holding the batch axis fixed at a small size (e.g.
+  8) keeps the allocation under the default limit even at sort-axis length 1024.
+  Capping the batch axis actually processed per compiled call -- not the sort
+  length -- is what bounds the buffer: measured at ``row_chunk=32``, the compiled
+  per-function allocation is ~19KB (native) / 16KB (wasm32) at every one of
+  ``L in (128, 256, 512, 1024)``, versus scaling unboundedly with ``L`` at
+  ``row_chunk=None``. This is NOT a larger-stack workaround (contrast
+  ``--iree-llvmcpu-stack-allocation-limit``, which raises IREE's own compile-time
+  guard without changing the actual per-call footprint, and would be unverifiable
+  for wasm32: Emscripten's default linked stack is 64KiB, and a 256KB stack frame
+  would silently overflow it at runtime with no way to execute-verify here). The
+  chunked path genuinely shrinks the footprint instead, so it holds under the
+  existing default budget on every target this repo compiles for.
+
+  Correctness does not depend on ``row_chunk``: ``(-x, index)`` with ``num_keys=2``
+  is a strict total order (see above), so any correct top-k over it -- computed in
+  one shot or independently per row-chunk and reassembled -- returns the identical
+  permutation. Padding introduced to reach a ``row_chunk`` multiple lives only on
+  synthetic rows that are sliced away before return; it never mixes into a real
+  row's own (full-length) last axis.
+
   Returns:
     ``(values, indices)``, matching ``jax.lax.top_k``'s contract on finite input.
     Non-finite input keeps the ordering ``jnp.argsort(-x)`` gave: NaNs sort last
     rather than first, and signed zeros compare equal. That differs from
     ``jax.lax.top_k`` and is unchanged from the previous implementation.
   """
+  if row_chunk is None or x.ndim < 2:
+    return _top_k_unchunked(x, k)
+  return _top_k_row_chunked(x, k, row_chunk)
+
+
+def _top_k_unchunked(x: jax.Array, k: int) -> tuple[jax.Array, jax.Array]:
   index = jax.lax.broadcasted_iota(jnp.int32, x.shape, x.ndim - 1)
   _, order = jax.lax.sort((-x, index), dimension=-1, is_stable=False, num_keys=2)
   order = order[..., :k]
   return jnp.take_along_axis(x, order, axis=-1), order
+
+
+def _top_k_row_chunked(x: jax.Array, k: int, row_chunk: int) -> tuple[jax.Array, jax.Array]:
+  """``top_k`` with the batch axes flattened and processed ``row_chunk`` rows at a time.
+
+  See ``top_k``'s docstring ("``row_chunk`` (T4, ...)") for why this exists. Padding
+  rows (added only to reach a multiple of ``row_chunk``) are computed on but always
+  sliced away below, so they cannot affect a real row's result.
+  """
+  batch_shape = x.shape[:-1]
+  sort_len = x.shape[-1]
+  n_rows = 1
+  for dim in batch_shape:
+    n_rows *= dim
+
+  flat = x.reshape(n_rows, sort_len)
+  n_chunks = -(-n_rows // row_chunk)  # ceil division
+  pad = n_chunks * row_chunk - n_rows
+  if pad:
+    flat = jnp.pad(flat, ((0, pad), (0, 0)), constant_values=-jnp.inf)
+  grouped = flat.reshape(n_chunks, row_chunk, sort_len)
+
+  def body(chunk_x: jax.Array) -> tuple[jax.Array, jax.Array]:
+    return _top_k_unchunked(chunk_x, k)
+
+  vals, idx = jax.lax.map(body, grouped)
+  vals = vals.reshape(n_chunks * row_chunk, k)[:n_rows].reshape(*batch_shape, k)
+  idx = idx.reshape(n_chunks * row_chunk, k)[:n_rows].reshape(*batch_shape, k)
+  return vals, idx
+
+
+def select_neighbors(
+  distances: ArrayLike,
+  mask: ArrayLike,
+  k: int,
+  structure_mapping: ArrayLike | None = None,
+  *,
+  row_chunk: int | None = None,
+) -> Int[Array, "L k"]:
+  """Select the ``k`` nearest neighbors per residue from a masked distance matrix.
+
+  Extracted verbatim (260926, T1) from ``ProteinFeatures.forward_edge_stages``, which
+  used to inline this block with ``self.k_neighbors`` and ``structure_coordinates.shape[0]``
+  in place of ``k`` and ``distances.shape[0]`` respectively -- otherwise byte-for-byte the
+  same masking, ``structure_mapping`` isolation, clamp, and ``top_k`` call. Pulled out so
+  ``aminx.export.wrappers`` can compute neighbor indices RNG-free (D-B), without going
+  through ``forward_edge_stages``'s noise-augmentation branch at all.
+
+  Args:
+    distances: ``(L, L)`` pairwise distance matrix (e.g. from
+      ``aminx.utils.coordinates.compute_backbone_distance``).
+    mask: ``(L,)`` residue validity mask. Invalid pairs are pushed to ``+inf`` before
+      selection so they never win a neighbor slot.
+    k: Requested neighbor count. Clamped to ``L`` (``distances.shape[0]``) so a structure
+      shorter than ``k`` still returns a full ``(L, L)`` selection instead of erroring.
+    structure_mapping: Optional ``(L,)`` array mapping each residue to a structure id.
+      When given, cross-structure pairs are also pushed to ``+inf`` (multi-state isolation).
+    row_chunk: Forwarded to ``aminx.model.features.top_k`` (T4). ``None`` (the default,
+      used by the eager/training call in ``ProteinFeatures.forward_edge_stages``) is
+      byte-identical to this function's pre-T4 behavior. The IREE export wrappers
+      (``aminx.export.wrappers``) pass a fixed chunk size to keep the compiled
+      ``lax.sort``'s stack footprint bounded at the L=512/1024 export buckets; see
+      ``top_k``'s docstring for why.
+
+  Returns:
+    ``(L, k_clamped)`` int32 neighbor indices, nearest first (``aminx.model.features.top_k``'s
+    tie-break order).
+  """
+  distances_masked = jnp.array(
+    jnp.where(
+      (mask[:, None] * mask[None, :]).astype(jnp.bool_),
+      distances,
+      jnp.inf,
+    ),
+  )
+
+  if structure_mapping is not None:
+    same_structure = structure_mapping[:, jnp.newaxis] == structure_mapping[jnp.newaxis, :]
+    distances_masked = jnp.array(
+      jnp.where(
+        same_structure.astype(jnp.bool_),
+        distances_masked,
+        jnp.inf,
+      ),
+    ).squeeze()
+
+  k_clamped = min(k, distances.shape[0])
+  _, neighbor_indices = top_k(-distances_masked, k_clamped, row_chunk=row_chunk)
+  return jnp.array(neighbor_indices, dtype=jnp.int32)
 
 
 class ProteinEdgeStageTensors(NamedTuple):
@@ -218,27 +355,7 @@ class ProteinFeatures(eqx.Module):
       distances = compute_backbone_distance(backbone_atom_coordinates)
 
     if distances is not None:
-      distances_masked = jnp.array(
-        jnp.where(
-          (mask[:, None] * mask[None, :]).astype(jnp.bool_),
-          distances,
-          jnp.inf,
-        ),
-      )
-
-      if structure_mapping is not None:
-        same_structure = structure_mapping[:, jnp.newaxis] == structure_mapping[jnp.newaxis, :]
-        distances_masked = jnp.array(
-          jnp.where(
-            same_structure.astype(jnp.bool_),
-            distances_masked,
-            jnp.inf,
-          ),
-        ).squeeze()
-
-      k = min(self.k_neighbors, structure_coordinates.shape[0])
-      _, neighbor_indices = top_k(-distances_masked, k)
-      neighbor_indices = jnp.array(neighbor_indices, dtype=jnp.int32)
+      neighbor_indices = select_neighbors(distances, mask, self.k_neighbors, structure_mapping)
 
     # At this point neighbor_indices must be populated (either passed in or computed)
     if neighbor_indices is None:

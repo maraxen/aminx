@@ -47,7 +47,7 @@ import jax.numpy as jnp
 import numpy as np
 from xtrax.run import ZarrStagingSink, derive_sink_spec
 from xtrax.tiling import BatchPlanner
-from xtrax.tiling import SafeMap as _XtraxSafeMap
+from xtrax.tiling import ChunkedMap as _XtraxChunkedMap
 from xtrax.tiling import Vmap as _XtraxVmap
 from xtrax.tiling.estimators import lowered_memory_estimate
 
@@ -64,6 +64,7 @@ from aminx.host._sampling_helper import (
   _prepare_fixed_controls,
   _prepare_ligand_context,
   fixed_provenance_outputs,
+  ligand_conditioning_mode,
 )
 from aminx.host.family_driver import refuse_driver_family
 from aminx.host.omit_aa_bias import compile_omit_aa_bias, omit_aa_is_active
@@ -209,7 +210,7 @@ def sample_states_fused(
   # union before handing it to aminx call sites (make_axis_dispatch_via_xtrax
   # expects aminx-native instances -- mirrors _plan_axis_strategy's identical
   # translation for the samples axis below).
-  if isinstance(xtrax_state_strategy, _XtraxSafeMap):
+  if isinstance(xtrax_state_strategy, _XtraxChunkedMap):
     state_strategy = SafeMap(tile=xtrax_state_strategy.batch_size)
   elif isinstance(xtrax_state_strategy, _XtraxVmap):
     state_strategy = Vmap()
@@ -702,7 +703,8 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     # `schema_version` it can be added without moving any manifest row hash or output path.
     "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
-    "ligand_conditioning": int(spec.ligand_conditioning),
+    "ligand_conditioning": int(bool(spec.ligand_conditioning)),
+    "ligand_conditioning_mode": ligand_conditioning_mode(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
     "samples_chunk_size": chunk_size,
     "multistate_poe_fused": 1,

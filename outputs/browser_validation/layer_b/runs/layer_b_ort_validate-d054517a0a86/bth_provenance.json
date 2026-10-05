@@ -1,0 +1,7 @@
+{
+  "sidecar.py_sha256": "6af2388b5ce33c02c054e14d39d93b59c7b964f48ffed674f5f009f4d541e521",
+  "mcp.py_sha256": "3f65e1078474a91ad019605e36ad8998889dc41fafb43607f35b00ec9688f58c",
+  "mcp_wrapped_command_guard_present": true,
+  "sidecar_evaluate_outcome_line": "679",
+  "bathos_tool_dir": "/home/marielle/.local/share/uv/tools/bathos/lib/python3.14/site-packages/bathos"
+}

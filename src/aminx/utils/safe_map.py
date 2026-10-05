@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, TypeVar
 
 import jax
+import jax.numpy as jnp
 
 if TYPE_CHECKING:
   from collections.abc import Callable
@@ -30,6 +31,14 @@ def safe_map(
   XLA issues of jax.lax.map's loop construct for single-batch or small inputs.
   Otherwise, it falls back to jax.lax.map.
 
+  It never lets XLA compile a vmapped chunk of size exactly 1 (aminx #2391). On one GPU stack
+  (TITAN RTX, jax 0.10.2, CUDA 12.9) a jitted size-1 batch around a matmul whose intermediate is
+  square returned wrong activations silently. A chunk of 1 arises three ways, all handled here:
+  a size-1 axis, ``batch_size == 1`` (lax.map vmaps each chunk of 1), and a remainder of 1
+  (``n % batch_size == 1``; lax.map vmaps the remainder). Results are identical on every backend.
+  Temporary home: the same guard belongs in xtrax's ``chunked_map``, after which this helper is a
+  re-export and then removed (aminx debt #2371).
+
   Args:
       f: The function to map.
       xs: The input array(s).
@@ -46,7 +55,25 @@ def safe_map(
 
   num_elements = leaves[0].shape[0]
 
+  if num_elements == 1:
+    return _call_on_single_element(f, xs)
+
   if batch_size is None or batch_size == 0 or num_elements <= batch_size:
     return jax.vmap(f)(xs)
 
+  if batch_size == 1:
+    return jax.lax.map(f, xs)  # a plain scan: one unbatched call per element
+
+  if num_elements % batch_size == 1:
+    # lax.map would vmap the trailing remainder of 1; peel it off and run it unbatched.
+    head = jax.lax.map(f, jax.tree_util.tree_map(lambda x: x[:-1], xs), batch_size=batch_size)
+    tail = _call_on_single_element(f, jax.tree_util.tree_map(lambda x: x[-1:], xs))
+    return jax.tree_util.tree_map(lambda h, t: jnp.concatenate([h, t], axis=0), head, tail)
+
   return jax.lax.map(f, xs, batch_size=batch_size)
+
+
+def _call_on_single_element(f: Callable[[Any], Any], xs: Any) -> Any:  # noqa: ANN401
+  """``jax.vmap(f)(xs)`` for a leading axis of size 1, without a batched XLA program."""
+  element = jax.tree_util.tree_map(lambda x: x[0], xs)
+  return jax.tree_util.tree_map(lambda y: jnp.asarray(y)[None], f(element))

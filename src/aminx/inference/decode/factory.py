@@ -59,8 +59,11 @@ def make_decode_fn(
   strategy : AxisStrategy
       State-axis strategy (Vmap, SafeMap, or Scan). Scan on state is rejected.
   decoding_order_fn : DecodingOrderFn, optional
-      Decoding order function for AR mode (default: random_decoding_order).
-      Ignored for non-AR modes.
+      Consumed ONLY by ``STEMode`` (default: random_decoding_order). It is deliberately not
+      used for ``AutoregressiveMode``: an AR decode reads the order from the bundle it is
+      given (``bundle.wave`` / ``bundle.conditioning.ar_mask``), which is where a caller's
+      function is applied -- see :func:`aminx.inference.bundle_builder.with_decoding_order`.
+      Ignored for the conditional and unconditional modes.
   autoregressive_config : AutoregressiveConfig, optional
       Only consulted when ``mode`` is ``AutoregressiveMode``. Controls
       ``AutoregressiveDecode.use_while_loop`` via
@@ -118,7 +121,6 @@ def make_decode_fn(
 
       return AutoregressiveDecode(
         model=model,
-        decoding_order_fn=decoding_order_fn,
         state_iterator=state_iter,
         wave_iterator=wave_iter,
         wave_carry=wave_carry,
@@ -126,17 +128,26 @@ def make_decode_fn(
         # autoregressive_config=AutoregressiveConfig(inference_only=True) for
         # inference-only sampling to get lax.while_loop's much faster compile.
         use_while_loop=ar_config.inference_only,
+        incremental=ar_config.incremental,
+        max_positions_per_wave=ar_config.max_positions_per_wave,
       )
 
     if isinstance(mode, STEMode):
       # Recursively build the inner mode
-      inner = make_decode_fn(model, mode.inner_mode, strategy, decoding_order_fn)
+      inner = make_decode_fn(model, mode.inner_mode, strategy)
       # STE requires the inner to be a _ConditionalDecodeBase (ConditionalDecode)
       if not isinstance(inner, _ConditionalDecodeBase):
         raise TypeError(
           f"STEMode inner must be _ConditionalDecodeBase instance, got {type(inner)}",
         )
-      return STEDecode(inner=inner, iterations=mode.iterations)
+      # The order function is consumed by STEDecode itself (it draws the order it optimises
+      # against); it used to be handed only to the inner mode, which ignores it, so the
+      # caller's function was silently replaced by STEDecode's default.
+      return STEDecode(
+        inner=inner,
+        iterations=mode.iterations,
+        decoding_order_fn=decoding_order_fn,
+      )
 
     # Exhaustiveness check: should never reach here if DecodeMode is sealed
     raise TypeError(f"Unknown mode type: {type(mode)}")

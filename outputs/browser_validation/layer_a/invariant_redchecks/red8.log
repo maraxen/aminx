@@ -1,0 +1,80 @@
+[31mF[0m
+=================================== FAILURES ===================================
+[31m[1m_______________________ test_invariant_8_knn_brute_force _______________________[0m
+
+    [0m[94mdef[39;49;00m[90m [39;49;00m[92mtest_invariant_8_knn_brute_force[39;49;00m() -> [94mNone[39;49;00m:[90m[39;49;00m
+      [94mimport[39;49;00m[90m [39;49;00m[04m[96mjax[39;49;00m[90m[39;49;00m
+    [90m[39;49;00m
+      fixture = _fixture(SMALL_FIXTURE)[90m[39;49;00m
+      batch = _batch(SMALL_FIXTURE)[90m[39;49;00m
+      k = [96mmin[39;49;00m([94m48[39;49;00m, batch.length)[90m[39;49;00m
+      expected = _brute_force_knn(batch.x4[:, [94m1[39;49;00m, :].astype(np.float64), batch.mask.astype(np.float64), k)[90m[39;49;00m
+      near_tie = [96mset[39;49;00m((fixture.get([33m"[39;49;00m[33mnear_tie_residues[39;49;00m[33m"[39;49;00m) [95mor[39;49;00m {}).get([96mstr[39;49;00m(k)) [95mor[39;49;00m [])[90m[39;49;00m
+      rows = [i [94mfor[39;49;00m i [95min[39;49;00m [96mrange[39;49;00m(batch.length) [94mif[39;49;00m batch.mask[i] > [94m0[39;49;00m [95mand[39;49;00m i [95mnot[39;49;00m [95min[39;49;00m near_tie][90m[39;49;00m
+      [94massert[39;49;00m [96mlen[39;49;00m(rows) > batch.length // [94m2[39;49;00m[90m[39;49;00m
+    [90m[39;49;00m
+      jax_model, pt_model, torch, _mu = _full_model()[90m[39;49;00m
+      fd = _lae()._reference_feature_dict(torch, batch)  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+      [94mwith[39;49;00m torch.no_grad():[90m[39;49;00m
+        _e, ref_idx = pt_model.features(fd)[90m[39;49;00m
+      ref_idx = ref_idx.numpy()[[94m0[39;49;00m][:, :k][90m[39;49;00m
+      _ef, am_idx, _nf, _key = jax_model.features([90m[39;49;00m
+        jax.random.PRNGKey([94m0[39;49;00m),[90m[39;49;00m
+        jax.numpy.asarray(batch.x4),[90m[39;49;00m
+        jax.numpy.asarray(batch.mask),[90m[39;49;00m
+        jax.numpy.asarray(batch.residue_index, dtype=jax.numpy.int32),[90m[39;49;00m
+        jax.numpy.asarray(batch.chain_index, dtype=jax.numpy.int32),[90m[39;49;00m
+        backbone_noise=[94m0.0[39;49;00m,[90m[39;49;00m
+      )[90m[39;49;00m
+      am_idx = np.asarray(am_idx)[:, :k][90m[39;49;00m
+      [94mfor[39;49;00m side, idx [95min[39;49;00m (([33m"[39;49;00m[33mreference[39;49;00m[33m"[39;49;00m, ref_idx), ([33m"[39;49;00m[33maminx[39;49;00m[33m"[39;49;00m, am_idx)):[90m[39;49;00m
+        bad = [i [94mfor[39;49;00m i [95min[39;49;00m rows [94mif[39;49;00m [96mset[39;49;00m(idx[i].tolist()) != [96mset[39;49;00m(expected[i].tolist())][90m[39;49;00m
+>       [94massert[39;49;00m [95mnot[39;49;00m bad, [33mf[39;49;00m[33m"[39;49;00m[33m{[39;49;00mside[33m}[39;49;00m[33m: neighbour set != brute force at [39;49;00m[33m{[39;49;00m[96mlen[39;49;00m(bad)[33m}[39;49;00m[33m no-tie residues, e.g. [39;49;00m[33m{[39;49;00mbad[:[94m5[39;49;00m][33m}[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+[1m[31mE       AssertionError: aminx: neighbour set != brute force at 68 no-tie residues, e.g. [0, 1, 2, 3, 4][0m
+[1m[31mE       assert not [0, 1, 2, 3, 4, 5, ...][0m
+
+[1m[31mtests/parity/test_mpnn_reference_invariants.py[0m:506: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Converting model from state dict with 118 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+------------------------------ Captured log call -------------------------------
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CG in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 68 (chain A)
+[32mINFO    [0m .prody:logger.py:123 ProDy is configured: verbosity='none'
+[33mWARNING [0m .prody:logger.py:141 WARNING prody cannot write configuration file to '/home/marielle', user does not have write access.
+[35mDEBUG   [0m .prody:logger.py:135 1227 atoms and 1 coordinate set(s) were parsed in 0.01s.
+[36m[1m=========================== short test summary info ============================[0m
+[31mFAILED[0m tests/parity/test_mpnn_reference_invariants.py::[1mtest_invariant_8_knn_brute_force[0m - AssertionError: aminx: neighbour set != brute force at 68 no-tie residues, ...
+[31m!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!![0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 8.47s[0m[0m

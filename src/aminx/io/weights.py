@@ -27,7 +27,11 @@ HF_REPO_ID = "maraxen/aminx"
 # default branch happens to serve, and two machines can run different weights while reporting
 # an identical aminx version. Bump deliberately, together with the consumer-side manifest.
 # Override for a checkpoint newer than the pin via ``AMINX_WEIGHTS_REVISION``.
-HF_REVISION = "25fb7f6e985724dee7471c3bc18522fe33b9228e"
+#
+# aa80d0fd (2026-09-30) regenerated the ligand and membrane checkpoints with the reference bias
+# layout (#162, #163). That LAYOUT CHANGED, so code from before that change cannot load these
+# files; it stays correct only by pinning the previous revision, 25fb7f6e985724dee7471c3bc18522fe33b9228e.
+HF_REVISION = "aa80d0fd1b70a7b7492c3d7d877c809dfc930475"
 
 #: Env var naming a directory that is AUTHORITATIVE for weights when set. A missing file there
 #: raises instead of silently falling through to the Hub -- the silent fallback is the defect
@@ -424,6 +428,7 @@ def load_model(
       num_encoder_layers=NUM_ENCODER_LAYERS,
       num_decoder_layers=NUM_DECODER_LAYERS,
       k_neighbors=topo["k_neighbors"],
+      atom_context_num=topo["atom_context_num"],
       num_positional_embeddings=topo["num_positional_embeddings"],
       num_context_layers=NUM_LIGAND_CONTEXT_LAYERS,
       ligand_mpnn_use_side_chain_context=use_side_chain_context,

@@ -1,0 +1,48 @@
+MUT1 applied to src/aminx/model/decoder.py
+ src/aminx/model/decoder.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+RED1: pytest exit=1 [1m[31mE       AssertionError: aminx: future residue 16 leaked into 15 (0.46550989151000977)[0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 16.45s[0m[0m
+RED1: src restored
+MUT2 applied to src/aminx/inference/decode/unconditional.py
+ src/aminx/inference/decode/unconditional.py | 1 +
+ 1 file changed, 1 insertion(+)
+RED2: pytest exit=1 [1m[31mE       AssertionError: aminx: unconditional log-probs depend on the sequence (2.771998405456543)[0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 18.71s[0m[0m
+RED2: src restored
+MUT3 applied to src/aminx/inference/decode/autoregressive.py
+ src/aminx/inference/decode/autoregressive.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+RED3: pytest exit=1 [1m[31mE     AssertionError: aminx: fixed position not held[0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 30.21s[0m[0m
+RED3: src restored
+MUT4 applied to src/aminx/inference/decode/autoregressive.py
+ src/aminx/inference/decode/autoregressive.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+RED4: pytest exit=1 [1m[31mE     AssertionError: aminx: sampled an omitted AA or X[0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 23.01s[0m[0m
+RED4: src restored
+MUT5 applied to src/aminx/inference/decode/autoregressive.py
+ src/aminx/inference/decode/autoregressive.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+RED5: pytest exit=1 [1m[31mE     AssertionError: aminx: one-step frequencies != softmax((l+b)/T) (TV=0.3670)[0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 205.17s (0:03:25)[0m[0m
+RED5: src restored
+MUT6 applied to src/aminx/inference/decode/autoregressive.py
+ src/aminx/inference/decode/autoregressive.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+RED6: pytest exit=1 [1m[31mE         AssertionError: aminx: tie group [0, 276] got different tokens[0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 48.13s[0m[0m
+RED6: src restored
+MUT7 applied to src/aminx/model/encoder.py
+ src/aminx/model/encoder.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+RED7: pytest exit=1 [1m[31mE             AssertionError: aminx/membrane_per_residue: labels 0 vs 1 barely move log-probs (0.0)[0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 16.77s[0m[0m
+RED7: src restored
+MUT8 applied to src/aminx/model/features.py
+ src/aminx/model/features.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+RED8: pytest exit=1 [1m[31mE       AssertionError: aminx: neighbour set != brute force at 68 no-tie residues, e.g. [0, 1, 2, 3, 4][0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 8.47s[0m[0m
+RED8: src restored

@@ -1,0 +1,65 @@
+[metadata]
+title = "G4: wall-clock cost of the split vs the monolith under ORT-Web wasm, with a planted-delay timer control"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "With a timer first shown to detect a deliberately planted delay, the median per-design wall time of the four-graph split and of the monolithic P07 export can be measured on identical inputs, the same backend (onnxruntime-web wasm, single-threaded, under Node) and the same machine, together with per-graph session-creation cost and peak RSS. NO DIRECTION IS PRE-REGISTERED. There is no pre-committed claim that the split is faster, slower or equal, because there is no basis for one: the split trades a single in-graph loop for L=128 JavaScript-to-wasm round trips, and which dominates at these sizes is precisely the unknown this gate exists to resolve. Pre-registering a direction here would be inventing a threshold to be met rather than a quantity to be measured. The graded outcome is therefore about MEASUREMENT VALIDITY -- did the clock demonstrably work, did every cell and repetition complete -- and the timings are reported as result fields. The one pre-registered pass/fail is the control: a planted delay of `planted_ms` measured through the same clock and the same await machinery the real measurements use must come back at no less than 0.9x and no more than planted_ms + 2000 ms. The lower bound catches a clock that does not advance or a region that is not actually being measured; the upper bound catches a machine so loaded that every number would be noise. This exists because an earlier benchmark in this project produced timings whose timer control was never established, and those numbers were consequently discarded -- a stopwatch that cannot see a deliberate 250 ms pause cannot be trusted to measure a 40 ms one. The Node runner measures and does not judge: it applies no threshold and emits no verdict, so the artifact under measurement cannot decide whether its own numbers are acceptable."
+stage_name = "validation"
+claim_discriminates = ["H_timer_sound", "H_timer_blind"]
+claim_isolates = ["C_bench_instrument"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling gates).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "timer_blind"]
+
+# First matching branch wins: incomplete, timer_blind, pass.
+
+[outcomes.incomplete]
+condition = "NOT bench_ok OR cells_total < 4 OR reps < 3 OR NOT git_clean OR failure <> ''"
+decision = "The benchmark did not run to size: the Node runner failed, too few cells or repetitions completed, the tree was dirty in a code path, or an exception was raised. No timing may be quoted."
+reasoning = "A partial benchmark invites quoting whichever subset happened to finish. Three repetitions is the floor for reporting a median at all, and four cells the floor for the spread across knobs to mean anything."
+is_residual = true
+
+[outcomes.timer_blind]
+condition = "ctrl_measured_ms < 0.9 * planted_ms OR ctrl_measured_ms > planted_ms + 2000"
+decision = "The clock did not see the planted delay, or the machine was too loaded for any measurement to be meaningful. NO TIMING NUMBER FROM THIS RUN MAY BE REPORTED OR CITED ANYWHERE."
+reasoning = "This is the gate's whole reason for existing. A previous benchmark in this project produced timings without ever establishing that its timer worked, and they had to be thrown away. A clock that cannot detect a deliberate pause cannot measure anything smaller, and a machine whose scheduler delays a sleep by seconds cannot resolve milliseconds."
+is_residual = true
+
+[outcomes.pass]
+condition = "bench_ok AND ctrl_measured_ms >= 0.9 * planted_ms AND ctrl_measured_ms <= planted_ms + 2000"
+decision = "The timer is demonstrably sensitive and every cell completed. The recorded medians, session-creation costs and peak RSS may be reported AS MEASUREMENTS OF THIS CONFIGURATION -- ORT-Web wasm, single-threaded, under Node, on this machine."
+reasoning = "A sound clock plus complete coverage is what licenses quoting a number at all. It licenses nothing about a browser, about WebGPU, about multithreaded wasm, or about other hardware; each of those is a different configuration and would need its own run."
+is_residual = false
+
+[result_schema]
+bucket = "int"
+cells_total = "int"
+reps = "int"
+planted_ms = "float"
+ctrl_measured_ms = "float"
+ctrl_ratio = "float"
+split_median_ms = "float"
+monolith_median_ms = "float"
+split_over_monolith = "float"
+split_min_ms = "float"
+split_max_ms = "float"
+monolith_min_ms = "float"
+monolith_max_ms = "float"
+session_create_split_total_ms = "float"
+session_create_monolith_ms = "float"
+decoder_calls_per_design = "int"
+peak_rss_bytes = "int"
+num_threads = "int"
+ort_version = "str"
+bench_ok = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+onnxruntime_web_version = { type = "string", required = true }

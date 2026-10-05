@@ -73,6 +73,21 @@ scripts/scratch/
 # accidentally committed 2026-05-14 onward before this rule existed).
 .claude/worktrees/
 
+# Browser validation (Phase 0 T3+): npm deps and the local Playwright
+# Chromium download (PLAYWRIGHT_BROWSERS_PATH is pinned inside browser/**
+# because the shared ~/.cache/ms-playwright is not writable under this
+# project's sandbox policy) -- never commit either.
+browser/**/node_modules/
+browser/**/.cache/
+
+# Playwright Test runner scratch (browser/layer_c/tests/threads.spec.mjs, T5a): the
+# default test-results/ report dir and a leftover playwright-report/ HTML report, plus
+# the ephemeral static-site fixture threads.spec.mjs builds and removes in afterAll
+# (defensive -- it is not supposed to survive a run, but never commit it if it does).
+browser/**/test-results/
+browser/**/playwright-report/
+browser/layer_c/.test-site/
+
 # Claude Code background-job scratch space (per-job tmp dirs; should never
 # land under the repo, but a relative path can resolve here by mistake).
 .claude/jobs/
@@ -85,3 +100,20 @@ scripts/scratch/
 # it dirties the tree, and the section 1c ledger REJECTS a run whose record says
 # git_dirty -- so an ignorable cache can silently cost a gate-eligible result.
 .xtrax/
+
+# Browser-validation (Phase 1 T4): read-only reference clones fetched fresh by
+# pins.py, and per-run outputs (parity results, titanix rsync mirrors, run
+# ledgers). Files that must stay tracked under outputs/browser_validation/
+# (params, the run ledger, fixture manifest/raw fixtures) are `git add -f`'d
+# individually per the T4 common context -- this ignore is deliberately not
+# narrowed to a subpath so `git status --porcelain` (git_clean, R2-C13) does
+# not see them as untracked noise.
+.cache/
+outputs/browser_validation/
+node_modules/
+.bth/synthetic_recovery_ledger.json
+*.bth.lock.toml
+
+# bathos writes .bth/refs/manifest.jsonl into the run tree during `bth run`; it made the
+# titanix provenance smoke see git_dirty=true (T4 attempt 1).
+.bth/refs/

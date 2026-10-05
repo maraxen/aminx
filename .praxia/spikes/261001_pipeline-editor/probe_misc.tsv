@@ -1,0 +1,7 @@
+pypi	jax	latest=0.11.2	n_files_latest=2	wasm_like_files=0	platform_tags=['any']
+pypi	jax	all_releases_wasm_like_files=0	[]
+pypi	jaxlib	latest=0.11.2	n_files_latest=22	wasm_like_files=0	platform_tags=['macosx_11_0_arm64', 'manylinux_2_27_aarch64', 'manylinux_2_27_x86_64', 'win_amd64']
+pypi	jaxlib	all_releases_wasm_like_files=0	[]
+pypi	onnxruntime	latest=1.30.0	n_files_latest=24	wasm_like_files=0	platform_tags=['macosx_14_0_arm64', 'manylinux_2_28_aarch64', 'manylinux_2_28_x86_64', 'win_amd64', 'win_arm64']
+pypi	onnxruntime	all_releases_wasm_like_files=0	[]
+fixture	simple_transfer_graph.json	keys=['execution_order', 'has_conditionals', 'has_loops', 'machine_types', 'operations', 'preconditions', 'protocol_fqn', 'protocol_name', 'resource_types', 'resources']	n_operations=4	execution_order=['op_1', 'op_2', 'op_3', 'op_4']	has_loops=False

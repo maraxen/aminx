@@ -1,0 +1,30 @@
+{
+  "agree_bound": 0.001,
+  "bucket": 128,
+  "controls_detected": 2,
+  "controls_total": 2,
+  "ctrl_nan_detected": true,
+  "ctrl_perturb_detected": true,
+  "d_converted": true,
+  "d_finite": true,
+  "d_max_abs_diff": 4.025176167488098e-06,
+  "d_onnx_bytes": 2905154,
+  "d_ran": true,
+  "dropout_stats": {
+    "max_p_before": 0.0,
+    "n_dropout": 15
+  },
+  "e_converted": true,
+  "e_finite": true,
+  "e_max_abs_diff": 2.378225326538086e-05,
+  "e_neighbor_exact": true,
+  "e_onnx_bytes": 3970503,
+  "e_ran": true,
+  "failure": "",
+  "git_clean": true,
+  "git_dirty_paths": "",
+  "git_hash": "c82440d93447dd4aa5554717e5209a23e8642bbe",
+  "jax_enable_x64": false,
+  "outcome": "pass",
+  "within_bound": true
+}

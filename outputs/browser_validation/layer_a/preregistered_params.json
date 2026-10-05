@@ -1,0 +1,45 @@
+{
+  "exact": {
+    "git_hash": "1ff55a5758dea3dbae0192446cb30253e1a171f8",
+    "min_effect": 1.0,
+    "measured_half_effect": 2.428293228149414,
+    "subset_size": 2,
+    "reduced_subset": [
+      "5L33",
+      "4GYT"
+    ],
+    "budget_wall_hours": 0.23674695524115427,
+    "projected_peak_rss_gib": 7.408542633056641,
+    "not_advanced_paths": [
+      "P05.log_probs",
+      "P06.log_probs",
+      "P09.log_probs",
+      "P11.context_off.log_probs",
+      "P11.context_on.log_probs",
+      "P12.conditional.log_probs",
+      "P13.global.argmax",
+      "P13.global.log_probs",
+      "P13.global.nll",
+      "P13.per_residue.argmax",
+      "P13.per_residue.log_probs",
+      "P13.per_residue.nll"
+    ],
+    "controls": {
+      "w_out_bias_perturb_magnitude": 0.0005
+    },
+    "pt_convert_diagnostic": {
+      "n_comparisons": 110,
+      "n_over_bar": 27,
+      "n_skipped": 0,
+      "worst_path": "P13.per_residue.argmax",
+      "worst_ratio_to_bar": 1.7976931348623157e+308
+    },
+    "fixture_set": "A",
+    "fixture_manifest_sha256": "8f47478bbeb077d68a5d98176cdf8f205a8e581a192a322811fb553436a1bdc5"
+  },
+  "litparity": {
+    "clauses_sha256": "fb3f17b79367dd2a64eed89f6f7c080a15a889353b2d13b3afe6e0346299f0ce",
+    "clauses_path": "outputs/browser_validation/litparity/clauses.json",
+    "written_before": "Phase 3 refutation and any parity run (O8)"
+  }
+}

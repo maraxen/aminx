@@ -34,10 +34,6 @@ from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 
 
-def _dummy_decoding_order_fn(wave):
-    return jnp.arange(wave.group_ids.shape[0])
-
-
 def _build_fixture(num_residues: int = 8, seed: int = 7) -> tuple[Aminx, InferenceBundle, InferenceConfig]:
     rng = np.random.default_rng(seed)
     jax_key = jax.random.PRNGKey(seed)
@@ -82,7 +78,6 @@ def test_use_while_loop_parity_with_scan():
         key = jax.random.PRNGKey(123)
         ar_decode = AutoregressiveDecode(
             model=model,
-            decoding_order_fn=_dummy_decoding_order_fn,
             state_iterator=VmapIterator(),
             wave_iterator=JaxScanIterator(),
             wave_carry=wave_carry,

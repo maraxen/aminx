@@ -1,0 +1,608 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>aminx Browser Sampler</title><meta name="description" content="How to run aminx ProteinMPNN sampling in a static site with onnxruntime-web.">
+<style>
+:root{--bg:#fbfaf7;--fg:#1d1d1f;--muted:#5b5b63;--line:#e3e1db;--code:#f1efe9;--accent:#2f6f5e;--pend:#9a5b00}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#141516;--fg:#e8e6e1;--muted:#a3a19b;--line:#2d2f31;--code:#1e2022;--accent:#7cc4ac;--pend:#e0a84a}}
+:root[data-theme="dark"]{--bg:#141516;--fg:#e8e6e1;--muted:#a3a19b;--line:#2d2f31;--code:#1e2022;--accent:#7cc4ac;--pend:#e0a84a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:860px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:1.9rem;line-height:1.25;margin:0 0 .5rem}
+h2{font-size:1.25rem;margin:2.2rem 0 .6rem;padding-top:.6rem;border-top:1px solid var(--line)}
+a{color:var(--accent)}
+code{font:0.88em ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:.1em .3em;border-radius:4px}
+pre{background:var(--code);padding:14px;border-radius:8px;overflow-x:auto;border:1px solid var(--line)}
+pre code{background:none;padding:0;font-size:.85em}
+.tw{overflow-x:auto;margin:1rem 0}
+table{border-collapse:collapse;width:100%;font-size:.92em}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{color:var(--muted);font-weight:600}
+td strong{color:var(--pend)}
+</style></head><body><main><h1>Running aminx ProteinMPNN sampling in the browser</h1>
+<p>This guide is for porting the exported ProteinMPNN sampler into a plain static site
+(for example a local ProteinHunter.org build). No bundler, no server-side Python, no
+WebGPU. The page loads one ONNX file per length bucket and runs it with
+onnxruntime-web on the wasm execution provider.</p>
+<p>Status as of 2026-09-29. The RunSpec knobs gate and the reference comparison have PASSED
+(numbers below, from bathos run <code>fd80f81d</code>). Items still marked <strong>pending</strong> or <strong>not
+measured</strong> are exactly that — do not cite a number from them.</p>
+<h2>What ships</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Piece</th>
+<th style="text-align: left;">Path in repo</th>
+<th style="text-align: left;">Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Sampler module</td>
+<td style="text-align: left;"><code>browser/aminx-sampler/aminx_sampler.mjs</code></td>
+<td style="text-align: left;"><code>createSampler</code>, bucket choice, padding, feeding the session</td>
+</tr>
+<tr>
+<td style="text-align: left;">RunSpec core</td>
+<td style="text-align: left;"><code>browser/aminx-sampler/runspec_core.mjs</code></td>
+<td style="text-align: left;">Builds the 11 input tensors from a structure and a RunSpec: PRNG, Gumbel noise, decoding order, bias/omit, fixed/tied positions. Has no <code>node:</code> imports.</td>
+</tr>
+<tr>
+<td style="text-align: left;">Model, L ≤ 128</td>
+<td style="text-align: left;"><code>p07_sample_L128.onnx</code> (19,374,293 B)</td>
+<td style="text-align: left;">Built by the export step below. Not checked in — "Reproducing" covers building it and verifying its hash</td>
+</tr>
+<tr>
+<td style="text-align: left;">Model, L ≤ 256</td>
+<td style="text-align: left;"><code>p07_sample_L256.onnx</code> (33,046,297 B)</td>
+<td style="text-align: left;">Same</td>
+</tr>
+<tr>
+<td style="text-align: left;">Runtime</td>
+<td style="text-align: left;"><code>onnxruntime-web@1.30.0</code>, wasm build (<code>ort.wasm.min.mjs</code>)</td>
+<td style="text-align: left;">Pinned. This is the version and build every parity run used</td>
+</tr>
+</tbody>
+</table></div>
+<p>"P07" is the internal name of this export: the full autoregressive sampler inside
+one ONNX graph. The encoder, the decoding loop and the sampling step all run
+in-graph. The noise and every RunSpec setting are runtime inputs, so one file per
+bucket serves every design configuration.</p>
+<p>Browser scope is <strong>ProteinMPNN sampling only</strong> (checkpoint <code>proteinmpnn_v_48_020</code>).
+LigandMPNN, membrane and other variants aren't exported to the browser.</p>
+<h2>Files to copy into the static site</h2>
+<p>For the monolith (the path this guide's main example uses):</p>
+<pre><code>site/
+  index.html
+  js/aminx_sampler.mjs      &lt;- browser/aminx-sampler/aminx_sampler.mjs
+  js/runspec_core.mjs       &lt;- browser/aminx-sampler/runspec_core.mjs (same dir; imported relatively)
+  models/p07_sample_L128.onnx
+  models/p07_sample_L256.onnx
+</code></pre>
+<p>For the <strong>four-graph split</strong> (smaller and faster — see its section below), add two modules
+and swap one big model for four small ones:</p>
+<pre><code>site/
+  js/aminx_sampler.mjs      &lt;- still needed: pickBucket, padStructure, MPNN_ALPHABET
+  js/runspec_core.mjs
+  js/split_driver.mjs       &lt;- browser/aminx-sampler/split_driver.mjs
+  js/split_loop.mjs         &lt;- browser/aminx-sampler/split_loop.mjs
+  models/p07_{encoder,wave,decoder,fuse}_L128.onnx
+  models/p07_{encoder,wave,decoder,fuse}_L256.onnx
+</code></pre>
+<p>Serve only the <code>.onnx</code> file. The export embeds its weights: <code>embed_external_data</code>
+rewrites the jax2onnx output into one self-contained file. A stray <code>.onnx.data</code> file
+next to it is stale. Don't ship it and don't rely on it.</p>
+<h2>Minimal integration (plain ES modules)</h2>
+<pre><code class="language-html">&lt;script type=&quot;module&quot;&gt;
+  import * as ort from &quot;https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs&quot;;
+  import { createSampler, pickBucket, MPNN_ALPHABET } from &quot;./js/aminx_sampler.mjs&quot;;
+
+  // Point ORT at its wasm binaries (same CDN version as the JS).
+  ort.env.wasm.wasmPaths = &quot;https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/&quot;;
+
+  // structure: backbone only, L residues (see &quot;Structure format&quot; below)
+  const L = structure.coords.length;
+  const bucket = pickBucket(L);                 // 128 or 256; throws if L &gt; 256
+  const sampler = await createSampler(ort, `./models/p07_sample_L${bucket}.onnx`, {
+    numThreads: crossOriginIsolated ? navigator.hardwareConcurrency : 1,
+  });
+
+  try {
+    const runspec = {
+      seed: 42,
+      temperature: 0.1,
+      omit_AA: &quot;C&quot;,
+      // bias_AA: { A: -1.0 }, fixed_positions: { 0: &quot;M&quot; }, tied_positions: [[3, 40]], ...
+    };
+    const { outputs, nReal } = await sampler.sample(structure, runspec);
+
+    const tokens = outputs[&quot;cond_out_0&quot;].data;        // Int32Array [bucket]
+    const logProbs = outputs[&quot;log_softmax_out_0&quot;].data; // Float32Array [bucket * 21]
+    const sequence = Array.from(tokens.slice(0, nReal), (t) =&gt; MPNN_ALPHABET[t]).join(&quot;&quot;);
+    console.log(sequence);
+  } finally {
+    await sampler.release();                    // free wasm memory; one session per model
+  }
+&lt;/script&gt;
+</code></pre>
+<p>Notes:</p>
+<ul>
+<li><strong>Outputs.</strong> <code>cond_out_0</code> holds the sampled tokens (int32, <code>[bucket]</code>).
+  <code>log_softmax_out_0</code> holds per-position log-probabilities (float32,
+  <code>[bucket, 21]</code>). Use only the first <code>nReal</code> rows; the rest is padding. If you
+  re-export, check <code>session.outputNames</code> to confirm the names.</li>
+<li><strong>Alphabet.</strong> Token <code>i</code> is <code>"ACDEFGHIKLMNPQRSTVWYX"[i]</code>. That is the ProteinMPNN
+  order, not alphabetical-by-name. Index 20 is <code>X</code>.</li>
+<li><strong>Reuse the sampler.</strong> Session creation compiles the graph and is the slow part.
+  Create one sampler per bucket, call <code>sample</code> many times, and release it on
+  teardown.</li>
+<li><strong>Many designs.</strong> Call <code>sample</code> again with a different <code>seed</code>. Randomness comes
+  only from the <code>seed</code> field, through a SplitMix64 PRNG, so a given
+  (structure, RunSpec, seed) always gives the same sequence.</li>
+</ul>
+<h2>Structure format</h2>
+<p><code>sampler.sample(structure, runspec)</code> takes plain arrays or typed arrays:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Field</th>
+<th style="text-align: left;">Shape / type</th>
+<th style="text-align: left;">Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>coords</code></td>
+<td style="text-align: left;"><code>[L][4][3]</code> numbers, or flat <code>Float32Array</code> with <code>coords_shape: [L,4,3]</code></td>
+<td style="text-align: left;">Backbone atoms in the order <strong>N, CA, C, O</strong> (no CB; the model computes it)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>mask</code></td>
+<td style="text-align: left;"><code>[L]</code> 0/1</td>
+<td style="text-align: left;">1 = real residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>residue_index</code></td>
+<td style="text-align: left;"><code>[L]</code> int</td>
+<td style="text-align: left;">PDB residue numbering, used for relative-position features</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chain_index</code></td>
+<td style="text-align: left;"><code>[L]</code> int</td>
+<td style="text-align: left;">Integer chain id per residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chain_ids</code></td>
+<td style="text-align: left;"><code>[L]</code> strings, optional</td>
+<td style="text-align: left;">Chain letters. Needed only for <code>chains_to_design</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Parse the PDB/mmCIF in the page with any JS parser. Take N/CA/C/O per residue in
+file order. Drop residues missing any backbone atom, or keep them with <code>mask: 0</code>.</p>
+<p>Padding up to the bucket is automatic: <code>padStructure</code> zero-pads coords and mask
+and repeats the last residue/chain index. This matches the Python export's
+convention exactly. <strong>The maximum length is 256 residues.</strong> Longer inputs throw.</p>
+<h2>RunSpec settings (all runtime inputs)</h2>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Key</th>
+<th style="text-align: left;">Example</th>
+<th style="text-align: left;">Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>seed</code></td>
+<td style="text-align: left;"><code>42</code></td>
+<td style="text-align: left;">Drives the Gumbel noise and the random decoding order</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>temperature</code></td>
+<td style="text-align: left;"><code>0.1</code> (default)</td>
+<td style="text-align: left;">Sampling temperature</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bias_AA</code></td>
+<td style="text-align: left;"><code>{ "A": -1.0 }</code></td>
+<td style="text-align: left;">Add to that residue type's logit everywhere</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>bias_AA_per_residue</code></td>
+<td style="text-align: left;"><code>{ "5": { "W": 2.0 } }</code></td>
+<td style="text-align: left;">Per-position logit bias</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>omit_AA</code></td>
+<td style="text-align: left;"><code>"CX"</code></td>
+<td style="text-align: left;">Forbid residue types everywhere</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>omit_AA_per_residue</code></td>
+<td style="text-align: left;"><code>{ "5": "P" }</code></td>
+<td style="text-align: left;">Forbid residue types at a position</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>chains_to_design</code></td>
+<td style="text-align: left;"><code>["A"]</code></td>
+<td style="text-align: left;">Other chains stay fixed at their native tokens (needs <code>chain_ids</code> and <code>native_tokens</code>)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>fixed_positions</code></td>
+<td style="text-align: left;"><code>{ "0": "M", "4": "G" }</code></td>
+<td style="text-align: left;">Pin these 0-based positions to the given residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>tied_positions</code></td>
+<td style="text-align: left;"><code>[[3, 40], [4, 41]]</code></td>
+<td style="text-align: left;">Force groups of positions to the same residue</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>decoding_order</code></td>
+<td style="text-align: left;"><code>"random"</code> or an explicit permutation</td>
+<td style="text-align: left;">Autoregressive order. With <code>"random"</code>, fixed positions decode first</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>chains_to_design</code> fixes every other chain to <code>structure.native_tokens</code> (<code>[L]</code> int32 in
+the alphabet above), so supply those when you use it. All positions are 0-based
+indices into the structure arrays, not PDB residue numbers.</p>
+<h2>Hosting requirements</h2>
+<ul>
+<li><strong>Multithreading needs cross-origin isolation.</strong> Serve the page with
+  <code>Cross-Origin-Opener-Policy: same-origin</code> and
+  <code>Cross-Origin-Embedder-Policy: require-corp</code>. Without these headers,
+  <code>crossOriginIsolated</code> is false and ORT runs single-threaded. Output is the same,
+  just slower. <code>browser/layer_c/serve.mjs</code> sets these headers for local testing.
+  With COEP on, CDN assets must be CORS-enabled (jsdelivr is) or self-hosted.</li>
+<li><strong>Memory.</strong> One L256 session plus its inputs fits comfortably in a desktop tab.
+  Mobile hasn't been tested.</li>
+<li><strong>Execution provider.</strong> Use wasm only. Don't pass <code>webgpu</code> (see below).</li>
+</ul>
+<h2>Validation status</h2>
+<p>Every measured row below is filled from a bathos run record, not from console output.
+Run <code>fd80f81d-3788-49c1-919f-e86acde3c4eb</code>, at commit <code>443c5b4f</code>, clean tree.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Check</th>
+<th style="text-align: left;">What it compares</th>
+<th style="text-align: left;">Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">RunSpec knobs gate</td>
+<td style="text-align: left;">JAX vs ORT-CPU vs ORT-Web across every RunSpec knob, L128 and L256, 288 cells</td>
+<td style="text-align: left;"><strong>PASS.</strong> Tokens bitwise identical <strong>288/288</strong> against ORT-CPU <em>and</em> <strong>288/288</strong> against ORT-Web. Max log-prob difference <strong>1.013e-04</strong> (bound 2e-4). All 7 knobs live</td>
+</tr>
+<tr>
+<td style="text-align: left;">Teacher-forced vs reference ProteinMPNN</td>
+<td style="text-align: left;">Per-position log-probs vs LigandMPNN@<code>26ec57ac</code>, same checkpoint, same fed sequence and order</td>
+<td style="text-align: left;"><strong>PASS. 4.482e-05 nats</strong> (bound 1e-4). This is the link that anchors everything else to the reference implementation rather than to aminx's own JAX</td>
+</tr>
+<tr>
+<td style="text-align: left;">Sampling correctness</td>
+<td style="text-align: left;">Gumbel-max draws vs <code>softmax(logits/T)</code>; decoding-order uniformity</td>
+<td style="text-align: left;"><strong>PASS.</strong> Gumbel total variation 0.00458 (bound 0.03) over 200,000 draws; order uniformity p=0.753 over 240,000 draws; 0 fixed-first violations; 0 omitted-class draws</td>
+</tr>
+<tr>
+<td style="text-align: left;">Instrument sensitivity</td>
+<td style="text-align: left;">Planted defects that MUST be caught</td>
+<td style="text-align: left;"><strong>4/4 detected</strong> — a bias-frozen wrapper stayed not-live, a non-Gumbel transform and a biased shuffle failed, and a uniform shuffle produced fixed-first violations</td>
+</tr>
+<tr>
+<td style="text-align: left;">JS RunSpec builder vs Python</td>
+<td style="text-align: left;"><code>runspec_core.mjs</code> inputs vs the Python builder (PRNG, Gumbel, orders, bias)</td>
+<td style="text-align: left;">Node unit tests pass (<code>runspec.test.mjs</code> 11/11, <code>aminx_sampler.test.mjs</code> 5/5)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Sampling distribution vs reference</td>
+<td style="text-align: left;">Statistical comparison of aminx samples against LigandMPNN@26ec57ac</td>
+<td style="text-align: left;"><strong>Pending.</strong> Calibration running on titanix; validate shards next on Engaging</td>
+</tr>
+<tr>
+<td style="text-align: left;">Speed / memory profile</td>
+<td style="text-align: left;">Wall time per design, session-create time, peak memory</td>
+<td style="text-align: left;"><strong>MEASURED</strong> — see "Performance" below. Run <code>be45e729</code>, whose timer control resolved a planted 250 ms delay to 250.2 ms (ratio 1.001) before any number was recorded</td>
+</tr>
+<tr>
+<td style="text-align: left;">WebGPU</td>
+<td style="text-align: left;">Capability probe: can the EP be reached at all?</td>
+<td style="text-align: left;"><strong>Determined, and negative here</strong> (<code>ca0ea202</code>): <code>navigator.gpu</code> present, but no adapter obtainable on this machine (WSL2, no GPU passthrough), so ORT was never asked. Untested for want of hardware — see "WebGPU" below</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>What that adds up to.</strong> The chain runs reference PyTorch → aminx JAX (teacher-forced,
+4.48e-05 nats) → ONNX (288/288 bitwise) → ORT-Web wasm (288/288 bitwise), across every
+RunSpec knob at both buckets, with a demonstrably sensitive instrument. Agreement with
+aminx's own JAX alone would only show self-consistency; the reference link is what makes
+it evidence.</p>
+<p><strong>What it does not cover:</strong> free-sampling distributional agreement with the reference —
+that row is genuinely still pending, and it is the one remaining gap in this table.
+Performance is measured (below, with a timer control) and WebGPU has been probed rather
+than merely deferred.</p>
+<h2>Performance</h2>
+<p>Measured 2026-09-29, bathos run <code>be45e729</code>. <strong>Read the control line first:</strong> a deliberately
+planted 250.0 ms delay was measured through the same clock as 250.2 ms (ratio 1.001). An
+earlier benchmark in this project never established that check and its numbers were thrown
+away, so no figure below was recorded until this one passed.</p>
+<p>Configuration: L=128, onnxruntime-web 1.30.0, <strong>wasm EP, single-threaded</strong>, Node on one
+Linux workstation, 8 RunSpec cells × 5 repetitions.</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;"></th>
+<th style="text-align: right;">Median per design</th>
+<th style="text-align: right;">Session create</th>
+<th style="text-align: right;">Peak RSS</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Monolith (the path this guide describes)</td>
+<td style="text-align: right;"><strong>19.96 s</strong></td>
+<td style="text-align: right;">589 ms</td>
+<td style="text-align: right;">550 MB</td>
+</tr>
+<tr>
+<td style="text-align: left;">Four-graph split (see below)</td>
+<td style="text-align: right;"><strong>17.19 s</strong></td>
+<td style="text-align: right;">364 ms</td>
+<td style="text-align: right;">550 MB</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>The headline is the absolute number, not the ratio: roughly 17–20 seconds per design at
+L=128, single-threaded.</strong> That is what a user waits — and it is why the threading result
+below matters more than the split-vs-monolith gap. L=256 costs about <strong>4×</strong> L=128, not 2×
+— see the browser table below.</p>
+<p>Two levers. The first is measured and large; the second is untouched:</p>
+<ul>
+<li><strong>Threads — the main lever, and it is measured.</strong> In headless Chromium with COOP/COEP,
+  both arms below passed their own timer control (planted 250.0 ms → measured 250.2 ms,
+  ratio 1.001) <em>in the browser</em>, so these are measurements rather than estimates.</li>
+</ul>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: right;">Bucket</th>
+<th style="text-align: right;">Threads</th>
+<th style="text-align: right;">Median per design</th>
+<th style="text-align: left;">Range</th>
+<th style="text-align: left;">Run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">128</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;"><strong>15.77 s</strong></td>
+<td style="text-align: left;">15.48–16.85</td>
+<td style="text-align: left;"><code>69bac70f</code></td>
+</tr>
+<tr>
+<td style="text-align: right;">128</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;"><strong>6.80 s</strong></td>
+<td style="text-align: left;">6.58–7.10</td>
+<td style="text-align: left;"><code>7fdb4001</code></td>
+</tr>
+<tr>
+<td style="text-align: right;">256</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;"><strong>27.18 s</strong></td>
+<td style="text-align: left;">27.03–28.63</td>
+<td style="text-align: left;"><code>4669e76f</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>2.32× faster, at no cost in correctness</strong> — at 4 threads the tokens are identical and
+  the log-probs bit-identical to single-threaded (<code>da02516e</code>). Session creation for all
+  four graphs is ~0.4 s either way.</p>
+<p>So <strong>enabling COOP/COEP takes an L=128 design from roughly 16 s to under 7 s.</strong> That
+  makes those headers the main performance lever rather than a hosting detail.</p>
+<p><strong>Length costs roughly quadratically, not linearly — size your UI accordingly.</strong> L256 is
+  4.0× L128, not 2×, even though it only doubles the autoregressive steps: each step also
+  does more work, because the encoder's L×K edge features and the wave graph's L² <code>ar_mask</code>
+  both grow. A 256-residue design is ~27 s <em>with</em> threading. If your page offers the larger
+  bucket, warn the user before they start rather than after.</p>
+<p>Worth noting for anyone reproducing this: browsers coarsen <code>performance.now</code> under some
+  isolation settings — exactly the settings threaded wasm requires — so the clock was
+  checked under those settings rather than assumed. It was not coarsened here.
+- <strong>WebGPU.</strong> See below. Unvalidated.</p>
+<h2>The four-graph split (faster, much smaller, and browser-validated)</h2>
+<p>The export can be split into four loop-free graphs — encoder, wave schedule, decoder step,
+fuse-and-sample — with the autoregressive loop driven from JavaScript
+(<code>browser/aminx-sampler/split_loop.mjs</code>). The integration example above still shows the
+monolith, because that is the path with the longest validation history — but the split is
+now validated in a real browser at both buckets, and it is measurably better on both axes
+that matter for a page:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;"></th>
+<th style="text-align: right;">Monolith</th>
+<th style="text-align: right;">Split</th>
+<th style="text-align: left;"></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Download, L128</td>
+<td style="text-align: right;">19.43 MB</td>
+<td style="text-align: right;"><strong>6.64 MB</strong></td>
+<td style="text-align: left;">2.9× smaller</td>
+</tr>
+<tr>
+<td style="text-align: left;">Download, L256</td>
+<td style="text-align: right;">31.52 MB</td>
+<td style="text-align: right;"><strong>6.71 MB</strong></td>
+<td style="text-align: left;">4.7× smaller</td>
+</tr>
+<tr>
+<td style="text-align: left;">Median per design, L128</td>
+<td style="text-align: right;">19.96 s</td>
+<td style="text-align: right;"><strong>17.19 s</strong></td>
+<td style="text-align: left;">14% faster</td>
+</tr>
+</tbody>
+</table></div>
+<p>The size gap widens with length because the split's graphs are weight-dominated and
+loop-free, while the monolith embeds the unrolled control flow <em>and</em> both decoder
+implementations behind a runtime branch.</p>
+<p>Correctness, all from run records:</p>
+<div class="tw"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Check</th>
+<th style="text-align: left;">Result</th>
+<th style="text-align: left;">Run</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Split vs monolith and vs JAX, ORT-CPU, L128</td>
+<td style="text-align: left;">tokens <strong>exact</strong> 56/56</td>
+<td style="text-align: left;"><code>fba872ce</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Same at L256</td>
+<td style="text-align: left;">tokens <strong>exact</strong> 32/32</td>
+<td style="text-align: left;"><code>ed2a2617</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Shipping <code>split_loop.mjs</code> on ORT-Web wasm (Node)</td>
+<td style="text-align: left;">tokens <strong>exact</strong> 56/56</td>
+<td style="text-align: left;"><code>bc8eb3d7</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Shipping loop in headless Chromium</strong></td>
+<td style="text-align: left;">tokens <strong>exact</strong> 8/8</td>
+<td style="text-align: left;"><code>13e06211</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Same, 4 threads with COOP/COEP</strong></td>
+<td style="text-align: left;">tokens <strong>exact</strong> 8/8, log-probs <strong>bit-identical</strong> to 1 thread</td>
+<td style="text-align: left;"><code>da02516e</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Split vs reference ProteinMPNN, teacher-forced, direct</strong></td>
+<td style="text-align: left;"><strong>3.822e-05 nats</strong> (bound 1e-4)</td>
+<td style="text-align: left;"><code>ed4f0b77</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>The last row is the important one: the exported split graphs were compared <strong>directly</strong>
+against the PyTorch reference, not via aminx's JAX, and land at essentially the same
+distance aminx's own JAX does (3.8e-05 against 4.5e-05). That measurement is scoped to
+untied lanes on fully-designed structures at L=128; fixed-position and tied cases are
+covered instead by the exact-token parity rows above, which run the full sampling loop.</p>
+<blockquote>
+<p><strong>On the run ids.</strong> Rows 1 and 4 were re-run after this work was integrated onto
+<code>main</code> (which had moved twice in the meantime — release 0.2.0a2 and PR #168), and cite
+those post-integration runs. The other rows cite their original runs. That mix is
+deliberate rather than sloppy: the re-runs reproduced their earlier figures
+<strong>bit-identically</strong>, and the four graphs re-exported from the integrated tree are
+<strong>byte-identical</strong> (all 8 sha256s match the pinned manifest), so the remaining rows
+measure the same bytes and the same behaviour. Had either check moved, every row would
+have been re-run.</p>
+</blockquote>
+<p>Across both buckets that is 15,360 decoder invocations with zero token mismatches, and
+the error does not grow with length — the L256 log-prob gap (4.768e-06) matches L128's
+exactly, so doubling the autoregressive depth does not accumulate drift.</p>
+<p>The browser rows are the ones that matter for a page, and they cover the full knob set —
+<code>fixed_positions</code>, <code>tied_pairs</code>, <code>chains_to_design</code> and <code>explicit_order</code> — end to end
+through the real sampling loop, with <code>crossOriginIsolated</code> confirmed true.</p>
+<p><strong>Threading is safe.</strong> At 4 threads the tokens are identical and the log-prob difference
+is <em>bit-identical</em> to the single-threaded run. That was worth checking rather than
+assuming: thread count changes float accumulation order, so results could in principle
+have moved, and this guide asks you to enable COOP/COEP.</p>
+<h3>Using the split</h3>
+<p>Same shape as <code>createSampler</code>, but four URLs instead of one. Copy
+<code>split_driver.mjs</code> and <code>split_loop.mjs</code> alongside the two modules listed at the top.</p>
+<pre><code class="language-html">&lt;script type=&quot;module&quot;&gt;
+  import * as ort from &quot;https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs&quot;;
+  import { createSplitSampler } from &quot;./js/split_driver.mjs&quot;;
+  import { pickBucket, MPNN_ALPHABET } from &quot;./js/aminx_sampler.mjs&quot;;
+
+  ort.env.wasm.wasmPaths = &quot;https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/&quot;;
+
+  const bucket = pickBucket(structure.coords.length);   // 128 or 256
+  const sampler = await createSplitSampler(ort, {
+    encoderUrl: `./models/p07_encoder_L${bucket}.onnx`,
+    waveUrl:    `./models/p07_wave_L${bucket}.onnx`,
+    decoderUrl: `./models/p07_decoder_L${bucket}.onnx`,
+    fuseUrl:    `./models/p07_fuse_L${bucket}.onnx`,
+  }, { numThreads: crossOriginIsolated ? 4 : 1 });
+
+  try {
+    const { tokens, nReal } = await sampler.sample(structure, { seed: 42, temperature: 0.1 });
+    // tokens is {shape, data} with a plain Int32Array — NOT an ort.Tensor, unlike
+    // createSampler, which hands back the raw `outputs` map.
+    console.log(Array.from(tokens.data.slice(0, nReal), (t) =&gt; MPNN_ALPHABET[t]).join(&quot;&quot;));
+  } finally {
+    await sampler.release();   // frees all four sessions
+  }
+&lt;/script&gt;
+</code></pre>
+<p><code>numThreads</code> is worth setting from <code>crossOriginIsolated</code> as shown: it is the difference
+between ~16 s and ~7 s per design, and it degrades safely to single-threaded if the
+headers are missing.</p>
+<p>L=256 is validated in the browser too (<code>8a3bb1d6</code>, tokens exact 4/4). Notably the
+log-prob difference is <strong>bit-identical</strong> — 5.7220458984375e-06 — across L128
+single-threaded, L128 at 4 threads, and L256 at 4 threads, which is the signature of a
+fixed float32 rounding floor rather than error that accumulates with depth or varies with
+threading.</p>
+<p>Remaining gap: WebGPU is untouched (below).</p>
+<h2>WebGPU</h2>
+<p>Not covered in this release, and <strong>untested for want of hardware rather than want of
+effort</strong> — worth stating precisely, because "we didn't try" and "we tried and it failed"
+lead somewhere different.</p>
+<p>A capability probe ran (<code>ca0ea202</code>). Chromium exposes <code>navigator.gpu</code>, but <strong>no adapter
+could be obtained</strong> on the development machine even with <code>--enable-unsafe-swiftshader</code>
+and <code>--use-angle=swiftshader</code>; it is WSL2 with no GPU passthrough. The probe therefore
+stopped before ORT was ever asked to accept the provider, so there is <strong>no evidence
+either way</strong> about whether the WebGPU EP works for these graphs.</p>
+<p>What is known, from design rather than measurement:</p>
+<ul>
+<li>The <strong>split removes the larger obstacle.</strong> The monolith keeps the whole autoregressive
+  loop in-graph (<code>Loop</code>/<code>If</code>/<code>Scan</code>), and ORT runs control-flow nodes on CPU, forcing a
+  transfer every step. The four-graph split has no loop in any graph, and Graph D — the
+  per-step hot path — contains no sort and no control flow at all.</li>
+<li><strong>One known dtype gap remains, and it is confined.</strong> ONNX mandates <code>int64</code> indices for
+  <code>TopK</code>, which the k-NN sort lowers to, and the WebGPU EP does not support int64. Under
+  the split that node lives only in the encoder, which runs <strong>once per structure</strong> rather
+  than once per step. Expect a partition with those nodes on CPU; the per-step path should
+  be unaffected.</li>
+</ul>
+<p>If you have GPU hardware, the probe (<code>scripts/browser_validation/p07_webgpu_probe.py</code>) is
+the cheapest way to find out where the stack actually stops — it records five staged
+checks and makes no claims. Note that tokens must be compared against the wasm path
+before any speed comparison is meaningful: the EP partitioning above means the two
+backends need not agree on tie order for the same file, which a log-prob tolerance cannot
+see.</p>
+<h2>Reproducing the ONNX files</h2>
+<p>From an aminx checkout (Python 3.12, <code>uv</code>):</p>
+<pre><code class="language-bash">uv run --frozen --with jax2onnx==0.16.1 --with onnx --with onnxruntime==1.30.0 \
+  python scripts/browser_validation/p07_knobs_gate.py --out /tmp/p07.json --budget-s 3600
+</code></pre>
+<p>The gate calls <code>aminx.export.wrappers.make_p07_sample</code> on
+<code>load_model(checkpoint_id="proteinmpnn_v_48_020")</code>, converts with <code>jax2onnx.to_onnx</code>
+for each bucket, and embeds the external data into one file. Export is
+byte-deterministic: repeated exports of the same commit give the same sha256.</p>
+<p>For the <strong>four-graph split</strong> there is a standalone entry point, which also writes a
+manifest recording every file's sha256, byte size, input shapes and dtypes alongside the
+commit and checkpoint id:</p>
+<pre><code class="language-bash">uv run --frozen --with jax2onnx==0.16.1 --with onnx --with onnxruntime==1.30.0 \
+  python scripts/browser_validation/p07_split_export.py \
+    --out-dir dist/models --buckets 128 256
+</code></pre>
+<p>Passing <code>--verify-manifest dist/models/MANIFEST.json</code> instead re-hashes the files and
+reports any drift — that is how to confirm the bytes you are serving are the bytes that
+were validated.</p>
+<h2>Licensing</h2>
+<p>The aminx code is MIT. The weights are converted from upstream ProteinMPNN
+(dauparas) and distributed through Hugging Face <code>maraxen/aminx</code>. <strong>Confirm the
+upstream weights license allows redistribution before serving them publicly</strong>, and
+credit ProteinMPNN (Dauparas et al., <em>Science</em> 2022) on the page.</p></main></body></html>

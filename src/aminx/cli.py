@@ -736,7 +736,16 @@ def run_sample(
     bool,
     _OPT(help="Compute pseudo-perplexity (requires return-logits)"),
   ] = False,
-  ligand_conditioning: Annotated[bool, _OPT(help="Ligand conditioning")] = False,
+  ligand_conditioning: Annotated[
+    bool | None,
+    _OPT(
+      help=(
+        "Ligand conditioning: --ligand-conditioning REQUIRES real ligand tensors (error if "
+        "absent); --no-ligand-conditioning ABLATES (ignores any ligand tensors); unset uses "
+        "whatever is present."
+      ),
+    ),
+  ] = None,
   sidechain_conditioning: Annotated[bool, _OPT(help="Sidechain conditioning")] = False,
   campaign_mode: Annotated[bool, _OPT(help="Campaign mode")] = False,
   allow_logits_in_campaign: Annotated[bool, _OPT(help="Allow logits in campaign")] = False,
@@ -1280,7 +1289,16 @@ def spec_emit_sample(
     bool,
     _OPT(help="Compute pseudo-perplexity (requires return-logits)"),
   ] = False,
-  ligand_conditioning: Annotated[bool, _OPT(help="Ligand conditioning")] = False,
+  ligand_conditioning: Annotated[
+    bool | None,
+    _OPT(
+      help=(
+        "Ligand conditioning: --ligand-conditioning REQUIRES real ligand tensors (error if "
+        "absent); --no-ligand-conditioning ABLATES (ignores any ligand tensors); unset uses "
+        "whatever is present."
+      ),
+    ),
+  ] = None,
   sidechain_conditioning: Annotated[bool, _OPT(help="Sidechain conditioning")] = False,
   campaign_mode: Annotated[bool, _OPT(help="Campaign mode")] = False,
   allow_logits_in_campaign: Annotated[bool, _OPT(help="Allow logits in campaign")] = False,
@@ -1744,9 +1762,50 @@ def campaign_plan(
     ),
   ] = None,
   state_weight_profiles: Annotated[
-    str,
-    _OPT("--state-weight-profiles", help="Comma-separated state weight profile names"),
-  ] = "equal",
+    str | None,
+    _OPT(
+      "--state-weight-profiles",
+      help=(
+        "Comma-separated state weight profile NAMES. Only 'equal' resolves by name; any "
+        "other name must also be declared with --state-weight-profile. Default: equal, "
+        "unless --state-weight-profile is given."
+      ),
+    ),
+  ] = None,
+  state_weight_profile: Annotated[
+    list[str] | None,
+    _OPT(
+      "--state-weight-profile",
+      help=(
+        "Profile LABEL=WEIGHTS, e.g. pocket_heavy=0.7|0.3 -- one weight per state, pipe- or "
+        "comma-separated; a 1-D .npy path also works. Reaches each row's state_weights, so "
+        "two profiles are two genuinely different weightings. Repeatable; each profile is "
+        "its own row-set."
+      ),
+    ),
+  ] = None,
+  bias: Annotated[
+    Path | None,
+    _OPT(
+      "--bias",
+      help=(
+        "Path to a (L, 21) float .npy of per-position, per-token logit bias (L = the "
+        "campaign's padded length, max_length=512). Applied to every row of the grid and "
+        "carried in each row's sampling_spec."
+      ),
+    ),
+  ] = None,
+  tie_group_map: Annotated[
+    Path | None,
+    _OPT(
+      "--tie-group-map",
+      "--tie-group",
+      help=(
+        "Path to a (L,) integer .npy of per-position tie-group ids; positions sharing an id "
+        "are decoded tied. Applied to every row of the grid."
+      ),
+    ),
+  ] = None,
   checkpoint_id: Annotated[
     str | None,
     _OPT("--checkpoint-id", help="Checkpoint identifier for manifest rows"),
@@ -1788,7 +1847,9 @@ def campaign_plan(
   from aminx.host.campaign import (  # noqa: PLC0415
     SamplingSpecification,
     _parse_csv,
+    campaign_residue_overrides,
     parse_fixed_arms,
+    parse_state_weight_profiles,
     write_campaign_manifest,
   )
 
@@ -1798,6 +1859,7 @@ def campaign_plan(
     return_logits=False,
     **({"checkpoint_id": checkpoint_id} if checkpoint_id is not None else {}),
     **({"chain_id": parsed_chain_id} if parsed_chain_id is not None else {}),
+    **campaign_residue_overrides(bias, tie_group_map),
     **({"ligand_context_path": ligand_context_path} if ligand_context_path is not None else {}),
   )
   write_campaign_manifest(
@@ -1808,7 +1870,9 @@ def campaign_plan(
     samples_chunk_size=samples_chunk_size,
     output_root=output_root,
     fixed_arms=parse_fixed_arms(fixed_arm),
-    state_weight_profiles=_parse_csv(state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      state_weight_profiles, state_weight_profile,
+    ),
   )
 
 
@@ -1921,6 +1985,33 @@ def campaign_run(
     raise typer.Exit(code=1)
 
 
+@campaign_app.command("adopt-legacy")
+def campaign_adopt_legacy(
+  manifest_path: Annotated[
+    Path,
+    _OPT("--manifest-path", help="Path to campaign manifest JSON (required)"),
+  ] = ...,  # ty: ignore[invalid-parameter-default]
+  row_hash: Annotated[list[str], _OPT("--row-hash", help="Row hash filter (repeatable)")] = [],  # noqa: B006
+  dry_run: Annotated[
+    bool,
+    _OPT("--dry-run", help="Report what would be adopted without changing anything"),
+  ] = False,
+  summary_path: Annotated[
+    Path | None,
+    _OPT("--summary-path", help="Path to write the adoption report JSON"),
+  ] = None,
+) -> None:
+  """Upgrade valid v2 done markers to v3. The operator attests the outputs match the current manifest."""
+  from aminx.host.campaign import _emit_json, adopt_legacy_done_markers  # noqa: PLC0415
+
+  report = adopt_legacy_done_markers(
+    manifest_path,
+    row_hashes=tuple(row_hash) if row_hash else None,
+    dry_run=dry_run,
+  )
+  _emit_json(report, str(summary_path) if summary_path else None)
+
+
 @campaign_app.command("gates")
 def campaign_gates(
   manifest_path: Annotated[
@@ -1986,12 +2077,53 @@ def campaign_ramp_plan(
     ),
   ] = None,
   state_weight_profiles: Annotated[
-    str,
-    _OPT("--state-weight-profiles", help="Comma-separated state weight profile names"),
-  ] = "equal",
+    str | None,
+    _OPT(
+      "--state-weight-profiles",
+      help=(
+        "Comma-separated state weight profile NAMES. Only 'equal' resolves by name; any "
+        "other name must also be declared with --state-weight-profile. Default: equal, "
+        "unless --state-weight-profile is given."
+      ),
+    ),
+  ] = None,
+  state_weight_profile: Annotated[
+    list[str] | None,
+    _OPT(
+      "--state-weight-profile",
+      help=(
+        "Profile LABEL=WEIGHTS, e.g. pocket_heavy=0.7|0.3 -- one weight per state, pipe- or "
+        "comma-separated; a 1-D .npy path also works. Reaches each row's state_weights, so "
+        "two profiles are two genuinely different weightings. Repeatable; each profile is "
+        "its own row-set."
+      ),
+    ),
+  ] = None,
   plan_path: Annotated[
     Path | None,
     _OPT("--plan-path", help="Path to write scale ramp plan JSON"),
+  ] = None,
+  bias: Annotated[
+    Path | None,
+    _OPT(
+      "--bias",
+      help=(
+        "Path to a (L, 21) float .npy of per-position, per-token logit bias (L = the "
+        "campaign's padded length, max_length=512). Applied to every row of the grid and "
+        "carried in each row's sampling_spec."
+      ),
+    ),
+  ] = None,
+  tie_group_map: Annotated[
+    Path | None,
+    _OPT(
+      "--tie-group-map",
+      "--tie-group",
+      help=(
+        "Path to a (L,) integer .npy of per-position tie-group ids; positions sharing an id "
+        "are decoded tied. Applied to every row of the grid."
+      ),
+    ),
   ] = None,
   checkpoint_id: Annotated[
     str | None,
@@ -2004,7 +2136,9 @@ def campaign_ramp_plan(
     _emit_json,
     _parse_csv,
     _parse_int_csv,
+    campaign_residue_overrides,
     parse_fixed_arms,
+    parse_state_weight_profiles,
     plan_scale_ramp,
   )
 
@@ -2012,6 +2146,7 @@ def campaign_ramp_plan(
     inputs=_parse_csv(inputs),
     return_logits=False,
     **({"checkpoint_id": checkpoint_id} if checkpoint_id is not None else {}),
+    **campaign_residue_overrides(bias, tie_group_map),
   )
   plan_payload = plan_scale_ramp(
     base_spec=base_spec,
@@ -2021,7 +2156,9 @@ def campaign_ramp_plan(
     stage_designs_per_library_type=_parse_int_csv(stage_designs_per_library_type),
     samples_chunk_size=samples_chunk_size,
     fixed_arms=parse_fixed_arms(fixed_arm),
-    state_weight_profiles=_parse_csv(state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      state_weight_profiles, state_weight_profile,
+    ),
   )
   _emit_json(plan_payload, str(plan_path) if plan_path else None)
 

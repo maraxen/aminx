@@ -1,0 +1,126 @@
+[metadata]
+title = "Layer (c): browser (ORT Web wasm EP, headless Chromium) validate on fixture set B"
+created = "260928"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On the T3b validate pairs (held-out fixture set B: 6MRR, 1BC8, 3HTN, 4YOW, at every export bucket >= each fixture's own -- the SAME (fixture, bucket) pairs T3b's b-ORT arm used), the already-converted, tracked T2 ONNX artifacts run through onnxruntime-web's wasm execution provider inside real headless Chromium (numThreads = 1, cross-origin-isolated) agree with the SAME artifact run through ONNX Runtime's native CPU execution provider: neighbour indices and P04 argmax EXACT (near-tie exclusion), P03 edge features and P04 log-probs TOL against the layer-(c) bars (bar/10 of the layer-(b) bars). Every gated cell is checked against the T5a-committed calibration headroom state (headroom_c); a not_advanced/low_headroom cell caps the outcome at partial_headroom rather than failing it. The T5a-sized P04 log-prob bias, T5a-sized P03 edge-projection bias, and the T2-built P03 index-slot swap are each run through the browser, at BOTH bucket 128 and bucket 1024 (6 planted controls total), and must each be detected against the layer-(c) bars. A no-COOP/COEP negative-control invocation of the SAME site (run_parity.mjs --no-isolation) must report self.crossOriginIsolated === false, proving the isolated run's numThreads = 1 evidence is trustworthy. The run writes outputs/browser_validation/layer_c/evidence/ort-wasm__chromium.json (UA, browser version, ORT Web version, execution provider, per-context wasm-init thread assertion, crossOriginIsolated, WebGPU capability probe)."
+stage_name = "validation"
+claim_discriminates = ["H_c_wasm_within_bar", "H_null_misspec"]
+claim_isolates = ["C_artifact_provenance"]
+
+[reproduction]
+novel = true
+# No external paper/reference codebase is being reproduced here (mirrors
+# layer_b_ort_validate.bth.toml's own choice): this is an internal ORT-Web-vs-ORT-CPU
+# consistency check on the SAME already-converted artifact, executed a second time
+# inside a real browser.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["blocked", "incomplete", "not_isolated", "ctrl_blind", "fail"]
+
+[differential]
+knob = "AMINX_BV_LAYERC_PARITY_PERTURB"   # read via BTH_DIFFERENTIAL_VALUE; 1 = apply the
+                                           # T5a-committed delta_c04/delta_c03 on 5L33@128
+                                           # (the SAME sizing fixture/bucket T5a's own search used)
+off = "0"
+on = "1"
+expect = "differs"
+metric = "ctrl_ratio_min"        # min(P04 log-prob ratio-to-bar, P03 edge ratio-to-bar) on 5L33@128,
+                                  # against the LAYER-C bars (1e-5, 2e-6) -- pure JAX, no browser
+min_effect = 9.5367431640625     # PINNED: min(ctrl_effect_c.p04 / 1e-5, ctrl_effect_c.p03 / 2e-6)
+                                  # from the T5a-committed preregistered_params.json (effect in bar
+                                  # units; ctrl_effect_c.p04=9.965896606445314e-05/1e-5=9.965896606445314,
+                                  # ctrl_effect_c.p03=1.9073486328125e-05/2e-6=9.5367431640625,
+                                  # min = 9.5367431640625). No placeholder; the same deterministic
+                                  # JAX computation as T5a's own sizing search, so the "on" arm's
+                                  # ctrl_ratio_min should reproduce this value.
+
+# Declaration order matters (first matching branch wins), per the task spec's own ordering:
+# blocked, incomplete, not_isolated, ctrl_blind, fail, tie_unstable, partial_headroom, pass.
+
+[outcomes.blocked]
+condition = "n_paths_available = 0"
+decision = "Neither P03 nor P04 has a clean converted artifact for every export bucket (T2 BLOCKED table); nothing in this task's comparisons could run, and the run is recorded as blocked rather than silently producing an empty pass."
+reasoning = "T2's per-path BLOCKED table requires every downstream sidecar to declare blocked as its FIRST-matching outcome when n_paths_available == 0 (spec 'Referenced excerpt: Task 2 per-path BLOCKED table')."
+is_residual = true
+
+[outcomes.incomplete]
+condition = "NOT git_clean OR NOT harness_ok OR n_skipped > 0"
+decision = "The run tree was dirty, the headless-Chromium harness itself failed to produce a result (browser launch, page crash, navigation error, timeout, or no node binary found), or one or more (fixture, bucket, path) cells failed to compute a comparison; this validate run proves nothing and must not be committed as a clean validation."
+reasoning = "A dirty tree, a harness that never produced browser evidence, or a skipped comparison each mean the measurements this run would grade did not all run under the conditions the claim requires, regardless of what the computed rows say."
+is_residual = true
+
+[outcomes.not_isolated]
+condition = "NOT isolation_ok"
+decision = "Either the primary run was not cross-origin-isolated (self.crossOriginIsolated !== true, so the numThreads = 1 wasm evidence this validation measures is not the isolated evidence AC-C1 requires), or the --no-isolation negative-control invocation of the SAME site did NOT report crossOriginIsolated === false (or its own harness never produced a result), so the negative control that proves the isolated run's evidence is trustworthy did not fire."
+reasoning = "The Definitions section fixes numThreads at wasm-init time only under cross-origin isolation; a primary run that is not isolated, or a negative control that fails to demonstrate the non-isolated counterfactual, both mean this run cannot be trusted as the isolated numThreads = 1 comparison AC-C1 asks for."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "Instrument insensitive at the claimed resolution; no parity statement is permitted for this run."
+negative_outcome_note = "One or more of the six planted controls (T5a-sized P04 bias, T5a-sized P03 edge bias, and the T2 index-slot swap, each at bucket 128 AND bucket 1024) failed to trip through the browser wasm execution provider."
+reasoning = "A planted control that fails to trip means the harness cannot be trusted to catch a real discrepancy of this or smaller magnitude on set B through the wasm EP, so a clean row set is not evidence of parity."
+is_residual = true
+
+[outcomes.fail]
+condition = "n_over_bar > 0"
+decision = "At least one GATED row (not excluded_not_advanced) exceeds its layer-(c) bar with a non-near-tie mismatch or a TOL metric over bar: finding + DEVIATION."
+reasoning = "Residual catch-all: a gated row's OWN measurement exceeding its bar, with sensitive controls and no calibration not_advanced/low_headroom cushion available, is a genuine divergence between the wasm EP and the native CPU EP on the identical artifact."
+is_residual = true
+
+[outcomes.tie_unstable]
+condition = "n_over_bar = 0 AND n_tie_unstable > 0"
+decision = "Every GATED index mismatch is confined to near-tie rows (pre-registered bars' Near-tie rule); the wasm EP is not shown to disagree with ORT-CPU on any geometrically well-separated row."
+reasoning = "The near-tie rule exists precisely so that float32-evaluation-order-driven neighbour-slot swaps on genuinely tied rows are not mistaken for a real divergence; recording tie_unstable (rather than pass or fail) keeps that distinction visible."
+is_residual = false
+
+[outcomes.partial_headroom]
+condition = "n_over_bar = 0 AND n_tie_unstable = 0 AND (n_excluded_not_advanced > 0 OR n_low_headroom > 0)"
+decision = "Every gated row is within bar (or tie_unstable-excluded), but at least one cell was excluded as not_advanced (T5a calibration headroom) or gated with only low_headroom margin; the excluded/low-headroom paths do not advance from this run."
+reasoning = "T5a's headroom rule already flagged these paths before this run (P03 edge_features/ort_wasm is not_advanced at every measured bucket in T5a's own calibration); measuring and reporting them here without gating on them keeps the not_advanced/low_headroom accounting honest without conflating it with a fresh validation failure."
+is_residual = false
+
+[outcomes.pass]
+condition = "n_over_bar = 0 AND n_tie_unstable = 0 AND n_excluded_not_advanced = 0 AND n_low_headroom = 0"
+decision = "Every gated row is within bar, with full calibration headroom (advanced) on every measured/inherited bucket, every control detected, and the isolated/negative-control evidence both hold."
+reasoning = "Zero over-bar rows, zero tie_unstable rows, zero not_advanced/low_headroom cells, every control detected, and a verified isolation/negative-control pair are the minimum evidence that every in-scope layer-(c) wasm-EP path is parity-equivalent to the native CPU EP on the held-out set."
+is_residual = false
+
+[result_schema]
+n_paths_available = "int"
+converted_by_path = "dict"
+controls_total = "int"
+controls_detected = "int"
+n_rows = "int"
+n_skipped = "int"
+n_excluded_not_advanced = "int"
+n_low_headroom = "int"
+n_over_bar = "int"
+n_tie_unstable = "int"
+harness_ok = "bool"
+cross_origin_isolated = "bool"
+no_isolation_cross_origin_isolated = "bool"
+isolation_ok = "bool"
+worst_ratio_to_bar = "float"
+worst_ratio_to_bar_available = "bool"
+worst_path = "str"
+git_hash = "str"
+git_clean = "bool"
+artifact_subdir = "str"
+versions = "dict"
+comparator_self_test_pass = "bool"
+control_fixture = "str"
+ctrl_ratio_min = "float"
+evidence_written = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
+onnxruntime_web_version = { type = "string", required = false }
+playwright_version = { type = "string", required = false }

@@ -29,6 +29,7 @@ import equinox as eqx
 import jax
 import jax.lax
 
+from aminx.tiling._deprecation import warn_deprecated
 from aminx.utils.safe_map import safe_map
 
 
@@ -127,9 +128,21 @@ class SafeMapIterator(eqx.Module):
 
   Elements are processed in tiles to avoid memory exhaustion and XLA
   loop construct issues. No carry state; elements are independent.
+
+  .. deprecated::
+     Get the chunked iterator from xtrax:
+     ``xtrax.tiling.make_axis_dispatch(xtrax.tiling.ChunkedMap(batch_size=...))``.
+     aminx debt #2371; aminx's own class will be removed.
   """
 
   tile: int = eqx.field(static=True)
+
+  def __post_init__(self) -> None:
+    """Warn (attributed to the caller) that this class is deprecated."""
+    warn_deprecated(
+      "aminx.tiling.iterator.SafeMapIterator",
+      "xtrax.tiling.make_axis_dispatch(xtrax.tiling.ChunkedMap(batch_size=<tile>))",
+    )
 
   def __call__(
     self,

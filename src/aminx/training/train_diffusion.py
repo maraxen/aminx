@@ -28,7 +28,7 @@ def train_step(
   mask: jax.Array,
   residue_index: jax.Array,
   chain_index: jax.Array,
-  sequence: jax.Array,  # [B, N] integer labels
+  sequence: jax.Array,  # [B, N] integer labels, MPNN-ordered (see aa_convert.training_labels)
   prng_key: jax.Array,
   noise_schedule: NoiseSchedule,
   lr_schedule: optax.Schedule,

@@ -49,7 +49,7 @@
     {
       "id": "decoder-conditional-scoring",
       "tier": "parity_heavy",
-      "code_paths": ["src/aminx/model/decoder.py", "src/aminx/scoring/score.py", "src/aminx/run/scoring.py"],
+      "code_paths": ["src/aminx/model/decoder.py", "src/aminx/scoring/score.py", "src/aminx/host/runner.py"],
       "reference": "LigandMPNN conditional scoring branch",
       "method": "logits and score parity",
       "metrics": ["pearson correlation", "score delta", "nll drift"],
@@ -60,10 +60,11 @@
     {
       "id": "autoregressive-sampling",
       "tier": "parity_heavy",
-      "code_paths": ["src/aminx/sampling/sample.py", "src/aminx/run/sampling.py", "src/aminx/model/mpnn.py"],
+      "code_paths": ["src/aminx/sampling/sample.py", "src/aminx/host/runner.py", "src/aminx/model/mpnn.py", "src/aminx/inference/sample_autoregressive.py"],
       "reference": "LigandMPNN autoregressive sample branch",
       "method": "stepwise deterministic sample parity",
       "metrics": ["stepwise logit drift", "token agreement", "sequence recovery"],
+      "note": "token agreement is non-discriminating under bias[...,0]=100; the discriminating gate is the teacher-forced lane (layer_a_sampling)",
       "acceptance": {
         "correlation_min": 0.95
       }
@@ -71,10 +72,11 @@
     {
       "id": "tied-positions-and-multi-state",
       "tier": "parity_heavy",
-      "code_paths": ["src/aminx/utils/autoregression.py", "src/aminx/model/multistate_sampling.py", "src/aminx/sampling/sample.py"],
+      "code_paths": ["src/aminx/utils/autoregression.py", "src/aminx/sampling/multistate_poe.py", "src/aminx/sampling/sample.py"],
       "reference": "LigandMPNN tie-group and multi-state sampling behavior",
       "method": "group-combined branch parity with explicit apples-to-apples comparison lanes",
       "metrics": ["group correlation", "strategy invariants"],
+      "note": "token agreement is non-discriminating under bias[...,0]=100; the discriminating gate is the teacher-forced lane (layer_a_sampling)",
       "acceptance": {
         "correlation_min": 0.95,
         "comparison_lanes": [
@@ -153,7 +155,7 @@
     {
       "id": "logits-helper-branches",
       "tier": "parity_fast",
-      "code_paths": ["src/aminx/sampling/unconditional_logits.py", "src/aminx/sampling/conditional_logits.py"],
+      "code_paths": ["src/aminx/sampling/conditional_logits.py", "src/aminx/inference/score_unconditional.py"],
       "reference": "Internal branch-to-helper consistency",
       "method": "helper vs direct branch parity",
       "metrics": ["allclose", "shape equality"],
@@ -215,7 +217,7 @@
     {
       "id": "averaged-encoding",
       "tier": "parity_fast",
-      "code_paths": ["src/aminx/run/averaging.py"],
+      "code_paths": ["src/aminx/host/averaging.py"],
       "reference": "Internal averaging contract",
       "method": "deterministic averaged encoding parity",
       "metrics": ["shape equality", "average drift"],
@@ -226,13 +228,14 @@
     {
       "id": "end-to-end-run-apis",
       "tier": "parity_fast",
-      "code_paths": ["src/aminx/run/scoring.py", "src/aminx/run/sampling.py"],
-      "reference": "Internal user-facing API contract",
-      "method": "fixture-driven API parity",
+      "code_paths": ["src/aminx/run/_exports.py", "src/aminx/host/runner.py", "src/aminx/scoring/score.py", "src/aminx/sampling/sample.py", "src/aminx/inference/sample_autoregressive.py"],
+      "reference": "None: run_sample(spec) is compared with a second run_sample(spec) on a mock protein (self-consistency); no reference implementation is involved",
+      "method": "self-consistency of the run API against itself (NOT reference parity)",
       "metrics": ["output shape", "score contract", "pseudo-perplexity contract"],
       "acceptance": {
         "tensor_tolerance": {"atol": 1e-06, "rtol": 1e-06}
-      }
+      },
+      "note": "this path passing says the API is deterministic and shaped as documented, not that it matches upstream LigandMPNN. Reference parity through the run API is measured by scripts/parity/e2e_run_api_parity.py (CPU pass: bathos 55ce2877; GPU run failed: bathos 239505fd, aminx #2391) with the knobs it varies and does not vary listed in aminx debt #2326"
     },
     {
       "id": "checkpoint-family-load",

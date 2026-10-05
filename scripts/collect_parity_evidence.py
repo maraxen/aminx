@@ -44,12 +44,11 @@ from aminx.parity.evidence import (
   write_point_records_csv,
 )
 from aminx.parity.matrix import load_parity_matrix
-from aminx.run.averaging import get_averaged_encodings
-from aminx.run.sampling import sample as run_sample
-from aminx.run.scoring import score as run_score
+from aminx.host.averaging import get_averaged_encodings
+from aminx.run._exports import sample as run_sample
+from aminx.run._exports import score as run_score
 from aminx.run.specs import SamplingSpecification, ScoringSpecification
 from aminx.sampling.conditional_logits import make_conditional_logits_fn
-from aminx.sampling.unconditional_logits import make_unconditional_logits_fn
 from aminx.utils.aa_convert import protein_sequence_to_string
 from aminx.utils.data_structures import Protein
 
@@ -2046,7 +2045,8 @@ def _collect_fast_logit_helper_metrics(
   metric_rows: list[EvidenceMetricRecord] = []
   point_rows: list[EvidencePointRecord] = []
   model = eqx.nn.inference_mode(core_models.jax_model, value=True)
-  unconditional_helper = make_unconditional_logits_fn(cast(Aminx, model))
+  # ``aminx.sampling.unconditional_logits`` (and its ``make_unconditional_logits_fn``) was deleted
+  # in 0.2.0a1 with nothing superseding it, so only the conditional helper is compared here.
   conditional_helper = make_conditional_logits_fn(model)
 
   coordinates = jnp.asarray(case.atom37_coordinates)
@@ -2056,25 +2056,6 @@ def _collect_fast_logit_helper_metrics(
   ar_mask = jnp.asarray(core_inputs.ar_mask)
   sequence_one_hot = jax.nn.one_hot(jnp.asarray(case.sequence), 21)
   key = jax.random.PRNGKey(case.seed + 3)
-
-  helper_unconditional = unconditional_helper(
-    key,
-    coordinates,
-    mask,
-    residue_index,
-    chain_index,
-    ar_mask,
-    jnp.asarray(0.0, dtype=jnp.float32),
-  )
-  _, direct_unconditional = model(
-    coordinates,
-    mask,
-    residue_index,
-    chain_index,
-    "unconditional",
-    ar_mask=ar_mask,
-    backbone_noise=jnp.asarray(0.0, dtype=jnp.float32),
-  )
 
   helper_conditional = conditional_helper(
     key,
@@ -2099,18 +2080,8 @@ def _collect_fast_logit_helper_metrics(
     backbone_noise=jnp.asarray(0.0, dtype=jnp.float32),
   )
 
-  reference = np.concatenate(
-    [
-      np.asarray(direct_unconditional).ravel(),
-      np.asarray(direct_conditional).ravel(),
-    ],
-  )
-  observed = np.concatenate(
-    [
-      np.asarray(helper_unconditional).ravel(),
-      np.asarray(helper_conditional).ravel(),
-    ],
-  )
+  reference = np.asarray(direct_conditional).ravel()
+  observed = np.asarray(helper_conditional).ravel()
   _append_scalar_metrics(
     metric_rows,
     path_id="logits-helper-branches",
@@ -2241,7 +2212,7 @@ def _collect_end_to_end_api_metrics(
     batch_size=1,
   )
   with patch(
-    "aminx.run.sampling.prep_protein_stream_and_model",
+    "aminx.host.runner.prep_protein_stream_and_model",
     return_value=([mock_protein], model),
   ):
     sample_first = run_sample(sample_spec)
@@ -2313,7 +2284,7 @@ def _collect_end_to_end_api_metrics(
     batch_size=1,
   )
   with patch(
-    "aminx.run.scoring.prep_protein_stream_and_model",
+    "aminx.host.runner.prep_protein_stream_and_model",
     return_value=([mock_protein], model),
   ):
     score_first = run_score(score_spec)

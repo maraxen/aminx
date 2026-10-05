@@ -1,5 +1,135 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **xtrax pinned to `0.4.0a11`** (was `0.4.0a10`). xtrax renamed its chunked strategy
+  `SafeMap` to `ChunkedMap` (`SafeMapIterator` to `ChunkedMapIterator`; xtrax #3644).
+  Every aminx use of *xtrax's* names now uses the new ones; aminx's own
+  `aminx.tiling.strategy.SafeMap` (`.tile`) is unchanged here, and is slated for
+  deprecation in favour of xtrax's (debt #2371).
+
+### Fixed
+
+- **`host.kernel_dispatch._dispatch_axis` keeps xtrax plans chunked after the rename.** It
+  dispatches on `type(strategy).__name__` to serve both strategy origins and matched only
+  `"SafeMap"`. Under xtrax 0.4.0a11 an xtrax plan reports `"ChunkedMap"` (the deprecated
+  alias is the same class), so it fell through to the fallback, `batch_size=0`: no
+  chunking, no error, no warning. It now accepts both names
+  (`tests/host/test_kernel_dispatch_chunked_map.py`, red on the old code).
+
+## 0.2.0a3 (2026-09-30)
+
+**Browser inference.** ProteinMPNN sampling now runs in a page, validated against the
+reference implementation and benchmarked with a clock that had to prove itself first. No
+store-format change, hence an alpha increment rather than another minor bump.
+
+*(`0.2.0a2` was tagged without a changelog entry. Its contents — debt sweep, random
+decoding order by default, parm7 trajectory loading, PR #160 — are not restated here.)*
+
+### Added
+
+- **RNG-free export wrappers and the browser sampling path** (task
+  `260926_browser-export-loop`). `aminx.export` exposes `make_p03_featurize`,
+  `make_p04_unconditional` and `make_p07_sample`, plus the bucket ladder
+  (`export.buckets`) and a jaxpr RNG walker (`export.rng_audit.find_rng_primitives`) that
+  asserts no random primitive reaches a traced export. `gumbel_noise` and every RunSpec
+  control are runtime inputs, so one graph per length bucket serves every design
+  configuration and nothing needs a PRNG key inside ONNX.
+
+- **A four-graph split export, and the reasoning for preferring it.** `make_p07_sample`
+  keeps the whole autoregressive loop in one ONNX graph, which works but forces ONNX to
+  carry `Loop`/`If`/`Scan` **and** both decoder implementations behind a runtime
+  `lax.cond` — `AutoregressiveConfig.incremental` defaults to `"auto"`, so the exported
+  graph contains the O(L²k) full-recompute arm and the O(Lk) cached arm plus an `If` to
+  choose. Splitting into encoder / wave-schedule / decoder-step / fuse-and-sample, with
+  the loop driven from JavaScript (`browser/aminx-sampler/split_loop.mjs`), removes the
+  duplication and leaves no control flow in the per-step path:
+
+  | | L128 | L256 |
+  |---|---:|---:|
+  | monolith | 19.43 MB | 31.52 MB |
+  | split | **6.64 MB** | **6.71 MB** |
+
+  The split barely grows with length because its graphs are weight-dominated and
+  loop-free. `can_increment` is computable from `decoding_order` and `tie_group_map`
+  alone, both already built in JavaScript, so the branch decision moves out of the graph
+  rather than being exported twice.
+
+- **`aminx.parity.compare`** — the shared comparison surface the browser gates use.
+
+- **`*.onnx` tracked in LFS**, with the validated bytes pinned at `release/browser/` and a
+  manifest recording each file's sha256, byte size, input shapes and dtypes alongside the
+  commit and checkpoint id. `p07_split_export.py --verify-manifest` re-hashes them and
+  reports drift, which is how a consumer confirms the bytes being served are the bytes
+  that were validated. Each LFS pointer oid equals the manifest sha256 for that file, so
+  the two records cannot silently disagree.
+
+### Validated
+
+Each figure below comes from a bathos run graded against a sidecar committed **before** it
+ran, with a negative control that had to fire first.
+
+- **Reference parity, measured directly against the exported graphs** — teacher-forced
+  per-position log-probs vs reference ProteinMPNN (LigandMPNN `26ec57ac`, same
+  `proteinmpnn_v_48_020` checkpoint): **3.822e-05 nats** (bound 1e-4, inherited from the
+  existing JAX-vs-reference check rather than chosen). Scoped to untied lanes on
+  fully-designed structures.
+- **Tokens exact, not within tolerance**, because a changed token is a changed design and
+  a log-prob bound cannot see one: 288/288 cells on the monolith across the full RunSpec
+  knob grid; 56/56 (L128) and 32/32 (L256) for the split under ORT-CPU; 56/56 through the
+  shipping JavaScript on ORT-Web wasm; 8/8 and 4/4 in headless Chromium.
+- **Threading changes nothing.** At 4 threads with COOP/COEP the tokens are identical and
+  the log-probs **bit-identical** to single-threaded. Worth checking rather than assuming:
+  thread count changes float accumulation order.
+- **Timing, with a planted-delay control that had to pass first** (an earlier benchmark
+  in this project never established one and its numbers were discarded). In-page at
+  L128: 15.77 s single-threaded, **6.80 s** at 4 threads. L256: 27.18 s — cost grows
+  roughly quadratically in length, not linearly.
+- **WebGPU is untested for want of hardware, not effort.** A capability probe obtained no
+  adapter on the development machine, so ORT was never asked; the one known obstacle
+  (ONNX mandates int64 `TopK` indices for the k-NN sort, unsupported by the WebGPU EP) is
+  confined to the encoder, which runs once per structure rather than once per step.
+
+### Fixed
+
+- **`generate_ar_mask`'s tied branch no longer depends on sort stability** — it sorts on
+  `(key, index)` with `num_keys=2` and `is_stable=False` instead of a bare
+  `jnp.argsort`. Every absent group shares the sentinel key `N + 1`, so ties are the
+  common case rather than an edge case, and IREE does not honour JAX's stable-sort tie
+  order. Same class of fix as `model.features.top_k` (PR #156).
+
+  Both this and `export.wrappers.wave_from_decoding_order` now carry **structural**
+  regression guards that assert on the traced jaxpr. The pre-existing tests reimplemented
+  the formula inside the test file and asserted a property of that copy, so a revert left
+  them green — verified, not assumed. A behavioural test cannot distinguish the two
+  implementations either, because the fix is designed to reproduce stable-argsort
+  semantics exactly; only the lowering differs.
+
+## Unreleased
+
+### Fixed
+
+- **The trainer optimized against AF-permuted labels** (#109). A loader batch's `aatype` is
+  AF-ordered (`ARNDCQEGHILKMFPSTWYVX`) but the model's token space is MPNN-ordered
+  (`ACDEFGHIKLMNPQRSTVWYX`), and `train_step` / `eval_step` (and the diffusion `train_step`)
+  received `batch.aatype` unconverted. The permuted array was the cross-entropy target, the
+  decoder's one-hot embedding input, and the reference for `sequence_recovery_accuracy` and
+  `perplexity`, so no symptom ever appeared. Labels are now converted at read time with
+  `aminx.utils.aa_convert.training_labels` at every call site in `training/trainer.py` and
+  `training/test_diffusion_loop.py`. The persisted `"aatype"` key in preprocessed array_record
+  datasets is unchanged (still AF-ordered), so existing datasets remain valid.
+  - **Consequence for existing checkpoints and metrics (not remediated here):** any checkpoint
+    trained or fine-tuned with aminx before this fix is suspect. Fine-tuning from an MPNN
+    checkpoint pushed the weights to relearn a permutation they already encoded correctly;
+    training from scratch self-consistently learned AF order, so those checkpoints are
+    AF-native while the whole inference stack assumes MPNN. The training metrics recorded for
+    such runs (loss, accuracy, perplexity, validation and test) are unreliable. The bundled
+    pretrained checkpoints and inference are unaffected.
+  - New guard: `tests/training/test_trainer_alphabet.py` runs the trainer's own `eval_step` /
+    `train_step` on real `proteinmpnn_v_48_020` weights and fails if raw AF labels reach them.
+
 ## 0.2.0a1 (2026-09-10)
 
 **Minor bump, not another `0.1.0a` alpha.** Two things in this release change what a run writes
@@ -293,6 +423,21 @@ left alpha.
   same function. This primitive already existed in xtrax with zero call sites anywhere in
   aminx before this (praxia debt #945 tracks auditing every other hand-typed estimate
   in aminx for the same migration).
+
+  **Tried and reverted (same investigation):** a `jax.profiler` trace of the working code
+  showed the GPU ~98% busy but firing ~12,000 kernel launches for 8 samples at
+  `num_states=4`, so an attempt was made to measure (via `lowered_memory_estimate` +
+  `xtrax.tiling.estimators.device_memory_budget`) whether `Vmap` across states fits the
+  device budget, preferring it over `SafeMap(1)` when it does, on the hypothesis that fewer
+  larger fused kernels would be faster than many small sequential ones. **Empirically
+  false for this workload**: production-scale re-validation (`sample_count` 8/32/128/512,
+  real L40S GPU) showed `Vmap`-across-states was consistently 40-70% *slower* than
+  `SafeMap(1)` at every size tested (e.g. `n=512`: 0.93s/sample with `SafeMap(1)` vs
+  1.58s/sample with the measured-fits `Vmap`) — kernel count was not the bottleneck for
+  this architecture; something about the larger fused/batched execution pattern (likely
+  memory-bandwidth-bound, not launch-overhead-bound) is genuinely slower. Reverted; kept
+  the unconditional `SafeMap(1)` default. Do not re-attempt this without new evidence that
+  the underlying bottleneck has changed.
 
 ### Changed
 

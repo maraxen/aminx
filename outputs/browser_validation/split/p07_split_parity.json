@@ -1,0 +1,25 @@
+{
+  "bucket": 128,
+  "cells_tokens_exact_vs_jax": 56,
+  "cells_tokens_exact_vs_monolith": 56,
+  "cells_total": 56,
+  "controls_detected": 1,
+  "controls_total": 1,
+  "ctrl_perturb_detected": true,
+  "decoder_calls_total": 7168,
+  "failure": "",
+  "fixture_ids": [
+    "5L33",
+    "tie_lattice_L96"
+  ],
+  "git_clean": true,
+  "git_dirty_paths": "",
+  "git_hash": "41032d8bed079155d0e2cafb797d35d702f8fe2a",
+  "jax_enable_x64": false,
+  "logprob_bound": 0.0002,
+  "max_logprob_abs_diff_vs_jax": 1.52587890625e-05,
+  "max_logprob_abs_diff_vs_monolith": 4.76837158203125e-06,
+  "n_waves": 128,
+  "outcome": "pass",
+  "worst_cell": "5L33_baseline_s11"
+}

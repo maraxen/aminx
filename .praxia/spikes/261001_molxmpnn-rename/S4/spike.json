@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S4",
+    "claims": {
+      "A6": "A find_spec('aminx') availability guard returns True for any installed package named aminx, including a hub with no scoring module, so the guard's friendly ImportError path is bypassed."
+    },
+    "question": "Once the hub is installed under the name aminx, does the guard line in asr's vendored proteinsmc scoring/mpnn.py report MPNN scoring as available and then fail at the call site with a different error?",
+    "command": "python3.13 .praxia/spikes/261001_molxmpnn-rename/S4/probe.py",
+    "expect_if_true": "control_no_aminx shows AMINX_AVAILABLE false; hub_aminx_present shows AMINX_AVAILABLE true and a call_site error of ModuleNotFoundError ('No module named aminx.scoring') rather than the guarded 'aminx is not installed' ImportError.",
+    "expect_if_false": "hub_aminx_present shows AMINX_AVAILABLE false (the guard is safe against a same-named package) or the control shows true (aminx is already importable in this interpreter, making the probe invalid)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T16:30:48.497879+00:00",
+    "git_head": "cb8ea2c6ce59d9382251cdbe27b052900c89a2f4",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.31835508346557617,
+    "output_sha256": "f99bc91292dd7dcd23b998caabc8a68b3cd59e590ae1c911d9a844788e77d684",
+    "output_full_sha256": "f99bc91292dd7dcd23b998caabc8a68b3cd59e590ae1c911d9a844788e77d684",
+    "output_bytes": 336,
+    "output_truncated": false,
+    "prereg_sha256": "f45a876aa8c4c4a378c38060a44e283783436fcfda868544628e8ed47745f45e",
+    "probe_files": {
+      "probe.py": "64f58edfb81f81c06833d6525d58600c485e79caf9a4f7df68126dd7cac04a14"
+    }
+  }
+}

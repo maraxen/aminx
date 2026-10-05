@@ -26,6 +26,22 @@ jobs:
           ref: 26ec57ac976ade5379920dbd43c7f97a91cf82de
           path: reference_ligandmpnn_clone
 
+      # tests/parity/test_mpnn_reference_invariants.py (parity_heavy) resolves its fixtures under a pinned
+      # ProteinMPNN clone. Its default location is $WT/.cache/reference/ProteinMPNN (scripts/browser_validation/
+      # fixtures.py), which this workflow never populated, so all 8 invariants died with FileNotFoundError
+      # (aminx debt #2410). The pin is read from the tracked reference_pins.json so there is one source of truth.
+      - name: Read pinned ProteinMPNN reference commit
+        id: pins
+        run: |
+          echo "proteinmpnn=$(python3 -c "import json; print(json.load(open('aminx/scripts/browser_validation/reference_pins.json'))['proteinmpnn_commit'])")" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Reference ProteinMPNN (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: dauparas/ProteinMPNN
+          ref: ${{ steps.pins.outputs.proteinmpnn }}
+          path: aminx/.cache/reference/ProteinMPNN
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -39,7 +55,9 @@ jobs:
       - name: Install dependencies
         run: |
           cd aminx
-          uv sync --extra cpu --extra dev --extra tests --group dev
+          # --extra benchmark brings ProDy (sdist-only in the lock, built on the runner), which the reference
+          # LigandMPNN/ProteinMPNN data_utils imports; the reference-invariants tests fail without it (debt #2410).
+          uv sync --extra cpu --extra dev --extra tests --extra onnx --extra benchmark --group dev
 
       - name: Download reference PyTorch weights
         run: |

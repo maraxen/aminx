@@ -1,0 +1,85 @@
+[metadata]
+title = "Layer (a) exact tier: aminx JAX vs LigandMPNN@26ec57ac on held-out fixture set B"
+created = "260925"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On fixture set B (CPU f32, precision highest, noise 0, reference-formula order fed to both sides), every deterministic comparison in the layer-(a) bars table is within its bar with the SHIPPED .eqx.zst weights, every path advanced from calibration, and every in-run control exceeds its bar. AMENDED 2026-09-29 (BEFORE any run used this revision): per-fixture seeds (`layer_a_exact._seed_for`) are now derived with hashlib.sha256 of the fixture name instead of Python's builtin hash(), which is randomized per process (PYTHONHASHSEED unset), so exact-tier runs are bit-reproducible across processes and machines; no threshold, bar, grid, or count changes."
+stage_name = "validation"
+claim_discriminates = ["H_exact_within_bar", "H_null_misspec"]
+claim_isolates = ["C_weight_source"]
+
+[reproduction]
+reproduces_paper = "dauparas/LigandMPNN@26ec57ac976ade5379920dbd43c7f97a91cf82de (reference code; bathos-literature-parity Mode A)"
+# no requires_pass_stem: only `bth submit` enforces it; prereq_check() (Bathos staging) replaces it
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_blind", "fail"]
+
+[differential]
+knob = "AMINX_BV_PERTURB"      # read via BTH_DIFFERENTIAL_VALUE; 1 = calibrated W_out-bias perturbation on the main arm
+off = "0"
+on = "1"
+expect = "differs"
+metric = "sentinel_ratio_to_bar"   # P05 log-prob max-abs / bar on the reduced subset
+min_effect = 1.0                   # PINNED at 1.0 (R2-C6); calibration sets exact.min_effect = 1.0 and
+                                   # asserts half the measured on-off effect on the reduced subset >= 1.0,
+                                   # recording exact.measured_half_effect. No placeholder; --dry-run
+                                   # requires sidecar min_effect == exact.min_effect == 1.0.
+
+[outcomes.incomplete]
+condition = "n_skipped > 0 OR NOT prereq_ok OR reference_commit <> '26ec57ac976ade5379920dbd43c7f97a91cf82de' OR NOT git_clean"
+decision = "A prerequisite was missing, the reference drifted, or the run tree was dirty; the run proves nothing."
+reasoning = "Any of a skipped reference call, a failed calibrate prerequisite, reference drift, or a dirty tree means the comparison did not run under the conditions this claim requires, regardless of what the row values say."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "Instrument insensitive at the claimed resolution; no parity statement is permitted."
+reasoning = "A control that fails to trip means the comparison harness itself cannot be trusted to catch a real discrepancy of this or smaller magnitude, so a clean row set is not evidence of parity."
+is_residual = true
+
+[outcomes.pass]
+condition = "n_over_bar = 0 AND n_not_advanced = 0"
+decision = "All paths within bar; eligible for the advance table (T11)."
+reasoning = "Zero over-bar rows and zero not_advanced paths, with every control detected, are the minimum evidence that every in-scope path is parity-equivalent to the reference on the held-out set."
+is_residual = false
+
+[outcomes.partial_headroom]
+condition = "n_over_bar = 0 AND n_not_advanced > 0"
+decision = "Advanced paths within bar; not_advanced paths are listed and do not advance. Maps to rung R2 (T11)."
+reasoning = "Calibration's headroom rule (bar/2) already flagged these paths before this run; measuring and reporting them here without gating on them keeps the not_advanced list honest without conflating it with a fresh validation failure."
+is_residual = false
+
+[outcomes.fail]
+condition = "n_over_bar > 0"
+decision = "worst_path exceeds its bar with a sensitive instrument: finding + DEVIATION."
+reasoning = "Residual catch-all: a row whose OWN measurement exceeds its bar, with a sensitive instrument and no calibration headroom flag in play, is a genuine divergence, not a footnote."
+is_residual = true
+
+[result_schema]
+n_comparisons = "int"
+n_over_bar = "int"
+n_not_advanced = "int"
+n_not_advanced_over_bar = "int"
+n_near_tie_excluded = "int"
+n_skipped = "int"
+prereq_ok = "bool"
+controls_total = "int"
+controls_detected = "int"
+worst_ratio_to_bar = "float"
+sentinel_ratio_to_bar = "float"
+worst_path = "str"
+reference_commit = "str"
+weight_source = "str"
+fixture_set = "str"
+fixture_manifest_sha256 = "str"
+git_hash = "str"
+git_clean = "bool"
+prereg_sha256 = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+torch_version = { type = "string", required = true }

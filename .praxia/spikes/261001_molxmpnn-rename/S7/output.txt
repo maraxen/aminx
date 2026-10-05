@@ -1,0 +1,20 @@
+--- ruff version
+ruff 0.15.16
+--- before_rename.py (positive control: must be flagged)
+exit=2
+--- after_rename.py (rename victim: flagged only if ruff follows renames)
+exit=2
+[1;31mruff failed[0m
+  [1mCause:[0m The argument `--config=pyproject.toml` cannot be used with `--isolated`
+
+  tip: You cannot specify a configuration file and also specify `--isolated`,
+       as `--isolated` causes ruff to ignore all configuration files.
+       For more information, try `--help`.
+
+[1;31mruff failed[0m
+  [1mCause:[0m The argument `--config=pyproject.toml` cannot be used with `--isolated`
+
+  tip: You cannot specify a configuration file and also specify `--isolated`,
+       as `--isolated` causes ruff to ignore all configuration files.
+       For more information, try `--help`.
+

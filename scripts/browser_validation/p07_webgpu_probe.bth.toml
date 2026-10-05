@@ -1,0 +1,47 @@
+[metadata]
+title = "G2-probe: how far the WebGPU execution provider gets with the split encoder graph"
+created = "260930"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Running the exported encoder graph in headless Chromium with executionProviders webgpu determines, and records, how far the stack gets through five staged checks: the browser exposes navigator.gpu, an adapter can be obtained, onnxruntime accepts the webgpu provider for this graph, the session runs, and its outputs are finite. Spec ODQ-B3 scopes WebGPU to a capability probe with NO numbers and NO parity claims, and this gate honours that literally -- it times nothing, compares nothing to any reference, and asserts nothing about correctness on the GPU. THE GRADING IS DELIBERATELY UNUSUAL AND SHOULD NOT BE MISREAD: 'WebGPU is unavailable' is a PASS. The question is whether the capability was successfully DETERMINED, not whether the capability exists. A run that cleanly establishes WebGPU cannot be reached in this environment has answered its question, and is arguably more useful than one that finds it available, because it tells an integrator not to plan around it. Only a probe that determines nothing -- the browser crashes, the page never settles, the driver writes no output -- is `incomplete`. The five checks are recorded separately rather than collapsed into one boolean because they are different answers: WebGPU may be absent entirely, present without a usable adapter, or adapter-capable while ORT still refuses the graph, and someone deciding whether to pursue the GPU path needs to know which. The ENCODER is probed on purpose: it carries the k-NN sort, which jax2onnx lowers to TopK with the int64 indices ONNX mandates and the WebGPU EP is documented not to support (xtrax .praxia/docs/research/260914_browser-inference-routes-jaxjs-jax2onnx.md S4), so if any of our graphs exposes that dtype gap it is that one. Software rendering is permitted via SwiftShader flags and recorded in adapter_info, because 'WebGPU works through a software adapter' and 'WebGPU is unavailable' are materially different answers and conflating them would misinform."
+stage_name = "validation"
+claim_isolates = ["C_webgpu_capability"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling gates).
+# No [differential]: this gate determines a capability; there is no effect to size.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete"]
+
+[outcomes.incomplete]
+condition = "NOT probe_ran OR NOT git_clean OR failure <> ''"
+decision = "The probe determined nothing: the browser crashed, the page never settled, the driver wrote no output, or the tree was dirty in a code path. No capability statement of any kind is permitted -- in particular this must NOT be read as 'WebGPU is unavailable', which is a different and positive finding."
+reasoning = "Absence of a determination is not a determination. Conflating 'we could not tell' with 'it does not work' is exactly the error this gate's grading is shaped to prevent, and it would send an integrator down the wrong road either way."
+is_residual = true
+
+[outcomes.pass]
+condition = "probe_ran"
+decision = "The capability was determined. `furthest_stage` records how far the stack got and `ort_webgpu_error` carries ORT's own message if it refused; read those, not this outcome, to learn what WebGPU can actually do here. No performance or correctness claim follows from this run under any result."
+reasoning = "The gate's job is to produce a reliable answer about reachability, and it did. Whether the answer is favourable is not a property of the measurement's validity, and grading it that way would create an incentive to treat an honest negative as a failure."
+is_residual = false
+
+[result_schema]
+bucket = "int"
+probe_ran = "bool"
+navigator_gpu_present = "bool"
+adapter_obtained = "bool"
+ort_webgpu_session_created = "bool"
+encoder_ran = "bool"
+furthest_stage = "str"
+ort_webgpu_error = "str"
+chromium_version = "str"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+onnxruntime_web_version = { type = "string", required = true }
+playwright_version = { type = "string", required = true }

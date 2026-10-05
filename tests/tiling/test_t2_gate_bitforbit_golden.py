@@ -66,9 +66,35 @@ def test_conditional_decode_bitforbit_identical_legacy_vs_adapter(
         key=k_dec, enc=enc, bundle=bundle, config=config, stage_set=stage_set,
     )
 
+    max_abs_diff = float(jnp.max(jnp.abs(legacy_logits - adapter_logits)))
+
+    if _legacy_peels_unit_chunk(strategy, num_states):
+        # aminx #2391 (PR #179): the legacy path runs a chunk of one element UNBATCHED, because a vmapped
+        # chunk of size 1 miscompiles on one XLA GPU stack; xtrax's ChunkedMap has no such guard and
+        # vmaps it. Same maths, different XLA program, so bit equality is not guaranteed -- and on main it
+        # held on some CI runs and not others (the first red run is #179's own merge commit). A real
+        # adapter regression moves logits by far more than float32 reassociation, so compare closely.
+        assert jnp.allclose(legacy_logits, adapter_logits, rtol=1e-5, atol=1e-5), (
+            "legacy (unit chunk run unbatched) and make_axis_dispatch_via_xtrax (unit chunk vmapped) differ "
+            f"by more than float32 reassociation: max |diff| = {max_abs_diff:.3e}"
+        )
+        return
+
     assert jnp.array_equal(legacy_logits, adapter_logits), (
         "Bit-for-bit mismatch between legacy make_axis_dispatch and "
         "make_axis_dispatch_via_xtrax on identical model/inputs/PRNG -- this "
         "is a real correctness regression in the T2.4 migration adapter, not "
-        "measurement noise."
+        f"measurement noise. max |diff| = {max_abs_diff:.3e}"
     )
+
+
+def _legacy_peels_unit_chunk(strategy, num_states: int) -> bool:
+    """True when ``aminx.utils.safe_map`` would run a chunk of exactly one element unbatched (#179).
+
+    That is a size-1 axis, or a trailing remainder of 1 for a chunked strategy. Vmap strategies on both
+    paths go through ``jax.vmap`` and stay bit-identical; chunked strategies with no unit chunk compile the
+    same program on both paths.
+    """
+    if num_states == 1:
+        return isinstance(strategy, SafeMap)
+    return isinstance(strategy, SafeMap) and num_states % strategy.tile == 1

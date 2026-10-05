@@ -35,6 +35,33 @@ def mpnn_to_af(sequence: ProteinSequence) -> ProteinSequence:
   return _MPNN_TO_AF_PERM[sequence].astype(jnp.int8)
 
 
+def training_labels(aatype: ProteinSequence) -> ProteinSequence:
+  """Turn a batch's persisted ``aatype`` into the integer labels the model is trained against.
+
+  ``aatype`` -- as parsed by proxide, and as persisted under the ``"aatype"`` key of
+  preprocessed array_record datasets -- is **AF**-ordered (``ARNDCQEGHILKMFPSTWYVX``). The
+  model's token space (logits, the decoder's one-hot embedding input, CE targets) is
+  **MPNN**-ordered (``ACDEFGHIKLMNPQRSTVWYX``). Every value 0-20 is legal in both, so nothing
+  downstream can detect a mix-up: it trains on permuted labels without any error or loss
+  anomaly (issue #109). Every place that binds a loader batch's ``aatype`` to a trainer's
+  ``sequence`` argument must go through this function.
+
+  Values outside ``[0, 21)`` (e.g. a negative padding sentinel) are passed through unchanged,
+  not remapped onto a real residue; the loss masks them out either way.
+
+  Args:
+    aatype: AF-ordered integer residue types, any shape.
+
+  Returns:
+    MPNN-ordered integer labels, same shape, dtype ``int32``.
+
+  """
+  aatype = jnp.asarray(aatype)
+  in_range = (aatype >= 0) & (aatype < len(AF_ALPHABET))
+  converted = _AF_TO_MPNN_PERM[jnp.clip(aatype, 0, len(AF_ALPHABET) - 1)]
+  return jnp.where(in_range, converted, aatype).astype(jnp.int32)
+
+
 def string_key_to_index(
   string_keys: np.ndarray,
   key_map: Mapping[str, int],

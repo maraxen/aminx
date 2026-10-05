@@ -28,7 +28,7 @@ from aminx.tiling.strategy import Scan as AminxScan
 from aminx.tiling.strategy import Vmap as AminxVmap
 from xtrax.tiling.dispatch import DispatchRejected as XtraxDispatchRejected
 from xtrax.tiling.dispatch import make_axis_dispatch as xtrax_make_axis_dispatch
-from xtrax.tiling.strategy import SafeMap as XtraxSafeMap
+from xtrax.tiling.strategy import ChunkedMap as XtraxChunkedMap
 from xtrax.tiling.strategy import Scan as XtraxScan
 from xtrax.tiling.strategy import Vmap as XtraxVmap
 
@@ -53,9 +53,9 @@ def test_aminx_native_safemap_is_not_drop_in_for_xtrax_dispatch():
 
 def test_xtrax_native_safemap_works_fine_via_xtrax_dispatch():
     """Sanity check: xtrax's own SafeMap is of course a valid argument."""
-    xtrax_strategy = XtraxSafeMap(batch_size=4)
+    xtrax_strategy = XtraxChunkedMap(batch_size=4)
     iterator = xtrax_make_axis_dispatch(xtrax_strategy, axis="state")
-    assert type(iterator).__name__ == "SafeMapIterator"
+    assert type(iterator).__name__ == "ChunkedMapIterator"
 
 
 def test_xtrax_dispatch_does_not_reject_scan_on_state_by_default():

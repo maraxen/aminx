@@ -15,7 +15,10 @@ import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
+from functools import lru_cache
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _package_version
 from itertools import pairwise
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,9 +33,13 @@ from xtrax.run import (
 )
 
 # campaign manifest functions are implemented in this module (see build_manifest_row et al.)
+from aminx.host._sampling_grid_lineage import _SEED_HASH_SCHEMA_PIN
 from aminx.host.family_driver import refuse_driver_family
 from aminx.host.runner import sample
+from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
 from aminx.host.spec_partition import campaign_sampling_spec_payload
+from aminx.io.sink_provenance import resolve_aminx_version
+from aminx.io.weights import REVISION_ENV, WEIGHTS_DIR_ENV, weight_provenance
 from aminx.run.spec import mpnn_temperatures
 from aminx.run.spec_json import _coerce_field_value
 from aminx.run.specs import SamplingSpecification, pop_deprecated_spec_kwargs
@@ -45,7 +52,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 LOCK_SCHEMA_VERSION = "campaign_lock_v1"
-DONE_MARKER_SCHEMA_VERSION = "campaign_done_marker_v2"
+DONE_MARKER_SCHEMA_VERSION = "campaign_done_marker_v3"
+LEGACY_DONE_MARKER_SCHEMA_VERSION = "campaign_done_marker_v2"
+ADOPT_LEGACY_REPORT_SCHEMA_VERSION = "campaign_adopt_legacy_report_v1"
+# Bump BY HAND when a change moves the sampled numbers for a given spec and seed (e.g. a decode or key-derivation
+# change). It is part of every unit's input hash, so a bump invalidates stamps written before it instead of letting a
+# resumed campaign mix outputs from two numerics (aminx #2421).
+SAMPLING_NUMERICS_EPOCH = 1
+_MAX_HASHED_DIR_FILES = 5000
 MANIFEST_ROW_SCHEMA_VERSION = "campaign_manifest_row_v1"
 MANIFEST_SCHEMA_VERSION = "campaign_manifest_v1"
 DEFAULT_LOCK_LEASE_SECONDS = 1800
@@ -70,6 +84,7 @@ def build_manifest_row(
   git_sha: str,
   config_hash: str,
   job_id: str,
+  declared_state_weights: Sequence[float] | None = None,
 ) -> dict[str, Any]:
   """Build a deterministic manifest row with SHA256 hash.
 
@@ -79,6 +94,12 @@ def build_manifest_row(
   temperature, and backbone_noise. job_index is intentionally excluded from
   the hash payload: it is derivable from job_id and included in the row dict
   for caller convenience.
+
+  ``declared_state_weights`` is the numeric vector a non-default ``state_weight_profile``
+  LABEL resolved to (``None`` for the ``"equal"`` profile). It is hashed only when present, so
+  every pre-existing row -- all of which are ``"equal"`` -- keeps the hash it always had, while
+  two campaigns that reuse one label for different vectors can no longer collide on a hash (and
+  therefore on an output path).
 
   Returns a dict ready for plan_campaign_manifest to extend with
   output_h5_path and sampling_spec.
@@ -104,6 +125,8 @@ def build_manifest_row(
     "temperature": [str(float(t)) for t in temperature_list],
     "backbone_noise": [str(float(n)) for n in backbone_noise_list],
   }
+  if declared_state_weights is not None:
+    hash_payload["state_weights"] = [str(float(w)) for w in declared_state_weights]
   row_hash = hashlib.sha256(canonical_json_bytes(hash_payload)).hexdigest()
   return {
     "manifest_row_hash": row_hash,
@@ -556,13 +579,192 @@ def _invalidate_stale_output(*, marker_path: Path, output_h5_path: Path) -> None
   marker_path.unlink(missing_ok=True)
 
 
+class LegacyV2DoneMarkerError(StaleDoneMarkerSchemaError):
+  """A valid-looking v2 marker. Its output may be perfectly good, so it is quarantined, never deleted.
+
+  v1 (pre-Zarr) outputs were unusable, which is why :class:`StaleDoneMarkerSchemaError` handling deletes them. v2 outputs
+  are real, digest-verified Zarr stores, and v2 carries no input hash, so reusing one would be an unverifiable claim.
+  The default is therefore recompute (keeping the old store aside); ``adopt-legacy`` is the explicit, auditable way
+  to keep it.
+  """
+
+
+class InputHashMismatchError(ValueError):
+  """A v3 stamp was written for different inputs than this run's: the artifact is for another computation."""
+
+
+class InputHashUnavailableError(RuntimeError):
+  """The unit's inputs cannot be hashed here (e.g. the checkpoint cannot be resolved), so reuse cannot be judged.
+
+  Raised rather than guessed: reusing on an unverifiable claim, or discarding a good artifact because the environment
+  could not resolve weights, are both worse than stopping.
+  """
+
+
+def _sha256_file(path: Path) -> str:
+  digest = hashlib.sha256()
+  with path.open("rb") as handle:
+    for block in iter(lambda: handle.read(1 << 20), b""):
+      digest.update(block)
+  return digest.hexdigest()
+
+
+@lru_cache(maxsize=64)
+def _sha256_file_cached(path_str: str, size: int, mtime_ns: int) -> str:  # noqa: ARG001 -- size/mtime key the cache
+  return _sha256_file(Path(path_str))
+
+
+def _file_identity(path: str | Path) -> str:
+  resolved = Path(path).expanduser()
+  try:
+    stat = resolved.stat()
+    return _sha256_file_cached(str(resolved.resolve()), stat.st_size, stat.st_mtime_ns)
+  except OSError as exc:
+    msg = f"cannot read {str(path)!r} to hash it: {exc}"
+    raise InputHashUnavailableError(msg) from exc
+
+
+def _hash_input_entry(entry: str) -> dict[str, Any]:
+  """Identify one ``inputs`` entry by content when it is a file or directory, else by its string alone."""
+  path = Path(entry).expanduser()
+  try:
+    if path.is_file():
+      return {"value": entry, "kind": "file", "bytes": path.stat().st_size, "sha256": _file_identity(path)}
+    if path.is_dir():
+      files = sorted(f for f in path.rglob("*") if f.is_file())
+      if len(files) > _MAX_HASHED_DIR_FILES:
+        return {"value": entry, "kind": "dir_unhashed", "files": len(files)}
+      digest = hashlib.sha256()
+      for f in files:
+        digest.update(f.relative_to(path).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(_file_identity(f).encode())
+        digest.update(b"\n")
+      return {"value": entry, "kind": "dir", "files": len(files), "sha256": digest.hexdigest()}
+  except OSError as exc:
+    msg = f"cannot read input {entry!r} to hash it: {exc}"
+    raise InputHashUnavailableError(msg) from exc
+  return {"value": entry, "kind": "unresolved"}  # an id, a URL, or a path that does not exist: identity by string only
+
+
+@lru_cache(maxsize=16)
+def _checkpoint_id_identity(checkpoint_id: str, weights_dir_env: str | None, revision_env: str | None) -> dict[str, Any]:  # noqa: ARG001
+  try:
+    wp = weight_provenance(checkpoint_id)
+  except Exception as exc:  # any resolution failure means the identity is unavailable, not a crash
+    msg = f"cannot resolve checkpoint {checkpoint_id!r} to hash its weights: {exc}"
+    raise InputHashUnavailableError(msg) from exc
+  return {
+    "route": "checkpoint_id",
+    "checkpoint_id": checkpoint_id,
+    "filename": wp.filename,
+    "source": wp.source,
+    "sha256": wp.sha256,
+    "hub_revision": wp.hub_revision,
+  }
+
+
+def _checkpoint_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
+  """Which weights this unit would run on, identified by their bytes where a file is reachable."""
+  local = payload.get("model_local_path")
+  registry = payload.get("checkpoint_registry_path")
+  checkpoint_id = payload.get("checkpoint_id")
+  if local:
+    return {"route": "local_path", "path": str(local), "sha256": _file_identity(local)}
+  if registry:
+    return {
+      "route": "registry",
+      "path": str(registry),
+      "registry_sha256": _file_identity(registry),
+      "checkpoint_id": checkpoint_id,
+    }
+  if checkpoint_id:
+    return _checkpoint_id_identity(str(checkpoint_id), os.environ.get(WEIGHTS_DIR_ENV), os.environ.get(REVISION_ENV))
+  return {
+    "route": "model_weights_version",
+    "model_weights": payload.get("model_weights", "original"),
+    "model_version": payload.get("model_version", "v_48_020"),
+    "sha256": None,  # packaged-resource route with no checkpoint_id: named, not hashed
+  }
+
+
+def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
+  """Hash everything that determines a unit's output, so reuse can be refused when any of it changed.
+
+  The manifest row hash does NOT cover this: it omits the input structures, ``checkpoint_id``, ``random_seed``, the
+  fixed mask/tokens and the bias, and the output path is derived from it, so a re-planned or patched manifest used to
+  resolve to the same path and be reported ``already_done`` (aminx #2421).
+
+  Covers: the whole sampling spec except ``output_h5_path`` (which differs between the partial and final path),
+  the content hash of each input structure, the checkpoint (bytes where a file is reachable), the schema pins that
+  feed the seed, and :data:`SAMPLING_NUMERICS_EPOCH`. It does NOT include the git SHA: code identity is recorded in the
+  stamp's ``producer`` for audit but is deliberately not part of the hash (a numerics-neutral commit must not
+  invalidate a finished campaign; bump the epoch when numerics move).
+
+  Returns ``(input_hash, components)``; ``components`` are the inputs to the hash, stored in the stamp so a mismatch
+  can be explained.
+  """
+  spec_without_output = {k: v for k, v in sampling_spec_payload.items() if k != "output_h5_path"}
+  components: dict[str, Any] = {
+    "spec_sha256": hashlib.sha256(canonical_json_bytes(spec_without_output)).hexdigest(),
+    "inputs": [_hash_input_entry(entry) for entry in _normalize_inputs(sampling_spec_payload.get("inputs", []))]
+    if sampling_spec_payload.get("inputs")
+    else [],
+    "checkpoint": _checkpoint_identity(sampling_spec_payload),
+    "versions": {
+      "manifest_row_schema": MANIFEST_ROW_SCHEMA_VERSION,
+      "sampling_schema": SAMPLING_SCHEMA_VERSION,
+      "grid_schema": GRID_SCHEMA_VERSION,
+      "seed_hash_schema_pin": _SEED_HASH_SCHEMA_PIN,
+      "numerics_epoch": SAMPLING_NUMERICS_EPOCH,
+    },
+  }
+  return hashlib.sha256(canonical_json_bytes(components)).hexdigest(), components
+
+
+def _producer_info() -> dict[str, str]:
+  try:
+    aminx_version = resolve_aminx_version()
+  except PackageNotFoundError:
+    aminx_version = "unknown"
+  try:
+    xtrax_version = _package_version("xtrax")
+  except PackageNotFoundError:
+    xtrax_version = "unknown"
+  return {"aminx": aminx_version, "xtrax": xtrax_version}
+
+
+def _quarantine_output(*, marker_path: Path, output_h5_path: Path, reason: str) -> dict[str, str | None]:
+  """Move a superseded output and its marker aside (never delete): the operator decides when to reclaim the space."""
+  suffix = f".superseded.{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.{uuid.uuid4().hex[:6]}"
+  moved: dict[str, str | None] = {"output": None, "marker": None, "reason": reason}
+  if output_h5_path.exists():
+    target = output_h5_path.with_name(output_h5_path.name + suffix)
+    output_h5_path.replace(target)
+    moved["output"] = str(target)
+  if marker_path.exists():
+    target = marker_path.with_name(marker_path.name + suffix)
+    marker_path.replace(target)
+    moved["marker"] = str(target)
+  fsync_directory(output_h5_path.parent)
+  return moved
+
+
 def _validate_done_marker(
   *,
   marker: dict[str, Any],
   marker_path: Path,
   output_h5_path: Path,
   manifest_row_hash: str,
+  input_hash: str | None = None,
 ) -> None:
+  if marker.get("schema_version") == LEGACY_DONE_MARKER_SCHEMA_VERSION:
+    msg = (
+      f"Done marker at {marker_path} is schema {LEGACY_DONE_MARKER_SCHEMA_VERSION!r}: it carries no input hash, "
+      f"so its output cannot be verified against this run's inputs. Recomputing (the old output is kept aside); "
+      f"run `adopt-legacy` first to keep outputs you know were produced from the current manifest."
+    )
+    raise LegacyV2DoneMarkerError(msg)
   if marker.get("schema_version") != DONE_MARKER_SCHEMA_VERSION:
     msg = (
       f"Done marker schema mismatch at {marker_path}: "
@@ -578,6 +780,12 @@ def _validate_done_marker(
   if not output_h5_path.exists():
     msg = f"Done marker exists at {marker_path} but output store is missing: {output_h5_path}."
     raise ValueError(msg)
+  if input_hash is not None and marker.get("input_hash") != input_hash:
+    msg = (
+      f"Done marker at {marker_path} was written for different inputs: "
+      f"stamped input_hash {marker.get('input_hash')!r}, this run {input_hash!r}."
+    )
+    raise InputHashMismatchError(msg)
   observed_content_digest = zarr_content_digest(output_h5_path)
   expected_content_digest = marker.get("content_digest_sha256")
   if observed_content_digest != expected_content_digest:
@@ -596,16 +804,29 @@ def _write_done_marker(
   attempt_id: str,
   content_digest_sha256: str,
   lock_backend: str,
+  input_hash: str | None = None,
+  input_hash_components: dict[str, Any] | None = None,
+  adopted_from: dict[str, Any] | None = None,
+  completed_at_unix_s: float | None = None,
 ) -> None:
-  marker_payload = {
+  marker_payload: dict[str, Any] = {
     "schema_version": DONE_MARKER_SCHEMA_VERSION,
     "manifest_row_hash": manifest_row_hash,
     "attempt_id": attempt_id,
     "output_h5_path": str(output_h5_path.resolve()),
     "content_digest_sha256": content_digest_sha256,
     "lock_backend": lock_backend,
-    "completed_at_unix_s": time.time(),
+    "completed_at_unix_s": time.time() if completed_at_unix_s is None else completed_at_unix_s,
   }
+  if input_hash is not None:
+    producer = _producer_info()
+    marker_payload["input_hash"] = input_hash
+    marker_payload["input_hash_components"] = input_hash_components
+    marker_payload["digest_algo"] = f"xtrax.run.zarr_content_digest@{producer['xtrax']}"
+    marker_payload["producer"] = producer
+  if adopted_from is not None:
+    marker_payload["adopted_from_v2"] = True
+    marker_payload["adopted_from"] = adopted_from
   tmp_marker_path = marker_path.with_name(f"{marker_path.name}.tmp.{attempt_id}")
   tmp_marker_path.write_bytes(canonical_json_bytes(marker_payload))
   fsync_file(tmp_marker_path)
@@ -732,6 +953,141 @@ def _resolve_arm(
   return mask, None
 
 
+# The one profile label aminx can resolve without being told what it means: "no weighting".
+# It resolves to ``state_weights=None`` -- the exact value every campaign row carried before
+# profiles resolved to anything -- so the default ``("equal",)`` changes no sampled output.
+_EQUAL_PROFILE = "equal"
+
+_WEIGHT_SPLIT_RE = re.compile(r"[|,]")
+
+
+def _parse_weight_declaration(label: str, text: str) -> np.ndarray:
+  """Parse ``0.7|0.3`` (or ``0.7,0.3``) into a 1-D float32 weight vector."""
+  parts = [part.strip() for part in _WEIGHT_SPLIT_RE.split(text) if part.strip()]
+  if not parts:
+    msg = f"state_weight_profiles[{label!r}]: {text!r} declares no weights."
+    raise ValueError(msg)
+  try:
+    return np.asarray([float(part) for part in parts], dtype=np.float32)
+  except ValueError as exc:
+    msg = (
+      f"state_weight_profiles[{label!r}]: {text!r} is not a list of numbers like '0.7|0.3' "
+      f"(one weight per state, pipe- or comma-separated) or a path to a 1-D .npy."
+    )
+    raise ValueError(msg) from exc
+
+
+def _resolve_state_weight_profile(label: str, source: Any) -> np.ndarray | None:  # noqa: ANN401
+  """Resolve one profile SOURCE into a weight vector, or None for the ``"equal"`` profile.
+
+  Shapes, mirroring ``_resolve_arm``: ``None``/``"equal"`` (no weighting), an inline
+  ``"0.7|0.3"``, a path to a 1-D ``.npy``, or an array/sequence of numbers.
+
+  Raises:
+    ValueError: not 1-D, empty, non-finite, negative, or summing to zero. The vector's length
+      cannot be checked against the number of states here (the planner parses no structure);
+      ``inference/logits.py`` refuses a mismatch when the row runs.
+
+  """
+  if source is None or (isinstance(source, str) and source.strip() == _EQUAL_PROFILE):
+    return None
+  if isinstance(source, str) and not source.endswith(".npy"):
+    weights = _parse_weight_declaration(label, source)
+  elif isinstance(source, (str, Path)):
+    weights = np.asarray(np.load(Path(source)), dtype=np.float32)
+  else:
+    weights = np.asarray(source, dtype=np.float32)
+  if weights.ndim != 1 or weights.size == 0:
+    msg = (
+      f"state_weight_profiles[{label!r}] has shape {weights.shape}; state weights must be a "
+      f"non-empty 1-D vector with one entry per state."
+    )
+    raise ValueError(msg)
+  if not np.all(np.isfinite(weights)) or np.any(weights < 0) or float(weights.sum()) <= 0.0:
+    msg = (
+      f"state_weight_profiles[{label!r}] = {weights.tolist()} must be finite, non-negative and "
+      f"not all zero."
+    )
+    raise ValueError(msg)
+  return weights
+
+
+def _resolve_state_weight_profiles(
+  profiles: Mapping[str, Any] | Sequence[str] | str,
+) -> dict[str, np.ndarray | None]:
+  """Resolve the ``state_weight_profiles`` declaration into ``{label: weights | None}``.
+
+  **The declaration must carry its own referent** -- the same fix ``fixed_arms`` got for the
+  same bug. ``state_weight_profiles`` used to be ``tuple[str, ...]`` of bare names: aminx
+  cannot know what ``"weighted"`` means, so the name was hashed into the row, written to the
+  row, checked for non-emptiness, and never reached ``SamplingSpecification.state_weights``.
+  ``--state-weight-profiles equal,weighted`` produced two row-sets, differently labelled and
+  identically weighted: duplicate work counted as an ablation.
+
+  A ``Mapping`` ``label -> weights`` is the honest form. A bare sequence of names is still
+  accepted for back-compat, but only ``"equal"`` is resolvable; any other bare name RAISES
+  instead of becoming a label with no meaning.
+
+  Raises:
+    ValueError: empty declaration, empty label, an unresolvable bare name, ``"equal"`` mapped
+      to weights, an invalid vector, or two labels that resolve to the same vector (a second
+      row-set that cannot differ from the first is not a second profile).
+
+  """
+  if isinstance(profiles, str):
+    profiles = (profiles,)
+  if not profiles:
+    msg = "state_weight_profiles is empty; pass ('equal',) for no weighting (the default)."
+    raise ValueError(msg)
+
+  declared: Mapping[str, Any]
+  if isinstance(profiles, Mapping):
+    declared = profiles
+  else:
+    declared = {}
+    for name in profiles:
+      if str(name).strip() != _EQUAL_PROFILE:
+        msg = (
+          f"state_weight_profiles: {name!r} is a bare name aminx cannot resolve -- it would be "
+          f"written to the manifest as a label and never reach state_weights, so the row-set "
+          f"would be weighted exactly like 'equal'. Declare the weights: "
+          f"--state-weight-profile {name}=0.7|0.3 (CLI) or "
+          f"state_weight_profiles={{{name!r}: [0.7, 0.3]}} (API)."
+        )
+        raise ValueError(msg)
+      if str(name).strip() in declared:
+        msg = f"state_weight_profiles: {str(name).strip()!r} listed twice; labels must be unique."
+        raise ValueError(msg)
+      declared[str(name).strip()] = None
+
+  resolved: dict[str, np.ndarray | None] = {}
+  for raw_label, source in declared.items():
+    label = str(raw_label).strip()
+    if not label:
+      msg = "state_weight_profiles has an empty label."
+      raise ValueError(msg)
+    weights = _resolve_state_weight_profile(label, source)
+    if label == _EQUAL_PROFILE and weights is not None:
+      msg = (
+        f"state_weight_profiles[{_EQUAL_PROFILE!r}] is reserved for 'no weighting' but was "
+        f"given weights {weights.tolist()}. Use another label."
+      )
+      raise ValueError(msg)
+    resolved[label] = weights
+
+  seen: dict[tuple[float, ...] | None, str] = {}
+  for label, weights in resolved.items():
+    key = None if weights is None else tuple(float(w) for w in weights)
+    if key in seen:
+      msg = (
+        f"state_weight_profiles: {label!r} and {seen[key]!r} resolve to the same weights; the "
+        f"second row-set would duplicate the first and be counted as diversity."
+      )
+      raise ValueError(msg)
+    seen[key] = label
+  return resolved
+
+
 def plan_campaign_manifest(
   *,
   base_spec: SamplingSpecification,
@@ -740,7 +1096,7 @@ def plan_campaign_manifest(
   samples_chunk_size: int,
   output_root: str | Path,
   fixed_arms: Mapping[str, Any] | None = None,
-  state_weight_profiles: tuple[str, ...] = ("equal",),
+  state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -772,8 +1128,17 @@ def plan_campaign_manifest(
       one sequence is sampled and a position is either designed or it is not. Cross-state
       index shifts are exactly what ``state_position_map`` exists to resolve.
 
+    state_weight_profiles: Maps a profile LABEL to the weight vector it means -- ``0.7|0.3``,
+      a sequence of numbers, or a path to a 1-D ``.npy`` -- or, for back-compat, a sequence of
+      names in which only ``"equal"`` (``state_weights=None``, the default) is resolvable. Like
+      ``fixed_arms``, the profile carries its own referent: the vector lands on each row's
+      ``sampling_spec["state_weights"]``. ``base_spec.state_weights`` is kept for the
+      ``"equal"`` profile (the pre-existing route), so a caller who set it directly is
+      untouched. Two different profiles yield rows with different ``state_weights``.
+
   Raises:
-    ValueError: ``fixed_arms`` is an empty mapping (states "here are my arms", then supplies
+    ValueError: a profile cannot be resolved (see ``_resolve_state_weight_profiles``);
+      ``fixed_arms`` is an empty mapping (states "here are my arms", then supplies
       none -- a contradiction, and silently reading it as "design everything" is how the old
       zero-rows bug read), or a mask is not 1-D.
 
@@ -811,14 +1176,31 @@ def plan_campaign_manifest(
     label: _resolve_arm(label, src, length=arm_length) for label, src in arms.items()
   }
 
+  resolved_profiles = _resolve_state_weight_profiles(state_weight_profiles)
+
   output_root_path = Path(output_root)
   rows: list[dict[str, Any]] = []
   job_index = 0
 
   for fixed_policy, (arm_mask, arm_tokens) in resolved_arms.items():
-    for state_weight_profile in state_weight_profiles:
+    for state_weight_profile, profile_weights in resolved_profiles.items():
       for ligand_on in (False, True):
         for sidechain_on in (False, True):
+          # sidechain_conditioning=True only does anything if the MODEL was built with the
+          # side-chain branch (`ligand_mpnn_use_side_chain_context`) -- two switches for one
+          # capability (#115). The planner owns the sidechain axis, so it owns the derivation
+          # too: a sidechain-on row on a LigandMPNN model states the model-level flag in its
+          # own sampling_spec rather than relying on prep.py to imply it at load time. (prep
+          # still implies it, so sampled output is unchanged; this makes the manifest
+          # self-describing and lets the knob harness observe it.) An EXPLICIT caller value is
+          # never overridden -- a contradiction (False with sidechain on) still raises in
+          # prep_protein_stream_and_model. No CLI flag is exposed for it on purpose: the 2x2
+          # grid always contains both a sidechain-on and a sidechain-off row, and True would
+          # crash the off rows (the branch needs atom_37) while False would contradict the
+          # on rows, so any explicit campaign-wide value could only be wrong for half the grid.
+          side_chain_context = base_spec.ligand_mpnn_use_side_chain_context
+          if sidechain_on and side_chain_context is None and base_spec.model_family == "ligandmpnn":
+            side_chain_context = True
           spec_variant = replace(
             base_spec,
             inputs=_normalize_inputs(base_spec.inputs),
@@ -826,6 +1208,7 @@ def plan_campaign_manifest(
             return_logits=False,
             ligand_conditioning=ligand_on,
             sidechain_conditioning=sidechain_on,
+            ligand_mpnn_use_side_chain_context=side_chain_context,
             # THE LINE WHOSE ABSENCE WAS THE ENTIRE BUG.
             #
             # The arm's mask has to land on the SPEC, because `sampling_spec` is the only
@@ -844,6 +1227,14 @@ def plan_campaign_manifest(
             # parse at plan time. Falls back to the caller's own tokens for the .npy/array
             # shapes, which carry a mask only.
             fixed_tokens=arm_tokens if arm_tokens is not None else base_spec.fixed_tokens,
+            # The profile's vector has to land on the SPEC for the same reason the arm's mask
+            # does: `sampling_spec` is all the worker reads. The loop variable used to reach
+            # only the row's LABEL (and its hash), so every profile sampled identically.
+            # `base_spec.state_weights` wins for the "equal" profile, so a caller who sets it
+            # directly keeps working untouched.
+            state_weights=(
+              profile_weights if profile_weights is not None else base_spec.state_weights
+            ),
           )
           for chunk_index, sample_start in enumerate(
             range(0, designs_per_library_type, samples_chunk_size),
@@ -864,6 +1255,7 @@ def plan_campaign_manifest(
               git_sha=git_sha,
               config_hash=config_hash,
               job_id=f"{campaign_id}-job-{job_index}",
+              declared_state_weights=profile_weights,
             )
             row["output_h5_path"] = _row_output_path(
               output_root_path,
@@ -905,7 +1297,7 @@ def write_campaign_manifest(
   samples_chunk_size: int,
   output_root: str | Path,
   fixed_arms: Mapping[str, Any] | None = None,
-  state_weight_profiles: tuple[str, ...] = ("equal",),
+  state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -956,6 +1348,33 @@ def _select_row(
   return rows[resolved_index]
 
 
+def _already_done_result(
+  marker: dict[str, Any],
+  *,
+  output_h5_path: Path,
+  done_marker_path: Path,
+  manifest_hash: str,
+  input_hash: str,
+) -> dict[str, Any]:
+  return {
+    "status": "already_done",
+    "output_h5_path": str(output_h5_path),
+    "manifest_row_hash": manifest_hash,
+    "done_marker_path": str(done_marker_path),
+    "attempt_id": marker.get("attempt_id"),
+    "input_hash": input_hash,
+    "reuse": {
+      "decision": "reused",
+      "reason": "stamp_verified",
+      "input_hash": input_hash,
+      "artifact_digest": marker.get("content_digest_sha256"),
+      "stamp_attempt_id": marker.get("attempt_id"),
+      "completed_at_unix_s": marker.get("completed_at_unix_s"),
+      "adopted_from_v2": bool(marker.get("adopted_from_v2", False)),
+    },
+  }
+
+
 def run_manifest_row(  # noqa: PLR0915
   manifest_path: str | Path,
   *,
@@ -989,8 +1408,12 @@ def run_manifest_row(  # noqa: PLR0915
   done_marker_path = _done_marker_path(output_h5_path)
   manifest_hash = str(row["manifest_row_hash"])
 
+  # Everything that determines this unit's output, hashed up front: reuse is only valid if it matches the stamp.
+  input_hash, input_hash_components = compute_unit_input_hash(sampling_spec_payload)
+  reuse: dict[str, Any] = {"decision": "computed", "reason": "no_prior_artifact", "input_hash": input_hash}
+
   existing_marker = _read_done_marker(done_marker_path)
-  marker_is_stale = False
+  marker_needs_replacement = False
   if existing_marker is not None:
     try:
       _validate_done_marker(
@@ -998,18 +1421,19 @@ def run_manifest_row(  # noqa: PLR0915
         marker_path=done_marker_path,
         output_h5_path=output_h5_path,
         manifest_row_hash=manifest_hash,
+        input_hash=input_hash,
       )
-    except StaleDoneMarkerSchemaError:
-      marker_is_stale = True
+    except (StaleDoneMarkerSchemaError, InputHashMismatchError):
+      marker_needs_replacement = True
     else:
-      return {
-        "status": "already_done",
-        "output_h5_path": str(output_h5_path),
-        "manifest_row_hash": manifest_hash,
-        "done_marker_path": str(done_marker_path),
-        "attempt_id": existing_marker.get("attempt_id"),
-      }
-  if not marker_is_stale and output_h5_path.exists():
+      return _already_done_result(
+        existing_marker,
+        output_h5_path=output_h5_path,
+        done_marker_path=done_marker_path,
+        manifest_hash=manifest_hash,
+        input_hash=input_hash,
+      )
+  if not marker_needs_replacement and output_h5_path.exists():
     msg = (
       f"Output file already exists without done marker for manifest row {manifest_hash}: "
       f"{output_h5_path}"
@@ -1037,7 +1461,29 @@ def run_manifest_row(  # noqa: PLR0915
           marker_path=done_marker_path,
           output_h5_path=output_h5_path,
           manifest_row_hash=manifest_hash,
+          input_hash=input_hash,
         )
+      except LegacyV2DoneMarkerError as exc:
+        logger.warning("Recomputing manifest row %s: %s", manifest_hash, exc)
+        reuse = {
+          "decision": "recomputed",
+          "reason": "legacy_v2_marker",
+          "input_hash": input_hash,
+          "quarantined": _quarantine_output(
+            marker_path=done_marker_path, output_h5_path=output_h5_path, reason="legacy_v2_marker",
+          ),
+        }
+      except InputHashMismatchError as exc:
+        logger.warning("Recomputing manifest row %s: %s", manifest_hash, exc)
+        reuse = {
+          "decision": "recomputed",
+          "reason": "input_hash_mismatch",
+          "input_hash": input_hash,
+          "stamped_input_hash": existing_marker.get("input_hash"),
+          "quarantined": _quarantine_output(
+            marker_path=done_marker_path, output_h5_path=output_h5_path, reason="input_hash_mismatch",
+          ),
+        }
       except StaleDoneMarkerSchemaError as exc:
         logger.warning(
           "Discarding stale done marker for manifest row %s, recomputing: %s",
@@ -1045,14 +1491,15 @@ def run_manifest_row(  # noqa: PLR0915
           exc,
         )
         _invalidate_stale_output(marker_path=done_marker_path, output_h5_path=output_h5_path)
+        reuse = {"decision": "recomputed", "reason": "stale_marker_schema", "input_hash": input_hash}
       else:
-        return {
-          "status": "already_done",
-          "output_h5_path": str(output_h5_path),
-          "manifest_row_hash": manifest_hash,
-          "done_marker_path": str(done_marker_path),
-          "attempt_id": existing_marker.get("attempt_id"),
-        }
+        return _already_done_result(
+          existing_marker,
+          output_h5_path=output_h5_path,
+          done_marker_path=done_marker_path,
+          manifest_hash=manifest_hash,
+          input_hash=input_hash,
+        )
     if output_h5_path.exists():
       msg = (
         f"Output file already exists without done marker for manifest row {manifest_hash}: "
@@ -1117,7 +1564,10 @@ def run_manifest_row(  # noqa: PLR0915
         attempt_id=attempt_id,
         content_digest_sha256=content_digest_sha256,
         lock_backend=lock_backend,
+        input_hash=input_hash,
+        input_hash_components=input_hash_components,
       )
+      reuse["artifact_digest"] = content_digest_sha256
     finally:
       if partial_path.exists():
         shutil.rmtree(partial_path)
@@ -1133,6 +1583,8 @@ def run_manifest_row(  # noqa: PLR0915
       "attempt_id": attempt_id,
       "done_marker_path": str(done_marker_path),
       "lock_backend": lock_backend,
+      "input_hash": input_hash,
+      "reuse": reuse,
     },
   )
   return result_payload
@@ -1200,6 +1652,7 @@ def execute_manifest(
           "manifest_row_hash": row_hash,
           "status": row_status,
           "output_h5_path": result.get("output_h5_path"),
+          "reuse": result.get("reuse"),
         },
       )
       if row_status in success_statuses:
@@ -1225,7 +1678,90 @@ def execute_manifest(
     "selected_rows": len(selected_rows),
     "successful_rows": successful_rows,
     "failed_rows": failed_rows,
+    "reused_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "reused"),
+    "recomputed_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "recomputed"),
     "row_results": row_results,
+  }
+
+
+def adopt_legacy_done_markers(
+  manifest_path: str | Path,
+  *,
+  row_hashes: Sequence[str] | None = None,
+  dry_run: bool = False,
+) -> dict[str, Any]:
+  """Upgrade valid v2 done markers to v3 so their outputs are reused instead of recomputed.
+
+  For each selected row with a v2 marker it checks that the row hash matches, the store exists and its
+  ``zarr_content_digest`` equals the marker's. Only then does it compute the input hash from the CURRENT manifest and
+  write a v3 marker flagged ``adopted_from_v2`` (the old marker is kept as ``<marker>.v2.bak``).
+
+  **This is an attestation by the operator, not a proof.** A v2 marker records no inputs, so adoption asserts that the
+  existing output was produced from the inputs this manifest now names. Run it only for campaigns you know were not
+  re-planned or patched after they ran. Adopted units show ``adopted_from_v2: true`` in every reuse report.
+  """
+  rows = _manifest_rows(manifest_path)
+  wanted = set(row_hashes or ())
+  entries: list[dict[str, Any]] = []
+  for row in rows:
+    row_hash = str(row["manifest_row_hash"])
+    if wanted and row_hash not in wanted:
+      continue
+    entry: dict[str, Any] = {"manifest_row_hash": row_hash, "adopted": False}
+    entries.append(entry)
+    spec_payload = row.get("sampling_spec")
+    raw_output = spec_payload.get("output_h5_path") if isinstance(spec_payload, dict) else None
+    if raw_output is None:
+      entry["skipped"] = "no_output_path"
+      continue
+    output_h5_path = Path(raw_output).resolve()
+    marker_path = _done_marker_path(output_h5_path)
+    entry["output_h5_path"] = str(output_h5_path)
+    marker = _read_done_marker(marker_path)
+    if marker is None:
+      entry["skipped"] = "no_marker"
+    elif marker.get("schema_version") == DONE_MARKER_SCHEMA_VERSION:
+      entry["skipped"] = "already_v3"
+    elif marker.get("schema_version") != LEGACY_DONE_MARKER_SCHEMA_VERSION:
+      entry["skipped"] = f"not_v2:{marker.get('schema_version')}"
+    elif marker.get("manifest_row_hash") != row_hash:
+      entry["skipped"] = "manifest_row_hash_mismatch"
+    elif not output_h5_path.exists():
+      entry["skipped"] = "output_missing"
+    elif zarr_content_digest(output_h5_path) != marker.get("content_digest_sha256"):
+      entry["skipped"] = "artifact_digest_mismatch"
+    else:
+      try:
+        input_hash, components = compute_unit_input_hash(spec_payload)
+      except InputHashUnavailableError as exc:
+        entry["skipped"] = f"input_hash_unavailable: {exc}"
+        continue
+      entry["input_hash"] = input_hash
+      if not dry_run:
+        backup = marker_path.with_name(marker_path.name + ".v2.bak")
+        marker_path.replace(backup)
+        _write_done_marker(
+          marker_path=marker_path,
+          output_h5_path=output_h5_path,
+          manifest_row_hash=row_hash,
+          attempt_id=str(marker.get("attempt_id", "adopted")),
+          content_digest_sha256=str(marker["content_digest_sha256"]),
+          lock_backend=str(marker.get("lock_backend", "local_fs")),
+          input_hash=input_hash,
+          input_hash_components=components,
+          adopted_from=marker,
+          completed_at_unix_s=marker.get("completed_at_unix_s"),
+        )
+        entry["backup"] = str(backup)
+      entry["adopted"] = True
+  return {
+    "schema_version": ADOPT_LEGACY_REPORT_SCHEMA_VERSION,
+    "manifest_path": str(Path(manifest_path).resolve()),
+    "dry_run": dry_run,
+    "selected_rows": len(entries),
+    "adopted_rows": sum(1 for e in entries if e["adopted"]),
+    "skipped_rows": sum(1 for e in entries if not e["adopted"]),
+    "rows": entries,
   }
 
 
@@ -1238,7 +1774,7 @@ def plan_scale_ramp(
   stage_designs_per_library_type: Sequence[int],
   samples_chunk_size: int,
   fixed_arms: Mapping[str, Any] | None = None,
-  state_weight_profiles: tuple[str, ...] = ("equal",),
+  state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -1606,6 +2142,143 @@ def parse_fixed_arms(values: Sequence[str] | None) -> dict[str, str] | None:
   return arms
 
 
+def _load_campaign_npy(flag: str, path: str | Path) -> np.ndarray:
+  source = Path(path)
+  if not source.is_file() or source.suffix != ".npy":
+    msg = f"{flag} expects a path to an existing .npy file, got {str(path)!r}."
+    raise ValueError(msg)
+  return np.load(source, allow_pickle=False)
+
+
+def load_campaign_bias(path: str | Path, *, length: int) -> np.ndarray:
+  """Load ``--bias``: a ``(L, 21)`` float ``.npy`` of per-position, per-token logit bias.
+
+  ``L`` must equal ``length`` (the campaign's padded length, ``max_length``) -- the same
+  assumption ``fixed_arms`` masks are sized against. Shapes are checked here, where the caller
+  still has the context to fix them, rather than when a worker first touches the tensor.
+
+  Raises:
+    ValueError: not a ``.npy`` file, not 2-D ``(length, 21)``, or not finite.
+
+  """
+  bias = np.asarray(_load_campaign_npy("--bias", path), dtype=np.float32)
+  if bias.shape != (length, 21):
+    msg = (
+      f"--bias {str(path)!r} has shape {bias.shape}; expected ({length}, 21): one logit bias "
+      f"per position (padded campaign length {length}) and per token (MPNN alphabet, 21)."
+    )
+    raise ValueError(msg)
+  if not np.all(np.isfinite(bias)):
+    msg = f"--bias {str(path)!r} contains non-finite values."
+    raise ValueError(msg)
+  return bias
+
+
+def load_campaign_tie_group_map(path: str | Path, *, length: int) -> np.ndarray:
+  """Load ``--tie-group-map``: a ``(L,)`` non-negative integer ``.npy`` of tie-group ids.
+
+  Positions sharing an id are decoded together (logits tied); an id per position, in the
+  canonical frame. ``L`` must equal ``length`` (the padded campaign length).
+
+  Raises:
+    ValueError: not a ``.npy`` file, not 1-D ``(length,)``, non-integer, or negative.
+
+  """
+  raw = _load_campaign_npy("--tie-group-map", path)
+  if raw.shape != (length,):
+    msg = (
+      f"--tie-group-map {str(path)!r} has shape {raw.shape}; expected ({length},): one integer "
+      f"tie-group id per position (padded campaign length {length})."
+    )
+    raise ValueError(msg)
+  if raw.dtype.kind not in "iu" and not (
+    raw.dtype.kind == "f" and np.all(np.isfinite(raw)) and np.all(raw == np.floor(raw))
+  ):
+    msg = f"--tie-group-map {str(path)!r} must hold integer group ids, got dtype {raw.dtype}."
+    raise ValueError(msg)
+  groups = raw.astype(np.int32)
+  if np.any(groups < 0):
+    msg = f"--tie-group-map {str(path)!r} has negative group ids; ids must be >= 0."
+    raise ValueError(msg)
+  return groups
+
+
+def campaign_residue_overrides(
+  bias_path: str | Path | None,
+  tie_group_map_path: str | Path | None,
+) -> dict[str, np.ndarray]:
+  """``SamplingSpecification`` kwargs for ``--bias`` / ``--tie-group-map`` (empty if neither).
+
+  Both land on the base spec, so every row of the grid carries them in its ``sampling_spec`` --
+  the only thing a worker reads. Until now they were settable only through the Python API
+  (debt #2119, the same gap ``--fixed-arm`` closed). Sized against ``max_length``'s default,
+  which is what every campaign runs (the campaign CLIs expose no ``--max-length``).
+  """
+  length = int(next(f.default for f in fields(SamplingSpecification) if f.name == "max_length"))
+  overrides: dict[str, np.ndarray] = {}
+  if bias_path is not None:
+    overrides["bias"] = load_campaign_bias(bias_path, length=length)
+  if tie_group_map_path is not None:
+    overrides["tie_group_map"] = load_campaign_tie_group_map(tie_group_map_path, length=length)
+  return overrides
+
+
+def parse_state_weight_profiles(
+  names_csv: str | None,
+  declarations: Sequence[str] | None,
+) -> dict[str, Any]:
+  """Combine ``--state-weight-profiles`` (names) and ``--state-weight-profile`` (LABEL=WEIGHTS).
+
+  ``--state-weight-profile LABEL=0.7|0.3`` is the flag that carries its own referent (the same
+  idiom as ``--fixed-arm``); it is repeatable and each label becomes its own row-set.
+  ``--state-weight-profiles`` is the legacy CSV of bare names, in which only ``equal`` means
+  anything -- any other name must ALSO be declared with weights, else this raises (a bare name
+  was a label that never reached ``state_weights``).
+
+  With neither flag the result is ``{"equal": None}``, i.e. today's default. With only
+  declarations there is NO implicit ``equal`` baseline: add ``--state-weight-profiles equal``
+  to keep one.
+
+  Raises:
+    ValueError: an entry has no ``=``, an empty label or weights, a duplicate label, or a bare
+      non-``equal`` name with no declaration.
+
+  """
+  declared: dict[str, str] = {}
+  for raw in declarations or ():
+    label, sep, weights = raw.partition("=")
+    label, weights = label.strip(), weights.strip()
+    if not sep or not label or not weights:
+      msg = (
+        f"--state-weight-profile expects LABEL=WEIGHTS (e.g. --state-weight-profile "
+        f"pocket_heavy=0.7|0.3; a 1-D .npy path also works), got {raw!r}. Repeat the flag for "
+        f"more profiles; each becomes its own row-set."
+      )
+      raise ValueError(msg)
+    if label in declared:
+      msg = f"--state-weight-profile {label!r} given twice; profile labels must be unique."
+      raise ValueError(msg)
+    declared[label] = weights
+
+  if names_csv is None and not declared:
+    return {_EQUAL_PROFILE: None}
+  profiles: dict[str, Any] = {}
+  for name in _parse_csv(names_csv) if names_csv is not None else ():
+    if name == _EQUAL_PROFILE:
+      profiles[name] = None
+    elif name in declared:
+      profiles[name] = declared[name]
+    else:
+      msg = (
+        f"--state-weight-profiles names {name!r}, which has no weights. A bare name is a label "
+        f"aminx cannot resolve; declare it: --state-weight-profile {name}=0.7|0.3"
+      )
+      raise ValueError(msg)
+  for label, weights in declared.items():
+    profiles.setdefault(label, weights)
+  return profiles
+
+
 def _parse_int_csv(value: str) -> tuple[int, ...]:
   parsed: list[int] = []
   for item in value.split(","):
@@ -1623,6 +2296,41 @@ def _emit_json(payload: dict[str, Any], output_path: str | None = None) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(rendered + "\n", encoding="utf-8")
   sys.stdout.write(rendered + "\n")
+
+
+def _add_state_weight_arguments(parser: argparse.ArgumentParser) -> None:
+  parser.add_argument(
+    "--state-weight-profiles",
+    default=None,
+    help="Comma-separated profile NAMES; only 'equal' is resolvable by name. Default: equal "
+    "(unless --state-weight-profile is given).",
+  )
+  parser.add_argument(
+    "--state-weight-profile",
+    action="append",
+    default=None,
+    metavar="LABEL=WEIGHTS",
+    help="Profile LABEL=WEIGHTS, e.g. pocket_heavy=0.7|0.3 (one weight per state; a 1-D .npy "
+    "path also works). Reaches each row's sampling_spec state_weights. Repeatable.",
+  )
+
+
+def _add_residue_override_arguments(parser: argparse.ArgumentParser) -> None:
+  parser.add_argument(
+    "--bias",
+    default=None,
+    metavar="PATH.npy",
+    help="(L, 21) float .npy of per-position, per-token logit bias, applied to every row.",
+  )
+  parser.add_argument(
+    "--tie-group-map",
+    "--tie-group",
+    dest="tie_group_map",
+    default=None,
+    metavar="PATH.npy",
+    help="(L,) integer .npy of per-position tie-group ids (equal ids are decoded tied), "
+    "applied to every row.",
+  )
 
 
 def _add_plan_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1646,7 +2354,8 @@ def _add_plan_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPar
       "canonical index). A .npy mask path also works. Repeatable."
     ),
   )
-  parser.add_argument("--state-weight-profiles", default="equal")
+  _add_state_weight_arguments(parser)
+  _add_residue_override_arguments(parser)
 
 
 def _add_worker_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1681,6 +2390,17 @@ def _add_run_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPars
     type=int,
     default=DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
   )
+
+
+def _add_adopt_legacy_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+  parser = subparsers.add_parser(
+    "adopt-legacy",
+    help="Upgrade valid v2 done markers to v3 (operator attests the outputs match the current manifest).",
+  )
+  parser.add_argument("--manifest-path", required=True)
+  parser.add_argument("--row-hash", action="append", default=[], help="Row hash filter (repeatable)")
+  parser.add_argument("--dry-run", action="store_true", help="Report what would be adopted without changing anything")
+  parser.add_argument("--summary-path", default=None)
 
 
 def _add_gates_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -1721,7 +2441,8 @@ def _add_ramp_plan_parser(subparsers: argparse._SubParsersAction[argparse.Argume
       "canonical index). A .npy mask path also works. Repeatable."
     ),
   )
-  parser.add_argument("--state-weight-profiles", default="equal")
+  _add_state_weight_arguments(parser)
+  _add_residue_override_arguments(parser)
   parser.add_argument("--plan-path", default=None)
 
 
@@ -1740,6 +2461,7 @@ def _handle_plan_command(args: argparse.Namespace) -> int:
   base_spec = SamplingSpecification(
     inputs=_parse_csv(args.inputs),
     return_logits=False,
+    **campaign_residue_overrides(args.bias, args.tie_group_map),
   )
   write_campaign_manifest(
     base_spec=base_spec,
@@ -1749,7 +2471,9 @@ def _handle_plan_command(args: argparse.Namespace) -> int:
     samples_chunk_size=args.samples_chunk_size,
     output_root=args.output_root,
     fixed_arms=parse_fixed_arms(args.fixed_arm),
-    state_weight_profiles=_parse_csv(args.state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      args.state_weight_profiles, args.state_weight_profile,
+    ),
   )
   return 0
 
@@ -1779,6 +2503,16 @@ def _handle_run_command(args: argparse.Namespace) -> int:
   return 0 if summary["failed_rows"] == 0 else 1
 
 
+def _handle_adopt_legacy_command(args: argparse.Namespace) -> int:
+  report = adopt_legacy_done_markers(
+    args.manifest_path,
+    row_hashes=tuple(args.row_hash),
+    dry_run=args.dry_run,
+  )
+  _emit_json(report, args.summary_path)
+  return 0
+
+
 def _handle_gates_command(args: argparse.Namespace) -> int:
   report = evaluate_campaign_gates(
     args.manifest_path,
@@ -1793,6 +2527,7 @@ def _handle_ramp_plan_command(args: argparse.Namespace) -> int:
   base_spec = SamplingSpecification(
     inputs=_parse_csv(args.inputs),
     return_logits=False,
+    **campaign_residue_overrides(args.bias, args.tie_group_map),
   )
   plan_payload = plan_scale_ramp(
     base_spec=base_spec,
@@ -1802,7 +2537,9 @@ def _handle_ramp_plan_command(args: argparse.Namespace) -> int:
     stage_designs_per_library_type=_parse_int_csv(args.stage_designs_per_library_type),
     samples_chunk_size=args.samples_chunk_size,
     fixed_arms=parse_fixed_arms(args.fixed_arm),
-    state_weight_profiles=_parse_csv(args.state_weight_profiles),
+    state_weight_profiles=parse_state_weight_profiles(
+      args.state_weight_profiles, args.state_weight_profile,
+    ),
   )
   _emit_json(plan_payload, args.plan_path)
   return 0
@@ -1822,25 +2559,26 @@ def main(argv: list[str] | None = None) -> int:
   _add_plan_parser(subparsers)
   _add_worker_parser(subparsers)
   _add_run_parser(subparsers)
+  _add_adopt_legacy_parser(subparsers)
   _add_gates_parser(subparsers)
   _add_ramp_plan_parser(subparsers)
   _add_ramp_eval_parser(subparsers)
 
   args = parser.parse_args(argv)
-  if args.command == "plan":
-    return _handle_plan_command(args)
-  if args.command == "worker":
-    return _handle_worker_command(args)
-  if args.command == "run":
-    return _handle_run_command(args)
-  if args.command == "gates":
-    return _handle_gates_command(args)
-  if args.command == "ramp-plan":
-    return _handle_ramp_plan_command(args)
-  if args.command == "ramp-evaluate":
-    return _handle_ramp_eval_command(args)
-  msg = f"Unsupported command: {args.command!r}"
-  raise ValueError(msg)
+  handlers = {
+    "plan": _handle_plan_command,
+    "worker": _handle_worker_command,
+    "run": _handle_run_command,
+    "adopt-legacy": _handle_adopt_legacy_command,
+    "gates": _handle_gates_command,
+    "ramp-plan": _handle_ramp_plan_command,
+    "ramp-evaluate": _handle_ramp_eval_command,
+  }
+  handler = handlers.get(args.command)
+  if handler is None:
+    msg = f"Unsupported command: {args.command!r}"
+    raise ValueError(msg)
+  return handler(args)
 
 
 if __name__ == "__main__":  # pragma: no cover

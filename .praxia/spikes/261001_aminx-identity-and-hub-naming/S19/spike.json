@@ -1,0 +1,29 @@
+{
+  "prereg": {
+    "id": "S19",
+    "claims": {
+      "A55": "release.yml contains no step that queries PyPI for an existing version, compares the release tag with the built version, or sets skip-existing, and has no workflow_dispatch trigger.",
+      "A56": "PyPI does not allow a distribution filename to be reused once uploaded (stated on pypi.org/help), so a second upload of the same version fails permanently.",
+      "A58": "The PyPI JSON endpoint /pypi/aminx/<version>/json answers 200 for a published version (0.2.0a3) and 404 for an unpublished one (0.2.0a4 on 261001), which is enough for a pre-publish duplicate check."
+    },
+    "question": "What does release.yml verify before publishing today, and do PyPI's JSON endpoint and help text support the duplicate-version guard S3-12 specifies?",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S19/probe.py",
+    "expect_if_true": "release.yml occurrences of pypi.org/pypi, tag_name, github.ref, skip-existing and workflow_dispatch are all 0 and environment: is 1; the pyproject version line is static (no dynamic version); 0.2.0a3 status 200 and 0.2.0a4 status 404; the help-text phrase is found.",
+    "expect_if_false": "Any guard string is already present in release.yml (S3-12 shrinks), 0.2.0a4 is already published (the release-train numbers shift), the JSON endpoint does not distinguish published from unpublished versions (the check must use another endpoint), or the help phrase is absent (A56 stays deferred). Any ERR is inconclusive: re-run under a new id."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:54:19.915047+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.8092408180236816,
+    "output_sha256": "9c946281ba098015edbf8aad6a7ecf52ecdf9f15ff0d9f14412c87b7a66a7517",
+    "output_full_sha256": "9c946281ba098015edbf8aad6a7ecf52ecdf9f15ff0d9f14412c87b7a66a7517",
+    "output_bytes": 1208,
+    "output_truncated": false,
+    "prereg_sha256": "4671f42674749c1de8ee87e72d673b58594668f4500c44a683b1e0c74b3e9b30",
+    "probe_files": {
+      "probe.py": "90281691324664427399ad5000beedc73a0f2d9bd23e570ec6dc63680fff0dd0"
+    }
+  }
+}

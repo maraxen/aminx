@@ -1,0 +1,1386 @@
+{
+  "paths": {
+    "P00": {
+      "advances": true,
+      "reasons": [],
+      "exact_rows": [
+        {
+          "path": "P00.weights",
+          "metric": "max_abs",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "v_48_020.pt (both checkpoints)",
+          "n_common_tensors": 118
+        },
+        {
+          "path": "P00.log_probs",
+          "metric": "max_abs",
+          "value": 0.0,
+          "bar": 0.0001,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 1.0
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P01": {
+      "advances": false,
+      "reasons": [
+        "confirmed defect(s) name this path: ['checkpoint_topology_source', 'membrane_label_encoding', 'positional_encoding_ligand', 'weight_conversion_bias_handling']"
+      ],
+      "exact_rows": [
+        {
+          "path": "P01.weights",
+          "metric": "max_abs",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "proteinmpnn_v_48_020 (eqx vs pt_convert)"
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P02": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['over_bar'])"
+      ],
+      "exact_rows": [
+        {
+          "path": "P02.residue_alignment",
+          "fixture": "1BC8",
+          "metric": "n_common",
+          "value": 93,
+          "n_aminx_only": 20,
+          "n_reference_only": 0,
+          "status": "over_bar",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.mask_exact",
+          "fixture": "1BC8",
+          "metric": "mask_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.chain_labels_exact",
+          "fixture": "1BC8",
+          "metric": "chain_labels_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.sequence_exact",
+          "fixture": "1BC8",
+          "metric": "sequence_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.backbone_coords_max_abs",
+          "fixture": "1BC8",
+          "metric": "backbone_coords_max_abs",
+          "value": 0.0,
+          "bar": 1e-05,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.residue_alignment",
+          "fixture": "3HTN",
+          "metric": "n_common",
+          "value": 416,
+          "n_aminx_only": 0,
+          "n_reference_only": 9,
+          "status": "over_bar",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.mask_exact",
+          "fixture": "3HTN",
+          "metric": "mask_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.chain_labels_exact",
+          "fixture": "3HTN",
+          "metric": "chain_labels_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.sequence_exact",
+          "fixture": "3HTN",
+          "metric": "sequence_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.backbone_coords_max_abs",
+          "fixture": "3HTN",
+          "metric": "backbone_coords_max_abs",
+          "value": 0.0,
+          "bar": 1e-05,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.residue_alignment",
+          "fixture": "4YOW",
+          "metric": "n_common",
+          "value": 681,
+          "n_aminx_only": 12,
+          "n_reference_only": 0,
+          "status": "over_bar",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.mask_exact",
+          "fixture": "4YOW",
+          "metric": "mask_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.chain_labels_exact",
+          "fixture": "4YOW",
+          "metric": "chain_labels_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.sequence_exact",
+          "fixture": "4YOW",
+          "metric": "sequence_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.backbone_coords_max_abs",
+          "fixture": "4YOW",
+          "metric": "backbone_coords_max_abs",
+          "value": 0.0,
+          "bar": 1e-05,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.residue_alignment",
+          "fixture": "6MRR",
+          "metric": "n_common",
+          "value": 68,
+          "n_aminx_only": 0,
+          "n_reference_only": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.mask_exact",
+          "fixture": "6MRR",
+          "metric": "mask_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.chain_labels_exact",
+          "fixture": "6MRR",
+          "metric": "chain_labels_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.sequence_exact",
+          "fixture": "6MRR",
+          "metric": "sequence_exact",
+          "value": 0,
+          "bar": 0,
+          "status": "validated",
+          "weight_source": "eqx"
+        },
+        {
+          "path": "P02.backbone_coords_max_abs",
+          "fixture": "6MRR",
+          "metric": "backbone_coords_max_abs",
+          "value": 0.0,
+          "bar": 1e-05,
+          "status": "validated",
+          "weight_source": "eqx"
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P03": {
+      "advances": true,
+      "reasons": [],
+      "exact_rows": [
+        {
+          "path": "P03.neighbor_set_k48",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "n_evaluated": 93,
+          "n_near_tie_excluded": 0,
+          "k": 48
+        },
+        {
+          "path": "P03.neighbor_set_k32",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "n_evaluated": 93,
+          "n_near_tie_excluded": 0,
+          "k": 32
+        },
+        {
+          "path": "P03.neighbor_set_k48",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "n_evaluated": 415,
+          "n_near_tie_excluded": 1,
+          "k": 48
+        },
+        {
+          "path": "P03.neighbor_set_k32",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "n_evaluated": 416,
+          "n_near_tie_excluded": 0,
+          "k": 32
+        },
+        {
+          "path": "P03.neighbor_set_k48",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "n_evaluated": 681,
+          "n_near_tie_excluded": 0,
+          "k": 48
+        },
+        {
+          "path": "P03.neighbor_set_k32",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "n_evaluated": 678,
+          "n_near_tie_excluded": 3,
+          "k": 32
+        },
+        {
+          "path": "P03.neighbor_set_k48",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "n_evaluated": 68,
+          "n_near_tie_excluded": 0,
+          "k": 48
+        },
+        {
+          "path": "P03.neighbor_set_k32",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "n_evaluated": 68,
+          "n_near_tie_excluded": 0,
+          "k": 32
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P04": {
+      "advances": true,
+      "reasons": [],
+      "exact_rows": [
+        {
+          "path": "P04.log_probs",
+          "metric": "max_abs",
+          "value": 2.6702880859375e-05,
+          "bar": 0.0001,
+          "ratio": 0.26702880859375,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.9999999999928544
+        },
+        {
+          "path": "P04.log_probs",
+          "metric": "max_abs",
+          "value": 3.5762786865234375e-05,
+          "bar": 0.0001,
+          "ratio": 0.35762786865234375,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.9999999999905952
+        },
+        {
+          "path": "P04.log_probs",
+          "metric": "max_abs",
+          "value": 3.24249267578125e-05,
+          "bar": 0.0001,
+          "ratio": 0.324249267578125,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.9999999999921251
+        },
+        {
+          "path": "P04.log_probs",
+          "metric": "max_abs",
+          "value": 3.0040740966796875e-05,
+          "bar": 0.0001,
+          "ratio": 0.30040740966796875,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "pearson": 0.9999999999921915
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P05": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['not_advanced'])",
+        "confirmed defect(s) name this path: ['conditional_score_context_mask']"
+      ],
+      "exact_rows": [
+        {
+          "path": "P05.log_probs",
+          "metric": "max_abs",
+          "value": 3.0517578125e-05,
+          "bar": 0.0001,
+          "ratio": 0.30517578125,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.999999999992769
+        },
+        {
+          "path": "P05.nll",
+          "metric": "abs_delta",
+          "value": 4.76837158203125e-07,
+          "bar": 1e-05,
+          "ratio": 0.04768371582031249,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "nll_reference": 1.612765908241272,
+          "nll_aminx": 1.6127663850784302
+        },
+        {
+          "path": "P05.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "n_valid": 113
+        },
+        {
+          "path": "P05.log_probs",
+          "metric": "max_abs",
+          "value": 3.695487976074219e-05,
+          "bar": 0.0001,
+          "ratio": 0.3695487976074219,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.999999999991995
+        },
+        {
+          "path": "P05.nll",
+          "metric": "abs_delta",
+          "value": 0.0,
+          "bar": 1e-05,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "nll_reference": 1.1634643077850342,
+          "nll_aminx": 1.1634643077850342
+        },
+        {
+          "path": "P05.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "n_valid": 416
+        },
+        {
+          "path": "P05.log_probs",
+          "metric": "max_abs",
+          "value": 3.5762786865234375e-05,
+          "bar": 0.0001,
+          "ratio": 0.35762786865234375,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.9999999999914186
+        },
+        {
+          "path": "P05.nll",
+          "metric": "abs_delta",
+          "value": 1.1920928955078125e-07,
+          "bar": 1e-05,
+          "ratio": 0.011920928955078123,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "nll_reference": 1.158300518989563,
+          "nll_aminx": 1.1583003997802734
+        },
+        {
+          "path": "P05.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "n_valid": 693
+        },
+        {
+          "path": "P05.log_probs",
+          "metric": "max_abs",
+          "value": 3.4809112548828125e-05,
+          "bar": 0.0001,
+          "ratio": 0.34809112548828125,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "pearson": 0.999999999992451
+        },
+        {
+          "path": "P05.nll",
+          "metric": "abs_delta",
+          "value": 7.152557373046875e-07,
+          "bar": 1e-05,
+          "ratio": 0.07152557373046875,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "nll_reference": 1.4761731624603271,
+          "nll_aminx": 1.4761738777160645
+        },
+        {
+          "path": "P05.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "n_valid": 68
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P06": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['not_advanced'])",
+        "confirmed defect(s) name this path: ['conditional_score_context_mask']"
+      ],
+      "exact_rows": [
+        {
+          "path": "P06.log_probs",
+          "metric": "max_abs",
+          "value": 3.0517578125e-05,
+          "bar": 0.0001,
+          "ratio": 0.30517578125,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.999999999992817
+        },
+        {
+          "path": "P06.nll",
+          "metric": "abs_delta",
+          "value": 4.76837158203125e-07,
+          "bar": 1e-05,
+          "ratio": 0.04768371582031249,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "nll_reference": 1.612765908241272,
+          "nll_aminx": 1.6127663850784302
+        },
+        {
+          "path": "P06.log_probs",
+          "metric": "max_abs",
+          "value": 3.695487976074219e-05,
+          "bar": 0.0001,
+          "ratio": 0.3695487976074219,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.9999999999920175
+        },
+        {
+          "path": "P06.nll",
+          "metric": "abs_delta",
+          "value": 0.0,
+          "bar": 1e-05,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "nll_reference": 1.1634643077850342,
+          "nll_aminx": 1.1634643077850342
+        },
+        {
+          "path": "P06.log_probs",
+          "metric": "max_abs",
+          "value": 3.62396240234375e-05,
+          "bar": 0.0001,
+          "ratio": 0.362396240234375,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.9999999999914485
+        },
+        {
+          "path": "P06.nll",
+          "metric": "abs_delta",
+          "value": 1.1920928955078125e-07,
+          "bar": 1e-05,
+          "ratio": 0.011920928955078123,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "nll_reference": 1.158300518989563,
+          "nll_aminx": 1.1583003997802734
+        },
+        {
+          "path": "P06.log_probs",
+          "metric": "max_abs",
+          "value": 3.647804260253906e-05,
+          "bar": 0.0001,
+          "ratio": 0.3647804260253906,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "pearson": 0.9999999999922563
+        },
+        {
+          "path": "P06.nll",
+          "metric": "abs_delta",
+          "value": 7.152557373046875e-07,
+          "bar": 1e-05,
+          "ratio": 0.07152557373046875,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "nll_reference": 1.4761731624603271,
+          "nll_aminx": 1.4761738777160645
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P07": {
+      "advances": false,
+      "reasons": [
+        "no layer-(a) rows",
+        "sampling tier not validated (budget_exceeded)",
+        "confirmed defect(s) name this path: ['ar_mask_order_rank_convention_mismatch', 'sample_log_probs_output']"
+      ],
+      "exact_rows": [],
+      "sampling_lanes": []
+    },
+    "P08": {
+      "advances": false,
+      "reasons": [
+        "no layer-(a) rows",
+        "sampling tier not validated (budget_exceeded)"
+      ],
+      "exact_rows": [],
+      "sampling_lanes": []
+    },
+    "P09": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['not_advanced'])",
+        "exact rows over bar: ['P09.log_probs']",
+        "sampling tier not validated (budget_exceeded)",
+        "confirmed defect(s) name this path: ['sample_log_probs_output']"
+      ],
+      "exact_rows": [
+        {
+          "path": "P09.log_probs",
+          "metric": "n_qualifying_groups",
+          "value": 0.0,
+          "bar": 1.0,
+          "ratio": 0.0,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "status_note": "no k-NN-disjoint multi-member tie group on this fixture"
+        },
+        {
+          "path": "P09.log_probs",
+          "metric": "max_abs",
+          "value": 4.76837158203125e-05,
+          "bar": 0.0001,
+          "ratio": 0.476837158203125,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.9999999999961171,
+          "n_qualifying_groups": 126,
+          "n_tied_positions": 252
+        },
+        {
+          "path": "P09.log_probs",
+          "metric": "max_abs",
+          "value": 0.0001010894775390625,
+          "bar": 0.0001,
+          "ratio": 1.010894775390625,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.9999999999972176,
+          "n_qualifying_groups": 223,
+          "n_tied_positions": 669
+        },
+        {
+          "path": "P09.log_probs",
+          "metric": "n_qualifying_groups",
+          "value": 0.0,
+          "bar": 1.0,
+          "ratio": 0.0,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "status_note": "no k-NN-disjoint multi-member tie group on this fixture"
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P10": {
+      "advances": false,
+      "reasons": [
+        "no layer-(a) rows"
+      ],
+      "exact_rows": [],
+      "sampling_lanes": []
+    },
+    "P11": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['not_advanced'])",
+        "exact rows over bar: ['P11.context_off.log_probs', 'P11.context_on.log_probs']",
+        "sampling tier not validated (budget_exceeded)",
+        "confirmed defect(s) name this path: ['checkpoint_topology_source', 'ligand_atom_context', 'ligand_context_fusion_bias', 'positional_encoding_ligand', 'weight_conversion_bias_handling']"
+      ],
+      "exact_rows": [
+        {
+          "path": "P11.context_off.log_probs",
+          "metric": "max_abs",
+          "value": 0.2385387420654297,
+          "bar": 0.0001,
+          "ratio": 2385.387420654297,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.9997964638830007
+        },
+        {
+          "path": "P11.context_on.log_probs",
+          "metric": "max_abs",
+          "value": 0.21456027030944824,
+          "bar": 0.0001,
+          "ratio": 2145.6027030944824,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.9997899451975687
+        },
+        {
+          "path": "P11.context_wiring",
+          "metric": "max_abs_delta_on_vs_off",
+          "value": 0.0,
+          "bar": 0.5,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "raw_delta": 4.826444149017334,
+          "note": "context ON must differ measurably from OFF when residues are fixed"
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P12": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['not_advanced'])"
+      ],
+      "exact_rows": [
+        {
+          "path": "P12.unconditional.log_probs",
+          "metric": "max_abs",
+          "value": 2.2411346435546875e-05,
+          "bar": 0.0001,
+          "ratio": 0.22411346435546875,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.9999999999959099
+        },
+        {
+          "path": "P12.conditional.log_probs",
+          "metric": "max_abs",
+          "value": 2.1457672119140625e-05,
+          "bar": 0.0001,
+          "ratio": 0.21457672119140625,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.9999999999954456
+        },
+        {
+          "path": "P12.conditional.nll",
+          "metric": "abs_delta",
+          "value": 1.1920928955078125e-07,
+          "bar": 1e-05,
+          "ratio": 0.011920928955078123,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "nll_reference": 1.659425139427185,
+          "nll_aminx": 1.6594252586364746
+        },
+        {
+          "path": "P12.conditional.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "n_valid": 113
+        },
+        {
+          "path": "P12.unconditional.log_probs",
+          "metric": "max_abs",
+          "value": 2.4080276489257812e-05,
+          "bar": 0.0001,
+          "ratio": 0.24080276489257812,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.9999999999947885
+        },
+        {
+          "path": "P12.conditional.log_probs",
+          "metric": "max_abs",
+          "value": 4.076957702636719e-05,
+          "bar": 0.0001,
+          "ratio": 0.4076957702636719,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.9999999999950644
+        },
+        {
+          "path": "P12.conditional.nll",
+          "metric": "abs_delta",
+          "value": 1.1920928955078125e-07,
+          "bar": 1e-05,
+          "ratio": 0.011920928955078123,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "nll_reference": 1.3415526151657104,
+          "nll_aminx": 1.341552495956421
+        },
+        {
+          "path": "P12.conditional.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "n_valid": 416
+        },
+        {
+          "path": "P12.unconditional.log_probs",
+          "metric": "max_abs",
+          "value": 2.9325485229492188e-05,
+          "bar": 0.0001,
+          "ratio": 0.2932548522949219,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.999999999995213
+        },
+        {
+          "path": "P12.conditional.log_probs",
+          "metric": "max_abs",
+          "value": 2.6702880859375e-05,
+          "bar": 0.0001,
+          "ratio": 0.26702880859375,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.9999999999951829
+        },
+        {
+          "path": "P12.conditional.nll",
+          "metric": "abs_delta",
+          "value": 1.1920928955078125e-07,
+          "bar": 1e-05,
+          "ratio": 0.011920928955078123,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "nll_reference": 1.1122993230819702,
+          "nll_aminx": 1.1122994422912598
+        },
+        {
+          "path": "P12.conditional.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "n_valid": 693
+        },
+        {
+          "path": "P12.unconditional.log_probs",
+          "metric": "max_abs",
+          "value": 1.8596649169921875e-05,
+          "bar": 0.0001,
+          "ratio": 0.18596649169921875,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "pearson": 0.9999999999959529
+        },
+        {
+          "path": "P12.conditional.log_probs",
+          "metric": "max_abs",
+          "value": 1.8835067749023438e-05,
+          "bar": 0.0001,
+          "ratio": 0.18835067749023438,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "pearson": 0.9999999999954908
+        },
+        {
+          "path": "P12.conditional.nll",
+          "metric": "abs_delta",
+          "value": 4.76837158203125e-07,
+          "bar": 1e-05,
+          "ratio": 0.04768371582031249,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "nll_reference": 1.43850576877594,
+          "nll_aminx": 1.4385062456130981
+        },
+        {
+          "path": "P12.conditional.argmax",
+          "metric": "n_mismatch",
+          "value": 0.0,
+          "bar": 0.0,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "n_valid": 68
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P13": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['not_advanced'])",
+        "exact rows over bar: ['P13.global.argmax', 'P13.global.argmax', 'P13.global.argmax', 'P13.global.argmax', 'P13.global.log_probs', 'P13.global.log_probs', 'P13.global.log_probs', 'P13.global.log_probs', 'P13.global.nll', 'P13.global.nll', 'P13.global.nll', 'P13.global.nll', 'P13.per_residue.argmax', 'P13.per_residue.argmax', 'P13.per_residue.argmax', 'P13.per_residue.argmax', 'P13.per_residue.log_probs', 'P13.per_residue.log_probs', 'P13.per_residue.log_probs', 'P13.per_residue.log_probs', 'P13.per_residue.nll', 'P13.per_residue.nll', 'P13.per_residue.nll', 'P13.per_residue.nll']",
+        "confirmed defect(s) name this path: ['membrane_label_encoding', 'weight_conversion_bias_handling']"
+      ],
+      "exact_rows": [
+        {
+          "path": "P13.per_residue.log_probs",
+          "metric": "max_abs",
+          "value": 4.883497178554535,
+          "bar": 0.0001,
+          "ratio": 48834.97178554535,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.9989071529193557
+        },
+        {
+          "path": "P13.per_residue.nll",
+          "metric": "abs_delta",
+          "value": 1.0170173645019531,
+          "bar": 1e-05,
+          "ratio": 101701.7364501953,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "nll_reference": 1.7276794910430908,
+          "nll_aminx": 2.744696855545044
+        },
+        {
+          "path": "P13.per_residue.argmax",
+          "metric": "n_mismatch",
+          "value": 72.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "n_valid": 113
+        },
+        {
+          "path": "P13.global.log_probs",
+          "metric": "max_abs",
+          "value": 0.9512917995452881,
+          "bar": 0.0001,
+          "ratio": 9512.91799545288,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "pearson": 0.9919832744531575
+        },
+        {
+          "path": "P13.global.nll",
+          "metric": "abs_delta",
+          "value": 0.006612181663513184,
+          "bar": 1e-05,
+          "ratio": 661.2181663513184,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "nll_reference": 1.6236565113067627,
+          "nll_aminx": 1.6302686929702759
+        },
+        {
+          "path": "P13.global.argmax",
+          "metric": "n_mismatch",
+          "value": 13.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "n_valid": 113
+        },
+        {
+          "path": "P13.live_label_invariant",
+          "metric": "max_abs_delta_across_labels",
+          "value": 0.0,
+          "bar": 0.5,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "raw_delta": 0.568023681640625,
+          "label_a": 0,
+          "label_b": 1
+        },
+        {
+          "path": "P13.per_residue.log_probs",
+          "metric": "max_abs",
+          "value": 5.282243728637695,
+          "bar": 0.0001,
+          "ratio": 52822.43728637695,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.9982876276645579
+        },
+        {
+          "path": "P13.per_residue.nll",
+          "metric": "abs_delta",
+          "value": 1.0191357135772705,
+          "bar": 1e-05,
+          "ratio": 101913.57135772704,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "nll_reference": 1.4106390476226807,
+          "nll_aminx": 2.429774761199951
+        },
+        {
+          "path": "P13.per_residue.argmax",
+          "metric": "n_mismatch",
+          "value": 277.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "n_valid": 416
+        },
+        {
+          "path": "P13.global.log_probs",
+          "metric": "max_abs",
+          "value": 4.2210109531879425,
+          "bar": 0.0001,
+          "ratio": 42210.109531879425,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "pearson": 0.8603393838453798
+        },
+        {
+          "path": "P13.global.nll",
+          "metric": "abs_delta",
+          "value": 0.32904624938964844,
+          "bar": 1e-05,
+          "ratio": 32904.624938964844,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "nll_reference": 2.257176637649536,
+          "nll_aminx": 1.9281303882598877
+        },
+        {
+          "path": "P13.global.argmax",
+          "metric": "n_mismatch",
+          "value": 210.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "n_valid": 416
+        },
+        {
+          "path": "P13.live_label_invariant",
+          "metric": "max_abs_delta_across_labels",
+          "value": 0.0,
+          "bar": 0.5,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "raw_delta": 4.723957061767578,
+          "label_a": 2,
+          "label_b": 0
+        },
+        {
+          "path": "P13.per_residue.log_probs",
+          "metric": "max_abs",
+          "value": 5.537948921322823,
+          "bar": 0.0001,
+          "ratio": 55379.489213228226,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.9985783543114112
+        },
+        {
+          "path": "P13.per_residue.nll",
+          "metric": "abs_delta",
+          "value": 1.0902422666549683,
+          "bar": 1e-05,
+          "ratio": 109024.22666549681,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "nll_reference": 1.102793574333191,
+          "nll_aminx": 2.193035840988159
+        },
+        {
+          "path": "P13.per_residue.argmax",
+          "metric": "n_mismatch",
+          "value": 422.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "n_valid": 692
+        },
+        {
+          "path": "P13.global.log_probs",
+          "metric": "max_abs",
+          "value": 2.308424472808838,
+          "bar": 0.0001,
+          "ratio": 23084.24472808838,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "pearson": 0.9879580631730491
+        },
+        {
+          "path": "P13.global.nll",
+          "metric": "abs_delta",
+          "value": 0.036850810050964355,
+          "bar": 1e-05,
+          "ratio": 3685.081005096435,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "nll_reference": 1.1218390464782715,
+          "nll_aminx": 1.1586898565292358
+        },
+        {
+          "path": "P13.global.argmax",
+          "metric": "n_mismatch",
+          "value": 74.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "n_valid": 693
+        },
+        {
+          "path": "P13.live_label_invariant",
+          "metric": "max_abs_delta_across_labels",
+          "value": 0.0,
+          "bar": 0.5,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "raw_delta": 0.6950998306274414,
+          "label_a": 0,
+          "label_b": 1
+        },
+        {
+          "path": "P13.per_residue.log_probs",
+          "metric": "max_abs",
+          "value": 5.503965616226196,
+          "bar": 0.0001,
+          "ratio": 55039.65616226196,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "pearson": 0.9985673383724425
+        },
+        {
+          "path": "P13.per_residue.nll",
+          "metric": "abs_delta",
+          "value": 0.8587011098861694,
+          "bar": 1e-05,
+          "ratio": 85870.11098861694,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "nll_reference": 1.4479371309280396,
+          "nll_aminx": 2.306638240814209
+        },
+        {
+          "path": "P13.per_residue.argmax",
+          "metric": "n_mismatch",
+          "value": 44.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "n_valid": 68
+        },
+        {
+          "path": "P13.global.log_probs",
+          "metric": "max_abs",
+          "value": 2.431232452392578,
+          "bar": 0.0001,
+          "ratio": 24312.32452392578,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "pearson": 0.9400505920516331
+        },
+        {
+          "path": "P13.global.nll",
+          "metric": "abs_delta",
+          "value": 0.2400902509689331,
+          "bar": 1e-05,
+          "ratio": 24009.025096893307,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "nll_reference": 1.9703837633132935,
+          "nll_aminx": 1.7302935123443604
+        },
+        {
+          "path": "P13.global.argmax",
+          "metric": "n_mismatch",
+          "value": 15.0,
+          "bar": 0.0,
+          "ratio": 1.7976931348623157e+308,
+          "status": "not_advanced",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "n_valid": 68
+        },
+        {
+          "path": "P13.live_label_invariant",
+          "metric": "max_abs_delta_across_labels",
+          "value": 0.0,
+          "bar": 0.5,
+          "ratio": 0.0,
+          "status": "validated",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "raw_delta": 3.2819647789001465,
+          "label_a": 2,
+          "label_b": 0
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P14": {
+      "advances": false,
+      "reasons": [
+        "exact rows not all validated (statuses=['not_implemented'])"
+      ],
+      "exact_rows": [
+        {
+          "path": "P14.packer_mixture",
+          "metric": "not_implemented",
+          "value": null,
+          "bar": null,
+          "ratio": null,
+          "status": "not_implemented",
+          "weight_source": "eqx",
+          "fixture": "1BC8",
+          "reason": "P14 (packer, shipped weights, real structures) needs a real-structure -> PackerBundle adapter. Searched (per orchestrator directive #5) for an existing one before declaring this: `grep -rn PackerBundle src/aminx` finds only the class def (types/bundles.py:522), an `in_axes` SPEC (not real data, host/plan.py:798), and synthetic-feature unit/parity tests (tests/host/test_packer_integration.py, tests/parity/test_packer_parity.py) -- no constructor from a parsed structure exists anywhere in src/aminx or tests/. The reference's OWN real-structure path (`run.py:524 pack_side_chains` -> `sc_utils.py:14-18,112-219`) depends on `openfold.data.data_transforms.atom37_to_torsion_angles`/`make_atom14_masks` plus OpenFold's `restype_atom14_*` tables to build atom14 from atom37 via rigid-group frame reconstruction; `openfold` is not installed and is not an aminx dependency (verified: `import openfold` fails). proxide DOES ship its own `restype_atom37_to_atom14` / `restype_atom14_mask` / `restype_atom14_rigid_group_positions` tables (`proxide.chem.residues`), so a simpler gather-based atom37->atom14 reindex is possible WITHOUT openfold -- but nothing in this repo has verified that proxide's atom14 SLOT ORDER actually matches the convention `ligandmpnn_sc_v_32_002_16`'s weights (shipped or pt_convert) were built against; `JAXPacker`'s own `atom37_order` flag (`test_packer_parity.py`) documents that more than one convention is live in this codebase. Building the bundle (backbone_coords via that unverified reindex, X_m from proxide's mask table, plus a separate real-ligand-atom-type mapping for ligand_coords/mask/types, the same class of risk flagged for P11's `Y_t`) without first confirming that order match would be exactly the 'silently wrong atom-order permutation feeding a numeric tolerance gate' orchestrator override #6 forbids. What would need to exist first: a small, INDEPENDENTLY reviewed unit test asserting proxide's atom14 order for a few known residue types (e.g. backbone N/CA/C/O at slots 0-3, a residue with a distinctive side chain) against the reference's own OpenFold-derived expectation -- only after that passes is writing the adapter itself low-risk. Deferred to T7b or a follow-up with that verification as its own reviewed step. The packer-weight-perturbation control is correspondingly not implemented (nothing to perturb without a working row)."
+        },
+        {
+          "path": "P14.packer_mixture",
+          "metric": "not_implemented",
+          "value": null,
+          "bar": null,
+          "ratio": null,
+          "status": "not_implemented",
+          "weight_source": "eqx",
+          "fixture": "3HTN",
+          "reason": "P14 (packer, shipped weights, real structures) needs a real-structure -> PackerBundle adapter. Searched (per orchestrator directive #5) for an existing one before declaring this: `grep -rn PackerBundle src/aminx` finds only the class def (types/bundles.py:522), an `in_axes` SPEC (not real data, host/plan.py:798), and synthetic-feature unit/parity tests (tests/host/test_packer_integration.py, tests/parity/test_packer_parity.py) -- no constructor from a parsed structure exists anywhere in src/aminx or tests/. The reference's OWN real-structure path (`run.py:524 pack_side_chains` -> `sc_utils.py:14-18,112-219`) depends on `openfold.data.data_transforms.atom37_to_torsion_angles`/`make_atom14_masks` plus OpenFold's `restype_atom14_*` tables to build atom14 from atom37 via rigid-group frame reconstruction; `openfold` is not installed and is not an aminx dependency (verified: `import openfold` fails). proxide DOES ship its own `restype_atom37_to_atom14` / `restype_atom14_mask` / `restype_atom14_rigid_group_positions` tables (`proxide.chem.residues`), so a simpler gather-based atom37->atom14 reindex is possible WITHOUT openfold -- but nothing in this repo has verified that proxide's atom14 SLOT ORDER actually matches the convention `ligandmpnn_sc_v_32_002_16`'s weights (shipped or pt_convert) were built against; `JAXPacker`'s own `atom37_order` flag (`test_packer_parity.py`) documents that more than one convention is live in this codebase. Building the bundle (backbone_coords via that unverified reindex, X_m from proxide's mask table, plus a separate real-ligand-atom-type mapping for ligand_coords/mask/types, the same class of risk flagged for P11's `Y_t`) without first confirming that order match would be exactly the 'silently wrong atom-order permutation feeding a numeric tolerance gate' orchestrator override #6 forbids. What would need to exist first: a small, INDEPENDENTLY reviewed unit test asserting proxide's atom14 order for a few known residue types (e.g. backbone N/CA/C/O at slots 0-3, a residue with a distinctive side chain) against the reference's own OpenFold-derived expectation -- only after that passes is writing the adapter itself low-risk. Deferred to T7b or a follow-up with that verification as its own reviewed step. The packer-weight-perturbation control is correspondingly not implemented (nothing to perturb without a working row)."
+        },
+        {
+          "path": "P14.packer_mixture",
+          "metric": "not_implemented",
+          "value": null,
+          "bar": null,
+          "ratio": null,
+          "status": "not_implemented",
+          "weight_source": "eqx",
+          "fixture": "4YOW",
+          "reason": "P14 (packer, shipped weights, real structures) needs a real-structure -> PackerBundle adapter. Searched (per orchestrator directive #5) for an existing one before declaring this: `grep -rn PackerBundle src/aminx` finds only the class def (types/bundles.py:522), an `in_axes` SPEC (not real data, host/plan.py:798), and synthetic-feature unit/parity tests (tests/host/test_packer_integration.py, tests/parity/test_packer_parity.py) -- no constructor from a parsed structure exists anywhere in src/aminx or tests/. The reference's OWN real-structure path (`run.py:524 pack_side_chains` -> `sc_utils.py:14-18,112-219`) depends on `openfold.data.data_transforms.atom37_to_torsion_angles`/`make_atom14_masks` plus OpenFold's `restype_atom14_*` tables to build atom14 from atom37 via rigid-group frame reconstruction; `openfold` is not installed and is not an aminx dependency (verified: `import openfold` fails). proxide DOES ship its own `restype_atom37_to_atom14` / `restype_atom14_mask` / `restype_atom14_rigid_group_positions` tables (`proxide.chem.residues`), so a simpler gather-based atom37->atom14 reindex is possible WITHOUT openfold -- but nothing in this repo has verified that proxide's atom14 SLOT ORDER actually matches the convention `ligandmpnn_sc_v_32_002_16`'s weights (shipped or pt_convert) were built against; `JAXPacker`'s own `atom37_order` flag (`test_packer_parity.py`) documents that more than one convention is live in this codebase. Building the bundle (backbone_coords via that unverified reindex, X_m from proxide's mask table, plus a separate real-ligand-atom-type mapping for ligand_coords/mask/types, the same class of risk flagged for P11's `Y_t`) without first confirming that order match would be exactly the 'silently wrong atom-order permutation feeding a numeric tolerance gate' orchestrator override #6 forbids. What would need to exist first: a small, INDEPENDENTLY reviewed unit test asserting proxide's atom14 order for a few known residue types (e.g. backbone N/CA/C/O at slots 0-3, a residue with a distinctive side chain) against the reference's own OpenFold-derived expectation -- only after that passes is writing the adapter itself low-risk. Deferred to T7b or a follow-up with that verification as its own reviewed step. The packer-weight-perturbation control is correspondingly not implemented (nothing to perturb without a working row)."
+        },
+        {
+          "path": "P14.packer_mixture",
+          "metric": "not_implemented",
+          "value": null,
+          "bar": null,
+          "ratio": null,
+          "status": "not_implemented",
+          "weight_source": "eqx",
+          "fixture": "6MRR",
+          "reason": "P14 (packer, shipped weights, real structures) needs a real-structure -> PackerBundle adapter. Searched (per orchestrator directive #5) for an existing one before declaring this: `grep -rn PackerBundle src/aminx` finds only the class def (types/bundles.py:522), an `in_axes` SPEC (not real data, host/plan.py:798), and synthetic-feature unit/parity tests (tests/host/test_packer_integration.py, tests/parity/test_packer_parity.py) -- no constructor from a parsed structure exists anywhere in src/aminx or tests/. The reference's OWN real-structure path (`run.py:524 pack_side_chains` -> `sc_utils.py:14-18,112-219`) depends on `openfold.data.data_transforms.atom37_to_torsion_angles`/`make_atom14_masks` plus OpenFold's `restype_atom14_*` tables to build atom14 from atom37 via rigid-group frame reconstruction; `openfold` is not installed and is not an aminx dependency (verified: `import openfold` fails). proxide DOES ship its own `restype_atom37_to_atom14` / `restype_atom14_mask` / `restype_atom14_rigid_group_positions` tables (`proxide.chem.residues`), so a simpler gather-based atom37->atom14 reindex is possible WITHOUT openfold -- but nothing in this repo has verified that proxide's atom14 SLOT ORDER actually matches the convention `ligandmpnn_sc_v_32_002_16`'s weights (shipped or pt_convert) were built against; `JAXPacker`'s own `atom37_order` flag (`test_packer_parity.py`) documents that more than one convention is live in this codebase. Building the bundle (backbone_coords via that unverified reindex, X_m from proxide's mask table, plus a separate real-ligand-atom-type mapping for ligand_coords/mask/types, the same class of risk flagged for P11's `Y_t`) without first confirming that order match would be exactly the 'silently wrong atom-order permutation feeding a numeric tolerance gate' orchestrator override #6 forbids. What would need to exist first: a small, INDEPENDENTLY reviewed unit test asserting proxide's atom14 order for a few known residue types (e.g. backbone N/CA/C/O at slots 0-3, a residue with a distinctive side chain) against the reference's own OpenFold-derived expectation -- only after that passes is writing the adapter itself low-risk. Deferred to T7b or a follow-up with that verification as its own reviewed step. The packer-weight-perturbation control is correspondingly not implemented (nothing to perturb without a working row)."
+        }
+      ],
+      "sampling_lanes": []
+    },
+    "P19": {
+      "advances": false,
+      "reasons": [
+        "no layer-(a) rows",
+        "confirmed defect(s) name this path: ['ar_mask_order_rank_convention_mismatch']"
+      ],
+      "exact_rows": [],
+      "sampling_lanes": []
+    },
+    "P26": {
+      "advances": false,
+      "reasons": [
+        "no layer-(a) rows"
+      ],
+      "exact_rows": [],
+      "sampling_lanes": []
+    }
+  },
+  "exact_result_sha256": "d58c9c465b94bead6d6d965019ade41f06306ba77f5a3a8958d9fd8f28005509",
+  "sampling_status": "missing",
+  "sampling_result_sha256": null,
+  "git_hash": "e4b86a0c0da96313449c2c72fe212eca994b6eea"
+}

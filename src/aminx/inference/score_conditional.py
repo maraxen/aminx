@@ -161,6 +161,17 @@ def score_averaged(
   )
 
 
+def split_keys(prng_key: PRNGKeyArray) -> tuple[PRNGKeyArray, PRNGKeyArray]:
+  """Split a scoring key into ``(k_enc, k_dec)``.
+
+  The single definition of how :func:`kernel` divides its key between the encode and decode
+  halves. Callers that run the two halves separately (``aminx.scoring.score.make_score_split_fns``)
+  derive their decode key through this function so they cannot drift from :func:`kernel`.
+  """
+  k_enc, k_dec = jax.random.split(prng_key)
+  return k_enc, k_dec
+
+
 def kernel(
   model: ModelProtocol,
   prng_key: PRNGKeyArray,
@@ -173,7 +184,7 @@ def kernel(
   Side-chain context (atom_37/atom_37_mask) is packaged onto the GeometryBundle by
   build_inference_bundle; it is not accepted as loose kernel kwargs (see #105).
   """
-  k_enc, k_dec = jax.random.split(prng_key)
+  k_enc, k_dec = split_keys(prng_key)
 
   # Encode and decode, byte-identical to original implementation
   enc = encode(model, k_enc, bundle, config)

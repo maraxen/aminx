@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S14",
+    "claims": {
+      "A50": "The user's praxia agent orchestrator already owns the names praxia (CLI binary, GitHub repository maraxen/praxia, bathos project slug) and the .praxia directory convention used across the user's projects, and a separate project named praxis exists; the bathos catalog has no project slug aminx-hub."
+    },
+    "question": "Which of the hub name candidates would collide with names already in use by the user's praxia orchestrator (binary, repo, bathos slug, directory convention) or a near-name (praxis), and is the working slug aminx-hub unused in the bathos catalog?",
+    "command": "python3.13 -B .praxia/spikes/261001_aminx-identity-and-hub-naming/S14/probe.py",
+    "expect_if_true": "bin names include praxia; origin url is github.com/maraxen/praxia.git; the slug list includes praxia and praxis and aminx; aminx-hub is absent; at least five projects have a .praxia directory; praxis is present as a sibling project.",
+    "expect_if_false": "The praxia binary is not named praxia or the origin is not maraxen/praxia (the collision is narrower than stated), or aminx-hub already exists as a bathos slug (the working slug is not free), or praxis is absent (the near-name remark is dropped)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T18:54:16.505692+00:00",
+    "git_head": "cb77d6b0d01689c8c55dff52e80772285a663741",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.038095712661743164,
+    "output_sha256": "e271d4a7d365c2fd59c7b44d7c85e66ff1943290706e9ab89584d668491cd4a2",
+    "output_full_sha256": "e271d4a7d365c2fd59c7b44d7c85e66ff1943290706e9ab89584d668491cd4a2",
+    "output_bytes": 410,
+    "output_truncated": false,
+    "prereg_sha256": "a583ac4766250492d2a74be01c75bc40a88fdcb1f16fa7aa0527d15fc597ce37",
+    "probe_files": {
+      "probe.py": "81d9c025eeac71218751a9011409abcc4cb69131ad998fe7ae80569d73679535"
+    }
+  }
+}

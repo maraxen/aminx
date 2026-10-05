@@ -1,0 +1,57 @@
+[metadata]
+title = "Phase 0: jax2onnx -> ONNX Runtime (CPU EP) spike, incl. the multi-key sort tie test"
+created = "260924"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "jax2onnx converts the real P05 conditional-logits kernel (shipped proteinmpnn_v_48_020, L=128, 1BC8.pdb parsed by aminx) to an ONNX graph whose ONNX Runtime CPU-EP execution matches JAX within bar, with EXACT neighbor indices and a detected perturbed-weight control, AND ONNX Runtime's execution of the model's own multi-key-sort top_k preserves JAX's exact tie order on a genuinely tie-rich cubic-lattice input."
+stage_name = "exploration"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["not_converted", "fail", "tie_unstable"]
+
+# Declaration ORDER is load-bearing: bathos picks the FIRST matching branch
+# (sidecar.py:679-695), and every non-residual label here is pass-direction,
+# so `fail` MUST precede `tie_unstable` -- otherwise a conversion with a large
+# max-abs or an undetected control would be mislabeled `tie_unstable` and T3
+# would proceed on a bad artifact (R2-C9).
+
+[outcomes.not_converted]
+condition = "converted = false"
+decision = "P05 does not convert via jax2onnx as currently structured; record the verbatim error and blocking primitive. Not a bar failure -- ORT-CPU parity/control/tie checks cannot run without a converted graph."
+reasoning = "A conversion failure blocks every downstream ORT-CPU measurement (max-abs, neighbor-index exactness, control detection) by construction; it must be distinguished from a converted-but-inaccurate graph (fail)."
+is_residual = true
+
+[outcomes.fail]
+condition = "NOT (ort_max_abs <= 1e-4 AND nbr_exact = true AND control_detected = true)"
+decision = "P05 converted, but the ORT-CPU execution does not match JAX within bar, or neighbor indices are not exact, or the perturbed-weight control was not detected. The converted artifact is not trustworthy evidence and must not be used by downstream tasks."
+reasoning = "Any of a large max-abs, a non-exact neighbor selection, or an undetected control indicates the ONNX graph or its ORT-CPU execution silently diverges from the real model -- exactly the failure mode a control exists to catch."
+is_residual = true
+
+[outcomes.tie_unstable]
+condition = "converted = true AND ort_max_abs <= 1e-4 AND nbr_exact = true AND control_detected = true AND tie_indices_identical = false"
+decision = "P05 converts and passes its own bars, but ORT-CPU's execution of the model's multi-key-sort top_k disagrees with JAX's tie order on the cubic-lattice fixture. The ORT route cannot be trusted for tie-order-sensitive downstream comparisons (T3+) even though P05 itself parities."
+reasoning = "The model's top_k folds the index into the sort key specifically to make tie order a strict total order independent of stability -- but that guarantee is about JAX's own `lax.sort`; whether ONNX Runtime's compiled execution of the same multi-key sort preserves it is exactly what this fixture tests, and a divergence here is a distinct instability from ordinary numerical mismatch."
+is_residual = false
+
+[outcomes.pass]
+condition = "converted = true AND ort_max_abs <= 1e-4 AND nbr_exact = true AND control_detected = true AND tie_indices_identical = true"
+decision = "P05 converts, ORT-CPU execution matches JAX within bar with exact neighbor indices, the perturbed-weight control is detected, and the tie-lattice top_k indices are identical between ORT-CPU and JAX. The ORT route clears Phase 0's de-risking bar for P05 and its k-NN tie-break rule."
+reasoning = "All four independent checks (accuracy, neighbor exactness, control sensitivity, tie stability) passing together is the minimum evidence needed to trust the ORT route for Phase 1+ conversions; ORT Python CPU EP is still not ORT Web and this is not browser evidence (see T3)."
+is_residual = false
+
+[result_schema]
+versions = "dict"
+bucket = "int"
+k_neighbors = "int"
+converted = "bool"
+ort_max_abs = "float"
+nbr_exact = "bool"
+control_max_abs = "float"
+control_detected = "bool"
+tie_converted = "bool"
+tie_indices_identical = "bool"
+p07_conversion = "dict"
+artifacts = "dict"

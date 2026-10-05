@@ -1,0 +1,16 @@
+{
+  "all_graphs_exported": true,
+  "buckets_exported": 2,
+  "buckets_requested": 2,
+  "decoder_calls_per_design": 256,
+  "failure": "",
+  "git_hash": "b9fa4b745ee3072001d79c3b16f2e83a616de11c",
+  "graphs_per_bucket": 4,
+  "jax_enable_x64": false,
+  "manifest_sha256": "69ea6fd0a8d0ed431cbf594255b8daea6d26b79ba459be92e7cc4f07b73653d3",
+  "manifest_written": true,
+  "max_groups_per_wave": 1,
+  "n_waves": 256,
+  "outcome": "pass",
+  "total_bytes": 14005426
+}

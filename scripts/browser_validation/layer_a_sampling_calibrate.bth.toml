@@ -1,0 +1,74 @@
+[metadata]
+title = "Layer (a) sampling tier: calibration on fixture set A (sigma/n_required, margins, beta, fusion eps)"
+created = "260925"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On fixture set A (f32, precision highest, noise 0, reference-formula order fed to both sides, SHIPPED .eqx.zst weights; aminx draws on one titanix GPU and the torch reference on CPU per deviation D10), the layer-(a) sampling engine (layer_a_sampling.py) runs to completion with a clean tree, estimates sigma_hat and n_required from a pilot, computes a per-lane margin m_l (aminx@T vs aminx@1.05*T), finds a beta (alanine bias) that sizes the positive control's mean excess-JS into [2x, 10x] the margin, sizes the P09-s fusion control's eps into [2x, 10x] the 1e-4 bar, and measures a positive differential sensitivity (main_js_vs_ref) on the pre-registered reduced subset."
+stage_name = "calibration"
+novel = true
+# No [reproduction]: novel = true replaces it (Bathos staging: "The calibration twin
+# ... has stage_name = 'calibration', novel = true instead of [reproduction]").
+# No [differential] and no experiment.claim_discriminates: calibration sidecars never
+# prove sensitivity themselves -- lint_sidecars.py's calibration-no-differential check
+# fails the build otherwise.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_unsized"]
+
+# Calibration-twin outcomes (R2-C10): declared in this order -- incomplete, then
+# ctrl_unsized, then pass -- so a run that is both incomplete AND under-sized controls
+# is classified by the FIRST matching branch (incomplete), matching the spec's own
+# ordering exactly. n_required/margins/beta are RESULT FIELDS here, never outcomes:
+# a calibration run that legitimately computes them still declares `pass`.
+
+[outcomes.incomplete]
+condition = "n_skipped > 0 OR NOT git_clean"
+decision = "A reference prerequisite was missing or the run tree was dirty; this calibration proves nothing and must not be committed."
+reasoning = "A skipped reference call or a dirty tree means the pilot/margin/beta/eps measurements this run would commit did not run under the conditions the claim requires."
+is_residual = true
+
+[outcomes.budget_exceeded]
+condition = "budget_wall_hours > 16 OR projected_peak_rss_gib > 48"
+decision = "The projected validate cost exceeds the titanix budget (16 h wall or 48 GiB peak RSS); no params are written and the sampling tier is not validated at the pre-registered scale."
+reasoning = "Spec 'Titanix budget (ODQ-13)': the calibrate run fails above 16 h or 48 GiB and the fix is a recorded protocol reduction, never a raised cap. Added before any titanix sampling run (D10), after a GPU feasibility probe measured ~2.2 s per aminx draw at L=693; the rule itself is the spec's."
+is_residual = true
+
+[outcomes.ctrl_unsized]
+condition = "controls_sized < controls_total"
+decision = "Not every in-run control (beta, fusion eps) could be sized; the committed magnitude(s) would rest on an insensitive instrument."
+reasoning = "If a control cannot be sized during calibration itself, the same insensitivity would silently pass validation later; the run must not be treated as a clean calibration."
+is_residual = true
+
+[outcomes.pass]
+condition = "params_written AND controls_sized = controls_total AND measured_half_effect > 0"
+decision = "The sampling section of preregistered_params.json was written with every control sized and a positive differential sensitivity; eligible for the orchestrator's params commit."
+reasoning = "A written params section with every control sized and a positive measured_half_effect is the minimum evidence that n_required/margins/beta/eps are usable, sensitive inputs for validation -- mirrors layer_a_exact_calibrate.bth.toml's own Calibration-twin outcomes exactly."
+is_residual = false
+
+[result_schema]
+sigma_hat = "float"
+n_required = "int"
+beta = "float"
+p09_qualifying_groups = "int"
+p09_tied_positions = "int"
+p09_fusion_ctrl_eps = "float"
+min_effect = "float"
+measured_half_effect = "float"
+n_not_advanced = "int"
+n_skipped = "int"
+controls_total = "int"
+controls_sized = "int"
+params_written = "bool"
+params_section_sha256 = "str"
+fixture_set = "str"
+git_hash = "str"
+git_clean = "bool"
+budget_wall_hours = "float"
+projected_peak_rss_gib = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+torch_version = { type = "string", required = true }

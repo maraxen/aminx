@@ -1,0 +1,27 @@
+{
+  "prereg": {
+    "id": "S2",
+    "claims": {
+      "A4": "A sys.meta_path alias finder whose loader returns the real module object gives identical module and class objects under aminx.* and molxmpnn.* names, while aliasing only the package in sys.modules yields duplicate module objects."
+    },
+    "question": "Does the transitional aminx shim need an alias finder (not just a sys.modules package alias) to keep module/class identity, isinstance and pickle behaviour intact, and does the finder also let a removed submodule (aminx.ebm) raise an informative error?",
+    "command": "python3.13 .praxia/spikes/261001_molxmpnn-rename/S2/probe.py",
+    "expect_if_true": "A_module_identity, A_class_identity, A_isinstance_cross, A_real_spec_name_intact, A_pickle_records_real_path, A_pickle_loads, A_gone_module_raises are all true and A_deprecation_warning_count is 1, while B_module_identity, B_class_identity and B_isinstance_cross are all false (duplicate objects), which is the negative control proving the naive approach is not enough.",
+    "expect_if_false": "Any A_* identity flag is false (the finder approach is unsound and the shim must be a full re-export copy), or any B_* flag is true (the naive alias is sufficient and the finder is unnecessary complexity)."
+  },
+  "result": {
+    "ran_at": "2026-10-01T16:30:43.062221+00:00",
+    "git_head": "cb8ea2c6ce59d9382251cdbe27b052900c89a2f4",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_s": 0.09619569778442383,
+    "output_sha256": "32dd1f9d18bf518682d959c8b38ffdf9fa636c609d5c1d5a9d4ee34140531e43",
+    "output_full_sha256": "32dd1f9d18bf518682d959c8b38ffdf9fa636c609d5c1d5a9d4ee34140531e43",
+    "output_bytes": 427,
+    "output_truncated": false,
+    "prereg_sha256": "6aa6438b51eb2eab0ec7da53d945e7b8bc5d3dc1720dc629e81856e0182992de",
+    "probe_files": {
+      "probe.py": "50583a328fc7d7337fd1c2a43cb856c99dc330a7f2d3284a50a808569d383199"
+    }
+  }
+}

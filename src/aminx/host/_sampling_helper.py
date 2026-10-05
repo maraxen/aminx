@@ -244,6 +244,18 @@ def _load_ligand_context_file(
     )
 
 
+def ligand_conditioning_mode(ligand_conditioning: bool | None) -> str:
+  """Name the tri-state ``SamplingSpecification.ligand_conditioning`` for provenance.
+
+  ``"auto"`` (None: use whatever is present), ``"required"`` (True), ``"ablated"`` (False).
+  The legacy ``ligand_conditioning`` store attribute is ``int(bool(...))`` and so cannot tell
+  ``auto`` from ``ablated``; this string can.
+  """
+  if ligand_conditioning is None:
+    return "auto"
+  return "required" if ligand_conditioning else "ablated"
+
+
 def _prepare_ligand_context(
   spec: SamplingSpecification,
   batched_ensemble: Protein,
@@ -251,7 +263,17 @@ def _prepare_ligand_context(
   seq_len: int,
   canonical_structure_ids: Sequence[str] | None = None,
   batch_structure_ids: Sequence[str] | None = None,
+  *,
+  ablate_ligand: bool | None = None,
 ) -> dict[str, jax.Array | None]:
+  """Build the ligand/side-chain tensors a LigandMPNN bundle consumes.
+
+  ``ablate_ligand`` overrides the spec's tri-state ``ligand_conditioning``: ``None`` (default)
+  derives it (``ligand_conditioning`` is False -> ablate). ``runner.score`` passes ``False``
+  because ``ScoringSpecification.ligand_conditioning`` is a plain bool with "False == not
+  required" semantics (a ``ligand_context_path`` alone requests the ligand there), and score
+  already never consults the batch's tensors unless the ligand was requested.
+  """
   if spec.model_family != "ligandmpnn":
     return {
       "Y": None,
@@ -262,11 +284,20 @@ def _prepare_ligand_context(
       "chain_mask": None,
     }
 
-  Y = getattr(batched_ensemble, "Y", None)
-  Y_t = getattr(batched_ensemble, "Y_t", None)
-  Y_m = getattr(batched_ensemble, "Y_m", None)
+  # ligand_conditioning is a genuine tri-state (#114): None = use whatever is present (legacy),
+  # True = require real tensors, False = ABLATE. The False arm used to be indistinguishable
+  # from "unset" -- real tensors on the batch or from ligand_context_path were injected
+  # regardless, so a caller (or a campaign's ligand_on=False row) asking for a no-ligand arm
+  # silently got full ligand conditioning. Under ablation the declared ligand_context_path is
+  # deliberately NOT read: a campaign hands every row the same base_spec, including its
+  # ligand_context_path, and the False row must still mean "no ligand".
+  if ablate_ligand is None:
+    ablate_ligand = spec.ligand_conditioning is not None and not spec.ligand_conditioning
+  Y = None if ablate_ligand else getattr(batched_ensemble, "Y", None)
+  Y_t = None if ablate_ligand else getattr(batched_ensemble, "Y_t", None)
+  Y_m = None if ablate_ligand else getattr(batched_ensemble, "Y_m", None)
 
-  if spec.ligand_context_path is not None:
+  if spec.ligand_context_path is not None and not ablate_ligand:
     file_Y, file_Y_t, file_Y_m = _load_ligand_context_file(
       spec.ligand_context_path,
       canonical_structure_ids=canonical_structure_ids,

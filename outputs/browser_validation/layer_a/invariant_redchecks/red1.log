@@ -1,0 +1,78 @@
+[31mF[0m
+=================================== FAILURES ===================================
+[31m[1m________________________ test_invariant_1_ar_causality _________________________[0m
+
+    [0m[94mdef[39;49;00m[90m [39;49;00m[92mtest_invariant_1_ar_causality[39;49;00m() -> [94mNone[39;49;00m:[90m[39;49;00m
+    [90m  [39;49;00m[33m"""log p(i) is unchanged by mutating a residue decoded AFTER i and changed by one BEFORE."""[39;49;00m[90m[39;49;00m
+      batch = _batch(SMALL_FIXTURE)[90m[39;49;00m
+      order = batch.decoding_order[90m[39;49;00m
+      rank = np.empty(batch.length, dtype=np.int64)[90m[39;49;00m
+      rank[order] = np.arange(batch.length)[90m[39;49;00m
+      i = [96mint[39;49;00m(order[[96mlen[39;49;00m(order) // [94m2[39;49;00m])[90m[39;49;00m
+      [90m# Both mutated residues are k-NN neighbours of i, so either could reach i through an[39;49;00m[90m[39;49;00m
+      [90m# edge; only the decoding order decides whether it may.[39;49;00m[90m[39;49;00m
+      _jax_model, pt_model, torch, _mu = _full_model()[90m[39;49;00m
+      [94mwith[39;49;00m torch.no_grad():[90m[39;49;00m
+        _e, e_idx = pt_model.features(_lae()._reference_feature_dict(torch, batch))  [90m# noqa: SLF001[39;49;00m[90m[39;49;00m
+      neighbours = [[96mint[39;49;00m(j) [94mfor[39;49;00m j [95min[39;49;00m e_idx.numpy()[[94m0[39;49;00m][i] [94mif[39;49;00m [96mint[39;49;00m(j) != i][90m[39;49;00m
+      j_before = [96mnext[39;49;00m(j [94mfor[39;49;00m j [95min[39;49;00m neighbours [94mif[39;49;00m rank[j] < rank[i])[90m[39;49;00m
+      j_after = [96mnext[39;49;00m(j [94mfor[39;49;00m j [95min[39;49;00m neighbours [94mif[39;49;00m rank[j] > rank[i])[90m[39;49;00m
+    [90m[39;49;00m
+      [94mfor[39;49;00m side, score [95min[39;49;00m ([90m[39;49;00m
+        ([33m"[39;49;00m[33mreference[39;49;00m[33m"[39;49;00m, [94mlambda[39;49;00m b: _ref_score(b, use_sequence=[94mTrue[39;49;00m)),[90m[39;49;00m
+        ([33m"[39;49;00m[33maminx[39;49;00m[33m"[39;49;00m, _aminx_conditional),[90m[39;49;00m
+      ):[90m[39;49;00m
+        base = score(batch)[i][90m[39;49;00m
+        after = score(_with_token(batch, j_after, _other_token(batch.seq_ref[j_after])))[i][90m[39;49;00m
+        before = score(_with_token(batch, j_before, _other_token(batch.seq_ref[j_before])))[i][90m[39;49;00m
+        d_after = [96mfloat[39;49;00m(np.abs(after - base).max())[90m[39;49;00m
+        d_before = [96mfloat[39;49;00m(np.abs(before - base).max())[90m[39;49;00m
+>       [94massert[39;49;00m d_after < CAUSAL_TOL, [33mf[39;49;00m[33m"[39;49;00m[33m{[39;49;00mside[33m}[39;49;00m[33m: future residue [39;49;00m[33m{[39;49;00mj_after[33m}[39;49;00m[33m leaked into [39;49;00m[33m{[39;49;00mi[33m}[39;49;00m[33m ([39;49;00m[33m{[39;49;00md_after[33m}[39;49;00m[33m)[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+[1m[31mE       AssertionError: aminx: future residue 16 leaked into 15 (0.46550989151000977)[0m
+[1m[31mE       assert 0.46550989151000977 < 1e-05[0m
+
+[1m[31mtests/parity/test_mpnn_reference_invariants.py[0m:140: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Converting model from state dict with 118 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+------------------------------ Captured log call -------------------------------
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CG in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 68 (chain A)
+[32mINFO    [0m .prody:logger.py:123 ProDy is configured: verbosity='none'
+[33mWARNING [0m .prody:logger.py:141 WARNING prody cannot write configuration file to '/home/marielle', user does not have write access.
+[35mDEBUG   [0m .prody:logger.py:135 1227 atoms and 1 coordinate set(s) were parsed in 0.00s.
+[36m[1m=========================== short test summary info ============================[0m
+[31mFAILED[0m tests/parity/test_mpnn_reference_invariants.py::[1mtest_invariant_1_ar_causality[0m - AssertionError: aminx: future residue 16 leaked into 15 (0.46550989151000977)
+[31m!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!![0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 16.45s[0m[0m

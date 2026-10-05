@@ -1,0 +1,73 @@
+[metadata]
+title = "G0: jax2onnx converts the P07 encoder and per-step decoder as standalone loop-free graphs"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The P07 encoder phase (export/wrappers.py:425-455) and the per-step decoder body (inference/decode/_kernel.py:16-110), lifted out of the enclosing lax.scan and lax.cond, each convert to a self-contained ONNX graph via jax2onnx, load in onnxruntime CPU, run on a synthetic L=128 alpha-helical backbone, produce finite outputs, and agree with the same JAX functions to within 1e-3 max-abs on the encoder's node and edge features and on the decoder's logits, with the encoder's neighbour indices exactly equal. This is a FEASIBILITY gate for the split export design (.praxia/docs/specs/260929_p07-split-export.md), not a parity gate: the 1e-3 bound is deliberately loose because the whole-graph knobs gate already measures ORT-CPU vs JAX at 2e-4 on log-probs over strictly MORE ops, so a discrepancy near 1e-3 here indicates a conversion defect rather than float noise. The tight parity bound is set by G1 in its own sidecar. A synthetic backbone is sufficient because this gate tests graph conversion, not scientific validity. AMENDED 2026-09-29, AFTER run b283c2d6-9eeb-4efb-823a-9999a7c4ae50 graded `incomplete` and BEFORE any run used this revision. That run is disclosed, not discarded: it converted Graph E (3970527 bytes) but never evaluated a single comparison, so it produced NO number against any threshold here and nothing in this sidecar was chosen with a measurement in view. Two harness defects caused it, both fixed, NEITHER of which relaxes a threshold: (1) jax2onnx monkey-patches jnp.stack at import with a primitive having no CPU MLIR lowering, so the script's own JAX reference arm died once conversion had run first -- the script now evaluates all JAX outputs before importing jax2onnx and asserts jax2onnx is absent from sys.modules at that point; (2) `git_clean` was computed from a bare `git status --porcelain`, which in this worktree can never be empty because it permanently carries harness dirt (.praxia/*, .claude/*, .bth/refs/ written by bth run itself) that must never be committed -- the same condition titanix_launch.sh excludes by design. `git_clean` is now scoped to src/, scripts/, pyproject.toml and uv.lock, INCLUDING untracked files there, so an uncommitted source change still forces `incomplete`; the raw dirty listing is recorded in `git_dirty_paths` either way. The agreement bound (1e-3), the finiteness checks, the neighbour-exactness check, both negative controls and every outcome condition are UNCHANGED. AMENDED AGAIN 2026-09-29, after run f684535d graded `pass` under the revision above: `incomplete` now also fires on `jax_enable_x64`. This is a TIGHTENING, never a relaxation, and it is disclosed because the earlier `pass` was evaluated without it. x64 is a process-wide JAX flag and scripts/data_processing/{process_parallel,debug_worker}.py enable it unconditionally at module import without restoring it, so an export run from such a process would silently emit an int64/float64 graph; ONNX already mandates int64 for TopK's index output and ORT-Web's WebGPU EP does not support int64, so self-inflicted int64 lands on exactly that gap (xtrax .praxia/docs/research/260914_browser-inference-routes-jaxjs-jax2onnx.md S4). The gate is re-run under THIS revision so the recorded pass is evaluated against the final conditions rather than inherited from the weaker ones. No bound, control or comparison changed."
+stage_name = "validation"
+claim_discriminates = ["H_split_exportable", "H_null_conversion_blocked"]
+claim_isolates = ["C_split_instrument"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as p07_knobs_gate.bth.toml).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_blind", "fail"]
+
+# First matching branch wins: incomplete, ctrl_blind, fail, pass.
+
+[outcomes.incomplete]
+condition = "jax_enable_x64 OR NOT e_converted OR NOT d_converted OR NOT e_ran OR NOT d_ran OR NOT git_clean"
+decision = "A graph did not convert, did not load/run, or the tree was dirty. If conversion itself failed, THAT IS THE FINDING: the split is not available by the jax2onnx route and the spec's G0 gate has answered no."
+reasoning = "A conversion or load failure is the outcome this gate exists to detect, and must never be reported as a parity result. A dirty tree means the graphs were not built from the recorded commit. The `failure` field carries the exception text for a conversion refusal."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "A negative control did not fire: an injected non-finite value was not caught, or a known 1.0 offset did not push the comparator over its bound. No feasibility statement is permitted."
+reasoning = "Both checks in this gate are pass-by-default shapes -- `all(isfinite(x))` and `max_abs_diff <= bound` are trivially satisfied by a comparator that silently compares an array to itself. Planting a NaN and a 1.0 offset is what proves the instrument can fail at all (rules/BATHOS.md)."
+is_residual = true
+
+[outcomes.fail]
+condition = "e_max_abs_diff > 0.001 OR d_max_abs_diff > 0.001 OR NOT e_finite OR NOT d_finite OR NOT e_neighbor_exact"
+decision = "Both graphs converted and ran, but an ONNX output disagrees with JAX beyond 1e-3, is non-finite, or the neighbour indices differ. The split route converts but is numerically wrong; do not proceed to G1 until root-caused."
+reasoning = "Conversion succeeding while the numbers move is the failure mode a bare 'did it export' probe would miss, and it is strictly worse than a clean refusal because it would silently corrupt every downstream gate."
+is_residual = true
+
+[outcomes.pass]
+condition = "e_finite AND d_finite AND e_neighbor_exact AND within_bound"
+decision = "Both graphs are exportable, loadable, and numerically faithful on this fixture. G0 is satisfied; the split design may proceed to graph persistence and G1a."
+reasoning = "Conversion plus finite outputs plus sub-1e-3 agreement on both graphs, with a demonstrably sensitive instrument, is the minimum evidence that the encoder/decoder cut is realisable by this route at all."
+is_residual = false
+
+[result_schema]
+bucket = "int"
+agree_bound = "float"
+e_converted = "bool"
+d_converted = "bool"
+e_ran = "bool"
+d_ran = "bool"
+e_finite = "bool"
+d_finite = "bool"
+e_neighbor_exact = "bool"
+e_max_abs_diff = "float"
+d_max_abs_diff = "float"
+e_onnx_bytes = "int"
+d_onnx_bytes = "int"
+within_bound = "bool"
+controls_total = "int"
+controls_detected = "int"
+ctrl_nan_detected = "bool"
+ctrl_perturb_detected = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+git_dirty_paths = "str"
+jax_enable_x64 = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }

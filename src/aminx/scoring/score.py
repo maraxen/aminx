@@ -1,7 +1,8 @@
 """Score a given sequence on a structure using the ProteinMPNN model."""
 
+from collections.abc import Callable
 from functools import partial
-from typing import Literal, cast
+from typing import Literal, NamedTuple, cast
 
 import equinox as eqx
 import jax
@@ -10,6 +11,7 @@ from jaxtyping import PRNGKeyArray
 from aminx.inference import score_conditional
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.logits import make_stage_set
+from aminx.types.encodings import EncoderOutput
 from aminx.types.protocols import ModelProtocol, ScoreFn
 from aminx.utils.autoregression import full_context_ar_mask
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
@@ -210,6 +212,122 @@ def make_score_fn(
 
 
 make_score_sequence = make_score_fn
+
+
+class ScoreSplitFns(NamedTuple):
+  """The encode-once / score-many halves of :func:`make_score_fn`'s core."""
+
+  encode_structure: Callable[..., EncoderOutput]
+  score_candidate: Callable[..., tuple[jax.Array, jax.Array, jax.Array]]
+
+
+def make_score_split_fns(
+  model: ModelProtocol,
+  decoding_order_fn: DecodingOrderFn = _DEFAULT_DECODING_ORDER_FN,
+  inference: bool = True,  # noqa: FBT001, FBT002
+) -> ScoreSplitFns:
+  """Split :func:`make_score_fn` into a per-structure encode and a per-candidate score.
+
+  ``make_score_fn``'s jitted core runs encode -> decode for every (structure, sequence) pair,
+  but the encoding depends on the structure alone. This returns the two halves separately so a
+  caller scoring many candidate sequences on one structure encodes it once:
+
+  - ``encode_structure(coords, mask, residue_index, chain_index, ligand_coords=None,
+    ligand_atom_types=None, ligand_mask=None) -> EncoderOutput``. Takes the ligand tensors
+    because the ligand conditions the ENCODER; ``score_candidate`` never sees them.
+  - ``score_candidate(prng_key, sequence, enc, coords, mask, residue_index, chain_index, *,
+    multi_state_strategy="arithmetic_mean", multi_state_temperature=1.0) -> (nll, logits,
+    decoding_order)`` -- the same three outputs as ``make_score_fn``'s function, with the
+    same key derivation (decoding-order draw, then ``score_conditional.split_keys``).
+
+  ``encode_structure`` has no PRNG key and no ``backbone_noise`` on purpose. Sharing one
+  encoding across candidates is only valid when the encoding does not depend on the
+  candidate's key, i.e. when ``backbone_noise`` is 0 -- which is how ``runner.score`` calls
+  the un-split core (it never forwards a noise level on this path). With nonzero noise the
+  encoder consumes the per-candidate key and every candidate would need its own encoding;
+  use ``make_score_fn`` (or the averaged path) for that.
+
+  Args:
+    model: Protein or Ligand Equinox checkpoint.
+    decoding_order_fn: Decoding order (drawn for key parity with ``make_score_fn``; the
+      full-context scoring mask does not depend on it).
+    inference: Use ``eqx.nn.inference_mode`` when True.
+
+  Returns:
+    A :class:`ScoreSplitFns` of two jitted functions.
+  """
+  if inference and isinstance(model, eqx.Module):
+    model = eqx.nn.inference_mode(model, value=True)
+
+  @jax.jit
+  def encode_structure(
+    structure_coordinates: jax.Array,
+    mask: jax.Array,
+    residue_index: jax.Array,
+    chain_index: jax.Array,
+    ligand_coords: jax.Array | None = None,
+    ligand_atom_types: jax.Array | None = None,
+    ligand_mask: jax.Array | None = None,
+  ) -> EncoderOutput:
+    # Sequence / AR mask are left at their defaults: the encoder reads only geometry, ligand
+    # and backbone_noise (0 here), never the conditioning bundle.
+    bundle, config = build_inference_bundle(
+      coords=structure_coordinates,
+      mask=mask,
+      residue_index=residue_index,
+      chain_index=chain_index,
+      backbone_noise=0.0,
+      ligand_coords=ligand_coords,
+      ligand_atom_types=ligand_atom_types,
+      ligand_mask=ligand_mask,
+      mode="score_conditional",
+      inference=True,
+    )
+    # The key only feeds backbone-noise injection, which is off (see docstring above).
+    k_enc, _ = score_conditional.split_keys(jax.random.PRNGKey(0))
+    return score_conditional.encode(model, k_enc, bundle, config)
+
+  @partial(jax.jit, static_argnames=("multi_state_strategy",))
+  def score_candidate(
+    prng_key: jax.Array,
+    sequence: jax.Array,
+    enc: EncoderOutput,
+    structure_coordinates: jax.Array,
+    mask: jax.Array,
+    residue_index: jax.Array,
+    chain_index: jax.Array,
+    multi_state_strategy: Literal[
+      "arithmetic_mean",
+      "geometric_mean",
+      "product",
+    ] = "arithmetic_mean",
+    multi_state_temperature: float = 1.0,
+  ) -> tuple[jax.Array, jax.Array, jax.Array]:
+    L = sequence.shape[0]
+    # Same key path as score_sequence: the order draw advances the key, then the kernel's split.
+    decoding_order, prng_key = decoding_order_fn(prng_key, L, None, None)
+    bundle, config = build_inference_bundle(
+      coords=structure_coordinates,
+      mask=mask,
+      residue_index=residue_index,
+      chain_index=chain_index,
+      sequence=sequence,
+      backbone_noise=0.0,
+      ar_mask=full_context_ar_mask(L),
+      mode="score_conditional",
+      inference=True,
+    )
+    stage_set = make_stage_set(
+      strategy=multi_state_strategy,
+      strategy_temperature=multi_state_temperature,
+      state_weights=None,
+    )
+    _, k_dec = score_conditional.split_keys(prng_key)
+    logits = score_conditional.score_from_encoding(model, k_dec, enc, bundle, config, stage_set)
+    nll = _nll_from_logits(logits, sequence, mask)
+    return nll, logits, decoding_order
+
+  return ScoreSplitFns(encode_structure, score_candidate)
 
 
 def score(

@@ -1,0 +1,3 @@
+dotted_find_spec_absent_parent -> RAISES ModuleNotFoundError No module named 'molxmpnn_absent_probe_pkg'
+parent_find_spec_absent -> None
+guard_parent_first -> False

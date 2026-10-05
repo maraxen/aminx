@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>aminx ProteinMPNN &middot; runs in your browser</title>
+<link rel="stylesheet" href="./site.css" />
+
+<!--
+  Optional: cross-origin isolation via a service worker.
+
+  Multithreaded wasm needs COOP/COEP response headers (see
+  browser_integration.md's "Hosting requirements"). GitHub Pages cannot set
+  custom response headers, so a deployment there runs single-threaded
+  (numThreads: 1) unless it fronts the page with something that CAN set
+  them -- a Cloudflare Worker, a small COOP/COEP-injecting reverse proxy, or
+  a vendored coi-serviceworker (https://github.com/gzuidhof/coi-serviceworker)
+  registered here before any other script runs. None of that is wired up in
+  this build; the site works either way; it is just faster with isolation.
+  To enable it: vendor coi-serviceworker.min.js next to this file and add,
+  as the FIRST script in <head>:
+    <script src="./coi-serviceworker.min.js"></script>
+-->
+
+<script type="importmap">
+{
+  "imports": {
+    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.30.0/dist/ort.wasm.min.mjs"
+  }
+}
+</script>
+</head>
+<body>
+<header class="app-header">
+  <h1>aminx ProteinMPNN <span class="app-header-tagline">&middot; runs entirely in your browser</span></h1>
+  <p class="app-header-credit">
+    Sequence design model: ProteinMPNN (<a href="https://www.science.org/doi/10.1126/science.add2187" target="_blank" rel="noopener">Dauparas et&nbsp;al., 2022</a>).
+    Structure viewer: <a href="https://github.com/sokrypton/py2Dmol" target="_blank" rel="noopener">py2Dmol</a> (Sergey Ovchinnikov).
+    Inference: <a href="https://onnxruntime.ai/docs/tutorials/web/" target="_blank" rel="noopener">onnxruntime-web</a>, wasm execution provider, no server round-trip.
+  </p>
+</header>
+
+<main class="app-layout">
+  <section class="panel panel-left" aria-label="Design inputs">
+    <fieldset class="field-group">
+      <legend>Structure</legend>
+      <div class="fetch-row">
+        <label for="structure-id" class="sr-only">PDB or AFDB id</label>
+        <input id="structure-id" type="text" placeholder="4-char PDB id (e.g. 1BC8) or a UniProt id" />
+        <button id="fetch-btn" type="button">Fetch</button>
+      </div>
+      <div class="fetch-row">
+        <label for="structure-file">...or upload a .pdb / .cif file</label>
+        <input id="structure-file" type="file" accept=".pdb,.ent,.cif,.mmcif" />
+      </div>
+      <div id="chain-checklist" class="chain-checklist" aria-label="Chains to design"></div>
+    </fieldset>
+
+    <fieldset class="field-group">
+      <legend>Settings</legend>
+      <div class="field-row">
+        <label for="num-designs">Number of designs</label>
+        <input id="num-designs" type="number" min="1" max="64" value="4" />
+      </div>
+      <div class="field-row">
+        <label for="temperature">Temperature</label>
+        <input id="temperature" type="number" min="0.001" max="2" step="0.01" value="0.1" />
+      </div>
+      <div class="field-row">
+        <label for="base-seed">Base seed</label>
+        <input id="base-seed" type="number" min="0" value="42" />
+      </div>
+      <div class="field-row">
+        <label for="omit-aa">Omit residues</label>
+        <input id="omit-aa" type="text" placeholder="e.g. CX" />
+      </div>
+      <div class="field-row">
+        <label for="bias-aa">Global bias</label>
+        <input id="bias-aa" type="text" placeholder="e.g. A:-1,W:0.5" />
+      </div>
+      <div class="field-row">
+        <label for="fixed-positions">Fixed positions</label>
+        <input id="fixed-positions" type="text" placeholder="e.g. A10,A11" />
+      </div>
+      <div class="field-row">
+        <label for="tied-positions">Tied positions (optional)</label>
+        <input id="tied-positions" type="text" placeholder="e.g. A10=A40; A11=A41" />
+      </div>
+      <p class="field-note" id="threads-note">threads: &mdash;</p>
+    </fieldset>
+
+    <button id="run-btn" type="button" class="run-button" disabled>Run</button>
+    <p id="status-line" class="status-line" role="status" aria-live="polite">Load a structure to begin.</p>
+    <div class="progress-bar" aria-hidden="true">
+      <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+    </div>
+  </section>
+
+  <section class="panel panel-right" aria-label="Structure viewer and results">
+    <div id="viewer" class="viewer" aria-label="3D structure viewer"></div>
+
+    <div class="results-header">
+      <h2>Designs</h2>
+      <div class="results-actions">
+        <button id="download-fasta" type="button" disabled>Download FASTA</button>
+        <button id="download-json" type="button" disabled>Download JSON</button>
+      </div>
+    </div>
+    <table id="results-table" class="results-table">
+      <thead>
+        <tr>
+          <th scope="col">#</th>
+          <th scope="col">Seed</th>
+          <th scope="col">Score</th>
+          <th scope="col">Recovery</th>
+          <th scope="col">Sequence</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+  </section>
+</main>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "adapter_info": null,
+  "adapter_obtained": false,
+  "bucket": 128,
+  "chromium_version": "153.0.8010.12",
+  "encoder_outputs_finite": null,
+  "encoder_ran": false,
+  "failure": "",
+  "furthest_stage": "navigator_gpu",
+  "git_clean": true,
+  "git_hash": "6ae703811d98700cadb45e1a6e41804510406c11",
+  "navigator_gpu_present": true,
+  "ort_webgpu_error": "",
+  "ort_webgpu_session_created": false,
+  "outcome": "pass",
+  "probe_ran": true
+}

@@ -1,0 +1,12 @@
+release.yml occurrences of 'pypi.org/pypi': 0
+release.yml occurrences of 'tag_name': 0
+release.yml occurrences of 'github.ref': 0
+release.yml occurrences of 'skip-existing': 0
+release.yml occurrences of 'workflow_dispatch': 0
+release.yml occurrences of 'environment:': 1
+pyproject [project].version line: ['version = "0.2.0a3"']
+pyproject declares dynamic version: False
+pypi aminx/0.2.0a3 json status (published): 200
+pypi aminx/0.2.0a4 json status (not published on 261001): 404
+pypi help phrase 'does not allow for a filename to be reused': found=True | sts Filename has been used but file no longer exists A file with the exact same content exists PyPI does not allow for a filename to be reused, even once a project has been deleted and recreated. A distribution filename on PyPI consists of the combination of project name, version number, and distrib
+pypi help phrase 'previously used': found=True | tration get blocked? Why am I getting a "Filename or contents already exists" or "Filename has been previously used" error? How do I request a new trove classifier? Where can I report a bug or provide feedback about PyPI? I'm having trouble setting up two factor authentication with an authentication

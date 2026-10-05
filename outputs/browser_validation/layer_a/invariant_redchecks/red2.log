@@ -1,0 +1,67 @@
+[31mF[0m
+=================================== FAILURES ===================================
+[31m[1m______________ test_invariant_2_unconditional_sequence_invariant _______________[0m
+
+    [0m[94mdef[39;49;00m[90m [39;49;00m[92mtest_invariant_2_unconditional_sequence_invariant[39;49;00m() -> [94mNone[39;49;00m:[90m[39;49;00m
+      batch = _batch(SMALL_FIXTURE)[90m[39;49;00m
+      rng = np.random.default_rng([94m2[39;49;00m)[90m[39;49;00m
+      scrambled = dataclasses.replace([90m[39;49;00m
+        batch,[90m[39;49;00m
+        aatype_aminx=rng.integers([94m0[39;49;00m, [94m20[39;49;00m, size=batch.length).astype(batch.aatype_aminx.dtype),[90m[39;49;00m
+        seq_ref=rng.integers([94m0[39;49;00m, [94m20[39;49;00m, size=batch.length).astype(batch.seq_ref.dtype),[90m[39;49;00m
+      )[90m[39;49;00m
+      scrambled = dataclasses.replace(scrambled, aatype_aminx=scrambled.seq_ref.copy())[90m[39;49;00m
+      [94mfor[39;49;00m side, score [95min[39;49;00m ([90m[39;49;00m
+        ([33m"[39;49;00m[33mreference[39;49;00m[33m"[39;49;00m, [94mlambda[39;49;00m b: _ref_score(b, use_sequence=[94mFalse[39;49;00m)),[90m[39;49;00m
+        ([33m"[39;49;00m[33maminx[39;49;00m[33m"[39;49;00m, _aminx_unconditional_with_sequence),[90m[39;49;00m
+      ):[90m[39;49;00m
+        delta = [96mfloat[39;49;00m(np.abs(score(batch) - score(scrambled)).max())[90m[39;49;00m
+>       [94massert[39;49;00m delta < CAUSAL_TOL, [33mf[39;49;00m[33m"[39;49;00m[33m{[39;49;00mside[33m}[39;49;00m[33m: unconditional log-probs depend on the sequence ([39;49;00m[33m{[39;49;00mdelta[33m}[39;49;00m[33m)[39;49;00m[33m"[39;49;00m[90m[39;49;00m
+[1m[31mE       AssertionError: aminx: unconditional log-probs depend on the sequence (2.771998405456543)[0m
+[1m[31mE       assert 2.771998405456543 < 1e-05[0m
+
+[1m[31mtests/parity/test_mpnn_reference_invariants.py[0m:180: AssertionError
+----------------------------- Captured stdout call -----------------------------
+Converting model from state dict with 118 keys
+Converting features...
+Converting encoder layers...
+  Encoder layer 0
+  Encoder layer 1
+  Encoder layer 2
+Converting decoder layers...
+  Decoder layer 0
+  Decoder layer 1
+  Decoder layer 2
+Converting sequence embedding...
+Converting output projection...
+------------------------------ Captured log call -------------------------------
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 11 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 43 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 51 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 55 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 58 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 59 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CE in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom NZ in residue LYS 66 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CG in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom CD in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE2 in residue GLU 68 (chain A)
+[33mWARNING [0m proxide_io.formatters.atom37:atom37.rs:86 Missing expected atom OE1 in residue GLU 68 (chain A)
+[32mINFO    [0m .prody:logger.py:123 ProDy is configured: verbosity='none'
+[33mWARNING [0m .prody:logger.py:141 WARNING prody cannot write configuration file to '/home/marielle', user does not have write access.
+[35mDEBUG   [0m .prody:logger.py:135 1227 atoms and 1 coordinate set(s) were parsed in 0.01s.
+[36m[1m=========================== short test summary info ============================[0m
+[31mFAILED[0m tests/parity/test_mpnn_reference_invariants.py::[1mtest_invariant_2_unconditional_sequence_invariant[0m - AssertionError: aminx: unconditional log-probs depend on the sequence (2.77...
+[31m!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!![0m
+[31m[31m[1m1 failed[0m, [33m7 deselected[0m[31m in 18.71s[0m[0m

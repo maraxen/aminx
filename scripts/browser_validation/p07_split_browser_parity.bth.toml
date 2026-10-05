@@ -1,0 +1,70 @@
+[metadata]
+title = "G1c: the four-graph split reproduces the monolith in headless Chromium"
+created = "260930"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Served over HTTP with COOP/COEP and driven in headless Chromium, the shipping JavaScript loop (browser/aminx-sampler/split_loop.mjs) over the four exported graphs reproduces the monolithic P07 export's tokens EXACTLY on every cell and its per-position log-probs to within 2e-4 nats, and likewise reproduces aminx JAX's tokens exactly within the same bound, on the same real fixtures and knobs the earlier gates used. WHY THIS EXISTS SEPARATELY FROM G1n: G1n (run bc8eb3d7) ran the same .mjs under Node and passed 56/56, but Node is not a browser -- no cross-origin isolation, no browser APIs, a different module loader -- and run 98a62501 demonstrated that the difference is not cosmetic, since threaded wasm fails to initialise from a file:// path under Node while it is expected to work over HTTP. A page is the environment this code actually ships into, so it gets its own gate rather than being assumed from the Node result. The gate reuses browser/layer_c/run_p07.mjs UNCHANGED rather than adding a second driver: that driver already serves with isolation, captures console errors and records Chromium and Playwright versions, and reusing it means the split arm is exercised through the same harness code as the existing monolith arm, so a difference between them cannot be a difference in harnesses. The page itself grades nothing -- it runs the loop and reports outputs, and every comparison and threshold lives in this tracked script, so the artifact under test cannot decide whether its own numbers are acceptable. The 2e-4 log-prob bound is inherited unchanged from the knobs gate and from G1/G1n, for the same reason: it is the measured JAX-versus-ORT envelope for this model, and a browser adds an environment, not new arithmetic. `cross_origin_isolated` and the EFFECTIVE thread count (as ORT reports it, not as requested) are recorded so that a silently single-threaded or non-isolated run is visible as data rather than mistaken for a threading or isolation result."
+stage_name = "validation"
+claim_discriminates = ["H_browser_matches", "H_browser_diverges"]
+claim_isolates = ["C_browser_environment"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling gates).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "ctrl_blind", "fail"]
+
+# First matching branch wins: incomplete, ctrl_blind, fail, pass.
+
+[outcomes.incomplete]
+condition = "NOT browser_ok OR cells_total < 4 OR NOT git_clean OR failure <> ''"
+decision = "The browser run did not happen at size: Chromium failed to launch, the page errored, fewer than four cells were graded, the tree was dirty in a code path, or an exception was raised. `failure` carries the text and the harness's own error is included. No browser statement is permitted."
+reasoning = "A page that throws produces no measurement, and a truncated sweep must not borrow the authority of a full one. Four cells is the floor for the knob spread to mean anything at this size."
+is_residual = true
+
+[outcomes.ctrl_blind]
+condition = "controls_detected < controls_total"
+decision = "The planted log-prob offset did not exceed the bound, so the comparator cannot be shown to fail. No browser statement is permitted."
+reasoning = "The browser results travel back through JSON and could in principle be compared against themselves by a wiring error; planting an offset proves the comparison is live (rules/BATHOS.md)."
+is_residual = true
+
+[outcomes.fail]
+condition = "cells_tokens_exact_vs_monolith < cells_total OR cells_tokens_exact_vs_jax < cells_total OR max_logprob_abs_diff_vs_monolith > 0.0002 OR max_logprob_abs_diff_vs_jax > 0.0002"
+decision = "The split does not reproduce the monolith in a browser. Since G1 (ORT-CPU) and G1n (wasm under Node) both passed on the same graphs and the same .mjs, a failure here isolates to the BROWSER ENVIRONMENT -- isolation, threading, the module loader or Chromium's wasm build -- rather than to the cut or the JavaScript. `worst_cell` names the offender."
+reasoning = "That isolation is the entire reason this gate is separate from G1n. Token inequality is listed first because a changed token is a changed design and a log-prob bound cannot see it."
+is_residual = true
+
+[outcomes.pass]
+condition = "cells_tokens_exact_vs_monolith = cells_total AND cells_tokens_exact_vs_jax = cells_total AND max_logprob_abs_diff_vs_monolith <= 0.0002 AND max_logprob_abs_diff_vs_jax <= 0.0002"
+decision = "The split computes what the monolith computes in the environment it ships into. Combined with G3a-direct's reference measurement, the four-graph browser path is validated from reference ProteinMPNN through to a real page, and the advisor guide's remaining blocker to recommending it is cleared."
+reasoning = "Exact tokens from a real browser, with log-probs inside the inherited envelope and a demonstrably sensitive comparator, is what licenses describing the browser path as validated rather than merely expected to work. It licenses nothing about WebGPU, nothing about other browsers, and nothing about speed beyond the recorded wall times, which carry no timer control here and are reported as context only."
+is_residual = false
+
+[result_schema]
+bucket = "int"
+bound = "float"
+cells_total = "int"
+cells_tokens_exact_vs_monolith = "int"
+cells_tokens_exact_vs_jax = "int"
+max_logprob_abs_diff_vs_monolith = "float"
+max_logprob_abs_diff_vs_jax = "float"
+worst_cell = "str"
+browser_ok = "bool"
+cross_origin_isolated = "bool"
+num_threads_requested = "int"
+num_threads_effective = "int"
+chromium_version = "str"
+median_wall_ms = "float"
+controls_total = "int"
+controls_detected = "int"
+ctrl_perturb_detected = "bool"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+onnxruntime_version = { type = "string", required = true }
+onnxruntime_web_version = { type = "string", required = true }
+playwright_version = { type = "string", required = true }

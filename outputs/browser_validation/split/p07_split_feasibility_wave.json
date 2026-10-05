@@ -1,0 +1,27 @@
+{
+  "controls_detected": 2,
+  "controls_total": 2,
+  "ctrl_index_perturb_detected": true,
+  "ctrl_mask_flip_detected": true,
+  "failure": "",
+  "fixture": {
+    "max_tie_group_size": 4,
+    "n_multi_member_groups": 3,
+    "n_unused_group_ids": 6,
+    "order_is_identity": false
+  },
+  "fixture_ok": true,
+  "git_clean": true,
+  "git_dirty_paths": "",
+  "git_hash": "24562aa2b118053bfe2ff655152119fadc6e8e35",
+  "jax_enable_x64": false,
+  "length": 128,
+  "mismatched_outputs": [],
+  "n_outputs_exact": 5,
+  "n_outputs_total": 5,
+  "outcome": "pass",
+  "w_all_outputs_exact": true,
+  "w_converted": true,
+  "w_onnx_bytes": 44741,
+  "w_ran": true
+}

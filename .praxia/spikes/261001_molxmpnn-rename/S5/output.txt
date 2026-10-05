@@ -1,0 +1,24 @@
+tracked files containing word 'aminx' (case-insens):  812
+  of which under src/:      143
+  of which under tests/:    253
+  of which under scripts/:  130
+  of which under docs/:     19
+--- top-level breakdown (first two path components)
+    143 src/aminx
+     74 .praxia/docs
+     52 scripts/browser_validation
+     51 tests/host
+     38 outputs/browser_validation
+     29 tests/inference
+     25 tests/utils
+     23 tests/parity
+     22 .praxia/sprint_plans
+     21 .praxia/handoffs
+     20 scripts/ebm
+     19 scripts/benchmarks
+--- importers of aminx.ebm outside src/aminx/ebm (expect 0)
+0
+--- residue of the PREVIOUS rename (prxteinmpnn)
+tracked files containing prxteinmpnn: 64
+check_model_boundary.sh lines naming the dead package: 6
+check_model_boundary.sh lines naming the live package: 0

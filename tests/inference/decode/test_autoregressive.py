@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -88,11 +89,6 @@ def _build_synthetic_fixture(
     return model, bundle, config
 
 
-def _dummy_decoding_order_fn(wave):
-    """Dummy decoding order function."""
-    return jnp.arange(wave.group_ids.shape[0])  # Return number of waves as dummy order
-
-
 def _build_scheduled_fixture(
     num_residues: int,
     seed: int,
@@ -151,7 +147,6 @@ def _run_ar_decode(
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -218,7 +213,6 @@ def _logits_at_target(
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -342,7 +336,6 @@ def test_autoregressive_produces_valid_output_s1():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -385,7 +378,6 @@ def test_autoregressive_produces_valid_output_s4():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -450,7 +442,6 @@ def test_state_iterator_parity_vmap_vs_safemap():
     # AR decode with Vmap
     ar_vmap = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=lambda w: jnp.arange(L),
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -467,7 +458,6 @@ def test_state_iterator_parity_vmap_vs_safemap():
     # AR decode with SafeMap
     ar_safemap = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=lambda w: jnp.arange(L),
         state_iterator=SafeMapIterator(tile=2),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -514,7 +504,6 @@ def test_autoregressive_with_tied_positions():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -671,7 +660,6 @@ def test_autoregressive_with_tied_positions_s4():
     wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
     ar_decode = AutoregressiveDecode(
         model=model,
-        decoding_order_fn=_dummy_decoding_order_fn,
         state_iterator=VmapIterator(),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
@@ -697,3 +685,43 @@ def test_autoregressive_with_tied_positions_s4():
     # Verify shape and dtype
     assert result.sequence.shape == (L,)
     assert result.logits.shape == (L, 21)
+
+
+# --------------------------------------------------------------------------------------
+# Wave-order sort key (T4, sort-stability): the tie-free `decode_wave * L + arange(L)`
+# key sorted with `stable=False` must reproduce the identical permutation
+# `jnp.argsort(decode_wave, stable=True)` would (IREE does not honour stable-sort tie
+# order; see `AutoregressiveDecode.__call__`, ~L616-639, and
+# `xtrax.export.safety`'s `sort-stability` rule). Pure numeric property test -- no model
+# or bundle needed, since the formula operates only on `decode_wave`/`L`.
+# --------------------------------------------------------------------------------------
+
+
+def _tie_free_wave_order(decode_wave: jnp.ndarray, length: int) -> jnp.ndarray:
+    """Reproduces AutoregressiveDecode.__call__'s wave-order formula verbatim."""
+    sort_key = decode_wave * length + jnp.arange(length, dtype=jnp.int32)
+    return jnp.argsort(sort_key, stable=False)
+
+
+@pytest.mark.parametrize("length", [1, 2, 8, 37, 128])
+def test_wave_order_sort_key_matches_stable_argsort(length: int) -> None:
+    """Random decode_wave arrays with many ties, including the n_waves sentinel value,
+    across several sequence lengths."""
+    rng = np.random.default_rng(7000 + length)
+    n_waves = max(length // 3, 1)  # several real waves, plenty of room for ties
+    for _ in range(25):
+        # Values in [0, n_waves] inclusive: n_waves itself is the "never scheduled"
+        # sentinel used by the real decode_wave construction (autoregressive.py L617-621).
+        decode_wave = jnp.asarray(
+            rng.integers(0, n_waves + 1, size=length).astype(np.int32)
+        )
+        got = _tie_free_wave_order(decode_wave, length)
+        want = jnp.argsort(decode_wave, stable=True)
+        chex.assert_trees_all_equal(got, want)
+
+    # Degenerate: every position shares the sentinel (nothing scheduled) -- the densest
+    # possible tie case, and the one the sentinel construction can actually produce.
+    decode_wave = jnp.full((length,), n_waves, dtype=jnp.int32)
+    got = _tie_free_wave_order(decode_wave, length)
+    want = jnp.argsort(decode_wave, stable=True)
+    chex.assert_trees_all_equal(got, want)
