@@ -106,6 +106,7 @@
 ## Preregistration
 
 ## Reference
+- [261005_laser-confirm-run-readiness](reference/261005_laser-confirm-run-readiness.md) — The resume machinery for the ~60 h LASEr distributional run is correct and already proven by tonight's Potts run; its cache key includes the script hash, so the driver must be frozen before launch
 - [261005_using-aminx-skill-family-update](reference/261005_using-aminx-skill-family-update.md) — Exact anchored edits to add PottsMPNN/LASErMPNN to the user's global using-aminx skill, including one stale line that is now wrong rather than merely incomplete
 - [261002_using-aminx-driver-families](reference/261002_using-aminx-driver-families.md) — The PottsMPNN/LASErMPNN section for the using-aminx skill, plus the frontmatter edits, staged here because ~/.claude/skills is sandbox-write-protected
 
