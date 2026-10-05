@@ -54,12 +54,42 @@ from aminx.model.laser.layers import (
   norm_no_nan,
 )
 
-if xtrax.__version__ != "0.4.0a10":
-  msg = f"Expected xtrax 0.4.0a10, got {xtrax.__version__}"
-  raise RuntimeError(msg)
-
 # Smallest boundary >= the atom count. select_bucket rejects a longer ligand.
 LIGAND_ATOM_BUCKETS: tuple[int, ...] = (8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096)
+
+
+def _assert_bucket_contract() -> None:
+  """Fail loud at import if xtrax's bucketing stops behaving the way this module needs.
+
+  Two properties are load-bearing here, and only the second is a *safety* property:
+  ``select_bucket`` returns the smallest boundary >= the length, and it REFUSES a length past
+  the largest boundary rather than clamping to it. A clamping implementation would silently
+  truncate a ligand -- wrong atoms, no error, parity drift that looks like a model defect.
+
+  This replaces an exact ``xtrax.__version__ != "0.4.0a10"`` equality check (added in the B3
+  scratch commit as drift insurance). That guard duplicated the ``==`` pin in pyproject while
+  being strictly worse than it: it fired at MODULE IMPORT, so the a10 -> a11 bump turned a
+  dependency question into 114 test-collection errors across tests/port and tests/families,
+  and it would have passed unchanged had xtrax altered this behaviour without a version bump.
+  Asserting the contract catches the hazard the version number was only a proxy for.
+  """
+  probe = (8, 16)
+  if select_bucket(1, probe) != 8 or select_bucket(16, probe) != 16:
+    msg = f"xtrax {xtrax.__version__}: select_bucket no longer returns the smallest boundary >= length"
+    raise RuntimeError(msg)
+  try:
+    select_bucket(probe[-1] + 1, probe)
+  except ValueError:
+    return
+  msg = (
+    f"xtrax {xtrax.__version__}: select_bucket accepts a length past the largest boundary "
+    "instead of raising. A ligand longer than LIGAND_ATOM_BUCKETS[-1] would be silently "
+    "truncated rather than refused."
+  )
+  raise RuntimeError(msg)
+
+
+_assert_bucket_contract()
 
 LIGAND_ATOMS = AxisSpec(
   name="ligand_atoms",

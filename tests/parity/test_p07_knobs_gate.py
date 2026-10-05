@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from scripts.browser_validation.p07_knobs_gate import (
+  IntegrityRefusalError,
   N_AA,
   OUTCOMES,
   P07_KEYS,
@@ -52,6 +53,27 @@ _SIDECAR = _ROOT / "scripts" / "browser_validation" / "p07_knobs_gate.bth.toml"
 _CASES = _ROOT / "scripts" / "browser_validation" / "p07_knobs_gate.cases.json"
 
 
+def _node_present() -> bool:
+  """True when this machine can run the JS side of the Python-vs-JS comparison."""
+  try:
+    _node_bin(None)
+  except IntegrityRefusalError:
+    return False
+  return True
+
+
+#: The JS arm needs a node binary, and a machine without one cannot make this comparison either
+#: way. Calling ``_node_bin`` unconditionally turned that into a red test on every node-less
+#: machine (titanix has no node), which reports a missing toolchain as a parity failure and
+#: buries whatever else the run found. The refusal inside the gate script is unchanged -- a real
+#: gate run still dies loudly rather than silently skipping the JS comparison.
+_NEEDS_NODE = pytest.mark.skipif(
+  not _node_present(),
+  reason="compares build_p07_inputs against the JS runspec.mjs implementation; no node binary "
+  "on this machine, so the JS arm cannot run",
+)
+
+
 def _noise(transform: str) -> Callable[[int, int, int], np.ndarray]:
   fn = gumbel_from_uniform if transform == "gumbel" else bad_gumbel_from_uniform
 
@@ -79,6 +101,7 @@ def test_tie_ids_stay_in_range() -> None:
   assert int(ids[0]) == 0
 
 
+@_NEEDS_NODE
 def test_runspec_matches_python_for_each_field() -> None:
   length = 6
   coords = np.arange(length * 12, dtype=np.float32).reshape(length, 4, 3)
@@ -109,7 +132,7 @@ def test_runspec_matches_python_for_each_field() -> None:
       "decoding_order": [0, 1, 2, 3, 4, 5],
     },
   }
-  node = _node_bin(None)
+  node = _node_bin(None)  # resolves: _NEEDS_NODE already proved it is present
   for name, spec in specs.items():
     blob = json.loads(json.dumps({"structure": structure, "runspec": spec}, default=_json_default))
     py = build_p07_inputs(blob["structure"], blob["runspec"])

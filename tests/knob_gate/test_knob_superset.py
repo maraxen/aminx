@@ -247,6 +247,12 @@ def test_row_markers_are_declared() -> None:
   )
 
 
+@pytest.mark.skipif(
+  "AMINX_REDSOX_OUTCOMES_READ" not in os.environ,
+  reason="asserts every live row's parity_test_ids passed in THIS gate's own outcomes.jsonl "
+  "(spec 6.3); AMINX_REDSOX_OUTCOMES_READ is exported only by scripts/redsox/run_gate.py, so "
+  "outside a gate run there are no outcomes to check the rows against",
+)
 def test_parity_ids_passed() -> None:
   passed = passed_nodeids(os.environ["AMINX_REDSOX_OUTCOMES_READ"])
 
