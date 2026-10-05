@@ -117,6 +117,48 @@ open; only the deletion is gated.
 5. **Only then**, and only with the user's go-ahead on retiring T2.GATE, delete the duplicate
    types and `_strategy_to_xtrax`.
 
+### Amendment (same day, before any of step 1 was dispatched): step 1 has a source already, and the `default_batch_size` catch is worse than §2 says
+
+Two corrections, both from reading the code rather than the plan. Nothing was
+implemented on either.
+
+**(a) "From the memory budget" is not something to invent — `aminx/tiling/planner.py:63`
+`plan_axis_strategy` already is it.** It builds an xtrax `MemoryBudget` from
+`jax.devices()[0].memory_stats()["bytes_limit"]` at `headroom=0.80`, falls back to
+`_DEFAULT_MEMORY_LIMIT_BYTES = 4 GiB` on backends without `memory_stats` (i.e. CPU,
+`planner.py:20` + `:110-114`), runs `BatchPlanner(budget=...)`, and translates the decision back
+to aminx-native (`XtraxChunkedMap -> SafeMap(tile=...)`, `XtraxVmap -> Vmap()`, `planner.py:122-127`).
+That is precisely the user's "dispatch to Vmap or ChunkedMap should automatically happen under the
+hood", and it is already load-bearing at **five** call sites —
+`sampling/conditional_logits.py:359` and `:395`, `sampling/mbr_consensus.py:213`,
+`host/runner.py:1022`, and `sampling/multistate_poe.py:250`. The last feeds it a *measured*
+byte count from `xtrax.tiling.estimators.lowered_memory_estimate` (which lowers and compiles to
+read XLA's own buffer sizes) rather than a guess.
+
+The family sample path is the one place in the tree that does not call it. So step 1 is not "find
+a budget", it is "call the planner the rest of aminx already calls" — which also means step 2's
+pattern and step 1's budget come from the same place, and `multistate_poe.py:248-255` is a
+complete worked example of both.
+
+**(b) `default_batch_size == cardinality` does not merely make the choice vacuous — under budget
+mode it makes chunking impossible.** `_plan_joint_budget` (`xtrax/tiling/plan.py:322-325`) picks
+demotion candidates as `cardinality > default_batch_size`. With the two set equal, as
+`sample_axes` declares for `samples` and `temperatures`, the axis is **not a candidate at all**:
+it is pinned at `Vmap`, and an over-budget plan does not chunk, it raises
+`BudgetInfeasibleError`. §2 said the planner "can never choose `ChunkedMap`"; the sharper
+statement is that it can never *demote*, so the budget has no lever and fails closed instead of
+degrading. That strengthens the §2 conclusion: `default_batch_size` must become the intended
+chunk tile — the quantity `resolve_chunk_size` already computes from the user-facing
+`samples_chunk_size` knob (`host/plan.py:425-452`) — with `cardinality` left as the true count.
+
+**One trap for whoever implements it.** The same function warns when
+`cardinality % default_batch_size != 0` and says the plan "will raise ValueError at
+make_axis_dispatch time" (`plan.py:330-338`). `num_samples=1000` with `samples_chunk_size=8`
+divides cleanly, but the pair is user-settable and arbitrary combinations do not, so the
+re-declaration has to either round the tile to a divisor or handle the ragged last chunk
+explicitly. Today's Python loop handles raggedness by construction (`min(size, total - start)`),
+so this is a capability the current code has and the dispatched version must not lose.
+
 L-DRV R1 bans `vmap`/`pmap`/`shard_map` in `families/**` and `host/family_*.py`, so step 3's
 vectorization has to arrive *through* xtrax's dispatch rather than a hand-rolled `jax.vmap` —
 which is the same thing the user asked for ("vectorization should be native"). Check whether the
