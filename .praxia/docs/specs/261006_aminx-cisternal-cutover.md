@@ -1,6 +1,6 @@
 ---
 title: 'S7: aminx cisternal cutover - agent assets, MCP surface, provenance'
-description: 'Make aminx agent-native through cisternal: a manifest-driven plugin bundle (using-aminx moved into the repo), an aminx-mcp server wired with @cisternal.tool over host.runner, cisternal provenance/telemetry for campaign runs; the Typer-to-cyclopts CLI port is a user decision, recommended deferred.'
+description: 'Make aminx agent-native through cisternal: a manifest-driven plugin bundle of targeted skills (using-aminx router + five task skills), an aminx-mcp server wired with @cisternal.tool over host.runner (launched via uvx by default, switchable to a local venv), cisternal provenance/telemetry for campaign runs; the Typer-to-cyclopts CLI port is deferred.'
 status: draft
 task_id: 261006_cisternal-cutover-spec
 date: '261006'
@@ -8,7 +8,7 @@ backlog_ids: ''
 adversarial_review: ''
 owner_repos:
   - aminx
-  - cisternal  # consumed at >=0.1.1a15; no change requested of it unless S7-Q4 says so
+  - cisternal  # consumed at >=0.1.1a15; only an optional upstream request (S7-23)
 related_specs:
   - S4  # xtrax model contract: ModelManifest ids (S4-19) are the later naming target for MCP tools
   - S5  # hub: `aminx serve` (S5-21) is the HTTP sibling of aminx-mcp; both are thin adapters over host.runner
@@ -29,7 +29,11 @@ myxcel, contemplex). It has three legs, and S7 takes them in increasing order of
 | A. Agent assets | hand-placed skill files, no plugin | `using-aminx` exists only as `~/.claude/skills/using-aminx/SKILL.md`, untracked and partly stale | **do** (additive) |
 | B. Tool surface | hand-rolled FastMCP + separate CLI | no MCP server at all; `.mcp.json` tracked but empty | **do** the MCP leg (additive) |
 | C. Provenance + telemetry | private logging / "unknown" git fields | `campaign.py` git_sha defaults to `"unknown"`; stdlib logging only | **do** (additive, guarded) |
-| D. CLI port Typer -> cyclopts via `wire()` | the Typer CLI | 2117-line Typer CLI | **user decision**, recommended *defer* (section 4.7) |
+| D. CLI port Typer -> cyclopts via `wire()` | the Typer CLI | 2117-line Typer CLI | **deferred** (user, 261006; section 4.7) |
+
+**Decisions recorded 261006 (user):** Q1 defer the CLI port. Q2 MCP launch defaults to `uvx`, with a
+documented switch to the user's local venv (section 4.5). Q3 targeted skills, not one monolithic skill
+(section 4.2). Q4 publish to the shared local marketplace. Q5 `jacobian` ships in v1.
 
 ## 1. Goal and non-goals
 
@@ -43,7 +47,7 @@ the real code commit instead of `"unknown"`.
   numerics change, so no parity re-run is triggered.
 - Not the hub's remote executor. `aminx serve` (S5-21, HTTP wire v1) stays S5's. S7 only requires that
   both adapters share the same request normalization (section 6).
-- No change to the published `aminx` CLI's flags or command names unless the user picks D (S7-Q1).
+- No change to the published `aminx` CLI's flags or command names (the CLI port was deferred, S7-Q1).
 - No hosted service, accounts or remote state. The MCP server is a local stdio process.
 
 ## 2. How to read the tags
@@ -132,7 +136,9 @@ the real binary.
 | A4 | `host.runner.*` can be driven from kwargs alone (no Typer context) for every knob the tools expose | unverified | S7-02 |
 | A5 | Manifest skill paths resolve from repo root; `snapshot --check` fails on a stale skill | unverified | S7-03 |
 | A6 | `capture_git_state` returns a 40-hex sha in a clean checkout and a non-"git" `provenance_source` in a wheel install | unverified | S7-09 |
-| A7 | `plugin_app` (cyclopts) cannot mount under a Typer app, so the `plugin` verbs need a separate entry point | unverified | S7-06 |
+| A7 | cisternal's in-process API can load the manifest bundle, replace the MCP server's command/launch, and write it to the shared marketplace (bathos `plugin_export.py` pattern) | unverified | S7-21 |
+| A9 | launch is resolved at bundle build; no install-time override exists in 0.1.1a15 | verified (`assets/launch.py`) | done |
+| A10 | `uvx_from = "aminx[agent]=={version}"` formats correctly (`str.format` leaves `[agent]` alone) | verified (`launch.py:24-32`) | - |
 | A8 | A long-lived server keeps the jit cache warm across calls with the same shapes | unverified | S7-08 |
 
 ## 4. Design
@@ -143,9 +149,11 @@ the real binary.
 pyproject.toml                         # + extra  agent = ["cisternal>=0.1.1a15"]
                                        # + script aminx-mcp = "aminx.agent.mcp:main"
 .praxia/manifest.toml                  # new: [plugin] aminx, skills, [plugin.mcp]
-agent_assets/skills/using-aminx/SKILL.md   # moved in from ~/.claude/skills, refreshed
-agent_assets/skills/<more>/SKILL.md    # optional, S7-Q3
+agent_assets/skills/using-aminx/SKILL.md   # router; replaces ~/.claude/skills/using-aminx
+agent_assets/skills/aminx-{sampling,scoring,run-specs,campaigns,potts}/SKILL.md   # targeted (Q3)
 src/aminx/agent/__init__.py            # import-guarded: clear error if the extra is missing
+src/aminx/agent/config.py              # mcp_launch / mcp_python layered resolver + mcp_launch_source()
+src/aminx/agent/plugin.py              # python -m aminx.agent.plugin {publish,info}: launch override + shared-marketplace write
 src/aminx/agent/tools.py               # REGISTRY = "aminx"; @cisternal.tool bodies; TOOL_NAMES
 src/aminx/agent/shaping.py             # results dict -> JSON summary + npz/zarr side file
 src/aminx/agent/mcp.py                 # FastMCP("aminx") + wire(server, registry=..., expected=TOOL_NAMES)
@@ -161,12 +169,27 @@ once. Nothing outside `aminx.agent` imports cisternal or fastmcp, except the gua
 
 ### 4.2 Leg A: agent assets
 
-- Move `using-aminx` into `agent_assets/skills/using-aminx/SKILL.md`. Refresh it against origin/main: CLI
-  verbs, `inspect` now wired, JSON (not TOML) specs, the MCP tools. Put `description` and `triggers` in
-  the **manifest**, because cisternal exports manifest triggers and drops frontmatter ones.
+- **Targeted skills (Q3).** The current 16 KB `using-aminx` is split into one short router plus five
+  task skills, following alynxr's `using-<tool>` + `<tool>-<task>` layout. Each covers the MCP tool, the
+  CLI verb and the Python API for one job, so an agent loads only what the task needs:
+
+  | Skill | Scope | Example triggers |
+  |---|---|---|
+  | `using-aminx` | router: what aminx is, install (`aminx[agent]`), MCP vs CLI vs Python API, `list_checkpoints`, which skill to load next | aminx, proteinmpnn, ligandmpnn, inverse folding |
+  | `aminx-sampling` | `sample`: temperature, fixed positions, tied positions, bias, multi-state, ligand context, outputs and side files | design sequences, sample sequences, fixed positions, tied positions |
+  | `aminx-scoring` | `score`, `inspect` (conditional / unconditional logits), `jacobian`; reading the results | score sequence, logits, pseudo-perplexity, jacobian, conditional probabilities |
+  | `aminx-run-specs` | JSON run specs: `spec_emit` / `spec_validate`, CLI `spec emit-* / validate / roundtrip`, fields that cannot serialize | run spec, spec json, reproducible run, emit spec |
+  | `aminx-campaigns` | `campaign plan / worker / run / gates / ramp-*`, cluster use, provenance fields | campaign, design campaign, sweep, ramp |
+  | `aminx-potts` | `potts emit / run`, GeometryBundle inputs | potts, coupling, TRW |
+
+  Rules: `description` and `triggers` live in the **manifest** (cisternal exports manifest triggers and
+  drops frontmatter ones). Each skill stays under ~300 lines and links to its siblings rather than
+  repeating them. Content is written against origin/main (`inspect` is wired, specs are JSON not TOML).
 - `.praxia/manifest.toml`: `[plugin] name = "aminx"` (the package keeps its name, per revised D2; avoid
   `praxia` in any non-DNS name, per OQ-01), `skills_delivered_by_plugin = true` (stops praxia's legacy copy
-  into `~/.claude/skills`), `[plugin.mcp] command = ["aminx-mcp"]` with `launch` per S7-Q2.
+  into `~/.claude/skills`), `[plugin.mcp] command = ["aminx-mcp"]`, `launch = "uvx"`,
+  `uvx_from = "aminx[agent]=={version}"` (the default spec `{name}=={version}` would omit the extra).
+  No `[plugin.marketplace]` table (Q4: shared marketplace).
 - Packaged snapshot `src/aminx/agent_plugin.json` via `cisternal assets snapshot`, with a CI `--check`
   test, so wheel installs (which have no `.praxia/`) can still install the plugin.
 - Retire `~/.claude/skills/using-aminx` only after the plugin copy is verified loading (S7-14, user step:
@@ -215,9 +238,47 @@ Whichever lands second must reuse it (an interface note in section 6, not a depe
 
 - `agent` extra as in spike S-1. `aminx-mcp` imports fail fast with
   `aminx-mcp needs the agent extra: pip install "aminx[agent]"`.
-- `[plugin.mcp] launch`: `"uvx"` (rewrites to `uvx --from aminx[agent]==<ver> aminx-mcp`, works with no
-  local venv) vs `"path"` (uses the project venv; right for dev). S7-Q2.
 - Add the `--extra agent` lane to CI's sync line (`ci.yml:46`) for `tests/agent/` only.
+
+**MCP launch mode (Q2: `uvx` by default, local venv on request).**
+
+- `[verified]` cisternal decides the launch when the **bundle is built**, not at install:
+  `resolve_mcp_launch` rewrites a `launch = "uvx"` server to the fixed argv
+  `uvx --from <spec> aminx-mcp` and stores it as `launch = "path"` (`cisternal/assets/launch.py:1-11,34-47`,
+  0.1.1a15). The installed `.mcp.json` is static, and cisternal 0.1.1a15 has no install-time override
+  (no `launch` option in `cli.py` or `plugin/`). So the switch must apply when aminx publishes its
+  bundle into the shared local marketplace (`~/.cisternal/claude-plugin-marketplace`), which is per
+  machine. That is the right place for a per-user choice.
+- **Modes.** `uvx` (default) gives
+  `uvx --from "aminx[agent]==<released version>" aminx-mcp`. It needs no aminx install and always matches
+  the release the skills describe. `venv` gives `<abs path to interpreter> -m aminx.agent.mcp`, using
+  an absolute interpreter path because Claude Code does not activate venvs and its PATH may not include
+  `.venv/bin`. This is right for development checkouts, local patches, GPU/JAX builds `uvx` would not pick,
+  and offline machines.
+- **Resolution,** following the derived-config rule (explicit > env > project > user config > default),
+  in `aminx.agent.config`:
+  1. `--launch {uvx,venv}` (and `--python PATH` for venv; default `sys.executable`) on
+     `python -m aminx.agent.plugin publish`
+  2. `AMINX_MCP_LAUNCH` (`uvx` | `venv`) and `AMINX_MCP_PYTHON`
+  3. `[tool.aminx.agent] mcp_launch` / `mcp_python` in the nearest `pyproject.toml`
+  4. `${XDG_CONFIG_HOME:-~/.config}/aminx/config.toml`, `[agent] mcp_launch` / `mcp_python`
+  5. default `uvx`
+
+  `mcp_launch_source()` reports which layer decided. A malformed config file, an unknown mode, or a `venv`
+  interpreter that cannot `import aminx.agent.mcp` fails loudly at publish time, never silently at first
+  tool call.
+- **Mechanism.** `python -m aminx.agent.plugin publish` loads the manifest through cisternal's in-process
+  API (the bathos `plugin_export.py` pattern: load the asset report, override the MCP server's `command`
+  and `launch`, emit, write). It writes into the shared marketplace and records the resolved mode and
+  source in the bundle's `cisternal-provenance.json` sidecar. Re-running with another mode switches an
+  existing install. This is a module entry point, not an `aminx` CLI verb, so the deferred CLI port (Q1)
+  is unaffected.
+- **Upstream ask (optional, S7-23).** A `--launch`/`--uvx-from` override on cisternal's
+  `assets publish-shared` / `install` would let aminx drop its override code. Until then aminx owns it.
+- **Documentation (S7-22).** A "Using aminx from an agent" page in the docs and a section in `using-aminx`
+  cover: install, the default `uvx` launch and its cold-start cost (first run resolves the env; JAX compile
+  follows), switching to `venv` (all four config layers, with examples), checking the active mode
+  (`python -m aminx.agent.plugin info` prints mode, command and source), and switching back.
 
 ### 4.6 Leg C: provenance and telemetry
 
@@ -233,7 +294,7 @@ Whichever lands second must reuse it (an interface note in section 6, not a depe
   `compile_cache_hit`. Never sequences or structure contents.
 - No overlap with bathos: bathos records *experiments*; this records *tool calls*. Neither replaces the other.
 
-### 4.7 Leg D: the CLI port (user decision S7-Q1)
+### 4.7 Leg D: the CLI port (deferred, S7-Q1)
 
 The bathos/naurmalade/maraxiom pattern deletes the Typer CLI and serves both legs from one `@tool`
 function set via `wire()`. For aminx it costs more than it did there:
@@ -248,11 +309,11 @@ function set via `wire()`. For aminx it costs more than it did there:
 - The payoff is one function set for CLI and MCP. S7 already gets most of that by having both
   call `host.runner` and share `requests`/`shaping`.
 
-**Recommendation: (a) defer.** Keep Typer. Revisit only if a second agent-facing CLI surface appears or
-cisternal gains group-level shared options. Options offered in S7-Q1: (a) defer; (b) port the small groups
-(`spec`, `potts`) to cyclopts via `wire()` under a new `aminx-agent` entry point that also hosts `plugin`
-verbs, leaving `aminx` untouched; (c) full port with a deprecation release. Items S7-16..S7-18 exist only
-for (b)/(c) and are marked `user_decision`.
+**Decision (user, 261006): defer.** Keep Typer. Revisit only if a second agent-facing CLI surface
+appears or cisternal gains group-level shared options. The alternatives considered were (b) porting
+`spec`/`potts` under a new `aminx-agent` cyclopts entry point, and (c) a full port with a deprecation
+release. Their items (formerly S7-16..18) are not filed. If the decision is reopened they would be
+re-specified, not revived from this draft.
 
 ## 5. Risks and mitigations
 
@@ -266,6 +327,9 @@ for (b)/(c) and are marked `user_decision`.
 | cisternal is alpha and APIs move | pin `>=0.1.1a15,<0.2`; surface tests assert against `await server.list_tools()`, not the registry |
 | `import aminx` gains fastmcp | G-IMPORT: `python -X importtime -c "import aminx"` has no `fastmcp`/`cisternal`/`cyclopts` modules |
 | Stale commit stamped by a long-lived server | provenance captured per run from the package source tree (A6 spike) |
+| `uvx` cold start (env resolve + JAX wheels) exceeds the client's MCP startup timeout | docs state it; `publish` can pre-warm with `uvx --from ... aminx-mcp --version`; `venv` mode avoids it |
+| `venv` mode points at an interpreter that later moves or loses aminx | `publish` validates the import; `info` re-checks; server start failure names the config layer that chose it |
+| Targeted skills drift apart or overlap triggers | G-SKILLS: per-skill command-parse test; trigger sets checked for duplicates across skills |
 | Heavy tests run locally and kill the box | all `tests/agent` JAX-touching tests run on titanix (repo rule); local runs are tiny-structure smoke only |
 
 ## 6. Interfaces
@@ -303,22 +367,33 @@ Each gate pairs a positive control with a negative control that must fail.
 - **G-PROV** (S7-09): in a clean checkout `capture()` gives a 40-hex sha with `provenance_source == "git"`;
   in a wheel install / no-cisternal env it gives the builtin or `"unknown"` source, never a fabricated sha.
   Negative: a dirty tree sets `dirty=True`.
-- **G-LOAD** (S7-14, user-run): after `cisternal assets install` (or `aminx-agent plugin install claude`), a
-  fresh Claude Code session lists the `using-aminx` skill from the plugin and `aminx-mcp` tools, and the
-  `~/.claude/skills` copy is gone.
+- **G-LAUNCH** (S7-21): with no config, the published `.mcp.json` command is
+  `uvx --from aminx[agent]==<ver> aminx-mcp` and `mcp_launch_source() == "default"`. Each layer (arg,
+  env, pyproject, XDG file) in turn selects `venv` and yields `[<abs python>, "-m", "aminx.agent.mcp"]`
+  with the matching source, and a higher layer beats a lower one. Negatives: `AMINX_MCP_LAUNCH=bogus`, a
+  malformed `config.toml`, and an interpreter without aminx each make `publish` exit non-zero and write
+  nothing.
+- **G-SKILLS** (S7-04, S7-19): every `aminx ...` command and MCP tool name in every skill resolves
+  (`--help` parses; tool is in `TOOL_NAMES`). No trigger appears in two skills. `snapshot --check` passes.
+  Negative: a bogus verb injected into one skill fails the parse test.
+- **G-LOAD** (S7-14, user-run): after `python -m aminx.agent.plugin publish` and
+  `claude plugin install aminx@<shared marketplace>`, a fresh Claude Code session lists all six skills
+  and the `aminx-mcp` tools, once in `uvx` mode and once in `venv` mode; the `~/.claude/skills` copy is gone.
 
 No gate produces a research finding. G-PARITY is an equality test on code paths, not a measurement,
 so it is a test, not a bathos run.
 
-## 8. Open questions for the user
+## 8. Decisions (answered by the user, 261006)
 
-| # | Question | Recommendation | Blocks |
+| # | Question | Decision | Effect |
 |---|---|---|---|
-| S7-Q1 | CLI port: (a) defer, (b) port `spec`/`potts` + `plugin` under a new `aminx-agent` entry, (c) full Typer->cyclopts port with deprecation release | **(a)**, revisit later | S7-16..18 |
-| S7-Q2 | `[plugin.mcp] launch`: `uvx` (zero-setup, pins released version) or `path` (project venv) | `uvx` in the shipped snapshot, `path` documented for dev | S7-06 |
-| S7-Q3 | Skills beyond `using-aminx` (e.g. `aminx-campaigns`, `aminx-potts`), and any agents | v1: only `using-aminx`, refreshed; split later if it grows past ~500 lines | S7-04 |
-| S7-Q4 | Distribution: `[plugin.marketplace]` in aminx (own marketplace) or `cisternal assets publish-shared` into the shared local marketplace | shared marketplace (what most adopters do); no marketplace table | S7-06 |
-| S7-Q5 | Should `jacobian` be in v1 (large outputs, slow) | yes, side-file only | S7-07 |
+| S7-Q1 | CLI port Typer -> cyclopts | **defer** | former S7-16..18 not filed |
+| S7-Q2 | MCP launch | **`uvx` default, configurable to the local venv, documented** | section 4.5; S7-21, S7-22 |
+| S7-Q3 | Skill scope | **targeted skills** | router + five task skills (4.2); S7-04, S7-19 |
+| S7-Q4 | Distribution | **shared local marketplace** | no `[plugin.marketplace]`; S7-21 writes there |
+| S7-Q5 | `jacobian` in v1 | **yes** | side-file output only; S7-07 |
+
+No open questions remain. Agents (`[[plugin.agents]]`) are out of v1 scope; none was asked for.
 
 ## 9. Backlog items
 
@@ -352,12 +427,12 @@ user_decision = false
 
 [[item]]
 id = "S7-04"
-title = "Move using-aminx into agent_assets/skills, refresh against origin/main (inspect wired, JSON specs, MCP tools), manifest description+triggers; test that every `aminx ...` command in the skill parses with --help"
+title = "using-aminx as a short router skill in agent_assets/skills (install, MCP vs CLI vs API, list_checkpoints, pointers to the five task skills); manifest description+triggers; skill command/tool parse test harness used by all skills"
 repo = "aminx"
-size = "M"
+size = "S"
 depends_on = ["S7-03"]
-gate = "G-SNAPSHOT; skill-command parse test with a negative control (a bogus verb fails)"
-user_decision = true  # S7-Q3 scope
+gate = "G-SKILLS, G-SNAPSHOT"
+user_decision = false
 
 [[item]]
 id = "S7-05"
@@ -370,12 +445,12 @@ user_decision = false
 
 [[item]]
 id = "S7-06"
-title = "aminx-mcp entry point: FastMCP('aminx') + wire(registry='aminx', expected=TOOL_NAMES) + CisternalMiddleware(PassthroughAdapter, reraise=True) + cisternal.init(); plugin install path (cisternal assets install or aminx-agent plugin, per A7) and launch mode"
+title = "aminx-mcp entry point (script + python -m aminx.agent.mcp): FastMCP('aminx') + wire(registry='aminx', expected=TOOL_NAMES) + CisternalMiddleware(PassthroughAdapter, reraise=True) + cisternal.init()"
 repo = "aminx"
 size = "M"
 depends_on = ["S7-03", "S7-05"]
-gate = "server starts over stdio and answers list_tools in a subprocess test"
-user_decision = true  # S7-Q2, S7-Q4
+gate = "server starts over stdio via both the script and `-m` form and answers list_tools in a subprocess test"
+user_decision = false
 
 [[item]]
 id = "S7-07"
@@ -445,7 +520,7 @@ id = "S7-14"
 title = "Install + load check in a fresh Claude Code session; retire ~/.claude/skills/using-aminx (user step)"
 repo = "aminx"
 size = "S"
-depends_on = ["S7-04", "S7-07"]
+depends_on = ["S7-19", "S7-21"]
 gate = "G-LOAD"
 user_decision = true
 
@@ -458,33 +533,54 @@ depends_on = []
 gate = "praxia docs check passes; DAG acyclicity re-checked by code"
 user_decision = false
 
+# S7-16..S7-18 (CLI port) withdrawn: S7-Q1 = defer. Ids are retired, not reused.
+
 [[item]]
-id = "S7-16"
-title = "(only if S7-Q1 = b/c) aminx-agent cyclopts entry point hosting plugin_app + wired spec/potts groups"
+id = "S7-19"
+title = "Five targeted skills: aminx-sampling, aminx-scoring (score/inspect/jacobian), aminx-run-specs, aminx-campaigns, aminx-potts; manifest entries with non-overlapping triggers; content from origin/main"
 repo = "aminx"
 size = "M"
-depends_on = ["S7-07"]
-gate = "every ported command driven through the real binary; flag-for-flag diff vs Typer help"
-user_decision = true
+depends_on = ["S7-04", "S7-07"]
+gate = "G-SKILLS (every skill), G-SNAPSHOT"
+user_decision = false
 
 [[item]]
-id = "S7-17"
-title = "(only if S7-Q1 = c) port run/campaign groups to cyclopts via wire(); shared-options strategy; deprecation release"
-repo = "aminx"
-size = "L"
-depends_on = ["S7-16"]
-gate = "e2e_run_api_parity lane green on the new CLI; old invocations print a deprecation pointer"
-user_decision = true
-
-[[item]]
-id = "S7-18"
-title = "(only if S7-Q1 = c) drop typer from base deps after one release with both CLIs"
+id = "S7-20"
+title = "aminx.agent.config: layered mcp_launch/mcp_python resolver (arg > AMINX_MCP_LAUNCH/AMINX_MCP_PYTHON > [tool.aminx.agent] > XDG aminx/config.toml > uvx) + mcp_launch_source(); loud failure on malformed config"
 repo = "aminx"
 size = "S"
-depends_on = ["S7-17"]
-gate = "uv lock --check; no typer import in src"
-user_decision = true
+depends_on = ["S7-01"]
+gate = "layer-precedence table test (each layer alone, each pair); negatives: unknown mode, malformed TOML"
+user_decision = false
+
+[[item]]
+id = "S7-21"
+title = "python -m aminx.agent.plugin {publish,info}: load bundle via cisternal API, set MCP command per resolved mode (uvx --from aminx[agent]==ver | abs-python -m aminx.agent.mcp), validate venv import, write to shared marketplace, record mode+source in provenance sidecar (spike A7 first)"
+repo = "aminx"
+size = "M"
+depends_on = ["S7-06", "S7-20"]
+gate = "G-LAUNCH"
+user_decision = false
+
+[[item]]
+id = "S7-22"
+title = "Docs: 'Using aminx from an agent' page + using-aminx section: install, uvx default and cold start, switching to the local venv via each config layer, `info` to check, switching back"
+repo = "aminx"
+size = "S"
+depends_on = ["S7-21", "S7-04"]
+gate = "docs build; every command in the page runs in a smoke test (publish --launch venv, info, publish --launch uvx)"
+user_decision = false
+
+[[item]]
+id = "S7-23"
+title = "(optional, cisternal) request a --launch/--uvx-from override on assets publish-shared/install so aminx can drop its override code"
+repo = "cisternal"
+size = "S"
+depends_on = []
+gate = "issue filed with the aminx use case; aminx keeps its own override until released"
+user_decision = false
 ```
+
 
 ### 9.1 Order
 
@@ -492,28 +588,35 @@ user_decision = true
 |---|---|---|---|---|---|---|
 | 1 | S7-01 | agent extra + aminx.agent skeleton | aminx | S | - | no |
 | 2 | S7-15 | fold S7 into ecosystem DAG | aminx | S | - | no |
-| 3 | S7-02 | spike A2-A4 | aminx | S | S7-01 | no |
-| 4 | S7-03 | manifest + snapshot | aminx | S | S7-01 | no |
-| 5 | S7-09 | provenance.capture() | aminx | S | S7-01 | no |
-| 6 | S7-04 | using-aminx into repo, refreshed | aminx | M | S7-03 | yes |
-| 7 | S7-05 | requests + shaping | aminx | M | S7-02 | no |
-| 8 | S7-10 | campaign git_sha | aminx | S | S7-09 | no |
-| 9 | S7-11 | opt-in CLI telemetry | aminx | S | S7-09 | no |
-| 10 | S7-06 | aminx-mcp entry + install path | aminx | M | S7-03, S7-05 | yes |
-| 11 | S7-07 | v1 tools | aminx | L | S7-05, S7-06 | no |
-| 12 | S7-08 | warm cache | aminx | S | S7-07 | no |
-| 13 | S7-12 | CI agent lane | aminx | S | S7-07 | no |
-| 14 | S7-14 | install + load check | aminx | S | S7-04, S7-07 | yes |
-| 15 | S7-13 | align with S4 manifest ids | aminx | S | S7-07, S4-19 | no |
-| 16 | S7-16 | aminx-agent cyclopts entry (Q1 b/c) | aminx | M | S7-07 | yes |
-| 17 | S7-17 | full CLI port (Q1 c) | aminx | L | S7-16 | yes |
-| 18 | S7-18 | drop typer (Q1 c) | aminx | S | S7-17 | yes |
+| 3 | S7-23 | (optional) cisternal launch-override request | cisternal | S | - | no |
+| 4 | S7-02 | spike A2-A4 | aminx | S | S7-01 | no |
+| 5 | S7-03 | manifest + snapshot | aminx | S | S7-01 | no |
+| 6 | S7-09 | provenance.capture() | aminx | S | S7-01 | no |
+| 7 | S7-20 | launch-mode config resolver | aminx | S | S7-01 | no |
+| 8 | S7-04 | using-aminx router skill + skill test harness | aminx | S | S7-03 | no |
+| 9 | S7-05 | requests + shaping | aminx | M | S7-02 | no |
+| 10 | S7-10 | campaign git_sha | aminx | S | S7-09 | no |
+| 11 | S7-11 | opt-in CLI telemetry | aminx | S | S7-09 | no |
+| 12 | S7-06 | aminx-mcp entry point | aminx | M | S7-03, S7-05 | no |
+| 13 | S7-07 | v1 tools (incl. jacobian) | aminx | L | S7-05, S7-06 | no |
+| 14 | S7-21 | plugin publish/info with uvx/venv launch | aminx | M | S7-06, S7-20 | no |
+| 15 | S7-08 | warm cache | aminx | S | S7-07 | no |
+| 16 | S7-12 | CI agent lane | aminx | S | S7-07 | no |
+| 17 | S7-13 | align with S4 manifest ids | aminx | S | S7-07, S4-19 | no |
+| 18 | S7-19 | five targeted skills | aminx | M | S7-04, S7-07 | no |
+| 19 | S7-22 | agent docs (launch modes) | aminx | S | S7-21, S7-04 | no |
+| 20 | S7-14 | install + load check, retire user-level skill | aminx | S | S7-19, S7-21 | yes |
 
-Critical path: S7-01 -> S7-02 -> S7-05 -> S7-06 -> S7-07 -> S7-14 (six items, two of them M and one L).
-Under the recommended S7-Q1 = (a), S7-16..18 are not filed, leaving 15 items.
+20 items, acyclic (checked with `graphlib` on the TOML above); one external edge, S4-19, which only S7-13
+waits on. Critical path by size weight: S7-01 -> S7-02 -> S7-05 -> S7-06 -> S7-07 -> S7-19 -> S7-14.
+S7-14 is the only item needing the user (it touches `~/.claude/skills` and a live Claude Code session).
 
 ## Revision log
 
 - 261006: first draft (task 261006_cisternal-cutover-spec). Recon from two read-only agent passes, with
   load-bearing claims re-read at source; spike S-1 (lock) run on a scratch copy. Not yet adversarially
   reviewed.
+- 261006 r2: user answered Q1-Q5 (defer CLI port; uvx default with documented local-venv switch; targeted
+  skills; shared marketplace; jacobian in v1). Verified that cisternal fixes the MCP launch at bundle
+  build (`assets/launch.py`), so the switch is a layered aminx config applied by
+  `python -m aminx.agent.plugin publish`. Added S7-19..S7-23 and G-LAUNCH/G-SKILLS; withdrew S7-16..18.
