@@ -1,4 +1,4 @@
-# 261001-xtrax-a11-pin Internal Docs
+# 261006-cisternal-cutover-spec Internal Docs
 
 ## Daily
 - [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
@@ -20,6 +20,7 @@
 - [260522_comp-new-sink-unify](plans/260522_comp-new-sink-unify.md) — COMP-NEW: unify result-sink topology; streaming_tensor_sink_session for non-streaming path
 
 ## Specs
+- [261006_aminx-cisternal-cutover](specs/261006_aminx-cisternal-cutover.md) — Make aminx agent-native through cisternal: a manifest-driven plugin bundle (using-aminx moved into the repo), an aminx-mcp server wired with @cisternal.tool over host.runner, cisternal provenance/telemetry for campaign runs; the Typer-to-cyclopts CLI port is a user decision, recommended deferred.
 - [261002_streaming-xtrax-migration-scope](specs/261002_streaming-xtrax-migration-scope.md) — Opus-tier scoping report (task 261002_streaming-xtrax-migration, debt #2421): premise check, current-state map, xtrax capability map, gap analysis, target architecture, preemption/resume design, staged plan, asks of xtrax, decisions. Includes the verified reuse-safety defect in the campaign row hash.
 - [261001_aminx-hub](specs/261001_aminx-hub.md) — A hub project separate from the aminx package (aminx keeps its name; working slug aminx-hub, final repo name, PyPI policy and domain are the S3-01 user decision): a static GitHub Pages site whose catalog is generated from S4 manifests, with ORT-Web, Pyodide, localfold and remote executors and py2Dmol as the viewer.
 - [261001_aminx-identity-and-hub-naming](specs/261001_aminx-identity-and-hub-naming.md) — aminx keeps its name and PyPI identity (no rename). S3 records the separate hub's identity (repo slug, PyPI policy, praxia.science domain, bathos slug, orchestrator-name collision), cleans the previous rename's stale names, guards release uniqueness, and checks the spec set's assembly mechanically.
