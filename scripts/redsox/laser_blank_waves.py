@@ -187,13 +187,26 @@ def _run_wave(repo: Path, wave: str, oracle_dir: str, work: Path) -> dict[str, A
 
   The runner is ``uv run --no-sync``, byte-for-byte what ``run_gate.py:32``
   uses, so a wave graded here runs in the same environment the gate would give
-  it. The pre-registered draft said ``--frozen --extra=dev``; that was a slip on
-  two counts and is corrected here, not loosened. ``dev`` is a
-  ``[dependency-groups]`` entry (``pyproject.toml:307``), not a
-  ``[project.optional-dependencies]`` one, so ``--extra=dev`` has no referent;
-  and any syncing form may rewrite the shared venv out from under whatever else
-  is on the host. This changes how the wave is scheduled, never what it is
-  graded against -- every band still comes from ``tests/port/targets/*.toml``.
+  it. The pre-registered draft said ``--frozen --extra=dev``, which is a syncing
+  form; three things are wrong with that and none is a loosening.
+
+  First, this file disagreed with itself: ``_n_pairs`` already used
+  ``--no-sync``. The negative control and the live pair count -- the two numbers
+  that decide whether anything gets graded at all -- were measured in one
+  environment while the waves they gate ran in another.
+
+  Second, ``dev`` is declared TWICE with different contents, so ``--extra=dev``
+  does not name what it looks like it names. The ``[project.optional-dependencies]``
+  ``dev`` (``pyproject.toml:81``) carries ruff, ty, sphinx and ast-grep; the
+  ``[dependency-groups]`` ``dev`` (``:307``) carries torch, pytest-timeout,
+  pyarrow, biopython and scipy. These waves skip without torch, so which of the
+  two they get must not be left to uv's default-group behaviour.
+
+  Third, a syncing form rewrites the project venv as a side effect, on a host
+  that runs other tenants' work concurrently.
+
+  This changes how the wave is scheduled, never what it is graded against --
+  every band still comes from ``tests/port/targets/*.toml``.
   """
   xml = work / f"{wave}.junit.xml"
   env = {
