@@ -618,3 +618,54 @@ cost of confirming it is small: one extra control arm is **one aminx unit per st
 re-run, and `graded_resume` reuses everything else — `9d621aee` reused 24 of 24 units in 32 s.
 So this converts "decide before spending the oracle time" into "run one cheap arm, then
 decide", which is a strictly better position than the item was filed in.
+
+### Chunk-width run halted at 5/16 units: the host became unmeasurable, and the warm-up numbers are confounded
+
+**Halted deliberately 2026-10-06, not failed.** titanix's 1-minute load average went
+15 → 32 → 72 → 107 on 20 cores while the run was in flight. Three heavy jobs had converged on
+the box: another session's `staging_rooting_invariance_stage2.py` (125 threads, 1.5 h elapsed),
+a Rust `sccache` build (118 threads), and my own worker plus its `bth` wrapper (~210 threads
+between them). At 3.6x oversubscription and rising, this measurement **cannot** satisfy its own
+load-stability gate (max/min of the 1-minute load within a pair instance <= 1.50), so
+continuing would have spent ~3 h to earn an `instrument_unverified` verdict while degrading two
+other sessions' work. Only my own processes were killed; the staging job and `sccache` were left
+alone, and the load that remains is theirs.
+
+**What the five completed units support, and what they do NOT.**
+
+| unit | n | width | pad | s/sample |
+| :-- | --: | --: | --: | --: |
+| `ref_n8_w8_p512__warm` | 8 | 8 | 512 | 50.53 |
+| `fit_n8_w8_p160__warm` | 8 | 8 | 160 | 48.74 |
+| `wide_n32_w32_p512__warm` | 32 | 32 | 512 | 50.15 |
+| `ctrl_n8_w1_p512__warm` | 1 | 1 | 512 | 89.36 |
+| `ref_n8_w8_p512__paddingr0` | 8 | 8 | 512 | 55.92 |
+
+**VALID: the padding null.** `ref_n8_w8_p512__warm` against `fit_n8_w8_p160__warm` is a clean
+comparison — same n, same width, both cold — and gives **50.53 vs 48.74, ratio 0.965**. That
+independently confirms by measurement what §"REFUTED" established by code reading: `max_length`
+is inert on the LASEr path.
+
+**NOT VALID: any width conclusion from these rows.** Every one is a **warm-up**, which the
+design deliberately excludes from grading *because warm-ups carry the cold compile* — and they
+carry it over different sample counts. `ctrl_n8_w1_p512__warm` ran at **n = 1**, so its single
+sample absorbs an entire cold compile, while the w8 row amortises its compile over 8. Solving
+`8p + C = 404.2` against `1p' + C' = 89.36` is underdetermined without C. So the apparent
+"width 1 is 1.77x worse than width 8" is **confounded by compile amortisation and must not be
+quoted.** I stated it as a finding in an earlier status; that was wrong.
+
+The valid width comparison is the **graded** `control` pair, which runs *both* members at
+n = 8 after a per-width warm-up has already paid each shape's compile. That pair had not run
+when the host was halted.
+
+**Re-run conditions, so the next attempt is not wasted.** A fresh `--work-dir` is required
+rather than resuming: the completed units have their observed loads baked into their bodies, and
+reusing a unit measured at load 15 beside one measured at load 70 is precisely what the
+stability gate exists to reject. Check `/proc/loadavg` and `ps --sort=-nlwp` first; the run
+wants a box near idle, and it is ~3.5 h of wall clock at the ~50 s/sample that every
+configuration here agrees on.
+
+**The one durable number.** Per-sample cost is **~50 s at L = 154** on CPU, consistent across
+three independent configurations (50.53, 50.15, 48.74) and a fourth under heavier load (55.92).
+Against Potts' 0.36 s/sample that is the ~113x gap the whole investigation is about, and it is
+now the only cost figure here not resting on a refuted mechanism.
