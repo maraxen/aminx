@@ -102,11 +102,12 @@ aminx     20 units  ~11.2 h each  -> ~224 h     (linear scaling)
                                      ~237 h total, ~10 days serial
 ```
 
-Linearity is corroborated for the *upstream* arm (2 min at n=50 → ~40 min at n=1000, against
-the ~1 h recorded independently). For the aminx arm an n=200 probe was run; see
-`reference/261005_laser-confirm-run-readiness.md` for the settled exponent. √-scaling is
-already excluded — it predicted 67 min and the probe passed that still running — so **no
-sublinear rescue of ~60 h exists.**
+**Linearity is measured, not assumed.** An n=200 probe (same unit, same seed, 4x samples) ran
+8046 s against the n=50 sampling time of 2018 s — ratio **3.86 for 4x**, exponent **0.975**,
+i.e. linear to within ~2.5%. √-scaling was excluded en route (it predicted 67 min; the probe
+passed that still running). Propagating the measured exponent gives **~10.5 h per aminx unit at
+n=1000 → ~223 h total**, marginally under the linear estimate and the same order. Use ~223 h as
+the planning number; **no sublinear rescue of ~60 h exists.**
 
 Two further pre-flight results, both clean: the resume design is correct *and proven* (the same
 `graded_resume` helper ran the 16-unit Potts job), and the grading contract audits **total and

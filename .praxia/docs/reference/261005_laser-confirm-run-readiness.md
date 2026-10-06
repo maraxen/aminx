@@ -198,11 +198,32 @@ upstream arm*: 2 min at n=50 scales to ~40 min at n=1000, and project memory rec
 upstream n=1000 unit. Those agree within the precision of "~1 h", which is what makes this
 arithmetic worth acting on rather than dismissing.
 
-**What would falsify it.** Aminx-arm linearity is **not** measured. n=50 may be
-batch-inefficient, so n=1000 could be meaningfully sublinear — but it would have to be ~4x
-sublinear to rescue the 60 h figure, and nothing observed suggests that. The cheap test is one
-aminx unit at an intermediate n (a crafted job JSON with `n: 200`, ~2 h if linear); two points
-settle the exponent.
+**Linearity is now measured, and it holds.** The caveat that used to sit here — "aminx-arm
+linearity is not measured, n=50 may be batch-inefficient" — is retired. A second spike ran the
+same unit and seed at `n: 200` (a crafted job JSON, 4x the samples, fresh work dir):
+
+```
+n=200   elapsed 8046 s (134.1 min), rc=0
+n=50    warm 2018 s   (sampling, compile already removed)
+```
+
+Subtracting the measured ~264 s compile gives sampling(200) ≈ 7782 s, so the ratio is
+**3.86 for 4x the data** — an exponent of **log(3.86)/log(4) = 0.975**, i.e. **linear to within
+~2.5%**. √-scaling was excluded along the way: it predicted 67 min and the probe passed that
+still running.
+
+Propagating the measured exponent to n=1000:
+
+| | | |
+| :-- | :-- | --: |
+| aminx unit | 2018 s × 20^0.975 + compile | **~10.5 h** |
+| 20 aminx units | | ~210 h |
+| 20 upstream units | | ~13 h |
+| | **total** | **~223 h ≈ 9.3 days serial** |
+
+That is marginally below the 237 h linear-assumption figure above and of the same order. **The
+decision-relevant claim is robust to the difference:** the confirm is multiple hundreds of
+hours, not ~60. Treat ~223 h as the planning number.
 
 **Recommendation before approving anything:** treat ~60 h as superseded, and either run that
 intermediate-n test or plan against the ~237 h / ~119 h figures. A GPU oracle, previously
