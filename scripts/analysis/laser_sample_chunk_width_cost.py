@@ -150,9 +150,15 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
 
   spec = _build_spec(pdb, checkpoint, n=unit.n, width=unit.width)
   entries_before = _xla_cache_entries(cache_dir)
+  # titanix is a shared host. A timing measurement taken while another session
+  # saturates the cores is not comparable to one taken on an idle host, and load
+  # that DRIFTS between two compared configurations can manufacture a ratio.
+  # Record it so the grader can refuse rather than average over it.
+  load_before = os.getloadavg()[0]
   started = time.perf_counter()
   result = runner_sample(spec)
   elapsed = time.perf_counter() - started
+  load_after = os.getloadavg()[0]
   entries_after = _xla_cache_entries(cache_dir)
 
   arrays = result["structures"]["0"]["arrays"]
@@ -173,6 +179,9 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
     "xla_cache_entries_after": entries_after,
     "compiled_during_unit": entries_after > entries_before,
     "n_drawn": drawn,
+    "loadavg_1m_before": load_before,
+    "loadavg_1m_after": load_after,
+    "n_cpus": os.cpu_count(),
   }
 
 
@@ -273,7 +282,20 @@ def _grade(measured: dict[str, dict[str, Any]]) -> dict[str, Any]:
   linearity_ratio = None if (c1 is None or c3 is None) else c3 / c1
   linearity_holds = linearity_ratio is not None and 0.80 <= linearity_ratio <= 1.25
 
-  instrument_ok = bool(complete and width_control_fires and linearity_holds)
+  # Load-stability gate. titanix is shared; a ratio measured across configurations
+  # that ran under materially different CPU contention is not a measurement of
+  # chunk width. Disclosed amendment, added 2026-10-06 BEFORE any graded number
+  # existed, after observing load 17.47 on 20 cores from another session's job.
+  loads = [
+    max(float(row["loadavg_1m_before"]), float(row["loadavg_1m_after"]))
+    for row in measured.values()
+    if "loadavg_1m_before" in row
+  ]
+  load_spread = (max(loads) / min(loads)) if loads and min(loads) > 0 else None
+  load_stable = load_spread is not None and load_spread <= 1.50
+  load_observed = max(loads) if loads else None
+
+  instrument_ok = bool(complete and width_control_fires and linearity_holds and load_stable)
 
   widen_ratio = None if (c1 is None or c2 is None) else c2 / c1
   if not instrument_ok or widen_ratio is None:
@@ -293,6 +315,9 @@ def _grade(measured: dict[str, dict[str, Any]]) -> dict[str, Any]:
     "width_control_fires": width_control_fires,
     "linearity_ratio": linearity_ratio,
     "linearity_holds": linearity_holds,
+    "load_spread": load_spread,
+    "load_stable": load_stable,
+    "load_observed_max": load_observed,
     "widen_ratio": widen_ratio,
     "seconds_per_sample": {label: sps(label) for label, _, _ in _CONFIGS},
   }
