@@ -562,3 +562,59 @@ sampling path with `jax_enable_x64` explicitly off, which is what production use
 live here and not only on the path it was filed against. It is not a cost finding — a truncated
 `astype` is cheap — but it is independent confirmation that the f64 CDF the parity waves
 validate is not the code production runs.
+
+### #2481 diagnosed from the pilot's own artifact: the chi1 control cannot fail, and why
+
+The item said the chi1 negative control "cannot fail at any pre-registered m, so that channel
+is unvalidated", and flagged it as something to decide *before* spending oracle time. It is
+now quantified, from the pilot's own record rather than a new run — run `9d621aee`
+(`completed / derived / exit 0`, `git_hash 0e642d44`),
+`outputs/laser_sample_dist_pilot/0e642d44/result.json`, `cells['min_p0@0.3']['chi1']`.
+252 positions, n = 1000, `chosen_m = 1.25`:
+
+| quantity | value | Δ against the U2/U1 baseline |
+| :-- | --: | --: |
+| `delta_chi` (threshold) | **0.05** | — |
+| `mean_d_u2_u1` (baseline) | 0.013714 | — |
+| control, m = 1.10 | 0.014297 | 0.00058 |
+| control, m = 1.25 | 0.023939 | 0.01023 |
+| control, m = 1.50 | 0.041489 | **0.02778** |
+
+A control grades `fail` only when the **90% CI lower bound** on Δ exceeds `delta_chi`. The
+largest pre-registered m yields a *point* Δ of 0.0278 — **56% of the threshold** — and even its
+raw distance, 0.0415, sits below 0.05. So no m in {1.10, 1.25, 1.50} can make this control
+fail. At the m actually chosen, 1.25, it sits at **20% of threshold**. **#2481 is confirmed
+exactly as written.**
+
+**The cause is NOT an unread knob, and I checked that first because it would have been tidy.**
+`LaserOptions.chi_temp` is what the confirm scales for `CTRL_m`, and debt #2435 listed
+`chi_temp` among eight fields "declared but never read" — which would have made the control
+structurally inert. Both halves of that are wrong: `chi_temp` **is** read
+(`laser_mpnn/sample_host.py:499,575` → `model/laser/tied.py:243`,
+`softmax(stored / chi_temperature)`), and #2435's dead-field claim is stale for all eight
+fields (plan §2f). So this item must **not** be attributed to #2435.
+
+**The cause is channel insensitivity against an asymmetric threshold.** Scaling temperature by
+1.5× does move the chi1 distance — 0.0137 → 0.0415, about 3× — so the knob is live; it just
+does not move it far enough. Meanwhile `delta_chi = 0.05` is **five times** the sequence
+channel's `delta = 0.01`, while the chi1 distance responds *less* to temperature than the
+sequence distance does. Two compounding reasons it is hard to shift, both in
+`scripts/parity/sample_dist_stats.py:366-405`: each position is restricted to samples whose
+amino acid equals upstream's **modal** amino acid, and chi1 is binned into **36 bins of 10°**,
+so any sub-bin angular shift is absorbed entirely.
+
+**What would fix it — a spec decision, not a code fix.** The measured trend is roughly a
+doubling of the control distance per +0.25 in m (0.0143, 0.0239, 0.0415), so m ≈ 1.75–2.0
+extrapolates to a distance of ~0.07–0.09 and a Δ of ~0.056–0.076, which **would** clear 0.05.
+In the order that best preserves the pre-registration:
+
+1. **Add a chi1-specific control m of about 2.0**, leaving the sequence channel's m untouched.
+2. Use a channel-specific m throughout.
+3. Revisit `delta_chi` — but that changes the **pass** criterion for the real arm too, so it is
+   not a free move and should be last.
+
+**The extrapolation is from three points and must be confirmed before it is relied on.** The
+cost of confirming it is small: one extra control arm is **one aminx unit per structure**, not a
+re-run, and `graded_resume` reuses everything else — `9d621aee` reused 24 of 24 units in 32 s.
+So this converts "decide before spending the oracle time" into "run one cheap arm, then
+decide", which is a strictly better position than the item was filed in.
