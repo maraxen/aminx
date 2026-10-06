@@ -99,17 +99,42 @@ roughly two orders of magnitude between the two families:
 
 Only two explanations fit a ~113x gap: LASEr sampling is intrinsically far heavier (rotamer
 and chi sampling, a larger model, ligand features — all plausible), or LASEr's compile is
-~30 of those 34 minutes. **They imply very different 60 h estimates** — if compile dominates,
-an n=1000 unit costs roughly compile + 20x the sampling remainder rather than 20x the whole
-34 min. That is exactly why the measurement below is worth an hour before committing days.
+~30 of those 34 minutes.
 
-**What is NOT measured, and must be before anyone quotes a saving:** the compile-versus-sampling
-split. The case for compile dominance is indirect (this stack's 15–20 min cold-compile figure,
-plus ~11-core parallelism consistent with XLA compilation). The clean experiment is two runs of
-a single aminx unit with `jax_compilation_cache_dir` set — the first pays compile, the second
-reuses it, and the difference *is* the compile cost. That is a ~1 h measurement that could
-retire several hours from both estimates, and it should be run before committing to either the
-60 h LASEr confirm or the 11.63 h re-wave.
+**It is the first. The compile-dominance hypothesis is withdrawn.** An unregistered spike ran
+the same aminx unit twice with `JAX_COMPILATION_CACHE_DIR` set and
+`JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS=0`, into fresh work dirs so `graded_resume` could
+not short-circuit and sampling was identical across passes:
+
+```
+pass 1 (cold cache)   elapsed 2282 s (38.0 min)   cache entries   0 -> 310
+pass 2 (warm cache)   elapsed 2018 s (33.6 min)   cache entries 310 -> 310
+```
+
+Compile is therefore **~264 s (4.4 min), about 12% of the unit**; sampling is the other ~88%.
+`cache_entries` did not move during pass 2 — zero new compilations — so the cache was fully
+effective and the contrast is real rather than a cache that never engaged.
+
+**Consequences.** A persistent compilation cache is a genuine but *modest* lever (~12% per
+unit), not the hours-saving one an earlier revision of this section suggested. LASEr's aminx
+cost is real compute: ~40 s/sample at n=50 against Potts' 0.36 s/sample. So the ~60 h estimate
+stands on sampling, and D4 is a straight "is this worth the CPU" decision with no cheap
+optimisation hiding inside it.
+
+**Status of that number: SPIKE, not evidence.** It was run inline without a sidecar, which is
+legitimate for an answer but not for a citation. Before it is used to support any claim — in
+particular any revised LASEr duration — it must be re-run as a tracked script with a
+pre-registered sidecar (`scripts/analysis/` is unscoped, so that can be done without touching
+a ledger row). It is recorded here because it *withdraws* a claim of mine, which needs only
+enough evidence to stop asserting it.
+
+**Not measured: how sampling scales to n=1000.** The smoke used n=50, and 20x the samples need
+not cost 20x the time (batching). Do not multiply 33.6 min by 20 — that is precisely the
+extrapolation error this document's sibling plan records three times.
+
+*(An earlier revision of this section called the compile-versus-sampling split unmeasured and
+proposed the experiment. It has since been run — see above. The split is ~12% compile / ~88%
+sampling, and the proposal is therefore closed rather than pending.)*
 
 ## The trap: `script_sha256` is in the cache key
 
