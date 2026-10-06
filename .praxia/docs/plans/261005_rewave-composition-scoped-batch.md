@@ -200,11 +200,40 @@ One thing to look at rather than assume: `tests/parity/browser_validation_paths.
 `src/aminx/tiling/pad.py::pad_bundle` to coverage id `P27`. That file is unscoped, but whoever
 lands this should confirm P27's claim still holds.
 
+### 2c. #2475 confirmed inert on every gate row — the doc's own TODO, discharged
+
+The B1 row used to end *"plausibly zero rows move. Confirm before assuming."* Confirmed, and
+the check was worth running because the first result looked **bad**: grepping the eight gate
+vehicles for `optimize_pdb|optimize_fasta|chain_suffix` returns 0 for six of them and **3 for
+`potts_ar_refine_exact`** — a *passing* ledger row. Nothing in `tests/port/` matches.
+
+Reading those three settles it:
+
+- `:119` and `:122` are the **n-to-c mutant**, `_ntoc`, whose body is
+  `del ar_order, randn, num_samples, chain_suffix, stored_orders_present` — it ignores every
+  one of them.
+- `:344-351` is the real call, and it passes **`chain_suffix=""` with
+  `stored_orders_present=True`**, `num_samples=1`.
+
+`upstream_refine_order` takes `fresh_refine_order(chain_mask, randn)` only when
+`not stored_orders_present or chain_suffix` — false here — then with `num_samples == 1` returns
+`ar_order` directly. **So `randn` is never read**, and the key B1 changes has no consumer on
+this vehicle.
+
+B1 therefore cannot move any ledger row's value, which makes it a free passenger by this doc's
+own definition. **It is still a real fix** — the key reuse is a genuine defect on
+`optimize_pdb`/`optimize_fasta` and the chain-suffix path — so it needs verifying on its own
+terms; it just needs no attribution against a ledger row.
+
+**Consequence: Tier B is now B2 alone.** The wave is six free passengers plus the one
+gate-clearing item, with a single genuinely expensive optional decision (§3).
+
 Tier B — changes measured numbers. Each needs its effect attributable.
 
 | # | item | files | what moves | re-measurement |
 | :-- | :-- | :-- | :-- | :-- |
-| B1 | #2475 refine key split | `src/aminx/families/potts_mpnn/sample_host.py` | `optimize_pdb` / `optimize_fasta`, and the sample path **only when a chain suffix is set** | No gate slug exercises those paths, so plausibly zero rows move. Confirm before assuming. |
+*(B1 was here. **Confirmed and reclassified to Tier A as A6** — see §2c. Tier B is now **B2
+alone**.)*
 | B2 | #2371 stage 2 step 3 (dispatched sample loop) | `src/aminx/families/potts_mpnn/sample_host.py`, `src/aminx/host/family_runner.py` | the sample chunk path — **which includes refine@0.3** | See §3. This is the expensive one. |
 *(B3 was here. It has been **reclassified to Tier A as A5** — see below. Tier B is now B1 and
 B2 only.)*
