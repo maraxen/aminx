@@ -62,17 +62,29 @@ _STRUCTURE_RELATIVE = "tests/fixtures/laser/103m_1.pdb"
 _TEMPERATURE = 0.3
 _MIN_P = 0.0
 
-# (label, n, width)
-_Config = tuple[str, int, int]
+# The fixture's resolved span, counted from its own CA records, and the default
+# the confirm inherits because it never sets max_length. host/runner.py:127-131
+# states the cost model: "Autoregressive decode cost grows roughly with the
+# square of the padded length", so the default pays about (512/160)^2 ~ 10x.
+_SPAN = 154
+_PAD_DEFAULT = 512
+_PAD_FITTED = 160  # ceil(154/32)*32, exactly what runner.py's own warning suggests
 
-_BASE: _Config = ("base_n32_w8", 32, 8)
-_WIDE: _Config = ("wide_n32_w32", 32, 32)
-_CTRL_W8: _Config = ("ctrl_n8_w8", 8, 8)
-_CTRL_W1: _Config = ("ctrl_n8_w1", 8, 1)
-_HALF_N: _Config = ("half_n16_w8", 16, 8)
+# (label, n, width, max_length)
+_Config = tuple[str, int, int, int]
+
+_BASE: _Config = ("base_n32_w8_p512", 32, 8, _PAD_DEFAULT)
+_WIDE: _Config = ("wide_n32_w32_p512", 32, 32, _PAD_DEFAULT)
+_CTRL_W8: _Config = ("ctrl_n8_w8_p512", 8, 8, _PAD_DEFAULT)
+_CTRL_W1: _Config = ("ctrl_n8_w1_p512", 8, 1, _PAD_DEFAULT)
+_HALF_N: _Config = ("half_n16_w8_p512", 16, 8, _PAD_DEFAULT)
+_PAD_FIT: _Config = ("fit_n8_w8_p160", 8, 8, _PAD_FITTED)
+_PAD_REF: _Config = ("ref_n8_w8_p512", 8, 8, _PAD_DEFAULT)
 
 # (pair name, member A, member B, repeats). Fixed before the run.
+# "padding" leads because it is the larger hypothesis by an order of magnitude.
 _PAIRS: tuple[tuple[str, _Config, _Config, int], ...] = (
+  ("padding", _PAD_REF, _PAD_FIT, 2),
   ("lever", _BASE, _WIDE, 2),
   ("control", _CTRL_W8, _CTRL_W1, 1),
   ("linearity", _BASE, _HALF_N, 1),
@@ -91,6 +103,7 @@ class Unit:
   label: str
   n: int
   width: int
+  max_length: int
   pair: str
   repeat: int
   warmup: bool
@@ -115,7 +128,16 @@ def _sha256_file(path: Path) -> str:
 
 def _cache_key(unit: Unit, *, script_sha: str, checkpoint_sha: str, pdb_sha: str) -> str:
   payload = "|".join(
-    (script_sha, checkpoint_sha, pdb_sha, unit.label, str(unit.n), str(unit.width), unit.uid)
+    (
+      script_sha,
+      checkpoint_sha,
+      pdb_sha,
+      unit.label,
+      str(unit.n),
+      str(unit.width),
+      str(unit.max_length),
+      unit.uid,
+    )
   )
   return _sha256_bytes(payload.encode())
 
@@ -126,8 +148,12 @@ def _xla_cache_entries(cache_dir: Path) -> int:
   return sum(1 for entry in cache_dir.rglob("*") if entry.is_file())
 
 
-def _build_spec(pdb: Path, checkpoint: Path, *, n: int, width: int) -> Any:
-  """Mirror the confirm's SamplingSpecification, varying only samples_chunk_size."""
+def _build_spec(pdb: Path, checkpoint: Path, *, n: int, width: int, max_length: int) -> Any:
+  """Mirror the confirm's SamplingSpecification, varying chunk width and max_length.
+
+  The confirm sets NEITHER max_length (so it inherits the 512 default) nor any
+  padding hint, which is why the padding pair exists.
+  """
   import laser_sample_dist_confirm as confirm  # type: ignore[import-not-found]
 
   from aminx.run.specs import SamplingSpecification
@@ -141,6 +167,7 @@ def _build_spec(pdb: Path, checkpoint: Path, *, n: int, width: int) -> Any:
     model_local_path=checkpoint,
     num_samples=n,
     samples_chunk_size=width,
+    max_length=max_length,
     return_logits=False,
     random_seed=0,
     temperature=_TEMPERATURE,
@@ -151,17 +178,28 @@ def _build_spec(pdb: Path, checkpoint: Path, *, n: int, width: int) -> Any:
 
 def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[str, Any]:
   """Time exactly one runner_sample call. Runs inside the worker subprocess."""
+  import warnings
+
   import jax
 
   from aminx.host.runner import sample as runner_sample
 
   jax.config.update("jax_enable_x64", False)
 
-  spec = _build_spec(pdb, checkpoint, n=unit.n, width=unit.width)
+  # aminx warns when a batch is padded to far more than its longest chain's span
+  # (host/runner.py:_PaddingCheck). Capturing it here rather than letting the
+  # subprocess swallow it is the whole reason the padding pair exists: the first
+  # run of this script discarded that warning on every unit.
+  caught: list[str] = []
+
+  spec = _build_spec(pdb, checkpoint, n=unit.n, width=unit.width, max_length=unit.max_length)
   entries_before = _xla_cache_entries(cache_dir)
   load_before = os.getloadavg()[0]
   started = time.perf_counter()
-  result = runner_sample(spec)
+  with warnings.catch_warnings(record=True) as record:
+    warnings.simplefilter("always")
+    result = runner_sample(spec)
+    caught.extend(str(w.message) for w in record)
   elapsed = time.perf_counter() - started
   load_after = os.getloadavg()[0]
   entries_after = _xla_cache_entries(cache_dir)
@@ -177,6 +215,7 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
     "label": unit.label,
     "n": unit.n,
     "width": unit.width,
+    "max_length": unit.max_length,
     "pair": unit.pair,
     "repeat": unit.repeat,
     "warmup": unit.warmup,
@@ -189,6 +228,8 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
     "loadavg_1m_before": load_before,
     "loadavg_1m_after": load_after,
     "n_cpus": os.cpu_count(),
+    "warnings": caught,
+    "padding_warning_seen": any("padded to max_length" in w for w in caught),
   }
 
 
@@ -204,6 +245,7 @@ def _worker(args: argparse.Namespace) -> None:
     label=args.worker_label,
     n=int(args.worker_n),
     width=int(args.worker_width),
+    max_length=int(args.worker_max_length),
     pair=args.worker_pair,
     repeat=int(args.worker_repeat),
     warmup=bool(args.worker_warmup),
@@ -227,6 +269,7 @@ def _dispatch(
     "--worker-label", unit.label,
     "--worker-n", str(unit.n),
     "--worker-width", str(unit.width),
+    "--worker-max-length", str(unit.max_length),
     "--worker-pair", unit.pair,
     "--worker-repeat", str(unit.repeat),
     "--worker-out", str(body_path),
@@ -267,18 +310,22 @@ def _plan_units() -> list[Unit]:
   # ceil(n/w) dispatches of the SAME shape, and every (n, width) pair here
   # divides evenly, so no remainder chunk introduces a second shape. Warming per
   # width instead of per configuration costs 41 sample-draws rather than 96.
-  seen_widths: set[int] = set()
+  seen_shapes: set[tuple[int, int]] = set()
   for _, member_a, member_b, _ in _PAIRS:
-    for label, _n, width in (member_a, member_b):
-      if width in seen_widths:
+    for label, _n, width, max_length in (member_a, member_b):
+      if (width, max_length) in seen_shapes:
         continue
-      seen_widths.add(width)
-      units.append(Unit(label, width, width, pair="warmup", repeat=0, warmup=True))
+      seen_shapes.add((width, max_length))
+      units.append(
+        Unit(label, width, width, max_length, pair="warmup", repeat=0, warmup=True)
+      )
   for pair_name, member_a, member_b, repeats in _PAIRS:
     for repeat in range(repeats):
       ordered = (member_a, member_b) if repeat % 2 == 0 else (member_b, member_a)
-      for label, n, width in ordered:
-        units.append(Unit(label, n, width, pair=pair_name, repeat=repeat, warmup=False))
+      for label, n, width, max_length in ordered:
+        units.append(
+          Unit(label, n, width, max_length, pair=pair_name, repeat=repeat, warmup=False)
+        )
   return units
 
 
@@ -326,6 +373,9 @@ def _pair_ratio(
 def _grade(rows: list[dict[str, Any]]) -> dict[str, Any]:
   instances = _pair_instances(rows)
 
+  padding_ratio, padding_all, padding_stable = _pair_ratio(
+    instances, "padding", _PAD_FIT[0], _PAD_REF[0]
+  )
   lever_ratio, lever_all, lever_stable = _pair_ratio(
     instances, "lever", _WIDE[0], _BASE[0]
   )
@@ -338,10 +388,25 @@ def _grade(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
   control_fires = control_ratio is not None and control_ratio >= 1.20
   linearity_holds = linearity_ratio is not None and 0.80 <= linearity_ratio <= 1.25
-  load_stable = bool(lever_stable and control_stable and linearity_stable)
+  load_stable = bool(lever_stable and control_stable and linearity_stable and padding_stable)
   instrument_ok = bool(
-    lever_ratio is not None and control_fires and linearity_holds and load_stable
+    lever_ratio is not None
+    and padding_ratio is not None
+    and control_fires
+    and linearity_holds
+    and load_stable
   )
+
+  # The padding verdict is reported alongside the chunk-width verdict rather than
+  # folded into it: they are independent levers and a reader needs both.
+  if padding_ratio is None:
+    padding_verdict = "unmeasured"
+  elif padding_ratio <= 0.50:
+    padding_verdict = "padding_dominates"
+  elif padding_ratio >= 0.90:
+    padding_verdict = "padding_irrelevant"
+  else:
+    padding_verdict = "padding_partial"
 
   if not instrument_ok:
     verdict = "instrument_unverified"
@@ -352,8 +417,17 @@ def _grade(rows: list[dict[str, Any]]) -> dict[str, Any]:
   else:
     verdict = "inconclusive"
 
+  expected_sq = (_PAD_DEFAULT / _PAD_FITTED) ** 2
   return {
     "verdict": verdict,
+    "padding_verdict": padding_verdict,
+    "padding_ratio": padding_ratio,
+    "padding_ratio_all": padding_all,
+    "padding_speedup": (1.0 / padding_ratio) if padding_ratio else None,
+    "padding_speedup_predicted_by_square_law": expected_sq,
+    "span_residues": _SPAN,
+    "pad_default": _PAD_DEFAULT,
+    "pad_fitted": _PAD_FITTED,
     "instrument_ok": instrument_ok,
     "widen_ratio": lever_ratio,
     "widen_ratio_all": lever_all,
@@ -365,6 +439,7 @@ def _grade(rows: list[dict[str, Any]]) -> dict[str, Any]:
     "linearity_holds": linearity_holds,
     "load_stable": load_stable,
     "load_stable_by_pair": {
+      "padding": padding_stable,
       "lever": lever_stable,
       "control": control_stable,
       "linearity": linearity_stable,
@@ -373,6 +448,7 @@ def _grade(rows: list[dict[str, Any]]) -> dict[str, Any]:
     "seconds_per_sample": {
       row["uid"]: row["seconds_per_sample"] for row in rows if not row.get("warmup")
     },
+    "padding_warning_seen_any": any(r.get("padding_warning_seen") for r in rows),
   }
 
 
@@ -384,6 +460,7 @@ def _synthetic_row(
     "label": label,
     "n": n,
     "width": width,
+    "max_length": _PAD_DEFAULT,
     "pair": pair,
     "repeat": repeat,
     "warmup": False,
@@ -394,11 +471,18 @@ def _synthetic_row(
 
 
 def _synthetic_rows(
-  *, widen_sps: float, control_ratio: float = 2.0, linearity: float = 1.0, load: float = 10.0
+  *,
+  widen_sps: float,
+  control_ratio: float = 2.0,
+  linearity: float = 1.0,
+  load: float = 10.0,
+  padding_sps: float = 1.0,
 ) -> list[dict[str, Any]]:
-  """A full synthetic result set with a controllable lever ratio."""
+  """A full synthetic result set with controllable lever and padding ratios."""
   rows: list[dict[str, Any]] = []
   for repeat in (0, 1):
+    rows.append(_synthetic_row(_PAD_REF[0], 8, 8, "padding", repeat, 10.0, load))
+    rows.append(_synthetic_row(_PAD_FIT[0], 8, 8, "padding", repeat, padding_sps, load))
     rows.append(_synthetic_row(_BASE[0], 32, 8, "lever", repeat, 10.0, load))
     rows.append(_synthetic_row(_WIDE[0], 32, 32, "lever", repeat, widen_sps, load))
   rows.append(_synthetic_row(_CTRL_W8[0], 8, 8, "control", 0, 10.0, load))
@@ -426,6 +510,16 @@ def _self_test() -> tuple[bool, list[str]]:
   check("lever_absent", _synthetic_rows(widen_sps=9.5), "compute_bound")
   check("lever_middle", _synthetic_rows(widen_sps=8.0), "inconclusive")
 
+  # The padding verdict is independent of the chunk-width verdict.
+  for name, padding_sps, expected in (
+    ("padding_dominates", 1.0, "padding_dominates"),
+    ("padding_irrelevant", 9.8, "padding_irrelevant"),
+    ("padding_partial", 7.0, "padding_partial"),
+  ):
+    graded = _grade(_synthetic_rows(widen_sps=5.0, padding_sps=padding_sps))
+    if graded["padding_verdict"] != expected:
+      failures.append(f"{name}: expected {expected}, got {graded['padding_verdict']}")
+
   # Negative: each control alone must force a refusal despite a strong lever.
   check(
     "control_inert",
@@ -438,7 +532,7 @@ def _self_test() -> tuple[bool, list[str]]:
     "instrument_unverified",
   )
   drifted = _synthetic_rows(widen_sps=5.0)
-  drifted[1]["loadavg_1m_after"] = 30.0  # inside the lever pair
+  drifted[-1]["loadavg_1m_after"] = 30.0  # inside the linearity pair
   check("load_drift", drifted, "instrument_unverified")
 
   return (not failures), failures
@@ -466,6 +560,7 @@ def _parse(argv: list[str] | None = None) -> argparse.Namespace:
   parser.add_argument("--worker-label", default="")
   parser.add_argument("--worker-n", type=int, default=0)
   parser.add_argument("--worker-width", type=int, default=0)
+  parser.add_argument("--worker-max-length", type=int, default=_PAD_DEFAULT)
   parser.add_argument("--worker-pair", default="")
   parser.add_argument("--worker-repeat", type=int, default=0)
   parser.add_argument("--worker-warmup", action="store_true")
@@ -486,7 +581,9 @@ def main(argv: list[str] | None = None) -> int:
   self_test_passed, self_test_failed = _self_test()
   for failure in self_test_failed:
     logger.error("self-test: %s", failure)
-  logger.info("self-test %s (6 checks, 3 of them refusals)", "PASSED" if self_test_passed else "FAILED")
+  logger.info(
+    "self-test %s (9 checks, 3 of them refusals)", "PASSED" if self_test_passed else "FAILED"
+  )
   if args.self_test_only:
     return 0 if self_test_passed else 1
   if not self_test_passed:
@@ -567,6 +664,8 @@ def main(argv: list[str] | None = None) -> int:
       body["loadavg_1m_before"],
       body["loadavg_1m_after"],
     )
+    if body.get("padding_warning_seen"):
+      logger.info("  ^ aminx emitted its padding warning for this unit")
 
   graded = (
     {"verdict": "smoke", "instrument_ok": False} if args.smoke else _grade(rows)
