@@ -810,3 +810,46 @@ the wave.
 **The dtype trio is now two.** #2311 closed; **#2309** blocked on an oracle dump rather than a
 tolerance (§1b); **#2321** open and now *corroborated* on the LASEr sampling path (readiness
 doc). Neither remaining item is a gate blocker.
+
+### 3b. B2's 11.63 h is genuine compute — no padding lever exists, and there is no crop hazard
+
+Checked 2026-10-06 because if the Potts confirm inherited `max_length=512` the way I wrongly
+believed the LASEr confirm did, **B2's cost might have been mostly padding** and the wave's one
+expensive decision would have changed. It does not, and two worries are closed at once.
+
+**The Potts confirm does not set `max_length`** (`potts_sample_dist_confirm.py:470-481` passes
+`inputs`, `model_family`, `model_local_path`, `num_samples`, `samples_chunk_size`,
+`return_logits`, `random_seed`, `temperature`, `backbone_noise`, `potts_mpnn` — and nothing
+else), so the 512 default is in the spec. **But the Potts sampling path never consults it.**
+`families/potts_mpnn/sample_host.py:283` resolves the pad width as
+
+```python
+resolved = int(features.L_total) if l_pad is None else int(l_pad)
+```
+
+and its docstring states the default plainly: *"`l_pad is None` keeps `L_total`, which is what
+every existing caller"* relies on. So Potts pads to the **real structure length**, exactly as
+LASEr takes its length from the features (§"REFUTED" in the readiness doc). `max_length` and
+`truncation_strategy` belong to the generic host loader (`host/prep.py:132-133`), which these
+parity vehicles bypass by having their own family `batches()`.
+
+**Consequence 1 — no padding lever on B2.** Its measured **11.63 h** is genuine per-sample
+compute. The structures are 3gg7 243, 4jox 118, 6w25 475 and swe1_ligand 819 residues, so had
+`max_length=512` applied, 4jox alone would have paid `(512/118)^2 ≈ 19x`. It does not. **The
+wave's cost estimate stands unchanged**, and the "maybe B2 is cheap" hypothesis is refuted the
+same way the LASEr padding hypothesis was — by reading where the length actually comes from.
+
+**Consequence 2 — a reproducibility worry raised and closed.** `swe1_ligand` is **819 residues
+in a single chain A** (6511 ATOM records, one model), which *exceeds* `max_length=512`. Had the
+loader path applied, `truncation_strategy` defaults to **`random_crop`**, which
+`host/runner.py:153` itself documents as *"not reproducible"* — and a randomly cropped aminx arm
+compared against an uncropped upstream arm would have made run `096d0847`'s 9x refine margin
+meaningless. **Neither happens.** `l_pad` resolves to `L_total`, so all 819 residues are used,
+and `potts_mpnn/featurize.py:508-509` would have **raised** rather than silently cropped had a
+shorter `l_pad` ever been passed (`"l_pad (...) is shorter than L_total (...)"`). The passed
+Potts result is unaffected.
+
+**Where #2358 does still apply:** the generic loader path used by the CLI and campaign flows,
+where `max_length` and `truncation_strategy` are live. Sizing `max_length` remains a real lever
+there, and the over-length case there would hit `random_crop` — worth knowing for any campaign
+over chains longer than 512.
