@@ -1,0 +1,135 @@
+[metadata]
+title = "how much faster is LASEr sampling on a TITAN RTX than on CPU-only jaxlib"
+created = "261006"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+PRE-REGISTERED BEFORE THE PROBE RUNS. The CUDA venv exists and reports
+backend = gpu, but no timed unit has been run in it and no speedup number exists.
+
+WHY HARDWARE IS THE ONLY LEVER LEFT, measured rather than assumed. The ~223 h
+LASEr distributional confirm had three candidate software levers and all three
+are now closed:
+  planner serialisation  FALSIFIED      samples_chunk_size never reaches the path
+  max_length padding     FALSIFIED      four independent lines, median ratio 1.054
+  chunk width            NOT ESTABLISHED control failed at 1.014 against >= 1.20,
+                                        so per-chunk dispatch is negligible; the
+                                        apparent effect equalled the within-
+                                        configuration replicate spread (the same
+                                        config measured 60.25 and 50.94 s/sample)
+The surviving explanation is that LASEr sampling is simply heavy: ~44-60 s/sample
+at L=154 across fourteen CPU units. titanix has four TITAN RTX and two of them
+are completely idle (5 MiB and 38 MiB used, 0% utilisation), while jax in every
+aminx venv reports "a CUDA-enabled jaxlib is not installed. Falling back to cpu."
+The cards have been unused for want of a wheel, not for want of hardware.
+
+THE COMPARISON IS FIXED IN ADVANCE AND CANNOT DRIFT. The CPU reference is 48.555
+s/sample, the median of the two graded n=8 / width=8 / max_length=512 units
+(52.68 and 44.43) from run cw-work-261006c. It is written into the script as a
+constant before any GPU number exists. The probe runs THE SAME WORKER CODE at the
+SAME configuration, structure and checkpoint, so this is one number against a
+directly comparable one rather than against a reimplementation.
+
+THE CONTROL IS THE WHOLE POINT, because the failure mode here is silent. A CUDA
+venv that falls back to CPU prints a warning and carries on, producing a speedup
+near 1.0 that reads exactly like a real negative finding. A backend string is not
+sufficient evidence: it is read in a DIFFERENT PROCESS from the one doing the
+work. So the probe samples nvidia-smi on the pinned cards throughout the timed
+run and requires peak memory >= 256 MiB AND peak utilisation >= 5% on them. An
+idle card (tens of MiB, 0%) fails that, and so does a sampler that collected
+nothing. controls_detected ANDs this with backend = gpu and a clean worker exit.
+
+WHAT I EXPECT, STATED SO IT CAN BE WRONG. I expect a substantial speedup, because
+autoregressive decode at L=154 is a long sequence of small matmuls and the CPU
+path is running on a contended 20-core box. But I will not be surprised by a
+SMALL one: this workload is latency-bound per decode step rather than
+throughput-bound, small kernels can leave a GPU mostly idle, and host-device
+transfer per step can dominate. A speedup under 3 is a real and reportable
+result, not an instrument failure, and the bands below say what each regime
+implies rather than treating only the good one as success.
+
+THE TURING CAVEAT, which is the detail most likely to be lost. TITAN RTX is
+sm_7.5 and its f64 throughput is 1/32 of f32. This probe is informative for f32
+production sampling -- which is what the distributional confirm does -- and is a
+POOR guide to the f64 parity tiers, which could run SLOWER here than on CPU.
+Nothing measured here may be generalised to the f64 waves. "We have GPUs now"
+invites exactly that generalisation and it would be wrong.
+
+SCOPE AND FREEZE. scripts/analysis/ is not in _SCOPED_PREFIXES, and the CUDA
+jaxlib lives in a SEPARATE venv (aminx-gpu-venv-261006) that no vehicle uses. No
+ledger row is affected by this script existing or running. GPUs 0 and 1 hold a
+vLLM service at 21.5 GB each and are not mine to disturb; the probe pins
+CUDA_VISIBLE_DEVICES=2,3.
+
+WHAT THIS CANNOT SEE. It measures ONE unit on ONE card. It does not measure
+concurrency across the two cards, memory contention from running several units
+per card, or the full 40-unit confirm's scheduling. It therefore sizes a CEILING
+for the per-unit gain, which is what the provisioning decision needs, and is not
+itself a plan.
+"""
+stage_name = "exploration"
+novel = true
+
+[outcomes.gpu_decisive]
+condition = "controls_detected = true AND speedup >= 10.0"
+decision = "Run the confirm on titanix's two idle cards. At >= 10x per unit over two cards the ~223 h serial estimate falls to roughly 11 h or less, which is one overnight run, and Engaging provisioning can be dropped from the critical path entirely."
+reasoning = "Ten-fold is the threshold at which the confirm stops being a scheduling problem and becomes a single run. Below it the arithmetic still argues for a wider machine; at or above it the two idle cards already on hand are enough."
+is_residual = false
+adversarial_check = "NOT (controls_detected = true AND speedup >= 10.0)"
+
+[outcomes.gpu_helps]
+condition = "controls_detected = true AND speedup >= 3.0 AND speedup < 10.0"
+decision = "Real but not sufficient alone: two cards take the estimate to roughly 11-37 h. Put both numbers to the user -- titanix now at that wall clock, against Engaging's 40-way array which parallelises across units rather than speeding each one up. This is a provisioning decision, not a technical one, and it is the user's."
+reasoning = "A 3-10x per-unit gain and a 40-way fan-out attack the same total from different directions, and which wins depends on queue time and on how much of the 40 units can run concurrently. Presenting one without the other would be choosing for them."
+is_residual = true
+adversarial_check = "speedup < 3.0 OR speedup >= 10.0"
+
+[outcomes.gpu_marginal]
+condition = "controls_detected = true AND speedup >= 1.2 AND speedup < 3.0"
+decision = "Not worth the complexity on its own. Record the number, keep the separate CUDA venv for future use, and take Engaging's array as the primary path for the confirm."
+reasoning = "Under 3x, two cards leave the estimate at 37 h or worse, and a second numerical backend in a parity project carries real risk for a modest gain. The number is still worth having, because it tells us the workload is latency-bound rather than that the GPU is broken."
+is_residual = true
+adversarial_check = "speedup < 1.2 OR speedup >= 3.0"
+
+[outcomes.gpu_no_help]
+condition = "controls_detected = true AND speedup < 1.2"
+decision = "A genuine negative result: this workload does not benefit from this hardware. Report it as such, do NOT retry with tuning in the hope of a better number, and treat Engaging's array as the only remaining lever. Record that autoregressive decode at L=154 is latency-bound on sm_7.5."
+reasoning = "Small per-step kernels and per-step host-device transfer can leave a GPU idle. With the control satisfied, a speedup near or below 1 is evidence about the workload, not about the installation -- which is exactly why the control is required before this branch may be read at all."
+is_residual = true
+adversarial_check = "speedup >= 1.2"
+
+[outcomes.instrument_unverified]
+condition = "controls_detected != true"
+decision = "Discard the speedup, including and especially a value near 1.0. Check backend_is_gpu, gpu_did_work and unit_ok separately: a false gpu_did_work with a true backend_is_gpu is the silent-CPU-fallback signature and means the number describes a CPU run."
+reasoning = "The whole hazard is that a CPU fallback produces speedup ~ 1.0, which is indistinguishable by value from the honest gpu_no_help outcome. Only the nvidia-smi evidence separates them, so without it no branch may be read."
+is_residual = true
+adversarial_check = "controls_detected = true"
+
+[result_schema]
+controls_detected = "bool"
+backend_is_gpu = "bool"
+gpu_did_work = "bool"
+unit_ok = "bool"
+gpu_seconds_per_sample = "float"
+cpu_ref_seconds_per_sample = "float"
+speedup = "float"
+wall_s = "float"
+gpu_state = "object"
+backend_report = "object"
+worker_returncode = "int"
+pinned_devices = "str"
+
+[data]
+cpu_reference_is_frozen = "48.555 s/sample, the median of ref_n8_w8_p512 instances 52.68 and 44.43 from run cw-work-261006c, written into the script as a constant before any GPU number existed. The full CPU spread across all fourteen units was 43.65-60.25."
+why_the_same_worker = "The probe invokes the existing chunk-width worker rather than reimplementing the timing. Same code, same structure, same checkpoint, same n/width/max_length -- so the comparison is between two measurements of one thing, not between two implementations."
+the_silent_failure_this_is_built_against = "jax prints 'An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.' and continues. That produces a speedup near 1.0 that reads like a finding. nvidia-smi sampling during the timed region is the only evidence that separates it from a genuine null."
+grader_self_test = "9 checks, 2 of which must REFUSE (zero and negative gpu seconds). Three pin the control directly: an empty sampler and an idle card (38 MiB, 0%) must both fail gpu_did_work, and a busy card must pass it."
+turing_f64 = "sm_7.5 f64 is 1/32 of f32. Applies to f32 sampling only. Do NOT generalise to the f64 parity tiers, which may run slower on this hardware than on CPU."
+venv_isolation = "CUDA jaxlib is installed only in /home/solab/projects/aminx-gpu-venv-261006, built via UV_PROJECT_ENVIRONMENT after a --dry-run confirmed the target path, so the running measurement's venv was never touched. jax-cuda12-plugin 0.10.2 with cuBLAS 12.9 and cuDNN 9.27 on driver 595.84 / CUDA 13.2, i.e. CUDA 12 wheels under forward compatibility."
+device_pinning = "CUDA_VISIBLE_DEVICES=2,3. GPUs 0 and 1 hold a vLLM service at 21.5 GB each. The sampler queries nvidia-smi by PHYSICAL index 2 and 3, while jax inside the pinned process sees them renumbered as CudaDevice(id=0) and CudaDevice(id=1); both namings refer to the same two idle cards."
+sequencing = "Run only after the chunk-width measurement finishes. A GPU run still consumes host CPU for dispatch, and running the two concurrently would perturb the timing measurement it is meant to be compared against."
+cost = "One unit of 8 samples, bounded by a 1800 s timeout."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
