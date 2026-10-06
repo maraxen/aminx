@@ -559,3 +559,44 @@ rsynced with `--exclude='/.git'`, and a worktree's `.git` is a file pointing int
 repo anyway, so copying it would not have helped. A `bth run` there would carry no git
 provenance, which the ledger's own 1c criteria require. Tracked measurement therefore has to
 run from a real checkout under `~/projects/`, not from an rsynced tree.
+
+### 5c-i. Running a tracked measurement on titanix needed git-lfs, which was not installed
+
+Resolved 2026-10-06, and worth recording because the error message points nowhere near the
+cause.
+
+`bth run` provenance (`git_hash`, `git_dirty`) is what the ledger's 1c criteria check, so a
+tracked measurement has to run from a real checkout. Building one exposed a four-link chain:
+
+1. **No checkout of this branch existed on titanix.** The rsynced trees have no `.git`, and
+   `~/projects/aminx-laser-confirm-261005/.git` is a *worktree pointer file* rsynced from the
+   local machine — it names a path that does not exist there, so it looks like a repo to
+   `find` and is unusable.
+2. **Built one with `git bundle` + clone** (74 MB, no network auth needed):
+   `~/projects/aminx-cw-261006` at `ff0053a8`, clean.
+3. **Every unit then failed** with
+   `ValueError: This file contains pickled (object) data ... allow_pickle=`, from
+   `families/laser_mpnn/featurize.py:503` loading `ideal_geometry.npz`. **That is not a dtype
+   or security problem.** `.gitattributes:1-5` tracks `*.npz` (and `*.eqx*`, 55 files) through
+   **git-lfs**, `git bundle` carries git objects but **not LFS blobs**, so the clone held a
+   ~130-byte pointer — and numpy raises exactly that message for any file that is neither a
+   zip nor npy-magic, because it falls through to the pickle path.
+4. **git-lfs was not installed on titanix at all.** Installed to
+   `/home/solab/.local/bin/git-lfs` (v3.5.1, release tarball, no sudo). Like `uv` and `bth` it
+   is **not on PATH over plain ssh**.
+
+**The trap inside the fix.** Simply rsyncing the real binaries in *works for the code* but
+leaves `git status --short` reporting them `M` permanently while `git diff` is **empty** — the
+index holds the pointer, and `git update-index --refresh` does not reconcile the stat cache.
+That is `git_dirty=True`, which disqualifies the run. The route that gives a clean tree **and**
+real data is: copy an existing checkout's object cache
+(`rsync -a ~/projects/aminx-b7i-git/.git/lfs/ <clone>/.git/lfs/`, 236 MB), `git lfs install
+--local`, then delete the file and `git checkout -- src/` so the smudge filter materializes it
+from the local cache. Verified: `git status` empty, geometry file a real `PK..` zip.
+
+**Two things this clears beyond the measurement.** `git-lfs` was one of the pending
+provisioning items, and it is now done for titanix. And the bathos wrapped-command plumbing is
+confirmed sound on that host: the failed run's record reads `git_hash ff0053a8`,
+`git_dirty False` and a populated `sidecar_sha256`, so the sidecar resolved correctly even
+though the console echoed `"script_path": "uv"` — the `endswith(".py")` fix is present in the
+installed bathos, and that console field is not evidence of the wrapper trap.
