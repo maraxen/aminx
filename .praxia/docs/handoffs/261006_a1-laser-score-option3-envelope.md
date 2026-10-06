@@ -82,6 +82,59 @@ re-measured twice (§0a).
 LASEr f32 tier to scale-relative would be more uniform and is explicitly **larger than this
 wave needs** — the decision doc says so. Do not expand scope.
 
+## The free passengers: A2, A3, A4 in the same dispatch
+
+These are **filed debts with agreed resolutions, not design choices**, so specifying them
+pre-empts nothing. The plan doc recommends them as free passengers (§5): they cannot change a
+measured value, only the commit the wave re-measures anyway. Anchors verified 261006.
+
+### A2 — #2483, the missing-`laser`-extra message
+
+`src/aminx/host/runner.py`, the bare `importlib.import_module(module)` inside
+`if module is not None and FAMILY_DRIVERS.get(family) is None:`. With the `laser` extra absent
+this raises a bare `ModuleNotFoundError: No module named 'prody'` naming neither the family nor
+the extra. **Reproduced 261006** while trying to run the pilot from `aminx-confirm-git`, whose
+venv lacks it — so this is observed, not theorised.
+
+Wrap that one call in `try/except ImportError` and raise naming both the family and the
+required extra (`prody` is not core; `pyproject.toml:42-45` puts it under `laser`).
+
+**Do not conflate it with the `RuntimeError` immediately below**, which covers a different
+case — the module imported but no driver registered (#2403, already resolved). A2 is the
+*import* failure only.
+
+### A3 — #2484, unknown-`model_family` validation
+
+`src/aminx/run/specs.py:241` declares
+`Literal["proteinmpnn","ligandmpnn","pottsmpnn","lasermpnn"] | None`, but `:572` reads
+`family = model_family if isinstance(model_family, str) else "proteinmpnn"` — so an
+*unrecognised* string silently becomes a stock-ProteinMPNN run. Confirmed through the CLI:
+`aminx spec --model-family lasermpn emit-sample …` exits 0 and emits `"model_family":
+"lasermpn"`. The CLI accepts a free string (`cli.py:485-493`, `:1095-1103`) with no
+Literal/choices/validator.
+
+Validate at spec construction so `None` means "stock handles this" and an unknown value raises.
+
+**The trap from the plan doc §4, repeated because it bites here:** this turns an
+accepted-but-unknown family into an **error**, so it can start raising on existing callers.
+Grep every committed spec JSON, fixture and sidecar for a `model_family` outside the four valid
+values *before* landing it.
+
+### A4 — #2417, the `--double` flag
+
+`scripts/parity/potts_refine.py:95`:
+`return common.load_potts_oracle(root, checkpoint, double=False)` inside
+`_load_oracle(root, checkpoint)`. Thread a `double` parameter from argparse (one line plus the
+flag). Diagnostic only — it unlocks the run that decides whether the 0.9539 refine gap is f32
+precision or a logic defect, since order *and* uniforms are both already injected.
+
+**`potts_refine` is not a gate slug**, so this blocks nothing; it is a passenger purely because
+`scripts/parity/` is scoped and the wave is the only time that path can change cheaply.
+
+**Watch the sidecar.** `potts_refine.py` has a committed `.bth.toml`; §1c compares a run's
+`sidecar_sha256` to the file's *current* digest. Editing the script alone is fine — editing the
+sidecar forces a re-run.
+
 ## Dispatch notes
 
 Per standing practice: route to a Cursor fixer via `praxia dispatch run --envelope <path>`,
