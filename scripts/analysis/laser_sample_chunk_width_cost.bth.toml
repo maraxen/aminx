@@ -1,0 +1,87 @@
+[metadata]
+title = "Does widening samples_chunk_size reduce LASEr per-sample sampling cost? (sizing the ~223 h confirm)"
+created = "261006"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The LASEr distributional confirm is priced at ~223 h, measured at ~88% sampling and ~12% compile on a CPU-only jaxlib. laser_sample_dist_confirm.py:557 sets samples_chunk_size=8, and host/plan.resolve_chunk_size (plan.py:450-454) makes that value win outright -- without it the chunk defaults to the full sample count, which the planner separately accepts at Vmap width 1000 for these structures. So the confirm issues ~125 sequential dispatches of width 8 at n=1000 where its own memory budget permits one. If that serialisation is a material part of the cost, then per-sample wall time at width 32 will be at most 0.70x of per-sample wall time at width 8 on the same structure at the same n, and the ~223 h figure is partly a script constant rather than irreducible compute; if per-sample wall time is within 10% across those widths, the cost is real per-sample compute and only different hardware can reduce it."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.pass]
+condition = "instrument_ok AND verdict == 'dispatch_bound'"
+decision = "Do NOT provision GPU hardware yet. Re-time the confirm with samples_chunk_size raised (or unset, letting resolve_chunk_size default to the full count) and re-price it before deciding anything about Engaging. Raising the width also weakens per-chunk failure isolation, so the new width must be chosen against the preemption-safety rule, not maximised."
+reasoning = "A >=30% per-sample improvement from widening alone means a measurable fraction of the bill is dispatch overhead that a one-line spec change removes. Buying GPU time to run a serialised workload faster would be paying for hardware to hide a configuration default. The decision this run exists to inform is whether to spend hours provisioning Engaging, and this outcome says: not yet, re-price first."
+is_residual = false
+adversarial_check = "NOT instrument_ok OR verdict != 'dispatch_bound'"
+
+[outcomes.compute_bound]
+condition = "instrument_ok AND verdict == 'compute_bound'"
+decision = "Treat the ~223 h as real compute. The chunk width is not the lever, so leave samples_chunk_size=8 (it buys failure isolation for free) and move the decision to hardware: a CUDA jaxlib plus a 40-way job array on Engaging, against the four prerequisites recorded in the readiness doc."
+reasoning = "If a 4x wider vmap does not move per-sample cost, the work is not dispatch-starved and the remaining explanations are the ones this project has not yet separated: a genuinely heavier per-sample computation than Potts (rotamer and chi sampling), or a CPU-bound kernel mix that only a different device changes. This is the outcome that JUSTIFIES the provisioning work rather than deferring it, which is why it is graded rather than treated as a null."
+is_residual = true
+adversarial_check = "NOT instrument_ok OR verdict != 'compute_bound'"
+
+[outcomes.inconclusive]
+condition = "instrument_ok AND verdict == 'inconclusive'"
+decision = "No decision. The widen ratio landed between 0.70 and 0.90, so widening helps some but not enough to redirect the plan. Record the number and decide the Engaging question on the other evidence; do not re-run at more widths hoping to cross a threshold."
+reasoning = "A 10-30% effect is real but too small to either justify re-pricing the whole confirm or to rule out hardware. Declaring a direction from it would be reading a decision into a band that was pre-registered as undecided. The explicit instruction not to re-run is here because sweeping more widths after seeing a near-miss is how a pre-registered band becomes a fitted one."
+is_residual = true
+adversarial_check = "NOT instrument_ok OR verdict != 'inconclusive'"
+
+[outcomes.instrument_unverified]
+condition = "NOT instrument_ok"
+decision = "Discard every timing number from this run. Diagnose the instrument before re-running, and do not cite the widen ratio for any purpose."
+reasoning = "Two controls must both fire. The POSITIVE control is C4 vs C5: width 1 against width 8 at equal n, where width 1 must be at least 1.20x worse per sample -- if the narrowest possible width is not measurably worse than width 8, the knob does not reach the computation this script claims to time, and the widen ratio measures nothing. The LINEARITY control is C3 vs C1: halving n at fixed width must leave per-sample cost within [0.80, 1.25], which is inherited from the independently measured scaling exponent of 0.975; failing it means the timing is dominated by a fixed per-call cost this design does not model. A missing configuration also lands here. This outcome is live, not decorative: a confident story about this same axis (that the planner silently demotes N_SAMPLES to width 1 on a CPU 4 GiB budget) was probed and FALSIFIED on 2026-10-06 before this script was written."
+is_residual = true
+adversarial_check = "instrument_ok"
+
+[result_schema]
+verdict = "str"
+instrument_ok = "bool"
+configs_complete = "bool"
+width_control_ratio = "float"
+width_control_fires = "bool"
+linearity_ratio = "float"
+linearity_holds = "bool"
+widen_ratio = "float"
+seconds_per_sample = "dict"
+smoke = "bool"
+rows = "list"
+failures = "list"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+checkpoint_sha256 = "str"
+pdb = "str"
+pdb_sha256 = "str"
+structure_relative = "str"
+temperature = "float"
+min_p = "float"
+unit_timeout_s = "int"
+work_dir = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+structure = "ONE structure, tests/fixtures/laser/103m_1.pdb, resolved against the aminx repo (not laser_root) exactly as laser_sample_dist_confirm.py:355-359 does, and checked against the digest that file pins. One structure is correct here because the question is about dispatch width, not about across-structure variance."
+checkpoint = "laser_weights_0p1A_nothing_heldout.pt, digest-checked through the pilot's own _require_checkpoint, so the model is pinned to the one the confirm would use."
+temperature_and_min_p = "T=0.3, min_p=0.0, held constant across every configuration. These are timing conditions, not a parity cell; min_p=0 avoids the min_p0.05@0.3 cell that upstream NaNs on, and no distributional claim is made."
+configurations = "Five, fixed before the run: C1 n=32 width=8 (the confirm's own setting), C2 n=32 width=32 (one full-width dispatch), C3 n=16 width=8 (linearity control), C4 n=8 width=1 and C5 n=8 width=8 (the positive control pair). No configuration is selected after seeing a number."
+passes = "Two per configuration. Pass 0 pays that shape's compile into a shared JAX_PERSISTENT_CACHE; ONLY pass 1 is graded. Each width is a distinct shape and therefore a distinct compile, so a single global warm-up would have left the first width carrying a compile the others did not."
+why_the_bands_are_ratios = "Every criterion is a RATIO between two configurations of this same run -- widen_ratio, width_control_ratio, linearity_ratio -- so none of them depends on absolute per-sample wall time. That is deliberate: an ungraded smoke mode exists to SIZE this run, and sizing reveals absolute seconds. Because the bands are ratios fixed in the script before any smoke ran, a sizing number cannot move a criterion."
+what_is_timed = "The runner_sample call and nothing else. Process start, model load and featurisation sit outside the timer, measured per unit in a separate subprocess."
+compile_is_observed_not_assumed = "Each unit records the XLA persistent-cache entry count before and after, and a compiled_during_unit flag. A graded pass-1 unit that reports compiled_during_unit=true means the warm-up did not warm that shape, which is visible in the record rather than silently inflating the time."
+cost = "Bounded by construction: 2 passes over 32+32+16+8+8 = 96 samples, i.e. 192 sample-draws total. Against the ~41 s/sample prior from the smoke that priced the confirm, that is ~2.2 h, and the dominant uncertainty is C4 (width 1), which is the configuration the positive control expects to be slowest."
+
+[provenance]
+note = "Ungraded-by-default diagnostic prompted by a direct question on 2026-10-06: why does the LASEr confirm take ~223 h, has it been profiled, and could Engaging do it instead. The honest answer to the second was no -- the compile/sampling split was measured at the UNIT level but nothing had looked inside sampling, and the readiness doc's explanation ('LASEr sampling is intrinsically far heavier') was a hypothesis written as a conclusion. Lives in scripts/analysis/ because scripts/parity/ and tests/port/ are _touches_scoped paths and a new file in either would invalidate every sidecar_ledger.toml row mid-freeze; scripts/analysis/ is outside _SCOPED_PREFIXES (tests/knob_gate/_coverage.py:21-28). NOT a redsox vehicle; no manifest row. It reads laser_sample_dist_confirm and laser_sample_dist_pilot for structure, checkpoint and LaserOptions construction rather than re-expressing them, so a drift in the confirm fails loudly here. Invocation: bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/laser_sample_chunk_width_cost.py --work-dir <dir> --out <json>."
+
+[resume]
+unit = "one (configuration, pass) pair"
+cache_key = "sha256 over the script bytes, the checkpoint digest, the structure digest, the configuration label, n, width and the pass index"
+stamp_order = "the per-unit JSON body is written first and its .done stamp second, so a crash between them leaves an unstamped body that is recomputed rather than trusted"
+invalidation = "the script hash is part of the key, so editing a configuration or a band recomputes every unit"
+timeout_scope = "per unit, in its own subprocess, 7200 s. There is deliberately NO whole-run timeout: a timeout must cost one configuration, never hours of completed work."
+max_attempts = 1
