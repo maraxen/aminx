@@ -319,6 +319,27 @@ Either way the wave is followed by one re-measurement of all eight rows, and **r
 re-provisioned first** or step 2 cannot run at all — see debt #2319, which also records that
 the install must survive a `uv sync` rather than being repeated by hand.
 
+### 5b. Step 2 is verified green on this branch, and its two skips are expected
+
+`tests/knob_gate` — the gate's step 2 — run against this branch on titanix: **35 passed, 2
+skipped**. Both skips are structural, not failures:
+`test_branch_coverage.py:33` and `test_knob_superset.py:250` require
+`AMINX_REDSOX_OUTCOMES_READ`, which only `scripts/redsox/run_gate.py` exports, so outside a
+gate run they have nothing to grade — and they *do* execute inside one. **Do not treat them as
+regressions when reading a standalone run.**
+
+The drift guard is **not** among the skips: `test_reference_surfaces_drift.py` now runs and
+passes, which is the point of `9f7208aa` (it previously skipped on any machine that was not one
+user's laptop — including the gate host — hiding a stale `EXTRACTOR_SHA256`).
+
+**Environment note, which is a trap in its own right.** This could not be run in
+`aminx-confirm-git`'s venv: that one pins the **pre-0.4.0a11** xtrax, and this branch carries
+the main merge that moved the floor, so it dies at import with `cannot import name 'ChunkedMap'
+from 'xtrax.tiling'`. It was run instead with `aminx-b7i-git`'s interpreter (xtrax 0.4.0a11 +
+pyarrow 25.0.1) and `PYTHONPATH` pointed at this branch's `src/`. `aminx-ci`'s venv has the
+right xtrax but **no pyarrow**, so it cannot collect `test_coverage_selftest.py`. Whoever runs
+the wave needs an environment with **both**.
+
 ### 5a. Redsox re-provisioning splits into a cheap half and a scoped half
 
 Checked on titanix 261005: the **source is already there** — `/home/solab/projects/redsox`,
