@@ -33,7 +33,16 @@
   "S6-28",
   "S6-30",
   "S6-31",
-  "S6-32"
+  "S6-32",
+  "S7-08",
+  "S7-10",
+  "S7-11",
+  "S7-12",
+  "S7-13",
+  "S7-14",
+  "S7-15",
+  "S7-22",
+  "S7-23"
  ],
  "longest_chain_to_sink": {
   "S1-16": {
@@ -641,11 +650,111 @@
     "S6-20",
     "S6-32"
    ]
+  },
+  "S7-08": {
+   "items": 6,
+   "weight": 10,
+   "path": [
+    "S7-01",
+    "S7-02",
+    "S7-05",
+    "S7-06",
+    "S7-07",
+    "S7-08"
+   ]
+  },
+  "S7-10": {
+   "items": 3,
+   "weight": 3,
+   "path": [
+    "S7-01",
+    "S7-09",
+    "S7-10"
+   ]
+  },
+  "S7-11": {
+   "items": 3,
+   "weight": 3,
+   "path": [
+    "S7-01",
+    "S7-09",
+    "S7-11"
+   ]
+  },
+  "S7-12": {
+   "items": 6,
+   "weight": 10,
+   "path": [
+    "S7-01",
+    "S7-02",
+    "S7-05",
+    "S7-06",
+    "S7-07",
+    "S7-12"
+   ]
+  },
+  "S7-13": {
+   "items": 12,
+   "weight": 21,
+   "path": [
+    "S4-01",
+    "S4-04",
+    "S4-05",
+    "S4-06",
+    "S4-09",
+    "S4-45",
+    "S4-34",
+    "S4-35",
+    "S4-17",
+    "S4-18",
+    "S4-19",
+    "S7-13"
+   ]
+  },
+  "S7-14": {
+   "items": 7,
+   "weight": 12,
+   "path": [
+    "S7-01",
+    "S7-02",
+    "S7-05",
+    "S7-06",
+    "S7-07",
+    "S7-19",
+    "S7-14"
+   ]
+  },
+  "S7-15": {
+   "items": 1,
+   "weight": 1,
+   "path": [
+    "S7-15"
+   ]
+  },
+  "S7-22": {
+   "items": 6,
+   "weight": 9,
+   "path": [
+    "S7-01",
+    "S7-02",
+    "S7-05",
+    "S7-06",
+    "S7-21",
+    "S7-22"
+   ]
+  },
+  "S7-23": {
+   "items": 1,
+   "weight": 1,
+   "path": [
+    "S7-23"
+   ]
   }
  },
- "n_items": 213,
- "n_edges": 478,
+ "n_items": 233,
+ "n_edges": 502,
  "duplicates": [],
+ "withdrawn_ids_present": [],
  "dangling": [],
  "self_deps": [],
  "forbidden_name_items": [],
@@ -864,7 +973,27 @@
   "S6-21",
   "S6-22",
   "S6-30",
-  "S6-32"
+  "S6-32",
+  "S7-01",
+  "S7-02",
+  "S7-03",
+  "S7-04",
+  "S7-05",
+  "S7-06",
+  "S7-07",
+  "S7-08",
+  "S7-09",
+  "S7-10",
+  "S7-11",
+  "S7-12",
+  "S7-13",
+  "S7-15",
+  "S7-19",
+  "S7-20",
+  "S7-21",
+  "S7-14",
+  "S7-22",
+  "S7-23"
  ],
  "critical_path_by_count": [
   "S4-01",
@@ -936,7 +1065,7 @@
    "user_decision": true
   },
   "S2-02": {
-   "descendants": 77,
+   "descendants": 78,
    "user_decision": true
   },
   "S3-01": {
@@ -956,19 +1085,19 @@
    "user_decision": false
   },
   "S4-01": {
-   "descendants": 136,
+   "descendants": 137,
    "user_decision": true
   },
   "S4-02": {
-   "descendants": 112,
+   "descendants": 113,
    "user_decision": false
   },
   "S4-03": {
-   "descendants": 60,
+   "descendants": 61,
    "user_decision": false
   },
   "S4-15": {
-   "descendants": 56,
+   "descendants": 57,
    "user_decision": false
   },
   "S4-25": {
@@ -976,7 +1105,7 @@
    "user_decision": false
   },
   "S4-37": {
-   "descendants": 33,
+   "descendants": 34,
    "user_decision": true
   },
   "S4-49": {
@@ -994,6 +1123,18 @@
   "S6-01": {
    "descendants": 62,
    "user_decision": true
+  },
+  "S7-01": {
+   "descendants": 17,
+   "user_decision": false
+  },
+  "S7-15": {
+   "descendants": 0,
+   "user_decision": false
+  },
+  "S7-23": {
+   "descendants": 0,
+   "user_decision": false
   }
  },
  "per_spec": {
@@ -1002,12 +1143,13 @@
   "S3": 8,
   "S4": 48,
   "S5": 59,
-  "S6": 33
+  "S6": 33,
+  "S7": 20
  },
  "per_size": {
-  "M": 96,
-  "S": 102,
-  "L": 15
+  "M": 100,
+  "S": 117,
+  "L": 16
  },
  "per_spec_user_decision": {
   "S1": 6,
@@ -1015,11 +1157,12 @@
   "S3": 2,
   "S4": 10,
   "S5": 18,
-  "S6": 7
+  "S6": 7,
+  "S7": 1
  },
- "n_user_decision": 53,
+ "n_user_decision": 54,
  "repos": {
-  "aminx": 70,
+  "aminx": 89,
   "mistypotts": 1,
   "mpnn_ext": 1,
   "asr": 1,
@@ -1034,7 +1177,8 @@
   "isochore": 3,
   "localfold": 1,
   "pipecanvas": 2,
-  "praxis": 2
+  "praxis": 2,
+  "cisternal": 1
  },
  "toml_blocks_per_spec": {
   "261001_aminx-hub.md": 1,
@@ -1042,9 +1186,10 @@
   "261001_ebm-extraction.md": 1,
   "261001_pipeline-editor.md": 1,
   "261001_spec-system-unification.md": 1,
-  "261001_xtrax-model-contract.md": 1
+  "261001_xtrax-model-contract.md": 1,
+  "261006_aminx-cisternal-cutover.md": 1
  },
- "toml_n_items": 213,
+ "toml_n_items": 233,
  "list_vs_toml_diffs": [],
  "previous_n_items": 231,
  "retired_vs_previous": [
@@ -1077,7 +1222,27 @@
  "added_vs_previous": [
   "S2-35",
   "S2-36",
-  "S3-29"
+  "S3-29",
+  "S7-01",
+  "S7-02",
+  "S7-03",
+  "S7-04",
+  "S7-05",
+  "S7-06",
+  "S7-07",
+  "S7-08",
+  "S7-09",
+  "S7-10",
+  "S7-11",
+  "S7-12",
+  "S7-13",
+  "S7-14",
+  "S7-15",
+  "S7-19",
+  "S7-20",
+  "S7-21",
+  "S7-22",
+  "S7-23"
  ],
  "edges_into_retired_removed_per_spec": {
   "S1": 13,

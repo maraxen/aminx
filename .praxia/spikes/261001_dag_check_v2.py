@@ -7,9 +7,10 @@ Inputs:
   261001_dag_given_items.json   authoritative item list handed over by the workflow (no-rename revision)
   261001_dag_given_edges.txt    the previous (rename-era) authoritative list, for the retired/added diff
   .praxia/docs/specs/261001_*.md one ```toml block of [[item]] tables per spec (read for comparison only)
+  .praxia/docs/specs/261006_aminx-cisternal-cutover.md  the same, for S7 (folded in 261006, S7-15)
 
 Checks: duplicate ids, dangling depends_on, self-dependencies, acyclicity (Kahn), forbidden retired names
-(molxmpnn, mpnnx) in any item field, list-vs-spec-toml differences. Emits a deterministic topological order,
+(molxmpnn, mpnnx) in any item field, withdrawn S7 ids (S7-16..18), list-vs-spec-toml differences. Emits a deterministic topological order,
 the critical path by item count and by size weight (S=1 M=2 L=3), roots with descendant counts, a mermaid
 flowchart and the topo table. --controls plants one defect per check and asserts each is detected.
 
@@ -38,6 +39,10 @@ FORBIDDEN = re.compile(r"molxmpnn|mpnnx", re.I)
 FIELDS = ("title", "repo", "size", "depends_on", "user_decision")
 # S3-28 is the assembly check whose job is to forbid the retired name, so its title names it; allow-listed.
 FORBIDDEN_ALLOW = {"S3-28"}
+# S7 (cisternal cutover, 261006) is a later spec; its toml block is compared like the 261001 specs'. Its withdrawn
+# ids (S7-16..S7-18) are never allocated, so the item count is 213 + 20 = 233.
+S7_SPEC = ".praxia/docs/specs/261006_aminx-cisternal-cutover.md"
+S7_WITHDRAWN = {"S7-16", "S7-17", "S7-18"}  # CLI port, deferred (S7-Q1); retired ids are never reused
 
 
 def key(iid: str) -> tuple[int, int]:
@@ -57,7 +62,8 @@ def load_old_ids(path: Path) -> list[str]:
 
 def load_toml() -> tuple[list[dict], dict[str, int]]:
     items, nblocks = [], {}
-    for f in sorted(glob.glob(str(ROOT / ".praxia/docs/specs/261001_*.md"))):
+    specs = glob.glob(str(ROOT / ".praxia/docs/specs/261001_*.md")) + [str(ROOT / S7_SPEC)]
+    for f in sorted(specs):
         text = Path(f).read_text()
         blocks = re.findall(r"```toml\n(.*?)```", text, re.S)
         blocks = [b for b in blocks if "[[item]]" in b]
@@ -161,6 +167,7 @@ def check(items: list[dict]) -> dict:
         "n_items": len(items),
         "n_edges": sum(len(i["depends_on"]) for i in items),
         "duplicates": dup,
+        "withdrawn_ids_present": sorted(x for x in ids if x in S7_WITHDRAWN),
         "dangling": dangling,
         "self_deps": self_dep,
         "forbidden_name_items": forbidden,
@@ -196,8 +203,10 @@ def controls(given: list[dict], toml: list[dict]) -> dict:
     m[3]["depends_on"].append(m[3]["id"])
     out["planted_self_dep_detected"] = bool(check(m)["self_deps"])
     m = copy.deepcopy(given)
-    m[-1]["title"] += " (molxmpnn)"  # m[-1] is S6-32, not allow-listed
+    m[-1]["title"] += " (molxmpnn)"  # m[-1] is the last item (S7-23), not allow-listed
     out["planted_forbidden_name_detected"] = bool(check(m)["forbidden_name_items"])
+    m = copy.deepcopy(given) + [{**copy.deepcopy(given[0]), "id": "S7-16"}]  # a withdrawn S7 id
+    out["planted_withdrawn_id_detected"] = bool(check(m)["withdrawn_ids_present"])
     m = copy.deepcopy(given)
     m[-1]["size"] = "L" if m[-1]["size"] != "L" else "S"
     out["planted_list_toml_drift_detected"] = bool(compare(m, toml)) and (
