@@ -4,6 +4,7 @@
 - [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
 
 ## Handoffs
+- [261006_xtrax-track-b-brief](handoffs/261006_xtrax-track-b-brief.md) — A ready-to-run brief for an xtrax session: fix the skill gaps (xtrax debt #2496-#2503) and upstream the chunked_map size-1 guard (aminx #2371).
 - [260930_advisor-message-final](handoffs/260930_advisor-message-final.md) — The Slack message handed to the advisor for v0.2.0a3, with the claim-to-run-id mapping behind every figure it quotes.
 - [260930_browser-split-merge-readiness](handoffs/260930_browser-split-merge-readiness.md) — What actually blocks merging feat/t11d-session-release, measured rather than assumed — including an export-safety fix the branch has and main does not.
 - [260930_reference-parity-coverage-debt](handoffs/260930_reference-parity-coverage-debt.md) — The direct split-vs-reference measurement is the narrowest link in the browser validation chain; what it skips, why, and the cheapest order to close it.
