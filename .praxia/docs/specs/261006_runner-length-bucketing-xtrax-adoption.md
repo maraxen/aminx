@@ -35,7 +35,7 @@ status: draft
 | A1 | Neighbour indices on the host path are computed in the model from coordinates, not taken from the loader's `neighbor_indices` field, so trimming coordinates re-derives k-NN over the rung | verified | `inference/encode.py:262`, `model/features.py:455`; no host use of `precomputed_neighbor_indices` |
 | A2 | Every spec array (bias, fixed_mask, fixed_tokens, fixed_positions, tie_group_map, state_position_map, structure_mapping, ligand Y/Y_t/Y_m) is validated against the padded length before `per_structure` is built in `_sample_batch` | verified | `host/kernel_dispatch.py:198-241` |
 | A3 | `make_inference_plan` is built once per run with no L baked in; `encode` and `decode` are `eqx.filter_jit`, so each rung is one trace | recon, partly read | `host/plan.py:559-772`, `runner.py:~296` |
-| A4 | Scores are invariant to padding at backbone_noise 0; at noise > 0 the noise draw has the padded shape and scores change | verified (test exists) | `tests/host/test_score_padding_invariance.py`; `utils/coordinates.py:47` |
+| A4 | Scores are invariant to padding at backbone_noise 0; at noise > 0 the noise draw has the padded shape and scores change | first half verified (test exists); **second half refuted 261006**: the plain score path forwards no noise level (`runner.py` encode-once comment, #147), so 1ubq scores 4.4554 at noise 0, 0.1 and 1.0, bucketed or not (spike on titanix; debt #2509). Only the averaged-feature path uses noise, and it is not bucketed | `tests/host/test_score_padding_invariance.py`; `utils/coordinates.py:47` |
 | A5 | Sampled sequences change with the padded length: `random_design_order` draws `uniform((L,))` | verified | `utils/decoding_order.py:143`, `runner.py:72` |
 | A6 | Putting a `Bucket` decision for the residue axis into the joint planner would corrupt the memory estimate, so v1 picks the rung on the host and leaves the residue axis unplanned | verified | `tiling/planner.py:54-60` |
 | A7 | `make_sampling_planner` is rebuilt per batch from `seq_len`, so passing the rung sizes memory correctly | recon | `kernel_dispatch.py:179-184` |
@@ -44,7 +44,7 @@ status: draft
 | A10 | Max checkpoint k-NN is 48, at most the smallest rung (64) | verified (naming) | checkpoint ids `*_v_48_*` and `*_v_32_*` |
 | A11 | No test or golden pins an exact seeded runner sample | recon | blast-radius recon, 261006 |
 | A12 | Tie-group ids must be below the trimmed length | recon | `decoding_order.py:134` |
-| A13 | Logits at masked positions today are not relied on downstream; the re-padded tail is 0 | **unverified** | settled by G-OPTOUT (old path unchanged) and G-SHAPE |
+| A13 | Logits at masked positions today are not relied on downstream; the re-padded tail is 0 | **partly refuted 261006**: the opt-out path samples every padded position (golden tokens and logits are nonzero out to 511), so under bucketing masked positions inside the rung are sampled and only the tail past the rung is 0 | settled by G-OPTOUT (old path unchanged) and G-SHAPE |
 | A14 | `xtrax.tiling.device_memory_budget` raises on devices without `bytes_limit` (CPU) | verified | `xtrax/tiling/estimators.py:52-56` |
 | A15 | `xtrax.profiling.loop_scaling` can bound the AR decode scan body's growth from jaxpr | **unverified** | spiked in S8-10 before it is built on |
 
@@ -114,8 +114,8 @@ After the transpose (`~:527`):
 | gate | check |
 |---|---|
 | **G-OPTOUT** | With `length_bucketing=False`, `sample` and `score` outputs equal a golden captured at the pre-change base commit (S8-01) bit for bit: 1ubq, seed 7, 2 samples, temperature 0.1, max_length 512. |
-| **G-INVARIANCE** | At noise 0, `score` bucketed equals opt-out within rel 1e-6 on 1ubq, 5awl (10 residues, below k), a two-chain fixture, a gapped fixture (unresolved backbone) and a ligand fixture. Negative control: noise 0.1 must differ. |
-| **G-SHAPE** | Bucketed sample outputs have exactly the opt-out shapes (padded L), the tail past the span is 0, and real positions are valid tokens. |
+| **G-INVARIANCE** | At noise 0, `score` bucketed equals opt-out within rel 1e-6 on 1ubq, 5awl (10 residues, below k), a two-chain fixture, a gapped fixture (unresolved backbone) and a ligand fixture. Negative control: scoring a different sequence must differ (noise cannot serve, see A4). |
+| **G-SHAPE** | Bucketed sample outputs have exactly the opt-out shapes (padded L), the re-padded tail past the rung is 0 (masked positions inside the rung are sampled, as in opt-out), and real positions are valid tokens. |
 | **G-CONTROLS** | Under bucketing, fixed positions keep their `fixed_tokens`, tied groups share tokens, and bias at a real position still moves its logits. Negative control: the same bias placed past the span has no effect. |
 | **G-COMPILE** | Inputs spanning 3 lengths in 2 rungs trace `decode` exactly 2 times (counted with `JAX_LOG_COMPILES` or a trace counter). |
 | **G-SPEED** | bathos, pre-registered, titanix CPU, chunked per cell. Expect bucketed `sample` on 1ubq (76 → 128) ≥ 3× faster than opt-out. Control: 3pgk (415 → 512) within 0.8–1.25×. |
@@ -210,4 +210,4 @@ gate = "tests/agent green; parity on returned spec"
 | Mixed rungs across batches break concatenation | Outputs are re-padded to the padded length before they leave `_sample_batch` and score. G-SHAPE checks it. |
 | Old campaign units reused across the numerics change | The epoch bump. |
 | Users replaying old seeded specs get different sequences | The CHANGELOG, the docs, and `--no-length-bucketing`. |
-| Score drift at noise > 0 | Expected (A4). Documented; G-INVARIANCE's negative control proves the instrument fires. |
+| Score drift at noise > 0 | Does not arise: the plain score path ignores backbone_noise (A4, debt #2509). G-INVARIANCE's negative control scores a different sequence instead, which proves the instrument fires. |

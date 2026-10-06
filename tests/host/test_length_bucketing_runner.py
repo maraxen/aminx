@@ -22,6 +22,7 @@ _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "length_bucketi
 _CHECKPOINT = "proteinmpnn_v_48_020"
 # 1UBQ chain A is 76 residues, contiguous, so the span is 76 and the rung is 128.
 _UBQ_SPAN = 76
+_UBQ_RUNG = 128
 
 
 def _skip_if_golden_runtime_differs(meta: dict[str, object]) -> None:
@@ -103,7 +104,12 @@ def test_g_optout_matches_golden() -> None:
 @pytest.mark.slow
 @pytest.mark.requires_weights
 def test_g_shape_bucketed_sample_keeps_padded_shape_and_zero_tail() -> None:
-  """Bucketed 1ubq keeps the golden shapes; the tail past the span is 0."""
+  """Bucketed 1ubq keeps the golden shapes; the re-padded tail past the rung is 0.
+
+  The opt-out golden samples every padded position (tokens and logits are nonzero
+  out to 511), so masked positions inside the rung (76-127) are sampled too. Only
+  the re-pad past the rung is guaranteed to be zero.
+  """
   pytest.importorskip("aminx")
   from aminx.host.runner import sample  # noqa: PLC0415
 
@@ -120,8 +126,9 @@ def test_g_shape_bucketed_sample_keeps_padded_shape_and_zero_tail() -> None:
   logits = np.asarray(result["logits"])
   assert list(sequences.shape) == meta["arrays"]["1ubq__sample__sequences"]
   assert list(logits.shape) == meta["arrays"]["1ubq__sample__logits"]
-  assert np.all(sequences[..., _UBQ_SPAN:] == 0)
-  assert np.all(logits[..., _UBQ_SPAN:, :] == 0)
+  assert np.all(sequences[..., _UBQ_RUNG:] == 0)
+  assert np.all(logits[..., _UBQ_RUNG:, :] == 0)
+  assert np.any(logits[..., :_UBQ_SPAN, :] != 0)
   real = sequences[..., :_UBQ_SPAN]
   assert real.size > 0
   assert int(real.min()) >= 0
@@ -133,11 +140,12 @@ def _score_pair(
   *,
   backbone_noise: float,
   chain_id: str | None = None,
+  sequences: tuple[str, str] = ("A" * 10, "A" * 10),
 ) -> tuple[np.ndarray, np.ndarray]:
   from aminx.host.runner import score  # noqa: PLC0415
   from aminx.run.specs import ScoringSpecification  # noqa: PLC0415
 
-  def once(length_bucketing: bool) -> np.ndarray:
+  def once(length_bucketing: bool, sequence: str) -> np.ndarray:
     kwargs: dict[str, object] = {}
     if chain_id is not None:
       kwargs["chain_id"] = chain_id
@@ -145,7 +153,7 @@ def _score_pair(
       ScoringSpecification(
         inputs=str(pdb),
         checkpoint_id=_CHECKPOINT,
-        sequences_to_score=["A" * 10],
+        sequences_to_score=[sequence],
         backbone_noise=backbone_noise,
         random_seed=42,
         max_length=512,
@@ -156,7 +164,7 @@ def _score_pair(
     )
     return np.asarray(result["scores"])
 
-  return once(True), once(False)
+  return once(True, sequences[0]), once(False, sequences[1])
 
 
 @pytest.mark.slow
@@ -184,10 +192,18 @@ def test_g_invariance_score_noise0(pdb_name: str, chain_id: str | None) -> None:
 
 @pytest.mark.slow
 @pytest.mark.requires_weights
-def test_g_invariance_noise_above_zero_differs() -> None:
-  """Negative control: the noise-0 comparison can fail."""
+def test_g_invariance_comparison_can_fail() -> None:
+  """Negative control: the rtol=1e-6 comparison detects a real change.
+
+  Backbone noise is not a usable control: the plain score path forwards no noise
+  level (runner.score, encode-once path #147), so 1ubq scores 4.4554 at noise 0,
+  0.1 and 1.0 alike (aminx debt #2509). Scoring a different sequence through the
+  bucketed path does change the score, and the comparison must catch it.
+  """
   pytest.importorskip("aminx")
-  bucketed, opted_out = _score_pair(_DATA / "1ubq.pdb", backbone_noise=0.1, chain_id="A")
+  bucketed, opted_out = _score_pair(
+    _DATA / "1ubq.pdb", backbone_noise=0.0, chain_id="A", sequences=("G" * 10, "A" * 10)
+  )
   assert not np.allclose(bucketed, opted_out, rtol=1e-6)
 
 
@@ -239,6 +255,15 @@ def test_g_controls_fixed_position_and_bias() -> None:
 
 @pytest.mark.slow
 @pytest.mark.requires_weights
+@pytest.mark.xfail(
+  raises=ValueError,
+  strict=True,
+  reason=(
+    "aminx debt #2508: proxide concatenate_proteins_for_inter_mode cannot concatenate "
+    "the 0-d source-path leaf, so runner inter mode fails before sampling. The inter "
+    "guard itself is covered in test_length_bucketing_helper.py."
+  ),
+)
 def test_g_controls_inter_is_not_trimmed() -> None:
   """Ties expressed as tied_positions auto/direct require pass_mode='inter'.
 
