@@ -600,3 +600,62 @@ confirmed sound on that host: the failed run's record reads `git_hash ff0053a8`,
 `git_dirty False` and a populated `sidecar_sha256`, so the sidecar resolved correctly even
 though the console echoed `"script_path": "uv"` — the `endswith(".py")` fix is present in the
 installed bathos, and that console field is not evidence of the wrapper trap.
+
+### 2f. Tier C shrinks again: #2435 is stale, #2443 is nearly closed, #2459 is real but free
+
+Bounded 2026-10-06 by reading the code rather than counting greps — the mistake this doc
+already records against me once.
+
+**#2435 ("Eight family Options fields are declared but never read", P1) — PRIMARY CLAIM IS
+STALE.** All eight now have genuine read sites:
+
+| field | read at |
+| :-- | :-- |
+| `chi_temp` | `laser_mpnn/sample_host.py:499,575` → `model/laser/tied.py:243` (`softmax(stored / chi_temperature)`) |
+| `strict_load` | `laser_mpnn/driver.py:268` |
+| `tied_second_input` | four sites under `laser_mpnn/` |
+| `tied_interpolation_lambda` | `laser_mpnn/sample_host.py:576` |
+| `budget_residue_selection` | `laser_mpnn/sample_host.py:287` |
+| `constrain_ala_gly_to_exposed_non_ss` | `laser_mpnn/sample_host.py:288` |
+| `bias_by_res_json` | `potts_mpnn/driver.py:797` (`_jsonl_last`) |
+| `pssm_json` | `potts_mpnn/driver.py:796` (`_jsonl_merged`) |
+
+So "a caller setting these gets default behaviour with no error" is no longer true for any of
+them, and **P1 is the wrong priority for what remains.** What remains is the item's *second*
+half — six `LaserOptions` alias rows asserting an Options-level correspondence that no test
+exercises. That is a **test-coverage** claim, not a dead-field claim, and this pass did not
+check it. It should be re-scoped, not closed.
+
+**#2443 ("Potts driver passes no optional dicts to tied_featurize_port") — MOSTLY RESOLVED, and
+the code says so itself.** `potts_mpnn/driver.py:775-799` centralises the call and its docstring
+records the history: *"That single omission is why `pssm_json` and `bias_by_res_json` were inert
+(aminx debt 2435/2443): the fields parsed fine and reached nothing."* Of the five optional
+dicts:
+
+- `pssm_dict`, `bias_by_res_dict` — **now passed.**
+- `fixed_position_dict`, `omit_aa_dict` — **deliberately unset**, because `fixed_positions` and
+  `omit_aa` are already applied host-side at `sample_host.py:282-288` and routing them through
+  featurize as well would apply them **twice**. By design, not a defect.
+- `tied_positions_dict` — **genuinely still missing**, pending a per-chain conversion of what is
+  a spec-level sequence of global indices.
+
+**#2459 ("tied_positions is inert on the Potts path") — CONFIRMED LIVE, with a precise cause,
+and it is the same residue as #2443's.** `features.tied_pos` is populated only from
+`tied_positions_dict` (`potts_mpnn/featurize.py:267-277`, parameter at `:334`), and the driver
+never supplies it. So `build_tie_groups_np(features.tied_pos, ...)` at `sample_host.py:347` can
+never see a group, the spec-section-9 overlap guard is unreachable, and
+`tied=bool(features.tied_pos)` is permanently False — the whole tied decode path, not just its
+error case. #2459's own impact text is **accurate**, which is worth saying after two stale
+impact lines in a row (#2433, #2435).
+
+**But it is a free passenger.** `grep 'tied_positions|tied_pos'` across all eight gate vehicles
+returns **zero**, and `tests/port/` has no match either. So #2459 cannot change a ledger row's
+value — only its commit, which the wave re-measures anyway. Same disposition as #2475 (§2c).
+
+**Net effect on the wave.** Tier C now contains no P1 that survives contact: #2444 cannot touch
+recorded evidence (§2d), #2433's blocking claim is retired (§2e), #2435's dead-field claim is
+stale and its surviving half is test coverage, #2443 is nearly closed, and #2459 is real but
+free. The three items still believed to move measured values are the dtype/tolerance ones —
+**#2311, #2309, #2321** — and those were never assumed inert. #2321 in particular is now
+*corroborated* on the LASEr sampling path, which is new since the last revision (see the
+readiness doc).
