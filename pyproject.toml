@@ -38,6 +38,9 @@ repository = "https://github.com/maraxen/Aminx.git"
 documentation = "https://aminx.readthedocs.io"
 
 [project.optional-dependencies]
+agent = [
+    "cisternal>=0.1.1a15,<0.2",
+]
 benchmark = [
     "torch>=2.12.0",
     "prody>=2.6.1",
