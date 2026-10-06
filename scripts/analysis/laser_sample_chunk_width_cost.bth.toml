@@ -9,37 +9,36 @@ stage_name = "diagnosis"
 novel = true
 
 [outcomes.pass]
-condition = "instrument_ok AND verdict == 'dispatch_bound'"
+condition = "self_test_passed AND instrument_ok AND verdict == 'dispatch_bound'"
 decision = "Do NOT provision GPU hardware yet. Re-time the confirm with samples_chunk_size raised (or unset, letting resolve_chunk_size default to the full count) and re-price it before deciding anything about Engaging. Raising the width also weakens per-chunk failure isolation, so the new width must be chosen against the preemption-safety rule, not maximised."
 reasoning = "A >=30% per-sample improvement from widening alone means a measurable fraction of the bill is dispatch overhead that a one-line spec change removes. Buying GPU time to run a serialised workload faster would be paying for hardware to hide a configuration default. The decision this run exists to inform is whether to spend hours provisioning Engaging, and this outcome says: not yet, re-price first."
 is_residual = false
-adversarial_check = "NOT instrument_ok OR verdict != 'dispatch_bound'"
+adversarial_check = "NOT self_test_passed OR NOT instrument_ok OR verdict != 'dispatch_bound'"
 
 [outcomes.compute_bound]
-condition = "instrument_ok AND verdict == 'compute_bound'"
+condition = "self_test_passed AND instrument_ok AND verdict == 'compute_bound'"
 decision = "Treat the ~223 h as real compute. The chunk width is not the lever, so leave samples_chunk_size=8 (it buys failure isolation for free) and move the decision to hardware: a CUDA jaxlib plus a 40-way job array on Engaging, against the four prerequisites recorded in the readiness doc."
 reasoning = "If a 4x wider vmap does not move per-sample cost, the work is not dispatch-starved and the remaining explanations are the ones this project has not yet separated: a genuinely heavier per-sample computation than Potts (rotamer and chi sampling), or a CPU-bound kernel mix that only a different device changes. This is the outcome that JUSTIFIES the provisioning work rather than deferring it, which is why it is graded rather than treated as a null."
 is_residual = true
-adversarial_check = "NOT instrument_ok OR verdict != 'compute_bound'"
+adversarial_check = "NOT self_test_passed OR NOT instrument_ok OR verdict != 'compute_bound'"
 
 [outcomes.inconclusive]
-condition = "instrument_ok AND verdict == 'inconclusive'"
+condition = "self_test_passed AND instrument_ok AND verdict == 'inconclusive'"
 decision = "No decision. The widen ratio landed between 0.70 and 0.90, so widening helps some but not enough to redirect the plan. Record the number and decide the Engaging question on the other evidence; do not re-run at more widths hoping to cross a threshold."
 reasoning = "A 10-30% effect is real but too small to either justify re-pricing the whole confirm or to rule out hardware. Declaring a direction from it would be reading a decision into a band that was pre-registered as undecided. The explicit instruction not to re-run is here because sweeping more widths after seeing a near-miss is how a pre-registered band becomes a fitted one."
 is_residual = true
-adversarial_check = "NOT instrument_ok OR verdict != 'inconclusive'"
+adversarial_check = "NOT self_test_passed OR NOT instrument_ok OR verdict != 'inconclusive'"
 
 [outcomes.instrument_unverified]
-condition = "NOT instrument_ok"
+condition = "NOT self_test_passed OR NOT instrument_ok"
 decision = "Discard every timing number from this run. Diagnose the instrument before re-running, and do not cite the widen ratio for any purpose."
 reasoning = "Three controls must all fire. The LOAD-STABILITY control is a DISCLOSED AMENDMENT, added 2026-10-06 before any graded number existed: titanix is a shared host, and it was observed at load 17.47 on 20 cores while another session ran a 125-thread staging job. A ratio measured across configurations that ran under materially different CPU contention is not a measurement of chunk width -- and contention that DRIFTS monotonically between two adjacent configurations manufactures a ratio in whichever direction it drifts. So every unit records the 1-minute load average before and after its timed call, and the graded units' max/min spread must be <= 1.50. The amendment can only cause a REFUSAL, never a pass, which is why adding it mid-flight is legitimate; it was added after a smoke that had produced no timing and before any graded unit ran. The other two controls follow. The POSITIVE control is C4 vs C5: width 1 against width 8 at equal n, where width 1 must be at least 1.20x worse per sample -- if the narrowest possible width is not measurably worse than width 8, the knob does not reach the computation this script claims to time, and the widen ratio measures nothing. The LINEARITY control is C3 vs C1: halving n at fixed width must leave per-sample cost within [0.80, 1.25], which is inherited from the independently measured scaling exponent of 0.975; failing it means the timing is dominated by a fixed per-call cost this design does not model. A missing configuration also lands here. This outcome is live, not decorative: a confident story about this same axis (that the planner silently demotes N_SAMPLES to width 1 on a CPU 4 GiB budget) was probed and FALSIFIED on 2026-10-06 before this script was written."
 is_residual = true
-adversarial_check = "instrument_ok"
+adversarial_check = "self_test_passed AND instrument_ok"
 
 [result_schema]
 verdict = "str"
 instrument_ok = "bool"
-configs_complete = "bool"
 width_control_ratio = "float"
 width_control_fires = "bool"
 linearity_ratio = "float"
@@ -48,6 +47,13 @@ load_spread = "float"
 load_stable = "bool"
 load_observed_max = "float"
 widen_ratio = "float"
+widen_ratio_all = "list"
+width_control_ratio_all = "list"
+linearity_ratio_all = "list"
+load_stable_by_pair = "dict"
+load_spread_max_allowed = "float"
+self_test_passed = "bool"
+self_test_failed = "list"
 seconds_per_sample = "dict"
 smoke = "bool"
 rows = "list"
@@ -71,13 +77,16 @@ aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
 structure = "ONE structure, tests/fixtures/laser/103m_1.pdb, resolved against the aminx repo (not laser_root) exactly as laser_sample_dist_confirm.py:355-359 does, and checked against the digest that file pins. One structure is correct here because the question is about dispatch width, not about across-structure variance."
 checkpoint = "laser_weights_0p1A_nothing_heldout.pt, digest-checked through the pilot's own _require_checkpoint, so the model is pinned to the one the confirm would use."
 temperature_and_min_p = "T=0.3, min_p=0.0, held constant across every configuration. These are timing conditions, not a parity cell; min_p=0 avoids the min_p0.05@0.3 cell that upstream NaNs on, and no distributional claim is made."
-configurations = "Five, fixed before the run: C1 n=32 width=8 (the confirm's own setting), C2 n=32 width=32 (one full-width dispatch), C3 n=16 width=8 (linearity control), C4 n=8 width=1 and C5 n=8 width=8 (the positive control pair). No configuration is selected after seeing a number."
-passes = "Two per configuration. Pass 0 pays that shape's compile into a shared JAX_PERSISTENT_CACHE; ONLY pass 1 is graded. Each width is a distinct shape and therefore a distinct compile, so a single global warm-up would have left the first width carrying a compile the others did not."
+superseded_configurations = "An earlier revision of this sidecar ran five INDEPENDENT configurations and compared them across the whole run. That design was abandoned before it graded anything, because titanix's 1-minute load average was measured moving from 17.47 to 9.55 on 20 cores within minutes: a 1.8x swing in available CPU swamps the ~30% effect being resolved, so configurations run hours apart are not comparable at all. Replaced by the PAIRED design below. The verdict bands were NOT touched -- only the way the ratio is formed. Original text: Five, fixed before the run: C1 n=32 width=8 (the confirm's own setting), C2 n=32 width=32 (one full-width dispatch), C3 n=16 width=8 (linearity control), C4 n=8 width=1 and C5 n=8 width=8 (the positive control pair). No configuration is selected after seeing a number."
+paired_design = "Every comparison is an ADJACENT PAIR: two configurations run back to back, with the ratio formed WITHIN the pair, so a monotone drift in contention cancels because both members see nearly the same machine. Three pairs, fixed before the run: lever (n=32 w=8 vs n=32 w=32, x2 repeats) is the question; control (n=8 w=8 vs n=8 w=1, x1) is the positive control; linearity (n=32 w=8 vs n=16 w=8, x1) is the scaling control. On odd repeats the member ORDER IS REVERSED, so even a drift inside one pair cannot bias the ratio in a fixed direction. The reported ratio is the MEDIAN over a pair's repeats. Load stability is checked PER PAIR INSTANCE over the four recorded load samples, which is the physically meaningful window and is strictly tighter per comparison than a whole-run check."
+warmup_is_per_width = "One warm-up per distinct chunk WIDTH, at n == width. The compiled shape is set by the chunk width, not by n -- n samples at width w is ceil(n/w) dispatches of the same shape -- and every (n, width) pair here divides evenly, so no remainder chunk introduces a second shape. Warming per width rather than per configuration costs 41 sample-draws instead of 96."
+grader_self_test = "Six synthetic checks run BEFORE the model is touched, so a broken grader costs seconds rather than three hours. Three are positive (the bands either side of 0.70 and 0.90); THREE REQUIRE A REFUSAL -- an inert width control, a broken linearity control, and a load drift injected inside the lever pair must each force instrument_unverified despite a strong lever ratio. A grader that can only return one answer is not a grader. Verified passing 2026-10-06 before the graded run; self_test_passed is recorded in the result and gates every outcome."
+superseded_passes = "Two per configuration. Pass 0 pays that shape's compile into a shared JAX_PERSISTENT_CACHE; ONLY pass 1 is graded. Each width is a distinct shape and therefore a distinct compile, so a single global warm-up would have left the first width carrying a compile the others did not."
 why_the_bands_are_ratios = "Every criterion is a RATIO between two configurations of this same run -- widen_ratio, width_control_ratio, linearity_ratio -- so none of them depends on absolute per-sample wall time. That is deliberate: an ungraded smoke mode exists to SIZE this run, and sizing reveals absolute seconds. Because the bands are ratios fixed in the script before any smoke ran, a sizing number cannot move a criterion."
 shared_host_contention = "titanix is shared and was measured at load 17.47 on 20 cores during this run's smoke, almost all of it another session's 125-thread job. Absolute per-sample seconds from this run are therefore NOT a clean figure for the host and must not be quoted as one. Every criterion here is a ratio between configurations run minutes apart, and the load-stability gate (max/min of the recorded 1-minute load average across graded units <= 1.50) is what makes those ratios defensible rather than assumed. Processes belonging to other sessions were NOT killed to make room."
 what_is_timed = "The runner_sample call and nothing else. Process start, model load and featurisation sit outside the timer, measured per unit in a separate subprocess."
 compile_is_observed_not_assumed = "Each unit records the XLA persistent-cache entry count before and after, and a compiled_during_unit flag. A graded pass-1 unit that reports compiled_during_unit=true means the warm-up did not warm that shape, which is visible in the record rather than silently inflating the time."
-cost = "Bounded by construction: 2 passes over 32+32+16+8+8 = 96 samples, i.e. 192 sample-draws total. Against the ~41 s/sample prior from the smoke that priced the confirm, that is ~2.2 h, and the dominant uncertainty is C4 (width 1), which is the configuration the positive control expects to be slowest."
+cost = "Bounded by construction: 233 sample-draws (192 graded across three pairs, 41 in per-width warm-ups). Against the ~41 s/sample prior from the smoke that priced the confirm, that is ~2.2 h, and the dominant uncertainty is C4 (width 1), which is the configuration the positive control expects to be slowest."
 
 [provenance]
 note = "Ungraded-by-default diagnostic prompted by a direct question on 2026-10-06: why does the LASEr confirm take ~223 h, has it been profiled, and could Engaging do it instead. The honest answer to the second was no -- the compile/sampling split was measured at the UNIT level but nothing had looked inside sampling, and the readiness doc's explanation ('LASEr sampling is intrinsically far heavier') was a hypothesis written as a conclusion. Lives in scripts/analysis/ because scripts/parity/ and tests/port/ are _touches_scoped paths and a new file in either would invalidate every sidecar_ledger.toml row mid-freeze; scripts/analysis/ is outside _SCOPED_PREFIXES (tests/knob_gate/_coverage.py:21-28). NOT a redsox vehicle; no manifest row. It reads laser_sample_dist_confirm and laser_sample_dist_pilot for structure, checkpoint and LaserOptions construction rather than re-expressing them, so a drift in the confirm fails loudly here. Invocation: bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/laser_sample_chunk_width_cost.py --work-dir <dir> --out <json>."

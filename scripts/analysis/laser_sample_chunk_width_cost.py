@@ -1,27 +1,36 @@
 """Does widening ``samples_chunk_size`` reduce LASEr per-sample sampling cost?
 
 The LASEr distributional confirm is priced at ~223 h, ~88% of it sampling, on a
-CPU-only jaxlib. ``laser_sample_dist_confirm.py`` sets ``samples_chunk_size=8``,
-and ``host/plan.resolve_chunk_size`` makes that value win outright -- without it
-the chunk defaults to the full sample count, which the planner was separately
-probed to accept at ``Vmap`` width 1000 for these structures. So the confirm
-performs ~125 sequential dispatches of width 8 at n=1000 where the memory budget
-permits one. Whether that costs anything has never been measured.
+CPU-only jaxlib. ``laser_sample_dist_confirm.py:557`` sets
+``samples_chunk_size=8``, and ``host/plan.resolve_chunk_size`` (plan.py:450-454)
+makes that value win outright -- without it the chunk defaults to the full sample
+count, which the planner was separately probed to accept at ``Vmap`` width 1000
+for these structures. So the confirm performs ~125 sequential dispatches of width
+8 at n=1000 where the memory budget permits one. Whether that costs anything has
+never been measured.
 
-This run measures it. Five configurations on ONE structure at ONE temperature,
-each timed around ``aminx.host.runner.sample`` only:
+PAIRED DESIGN, and the reason for it. titanix is shared. Measured 2026-10-06, the
+1-minute load average moved from 17.47 to 9.55 on 20 cores within minutes, driven
+by another session's 125-thread job. A 1.8x swing in available CPU swamps the ~30%
+effect this measurement is trying to resolve, so a design that compares two
+configurations run hours apart cannot answer the question at all.
 
-    C1  n=32  width=8    baseline -- exactly what the confirm does
-    C2  n=32  width=32   the lever -- one full-width dispatch
-    C3  n=16  width=8    linearity control -- must cost ~half of C1
-    C4  n=8   width=1    positive control -- width 1 must be the slowest per sample
-    C5  n=8   width=8    C4's pair at equal n
+Every comparison is therefore measured as an ADJACENT PAIR: the two configurations
+run back to back, and the ratio is formed within the pair. A monotone drift in
+contention cancels, because both members see nearly the same machine. Pairs are
+repeated with the member order REVERSED on alternate repeats, so even a drift
+inside a single pair cannot bias the ratio in a fixed direction.
 
-C4/C5 are the instrument check that matters: if width 1 is NOT measurably worse
-per sample than width 8, then the width knob does not do what this script claims
-to measure, and every other number here is uninterpretable. That is a real
-possible result, not a formality -- the planner probe already falsified one
-confident story about this axis today.
+    lever      n=32 w=8  vs  n=32 w=32   x2   -- the question
+    control    n=8  w=8  vs  n=8  w=1    x1   -- width 1 must be worse per sample
+    linearity  n=32 w=8  vs  n=16 w=8    x1   -- halving n must halve the cost
+
+The control is the one that matters: if the narrowest possible width is not
+measurably worse than width 8, the knob does not reach the computation this
+script claims to time, and every other number here is uninterpretable. That is a
+live possibility -- a confident story about this same axis (that the planner
+silently demotes the sample axis to width 1 on a CPU 4 GiB budget) was probed and
+falsified on 2026-10-06 before this script was written.
 
 Per-unit resume and per-unit timeouts, because an interruption must cost one
 configuration rather than the whole run.
@@ -34,6 +43,7 @@ import hashlib
 import json
 import logging
 import os
+import statistics
 import subprocess
 import sys
 import time
@@ -46,25 +56,34 @@ logger = logging.getLogger("laser_chunk_width")
 _REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_REPO / "scripts" / "parity"))
 
-# The structure is pinned by name AND digest via the confirm's own STRUCTURES map,
-# so this script cannot silently measure a different backbone than the confirm.
+# Pinned by name AND digest via the confirm's own STRUCTURES map, so this script
+# cannot silently time a different backbone than the confirm.
 _STRUCTURE_RELATIVE = "tests/fixtures/laser/103m_1.pdb"
 _TEMPERATURE = 0.3
 _MIN_P = 0.0
 
-# (label, n, width). Fixed before the run; no configuration is chosen later.
-_CONFIGS: tuple[tuple[str, int, int], ...] = (
-  ("C1_n32_w8", 32, 8),
-  ("C2_n32_w32", 32, 32),
-  ("C3_n16_w8", 16, 8),
-  ("C4_n8_w1", 8, 1),
-  ("C5_n8_w8", 8, 8),
-)
-_PASSES = 2  # pass 0 pays this shape's compile; pass 1 is the warm measurement.
+# (label, n, width)
+_Config = tuple[str, int, int]
 
-# Per-unit wall-clock ceiling. Generous against the ~41 s/sample prior so that a
-# timeout means "something is wrong", not "the prior was optimistic".
+_BASE: _Config = ("base_n32_w8", 32, 8)
+_WIDE: _Config = ("wide_n32_w32", 32, 32)
+_CTRL_W8: _Config = ("ctrl_n8_w8", 8, 8)
+_CTRL_W1: _Config = ("ctrl_n8_w1", 8, 1)
+_HALF_N: _Config = ("half_n16_w8", 16, 8)
+
+# (pair name, member A, member B, repeats). Fixed before the run.
+_PAIRS: tuple[tuple[str, _Config, _Config, int], ...] = (
+  ("lever", _BASE, _WIDE, 2),
+  ("control", _CTRL_W8, _CTRL_W1, 1),
+  ("linearity", _BASE, _HALF_N, 1),
+)
+
+# Per-unit wall-clock ceiling. Generous against the measured 49.8 s/sample (which
+# included a cold compile, under load 17) so a timeout means something is wrong.
 _UNIT_TIMEOUT_S = 7200
+
+# Max/min of the 1-minute load averages recorded WITHIN one pair instance.
+_LOAD_SPREAD_MAX = 1.50
 
 
 @dataclass(frozen=True)
@@ -72,11 +91,14 @@ class Unit:
   label: str
   n: int
   width: int
-  pass_idx: int
+  pair: str
+  repeat: int
+  warmup: bool
 
   @property
   def uid(self) -> str:
-    return f"{self.label}_p{self.pass_idx}"
+    kind = "warm" if self.warmup else f"{self.pair}r{self.repeat}"
+    return f"{self.label}__{kind}"
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -93,15 +115,7 @@ def _sha256_file(path: Path) -> str:
 
 def _cache_key(unit: Unit, *, script_sha: str, checkpoint_sha: str, pdb_sha: str) -> str:
   payload = "|".join(
-    (
-      script_sha,
-      checkpoint_sha,
-      pdb_sha,
-      unit.label,
-      str(unit.n),
-      str(unit.width),
-      str(unit.pass_idx),
-    )
+    (script_sha, checkpoint_sha, pdb_sha, unit.label, str(unit.n), str(unit.width), unit.uid)
   )
   return _sha256_bytes(payload.encode())
 
@@ -109,21 +123,16 @@ def _cache_key(unit: Unit, *, script_sha: str, checkpoint_sha: str, pdb_sha: str
 def _xla_cache_entries(cache_dir: Path) -> int:
   if not cache_dir.is_dir():
     return 0
-  return sum(1 for _ in cache_dir.rglob("*") if _.is_file())
+  return sum(1 for entry in cache_dir.rglob("*") if entry.is_file())
 
 
 def _build_spec(pdb: Path, checkpoint: Path, *, n: int, width: int) -> Any:
-  """Mirror the confirm's SamplingSpecification, varying only samples_chunk_size.
-
-  The field set is asserted against the confirm's own builder so that a drift in
-  the confirm fails loudly here rather than letting this script time a different
-  computation under the same name.
-  """
+  """Mirror the confirm's SamplingSpecification, varying only samples_chunk_size."""
   import laser_sample_dist_confirm as confirm  # type: ignore[import-not-found]
 
   from aminx.run.specs import SamplingSpecification
 
-  options = confirm._laser_options(  # noqa: SLF001 - deliberate reuse, see docstring
+  options = confirm._laser_options(  # noqa: SLF001 - deliberate reuse, see module docstring
     {"sample_temperature": _TEMPERATURE, "min_p": _MIN_P}
   )
   return SamplingSpecification(
@@ -150,10 +159,6 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
 
   spec = _build_spec(pdb, checkpoint, n=unit.n, width=unit.width)
   entries_before = _xla_cache_entries(cache_dir)
-  # titanix is a shared host. A timing measurement taken while another session
-  # saturates the cores is not comparable to one taken on an idle host, and load
-  # that DRIFTS between two compared configurations can manufacture a ratio.
-  # Record it so the grader can refuse rather than average over it.
   load_before = os.getloadavg()[0]
   started = time.perf_counter()
   result = runner_sample(spec)
@@ -172,7 +177,9 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
     "label": unit.label,
     "n": unit.n,
     "width": unit.width,
-    "pass_idx": unit.pass_idx,
+    "pair": unit.pair,
+    "repeat": unit.repeat,
+    "warmup": unit.warmup,
     "elapsed_s": elapsed,
     "seconds_per_sample": elapsed / unit.n,
     "xla_cache_entries_before": entries_before,
@@ -188,7 +195,7 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
 def _worker(args: argparse.Namespace) -> None:
   # Fail on the real cause, not six frames later inside Equinox. An unresolved
   # path arrives here as the literal string "None", which Path() accepts happily
-  # and eqx then opens as "None.eqx".
+  # and eqx then opens as "None.eqx". Measured 2026-10-06.
   for flag, value in (("--pdb", args.pdb), ("--checkpoint", args.checkpoint)):
     if value is None or str(value) == "None" or not Path(value).is_file():
       msg = f"worker got an unusable {flag}: {value!r}"
@@ -197,7 +204,9 @@ def _worker(args: argparse.Namespace) -> None:
     label=args.worker_label,
     n=int(args.worker_n),
     width=int(args.worker_width),
-    pass_idx=int(args.worker_pass),
+    pair=args.worker_pair,
+    repeat=int(args.worker_repeat),
+    warmup=bool(args.worker_warmup),
   )
   body = _run_one(unit, Path(args.pdb), Path(args.checkpoint), Path(args.cache_dir))
   out = Path(args.worker_out)
@@ -208,41 +217,25 @@ def _worker(args: argparse.Namespace) -> None:
 
 
 def _dispatch(
-  unit: Unit,
-  *,
-  pdb: Path,
-  checkpoint: Path,
-  body_path: Path,
-  cache_dir: Path,
+  unit: Unit, *, pdb: Path, checkpoint: Path, body_path: Path, cache_dir: Path
 ) -> tuple[dict[str, Any] | None, str]:
-  """Launch one unit.
-
-  ``pdb`` and ``checkpoint`` are the RESOLVED paths, never ``args.pdb`` /
-  ``args.checkpoint`` -- those are None whenever the caller relied on the
-  default resolution, and ``str(None)`` reaches the worker as the literal
-  "None", which Equinox then opens as "None.eqx". Measured 2026-10-06.
-  """
+  """Launch one unit with the RESOLVED paths, never the raw argparse values."""
   cmd = [
     sys.executable,
     str(Path(__file__).resolve()),
     "--worker",
-    "--worker-label",
-    unit.label,
-    "--worker-n",
-    str(unit.n),
-    "--worker-width",
-    str(unit.width),
-    "--worker-pass",
-    str(unit.pass_idx),
-    "--worker-out",
-    str(body_path),
-    "--pdb",
-    str(pdb),
-    "--checkpoint",
-    str(checkpoint),
-    "--cache-dir",
-    str(cache_dir),
-  ]
+    "--worker-label", unit.label,
+    "--worker-n", str(unit.n),
+    "--worker-width", str(unit.width),
+    "--worker-pair", unit.pair,
+    "--worker-repeat", str(unit.repeat),
+    "--worker-out", str(body_path),
+    "--pdb", str(pdb),
+    "--checkpoint", str(checkpoint),
+    "--cache-dir", str(cache_dir),
+  ]  # fmt: skip
+  if unit.warmup:
+    cmd.append("--worker-warmup")
   env = {
     **os.environ,
     "JAX_COMPILATION_CACHE_DIR": str(cache_dir),
@@ -262,47 +255,99 @@ def _dispatch(
   return json.loads(body_path.read_text()), ""
 
 
-def _grade(measured: dict[str, dict[str, Any]]) -> dict[str, Any]:
-  """Classify the width effect, after two instrument checks that can refuse."""
+def _plan_units() -> list[Unit]:
+  """Warm-ups for each distinct shape first, then each pair's members adjacently.
 
-  def sps(label: str) -> float | None:
-    row = measured.get(label)
-    return None if row is None else float(row["seconds_per_sample"])
+  Member order reverses on odd repeats so a drift inside one pair cannot bias the
+  ratio in a fixed direction.
+  """
+  units: list[Unit] = []
+  # One warm-up per distinct WIDTH, at n == width (a single chunk). The compiled
+  # shape is set by the chunk width, not by n: a run of n samples at width w is
+  # ceil(n/w) dispatches of the SAME shape, and every (n, width) pair here
+  # divides evenly, so no remainder chunk introduces a second shape. Warming per
+  # width instead of per configuration costs 41 sample-draws rather than 96.
+  seen_widths: set[int] = set()
+  for _, member_a, member_b, _ in _PAIRS:
+    for label, _n, width in (member_a, member_b):
+      if width in seen_widths:
+        continue
+      seen_widths.add(width)
+      units.append(Unit(label, width, width, pair="warmup", repeat=0, warmup=True))
+  for pair_name, member_a, member_b, repeats in _PAIRS:
+    for repeat in range(repeats):
+      ordered = (member_a, member_b) if repeat % 2 == 0 else (member_b, member_a)
+      for label, n, width in ordered:
+        units.append(Unit(label, n, width, pair=pair_name, repeat=repeat, warmup=False))
+  return units
 
-  c1, c2, c3, c4, c5 = (sps(label) for label, _, _ in _CONFIGS)
-  complete = all(v is not None for v in (c1, c2, c3, c4, c5))
 
-  # Positive control: width 1 must be measurably worse per sample than width 8 at
-  # equal n. If it is not, the knob is inert and nothing else here means anything.
-  width_control_ratio = None if (c4 is None or c5 is None) else c4 / c5
-  width_control_fires = width_control_ratio is not None and width_control_ratio >= 1.20
+def _pair_instances(rows: list[dict[str, Any]]) -> dict[tuple[str, int], list[dict[str, Any]]]:
+  grouped: dict[tuple[str, int], list[dict[str, Any]]] = {}
+  for row in rows:
+    if row.get("warmup"):
+      continue
+    grouped.setdefault((row["pair"], int(row["repeat"])), []).append(row)
+  return grouped
 
-  # Linearity control: halving n at fixed width must roughly halve the cost.
-  # Band inherited from the measured scaling exponent of 0.975 (near-linear).
-  linearity_ratio = None if (c1 is None or c3 is None) else c3 / c1
+
+def _pair_ratio(
+  instances: dict[tuple[str, int], list[dict[str, Any]]],
+  pair: str,
+  numerator_label: str,
+  denominator_label: str,
+) -> tuple[float | None, list[float], bool]:
+  """Median within-pair ratio, plus whether every instance's load was stable."""
+  ratios: list[float] = []
+  stable = True
+  found = False
+  for (pair_name, _), members in sorted(instances.items()):
+    if pair_name != pair or len(members) != 2:
+      continue
+    by_label = {row["label"]: row for row in members}
+    num, den = by_label.get(numerator_label), by_label.get(denominator_label)
+    if num is None or den is None:
+      continue
+    found = True
+    loads = [
+      float(row[key])
+      for row in members
+      for key in ("loadavg_1m_before", "loadavg_1m_after")
+      if key in row
+    ]
+    if not loads or min(loads) <= 0 or max(loads) / min(loads) > _LOAD_SPREAD_MAX:
+      stable = False
+    ratios.append(float(num["seconds_per_sample"]) / float(den["seconds_per_sample"]))
+  if not ratios:
+    return None, [], False
+  return statistics.median(ratios), ratios, (stable and found)
+
+
+def _grade(rows: list[dict[str, Any]]) -> dict[str, Any]:
+  instances = _pair_instances(rows)
+
+  lever_ratio, lever_all, lever_stable = _pair_ratio(
+    instances, "lever", _WIDE[0], _BASE[0]
+  )
+  control_ratio, control_all, control_stable = _pair_ratio(
+    instances, "control", _CTRL_W1[0], _CTRL_W8[0]
+  )
+  linearity_ratio, linearity_all, linearity_stable = _pair_ratio(
+    instances, "linearity", _HALF_N[0], _BASE[0]
+  )
+
+  control_fires = control_ratio is not None and control_ratio >= 1.20
   linearity_holds = linearity_ratio is not None and 0.80 <= linearity_ratio <= 1.25
+  load_stable = bool(lever_stable and control_stable and linearity_stable)
+  instrument_ok = bool(
+    lever_ratio is not None and control_fires and linearity_holds and load_stable
+  )
 
-  # Load-stability gate. titanix is shared; a ratio measured across configurations
-  # that ran under materially different CPU contention is not a measurement of
-  # chunk width. Disclosed amendment, added 2026-10-06 BEFORE any graded number
-  # existed, after observing load 17.47 on 20 cores from another session's job.
-  loads = [
-    max(float(row["loadavg_1m_before"]), float(row["loadavg_1m_after"]))
-    for row in measured.values()
-    if "loadavg_1m_before" in row
-  ]
-  load_spread = (max(loads) / min(loads)) if loads and min(loads) > 0 else None
-  load_stable = load_spread is not None and load_spread <= 1.50
-  load_observed = max(loads) if loads else None
-
-  instrument_ok = bool(complete and width_control_fires and linearity_holds and load_stable)
-
-  widen_ratio = None if (c1 is None or c2 is None) else c2 / c1
-  if not instrument_ok or widen_ratio is None:
+  if not instrument_ok:
     verdict = "instrument_unverified"
-  elif widen_ratio <= 0.70:
+  elif lever_ratio <= 0.70:
     verdict = "dispatch_bound"
-  elif widen_ratio >= 0.90:
+  elif lever_ratio >= 0.90:
     verdict = "compute_bound"
   else:
     verdict = "inconclusive"
@@ -310,17 +355,93 @@ def _grade(measured: dict[str, dict[str, Any]]) -> dict[str, Any]:
   return {
     "verdict": verdict,
     "instrument_ok": instrument_ok,
-    "configs_complete": complete,
-    "width_control_ratio": width_control_ratio,
-    "width_control_fires": width_control_fires,
+    "widen_ratio": lever_ratio,
+    "widen_ratio_all": lever_all,
+    "width_control_ratio": control_ratio,
+    "width_control_ratio_all": control_all,
+    "width_control_fires": control_fires,
     "linearity_ratio": linearity_ratio,
+    "linearity_ratio_all": linearity_all,
     "linearity_holds": linearity_holds,
-    "load_spread": load_spread,
     "load_stable": load_stable,
-    "load_observed_max": load_observed,
-    "widen_ratio": widen_ratio,
-    "seconds_per_sample": {label: sps(label) for label, _, _ in _CONFIGS},
+    "load_stable_by_pair": {
+      "lever": lever_stable,
+      "control": control_stable,
+      "linearity": linearity_stable,
+    },
+    "load_spread_max_allowed": _LOAD_SPREAD_MAX,
+    "seconds_per_sample": {
+      row["uid"]: row["seconds_per_sample"] for row in rows if not row.get("warmup")
+    },
   }
+
+
+def _synthetic_row(
+  label: str, n: int, width: int, pair: str, repeat: int, sps: float, load: float
+) -> dict[str, Any]:
+  return {
+    "uid": f"{label}__{pair}r{repeat}",
+    "label": label,
+    "n": n,
+    "width": width,
+    "pair": pair,
+    "repeat": repeat,
+    "warmup": False,
+    "seconds_per_sample": sps,
+    "loadavg_1m_before": load,
+    "loadavg_1m_after": load,
+  }
+
+
+def _synthetic_rows(
+  *, widen_sps: float, control_ratio: float = 2.0, linearity: float = 1.0, load: float = 10.0
+) -> list[dict[str, Any]]:
+  """A full synthetic result set with a controllable lever ratio."""
+  rows: list[dict[str, Any]] = []
+  for repeat in (0, 1):
+    rows.append(_synthetic_row(_BASE[0], 32, 8, "lever", repeat, 10.0, load))
+    rows.append(_synthetic_row(_WIDE[0], 32, 32, "lever", repeat, widen_sps, load))
+  rows.append(_synthetic_row(_CTRL_W8[0], 8, 8, "control", 0, 10.0, load))
+  rows.append(_synthetic_row(_CTRL_W1[0], 8, 1, "control", 0, 10.0 * control_ratio, load))
+  rows.append(_synthetic_row(_BASE[0], 32, 8, "linearity", 0, 10.0, load))
+  rows.append(_synthetic_row(_HALF_N[0], 16, 8, "linearity", 0, 10.0 * linearity, load))
+  return rows
+
+
+def _self_test() -> tuple[bool, list[str]]:
+  """Grade synthetic ground truth, including controls that MUST refuse.
+
+  A grader that can only return one answer is not a grader. Three of these six
+  checks require a refusal, so passing them shows the instrument can say no.
+  """
+  failures: list[str] = []
+
+  def check(name: str, rows: list[dict[str, Any]], expected: str) -> None:
+    got = _grade(rows)["verdict"]
+    if got != expected:
+      failures.append(f"{name}: expected {expected}, got {got}")
+
+  # Positive: the three substantive bands, at values either side of 0.70/0.90.
+  check("lever_strong", _synthetic_rows(widen_sps=5.0), "dispatch_bound")
+  check("lever_absent", _synthetic_rows(widen_sps=9.5), "compute_bound")
+  check("lever_middle", _synthetic_rows(widen_sps=8.0), "inconclusive")
+
+  # Negative: each control alone must force a refusal despite a strong lever.
+  check(
+    "control_inert",
+    _synthetic_rows(widen_sps=5.0, control_ratio=1.0),
+    "instrument_unverified",
+  )
+  check(
+    "linearity_broken",
+    _synthetic_rows(widen_sps=5.0, linearity=2.0),
+    "instrument_unverified",
+  )
+  drifted = _synthetic_rows(widen_sps=5.0)
+  drifted[1]["loadavg_1m_after"] = 30.0  # inside the lever pair
+  check("load_drift", drifted, "instrument_unverified")
+
+  return (not failures), failures
 
 
 def _parse(argv: list[str] | None = None) -> argparse.Namespace:
@@ -328,19 +449,26 @@ def _parse(argv: list[str] | None = None) -> argparse.Namespace:
   parser.add_argument("--laser-root", type=Path, default=None)
   parser.add_argument("--checkpoint", type=Path, default=None)
   parser.add_argument("--pdb", type=Path, default=None)
-  parser.add_argument("--work-dir", type=Path, required=False)
+  parser.add_argument("--work-dir", type=Path, default=None)
   parser.add_argument("--out", type=Path, default=None)
   parser.add_argument("--cache-dir", type=Path, default=None)
   parser.add_argument(
     "--smoke",
     action="store_true",
-    help="Run only C5 pass 0 and report its timing. Sizes the full run; grades nothing.",
+    help="Run one cheap unit and report its timing. Sizes the run; grades nothing.",
+  )
+  parser.add_argument(
+    "--self-test-only",
+    action="store_true",
+    help="Run the grader's synthetic checks and exit. Touches no model.",
   )
   parser.add_argument("--worker", action="store_true")
   parser.add_argument("--worker-label", default="")
   parser.add_argument("--worker-n", type=int, default=0)
   parser.add_argument("--worker-width", type=int, default=0)
-  parser.add_argument("--worker-pass", type=int, default=0)
+  parser.add_argument("--worker-pair", default="")
+  parser.add_argument("--worker-repeat", type=int, default=0)
+  parser.add_argument("--worker-warmup", action="store_true")
   parser.add_argument("--worker-out", type=Path, default=None)
   return parser.parse_args(argv)
 
@@ -353,19 +481,31 @@ def main(argv: list[str] | None = None) -> int:
     _worker(args)
     return 0
 
+  # The instrument is checked BEFORE the model is touched, so a broken grader
+  # costs seconds rather than three hours.
+  self_test_passed, self_test_failed = _self_test()
+  for failure in self_test_failed:
+    logger.error("self-test: %s", failure)
+  logger.info("self-test %s (6 checks, 3 of them refusals)", "PASSED" if self_test_passed else "FAILED")
+  if args.self_test_only:
+    return 0 if self_test_passed else 1
+  if not self_test_passed:
+    msg = "grader self-test failed; refusing to measure"
+    raise SystemExit(msg)
+
+  import laser_sample_dist_confirm as confirm  # type: ignore[import-not-found]
   import laser_sample_dist_pilot as pilot  # type: ignore[import-not-found]
 
   laser_root = Path(args.laser_root) if args.laser_root else pilot._default_laser_root()  # noqa: SLF001
-  checkpoint = Path(args.checkpoint) if args.checkpoint else pilot._checkpoint(  # noqa: SLF001
-    argparse.Namespace(checkpoint=None, laser_root=laser_root)
+  checkpoint = (
+    Path(args.checkpoint)
+    if args.checkpoint
+    else pilot._checkpoint(argparse.Namespace(checkpoint=None, laser_root=laser_root))  # noqa: SLF001
   )
   pilot._require_checkpoint(checkpoint)  # noqa: SLF001
+
   # The confirm resolves "tests/"-prefixed structures against the AMINX repo and
   # everything else against laser_root (laser_sample_dist_confirm.py:355-359).
-  # Mirror that rather than guessing, and check the digest the confirm pins so
-  # this script cannot time a different backbone under the same label.
-  import laser_sample_dist_confirm as confirm  # type: ignore[import-not-found]
-
   if args.pdb:
     pdb = Path(args.pdb)
   elif _STRUCTURE_RELATIVE.startswith("tests/"):
@@ -375,9 +515,8 @@ def main(argv: list[str] | None = None) -> int:
   if not pdb.is_file():
     msg = f"structure not found: {pdb}"
     raise SystemExit(msg)
-  expected_digest = confirm.STRUCTURES.get(_STRUCTURE_RELATIVE)
-  if expected_digest is not None and not args.pdb:
-    pinned = expected_digest[0] if isinstance(expected_digest, tuple) else expected_digest
+  pinned = confirm.STRUCTURES.get(_STRUCTURE_RELATIVE)
+  if pinned is not None and not args.pdb:
     got = _sha256_file(pdb)
     if got != pinned:
       msg = f"{pdb} sha256 {got} != confirm's pin {pinned}"
@@ -393,13 +532,7 @@ def main(argv: list[str] | None = None) -> int:
   pdb_sha = _sha256_file(pdb)
 
   units = (
-    [Unit("C5_n8_w8", 8, 8, 0)]
-    if args.smoke
-    else [
-      Unit(label, n, width, pass_idx)
-      for label, n, width in _CONFIGS
-      for pass_idx in range(_PASSES)
-    ]
+    [Unit(*_CTRL_W8, pair="smoke", repeat=0, warmup=True)] if args.smoke else _plan_units()
   )
 
   rows: list[dict[str, Any]] = []
@@ -426,20 +559,24 @@ def main(argv: list[str] | None = None) -> int:
     rows.append(body)
     n_computed += 1
     logger.info(
-      "%s elapsed %.1f s (%.2f s/sample, compiled=%s)",
+      "%s elapsed %.1f s (%.2f s/sample, compiled=%s, load %.2f->%.2f)",
       unit.uid,
       body["elapsed_s"],
       body["seconds_per_sample"],
       body["compiled_during_unit"],
+      body["loadavg_1m_before"],
+      body["loadavg_1m_after"],
     )
 
-  # Only the WARM pass is graded; pass 0 exists to pay this shape's compile.
-  measured = {row["label"]: row for row in rows if row["pass_idx"] == _PASSES - 1}
-  graded = _grade(measured) if not args.smoke else {"verdict": "smoke", "instrument_ok": False}
+  graded = (
+    {"verdict": "smoke", "instrument_ok": False} if args.smoke else _grade(rows)
+  )
 
   results: dict[str, Any] = {
     **graded,
     "smoke": bool(args.smoke),
+    "self_test_passed": self_test_passed,
+    "self_test_failed": self_test_failed,
     "rows": rows,
     "failures": failures,
     "n_reused": n_reused,
