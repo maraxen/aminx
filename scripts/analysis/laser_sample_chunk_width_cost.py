@@ -177,6 +177,13 @@ def _run_one(unit: Unit, pdb: Path, checkpoint: Path, cache_dir: Path) -> dict[s
 
 
 def _worker(args: argparse.Namespace) -> None:
+  # Fail on the real cause, not six frames later inside Equinox. An unresolved
+  # path arrives here as the literal string "None", which Path() accepts happily
+  # and eqx then opens as "None.eqx".
+  for flag, value in (("--pdb", args.pdb), ("--checkpoint", args.checkpoint)):
+    if value is None or str(value) == "None" or not Path(value).is_file():
+      msg = f"worker got an unusable {flag}: {value!r}"
+      raise SystemExit(msg)
   unit = Unit(
     label=args.worker_label,
     n=int(args.worker_n),
@@ -194,10 +201,18 @@ def _worker(args: argparse.Namespace) -> None:
 def _dispatch(
   unit: Unit,
   *,
-  args: argparse.Namespace,
+  pdb: Path,
+  checkpoint: Path,
   body_path: Path,
   cache_dir: Path,
 ) -> tuple[dict[str, Any] | None, str]:
+  """Launch one unit.
+
+  ``pdb`` and ``checkpoint`` are the RESOLVED paths, never ``args.pdb`` /
+  ``args.checkpoint`` -- those are None whenever the caller relied on the
+  default resolution, and ``str(None)`` reaches the worker as the literal
+  "None", which Equinox then opens as "None.eqx". Measured 2026-10-06.
+  """
   cmd = [
     sys.executable,
     str(Path(__file__).resolve()),
@@ -213,9 +228,9 @@ def _dispatch(
     "--worker-out",
     str(body_path),
     "--pdb",
-    str(args.pdb),
+    str(pdb),
     "--checkpoint",
-    str(args.checkpoint),
+    str(checkpoint),
     "--cache-dir",
     str(cache_dir),
   ]
@@ -376,7 +391,9 @@ def main(argv: list[str] | None = None) -> int:
       logger.info("reused %s", unit.uid)
       continue
     logger.info("running %s (n=%d width=%d)", unit.uid, unit.n, unit.width)
-    body, error = _dispatch(unit, args=args, body_path=body_path, cache_dir=cache_dir)
+    body, error = _dispatch(
+      unit, pdb=pdb, checkpoint=checkpoint, body_path=body_path, cache_dir=cache_dir
+    )
     if body is None:
       logger.error("%s FAILED: %s", unit.uid, error)
       failures.append({"uid": unit.uid, "error": error})

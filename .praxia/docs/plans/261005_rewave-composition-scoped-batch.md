@@ -513,3 +513,47 @@ eight rows by itself.
 **Do not do (a) into `aminx-confirm-git/.venv` while the Potts confirmatory run is in
 flight** — that run uses that interpreter, and installing into a venv underneath a live
 measured process is not worth the risk for a step that can wait an hour.
+
+## 5c. The b7i venv is xtrax 0.4.0a10, not a11 — it reflects main's pin, not this branch's
+
+Found 2026-10-06 while provisioning the chunk-width measurement, and it corrects a claim this
+sprint had been carrying: `aminx-b7i-git`'s venv was recorded as "xtrax 0.4.0a11 + pyarrow".
+**It is 0.4.0a10.** Measured side by side:
+
+```
+local worktree venv   xtrax 0.4.0a11   ['ChunkedMap', 'ChunkedMapIterator', 'MapIterator', 'Vmap', 'VmapIterator']
+titanix b7i venv      xtrax 0.4.0a10   ['MapIterator', 'SafeMap', 'SafeMapIterator', 'Vmap', 'VmapIterator']
+```
+
+**a11 renamed `SafeMap` to `ChunkedMap`.** `src/aminx/tiling/planner.py:8` does
+`from xtrax.tiling import ChunkedMap as XtraxChunkedMap`, so on a10 the import fails outright:
+
+```
+ImportError: cannot import name 'ChunkedMap' from 'xtrax.tiling'
+  via src/aminx/sampling/conditional_logits.py:34 -> src/aminx/tiling/planner.py:8
+```
+
+This is **not a mystery, and not a broken venv** — it is a pin difference. `pyproject.toml:26`
+on this branch pins `xtrax[io,export]==0.4.0a11` exactly, while **main pins a10**. b7i is
+synced to main's pin. So the venv is correct for main and wrong for this branch.
+
+**Three consequences.**
+
+1. **Any run of THIS branch's code on b7i that reaches the tiling planner fails at import.**
+   That covers every sampling path, including the LASEr and Potts distributional vehicles. A
+   measurement must use a venv built from this branch's own lock.
+2. **It does not invalidate the step-2 result from earlier today.** The
+   `tests/knob_gate/test_knob_superset.py` run (5 passed, 1 structural skip) does not import
+   `conditional_logits`, so it never reaches `planner.py`. That result stands — stated
+   explicitly so it is not discarded by association.
+3. **It sharpens the main-merge work.** The `SafeMap` -> `ChunkedMap` rename is exactly the
+   kind of cross-version API change the merge has to reconcile, and it is load-bearing for the
+   standing directive that aminx use xtrax natively with Vmap/ChunkedMap dispatch happening
+   under the hood. Whoever lands the merge should expect the pin bump to be part of it, not a
+   follow-up.
+
+A pin-compliant venv now exists at `titanix:~/aminx-chunkwidth-261006/.venv`, built by
+`uv sync --extra laser` against this branch's `uv.lock`: xtrax 0.4.0a11 with `ChunkedMap`
+present, prody importable, jax 0.10.2. It also **independently re-confirms the CPU-only
+constraint** behind the ~223 h estimate — `jax.devices()` returns `[CpuDevice(id=0)]`, so the
+cost figure is not resting on a stale note about the environment.

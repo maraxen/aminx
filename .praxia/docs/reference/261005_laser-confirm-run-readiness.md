@@ -470,3 +470,33 @@ So: Engaging is plausibly the right venue, and the array shape is a genuine impr
 anything titanix can offer. But provisioning it is several hours of work resting on an
 unmeasured assumption, and the chunk-width probe costs ~1 h and could change the target.
 **Measure first.**
+
+### A cheaper GPU path than Engaging: titanix already has the GPUs
+
+Measured 2026-10-06, from jax's own startup warning in the new pin-compliant venv:
+
+```
+An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed.
+Falling back to cpu.
+...
+jax 0.10.2  [CpuDevice(id=0)]
+```
+
+So the CPU-only constraint behind the ~223 h is **purely a missing wheel**, not absent
+hardware. titanix has NVIDIA GPUs; GPUs 0 and 1 hold vLLM, which leaves 2 and 3. That makes
+"install a CUDA jaxlib on titanix" a materially cheaper experiment than provisioning Engaging:
+it needs no DTN fetch job, no pre-staged weights, no second checkout, no SM120 flag, and no
+12 h walltime chunking — and it can be tried in one venv without touching the one the vehicles
+use.
+
+**It is not a substitute for Engaging, and it is not free.** titanix gives at most two free
+GPUs against Engaging's 40-way array, so the array shape remains the better answer for the
+full confirm. And a CUDA jaxlib changes the numerical environment, which matters for a
+*parity* project: any ledger row re-measured on GPU is re-measured on a different backend, so
+this belongs on a measurement venv first, never on the vehicles' venv, and never during the
+freeze.
+
+Ordering, then, is: chunk-width measurement (~2.2 h, decides whether width is the lever) ->
+CUDA jaxlib on a titanix measurement venv (cheap, bounds the GPU speedup on 2 GPUs) ->
+Engaging provisioning only if the confirm is still the bottleneck. Each step is cheap enough
+to refute the next one's premise.
