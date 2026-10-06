@@ -753,6 +753,88 @@ is step 1: the gate can go green while those two waves have no evidence at all. 
 the wave should either resolve their oracle dumps or record explicitly that the gate's step 1 is
 silent on them.
 
+### 1a-i. ROOT CAUSE of the two blank waves: a stale default path, and the fix costs nothing
+
+§1a left this as *"either resolve their oracle dumps or record explicitly that the gate's step 1
+is silent on them."* **Neither is needed. The dumps exist, and the fix is an environment
+variable — no scoped file changes, so no ledger row is invalidated.**
+
+**The two blank waves resolve their oracle directory to a path that does not exist.**
+
+| slug | `sealed.py` default for `AMINX_LASER_ORACLE_DIR` | exists on gate host |
+| :-- | :-- | :-- |
+| `laser_layers` | `~/projects/aminx-oracles/dumps/laser` | **NO** |
+| `laser_encoder` | `~/projects/aminx-oracles/dumps/laser` | **NO** |
+| `laser_score` | `~/projects/aminx-oracles/dumps/b3_laser_owned` | yes |
+| `laser_decode_step` | `~/projects/aminx-oracles/dumps/b3_laser_owned` | yes |
+
+Exactly the two slugs pointing at `dumps/laser` are the two that contributed zero assertions.
+That is the whole mechanism: `load_npz` raises `OracleAbsentError` on a missing directory,
+`_oracle_pairs()` catches it and returns `[]`, parametrisation collects nothing, and pytest
+reports a setup-skip with the `[NOTSET-f64]` id §1a saw.
+
+**Measured on the gate host**, calling the real loader under both conditions (b7i venv, both
+precisions):
+
+```
+AMINX_LASER_ORACLE_DIR=<unset>
+  resolved root : /home/solab/projects/aminx-oracles/dumps/laser (exists=False)
+  laser_layers   OracleAbsentError -> _PAIRS == [] -> no cases collected
+  laser_encoder  OracleAbsentError -> _PAIRS == [] -> no cases collected
+
+AMINX_LASER_ORACLE_DIR=.../dumps/b3_laser_owned
+  resolved root : .../dumps/b3_laser_owned (exists=True)
+  laser_layers   pairs = 63  (3 ckpt x 21 fixture)
+  laser_encoder  pairs = 63  (3 ckpt x 21 fixture)
+```
+
+**63 pairs each — the same 63 as `laser_score`**, because all three share the 3×21 fixture set.
+So the gate is currently silent on **126 parity cases per tier** that are sitting on disk ready
+to run.
+
+**Nothing in the repo exports that variable.** `run_waves.sh:16` sets only `AMINX_PORT_WAVE`; a
+grep across every file finds no export anywhere. The value is whatever the operator's shell
+happened to carry, which is why the two slugs that *default* correctly have always worked and
+the two that don't have always been blank.
+
+**It is drift between two authoring dates, never reconciled.** Each `sealed.py` was written once
+and never touched since: `laser_layers` at `9e174806` (B2), `laser_encoder` in the same family,
+`laser_score` at `ad5bf6e8` (B4a). The dumps were regenerated during **B3** into a directory
+named for it, the later slugs adopted the new default, and the two earlier ones kept the
+pre-B3 path. The irony is exact: the directory called `b3_laser_owned` is the one
+`laser_encoder` — the B3 slug — does not point at.
+
+**`b3_laser_owned` is a strict superset, so one env var fixes all of it:**
+
+```
+b3_laser_owned/  laser_decode_step laser_encoder laser_layers laser_order
+                 laser_rotamers laser_score oracle_manifest.toml
+b1_laser/        laser_decode_step laser_encoder laser_layers
+                 laser_rotamers laser_score oracle_manifest.toml      (no laser_order)
+```
+
+Setting `AMINX_LASER_ORACLE_DIR=<...>/dumps/b3_laser_owned` therefore satisfies every laser slug
+at once and changes nothing for the two that already work.
+
+**The seals are intact, and this was verified rather than assumed.** `load_npz` hash-checks each
+npz against the `oracle_manifest.toml` sitting beside it and raises on a mismatch. The probe
+above went through that path for both slugs at f64 and returned pairs, so both dumps match their
+pinned digests.
+
+**Do NOT "fix" this by editing `sealed.py`.** Both files carry `# REFERENCE: DO NOT MODIFY`, and
+`tests/port/` is a `_SCOPED_PREFIXES` path — editing it would invalidate **all eight** ledger
+rows globally for a cosmetic default. The env var achieves the same thing at zero freeze cost.
+If the default is ever aligned for tidiness, it belongs in the re-wave batch with everything
+else scoped.
+
+**A real gap this exposes, worth its own item: nothing asserts a wave collected a nonzero number
+of cases.** `tests/port/selftest_coverage/` has 23 fixtures covering ledger and mutant failure
+modes (`v_mutants_missing`, `v_no_ledger_entry`, `v_git_dirty`, …) and `i_noop` covers an empty
+*ledger* — but none covers an empty *parameter set*. An all-skipped wave is numerically
+indistinguishable from a healthy one in every call-phase tally, which is precisely the
+green-by-absence class debt #2316 names. A one-line `assert _PAIRS` would have surfaced this the
+day B4a landed.
+
 ### 1b. #2309's fix has landed in the target but has NEVER been exercised
 
 #2309 (P1) says the `laser_layers` tolerance is "pure rtol with no atol, which no implementation
@@ -774,6 +856,16 @@ standalone, and not in the gate either, because §1a shows `laser_layers` skippi
 item's own impact text is honest about the consequence — *"B2 is therefore held uncommitted and
 laser_layers parity is NOT claimed"* — and that remains the correct status. **The real blocker
 is the oracle dump, not the tolerance.** Do not close #2309 on the strength of the target file.
+
+> **AMENDED by §1a-i — the blocker is cheaper than this paragraph claims.** "The real blocker is
+> the oracle dump" is right about *where* the block is and wrong about *what* it is. The dump is
+> not missing: `b3_laser_owned/laser_layers/oracle_{f64,f32}.npz` is on the gate host, seal
+> intact, carrying all 1512 `__in__` leaves that layer replay needs (the `b1_laser` copy has the
+> 819 `__out__` leaves and **zero** `__in__`, which is presumably what "the dump is missing"
+> originally meant). What blocks #2309 is a stale default path, cleared by exporting
+> `AMINX_LASER_ORACLE_DIR`. **So #2309 is one wave run from resolution, with no scoped edit and
+> no ledger cost** — the cheapest P1 on the board, not the most blocked. It still must not be
+> closed on the target file; it should be closed on a wave run at the amended band.
 
 ### 2h. #2311 CLOSED — the dtype trio is down to two
 
