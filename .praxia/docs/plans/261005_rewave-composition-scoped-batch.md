@@ -774,3 +774,39 @@ standalone, and not in the gate either, because §1a shows `laser_layers` skippi
 item's own impact text is honest about the consequence — *"B2 is therefore held uncommitted and
 laser_layers parity is NOT claimed"* — and that remains the correct status. **The real blocker
 is the oracle dump, not the tolerance.** Do not close #2309 on the strength of the target file.
+
+### 2h. #2311 CLOSED — the dtype trio is down to two
+
+**#2311 (LASEr RBF `D_mu` must be recomputed at the working dtype) is resolved and closed.**
+It is the first Tier C item this sprint to close on verification rather than be re-scoped. Four
+things had to hold, and all four do:
+
+1. **`D_mu` is recomputed, not loaded.** `model/laser/encoders.py:154`, inside
+   `RBFEncoding.__init__`: `self.D_mu = jnp.linspace(bin_min, bin_max, num_bins)`.
+2. **The load path skips the checkpoint key on f64** — `families/laser_mpnn/driver.py:653-655`
+   and the mirror at `:703-710`, with the reason stated in place: *"D_mu is a derived linspace.
+   The f64 laser_score wave leaves it alone so a cast does not fight the encoder's own
+   reconstruction."* On **f32** the checkpoint value *is* loaded, which is correct there — those
+   values are what upstream computes in f32, so loading them preserves exact agreement. Both
+   branches are right for different reasons, which is why this looked asymmetric at first.
+3. **The ordering is correct, and this is the subtle part.** `jnp.linspace` with no explicit
+   dtype returns **float32 when x64 is disabled**, so recomputation only helps if x64 is on
+   *before* construction — otherwise an f32-precise linspace is merely cast up, which is
+   precisely the defect. `tests/port/conftest.py:269-276`'s `_tier2_enable_x64` is an **autouse**
+   fixture wrapping the whole tier_2 test in `enable_x64()`, so the model is built under x64.
+4. **It is exercised by passing f64 waves**, not just inspected. From the gate's own
+   `outcomes.jsonl`, call-phase tier_2 rows: **`laser_score` 63 passed, `laser_decode_step` 63
+   passed** — 126 f64 assertions across the two LASEr waves that load the encoder. `laser_score`
+   *is* B4, the surface #2311 said was blocked, so the block is lifted by measurement.
+
+**Scope caveat.** `laser_layers` and `laser_encoder` f64 are **not** evidence for this —
+both skip at setup in that same run (§1a). The verification rests entirely on the two waves
+that do run.
+
+**One doc nit, not a defect:** `encoders.py:143`'s class docstring still says *"`D_mu` is the
+checkpoint buffer"*, now true only on f32. One line, and the file is scoped, so it waits for
+the wave.
+
+**The dtype trio is now two.** #2311 closed; **#2309** blocked on an oracle dump rather than a
+tolerance (§1b); **#2321** open and now *corroborated* on the LASEr sampling path (readiness
+doc). Neither remaining item is a gate blocker.
