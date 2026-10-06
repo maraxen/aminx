@@ -1,0 +1,25 @@
+[plugin]
+name = "aminx"
+# cisternal overrides this from the installed distribution version
+version = "0.0.0"
+description = "JAX ProteinMPNN/LigandMPNN inverse folding -- design, score and inspect protein sequences from structure files"
+skills_delivered_by_plugin = true
+requires_praxia = false
+
+[plugin.mcp]
+command = ["aminx-mcp"]
+launch = "uvx"
+# The default spec `{name}=={version}` would omit the agent extra.
+uvx_from = "aminx[agent]=={version}"
+
+[[plugin.skills]]
+name = "using-aminx"
+path = "agent_assets/skills/using-aminx/SKILL.md"
+description = "Router for aminx: install, MCP tools versus the CLI versus the Python API, checkpoints, and which task skill to load next."
+triggers = [
+  "aminx",
+  "proteinmpnn",
+  "ligandmpnn",
+  "inverse folding",
+  "sequence design",
+]

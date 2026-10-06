@@ -293,7 +293,7 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-aminx = ["py.typed"]
+aminx = ["py.typed", "agent_plugin.json"]
 
 # Weights are tracked in the source tree but must NOT ride along in the wheel. Modern
 # setuptools auto-includes them, which took a25 from 499,612 bytes (a24, zero weight files)

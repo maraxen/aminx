@@ -1,0 +1,40 @@
+{
+  "bundle": {
+    "agents": [],
+    "commands": [],
+    "hook_specs": [],
+    "marketplace": null,
+    "mcp_servers": [
+      {
+        "command": [
+          "aminx-mcp"
+        ],
+        "env": [],
+        "launch": "uvx",
+        "name": "aminx",
+        "uvx_from": "aminx[agent]=={version}"
+      }
+    ],
+    "metadata": {
+      "description": "JAX ProteinMPNN/LigandMPNN inverse folding -- design, score and inspect protein sequences from structure files",
+      "name": "aminx",
+      "version": "0.0.0"
+    },
+    "skills": [
+      {
+        "body": "# using-aminx\n\naminx designs, scores, and inspects protein sequences from structure files. It is a JAX and Equinox implementation of ProteinMPNN and LigandMPNN: inverse folding from a backbone (and, for ligand checkpoints, from ligand context) to amino-acid sequences. The same run is available to an agent, a shell, or Python.\n\n## Install\n\nMCP tools need the agent extra. The library and the `aminx` CLI do not.\n\n```bash\npip install \"aminx[agent]\"\n```\n\n`pip install aminx` installs the library and the CLI only.\n\n## Which surface\n\n| Surface | When to use it |\n| --- | --- |\n| MCP tools | Inside an agent. This is the preferred surface. Tools take structure paths and return JSON plus side-file paths. |\n| `aminx` CLI | A shell command or a file-driven, reproducible run. |\n| Python API | Composing JAX code. Start with `aminx.parse_structure`, `aminx.load_model`, `aminx.sample`, and `aminx.score`. |\n\nThe first call for a given checkpoint and input shape compiles JAX and can take minutes. Later calls with the same shapes reuse that compilation.\n\n## MCP tools\n\n| Tool | What it does |\n| --- | --- |\n| `aminx-mcp:sample` | Design sequences for structure files. |\n| `aminx-mcp:score` | Score sequences against structures. |\n| `aminx-mcp:inspect` | Logits and other features (conditional or unconditional). |\n| `aminx-mcp:jacobian` | Sequence Jacobian. Large arrays stay in a side file. |\n| `aminx-mcp:spec_emit` | Build a run-spec JSON object without running the model. |\n| `aminx-mcp:spec_validate` | Check that a run-spec JSON object decodes. |\n| `aminx-mcp:list_checkpoints` | List checkpoint ids, whether each is installed locally, and the default id. |\n\nA model-run result carries `spec`, `spec_sha256`, and `provenance`. Side files are written under `output_dir`. When that argument is omitted the directory is `$AMINX_AGENT_OUTPUT_DIR`, otherwise `$XDG_CACHE_HOME/aminx/agent`, otherwise `~/.cache/aminx/agent`.\n\n## Checkpoints\n\nCall `aminx-mcp:list_checkpoints` before choosing weights. The default checkpoint id is `proteinmpnn_v_48_020`. Soluble, membrane, and ligand checkpoints are in that listing. A weight file that is not installed locally downloads from the Hub on first use.\n\n## CLI\n\n`run` has four verbs: `sample`, `score`, `inspect`, and `jacobian`. Options shared by those verbs go before the verb.\n\n```bash\naminx run --checkpoint-id proteinmpnn_v_48_020 sample --inputs structure.pdb --num-samples 4\n```\n\n```bash\naminx run score --inputs structure.pdb --sequences-to-score ACDEFGHIKLMNPQRSTVWY\n```\n\n```bash\naminx run inspect --inputs structure.pdb\n```\n\n```bash\naminx run jacobian --inputs structure.pdb\n```\n\n`aminx spec`, `aminx campaign`, and `aminx potts` are separate command groups. Use the task skill for the group you need.\n\n## Load next\n\n- `aminx-sampling` — temperature, fixed positions, tied positions, bias, multi-state design, ligand context, and output files.\n- `aminx-scoring` — score, inspect, jacobian, and how to read the results.\n- `aminx-run-specs` — JSON run specs, including emit, validate, and roundtrip.\n- `aminx-campaigns` — campaign plan, worker, run, gates, and ramps.\n- `aminx-potts` — Potts emit and run from a GeometryBundle.\n",
+        "description": "Router for aminx: install, MCP tools versus the CLI versus the Python API, checkpoints, and which task skill to load next.",
+        "name": "using-aminx",
+        "resources": [],
+        "triggers": [
+          "aminx",
+          "proteinmpnn",
+          "ligandmpnn",
+          "inverse folding",
+          "sequence design"
+        ]
+      }
+    ]
+  },
+  "schema": 1
+}
