@@ -152,3 +152,29 @@ here because it must be the tree at dispatch time — after the main merge, per 
 `aminx-b7i-git` has both; `aminx-confirm-git` fails on the xtrax floor and lacks the `laser`
 extra; `aminx-ci` has no pyarrow. And `uv`/`bth` are not on PATH over a plain ssh — prefix
 `PATH=/home/solab/.local/bin:$PATH` or the wrapped command fails with exit 1 and no traceback.
+
+## The option-3 band is not at risk from #2460, checked because it could have been
+
+Added 2026-10-06, after the decision. #2460 records that *"LASEr score chi candidate rule:
+spec 5.4b and `_chi_for_candidate` disagree (K→R)"*. That rule sits **on the scoring path**
+(`families/laser_mpnn/driver.py:298-308`, reached from `_score_prepared` at `:329`), so it had
+to be ruled out: this project's own discipline is that **a floor measured over a defect
+describes the defect**, and option 3's band comes from a measured f32 floor.
+
+**It is ruled out, by the f64 tier.** The rule is dtype-agnostic — chi is cast with
+`_working_dtype()` at `:306`, so the same candidate decision runs at both precisions. And
+`laser_score`'s **tier_2 f64 passes 63 of 63** at `tolerance_policy_f64 = "rtol=1e-8,atol=1e-11"`
+(gate run `20261004T083423Z`, call-phase tier_2 rows). If aminx's chi choice disagreed with
+upstream's on any pair in that fixture set, the scores would differ by orders of magnitude more
+than 1e-8 and the f64 tier would fail. It does not.
+
+So on the 63 pairs the band was measured over, aminx and upstream make the **same** chi choice,
+and the floor is a float32-accumulation measurement — exactly what option 3 assumes it is.
+
+**What that leaves #2460 as**, and it is worth re-scoping rather than closing: either the spec
+text is wrong and the code is right, or the code diverges only on candidate substitutions no
+fixture exercises. Distinguishing them needs no run — check whether any pair in `laser_score`'s
+`_PAIRS` presents a mismatched candidate at a K/R position. If none does, the rule is simply
+untested, which is the same gap debt **#2298** already files (fixtures lack diversity, 12/20
+myoglobin HEM). It still matters for anyone scoring real mutational panels, where a mismatched
+candidate is the normal case rather than the exception.
