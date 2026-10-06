@@ -1,0 +1,119 @@
+[metadata]
+title = "do laser_layers and laser_encoder pass when their oracle is actually reachable"
+created = "261006"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+PRE-REGISTERED BEFORE ANY RUN OF THIS SCRIPT. Nothing below was written after
+seeing a result from it.
+
+laser_layers and laser_encoder have contributed ZERO assertions to every redsox
+gate run to date. Gate run fb898d24's own outcomes file shows all of their tests
+skipping at SETUP, so they appear in none of the 586 passed / 63 failed / 6
+skipped call-phase tallies. "Nothing else in step 1 is red" has therefore been
+true of these two waves only because they never ran.
+
+THE CAUSE IS MEASURED AND IS NOT WHAT THE PLAN ORIGINALLY RECORDED. Their
+sealed.py defaults AMINX_LASER_ORACLE_DIR to ~/projects/aminx-oracles/dumps/laser,
+which does not exist on the gate host, while laser_score and laser_decode_step
+default to dumps/b3_laser_owned, which does. Exactly the two slugs pointing at the
+dead path are the two that are blank. The dumps are NOT missing: b3_laser_owned
+holds all six laser slugs, its laser_layers npz carries the 1512 __in__ leaves
+layer replay needs (the b1_laser copy has the 819 __out__ leaves and zero __in__),
+and load_npz hash-checks each file against the adjacent oracle_manifest.toml
+without raising. Only the default path is stale.
+
+WHAT IS ALREADY KNOWN, AND IS USED HERE ONLY AS A PRECONDITION. That each wave
+resolves 63 pairs (3 checkpoints x 21 fixtures, the same set laser_score uses)
+when pointed at b3_laser_owned was measured on 261006 before this sidecar was
+written. It is a gate on whether the environment is right, NOT the finding. If it
+does not reproduce, nothing is graded.
+
+THE FINDING, WHICH IS GENUINELY UNKNOWN: do the collected cases PASS at the bands
+their target files already declare? No run has ever established this for either
+wave. For laser_layers the band is itself amended -- debt #2309 reports that the
+original tolerance was pure rtol with no atol, which no implementation can satisfy
+because reference elements are exactly 0.0, and targets/laser_layers.toml:17-18
+now reads rtol=1e-9,atol=1e-12 (f64) and rtol=1e-5,atol=1e-6 (f32) with an
+amendment record naming graded run 2747efa8. That graded run is the tolerance
+DERIVATION (duration 0.31 s, a script run), not the wave. So the amended band has
+been derived and never exercised. This run exercises it.
+
+I DO NOT PREDICT THE OUTCOME, and specifically do not assume these waves pass
+because other LASEr waves do. laser_encoder has a known f64 history (debt #2310,
+resolved) and laser_score fails its f32 tier today for reasons attributed to
+float32 accumulation. A failure here is a real result and must be reported as one.
+
+TOLERANCES ARE NOT TO BE TOUCHED. If a tier fails, the band stays and the failure
+is reported. Loosening a declared tolerance to make a wave pass is the exact
+failure the project's rules exist to prevent, and these bands predate this run.
+
+SCOPE AND FREEZE. scripts/redsox/ is not in _SCOPED_PREFIXES
+(tests/knob_gate/_coverage.py:21-28), so neither this script nor this sidecar
+invalidates any ledger row. Neither wave is one of the eight ledger slugs, so
+section 1c does not depend on the result either. The exposure this addresses is
+step 1 only.
+
+WHAT THIS CANNOT SEE. It does not re-run the gate, so it says nothing about the
+other waves or about laser_score's 63 f32 failures. It also cannot certify that a
+future gate run will exercise these waves: that depends on AMINX_LASER_ORACLE_DIR
+being exported in the gate environment, which no file in the repo does.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "controls_detected = true AND n_collected > 0 AND n_failed = 0"
+decision = "Both previously-blank waves pass at their declared bands. Record that the gate's step 1 silence was environmental, not a defect, and that #2309's amended laser_layers band is satisfied by a real wave run. Export AMINX_LASER_ORACLE_DIR for all future gate runs so this cannot regress to silence."
+reasoning = "controls_detected proves the pair probe discriminates a reachable oracle from an unreachable one, so 63 is evidence rather than a number the probe happened to print. n_failed = 0 over a nonzero collection is the first positive evidence either wave has ever produced."
+is_residual = false
+adversarial_check = "NOT (controls_detected = true AND n_collected > 0 AND n_failed = 0)"
+
+[outcomes.fail]
+condition = "controls_detected = true AND n_failed > 0"
+decision = "A real parity defect, hidden until now by the blank waves. Read per_wave.failing_ids and the tier: a tier_2 f64 failure is a port defect, a tier_3 f32 failure is the laser_score question recurring in a second slug. Do NOT loosen the band. File it and route it like any other parity failure."
+reasoning = "This is the outcome the investigation exists to make possible. The waves have been silent, so a failure here was always latent; surfacing it is the point, and it must not be softened into an instrument problem."
+is_residual = true
+adversarial_check = "n_failed = 0"
+
+[outcomes.still_blank]
+condition = "controls_detected != true AND (live_pairs_laser_layers = 0 OR live_pairs_laser_encoder = 0)"
+decision = "The oracle directory is still unreachable at the configured path. Do not grade the waves. Check the dumps are present on this host and that --oracle-dir names the directory that actually holds them."
+reasoning = "Separated from the generic instrument failure because it has a specific, cheap remedy and is the single most likely way this run goes wrong on a host other than the one the 261006 probe ran on."
+is_residual = true
+adversarial_check = "live_pairs_laser_layers = 63 AND live_pairs_laser_encoder = 63"
+
+[outcomes.instrument_unverified]
+condition = "controls_detected != true"
+decision = "Discard every count, including any zero. Fix the probe before concluding anything about either wave."
+reasoning = "controls_detected requires BOTH that a bogus oracle directory yields zero pairs AND that the real one yields exactly 63 for each wave. If the bogus directory yields nonzero, the probe is not reading what it claims; if the real one yields something other than 63, the dump set is not the one this was pre-registered against. Either way the pass/fail counts describe something unknown."
+is_residual = true
+adversarial_check = "controls_detected = true"
+
+[result_schema]
+controls_detected = "bool"
+control_pairs_bogus_dir = "object"
+live_pairs = "object"
+live_pairs_laser_layers = "int"
+live_pairs_laser_encoder = "int"
+control_pairs_laser_layers = "int"
+control_pairs_laser_encoder = "int"
+n_collected = "int"
+n_passed = "int"
+n_failed = "int"
+per_wave = "object"
+oracle_dir = "str"
+commit = "str"
+
+[data]
+the_negative_control_and_why_it_is_not_decorative = "A positive control that can only pass is not a check. Here the cheap self-congratulation would be to print '63 pairs' and call the oracle reachable. The bogus-directory arm must return 0 for both waves in the same run, on the same host, through the same loader -- so the probe is shown to discriminate rather than merely to emit a number."
+grader_self_test = "9 synthetic checks run before pytest is touched, 3 of which must REFUSE (no testsuite element, wrong child, non-xml). One check pins the blank-wave shape itself -- all skipped, nothing failed -- and asserts it reports passed = 0 rather than reading as healthy, which is the exact misreading this whole investigation corrects. Another pins that an <error> counts as a failure, because counting only <failure> would grade a wave that blew up in setup as clean."
+precondition_vs_finding = "live_pairs = 63 per wave is a precondition measured before this sidecar existed; n_failed is the finding and is unknown. They are kept in separate clauses so a precondition that silently stopped holding cannot be mistaken for a result."
+resume = "Each wave writes its report then its completion stamp, keyed by sha256 over (wave, oracle dir, commit). A rerun at the same commit against the same dumps reuses a finished wave and records reused = true per wave. Resume changes scheduling only; it touches no [outcomes] criterion."
+cost = "Two pytest sessions over 63 pairs each, CPU. Bounded by a per-wave timeout of 3600 s so a hang loses one wave, not the run."
+why_not_run_gate = "scripts/redsox/run_gate.py takes only --log and enumerates every wave from tests/port/targets/*.toml, so there is no per-wave selection. Running the full gate to exercise two waves would also re-run laser_score's 63 known f32 failures and cost hours. This is the bounded complement; it does not replace a gate run."
+tolerances_are_pre_existing = "Every band this run tests was declared in tests/port/targets/*.toml before this script existed. Nothing here sets, relaxes or overrides a tolerance."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
