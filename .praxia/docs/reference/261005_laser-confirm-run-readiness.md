@@ -801,3 +801,55 @@ the ~223 h it is deciding about.
 
 **Do it after the current run finishes, not alongside it** — a GPU run still consumes host CPU
 for dispatch, and the timing measurement in flight has already lost one attempt to contention.
+
+### THE CONTROL ARM FAILS, so the chunk-width lever is NOT established — retracting the ~25%
+
+The validity gate has landed and it does not clear. This retracts the width number I reported
+twice today.
+
+| pair | members | ratio | pre-registered band | verdict |
+| :-- | :-- | --: | :-- | :-- |
+| **control** | `ctrl_n8_w1` 53.04 vs `ctrl_n8_w8` 52.33 | **1.014** | **≥ 1.20** | **FAILS** |
+| lever r0 | `wide_n32_w32` 45.12 vs `base_n32_w8` 60.25 | 0.749 | ≤0.70 bound / ≥0.90 compute | — |
+| lever r1 (reversed) | `wide_n32_w32` 43.65 vs `base_n32_w8` 50.94 | 0.857 | — | — |
+
+**What the control was for.** Width 1 at n=8 runs eight single-sample chunks where width 8 runs
+one chunk of eight. If per-chunk dispatch were an appreciable share of the cost, width 1 had to
+be visibly worse — the band asked only for 1.20×, far less than the 1.77× I once wrongly quoted
+off a warm-up row. It came in at **1.014: no detectable difference at all.** Dispatch overhead on
+this path is negligible, which is a clean negative result and refutes the mechanism the whole
+lever hypothesis rested on.
+
+**And the lever's effect is the same size as its own replicate noise.** The two instances of the
+*identical* configuration `base_n32_w8_p512` measured **60.25 and 50.94 s/sample — an 18%
+spread within one configuration.** The lever's apparent effect is ~20% (median ratio 0.803). An
+effect indistinguishable in magnitude from the within-configuration spread is not a measured
+effect. The `wide` arm, by contrast, reproduced tightly (45.12 / 43.65, 3.3%), so the instability
+is concentrated in the base arm — consistent with the load-drift mechanism recorded two sections
+above, and not with width.
+
+**So both candidate levers are now closed by measurement:**
+
+| lever | status | evidence |
+| :-- | :-- | :-- |
+| planner serialisation | falsified | code reading; `samples_chunk_size` never reaches the path |
+| `max_length` padding | falsified | four independent lines, median ratio 1.054 |
+| chunk width | **not established** | control fails at 1.014 vs ≥1.20; effect ≈ replicate noise |
+
+**The surviving explanation is the original one, now measured rather than assumed: LASEr sampling
+is simply heavy — ~44–60 s/sample at L=154 on CPU-only jaxlib, across fourteen units.** The
+~223 h estimate stands with no software lever against it, which makes **hardware the only
+remaining lever** and the CUDA probe specified above the next thing worth running.
+
+**I am reporting the control as a failure rather than reinterpreting it.** The honest reading of
+a failed validity gate is that the lever arm is uninterpretable, not that the lever arm is the
+real result and the control is noise. Had the control been the one at 0.80 and the lever at 1.01
+I would have had to say the same thing, which is the test of whether the band was a real
+commitment.
+
+**Final verdict still comes from the instrument, not from this arithmetic.** The linearity pair
+was still running when this was written; the run writes its own `results.json` and grades itself
+against the bands in `laser_sample_chunk_width_cost.bth.toml`. Expect `instrument_unverified`
+overall, because padding r0's load spread of 1.80 exceeded the pre-registered 1.50 ceiling and
+`_pair_ratio` ANDs stability across a pair's instances. The ratios above are per-unit facts and
+stand on their own; the graded verdict is the record's to issue.
