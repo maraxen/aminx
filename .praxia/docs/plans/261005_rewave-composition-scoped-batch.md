@@ -659,3 +659,45 @@ free. The three items still believed to move measured values are the dtype/toler
 **#2311, #2309, #2321** — and those were never assumed inert. #2321 in particular is now
 *corroborated* on the LASEr sampling path, which is new since the last revision (see the
 readiness doc).
+
+### 2g. #2417 does not block Z1 either — and the refine defect narrows to two candidates
+
+**The fourth over-claimed gate-blocking impact line.** #2417 (P1, "potts_refine clean arm FAILS
+at match 0.9539") states *"Blocks Z1, since the section 1c sidecar ledger accepts only
+outcome == 'pass'."* It does not.
+
+`tests/knob_gate/sidecar_ledger.toml` contains exactly **eight** `[sidecar.<slug>]` sections,
+and `grep potts_refine` over that file returns **0**. `potts_refine` is a separate vehicle
+(`scripts/parity/potts_refine.py` plus its own sidecar) with **no manifest row**, so its
+outcome cannot fail a 1c check that reads only those eight. The slug that *does* cover refine,
+`potts_ar_refine_exact`, **passes**: ledger run `1a98f24f`, *"completed, outcome pass,
+git_dirty False, adversarial check fired, 1.0 h. clean pass at match 1.0 over 1500 units
+(0 reused) … all three controls failed."*
+
+**The pattern is now worth naming.** Four items have claimed to gate the wave and none does:
+#2433 (stale `test_superset` claim, §2e), #2435 (stale dead-field claim, §2f), #2444 (cannot
+touch recorded evidence, §2d), and now #2417. Each one pulled an elective item toward the
+critical path. **Read the ledger, not the impact line.**
+
+**Two further narrowings, from the vehicles' own code rather than a new run.**
+
+*Order and noise are controlled, so neither explains 4.6% of tokens.* `potts_refine` generates
+the decoding order once — `_torch_order` at `:85-91`, upstream's
+`argsort((chain_mask + 1e-4)·|randn|)` — banks it at `:111`, and then **both** arms read the
+same `cell["order"]` (upstream at `:146`, aminx at `:320`). The uniform stream is shared the
+same way (`cell["uniforms"]`: `injected_uniform_draws` for upstream at `:152-153`, passed to
+`refine_tokens` for aminx at `:324`).
+
+*The single `potts` sweep is bit-exact, so the defect is in the loop or the nodes path.* Both
+vehicles instantiate the **same** `PottsRefine` (`potts_refine.py:289,314`;
+`potts_ar_refine_exact.py:433,468`). `exact_tokens`'s own docstring says what the passing slug
+exercises — *"AR-decode, then one `potts` refine sweep, both on the banked stream"* — and that
+is match **1.0 over 1500 units**. `potts_refine` drives `MODES = ("potts", "potts_converge",
+"nodes")` and pools to 0.9539.
+
+So the per-sweep `potts` update rule is demonstrably correct, and repeated application of a
+bit-exact rule stays exact **unless the loop control differs**. Remaining candidates, in order:
+the `potts_converge` convergence loop, then the `nodes` path. That takes the item's own stated
+next step — *"localise which of the three modes diverges"* — from three candidates down to two
+plus a loop-control question. The per-mode breakdown is still the right measurement; it is now
+cheaper to interpret.
