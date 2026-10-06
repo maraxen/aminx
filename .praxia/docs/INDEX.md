@@ -1,6 +1,7 @@
 # 260929_laser-confirm Internal Docs
 
 ## Daily
+- [261005_overnight-decisions](daily/261005_overnight-decisions.md) — What landed overnight with its verified evidence, the four open decisions each priced, and the corrections made to earlier claims
 - [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
 
 ## Handoffs
