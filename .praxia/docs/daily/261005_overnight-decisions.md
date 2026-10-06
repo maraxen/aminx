@@ -85,15 +85,42 @@ Every Tier A/B candidate now carries a measured size, including **B3** (#2480(b)
 one line: `pad_bundle` (`src/aminx/tiling/pad.py:44-54`) pads six conditioning fields and omits
 `state_position_map`.
 
-### D4 — the LASEr ~60 h distributional run
+### D4 — the LASEr distributional run: **~237 h, not the recorded ~60 h**
 
-Not launched; not a gate slug, so it blocks nothing. Pre-flight done: the resume design is
-correct *and proven* (the same `graded_resume` helper ran tonight's 16-unit Potts job), and the
-grading contract was audited **total and disjoint** — a smoke cannot be mistaken for the
-confirmatory test, and `pass`/`fail` both require `controls_all_fail = true`.
+Not launched; not a gate slug, so it blocks nothing. But the cost was re-derived overnight and
+**the figure in project memory is low by roughly 4x**, which changes the shape of this decision
+more than anything else in this brief.
+
+The ~60 h came from *upstream* throughput (~1 h per n=1000 unit) and appears to price every
+unit at upstream cost. Measured overnight, the **aminx arms are ~17x the upstream arms**
+(33.6 min vs ~2 min at n=50). The confirm is 2 cells × 5 structures × 4 arms = **40 units**,
+half of them aminx:
+
+```
+upstream  20 units  ~0.67 h each  ->  ~13 h
+aminx     20 units  ~11.2 h each  -> ~224 h     (linear scaling)
+                                     ~237 h total, ~10 days serial
+```
+
+Linearity is corroborated for the *upstream* arm (2 min at n=50 → ~40 min at n=1000, against
+the ~1 h recorded independently). For the aminx arm an n=200 probe was run; see
+`reference/261005_laser-confirm-run-readiness.md` for the settled exponent. √-scaling is
+already excluded — it predicted 67 min and the probe passed that still running — so **no
+sublinear rescue of ~60 h exists.**
+
+Two further pre-flight results, both clean: the resume design is correct *and proven* (the same
+`graded_resume` helper ran the 16-unit Potts job), and the grading contract audits **total and
+disjoint** — a smoke cannot be mistaken for the confirmatory test, and `pass`/`fail` both
+require `controls_all_fail = true`. The plumbing was also exercised end to end by a smoke: the
+oracle subprocess, `--laser-root` resolution, job handoff and stamping all work on this branch
+under xtrax 0.4.0a11.
 
 **Trap if launched:** `script_sha256` is in the cache key, so editing the driver after launch
 discards *every* completed unit. Freeze it first.
+
+**What this reframes:** a GPU oracle was previously a convenience. At ~10 days serial it is the
+central question — and note it is the **aminx** arms a GPU must accelerate, not the upstream
+oracle, which is the opposite of how that was framed before these measurements.
 
 ## 3. Also landed
 
@@ -125,6 +152,15 @@ Recorded because the pattern matters more than any single number.
 | #2480(b) fix is in `bundle_builder.py` | `src/aminx/tiling/pad.py:44-54` |
 | import-isolation tests "cannot fail" | they can; the gap is narrower and specific |
 | rows anchored at `feade020` | rows sit at **three** earlier trees (`719c33e0`, `e9ef452f`, `124f6e9e`); re-checked per anchor |
+| Potts 11.63 h "may be inflated by cold compiles" | withdrawn — target 1's aminx units ran 6 min *total* at n=1000, so compile is ≤7% |
+| a persistent XLA cache is an "hours-saving lever" | measured **~12%** of a unit (4.4 min of 38); modest, not transformative |
+| LASEr confirm "~60 h" (project memory) | **~237 h** — that figure priced all 40 units at upstream cost; aminx arms are ~17x |
+
+Note the direction. Of the eleven, **every cost figure erred low and every safety margin erred
+high** — the re-run looked cheaper, the band looked safer, the compile lever looked bigger, the
+LASEr run looked shorter. Each came from extrapolating a partial observation in the direction
+that made the work look easier. That is the bias to watch for in the next estimate, more than
+any individual number here.
 
 Every ledger-row claim is now verified against the gate's own predicate rather than asserted
 from path reasoning, and all eight rows read `completed/pass/exit 0/git_dirty=False`.
