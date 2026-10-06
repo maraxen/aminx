@@ -56,6 +56,44 @@ controls gate the verdict**: `pass` and `fail` both require `controls_all_fail =
 whose controls did not fail cannot report either, it reports `instrument_invalid`. That is the
 spec rule enforced in the grading contract rather than only in prose.
 
+## Measured per-arm cost, and a cheap lever nobody has pulled
+
+A truncated smoke (n=50, `min_p0@1.0`, `103m_1`) was run on titanix 261005 to check plumbing.
+**The dual-environment seam works end to end** on this branch: the oracle subprocess spawns,
+`--laser-root` resolves, the job handoff works, both upstream arms sampled and stamped. Per-arm
+durations from the stamp mtimes:
+
+| arm | n | duration |
+| :-- | --: | --: |
+| upstream U1 | 50 | ~2 min |
+| upstream U2 | 50 | ~2 min |
+| **aminx A** | 50 | **~34 min** |
+| aminx CTRL_m | 50 | killed at ~12 min, unstamped |
+
+So **aminx arms cost ~17x their upstream counterparts at the same n**, and four arms need
+~72 min — the run was cut at three units by a 50 min `timeout` chosen from a wrong estimate
+(mine). The two upstream units remain stamped and will be reused on resume.
+
+**The lever: no persistent XLA compilation cache is configured anywhere.** Not in
+`laser_sample_dist_confirm.py`, not in `laser_sample_dist_pilot.py`, and no `JAX_*`/`XLA_*`
+variable is set in the titanix environment. Every unit runs in its **own
+`--aminx-worker` subprocess**, so each pays a full cold compile, which this stack has measured
+at 15–20 min (see the orbax/compile memory note). Against a 34 min aminx arm, that is
+plausibly the majority of the cost — and it is paid once per unit instead of once per run.
+
+**This is not confined to LASEr.** Tonight's Potts confirmatory run (`096d0847`, 11.63 h) also
+ran its 16 units as separate subprocesses with no persistent cache. So the measured 11.63 h
+re-run price in `plans/261005_rewave-composition-scoped-batch.md` §3 may be materially
+inflated by the same repeated compilation.
+
+**What is NOT measured, and must be before anyone quotes a saving:** the compile-versus-sampling
+split. The case for compile dominance is indirect (this stack's 15–20 min cold-compile figure,
+plus ~11-core parallelism consistent with XLA compilation). The clean experiment is two runs of
+a single aminx unit with `jax_compilation_cache_dir` set — the first pays compile, the second
+reuses it, and the difference *is* the compile cost. That is a ~1 h measurement that could
+retire several hours from both estimates, and it should be run before committing to either the
+60 h LASEr confirm or the 11.63 h re-wave.
+
 ## The trap: `script_sha256` is in the cache key
 
 This is correct behaviour — a changed script invalidates its own results, which is what you

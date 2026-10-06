@@ -312,6 +312,18 @@ assumed the observed rate would continue, and each was made before the expensive
 The lesson for the next estimate: with per-target tiers this wide, a partial run supports no
 total. Quote a duration only once the run has paid for its most expensive target.
 
+**The 11.63 h may itself be inflated, and the lever is cheap.** Each of the 16 units ran in its
+own `--aminx-worker` subprocess, and **no persistent XLA compilation cache is configured** —
+not in the parity drivers, and no `JAX_*`/`XLA_*` variable in the titanix environment. So every
+unit paid a fresh cold compile, which this stack has measured at 15–20 min. A LASEr smoke run
+the same night measured an aminx arm at **34 min against ~2 min for the upstream arms at the
+same n=50** (17x), which is the shape you would expect if compilation dominated. The
+compile-versus-sampling split is **not measured**, so no saving is claimed here — but the
+experiment is small: run one unit twice with `jax_compilation_cache_dir` set and the difference
+*is* the compile cost. Worth doing **before** committing to the re-wave, because it could
+retire hours from this very figure. See
+`reference/261005_laser-confirm-run-readiness.md`.
+
 **B1 and B2 are separable in effect even though they edit the same file.** B1 only reaches
 `fresh_refine_order`, which is called when `not stored_orders_present or chain_suffix`; the
 confirm path passes `stored_orders_present=True` with no suffix and `num_samples=1`, so it takes
