@@ -39,6 +39,25 @@ graded failures found tonight that exit zero, and the standing argument for neve
 exit code as evidence. Round 1 refined N-to-C while upstream refined each sample in that
 sample's own AR order; round 2 changes only the aminx refine order.
 
+**A worry worth having, and its resolution.** The confirm's δ=0.01 and m=1.5 come from pilot run
+`6b47d40c` — which itself graded **`instrument_invalid`** (residual, 4.31 h). A passing confirm
+resting on an invalid pilot would be a serious problem, so it was checked rather than assumed.
+The pilot's artifact attributes that verdict to **exactly one cell**:
+
+```
+plain@0.3    status=ok  h_hat=0.0020865  chosen_m=1.25  shim_invalid=TRUE   <- sole offender
+plain@1.0    status=ok  h_hat=0.0022992  chosen_m=1.10  shim_invalid=False
+refine@0.3   status=ok  h_hat=0.0020500  chosen_m=1.50  shim_invalid=False  <- the confirmed cell
+any_instrument_invalid=True        all_cells_derived=True
+```
+
+`refine@0.3`'s pilot constants (`h_hat` 0.0020500332952815914, `chosen_m` 1.5) match the
+passing confirm's record **digit-for-digit**. So the PASS rests on a shim-**valid** cell, and the
+pilot's residual verdict comes solely from `plain@0.3` — exactly the cell the confirm's
+`excluded` field names and refuses ("the spec provides no re-pilot for a shim-check failure").
+The exclusion was correct rather than convenient, and `all_cells_derived=True` shows the pilot
+still did its derivation job for all three.
+
 ## 2. The four decisions
 
 ### D1 — `laser_score` option 3 (the only thing blocking Z1)
