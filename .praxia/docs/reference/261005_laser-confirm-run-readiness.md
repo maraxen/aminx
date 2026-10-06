@@ -340,6 +340,21 @@ NaNs.
    failures that occur almost immediately. **This undercuts "verify by record" precisely where
    it is most needed**, so cross-check with `ps` that no wrapper is alive before reading a
    `running` row as in-flight.
+
+   **It is not a one-off: the aminx catalog holds NINE such phantom rows**, spanning
+   2026-10-01 to 2026-10-06 across five vehicles — `laser_decode_e2e` (`068b027c`),
+   `laser_proofread_parity` (`4ae3a093`, `86fb61a3`), `potts_ar_refine_exact` (`fd0bafb7`,
+   `c823350b`), `run_gate.py` (`e0537910`), and tonight's three
+   `laser_sample_dist_pilot` PATH failures (`3cab0e8c`, `ced279d9`, `48fa3fac`). So anyone
+   querying the catalog for in-flight work sees nine runs that died days ago. Worth knowing
+   before the re-wave, whose own gate run could add a tenth.
+
+   Separately, three `potts_energy_parity` runs from 2026-09-30 (`35f9a257`, `6b2b3110`,
+   `755271fb`) show `completed / exit 0 / output_paths=None` and **no outcome** — they
+   succeeded but never graded, because nothing was registered for bth to grade from (the
+   `--out`-without-`--output-paths` trap). They are harmless only because `06f329d4` later
+   graded that slug `pass`; the lesson is that an ungraded success looks identical to an
+   ungraded nothing.
 3. **Debt #2483, reproduced in practice.** `aminx-confirm-git`'s venv lacks the `laser` extra,
    and the failure is a bare `ModuleNotFoundError: No module named 'prody'` naming neither the
    family nor the extra. Exactly the defect #2483 describes — previously documented from
