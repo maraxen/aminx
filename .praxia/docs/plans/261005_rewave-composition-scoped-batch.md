@@ -31,12 +31,30 @@ were landed tonight without touching a row): `tests/knob_gate/`, `tests/lint/`, 
 The eight rows are **currently live**, and the frame you evaluate that in decides the answer —
 which is worth stating because evaluating it in the wrong frame gives the opposite result.
 
-| frame | scoped commits since `feade020` | rows |
+| frame | scoped commits since the measurement | rows |
 | :-- | :-- | :-- |
 | `origin/wt/260929-potts-laser-main` (the sprint branch — **the gate's frame**) | **0** | **live** |
 | `wt/260929-laser-confirm` (this confirmatory branch) | **41** | would fail 1c |
 
-`feade020` is dated 2026-10-04 01:34, *"redsox: all eight ledger rows re-measured and grading"*.
+**Anchor correctly: the rows do not sit at `feade020`.** `feade020` (2026-10-04 01:34,
+*"redsox: all eight ledger rows re-measured and grading"*) is where the ledger *file* was
+written. 1c compares `<the run's own git_hash>..HEAD`, and reading the eight records shows
+**three** distinct trees, all earlier than `feade020`:
+
+| run tree | rows |
+| :-- | :-- |
+| `719c33e0` | `laser_proofread_parity`, `laser_proofread_unconditional_parity`, `laser_decode_e2e` |
+| `e9ef452f` | `potts_ar_decode`, `potts_energy_parity`, `laser_score_parity`, `potts_ar_refine_exact` |
+| `124f6e9e` | `potts_ddg_megascale` |
+
+Because those trees precede `feade020`, each one's diff to HEAD is a *superset* of
+`feade020..HEAD` — so checking `feade020` alone would have been too weak. Re-checked per
+anchor against the sprint branch: all three are ancestors of it, and all three have **zero**
+scoped paths since. The conclusion survives the stricter test.
+
+All eight runs also read `status=completed, outcome=pass, exit_code=0, git_dirty=False`, so no
+row is weak at the record level either — the gate's "all waves pass except `laser_score`" holds
+as recorded, not merely as remembered.
 Those 41 scoped commits are **only on this branch** — verified with `git branch --contains`:
 both `bc3f1950` (*merge origin/main into the sprint lineage*, 10-05 08:48, bringing xtrax
 0.4.0a11 + the ChunkedMap dispatch fix) and `5c625b00` (*Potts confirmatory round 2*,
