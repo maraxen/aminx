@@ -173,6 +173,32 @@ to the freeze and does not need re-measuring with the wave.
 | A2 | #2483 missing-`laser`-extra message | `src/aminx/host/runner.py` | one block | Wrap the `importlib.import_module` so a missing extra names the family and the extra instead of raising a bare `prody` ImportError. |
 | A3 | #2484 unknown-`model_family` validation | `src/aminx/run/specs.py`, `src/aminx/host/runner.py` | small | Makes `None` mean "stock handles this" rather than "nothing matched". Changes no number **for a valid family** — but see §4. |
 | A4 | #2417 `--double` flag | `scripts/parity/potts_refine.py` | one line + argparse | Diagnostic only. Unlocks the run that decides whether the 0.9539 refine gap is f32 precision or a logic defect. |
+| A5 | #2480(b) `state_position_map` not bucket-padded (**was B3**) | `src/aminx/tiling/pad.py:44-54`, one field in `pad_bundle`'s tuple | small | Reclassified from Tier B — **no measured value can move**, see §2b. Fixes a path that currently crashes. |
+
+### 2b. Why #2480(b) is a free passenger, not a Tier B risk
+
+It was filed under Tier B as "unknown" size, and the honest reason was that nobody had diagnosed
+it. Now that it is located (§3a), its blast radius is checkable, and it is empty:
+
+- **No `tests/port/` wave uses bucketing.** `grep -rln 'bucket_config\|BucketingConfig'
+  tests/port/` returns nothing. The only users are `tests/tiling/test_bucketing.py`,
+  `tests/host/test_bucketed_plan.py`, `tests/utils/test_autoregression.py`,
+  `tests/parity/browser_validation_paths.json` and `scripts/benchmarks/*` — **all unscoped**.
+  So none of the eight gate vehicles reaches `pad_bundle` at all, and padding one more field
+  cannot change a ledger row's value.
+- **No test asserts the map's padded width.** `state_position_map` appears in none of those
+  three bucketing tests. The single `pad_bundle` mention
+  (`tests/utils/test_autoregression.py:154`) is about zero-padded *waves* and the mask, not the
+  map. So the fix needs no test updates.
+
+The commit is still **scoped** (`src/aminx/tiling/pad.py`), so it still invalidates all eight
+rows by the path rule — which is exactly what Tier A means: *"they cannot change a ledger row's
+value, only its commit, which the wave re-measures anyway."* It changes behaviour only on a path
+that currently **raises**, so there is no prior number to preserve.
+
+One thing to look at rather than assume: `tests/parity/browser_validation_paths.json:716` maps
+`src/aminx/tiling/pad.py::pad_bundle` to coverage id `P27`. That file is unscoped, but whoever
+lands this should confirm P27's claim still holds.
 
 Tier B — changes measured numbers. Each needs its effect attributable.
 
@@ -180,7 +206,8 @@ Tier B — changes measured numbers. Each needs its effect attributable.
 | :-- | :-- | :-- | :-- | :-- |
 | B1 | #2475 refine key split | `src/aminx/families/potts_mpnn/sample_host.py` | `optimize_pdb` / `optimize_fasta`, and the sample path **only when a chain suffix is set** | No gate slug exercises those paths, so plausibly zero rows move. Confirm before assuming. |
 | B2 | #2371 stage 2 step 3 (dispatched sample loop) | `src/aminx/families/potts_mpnn/sample_host.py`, `src/aminx/host/family_runner.py` | the sample chunk path — **which includes refine@0.3** | See §3. This is the expensive one. |
-| B3 | #2480(b) `state_position_map` not bucket-padded | **`src/aminx/tiling/pad.py:44-54`** (one field in `pad_bundle`'s tuple) | **small, now diagnosed and located** | See §3a. One conditioning field escapes bucket padding; everything else in the bundle is padded correctly. |
+*(B3 was here. It has been **reclassified to Tier A as A5** — see below. Tier B is now B1 and
+B2 only.)*
 
 Tier C — larger, and each wants its own decision first, so listed for completeness rather than
 proposed: #2459 (`tied_positions` inert), #2443 (Potts optional dicts), #2435 (eight unread
