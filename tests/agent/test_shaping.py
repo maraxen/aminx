@@ -254,6 +254,70 @@ def test_inspect_features_use_structure_keys(tmp_path: Path) -> None:
   assert _contains(inlined, similarity.tolist())
 
 
+def test_padded_per_structure_arrays_are_trimmed(tmp_path: Path) -> None:
+  """Inspect and jacobian arrays padded past the residue count are cut to it; unknown lengths warn."""
+  padded_logits = np.zeros((6, 21), dtype=np.float32)
+  padded_logits[:4] = 1.0
+  padded_jac = np.zeros((6, 21, 6, 21), dtype=np.float32)
+  padded_jac[:4, :, :4, :] = 1.0
+  inspect_spec = InspectionSpecification(inputs=[str(_PDB)])
+  inspect_results = {
+    "unconditional_logits": [padded_logits],
+    "distance_matrix": [np.ones((6, 6), dtype=np.float32)],
+    "schema_version": "inspection_v1",
+    "metadata": {"structure_ids": ["1ubq"], "skipped_inputs": []},
+  }
+  shaped = shape_result(
+    "inspect",
+    inspect_results,
+    spec=inspect_spec,
+    lengths={"1ubq": 4},
+    output_dir=tmp_path,
+    run_id="trim-inspect",
+    inline_cap=0,
+    provenance={"sha": None},
+  )
+  arrays = shaped["side_file"]["arrays"]
+  assert arrays["unconditional_logits/1ubq"]["shape"] == [4, 21]
+  assert arrays["distance_matrix/1ubq"]["shape"] == [4, 4]
+  assert shaped["structure_lengths"] == {"1ubq": 4}
+
+  jac_spec = JacobianSpecification(inputs=[str(_PDB)])
+  jac_results = {
+    "categorical_jacobians": [padded_jac],
+    "jacobian_mode": "categorical",
+    "n_structures": 1,
+    "schema_version": "jacobian_v1",
+    "metadata": {"structure_ids": ["1ubq"], "skipped_inputs": []},
+  }
+  jac = shape_result(
+    "jacobian",
+    jac_results,
+    spec=jac_spec,
+    lengths={"1ubq": 4},
+    output_dir=tmp_path,
+    run_id="trim-jac",
+    inline_cap=0,
+    provenance={"sha": None},
+  )
+  loaded = np.load(jac["side_file"]["path"])
+  np.testing.assert_array_equal(loaded["categorical_jacobians__1ubq"], padded_jac[:4, :, :4, :])
+
+  # NEGATIVE: without a known length the array stays padded and a warning says so.
+  untrimmed = shape_result(
+    "jacobian",
+    jac_results,
+    spec=jac_spec,
+    lengths={},
+    output_dir=tmp_path,
+    run_id="trim-none",
+    inline_cap=0,
+    provenance={"sha": None},
+  )
+  assert untrimmed["side_file"]["arrays"]["categorical_jacobians/1ubq"]["shape"] == [6, 21, 6, 21]
+  assert any("residue length unknown" in w for w in untrimmed["warnings"])
+
+
 def test_jacobian_arrays_and_streaming_digest(tmp_path: Path) -> None:
   """Jacobian tensors are side-filed; a streaming result keeps path and digest inline."""
   jac = np.ones((2, 21, 2, 21), dtype=np.float32)

@@ -34,6 +34,20 @@ DEFAULT_INLINE_CAP = 10_000
 _SKIP_ROUTE = frozenset({"metadata", "schema_version"})
 _KINDS = frozenset({"sample", "score", "inspect", "jacobian"})
 _SEQUENCE_NDIM = 5
+# Residue-length axes of per-structure list results (inspect features, jacobian outputs). The
+# runners pad these to the batch/max length; they are trimmed to the parsed residue count.
+_RESIDUE_AXES: dict[str, tuple[int, ...]] = {
+  "unconditional_logits": (0,),
+  "conditional_logits": (0,),
+  "encoded_node_features": (0,),
+  "decoded_node_features": (0,),
+  "edge_features": (0,),
+  "batched_conditional_logits": (2,),
+  "distance_matrix": (0, 1),
+  "categorical_jacobians": (0, 2),
+  "score_gradients": (0,),
+  "apc_frobenius_norm": (0, 1),
+}
 
 
 def default_output_dir(environ: Mapping[str, str] | None = None) -> Path:
@@ -186,8 +200,9 @@ def shape_result(
     structure_ids=structure_ids,
     warnings=warnings,
   )
+  trimmed_results = _trim_residue_axes(results, lengths, structure_ids, warnings)
   store: dict[str, np.ndarray] = {}
-  routed = _route_results(results, store, inline_cap, structure_ids)
+  routed = _route_results(trimmed_results, store, inline_cap, structure_ids)
   spec_dict = _spec_dict(spec)
   recorded = provenance if provenance is not None else capture()
   summary: dict[str, Any] = {
@@ -203,6 +218,10 @@ def shape_result(
     "warnings": warnings,
   }
   summary.update(routed)
+  if lengths is not None:
+    summary["structure_lengths"] = {
+      sid: int(lengths[sid]) for sid in structure_ids if sid in lengths
+    }
   if structures is not None:
     summary["structures"] = structures
   fused = metadata.get("fused_structure_ids")
@@ -365,6 +384,44 @@ def _known_length(
     noted.add(structure_id)
     warnings.append(f"structure {structure_id!r} has no length; sequences were not trimmed")
   return None
+
+
+def _trim_residue_axes(
+  results: Mapping[str, Any],
+  lengths: Mapping[str, int] | None,
+  structure_ids: Sequence[str],
+  warnings: list[str],
+) -> Mapping[str, Any]:
+  """Trim padded per-structure arrays to each structure's residue count.
+
+  Only list-valued keys in ``_RESIDUE_AXES`` are touched, and only axes longer than the known
+  length; the runners pad at the end. A structure without a known length is left as returned and
+  a warning says so.
+  """
+  out: dict[str, Any] = dict(results)
+  for key, axes in _RESIDUE_AXES.items():
+    value = results.get(key)
+    if not isinstance(value, list) or not value:
+      continue
+    trimmed_items: list[object] = []
+    for index, item in enumerate(value):
+      if not _is_array(item):
+        trimmed_items.append(item)
+        continue
+      structure_id = _structure_id_at(structure_ids, index)
+      length = None if lengths is None else lengths.get(structure_id)
+      array = np.asarray(item)
+      if length is None:
+        warnings.append(f"{key}/{structure_id}: residue length unknown; array left padded")
+        trimmed_items.append(array)
+        continue
+      index_tuple: list[slice] = [slice(None)] * array.ndim
+      for axis in axes:
+        if axis < array.ndim and array.shape[axis] > length:
+          index_tuple[axis] = slice(0, length)
+      trimmed_items.append(array[tuple(index_tuple)])
+    out[key] = trimmed_items
+  return out
 
 
 def _route_results(
