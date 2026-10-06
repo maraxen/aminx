@@ -172,6 +172,43 @@ and `aminx-b7i-git` has both but is someone else's checkout at another commit. P
 venv for this is a few minutes of work, but it is work in service of a run that has not been
 approved, so it is left for whoever makes that call.
 
+## The "~60 h" figure is likely low by ~4x, and the arithmetic is now checkable
+
+**This is the single most decision-relevant number in this note.** The ~60 h estimate in
+project memory derives from *upstream* throughput (~1 h per n=1000 unit). It appears to price
+**every** unit at upstream cost — but tonight measured the aminx arms at **17x upstream**, so
+pricing them alike understates the run badly.
+
+Unit count, read from the driver rather than assumed: **2 selectable cells** (`min_p0@0.3` and
+`min_p0@1.0`; `min_p0.05@0.3` and `min_p0@0.1` are in `_EXCLUDED_CELLS`) × **5 structures**
+(`STRUCTURES`, `:62-77`) × **4 arms** (`U1, U2, A, CTRL_m`) = **40 units**, 20 upstream and
+20 aminx, every cell at `n = 1000`.
+
+| arm class | units | measured at n=50 | n=1000, linear | subtotal |
+| :-- | --: | --: | --: | --: |
+| upstream | 20 | ~2 min | ~0.67 h | ~13 h |
+| **aminx** | 20 | **33.6 min** | **~11.2 h** | **~224 h** |
+| | | | **total** | **~237 h** |
+
+~237 h is **~10 days serial**, against a recorded estimate of ~60 h. Even restricting to a
+single cell (as the smoke did) gives 20 units -> ~119 h.
+
+**Why linear scaling is not merely assumed here.** It is corroborated independently *for the
+upstream arm*: 2 min at n=50 scales to ~40 min at n=1000, and project memory records ~1 h per
+upstream n=1000 unit. Those agree within the precision of "~1 h", which is what makes this
+arithmetic worth acting on rather than dismissing.
+
+**What would falsify it.** Aminx-arm linearity is **not** measured. n=50 may be
+batch-inefficient, so n=1000 could be meaningfully sublinear — but it would have to be ~4x
+sublinear to rescue the 60 h figure, and nothing observed suggests that. The cheap test is one
+aminx unit at an intermediate n (a crafted job JSON with `n: 200`, ~2 h if linear); two points
+settle the exponent.
+
+**Recommendation before approving anything:** treat ~60 h as superseded, and either run that
+intermediate-n test or plan against the ~237 h / ~119 h figures. A GPU oracle, previously
+framed as a convenience, becomes the central question at this scale — and note the aminx arms,
+not the upstream oracle, are what a GPU would have to accelerate.
+
 ## What this note does NOT say
 
 It does not argue for or against launching. The cost (~60 h CPU-only, because the titanix
