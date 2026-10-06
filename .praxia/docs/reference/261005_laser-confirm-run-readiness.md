@@ -669,3 +669,54 @@ configuration here agrees on.
 three independent configurations (50.53, 50.15, 48.74) and a fourth under heavier load (55.92).
 Against Potts' 0.36 s/sample that is the ~113x gap the whole investigation is about, and it is
 now the only cost figure here not resting on a refuted mechanism.
+
+### The load-stability gate measures my own worker's startup, which is an instrument flaw
+
+Observed 2026-10-06 on the relaunched run, at graded padding instance r0:
+
+```
+ref_n8_w8_p512__paddingr0   52.68 s/sample   load 12.6 -> 22.6
+fit_n8_w8_p160__paddingr0   57.61 s/sample   load 22.7 -> 19.1
+```
+
+max/min over that instance's four load samples = **22.7 / 12.6 = 1.80**, against the
+pre-registered ceiling of 1.50. So this pair instance fails the stability gate, and because
+`_pair_ratio` ANDs stability across a pair's instances, one bad instance forces
+`instrument_unverified` for the whole run.
+
+**The drift is mostly mine.** A unit is a fresh subprocess that spins up ~100 JAX threads. The
+`before` sample is taken at the very start of the timed call — while the *previous* unit's
+process is still exiting and this one's threads are still spinning up — and the `after` sample
+once it is fully warm. So the gate is partly measuring **my own process lifecycle**, not
+external contention. The external load was steady at 15-19 throughout (`/proc/loadavg` was
+15.94 at the time of reading, and the box's other tenant has been stable for an hour).
+
+**I am not touching the threshold.** Loosening a pre-registered band because it is inconvenient
+is the exact failure this project's rules exist to prevent, and the band was written down
+before any graded number existed. The run continues to completion and will report whatever it
+reports.
+
+**But the instrument needs a revision before the next attempt**, and the fix is not the
+threshold:
+
+1. **Sample load as a median over the unit's duration**, not two endpoints — a background
+   sampler thread, or simply read `/proc/loadavg` at intervals and keep the median. Two
+   endpoints on a 7-minute unit are a tiny, badly-timed sample.
+2. **Or exclude self-load**: compare against the load attributable to *other* processes (total
+   minus this process's own runnable threads), which is what the gate is actually trying to
+   control for.
+3. **Or warm the process before the first load sample** — take `before` after the model has
+   loaded and threads have settled, immediately prior to the timed region, rather than at its
+   start.
+
+Option 3 is the smallest change and addresses the observed mechanism directly. Option 1 is the
+most honest about what "load during this unit" means. Either way this is a revision to **how
+the covariate is sampled**, not to the criterion it feeds, so it does not touch the verdict
+bands.
+
+**What survives regardless.** The ratios are still recorded per unit, so the padding and width
+numbers remain readable with the load caveat attached — clearly labelled as *not having cleared
+the pre-registered gate*. And the padding null now has three independent readings pointing the
+same way (0.965 and 0.962 from warm-up pairs on two different hosts' load regimes, plus
+whatever the graded instances give), which is a much stronger position than the single
+measurement the question started from.
