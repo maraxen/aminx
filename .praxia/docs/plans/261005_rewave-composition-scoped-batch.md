@@ -133,7 +133,14 @@ only its commit, which the wave re-measures anyway.
 
 | # | item | files | size | notes |
 | :-- | :-- | :-- | :-- | :-- |
-| A1 | **laser_score option 3** | `tests/port/test_laser_score.py`, `tests/port/targets/laser_score.toml` (+ `tests/lint/test_port_tolerances_match_targets.py`, unscoped) | small | **The only gate-clearing item.** Band measured: `proposed_tol` 4e-4 over a floor of 3.63e-5, **10x headroom** — see §2a. Gated on the user picking option 3. |
+| A1 | **laser_score option 3** | `tests/port/test_laser_score.py`, `tests/port/targets/laser_score.toml` (+ `tests/lint/test_port_tolerances_match_targets.py`, unscoped) | small | **The only gate-clearing item.** Band measured: `proposed_tol` 4e-4 over a floor of 3.63e-5, **10x headroom** — see §2a. **DECIDED 2026-10-06: the user chose option 3.** No longer gated. |
+
+**A1 is decided.** The user selected option 3 on 2026-10-06, so the single unmet Z1 criterion in
+§0b is now met and the last gate-blocking design question is closed. What A1 still needs is
+mechanical, not a decision: the band applied to the target TOML, the `f32_atol_basis` prose
+rewritten to cite run `3af3be02` (its current text ends "Do not move it without a new
+measurement that clears the margin" — that measurement now exists, so leaving the sentence
+would make the file argue against its own number), and the unscoped lint test kept in step.
 
 ### 2a. A1's band, verified by its own record rather than carried forward
 

@@ -374,3 +374,99 @@ first, and the fact that this is **not a gate slug** — so it blocks nothing in
 gate — are all inputs to a decision that remains open. It also does not re-verify the
 constants: those were filled at `cf2ea530`, which also refused `min_p0.05@0.3` because
 upstream NaNs there.
+
+## Where the ~223 h actually goes: one hypothesis falsified, one real knob found
+
+Asked 2026-10-06: *why does it take so long, have we profiled it, and can Engaging do it
+instead?* The honest answer to the middle question was **no** — the split was profiled at the
+*unit* level (~12% compile / ~88% sampling, §"Measured per-arm cost") but nothing had ever
+looked inside sampling. The doc's own explanation, "LASEr sampling is intrinsically far
+heavier (rotamer and chi sampling, a larger model, ligand features — all plausible)", is a
+hypothesis dressed as a conclusion. Two probes follow.
+
+### Falsified: the planner does NOT serialise the sample axis on CPU
+
+`host/plan.py:281-284` reads the memory budget from `jax.devices()[0].memory_stats()` and
+falls back to **4 GiB** on exception. CPU devices return `None` there, and
+`N_SAMPLES.default_batch_size` is **1** (`tiling/axes.py:64-70`), so a demotion from `Vmap` to
+`ChunkedMap` would have meant **one sample at a time** — which would explain the whole 113x
+gap against Potts. `plan.py:306-320` records that this exact bug was found once before on the
+legacy dispatch path (EPIC #1541 T-PLANNER.2), which made it a live suspicion rather than a
+guess.
+
+Probed (`.praxia/spikes/261006_sample_axis_plan_probe.py`, local CPU, throwaway):
+
+```
+memory_stats() RAISED TypeError: 'NoneType' object is not subscriptable
+  -> plan.py falls back to limit = 4 GiB
+
+ seq_len  n_samples     strategy  batch_size  safe_map
+      76       1000         Vmap           1         0
+     120       1000         Vmap           1         0
+     240       1000   ChunkedMap           1         1
+
+reasoning @ seq_len=120, n_samples=1000:
+  joint-budget: Vmap retained (final estimate 2022000000 B <= budget 3435973836 B)
+```
+
+So the CPU fallback is **real** (4 GiB, confirmed) but **not harmful at these sizes**: `Vmap`
+is retained all the way to n=1000 for seq_len ≤ 120, and only seq_len 240 at n=1000 demotes.
+**The hypothesis is dead.** Worth recording precisely because it was the attractive
+explanation — a planner artifact would have meant the ~223 h was nearly free to fix.
+
+### The real cap is the confirm script's own `samples_chunk_size=8`
+
+`laser_sample_dist_confirm.py:557` sets `samples_chunk_size=8`. Per
+`resolve_chunk_size` (`plan.py:450-454`), that value wins outright, and **without** it the
+chunk defaults to the full `total_num_samples`. Since the planner would retain `Vmap` at 1000
+for these structures, the script is choosing a vectorisation width of **8** where the budget
+permits ~1000 — i.e. **125 sequential dispatches** at n=1000 instead of one.
+
+**What this does and does not establish.** It establishes that the width is a script-level
+constant, not an irreducible property of the model — which is what "have we identified the
+bottleneck" was really asking. It does **not** establish that widening it is faster: CPU `vmap`
+is memory-bandwidth-bound and a 125x wider batch at seq_len 120 is estimated at ~2.0 GB of
+activations, close enough to the 3.4 GB CPU budget that the planner's own margin is thin. The
+chunk also bounds the blast radius of a failure, which is a deliberate design property per the
+preemption-safety rule, so widening it trades recoverability for throughput.
+
+**Unmeasured, and the next thing to measure:** wall time per sample as a function of
+`samples_chunk_size` (8 / 32 / 128) at small n on one structure. If per-sample cost falls with
+width, the cost is dispatch-bound and the fix is a knob; if it is flat, the cost is real
+per-sample compute and only different hardware helps. That is a ~1 h experiment that decides
+whether to provision anything at all, and it must be run under a sidecar before any number
+from it is cited.
+
+### Engaging: the right instinct, but it buys parallelism more than speed
+
+The per-arm cost is ~88% sampling on a **CPU-only jaxlib** — so GPU is exactly the lever the
+estimate is begging for, and the question was well aimed. Two caveats and four prerequisites.
+
+The caveats: GPU helps only to the extent the work is actually GPU-shaped, and at
+`samples_chunk_size=8` the device would sit mostly idle — so **the chunk-width measurement
+above should come first**, or a GPU run reproduces the CPU run's serialisation on more
+expensive hardware. And the upstream arms are the *cheap* 1/17th of the bill; moving them
+buys almost nothing.
+
+The bigger structural win is not speed but **shape**: 40 units that are independent by
+construction, and `graded_resume` already persists and reuses per unit (proven — run
+`9d621aee` reused 24 of 24). A 40-way job array turns ~223 h serial into ~1 unit of wall
+clock, which also makes the **12 h MIT partition cap** a non-issue per unit (currently each
+aminx unit is projected at ~10.5 h, uncomfortably close to it on CPU).
+
+Prerequisites, none of which are verified yet:
+
+1. **A CUDA jaxlib** in an aminx venv on Engaging. This whole estimate exists because neither
+   titanix nor the oracle venv has one.
+2. **Pre-staged weights.** Compute nodes have no outbound internet, and aminx resolves
+   checkpoints from the Hub (`HF_REVISION`). The fetch belongs on `mit_data_transfer`, not a
+   login node, and is a separate job from the run.
+3. **The upstream oracle** needs `torch` + `prody` (debt #2483). Engaging's aminx checkout is
+   also known to receive only hand-transferred files, not a full sync.
+4. **`XLA_FLAGS=--xla_gpu_shard_autotuning=false`** is mandatory on `node4007`/`node4008`
+   (Blackwell SM120) — a 1170x difference, keyed on hostname.
+
+So: Engaging is plausibly the right venue, and the array shape is a genuine improvement over
+anything titanix can offer. But provisioning it is several hours of work resting on an
+unmeasured assumption, and the chunk-width probe costs ~1 h and could change the target.
+**Measure first.**
