@@ -241,26 +241,50 @@ The refine@0.3 confirmatory run is in flight **pinned to `5c625b00`**, a tree th
 contain B2. B2 changes the sample chunk path, and refine@0.3 goes through that path. So:
 
 - **Land B2 → tonight's refine@0.3 result no longer describes the final tree**, and it has to be
-  re-run. Cost measured from this very run, from its own stamp mtimes: **~8.5–9 h, serial**.
+  re-run. Cost, now **measured end to end rather than projected**: `duration_s = 41863.66`
+  on run `096d0847`, i.e. **11.63 h, serial**.
 - **Leave B2 out → the run stands**, and stage 2 of #2371 waits for a later wave.
 
 That is the single biggest lever in the composition, and it is not a correctness question —
-both answers are defensible. It is a question of whether stage 2 is worth ~8.75 h of re-measurement
-now or later.
+both answers are defensible. It is a question of whether stage 2 is worth **~11.6 h** of
+re-measurement now or later.
 
-**Where the ~8.75 h comes from** (read off the in-flight run's own stamp mtimes in
-`/tmp/potts_sample_dist_confirm_r2/units`, so it is measured, not projected from a sidecar):
-twelve stamps at 10:34 10:47 10:53 10:59 11:36 12:19 13:16 14:09 14:46 15:23 15:54 16:24,
-i.e. gaps of 13 6 6 37 43 57 53 37 37 31 30 min. **Per-unit cost is bimodal** — four fast
-upstream-arm units at ~6–14 min and eight aminx-arm units averaging **40.6 min** — and the
-work is **serial**: exactly one `--aminx-worker` process exists at a time and no two stamps
-overlap. A re-run pays twelve *slow* units, not twelve average ones, so the arithmetic is
-12 × 40.6 + 4 × 9.75 ≈ **8.75 h**; call it **~8.5–9 h**. This run started 10:20, has three
-aminx-arm units left behind the one in flight, and projects to finish ~19:05 — consistent.
+**The measurement.** Run `096d0847` @ `5c625b00` completed at 21:58 with `outcome=pass`,
+`duration_s = 41863.66` (11.63 h), `n_computed = 16`, `n_reused = 0`. Per-unit, from the stamp
+mtimes (run started 10:20):
 
-An earlier revision of this section said "~5–6 h at the current 4-way concurrency". **Both
-halves were wrong**: there is no 4-way concurrency, and averaging the fast upstream units into
-the per-unit figure understated a re-run by roughly 3 h. The corrected number is the one above.
+| unit | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 |
+| :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| min | 14 | 13 | 6 | 6 | 37 | 43 | 57 | 53 | 37 | 37 | 31 | 30 | 66 | 66 | 100 | ~102 |
+
+The structure is **4 targets × 4 arms** (U1, U2 upstream; A, CTRL_m aminx), units grouped by
+target in four consecutive blocks:
+
+| target block | U1 | U2 | A | CTRL_m |
+| :-- | --: | --: | --: | --: |
+| `3gg7`-tier (1–4) | 14 | 13 | **6** | **6** |
+| (5–8) | 37 | 43 | 57 | 53 |
+| (9–12) | 37 | 37 | 31 | 30 |
+| `swe1_ligand`-tier (13–16) | 66 | 66 | 100 | ~102 |
+
+**Cost is dominated by the TARGET, not the arm.** A re-run pays the same 16-unit mix, so
+11.63 h is the price. The work is serial — exactly one `--aminx-worker` at a time, no two
+stamps overlapping.
+
+**Three earlier figures in this section were wrong, and all three understated the cost.** They
+are recorded rather than quietly replaced, because the pattern matters: every projection
+assumed the observed rate would continue, and each was made before the expensive target ran.
+
+1. *"~5–6 h at the current 4-way concurrency"* — both halves wrong. There is no concurrency.
+2. *"~8.5–9 h"*, from `12 × 40.6 + 4 × 9.75` — wrong because it called the spread **bimodal**
+   and attributed it to **arm**: "four fast upstream-arm units … eight aminx-arm units
+   averaging 40.6 min". The four fast units are in fact **all four arms of target 1, aminx
+   included**, and there are four target tiers (~10, ~45, ~34, ~83 min), not two modes.
+3. *"aminx arms cost 2–3× their upstream counterparts"* — wrong. Measured A/U1 ratios are
+   **0.43, 1.54, 0.84, 1.52**; on target 1 aminx is **faster** than upstream.
+
+The lesson for the next estimate: with per-target tiers this wide, a partial run supports no
+total. Quote a duration only once the run has paid for its most expensive target.
 
 **B1 and B2 are separable in effect even though they edit the same file.** B1 only reaches
 `fresh_refine_order`, which is called when `not stored_orders_present or chain_suffix`; the
