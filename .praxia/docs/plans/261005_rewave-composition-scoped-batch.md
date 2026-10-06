@@ -261,6 +261,25 @@ have been graded against the wrong target. That lowers its urgency considerably:
 need to ride this wave to protect anything, though `tests/port/` being scoped means it is cheap
 to include once the wave is running anyway.
 
+### 2e. #2433 does not block the gate — its impact line is stale
+
+This doc previously repeated #2433's own impact text, which says `test_superset` cannot pass
+while two alias rows have no mappable target. **Measured on titanix against this branch, it
+passes:**
+
+```
+tests/knob_gate/test_knob_superset.py
+  test_rows_bijective PASSED   test_superset PASSED   test_exclusions PASSED
+  test_row_markers_are_declared PASSED   test_u1_reachability_present PASSED
+  test_parity_ids_passed SKIPPED (structural: needs AMINX_REDSOX_OUTCOMES_READ)
+  => 5 passed, 1 skipped
+```
+
+The alias-map target work resolved it. So #2433 is **not** a gate blocker — the three
+unimplemented Potts fields are a completeness matter. The stale line made it look like it gated
+step 2, which would have mis-prioritised it: it is Tier C and elective. Corrected on the debt
+item too, so the ledger does not keep the wrong story.
+
 Tier C — larger, and each wants its own decision first, so listed for completeness rather than
 proposed: #2459 (`tied_positions` inert), #2443 (Potts optional dicts), #2435 (eight unread
 Options fields), #2433 (three unimplemented Potts fields — note its own impact line says
