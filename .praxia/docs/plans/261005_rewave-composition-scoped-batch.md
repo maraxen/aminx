@@ -514,46 +514,48 @@ eight rows by itself.
 flight** — that run uses that interpreter, and installing into a venv underneath a live
 measured process is not worth the risk for a step that can wait an hour.
 
-## 5c. The b7i venv is xtrax 0.4.0a10, not a11 — it reflects main's pin, not this branch's
+## 5c. CORRECTION: the b7i venv is a11 as recorded. I measured a DECOY directory.
 
-Found 2026-10-06 while provisioning the chunk-width measurement, and it corrects a claim this
-sprint had been carrying: `aminx-b7i-git`'s venv was recorded as "xtrax 0.4.0a11 + pyarrow".
-**It is 0.4.0a10.** Measured side by side:
+**An earlier revision of this section claimed "the b7i venv is xtrax 0.4.0a10, not a11" and
+built three consequences on it. That claim was WRONG and all three are withdrawn.**
 
-```
-local worktree venv   xtrax 0.4.0a11   ['ChunkedMap', 'ChunkedMapIterator', 'MapIterator', 'Vmap', 'VmapIterator']
-titanix b7i venv      xtrax 0.4.0a10   ['MapIterator', 'SafeMap', 'SafeMapIterator', 'Vmap', 'VmapIterator']
-```
+There are **two directories on titanix whose names differ only by a parent**:
 
-**a11 renamed `SafeMap` to `ChunkedMap`.** `src/aminx/tiling/planner.py:8` does
-`from xtrax.tiling import ChunkedMap as XtraxChunkedMap`, so on a10 the import fails outright:
+| path | is a git checkout? | xtrax | what it is |
+| :-- | :-- | :-- | :-- |
+| `~/projects/aminx-b7i-git` | **yes** — HEAD `0e642d44`, clean | **0.4.0a11**, `ChunkedMap` present | the sprint's real b7i checkout, exactly as recorded |
+| `~/aminx-b7i-git` | no `.git` at all | 0.4.0a10, `SafeMap` | a stale rsynced tree that merely shares the name |
 
-```
-ImportError: cannot import name 'ChunkedMap' from 'xtrax.tiling'
-  via src/aminx/sampling/conditional_logits.py:34 -> src/aminx/tiling/planner.py:8
-```
+I probed the second and reported it as the first. **The original record was right and my
+correction to it was the error.**
 
-This is **not a mystery, and not a broken venv** — it is a pin difference. `pyproject.toml:26`
-on this branch pins `xtrax[io,export]==0.4.0a11` exactly, while **main pins a10**. b7i is
-synced to main's pin. So the venv is correct for main and wrong for this branch.
+**What misled me, stated plainly so the next session does not repeat it:** `ls -d
+~/aminx-b7i-git` *succeeds*. A path existing is not evidence that it is the path you meant,
+and on this host the real checkouts all live under `~/projects/`. The giveaway I walked past
+was that `git rev-parse` in `~/aminx-b7i-git` returned *"not a git repository"* — I read that
+as "titanix checkouts aren't repos" and generalised, when it actually meant "this is not the
+checkout."
 
-**Three consequences.**
+**What survives, because it was measured directly rather than inferred:**
 
-1. **Any run of THIS branch's code on b7i that reaches the tiling planner fails at import.**
-   That covers every sampling path, including the LASEr and Potts distributional vehicles. A
-   measurement must use a venv built from this branch's own lock.
-2. **It does not invalidate the step-2 result from earlier today.** The
-   `tests/knob_gate/test_knob_superset.py` run (5 passed, 1 structural skip) does not import
-   `conditional_logits`, so it never reaches `planner.py`. That result stands — stated
-   explicitly so it is not discarded by association.
-3. **It sharpens the main-merge work.** The `SafeMap` -> `ChunkedMap` rename is exactly the
-   kind of cross-version API change the merge has to reconcile, and it is load-bearing for the
-   standing directive that aminx use xtrax natively with Vmap/ChunkedMap dispatch happening
-   under the hood. Whoever lands the merge should expect the pin bump to be part of it, not a
-   follow-up.
+1. **a11 did rename `SafeMap` to `ChunkedMap`.** Both module dictionaries were read side by
+   side, and `src/aminx/tiling/planner.py:8` imports `ChunkedMap`, so an a10 environment
+   genuinely cannot import aminx's sampling path. That remains a real constraint on any
+   environment pinned to a10 — it is just not a statement about b7i.
+2. **This branch pins `xtrax[io,export]==0.4.0a11`** (`pyproject.toml:26`), and the b7i venv
+   satisfies it. There is no pin violation and nothing for the main merge to repair on this
+   account.
+3. **The CPU-only constraint is a missing wheel, not absent hardware** — measured in a venv I
+   built myself, so it does not depend on which directory b7i is. See the readiness doc.
 
-A pin-compliant venv now exists at `titanix:~/aminx-chunkwidth-261006/.venv`, built by
-`uv sync --extra laser` against this branch's `uv.lock`: xtrax 0.4.0a11 with `ChunkedMap`
-present, prody importable, jax 0.10.2. It also **independently re-confirms the CPU-only
-constraint** behind the ~223 h estimate — `jax.devices()` returns `[CpuDevice(id=0)]`, so the
-cost figure is not resting on a stale note about the environment.
+**The withdrawn consequences**, explicitly, so no reader carries them forward: there was never
+a b7i import failure for this branch's sampling code; the step-2 result from this morning never
+needed the exoneration I gave it (it was never in doubt); and the pin bump is not part of the
+main merge's work.
+
+**Operational note that is worth keeping.** `~/aminx-chunkwidth-261006`, the staging tree this
+session rsynced for the chunk-width measurement, is *also* not a git repository — it was
+rsynced with `--exclude='/.git'`, and a worktree's `.git` is a file pointing into the parent
+repo anyway, so copying it would not have helped. A `bth run` there would carry no git
+provenance, which the ledger's own 1c criteria require. Tracked measurement therefore has to
+run from a real checkout under `~/projects/`, not from an rsynced tree.
