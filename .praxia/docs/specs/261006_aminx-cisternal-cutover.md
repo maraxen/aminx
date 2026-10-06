@@ -131,12 +131,13 @@ the real binary.
 | # | Assumption the design leans on | Tag | Spike |
 |---|---|---|---|
 | A1 | aminx locks with a cisternal extra without prerelease=allow | verified (S-1) | done |
-| A2 | `wire(server, app=None, ...)` registers MCP-only, with no cyclopts App needed | unverified | S7-02 |
-| A3 | Sync tool bodies block the FastMCP loop; `asyncio.to_thread` in an async body fixes it | unverified | S7-02 |
-| A4 | `host.runner.*` can be driven from kwargs alone (no Typer context) for every knob the tools expose | unverified | S7-02 |
+| A2 | `wire(server, app=None, ...)` registers MCP-only, with no cyclopts App needed | verified (S7-02: `mcp=[fast, slow_*] cli=[]`; `expected=[..., "ghost"]` raises `CisternalWireError`) | done |
+| A3 | Sync tool bodies block the FastMCP loop; `asyncio.to_thread` in an async body fixes it | verified (S7-02: fast call behind a 2 s call returned at 2.10 s sync vs 0.10 s async+to_thread) | done |
+| A4 | `host.runner.*` can be driven without Typer | verified (`host/runner.py:261-264,705-708`: `spec=None` → `Spec(**kw)` after `pop_deprecated_spec_kwargs`, which **silently drops** deprecated keys). Tools therefore build the spec in `aminx.agent.requests` and pass `spec=`, so unknown keys raise | done |
+| A11 | `uvx --from aminx[agent]==<ver>` only resolves for a version published on PyPI; a dev checkout's version (e.g. `0.2.0a4.devN`) cannot | verified (`launch.py:uvx_spec` pins the bundle version verbatim, minus `+local`) | `publish` in `uvx` mode refuses a version not on the index (G-LAUNCH negative) |
 | A5 | Manifest skill paths resolve from repo root; `snapshot --check` fails on a stale skill | unverified | S7-03 |
 | A6 | `capture_git_state` returns a 40-hex sha in a clean checkout and a non-"git" `provenance_source` in a wheel install | unverified | S7-09 |
-| A7 | cisternal's in-process API can load the manifest bundle, replace the MCP server's command/launch, and write it to the shared marketplace (bathos `plugin_export.py` pattern) | unverified | S7-21 |
+| A7 | cisternal's in-process API can load the bundle, replace the MCP server command, and install into the shared marketplace | verified by reading 0.1.1a15: `cisternal.plugin.app.load_bundle(PluginSpec)` (checkout manifest or packaged snapshot; already applies the `uvx` rewrite via `merge_registry`) → `dataclasses.replace` on `bundle.mcp_servers` → `claude_install(bundle, record, marketplace=, scope=, claude_bin=, require_installed=False, prune_shadowed=)` (`plugin/app.py:211-251,314-394`); marketplace root via `cisternal.plugin.config.marketplace_root_source`. `prune_shadowed=True` moves the old `~/.claude/skills/using-aminx` aside (S7-14) | done |
 | A9 | launch is resolved at bundle build; no install-time override exists in 0.1.1a15 | verified (`assets/launch.py`) | done |
 | A10 | `uvx_from = "aminx[agent]=={version}"` formats correctly (`str.format` leaves `[agent]` alone) | verified (`launch.py:24-32`) | - |
 | A8 | A long-lived server keeps the jit cache warm across calls with the same shapes | unverified | S7-08 |
