@@ -1,15 +1,20 @@
 ---
-title: 'A1 ready-to-fire: the laser_score option-3 dispatch envelope, drafted not dispatched'
+title: 'A1 ready-to-fire: the laser_score option-3 dispatch envelope (option 3 CHOSEN 261006)'
 description: Exact scope, anchors, measured band and acceptance criteria for the only gate-clearing item, so the decision becomes one dispatch
-status: proposed
+status: accepted
 task_id: 260929_potts-laser-xtrax-compose
 date: '261006'
 ---
 # A1 ready-to-fire: the laser_score option-3 dispatch envelope
 
-**Drafted, NOT dispatched.** Option 3 has not been chosen, and dispatching the implementation of
-an undecided design choice would pre-empt the decision. This document exists so that choosing it
-costs one dispatch rather than a work session.
+**DECIDED 2026-10-06: the user chose option 3.** This envelope is no longer blocked on a design
+choice. One mechanical precondition remains before it can be dispatched: the
+`worktree_base_sha` must be a full 40-char SHA taken **after** the `origin/main` merge, because
+the scoped files here invalidate all eight ledger rows and the wave must run once, post-merge
+(§0a of the plan). Until that SHA exists there is nothing to decide — only to wait.
+
+*(Superseded header, kept so the sequencing is legible: this previously read "Drafted, NOT
+dispatched — option 3 has not been chosen." That was true until 2026-10-06.)*
 
 A1 is the **only** gate-clearing item (see `plans/261005_rewave-composition-scoped-batch.md` §1):
 all 63 of gate run `fb898d24`'s failures are `tests/port/test_laser_score.py` clean-arm
