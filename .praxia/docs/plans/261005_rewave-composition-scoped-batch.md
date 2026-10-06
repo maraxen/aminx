@@ -701,3 +701,76 @@ the `potts_converge` convergence loop, then the `nodes` path. That takes the ite
 next step — *"localise which of the three modes diverges"* — from three candidates down to two
 plus a loop-control question. The per-mode breakdown is still the right measurement; it is now
 cheaper to interpret.
+
+### 1a. The gate's "nothing else is red" is green-by-absence for two waves
+
+**Correcting my own reading of §1.** That section says gate run `fb898d24`'s own `outcomes.jsonl`
+gives *"586 passed, 63 failed, 6 skipped, and all 63 failures are `tests/port/test_laser_score.py`
+clean-arm failures. Nothing else in step 1 is red."* Those three numbers are **exactly right** —
+I re-derived them from the file (`outputs/gate/20261004T083423Z/outcomes.jsonl`, 2111 rows) and
+they reproduce to the unit. But they count only `when == "call"` rows, and that is not the whole
+run.
+
+**Per-wave call-phase outcomes:**
+
+| wave | passed | failed | skipped |
+| :-- | --: | --: | --: |
+| `__nonport__` | 117 | | 1 |
+| `laser_decode_step` | 253 | | |
+| `laser_score` | 189 | **63** | |
+| `potts_energy` / `potts_head` / `potts_merge_pair_d2` / `potts_merge_pair_d4` | 4 each | | |
+| `port_selftest` | 4 | | |
+| `declayer_f64` | 3 | | 1 |
+| `potts_order` | 3 | | |
+| `laser_order` | 1 | | |
+| `pottsmpnn_full` | | | 4 |
+
+Sums to 586 / 63 / 6. **And two waves are missing from that table entirely:**
+
+```
+SETUP-SKIPPED tests (no call phase, so absent from every tally):
+  laser_score      63
+  laser_encoder     5
+  laser_layers      5
+  total            73
+waves with NO call phase at all: ['laser_encoder', 'laser_layers']
+```
+
+**`laser_encoder` and `laser_layers` contributed ZERO assertions.** All ten of their tests skip
+at **setup**, so they appear in neither the 586, the 63, nor the 6. The parametrisation id is
+`[NOTSET-f32]` / `[NOTSET-f64]`, i.e. the pair list is empty — they are **oracle-blocked** in the
+gate environment, not passing. "Nothing else in step 1 is red" is therefore true *because those
+waves never ran*, which is a materially weaker statement than it reads as.
+
+**This is the sprint's recurring failure class, not a new one.** Debt #2316 names it exactly —
+"a gate that reports something other than what it did" — for `pottsmpnn_full`, whose 4 skips
+*are* visible here. The setup-skip variant is worse, because a setup-skip is invisible to a
+call-phase tally rather than merely ambiguous.
+
+**Bounded, though.** Neither `laser_encoder` nor `laser_layers` is one of the eight ledger
+slugs, so section 1c does not depend on them and Z1's ledger half is unaffected. The exposure
+is step 1: the gate can go green while those two waves have no evidence at all. Whoever lands
+the wave should either resolve their oracle dumps or record explicitly that the gate's step 1 is
+silent on them.
+
+### 1b. #2309's fix has landed in the target but has NEVER been exercised
+
+#2309 (P1) says the `laser_layers` tolerance is "pure rtol with no atol, which no implementation
+can satisfy (reference elements are exactly 0.0)". **The fix is in the file:**
+`tests/port/targets/laser_layers.toml:17-18` now reads `rtol=1e-9,atol=1e-12` (f64) and
+`rtol=1e-5,atol=1e-6` (f32), with an explicit amendment record at `:27-31` naming
+`original_tolerance_policy_f64 = "rtol=1e-9"`, `amended_on = "260930"`, and
+`graded_run = "2747efa8-…"` / `graded_outcome = "pass"`.
+
+**But that graded run is the tolerance DERIVATION, not the wave.** Verified by record: run
+`2747efa8` is `completed / pass / exit 0 / git_dirty False`, `duration_s = 0.31`, command
+`scripts/parity/laser_layers_tolerance.py --payload-out …`. Its claimed payload resolves
+(480 bytes, 260930). A whole-catalog scan finds **exactly two** runs whose command mentions
+`laser_layers`, and **both are that derivation script** — the second, `32aa4486`, graded
+`outcome = unknown`, the signature of results not reaching a registered output path.
+
+So: the band was derived and graded; **no run has ever confirmed the wave passes at it.** Not
+standalone, and not in the gate either, because §1a shows `laser_layers` skipping at setup. The
+item's own impact text is honest about the consequence — *"B2 is therefore held uncommitted and
+laser_layers parity is NOT claimed"* — and that remains the correct status. **The real blocker
+is the oracle dump, not the tolerance.** Do not close #2309 on the strength of the target file.
