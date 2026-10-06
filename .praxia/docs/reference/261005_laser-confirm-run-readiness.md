@@ -500,3 +500,65 @@ Ordering, then, is: chunk-width measurement (~2.2 h, decides whether width is th
 CUDA jaxlib on a titanix measurement venv (cheap, bounds the GPU speedup on 2 GPUs) ->
 Engaging provisioning only if the confirm is still the bottleneck. Each step is cheap enough
 to refute the next one's premise.
+
+### REFUTED: max_length padding is inert on the LASEr path, so the ~10x framing was wrong
+
+I claimed, confidently, that the ~223 h was inflated ~10x because the confirm never sets
+`max_length` and so inherits the 512 default against a 154-residue structure, citing
+`host/runner.py:127-131`'s own cost model ("Autoregressive decode cost grows roughly with the
+square of the padded length"). **That is wrong for LASEr.** Three direct probes, 2026-10-06:
+
+1. **The featurizer emits real-length arrays.** `families/laser_mpnn/featurize.featurize` on
+   `103m_1.pdb` returns `chain_mask (154,)` and `sequence_indices (154,)` — not `(512,)`.
+2. **`l_pad` is a Potts-only mechanism.** It appears solely in
+   `families/potts_mpnn/featurize.py:505-544` and `potts_mpnn/sample_host.py:217-235`. Nothing
+   under `families/laser_mpnn/` references `l_pad` or `max_length` at all.
+3. **The LASEr batch takes its length from the features**, not from a padding target:
+   `sample_host.py:165`, `length = int(features.sequence_indices.shape[0])`.
+
+So `max_length` does not govern this path, and the `(512/160)^2 = 10.24` figure describes a
+configuration LASEr never enters.
+
+**The absent warning was the clue I misread.** The first completed unit recorded
+`padding_warning_seen=False`. `_PADDING_WARN_RATIO` is 2.0 and 512 > 2x154, so I initially
+read the silence as a gap in aminx's warning coverage. It is the opposite: `_PaddingCheck`
+measures the span of the mask it is *given*, that mask is length 154, so padded == real,
+ratio 1.0, and the check correctly says nothing. **aminx was right and my inference was
+wrong** — the warning's silence was evidence against my hypothesis, not evidence of a missing
+warning.
+
+**Why this still matters for #2358.** That debt (~86 s/sample for a 93-residue chain at the
+default) is real, but it is about the **host loader's** padded path used by the
+ProteinMPNN/LigandMPNN/Potts families — not LASEr. Sizing `max_length` remains a genuine
+lever for *those* runs and is simply not available here.
+
+**What this leaves.** Four candidate explanations for LASEr's ~50 s/sample at L=154 against
+Potts' 0.36 s/sample, two now eliminated by direct probe:
+
+| explanation | status |
+| :-- | :-- |
+| the planner demotes the sample axis to width 1 on a CPU 4 GiB budget | **falsified** — `Vmap` retained to n=1000 |
+| the confirm pads 154 residues to `max_length=512` | **falsified** — `max_length` inert on this path |
+| `samples_chunk_size=8` caps vectorisation at 8 of a permitted ~1000 | **measuring** (run at `a4bfe86c`) |
+| LASEr sampling is genuinely heavier: rotamer and chi sampling, larger model, ligand features | surviving, and now better supported by elimination |
+
+The surviving explanation is the readiness doc's original one. It is in a stronger position
+than when it was written, not because new evidence arrived for it, but because two rivals were
+tested and failed. The padding pair is being left in the running measurement so the refutation
+is a **recorded null** rather than my assertion.
+
+### Incidental, and it corroborates debt #2321
+
+Every completed unit's captured warnings include, twice:
+
+```
+Explicitly requested dtype float64 requested in astype is not available, and will be
+truncated to dtype float32. To enable more dtypes, set the jax_enable_x64 configuration option
+```
+
+Debt #2321 says `categorical_draw`'s f64 CDF "is inert in production" and "emits a JAX
+UserWarning on every trace of the sampler". This is that warning, observed on the **LASEr**
+sampling path with `jax_enable_x64` explicitly off, which is what production uses. So #2321 is
+live here and not only on the path it was filed against. It is not a cost finding — a truncated
+`astype` is cheap — but it is independent confirmation that the f64 CDF the parity waves
+validate is not the code production runs.
