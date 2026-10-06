@@ -755,3 +755,49 @@ reading, and `_PaddingCheck`'s silence was correct all along.
 load 69 again (another session started a 87-thread spike on top of the long-running staging
 job). The run continues; if the lever's instances land under drifting load they will fail the
 same gate r0 failed, and the ratios will be reported with that caveat rather than as a verdict.
+
+### The CUDA-jaxlib probe, specified concretely (measured 2026-10-06, not yet run)
+
+Since the chunk-width lever is looking like a ~25% effect and padding is a null, **hardware is
+the only remaining lever** on the ~223 h. The cheap probe is titanix itself, and the hardware
+facts are now measured rather than assumed:
+
+```
+index, name,              memory.total, memory.used, driver_version
+0,     NVIDIA TITAN RTX,  24576 MiB,    21580 MiB,   595.84     <- vLLM
+1,     NVIDIA TITAN RTX,  24576 MiB,    21580 MiB,   595.84     <- vLLM
+2,     NVIDIA TITAN RTX,  24576 MiB,        5 MiB,   595.84     <- FREE
+3,     NVIDIA TITAN RTX,  24576 MiB,       38 MiB,   595.84     <- FREE
+CUDA Version: 13.2
+```
+
+**Two full 24 GB cards are idle.** 24 GB is ample for L = 154, and the driver (595.84, CUDA
+13.2) is newer than any CUDA 12 wheel needs, so forward compatibility covers
+`jax[cuda12]` at the pinned `jax>=0.10.2,<0.11`.
+
+**Four constraints, each of which would invalidate the probe if ignored.**
+
+1. **Pin to GPUs 2 and 3.** `CUDA_VISIBLE_DEVICES=2,3`. GPUs 0 and 1 hold vLLM at 21.5 GB
+   each — a run that lands there competes with another service, and that service is not mine
+   to disturb.
+2. **A separate venv, never the vehicles'.** A CUDA jaxlib changes the numerical backend, and
+   this is a parity project under a freeze. The measurement venv gets it; nothing that writes
+   a ledger row does.
+3. **TITAN RTX is Turing, compute capability 7.5, and its f64 throughput is 1/32 of f32.** So
+   this hardware is a reasonable probe for **f32 production sampling** — which is what the
+   distributional confirm does — and a *poor* choice for the **f64 parity tiers**, which would
+   likely run slower than on CPU. Do not generalise a GPU speedup measured here to the f64
+   waves. This is the detail most likely to be missed, because "we have GPUs now" invites
+   exactly that generalisation.
+4. **It measures a ceiling, not the plan.** Two cards against Engaging's 40-way array: even a
+   large per-unit speedup leaves the array the better shape for the full 40-unit confirm. The
+   probe's job is to size the speedup cheaply, so the Engaging provisioning decision rests on
+   a number instead of a hope.
+
+**The probe itself:** one LASEr unit at n = 8, width 8, the same structure and checkpoint this
+script already pins, timed the same way — directly comparable against the 44–60 s/sample this
+run has measured across ten units on CPU. Roughly 30 minutes including the venv build, against
+the ~223 h it is deciding about.
+
+**Do it after the current run finishes, not alongside it** — a GPU run still consumes host CPU
+for dispatch, and the timing measurement in flight has already lost one attempt to contention.
