@@ -6,9 +6,21 @@ time; an absent oracle yields no pairs and the wave skips.
 The scoring path is fed the dump's ``decoding_order``. Order log-probs are an
 invariant of the no-generator branch: every entry is exactly 1.
 
-f64 uses rtol=1e-8, atol=1e-11. f32 uses rtol=1e-4, atol=1e-7. Those bounds
-are pre-registered. A miss reports the measured deviation and does not widen
-them.
+The two tiers use DIFFERENT FORMS of comparison, deliberately.
+
+f64 (tier 2) is element-wise at rtol=1e-8, atol=1e-11. It is the correctness
+check: it asks whether the port computes the same function as upstream.
+
+f32 (tier 3) is SCALE-RELATIVE at 4e-4 -- ``max|got-ref| <= tol * max|ref|``,
+reduced per field per pair. This is option 3 of
+decisions/261003_laser-score-tier3-f32-design.md, chosen by the user
+2026-10-06. It exists because run 18b97f4f showed the two f32 implementations
+make the SAME error (they agree with each other ~200x more tightly than either
+agrees with an f64 truth), so no element-wise band could both admit that shared
+f32 noise and still reject a real 1% defect.
+
+Both bounds are pre-registered and measured. A miss reports the measured
+deviation and does not widen them.
 """
 
 from __future__ import annotations
@@ -22,7 +34,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-
 from port.a1_compare import assert_shape_dtype, names, open_dump, x64_context
 from port.reference.laser_score.algo import OracleAbsentError, load as load_score_dump
 
@@ -33,9 +44,32 @@ from aminx.model.laser.graphs import GraphStructure
 
 pytestmark = [pytest.mark.port_wave("laser_score"), pytest.mark.parity_heavy]
 
-_RTOL = {"f64": 1e-8, "f32": 1e-4}
+# f64 keeps the ELEMENT-WISE envelope. It is the actual correctness check, and
+# decisions/261003_laser-score-tier3-f32-design.md is explicit that no option
+# there touches it. f64 is a parity dtype, never a production one.
+_RTOL = {"f64": 1e-8}
 # House pairing for the declared rtol. Not a measured deviation.
-_ATOL = {"f64": 1e-11, "f32": 1e-7}
+_ATOL = {"f64": 1e-11}
+# f32 is SCALE-RELATIVE (option 3, chosen by the user 2026-10-06). The rule is a
+# REDUCTION per field per pair, not an element-wise envelope:
+#
+#     max|got - ref|  <=  tol * max|ref|
+#
+# The change of FORM is the point, not the change of value. Run 18b97f4f
+# measured that aminx-f32 and upstream-f32 agree with each other ~200x more
+# tightly than either agrees with an f64 truth: they make the SAME f32 error, so
+# this tier compares two implementations of one approximation. An element-wise
+# band wide enough to admit that shared error could not separate it from a real
+# 1% defect, which is why widening the old rule was refused rather than tuned.
+#
+# The band is measured, not chosen: graded run 3af3be02
+# (scripts/analysis/laser_score_scale_relative_floor.py @ 0e642d44,
+# completed/pass/exit 0/clean) gives floor_scale_relative = 3.6297e-5 over
+# n_pairs = 63 -- the same 63 pairs this tier asserts over, not a sample of
+# them -- with headroom = 10.0, control_rejected = true (the negative control
+# still fails) and loo_all_admitted = true (loo_worst_ratio 0.121, so no single
+# pair props the floor up).
+_SCALE_REL = {"f32": 4e-4}
 _CHECKPOINTS = {
   "nothing_heldout": "model_weights/laser_weights_0p1A_nothing_heldout.pt",
   "noise_ligandmpnn_split": "model_weights/laser_weights_0p1A_noise_ligandmpnn_split.pt",
@@ -290,6 +324,37 @@ def _rows_over(
   return int(np.sum(row_bad)), int(row_bad.shape[0]), worst
 
 
+def _scale_relative(got: np.ndarray, ref: np.ndarray) -> tuple[float, float, float]:
+  """``max|got-ref|``, the scale ``max|ref|``, and their ratio.
+
+  This is the option-3 rule's measurement. It is a reduction over the whole
+  field, so unlike ``_rows_over`` it does not ask each element to sit inside an
+  envelope -- it asks whether the field's largest deviation is small *relative
+  to the field's own magnitude*. NaN handling matches ``_rows_over`` so the two
+  rules disagree only about form: shared NaNs are not errors, and a NaN on one
+  side only is infinite error.
+
+  A zero scale is not silently forgiving. If ``max|ref|`` is 0 the only
+  deviation the rule can admit is exactly 0, and the ratio is reported as inf
+  for any nonzero deviation so the failure message says why.
+  """
+  got64 = got.astype(np.float64)
+  ref64 = ref.astype(np.float64)
+  both_nan = np.isnan(got64) & np.isnan(ref64)
+  nan_mismatch = np.isnan(got64) != np.isnan(ref64)
+  error = np.abs(got64 - ref64)
+  error = np.where(both_nan, 0.0, error)
+  error = np.where(nan_mismatch, np.inf, error)
+  max_abs = float(np.max(error)) if error.size else 0.0
+  finite_ref = np.where(np.isnan(ref64), 0.0, ref64)
+  scale = float(np.max(np.abs(finite_ref))) if finite_ref.size else 0.0
+  if scale > 0.0:
+    ratio = max_abs / scale
+  else:
+    ratio = 0.0 if max_abs == 0.0 else float("inf")
+  return max_abs, scale, ratio
+
+
 def _run(
   data: np.lib.npyio.NpzFile,
   precision: str,
@@ -302,8 +367,20 @@ def _run(
   failures: list[str] = []
   worst = 0.0
   dtype = np.dtype(np.float64 if precision == "f64" else np.float32)
-  rtol = _RTOL[precision]
-  atol = _ATOL[precision]
+  rtol = _RTOL.get(precision)
+  atol = _ATOL.get(precision)
+  scale_rel = _SCALE_REL.get(precision)
+  # A precision must be defined by exactly ONE rule. Without this, a half-done
+  # migration that left a stale _RTOL[precision] beside a new _SCALE_REL entry
+  # would silently apply whichever branch happened to be checked first, and the
+  # emitted verdict would name a band the test did not use -- the exact defect
+  # tests/lint/test_port_tolerances_match_targets.py exists to prevent.
+  if (rtol is None and atol is None) == (scale_rel is None):
+    msg = (
+      f"laser_score {precision}: exactly one of the element-wise band "
+      f"(_RTOL/_ATOL) and the scale-relative band (_SCALE_REL) must define it"
+    )
+    raise AssertionError(msg)
   prefix = f"{checkpoint}__{fixture}__"
   order_key = prefix + "decoding_order"
   if order_key not in data.files:
@@ -345,7 +422,17 @@ def _run(
         ):
           failures.append(f"{key}: not exactly 1 (no decoding-order generator)")
           worst = max(worst, float(np.max(np.abs(got.astype(np.float64) - 1.0))))
-        if numeric:
+        if numeric and scale_rel is not None:
+          max_abs, scale, ratio = _scale_relative(got, ref)
+          worst = max(worst, max_abs)
+          # Negated rather than `ratio > scale_rel` so a NaN ratio fails.
+          if not ratio <= scale_rel:
+            failures.append(
+              f"{key}: max|got-ref|/max|ref| = {ratio:.6e} exceeds "
+              f"scale_rel={scale_rel:g} "
+              f"(max|got-ref|={max_abs:.6e}, max|ref|={scale:.6e})",
+            )
+        elif numeric and rtol is not None and atol is not None:
           n_bad, n_rows, max_abs = _rows_over(got, ref, rtol, atol)
           worst = max(worst, max_abs)
           if n_bad:
@@ -421,13 +508,49 @@ def test_tier_2_f64(oracle: object, checkpoint: str, fixture: str) -> None:
 @pytest.mark.tier_3
 @pytest.mark.parametrize(("checkpoint", "fixture"), _PAIRS, ids=_PAIR_IDS)
 def test_tier_3_f32(oracle: object, checkpoint: str, fixture: str) -> None:
-  """f32 score outputs match at rtol=1e-4, atol=1e-7."""
+  """f32 score outputs match scale-relatively: max|got-ref| <= 4e-4 * max|ref|."""
   _skip_absent_oracle()
   data = open_dump(oracle, "f32")
   try:
     assert _run(data, "f32", checkpoint, fixture, numeric=True) > 0
   finally:
     data.close()
+
+
+def test_scale_relative_band_rejects_an_injected_defect() -> None:
+  """NEGATIVE CONTROL for the option-3 band. Needs no oracle, so it always runs.
+
+  A band that cannot fail is not a band. Run 3af3be02's 10x headroom only means
+  something if a defect of the size the decision doc cares about is actually
+  rejected, so this injects one. It also checks the clean case still passes, so
+  the control is not vacuous in the other direction, and pins the two edge cases
+  where a scale-relative rule could quietly forgive: NaN and a zero scale.
+  """
+  tol = _SCALE_REL["f32"]
+  rng = np.random.default_rng(0)
+  ref = rng.normal(size=(64, 9)).astype(np.float32)
+
+  # Clean: a ~1e-6 relative perturbation, the order of f32 round-off. Passes.
+  clean = (ref * np.float32(1.0 + 1e-6)).astype(np.float32)
+  assert _scale_relative(clean, ref)[2] <= tol
+
+  # A 1e-2 RELATIVE defect -- the size the decision doc requires separation
+  # from -- must be rejected, and with real margin rather than barely.
+  defect = (ref * np.float32(1.0 + 1e-2)).astype(np.float32)
+  ratio = _scale_relative(defect, ref)[2]
+  assert not ratio <= tol
+  assert ratio / tol > 10.0, f"injected defect only {ratio / tol:.1f}x over the band"
+
+  # Shared NaNs are not errors; a one-sided NaN is infinite error.
+  with_nan = ref.copy()
+  with_nan[0, 0] = np.nan
+  assert _scale_relative(with_nan.copy(), with_nan)[2] == 0.0
+  assert not _scale_relative(ref, with_nan)[2] <= tol
+
+  # A zero scale admits an exact match and nothing else.
+  zeros = np.zeros((4,), dtype=np.float32)
+  assert _scale_relative(zeros, zeros)[2] == 0.0
+  assert _scale_relative(zeros + np.float32(1e-30), zeros)[2] == float("inf")
 
 
 @pytest.mark.tier_5

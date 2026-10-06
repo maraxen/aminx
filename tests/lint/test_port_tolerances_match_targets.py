@@ -14,6 +14,16 @@ verdict (and hashes it into the verdict id). Nothing tied the two together. So:
 
 This reads both statically (AST for the constants, tomllib for the policy), so
 it costs nothing and runs in the ordinary suite rather than only in the gate.
+
+A BAND HAS A FORM AS WELL AS A VALUE (added 261006 for laser_score option 3).
+``laser_score``'s f32 tier is no longer an element-wise ``rtol``/``atol``
+envelope; it is scale-relative, ``max|got-ref| <= tol * max|ref|``, carried by a
+``_SCALE_REL`` constant and reported as ``scale_rel=4e-4``. So this guard
+compares forms first and values second, and treats three further things as
+failures: a policy whose key set matches no known form (which would otherwise
+compare nothing and pass), a test still carrying a constant from the *other*
+form for the same precision (a half-finished migration leaves two bands on one
+tier), and of course a value that drifted.
 """
 
 from __future__ import annotations
@@ -30,6 +40,18 @@ _TARGETS = _PORT / "targets"
 #: How many waves must actually be compared. A guard that silently matches no
 #: file would pass forever; raise this when a wave adopts the constants.
 _MIN_COVERED = 3
+
+#: Every module constant that can carry a band. Order is irrelevant; membership
+#: is what makes a stale leftover from another form detectable.
+_ALL_CONSTS = ("_RTOL", "_ATOL", "_SCALE_REL")
+
+#: Policy key-set -> the (constant, policy key) pairs that form requires. A
+#: policy whose keys match no entry is a failure, not a pass: an unrecognised
+#: form would compare nothing at all.
+_FORMS: dict[frozenset[str], tuple[tuple[str, str], ...]] = {
+  frozenset({"rtol", "atol"}): (("_RTOL", "rtol"), ("_ATOL", "atol")),
+  frozenset({"scale_rel"}): (("_SCALE_REL", "scale_rel"),),
+}
 
 
 def _parse_policy(policy: str) -> dict[str, float]:
@@ -61,7 +83,7 @@ def _module_facts(path: Path) -> tuple[str | None, dict[str, dict[str, float]]]:
       target, expr = node.target, node.value
     else:
       continue
-    if isinstance(target, ast.Name) and target.id in {"_RTOL", "_ATOL"}:
+    if isinstance(target, ast.Name) and target.id in set(_ALL_CONSTS):
       value = ast.literal_eval(expr)
       if isinstance(value, dict):
         consts[target.id] = {str(k): float(v) for k, v in value.items()}
@@ -75,12 +97,29 @@ def _mismatches(
   problems: list[str] = []
   for precision in ("f64", "f32"):
     policy = _parse_policy(str(parity[f"tolerance_policy_{precision}"]))
-    for name, key in (("_RTOL", "rtol"), ("_ATOL", "atol")):
+    form = _FORMS.get(frozenset(policy))
+    if form is None:
+      problems.append(
+        f"{precision}: TOML policy {sorted(policy)} matches no known band form "
+        f"{[sorted(keys) for keys in _FORMS]}",
+      )
+      continue
+    for name, key in form:
       asserted = consts.get(name, {}).get(precision)
       reported = policy.get(key)
       if asserted != reported:
         problems.append(
           f"{precision} {key}: test asserts {asserted!r}, TOML reports {reported!r}",
+        )
+    # A constant belonging to a DIFFERENT form that still defines this precision
+    # is a half-finished migration: the tier would carry two bands at once, and
+    # which one the test applies is then an accident of control flow.
+    named = {name for name, _ in form}
+    for name in _ALL_CONSTS:
+      if name not in named and consts.get(name, {}).get(precision) is not None:
+        problems.append(
+          f"{precision}: TOML declares the {sorted(policy)} form but the test "
+          f"still defines {name}[{precision!r}]",
         )
   return problems
 
@@ -92,6 +131,33 @@ def test_mismatch_detector_fires() -> None:
   agreed = {"_RTOL": {"f64": 1e-8, "f32": 1e-4}, "_ATOL": {"f64": 1e-11, "f32": 2e-3}}
   assert _mismatches(drifted, parity) == ["f32 atol: test asserts 1e-07, TOML reports 0.002"]
   assert _mismatches(agreed, parity) == []
+
+  # --- the scale-relative form, and the three ways it can go wrong ---
+  scale = {
+    "tolerance_policy_f64": "rtol=1e-8,atol=1e-11",
+    "tolerance_policy_f32": "scale_rel=4e-4",
+  }
+  ok = {"_RTOL": {"f64": 1e-8}, "_ATOL": {"f64": 1e-11}, "_SCALE_REL": {"f32": 4e-4}}
+  assert _mismatches(ok, scale) == []
+
+  # 1. the value drifted
+  assert _mismatches({**ok, "_SCALE_REL": {"f32": 1e-3}}, scale) == [
+    "f32 scale_rel: test asserts 0.001, TOML reports 0.0004",
+  ]
+
+  # 2. half-finished migration: an element-wise band left beside the new one.
+  #    This is the case a form-blind guard would wave through.
+  stale = {**ok, "_RTOL": {"f64": 1e-8, "f32": 1e-4}}
+  assert _mismatches(stale, scale) == [
+    "f32: TOML declares the ['scale_rel'] form but the test still defines _RTOL['f32']",
+  ]
+
+  # 3. a form nobody has taught the guard must NOT pass silently
+  unknown = {
+    "tolerance_policy_f64": "rtol=1e-8,atol=1e-11",
+    "tolerance_policy_f32": "ulps=4",
+  }
+  assert _mismatches(ok, unknown) != []
 
 
 def _covered() -> list[tuple[str, Path, dict[str, dict[str, float]]]]:

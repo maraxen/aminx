@@ -17,7 +17,7 @@ dynamic_shape = true
 ad_critical = false
 ad_critical_justification = ""
 tolerance_policy_f64 = "rtol=1e-8,atol=1e-11"
-tolerance_policy_f32 = "rtol=1e-4,atol=1e-7"
+tolerance_policy_f32 = "scale_rel=4e-4"
 max_traces = 1
 
 [access]
@@ -34,6 +34,10 @@ noise_reaches_defect_scale for this wave, whose pre-registered decision
 (64274bcf) is: escalate, do NOT widen. So this band stays red at tier 3 and the
 redsox gate keeps rc = 1 on it (debt #2445). Do not move it without a new
 measurement that clears the margin.
+
+  SUPERSEDED 2026-10-06 -- that measurement now exists (run 3af3be02, below),
+  and the band did not move: the RULE changed form. The paragraph above is kept
+  because it records why widening was refused, which is still the right call.
 
   f64 tier passes rtol=1e-8,atol=1e-11 on all 9 fields (max abs 7.8e-13): the
     port computes the same function as upstream. This is float32, not a defect.
@@ -71,4 +75,49 @@ compares two f32 implementations with a pairwise band, and the pre-registered
 put to the user, not decided here: keep the band and accept tier 3 red for
 this wave; grade aminx-f32 against the f64 reference with a measured band; or
 compare on a scale-relative basis. No tolerance changes from this run.
+
+DECIDED 2026-10-06: THE USER CHOSE OPTION 3, SCALE-RELATIVE. So
+tolerance_policy_f32 above is no longer an rtol/atol pair at all. The assertion
+in tests/port/test_laser_score.py changed FORM, from an element-wise envelope
+to a reduction per field per pair:
+
+    max|got - ref|  <=  4e-4 * max|ref|
+
+That the form changed, and not merely the number, is what makes this legitimate
+rather than a widening. The paragraph above explains why no element-wise band
+could work: the two f32 implementations make the same error, so any envelope
+loose enough to admit it is also loose enough to admit a 1% defect.
+
+THE BAND IS MEASURED, NOT CHOSEN. Graded run 3af3be02
+(scripts/analysis/laser_score_scale_relative_floor.py @ 0e642d44, 458 s,
+status=completed / outcome=pass / exit_code=0 / git_dirty=False, sidecar
+c40240fe...). Its artifact resolves at
+outputs/laser_score_scale_relative_floor/0e642d44/result.json and reports:
+
+  proposed_tol         = 4e-4        floor_scale_relative = 3.6297e-05
+  headroom             = 10.0        control_scale_margin = 10.0
+  control_rejected     = true        below_control_scale  = true
+  n_pairs              = 63          n_fields             = 9
+  loo_all_admitted     = true        loo_worst_ratio      = 0.121
+  floor_field = seq_log_prob         floor_pair = soluble_65000__107m_1
+
+Three properties of that record carry the argument, beyond the headline:
+n_pairs = 63 is the whole population this tier asserts over, not a sample of
+it; control_rejected = true means the instrument still fails what it should
+fail; and loo_all_admitted = true with loo_worst_ratio = 0.121 means no single
+pair props the floor up.
+
+NOTE the margin is 10x, not the 100x quoted in some earlier notes. The band
+itself, 4e-4, was right in those notes.
+
+THE f64 TIER IS UNTOUCHED and remains element-wise at rtol=1e-8, atol=1e-11.
+It is the real correctness check; f64 is a parity dtype and is never used in
+production. No option in the decision doc changes it.
+
+The key name f32_atol_basis is now a misnomer -- the f32 band is not an atol.
+It is kept so the history above stays at its original key rather than being
+silently relocated.
+
+Do not move 4e-4 without a NEW pre-registered measurement that clears the 10x
+margin, exactly as the superseded paragraph required of the old band.
 """
