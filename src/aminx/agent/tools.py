@@ -19,6 +19,7 @@ import cisternal
 from aminx.agent.provenance import capture
 from aminx.agent.requests import (
   build_spec,
+  check_unique_structure_ids,
   spec_from_json,
   spec_to_json_dict,
   structure_lengths,
@@ -196,6 +197,7 @@ async def _run(
   """
   merged = _merge_options(typed_options, options)
   spec = build_spec(kind, inputs, merged)
+  check_unique_structure_ids(spec)
 
   def worker() -> dict[str, Any]:
     with _RUN_LOCK:
@@ -521,9 +523,36 @@ def _legacy_alias_map() -> dict[str, str]:
   }
 
 
+def _checkpoint_entries(*, with_sha256: bool) -> list[dict[str, Any]]:
+  """Build ``list_checkpoints`` entries (blocking; run it in a worker thread).
+
+  A checkpoint whose weights cannot be hashed (missing, unreachable hub) gets
+  ``sha256_error`` instead of failing the whole listing.
+  """
+  packaged = _packaged_checkpoint_ids()
+  entries: list[dict[str, Any]] = []
+  for checkpoint_id in _checkpoint_ids():
+    entry: dict[str, Any] = {
+      "checkpoint_id": checkpoint_id,
+      "packaged": checkpoint_id in packaged,
+      "topology": _json_topology(checkpoint_id),
+    }
+    if with_sha256:
+      try:
+        provenance = weights_io.weight_provenance(checkpoint_id)
+      except Exception as exc:  # noqa: BLE001 -- reported per checkpoint
+        entry["sha256_error"] = f"{type(exc).__name__}: {exc}"
+      else:
+        entry["sha256"] = provenance.sha256
+        entry["source"] = provenance.source
+        entry["hub_revision"] = provenance.hub_revision
+    entries.append(entry)
+  return entries
+
+
 @cisternal.tool(registry=REGISTRY)
 async def list_checkpoints(with_sha256: bool = False) -> dict[str, Any]:  # noqa: FBT001, FBT002
-  """List loadable checkpoints, the default id, and the legacy alias map. `packaged` says whether the weights are installed locally; otherwise they download from the Hub on first use. When with_sha256 is true this hashes every checkpoint file and may download missing weights.
+  """List loadable checkpoints, the default id, and the legacy alias map. `packaged` says whether the weights are installed locally; otherwise they download from the Hub on first use. When with_sha256 is true this hashes every checkpoint file and may download missing weights; a checkpoint that cannot be hashed carries sha256_error.
 
   Parameters
   ----------
@@ -537,20 +566,8 @@ async def list_checkpoints(with_sha256: bool = False) -> dict[str, Any]:  # noqa
   dict
     ``checkpoints``, ``default_checkpoint``, and ``legacy_alias_map``.
   """
-  packaged = _packaged_checkpoint_ids()
-  entries: list[dict[str, Any]] = []
-  for checkpoint_id in _checkpoint_ids():
-    entry: dict[str, Any] = {
-      "checkpoint_id": checkpoint_id,
-      "packaged": checkpoint_id in packaged,
-      "topology": _json_topology(checkpoint_id),
-    }
-    if with_sha256:
-      provenance = weights_io.weight_provenance(checkpoint_id)
-      entry["sha256"] = provenance.sha256
-      entry["source"] = provenance.source
-      entry["hub_revision"] = provenance.hub_revision
-    entries.append(entry)
+  # Hashing reads (and may download) every weight file; keep it off the event loop.
+  entries = await asyncio.to_thread(_checkpoint_entries, with_sha256=with_sha256)
   return {
     "checkpoints": entries,
     "default_checkpoint": DEFAULT_CHECKPOINT_ID,

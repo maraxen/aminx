@@ -99,7 +99,12 @@ def run_cli(app: Callable[[], object], argv: Sequence[str] | None = None) -> Non
     app()
     return
   tokens = list(sys.argv if argv is None else argv)
-  cisternal.init()
+  try:
+    cisternal.init()
+  except Exception as exc:  # noqa: BLE001 -- opt-in telemetry must never block the CLI
+    print(f"aminx: telemetry disabled, cisternal.init() failed: {exc}", file=sys.stderr)  # noqa: T201
+    app()
+    return
   try:
     with cisternal.span(f"aminx.cli.{command_name(tokens)}"):
       try:

@@ -245,6 +245,33 @@ def _absolute_inputs(inputs: Sequence[str]) -> list[str]:
   return resolved
 
 
+def check_unique_structure_ids(spec: RunSpecification) -> None:
+  """Raise when two inputs map to the same runner structure id.
+
+  The runner keys structures by file stem, so ``a/model.pdb`` and
+  ``b/model.pdb`` would share lengths and side-file keys and one would
+  silently overwrite or mis-trim the other.
+
+  Parameters
+  ----------
+  spec : RunSpecification
+    Specification whose ``inputs`` are checked.
+
+  Raises
+  ------
+  ValueError
+    Two or more inputs share a structure id. The message names them.
+  """
+  seen: dict[str, list[str]] = {}
+  for index, item in enumerate(_input_items(spec)):
+    seen.setdefault(_canonical_structure_id(item, index), []).append(str(item))
+  clashes = {key: items for key, items in seen.items() if len(items) > 1}
+  if clashes:
+    detail = "; ".join(f"{key!r}: {', '.join(items)}" for key, items in sorted(clashes.items()))
+    msg = f"inputs share a structure id (the file stem); rename or copy them apart: {detail}"
+    raise ValueError(msg)
+
+
 def _input_items(spec: RunSpecification) -> list[object]:
   """Return specification inputs as a list, matching the runner's wrapping."""
   raw = spec.inputs
@@ -308,6 +335,7 @@ def _is_potts_payload(data: Mapping[str, Any]) -> bool:
 __all__ = [
   "SPEC_KINDS",
   "build_spec",
+  "check_unique_structure_ids",
   "spec_from_json",
   "spec_to_json_dict",
   "structure_lengths",

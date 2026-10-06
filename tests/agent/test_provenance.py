@@ -107,3 +107,25 @@ def test_builtin_tier_when_cisternal_provenance_is_unavailable(
   assert isinstance(state["sha"], str)
   assert _SHA.fullmatch(state["sha"])
   assert state["dirty"] is False
+
+
+def test_installed_package_inside_another_repo_is_not_attributed(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A wheel under ``site-packages`` inside some project's repo reports no sha.
+
+  Positive control: the same directory passed explicitly does resolve that
+  repository's sha, so the default-path guard is what suppresses it.
+  """
+  _require_git()
+  repo = _init_repo(tmp_path)
+  installed = repo / ".venv" / "lib" / "python3.13" / "site-packages" / "aminx"
+  installed.mkdir(parents=True)
+  monkeypatch.setattr(_provenance, "_package_root", lambda: installed)
+  state = _provenance.capture()
+  assert state["provenance_source"] == "not-a-checkout"
+  assert state["sha"] is None
+  explicit = _provenance.capture(installed)
+  assert isinstance(explicit["sha"], str)
+  assert _SHA.fullmatch(explicit["sha"])

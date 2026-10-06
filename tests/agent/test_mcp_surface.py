@@ -167,6 +167,35 @@ def test_list_checkpoints_includes_default() -> None:
   assert "proteinmpnn_v_48_020" in str(payload)
 
 
+def test_list_checkpoints_sha256_failure_is_per_entry(monkeypatch: pytest.MonkeyPatch) -> None:
+  """One unhashable checkpoint is flagged on its entry; the rest still hash."""
+  from types import SimpleNamespace  # noqa: PLC0415
+
+  from aminx.agent import tools  # noqa: PLC0415
+
+  failing = tools.DEFAULT_CHECKPOINT_ID
+
+  def _provenance(checkpoint_id: str) -> SimpleNamespace:
+    if checkpoint_id == failing:
+      msg = "hub unreachable"
+      raise OSError(msg)
+    return SimpleNamespace(sha256="0" * 64, source="packaged", hub_revision=None)
+
+  monkeypatch.setattr(tools.weights_io, "weight_provenance", _provenance)
+
+  async def body() -> dict[str, Any]:
+    async with Client(build_server()) as client:
+      result = await client.call_tool("list_checkpoints", {"with_sha256": True})
+      return _data(result)
+
+  entries = {entry["checkpoint_id"]: entry for entry in asyncio.run(body())["checkpoints"]}
+  assert "hub unreachable" in entries[failing]["sha256_error"]
+  assert "sha256" not in entries[failing]
+  others = [entry for key, entry in entries.items() if key != failing]
+  assert others
+  assert all(entry["sha256"] == "0" * 64 for entry in others)
+
+
 def test_known_checkpoint_ids_match_source_tree() -> None:
   """KNOWN_CHECKPOINT_IDS lists exactly the checkpoints tracked in src/aminx/model_params."""
   from aminx.agent.tools import KNOWN_CHECKPOINT_IDS  # noqa: PLC0415
@@ -219,3 +248,23 @@ def test_sample_options_temperature_does_not_collide() -> None:
   # Fails on `bogus` (unknown key), not on a temperature collision: the collision check runs
   # first, so reaching the unknown-key error proves temperature was accepted.
   asyncio.run(body())
+
+
+def test_sample_rejects_shared_file_stems_before_running(tmp_path: Path) -> None:
+  """The tool refuses colliding structure ids instead of overwriting results."""
+  import shutil  # noqa: PLC0415
+
+  pdb = Path(__file__).resolve().parents[1] / "data" / "1ubq.pdb"
+  paths = []
+  for name in ("run1", "run2"):
+    target = tmp_path / name / "model.pdb"
+    target.parent.mkdir()
+    shutil.copy(pdb, target)
+    paths.append(str(target))
+
+  async def body() -> None:
+    async with Client(build_server()) as client:
+      await client.call_tool("sample", {"inputs": paths})
+
+  with pytest.raises(ToolError, match="structure id"):
+    asyncio.run(body())

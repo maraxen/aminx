@@ -104,3 +104,59 @@ def test_spec_json_roundtrip_and_potts_kind() -> None:
   assert isinstance(decoded, PottsRunSpec)
   assert decoded.k_neighbors == 8
   assert decoded.weights_path == "weights.npz"
+
+
+def test_shared_file_stem_is_rejected(tmp_path: Path) -> None:
+  """Two inputs named model.pdb in different directories cannot share one id."""
+  import shutil  # noqa: PLC0415
+
+  from aminx.agent.requests import check_unique_structure_ids  # noqa: PLC0415
+
+  first = tmp_path / "run1" / "model.pdb"
+  second = tmp_path / "run2" / "model.pdb"
+  for target in (first, second):
+    target.parent.mkdir()
+    shutil.copy(_PDB, target)
+  spec = build_spec("sample", [str(first), str(second)], {})
+  with pytest.raises(ValueError, match="'model'"):
+    check_unique_structure_ids(spec)
+  # Negative control: distinct stems pass.
+  distinct = tmp_path / "run2" / "other.pdb"
+  shutil.copy(_PDB, distinct)
+  check_unique_structure_ids(build_spec("sample", [str(first), str(distinct)], {}))
+
+
+@pytest.mark.parametrize(("chain", "expected"), [(None, 86), ("A", 76), ("B", 10)])
+def test_structure_lengths_match_the_runner_loader(
+  tmp_path: Path,
+  chain: str | None,
+  expected: int,
+) -> None:
+  """``structure_lengths`` counts what the runner's loader keeps, chain filter included.
+
+  ``fitted_max_length`` sizes the padded shape from these counts, so an
+  undercount would truncate residues.
+  """
+  import numpy as np  # noqa: PLC0415
+  from proxide.ops.dataset import create_protein_dataset  # noqa: PLC0415
+
+  ubq = [ln for ln in _PDB.read_text().splitlines() if ln.startswith("ATOM")]
+  awl_path = _PDB.parent / "5awl.pdb"
+  awl = [ln[:21] + "B" + ln[22:] for ln in awl_path.read_text().splitlines() if ln.startswith("ATOM")]
+  two_chain = tmp_path / "two_chain.pdb"
+  two_chain.write_text("\n".join([*ubq, "TER", *awl, "TER", "END"]) + "\n")
+  spec = build_spec("sample", [str(two_chain)], {} if chain is None else {"chain_id": chain})
+  assert structure_lengths(spec) == {"two_chain": expected}
+  dataset = create_protein_dataset(
+    [str(two_chain)],
+    batch_size=1,
+    parse_kwargs={
+      "chain_id": spec.chain_id,
+      "model": spec.model,
+      "altloc": spec.altloc,
+      "topology": spec.topology,
+    },
+    max_length=512,
+  )
+  batch = next(iter(dataset))
+  assert int(np.asarray(batch.mask).sum()) == expected

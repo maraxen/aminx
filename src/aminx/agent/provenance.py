@@ -35,7 +35,9 @@ def capture(root: Path | None = None) -> dict[str, object]:
   root : Path or None, optional
     Directory to inspect. Defaults to the directory of the installed
     ``aminx`` package (``Path(aminx.__file__).parent``), computed on every
-    call.
+    call. When that default lies under ``site-packages`` or
+    ``dist-packages`` it is a built install, not a checkout, and the result
+    is ``provenance_source`` ``"not-a-checkout"`` with no sha.
 
   Returns
   -------
@@ -44,6 +46,16 @@ def capture(root: Path | None = None) -> dict[str, object]:
     (str or None), and ``provenance_source`` (str).
   """
   resolved = _package_root() if root is None else Path(root)
+  if root is None and _INSTALLED_DIRS.intersection(resolved.parts):
+    # A built install (wheel, uvx) is not a checkout. Any repository around it
+    # belongs to the enclosing project, so its commit would be misattributed.
+    logger.debug("provenance skipped for installed package at %s", resolved)
+    return {
+      "sha": None,
+      "dirty": None,
+      "branch": None,
+      "provenance_source": "not-a-checkout",
+    }
   state = _from_cisternal(resolved)
   if state is not None:
     return state
@@ -57,6 +69,9 @@ def capture(root: Path | None = None) -> dict[str, object]:
     "branch": None,
     "provenance_source": "unknown",
   }
+
+
+_INSTALLED_DIRS = frozenset({"site-packages", "dist-packages"})
 
 
 def _package_root() -> Path:

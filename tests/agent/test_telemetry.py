@@ -87,3 +87,23 @@ def test_enabled_telemetry_records_the_spec_span(tmp_path: Path) -> None:
   assert files
   text = "\n".join(path.read_text(encoding="utf-8") for path in files)
   assert "aminx.cli.spec" in text
+
+
+def test_failed_init_still_runs_the_command(
+  monkeypatch: pytest.MonkeyPatch,
+  capsys: pytest.CaptureFixture[str],
+) -> None:
+  """With telemetry on, a cisternal.init() failure warns and the command still runs."""
+  cisternal = pytest.importorskip("cisternal")
+  from aminx.agent.telemetry import run_cli
+
+  def _broken() -> None:
+    msg = "events dir not writable"
+    raise OSError(msg)
+
+  monkeypatch.setenv("CISTERNAL_TELEMETRY", "aminx")
+  monkeypatch.setattr(cisternal, "init", _broken)
+  calls: list[int] = []
+  run_cli(lambda: calls.append(1), argv=["aminx", "spec", "validate"])
+  assert calls == [1]
+  assert "events dir not writable" in capsys.readouterr().err
