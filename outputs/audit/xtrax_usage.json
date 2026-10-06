@@ -1,0 +1,5392 @@
+{
+ "xtrax_version": "0.4.0a11",
+ "n_modules": 174,
+ "n_symbols": 619,
+ "n_used_src": 45,
+ "n_used_tests_or_scripts_only": 16,
+ "n_unused": 558,
+ "n_unresolved_imports": 2,
+ "n_internal_symbols_used": 0,
+ "parse_errors": 0,
+ "positive_control_ok": true,
+ "negative_control_ok": true,
+ "planted_control_detected": true,
+ "controls_ok": true,
+ "by_package": {
+  "xtrax.checkpoint": {
+   "symbols": 3,
+   "used_src": 3,
+   "used_tests_or_scripts_only": 0,
+   "unused": 0
+  },
+  "xtrax.cli": {
+   "symbols": 46,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 46
+  },
+  "xtrax.composition": {
+   "symbols": 29,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 29
+  },
+  "xtrax.config": {
+   "symbols": 6,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 6
+  },
+  "xtrax.data": {
+   "symbols": 2,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 1,
+   "unused": 1
+  },
+  "xtrax.distributed": {
+   "symbols": 5,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 5
+  },
+  "xtrax.eda": {
+   "symbols": 18,
+   "used_src": 2,
+   "used_tests_or_scripts_only": 1,
+   "unused": 15
+  },
+  "xtrax.engine": {
+   "symbols": 6,
+   "used_src": 1,
+   "used_tests_or_scripts_only": 0,
+   "unused": 5
+  },
+  "xtrax.export": {
+   "symbols": 83,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 5,
+   "unused": 78
+  },
+  "xtrax.findings": {
+   "symbols": 11,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 11
+  },
+  "xtrax.inference": {
+   "symbols": 24,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 24
+  },
+  "xtrax.jaxlint_runner": {
+   "symbols": 3,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 3
+  },
+  "xtrax.loop": {
+   "symbols": 132,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 132
+  },
+  "xtrax.profiling": {
+   "symbols": 38,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 7,
+   "unused": 31
+  },
+  "xtrax.run": {
+   "symbols": 40,
+   "used_src": 10,
+   "used_tests_or_scripts_only": 0,
+   "unused": 30
+  },
+  "xtrax.safety": {
+   "symbols": 5,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 5
+  },
+  "xtrax.sparse": {
+   "symbols": 7,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 7
+  },
+  "xtrax.stages": {
+   "symbols": 24,
+   "used_src": 6,
+   "used_tests_or_scripts_only": 0,
+   "unused": 18
+  },
+  "xtrax.telemetry": {
+   "symbols": 62,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 62
+  },
+  "xtrax.tiling": {
+   "symbols": 52,
+   "used_src": 20,
+   "used_tests_or_scripts_only": 2,
+   "unused": 30
+  },
+  "xtrax.tombstone": {
+   "symbols": 6,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 6
+  },
+  "xtrax.training": {
+   "symbols": 14,
+   "used_src": 3,
+   "used_tests_or_scripts_only": 0,
+   "unused": 11
+  },
+  "xtrax.transforms": {
+   "symbols": 3,
+   "used_src": 0,
+   "used_tests_or_scripts_only": 0,
+   "unused": 3
+  }
+ },
+ "symbols": [
+  {
+   "module": "xtrax.checkpoint.orbax",
+   "name": "get_checkpoint_manager",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/ebm/training.py",
+    "src/aminx/training/checkpoint.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.checkpoint.orbax",
+   "name": "load_checkpoint",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/ebm/training.py",
+    "src/aminx/training/checkpoint.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.checkpoint.orbax",
+   "name": "save_checkpoint",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/ebm/training.py",
+    "src/aminx/training/checkpoint.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli",
+   "name": "main",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.config",
+   "name": "CURRENT_SCHEMA_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.config",
+   "name": "ConfigError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.config",
+   "name": "TrainConfig",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.config",
+   "name": "load_config",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.emit",
+   "name": "emit",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.entrypoint",
+   "name": "main",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.errors",
+   "name": "CLIError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.errors",
+   "name": "CLIImportError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.errors",
+   "name": "ResumeError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.errors",
+   "name": "ShapeParseError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.explain",
+   "name": "ExplainArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.explain",
+   "name": "run_explain",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.export",
+   "name": "ExportArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.export",
+   "name": "run_export",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_author_verb",
+   "name": "AUTHOR_ENVELOPE_SCHEMA_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_author_verb",
+   "name": "GraphAuthorArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_author_verb",
+   "name": "run_graph_author",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_plan_verb",
+   "name": "GraphPlanArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_plan_verb",
+   "name": "run_graph_plan",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_verb",
+   "name": "GraphValidateArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_verb",
+   "name": "VALIDATE_ENVELOPE_SCHEMA_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.graph_verb",
+   "name": "run_graph_validate",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.hash",
+   "name": "config_hash",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.ledger_verb",
+   "name": "LedgerArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.ledger_verb",
+   "name": "run_ledger",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.loader",
+   "name": "load_fn",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.manifest",
+   "name": "read_manifest",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.manifest",
+   "name": "write_manifest",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.manifest",
+   "name": "write_manifest_dict",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.plan",
+   "name": "PlanArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.plan",
+   "name": "plan_from_fn",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.plan",
+   "name": "print_plan_summary",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.plan",
+   "name": "run_plan",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.registry",
+   "name": "REGISTRY",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.resolve",
+   "name": "ResolvedComponents",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.resolve",
+   "name": "resolve_components",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.resume_verb",
+   "name": "ResumeArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.resume_verb",
+   "name": "run_resume",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.run",
+   "name": "generate_run_id",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.run",
+   "name": "run_from_config",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.run_verb",
+   "name": "RunArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.run_verb",
+   "name": "run_run",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.shapes",
+   "name": "parse_shapes",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.sweep_verb",
+   "name": "SweepArgs",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.cli.sweep_verb",
+   "name": "run_sweep",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.author",
+   "name": "Generator",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.author",
+   "name": "TemplateGenerator",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.errors",
+   "name": "FrozenNodeError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.errors",
+   "name": "GraphConstructionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.errors",
+   "name": "GraphSerializationError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.errors",
+   "name": "SchemaVersionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.graph",
+   "name": "GraphEdge",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.graph",
+   "name": "HostPrepGraph",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.graph",
+   "name": "HostPrepGraphNode",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.node_metadata",
+   "name": "KNOWN_SLOT_TYPES",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.node_metadata",
+   "name": "NodeMetadataSchema",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.node_metadata",
+   "name": "SEMVER_RE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.node_metadata",
+   "name": "SlotDefinition",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.node_metadata",
+   "name": "load_node_metadata_schema",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.node_metadata",
+   "name": "validate_node_metadata",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "GRAPH_SCHEMA_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "MIN_SUPPORTED_GRAPH_SCHEMA_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "deserialize_graph",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "deserialize_node",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "dump_graph",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "load_graph",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "serialize_graph",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.serialize",
+   "name": "serialize_node",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.validate",
+   "name": "FAIL",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.validate",
+   "name": "GraphValidationResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.validate",
+   "name": "NEEDS_WORK",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.validate",
+   "name": "NodeCheckFailure",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.validate",
+   "name": "PASS",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.composition.validate",
+   "name": "validate_graph",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.config",
+   "name": "SchemaVersionStatus",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.config",
+   "name": "check_schema_version",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.config",
+   "name": "classify_schema_version",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.config",
+   "name": "load_toml_document",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.config",
+   "name": "require_field",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.config",
+   "name": "require_sections",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.data.module",
+   "name": "DataModule",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [
+    "tests/ebm/test_training.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.data.pipeline",
+   "name": "create_distributed_pipeline",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.distributed.init",
+   "name": "init_dist",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.distributed.init",
+   "name": "is_distributed",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.distributed.sharding",
+   "name": "ShardingPolicy",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.distributed.sharding",
+   "name": "get_device_mesh",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.distributed.sharding",
+   "name": "get_hardware_mesh_profile",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda",
+   "name": "plan_to_dataframe",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda",
+   "name": "render",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.explain",
+   "name": "explain_plan",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/tiling/eda.py"
+   ],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/ebm/bucket_boundary_check.py"
+   ]
+  },
+  {
+   "module": "xtrax.eda.export",
+   "name": "plan_to_dataframe",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.stats",
+   "name": "analyze_bucket",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/ebm/bucket_boundary_check.py"
+   ]
+  },
+  {
+   "module": "xtrax.eda.stats",
+   "name": "analyze_dedup",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.stats",
+   "name": "extract_plan_stats",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/tiling/eda.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "AxisDecisionLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "AxisSpecLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "AxisStatsEntry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "BatchPlanLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "BucketLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "BucketStatsEntry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "DedupGatherLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "DedupStatsEntry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "PlanLogger",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.types",
+   "name": "PlanStatsDict",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.eda.viz",
+   "name": "render",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.engine.engine",
+   "name": "DataIterLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.engine.engine",
+   "name": "Engine",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/training.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.engine.engine",
+   "name": "TrainStepLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.engine.io",
+   "name": "BoundedCallbackHandler",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.engine.io",
+   "name": "T",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.engine.io",
+   "name": "async_indexed_stream",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.compile",
+   "name": "CompileError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.compile",
+   "name": "CompileResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.compile",
+   "name": "compile_for_target",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_iree.py"
+   ]
+  },
+  {
+   "module": "xtrax.export.compile",
+   "name": "run_native_vmfb",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_iree.py"
+   ]
+  },
+  {
+   "module": "xtrax.export.composer",
+   "name": "ComposerError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.composer",
+   "name": "MultiAxisCompositionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.composer",
+   "name": "UnsupportedStrategyError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.composer",
+   "name": "build_traceable_callable",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.composer",
+   "name": "compose_single_axis",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.composer",
+   "name": "compose_vmap_of_scan",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "DivergenceClass",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "LeafDivergence",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "MissingBudgetError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "ProbeDependencyError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "ProbeReport",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "ProbeResolution",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "ProbeStructureError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "RingResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "SLACK",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "Severity",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "ULP_FLOOR",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "budget_key",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "budget_leaf",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "classify_probes",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "compare_pytree",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "probe_resolution",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.divergence",
+   "name": "validate_probe_deps",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.hf_weights",
+   "name": "HFWeightsError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.hf_weights",
+   "name": "LoadedWeights",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.hf_weights",
+   "name": "WeightReport",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.hf_weights",
+   "name": "load_hf_weights",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "LeafParityResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "ONNX_OPSET",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "ONNX_RNG_OP_TYPES",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "OnnxDtypeCensus",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "convert_to_onnx",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "find_onnx_rng_ops",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "onnx_dtype_census",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "run_onnx",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.onnx",
+   "name": "verify_onnx_parity",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.parity",
+   "name": "ParityResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.parity",
+   "name": "compare",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.parity",
+   "name": "verify_native_parity",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.pipeline",
+   "name": "ExportResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.pipeline",
+   "name": "export_pipeline",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "BUCKET_LADDER",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "InputClassResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "magnitude_extremes",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "nominal",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "r0_replay_gate",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "r1_target_isa",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "r2a_fusion",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "r2b_lowering",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "r3_probe",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "recover_probe_names",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "run_ladder",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "sub_k_neighbours",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.rings",
+   "name": "symmetric_geometry",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "DtypeNotSupportedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "ExportBlocker",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "ExportSafetyError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "UnsupportedOperationError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "check_export_safety",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [
+    "tests/export/test_export_wrappers.py"
+   ],
+   "scripts_files": [
+    "scripts/browser_validation/export_safety_census.py",
+    "scripts/browser_validation/layer_b_iree.py"
+   ]
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "dtype_name",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "find_bcoo_leaves",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.safety",
+   "name": "validate_export_safe",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.spirv",
+   "name": "SPIRV_MAGIC_BE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.spirv",
+   "name": "SPIRV_MAGIC_LE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.spirv",
+   "name": "SpirvValidationResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.spirv",
+   "name": "is_spirv",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.spirv",
+   "name": "spirv_binaries_in",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "ALL_TARGETS",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "Backend",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "IREE_TARGETS",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "METAL_SPIRV",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "NATIVE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [
+    "tests/export/test_export_wrappers.py"
+   ],
+   "scripts_files": [
+    "scripts/browser_validation/export_safety_census.py",
+    "scripts/browser_validation/layer_b_iree.py"
+   ]
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "NATIVE_PORTABLE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "ONNX",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "Target",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "VULKAN_SPIRV",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "VerificationLevel",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "WASM32",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [
+    "tests/export/test_export_wrappers.py"
+   ],
+   "scripts_files": [
+    "scripts/browser_validation/export_safety_census.py",
+    "scripts/browser_validation/layer_b_iree.py"
+   ]
+  },
+  {
+   "module": "xtrax.export.targets",
+   "name": "target_by_name",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "AuditFinding",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "SCHEMA_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "SchemaVersionMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "append_finding",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "assert_schema_version_compatible",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "compute_finding_id",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "emit_judgment_finding",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "emit_metric_finding",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "finding_from_dict",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "finding_to_dict",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.findings",
+   "name": "round_trip_finding",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.abstract",
+   "name": "build_abstract_inputs",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.api",
+   "name": "infer_bundle",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.axes",
+   "name": "resolve_axis_role",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.axes",
+   "name": "synthesize_axes",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.config",
+   "name": "AxisOverride",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.config",
+   "name": "axis_config",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.config",
+   "name": "get_axis_config",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.cse",
+   "name": "CseDuplicateClass",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.cse",
+   "name": "CseReport",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.cse",
+   "name": "analyze_cse",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "CseTraceError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "MemoDonationError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "MemoImpurityError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "MemoKeyUnsupportedLeafError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "MemoMultiDeviceError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "MemoStalenessError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "StructureMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.errors",
+   "name": "XtraxInferenceError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.ir_schema",
+   "name": "emit_ir_schema",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.memo",
+   "name": "MemoPolicy",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.memo",
+   "name": "memoize_jaxpr",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.schema",
+   "name": "BundleSchema",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.schema",
+   "name": "extract_schema",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.inference.verify",
+   "name": "verify_structure",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.jaxlint_runner",
+   "name": "file_line",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.jaxlint_runner",
+   "name": "map_severity",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.jaxlint_runner",
+   "name": "run_jaxlint_json",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.admission",
+   "name": "admit_candidate",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.attestation_evidence_gate",
+   "name": "EvidenceAdmissionInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.attestation_evidence_gate",
+   "name": "EvidenceAdmissionResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.attestation_evidence_gate",
+   "name": "EvidenceCandidate",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.attestation_evidence_gate",
+   "name": "ExcludedRun",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.attestation_evidence_gate",
+   "name": "admit_evidence",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.campaign_approval_gate",
+   "name": "ApprovalExpiredError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.campaign_approval_gate",
+   "name": "CampaignNotApprovedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.campaign_approval_gate",
+   "name": "DEFAULT_GATES_TOML",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.campaign_approval_gate",
+   "name": "GateEntry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.campaign_approval_gate",
+   "name": "NoMatchingApprovalError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.campaign_approval_gate",
+   "name": "assert_campaign_approved",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_smoke",
+   "name": "CandidateSmokeError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_smoke",
+   "name": "CandidateSmokeFailedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_smoke",
+   "name": "CandidateSmokeTimeoutError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_smoke",
+   "name": "assert_candidate_smoke",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_static",
+   "name": "CandidateStaticFailure",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_static",
+   "name": "CandidateStaticGateError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_static",
+   "name": "CandidateStaticResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_static",
+   "name": "assert_candidate_static",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.candidate_static",
+   "name": "check_candidate_static",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.capability_probe_gate",
+   "name": "CapabilityNotLiveError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.capability_probe_gate",
+   "name": "CapabilityProbeInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.capability_probe_gate",
+   "name": "CapabilityProbeResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.capability_probe_gate",
+   "name": "assert_capability_live",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.checkified_execution",
+   "name": "CheckifiedExecutionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.checkified_execution",
+   "name": "assert_checkified_execution",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "ClosureHashMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "ClosureManifest",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "EvaluatorClosureDriftError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "ProtectedPathMutatedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "UnlistedReadError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "build_closure_manifest",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "guarded_evaluate",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "track_reads",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.closure_lock",
+   "name": "verify_closure",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.compile_time_clock",
+   "name": "CompileTimeClockError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.compile_time_clock",
+   "name": "CompileTimeRegressionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.compile_time_clock",
+   "name": "TwoPhaseTiming",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.compile_time_clock",
+   "name": "assert_no_compile_time_regression",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.compile_time_clock",
+   "name": "measure_two_phase_timing",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.compile_time_clock",
+   "name": "rolling_median",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.diversity_quota",
+   "name": "DiversityQuotaDecision",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.diversity_quota",
+   "name": "DiversityQuotaInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.diversity_quota",
+   "name": "assert_diversity_quota",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.diversity_quota",
+   "name": "is_structural_mutation",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_change_gate",
+   "name": "ApprovalExpiredError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_change_gate",
+   "name": "DEFAULT_GATES_TOML",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_change_gate",
+   "name": "EvaluatorChangeNotApprovedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_change_gate",
+   "name": "NoMatchingApprovalError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_change_gate",
+   "name": "assert_evaluator_change_approved",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "EvaluatorCompletenessError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "Invariant",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "InvariantManifest",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "InvariantManifestStaleError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "InvariantViolationError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "SyntheticGroundTruthCase",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "SyntheticSanityCheckFailedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "assert_evaluator_completeness",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.evaluator_completeness",
+   "name": "run_synthetic_sanity_check",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.external_stop_watchdog",
+   "name": "WatchdogAlreadyStoppedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.external_stop_watchdog",
+   "name": "WatchdogCriteria",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.external_stop_watchdog",
+   "name": "WatchdogError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.external_stop_watchdog",
+   "name": "WatchdogHandle",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.external_stop_watchdog",
+   "name": "start_watchdog",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "DEFAULT_DELTA_POLICY",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "DeltaExposurePolicy",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "FitnessDeltaExposureError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "InfoBarrierViolationError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "NonWhitelistedFieldError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "PER_SPLIT_FIELD_NAMES",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "PER_SPLIT_PREFIXES",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "PerSplitGranularityError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "RAW_LOG_FIELD_NAMES",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "RawLogPathExposedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "SANCTIONED_FIELDS",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "SanctionedEnvelope",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "build_sanctioned_envelope",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.info_barrier_lint",
+   "name": "lint_agent_envelope",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.metrics_provenance",
+   "name": "MetricsProvenanceRecord",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.metrics_provenance",
+   "name": "UnprovenancedMetricsError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.metrics_provenance",
+   "name": "build_metrics_provenance_attestation_toml",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.metrics_provenance",
+   "name": "evaluate_with_provenance",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.metrics_provenance",
+   "name": "verify_metrics_provenance",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.metrics_provenance",
+   "name": "write_metrics_provenance_attestation",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.multi_metric_ratchet",
+   "name": "RatchetDecision",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.multi_metric_ratchet",
+   "name": "RatchetInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.multi_metric_ratchet",
+   "name": "compute_ratchet_decision",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.prereg_match",
+   "name": "GateErrorPayload",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.prereg_match",
+   "name": "PreregMatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.prereg_match",
+   "name": "PreregSidecar",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.prereg_match",
+   "name": "RunConfig",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.prereg_match",
+   "name": "assert_prereg_match",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.promotion_gate",
+   "name": "ApprovalExpiredError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.promotion_gate",
+   "name": "DEFAULT_GATES_TOML",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.promotion_gate",
+   "name": "GateEntry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.promotion_gate",
+   "name": "NoMatchingApprovalError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.promotion_gate",
+   "name": "PromotionNotApprovedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.promotion_gate",
+   "name": "assert_promotion_approved",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.ratchet_crash_atomicity",
+   "name": "CommitCreationError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.ratchet_crash_atomicity",
+   "name": "RatchetCrashAtomicityError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.ratchet_crash_atomicity",
+   "name": "RefUpdateConflictError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.ratchet_crash_atomicity",
+   "name": "advance_best_so_far",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.ratchet_crash_atomicity",
+   "name": "create_pending_commit",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.ratchet_crash_atomicity",
+   "name": "read_best_so_far",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.ratchet_crash_atomicity",
+   "name": "reset_worktree_to_best_so_far",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.schema_gate",
+   "name": "CandidateResolutionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.schema_gate",
+   "name": "SchemaGateError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.schema_gate",
+   "name": "SchemaMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.schema_gate",
+   "name": "assert_schema_gate",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.schema_gate",
+   "name": "resolve_candidate_callable",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.scope_expansion_gate",
+   "name": "ApprovalExpiredError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.scope_expansion_gate",
+   "name": "DEFAULT_GATES_TOML",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.scope_expansion_gate",
+   "name": "NoMatchingApprovalError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.scope_expansion_gate",
+   "name": "ScopeExpansionNotApprovedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.scope_expansion_gate",
+   "name": "assert_scope_expansion_approved",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.seed_gate",
+   "name": "MIN_SEEDS",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.seed_gate",
+   "name": "MIN_TRIALS",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.seed_gate",
+   "name": "SeedGateInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.seed_gate",
+   "name": "SeedTrialCounts",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.seed_gate",
+   "name": "SeedTrialFloorDecision",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.seed_gate",
+   "name": "assess_seed_trial_floor",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.sidecar_drift_gate",
+   "name": "SidecarDriftDecision",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.sidecar_drift_gate",
+   "name": "SidecarDriftGateInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.sidecar_drift_gate",
+   "name": "SidecarDriftSignal",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.sidecar_drift_gate",
+   "name": "SidecarHashMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.sidecar_drift_gate",
+   "name": "assert_sidecar_drift_reaction",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.stats_battery_gate",
+   "name": "BathosStatsBatteryVerdict",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.stats_battery_gate",
+   "name": "ConcludeStatsDecision",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.stats_battery_gate",
+   "name": "StatsBatteryGateInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.stats_battery_gate",
+   "name": "assess_stats_battery_verdict",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.loop.structure_tripwire",
+   "name": "assert_structure_tripwire",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "BenchRecordPlan",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "DECLARATION_N_ATOMS_KEY",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "DECLARATION_STAGE_KEY",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "bench_metrics_from_stats",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "build_bench_record_plan",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "check_probe_id_collision",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "parse_bench_extra_info",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "record_from_plan",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.bench",
+   "name": "sanitize_bench_fullname",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "CONTRACT_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "ClaimClass",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_profile.py",
+    "scripts/browser_validation/layer_c_bench.py"
+   ]
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "ClaimValidityError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [
+    "tests/parity/test_bench_stats.py"
+   ],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_profile.py",
+    "scripts/browser_validation/layer_c_bench.py"
+   ]
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "REQUIRED_METRICS",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "SCALE_EXTRAPOLATION_LIMIT",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "assert_claim_supported",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_profile.py",
+    "scripts/browser_validation/layer_c_bench.py"
+   ]
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "paired_configs",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_c_bench.py"
+   ]
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "permitted_claims",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.claims",
+   "name": "select_sources",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.emitters",
+   "name": "ATTRIBUTION_NAMED_SCOPE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.emitters",
+   "name": "ATTRIBUTION_OP_NAME",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.emitters",
+   "name": "attribution_from_scopes",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.emitters",
+   "name": "emit_probe_record",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.emitters",
+   "name": "probe_record_field_names",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.loop_scaling",
+   "name": "DEFAULT_RATIO_THRESHOLD",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.loop_scaling",
+   "name": "ExtentScalingReport",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.loop_scaling",
+   "name": "LoopBody",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.loop_scaling",
+   "name": "LoopStructureMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.loop_scaling",
+   "name": "ScalingFinding",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.loop_scaling",
+   "name": "extent_scaling_report",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.loop_scaling",
+   "name": "loop_bodies",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.record",
+   "name": "ProbeRecord",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_profile.py",
+    "scripts/browser_validation/layer_c_bench.py"
+   ]
+  },
+  {
+   "module": "xtrax.profiling.report",
+   "name": "discover_records",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.report",
+   "name": "main",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.report",
+   "name": "render_report",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.trace",
+   "name": "parse_dispatch_counts",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_profile.py"
+   ]
+  },
+  {
+   "module": "xtrax.profiling.trace",
+   "name": "parse_hlo_op_times",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/browser_validation/layer_b_profile.py"
+   ]
+  },
+  {
+   "module": "xtrax.profiling.trace",
+   "name": "parse_scopes",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.profiling.trace",
+   "name": "scope_map_from_hlo_text",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.baseline_budget_emission",
+   "name": "BaselineBudgetCounts",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.baseline_budget_emission",
+   "name": "BaselineBudgetCountsInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.baseline_budget_emission",
+   "name": "baseline_budget_counts",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.component_binding",
+   "name": "ComponentSidecarBinding",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.component_binding",
+   "name": "ComponentSidecarFileMissingError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.component_binding",
+   "name": "ComponentSidecarRefMissingError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.component_binding",
+   "name": "component_sidecar_binding",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.freshness",
+   "name": "Attestation",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.freshness",
+   "name": "FreshnessVerdict",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.freshness",
+   "name": "ProbeResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.freshness",
+   "name": "SKIP_PROBE_ENV_VAR",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.freshness",
+   "name": "SKIP_TTL_ENV_VAR",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.freshness",
+   "name": "days_since",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.freshness",
+   "name": "evaluate_freshness",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.ident",
+   "name": "new_run_id",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/io/designs.py"
+   ],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/analysis/jacobian_profile.py"
+   ]
+  },
+  {
+   "module": "xtrax.run.repro_floor",
+   "name": "ReproFloorResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.repro_floor",
+   "name": "build_repro_floor_attestation_toml",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.repro_floor",
+   "name": "repro_floor_freshness_attestation",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.repro_floor",
+   "name": "run_repro_floor",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.repro_floor",
+   "name": "toml_escape_basic_string",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.repro_floor",
+   "name": "toml_quote",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.repro_floor",
+   "name": "write_repro_floor_attestation",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.resolver",
+   "name": "InputResolver",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.resolver",
+   "name": "RuntimeBundle",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.seed_emission",
+   "name": "SeedAssignment",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.seed_emission",
+   "name": "SeedEmissionInputError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.seed_emission",
+   "name": "seed_assignment",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.sink",
+   "name": "SinkSpec",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/io/designs.py"
+   ],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/analysis/jacobian_profile.py"
+   ]
+  },
+  {
+   "module": "xtrax.run.sink",
+   "name": "derive_sink_spec",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/runner.py",
+    "src/aminx/host/streaming.py",
+    "src/aminx/sampling/multistate_poe.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.sink",
+   "name": "make_sink",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.spec",
+   "name": "RunSpec",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/run/spec.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "canonical_json_bytes",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/campaign.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "fsync_directory",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/campaign.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "fsync_file",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/campaign.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "fsync_tree",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/campaign.py",
+    "src/aminx/host/runner.py"
+   ],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/analysis/jacobian_profile.py"
+   ]
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "normalize_json_value",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "update_array_digest",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "update_zarr_node_digest",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.run.zarr_integrity",
+   "name": "zarr_content_digest",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/campaign.py",
+    "src/aminx/host/runner.py"
+   ],
+   "tests_files": [
+    "tests/host/test_campaign_done_marker.py",
+    "tests/host/test_campaign_stamp_v3.py"
+   ],
+   "scripts_files": [
+    "scripts/analysis/jacobian_profile.py",
+    "scripts/analysis/verify_done_markers.py"
+   ]
+  },
+  {
+   "module": "xtrax.run.zarr_sink",
+   "name": "ZarrStagingSink",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/host/runner.py",
+    "src/aminx/host/streaming.py",
+    "src/aminx/io/designs.py",
+    "src/aminx/sampling/multistate_poe.py"
+   ],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/analysis/jacobian_profile.py"
+   ]
+  },
+  {
+   "module": "xtrax.safety.manager",
+   "name": "SafetyManager",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.safety.manager",
+   "name": "with_safety",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.safety.ops",
+   "name": "safe_norm",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.safety.ops",
+   "name": "safe_reciprocal",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.safety.preemption",
+   "name": "PreemptionHandler",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.sparse.config",
+   "name": "SparseConfig",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.sparse.inference",
+   "name": "assert_not_tracing",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.sparse.inference",
+   "name": "make_sparse_forward_fn",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.sparse.inference",
+   "name": "sparse_filter_jit",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.sparse.inference",
+   "name": "sparsify_model",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.sparse.manager",
+   "name": "SparseMaskManager",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.sparse.policy",
+   "name": "SparsePolicy",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.boundaries",
+   "name": "AxisBoundary",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/types/boundaries.py"
+   ],
+   "tests_files": [
+    "tests/types/test_boundaries_shim.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.boundaries",
+   "name": "Fuse",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/types/boundaries.py"
+   ],
+   "tests_files": [
+    "tests/types/test_boundaries_shim.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.boundaries",
+   "name": "Sink",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/types/boundaries.py"
+   ],
+   "tests_files": [
+    "tests/types/test_boundaries_shim.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.boundaries",
+   "name": "Tap",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/types/boundaries.py"
+   ],
+   "tests_files": [
+    "tests/types/test_boundaries_shim.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.bundle",
+   "name": "StageBundle",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.evaluate",
+   "name": "EvaluateFn",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.evaluate",
+   "name": "EvaluatorAlreadySealedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.evaluate",
+   "name": "SealedEvaluatorRegistry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.evaluate",
+   "name": "get_sealed_evaluator",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.evaluate",
+   "name": "seal_evaluator",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.executor",
+   "name": "ExecutorError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.executor",
+   "name": "execute_map_axis",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.executor",
+   "name": "execute_scan_axis",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.protocols",
+   "name": "RollingFn",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.protocols",
+   "name": "TransformFn",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "AxisBoundaryLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "AxisDecisionLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "AxisSpecLike",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "MaterializeFuseConflictError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "MaterializeWithoutSinkError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "MultipleMaterializeAxesError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "PlanTopologyError",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/host/plan.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "axis_boundaries_by_name",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.stages.topology",
+   "name": "validate_plan_topology",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/plan.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.callback",
+   "name": "TelemetryCallback",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.claims",
+   "name": "UnrecordedRunError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.claims",
+   "name": "assert_run_citable",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.claims",
+   "name": "filter_citable",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.claims",
+   "name": "run_is_citable",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.compact",
+   "name": "ARCHIVE_DIRNAME",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.compact",
+   "name": "COMPACTION_THRESHOLD",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.compact",
+   "name": "CompactResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.compact",
+   "name": "compact_ledger",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.compact",
+   "name": "should_compact",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.compact",
+   "name": "verify_ledger",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "CAPTURE_FULL",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "CAPTURE_FULL_OPTIMIZED",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "CAPTURE_HASH",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "CAPTURE_NONE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "DEFAULT_MAX_IR_BYTES",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "IRCaptureMode",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "IR_KIND_JAXPR",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "IR_KIND_OPTIMIZED_HLO",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "IR_KIND_STABLEHLO",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "capture_ir",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "degraded_reason",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ir",
+   "name": "resolve_capture_mode",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "BLOBS_DIRNAME",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "DEFAULT_LEDGER_ROOT",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "LedgerUnavailableError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "MAX_SEGMENT_BYTES",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "RunLedger",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "SEALED_DIRNAME",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "SEGMENTS_DIRNAME",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "blobs_dir",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "find_run",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "iter_rows",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.ledger",
+   "name": "resolve_root",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.migrate",
+   "name": "MIN_SUPPORTED_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.migrate",
+   "name": "migration_chain_is_complete",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.migrate",
+   "name": "read_row_upgrading",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.migrate",
+   "name": "upgrade_row",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "IRRef",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "IR_FULL",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "IR_HASH_ONLY",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "IR_SKIPPED",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "KIND_EVAL",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "KIND_EXPORT",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "KIND_TRAIN",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "LedgerRecordError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "PROVENANCE_BUILTIN",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "PROVENANCE_CISTERNAL",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "PROVENANCE_DEGRADED",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "RunLedgerRecord",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "RunProvenance",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "SCHEMA_VERSION",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "STATUS_COMPLETE",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "STATUS_DEGRADED",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "STATUS_FAILED",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "STATUS_OPTED_OUT",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "SchemaVersionMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.record",
+   "name": "telemetry_opted_out",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.store",
+   "name": "BlobStore",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.store",
+   "name": "BlobStoreError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.store",
+   "name": "POPULATION_WARN_THRESHOLD",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.telemetry.store",
+   "name": "digest_of",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling._plan_wrapper",
+   "name": "_BatchPlanWrapper",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.bucket",
+   "name": "bucketize",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.bucket",
+   "name": "select_bucket",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/export/buckets.py"
+   ],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/ebm/benchmarks/heterogeneous_batch_benchmark.py",
+    "scripts/ebm/bucket_boundary_check.py"
+   ]
+  },
+  {
+   "module": "xtrax.tiling.budget",
+   "name": "BudgetInfeasibleError",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/host/plan.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.budget",
+   "name": "MemoryBudget",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/host/plan.py",
+    "src/aminx/tiling/planner.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.carry",
+   "name": "CarrySpec",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/langevin_schedule.py",
+    "src/aminx/host/plan.py",
+    "src/aminx/run/specs.py"
+   ],
+   "tests_files": [
+    "tests/host/test_knob_differential.py",
+    "tests/host/test_sampling_planner_carry_dedup.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.carry_shape",
+   "name": "CarryShape",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/inference/decode/autoregressive.py",
+    "src/aminx/inference/decode/factory.py"
+   ],
+   "tests_files": [
+    "tests/inference/decode/test_autoregressive.py",
+    "tests/inference/decode/test_autoregressive_inference_only.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup",
+   "name": "DedupSpec",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/run/specs.py"
+   ],
+   "tests_files": [
+    "tests/host/test_sampling_planner_carry_dedup.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup",
+   "name": "get_k_bucket",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [
+    "tests/tiling/test_dedup_gather.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup",
+   "name": "validate_dedup_carry_names",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupOutputEquivalenceResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupOutputMismatchError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupSpecCollisionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupSpecVerificationError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupSynthesisCollisionError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupSynthesisResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupSynthesisUnsupportedError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "DedupVerificationResult",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "merge_dedup_specs",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "synthesize_dedup_spec",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "verify_dedup_outputs",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dedup_synthesis",
+   "name": "verify_dedup_spec",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dispatch",
+   "name": "DispatchRejected",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/tiling/dispatch.py"
+   ],
+   "tests_files": [
+    "tests/tiling/test_t2_4_xtrax_dispatch_compat.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dispatch",
+   "name": "axis_dispatch",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.dispatch",
+   "name": "make_axis_dispatch",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/tiling/dispatch.py"
+   ],
+   "tests_files": [
+    "tests/tiling/test_t2_4_xtrax_dispatch_compat.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.estimators",
+   "name": "device_memory_budget",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.estimators",
+   "name": "lowered_memory_estimate",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/host/runner.py",
+    "src/aminx/sampling/multistate_poe.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.iterator",
+   "name": "BucketIterator",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.iterator",
+   "name": "ChunkedMapIterator",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.iterator",
+   "name": "JaxScanIterator",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/inference/decode/factory.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.iterator",
+   "name": "MapIterator",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/inference/decode/autoregressive.py",
+    "src/aminx/inference/decode/conditional.py",
+    "src/aminx/inference/decode/unconditional.py",
+    "src/aminx/inference/decode/unfused.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.iterator",
+   "name": "ScanIterator",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/inference/decode/autoregressive.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.iterator",
+   "name": "VmapIterator",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/inference/score_conditional.py",
+    "src/aminx/sampling/mbr_consensus.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.iterator",
+   "name": "WhileLoopIterator",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.plan",
+   "name": "AxisDecision",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/plan.py",
+    "src/aminx/host/plan.py",
+    "src/aminx/tiling/planner.py"
+   ],
+   "tests_files": [
+    "tests/host/test_plan_topology_validator.py",
+    "tests/host/test_unified_driver_regression.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.plan",
+   "name": "AxisSpec",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/plan.py",
+    "src/aminx/host/plan.py",
+    "src/aminx/tiling/axes.py",
+    "src/aminx/tiling/planner.py"
+   ],
+   "tests_files": [
+    "tests/host/test_bucketed_plan.py"
+   ],
+   "scripts_files": [
+    "scripts/benchmarks/bench_xtrax_vs_aminx_dispatch_gpu.py",
+    "scripts/benchmarks/bench_xtrax_vs_aminx_tiling.py",
+    "scripts/ebm/benchmarks/heterogeneous_batch_benchmark.py",
+    "scripts/ebm/benchmarks/langevin_benchmark.py",
+    "scripts/ebm/bucket_boundary_check.py"
+   ]
+  },
+  {
+   "module": "xtrax.tiling.plan",
+   "name": "BatchPlan",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/host/plan.py",
+    "src/aminx/tiling/bucketing.py"
+   ],
+   "tests_files": [
+    "tests/host/test_plan_topology_validator.py",
+    "tests/host/test_unified_driver_regression.py",
+    "tests/tiling/test_bucketing.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.plan",
+   "name": "BatchPlanner",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/plan.py",
+    "src/aminx/host/plan.py",
+    "src/aminx/sampling/multistate_poe.py",
+    "src/aminx/tiling/planner.py"
+   ],
+   "tests_files": [],
+   "scripts_files": [
+    "scripts/benchmarks/bench_xtrax_vs_aminx_tiling.py",
+    "scripts/ebm/benchmarks/heterogeneous_batch_benchmark.py",
+    "scripts/ebm/benchmarks/langevin_benchmark.py",
+    "scripts/ebm/bucket_boundary_check.py"
+   ]
+  },
+  {
+   "module": "xtrax.tiling.roles",
+   "name": "AmbiguousAxisError",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.roles",
+   "name": "AxisRole",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "Bucket",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [
+    "tests/ebm/test_plan.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "ChunkedMap",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/plan.py",
+    "src/aminx/host/plan.py",
+    "src/aminx/sampling/multistate_poe.py",
+    "src/aminx/tiling/dispatch.py",
+    "src/aminx/tiling/planner.py"
+   ],
+   "tests_files": [
+    "tests/ebm/test_plan.py",
+    "tests/host/test_comp_unified_encoder_fusion.py",
+    "tests/host/test_kernel_dispatch_chunked_map.py",
+    "tests/host/test_sampling_tensor_batch_io.py",
+    "tests/tiling/test_t2_4_xtrax_dispatch_compat.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "DedupFn",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "DedupGather",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "GatherFn",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "Scan",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/plan.py",
+    "src/aminx/tiling/dispatch.py"
+   ],
+   "tests_files": [
+    "tests/tiling/test_t2_4_xtrax_dispatch_compat.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "ScanTransition",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "Vmap",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/plan.py",
+    "src/aminx/sampling/multistate_poe.py",
+    "src/aminx/tiling/dispatch.py",
+    "src/aminx/tiling/planner.py"
+   ],
+   "tests_files": [
+    "tests/ebm/test_plan.py",
+    "tests/host/test_kernel_dispatch_unit_axis.py",
+    "tests/tiling/test_t2_4_xtrax_dispatch_compat.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "WhileBodyFn",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "WhileCarry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "WhileCondFn",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tiling.strategy",
+   "name": "fixed_step_count_cond",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tombstone",
+   "name": "DEFAULT_TOMBSTONE_PATH",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tombstone",
+   "name": "TombstoneEntry",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tombstone",
+   "name": "append_tombstone",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tombstone",
+   "name": "filter_tombstoned",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tombstone",
+   "name": "is_tombstoned",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.tombstone",
+   "name": "load_tombstones",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.grad",
+   "name": "accumulate_grads",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.loss",
+   "name": "MultiTaskLoss",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.loss",
+   "name": "WeightedLoss",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.optim",
+   "name": "adamw_with_schedule",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/ebm/training.py",
+    "src/aminx/training/trainer.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.optim",
+   "name": "make_optimizer",
+   "kind": "function",
+   "src_files": [
+    "src/aminx/training/trainer.py"
+   ],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.optim",
+   "name": "no_bias_wd_mask",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.optim",
+   "name": "partition_labels",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.state",
+   "name": "init_state",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.step",
+   "name": "SafetyTrainStep",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.step",
+   "name": "create_train_step",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.trainer",
+   "name": "Trainer",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.types",
+   "name": "Callback",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.types",
+   "name": "LossFunction",
+   "kind": "class",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.training.types",
+   "name": "ResumableState",
+   "kind": "class",
+   "src_files": [
+    "src/aminx/ebm/training.py",
+    "src/aminx/training/trainer.py"
+   ],
+   "tests_files": [
+    "tests/training/test_checkpoint.py",
+    "tests/training/test_resumable_state.py"
+   ],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.transforms.map",
+   "name": "T",
+   "kind": "constant",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.transforms.map",
+   "name": "chunked_map",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  },
+  {
+   "module": "xtrax.transforms.scan",
+   "name": "safe_scan",
+   "kind": "function",
+   "src_files": [],
+   "tests_files": [],
+   "scripts_files": []
+  }
+ ],
+ "modules_imported": {
+  "xtrax": {
+   "src": [],
+   "tests": [],
+   "scripts": [
+    "scripts/benchmarks/poe_fused_scaling.py",
+    "scripts/browser_validation/export_safety_census.py",
+    "scripts/cluster/smoke_sm120.py"
+   ]
+  },
+  "xtrax.export.safety": {
+   "src": [],
+   "tests": [],
+   "scripts": [
+    "scripts/browser_validation/export_safety_census.py"
+   ]
+  }
+ },
+ "internal_symbols_used": [],
+ "unresolved_imports": [
+  {
+   "file": "src/aminx/host/plan.py",
+   "area": "src",
+   "import": "xtrax.tiling.DedupSpec",
+   "how": "from-import"
+  },
+  {
+   "file": "scripts/ebm/benchmarks/langevin_benchmark.py",
+   "area": "scripts",
+   "import": "xtrax.tiling.SafeMap",
+   "how": "from-import"
+  }
+ ],
+ "parse_error_detail": []
+}

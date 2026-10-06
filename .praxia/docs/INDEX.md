@@ -59,6 +59,7 @@
 ## Actuation Surfaces
 
 ## Audits
+- [261006_xtrax-usage-audit](audits/261006_xtrax-usage-audit.md) — Static inventory of all 619 public xtrax symbols against aminx (bathos da99c566, pass) plus per-capability verdicts. Includes duplicates to replace, gaps worth adopting, things that don't apply, and the native hook for runner length bucketing.
 - [260928_t5a-calibrate-attempt-history](audits/260928_t5a-calibrate-attempt-history.md) — All four tracked runs of layer_c_calibrate (one pass, three prior), and the one post-registration sidecar edit
 - [260928_t8-layer-c-bench-verdict](audits/260928_t8-layer-c-bench-verdict.md) — T8 tracked run edf8926e graded ctrl_blind; planted 5 ms control reads ~16 ms systematically; timing sentences not citable; v2 needs a dose-response instrument check
 - [260926_mpnn-reference-parity-verdict](audits/260926_mpnn-reference-parity-verdict.md) — Browser-validation Phase 1 literature-parity verdict: global FAIL (sampling prerequisite missing + 8 confirmed core defects); 3/17 paths advance
