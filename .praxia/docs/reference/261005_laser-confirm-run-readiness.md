@@ -32,6 +32,30 @@ preemption-safety rule point for point:
 (`096d0847`, `--resume`, 16 units) is using this same helper right now and has been stamping
 units one at a time for ten hours. The machinery is exercised, not just reviewed.
 
+## The outcome space is total and disjoint — audited, no finding
+
+A 60 h run that lands on an *unmatched* outcome records an empty `outcome` at exit 0 and looks
+indistinguishable from a successful one, so the sidecar's `[outcomes]` were checked against the
+verdicts the driver can actually emit. `_worst` (`laser_sample_dist_confirm.py:765-774`) closes
+over exactly `_VERDICT_RANK = {pass, inconclusive, fail}` and **raises `SystemExit` on an
+unknown verdict** (`:766-768`) rather than letting it through. So the reachable states map
+completely:
+
+| state | declared outcome |
+| :-- | :-- |
+| `smoke = true` | `smoke` (residual) |
+| `¬smoke ∧ ¬controls_all_fail` | `instrument_invalid` (residual) |
+| `¬smoke ∧ controls_all_fail ∧ verdict = pass` | `pass` |
+| `¬smoke ∧ controls_all_fail ∧ verdict = fail` | `fail` |
+| `¬smoke ∧ controls_all_fail ∧ verdict = inconclusive` | `inconclusive` (residual) |
+
+Two properties worth having explicitly. **A smoke cannot be mistaken for the confirmatory
+test** — every other outcome requires `smoke = false`, and `[outcomes.smoke]` catches it as a
+residual with the reasoning *"A smoke run is not the confirmatory test."* And **the negative
+controls gate the verdict**: `pass` and `fail` both require `controls_all_fail = true`, so a run
+whose controls did not fail cannot report either, it reports `instrument_invalid`. That is the
+spec rule enforced in the grading contract rather than only in prose.
+
 ## The trap: `script_sha256` is in the cache key
 
 This is correct behaviour — a changed script invalidates its own results, which is what you
@@ -52,6 +76,21 @@ So the pre-launch checklist is short and worth actually following:
 4. Expect the record to read `status=running, outcome=''` from the moment it starts — the
    cool-tier parquet exists from launch, so its presence is not evidence of completion, and
    the bth wrapper's teardown is not instant. Verify only after the wrapper process exits.
+
+## The smoke is safe to run, but needs an environment that does not exist yet
+
+`--smoke` exists (`:157`) and is narrow — *"smoke runs min_p0@1.0 on 103m_1 only"* (`:204-206`)
+— and per the table above it grades as the residual `smoke`, so it cannot pollute the
+confirmatory record. It is the right way to check plumbing before committing 60 h.
+
+It was **not** run here, because nothing on titanix currently satisfies all three
+requirements at once: xtrax **0.4.0a11** (this branch's floor, after the main merge), the
+LASEr upstream at `/home/solab/repos/LASErMPNN`, and a **clean git tree** so the `bth` run is
+not recorded `git_dirty`. `aminx-confirm-git` fails the first (pre-0.4.0a11 — it dies at
+import with `cannot import name 'ChunkedMap'`), `aminx-ci` has the right xtrax but no pyarrow,
+and `aminx-b7i-git` has both but is someone else's checkout at another commit. Provisioning a
+venv for this is a few minutes of work, but it is work in service of a run that has not been
+approved, so it is left for whoever makes that call.
 
 ## What this note does NOT say
 
