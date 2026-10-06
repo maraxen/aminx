@@ -847,6 +847,62 @@ real result and the control is noise. Had the control been the one at 0.80 and t
 I would have had to say the same thing, which is the test of whether the band was a real
 commitment.
 
+### RESULT: the GPU gives 8.33x, graded `gpu_helps` — and the chunk-width run grades `instrument_unverified`
+
+Both runs are complete and both are verified by record.
+
+**GPU probe — bathos `db1d27c8`, `status=completed`, `outcome=gpu_helps`, `exit_code=0`.**
+
+| | |
+| :-- | --: |
+| GPU seconds/sample | **5.83** |
+| CPU reference (frozen before the run) | 48.555 |
+| **speedup** | **8.33x** |
+
+Every control passed: `backend_is_gpu` true, `unit_ok` true, and `gpu_did_work` true on the
+evidence that matters — **peak utilisation 100% and 744 MiB on physical GPU 2** during the timed
+region, sampled 42 times. That is what separates a real GPU run from the silent CPU fallback
+this probe was built against. GPU 3 shows only 207 MiB / 1%, as expected: one unit uses one card.
+
+**`git_dirty=true` on that record, disclosed in advance.** The probe script and sidecar were
+rsynced into the titanix checkout so `bth` could resolve the sidecar adjacent to the script; they
+are committed on the branch but untracked there. Acceptable for an exploratory, non-ledger probe,
+and the files have since been removed to restore a clean tree.
+
+**8.33x is a LOWER bound for the real confirm.** The probe ran n=8, so a fixed ~17 s of model
+load and XLA compile (`wall_s` 63.2 against 8 x 5.83 = 46.6 s of sampling) is amortised over
+only eight samples. The confirm's units are **n=1000** (`laser_sample_dist_confirm.py:48,55`),
+where that overhead vanishes into the average.
+
+**What it does NOT establish**, stated because the temptation is to over-read it: one unit, one
+card, one structure (103m, L=154), f32 only. Two-card concurrency is untested, 4jnj is a
+different length, and the **Turing f64 caveat is untouched** — sm_7.5 runs f64 at 1/32 of f32,
+so none of this transfers to the f64 parity tiers.
+
+**Chunk-width measurement — 16/16 units, and it graded itself `instrument_unverified`.**
+
+| field | value |
+| :-- | :-- |
+| `verdict` | **`instrument_unverified`** |
+| `load_stable` | **False** — the pre-registered 1.50 spread ceiling was exceeded |
+| `width_control_fires` | **False** — ratio 1.0135 against a required >= 1.20 |
+| `widen_ratio` | 0.803 |
+| `padding_verdict` | `padding_irrelevant` (ratio 1.0538) |
+| `linearity_holds` | **True** (1.137, band [0.80, 1.25]) |
+| `self_test_passed` | True · `n_computed` 16 · `n_reused` 0 |
+
+This is the outcome I committed to accepting rather than engineering away, and the instrument
+issued it on its own. **The top-level verdict governs**: this run does not license a width claim.
+The padding null stands anyway, on three independent lines that do not depend on this grading.
+
+**The single cleanest number of the day** is the run's own refutation of my earlier ~10x padding
+claim: `padding_speedup_predicted_by_square_law = 10.24` against a **measured 0.949**. The
+(512/160)^2 reasoning predicted a tenfold cost and the measurement found none.
+
+**Linearity passing at 1.137 matters for the GPU extrapolation**: cost scales with n as expected,
+which is the assumption behind pricing an n=1000 unit from smaller runs. It was measured on CPU,
+not GPU, so it supports the CPU baseline rather than the GPU projection.
+
 ### CORRECTION: Engaging is not a "40-way array", and the 12 h walltime worry is void
 
 I have written **"Engaging's 40-way array"** several times in this doc and in commit messages. It
