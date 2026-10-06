@@ -91,6 +91,32 @@ A corollary worth stating because it is easy to get backwards: the rows being li
 *not* an argument for keeping them. They were measured against a pre-merge tree, so after the
 merge they would describe code that no longer exists even if 1c somehow still accepted them.
 
+## 0b. Z1 status against the spec's own criteria — one unmet item, and the wave is self-inflicted
+
+Spec line 1246 states Z1's acceptance criteria. Each was checked rather than assumed:
+
+| criterion | status |
+| :-- | :-- |
+| `sidecar_sha256 == sha256(run_gate.bth.toml)`, non-empty | **met** — gate run `fb898d24` recorded `39babc8b…`, and `git show origin/wt/260929-potts-laser-main:scripts/redsox/run_gate.bth.toml \| sha256sum` is the same digest. The gate's own sidecar has not drifted (worth checking separately, because `scripts/redsox/` is **not** scoped, so it could have). |
+| `git_dirty` false | **met** — `fb898d24` recorded `False`. |
+| *"re-runs every vehicle sidecar whose ledger record fails the ancestor or diff-scope check"* | **met, vacuously: the re-run set is EMPTY.** All eight rows pass both checks today (§0a). |
+| `status == 'completed'` | **met.** |
+| `outcome == 'pass'` | **NOT met** — `fb898d24` is `outcome=fail` (at `exit_code=0`, incidentally). The cause is step 1's 63 `laser_score` clean-arm failures and nothing else (§1). |
+
+**So Z1 has exactly one unmet criterion, and the re-wave exists only because the fix for it is
+itself scoped.** Read Z1's own wording: the operator re-runs the vehicles whose records *fail*
+1c. Today that set is empty, so if `laser_score` could be cleared without touching a scoped
+path, Z1 would complete with **no re-measurement at all**. It cannot: option 3 moves a
+tolerance, the tolerance lives in `tests/port/targets/laser_score.toml`, and
+`tests/port/` is scoped — and it has to live there, because the unscoped
+`tests/lint/test_port_tolerances_match_targets.py` exists precisely to keep the test and the
+target file in agreement.
+
+The eight-row re-measurement is therefore **self-inflicted by the fix's location**, not the
+repair of pre-existing drift. That does not make it avoidable; it does mean the wave's cost is
+attributable to A1 alone, which is the cleanest possible argument for letting A2–A4 ride along
+free (§5).
+
 ## 1. What the gate is actually waiting on
 
 Gate run `fb898d24` @ `feade020`, from its own `outcomes.jsonl`: **586 passed, 63 failed, 6
