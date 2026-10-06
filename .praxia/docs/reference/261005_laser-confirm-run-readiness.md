@@ -270,6 +270,45 @@ should be killed rather than left to run for ~134 h.
 That asymmetry is why this is worth doing deliberately rather than casually: minutes if right,
 and it must be watched if wrong.
 
+### Tested: the inference holds. The pilot's two runnable cells are COMPLETE.
+
+Run untracked with a 30 min cap, `--cells min_p0@0.3,min_p0@1.0 --resume`:
+
+```
+n_reused = 24    n_computed = 0    smoke = False
+cells_selected = ['min_p0@0.3', 'min_p0@1.0']
+all_cells_derived = true   any_instrument_invalid = false   shim_ok = true
+missing_cells = []         open_questions = []              n_boot = 2000
+```
+
+**Zero units computed** — the 21.68 h is fully recovered, and it finished in seconds. Per cell:
+
+| cell | `delta` | `h_hat` | `q_hat` | `chosen_m` | `escalate` | status |
+| :-- | --: | --: | --: | --: | :-- | :-- |
+| `min_p0@0.3` | 0.01 | 0.001560551948051945 | 0.00311 | **1.25** | false | ok |
+| `min_p0@1.0` | 0.01 | 0.0017875000000000252 | 0.00279 | **1.10** | false | ok |
+
+**Those constants are digit-for-digit identical to the `CELLS` table in
+`laser_sample_dist_confirm.py`.** So the confirm's pre-registered `h_hat` and `m` are traceably
+derived from *this* pilot output — which `cf2ea530` ("fill the LASEr confirmatory constants")
+recorded even though the pilot run itself never completed. The provenance chain closes.
+
+**The m-selection is principled, not arbitrary.** For `min_p0@0.3` the m=1.1 control yields
+`delta_neg = 0.0036`, *below* δ=0.01 and therefore undetectable, so the pilot escalated to
+m=1.25 (0.0155 > δ). For `min_p0@1.0`, m=1.1 already gives 0.0156 > δ and was kept. The
+instrument chose the smallest control it can actually see per cell — which is exactly what a
+negative control is for, and it is why the confirm's controls fail as designed.
+
+`shim_check` is clean on both cells (`mean_gap` 4.3e-4 and 2.7e-4 against `h_hat` ~1.6e-3 and
+~1.8e-3, `instrument_invalid` false), and chi1 is derived over 252 positions per cell with
+controls ordered correctly above the U2/U3-vs-U1 baselines.
+
+**Consequence for spec row B5** ("pilot → laser_sample_dist"): the pilot is *substantively*
+done. Its one recorded failure was reaching the third cell, `min_p0.05@0.3`, which is now
+excluded for upstream NaNs. What remains is bookkeeping, not computation: **this run was
+untracked**, so a graded pilot record still requires one `bth` invocation from a clean checkout
+— minutes of compute, since the units are reused.
+
 ## What this note does NOT say
 
 It does not argue for or against launching. The cost (~60 h CPU-only, because the titanix

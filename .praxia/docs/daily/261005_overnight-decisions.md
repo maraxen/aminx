@@ -119,6 +119,17 @@ under xtrax 0.4.0a11.
 **Trap if launched:** `script_sha256` is in the cache key, so editing the driver after launch
 discards *every* completed unit. Freeze it first.
 
+**The pilot, however, is already done — and nobody knew.** No LASEr distributional run had ever
+completed: the one full pilot attempt (`03d2ef37`) burned **21.68 h** and exited 1, because its
+cell list included `min_p0.05@0.3`, the cell the confirm now refuses for upstream NaNs. But its
+24 completed units survive on disk and the pilot script is unchanged since that run, so a
+resumed 2-cell run reused **all 24, computing zero**, and finished in seconds:
+`all_cells_derived = true`, `any_instrument_invalid = false`, `shim_ok = true`, no missing cells,
+no open questions. Its `h_hat`/`chosen_m` are **digit-for-digit identical** to the confirm's
+pre-registered `CELLS` table, closing that provenance chain. So **spec row B5 is substantively
+complete**; what is missing is one tracked `bth` invocation (minutes, since units are reused),
+not ~134 h of compute.
+
 **What this reframes:** a GPU oracle was previously a convenience. At ~10 days serial it is the
 central question — and note it is the **aminx** arms a GPU must accelerate, not the upstream
 oracle, which is the opposite of how that was framed before these measurements.
