@@ -464,7 +464,7 @@ user_decision = false
 
 [[item]]
 id = "S7-08"
-title = "Warm path (A8, restated 261006): jit reuse already holds; MCP tools fit max_length to the parsed inputs (max for intra, sum for inter, rounded up to 64; explicit value kept; never below measured residues) and record it in the returned spec; tool descriptions and docs say so"
+title = "Warm path (A8, restated 261006): jit reuse already holds; MCP tools fit max_length to the parsed inputs (max for intra, sum for inter, rounded up to xtrax BUCKET_LADDER via xtrax.tiling.select_bucket; explicit value kept; never below measured residues) and record it in the returned spec; tool descriptions and docs say so"
 repo = "aminx"
 size = "S"
 depends_on = ["S7-07"]

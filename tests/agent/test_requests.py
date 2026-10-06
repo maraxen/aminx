@@ -160,3 +160,41 @@ def test_structure_lengths_match_the_runner_loader(
   )
   batch = next(iter(dataset))
   assert int(np.asarray(batch.mask).sum()) == expected
+
+
+@pytest.mark.parametrize("variant", ["numbering_gap", "unresolved_backbone", "unresolved_tail"])
+def test_structure_lengths_never_below_the_loader_span(tmp_path: Path, variant: str) -> None:
+  """Gapped structures: the parsed row count covers the span the loader pads to.
+
+  ``fitted_max_length`` sizes padding from ``structure_lengths``; the loader
+  crops at random when ``max_length`` is below the span (last valid residue
+  index + 1), so the count must never undercut it.
+  """
+  import numpy as np  # noqa: PLC0415
+  from proxide.ops.dataset import create_protein_dataset  # noqa: PLC0415
+
+  backbone = {"N", "CA", "C", "O"}
+  atoms = [ln for ln in _PDB.read_text().splitlines() if ln.startswith("ATOM")]
+
+  def keep(line: str) -> bool:
+    number = int(line[22:26])
+    name = line[12:16].strip()
+    if variant == "numbering_gap":
+      return not 30 <= number <= 35
+    if variant == "unresolved_backbone":
+      return not (30 <= number <= 35 and name in backbone)
+    return not (number >= 70 and name in backbone)
+
+  path = tmp_path / f"{variant}.pdb"
+  path.write_text("\n".join([*(ln for ln in atoms if keep(ln)), "TER", "END"]) + "\n")
+  spec = build_spec("sample", [str(path)], {})
+  (count,) = structure_lengths(spec).values()
+  dataset = create_protein_dataset(
+    [str(path)],
+    batch_size=1,
+    parse_kwargs={"chain_id": None, "model": spec.model, "altloc": spec.altloc, "topology": spec.topology},
+    max_length=512,
+  )
+  valid = np.asarray(next(iter(dataset)).mask).reshape(-1) > 0
+  span = int(valid.size - np.argmax(valid[::-1]))
+  assert count >= span

@@ -123,6 +123,6 @@ When a tool call omits ``output_dir``, side files go to ``$AMINX_AGENT_OUTPUT_DI
 Run time and padding
 --------------------
 
-Each structure is padded to ``max_length`` before the model runs, and decode time grows with that padded length. The specification default is 512. When a ``sample``, ``score``, ``inspect`` or ``jacobian`` call does not set ``max_length`` in ``options`` and every input parses, the server fits it to the inputs: the longest structure (or the summed length when ``pass_mode`` is ``inter``), rounded up to a multiple of 64. The fitted value is in the returned ``spec``, so a run can be repeated exactly. Set ``max_length`` explicitly to keep a fixed shape across calls.
+Each structure is padded to ``max_length`` before the model runs, and decode time grows with that padded length. The specification default is 512. When a ``sample``, ``score``, ``inspect`` or ``jacobian`` call does not set ``max_length`` in ``options`` and every input parses, the server fits it to the inputs: the longest structure (or the summed length when ``pass_mode`` is ``inter``), rounded up to the next bucket on xtrax's ``BUCKET_LADDER`` (64, 128, 256, 512, ...; never above the spec's ``max_length``). The fitted value is in the returned ``spec``, so a run can be repeated exactly. Set ``max_length`` explicitly to keep a fixed shape across calls.
 
 One server process keeps JAX's compiled functions, so a later call with the same checkpoint and padded shape does not compile again.
