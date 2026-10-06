@@ -114,6 +114,9 @@
   "src/aminx/host/averaging.py::IdentityEncodingFusion": "P15",
   "src/aminx/host/averaging.py::get_averaged_encodings": "P15",
   "src/aminx/host/averaging.py::make_encoding_sampling_split_fn": "P15",
+  "src/aminx/host/bucketing.py::batch_span": "P26",
+  "src/aminx/host/bucketing.py::bucket_ladder": "P26",
+  "src/aminx/host/bucketing.py::rung_for": "P26",
   "src/aminx/host/campaign.py::InputHashMismatchError": "P28",
   "src/aminx/host/campaign.py::InputHashUnavailableError": "P28",
   "src/aminx/host/campaign.py::LegacyV2DoneMarkerError": "P28",
@@ -156,6 +159,8 @@
   "src/aminx/host/logit_aggregation.py::pad_to_max": {
     "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
   },
+  "src/aminx/host/memory_budget.py::memory_budget_source": "P26",
+  "src/aminx/host/memory_budget.py::resolve_memory_budget_bytes": "P26",
   "src/aminx/host/output_sinks.py::EncoderIntermediateStagingSink": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
   },
@@ -234,9 +239,6 @@
   "src/aminx/host/plan.py::make_sampling_planner": {
     "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
   },
-  "src/aminx/host/plan.py::plan_bucketed": {
-    "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
-  },
   "src/aminx/host/plan.py::resolve_chunk_size": {
     "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
   },
@@ -267,9 +269,6 @@
   },
   "src/aminx/host/spec_partition.py::campaign_sampling_spec_payload": {
     "internal": "spec partitioning validation for host runner, covered through P26"
-  },
-  "src/aminx/host/stage_adapter.py::StageBundleAdapter": {
-    "internal": "stage-bundle adapter plumbing for host runner, covered through P26"
   },
   "src/aminx/host/streaming_host.py::StreamingBatchHost": {
     "internal": "streaming batch host plumbing for host runner, covered through P26"
@@ -486,11 +485,6 @@
   "src/aminx/tiling/bucketing.py::BucketingConfig": "P27",
   "src/aminx/tiling/bucketing.py::group_by_bucket": "P27",
   "src/aminx/tiling/bucketing.py::select_bucket": "P27",
-  "src/aminx/tiling/buckets.py::create_residue_mask": "P27",
-  "src/aminx/tiling/buckets.py::get_length_bucket": "P27",
-  "src/aminx/tiling/buckets.py::masked_mean": "P27",
-  "src/aminx/tiling/buckets.py::pad_length_bucket_128": "P27",
-  "src/aminx/tiling/buckets.py::pad_to_bucket": "P27",
   "src/aminx/tiling/dispatch.py::DispatchRejected": {
     "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
   },

@@ -24,6 +24,7 @@ from aminx.host._sampling_helper import (
   _prepare_ligand_context,
   _structure_ids_for_batch,
 )
+from aminx.host.bucketing import batch_span
 from aminx.host.kernel_dispatch import _sample_batch
 from aminx.host.logit_aggregation import (
   aggregate_logits,
@@ -113,13 +114,7 @@ class _PaddingCheck:
       if mask_np.ndim < 2 or mask_np.shape[-1] == 0:  # expects (batch, length)
         return
       padded = int(mask_np.shape[-1])
-      valid = mask_np.reshape(-1, padded) > 0
-      if valid.size == 0 or not valid.any():
-        return
-      # span per row = index of the last valid residue + 1 (0 for an all-masked row)
-      last_from_end = np.argmax(valid[:, ::-1], axis=-1)
-      span = np.where(valid.any(axis=-1), padded - last_from_end, 0)
-      real = int(span.max())
+      real = batch_span(mask_np)
     except (TypeError, ValueError):  # advisory only: a malformed batch is never worth failing a run
       return
     suggested = -(-real // _PADDING_BUCKET) * _PADDING_BUCKET

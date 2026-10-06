@@ -145,7 +145,7 @@ import numpy as np
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from xtrax.tiling import AxisSpec, BatchPlanner, SafeMap
+from xtrax.tiling import AxisSpec, BatchPlanner, ChunkedMap
 
 from aminx.ebm.checkpoint import load_pytorch_checkpoint
 from aminx.ebm.langevin import DEFAULT_EFFECTIVE_TEMP_SCALING, langevin_step, run_langevin_equilibration
@@ -610,7 +610,7 @@ def _jax_equilibration_batch(
     # every non-divisible cell.
     warnings.filterwarnings("ignore", message=r".*is not divisible by batch_size.*", category=RuntimeWarning)
     decision = BatchPlanner().plan([spec]).decisions[0]
-  if isinstance(decision.strategy, SafeMap):
+  if isinstance(decision.strategy, ChunkedMap):
     return _chunked_vmap(_single, (coords_batch, keys), decision.strategy.batch_size)
   return jax.vmap(_single)((coords_batch, keys))
 

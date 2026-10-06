@@ -268,6 +268,8 @@ class RunSpecification:
   """Optional dataset buffer cap (bytes); forwarded to proxide-style loaders when set."""
   overwrite_cache: bool = False
   max_length: int | None = 512
+  length_bucketing: bool = True
+  """Trim each batch to the smallest xtrax BUCKET_LADDER rung covering its residue span (outputs re-padded to the padded length). False restores fixed max_length padding."""
   truncation_strategy: Literal["none", "random_crop", "center_crop"] = "random_crop"
 
   # Host Resource Allocation

@@ -17,6 +17,7 @@ import numpy as np
 from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, ChunkedMap, MemoryBudget
 from xtrax.tiling import BudgetInfeasibleError as _XtraxBudgetInfeasibleError
 
+from aminx.host.memory_budget import resolve_memory_budget_bytes
 from aminx.tiling.axes import N_NOISES, N_SAMPLES, N_STRUCTURES, N_TEMPERATURES
 from aminx.tiling.errors import TilingError
 from aminx.tiling.planner import estimate_memory_theoretical
@@ -25,11 +26,13 @@ if TYPE_CHECKING:
   from collections.abc import Sequence
 
   from jaxtyping import PRNGKeyArray
-  from xtrax.tiling import AxisSpec, CarrySpec, DedupSpec
+  from xtrax.tiling import AxisSpec, CarrySpec
+  from xtrax.tiling.dedup import (  # noqa: TID251 -- DedupSpec is submodule-only, not re-exported from xtrax.tiling
+    DedupSpec,
+  )
 
   from aminx.inference.decode.protocols import ARDecodeFn, DecodeScoreFn, STEDecodeFn
   from aminx.run.specs import SamplingSpecification
-  from aminx.tiling.bucketing import BucketAssignment
   from aminx.types.arrays import Logits
   from aminx.types.bundles import InferenceBundle
   from aminx.types.configs import InferenceConfig
@@ -275,11 +278,7 @@ def make_sampling_planner(
       Batch size decisions for each sampling axis (structures, samples, temps, noises).
 
   """
-  try:
-    limit = jax.devices()[0].memory_stats()["bytes_limit"]
-  except Exception:
-    limit = 4 * 1024**3
-  budget_bytes = int(limit * headroom - param_bytes)
+  budget_bytes = int(resolve_memory_budget_bytes(headroom=headroom) - param_bytes)
   if n_samples_override is not None:
     samples_cardinality = max(1, n_samples_override)
   else:
@@ -1030,114 +1029,3 @@ def make_inference_plan(
     concrete_tau_end=float(getattr(spec, "concrete_tau_end", 0.1)),
   )
 
-
-def plan_bucketed(
-  spec: SamplingSpecification,
-  sequence_lengths: list[int],
-  axes: list[AxisSpec],
-  *,
-  budget_bytes: int,
-  estimate_fn: Callable[[Sequence[AxisDecision]], float],
-  carry_specs: list[CarrySpec] | None = None,
-  dedup_specs: list[DedupSpec] | None = None,
-  bucketing_config: BucketingConfig | None = None,
-) -> BucketAssignment:
-  """Plan inference for a batch grouped by sequence-length buckets.
-
-  For each bucket, override the "n_structures" axis cardinality to the bucket
-  ceiling (number of sequences in that bucket) and plan once via
-  _plan_with_joint_budget. Returns a BucketAssignment with per-bucket BatchPlans.
-
-  NOTE: The implementation overrides n_structures cardinality (a structure count)
-  to the bucket ceiling (a sequence length). This may be a semantic mismatch.
-  Implementing as specified, but this should be reviewed.
-
-  Takes axes/budget_bytes/estimate_fn/carry_specs/dedup_specs directly (EPIC
-  #1541 T-PLANNER.3) rather than a pre-built BatchPlanner: xtrax.tiling.
-  BatchPlanner isn't a dataclass and doesn't hold axes as an attribute (axes
-  are a per-call .plan(specs) argument), so the old "mutate an existing
-  planner's .axes field" design has no equivalent -- there's nothing to
-  dataclasses.replace(). This function has no production callers today
-  (only its own test), so the signature change is contained to this file.
-
-  Parameters
-  ----------
-  spec : SamplingSpecification
-      Sampling specification (unused in function, required for interface).
-  sequence_lengths : list[int]
-      Sequence lengths for each position in the batch.
-  axes : list[AxisSpec]
-      Axes to plan (must include an "n_structures" axis).
-  budget_bytes : int
-      Joint memory budget in bytes, passed to _plan_with_joint_budget.
-  estimate_fn : Callable[[Sequence[AxisDecision]], float]
-      Joint memory estimator, passed to _plan_with_joint_budget.
-  carry_specs : list[CarrySpec] | None, optional
-      CarrySpec declarations, passed to _plan_with_joint_budget.
-  dedup_specs : list[DedupSpec] | None, optional
-      DedupSpec declarations, passed to _plan_with_joint_budget.
-  bucketing_config : BucketingConfig | None, optional
-      Bucketing configuration. Default is BucketingConfig().
-
-  Returns
-  -------
-  BucketAssignment
-      Assignment with bucket grouping, boundaries, and per-bucket plans.
-
-  Raises
-  ------
-  ValueError
-      If sequence_lengths is empty or any length exceeds all buckets.
-  KeyError
-      If no "n_structures" axis found in axes.
-
-  """
-  from aminx.tiling.bucketing import (
-    BucketAssignment,
-    BucketingConfig,
-    group_by_bucket,
-  )
-
-  if not sequence_lengths:
-    raise ValueError("sequence_lengths cannot be empty")
-
-  if bucketing_config is None:
-    bucketing_config = BucketingConfig()
-
-  # Group sequences by bucket
-  bucket_groups = group_by_bucket(sequence_lengths, bucketing_config)
-
-  # Confirm an n_structures axis is present to override
-  if not any(axis.name == "n_structures" for axis in axes):
-    raise KeyError('No "n_structures" axis found in axes')
-
-  # Plan for each bucket
-  per_bucket_plans: dict[int, BatchPlan] = {}
-  for bucket_ceil, _indices in bucket_groups.items():
-    # Override n_structures cardinality to bucket ceiling
-    modified_axes = []
-    for axis in axes:
-      if axis.name == "n_structures":
-        # NOTE: This overrides cardinality (structure count) to bucket ceiling (seq length).
-        # May be semantic mismatch; implementing as specified.
-        modified_axis = dataclasses.replace(axis, cardinality=bucket_ceil)
-        modified_axes.append(modified_axis)
-      else:
-        modified_axes.append(axis)
-
-    per_bucket_plans[bucket_ceil] = _plan_with_joint_budget(
-      modified_axes,
-      budget_bytes=budget_bytes,
-      estimate_fn=estimate_fn,
-      carry_specs=carry_specs,
-      dedup_specs=dedup_specs,
-    )
-
-  # Create sorted bucket boundaries
-  bucket_boundaries = tuple(sorted(bucket_groups.keys()))
-
-  return BucketAssignment(
-    bucket_boundaries=bucket_boundaries,
-    bucket_groups=bucket_groups,
-    per_bucket_plans=per_bucket_plans,
-  )
