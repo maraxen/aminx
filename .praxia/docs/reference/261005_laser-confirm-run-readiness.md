@@ -303,11 +303,47 @@ negative control is for, and it is why the confirm's controls fail as designed.
 ~1.8e-3, `instrument_invalid` false), and chi1 is derived over 252 positions per cell with
 controls ordered correctly above the U2/U3-vs-U1 baselines.
 
-**Consequence for spec row B5** ("pilot → laser_sample_dist"): the pilot is *substantively*
-done. Its one recorded failure was reaching the third cell, `min_p0.05@0.3`, which is now
-excluded for upstream NaNs. What remains is bookkeeping, not computation: **this run was
-untracked**, so a graded pilot record still requires one `bth` invocation from a clean checkout
-— minutes of compute, since the units are reused.
+### Spec row B5 is DONE: graded pilot record `9d621aee`, obtained in 32 seconds
+
+The bookkeeping is now closed too. Verified by record, not by exit code:
+
+```
+run 9d621aee-7c96-43f9-9c1d-3d755adc8e54
+status=completed   outcome=derived   outcome_is_residual=False   exit_code=0
+git_dirty=False    git_hash=0e642d44 (aminx-b7i-git, clean)      duration_s=32.3
+sidecar=scripts/parity/laser_sample_dist_pilot.bth.toml (9e05febf…)
+output_paths=['outputs/laser_sample_dist_pilot/0e642d44/result.json']
+```
+
+The artifact resolves and matches the untracked probe exactly (`n_reused 24`, `n_computed 0`,
+`all_cells_derived`, `shim_ok`, both cells' `h_hat`/`chosen_m`). `outcome=derived` with
+`is_residual=False` means it matched a **declared** outcome — deriving the confirm's constants
+is what the pilot is *for*, so that is its success state, not a fallthrough.
+
+**32 seconds, against the 21.68 h that run `03d2ef37` burned before exiting 1.** The pilot's
+only real failure was reaching the third cell, `min_p0.05@0.3`, since excluded for upstream
+NaNs.
+
+### Three traps that made this take four attempts — worth knowing before the re-wave
+
+1. **`uv` is not on PATH in a non-login ssh shell, and bth's documented wrapped form needs
+   it.** `bth run … -- uv run --no-sync python3 script.py` fails with `exit_code: 1` and **no
+   script error at all**, because `uv` is never found and the script never executes. `bth`
+   itself has the same problem (`/home/solab/.local/bin/bth`). Fix:
+   `PATH=/home/solab/.local/bin:$PATH`. Three runs failed this way before the cause was
+   isolated by comparing a direct `.venv/bin/python3` run (which succeeded) against
+   `uv run` (which could not exec).
+2. **A fast-failing bth run leaves its cool-tier record stuck at
+   `status=running, outcome='', exit_code=-1, duration_s=0`** — indistinguishable from an
+   in-flight run, *permanently*, after the wrapper has exited. The older pilot `03d2ef37`
+   recorded `failed/error/exit 1` correctly, so bth can do this; it appears specific to
+   failures that occur almost immediately. **This undercuts "verify by record" precisely where
+   it is most needed**, so cross-check with `ps` that no wrapper is alive before reading a
+   `running` row as in-flight.
+3. **Debt #2483, reproduced in practice.** `aminx-confirm-git`'s venv lacks the `laser` extra,
+   and the failure is a bare `ModuleNotFoundError: No module named 'prody'` naming neither the
+   family nor the extra. Exactly the defect #2483 describes — previously documented from
+   reading `pyproject.toml`, now observed.
 
 ## What this note does NOT say
 

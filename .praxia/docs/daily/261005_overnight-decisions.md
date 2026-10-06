@@ -126,9 +126,12 @@ cell list included `min_p0.05@0.3`, the cell the confirm now refuses for upstrea
 resumed 2-cell run reused **all 24, computing zero**, and finished in seconds:
 `all_cells_derived = true`, `any_instrument_invalid = false`, `shim_ok = true`, no missing cells,
 no open questions. Its `h_hat`/`chosen_m` are **digit-for-digit identical** to the confirm's
-pre-registered `CELLS` table, closing that provenance chain. So **spec row B5 is substantively
-complete**; what is missing is one tracked `bth` invocation (minutes, since units are reused),
-not ~134 h of compute.
+pre-registered `CELLS` table, closing that provenance chain.
+
+**And it is now graded.** Run `9d621aee` — `status=completed, outcome=derived,
+outcome_is_residual=False, exit_code=0, git_dirty=False, git_hash=0e642d44, duration_s=32.3`,
+sidecar resolved, artifact spot-checked. **Spec row B5 is DONE**, obtained in 32 seconds rather
+than the ~134 h it appeared to need.
 
 **What this reframes:** a GPU oracle was previously a convenience. At ~10 days serial it is the
 central question — and note it is the **aminx** arms a GPU must accelerate, not the upstream
