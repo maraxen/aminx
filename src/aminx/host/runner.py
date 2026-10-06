@@ -24,7 +24,7 @@ from aminx.host._sampling_helper import (
   _prepare_ligand_context,
   _structure_ids_for_batch,
 )
-from aminx.host.bucketing import batch_span
+from aminx.host.bucketing import batch_span, repad_residue_axis, rung_for, trim_residue_axis
 from aminx.host.kernel_dispatch import _sample_batch
 from aminx.host.logit_aggregation import (
   aggregate_logits,
@@ -71,11 +71,15 @@ _PADDING_COST_TEXT = {
   "sample": (
     "Autoregressive decode cost grows roughly with the square of the padded length, so this does about "
     "{ratio_sq:.0f}x the work needed. Sampling draws random numbers at the padded shape, so changing "
-    "max_length may change the sampled sequences for the same seed."
+    "max_length may change the sampled sequences for the same seed. "
+    "Default runs set length_bucketing and trim each batch to the xtrax ladder rung; "
+    "pass --no-length-bucketing (length_bucketing=False) to restore fixed padding."
   ),
   "score": (
     "Scoring is a single forward pass over the padded length, so it also pays for the padding (the scaling "
-    "was not measured). Scores themselves do not depend on max_length."
+    "was not measured). Scores themselves do not depend on max_length. "
+    "Default runs set length_bucketing and trim each batch to the xtrax ladder rung; "
+    "pass --no-length-bucketing (length_bucketing=False) to restore fixed padding."
   ),
 }
 
@@ -97,11 +101,17 @@ class _PaddingCheck:
   the loader crop at random (default ``random_crop``, not reproducible) or raise (``truncation_strategy="none"``).
   The suggestion is therefore never below the span, and the message says to size it to the longest chain across
   ALL inputs, since only the first offending batch is examined.
+
+  ``length_bucketing=False`` (the constructor default) compares the span to the padded length, which is
+  what ``_PaddingCheck("sample")`` has always done. The runner passes the spec flag explicitly. When it
+  is true, the comparison uses the xtrax rung instead, so a batch whose padding the rung removes stays
+  silent, and a span past the ladder (or bucketing left off) still warns.
   """
 
-  def __init__(self, entry: str) -> None:
+  def __init__(self, entry: str, *, length_bucketing: bool = False) -> None:
     self._entry = entry
     self._warned = False
+    self._length_bucketing = length_bucketing
 
   def __call__(self, batched_ensemble: Any) -> None:  # noqa: ANN401
     if self._warned:
@@ -117,8 +127,13 @@ class _PaddingCheck:
       real = batch_span(mask_np)
     except (TypeError, ValueError):  # advisory only: a malformed batch is never worth failing a run
       return
+    compared = padded
+    if self._length_bucketing:
+      rung = rung_for(real, padded, enabled=True)
+      if rung is not None:
+        compared = rung
     suggested = -(-real // _PADDING_BUCKET) * _PADDING_BUCKET
-    if real <= 0 or padded <= _PADDING_WARN_RATIO * real or suggested >= padded:
+    if real <= 0 or compared <= _PADDING_WARN_RATIO * real or suggested >= compared:
       return
     self._warned = True
     # Attribute the warning to the caller's code (first frame outside aminx), so filters keyed on the caller's
@@ -130,7 +145,7 @@ class _PaddingCheck:
       level += 1
     if frame is None:
       level -= 1
-    cost = _PADDING_COST_TEXT[self._entry].format(ratio_sq=(padded / real) ** 2)
+    cost = _PADDING_COST_TEXT[self._entry].format(ratio_sq=(compared / real) ** 2)
     warnings.warn(
       f"structures are padded to max_length={padded} but the longest chain in this batch spans {real} residues. "
       f"{cost} Pass max_length close to your longest chain, for example max_length={suggested} if this is the "
@@ -304,7 +319,7 @@ def sample(
   structure_batch_count = StreamingBatchHost.structure_batch_count(protein_iterator)
   grid_lineage = _resolve_grid_lineage(spec)
 
-  padding_check = _PaddingCheck("sample")
+  padding_check = _PaddingCheck("sample", length_bucketing=spec.length_bucketing)
   with streaming_tensor_sink_session():
     for batch_idx, batched_ensemble in enumerate(protein_iterator):
       padding_check(batched_ensemble)
@@ -444,6 +459,7 @@ def _make_averaged_score_fn(
           )
           raise AssertionError(msg)
 
+  # Not length-bucketed in S8 v1: this path keeps the padded length.
   @partial(jax.jit, static_argnames=("multi_state_strategy", "use_rolling_state"))
   def _score_averaged_jit(
     prng_key: jax.Array,
@@ -804,6 +820,7 @@ def score(  # noqa: PLR0915
   # call site where S was always 1) were silently inert here -- confirmed via a live
   # differential (arithmetic_mean vs product produced byte-identical logits) before
   # this fix, not assumed from a source read alone.
+  # Length bucketing (S8 v1) does not trim _score_fused_multistate or _score_averaged_jit.
   if spec.state_position_map is not None:
     return _score_fused_multistate(
       spec, protein_iterator, score_fn, sequence_indices_list,
@@ -834,7 +851,7 @@ def score(  # noqa: PLR0915
   # that is host-side streaming-iterator drainage, not JAX computation, the same
   # exemption generate_multistate_conditional_logits.py's own docstring gives its
   # result-writing loop.
-  padding_check = _PaddingCheck("score")
+  padding_check = _PaddingCheck("score", length_bucketing=spec.length_bucketing)
   for _batch_idx, batched_ensemble in enumerate(protein_iterator):
     padding_check(batched_ensemble)
     batch_size = batched_ensemble.coordinates.shape[0]
@@ -908,7 +925,62 @@ def score(  # noqa: PLR0915
     else:
       batch_ligand = (None, None, None)
 
-    if split_fns is not None:
+    # Rung uses the structure span and the longest unpadded sequence. None keeps
+    # the arrays below unread-as-trimmed: the activation estimate and the vmap
+    # receive the padded tensors.
+    score_coords = batched_ensemble.coordinates
+    score_mask = batched_ensemble.mask
+    score_residue_index = batched_ensemble.residue_index
+    score_chain_index = batched_ensemble.chain_index
+    score_sequences = stacked_sequences
+    score_ligand = batch_ligand
+    rung = None
+    if (
+      spec.max_length is not None
+      and spec.length_bucketing
+      and spec.pass_mode != "inter"  # noqa: S105
+      and batched_ensemble.mask is not None
+      and not isinstance(batched_ensemble.mask, jax.core.Tracer)
+    ):
+      longest_unpadded = max(int(seq.shape[0]) for seq in sequence_indices_list)
+      span = max(batch_span(batched_ensemble.mask), longest_unpadded)
+      rung = rung_for(
+        span,
+        struct_len,
+        enabled=spec.length_bucketing,
+        pass_mode=spec.pass_mode,
+      )
+      if rung is not None and rung >= struct_len:
+        rung = None
+    if rung is not None:
+      score_coords = trim_residue_axis(score_coords, rung, 1)
+      score_mask = trim_residue_axis(score_mask, rung, 1)
+      score_residue_index = trim_residue_axis(score_residue_index, rung, 1)
+      score_chain_index = trim_residue_axis(score_chain_index, rung, 1)
+      score_sequences = trim_residue_axis(score_sequences, rung, 1)
+      score_ligand = tuple(trim_residue_axis(part, rung, 1) for part in score_ligand)
+
+    if rung is not None and split_fns is not None:
+      from types import SimpleNamespace  # noqa: PLC0415
+
+      activation_bytes = _candidate_activation_bytes(
+        split_fns,
+        spec.multi_state_strategy,
+        SimpleNamespace(
+          coordinates=score_coords,
+          mask=score_mask,
+          residue_index=score_residue_index,
+          chain_index=score_chain_index,
+        ),
+        score_ligand,
+        batch_keys[0, 0],
+        score_sequences[0],
+        batch_size=batch_size,
+        estimate_cache=activation_estimates,
+      )
+    elif rung is not None:
+      activation_bytes = rung * 21 * 4  # trimmed (L, 21) float32 logits per candidate
+    elif split_fns is not None:
       activation_bytes = _candidate_activation_bytes(
         split_fns,
         spec.multi_state_strategy,
@@ -938,7 +1010,7 @@ def score(  # noqa: PLR0915
       struct_keys: jax.Array,
       struct_ligand: tuple[jax.Array | None, jax.Array | None, jax.Array | None],
       _candidate_iterator: Any = candidate_iterator,  # noqa: ANN401
-      _stacked_sequences: jax.Array = stacked_sequences,
+      _stacked_sequences: jax.Array = score_sequences,
     ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
       ligand_kwargs = (
         {}
@@ -999,13 +1071,15 @@ def score(  # noqa: PLR0915
     # The third output (a decoding order) is discarded: scoring is full-context, see the
     # `decoding_orders` note in this function's docstring (debt #1717).
     batch_scores, batch_logits, _ = jax.vmap(_score_structure)(
-      batched_ensemble.coordinates,
-      batched_ensemble.mask,
-      batched_ensemble.residue_index,
-      batched_ensemble.chain_index,
+      score_coords,
+      score_mask,
+      score_residue_index,
+      score_chain_index,
       batch_keys,
-      batch_ligand,
+      score_ligand,
     )
+    if rung is not None:
+      batch_logits = repad_residue_axis(batch_logits, struct_len, -2)
 
     all_scores.append(batch_scores)
     if spec.run_spec.sampling.return_logits and all_logits is not None:
@@ -1038,7 +1112,7 @@ def score(  # noqa: PLR0915
   return results
 
 
-def _score_fused_multistate(
+def _score_fused_multistate(  # not length-bucketed in S8 v1
   spec: ScoringSpecification,
   protein_iterator: Any,  # noqa: ANN401
   score_fn: Any,  # noqa: ANN401

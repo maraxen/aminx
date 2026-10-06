@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 
 import numpy as np
+import pytest
 
-from aminx.host.bucketing import batch_span, bucket_ladder, rung_for
+from aminx.host.bucketing import (
+  batch_span,
+  bucket_ladder,
+  repad_residue_axis,
+  rung_for,
+  sample_rung,
+  trim_residue_axis,
+)
 from aminx.run.spec_json import (
   run_specification_from_json_dict,
   run_specification_to_json_dict,
@@ -76,3 +85,91 @@ def test_length_bucketing_spec_json_round_trip() -> None:
   del missing["length_bucketing"]
   decoded = run_specification_from_json_dict(missing)
   assert decoded.length_bucketing is True
+
+
+def _mask(span: int, padded: int = 512) -> np.ndarray:
+  mask = np.zeros(padded, dtype=np.float32)
+  mask[:span] = 1.0
+  return mask
+
+
+def test_sample_rung_selects_the_ladder_rung() -> None:
+  assert sample_rung(_mask(76), 512, max_length=512, enabled=True) == 128
+
+
+def test_sample_rung_returns_none_when_nothing_to_trim() -> None:
+  assert sample_rung(_mask(76), 76, max_length=76, enabled=True) is None
+  assert sample_rung(_mask(76), 512, max_length=None, enabled=True) is None
+  assert sample_rung(_mask(76), 512, max_length=512, enabled=False) is None
+  assert sample_rung(_mask(76), 512, max_length=512, enabled=True, pass_mode="inter") is None
+  assert sample_rung(None, 512, max_length=512, enabled=True) is None
+
+
+def test_sample_rung_tracer_is_not_trimmed() -> None:
+  import jax
+  import jax.numpy as jnp
+
+  seen: dict[str, object] = {}
+
+  def capture(mask: jax.Array) -> jax.Array:
+    seen["tracer"] = type(mask).__name__
+    seen["rung"] = sample_rung(mask, int(mask.shape[-1]), max_length=512, enabled=True)
+    return mask
+
+  jax.jit(capture)(jnp.ones((512,), dtype=jnp.float32))
+  assert seen["rung"] is None
+
+
+def test_sample_rung_skip_guards_log_and_return_none(caplog: pytest.LogCaptureFixture) -> None:
+  mask = _mask(76)
+  cases = (
+    {"bias": np.zeros(10), "needle": "bias"},
+    {"tie_group_map": np.zeros(10, dtype=np.int32), "needle": "tie_group_map length"},
+    {"tie_group_map": np.arange(512, dtype=np.int32), "needle": "tie_group_map id"},
+    {"state_position_map": np.zeros((2, 10), dtype=np.int32), "needle": "state_position_map last axis"},
+    {"state_position_map": np.full((2, 512), 200, dtype=np.int32), "needle": "state_position_map value"},
+    {"structure_mapping": np.zeros(10, dtype=np.int32), "needle": "structure_mapping"},
+  )
+  for case in cases:
+    needle = str(case.pop("needle"))
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="aminx.host.bucketing"):
+      rung = sample_rung(mask, 512, max_length=512, enabled=True, **case)
+    assert rung is None, needle
+    assert any(needle in rec.message for rec in caplog.records), needle
+
+
+def test_sample_rung_accepts_aligned_controls() -> None:
+  rung = sample_rung(
+    _mask(76),
+    512,
+    max_length=512,
+    enabled=True,
+    bias=np.zeros((512, 21), dtype=np.float32),
+    tie_group_map=np.zeros(512, dtype=np.int32),
+    state_position_map=np.zeros((1, 512), dtype=np.int32),
+    structure_mapping=np.zeros((1, 512), dtype=np.int32),
+  )
+  assert rung == 128
+
+
+def test_trim_and_repad_round_trip_and_none() -> None:
+  arr = np.arange(24, dtype=np.int32).reshape(2, 6, 2)
+  trimmed = trim_residue_axis(arr, 4, 1)
+  assert trimmed.shape == (2, 4, 2)
+  padded = repad_residue_axis(trimmed, 6, 1)
+  assert padded.shape == arr.shape
+  assert np.array_equal(padded[:, :4], arr[:, :4])
+  assert np.all(padded[:, 4:] == 0)
+  assert trim_residue_axis(None, 4, 1) is None
+  assert repad_residue_axis(None, 6, 1) is None
+
+
+def test_state_position_map_trims_the_last_axis() -> None:
+  spm = np.arange(30, dtype=np.int32).reshape(2, 3, 5)
+  trimmed = trim_residue_axis(spm, 3, -1)
+  assert trimmed.shape == (2, 3, 3)
+  assert np.array_equal(trimmed, spm[:, :, :3])
+  padded = repad_residue_axis(trimmed, 5, -1)
+  assert padded.shape == spm.shape
+  assert np.all(padded[:, :, 3:] == 0)

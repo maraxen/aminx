@@ -148,8 +148,9 @@ PROTOCOL_VERSION = 2
 LEGACY_CONTROLS = ("ctl_T_wrong_order", "ctl_D_wrong_temperature", "ctl_C_wrong_bias", "ctl_S_stock_single_aa")
 ALL_CELLS = (*KNOB_CELLS, *SCORE_CELLS, *CONTROL_CELLS, *OTHER_CELLS)
 
+# Recorded parity bathos runs predate S8 length bucketing. Opting out keeps them comparable.
 CLI_KNOBS = {"checkpoint_id": "proteinmpnn_v_48_020", "num_samples": 4, "temperature": 0.3,
-             "chain_id": CHAIN, "random_seed": 5, "max_length": N_PAD}
+             "chain_id": CHAIN, "random_seed": 5, "max_length": N_PAD, "length_bucketing": False}
 
 
 _TMP_DIRS: list[str] = []
@@ -374,8 +375,10 @@ def aminx_kwargs(model_key: str, ctx: dict[str, Any], *, temperature: float, bia
   fd = ctx["fd"]
   chain_mask = fd["chain_mask"][0].numpy()
   s_native = fd["S"][0].numpy()
+  # Recorded parity bathos runs predate S8 length bucketing. Opting out keeps them comparable.
   kw: dict[str, Any] = {"inputs": [str(root / "inputs" / PDB_NAME)], "checkpoint_id": MODELS[model_key]["checkpoint"],
-                        "chain_id": CHAIN, "temperature": temperature, "max_length": pad}
+                        "chain_id": CHAIN, "temperature": temperature, "max_length": pad,
+                        "length_bucketing": False}
   length = chain_mask.shape[0]
   fixed = chain_mask == 0
   if fixed.any():
@@ -559,9 +562,11 @@ def lane_score(model_key: str, ctx: dict[str, Any], *, vs_stock: bool) -> dict[s
   native = fd["S"][0].numpy()
   other = out["S"][0].numpy()
   strings = ["".join(ALPHABET[i] for i in s) for s in (native, other)]
+  # Recorded parity bathos runs predate S8 length bucketing. Opting out keeps them comparable.
   kw: dict[str, Any] = {"inputs": [str(_ref_root() / "inputs" / PDB_NAME)],
                         "checkpoint_id": MODELS[model_key]["checkpoint"], "chain_id": CHAIN,
-                        "sequences_to_score": strings, "return_logits": True, "max_length": N_PAD}
+                        "sequences_to_score": strings, "return_logits": True, "max_length": N_PAD,
+                        "length_bucketing": False}
   if MODELS[model_key]["ligand"]:
     kw["ligand_conditioning"] = True
     kw["ligand_context_path"] = ligand_npz(ctx, N_PAD)
@@ -622,6 +627,8 @@ def _cli_emit(*, drop: tuple[str, ...] = ()) -> tuple[dict[str, Any] | None, dic
   for knob, (flag, value) in base.items():
     if knob not in drop:
       cmd += [flag, str(value)]
+  # Recorded parity bathos runs predate S8 length bucketing. Opting out keeps them comparable.
+  cmd += ["--no-length-bucketing"]
   cmd += ["sample", "--inputs", str(root / "inputs" / PDB_NAME)]
   for knob, (flag, value) in sample.items():
     if knob not in drop:

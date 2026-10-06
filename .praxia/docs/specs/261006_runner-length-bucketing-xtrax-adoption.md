@@ -105,8 +105,8 @@ After the transpose (`~:527`):
   3. `[tool.aminx] memory_budget_bytes` in the nearest `pyproject.toml`;
   4. `${XDG_CONFIG_HOME:-~/.config}/aminx/config.toml`, `[runtime] memory_budget_bytes`;
   5. `xtrax.tiling.device_memory_budget(fraction=headroom)`;
-  6. the documented 4 GiB default, with a one-time WARNING.
-  `memory_budget_source()` reports which layer decided, and a malformed config fails loudly. GPU behaviour is unchanged, because layer 5 equals today's `bytes_limit * headroom`. CPU behaviour is unchanged except that the WARNING names the source.
+  6. the documented 4 GiB default, with a one-time INFO.
+  `memory_budget_source()` reports which layer decided, and a malformed config fails loudly. GPU behaviour is unchanged, because layer 5 equals today's `bytes_limit * headroom`. CPU behaviour is unchanged except that the INFO names the source. CPU never reports `bytes_limit`, so the default-budget INFO line is the normal CPU path.
 - **AR complexity guard (S8-10).** A test that uses `xtrax.profiling.loop_scaling` to assert that the AR decode scan body does not grow with L (the aminx #1983 class of bug). Spike the API first (A15). If it cannot express the check, record that and file it upstream; don't hand-roll.
 
 ## 4. Gates

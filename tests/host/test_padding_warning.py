@@ -145,6 +145,24 @@ def test_never_raises_from_its_own_computation():
         check(SimpleNamespace(mask=np.array([["a", "b"]], dtype=object)))  # non-numeric
 
 
+def test_bucketing_on_compares_the_span_to_the_rung():
+    """76 residues at pad 512 rung to 128, which is under 2x the span, so the check stays silent."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _PaddingCheck("sample", length_bucketing=True)(_batch([76], 512))
+
+
+def test_bucketing_off_still_warns_on_the_padded_length():
+    with pytest.warns(UserWarning, match=r"max_length=512.*spans 76"):
+        _PaddingCheck("sample", length_bucketing=False)(_batch([76], 512))
+
+
+def test_bucketing_on_still_warns_when_the_span_is_past_the_ladder():
+    """A span past the last rung is not trimmed, so the padded length is what the warning sees."""
+    with pytest.warns(UserWarning, match=r"spans 3000 residues"):
+        _PaddingCheck("sample", length_bucketing=True)(_batch([3000], 8192))
+
+
 def test_suggestion_rounds_up_to_a_multiple_of_32_and_never_below_the_span():
     for real in (1, 31, 32, 33, 93, 214, 250):
         padded = 1024
@@ -165,9 +183,12 @@ _CHECKPOINT = "proteinmpnn_v_48_020"
 _UBQ_SEQUENCE = "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"  # 76 residues
 
 
-def _sample(max_length: int) -> None:
+def _sample(max_length: int, *, length_bucketing: bool | None = None) -> None:
     from aminx.host.runner import sample
 
+    kwargs: dict[str, object] = {}
+    if length_bucketing is not None:
+        kwargs["length_bucketing"] = length_bucketing
     sample(
         inputs=[_STRUCTURE],
         checkpoint_id=_CHECKPOINT,
@@ -175,18 +196,23 @@ def _sample(max_length: int) -> None:
         temperature=0.5,
         random_seed=0,
         max_length=max_length,
+        **kwargs,
     )
 
 
-def _score(max_length: int) -> None:
+def _score(max_length: int, *, length_bucketing: bool | None = None) -> None:
     from aminx.host.runner import score
 
+    kwargs: dict[str, object] = {}
+    if length_bucketing is not None:
+        kwargs["length_bucketing"] = length_bucketing
     score(
         inputs=[_STRUCTURE],
         checkpoint_id=_CHECKPOINT,
         sequences_to_score=[_UBQ_SEQUENCE],
         random_seed=0,
         max_length=max_length,
+        **kwargs,
     )
 
 
@@ -198,7 +224,7 @@ def _padding_warnings(caught: list[warnings.WarningMessage]) -> list[warnings.Wa
 @pytest.mark.requires_weights
 def test_runner_sample_warns_when_padding_dominates():
     with pytest.warns(UserWarning, match=r"max_length=256.*spans 76 residues.*max_length=96"):
-        _sample(256)
+        _sample(256, length_bucketing=False)
 
 
 @pytest.mark.slow
@@ -216,7 +242,17 @@ def test_runner_sample_is_silent_with_modest_padding():
 def test_runner_score_warns_when_padding_dominates():
     assert len(_UBQ_SEQUENCE) == 76
     with pytest.warns(UserWarning, match=r"max_length=256.*spans 76 residues.*single forward pass"):
-        _score(256)
+        _score(256, length_bucketing=False)
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+def test_runner_sample_default_bucketing_is_silent():
+    """The warning case above stays quiet once the default rung removes the padding."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        _sample(256)
+    assert not _padding_warnings(caught), "default length bucketing should trim 76 -> 128 and stay silent"
 
 
 @pytest.mark.slow

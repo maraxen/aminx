@@ -4,6 +4,12 @@
 
 ### Changed
 
+- **Runner buckets residue length by default** (xtrax `BUCKET_LADDER`). Seeded sample
+  outputs change. Logits at padded tail positions are now 0 (previously computed
+  values). Old specs replay with bucketing on; pass `--no-length-bucketing` /
+  `length_bucketing=False` to reproduce a pre-bucketing run. Campaign numerics
+  epoch is 2.
+
 - **xtrax pinned to `0.4.0a11`** (was `0.4.0a10`). xtrax renamed its chunked strategy
   `SafeMap` to `ChunkedMap` (`SafeMapIterator` to `ChunkedMapIterator`; xtrax #3644).
   Every aminx use of *xtrax's* names now uses the new ones; aminx's own

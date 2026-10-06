@@ -56,7 +56,8 @@ ADOPT_LEGACY_REPORT_SCHEMA_VERSION = "campaign_adopt_legacy_report_v1"
 # Bump BY HAND when a change moves the sampled numbers for a given spec and seed (e.g. a decode or key-derivation
 # change). It is part of every unit's input hash, so a bump invalidates stamps written before it instead of letting a
 # resumed campaign mix outputs from two numerics (aminx #2421).
-SAMPLING_NUMERICS_EPOCH = 1
+# S8 length bucketing changes seeded sample outputs, so stamps from epoch 1 are not reused.
+SAMPLING_NUMERICS_EPOCH = 2
 _MAX_HASHED_DIR_FILES = 5000
 MANIFEST_ROW_SCHEMA_VERSION = "campaign_manifest_row_v1"
 MANIFEST_SCHEMA_VERSION = "campaign_manifest_v1"
