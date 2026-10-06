@@ -183,14 +183,25 @@ def _n_pairs(repo: Path, wave: str, oracle_dir: str) -> int:
 
 
 def _run_wave(repo: Path, wave: str, oracle_dir: str, work: Path) -> dict[str, Any]:
-  """One pytest session for one wave. ``-o addopts=''`` defeats parity_heavy."""
+  """One pytest session for one wave. ``-o addopts=''`` defeats parity_heavy.
+
+  The runner is ``uv run --no-sync``, byte-for-byte what ``run_gate.py:32``
+  uses, so a wave graded here runs in the same environment the gate would give
+  it. The pre-registered draft said ``--frozen --extra=dev``; that was a slip on
+  two counts and is corrected here, not loosened. ``dev`` is a
+  ``[dependency-groups]`` entry (``pyproject.toml:307``), not a
+  ``[project.optional-dependencies]`` one, so ``--extra=dev`` has no referent;
+  and any syncing form may rewrite the shared venv out from under whatever else
+  is on the host. This changes how the wave is scheduled, never what it is
+  graded against -- every band still comes from ``tests/port/targets/*.toml``.
+  """
   xml = work / f"{wave}.junit.xml"
   env = {
     **os.environ,
     "AMINX_LASER_ORACLE_DIR": oracle_dir,
     "AMINX_PORT_WAVE": wave,
   }
-  runner = ["uv", "run", "--frozen", "--extra=dev", "pytest"]
+  runner = ["uv", "run", "--no-sync", "pytest"]
   argv = [
     *runner,
     "-o",
