@@ -202,6 +202,27 @@ today, not merely missing (`--model-family` listed as two values; there are four
 find one that works — `aminx-b7i-git` has both xtrax 0.4.0a11 and pyarrow; `aminx-confirm-git`
 dies on the xtrax floor, `aminx-ci` has no pyarrow.
 
+## 3a. The catalog was swept for other unrecognised work — there is none
+
+Finding the pilot (§2 D4) raised the obvious question: is other completed work sitting
+unrecognised? All **106** aminx runs were checked. Every run over 1 h that is not graded
+`pass`/`derived` is accounted for:
+
+| runs | superseded by |
+| :-- | :-- |
+| 8 × `laser_proofread_parity` fail (1.5–4.5 h) | `182ab6d4`, a **passing ledger row** |
+| 3 × `laser_decode_e2e` fail | `5b2c16ee`, passing |
+| 1 × `potts_ar_refine_exact` fail | `1a98f24f`, passing |
+| `03d2ef37`, `1cfc1e9d`, `6b47d40c`, `6a7ec712` | all four resolved this session |
+
+So those long failures are **iteration history**, not lost deliverables — each was followed by a
+pass that is already in the ledger. The 12 runs with an `(empty)` outcome are all sub-hour,
+consistent with the fast-failure trap (a bth run that dies immediately records nothing); three
+of them are tonight's PATH failures.
+
+Recorded because the negative result is the useful part: the search is exhausted, so nobody
+needs to repeat it.
+
 ## 4. Claims corrected this session
 
 Recorded because the pattern matters more than any single number.
