@@ -154,7 +154,7 @@ Tier B — changes measured numbers. Each needs its effect attributable.
 | :-- | :-- | :-- | :-- | :-- |
 | B1 | #2475 refine key split | `src/aminx/families/potts_mpnn/sample_host.py` | `optimize_pdb` / `optimize_fasta`, and the sample path **only when a chain suffix is set** | No gate slug exercises those paths, so plausibly zero rows move. Confirm before assuming. |
 | B2 | #2371 stage 2 step 3 (dispatched sample loop) | `src/aminx/families/potts_mpnn/sample_host.py`, `src/aminx/host/family_runner.py` | the sample chunk path — **which includes refine@0.3** | See §3. This is the expensive one. |
-| B3 | #2480(b) `state_position_map` not bucket-padded | `src/aminx/inference/bundle_builder.py` (one field) | **small, now diagnosed** | See §3a. One conditioning field escapes bucket padding; everything else in the bundle is padded correctly. |
+| B3 | #2480(b) `state_position_map` not bucket-padded | **`src/aminx/tiling/pad.py:44-54`** (one field in `pad_bundle`'s tuple) | **small, now diagnosed and located** | See §3a. One conditioning field escapes bucket padding; everything else in the bundle is padded correctly. |
 
 Tier C — larger, and each wants its own decision first, so listed for completeness rather than
 proposed: #2459 (`tied_positions` inert), #2443 (Potts optional dicts), #2435 (eight unread
@@ -200,11 +200,33 @@ path**, not just multi-state designs. (2) A second mismatch sits immediately beh
 `conditional.py:159` passes `cond.tie_group_map[0]` (length 128) to `_apply_tie_group_fuse`
 alongside fused logits that are now length 76.
 
+**The exact fix site, located by reading this branch's tree** (not the one the probe ran in —
+see the caveat below): `pad_bundle` in `src/aminx/tiling/pad.py` pads exactly six fields —
+`fixed_mask, fixed_tokens, bias, tie_group_map, sequence_oh, ar_mask` (`:44-46`, tuple at
+`:52-54`) — and `state_position_map` is **not among them**. Meanwhile
+`bundle_builder.py:198-203` defaults the map to `jnp.arange(seq_len)` *before*
+`pad_bundle(bundle, target_length)` runs at `:364-367`. So the map is created at the real
+length and then never padded, while its six siblings are. Adding it to that tuple is the fix.
+
+Note `bundle_builder.py:208` already contains an F004 guard whose comment reads *"a
+reference-frame width different from the padded chain length"* — i.e. the intended invariant is
+that the map matches the **padded** length. The default path violates the invariant the guard
+was written to protect, which is why the guard does not fire: it only checks a *user-supplied*
+map.
+
 **Not fixed here**, because `src/aminx/` is scoped and a commit there invalidates all eight
-ledger rows (§0). The fix is one field in the bundle's padding step, and the convention
-question -- pad `state_position_map` to the bucket like every sibling field, or slice `bias`
-and `tie_group_map` down to the real length -- should be answered the way the rest of the
-bundle already answers it: pad.
+ledger rows (§0). The convention question -- pad `state_position_map` like every sibling field,
+or slice `bias` and `tie_group_map` down to the real length -- is already answered by that
+F004 comment and by the other six fields: pad.
+
+**Provenance caveat.** The shapes above were observed by instrumenting the benchmark in the
+`aminx-confirm-git` tree, whose venv pins the **pre-0.4.0a11** xtrax and whose `src/aminx` is
+`5c625b00` — this branch cannot run there at all (`ImportError: cannot import name
+'ChunkedMap' from 'xtrax.tiling'`, because the main merge `bc3f1950` moved the floor to
+0.4.0a11). The defect's presence on *this* branch was therefore established by reading
+`pad.py` and `bundle_builder.py` directly, as cited, rather than by re-running. Upgrading
+xtrax in that venv to re-run was deliberately not done: the Potts confirmatory run was using
+that interpreter at the time.
 
 **Corrects two earlier mischaracterisations of mine.** `c18062d6`'s message called 128 "a
 padded length" and guessed the failure was in `ar_sample`; and a later reading of mine called
