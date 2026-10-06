@@ -238,6 +238,29 @@ alone**.)*
 *(B3 was here. It has been **reclassified to Tier A as A5** — see below. Tier B is now B1 and
 B2 only.)*
 
+### 2d. #2444 cannot have contaminated any recorded evidence
+
+Worth checking before anything else in Tier C, because "`AMINX_PORT_WAVE` loads the wrong
+oracle" reads like it could undermine the eight passing rows. It cannot. Blast radius, bounded
+by reading the resolution order:
+
+`tests/port/conftest.py:71-81` resolves the target as: env var set and not `__nonport__` →
+`targets/<wave>.toml`; otherwise fall back to `pyproject.toml`'s `[tool.port] target`;
+otherwise raise. That fallback is configured (`pyproject.toml:279-280`) to
+**`tests/port/targets/port_selftest.toml`** — the self-test target, not a sibling wave's.
+
+| path | affected? | why |
+| :-- | :-- | :-- |
+| the redsox gate | **no** | `run_gate.py:147,216` sets the var per wave, and `:258-260` pops it for step 0 precisely so a leak cannot deselect the rest |
+| the eight ledger rows | **no** | they are `scripts/parity/` vehicle runs, not pytest port waves — the variable is not in their path |
+| `tests/port/run_waves.sh` | **no** | `:16` sets it explicitly |
+| a bare `pytest tests/port/test_<wave>.py` | **yes** | resolves to `port_selftest.toml` |
+
+So #2444 is a **developer footgun, not an evidence problem** — no recorded measurement could
+have been graded against the wrong target. That lowers its urgency considerably: it does not
+need to ride this wave to protect anything, though `tests/port/` being scoped means it is cheap
+to include once the wave is running anyway.
+
 Tier C — larger, and each wants its own decision first, so listed for completeness rather than
 proposed: #2459 (`tied_positions` inert), #2443 (Potts optional dicts), #2435 (eight unread
 Options fields), #2433 (three unimplemented Potts fields — note its own impact line says
