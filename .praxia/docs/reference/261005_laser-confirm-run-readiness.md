@@ -720,3 +720,38 @@ the pre-registered gate*. And the padding null now has three independent reading
 same way (0.965 and 0.962 from warm-up pairs on two different hosts' load regimes, plus
 whatever the graded instances give), which is a much stronger position than the single
 measurement the question started from.
+
+### The padding pair is COMPLETE and grades `padding_irrelevant`, with a gate-clearing instance
+
+Both graded instances finished 2026-10-06:
+
+| instance | `ref` p512 | `fit` p160 | ratio fit/ref | load spread | stability gate |
+| :-- | --: | --: | --: | --: | :-- |
+| r0 | 52.68 | 57.61 | 1.094 | 1.80 | **fails** (>1.50) |
+| **r1** (order reversed) | **44.43** | **45.05** | **1.014** | **1.17** | **passes** |
+
+Median ratio **1.054**, which is >= 0.90, so the pre-registered band grades
+**`padding_irrelevant`**. The 160-padded configuration is, if anything, marginally *slower* —
+exactly the noise you expect around a true null.
+
+**And r1 clears the stability gate on its own**, at a load spread of 1.17 against the 1.50
+ceiling. That matters: it means the self-load problem recorded above is **not** a permanent bar
+to a valid instance — r1 is a fully valid measurement by this run's own criteria, taken with
+the member order reversed, which is also the arm where a monotone drift would have shown up
+with the opposite sign. It did not.
+
+**So the padding question is settled, four ways:**
+
+1. Code reading — `max_length` never reaches the LASEr path (`l_pad` is Potts-only;
+   `sample_host.py:165` takes length from the features).
+2. Shape probe — `featurize` returns `(154,)`, not `(512,)`.
+3. Warm-up pairs — ratio 0.965 and 0.962, under two different load regimes on two hosts.
+4. **Graded pairs — median 1.054, with a gate-clearing instance at 1.014.**
+
+The ~10x padding hypothesis I asserted earlier today is dead by measurement as well as by
+reading, and `_PaddingCheck`'s silence was correct all along.
+
+**Still open: the lever.** The `control` and `lever` pairs had not run when the host went to
+load 69 again (another session started a 87-thread spike on top of the long-running staging
+job). The run continues; if the lever's instances land under drifting load they will fail the
+same gate r0 failed, and the ratios will be reported with that caveat rather than as a verdict.
