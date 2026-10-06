@@ -308,3 +308,26 @@ def test_info_reports_resolution_without_writing(
   assert result["python"] is None
   assert result["marketplace_source"] == "$CISTERNAL_PLUGIN_MARKETPLACE"
   assert result["bundle_source"]
+
+
+def test_dry_run_with_no_marketplace_writes_no_config(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+  recorder: list[dict[str, Any]],
+  capsys: pytest.CaptureFixture[str],
+) -> None:
+  """With nothing configured, ``--dry-run`` reports that and leaves the user config alone.
+
+  ``resolve_marketplace_root`` writes a default entry into
+  ``$XDG_CONFIG_HOME/cisternal/config.toml``; a dry run must not reach it.
+  """
+  xdg = _isolate(monkeypatch, tmp_path)
+  monkeypatch.delenv("CISTERNAL_PLUGIN_MARKETPLACE", raising=False)
+  monkeypatch.chdir(_empty_start(tmp_path))
+  assert main(["publish", "--dry-run"]) == 0
+  assert recorder == []
+  assert list(xdg.rglob("*")) == []
+  payload = json.loads(capsys.readouterr().out)
+  assert payload["dry_run"] is True
+  assert payload["marketplace"] is None
+  assert payload["marketplace_source"]

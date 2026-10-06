@@ -17,6 +17,14 @@ pip install "aminx[agent]"
 
 `pip install aminx` installs the library and the CLI only.
 
+## Agent launch mode
+
+Publish the plugin with `python -m aminx.agent.plugin publish`. The default MCP command is `uvx --from aminx[agent]==<version> aminx-mcp`. That version must be on PyPI. The first launch resolves the uvx environment, and the first tool call for a checkpoint and input shape compiles JAX.
+
+`python -m aminx.agent.plugin publish --launch venv` switches to the local interpreter. The same choice is `AMINX_MCP_LAUNCH=venv` and `AMINX_MCP_PYTHON`, `[tool.aminx.agent]` in the nearest `pyproject.toml`, or `[agent]` in `${XDG_CONFIG_HOME:-~/.config}/aminx/config.toml`. The recorded command is an absolute interpreter path running `-m aminx.agent.mcp`, because Claude Code does not activate virtualenvs. `python -m aminx.agent.plugin info` prints the mode, command, and source. Publish again with `--launch uvx`, and remove an env or config setting if one was used, to switch back.
+
+Details are in the docs page "Using aminx from an agent" (`docs/source/tutorials/agent.rst`).
+
 ## Which surface
 
 | Surface | When to use it |
@@ -25,7 +33,7 @@ pip install "aminx[agent]"
 | `aminx` CLI | A shell command or a file-driven, reproducible run. |
 | Python API | Composing JAX code. Start with `aminx.parse_structure`, `aminx.load_model`, `aminx.sample`, and `aminx.score`. |
 
-The first call for a given checkpoint and input shape compiles JAX and can take minutes. Later calls with the same shapes reuse that compilation.
+Run time grows with the padded length. Unless `options` sets `max_length`, MCP tools fit it to the parsed structures (rounded up to a multiple of 64) and record it in the returned `spec`. The first call for a checkpoint and padded shape compiles JAX; later calls in the same server reuse it.
 
 ## MCP tools
 

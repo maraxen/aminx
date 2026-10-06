@@ -16,7 +16,7 @@ pytest.importorskip("cisternal")
 from fastmcp import Client
 
 from aminx.agent.mcp import build_server
-from aminx.agent.requests import build_spec, structure_lengths
+from aminx.agent.requests import build_spec, spec_from_json, structure_lengths
 from aminx.host import runner
 from aminx.utils.aa_convert import protein_sequence_to_string
 
@@ -110,7 +110,11 @@ def test_sample_matches_runner_and_seed_changes(tmp_path: Path) -> None:
       return _data(seeded), _data(other)
 
   payload, other_payload = asyncio.run(body())
-  spec = build_spec("sample", [pdb], options)
+  # The tool fits max_length to the structure (76 residues -> 128) instead of the
+  # specification default; the returned spec must reproduce the run exactly.
+  assert build_spec("sample", [pdb], options).max_length == 512
+  spec = spec_from_json(payload["spec"])
+  assert spec.max_length == 128
   direct = runner.sample(spec=spec)
   lengths = structure_lengths(spec)
   structure_ids = list(lengths)
@@ -160,11 +164,9 @@ def test_score_matches_runner(tmp_path: Path) -> None:
       return _data(result)
 
   payload = asyncio.run(score_sequences())
-  spec = build_spec(
-    "score",
-    [pdb],
-    {"sequences_to_score": sequences, "random_seed": 42},
-  )
+  spec = spec_from_json(payload["spec"])
+  assert spec.max_length == 128
+  assert list(spec.sequences_to_score) == sequences
   direct = runner.score(spec=spec)
   direct_nlls = [float(value) for value in np.asarray(direct["scores"]).reshape(-1)]
   assert _tool_nlls(payload) == pytest.approx(direct_nlls, rel=1e-6)
@@ -200,11 +202,12 @@ def test_reverse_jacobian_side_file(tmp_path: Path) -> None:
   }
   assert len(matched) == 1
   info = next(iter(matched.values()))
-  spec = build_spec("jacobian", [pdb], {"jacobian_mode": "reverse", "compute_apc": False})
+  spec = spec_from_json(payload["spec"])
+  assert spec.max_length == 128
   length = structure_lengths(spec)["1ubq"]
   assert info["shape"] == [length, 21]
 
-  # The runner pads to max_length; the tool trims to the parsed residue count. Trimming must
+  # The runner pads to max_length (fitted to 128 here); the tool trims to the parsed residue count. Trimming must
   # keep every real row (equal to the direct runner's first `length` rows) and drop only padding
   # (the direct output's rows past `length` are all zero).
   key = next(iter(matched)).replace("/", "__")

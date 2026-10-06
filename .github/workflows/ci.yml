@@ -43,7 +43,7 @@ jobs:
         run: npm install -g @ast-grep/cli
       - name: Install dependencies and run tests
         run: |
-          uv sync --extra cpu --extra dev --extra tests --extra onnx
+          uv sync --extra cpu --extra dev --extra tests --extra onnx --extra agent
 
           # The ONNX parity tests skip (rather than error) when the toolchain is absent, so a broken install
           # would quietly turn them into skips. Fail the job instead (aminx debt #2392).

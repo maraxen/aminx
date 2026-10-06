@@ -113,6 +113,52 @@ def _merge_options(
   return merged
 
 
+MAX_LENGTH_BUCKET = 64
+
+
+def fitted_max_length(
+  spec: Any,  # noqa: ANN401 -- any RunSpecification subclass
+  lengths: Mapping[str, int],
+  *,
+  explicit: bool,
+) -> int | None:
+  """Padded length that fits the parsed inputs, or ``None`` to keep the spec's.
+
+  The runner pads every structure to ``max_length`` (default 512) and decode
+  cost grows with the padded length, so a short structure at the default
+  length spends most of its time on padding. When the caller did not set
+  ``max_length`` and every input parsed, this returns the longest structure
+  (``intra``) or the summed length (``inter``, which joins inputs), rounded
+  up to a multiple of :data:`MAX_LENGTH_BUCKET`. Rounding keeps nearby sizes on
+  one compiled shape. It never returns less than the residues it measured, so
+  nothing is truncated.
+
+  Parameters
+  ----------
+  spec : RunSpecification
+    Specification built from the caller's options.
+  lengths : mapping of str to int
+    Parsed residue counts from :func:`aminx.agent.requests.structure_lengths`.
+  explicit : bool
+    Whether the caller set ``max_length``. An explicit value is kept.
+
+  Returns
+  -------
+  int or None
+    The fitted length, or ``None`` when the spec should be left unchanged.
+  """
+  inputs = spec.inputs if isinstance(spec.inputs, (list, tuple)) else [spec.inputs]
+  if explicit or not lengths or len(lengths) != len(inputs):
+    return None
+  counts = list(lengths.values())
+  needed = sum(counts) if getattr(spec, "pass_mode", "intra") == "inter" else max(counts)
+  fitted = -(-needed // MAX_LENGTH_BUCKET) * MAX_LENGTH_BUCKET
+  current = getattr(spec, "max_length", None)
+  if current is not None and fitted >= current:
+    return None
+  return fitted
+
+
 async def _run(
   kind: Literal["sample", "score", "inspect", "jacobian"],
   inputs: list[str],
@@ -153,7 +199,11 @@ async def _run(
 
   def worker() -> dict[str, Any]:
     with _RUN_LOCK:
+      nonlocal spec
       lengths = structure_lengths(spec)
+      fitted = fitted_max_length(spec, lengths, explicit="max_length" in merged)
+      if fitted is not None:
+        spec = build_spec(kind, inputs, {**merged, "max_length": fitted})
       results = _RUNNERS[kind](spec=spec)
       directory = Path(output_dir) if output_dir else default_output_dir()
       return shape_result(
@@ -182,7 +232,7 @@ async def sample(
   output_dir: str | None = None,
   inline_cap: int = DEFAULT_INLINE_CAP,
 ) -> dict[str, Any]:
-  """Design amino-acid sequences for protein backbones. Inputs are local structure file paths. The first call per checkpoint and shape compiles JAX and can take minutes; later calls with the same shapes are fast. Large arrays come back as a side-file path.
+  """Design amino-acid sequences for protein backbones. Inputs are local structure file paths. Run time grows with the padded length: unless options sets max_length, it is fitted to the parsed structures (rounded up to a multiple of 64) and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
 
   Parameters
   ----------
@@ -232,7 +282,7 @@ async def score(
   output_dir: str | None = None,
   inline_cap: int = DEFAULT_INLINE_CAP,
 ) -> dict[str, Any]:
-  """Score amino-acid sequences against protein backbones. Inputs are local structure file paths. The first call per checkpoint and shape compiles JAX and can take minutes; later calls with the same shapes are fast. Large arrays come back as a side-file path.
+  """Score amino-acid sequences against protein backbones. Inputs are local structure file paths. Run time grows with the padded length: unless options sets max_length, it is fitted to the parsed structures (rounded up to a multiple of 64) and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
 
   Parameters
   ----------
@@ -277,7 +327,7 @@ async def inspect(
   output_dir: str | None = None,
   inline_cap: int = DEFAULT_INLINE_CAP,
 ) -> dict[str, Any]:
-  """Inspect model features for protein backbones. Inputs are local structure file paths. The first call per checkpoint and shape compiles JAX and can take minutes; later calls with the same shapes are fast. Large arrays come back as a side-file path.
+  """Inspect model features for protein backbones. Inputs are local structure file paths. Run time grows with the padded length: unless options sets max_length, it is fitted to the parsed structures (rounded up to a multiple of 64) and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
 
   Parameters
   ----------
@@ -321,7 +371,7 @@ async def jacobian(
   output_dir: str | None = None,
   inline_cap: int = DEFAULT_INLINE_CAP,
 ) -> dict[str, Any]:
-  """Compute a sequence Jacobian for protein backbones. Inputs are local structure file paths. The first call per checkpoint and shape compiles JAX and can take minutes; later calls with the same shapes are fast. Large arrays come back as a side-file path.
+  """Compute a sequence Jacobian for protein backbones. Inputs are local structure file paths. Run time grows with the padded length: unless options sets max_length, it is fitted to the parsed structures (rounded up to a multiple of 64) and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
 
   Parameters
   ----------

@@ -140,7 +140,7 @@ the real binary.
 | A7 | cisternal's in-process API can load the bundle, replace the MCP server command, and install into the shared marketplace | verified by reading 0.1.1a15: `cisternal.plugin.app.load_bundle(PluginSpec)` (checkout manifest or packaged snapshot; already applies the `uvx` rewrite via `merge_registry`) → `dataclasses.replace` on `bundle.mcp_servers` → `claude_install(bundle, record, marketplace=, scope=, claude_bin=, require_installed=False, prune_shadowed=)` (`plugin/app.py:211-251,314-394`); marketplace root via `cisternal.plugin.config.marketplace_root_source`. `prune_shadowed=True` moves the old `~/.claude/skills/using-aminx` aside (S7-14) | done |
 | A9 | launch is resolved at bundle build; no install-time override exists in 0.1.1a15 | verified (`assets/launch.py`) | done |
 | A10 | `uvx_from = "aminx[agent]=={version}"` formats correctly (`str.format` leaves `[agent]` alone) | verified (`launch.py:24-32`) | - |
-| A8 | A long-lived server keeps the jit cache warm across calls with the same shapes | unverified | S7-08 |
+| A8 | A long-lived server keeps the jit cache warm across calls with the same shapes | **verified, but not the cost** (261006 spike): a second identical `runner.sample` compiles nothing (`InferencePlan.encode/decode` are class-level `eqx.filter_jit`, `plan.py:626,653`); per-call time is execution at the padded `max_length` (default 512, `specs.py:270`), and a persistent compile cache did not help (warm-cache process no faster). S7-08 therefore fits `max_length` to the inputs | S7-08 |
 
 ## 4. Design
 
@@ -464,11 +464,11 @@ user_decision = false
 
 [[item]]
 id = "S7-08"
-title = "Warm-cache behaviour: model + jit cache reuse across calls in one server process; document cold-compile latency in tool descriptions (A8)"
+title = "Warm path (A8, restated 261006): jit reuse already holds; MCP tools fit max_length to the parsed inputs (max for intra, sum for inter, rounded up to 64; explicit value kept; never below measured residues) and record it in the returned spec; tool descriptions and docs say so"
 repo = "aminx"
 size = "S"
 depends_on = ["S7-07"]
-gate = "second identical-shape call skips compile (compile_cache_hit span field true); negative: a new shape reports false"
+gate = "unit: fitted value covers every measured residue, explicit and unparsed cases keep the spec value; G-PARITY: tool equals runner on the returned spec with max_length 128 for 1ubq (default 512)"
 user_decision = false
 
 [[item]]

@@ -337,12 +337,20 @@ def publish(
     allow_unpublished=allow_unpublished,
   )
   require_agent_extra()
-  from cisternal.plugin import resolve_marketplace_root  # noqa: PLC0415
+  from cisternal.plugin import marketplace_root_source, resolve_marketplace_root  # noqa: PLC0415
   from cisternal.plugin.app import claude_install  # noqa: PLC0415
 
-  root = resolve_marketplace_root(marketplace)
   if dry_run:
-    return {"dry_run": True, **record, "marketplace": str(root)}
+    # resolve_marketplace_root writes a default entry to the user's cisternal
+    # config when none exists; a dry run must not write anything.
+    found, found_source = marketplace_root_source(marketplace)
+    return {
+      "dry_run": True,
+      **record,
+      "marketplace": None if found is None else str(found),
+      "marketplace_source": found_source,
+    }
+  root = resolve_marketplace_root(marketplace)
   claude_install(
     bundle,
     record,
