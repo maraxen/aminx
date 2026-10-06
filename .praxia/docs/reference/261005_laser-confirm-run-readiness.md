@@ -230,6 +230,46 @@ intermediate-n test or plan against the ~237 h / ~119 h figures. A GPU oracle, p
 framed as a convenience, becomes the central question at this scale — and note the aminx arms,
 not the upstream oracle, are what a GPU would have to accelerate.
 
+## The pilot never completed — but 21.68 h of its work is still on disk and reusable
+
+Searching the catalog for `laser_sample_dist` runs turns up something the ~36 h pilot estimate
+in project memory does not mention: **no LASEr distributional run has ever completed.**
+
+| run | kind | status | outcome | hours |
+| :-- | :-- | :-- | :-- | --: |
+| `03d2ef37` | pilot, full | **failed** | error (exit 1) | **21.68** |
+| `6a7ec712` | confirm, smoke | completed | `smoke` | 1.21 |
+| 4 others | confirm, smoke | failed | error | ≤0.08 |
+| `abd2b8a1`, `e0cefaa7` | pilot | completed | `derived` | 0.01 |
+
+So "~36 h" was an estimate, never a measurement — and the one serious attempt burned 21.68 h
+and exited 1 without finishing. (Incidentally `6a7ec712` completing with `outcome=smoke`
+**empirically confirms** the residual-outcome design audited above from the TOML alone.)
+
+**Why it died is now obvious:** its command was
+`--cells min_p0@0.3,min_p0@1.0,min_p0.05@0.3`, and `min_p0.05@0.3` is the cell the confirm
+later *refuses* because upstream produces NaNs there (`cf2ea530`). It ran the valid cells, then
+hit the broken one.
+
+**And the work survives.** `/tmp/laser_sample_dist_pilot/units/` holds **24 stamped units**, and
+`git log 96a148ba..HEAD -- scripts/parity/laser_sample_dist_pilot.py` is **empty** — the script
+has not changed since that run, so `script_sha256` still matches and `graded_resume` can reuse
+them.
+
+**Inference, labelled as such:** each cell is 2 structures × 6 arms = 12 units, so 24 stamped is
+*exactly two cells' worth*, and the run failed on the third. The two runnable cells are
+therefore very likely complete. This is arithmetic plus the failure mode, not a direct read —
+the unit files key on an opaque `cache_key`, so the cell names are not recoverable from them.
+
+**The cheap test, and the prize.** Re-run the pilot with `--cells min_p0@0.3,min_p0@1.0` and
+`--resume` under `bth`. If the inference holds it reports `n_reused = 24`, finishes in minutes,
+and yields a **graded pilot result** — a spec deliverable (B5, "pilot → laser_sample_dist")
+that has never been obtained. If it instead starts computing, the inference was wrong and it
+should be killed rather than left to run for ~134 h.
+
+That asymmetry is why this is worth doing deliberately rather than casually: minutes if right,
+and it must be watched if wrong.
+
 ## What this note does NOT say
 
 It does not argue for or against launching. The cost (~60 h CPU-only, because the titanix
