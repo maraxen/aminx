@@ -58,6 +58,36 @@ pilot's residual verdict comes solely from `plain@0.3` — exactly the cell the 
 The exclusion was correct rather than convenient, and `all_cells_derived=True` shows the pilot
 still did its derivation job for all three.
 
+### The Potts distributional protocol is complete for every cell that can run
+
+`plain@1.0`'s pass lives inside round 1 (`1cfc1e9d`), a run whose **overall outcome is
+`fail`** — the same surface-alarming shape as the pilot above, and it resolves the same way.
+Round 1's artifact:
+
+```
+outcome=fail   controls_all_fail=True   cells_selected=['plain@1.0','refine@0.3']
+  plain@1.0    verdict=PASS   mean_delta=-0.000496   upper_95=0.000729 < δ=0.01  (13.7x)
+                              controls: CTRL_m=fail, CTRL_ntoc=fail
+  refine@0.3   verdict=FAIL   mean_delta=+0.018471   upper_95=0.016471 > δ=0.01
+```
+
+The run-level `fail` is attributable **entirely to `refine@0.3`** — precisely the cell round 2
+fixed (#2474, refine order) and which now passes. `plain@1.0` passed on its own terms: a
+*negative* mean delta (aminx closer to upstream U1 than U2 is), a **13.7x margin**, and **two**
+negative controls both failing — stronger discrimination than `refine@0.3`, which has only
+`CTRL_m`. So the confirm sidecar's "plain@1.0 passed there and is NOT re-run" is justified
+rather than convenient.
+
+| cell | verdict | evidence |
+| :-- | :-- | :-- |
+| `plain@1.0` | **PASS** | round 1 `1cfc1e9d`, 13.7x margin, 2/2 controls fail |
+| `refine@0.3` | **PASS** | round 2 `096d0847`, 9x margin, control fails |
+| `plain@0.3` | excluded | pilot shim-invalid; spec provides no re-pilot for that |
+| `plain@0.1`, `pssm@0.3`, `tied@0.3` | pending | user decision, `decisions/261004_sample-dist-pilot-fixtures-and-low-t.md` |
+
+**Both run-level failures on the Potts side are therefore understood and correctly scoped**, and
+in both cases the exonerating detail was in the artifact, not the outcome string.
+
 ## 2. The four decisions
 
 ### D1 — `laser_score` option 3 (the only thing blocking Z1)
