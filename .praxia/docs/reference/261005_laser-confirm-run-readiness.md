@@ -349,6 +349,12 @@ NaNs.
    querying the catalog for in-flight work sees nine runs that died days ago. Worth knowing
    before the re-wave, whose own gate run could add a tenth.
 
+   **Do not reach for `bth repair`.** `bth repair --dry-run --tier cool` on titanix reports
+   `action_count: 0` — bathos does not consider these repairable, because they are *valid*
+   records of a terminal state that was never written, not corruption. There is no tooling fix;
+   the remedy is procedural (check `ps`). Worth stating because the instinct is to try a repair,
+   and `--force-rebuild` has wiped a warm table before.
+
    Separately, three `potts_energy_parity` runs from 2026-09-30 (`35f9a257`, `6b2b3110`,
    `755271fb`) show `completed / exit 0 / output_paths=None` and **no outcome** — they
    succeeded but never graded, because nothing was registered for bth to grade from (the
