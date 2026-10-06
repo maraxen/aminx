@@ -312,17 +312,26 @@ assumed the observed rate would continue, and each was made before the expensive
 The lesson for the next estimate: with per-target tiers this wide, a partial run supports no
 total. Quote a duration only once the run has paid for its most expensive target.
 
-**The 11.63 h may itself be inflated, and the lever is cheap.** Each of the 16 units ran in its
-own `--aminx-worker` subprocess, and **no persistent XLA compilation cache is configured** —
-not in the parity drivers, and no `JAX_*`/`XLA_*` variable in the titanix environment. So every
-unit paid a fresh cold compile, which this stack has measured at 15–20 min. A LASEr smoke run
-the same night measured an aminx arm at **34 min against ~2 min for the upstream arms at the
-same n=50** (17x), which is the shape you would expect if compilation dominated. The
-compile-versus-sampling split is **not measured**, so no saving is claimed here — but the
-experiment is small: run one unit twice with `jax_compilation_cache_dir` set and the difference
-*is* the compile cost. Worth doing **before** committing to the re-wave, because it could
-retire hours from this very figure. See
-`reference/261005_laser-confirm-run-readiness.md`.
+**Is the 11.63 h inflated by repeated cold compiles? No — and the run's own data settles it.**
+Each of the 16 units ran in its own `--aminx-worker` subprocess and **no persistent XLA
+compilation cache is configured** (not in the parity drivers; no `JAX_*`/`XLA_*` variable in
+the titanix environment), so every unit does pay a fresh compile. That raised the question of
+whether this figure is mostly compilation, since this stack has recorded 15–20 min cold
+compiles elsewhere.
+
+It is not. `_runs("refine@0.3")` returns `("U1", "U2", "A", "CTRL_m")`
+(`potts_sample_dist_confirm.py:157-159`), so within each target block the last two units are
+the aminx arms — and on target 1 those took **6 minutes each**, total, including process start,
+weight load, compile *and* sampling at n=1000. A 15–20 min compile is therefore impossible
+here. Compile is bounded above by 6 min per unit, i.e. **≤48 min across all eight aminx units,
+≤7% of 11.63 h** — and that bound is generous, because it counts target 1's entire sampling
+cost as compile.
+
+**So 11.63 h stands as the re-run price.** An earlier revision of this section claimed it
+"may itself be materially inflated" by compilation; that claim is withdrawn, falsified by the
+run's own per-arm timings at no cost. The open compile question is **LASEr-specific** — see
+`reference/261005_laser-confirm-run-readiness.md`, where the per-sample gap is large enough
+that it still matters there.
 
 **B1 and B2 are separable in effect even though they edit the same file.** B1 only reaches
 `fresh_refine_order`, which is called when `not stored_orders_present or chain_suffix`; the

@@ -81,10 +81,27 @@ variable is set in the titanix environment. Every unit runs in its **own
 at 15–20 min (see the orbax/compile memory note). Against a 34 min aminx arm, that is
 plausibly the majority of the cost — and it is paid once per unit instead of once per run.
 
-**This is not confined to LASEr.** Tonight's Potts confirmatory run (`096d0847`, 11.63 h) also
-ran its 16 units as separate subprocesses with no persistent cache. So the measured 11.63 h
-re-run price in `plans/261005_rewave-composition-scoped-batch.md` §3 may be materially
-inflated by the same repeated compilation.
+**It IS confined to LASEr — the Potts run rules itself out.** An earlier revision of this
+section said the Potts 11.63 h figure might be inflated the same way. That is **withdrawn**.
+`_runs("refine@0.3")` returns `("U1", "U2", "A", "CTRL_m")`, so the last two units of each
+target block are the aminx arms, and on target 1 those took **6 minutes each** — total,
+including process start, weight load, compile and sampling at **n=1000**. A 15–20 min compile
+cannot fit inside 6 minutes, so Potts compile is bounded below 6 min per unit: ≤7% of 11.63 h,
+and that bound generously counts target 1's whole sampling cost as compile.
+
+**Which sharpens the LASEr question rather than dissolving it.** Per-sample cost differs by
+roughly two orders of magnitude between the two families:
+
+| | n | unit wall time | per sample |
+| :-- | --: | --: | --: |
+| Potts aminx, cheapest target | 1000 | 6 min | **0.36 s** |
+| LASEr aminx, smoke | 50 | 34 min | **41 s** |
+
+Only two explanations fit a ~113x gap: LASEr sampling is intrinsically far heavier (rotamer
+and chi sampling, a larger model, ligand features — all plausible), or LASEr's compile is
+~30 of those 34 minutes. **They imply very different 60 h estimates** — if compile dominates,
+an n=1000 unit costs roughly compile + 20x the sampling remainder rather than 20x the whole
+34 min. That is exactly why the measurement below is worth an hour before committing days.
 
 **What is NOT measured, and must be before anyone quotes a saving:** the compile-versus-sampling
 split. The case for compile dominance is indirect (this stack's 15–20 min cold-compile figure,
