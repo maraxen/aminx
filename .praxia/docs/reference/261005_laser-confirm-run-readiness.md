@@ -847,6 +847,59 @@ real result and the control is noise. Had the control been the one at 0.80 and t
 I would have had to say the same thing, which is the test of whether the band was a real
 commitment.
 
+### CORRECTION: Engaging is not a "40-way array", and the 12 h walltime worry is void
+
+I have written **"Engaging's 40-way array"** several times in this doc and in commit messages. It
+is wrong, and I never checked it — I conflated the confirm's **unit count** with the **width**
+available to run it. Both numbers are now measured.
+
+**The confirm is exactly 40 units, but only 20 of them are expensive.**
+`laser_sample_dist_confirm.py` builds one unit per (cell, structure, run): `_RUNS` is
+`("U1", "U2", "A", "CTRL_m")` (`:109`), `STRUCTURES` holds 5 (`:62-77`), and 2 of the 3
+`LASER_CELLS` are runnable (`min_p0.05@0.3` is in `_EXCLUDED_CELLS`, `:80`). 2 × 5 × 4 = **40**.
+But `U1` and `U2` are the **upstream** arms (`_UPSTREAM`, `:110`) and upstream costs ~1/17 of an
+aminx arm, so the cost sits in the **20 aminx units** (`A` and `CTRL_m`).
+
+**Each aminx unit is ~14 h, because n = 1000 samples** (`:48`, `:55`) at the ~50 s/sample this
+week's measurement established. 20 × ~14 h ≈ the recorded ~223 h, which reconciles.
+
+**`pi_so3` allows 2 DAYS, not 12 hours.** Measured:
+
+```
+PartitionName=pi_so3   MaxTime=2-00:00:00   PreemptMode=OFF
+Nodes=node[4007-4009]  TotalCPUs=160        PriorityTier=100  PriorityJobFactor=3000
+TRES=cpu=160,mem=1261511M,gres/gpu=6,gres/gpu:h200=2,gres/gpu:rtx_pro_6000=4
+AllowGroups=slurm_admin,orcd_rg_par_pi_so3
+```
+
+The 12 h cap in the cluster rules is the **general** MIT partitions (`mit_normal`,
+`mit_preemptable`), not the lab partition. So a ~14 h unit fits `pi_so3` with 34 h of margin,
+and `PreemptMode=OFF` means it cannot be bumped mid-unit — which matters because
+`graded_resume` checkpoints **per unit**, so a preemption 13 h into a 14 h unit loses all of it.
+On `mit_preemptable` that risk would be real; on `pi_so3` it is zero.
+
+**The available width is 6 GPUs or 160 CPUs across 3 nodes — not 40.** Current state:
+
+```
+node4008  mix    32/32/0/64   gpu:rtx_pro_6000:2
+node4007  mix    48/16/0/64   gpu:rtx_pro_6000:2
+node4009  alloc  32/0/0/32    gpu:h200:2
+```
+
+48 CPUs idle, 3 other users' jobs running, 2 queued ahead, **plus one of our own jobs already
+pending there** (25076878, reason `Priority`). So Engaging is contended too; it is not an empty
+machine waiting.
+
+**What this does and does not change.** It removes the walltime objection to Engaging entirely —
+that was my error and it was the main structural argument against it. It also shrinks the claimed
+advantage: 20 expensive units over 6 GPUs is ~4 rounds, not a single fan-out, and over CPUs it is
+bounded by cores rather than by the unit count. Engaging's real edge is **width** (6 GPUs /
+160 CPUs against titanix's 2 idle cards and 20 contended cores) and **better GPUs** — H200 is
+Hopper and RTX PRO 6000 is Blackwell, both of which are far stronger at f64 than titanix's
+Turing, where f64 runs at 1/32 of f32. For the **f64 parity tiers**, Engaging is not merely
+better, it is the only sensible option. For this **f32 sampling confirm**, titanix may well
+suffice, and that is exactly what the pending GPU probe decides.
+
 **Final verdict still comes from the instrument, not from this arithmetic.** The linearity pair
 was still running when this was written; the run writes its own `results.json` and grades itself
 against the bands in `laser_sample_chunk_width_cost.bth.toml`. Expect `instrument_unverified`
