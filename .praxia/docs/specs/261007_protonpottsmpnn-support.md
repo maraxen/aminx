@@ -533,8 +533,35 @@ Both are 400 wide. **There is no shape error — only wrong numbers.** The fix i
 `edge_embedding.weight`'s input columns in 16-wide blocks, mapping aminx slot *s* with pair
 `(p0, p1)` to upstream column block `5*p0 + p1`.
 
-Also verified and not currently reproduced in aminx: upstream zeroes the RBF block by the atom
+Also verified and not currently reproduced in aminx: foundry zeroes the RBF block by the atom
 mask when any atom is absent (`RBF_all * X_m[...] * X_m_gathered[...]`, `graph_embeddings.py`).
+
+#### This is NOT a latent defect in shipped aminx, and the distinction matters
+
+Read carelessly, the two paragraphs above look like a bug report against aminx. They are not,
+and nobody should file one. **aminx matches its own upstream exactly on both points** — checked
+against the vendored `/home/marielle/repos/PottsMPNN` @ `0cb0a58`:
+
+- **Ordering.** KeatingLab builds `RBF_all` by explicit `append`, and from index 5 its order is
+  `Ca-N, Ca-C, Ca-O, Ca-Cb, N-C, N-O, N-Cb, Cb-C, Cb-O, O-C, N-Ca, C-Ca, O-Ca, Cb-Ca, C-N, O-N,
+  Cb-N, C-Cb, O-Cb, C-O` (`potts_mpnn_utils.py:1190-1209`). That is **exactly** aminx's
+  `BACKBONE_PAIRS` under 0=N, 1=CA, 2=C, 3=O, 4=CB, including the five self-pairs first and the
+  `[1,1]` Ca–Ca lead.
+- **Atom mask.** `_get_rbf(self, A, B, E_idx)` (`:1070`) takes no atom mask and applies none.
+
+So **both differences are foundry-fork innovations**, not aminx omissions. The outer-product
+flattening and the `X_m` zeroing were introduced downstream of the code aminx ports.
+
+The positive evidence agrees: `potts_energy_parity` passes at `max_abs_delta` 7.3e-4 and
+`potts_ar_decode` reaches exact token match 1.0, both end to end through this feature embedding
+against sealed upstream oracles. A pair ordering wrong *relative to its own upstream* could not
+produce either number.
+
+**What this means operationally:** the permutation is a *porting requirement for
+ProtonPottsMPNN*, to be applied when converting foundry weights — not a repair to aminx's
+featurizer, which must keep its current order for the Potts and ProteinMPNN families it already
+serves. If the two families ever share one featurizer, the ordering becomes a per-family
+parameter rather than a constant.
 
 ### An open question about the decoder mask, stated precisely rather than called a bug
 
