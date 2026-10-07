@@ -133,7 +133,10 @@ def assert_partition_is_exhaustive() -> None:
     campaign_mode=True,
     return_logits=False,
   )
-  dumped = set(run_specification_to_json_dict(probe)) - {"_spec_class"}
+  # schema_version is codec metadata, not a SamplingSpecification field. It must not be
+  # treated as a serialized field, and it must not enter the worker payload (that payload
+  # is hashed and passed to SamplingSpecification).
+  dumped = set(run_specification_to_json_dict(probe)) - {"_spec_class", "schema_version"}
 
   classified = dumped | set(EXCLUDED_WITH_REASON) | CAMPAIGN_OWNED_KEYS | DERIVED_FIELDS
   unclassified = actual - classified
@@ -206,9 +209,9 @@ def campaign_sampling_spec_payload(
 
   Returns:
     A JSON-safe payload that reconstructs via ``SamplingSpecification(**payload)`` -- the
-    worker's real path. ``_spec_class`` is removed deliberately: the worker uses the plain
-    constructor, which rejects unknown keys with a TypeError. ``run_specification_from_json_dict``
-    would instead *silently ignore* them, which would trade one silent-failure class for another.
+    worker's real path. ``_spec_class`` and ``schema_version`` are removed deliberately:
+    the worker uses the plain constructor, which rejects unknown keys with a TypeError, and
+    ``schema_version`` must not change the campaign unit hash.
 
   Raises:
     SpecPartitionError: ``campaign_owned`` does not match ``CAMPAIGN_OWNED_KEYS`` exactly.
@@ -229,6 +232,7 @@ def campaign_sampling_spec_payload(
 
   payload = run_specification_to_json_dict(spec_variant)
   payload.pop("_spec_class", None)
+  payload.pop("schema_version", None)
   payload.update(campaign_owned)
   return payload
 

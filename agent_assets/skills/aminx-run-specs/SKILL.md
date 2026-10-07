@@ -7,6 +7,8 @@ description: Build and check aminx run specs as JSON. Covers MCP spec_emit and s
 
 A run spec is JSON. It is not TOML. The document has `_spec_class` set to `SamplingSpecification`, `ScoringSpecification`, `InspectionSpecification`, or `JacobianSpecification`. A Potts document is separate: see `aminx-potts` and the `emit-potts` verb below. What the runs do is in `aminx-sampling` and `aminx-scoring`.
 
+Encoded documents include integer `schema_version` 1 next to `_spec_class`. A document with no `schema_version` is legacy and still loads. A newer version, or a value that is not an integer, is rejected. A key that is not a field of the spec class is rejected: the error lists every unknown key and suggests a close match when there is one. Keys removed from the spec are migrated by a table instead of being ignored silently.
+
 ## MCP
 
 `aminx-mcp:spec_emit` builds a spec and does not run the model. `kind` is `sample`, `score`, `inspect`, or `jacobian`. `inputs` are local structure paths that must already exist. `options` are dataclass fields. For `score`, put the sequences in `options` under `sequences_to_score`. Unknown, deprecated, and unsettable keys are reported together. The result is `{"spec": ...}`.

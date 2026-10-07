@@ -12,6 +12,12 @@
 
 ### Changed
 
+- **Spec JSON carries `schema_version` 1.** Unknown keys are rejected with close-match
+  suggestions. Legacy documents without `schema_version` still load. Removed keys are
+  migrated by a table (`drop` warns, `error` fails). The deprecated-kwargs constructor
+  shim is gone: passing those kwargs to a specification constructor raises `TypeError`.
+  Agent `spec_sha256` values change because the encoded spec gained a key.
+
 - **Runner buckets residue length by default** (xtrax `BUCKET_LADDER`). Seeded sample
   outputs change. Past the bucket, sampled tokens are X and logits are 0 (previously
   computed values). Old specs replay with bucketing on; pass `--no-length-bucketing` /

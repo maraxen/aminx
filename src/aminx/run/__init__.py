@@ -12,6 +12,7 @@ from .run_spec_portable_json import (
 )
 from .spec import RunSpec, build_run_spec, topology_hash
 from .spec_json import (
+  SPEC_JSON_SCHEMA_VERSION,
   SpecJSONDecodeError,
   SpecJSONEncodeError,
   run_specification_from_json,
@@ -29,6 +30,7 @@ from .specs import (
 
 __all__ = [
   "PORTABLE_RUN_SPEC_VERSION",
+  "SPEC_JSON_SCHEMA_VERSION",
   "InspectionSpecification",
   "JacobianSpecification",
   "RunSpec",

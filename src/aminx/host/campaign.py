@@ -39,8 +39,8 @@ from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERS
 from aminx.host.spec_partition import campaign_sampling_spec_payload
 from aminx.io.sink_provenance import resolve_aminx_version
 from aminx.io.weights import REVISION_ENV, WEIGHTS_DIR_ENV, weight_provenance
-from aminx.run.spec_json import _coerce_field_value
-from aminx.run.specs import SamplingSpecification, pop_deprecated_spec_kwargs
+from aminx.run.spec_json import _coerce_field_value, migrate_removed_spec_keys
+from aminx.run.specs import SamplingSpecification
 from aminx.runtime import configure_multiprocessing
 from aminx.sampling.multistate_poe import sample_multistate_poe_campaign_row
 
@@ -1546,7 +1546,7 @@ def run_manifest_row(  # noqa: PLR0915
 
     worker_payload = dict(sampling_spec_payload)
     worker_payload["output_h5_path"] = str(partial_path)
-    pop_deprecated_spec_kwargs(worker_payload)
+    worker_payload = migrate_removed_spec_keys(worker_payload)
     # Coerce JSON scalars back to their spec types (lists -> ndarray for the array knobs,
     # list -> tuple for temperature) using spec_json's whitelist, which names exactly these
     # fields and exists for exactly this. Before the field-driven manifest write, array knobs
@@ -1556,9 +1556,9 @@ def run_manifest_row(  # noqa: PLR0915
     # this audit exists to end -- restore the type at the boundary instead.
     #
     # Coercion is a VALUE transform, so strict unknown-key rejection is unaffected: an unknown
-    # key still reaches the constructor and raises TypeError. That strictness is why this path
-    # uses the plain constructor rather than run_specification_from_json_dict, which would
-    # silently ignore unknown keys.
+    # key still reaches the constructor and raises TypeError. Removed keys from older manifests
+    # are migrated first. This path keeps the plain constructor rather than
+    # run_specification_from_json_dict so the hashed payload stays constructor kwargs.
     worker_payload = {
       key: _coerce_field_value(SamplingSpecification, key, value)
       for key, value in worker_payload.items()

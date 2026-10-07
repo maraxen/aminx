@@ -4,6 +4,7 @@
   "aminx.run::PORTABLE_RUN_SPEC_VERSION": "P26",
   "aminx.run::RunSpec": "P26",
   "aminx.run::RunSpecification": "P26",
+  "aminx.run::SPEC_JSON_SCHEMA_VERSION": "P26",
   "aminx.run::SamplingDriver": "P26",
   "aminx.run::SamplingSpecification": "P26",
   "aminx.run::ScoringSpecification": "P26",
