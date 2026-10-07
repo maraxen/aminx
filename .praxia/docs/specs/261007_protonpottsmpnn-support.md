@@ -1481,3 +1481,104 @@ is `v4` and every cell run so far has had to pass `extended_vocab="v6"` explicit
 
 Item 1 is done — it needed no alphex, no checkpoint and no decision, which is why it went
 first. Items 2 and 3 wait on §11c.
+
+---
+
+## §26 — the §23 labelled cell covers 3 of 9 tokens, and that is a vacuity hole
+
+§23 established that a labelled cell is constructible with no HBPLUS, and §23.3 ruled that a
+`protonpotts_*` wave must compare a sequence-dependent observable on a cell whose `S` contains
+tokens ≥ 21. Both still hold. But §23's labeller assigned a **fixed label per residue type**
+(every `HIS` → `HIS-S`, every `ASP` → `ASP-D`, every `GLU` → `GLU-P`), so the cell reached
+exactly **3 of the 9** protonation indices.
+
+That is not sufficient, and the gap is the interesting kind. A wave built on that cell never
+exercises **two different protonation states of the same residue type** — which is precisely
+the axis the v6 vocabulary exists to represent. Such a wave could pass in full while the
+P/S/A (and P/D/A) discrimination is completely broken, because nothing ever asks the model to
+tell those apart. §23.3's rule is necessary but not sufficient; §26.4 tightens it.
+
+### §26.1 Cycling by `res_id % 3` is coverage-fragile — measured
+
+First attempt: cycle the label deterministically on `res_id % 3`. On `5o45_cropped.pdb`:
+
+```
+protonation indices present: [21, 24, 25, 26, 27, 28, 29]
+covered 7/9   missing=[22, 23]        (HIS-S, HIS-A)
+log_probs max|delta| vs unlabelled = 52.8716
+```
+
+Both missing tokens are HIS. The cause is that coverage under this scheme depends on where
+residues happen to sit in the numbering — every HIS in this structure landed on the same value
+mod 3, so one HIS token appeared and the other two could not. A labelling scheme whose coverage
+is an accident of the author's residue numbering is not a scheme you want behind a parity gate.
+
+### §26.2 Cycling by ordinal-within-type fixes the scheme but not the cell
+
+Second attempt: cycle on the **ordinal of each titratable residue within its own type**, so
+coverage depends only on *how many* residues of that type exist. Same structure:
+
+```
+titratable residue counts: {'HIS': 2, 'ASP': 8, 'GLU': 7}
+covered 8/9   missing=[23]            (HIS-A)
+log_probs max|delta| vs unlabelled = 38.3736
+```
+
+Now the only missing token is explained by the cell rather than by the scheme: **this structure
+has 2 histidines**, so at most 2 of the 3 HIS states can appear. That is a hard property of the
+input, and the per-type counts the labeller now prints make it diagnosable before the run
+rather than inferable afterwards.
+
+### §26.3 A cell that covers all nine — measured
+
+`benchmarks/data/PKAD/pdb_cache/1BVC.pdb` (HIS 12 / ASP 7 / GLU 14):
+
+```
+protonation indices present: [21, 22, 23, 24, 25, 26, 27, 28, 29]
+covered 9/9   missing=[]
+log_probs max|delta| vs unlabelled = 37.1461
+PASS: all nine v6 protonation tokens exercised in ONE cell, non-vacuously
+```
+
+So **one cell can exercise the entire v6 extension region**, and it remains non-vacuous by
+§23.3 (`log_probs` moves by 37.15 against the unlabelled cell, while `etab_out` would not move
+at all — §23.2).
+
+The resulting cell-selection criterion is cheap and checkable without running anything:
+
+> A `protonpotts_*` cell intended to cover the v6 extension region needs **≥ 3 HIS, ≥ 3 ASP and
+> ≥ 3 GLU**. Count them from the structure before the run; do not discover a shortfall from a
+> coverage report afterwards.
+
+A scan of the structures vendored with upstream found 17 satisfying it, including several in
+the PKAD cache.
+
+### §26.4 Tightening §23.3
+
+§23.3 said *tokens ≥ 21*. Superseded by:
+
+> A `protonpotts_*` wave must compare at least one **sequence-dependent** observable
+> (`log_probs`, or an energy evaluated at `S`) on a cell whose `S` covers **all nine** v6
+> protonation indices (21–29), with the per-type counts recorded in the pre-registration. A
+> wave comparing only `etab_out`/`E_idx` is PottsMPNN structure parity; a wave whose `S` covers
+> only some protonation indices is partial, and must say which it covered.
+
+### §26.5 THESE LABELS ARE NOT CHEMISTRY
+
+Stated here because it is the obvious way for this to be misread later. The cycling labeller
+assigns protonation states **by position in an enumeration**, not by any physical reasoning.
+Its output is wrong as chemistry and is not a prediction of anything.
+
+That is fine for its purpose and only for its purpose: a parity wave compares aminx against
+upstream **on identical inputs**, so the labels need only be *valid tokens that exercise the
+vocabulary*, not correct ones. Any pre-registration using this labeller must say so in those
+words, and no number produced from such a cell may be presented as a protonation-state result.
+
+### §26.6 An opening for §20
+
+§20 asked where P4's dump labels come from and recorded three routes, one of which was that
+the PKAD cache does not help. That still holds for the *parity* dumps — they need no chemistry.
+But the scan above is a reminder that upstream vendors `benchmarks/data/PKAD/`, a pKa benchmark
+carrying **experimental** values. If a later wave wants labels that are chemically grounded
+rather than merely valid, that is where they would come from, and it needs no HBPLUS either.
+Not required for P4; recorded so §20's route list is not read as exhaustive.
