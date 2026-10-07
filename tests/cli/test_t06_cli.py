@@ -46,6 +46,7 @@ def test_base_spec_kwargs_parses_options_json() -> None:
         max_buffer_size=None,
         overwrite_cache=False,
         max_length=512,
+        length_bucketing=True,
         truncation_strategy="none",
         host_resource_allocation_strategy="auto",
         ram_budget_mb=None,
