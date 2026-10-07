@@ -369,6 +369,22 @@ def run_specification_from_json_dict(data: Mapping[str, Any]) -> RunSpecificatio
         raise SpecJSONDecodeError(msg)
     else:
       kwargs[f.name] = _coerce_field_value(cls, f.name, migrated[f.name])
+  # Legacy documents (no schema_version) recorded seed 0 while the falsy coalesce actually ran 42.
+  # Decode that one value as 42 so a reload reproduces the original run. schema_version 1
+  # keeps 0.
+  recorded_seed = kwargs.get("random_seed")
+  if (
+    "schema_version" not in data
+    and recorded_seed == 0
+    and not isinstance(recorded_seed, bool)
+  ):
+    warnings.warn(
+      "Pre-schema spec recorded random_seed 0 but ran with seed 42; "
+      "decoding as 42 to reproduce the original run.",
+      UserWarning,
+      stacklevel=2,
+    )
+    kwargs["random_seed"] = 42
   return cls(**kwargs)  # type: ignore[arg-type]
 
 

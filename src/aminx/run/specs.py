@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import numbers
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -293,6 +294,18 @@ class RunSpecification:
     # Ensure guard flag is initialized for first-time use
     if not hasattr(self, "_run_spec_synced"):
       object.__setattr__(self, "_run_spec_synced", False)
+
+    # Default once, here. ``None`` is the unset sentinel; 0 is a real seed. Every later
+    # reader uses ``run_spec.sampling.random_seed`` with no ``or`` fallback.
+    seed = self.random_seed
+    if seed is None:
+      object.__setattr__(self, "random_seed", 42)
+    elif isinstance(seed, bool) or not isinstance(seed, numbers.Integral):
+      msg = f"random_seed must be an int, got {type(seed).__name__}"
+      raise TypeError(msg)
+    elif not isinstance(seed, int):
+      # numpy integers (e.g. a derived np.int64 seed) are accepted and normalised.
+      object.__setattr__(self, "random_seed", int(seed))
 
     # Handle backward compatibility: convert old-style noise params to noise list
     bundles = list(self.noise)  # Start with provided bundles

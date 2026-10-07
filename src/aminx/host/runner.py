@@ -849,7 +849,7 @@ def score(  # noqa: PLR0915
   activation_estimates: dict[Any, int] = {}
 
   # Prepare random key
-  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42)
+  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed)
 
   # Structures within one Grain batch are already stacked to a common length by the
   # loader (batched_ensemble.coordinates is a genuine (batch_size, L, 4, 3) array) --
@@ -1184,7 +1184,7 @@ def _score_fused_multistate(  # not length-bucketed in S8 v1
   stacked_sequences = jnp.stack(padded_seqs, axis=0)  # (C, struct_len)
   n_candidates = stacked_sequences.shape[0]
   candidate_keys = jax.random.split(
-    jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42), n_candidates,
+    jax.random.PRNGKey(spec.run_spec.sampling.random_seed), n_candidates,
   )
 
   # Candidate (sequences-to-score) axis dispatched via aminx's own BatchPlanner ->
@@ -1339,7 +1339,7 @@ def inspect(  # noqa: PLR0915
   structure_offset = 0
 
   # Prepare random key
-  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42)
+  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed)
 
   for _batch_idx, batched_ensemble in enumerate(protein_iterator):
     batch_size = batched_ensemble.coordinates.shape[0]
@@ -1669,7 +1669,7 @@ def jacobian(
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
   structure_offset = 0
-  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42)
+  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed)
   use_io_sink = spec.output_h5_path is not None
   n_staged = 0
 
@@ -1777,16 +1777,16 @@ def jacobian(
             payload["apc_frobenius_norm"] = np.asarray(apc)
           # No root stage on this path (see task_id `260910_aminx-sink-provenance-schema`
           # AC3) -- the wheel version and PRNG seed are stamped per-record instead. Uses
-          # the SAME `spec.run_spec.sampling.random_seed or 42` expression that built
-          # `prng_key` above, so the recorded seed matches what was actually used even
-          # when the raw field is falsy (0). This record never stages a "logits" array
+          # the SAME `spec.run_spec.sampling.random_seed` value that built `prng_key`
+          # above. None becomes 42 once at specification construction; 0 stays 0.
+          # This record never stages a "logits" array
           # (result_key is "score_gradients" or "categorical_jacobians"), so
           # `logits_bias_semantics` does not apply here.
           zarr_sink.stage(
             (str(global_idx),),
             attrs={
               "aminx_version": resolved_aminx_version,
-              **prng_seed_attrs(spec.run_spec.sampling.random_seed or 42),
+              **prng_seed_attrs(spec.run_spec.sampling.random_seed),
             },
             **payload,
           )

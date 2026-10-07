@@ -38,6 +38,14 @@
 
 ### Fixed
 
+- **Seed 0 means seed 0.** `random_seed or 42` used to execute seed 0 as seed 42 while the
+  saved spec recorded 0. `None` still defaults to 42, once, when the specification is
+  constructed. A legacy spec JSON document (no `schema_version`) that records 0 decodes as
+  42 with a `UserWarning`, because that is the seed the run actually used. Documents with
+  `schema_version` 1 keep 0. Campaign units whose `random_seed` is 0 are recomputed
+  (`seed0_semantics` on the unit input hash); every other unit hash is unchanged.
+  `SAMPLING_NUMERICS_EPOCH` stays 2.
+
 - **`host.kernel_dispatch._dispatch_axis` keeps xtrax plans chunked after the rename.** It
   dispatches on `type(strategy).__name__` to serve both strategy origins and matched only
   `"SafeMap"`. Under xtrax 0.4.0a11 an xtrax plan reports `"ChunkedMap"` (the deprecated
