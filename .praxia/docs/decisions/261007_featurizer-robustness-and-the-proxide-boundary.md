@@ -228,3 +228,75 @@ Steps 1 and 2 are what the ProtonPottsMPNN port actually needs. 3–5 can follow
 | the ProtonPottsMPNN checkpoint carries `train_cfg` with the vocab | verified, spec §1a P0 probe |
 | a `FeatureSpec` can reproduce all four current featurizers | **unverified** — the Potts and ligand paths are read and look reducible; `laser/graphs.py` packs edges differently enough that it may stay separate. Spike before committing to step 5. |
 | widths-only conformance would not have caught the §14 ordering trap | verified by construction — both tensors are 400 wide; hence the `pair_order` stamp requirement in §3 |
+
+## 7. The third side: what belongs to xtrax
+
+Added 2026-10-07 after the user asked *"is there anything that belongs xtrax side?"* Yes, and
+it is narrower than the proxide share — but one piece of it is a **gap in the #198 separation
+audit**.
+
+### 7a. The audit never entered `src/aminx/model/`
+
+`.praxia/docs/audits/261007_aminx-xtrax-separation-audit.md` (63 findings, at `d3a58a42`) scoped
+itself to run/IO/execution/config/training. Grepping it for `model/`, `features.py` and `top_k`
+returns **zero hits**. So everything below is uncovered by that sprint, not a restatement of it.
+
+### 7b. `_top_k_row_chunked` is a hand-rolled `ChunkedMap`, and it pads where xtrax does not
+
+`model/features.py:155-181` flattens the leading batch axes, pads up to a multiple of
+`row_chunk` with `-inf` rows, reshapes to `(n_chunks, row_chunk, sort_len)`, runs `jax.lax.map`,
+and slices the padding away.
+
+`xtrax.transforms.chunked_map` (`transforms/map.py:8-33`) is that primitive — and strictly
+better. It dispatches to `jax.vmap` when `n <= batch_size`, else to
+`jax.lax.map(..., batch_size=)`, which per its own docstring (xtrax #5565) "runs the
+`n // batch_size` full chunks as a scan and the `n % batch_size` remainder as one smaller
+vmapped chunk, so peak memory stays bounded by `batch_size` and **nothing is padded**."
+
+aminx computes on synthetic rows that xtrax would never materialize. Filed as debt **#2561**,
+with the three reasons it is not a drop-in (axis-0-only iteration needs a flatten wrapper;
+xtrax's `chunked_map` still lacks the #2391 size-1 guard, so the swap is blocked on xtrax
+#2520; and the IREE stack-allocation budget must be **re-measured**, because a ragged remainder
+is a different trace than a padded one).
+
+### 7c. `top_k` itself is an export primitive, not protein code
+
+`model/features.py:60-145` exists entirely for backend portability: `jax.lax.top_k` lowers to a
+`stablehlo.composite` that IREE's importer marks illegal, and IREE does not honour stable-sort
+tie order (measured 260911 — an integer `lax.sort_key_val` over 64 slots disagreed with XLA at
+**45 of 64 positions**, carried entirely by the indices while the gathered values stayed
+bit-identical, so a float parity check reported `max_abs_diff 0.0` and passed). The remedy —
+folding the index into the sort key with `num_keys=2` for a strict total order — is a
+miscompile guard and an export primitive. It contains no protein logic, and the #198 audit's own
+line 20 puts miscompile guards and export tooling in xtrax. It should move, with aminx importing it.
+
+### 7d. The one distinction worth stating carefully: pad mechanism vs pad semantics
+
+Generic axis padding, trimming and the bucket ladder are xtrax's (already debt #2522/#2537).
+But **what a pad row means to a protein is not generic**, and the Potts featurizer docstring is
+the proof: a zeroed gap row puts N/CA/C/O at the origin and derives Cb from that frame, so
+`N-N` into the gap is a real finite distance to the origin, and the Ca-Ca RBF of a
+present→absent edge is the RBF of `D_max_i` (`families/potts_mpnn/features.py:9-20`). The
+padding *mechanism* is xtrax; the padding *semantics* belong with the FeatureSpec in aminx, or
+with the geometry in proxide. Conflating them is how a bucket boundary silently changes a
+model's numbers.
+
+### 7e. The split, stated once
+
+| Library | Owns | Never knows |
+| --- | --- | --- |
+| **xtrax** | how work is *shaped* — vmap/chunk/scan/bucket, pad mechanics, memory estimates, miscompile guards, export-legal primitives | that it is a protein |
+| **proxide** | what a protein *is* — parsing, atom37, chemistry, geometry kernels (kNN, RBF, dihedrals, NeRF) | that there is a model |
+| **aminx** | what *this checkpoint* wants — FeatureSpec conventions, embeddings, model, sampling, parity | — |
+
+aminx is the only one of the three that knows both. That is the whole point of it, and it is
+also the test for any new code: if it would still make sense without proteins, it is xtrax's; if
+it would still make sense without weights, it is proxide's; if it needs both, it is ours.
+
+### 7f. What is already tracked, so this does not get re-filed
+
+`utils/safe_map.py` / `safe_scan.py` duplication (#2533), three live copies of axis dispatch
+(#2533), the size-1 guard gap (xtrax #2520), `BUCKET_LADDER` stranded in `export/rings.py`
+(xtrax #2522), the generic half of `host/bucketing.py` (#2537), and dead `tiling/bucketing.py`
+/ `tiling/pad.py` (#2532) are all already filed from the #198 audit. **#2561 is the only new
+one**, and it is new precisely because the audit stopped at the model boundary.
