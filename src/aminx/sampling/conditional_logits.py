@@ -47,13 +47,6 @@ from aminx.types.protocols import ConditionalLogitsFn, ModelProtocol
 from aminx.utils.autoregression import full_context_ar_mask
 
 
-def _eqx_module_hash(self: object) -> int:  # pragma: no cover - safe shim
-  return id(self)
-
-
-eqx.Module.__hash__ = _eqx_module_hash  # type: ignore[invalid-assignment]
-
-
 def make_conditional_logits_fn(
   model: ModelProtocol,
 ) -> ConditionalLogitsFn:
