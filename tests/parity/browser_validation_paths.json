@@ -4,6 +4,7 @@
   "aminx.run::PORTABLE_RUN_SPEC_VERSION": "P26",
   "aminx.run::RunSpec": "P26",
   "aminx.run::RunSpecification": "P26",
+  "aminx.run::SPEC_JSON_SCHEMA_VERSION": "P26",
   "aminx.run::SamplingDriver": "P26",
   "aminx.run::SamplingSpecification": "P26",
   "aminx.run::ScoringSpecification": "P26",
@@ -194,49 +195,16 @@
   "src/aminx/host/omit_aa_bias.py::omit_letter_indices": {
     "internal": "Host-side omit_aa bias compilation consumed by the sampling kernels, covered through their P-IDs. The browser reimplements this in JS rather than importing it (scripts/browser_validation/layer_a_sampling.py::_omit_aa_bias), and p07_knobs_gate checks that reimplementation against _reference_omit_aa_bias."
   },
-  "src/aminx/host/output_sinks.py::EncoderIntermediateStagingSink": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::IoCallbackEncoderSink": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::JacobianAccumulationSink": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
   "src/aminx/host/output_sinks.py::NoopDesignSink": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
   },
   "src/aminx/host/output_sinks.py::StreamingTensorStagingSink": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
   },
-  "src/aminx/host/output_sinks.py::active_encoder_staging_sink": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::active_jacobian_sink": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
   "src/aminx/host/output_sinks.py::active_sampling_staging_sink": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
   },
-  "src/aminx/host/output_sinks.py::active_scoring_sink": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::encoder_sink_session": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::jacobian_sink_session": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::scoring_tensor_sink_session": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::stage_jacobian_io": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
   "src/aminx/host/output_sinks.py::streaming_tensor_sink_session": {
-    "internal": "streaming output-sink plumbing for host runner, covered through P26"
-  },
-  "src/aminx/host/output_sinks.py::take_encoder_intermediates": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
   },
   "src/aminx/host/output_sinks.py::take_staging_sequences_logits": {
@@ -365,12 +333,6 @@
   },
   "src/aminx/inference/decode/unfused.py::decode_states_unfused": {
     "internal": "unfused multi-state decode fallback path, covered through P10"
-  },
-  "src/aminx/inference/driver.py::decode": {
-    "internal": "generic topology/decode driver dispatch shared across P04-P07, no dedicated P-ID"
-  },
-  "src/aminx/inference/driver.py::infer_topology": {
-    "internal": "generic topology/decode driver dispatch shared across P04-P07, no dedicated P-ID"
   },
   "src/aminx/inference/encode.py::make_encode_fn": {
     "internal": "shared encoder entrypoint feeding P03-P14 kernels, no dedicated P-ID"

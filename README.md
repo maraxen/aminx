@@ -165,7 +165,6 @@ For control over fusion strategy, encode path, and decode variant without touchi
 import jax.numpy as jnp
 from aminx.host.plan import make_inference_plan, InferencePlan, InferenceComponents
 from aminx.inference.encode import make_encode_fn
-from aminx.inference import driver
 from aminx.inference.logits import GeometricMeanLogits, ARLogitFuse
 from aminx.run import SamplingSpecification
 from aminx.types.stages import StageSet
@@ -189,7 +188,6 @@ plan = InferencePlan(
     model=model,
     components=InferenceComponents(
         encode_fn=make_encode_fn(model, use_rolling_state=False),
-        driver=driver.decode,
         stage_set=stage_set,
     ),
 )
@@ -198,7 +196,7 @@ result = plan.sample(bundle, key, config)   # → SampleResult(sequence, logits)
 logits = plan.score(bundle, key, config)    # → (L, 21)
 ```
 
-Plain callables and lambdas work in all `StageSet` slots (the driver uses `eqx.filter_jit`). Use `eqx.Module` only when the callable carries JAX array leaves (e.g. weights that need grad).
+Plain callables and lambdas work in all `StageSet` slots (`eqx.filter_jit` marks non-array objects as static). Use `eqx.Module` only when the callable carries JAX array leaves (e.g. weights that need grad).
 
 See the [Composition Guide](docs/COMPOSITION_GUIDE.md) for the five extension points (`logit_transform`, `ar_logit_transform`, `decode_step`, `sample_step`, `tie_group_fuse`).
 
@@ -647,7 +645,7 @@ All five decoding paths are validated via `parity_heavy` tests — see [Validati
 aminx.run          ← SamplingSpecification, ScoringSpecification, sample(), score()
 aminx.host.plan    ← InferencePlan, InferenceComponents, make_inference_plan()
 aminx.types.stages ← StageSet (the composition interface)
-aminx.inference    ← driver.decode, logits (LOGIT_STRATEGIES, TIE_GROUP_STRATEGIES)
+aminx.inference    ← decode mode classes, logits (LOGIT_STRATEGIES, TIE_GROUP_STRATEGIES)
 aminx.model        ← LigandMPNN, Packer (Equinox modules, JIT-safe)
 aminx.sampling     ← sample() kernel
 aminx.scoring      ← score() kernel

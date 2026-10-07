@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
 import equinox as eqx
@@ -470,6 +471,48 @@ def resolve_sample_start(
 
   """
   return int(grid_lineage["sample_start"]) if grid_lineage is not None else 0
+
+
+def _as_level_sequence(value: object, default: tuple[float, ...]) -> tuple[float, ...]:
+  """Coerce a temperature or noise knob into a non-empty sequence of levels.
+
+  ``make_sampling_planner`` takes ``len(...)`` of these. Sampling specs store a
+  sequence; scoring specs store a scalar float. Both have to plan.
+  """
+  if value is None or isinstance(value, (str, bytes)):
+    return default
+  if isinstance(value, (int, float)):
+    return (float(value),)
+  if not isinstance(value, (list, tuple)):
+    return default
+  return tuple(float(level) for level in value) or default
+
+
+def _topology_planner_spec(spec: object, sampling_config: object) -> SimpleNamespace:
+  """Flat spec view for the one construction-time BatchPlan.
+
+  ``_sample_batch`` rebuilds a BatchPlan per structure batch (real ``seq_len`` and
+  sample count). Topology validation runs once, here, on the spec-level plan:
+  same axes and carry/dedup specs, without a per-batch override.
+  """
+  config_temperature = getattr(sampling_config, "temperature", ())
+  config_noise = getattr(sampling_config, "backbone_noise", ())
+  temperature = _as_level_sequence(
+    getattr(spec, "temperature", None),
+    tuple(config_temperature) or (1.0,),
+  )
+  backbone_noise = _as_level_sequence(
+    getattr(spec, "backbone_noise", None),
+    tuple(config_noise) or (0.0,),
+  )
+  return SimpleNamespace(
+    batch_size=getattr(spec, "batch_size", 1),
+    samples_batch_size=getattr(spec, "samples_batch_size", 128),
+    temperature=temperature,
+    backbone_noise=backbone_noise,
+    carry_specs=getattr(spec, "carry_specs", None),
+    dedup_specs=getattr(spec, "dedup_specs", None),
+  )
 
 
 def _validate_plan_topology(
@@ -1009,6 +1052,14 @@ def make_inference_plan(
     mode=decode_mode,
     strategy=decode_strategy,
     decoding_order_fn=sampling_config.decoding_order_fn,
+  )
+
+  # Once per plan, not per batch. InferencePlan carries decode_fn; the sampling
+  # BatchPlan carries decisions. The validator reads both off one subject.
+  batch_plan = make_sampling_planner(_topology_planner_spec(spec, sampling_config))
+  _validate_plan_topology(
+    SimpleNamespace(decisions=batch_plan.decisions, decode_fn=decode_fn),
+    stage_set,
   )
 
   components = InferenceComponents(

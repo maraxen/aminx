@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import logging
+import numbers
 import re
-import warnings
-from collections.abc import Mapping, MutableMapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TextIO, cast
@@ -15,33 +15,6 @@ from aminx.io.weights import get_topology_for_checkpoint
 from aminx.model.versions import MODEL_VERSION, MODEL_WEIGHTS
 
 from .spec import UNSET, RunSpec, Unset, _as_temperature_tuple, build_run_spec
-
-_DEPRECATED_SPEC_KWARGS = frozenset(
-  {
-    "output_path",
-    "score_batch_size",
-    "average_logits",
-    "combine_noise_batch_size",
-    "gmm_min_iters",
-    "average_encoding_mode",
-  },
-)
-
-
-def pop_deprecated_spec_kwargs(kwargs: MutableMapping[str, Any]) -> None:
-  """Remove legacy serialized keys dropped from specification dataclasses.
-
-  Mutates ``kwargs`` in place. Emits :class:`DeprecationWarning` for each removed key.
-  """
-  for key in _DEPRECATED_SPEC_KWARGS:
-    if key in kwargs:
-      kwargs.pop(key)
-      warnings.warn(
-        f"Specification kwarg {key!r} is deprecated and ignored.",
-        DeprecationWarning,
-        stacklevel=3,
-      )
-
 
 if TYPE_CHECKING:
   from jaxtyping import ArrayLike
@@ -148,11 +121,12 @@ _WRAPPED_DEPRECATED_INIT: set[type] = set()
 
 
 def register_spec(cls: type) -> type:
-  """Decorator to wrap spec __init__ with deprecated kwarg warnings.
+  """Drop the non-init ``run_spec`` kwarg before the dataclass constructor.
 
-  Strips deprecated kwargs and emits DeprecationWarning for each removed key.
-  Handles special migration: average_encoding_mode → encoding_aggregation_fn.
-  Safe to apply multiple times; idempotent via _WRAPPED_DEPRECATED_INIT tracking.
+  Removed specification keys are not stripped here. A Python caller that passes
+  one gets the normal ``TypeError``. Legacy JSON is migrated in
+  :mod:`aminx.run.spec_json`. Safe to apply multiple times; idempotent via
+  ``_WRAPPED_DEPRECATED_INIT``.
   """
   if cls in _WRAPPED_DEPRECATED_INIT:
     return cls
@@ -161,25 +135,6 @@ def register_spec(cls: type) -> type:
 
   def patched_init(self: object, *args: object, **kwargs: object) -> None:
     kwargs.pop("run_spec", None)
-
-    # Special handling for average_encoding_mode → encoding_fusion migration
-    if "average_encoding_mode" in kwargs:
-      kwargs.pop("average_encoding_mode")
-      warnings.warn(
-        "Specification kwarg 'average_encoding_mode' is deprecated. "
-        "Use 'encoding_fusion' (EncodingFusionFn) on RunSpecification instead.",
-        DeprecationWarning,
-        stacklevel=3,
-      )
-
-    for key in list(kwargs):
-      if key in _DEPRECATED_SPEC_KWARGS:
-        kwargs.pop(key)
-        warnings.warn(
-          f"Specification kwarg {key!r} is deprecated and ignored.",
-          DeprecationWarning,
-          stacklevel=3,
-        )
     original_init(self, *args, **kwargs)
 
   setattr(cls, "__init__", patched_init)  # noqa: B010
@@ -219,7 +174,7 @@ class RunSpecification:
       for sampling/jacobian; not yet implemented for score/inspect).
       ``output_dir`` (when set) overrides inferred output roots from ``cache_path`` / streaming
       output parents in :func:`~aminx.run.spec.build_run_spec`.
-      Legacy serialized ``output_path`` is ignored with a :class:`DeprecationWarning`.
+      A saved document may still carry legacy ``output_path``; spec JSON migration drops it.
 
   """
 
@@ -350,6 +305,18 @@ class RunSpecification:
     # Ensure guard flag is initialized for first-time use
     if not hasattr(self, "_run_spec_synced"):
       object.__setattr__(self, "_run_spec_synced", False)
+
+    # Default once, here. ``None`` is the unset sentinel; 0 is a real seed. Every later
+    # reader uses ``run_spec.sampling.random_seed`` with no ``or`` fallback.
+    seed = self.random_seed
+    if seed is None:
+      object.__setattr__(self, "random_seed", 42)
+    elif isinstance(seed, bool) or not isinstance(seed, numbers.Integral):
+      msg = f"random_seed must be an int, got {type(seed).__name__}"
+      raise TypeError(msg)
+    elif not isinstance(seed, int):
+      # numpy integers (e.g. a derived np.int64 seed) are accepted and normalised.
+      object.__setattr__(self, "random_seed", int(seed))
 
     # Handle backward compatibility: convert old-style noise params to noise list
     bundles = list(self.noise)  # Start with provided bundles
@@ -905,9 +872,10 @@ Specs = (
 
 
 def apply_deprecated_spec_init_warnings(cls: type) -> None:
-  """Wrap ``cls.__init__`` like task specs: strip deprecated kwargs and warn.
+  """Wrap ``cls.__init__`` like task specs (drop non-init ``run_spec`` only).
 
   Call once per extra subclass (e.g. :class:`~aminx.training.specs.TrainingSpecification`)
-  defined outside this module.
+  defined outside this module. Removed keys are not accepted; pass them and the
+  constructor raises ``TypeError``.
   """
   register_spec(cls)

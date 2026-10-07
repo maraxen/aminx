@@ -2,7 +2,30 @@
 
 ## Unreleased
 
+### Removed
+
+- **`aminx.profiling`** (`hlo_tools`, `sampler_profile`). No importers.
+- **`aminx.training.train_diffusion`** and its in-tree test `training/test_diffusion_loop.py`.
+- **`aminx.inference.driver`** (`decode`, `infer_topology`, topology constants). `decode` raised `NotImplementedError`; topology routing lives on the plan mode classes. `aminx.host.plan.PlanTopologyError` and `aminx.tiling.errors` are unchanged.
+- **Host sinks with no production callers:** `JacobianAccumulationSink`, `jacobian_sink_session`, `stage_jacobian_io`, `scoring_tensor_sink_session`, `active_scoring_sink`, `EncoderIntermediateStagingSink`, `encoder_sink_session`, `active_encoder_staging_sink`, `take_encoder_intermediates`, `IoCallbackEncoderSink`, and `_noop_sampling_chunk_io`. Streaming tensor sinks stay.
+- **`aminx.utils.atomic_write`** and **`aminx.utils.testing.get_tolerances`**.
+
 ### Changed
+
+- **Training numerics** (`TrainingSpecification.weight_decay_mask`, default `"no_bias"`).
+  No-warmup AdamW now skips decay on 1-D parameters, matching the warmup path.
+  `weight_decay_mask="all"` decays every inexact parameter and restores the previous
+  no-warmup behaviour. Gradient accumulation averages micro-batch loss and gradients.
+  Resume continues the checkpoint PRNG key and the epoch stored in `extras["epoch"]`
+  (the loader has no fixed steps-per-epoch, so the epoch is not derived from `step`).
+  Checkpoints written before this change cannot be resumed: the restore template now
+  includes that epoch leaf, and older checkpoints saved `extras={}`.
+  
+- **Spec JSON carries `schema_version` 1.** Unknown keys are rejected with close-match
+  suggestions. Legacy documents without `schema_version` still load. Removed keys are
+  migrated by a table (`drop` warns, `error` fails). The deprecated-kwargs constructor
+  shim is gone: passing those kwargs to a specification constructor raises `TypeError`.
+  Agent `spec_sha256` values change because the encoded spec gained a key.
 
 - **Runner buckets residue length by default** (xtrax `BUCKET_LADDER`). Seeded sample
   outputs change. Past the bucket, sampled tokens are X and logits are 0 (previously
@@ -23,6 +46,14 @@
   deprecation in favour of xtrax's (debt #2371).
 
 ### Fixed
+
+- **Seed 0 means seed 0.** `random_seed or 42` used to execute seed 0 as seed 42 while the
+  saved spec recorded 0. `None` still defaults to 42, once, when the specification is
+  constructed. A legacy spec JSON document (no `schema_version`) that records 0 decodes as
+  42 with a `UserWarning`, because that is the seed the run actually used. Documents with
+  `schema_version` 1 keep 0. Campaign units whose `random_seed` is 0 are recomputed
+  (`seed0_semantics` on the unit input hash); every other unit hash is unchanged.
+  `SAMPLING_NUMERICS_EPOCH` stays 2.
 
 - **`host.kernel_dispatch._dispatch_axis` keeps xtrax plans chunked after the rename.** It
   dispatches on `type(strategy).__name__` to serve both strategy origins and matched only

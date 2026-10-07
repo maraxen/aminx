@@ -488,7 +488,7 @@ def build_run_spec(spec: object) -> RunSpec:
 
   sampling = SamplingConfig(
     num_samples=int(getattr(spec, "num_samples", 1) or 1),
-    random_seed=int(getattr(spec, "random_seed", 42) or 42),
+    random_seed=int(getattr(spec, "random_seed", 42)),
     return_logits=bool(getattr(spec, "return_logits", False)),
     compute_pseudo_perplexity=bool(getattr(spec, "compute_pseudo_perplexity", False)),
     return_decoding_orders=bool(getattr(spec, "return_decoding_orders", False)),

@@ -41,8 +41,8 @@ from aminx.host.spec_partition import campaign_sampling_spec_payload
 from aminx.io.sink_provenance import resolve_aminx_version
 from aminx.io.weights import REVISION_ENV, WEIGHTS_DIR_ENV, weight_provenance
 from aminx.run.spec import mpnn_temperatures
-from aminx.run.spec_json import _coerce_field_value
-from aminx.run.specs import SamplingSpecification, pop_deprecated_spec_kwargs
+from aminx.run.spec_json import _coerce_field_value, migrate_removed_spec_keys
+from aminx.run.specs import SamplingSpecification
 from aminx.runtime import configure_multiprocessing
 from aminx.sampling.multistate_poe import sample_multistate_poe_campaign_row
 
@@ -705,6 +705,10 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
   stamp's ``producer`` for audit but is deliberately not part of the hash (a numerics-neutral commit must not
   invalidate a finished campaign; bump the epoch when numerics move).
 
+  A finished unit whose ``random_seed`` is 0 holds output from the old seed-42 execution. Those units alone get a
+  ``seed0_semantics`` component so reuse is refused; every other payload is hashed exactly as before. This is not a
+  numerics-epoch bump.
+
   Returns ``(input_hash, components)``; ``components`` are the inputs to the hash, stored in the stamp so a mismatch
   can be explained.
   """
@@ -723,6 +727,10 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
       "numerics_epoch": SAMPLING_NUMERICS_EPOCH,
     },
   }
+  # Only seed 0. Adding the key for any other seed would change that unit's hash.
+  recorded_seed = sampling_spec_payload.get("random_seed")
+  if recorded_seed == 0 and not isinstance(recorded_seed, bool):
+    components["seed0_semantics"] = 2
   return hashlib.sha256(canonical_json_bytes(components)).hexdigest(), components
 
 
@@ -1549,7 +1557,7 @@ def run_manifest_row(  # noqa: PLR0915
 
     worker_payload = dict(sampling_spec_payload)
     worker_payload["output_h5_path"] = str(partial_path)
-    pop_deprecated_spec_kwargs(worker_payload)
+    worker_payload = migrate_removed_spec_keys(worker_payload)
     # Coerce JSON scalars back to their spec types (lists -> ndarray for the array knobs,
     # list -> tuple for temperature) using spec_json's whitelist, which names exactly these
     # fields and exists for exactly this. Before the field-driven manifest write, array knobs
@@ -1559,9 +1567,9 @@ def run_manifest_row(  # noqa: PLR0915
     # this audit exists to end -- restore the type at the boundary instead.
     #
     # Coercion is a VALUE transform, so strict unknown-key rejection is unaffected: an unknown
-    # key still reaches the constructor and raises TypeError. That strictness is why this path
-    # uses the plain constructor rather than run_specification_from_json_dict, which would
-    # silently ignore unknown keys.
+    # key still reaches the constructor and raises TypeError. Removed keys from older manifests
+    # are migrated first. This path keeps the plain constructor rather than
+    # run_specification_from_json_dict so the hashed payload stays constructor kwargs.
     worker_payload = {
       key: _coerce_field_value(SamplingSpecification, key, value)
       for key, value in worker_payload.items()

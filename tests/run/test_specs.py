@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import tempfile
-import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 
@@ -15,12 +13,7 @@ from aminx.run.specs import (
     RunSpecification,
     SamplingSpecification,
     ScoringSpecification,
-    _DEPRECATED_SPEC_KWARGS,
-    pop_deprecated_spec_kwargs,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import MutableMapping
 
 
 # ============================================================================
@@ -770,74 +763,25 @@ class TestInspectionSpecification:
 
 
 class TestDeprecatedKwargs:
-    """Tests for deprecated kwarg handling via register_spec decorator."""
+    """Removed specification kwargs are rejected by the constructor."""
 
-    def test_output_path_deprecated_warning(self, minimal_run_spec_kwargs: dict) -> None:
-        """output_path kwarg should emit DeprecationWarning."""
-        with pytest.warns(DeprecationWarning, match="output_path.*deprecated and ignored"):
-            RunSpecification(**minimal_run_spec_kwargs, output_path="/tmp/out")
-
-    def test_score_batch_size_deprecated_warning(self, minimal_run_spec_kwargs: dict) -> None:
-        """score_batch_size kwarg should emit DeprecationWarning."""
-        with pytest.warns(DeprecationWarning, match="score_batch_size.*deprecated and ignored"):
-            RunSpecification(**minimal_run_spec_kwargs, score_batch_size=32)
-
-    def test_average_logits_deprecated_warning(self, minimal_run_spec_kwargs: dict) -> None:
-        """average_logits kwarg should emit DeprecationWarning."""
-        with pytest.warns(DeprecationWarning, match="average_logits.*deprecated and ignored"):
-            RunSpecification(**minimal_run_spec_kwargs, average_logits=True)
-
-    def test_combine_noise_batch_size_deprecated_warning(
-        self, minimal_run_spec_kwargs: dict
+    @pytest.mark.parametrize(
+        ("key", "value"),
+        [
+            ("output_path", "/tmp/out"),
+            ("score_batch_size", 32),
+            ("average_logits", True),
+            ("combine_noise_batch_size", 16),
+            ("gmm_min_iters", 10),
+            ("average_encoding_mode", "inputs"),
+        ],
+    )
+    def test_removed_kwarg_raises_type_error(
+        self, minimal_run_spec_kwargs: dict, key: str, value: object
     ) -> None:
-        """combine_noise_batch_size kwarg should emit DeprecationWarning."""
-        with pytest.warns(
-            DeprecationWarning, match="combine_noise_batch_size.*deprecated and ignored"
-        ):
-            RunSpecification(**minimal_run_spec_kwargs, combine_noise_batch_size=16)
-
-    def test_gmm_min_iters_deprecated_warning(self, minimal_run_spec_kwargs: dict) -> None:
-        """gmm_min_iters kwarg should emit DeprecationWarning."""
-        with pytest.warns(DeprecationWarning, match="gmm_min_iters.*deprecated and ignored"):
-            RunSpecification(**minimal_run_spec_kwargs, gmm_min_iters=10)
-
-    def test_all_deprecated_kwargs_together(self, minimal_run_spec_kwargs: dict) -> None:
-        """All deprecated kwargs should emit warnings."""
-        with pytest.warns(DeprecationWarning) as record:
-            RunSpecification(
-                **minimal_run_spec_kwargs,
-                output_path="/tmp/out",
-                score_batch_size=32,
-                average_logits=True,
-                combine_noise_batch_size=16,
-                gmm_min_iters=10,
-            )
-        assert len(record) == 5
-
-    def test_deprecated_kwargs_ignored_not_stored(self, minimal_run_spec_kwargs: dict) -> None:
-        """Deprecated kwargs should be silently ignored and not stored."""
-        with pytest.warns(DeprecationWarning):
-            spec = RunSpecification(
-                **minimal_run_spec_kwargs,
-                output_path="/tmp/out",
-                score_batch_size=999,
-            )
-        # Verify deprecated values don't overwrite existing attributes
-        assert not hasattr(spec, "output_path")
-        assert not hasattr(spec, "score_batch_size")
-
-    def test_pop_deprecated_spec_kwargs_function(self) -> None:
-        """pop_deprecated_spec_kwargs should remove all deprecated keys."""
-        kwargs: MutableMapping[str, object] = {
-            "output_path": "/tmp/out",
-            "batch_size": 32,
-            "other_field": "value",
-        }
-        with pytest.warns(DeprecationWarning, match="output_path"):
-            pop_deprecated_spec_kwargs(kwargs)
-        assert "output_path" not in kwargs
-        assert "batch_size" in kwargs
-        assert "other_field" in kwargs
+        """A Python caller passing a removed key gets TypeError."""
+        with pytest.raises(TypeError, match=key):
+            RunSpecification(**minimal_run_spec_kwargs, **{key: value})
 
 
 # ============================================================================

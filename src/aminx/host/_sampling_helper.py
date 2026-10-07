@@ -426,15 +426,6 @@ def _noop_sampling_structure_batch_io(batch_idx: object, batch_count: object) ->
   del batch_idx, batch_count
 
 
-def _noop_sampling_chunk_io(chunk_idx: object, chunk_count: object) -> None:
-  """Host chunk-boundary hook for sampling (Phase 5g PR1).
-
-  ``jax.experimental.io_callback`` invokes this on the host with ``ordered=False``.
-  Lightweight marker to signal a chunk is done.
-  """
-  del chunk_idx, chunk_count
-
-
 def _dispatch_sampling_tensor_batch_io(
   batch_idx: object,
   batch_count: object,

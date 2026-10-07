@@ -66,6 +66,7 @@
 ## Actuation Surfaces
 
 ## Audits
+- [261007_aminx-xtrax-separation-audit](audits/261007_aminx-xtrax-separation-audit.md) — Deep audit (4 domain auditors, spot-verified) of where aminx still owns generic run, IO, execution, config and training contracts that xtrax should own, where xtrax holds aminx-specific logic, and the debts and sprint shape to fix it.
 - [261006_xtrax-usage-audit](audits/261006_xtrax-usage-audit.md) — Static inventory of all 619 public xtrax symbols against aminx (bathos da99c566, pass) plus per-capability verdicts. Includes duplicates to replace, gaps worth adopting, things that don't apply, and the native hook for runner length bucketing.
 - [260929_potts-laser-spec-adversarial-log](audits/260929_potts-laser-spec-adversarial-log.md) — Sequential challenger→defender rounds for specs/260929_pottsmpnn-lasermpnn-xtrax-composition.md until convergence
 - [260928_t5a-calibrate-attempt-history](audits/260928_t5a-calibrate-attempt-history.md) — All four tracked runs of layer_c_calibrate (one pass, three prior), and the one post-registration sidecar edit
