@@ -22,6 +22,7 @@ from aminx.host._sampling_helper import _canonical_structure_id
 from aminx.io.parsing import parse_structure
 from aminx.potts.spec import PottsRunSpec
 from aminx.run.spec_json import (
+  _REMOVED_SPEC_KEYS,
   SpecJSONDecodeError,
   SpecJSONEncodeError,
   run_specification_from_json,
@@ -29,7 +30,6 @@ from aminx.run.spec_json import (
   run_specification_to_json_dict,
 )
 from aminx.run.specs import (
-  _DEPRECATED_SPEC_KWARGS,
   InspectionSpecification,
   JacobianSpecification,
   RunSpecification,
@@ -210,7 +210,7 @@ def _option_problems(cls: type[RunSpecification], options: Mapping[str, Any]) ->
   init_names = {field.name for field in fields(cls) if field.init}
   problems: list[str] = []
   for key in sorted(options):
-    if key in _DEPRECATED_SPEC_KWARGS:
+    if key in _REMOVED_SPEC_KEYS:
       problems.append(f"{key} is deprecated and is not accepted")
       continue
     if key in _UNSETTABLE:

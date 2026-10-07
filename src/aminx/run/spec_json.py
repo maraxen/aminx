@@ -9,13 +9,16 @@ Pickle-based migration is intentionally out of scope; prefer this module for new
 
 from __future__ import annotations
 
+import difflib
 import json
+import warnings
 from collections.abc import Mapping, Sequence
-from dataclasses import MISSING, fields, is_dataclass
+from dataclasses import MISSING, dataclass, fields, is_dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Final, Literal
 
 import numpy as np
+from xtrax.config import classify_schema_version
 
 from aminx.run.specs import (
   InspectionSpecification,
@@ -120,9 +123,126 @@ _NON_JSON_ROOT_FIELDS = frozenset(
 # serialized fields do not already carry.
 _DERIVED_FIELDS = frozenset({"noise"})
 
+# Current spec JSON document version. Legacy documents omit the key and still load.
+SPEC_JSON_SCHEMA_VERSION: Final[int] = 1
+
+
+@dataclass(frozen=True)
+class RemovedSpecKey:
+  """One removed specification key and how a saved document should treat it."""
+
+  policy: Literal["drop", "error"]
+  note: str
+
+
+# A key with policy "error" raises SpecJSONDecodeError with its note (this is what
+# #2519/#2531 will use for knobs that used to do something). policy "drop" removes a key
+# that is already ignored, so the document's meaning stays the same, and emits one
+# DeprecationWarning naming the key.
+_REMOVED_SPEC_KEYS: Mapping[str, RemovedSpecKey] = {
+  "output_path": RemovedSpecKey(
+    policy="drop",
+    note="removed; streaming output uses output_h5_path",
+  ),
+  "score_batch_size": RemovedSpecKey(
+    policy="drop",
+    note="removed; already ignored",
+  ),
+  "average_logits": RemovedSpecKey(
+    policy="drop",
+    note="removed; already ignored",
+  ),
+  "combine_noise_batch_size": RemovedSpecKey(
+    policy="drop",
+    note="removed; already ignored",
+  ),
+  "gmm_min_iters": RemovedSpecKey(
+    policy="drop",
+    note="removed; already ignored",
+  ),
+  "average_encoding_mode": RemovedSpecKey(
+    policy="drop",
+    note="removed; encoding fusion is encoding_fusion",
+  ),
+}
+
+
+def migrate_removed_spec_keys(payload: Mapping[str, Any]) -> dict[str, Any]:
+  """Apply :data:`_REMOVED_SPEC_KEYS` and return a new mapping.
+
+  ``drop`` deletes the key and emits one :class:`DeprecationWarning` naming it.
+  ``error`` raises :class:`SpecJSONDecodeError` with that key's note.
+  """
+  migrated = dict(payload)
+  for key, entry in _REMOVED_SPEC_KEYS.items():
+    if key not in migrated:
+      continue
+    if entry.policy == "drop":
+      migrated.pop(key)
+      warnings.warn(
+        f"Removed spec key {key!r} is deprecated and ignored. {entry.note}",
+        DeprecationWarning,
+        stacklevel=2,
+      )
+      continue
+    if entry.policy == "error":
+      raise SpecJSONDecodeError(entry.note)
+    msg = f"Unknown removal policy {entry.policy!r} for spec key {key!r}"
+    raise SpecJSONDecodeError(msg)
+  return migrated
+
+
+def _require_supported_schema_version(data: Mapping[str, Any]) -> None:
+  """Accept the current version and legacy documents; reject anything else."""
+  status = classify_schema_version(data, SPEC_JSON_SCHEMA_VERSION)
+  if status.kind in {"ok", "missing"}:
+    return
+  if status.kind in {"newer_than_supported", "mismatched"}:
+    msg = (
+      f"Unsupported spec JSON schema_version: found {status.found!r}, "
+      f"supported {status.current!r} "
+      f"(document schema_version is {data.get('schema_version')!r})"
+    )
+    raise SpecJSONDecodeError(msg)
+  msg = f"Unrecognized spec JSON schema version status {status.kind!r}"
+  raise SpecJSONDecodeError(msg)
+
+
+def _reject_unaccepted_keys(cls: type[Any], data: Mapping[str, Any]) -> None:
+  """Reject unknown keys and non-null values for fields JSON cannot carry."""
+  init_names = {f.name for f in fields(cls) if f.init}
+  non_init_names = {f.name for f in fields(cls) if not f.init}
+  non_null_carriers: list[str] = []
+  unknown: list[str] = []
+  for key, value in data.items():
+    if key in {"_spec_class", "schema_version"} or key in _DERIVED_FIELDS:
+      continue
+    if key in _NON_JSON_ROOT_FIELDS or key in non_init_names:
+      if value is not None:
+        non_null_carriers.append(key)
+      continue
+    if key not in init_names:
+      unknown.append(key)
+  if non_null_carriers:
+    names = ", ".join(repr(key) for key in sorted(non_null_carriers))
+    msg = f"Spec JSON field(s) {names} must be null"
+    raise SpecJSONDecodeError(msg)
+  if not unknown:
+    return
+  candidates = sorted(init_names)
+  parts: list[str] = []
+  for key in sorted(unknown):
+    matches = difflib.get_close_matches(key, candidates, n=1, cutoff=0.6)
+    if matches:
+      parts.append(f"{key!r} (did you mean {matches[0]!r}?)")
+    else:
+      parts.append(repr(key))
+  msg = "Unknown spec JSON key(s): " + "; ".join(parts)
+  raise SpecJSONDecodeError(msg)
+
 
 def run_specification_to_json_dict(spec: RunSpecification) -> dict[str, Any]:
-  """Return a JSON-serializable dict for ``spec`` (includes ``_spec_class``)."""
+  """Return a JSON-serializable dict for ``spec`` (includes ``_spec_class`` and ``schema_version``)."""
   if not is_dataclass(spec):
     msg = "run_specification_to_json_dict expects a dataclass specification instance"
     raise TypeError(msg)
@@ -131,7 +251,10 @@ def run_specification_to_json_dict(spec: RunSpecification) -> dict[str, Any]:
   if name not in _SPEC_CLASS_BY_NAME:
     msg = f"Unknown specification class {name!r}; register it in spec_json._SPEC_CLASS_BY_NAME"
     raise SpecJSONEncodeError(msg)
-  payload: dict[str, Any] = {"_spec_class": name}
+  payload: dict[str, Any] = {
+    "_spec_class": name,
+    "schema_version": SPEC_JSON_SCHEMA_VERSION,
+  }
   for f in fields(spec):
     if not f.init:
       continue
@@ -227,13 +350,16 @@ def run_specification_from_json_dict(data: Mapping[str, Any]) -> RunSpecificatio
     msg = f"Unknown or invalid _spec_class: {name!r}"
     raise SpecJSONDecodeError(msg)
   cls = _SPEC_CLASS_BY_NAME[name]
+  _require_supported_schema_version(data)
+  migrated = migrate_removed_spec_keys(data)
+  _reject_unaccepted_keys(cls, migrated)
   kwargs: dict[str, Any] = {}
   for f in fields(cls):
     if not f.init:
       continue
-    if f.name in _NON_JSON_ROOT_FIELDS:
+    if f.name in _NON_JSON_ROOT_FIELDS or f.name in _DERIVED_FIELDS:
       continue
-    if f.name not in data:
+    if f.name not in migrated:
       if f.default is not MISSING:
         kwargs[f.name] = f.default
       elif f.default_factory is not MISSING:
@@ -242,7 +368,23 @@ def run_specification_from_json_dict(data: Mapping[str, Any]) -> RunSpecificatio
         msg = f"Missing required field {f.name!r}"
         raise SpecJSONDecodeError(msg)
     else:
-      kwargs[f.name] = _coerce_field_value(cls, f.name, data[f.name])
+      kwargs[f.name] = _coerce_field_value(cls, f.name, migrated[f.name])
+  # Legacy documents (no schema_version) recorded seed 0 while the falsy coalesce actually ran 42.
+  # Decode that one value as 42 so a reload reproduces the original run. schema_version 1
+  # keeps 0.
+  recorded_seed = kwargs.get("random_seed")
+  if (
+    "schema_version" not in data
+    and recorded_seed == 0
+    and not isinstance(recorded_seed, bool)
+  ):
+    warnings.warn(
+      "Pre-schema spec recorded random_seed 0 but ran with seed 42; "
+      "decoding as 42 to reproduce the original run.",
+      UserWarning,
+      stacklevel=2,
+    )
+    kwargs["random_seed"] = 42
   return cls(**kwargs)  # type: ignore[arg-type]
 
 
