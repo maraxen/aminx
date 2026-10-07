@@ -108,6 +108,7 @@
 ## Preregistration
 
 ## Reference
+- [261007_laser-distributional-confirm-result](reference/261007_laser-distributional-confirm-result.md) — The sharded LASErMPNN confirmatory run completed on titanix GPUs 2 and 3 and graded pass by record on min_p0@1.0 and min_p0@0.3, with the CTRL_m negative control failing on sequence in both shards
 - [261006_laser-oracle-seal-asymmetry](reference/261006_laser-oracle-seal-asymmetry.md) — Three seal mechanisms guard the port oracles with materially different strength; the LASEr one fails open and its pin is not in version control
 - [261005_laser-confirm-run-readiness](reference/261005_laser-confirm-run-readiness.md) — The resume machinery for the ~60 h LASEr distributional run is correct and already proven by tonight's Potts run; its cache key includes the script hash, so the driver must be frozen before launch
 - [261005_using-aminx-skill-family-update](reference/261005_using-aminx-skill-family-update.md) — Exact anchored edits to add PottsMPNN/LASErMPNN to the user's global using-aminx skill, including one stale line that is now wrong rather than merely incomplete
