@@ -37,13 +37,36 @@ import pytest
 
 _PORT = Path(__file__).resolve().parents[1] / "port"
 _TARGETS = _PORT / "targets"
-#: How many waves must actually be compared. A guard that silently matches no
-#: file would pass forever; raise this when a wave adopts the constants.
-_MIN_COVERED = 3
+
+#: The waves this guard compares, BY NAME.
+#:
+#: This replaced a bare ``_MIN_COVERED = 3`` count (261006). A count is not
+#: coverage: five waves satisfied "at least three", so two could stop being
+#: checked -- by losing their band dicts or their ``port_wave`` marker -- and
+#: the guard would still certify itself non-vacuous while quietly comparing
+#: less. Verified by probe: dropping the marker from test_laser_encoder.py took
+#: the wave out of this guard entirely and the count check still passed.
+#:
+#: Equality, not a floor, and in both directions on purpose: a wave leaving is
+#: a regression, and a wave arriving should be recorded here so the set stays a
+#: true statement about what is checked rather than a stale lower bound.
+_EXPECTED_COVERED = frozenset({
+  "laser_decode_step",
+  "laser_encoder",
+  "laser_layers",
+  "laser_rotamers",
+  "laser_score",
+})
 
 #: Every module constant that can carry a band. Order is irrelevant; membership
 #: is what makes a stale leftover from another form detectable.
 _ALL_CONSTS = ("_RTOL", "_ATOL", "_SCALE_REL")
+
+#: Sentinel for a band the module defines but does not define LITERALLY, so it
+#: cannot be read statically. Compared by identity, never by value: an empty
+#: dict would be indistinguishable from "the constant is absent", and the two
+#: want different messages.
+_UNREADABLE: dict[str, float] = {}
 
 #: Policy key-set -> the (constant, policy key) pairs that form requires. A
 #: policy whose keys match no entry is a failure, not a pass: an unrecognised
@@ -84,7 +107,18 @@ def _module_facts(path: Path) -> tuple[str | None, dict[str, dict[str, float]]]:
     else:
       continue
     if isinstance(target, ast.Name) and target.id in set(_ALL_CONSTS):
-      value = ast.literal_eval(expr)
+      # A band that is not a literal cannot be read statically. Do NOT let that
+      # raise: this runs at import time to build the parametrize list, so a
+      # ValueError here fails COLLECTION of the whole file and takes every test
+      # in it down with the one module it could not parse (found 261006 by
+      # probe, on `_RTOL = dict(_BAND["rtol"])`). Record it as unreadable
+      # instead, and let _mismatches refuse it as a normal, legible failure --
+      # unreadable must not become a quiet way to skip the comparison.
+      try:
+        value = ast.literal_eval(expr)
+      except ValueError:
+        consts[target.id] = _UNREADABLE
+        continue
       if isinstance(value, dict):
         consts[target.id] = {str(k): float(v) for k, v in value.items()}
   return wave, consts
@@ -105,6 +139,12 @@ def _mismatches(
       )
       continue
     for name, key in form:
+      if consts.get(name) is _UNREADABLE:
+        problems.append(
+          f"{precision}: {name} is not a literal, so this guard cannot confirm "
+          f"the asserted band matches the reported {key}. Keep the band literal.",
+        )
+        continue
       asserted = consts.get(name, {}).get(precision)
       reported = policy.get(key)
       if asserted != reported:
@@ -152,7 +192,14 @@ def test_mismatch_detector_fires() -> None:
     "f32: TOML declares the ['scale_rel'] form but the test still defines _RTOL['f32']",
   ]
 
-  # 3. a form nobody has taught the guard must NOT pass silently
+  # 3. a band the module defines but not literally: refused, not skipped, and
+  #    above all not raised during collection.
+  assert _mismatches({**ok, "_SCALE_REL": _UNREADABLE}, scale) == [
+    "f32: _SCALE_REL is not a literal, so this guard cannot confirm the asserted "
+    "band matches the reported scale_rel. Keep the band literal.",
+  ]
+
+  # 4. a form nobody has taught the guard must NOT pass silently
   unknown = {
     "tolerance_policy_f64": "rtol=1e-8,atol=1e-11",
     "tolerance_policy_f32": "ulps=4",
@@ -170,11 +217,20 @@ def _covered() -> list[tuple[str, Path, dict[str, dict[str, float]]]]:
   return rows
 
 
-def test_guard_is_not_vacuous() -> None:
-  covered = _covered()
-  assert len(covered) >= _MIN_COVERED, (
-    f"only {len(covered)} port tests expose literal _RTOL/_ATOL dicts "
-    f"({[w for w, _, _ in covered]}); the guard would be checking almost nothing"
+def test_guard_covers_exactly_the_waves_it_claims() -> None:
+  """Anti-vacuity by NAME. See ``_EXPECTED_COVERED`` for why not a count."""
+  covered = {wave for wave, _, _ in _covered()}
+  missing = sorted(_EXPECTED_COVERED - covered)
+  arrived = sorted(covered - _EXPECTED_COVERED)
+  assert not missing, (
+    f"these waves were being checked and no longer are: {missing}. A wave leaves "
+    f"this guard by losing its literal _RTOL/_ATOL dicts or its port_wave marker, "
+    f"and either way its emitted verdict stops being tied to any assertion. "
+    f"Still covered: {sorted(covered)}"
+  )
+  assert not arrived, (
+    f"these waves newly expose literal band dicts and are now checked: {arrived}. "
+    f"Add them to _EXPECTED_COVERED so it keeps stating what is really covered."
   )
 
 
