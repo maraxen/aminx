@@ -1271,3 +1271,57 @@ use_salt_bridge, deterministic, protonation_seed)` — **not** on the annotation
 `PI._PIPELINE_CACHE` is cleared first. The §23.2 comparison clears it explicitly; without that it
 would have silently compared the first cell against itself and "proved" invariance trivially.
 
+## 24. §15.3's open measurement is CLOSED: `num_virtual_atoms = 1`, so aminx's literal 25 is right
+
+Read off the loaded checkpoint, not off a fixture.
+
+```
+graph_featurization_module: PottsProteinFeatures
+num_backbone_atoms = 4
+num_virtual_atoms  = 1          ->  num_atoms = 5,  pair count = 25
+num_rbf = 16
+num_positional_embeddings = 16
+edge_embedding.weight (128, 416)
+```
+
+§15.3 flagged `num_virtual_atoms > 0` as the open question that would make aminx's hard-coded `25`
+**wrong** — loudly, as an edge-embedding width mismatch. It is `1`, but the backbone count is `4`,
+so `num_atoms = 5` and the pair count is `5² = 25`. **aminx's literal 25 is correct for this
+checkpoint.** The risk §15.3 named does not materialise, and P6 shrinks accordingly.
+
+Worth separating the two things that happen to coincide: `4 + 1 = 5` is *not* the same fact as
+"aminx uses the 5 backbone slots". Upstream reaches 5 as 4 real backbone atoms plus one virtual
+atom (the CB pseudo-atom, by the usual convention); aminx reaches 25 as a 5×5 loop over
+`backbone_coords`. They agree on the number today. They would stop agreeing the moment a
+checkpoint ships `num_virtual_atoms = 2`. So §5's recommendation to parameterise rather than
+hard-code stands on robustness grounds — it is just no longer a *correctness* fix for this port.
+
+### 24.1 ⚠ This does NOT discriminate between the two `edge_in_dim` formulas
+
+The measured `edge_in_dim = 416` reproduces the corrected formula exactly:
+
+```
+pos_embed_dim + rbf_count * n_pairs  =  16 + 16 * 25  =  416   ✓
+```
+
+But the formula I originally wrote and later corrected also lands on 416:
+
+```
+rbf_count * (len(pair_order) + 1)    =  16 * (25 + 1) =  416   ✗ (still wrong, still 416)
+```
+
+They coincide **precisely because `num_rbf == num_positional_embeddings == 16` on this
+checkpoint** — which is the degeneracy that let the wrong formula survive unnoticed in the first
+place. So this measurement confirms the *value* and does **not** confirm the *formula*. The
+correction rests on foundry's own arithmetic (`weights.py:242-243`, splitting off the first
+`num_positional_embeddings` columns before viewing the remainder as
+`(out_dim, num_atoms*num_atoms, num_rbf)`), not on this number.
+
+Recorded so nobody later cites 416 as evidence the formula is right. A checkpoint with
+`num_rbf != num_positional_embeddings` is the only thing that would discriminate them empirically,
+and none is in hand.
+
+Incidental confirmation: 416 is also the literal at aminx's `ligand_features.py:250` (the real
+constant — `:249` is a comment, per §8's audit correction), so that site is consistent with this
+checkpoint too.
+
