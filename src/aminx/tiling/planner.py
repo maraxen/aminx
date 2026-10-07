@@ -3,11 +3,11 @@ from __future__ import annotations
 import dataclasses
 from typing import TYPE_CHECKING
 
-import jax
 from xtrax.tiling import AxisSpec, BatchPlanner, MemoryBudget
 from xtrax.tiling import ChunkedMap as XtraxChunkedMap
 from xtrax.tiling import Vmap as XtraxVmap
 
+from aminx.tiling.memory_budget import resolve_memory_budget_bytes
 from aminx.tiling.strategy import SafeMap, Vmap
 
 if TYPE_CHECKING:
@@ -16,9 +16,6 @@ if TYPE_CHECKING:
   from xtrax.tiling import AxisDecision
 
   from aminx.tiling.strategy import AxisStrategy
-
-_DEFAULT_MEMORY_LIMIT_BYTES = 4 * 1024**3
-
 
 def estimate_memory_theoretical(
   decisions: Sequence[AxisDecision],
@@ -105,12 +102,8 @@ def plan_axis_strategy(
     return SafeMap(tile=batch_size_override)
 
   axis = dataclasses.replace(axis_template, cardinality=cardinality)
-  try:
-    limit = jax.devices()[0].memory_stats()["bytes_limit"]
-  except Exception:  # noqa: BLE001 - memory_stats unavailable on some backends (e.g. CPU)
-    limit = _DEFAULT_MEMORY_LIMIT_BYTES
   budget = MemoryBudget(
-    bytes=int(limit * headroom),
+    bytes=resolve_memory_budget_bytes(headroom=headroom),
     estimate=lambda decisions: int(
       estimate_memory_theoretical(decisions, activation_bytes_per_element, 1.0),
     ),

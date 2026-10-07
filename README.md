@@ -342,7 +342,7 @@ aminx run --checkpoint-id proteinmpnn_v_48_020 --chain-id C --random-seed 5 --ma
 
 `aminx run sample --chain-id C ...` is rejected (`No such option`). Fields that are not JSON-serialisable (`bias`, `fixed_positions`, `fixed_tokens`, `fixed_mask`, `state_weights`, `decode_fn`) cannot be set from the CLI; use the Python API. Spec construction failures exit 1; an unwired runner exits 2.
 
-`--max-length` is the length every per-position array is padded to (default 512) and the autoregressive decode runs at that **padded** length, so for a short chain it dominates the cost: on one CPU, a 93-residue chain took roughly 86 s/sample at 512 and a small fraction of that at 96. Set it near your real chain length.
+`--max-length` is the length every per-position array is padded to (default 512). Default runs then trim each batch to the xtrax `BUCKET_LADDER` rung that covers the residue span and re-pad outputs to `--max-length`. `--no-length-bucketing` (or `length_bucketing=False`) restores fixed padding, and the autoregressive decode runs at that padded length, so for a short chain it dominates the cost: on one CPU, a 93-residue chain took roughly 86 s/sample at 512 and a small fraction of that at 96.
 
 #### Driver families — PottsMPNN and LASErMPNN
 

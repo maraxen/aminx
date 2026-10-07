@@ -213,3 +213,23 @@
 | 211 | S6-22 | Praxis host: read-only pipe-canvas in protocol detail view; resolve zoneless and CUSTOM_ELEMENTS_SCHEMA assumptions | praxis | M | S6-21 | no |
 | 212 | S6-30 | Hub consumes the extracted pipecanvas release: vendor.lock.json entry, import map, CI, delete the in-repo copy | aminx-hub | S | S6-20 | no |
 | 213 | S6-32 | Optional npm publish of the pipecanvas packages (publish performed by the user); nothing depends on it | pipecanvas | S | S6-20 | yes |
+| 214 | S7-01 | agent extra (cisternal>=0.1.1a15,<0.2) + aminx.agent package skeleton with fail-fast import guard; G-LOCK and G-IMPORT tests | aminx | S | - | no |
+| 215 | S7-02 | Spike: wire() MCP-only registration, async+to_thread JAX body responsiveness, kwargs-only host.runner drive for every exposed knob (A2-A4); record answers in this spec | aminx | S | S7-01 | no |
+| 216 | S7-03 | .praxia/manifest.toml ([plugin] aminx, skills_delivered_by_plugin, [plugin.mcp]) + packaged agent_plugin.json snapshot + snapshot --check test | aminx | S | S7-01 | no |
+| 217 | S7-04 | using-aminx as a short router skill in agent_assets/skills (install, MCP vs CLI vs API, list_checkpoints, pointers to the five task skills); manifest description+triggers; skill command/tool parse test harness used by all skills | aminx | S | S7-03 | no |
+| 218 | S7-05 | aminx.agent.requests + aminx.agent.shaping (cisternal-free): JSON request -> spec, results dict -> JSON summary + npz side files, token decoding, XDG output_dir | aminx | M | S7-02 | no |
+| 219 | S7-06 | aminx-mcp entry point (script + python -m aminx.agent.mcp): FastMCP('aminx') + wire(registry='aminx', expected=TOOL_NAMES) + CisternalMiddleware(PassthroughAdapter, reraise=True) + cisternal.init() | aminx | M | S7-03, S7-05 | no |
+| 220 | S7-07 | v1 tools: sample, score, inspect, jacobian, spec_emit, spec_validate, list_checkpoints (async, to_thread, single-run lock) | aminx | L | S7-05, S7-06 | no |
+| 221 | S7-08 | Warm path (A8, restated 261006): jit reuse already holds; MCP tools fit max_length to the parsed inputs (max for intra, sum for inter, rounded up to 64; explicit value kept; never below measured residues) and record it in the returned spec; tool descriptions and docs say so | aminx | S | S7-07 | no |
+| 222 | S7-09 | aminx.agent.provenance.capture(): cisternal capture_git_state -> builtin git -> 'unknown', always recording provenance_source; per-run, from the package source tree | aminx | S | S7-01 | no |
+| 223 | S7-10 | campaign.py: fill git_sha from capture() when the caller passes none (sites at host/campaign.py:1100,1301); record provenance_source beside it | aminx | S | S7-09 | no |
+| 224 | S7-11 | Opt-in CLI telemetry: cisternal.init() + aminx.cli.* spans only when CISTERNAL_TELEMETRY in {aminx,all,1,true}; no-op otherwise | aminx | S | S7-09 | no |
+| 225 | S7-12 | CI: --extra agent lane for tests/agent (non-JAX parts); JAX-touching agent tests marked for titanix | aminx | S | S7-07 | no |
+| 226 | S7-13 | Align tool metadata with S4 ModelManifest ids (aminx/proteinmpnn.sample/score) in descriptions and results; no rename | aminx | S | S4-19, S7-07 | no |
+| 227 | S7-15 | Fold S7 into a regenerated ecosystem DAG (ids, edges, topological order) alongside S1-S6 | aminx | S | - | no |
+| 228 | S7-19 | Five targeted skills: aminx-sampling, aminx-scoring (score/inspect/jacobian), aminx-run-specs, aminx-campaigns, aminx-potts; manifest entries with non-overlapping triggers; content from origin/main | aminx | M | S7-04, S7-07 | no |
+| 229 | S7-20 | aminx.agent.config: layered mcp_launch/mcp_python resolver (arg > AMINX_MCP_LAUNCH/AMINX_MCP_PYTHON > [tool.aminx.agent] > XDG aminx/config.toml > uvx) + mcp_launch_source(); loud failure on malformed config | aminx | S | S7-01 | no |
+| 230 | S7-21 | python -m aminx.agent.plugin {publish,info}: load bundle via cisternal API, set MCP command per resolved mode (uvx --from aminx[agent]==ver / abs-python -m aminx.agent.mcp), validate venv import, write to shared marketplace, record mode+source in provenance sidecar (spike A7 first) | aminx | M | S7-06, S7-20 | no |
+| 231 | S7-14 | Install + load check in a fresh Claude Code session; retire ~/.claude/skills/using-aminx (user step) | aminx | S | S7-19, S7-21 | yes |
+| 232 | S7-22 | Docs: 'Using aminx from an agent' page + using-aminx section: install, uvx default and cold start, switching to the local venv via each config layer, `info` to check, switching back | aminx | S | S7-04, S7-21 | no |
+| 233 | S7-23 | (optional, cisternal) request a --launch/--uvx-from override on assets publish-shared/install so aminx can drop its override code | cisternal | S | - | no |

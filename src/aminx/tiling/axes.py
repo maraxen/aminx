@@ -23,7 +23,7 @@ demotion priority.
 
 from xtrax.tiling import AxisSpec
 
-# Residue/position dimension within a single structure. Fixed after LENGTH_BUCKETS binning.
+# Residue/position dimension within a single structure. Fixed per batch by runner length bucketing (xtrax BUCKET_LADDER rung).
 N_RESIDUES = AxisSpec(
   name="n_residues",
   cardinality=1200,
@@ -50,7 +50,7 @@ N_STATES = AxisSpec(
   heterogeneous=True,
 )
 
-# Batch of protein structures (SamplingSpecification.batch_size). Lengths vary before LENGTH_BUCKETS.
+# Batch of protein structures (SamplingSpecification.batch_size). Lengths vary before runner length bucketing.
 N_STRUCTURES = AxisSpec(
   name="n_structures",
   cardinality=32,

@@ -58,7 +58,8 @@ ADOPT_LEGACY_REPORT_SCHEMA_VERSION = "campaign_adopt_legacy_report_v1"
 # Bump BY HAND when a change moves the sampled numbers for a given spec and seed (e.g. a decode or key-derivation
 # change). It is part of every unit's input hash, so a bump invalidates stamps written before it instead of letting a
 # resumed campaign mix outputs from two numerics (aminx #2421).
-SAMPLING_NUMERICS_EPOCH = 1
+# S8 length bucketing changes seeded sample outputs, so stamps from epoch 1 are not reused.
+SAMPLING_NUMERICS_EPOCH = 2
 _MAX_HASHED_DIR_FILES = 5000
 MANIFEST_ROW_SCHEMA_VERSION = "campaign_manifest_row_v1"
 MANIFEST_SCHEMA_VERSION = "campaign_manifest_v1"
@@ -85,6 +86,7 @@ def build_manifest_row(
   config_hash: str,
   job_id: str,
   declared_state_weights: Sequence[float] | None = None,
+  git_provenance_source: str = "unknown",
 ) -> dict[str, Any]:
   """Build a deterministic manifest row with SHA256 hash.
 
@@ -93,7 +95,8 @@ def build_manifest_row(
   model_family, ligand/sidechain_conditioning, multi_state_strategy,
   temperature, and backbone_noise. job_index is intentionally excluded from
   the hash payload: it is derivable from job_id and included in the row dict
-  for caller convenience.
+  for caller convenience. ``git_sha`` and ``git_provenance_source`` are
+  recorded on the row and are not part of the hash payload.
 
   ``declared_state_weights`` is the numeric vector a non-default ``state_weight_profile``
   LABEL resolved to (``None`` for the ``"equal"`` profile). It is hashed only when present, so
@@ -147,6 +150,7 @@ def build_manifest_row(
     "dataset_fingerprint": dataset_fingerprint,
     "environment_image": environment_image,
     "git_sha": git_sha,
+    "git_provenance_source": git_provenance_source,
     "config_hash": config_hash,
   }
 
@@ -1088,6 +1092,29 @@ def _resolve_state_weight_profiles(
   return resolved
 
 
+def _resolve_git_provenance(
+  git_sha: str | None,
+  git_provenance_source: str | None,
+) -> tuple[str, str]:
+  """Resolve the recorded git SHA and the label for where it came from.
+
+  An explicit ``git_sha`` is kept. Its source is ``"argument"`` unless the
+  caller already passed ``git_provenance_source``. When ``git_sha`` is
+  ``None``, both values come from ``aminx.agent.provenance.capture``.
+  """
+  if git_sha is not None:
+    source = "argument" if git_provenance_source is None else git_provenance_source
+    return git_sha, source
+  from aminx.agent.provenance import capture  # noqa: PLC0415
+
+  info = capture()
+  sha = info.get("sha")
+  source = info.get("provenance_source")
+  resolved_sha = sha if isinstance(sha, str) and sha else "unknown"
+  resolved_source = source if isinstance(source, str) and source else "unknown"
+  return resolved_sha, resolved_source
+
+
 def plan_campaign_manifest(
   *,
   base_spec: SamplingSpecification,
@@ -1100,10 +1127,15 @@ def plan_campaign_manifest(
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
-  git_sha: str = "unknown",
+  git_sha: str | None = None,
+  git_provenance_source: str | None = None,
   config_hash: str = "unknown",
 ) -> list[dict[str, Any]]:
   """Plan campaign rows for all library/fixed-arm/profile combinations.
+
+  ``git_sha=None`` (the default) records the commit from
+  ``aminx.agent.provenance.capture`` and sets ``git_provenance_source`` from that capture; an
+  explicit SHA is recorded with source ``"argument"``. Neither value enters the row hash.
 
   Args:
     fixed_arms: Maps an arm LABEL to the **1-D canonical fixed_mask** it means, or to a path
@@ -1143,6 +1175,7 @@ def plan_campaign_manifest(
       zero-rows bug read), or a mask is not 1-D.
 
   """
+  resolved_sha, resolved_source = _resolve_git_provenance(git_sha, git_provenance_source)
   if designs_per_library_type <= 0:
     msg = "designs_per_library_type must be positive."
     raise ValueError(msg)
@@ -1252,7 +1285,8 @@ def plan_campaign_manifest(
               planner_version=planner_version,
               dataset_fingerprint=dataset_fingerprint,
               environment_image=environment_image,
-              git_sha=git_sha,
+              git_sha=resolved_sha,
+              git_provenance_source=resolved_source,
               config_hash=config_hash,
               job_id=f"{campaign_id}-job-{job_index}",
               declared_state_weights=profile_weights,
@@ -1301,10 +1335,15 @@ def write_campaign_manifest(
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
-  git_sha: str = "unknown",
+  git_sha: str | None = None,
   config_hash: str = "unknown",
 ) -> Path:
-  """Plan rows and write campaign manifest JSON. See `plan_campaign_manifest` for fixed_arms."""
+  """Plan rows and write campaign manifest JSON. See `plan_campaign_manifest` for fixed_arms.
+
+  ``git_sha=None`` resolves the SHA and its ``git_provenance_source`` once here and passes both
+  through, so planning does not capture again.
+  """
+  resolved_sha, resolved_source = _resolve_git_provenance(git_sha, None)
   rows = plan_campaign_manifest(
     base_spec=base_spec,
     campaign_id=campaign_id,
@@ -1316,7 +1355,8 @@ def write_campaign_manifest(
     planner_version=planner_version,
     dataset_fingerprint=dataset_fingerprint,
     environment_image=environment_image,
-    git_sha=git_sha,
+    git_sha=resolved_sha,
+    git_provenance_source=resolved_source,
     config_hash=config_hash,
   )
   metadata = {
@@ -1778,7 +1818,7 @@ def plan_scale_ramp(
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
-  git_sha: str = "unknown",
+  git_sha: str | None = None,
   config_hash: str = "unknown",
 ) -> dict[str, Any]:
   """Create staged manifests for pilot-to-scale rollout."""

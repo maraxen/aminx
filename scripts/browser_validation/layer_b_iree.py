@@ -36,8 +36,9 @@ three NATIVE-only planted-control vmfbs) is appended to the tracked artifact man
 `layer_b_common.manifest_append` with `route="iree"`, into the SAME `artifact_subdir` T2's
 build already verified (D-G: "Later producers ... write into the same artifact_subdir").
 
-`rings = "not_available"` throughout (V8: the `xtrax.export.rings` bucket ladder used by
-the R0-R3 tracks is unavailable on the installed `xtrax==0.4.0a10`).
+`rings = "not_available"` throughout. The pinned xtrax (0.4.0a11) now ships
+`xtrax.export.rings`; adopting that ladder here is tracked as aminx debt #2493.
+The constant stays ``"not_available"`` until that adoption lands.
 """
 
 from __future__ import annotations
@@ -113,7 +114,7 @@ DIFFERENTIAL_KNOB = "AMINX_BV_LAYERB_IREE_VALIDATE_PERTURB"
 DIFFERENTIAL_METRIC = "ctrl_ratio_min"
 EXIT_DIFFERENTIAL_KNOB_MISMATCH = 2
 
-RINGS = "not_available"  # V8: no rings module / default ladder on installed xtrax==0.4.0a10
+RINGS = "not_available"  # rings exist in the 0.4.0a11 pin; adopting them is aminx debt #2493
 
 
 # --------------------------------------------------------------------------------------

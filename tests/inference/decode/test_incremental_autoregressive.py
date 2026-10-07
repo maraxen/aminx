@@ -18,7 +18,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from jax.extend.core import jaxprs_in_params
+from xtrax.profiling.loop_scaling import extent_scaling_report, loop_bodies
 
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.decode.factory import make_decode_fn
@@ -226,43 +226,73 @@ def test_auto_falls_back_on_inconsistent_ar_mask(model) -> None:
 # --------------------------------------------------------------------------------------
 
 
-def _loop_body_dot_sizes(jaxpr) -> list[int]:
-  """Output sizes of every dot_general inside a scan/while body (recursively)."""
-  sizes: list[int] = []
-
-  def walk(jx, inside_loop: bool) -> None:
-    for eqn in jx.eqns:
-      if inside_loop and eqn.primitive.name == "dot_general":
-        sizes.append(int(np.prod(eqn.outvars[0].aval.shape)))
-      loop = inside_loop or eqn.primitive.name in ("scan", "while")
-      for sub in jaxprs_in_params(eqn.params):
-        walk(sub, loop)
-
-  walk(jaxpr.jaxpr, inside_loop=False)
-  return sizes
+GUARD_EXTENT = 32
+# A loop whose trip count grows less than this between L and 2L is not a per-position loop.
+# jnp.searchsorted's binary-search scan runs about log2 L trips (one more at 2L) and its body
+# carries O(L) work, so xtrax flags its per-iteration ratio (~1.97); it is O(L log L) in
+# total, not the O(L^2) this guard looks for (xtrax debt #2505).
+TRIP_SCALING_RATIO = 1.5
 
 
-def _max_loop_dot(model, length: int, incremental: str) -> int:
-  bundle, config = _bundle(length=length, wave=_random_wave(length), temperature=1.0)
-  enc = make_encode_fn(model, use_rolling_state=False)(bundle, jax.random.PRNGKey(0), config)
+def _decode_scaling(model, incremental: str) -> tuple[list[tuple[object, int | None, int | None]], int]:
+  """Per-loop scaling of the decode between L=GUARD_EXTENT and 2L, with trip counts.
+
+  Returns ``(rows, n_length_loops)``: one ``(finding, trips_at_L, trips_at_2L)`` per loop
+  body, and how many loops have a trip count that scales with L (a ``while`` has no static
+  trip count and counts as scaling).
+  """
   decode_fn = make_decode_fn(
     model=model,
     mode=AutoregressiveMode(),
     strategy=Vmap(),
     autoregressive_config=AutoregressiveConfig(incremental=incremental),
   )
-  jaxpr = jax.make_jaxpr(lambda k, e: decode_fn(k, e, bundle, config, make_stage_set()))(
-    jax.random.PRNGKey(1), enc
-  )
-  sizes = _loop_body_dot_sizes(jaxpr)
-  assert sizes, "no dot_general found inside the wave loop -- the guard would be vacuous"
-  return max(sizes)
+
+  def make_args(length: int):
+    bundle, config = _bundle(length=length, wave=_random_wave(length), temperature=1.0)
+    enc = make_encode_fn(model, use_rolling_state=False)(bundle, jax.random.PRNGKey(0), config)
+    return (jax.random.PRNGKey(1), enc, bundle, config)
+
+  def fn(key, enc, bundle, config):
+    return decode_fn(key, enc, bundle, config, make_stage_set())
+
+  report = extent_scaling_report(fn, make_args, GUARD_EXTENT)
+  # The report pairs bodies by structural path but drops trip counts; recover them from
+  # the same two traces (findings follow loop_bodies order, outermost first).
+  small = loop_bodies(fn, *make_args(GUARD_EXTENT))
+  large = loop_bodies(fn, *make_args(2 * GUARD_EXTENT))
+  assert [b.path for b in small] == [f.path for f in report.findings]
+  rows = [
+    (finding, s.trip_count, g.trip_count)
+    for finding, s, g in zip(report.findings, small, large, strict=True)
+  ]
+  n_length_loops = sum(1 for _, s, g in rows if _trips_scale(s, g))
+  return rows, n_length_loops
+
+
+def _trips_scale(small: int | None, large: int | None) -> bool:
+  if small is None or large is None:
+    return True
+  return small > 0 and large / small >= TRIP_SCALING_RATIO
+
+
+def _quadratic_loops(rows) -> list[str]:
+  """Loops whose trip count AND per-iteration work both grow with L (O(L^2) total)."""
+  return [
+    f"{f.path or '<root>'} {f.primitive} work {f.work_at_extent}->{f.work_at_double_extent} "
+    f"(x{f.ratio:.2f}), trips {s}->{g}"
+    for f, s, g in rows
+    if f.flagged and _trips_scale(s, g)
+  ]
 
 
 def test_incremental_wave_body_work_is_independent_of_length(model) -> None:
-  assert _max_loop_dot(model, 32, "force") == _max_loop_dot(model, 64, "force")
+  rows, n_length_loops = _decode_scaling(model, "force")
+  assert n_length_loops, "no loop whose trip count scales with L -- the guard would be vacuous"
+  assert not _quadratic_loops(rows), _quadratic_loops(rows)
 
 
 def test_full_recompute_wave_body_work_grows_with_length(model) -> None:
   """Negative control: the guard above must be able to see O(L) per-wave work."""
-  assert _max_loop_dot(model, 64, "off") >= 2 * _max_loop_dot(model, 32, "off")
+  rows, _ = _decode_scaling(model, "off")
+  assert _quadratic_loops(rows), "full recompute was not flagged; the guard cannot fail"

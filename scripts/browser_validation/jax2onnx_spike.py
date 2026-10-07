@@ -93,7 +93,6 @@ def build_p05_inputs(bucket: int) -> dict[str, Any]:
   from proxide.core.containers import atom_order
 
   from aminx.io.parsing import parse_structure
-  from aminx.tiling.buckets import pad_to_bucket
 
   pdb_path = _reference_path() / "inputs" / "1BC8.pdb"
   protein = parse_structure(str(pdb_path), k_neighbors=K_NEIGHBORS)
@@ -114,7 +113,9 @@ def build_p05_inputs(bucket: int) -> dict[str, Any]:
     raise ValueError(msg)
 
   n_pad = bucket - real_length
-  coords_p, sequence_p, mask_p = pad_to_bucket(coords, sequence, mask, bucket)
+  coords_p = jnp.pad(coords, ((0, n_pad), (0, 0), (0, 0)), constant_values=0.0)
+  sequence_p = jnp.pad(sequence, (0, n_pad), constant_values=0)
+  mask_p = jnp.pad(mask, (0, n_pad), constant_values=False)
   residue_index_p = jnp.pad(residue_index, (0, n_pad), constant_values=int(residue_index[-1]))
   chain_index_p = jnp.pad(chain_index, (0, n_pad), constant_values=int(chain_index[-1]))
 

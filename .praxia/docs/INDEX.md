@@ -1,4 +1,4 @@
-# 260929_laser-confirm Internal Docs
+# 261007-165-merge Internal Docs
 
 ## Daily
 - [261005_overnight-decisions](daily/261005_overnight-decisions.md) — What landed overnight with its verified evidence, the four open decisions each priced, and the corrections made to earlier claims
@@ -6,6 +6,7 @@
 
 ## Handoffs
 - [261006_a1-laser-score-option3-envelope](handoffs/261006_a1-laser-score-option3-envelope.md) — Exact scope, anchors, measured band and acceptance criteria for the only gate-clearing item, so the decision becomes one dispatch
+- [261006_xtrax-track-b-brief](handoffs/261006_xtrax-track-b-brief.md) — A ready-to-run brief for an xtrax session. It fixes the skill gaps filed as xtrax debt
 - [260930_advisor-message-final](handoffs/260930_advisor-message-final.md) — The Slack message handed to the advisor for v0.2.0a3, with the claim-to-run-id mapping behind every figure it quotes.
 - [260930_browser-split-merge-readiness](handoffs/260930_browser-split-merge-readiness.md) — What actually blocks merging feat/t11d-session-release, measured rather than assumed — including an export-safety fix the branch has and main does not.
 - [260930_reference-parity-coverage-debt](handoffs/260930_reference-parity-coverage-debt.md) — The direct split-vs-reference measurement is the narrowest link in the browser validation chain; what it skips, why, and the cheapest order to close it.
@@ -16,13 +17,15 @@
 
 ## Plans
 - [261005_rewave-composition-scoped-batch](plans/261005_rewave-composition-scoped-batch.md) — Decision-ready menu of every scoped-pending item with its blast radius, which ones change measured numbers, and the sequencing constraint that makes one of them expensive
-- [261001_ecosystem-backlog-dag](plans/261001_ecosystem-backlog-dag.md) — Combined backlog DAG of the six 261001 ecosystem specs (S1-S6) after the no-rename decision: 213 PR-sized items, mermaid graph, topological order, critical path, startable items, consolidated user questions (hub identity first), what the no-rename decision removed, and a code-checked acyclicity result.
+- [261001_ecosystem-backlog-dag](plans/261001_ecosystem-backlog-dag.md) — Combined backlog DAG of the 261001 ecosystem specs (S1-S6, after the no-rename decision) plus the 261006 S7 cisternal-cutover spec: 233 PR-sized items, mermaid graph, topological order, critical path, startable items, consolidated user questions (hub identity first), what the no-rename decision removed, and a code-checked acyclicity result.
 - [260709_proteinebm-epic-backlog-dag](plans/260709_proteinebm-epic-backlog-dag.md) — **PROPOSAL, gated on user review before praxia filing** (task `260709_aminxtension`) — EPIC + backlog DAG for the ProteinEBM energy/score path, output of the compose→brainstorm→adversarial-critique pipeline (challenger `not_ready` + defender `needs_revision`, both resolved). Resolves design forks 1–11 (readout = additive `StageSet` peer slots; 2nd-order AD via nested `jax.grad`+`checkpoint` + new invariant gate; orbax weight-port + validation-retrain; buckets `(64,128,256,512)`; Langevin = outer `CarrySpec`+`Scan` / inner `while_loop` + net-new model-swap; Engine for E8 only). Corrected DAG (E0–E12 + gates E3.5/E4.5, E11a–d) fixing the 2 BLOCKERs (schedule_selector/`AxisBoundary` model-swap; scalar-energy≠`DecodeOutput`) + 5 MAJORs. Includes bathos parity/claim(Union Gate)/throughput instruments. Filing plan in §5 (not executed).
 - [260614_runspec-migration-map](plans/260614_runspec-migration-map.md) — RS-1 host-field inventory: 67 fields, 22 migrated, 16 to migrate, 9 RS-gaps, 21 protein-only
 - [260525_comp-unified-encoder-fusion](plans/260525_comp-unified-encoder-fusion.md) — COMP-UNIFIED: encoder fusion via InferencePlan; eliminate averaged-path branch
 - [260522_comp-new-sink-unify](plans/260522_comp-new-sink-unify.md) — COMP-NEW: unify result-sink topology; streaming_tensor_sink_session for non-streaming path
 
 ## Specs
+- [261006_aminx-cisternal-cutover](specs/261006_aminx-cisternal-cutover.md) — Make aminx agent-native through cisternal: a manifest-driven plugin bundle of targeted skills (using-aminx router + five task skills), an aminx-mcp server wired with @cisternal.tool over host.runner (launched via uvx by default, switchable to a local venv), cisternal provenance/telemetry for campaign runs; the Typer-to-cyclopts CLI port is deferred.
+- [261006_runner-length-bucketing-xtrax-adoption](specs/261006_runner-length-bucketing-xtrax-adoption.md) — The core runner trims each batch from the loader's max_length to the smallest xtrax BUCKET_LADDER rung that covers it, then re-pads the outputs. On by default, with length_bucketing=False to opt out. Also retires the private bucket ladders and dead xtrax duplicates, and adopts device_memory_budget and loop_scaling. Closes
 - [261002_streaming-xtrax-migration-scope](specs/261002_streaming-xtrax-migration-scope.md) — Opus-tier scoping report (task 261002_streaming-xtrax-migration, debt #2421): premise check, current-state map, xtrax capability map, gap analysis, target architecture, preemption/resume design, staged plan, asks of xtrax, decisions. Includes the verified reuse-safety defect in the campaign row hash.
 - [261001_aminx-hub](specs/261001_aminx-hub.md) — A hub project separate from the aminx package (aminx keeps its name; working slug aminx-hub, final repo name, PyPI policy and domain are the S3-01 user decision): a static GitHub Pages site whose catalog is generated from S4 manifests, with ORT-Web, Pyodide, localfold and remote executors and py2Dmol as the viewer.
 - [261001_aminx-identity-and-hub-naming](specs/261001_aminx-identity-and-hub-naming.md) — aminx keeps its name and PyPI identity (no rename). S3 records the separate hub's identity (repo slug, PyPI policy, praxia.science domain, bathos slug, orchestrator-name collision), cleans the previous rename's stale names, guards release uniqueness, and checks the spec set's assembly mechanically.
@@ -63,6 +66,7 @@
 ## Actuation Surfaces
 
 ## Audits
+- [261006_xtrax-usage-audit](audits/261006_xtrax-usage-audit.md) — Static inventory of all 619 public xtrax symbols against aminx (bathos da99c566, pass) plus per-capability verdicts. Includes duplicates to replace, gaps worth adopting, things that don't apply, and the native hook for runner length bucketing.
 - [260929_potts-laser-spec-adversarial-log](audits/260929_potts-laser-spec-adversarial-log.md) — Sequential challenger→defender rounds for specs/260929_pottsmpnn-lasermpnn-xtrax-composition.md until convergence
 - [260928_t5a-calibrate-attempt-history](audits/260928_t5a-calibrate-attempt-history.md) — All four tracked runs of layer_c_calibrate (one pass, three prior), and the one post-registration sidecar edit
 - [260928_t8-layer-c-bench-verdict](audits/260928_t8-layer-c-bench-verdict.md) — T8 tracked run edf8926e graded ctrl_blind; planted 5 ms control reads ~16 ms systematically; timing sentences not citable; v2 needs a dose-response instrument check

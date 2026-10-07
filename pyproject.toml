@@ -32,12 +32,16 @@ classifiers = [
 
 [project.scripts]
 aminx = "aminx.cli:main"
+aminx-mcp = "aminx.agent.mcp:main"
 
 [project.urls]
 repository = "https://github.com/maraxen/Aminx.git"
 documentation = "https://aminx.readthedocs.io"
 
 [project.optional-dependencies]
+agent = [
+    "cisternal>=0.1.1a15,<0.2",
+]
 # LASErMPNN host featurizer (families/laser_mpnn/featurize.py) parses with ProDy, as upstream does.
 laser = [
     "prody>=2.6.1",
@@ -236,7 +240,6 @@ pylint.max-args = 15
 "src/aminx/run/**/*.py" = ["N806", "N803"]
 "src/aminx/run/multistate_pools.py" = ["N806", "N803"]
 "src/aminx/run/sampling.py" = ["N806", "N803"]
-"src/aminx/host/stage_adapter.py" = ["ANN002", "ANN003", "ANN401"]  # *args/**kwargs needed for chaining arbitrary sinks
 "tests/test_adapter.py" = ["S101", "T201", "ANN201", "INP001", "PLC0415", "SLF001"]
 "scripts/**/*.py" = ["T201", "INP001"]
 
@@ -322,7 +325,7 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-aminx = ["py.typed", "families/laser_mpnn/ideal_geometry.npz"]
+aminx = ["py.typed", "agent_plugin.json", "families/laser_mpnn/ideal_geometry.npz"]
 
 # Weights are tracked in the source tree but must NOT ride along in the wheel. Modern
 # setuptools auto-includes them, which took a25 from 499,612 bytes (a24, zero weight files)

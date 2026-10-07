@@ -459,6 +459,7 @@ class _RunBase:
   max_buffer_size: int | None
   overwrite_cache: bool
   max_length: int | None
+  length_bucketing: bool
   truncation_strategy: str
   host_resource_allocation_strategy: str
   ram_budget_mb: int | None
@@ -522,6 +523,15 @@ def _run_base(
   max_buffer_size: Annotated[int | None, _OPT(help="Max buffer size (bytes)")] = None,
   overwrite_cache: Annotated[bool, _OPT(help="Overwrite cache")] = False,
   max_length: Annotated[int | None, _OPT(help="Max sequence length")] = 512,
+  length_bucketing: Annotated[
+    bool,
+    _OPT(
+      help=(
+        "Trim each batch to the smallest xtrax BUCKET_LADDER rung covering its residue span "
+        "(outputs re-padded to the padded length). --no-length-bucketing restores fixed max_length padding."
+      ),
+    ),
+  ] = True,
   truncation_strategy: Annotated[
     str,
     _OPT(help="Truncation strategy: none, random_crop, center_crop"),
@@ -610,6 +620,7 @@ def _run_base(
     max_buffer_size=max_buffer_size,
     overwrite_cache=overwrite_cache,
     max_length=max_length,
+    length_bucketing=length_bucketing,
     truncation_strategy=truncation_strategy,
     host_resource_allocation_strategy=host_resource_allocation_strategy,
     ram_budget_mb=ram_budget_mb,
@@ -661,6 +672,7 @@ def _base_spec_kwargs(b: _RunBase) -> dict[str, Any]:
     "max_buffer_size": b.max_buffer_size,
     "overwrite_cache": b.overwrite_cache,
     "max_length": b.max_length,
+    "length_bucketing": b.length_bucketing,
     "truncation_strategy": b.truncation_strategy,
     "host_resource_allocation_strategy": b.host_resource_allocation_strategy,
     "ram_budget_mb": b.ram_budget_mb,
@@ -1132,6 +1144,15 @@ def _spec_base(
   max_buffer_size: Annotated[int | None, _OPT(help="Max buffer size (bytes)")] = None,
   overwrite_cache: Annotated[bool, _OPT(help="Overwrite cache")] = False,
   max_length: Annotated[int | None, _OPT(help="Max sequence length")] = 512,
+  length_bucketing: Annotated[
+    bool,
+    _OPT(
+      help=(
+        "Trim each batch to the smallest xtrax BUCKET_LADDER rung covering its residue span "
+        "(outputs re-padded to the padded length). --no-length-bucketing restores fixed max_length padding."
+      ),
+    ),
+  ] = True,
   truncation_strategy: Annotated[
     str,
     _OPT(help="Truncation strategy: none, random_crop, center_crop"),
@@ -1205,6 +1226,7 @@ def _spec_base(
     max_buffer_size=max_buffer_size,
     overwrite_cache=overwrite_cache,
     max_length=max_length,
+    length_bucketing=length_bucketing,
     truncation_strategy=truncation_strategy,
     host_resource_allocation_strategy=host_resource_allocation_strategy,
     ram_budget_mb=ram_budget_mb,
@@ -2195,7 +2217,9 @@ app.add_typer(potts_app, name="potts")
 
 def main() -> None:
   """Console script entrypoint."""
-  app()
+  from aminx.agent.telemetry import run_cli  # noqa: PLC0415
+
+  run_cli(app)
 
 
 if __name__ == "__main__":

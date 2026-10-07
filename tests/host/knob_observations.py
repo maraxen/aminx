@@ -285,6 +285,12 @@ OBSERVATIONS: dict[str, Verdict] = {
   "max_buffer_size": NotApplicable(reason="host-side streaming buffer"),
   "overwrite_cache": NotApplicable(reason="host-side cache policy"),
   "max_length": NotApplicable(reason="parse/truncation policy"),
+  "length_bucketing": NotApplicable(
+    reason=(
+      "runner padding policy (host/bucketing.py); campaigns cannot vary it per row "
+      "(not a model-facing boundary arg)"
+    ),
+  ),
   "truncation_strategy": NotApplicable(reason="parse/truncation policy"),
   "host_resource_allocation_strategy": NotApplicable(reason="host resource policy"),
   "ram_budget_mb": NotApplicable(reason="host resource policy"),
