@@ -58,6 +58,58 @@ What *does* transfer, and is worth a great deal: the FamilyDriver seam
 `scripts/parity/` vehicle pattern, and the knob gate. The last sprint's machinery is reusable
 even though its model code is not.
 
+## 1a. P0 HAS RUN. The checkpoint settles three open questions, and the biggest risk shrank
+
+Spike executed 2026-10-07 against the vendored clone at
+`/home/marielle/repos/ProtonPottsMPNN` @ **`09682abfa7d20e0abcdeea0490b7a4b1c190aee3`**
+(2026-09-30, 640 MB, weights committed in-repo). Throwaway probe, no sidecar — it produced an
+answer, not a finding.
+
+**How it was loaded, because it matters.** `torch.load(..., weights_only=False)`, which the
+upstream inference script uses, is arbitrary code execution on a third-party file. The probe
+instead ran `weights_only=True` with a **bounded allowlist** of omegaconf's data containers plus
+`collections.defaultdict` — every other global still refuses. Anyone repeating this should do
+the same rather than disabling the check.
+
+### (a) The vocab is 30. The 30-vs-32 conflict is resolved, by the weights
+
+| tensor | shape |
+| :-- | :-- |
+| `W_s.weight` | `(30, 128)` |
+| `W_out.weight` / `W_out.bias` | `(30, 128)` / `(30,)` |
+| **`etab_out.weight`** | **`(900, 128)`** |
+
+900 = 30², so the pair table is V×V at V=30 — the etab confirms the alphabet independently of
+the embedding. `train_cfg.extended_vocab = 'v6'`. The 32-token claim in
+`transforms/extended_vocab.py` does not describe this checkpoint. **§5's refactor target is
+V=30, PAIR_DIM=900.**
+
+### (b) The architecture is ProteinMPNN, by parameter name and by shape
+
+120 tensors, hidden dim **128**, **3 encoder + 3 decoder layers**, `graph_featurization_module`
+(5 tensors), `W_e`, `W_s`, `W_out`, `etab_out`. Each layer carries
+`norm1/norm2/norm3`, `W1/W2/W3` (node update), `W11/W12/W13` (edge update) and
+`dense.W_in/W_out` — the ProteinMPNN `EncLayer`/`DecLayer` names aminx already implements, at
+the shapes it already uses (`W1: (128, 384)` = 3×128 concat, `dense: 128→512→128`).
+
+**This is the single most important P0 result: the top risk in §9 got much smaller.** P6 was
+sized as "2–4 d, unbounded if foundry's ProteinMPNN diverges". On names and shapes it does not
+diverge — encoder reuse now looks like a weight-conversion job rather than a second port.
+It is **not yet proven numerically**; that is P6's gate (0 unmapped keys plus
+`protonpotts_encoder` parity), and this evidence is structural only.
+
+### (c) Everything is float32
+
+`dtypes = {'torch.float32': 120}`. No f64 anywhere in the checkpoint, consistent with the
+standing constraint that f64 is for parity assertions and never for production.
+
+### Still open after P0
+
+`etab_source` / `field_source` are not in `train_cfg` — upstream infers them from the weights
+via `PottsMPNN.infer_etab_source()`, and the checkpoint directory name
+(`potts_v6_afdb_edge_his0.3_acid0.06`) says `edge`, consistent with `etab_out` mapping 128 → 900
+rather than 3×128 → 900. Treat that as strongly indicated, not measured. P2 resolves it.
+
 ## 2. What the model is
 
 | Fact | Evidence | Status |
@@ -229,8 +281,8 @@ fire grades `instrument_unverified`, not `pass`.
 
 | ID | Task | Depends | Gate |
 | :-- | :-- | :-- | :-- |
-| **P0** | **Spike.** Load the ckpt; print `train_cfg` and every tensor shape; settle 30-vs-32 from the weights; confirm or kill foundry-`ProteinMPNN` ↔ aminx encoder weight compatibility | — | answer recorded; throwaway, no sidecar |
-| P1 | Vendor upstream at a pinned SHA; stand up `aminx-oracles-protonpotts/` on titanix (torch + atomworks + foundry, Py3.12) | P0 | env resolves; manifest |
+| ~~P0~~ | ~~**Spike.** Load the ckpt; settle 30-vs-32; check encoder compatibility~~ **DONE 2026-10-07 — see §1a.** V=30, architecture is ProteinMPNN by name and shape, all f32 | — | answer recorded |
+| P1 | ~~Vendor upstream at a pinned SHA~~ **done: `/home/marielle/repos/ProtonPottsMPNN` @ `09682abf`**; stand up `aminx-oracles-protonpotts/` on titanix (torch + atomworks + foundry, Py3.12) | P0 | env resolves; manifest |
 | P2 | Probe report: key audit, `strict=True` behaviour, featurizer surface, engine entry points | P1 | doc |
 | P3 | Vocab module, aa↔token maps, aminx-alphabet projection | P2 | `protonpotts_vocab` |
 | P4 | Oracle dumps — the nine tensors + per-stage activations, f64 and f32, with draw shims | P1, P2 | sealed `.npz` + `oracle_manifest.toml` |
@@ -243,17 +295,24 @@ fire grades `instrument_unverified`, not `pass`.
 
 ## 9. Cost and risk
 
-P5's estimate is **reduced** from the first pass (2–3 d → ~1 d) on the strength of §3. P6 remains
-the unbounded one and is why P0 is first.
+P5's estimate is **reduced** from the first pass (2–3 d → ~1 d) on the strength of §3, and P6's
+is reduced again by §1a — it was "2–4 d, unbounded"; with the architecture matching on names and
+shapes it is a weight-conversion job plus a parity wave.
 
-**Top risks.**
+**Top risks, re-ranked after P0.**
 
-1. **Wrong-lineage assumption** (§1). Mitigated by making P0 blocking.
-2. **Encoder divergence.** If foundry's `ProteinMPNN` is not weight-compatible with aminx's, P6
-   becomes a second encoder port. P0 answers this in ~2 h, before anything depends on it.
-3. **The generic-`V` refactor regresses the shipped Potts port.** `N_AA = 20` is load-bearing in
-   two modules of frozen, measured code. Goldens captured *before* P7 starts; existing waves
-   re-run after.
+1. **The generic-`V` refactor regresses the shipped Potts port.** Now the top risk. `N_AA = 20`
+   and `PAIR_DIM = 400` are load-bearing in two modules of frozen, measured code, and the target
+   is V=30 / PAIR_DIM=900. Capture goldens *before* P7 starts; re-run the existing Potts waves
+   after.
+2. **The atomworks front end.** Reduced but not eliminated: the tensor contract matches (§3), so
+   what remains is fidelity of parsing and protonation assignment — which §6 deliberately places
+   *above* the seam, as a discrete match rate rather than a float comparison.
+3. **Encoder divergence — downgraded, not closed.** §1a found name- and shape-compatibility with
+   the ProteinMPNN aminx implements, so this is no longer unbounded. It stays a risk until P6
+   shows *numerical* agreement: structural agreement is not numerical agreement.
+
+*(The original top risk, "wrong-lineage assumption", is retired — P0 ran and §1 is measured.)*
 
 ## 10. Freeze impact — budget it explicitly
 
@@ -292,8 +351,15 @@ imports; the `transforms/` and `feature_aggregation/` file listings; the repo ro
 aminx's `PottsFeatures` fields, `N_AA`/`PAIR_DIM`, and `ETAB_ALPHABET`; the KeatingLab pin;
 `_SCOPED_PREFIXES`.
 
-**Unverified, carried from a scoping subagent and flagged as leads, not facts:** the 30-token v6
-listing and the 30-vs-32 conflict; the checkpoint's size and internal structure; the etab merge
-rule and conditional-energy convention; the design engine's internals and file size; the paper
-citation. **P0 and P2 exist to convert these.** Nothing in §7–§8 should be treated as settled
-until they do.
+**Converted from lead to measured by P0 (§1a), 2026-10-07:** the alphabet is **30**, settled by
+`W_s`/`W_out` at 30 and `etab_out` at 900 = 30², with `train_cfg.extended_vocab = 'v6'`; the
+checkpoint's internal structure (120 tensors, hidden 128, 3+3 layers, all float32); and the
+architecture's ProteinMPNN lineage by parameter name and shape. The pinned SHA is
+`09682abfa7d20e0abcdeea0490b7a4b1c190aee3`.
+
+**Still unverified, carried from a scoping subagent and flagged as leads, not facts:** the etab
+merge rule (reciprocal-only `0.5(e+eᵀ)`) and the conditional-energy convention; `etab_source` /
+`field_source`, which are inferred from weights rather than stored (the directory name says
+`edge` and `etab_out`'s 128→900 shape agrees, so this is strongly indicated but not measured);
+the design engine's internals and file size; the paper citation. **P2 exists to convert these.**
+Nothing in §7–§8 that depends on them should be treated as settled until it does.
