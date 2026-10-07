@@ -117,6 +117,21 @@ def add_commit(repo: Path, rel: str) -> tuple[str, str] | None:
   return sha, when
 
 
+def was_renamed(repo: Path, rel: str) -> bool:
+  """Did this path ever arrive via a rename?
+
+  ``--follow`` traces renames with a similarity HEURISTIC, so for a file that
+  moved, the commit it calls the "add" may be the move rather than the original
+  authoring. That uncertainty must not be spent accusing someone of post-hoc
+  registration, so a renamed path can be reported as unverifiable but never as
+  a violation.
+  """
+  code, out = _git(repo, "log", "--follow", "--name-status", "--format=", "--", rel)
+  if code != 0:
+    return False
+  return any(line.startswith("R") for line in out.splitlines())
+
+
 def classify(
   repo: Path, rel: str, first_run: str, first_git: str,
 ) -> tuple[str, dict[str, Any]]:
@@ -129,6 +144,12 @@ def classify(
   ran = datetime.fromisoformat(first_run.replace(" ", "T")).astimezone(timezone.utc)
   lead_h = (ran - committed).total_seconds() / 3600.0
   if lead_h < 0:
+    if was_renamed(repo, rel):
+      return "unverifiable", {
+        "sidecar": rel, "added": sha[:12], "hours_late": round(-lead_h, 3),
+        "why": "appears late, but the path was RENAMED, so --follow's add "
+               "attribution is heuristic and cannot carry the accusation",
+      }
     return "violation", {
       "sidecar": rel, "added": sha[:12], "committed": when[:19],
       "first_run": first_run[:19], "hours_late": round(-lead_h, 3),
