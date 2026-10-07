@@ -136,7 +136,7 @@ The order is forced by two facts. Nothing can be deleted until spec JSON fails l
 7. #2526 (export)
 8. #2527 (stages)
 9. #2544 (key stream, D5)
-10. #2543 (P3, CarrySpec transitions; parked until a use case exists)
+10. #2543 (P2, planned CarrySpec transition execution; consumers are aminx AR decode #2125, prolix MD steps and ProteinSMC kernels)
 
 **Wave 2: aminx onto the new xtrax.**
 - #2529: run identity.
@@ -155,7 +155,7 @@ Gates that pin today's behaviour bit for bit and must be retired or re-baselined
 ## Decisions (made by the user, 2026-10-07)
 
 - **D1** (#2528): **Fix it.** Seed 0 means seed 0. Land after #2530 so specs from before the fix can be told apart.
-- **D2** (#2533; xtrax #2543): **Reject loudly now.** A user `CarrySpec.transition` that would go through planned dispatch raises instead of being dropped. Running transitions is parked as xtrax #2543 (P3), waiting for a concrete use case. Candidates: AR decode on `CarrySpec`/`RollingFn` (#2125), annealed Langevin schedules (`ebm/langevin_schedule.py`, which already runs its own `CarrySpec` via `safe_scan`), and temperature or replica chains.
+- **D2** (#2533; xtrax #2543): **Reject loudly now.** A user `CarrySpec.transition` that would go through planned dispatch raises instead of being dropped. Running transitions is xtrax #2543. It was filed at P3 to wait for a use case, then raised to P2 the same day after the user confirmed the intent: AR decoding as a planned axis (#2125), plus iterative kernels in ProteinSMC (SMC, replica and MCMC loops) and prolix. prolix already works around the gap: its MD step axis plans with a stub transition and wires up the real integrator outside the planner (`prolix/api/step_carry.py`). aminx's annealed Langevin (`ebm/langevin_schedule.py`) is another consumer.
 - **D3** (xtrax #2526): **Move the protein generators to aminx's export layer.** xtrax keeps generic rings machinery that takes an input-generator callable.
 - **D4** (C10; xtrax #2523, aminx #2519): **Move generic execution config into xtrax `RunSpec`.** `output_h5_path` is retired outright in favour of xtrax Zarr (output root plus `SinkSpec`), not renamed. Its siblings go with it.
 - **D5** (C11; xtrax #2544): **xtrax owns the chunk- and resume-invariant key stream.** Gate: a bit-for-bit golden test against aminx's current derivation before aminx switches.
