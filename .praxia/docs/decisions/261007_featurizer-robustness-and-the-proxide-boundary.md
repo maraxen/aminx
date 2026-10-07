@@ -497,3 +497,80 @@ The foundry conversion-time column permutation (`mpnn/utils/weights.py:225-278`)
 alternative to a runtime `pair_order` field, the three-vs-one `row_chunk` call sites, and the
 `potts_mpnn/model.py:30-38` hardcodes bypassing `get_topology_for_checkpoint`. Not cited
 anywhere until probed.
+
+## 10. The last three leads, settled
+
+### 10.1 Foundry already solved the ordering problem at CONVERSION time — and §3 should have considered it
+
+`ProtonPottsMPNN/foundry/models/mpnn/src/mpnn/utils/weights.py:~228-280` does exactly this to
+`graph_featurization_module.edge_embedding.weight`:
+
+1. split the loaded weight into `[:, :num_positional_embeddings]` and the rest;
+2. `view(out_dim, num_atoms * num_atoms, num_rbf)`;
+3. reorder with `[legacy_order[name] for name in new_order]`;
+4. reshape back and `torch.cat` the two halves.
+
+Three things follow, and they matter more than the lead itself.
+
+**(a) There is a route with no runtime parameter at all.** §3 proposed `pair_order` as a
+`FeatureSpec` field consulted at featurization time. Foundry instead normalizes the *weights*
+once, at conversion, and ships a featurizer with a single fixed order. That is cheaper at
+runtime and removes the per-family branch entirely. It is only available when you control
+weight conversion — which for a port is exactly the case. A runtime field is needed only if one
+featurizer must serve two live conventions *simultaneously*. **§3 should present these as two
+options with that as the deciding question**, not assume the runtime field.
+
+**(b) Foundry already parameterizes the pair count.** It is `num_atoms * num_atoms` where
+`num_atoms = num_backbone_atoms + num_virtual_atoms` — so upstream's "25" is derived, and it
+generalizes past 5 atoms to include *virtual* atoms. The FeatureSpec idea is not speculative;
+the fork this document is about has already implemented its core.
+
+**(c) It independently confirms §8's corrected width formula.** Foundry's split implies
+`edge_in = num_positional_embeddings + num_atoms² × num_rbf` — the same shape as the corrected
+`pos_embed_dim + rbf_count * len(pair_order)`, and *not* the `rbf_count * (len(pair_order) + 1)`
+I first wrote. Two independent derivations agreeing is worth more than either alone.
+
+The same file goes on to permute the amino-acid token order coming out of the model, which is
+the alphabet-boundary question (spec §5) appearing in the same place for the same reason.
+
+### 10.2 `row_chunk` has FIVE call sites, not one
+
+I wrote "set in exactly one place." Wrong — I conflated the constant's *definition* with its
+*uses*, and my grep was truncated before reaching the rest:
+
+- `export/wrappers.py:92` defines `EXPORT_TOP_K_ROW_CHUNK = 32`
+- used at `export/wrappers.py:193`, `:256`, `:431` — three separate export wrappers
+- plus `scripts/browser_validation/p07_split_export.py:124` and `p07_split_feasibility.py:154`
+
+"Runtime is unaffected" still holds — all five are export-path — but "one place" was wrong and
+is corrected here and in debt #2561.
+
+**A new observation that refines §9.3.** `tests/export/test_top_k_export.py:287` parametrizes
+`row_chunk` over `[1, 8, 32]`. At `row_chunk=1` every chunk is size 1 — which is `safe_map`'s
+case (b), `batch_size == 1`, one of the three #2391 shapes it exists to forbid. So
+`_top_k_row_chunked` is immune to the *remainder*-of-1 case by construction (§9.3) but has **no
+guard against the other two**, and the test suite exercises one of them. Production uses 32, so
+this is latent, not live — but "aminx's version is the safer one" is narrower than §9.3 implies:
+it is safer on exactly one of three hazards, and unguarded on the rest.
+
+### 10.3 Potts bypasses `get_topology_for_checkpoint` entirely — so §1e has TWO sources, not one
+
+`families/potts_mpnn/model.py:25-31` hardcodes its own topology:
+
+```python
+_EDGE_FEATURES = 128      _HIDDEN_FEATURES = 128
+_ENCODER_LAYERS = 3       _DECODER_LAYERS = 3
+_K_NEIGHBORS = 48         _POSITIONAL_EMBEDDINGS = 32
+_VOCAB = 21
+```
+
+So §1e's "architecture is inferred by substring-matching a filename" is true for the stock,
+ligand and packer paths and **false for Potts**, which never consults `io/weights.py` at all.
+That makes the problem *worse* than §1e stated rather than better: there are at least two
+independent, unreconciled sources of model topology, and nothing cross-checks them.
+
+**This is directly on the ProtonPottsMPNN critical path.** `_VOCAB = 21` and the `etab_raw`
+annotation `Float[Array, "L K 20 20"]` (`model.py:~45`) are both wrong for V=30, and they live
+in a different file from the `io/weights.py` ladder §1e pointed at. A port that fixed only the
+ladder would leave these untouched — and `_VOCAB` is not a tensor shape, so it would not fail
+loudly.
