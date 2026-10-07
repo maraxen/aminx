@@ -76,6 +76,25 @@ _EXACT_BY_CONSTRUCTION: dict[str, str] = {
   "potts_order": "neighbour order compared by np.array_equal / set equality",
 }
 
+#: Waves that legitimately have NO test module, so no band is applied anywhere
+#: and there is nothing for this file to compare.
+#:
+#: THIS REGISTRY EXISTS BECAUSE ITS ABSENCE WAS A HOLE (found 261006 by probe).
+#: The accounting test used to `continue` past any wave it could not find a
+#: module for, with `port_selftest` in mind. But a wave is matched to its module
+#: by the ``port_wave`` marker, so deleting that one marker argument -- from a
+#: module that still exists and still asserts -- made the wave simply vanish
+#: from the loop, and the test PASSED. Both guards keyed on the same marker, so
+#: nothing else caught it either. A mutation probe that dropped the marker from
+#: test_laser_encoder.py was waved through by both; dropping its BANDS was
+#: correctly refused, which is what made the gap specific rather than theoretical.
+#:
+#: So membership is declared AND verified: an entry here must really have no
+#: module, and a wave missing a module without an entry is now a failure.
+_NO_TEST_MODULE: dict[str, str] = {
+  "port_selftest": "the suite's own self-test target; no tests/port module declares it",
+}
+
 #: Waves whose APPLIED band is real but whose REPORTED policy does not state it
 #: fully. This is the #2445 defect, pinned so it cannot grow silently. Asserted
 #: to match exactly, so removing a defect without removing its entry also fails.
@@ -275,7 +294,17 @@ def test_every_target_is_accounted_for() -> None:
   for target in sorted(_TARGETS.glob("*.toml")):
     wave = target.stem
     if wave not in modules:
-      continue  # no test module (e.g. port_selftest); nothing applies a band
+      # NOT a free pass -- see _NO_TEST_MODULE. A wave losing its port_wave
+      # marker looks identical here to one that never had a module, and that
+      # is how a live, asserting module used to leave the guard unnoticed.
+      if wave not in _NO_TEST_MODULE:
+        orphaned.append(
+          f"{wave}: targets/{wave}.toml exists but no tests/port module declares "
+          f"port_wave({wave!r}). Either the marker was dropped from a module that "
+          f"still asserts (a regression this guard must refuse), or the wave "
+          f"genuinely has no module and belongs in _NO_TEST_MODULE with a reason.",
+        )
+      continue
     if wave in _EXACT_BY_CONSTRUCTION:
       continue
     bands = applied_bands(modules[wave])
@@ -290,6 +319,26 @@ def test_every_target_is_accounted_for() -> None:
     "these waves are neither machine-checked nor declared unverifiable, which is "
     "exactly the silent gap this file exists to close:\n  " + "\n  ".join(orphaned)
   )
+
+
+def test_no_test_module_registry_is_earned_not_declared() -> None:
+  """An entry must really have no module, or it is an opt-out from the guard.
+
+  Without this, _NO_TEST_MODULE would be a way to silence any wave by naming
+  it -- which is precisely the hole it was added to close, moved one level up.
+  """
+  modules = _modules()
+  wrong = []
+  for wave, reason in _NO_TEST_MODULE.items():
+    if not (_TARGETS / f"{wave}.toml").is_file():
+      wrong.append(f"{wave}: no such target; remove the entry")
+    if wave in modules:
+      wrong.append(
+        f"{wave}: {modules[wave].name} DOES declare port_wave({wave!r}), so the "
+        f"wave is checkable and must not be exempt",
+      )
+    assert reason.strip(), f"{wave}: _NO_TEST_MODULE entry needs a reason"
+  assert not wrong, "\n  ".join(wrong)
 
 
 def test_prose_list_is_not_a_dumping_ground() -> None:
