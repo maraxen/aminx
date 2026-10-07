@@ -591,3 +591,68 @@ Causal/anti-causal mask equivalence beyond structure, the AR sampling path, symm
 noise injection, ligand and packer paths, `construct_X_atoms` token-indexing edge cases, and the
 `_mlp`-headed (`etab_hidden`) variants. The C-beta construction was reported as algebraically
 identical through a double sign flip; that is plausible but was **not** re-derived here.
+
+## 15. Foundry normalizes BOTH orderings at weight-conversion time — this simplifies P6 and P7
+
+Found 2026-10-07 while auditing the featurizer boundary
+(`.praxia/docs/decisions/261007_featurizer-robustness-and-the-proxide-boundary.md` §10.1). It
+changes the task graph, so it belongs here and not only there.
+
+`foundry/models/mpnn/src/mpnn/utils/weights.py:~228-280` rewrites
+`graph_featurization_module.edge_embedding.weight` on load: split off the first
+`num_positional_embeddings` columns, `view(out_dim, num_atoms * num_atoms, num_rbf)`, reorder
+the pair axis by `[legacy_order[name] for name in new_order]`, reshape, concatenate back. The
+same file then permutes the amino-acid token order coming out of the model.
+
+### 15.1 §14's RBF trap is absorbed by P6, not by a featurizer change
+
+§14 recorded that aminx's `BACKBONE_PAIRS` order and foundry's flattened `5*i + j` order differ
+with no shape error, and framed the remedy as a permutation of `edge_embedding.weight`'s input
+columns. That is exactly what foundry already does — so **P6's weight conversion is the right
+and only home for it**, and no runtime `pair_order` parameter is required for this port.
+
+The alternative (a `FeatureSpec.pair_order` field consulted at featurization time) is only
+needed if one featurizer must serve two live conventions *simultaneously*. ProtonPottsMPNN does
+not require that: its weights are converted once, on the way in. **Prefer the conversion-time
+permutation.** It costs nothing at runtime, adds no per-family branch, and keeps aminx's
+featurizer bit-identical for the Potts and ProteinMPNN families it already serves — which is
+what §14 said must not change.
+
+### 15.2 The same applies to §5's alphabet boundary, and it narrows P3/P7
+
+Foundry permutes the token order at conversion too. So the 30-token question splits cleanly:
+
+- **Token ORDER** (which index means which protonated residue) — settle at conversion, like the
+  pair order. No runtime machinery.
+- **Token COUNT** (V=30 vs aminx's hard-coded 20/21) — genuinely runtime, and genuinely a
+  refactor of frozen code. `potts_head.py:26-27`'s `N_AA = 20` → `PAIR_DIM` has to become
+  parameterised, and §5's warning about goldens-before-refactor stands unchanged.
+
+P3 therefore shrinks to the maps plus the aminx-alphabet projection; it does not also have to
+negotiate ordering at runtime. P7 keeps its full scope — generic `V` is the real work.
+
+### 15.3 Upstream already parameterizes what aminx hard-codes
+
+`num_atoms = num_backbone_atoms + num_virtual_atoms`, and the pair count is `num_atoms²` — so
+foundry's "25" is derived and generalizes to virtual atoms. Where aminx writes `16 + 16 * 25`
+as a literal (`model/features.py:294`), foundry computes it. Two consequences:
+
+1. The `FeatureSpec` idea in the boundary doc is not speculative — the fork has implemented its
+   core, and it is a reference to copy rather than a design to invent.
+2. If ProtonPottsMPNN ever uses virtual atoms, aminx's literal `25` becomes wrong in a way that
+   **is** a loud shape error (the edge-embedding input width changes), unlike the ordering trap.
+   Worth confirming during P6 whether this checkpoint has `num_virtual_atoms > 0`; §1a measured
+   the vocab and the layer counts but not this.
+
+### 15.4 Status of the task graph after this
+
+P0 done (§1a). P1 half done — upstream vendored at `09682abf`; the `aminx-oracles-protonpotts/`
+environment is **not** stood up, and that is now the critical path, because P4's oracle dumps
+gate P5, P6 and P7. It is also the subject of open decision §11c. P2 done (§2a, §4's
+correction). P6's structural half done (§14). Everything from P3 on touches `src/aminx/` and is
+therefore **blocked by THE FREEZE until PR #165 merges**.
+
+`aminx-oracles-protonpotts/` itself is **not** scoped: `_coverage.py:247` matches by literal
+`path.startswith(prefix)` and `_SCOPED_PREFIXES` contains `aminx-oracles/`, which
+`aminx-oracles-protonpotts/` does not start with. So P1 and P4 can proceed during the freeze —
+they are the only ProtonPottsMPNN tasks that can.
