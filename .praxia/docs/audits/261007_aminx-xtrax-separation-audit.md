@@ -122,7 +122,7 @@ The order is forced by two facts. Nothing can be deleted until spec JSON fails l
 - #2528: seed 0. Pre-registered numerics change for seed 0 only.
 - #2532: dead-code sweep.
 - #2530: spec JSON schema version and unknown-key rejection.
-- #2535: training correctness. Pre-registered, needs decision D6.
+- #2535: training correctness. Pre-registered; D6 says use one configurable decay policy, masked by default.
 - #2534: wire or delete topology validation; remove the global hash patch.
 - The cheap parts of #2533 (legacy `use_unified_driver` paths; consistent size-1 guard) and of #2538 (stale-path references, parity-metric dedupe).
 
@@ -135,6 +135,8 @@ The order is forced by two facts. Nothing can be deleted until spec JSON fails l
 6. #2525 (Trainer/Engine)
 7. #2526 (export)
 8. #2527 (stages)
+9. #2544 (key stream, D5)
+10. #2543 (P3, CarrySpec transitions; parked until a use case exists)
 
 **Wave 2: aminx onto the new xtrax.**
 - #2529: run identity.
@@ -150,16 +152,16 @@ The order is forced by two facts. Nothing can be deleted until spec JSON fails l
 
 Gates that pin today's behaviour bit for bit and must be retired or re-baselined deliberately: the T2.GATE golden and dispatch-parity tests, the EBM score-matching parity tests, the p07/layer B/C ORT and IREE bars, campaign resume hashes and the grid seed-hash pin, `tests/host/knob_observations.py`, `host/spec_partition.py`, and the browser-validation inventory.
 
-## Decisions for the user
+## Decisions (made by the user, 2026-10-07)
 
-- **D1** (#2528): fix seed 0 → 42? It changes outputs for seed 0 only.
-- **D2** (#2521/#2533): should a user `CarrySpec.transition` execute? aminx silently drops it today.
-- **D3** (#2526): `rings` protein generators: parameterise in xtrax, or move to aminx's export layer?
-- **D4** (C10): upstream a generic execution-config section (output root, device count, precision, shard lineage) into xtrax `RunSpec`, or keep it in aminx?
-- **D5** (C11): upstream a chunk-invariant key-stream utility to xtrax, keeping aminx's frozen derivation byte-identical?
-- **D6** (#2535): which weight-decay policy is canonical: masked (no decay on 1-D params, the warmup path today) or unmasked? Either way, one of the two paths changes numerics.
-- **D7** (#2126): accept that unifying multi-state sampling changes PoE sample keys?
-- **D8** (#2531): delete the inert batch-size knobs, or wire them to a generic per-axis override?
+- **D1** (#2528): **Fix it.** Seed 0 means seed 0. Land after #2530 so specs from before the fix can be told apart.
+- **D2** (#2533; xtrax #2543): **Reject loudly now.** A user `CarrySpec.transition` that would go through planned dispatch raises instead of being dropped. Running transitions is parked as xtrax #2543 (P3), waiting for a concrete use case. Candidates: AR decode on `CarrySpec`/`RollingFn` (#2125), annealed Langevin schedules (`ebm/langevin_schedule.py`, which already runs its own `CarrySpec` via `safe_scan`), and temperature or replica chains.
+- **D3** (xtrax #2526): **Move the protein generators to aminx's export layer.** xtrax keeps generic rings machinery that takes an input-generator callable.
+- **D4** (C10; xtrax #2523, aminx #2519): **Move generic execution config into xtrax `RunSpec`.** `output_h5_path` is retired outright in favour of xtrax Zarr (output root plus `SinkSpec`), not renamed. Its siblings go with it.
+- **D5** (C11; xtrax #2544): **xtrax owns the chunk- and resume-invariant key stream.** Gate: a bit-for-bit golden test against aminx's current derivation before aminx switches.
+- **D6** (#2535): **Both optimizer paths apply the same policy.** Default masked, configurable through one field. Training only. The path has seen little use, so there is no reproducibility constraint.
+- **D7** (#2126): **Accept the PoE key change.** Unification is needed. Add a CHANGELOG entry and a schema-version bump.
+- **D8** (#2531): **Delete the inert batch-size knobs after #2530.** No override knob for now. xtrax's memory estimator, planner and optimizer are still experimental, so an override may become necessary, but given how many axes are involved, build one (a generic xtrax planner override) only when a concrete failure proves it is needed.
 
 ## Related
 
