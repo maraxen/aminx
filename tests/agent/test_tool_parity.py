@@ -110,11 +110,12 @@ def test_sample_matches_runner_and_seed_changes(tmp_path: Path) -> None:
       return _data(seeded), _data(other)
 
   payload, other_payload = asyncio.run(body())
-  # The tool fits max_length to the structure (76 residues -> 128) instead of the
+  # The runner buckets sample itself (76 residues run at 128), so the tool keeps the
   # specification default; the returned spec must reproduce the run exactly.
   assert build_spec("sample", [pdb], options).max_length == 512
   spec = spec_from_json(payload["spec"])
-  assert spec.max_length == 128
+  assert spec.max_length == 512
+  assert spec.length_bucketing is True
   direct = runner.sample(spec=spec)
   lengths = structure_lengths(spec)
   structure_ids = list(lengths)
@@ -165,7 +166,7 @@ def test_score_matches_runner(tmp_path: Path) -> None:
 
   payload = asyncio.run(score_sequences())
   spec = spec_from_json(payload["spec"])
-  assert spec.max_length == 128
+  assert spec.max_length == 512  # runner-bucketed: the tool does not fit
   assert list(spec.sequences_to_score) == sequences
   direct = runner.score(spec=spec)
   direct_nlls = [float(value) for value in np.asarray(direct["scores"]).reshape(-1)]
@@ -203,7 +204,7 @@ def test_reverse_jacobian_side_file(tmp_path: Path) -> None:
   assert len(matched) == 1
   info = next(iter(matched.values()))
   spec = spec_from_json(payload["spec"])
-  assert spec.max_length == 128
+  assert spec.max_length == 128  # jacobian is not runner-bucketed, so the tool still fits
   length = structure_lengths(spec)["1ubq"]
   assert info["shape"] == [length, 21]
 

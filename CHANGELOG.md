@@ -5,10 +5,16 @@
 ### Changed
 
 - **Runner buckets residue length by default** (xtrax `BUCKET_LADDER`). Seeded sample
-  outputs change. Logits at padded tail positions are now 0 (previously computed
-  values). Old specs replay with bucketing on; pass `--no-length-bucketing` /
+  outputs change. Past the bucket, sampled tokens are X and logits are 0 (previously
+  computed values). Old specs replay with bucketing on; pass `--no-length-bucketing` /
   `length_bucketing=False` to reproduce a pre-bucketing run. Campaign numerics
   epoch is 2.
+
+- **MCP `sample` and `score` no longer fit `max_length`** where the runner buckets
+  (bucketing on, `pass_mode` not inter, and for `score` not averaged or multi-state).
+  The returned spec keeps the caller's `max_length` (default 512); outputs are
+  unchanged in shape because tools already trim to each structure's residue count.
+  `inspect`, `jacobian` and the unbucketed paths still fit it.
 
 - **xtrax pinned to `0.4.0a11`** (was `0.4.0a10`). xtrax renamed its chunked strategy
   `SafeMap` to `ChunkedMap` (`SafeMapIterator` to `ChunkedMapIterator`; xtrax #3644).

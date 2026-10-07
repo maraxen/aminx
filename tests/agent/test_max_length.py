@@ -1,9 +1,11 @@
-"""S7-08: MCP tools fit ``max_length`` to the parsed inputs on xtrax's bucket ladder."""
+"""S7-08 / S8-11: MCP tools fit ``max_length`` on xtrax's bucket ladder where the runner does not bucket."""
 
 from __future__ import annotations
 
+import asyncio
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,7 +13,8 @@ import pytest
 pytest.importorskip("cisternal")
 pytest.importorskip("fastmcp")
 
-from aminx.agent.tools import fitted_max_length, max_length_ladder
+from aminx.agent import tools
+from aminx.agent.tools import fitted_max_length, max_length_ladder, runner_buckets
 
 
 def _spec(inputs: list[str], *, max_length: int = 512, pass_mode: str = "intra") -> SimpleNamespace:
@@ -103,3 +106,72 @@ def test_fitting_does_not_load_the_onnx_toolchain() -> None:
   )
   out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)  # noqa: S603
   assert out.stdout.strip() == ""
+
+
+# --- S8-11: tools leave max_length alone where the runner buckets ------------------------------
+
+
+def _bucket_spec(**overrides: object) -> SimpleNamespace:
+  fields: dict[str, object] = {
+    "length_bucketing": True,
+    "max_length": 512,
+    "pass_mode": "intra",
+    "average_node_features": False,
+    "state_position_map": None,
+  }
+  fields.update(overrides)
+  return SimpleNamespace(**fields)
+
+
+def test_runner_buckets_plain_sample_and_score() -> None:
+  assert runner_buckets("sample", _bucket_spec())
+  assert runner_buckets("score", _bucket_spec())
+
+
+@pytest.mark.parametrize(
+  ("kind", "overrides"),
+  [
+    pytest.param("inspect", {}, id="inspect"),
+    pytest.param("jacobian", {}, id="jacobian"),
+    pytest.param("sample", {"pass_mode": "inter"}, id="sample-inter"),
+    pytest.param("sample", {"length_bucketing": False}, id="sample-opt-out"),
+    pytest.param("sample", {"max_length": None}, id="sample-no-max-length"),
+    pytest.param("score", {"average_node_features": True}, id="score-averaged"),
+    pytest.param("score", {"state_position_map": [[0]]}, id="score-multistate"),
+    pytest.param("score", {"pass_mode": "inter"}, id="score-inter"),
+  ],
+)
+def test_runner_does_not_bucket_these_so_the_tool_still_fits(kind: str, overrides: dict) -> None:
+  assert not runner_buckets(kind, _bucket_spec(**overrides))
+
+
+def test_runner_buckets_reads_missing_fields_as_not_bucketed() -> None:
+  """A spec type without length_bucketing (older or duck-typed) keeps the S7 fit."""
+  assert not runner_buckets("sample", SimpleNamespace(max_length=512))
+
+
+_PDB = Path(__file__).resolve().parents[1] / "data" / "1ubq.pdb"
+
+
+@pytest.mark.parametrize(
+  ("kind", "options", "expected"),
+  [
+    pytest.param("sample", {}, 512, id="sample-bucketed-keeps-default"),
+    pytest.param("sample", {"length_bucketing": False}, 128, id="sample-opt-out-fits"),
+    pytest.param("score", {"sequences_to_score": ["A" * 10]}, 512, id="score-bucketed-keeps-default"),
+    pytest.param("inspect", {}, 128, id="inspect-fits"),
+  ],
+)
+def test_run_passes_the_runner_the_expected_max_length(
+  kind: str, options: dict, expected: int, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+  """The spec handed to the runner: unfitted where the runner buckets, fitted to 128 (1ubq, 76) elsewhere."""
+  seen: list[SimpleNamespace] = []
+  monkeypatch.setitem(tools._RUNNERS, kind, lambda spec: seen.append(spec) or {})  # noqa: SLF001
+  monkeypatch.setattr(tools, "shape_result", lambda *_a, **kw: {"max_length": kw["spec"].max_length})
+  result = asyncio.run(
+    tools._run(kind, [str(_PDB)], {}, options, str(tmp_path), 0),  # noqa: SLF001
+  )
+  assert len(seen) == 1
+  assert seen[0].max_length == expected
+  assert result == {"max_length": expected}
