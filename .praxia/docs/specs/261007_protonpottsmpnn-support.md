@@ -155,6 +155,54 @@ Repository layout (verified): root holds `benchmarks/`, `checkpoints/`, `figures
 `requirements-extra.txt`. `inference/` holds `design_ph.py`, `design_ph.ipynb`,
 `design_placement_scan.py`, `fold_rf3.py`.
 
+## 2a. The etab head's conventions, now measured
+
+Read from the vendored source 2026-10-07 and **spot-checked against the file by hand**, not
+taken from a report. These were three of §12's unverified rows.
+
+**`etab_source` is `edge` for this checkpoint.** `get_pottshead_input()` returns `h_E`
+unchanged, so the head maps 128 → V². `node_edge_node` would consume `[h_i, h_E, h_j]` at 384.
+`etab_out.weight`'s measured `(900, 128)` therefore settles the mode, independently of
+`infer_etab_source()`.
+
+**`field_source` writes the single-site field into slot 0.** Two branches, both verified:
+
+```python
+if self.field_source == "node":
+    field = self.node_field(encoder_features["h_V"])          # [B, L, Vp]
+    etab_out[:, :, 0, :, :] = torch.diag_embed(field)
+else:                                                          # "self_edge"
+    eye = torch.eye(self.potts_vocab_size, ...)
+    etab_out[:, :, 0, :, :] = etab_out[:, :, 0, :, :] * eye
+```
+
+So `self_edge` zeroes the off-diagonal of the self-edge table and keeps its diagonal as the
+field; `node` overwrites the whole slot with a dedicated head's diagonal.
+
+**The merge is reciprocal-only, and non-reciprocal edges are untouched.** Verbatim:
+
+```python
+merged_etab = 0.5 * (etab_out + reverse_etab.transpose(-1, -2))
+...
+valid_merge = has_reverse & E_mask.bool() & reverse_mask.bool()
+etab_out = torch.where(valid_merge[..., None, None], merged_etab, etab_out)
+```
+
+**The energy double-counts reciprocal pairs, deliberately.** `calc_potts_eners` is
+`H(s) = Σ_i Σ_k etab[i, k, s_i, s_neighbour]`, implemented as
+`etab[L_idx, K_idx, s_i, E_aa_j].sum(dim=(-1, -2))` — one scalar per *directed* edge. The
+upstream note states the consequence rather than hiding it
+(`POTTS_CONDITIONAL_ENERGY.md:44-48`): *"a **reciprocal** pair … contributes **two** terms →
+reciprocal pairs are double-counted; a **non-reciprocal** pair contributes **one** term; the
+matrices are directed and are **not** required to be symmetric."* The merge's 0.5 makes the
+tables symmetric; it does **not** undo the double counting in the Hamiltonian.
+
+**Consequence for the port, and it is a real difference rather than a restatement.** aminx's
+`etab.py` exposes `merge_pair(denom, exclude_self)` with a d2/d4 + `exclude_self` convention.
+That is *not* this rule. `protonpotts_merge` and `protonpotts_energy` (§7) must implement
+reciprocal-only averaging and directed double-counting explicitly, and must not be satisfied by
+reusing the existing helper.
+
 ## 3. The featurization is a front end, not a feature algebra
 
 **This section corrects an earlier estimate.** A first scoping pass called the atomworks
@@ -195,17 +243,46 @@ Verified from `inference/design_ph.py`'s imports: the design path pulls `mpnn`,
 (`design_placement_scan`, `annotate_charge_clash`, `fold_rf3`, `annotate_folds`). It imports
 **none of** `flaml`, `xgboost`, `lightgbm`, `sklearn`, or `hbplus`.
 
-Consequences, and they are all simplifications:
+### CORRECTION 2026-10-07: that import list proves less than it looks, and two bullets here were wrong
 
-- **FLAML is not on the V1 path.** It belongs to the labeller/training side. The user's
-  position — "if flaml is needed for that it is covered" — is satisfied without needing it.
-- **HBPLUS is not required.** It is env-gated inside `annotate_folds`, i.e. post-hoc fold
-  annotation, not design.
+An earlier revision of this section read the import list above and concluded "FLAML is not on
+the V1 path" and "HBPLUS is not required". **Both were wrong**, and wrong in a way this project
+has a standing lesson about: *audit transitive imports, not the file you read*. `design_ph.py`
+genuinely imports none of them — but it reaches them through the featurization pipeline.
+
+Measured in the vendored tree:
+
+- **Protonation state is assigned by a LEARNED model, not a rule.**
+  `classify_titratable_residues()` (`transforms/extended_vocab_v6.py`) runs the EV6 **5-fold
+  FLAML ensemble** via `transforms/ev6/predictor.py`, and discretises with
+  `if metal_adjacent or sd > sd_cut → "-A"` (ambiguous) `elif p >= prob_thr → "-P"` else
+  `"-S"`/`"-D"`, where `p` and `sd` are the ensemble mean and spread.
+- **HBPLUS is a real subprocess on that path.** `bond_annotation.py:198` defines
+  `_run_hbplus_cmd(hbplus_cmd, pdb_path, …)`, and `extended_vocab_v6.py:100` says in terms:
+  *"None makes EV6 run HBPLUS itself — correct, but two extra [calls]"*. `precomputed.py:3`
+  names the whole cost: *"Protonation labelling (HBPLUS + biotite geometry + the EV6 fold
+  ensemble) is the dominant per-structure [cost]"*.
+
+**The escape hatch is real and is the actual decision.** `transforms/precomputed.py` plus
+`ApplyProtonationThreshold` let a run consume *persisted* per-residue scores (`p`, `sd`,
+`metal`, threshold-independent) and skip HBPLUS and FLAML entirely. So V1 has two genuinely
+different shapes:
+
+| V1 shape | needs | what aminx would have to reproduce |
+| :-- | :-- | :-- |
+| **consume pre-labelled structures** | nothing beyond torch + atomworks + foundry | the threshold rule only (`-P`/`-S`/`-D`/`-A` from stored `p`/`sd`/`metal`) |
+| **label end to end** | HBPLUS binary + FLAML + sklearn/xgboost/lightgbm pins | the full EV6 ensemble, i.e. porting or shelling out to a 5-fold AutoML model |
+
+This is **§11a**, and it is no longer "already answered" — it is the single biggest scope fork
+in the project. It also revives the pins (`sklearn<1.9`, FLAML, xgboost/lightgbm) that this
+section previously dismissed as labeller-only, *if* the second shape is chosen.
+
+Unchanged and still true:
+
 - **RF3 (~3 GB) is optional** — it folds candidate sequences *after* design for structural
   metrics. Out of V1.
-- The heavy pins that made a second oracle environment look costly (`sklearn<1.9`, FLAML,
-  xgboost/lightgbm) are labeller pins. The V1 oracle env is torch + atomworks + foundry on
-  Python 3.12.
+- The design *engine* itself (`PottsMPNNPHEngine`) pulls none of these; the dependency enters
+  upstream of it, at featurization.
 
 What V1 must reproduce: featurize a structure → build the etab → compute conditional energies →
 run `PottsMPNNPHEngine`'s block descent → emit designs and the stability/selectivity-gap Pareto
@@ -357,7 +434,13 @@ cost is paid once rather than twice.
 
 ## 11. Open decisions (the user's)
 
-a. **Design engine in V1?** This spec assumes yes (P9). The alternative is energy/scoring only,
+a. **THE BIG ONE — does aminx label protonation states, or consume them pre-labelled?** See §4's
+   correction. Pre-labelled means reproducing only the threshold rule and needs no new
+   dependency. End-to-end labelling means a HBPLUS binary plus the EV6 5-fold FLAML ensemble,
+   and revives the `sklearn<1.9` / xgboost / lightgbm pins. An earlier revision of this spec
+   declared this closed on the strength of `design_ph.py`'s import list; that was wrong, and it
+   is the largest scope fork in the project.
+b. **Design engine in V1?** This spec assumes yes (P9). The alternative is energy/scoring only,
    deferring the engine — smaller, but then V1 does not validate the thing the repo exists for.
 b. **Public alphabet.** 30 tokens end-to-end, or a 21-token public alphabet with protonation as
    a side channel? Affects every sink and every `sequences_to_score` caller.
@@ -367,7 +450,8 @@ c. **Second oracle environment on titanix.** atomworks + foundry pin incompatibl
 d. **Where §6's seam sits for `protonpotts_features`.** Exact on coordinates, or a floor run?
    This spec proposes a floor run because the upstream path is f32 throughout.
 
-*(The labeller/FLAML question is no longer open: §4 shows it is off the V1 path.)*
+*(An earlier revision closed the labeller/FLAML question here, claiming §4 showed it off the V1
+path. That claim is retracted — it is now decision (a) above, and it is the biggest one.)*
 
 ## 12. Assumption register
 
