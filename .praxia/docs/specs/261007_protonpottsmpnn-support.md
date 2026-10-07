@@ -1877,3 +1877,81 @@ labels once seeded.
 This supersedes the original pre-registration's hypothesis 2, whose positive control named
 `log_probs`. That hypothesis was **falsified**, not relaxed; the amended sidecar records the
 falsification and the replacement rather than quietly editing the criterion.
+
+---
+
+## §30 — the observables are now deterministic; the instability is in the FIRST forward of a process
+
+Three runs of the amended dumper, same cell, same seed:
+
+```
+control A: H(S) plain=-34724.792969 labelled=-33881.527344 delta=+843.265625   [all 3 runs]
+control B: ASP_P_vs_D=0.2092742919921875  GLU_P_vs_D=0.12173986434936523
+           HIS_P_vs_S=0.17555570602416992                                      [all 3 runs]
+negative : etab_out differs, max|delta| = 4.76804 / 0.941982 / 3.84095         [all 3 differ]
+```
+
+**P4's observables are deterministic.** `H(S)` and the field contrasts are bit-identical to
+the last digit across all three runs, so §28's seeding fix did its job. Control B also now
+agrees with §29.3 measured independently: `ASP_P_vs_D` 0.2093 against 0.209, `HIS_P_vs_S`
+0.1756 against 0.172. (`GLU_P_vs_D` reads 0.122 here against 0.036 there because this is the
+max over all 14 GLU positions and §29.3 quoted one position — different statistics of the same
+quantity, not a disagreement.)
+
+### §30.1 A bug in control B, caught before it was relied on
+
+The first version of `_check_field_non_degenerate` took the max over **all L positions**,
+reporting the contrast at positions where the token is meaningless — an ALA position has a
+`GLU-P` field entry and it signifies nothing. That returned `0.354 / 0.403 / 0.412`. Restricted
+to positions actually holding the parent residue it returns `0.209 / 0.122 / 0.176`.
+
+Worth naming because of what it would have cost: the inflated GLU figure is **~3.3× too large**,
+and this function's entire job is to supply the tolerance scale. A band set from `0.403` would
+have been loose enough to pass a wave with a broken GLU P/D discrimination — the precise
+failure §29.3 was written to prevent, reintroduced by the check meant to enforce it.
+
+### §30.2 The remaining instability is narrow and now locatable
+
+The negative control fires on **every** run, but with a **different** magnitude each time
+(4.77 / 0.94 / 3.84) while every other number is bit-stable. That pattern locates it:
+
+- `H(S)` and the field both derive from the **labelled** cell's `etab_out`, and both are
+  bit-stable across runs → **the labelled cell is deterministic**.
+- The only unstable quantity is the *difference* against the **unlabelled** cell's `etab_out`
+  → **the unlabelled cell's `etab_out` is what varies**.
+- The unlabelled cell is the one built **first** in each process.
+
+So the hypothesis is **first-forward instability** — lazy initialisation, a one-time allocator
+or kernel-selection effect that perturbs the first forward pass in a process and not later
+ones. This also retro-explains §27 (whose spike compared call 1 against call 2 and saw a
+difference) and §28's 32 clean pairs (which seeded before *each* call, but still compared
+call-1-of-pair against call-2-of-pair... so that part does **not** fit, and I am flagging the
+inconsistency rather than smoothing it over).
+
+### §30.3 §23.2 is now more likely wrong than merely unproven
+
+`etab_out` differs between the labelled and unlabelled cells on **every** run. §23.2 claimed
+it invariant to `S`. The varying magnitude means the two candidate explanations cannot yet be
+separated:
+
+1. `etab_out` genuinely depends on `S`, and the varying delta is first-forward noise on top.
+2. `etab_out` is `S`-invariant and the entire delta is first-forward noise.
+
+Under (1) the dumper's negative control is simply the wrong check and should be deleted;
+under (2) it is right and the warm-up must be fixed. **Do not delete it to make the dumper
+pass** — that is the failure mode the control exists to prevent, and the distinction is one
+experiment away.
+
+### §30.4 The next experiment, which separates them
+
+Add a throwaway warm-up forward before both cells, and independently swap the cell order
+(labelled first, unlabelled second):
+
+- delta → **0** ⇒ `etab_out` is `S`-invariant, §23.2 was right, all of §27/§30's instability
+  was warm-up, and the negative control stays.
+- delta → **stable and nonzero** ⇒ `etab_out` depends on `S`, §23.2 is wrong, and the
+  negative control must be replaced by an equality-to-a-pinned-value check.
+- delta → **still varying** ⇒ the warm-up hypothesis is wrong too, and the cause is elsewhere.
+
+Each outcome is distinguishable and each dictates a different, specific change. Until it runs,
+no oracle is sealed and `etab_out`'s dependence on `S` has no trustworthy answer.

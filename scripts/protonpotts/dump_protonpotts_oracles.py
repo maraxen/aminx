@@ -198,7 +198,7 @@ def _check_non_vacuous(plain_energy: float, labelled_energy: float) -> float:
   return delta
 
 
-def _check_field_non_degenerate(field: np.ndarray) -> dict[str, float]:
+def _check_field_non_degenerate(field: np.ndarray, seq: np.ndarray) -> dict[str, float]:
   """Second half of the positive control: does the TABLE distinguish the protonation tokens?
 
   `H(S)` differing is necessary but weak on its own -- indexing a table at different indices
@@ -209,12 +209,26 @@ def _check_field_non_degenerate(field: np.ndarray) -> dict[str, float]:
   against: §29.3 measured them at 0.209 (ASP) and 0.036 (GLU), against an ambiguity penalty of
   4.5-6.3 and a table abs-max of 12.41. A band taken from the spread rather than from these
   would be one to two orders of magnitude too loose.
+
+  CORRECTED before ever being relied on: the first version took the max over ALL L positions,
+  which reports the contrast at positions where the token is irrelevant -- an ALA position has
+  a GLU-P field entry and it means nothing. That inflated the numbers to 0.354 / 0.403 / 0.412
+  against §29.3's 0.209 / 0.036 / 0.172, i.e. it would have set the tolerance band ~10x too
+  loose for GLU, which is precisely the error this function exists to prevent. Now restricted
+  to positions actually holding the parent residue.
   """
-  contrasts = {
-    "ASP_P_vs_D": float(np.abs(field[:, 24] - field[:, 25]).max()),
-    "GLU_P_vs_D": float(np.abs(field[:, 27] - field[:, 28]).max()),
-    "HIS_P_vs_S": float(np.abs(field[:, 21] - field[:, 22]).max()),
+  parent_idx = {"ASP": 3, "GLU": 6, "HIS": 8}
+  pairs = {
+    "ASP_P_vs_D": (24, 25, "ASP"),
+    "GLU_P_vs_D": (27, 28, "GLU"),
+    "HIS_P_vs_S": (21, 22, "HIS"),
   }
+  contrasts: dict[str, float] = {}
+  for name, (col_a, col_b, parent) in pairs.items():
+    rows = np.flatnonzero(seq.ravel() == parent_idx[parent])
+    contrasts[name] = (
+      float(np.abs(field[rows, col_a] - field[rows, col_b]).max()) if rows.size else 0.0
+    )
   if max(contrasts.values()) == 0.0:
     raise SystemExit(
       f"the single-site field does not distinguish any protonation pair {contrasts}: the v6 "
@@ -276,7 +290,9 @@ def main() -> int:
   )
 
   field = _as_numpy(etab.squeeze(0)[:, 0].diagonal(dim1=-2, dim2=-1))  # [L, V]
-  contrasts = _check_field_non_degenerate(field)
+  # The UNLABELLED S, so rows are selected by parent residue (ASP 3 / GLU 6 / HIS 8, confirmed
+  # by §23's measurement that those indices vanish once every titratable residue is relabelled).
+  contrasts = _check_field_non_degenerate(field, _as_numpy(plain_features["S"]))
   logger.info("positive control B: single-site field P-vs-D contrasts %s", contrasts)
   logger.info(
     "  tolerance must be set against the SMALLEST of these (§29.3), not the overall spread"
