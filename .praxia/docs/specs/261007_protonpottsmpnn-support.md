@@ -1955,3 +1955,78 @@ Add a throwaway warm-up forward before both cells, and independently swap the ce
 
 Each outcome is distinguishable and each dictates a different, specific change. Until it runs,
 no oracle is sealed and `etab_out`'s dependence on `S` has no trustworthy answer.
+
+---
+
+## §31 — §23.2 is RESTORED: `etab_out` is `S`-invariant; the anomaly is per-process and ~1/3
+
+§30.4's experiment ran, and all four arms came back zero:
+
+```
+A  no warm-up   plain#1 vs plain#2    delta=0
+B  warmed       plain#1 vs plain#2    delta=0
+C  warmed       plain   vs labelled   delta=0
+C' warmed       plain   vs labelled   delta=0
+plain reproducible across C and C' : 0     labelled reproducible : 0
+```
+
+Arm A is the informative one: **even with no warm-up, the first forward is stable.** So §30.2's
+warm-up hypothesis is **wrong**, and C/C' answer §23.2 directly.
+
+**§23.2 is restored.** `etab_out` is invariant to `S`. §27 suspended it and §30.3 called it
+"more likely wrong than merely unproven" — both of those were reacting to the dumper's firing
+control, and the dumper turns out not to be measuring what the model does.
+
+### §31.1 The anomaly is per-process, and the control is a correct filter
+
+Within one process the comparison is zero every time, across many arms. Across **fresh
+processes** it is not. Six runs of the dumper, default environment:
+
+```
+run1 bit-identical   run2 max|delta|=1.56884   run3 bit-identical
+run4 bit-identical   run5 bit-identical        run6 max|delta|=4.76804
+```
+
+Two of six fire. And critically — **the four clean runs produced exactly ONE distinct
+sha256.** So when the control passes, the oracle is bit-reproducible.
+
+That is a usable state, and it is worth saying plainly rather than treating the anomaly as a
+total blocker: **the negative control is behaving as a correct filter.** Bad runs are rejected
+before anything is written; clean runs agree with each other exactly. P4 can proceed on a
+retry-until-clean basis while the anomaly is tracked separately.
+
+### §31.2 What the anomaly is not
+
+- **Not warm-up** — arm A above.
+- **Not the seed** — seeding is already in place and the derived observables are bit-stable
+  across all runs, firing or not (`H(S)` and the field contrasts are identical to the last
+  digit in every run of §30 and §31).
+- **Not `PYTHONHASHSEED`.** Tested directly: with `PYTHONHASHSEED=0` fixed, 5 of 6 runs fired
+  (`1.56884, 1.56884, bit-identical, 0.543993, 4.76804, 4.76804`). Pinning the hash seed does
+  not remove it. This was a good candidate — a dict/set iteration order varying per process
+  would explain "constant within a process, varying across them" — and it is **excluded**.
+- **Not continuous float noise.** The deltas recur exactly: `1.56884` twice, `4.76804` twice,
+  across different runs. Something discrete is being selected, not perturbed.
+
+### §31.3 The actual open question, which is narrower than it was
+
+The **spike never fires and the dumper fires ~1/3 of the time**, and both do plain-then-
+labelled in a fresh process against the same cell. So the difference is in the *dumper*, not
+in the model — which is a much smaller search space than "upstream is nondeterministic".
+
+The leading candidate is the labeller object. The dumper's `CyclingProtonationLabels` declares
+a `counts` attribute and defines `__init__` calling `super().__init__()`; the spike's
+equivalent defines neither. If `Transform.__init__` carries state, the two are not the same
+transform even though their `forward` is identical.
+
+Next step is a direct diff of the two code paths rather than more sampling: make the spike
+progressively more like the dumper until it starts firing. Each step is one edit and one run,
+and the first step that flips the behaviour names the cause.
+
+### §31.4 Status of the controls
+
+Keep the negative control. §30.3 set out the rule that it must not be deleted to make the
+dumper pass, and the experiment has now come down on the side where **it is the right check** —
+`etab_out` really is `S`-invariant, so a nonzero delta really does mean the two cells differ by
+more than their labels. Deleting it would have silently admitted the ~1/3 of runs that are
+wrong for an unknown reason.
