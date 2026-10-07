@@ -434,21 +434,33 @@ cost is paid once rather than twice.
 
 ## 11. Open decisions (the user's)
 
-a. **THE BIG ONE — does aminx label protonation states, or consume them pre-labelled?** See §4's
-   correction. Pre-labelled means reproducing only the threshold rule and needs no new
-   dependency. End-to-end labelling means a HBPLUS binary plus the EV6 5-fold FLAML ensemble,
-   and revives the `sklearn<1.9` / xgboost / lightgbm pins. An earlier revision of this spec
-   declared this closed on the strength of `design_ph.py`'s import list; that was wrong, and it
-   is the largest scope fork in the project.
-b. **Design engine in V1?** This spec assumes yes (P9). The alternative is energy/scoring only,
-   deferring the engine — smaller, but then V1 does not validate the thing the repo exists for.
-b. **Public alphabet.** 30 tokens end-to-end, or a 21-token public alphabet with protonation as
-   a side channel? Affects every sink and every `sequences_to_score` caller.
-c. **Second oracle environment on titanix.** atomworks + foundry pin incompatibly against the
-   existing `aminx-oracles/`. §4 shows the V1 env is lighter than first thought, but it is still
-   a second env.
-d. **Where §6's seam sits for `protonpotts_features`.** Exact on coordinates, or a floor run?
-   This spec proposes a floor run because the upstream path is f32 throughout.
+*(Until 2026-10-07 this list was mis-numbered `a, b, b, c, d` — two items carried the label
+`b`, so "decision (c)" meant the second env in the doc and the alphabet in every summary written
+from it. Renumbered `a`–`e` below. If an older note cites a letter past `b`, re-resolve it
+against this list rather than trusting the letter.)*
+
+a. ~~**THE BIG ONE — does aminx label protonation states, or consume them pre-labelled?**~~
+   **DECIDED 2026-10-07 by the user: PRE-LABELLED.** See §18.3 for the evidence the decision was
+   taken on, and §19 for what it binds. Pre-labelled means reproducing only the threshold rule
+   and needs no new dependency. End-to-end labelling would have meant a HBPLUS binary plus the
+   EV6 5-fold FLAML ensemble, reviving the `sklearn<1.9` / xgboost / lightgbm pins; §18.3
+   measured that its default path is a hardcoded absolute path to the upstream author's laptop,
+   so it does not run anywhere else without a separately-built binary. An earlier revision of
+   this spec declared this closed on the strength of `design_ph.py`'s import list; that was
+   wrong, and it was the largest scope fork in the project.
+b. **OPEN — Design engine in V1?** This spec assumes yes (P9). The alternative is energy/scoring
+   only, stopping at P8's `ProtonPottsDriver` with `score:energy|ddg` and deferring the engine —
+   smaller, but then V1 does not validate the thing the repo exists for.
+c. **OPEN — Public alphabet.** 30 tokens end-to-end, or a 21-token public alphabet with
+   protonation as a side channel? Affects every sink and every `sequences_to_score` caller.
+   §1a measured V=30 off the checkpoint, so 30 is what the model speaks; the question is whether
+   that width reaches aminx's public surface or is projected down at the boundary (P3).
+d. ~~**Second oracle environment on titanix.**~~ **ANSWERED 2026-10-07 by §17.4, not a choice.**
+   `aminx-oracles/` pins `requires-python >=3.11,<3.12` and `rc-foundry` pins `>=3.12,<3.13`, so
+   the two cannot share an interpreter — the second env was FORCED. Built, and it cost one
+   `uv sync`, 2.0 GB and about a minute.
+e. **OPEN — Where §6's seam sits for `protonpotts_features`.** Exact on coordinates, or a floor
+   run? This spec proposes a floor run because the upstream path is f32 throughout.
 
 *(An earlier revision closed the labeller/FLAML question here, claiming §4 showed it off the V1
 path. That claim is retracted — it is now decision (a) above, and it is the biggest one.)*
@@ -888,9 +900,65 @@ stops there for an environmental reason, not a dependency one.
 
 ### 18.5 Next, in order
 
-1. Decide §11a (recommendation above). If pre-labelled, find the `precomputed.py` entry point
-   and re-run the context build through it — that is the real V1 smoke test.
+1. ~~Decide §11a (recommendation above).~~ **DECIDED: pre-labelled — see §19.** The follow-on
+   instruction here said "find the `precomputed.py` entry point"; §19.1 shows that was pointed at
+   the wrong module.
 2. If end-to-end is wanted instead, obtain HBPLUS and set `HBPLUS_PATH`; the hardcoded fallback
    should be reported upstream regardless.
 3. Only then P4's oracle dumps. Nothing should be dumped from an env whose featurization path
    has never completed once.
+
+## 19. §11a DECIDED: pre-labelled. What that binds, read off the pipeline rather than assumed
+
+**The user chose pre-labelled on 2026-10-07**, on the §18.3 evidence: HBPLUS is on the default V1
+featurization path and its default resolves to a hardcoded absolute path on the upstream author's
+laptop, so the end-to-end branch does not run anywhere else without a separately-built binary that
+is not on PyPI.
+
+### 19.1 `precomputed.py` is the TRAINING snapshot cache, not an inference entry
+
+§18.5 step 1 told the next session to re-run the context build "through the `precomputed.py` entry
+point". That module is `mpnn/transforms/precomputed.py`, and its own docstring says the opposite of
+what I implied: *"Training / validation are PRECOMPUTED-ONLY … EV6 runs live ONLY in the PKAD /
+MegaScale benchmark callbacks."* It is a `save_snapshot` / `load_snapshot` pair plus a dataset
+`loader`, and it exists because EV6 is a FLAML/tree ensemble whose OpenMP deadlocks inside a forked
+DataLoader worker. It is a training-throughput device. Following that instruction literally would
+have sent the next session into the training path looking for an inference smoke test.
+
+### 19.2 The real lever is a pipeline flag, and it skips exactly the right block
+
+`build_mpnn_transform_pipeline(..., precomputed=True)` at `pipelines/potts_mpnn.py:221`. Its own
+comment states the contract: when true, the cleaned+annotated FULL structure is supplied by the
+loader, so the pipeline *"SKIPS `get_cleanup_transforms` and the whole HBPLUS/annotation block — it
+runs only the chain crop + featurization tail."* `precomputed_dir` is informational there; the
+loader owns the lookup. So pre-labelled is a **supported upstream configuration**, not a bypass we
+invent — which is the strongest form this decision could have taken.
+
+At `is_inference=True` the chain crop is `Identity()` anyway (`:248`), so the inference +
+precomputed combination reduces to the featurization tail alone.
+
+### 19.3 What aminx must therefore supply — a block, not a threshold
+
+§11a's old wording said pre-labelled "means reproducing only the threshold rule". That understates
+it, and the understatement should not survive into P5. The skipped block is four transforms
+(`get_protonation_state_transforms`, `:111-157`):
+
+| Transform | Why it matters to the contract |
+| :-- | :-- |
+| `RemoveHydrogens` | H is stripped FIRST, deliberately: with deposited H the label would be read off the observed answer, and EV6 trained H-stripped |
+| `CalculateHbondsPlus` | the HBPLUS call; cutoffs come from the **vocabulary**, not from free knobs |
+| `AnnotateSaltBridges` | `dist_max=5.5`, `min_dist=0.5`, PLIP criteria |
+| `AnnotateProtonationStates` | the actual labelling; `deterministic=True` at inference |
+
+The input contract is the block's **output on the atom array**, not a scalar rule. One consequence
+is load-bearing and belongs in P5: the docstring records that **v6 consumes this pass's bonds
+directly** via `data["hbond_records"]`, so a pre-labelled structure must carry the bond records
+too, not only the per-residue protonation labels. A snapshot with labels but no `hbond_records`
+would be silently under-specified for exactly the checkpoint we are porting.
+
+### 19.4 What this decision does NOT settle
+
+It does not make V1 runnable yet — it names the configuration under which it becomes runnable. The
+featurization path still has never completed once in this env, so §18.5's rule stands unchanged:
+nothing is dumped for P4 until it does. The open decisions are now §11b (design engine in V1) and
+§11c (public alphabet width).
