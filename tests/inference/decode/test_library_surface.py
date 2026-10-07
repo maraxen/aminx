@@ -156,7 +156,7 @@ def test_negative_control_catches_violation():
     deliberately-bad source and asserting it IS detected as a violation.
     """
     bad_src = (
-        "from aminx.inference.driver import decode_ar\n"
+        "from aminx.inference.encode import make_encode_fn\n"
         "import aminx.host.plan\n"
         "from aminx.model import SomeClass\n"
     )
@@ -169,7 +169,7 @@ def test_negative_control_catches_violation():
     # Verify they match the bad imports
     module_names = {v.module_name for v in violations}
     expected_modules = {
-        "aminx.inference.driver",
+        "aminx.inference.encode",
         "aminx.host.plan",
         "aminx.model",
     }

@@ -33,7 +33,8 @@ import numpy as np
 import pytest
 
 from aminx.host.campaign import plan_campaign_manifest
-from aminx.run.specs import SamplingSpecification, pop_deprecated_spec_kwargs
+from aminx.run.spec_json import migrate_removed_spec_keys
+from aminx.run.specs import SamplingSpecification
 from tests.host.knob_observations import (
   KNOWN_BROKEN_TIER_A,
   KNOWN_BROKEN_TIER_B,
@@ -78,8 +79,7 @@ def _reconstruct(payload: dict[str, Any]) -> SamplingSpecification:
   Deliberately mirrors the real worker rather than using spec_json: the harness must not
   diverge from the path under test, or it stops testing anything real.
   """
-  worker_payload = dict(payload)
-  pop_deprecated_spec_kwargs(worker_payload)
+  worker_payload = migrate_removed_spec_keys(payload)
   return SamplingSpecification(**worker_payload)
 
 
@@ -330,8 +330,7 @@ class TestArrayKnobFidelity:
     """Reconstruct via the REAL worker path, including its coercion step."""
     from aminx.run.spec_json import _coerce_field_value
 
-    payload = dict(_plan_one_row(**spec_kwargs))
-    pop_deprecated_spec_kwargs(payload)
+    payload = migrate_removed_spec_keys(_plan_one_row(**spec_kwargs))
     coerced = {k: _coerce_field_value(SamplingSpecification, k, v) for k, v in payload.items()}
     return SamplingSpecification(**coerced)
 
@@ -389,8 +388,7 @@ class TestArrayKnobFidelity:
     """
     from aminx.run.spec_json import _coerce_field_value
 
-    payload = dict(_plan_one_row())
-    pop_deprecated_spec_kwargs(payload)
+    payload = migrate_removed_spec_keys(_plan_one_row())
     payload["not_a_real_field"] = 123
     coerced = {k: _coerce_field_value(SamplingSpecification, k, v) for k, v in payload.items()}
 

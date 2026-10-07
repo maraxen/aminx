@@ -29,6 +29,7 @@ class TrainingSpecification(RunSpecification):
       # Optimization
       learning_rate: Peak learning rate (default: 1e-4)
       weight_decay: L2 regularization coefficient (default: 0.01)
+      weight_decay_mask: ``no_bias`` skips decay on 1-D parameters; ``all`` decays every inexact parameter
       warmup_steps: Number of warmup steps for learning rate schedule
       total_steps: Total number of training steps
       gradient_clip: Max gradient norm for clipping (default: 1.0)
@@ -84,6 +85,12 @@ class TrainingSpecification(RunSpecification):
   # Optimizer hyperparameters
   learning_rate: float = 1e-4
   weight_decay: float = 0.01
+  weight_decay_mask: Literal["no_bias", "all"] = "no_bias"
+  """AdamW decay mask shared by the warmup and no-warmup optimizer paths.
+
+  ``no_bias`` skips 1-D parameters (biases and scales). ``all`` decays every
+  inexact parameter.
+  """
   warmup_steps: int = 1000
   total_steps: int | None = None
   gradient_clip: float | None = None
@@ -151,6 +158,13 @@ class TrainingSpecification(RunSpecification):
     # Validate precision
     if self.precision not in ("fp32", "fp16", "bf16"):
       msg = f"precision must be one of ['fp32', 'fp16', 'bf16'], got {self.precision}"
+      raise ValueError(msg)
+
+    if self.weight_decay_mask not in ("no_bias", "all"):
+      msg = (
+        "weight_decay_mask must be one of ['no_bias', 'all'], "
+        f"got {self.weight_decay_mask}"
+      )
       raise ValueError(msg)
 
     if self.accum_steps < 1:

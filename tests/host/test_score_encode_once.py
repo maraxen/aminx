@@ -121,7 +121,7 @@ def _reference_per_candidate_core(
     padded.append(jnp.concatenate([idx, jnp.full((struct_len - idx.shape[0],), 20, dtype=idx.dtype)]))
   sequences = jnp.stack(padded)
   # The runner's key tree: one sequential split per (structure, candidate), structure outer.
-  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed or 42)
+  prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed)
   keys = []
   for _ in _CANDIDATES:
     prng_key, subkey = jax.random.split(prng_key)

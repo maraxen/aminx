@@ -1,10 +1,9 @@
-"""Coverage tests for uncovered inference/driver/logits branches.
+"""Coverage tests for uncovered inference logits and bundle-builder branches.
 
 This test module focuses on:
   1. Uncovered logit strategies (geometric_mean, product)
-  2. Unconditional and conditional scoring paths in driver.py
-  3. Edge cases with bias and different state weights
-  4. Bundle builder with non-default strategies
+  2. Edge cases with bias and different state weights
+  3. Bundle builder with non-default strategies
 """
 
 from __future__ import annotations
@@ -22,18 +21,9 @@ from aminx.inference.logits import (
     ARLogitFuse,
     make_stage_set,
 )
-from aminx.inference.driver import (
-    decode,
-    infer_topology,
-    TOPOLOGY_AR,
-    TOPOLOGY_CONDITIONAL_SCORE,
-    TOPOLOGY_UNCONDITIONAL,
-)
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.types.stages import (
     StageSet,
-    ConditionalDecodeStep,
-    UnconditionalDecodeStep,
 )
 from aminx.types.encodings import EncoderOutput
 from aminx.model import Aminx
@@ -402,44 +392,7 @@ class TestArithmeticMeanLogitsWithBias:
 
 
 # ---------------------------------------------------------------------------
-# 4. Unconditional Scoring Path (Uncovered)
-# ---------------------------------------------------------------------------
-
-
-class TestUnconditionalDecodePath:
-    """Test unconditional scoring path via driver._decode_unconditional."""
-
-    def test_unconditional_topology_detection(self):
-        """infer_topology detects TOPOLOGY_UNCONDITIONAL when UnconditionalDecodeStep set."""
-        class DummyDecoder(eqx.Module):
-            pass
-
-        stage_set = StageSet(
-            decode_step=UnconditionalDecodeStep(decoder=DummyDecoder())
-        )
-        topology = infer_topology(stage_set)
-        assert topology == TOPOLOGY_UNCONDITIONAL
-
-
-
-# ---------------------------------------------------------------------------
-# 5. Conditional Scoring Path (Uncovered)
-# ---------------------------------------------------------------------------
-
-
-class TestConditionalDecodePath:
-    """Test conditional scoring path via driver._decode_conditional."""
-
-    def test_conditional_topology_default(self):
-        """infer_topology returns TOPOLOGY_CONDITIONAL_SCORE by default."""
-        stage_set = StageSet()  # No decode_step, no sample_step
-        topology = infer_topology(stage_set)
-        assert topology == TOPOLOGY_CONDITIONAL_SCORE
-
-
-
-# ---------------------------------------------------------------------------
-# 6. Bundle Builder with Different Strategies
+# 4. Bundle Builder with Different Strategies
 # ---------------------------------------------------------------------------
 
 

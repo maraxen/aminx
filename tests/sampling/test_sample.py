@@ -2,6 +2,7 @@
 """Tests for aminx.sampling.sample."""
 
 import chex
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import pytest
@@ -279,7 +280,7 @@ def test_sample_convenience_function_jit(
         k_neighbors=48,
         key=rng_key,
     )
-    sample_fn = jax.jit(sample, static_argnames=["model"])
+    sample_fn = eqx.filter_jit(sample)
     seq, logits, order = sample_fn(
         rng_key,
         model,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -15,7 +16,7 @@ import optax
 import orbax.checkpoint as ocp
 import tqdm
 from proxide.ops.dataset import create_protein_dataset
-from xtrax.training.optim import adamw_with_schedule, make_optimizer
+from xtrax.training.optim import adamw_with_schedule, make_optimizer, no_bias_wd_mask
 from xtrax.training.types import ResumableState
 
 from aminx.io.weights import load_model
@@ -77,6 +78,22 @@ def get_compute_dtype(precision: str) -> jnp.dtype:
   return jnp.float32
 
 
+def _decay_all_wd_mask(params: ArrayTree) -> ArrayTree:
+  """Decay every inexact parameter. Non-inexact leaves are left alone."""
+  return jax.tree.map(eqx.is_inexact_array, params)
+
+
+def _weight_decay_mask(spec: TrainingSpecification) -> Callable[[ArrayTree], ArrayTree]:
+  """Resolve ``spec.weight_decay_mask`` once for both optimizer paths."""
+  if spec.weight_decay_mask == "no_bias":
+    return no_bias_wd_mask
+  return _decay_all_wd_mask
+
+
+def _optimizer_total_steps(spec: TrainingSpecification) -> int:
+  return spec.total_steps or (spec.num_epochs * 1000)
+
+
 def create_optimizer(
   spec: TrainingSpecification,
 ) -> optax.GradientTransformation:
@@ -90,7 +107,8 @@ def create_optimizer(
       AdamW, and optional gradient clipping.
 
   """
-  total_steps = spec.total_steps or (spec.num_epochs * 1000)
+  total_steps = _optimizer_total_steps(spec)
+  wd_mask = _weight_decay_mask(spec)
 
   if spec.warmup_steps > 0:
     optimizer = adamw_with_schedule(
@@ -99,18 +117,38 @@ def create_optimizer(
       total_steps=total_steps,
       weight_decay=spec.weight_decay,
       clip_norm=spec.gradient_clip,
+      wd_mask=wd_mask,
     )
   else:
-    # No warmup: use constant schedule with adamw
+    # No warmup: constant learning rate. Same decay mask as the warmup path.
     optimizer = make_optimizer(
       optax.adamw(
         learning_rate=spec.learning_rate,
         weight_decay=spec.weight_decay,
+        mask=wd_mask,
       ),
       clip_norm=spec.gradient_clip,
     )
 
   return optimizer
+
+
+def _learning_rate_schedule(spec: TrainingSpecification) -> Callable[[int], jax.Array]:
+  """Learning-rate value reported in training metrics.
+
+  The warmup path matches ``xtrax.training.optim.adamw_with_schedule``: cosine
+  warmup from 0 to ``learning_rate`` and back to 0 over ``total_steps``. With
+  ``warmup_steps == 0`` the optimizer is constant ``spec.learning_rate``.
+  """
+  if spec.warmup_steps > 0:
+    return optax.warmup_cosine_decay_schedule(
+      init_value=0.0,
+      peak_value=spec.learning_rate,
+      warmup_steps=spec.warmup_steps,
+      decay_steps=_optimizer_total_steps(spec),
+      end_value=0.0,
+    )
+  return optax.constant_schedule(spec.learning_rate)
 
 
 @dataclass
@@ -127,6 +165,50 @@ class TrainingResult:
   final_model: Aminx
   final_step: int
   checkpoint_dir: str | Path
+
+
+def _assemble_resumable_state(
+  *,
+  model: eqx.Module,
+  opt_state: ArrayTree | None,
+  random_seed: int,
+  restored: ResumableState | None,
+) -> ResumableState:
+  """Build the state a run starts from.
+
+  Fresh runs use ``PRNGKey(random_seed)``, step 0, and ``extras["epoch"] == 0``.
+  Resume keeps the checkpoint step, PRNG key, and extras (including epoch).
+  ``model`` and ``opt_state`` are the caller's (possibly cast) copies so the
+  restored key is not paired with a pre-cast template.
+  """
+  if restored is None:
+    return ResumableState(
+      step=jnp.int32(0),
+      key=jax.random.PRNGKey(random_seed),
+      model=model,
+      opt_state=opt_state,
+      extras={"epoch": jnp.int32(0)},
+    )
+  return ResumableState(
+    step=restored.step,
+    key=restored.key,
+    model=model,
+    opt_state=opt_state,
+    extras=restored.extras,
+  )
+
+
+def _with_epoch(state: ResumableState, epoch: int) -> ResumableState:
+  """Return ``state`` with ``extras["epoch"]`` set to the epoch being trained."""
+  extras = dict(state.extras)
+  extras["epoch"] = jnp.int32(epoch)
+  return ResumableState(
+    step=state.step,
+    key=state.key,
+    model=state.model,
+    opt_state=state.opt_state,
+    extras=extras,
+  )
 
 
 def _init_checkpoint_and_model(
@@ -155,6 +237,7 @@ def _init_checkpoint_and_model(
 
   opt_state: ArrayTree | None = None
   compute_dtype = get_compute_dtype(_training_precision(spec))
+  restored_state: ResumableState | None = None
 
   if spec.resume_from_checkpoint:
     model_template = load_model(
@@ -171,19 +254,20 @@ def _init_checkpoint_and_model(
       eqx.filter(model_template, eqx.is_inexact_array),
     )
 
-    # Build a ResumableState template so orbax knows the expected PyTree shapes
+    # Template must match what ``_assemble_resumable_state`` / ``_with_epoch`` save:
+    # extras carries an int32 epoch leaf. Checkpoints written with extras={} (before
+    # that leaf existed) do not restore.
     state_template = ResumableState(
       step=jnp.int32(0),
       key=jax.random.PRNGKey(0),
       model=model_template,
       opt_state=abstract_opt_state,
-      extras={},
+      extras={"epoch": jnp.int32(0)},
     )
     restored_state = load_checkpoint(checkpoint_manager, state_template, step=None)
-    start_step = int(restored_state.step)
     model = restored_state.model
     opt_state = restored_state.opt_state
-    logger.info("Resumed from checkpoint at step %d", start_step)
+    logger.info("Resumed from checkpoint at step %d", int(restored_state.step))
   else:
     model = load_model(
       spec.model_version,  # type: ignore[invalid-argument-type]
@@ -191,7 +275,6 @@ def _init_checkpoint_and_model(
       use_electrostatics=spec.use_electrostatics,
       use_vdw=spec.use_vdw,
     )
-    start_step = 0
     optimizer_obj = create_optimizer(spec)
     opt_state = optimizer_obj.init(eqx.filter(model, eqx.is_inexact_array))  # type: ignore[invalid-assignment]
 
@@ -205,14 +288,11 @@ def _init_checkpoint_and_model(
     model = jax.tree_util.tree_map(_cast_fn, model)
     opt_state = jax.tree_util.tree_map(_cast_fn, opt_state)
 
-  # Create ResumableState
-  prng_key = jax.random.PRNGKey(spec.random_seed)
-  resumable_state = ResumableState(
-    step=jnp.int32(start_step),
-    key=prng_key,
+  resumable_state = _assemble_resumable_state(
     model=model,
     opt_state=opt_state,
-    extras={},
+    random_seed=spec.random_seed,
+    restored=restored_state,
   )
 
   return resumable_state, checkpoint_manager, permanent_manager
@@ -291,6 +371,60 @@ def setup_mixed_precision(precision: str) -> None:
     logger.info("Using FP32 (full precision)")
 
 
+def _accumulate_value_and_grad(
+  model: eqx.Module,
+  micro_loss_fn: Callable[[eqx.Module, ArrayTree], tuple[jax.Array, jax.Array]],
+  micro_batches: ArrayTree,
+  *,
+  batch_size: int,
+  accum_steps: int,
+) -> tuple[jax.Array, jax.Array, ArrayTree]:
+  """Average a loss and its gradients over ``accum_steps`` micro-batches.
+
+  The scan carry is ``(loss_sum, grads_sum)`` with ``grads_sum`` zeros of the
+  filtered inexact parameters. Per-micro-batch logits are scan outputs, stacked
+  and reshaped to the full batch. The returned loss and gradients are the sums
+  divided by ``accum_steps``, which matches one step on the full batch when
+  every micro-batch has the same size.
+
+  ``accum_steps == 1`` is not this helper's job; callers keep that path as a
+  single ``filter_value_and_grad``.
+  """
+  if batch_size % accum_steps != 0:
+    msg = f"batch_size ({batch_size}) must be divisible by accum_steps ({accum_steps})"
+    raise ValueError(msg)
+
+  params = eqx.filter(model, eqx.is_inexact_array)
+  grads_sum = jax.tree.map(jnp.zeros_like, params)
+  loss_sum = jnp.zeros(())
+
+  def _body(
+    carry: tuple[jax.Array, ArrayTree],
+    micro: ArrayTree,
+  ) -> tuple[tuple[jax.Array, ArrayTree], jax.Array]:
+    running_loss, running_grads = carry
+
+    def _loss_for_grad(m: eqx.Module) -> tuple[jax.Array, jax.Array]:
+      return micro_loss_fn(m, micro)
+
+    (loss, logits), grads = eqx.filter_value_and_grad(_loss_for_grad, has_aux=True)(model)
+    running_grads = jax.tree.map(lambda a, b: a + b, running_grads, grads)
+    return (running_loss + loss, running_grads), logits
+
+  (loss_sum, grads_sum), logits_stacked = jax.lax.scan(
+    _body,
+    (loss_sum, grads_sum),
+    micro_batches,
+  )
+  loss = loss_sum / accum_steps
+  grads = jax.tree.map(lambda g: g / accum_steps, grads_sum)
+  logits = jnp.reshape(
+    logits_stacked,
+    (logits_stacked.shape[0] * logits_stacked.shape[1], *logits_stacked.shape[2:]),
+  )
+  return loss, logits, grads
+
+
 def train_step(  # noqa: PLR0915
   model: Aminx,
   opt_state: optax.OptState,
@@ -310,9 +444,10 @@ def train_step(  # noqa: PLR0915
   training_mode: str = "autoregressive",
   noise_schedule: NoiseSchedule | None = None,
   accum_steps: int = 1,
-  compute_dtype: jnp.dtype = jnp.float32,
+  compute_dtype: jnp.dtype = jnp.float32,  # noqa: ARG001
   rbf_features: jax.Array | None = None,
   neighbor_indices: jax.Array | None = None,
+  lr_schedule: Callable[[int], jax.Array] | None = None,
 ) -> tuple[Aminx, optax.OptState, TrainingMetrics]:
   """Single training step.
 
@@ -342,6 +477,9 @@ def train_step(  # noqa: PLR0915
           When provided, RBF computation is skipped in the feature module.
       neighbor_indices: Optional precomputed neighbor indices from proxide (N, K).
           Must be provided if rbf_features is provided.
+      lr_schedule: Maps the training step to the optimizer learning rate. When
+          omitted, the learning-rate metric is left unset rather than filled with
+          a placeholder.
 
   Returns:
       Tuple of (updated_model, updated_opt_state, metrics)
@@ -460,8 +598,11 @@ def train_step(  # noqa: PLR0915
 
     return loss, logits_batch
 
-  # Gradient accumulation support
+  # Gradient accumulation support. accum_steps == 1 stays a single value_and_grad.
   if accum_steps > 1:
+    if batch_size % accum_steps != 0:
+      msg = f"batch_size ({batch_size}) must be divisible by accum_steps ({accum_steps})"
+      raise ValueError(msg)
     # Reshape features to [accum_steps, batch_size // accum_steps, ...]
     micro_batch_size = batch_size // accum_steps
 
@@ -484,8 +625,8 @@ def train_step(  # noqa: PLR0915
     # Split PRNG key for each micro-batch
     accum_keys = jax.random.split(prng_key, accum_steps)
 
-    def accum_grad_step(
-      carry: tuple[jax.Array, Logits],
+    def micro_loss_fn(
+      m_model: Aminx,
       inputs: tuple[
         jax.Array,
         jax.Array,
@@ -497,35 +638,26 @@ def train_step(  # noqa: PLR0915
         jax.Array | None,
         jax.Array | None,
       ],
-    ) -> tuple[tuple[jax.Array, Logits], Any]:
-      (accum_loss, accum_logits) = carry
+    ) -> tuple[jax.Array, Logits]:
       (c, m, ri, ci, s, k, p, rbf, nb) = inputs
+      micro_keys = jax.random.split(k, micro_batch_size)
+      micro_logits = jax.vmap(partial(single_forward, m_model))(
+        c,
+        m,
+        ri,
+        ci,
+        s,
+        micro_keys,
+        p,
+        rbf,
+        nb,
+      )
+      micro_loss_val = jnp.mean(jax.vmap(batch_loss)(micro_logits, s, m))
+      return micro_loss_val, micro_logits
 
-      # We need a different loss_fn that takes specific micro-batch inputs
-      def micro_loss_fn(m_model: Aminx) -> tuple[jax.Array, Logits]:
-        micro_keys = jax.random.split(k, micro_batch_size)
-        micro_logits = jax.vmap(partial(single_forward, m_model))(
-          c,
-          m,
-          ri,
-          ci,
-          s,
-          micro_keys,
-          p,
-          rbf,
-          nb,
-        )
-        micro_loss_val = jnp.mean(jax.vmap(batch_loss)(micro_logits, s, m))
-        return micro_loss_val, micro_logits
-
-      (loss_val, logit), g = eqx.filter_value_and_grad(micro_loss_fn, has_aux=True)(model)
-      return (accum_loss + loss_val / accum_steps, jnp.concatenate([accum_logits, logit])), g
-
-    # Initialize carry
-    init_logits = jnp.zeros((0, sequence.shape[1], 21), dtype=compute_dtype)
-    (loss, logits_batch), grads_list = jax.lax.scan(
-      accum_grad_step,
-      (jnp.array(0.0), init_logits),
+    loss, logits_batch, grads = _accumulate_value_and_grad(
+      model,
+      micro_loss_fn,
       (
         coords_reshaped,
         mask_reshaped,
@@ -537,9 +669,9 @@ def train_step(  # noqa: PLR0915
         rbf_reshaped,
         neighbor_reshaped,
       ),
+      batch_size=batch_size,
+      accum_steps=accum_steps,
     )
-    # Sum gradients
-    grads = jax.tree_util.tree_map(lambda *x: jnp.sum(jnp.stack(x)), *grads_list)
   else:
     (loss, logits_batch), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(model)
 
@@ -552,9 +684,9 @@ def train_step(  # noqa: PLR0915
   accuracy = jnp.mean(accuracies)
   ppl = jnp.mean(perplexities)
   grad_norm = compute_grad_norm(grads)
-  # Note: learning rate is now embedded in the optimizer's schedule from xtrax.training.optim
-  # We log a placeholder value; the actual LR is internal to optax
-  current_lr = jnp.array(0.0)
+  # Same schedule the optimizer applies (constant, or xtrax warmup-cosine). Absent
+  # schedule: omit the metric. Do not log a stand-in value.
+  current_lr = None if lr_schedule is None else lr_schedule(current_step)
 
   params = eqx.filter(model, eqx.is_inexact_array)
   updates, new_opt_state = optimizer.update(grads, opt_state, params)
@@ -564,7 +696,7 @@ def train_step(  # noqa: PLR0915
     loss=loss,
     accuracy=accuracy,
     perplexity=ppl,
-    learning_rate=current_lr,  # type: ignore[invalid-argument-type]
+    learning_rate=current_lr,
     grad_norm=grad_norm,
   )
 
@@ -734,6 +866,7 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
   logger.info("Starting training with spec: %s", spec)
 
   optimizer = create_optimizer(spec)
+  lr_schedule = _learning_rate_schedule(spec)
 
   resumable_state, checkpoint_manager, permanent_manager = _init_checkpoint_and_model(
     spec,
@@ -757,7 +890,16 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
 
   logger.info("Starting training loop...")
 
-  for epoch in range(spec.num_epochs):
+  # Epoch is persisted in extras["epoch"] instead of being derived from step.
+  # The loader has no fixed steps-per-epoch (length can vary between epochs), so
+  # step // steps_per_epoch would not land on the same epoch the loop was in.
+  # The stored value is the epoch in progress; resume repeats that epoch from the
+  # start of the loader and continues the step and PRNG key.
+  start_epoch = int(jax.device_get(resumable_state.extras["epoch"]))
+  early_stop = False
+
+  for epoch in range(start_epoch, spec.num_epochs):
+    resumable_state = _with_epoch(resumable_state, epoch)
     logger.info("Epoch %d/%d", epoch + 1, spec.num_epochs)
     pbar = tqdm.tqdm(train_loader, desc=f"Epoch {epoch + 1}/{spec.num_epochs}")
 
@@ -766,7 +908,7 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
     filter_jitted_train_step = eqx.filter_jit(train_step)
     filter_jitted_eval_step = eqx.filter_jit(eval_step)
 
-    for batch in train_loader:
+    for batch in pbar:
       prng_key, subkey = jax.random.split(prng_key)
 
       if isinstance(spec.backbone_noise, (float, int)):
@@ -794,6 +936,7 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
         noise_schedule,
         spec.accum_steps,
         compute_dtype,
+        lr_schedule=lr_schedule,
       )
 
       # Update resumable state
@@ -852,6 +995,7 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
 
           if patience_counter >= spec.early_stopping_patience:
             logger.info("Early stopping triggered at step %d", step)
+            early_stop = True
             break
 
       if step % spec.checkpoint_every == 0:
@@ -861,6 +1005,15 @@ def train(spec: TrainingSpecification) -> TrainingResult:  # noqa: PLR0915
       if spec.save_at_epochs and (epoch + 1) in spec.save_at_epochs:
         logger.info("Saving persistent checkpoint for epoch %d", epoch + 1)
         save_checkpoint(permanent_manager, resumable_state)
+
+    pbar.close()
+    if early_stop:
+      break
+
+  # The in-loop save only runs when step % checkpoint_every == 0. Always persist
+  # the final state, including after early stop. Skip when that step was just written.
+  if checkpoint_manager.latest_step() != step:
+    save_checkpoint(checkpoint_manager, resumable_state)
 
   logger.info("Training complete!")
 

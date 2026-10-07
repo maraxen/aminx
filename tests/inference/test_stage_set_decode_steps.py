@@ -112,42 +112,7 @@ def test_sample_autoregressive_kernel_signature_accepts_stage_set():
 
 
 # ---------------------------------------------------------------------------
-# 6. Unconditional decode path and topology inference
-# ---------------------------------------------------------------------------
-
-def test_infer_topology_unconditional():
-    """infer_topology with UnconditionalDecodeStep returns TOPOLOGY_UNCONDITIONAL."""
-    import equinox as eqx
-    from aminx.types.stages import UnconditionalDecodeStep, StageSet
-    from aminx.inference.driver import infer_topology, TOPOLOGY_UNCONDITIONAL
-
-    class DummyDecoder(eqx.Module):
-        pass
-
-    stage_set = StageSet(decode_step=UnconditionalDecodeStep(decoder=DummyDecoder()))
-    assert infer_topology(stage_set) == TOPOLOGY_UNCONDITIONAL
-
-
-def test_infer_topology_conditional():
-    """infer_topology with ConditionalDecodeStep returns TOPOLOGY_CONDITIONAL_SCORE."""
-    import equinox as eqx
-    from aminx.types.stages import ConditionalDecodeStep, StageSet
-    from aminx.inference.driver import infer_topology, TOPOLOGY_CONDITIONAL_SCORE
-
-    class DummyDecoder(eqx.Module):
-        pass
-
-    class DummyEmbed(eqx.Module):
-        pass
-
-    stage_set = StageSet(
-        decode_step=ConditionalDecodeStep(decoder=DummyDecoder(), w_s_embed=DummyEmbed())
-    )
-    assert infer_topology(stage_set) == TOPOLOGY_CONDITIONAL_SCORE
-
-
-# ---------------------------------------------------------------------------
-# 7. DecodeStep __call__ delegation tests
+# 6. DecodeStep __call__ delegation tests
 # ---------------------------------------------------------------------------
 
 def test_unconditional_decode_step_call_delegates_to_decoder():
