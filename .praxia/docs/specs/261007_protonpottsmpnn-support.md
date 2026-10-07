@@ -494,3 +494,73 @@ Three things were tracked in neither and are now filed:
 | backlog **#5781** | this spec — ProtonPottsMPNN V1, P1–P10 |
 | backlog **#5782** | the three unmeasured Potts distributional cells, and the decision they wait on |
 
+
+## 14. P6's evidence: the encoder is reusable, and there is exactly one trap
+
+Comparison run 2026-10-07 against the vendored upstream. Every claim reproduced below was
+re-read from the source by hand before being written here; claims I could not reproduce are
+marked as such rather than carried over.
+
+### The verdict
+
+**aminx's `encoder.py` and `decoder.py` need no change.** The message-passing layers are
+operation-for-operation the same. P6 is therefore a weight conversion plus three changes
+*outside* the encoder — and one input permutation that must not be forgotten.
+
+Independent corroboration of the structure: 3 enc × 22 + 3 dec × 14 + `W_e`(2) + `W_s`(1) +
+`W_out`(2) + `etab_out`(2) + featurizer(5) = **exactly 120**, matching the measured tensor
+count in §1a. Two counts derived from different directions agreeing is worth more than either.
+
+### Verified identical
+
+| step | evidence |
+| :-- | :-- |
+| neighbour aggregation | upstream `dh = torch.sum(h_message, -2) / self.scale` with `scale=30` (`message_passing.py:107,172,316`); aminx `jnp.sum(message, -2) / scale` with `scale: float = 30.0` (`encoder.py:170,225`). **Sum, not mean** — a mean would have been a silent divergence. |
+| residual / norm | both post-norm: dropout → add → norm |
+| message MLP | `W3(act(W2(act(W1))))`, exact (non-approximate) GELU on both |
+| dense block | 128 → 512 → 128 |
+| LayerNorm eps | 1e-5 both |
+
+### ⚠ The one that would silently destroy parity: RBF atom-pair order
+
+**Verified directly, and it is real.** Upstream builds the 25 atom-pair blocks as a full outer
+product — `X[:, :, None, :, None, :] - X_g[:, :, :, None, :, :]` then `.view(B, L, K, -1)`
+(`graph_embeddings.py:450-480`) — so the flat slot is `5*i + j`, self-atom major. aminx uses an
+explicit hand-ordered list, `BACKBONE_PAIRS` starting `[1, 1]` (Ca–Ca), then `[0,0]`, `[2,2]`…
+(`utils/radial_basis.py:32-60`).
+
+Both are 400 wide. **There is no shape error — only wrong numbers.** The fix is a permutation of
+`edge_embedding.weight`'s input columns in 16-wide blocks, mapping aminx slot *s* with pair
+`(p0, p1)` to upstream column block `5*p0 + p1`.
+
+Also verified and not currently reproduced in aminx: upstream zeroes the RBF block by the atom
+mask when any atom is absent (`RBF_all * X_m[...] * X_m_gathered[...]`, `graph_embeddings.py`).
+
+### An open question about the decoder mask, stated precisely rather than called a bug
+
+Upstream applies `mask_E` to the decoder **message**, after the MLP. aminx's decoder layer
+*has* an `attention_mask` parameter and applies it (`decoder.py:287,334`) — but **both call
+sites pass no such argument** (`decoder.py:648-653, 733-738`), so it is always `None`. The
+conditional site carries the comment *"masking already applied to layer_edge_features"*, i.e.
+aminx masks the edge features **before** the MLP instead.
+
+Those placements are not equivalent in general: an MLP with biases maps a zeroed input to a
+nonzero output, so a masked neighbour can still contribute. Whether it matters here depends on
+the surrounding construction and only bites when padding is present. **UNRESOLVED** — resolve it
+in P6 with a padded-input differential, not by reasoning.
+
+### Changes needed outside the encoder
+
+- `vocab_size` / `num_amino_acids` = **30** (not the default).
+- `num_positional_embeddings` = **32**. It is the max *relative* feature, not an output width;
+  `io/weights.py` already passes 32 for ProteinMPNN topologies, and the wrong value is a loud
+  shape error rather than a silent one.
+- A new 30×30 Potts head: aminx's `PottsHead` is hard-coded `N_AA = 20` → 400
+  (`potts_head.py:26-27`) against the measured `etab_out` 900.
+
+### Not checked, and named so nobody assumes otherwise
+
+Causal/anti-causal mask equivalence beyond structure, the AR sampling path, symmetry groups,
+noise injection, ligand and packer paths, `construct_X_atoms` token-indexing edge cases, and the
+`_mlp`-headed (`etab_hidden`) variants. The C-beta construction was reported as algebraically
+identical through a double sign flip; that is plausible but was **not** re-derived here.
