@@ -33,7 +33,7 @@ Details are in the docs page "Using aminx from an agent" (`docs/source/tutorials
 | `aminx` CLI | A shell command or a file-driven, reproducible run. |
 | Python API | Composing JAX code. Start with `aminx.parse_structure`, `aminx.load_model`, `aminx.sample`, and `aminx.score`. |
 
-Run time grows with the padded length. Unless `options` sets `max_length`, MCP tools fit it to the parsed structures (the next bucket on xtrax's ladder: 64, 128, 256, 512) and record it in the returned `spec`. The first call for a checkpoint and padded shape compiles JAX; later calls in the same server reuse it.
+Run time grows with the length a batch runs at. `sample` and `score` batches are trimmed by the runner to the next bucket on xtrax's ladder (64, 128, 256, 512), so `max_length` only caps them. Where the runner does not trim (`inspect`, `jacobian`, `pass_mode` inter, averaged or multi-state scoring, `length_bucketing` false), MCP tools fit `max_length` to the parsed structures on the same ladder unless `options` sets it, and record it in the returned `spec`. The first call for a checkpoint and shape compiles JAX; later calls in the same server reuse it.
 
 ## MCP tools
 

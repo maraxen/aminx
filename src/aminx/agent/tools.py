@@ -125,6 +125,42 @@ def max_length_ladder() -> tuple[int, ...]:
   return tuple(BUCKET_LADDER)
 
 
+def runner_buckets(kind: str, spec: Any) -> bool:  # noqa: ANN401 -- any RunSpecification subclass
+  """Whether the runner trims this call's batches to an xtrax bucket itself (spec S8).
+
+  ``runner.sample`` and plain ``runner.score`` trim each batch to the smallest
+  ``BUCKET_LADDER`` rung that holds it, so the agent leaves ``max_length`` alone
+  for them and the returned spec is the caller's. The runner does not trim
+  ``inspect``, ``jacobian``, ``pass_mode="inter"``, the averaged-feature or fused
+  multi-state score paths, or any call with ``length_bucketing=False``; for those
+  :func:`fitted_max_length` still sizes the padding.
+
+  Parameters
+  ----------
+  kind : str
+    Tool kind: ``"sample"``, ``"score"``, ``"inspect"`` or ``"jacobian"``.
+  spec : RunSpecification
+    Specification built from the caller's options.
+
+  Returns
+  -------
+  bool
+    True when the runner buckets the call and the agent should not fit.
+  """
+  if kind not in {"sample", "score"}:
+    return False
+  if not getattr(spec, "length_bucketing", False) or getattr(spec, "max_length", None) is None:
+    return False
+  if getattr(spec, "pass_mode", "intra") == "inter":
+    return False
+  if kind == "score":
+    return (
+      not getattr(spec, "average_node_features", False)
+      and getattr(spec, "state_position_map", None) is None
+    )
+  return True
+
+
 def fitted_max_length(
   spec: Any,  # noqa: ANN401 -- any RunSpecification subclass
   lengths: Mapping[str, int],
@@ -221,7 +257,11 @@ async def _run(
     with _RUN_LOCK:
       nonlocal spec
       lengths = structure_lengths(spec)
-      fitted = fitted_max_length(spec, lengths, explicit="max_length" in merged)
+      fitted = (
+        None
+        if runner_buckets(kind, spec)
+        else fitted_max_length(spec, lengths, explicit="max_length" in merged)
+      )
       if fitted is not None:
         spec = build_spec(kind, inputs, {**merged, "max_length": fitted})
       results = _RUNNERS[kind](spec=spec)
@@ -252,7 +292,7 @@ async def sample(
   output_dir: str | None = None,
   inline_cap: int = DEFAULT_INLINE_CAP,
 ) -> dict[str, Any]:
-  """Design amino-acid sequences for protein backbones. Inputs are local structure file paths. Run time grows with the padded length: unless options sets max_length, it is fitted to the parsed structures (the next bucket on xtrax's ladder: 64, 128, 256, 512) and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
+  """Design amino-acid sequences for protein backbones. Inputs are local structure file paths. Run time grows with the length each batch runs at: the runner trims every batch to the next bucket on xtrax's ladder (64, 128, 256, 512) that holds its structures, so max_length only caps the size. With pass_mode inter or length_bucketing false the runner does not trim, and unless options sets max_length it is fitted to the parsed structures on the same ladder and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
 
   Parameters
   ----------
@@ -302,7 +342,7 @@ async def score(
   output_dir: str | None = None,
   inline_cap: int = DEFAULT_INLINE_CAP,
 ) -> dict[str, Any]:
-  """Score amino-acid sequences against protein backbones. Inputs are local structure file paths. Run time grows with the padded length: unless options sets max_length, it is fitted to the parsed structures (the next bucket on xtrax's ladder: 64, 128, 256, 512) and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
+  """Score amino-acid sequences against protein backbones. Inputs are local structure file paths. Run time grows with the length each batch runs at: the runner trims every batch to the next bucket on xtrax's ladder (64, 128, 256, 512) that holds its structures and sequences, so max_length only caps the size. With pass_mode inter, average_node_features, state_position_map, or length_bucketing false the runner does not trim, and unless options sets max_length it is fitted to the parsed structures on the same ladder and recorded in the returned spec. The first call per checkpoint and shape also compiles JAX. Large arrays come back as a side-file path.
 
   Parameters
   ----------
