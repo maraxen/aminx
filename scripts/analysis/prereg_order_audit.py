@@ -65,7 +65,8 @@ def earliest_runs(bth: str, project: str) -> list[dict[str, Any]]:
   """(sidecar_path, earliest run, that run's git_hash) straight from the catalog."""
   sql = (
     "SELECT sidecar_path, min(timestamp) AS first_run, "
-    "arg_min(git_hash, timestamp) AS first_git, count(*) AS n FROM runs "
+    "arg_min(git_hash, timestamp) AS first_git, "
+    "arg_min(outcome, timestamp) AS first_outcome, count(*) AS n FROM runs "
     "WHERE sidecar_path IS NOT NULL AND git_hash IS NOT NULL "
     f"AND project_slug = '{project}' GROUP BY sidecar_path ORDER BY first_run"
   )
@@ -77,7 +78,8 @@ def earliest_runs(bth: str, project: str) -> list[dict[str, Any]]:
   except json.JSONDecodeError:
     return []
   return [
-    {"sidecar_path": r[0], "first_run": r[1], "first_git": r[2], "n": r[3]}
+    {"sidecar_path": r[0], "first_run": r[1], "first_git": r[2],
+     "first_outcome": r[3], "n": r[4]}
     for r in payload.get("rows", [])
     if r and r[0]
   ]
@@ -315,6 +317,7 @@ def main() -> int:
   for rel, row in sorted(earliest.items()):
     kind, detail = classify(args.repo, rel, str(row["first_run"]), str(row["first_git"]))
     detail["runs"] = row["n"]
+    detail["first_outcome"] = row.get("first_outcome")
     buckets[kind].append(detail)
 
   audited = sum(len(v) for v in buckets.values())
@@ -330,6 +333,16 @@ def main() -> int:
     "n_clean": len(buckets["clean"]),
     "n_violations": len(buckets["violation"]),
     "n_unverifiable": len(buckets["unverifiable"]),
+    # A late commit whose FIRST run did not grade a pass cannot have had its
+    # criteria chosen to flatter that run: nobody writes conditions post-hoc
+    # that fail, error, or fail to grade at all. So this subset, not
+    # n_violations, is the set where the post-hoc concern is actually live.
+    # Reported, never graded -- the verdict keys on n_violations as
+    # pre-registered, and narrowing a criterion after seeing results is the
+    # exact move this audit exists to detect.
+    "n_violations_whose_first_run_passed": sum(
+      1 for d in buckets["violation"] if str(d.get("first_outcome") or "") == "pass"
+    ),
     "violations": sorted(buckets["violation"], key=lambda d: -d.get("hours_late", 0)),
     "unverifiable": sorted(buckets["unverifiable"], key=lambda d: d["sidecar"]),
     "min_lead_hours": min((d["lead_hours"] for d in buckets["clean"]), default=None),
