@@ -2132,7 +2132,9 @@ app.add_typer(potts_app, name="potts")
 
 def main() -> None:
   """Console script entrypoint."""
-  app()
+  from aminx.agent.telemetry import run_cli  # noqa: PLC0415
+
+  run_cli(app)
 
 
 if __name__ == "__main__":
