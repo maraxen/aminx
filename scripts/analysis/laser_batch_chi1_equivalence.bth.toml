@@ -36,6 +36,13 @@ reasoning = "An empty screen makes mean_tv_chi1 an average over no positions. Re
 is_residual = true
 adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'chi_screen_empty'"
 
+[outcomes.chi_table_inconsistent]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'chi_table_inconsistent'"
+decision = "No conclusion. The has-chi1 table and the reference data disagree: some amino acid the reference actually shows with a chi1 angle is marked in the table as having none. Fix the table (or the alphabet it was exported against) and re-run."
+reasoning = "The table decides which positions are screened in, so a wrong one silently compares the wrong residues and still returns a confident number. Because the table may arrive as a JSON file exported from another venv, it is checked against the data rather than trusted -- a stale or mis-indexed export must refuse, not quietly shrink the screen."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'chi_table_inconsistent'"
+
 [outcomes.cuda_unavailable]
 condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'cuda_unavailable'"
 decision = "No conclusion. Re-run where the requested CUDA device resolves."
@@ -60,6 +67,8 @@ adversarial_check = "self_test_passed"
 [result_schema]
 verdict = "str"
 refusal = "str"
+chi_table_source = "str"
+chi_table_n_with_chi1 = "int"
 self_test_passed = "bool"
 self_test_n_checks = "int"
 self_test_failed = "list"

@@ -120,6 +120,43 @@ def _modal_aa(sequences: np.ndarray, alphabet: int) -> np.ndarray:
   return modal
 
 
+def _resolve_chi_table(path: Path | None) -> tuple[np.ndarray, int, str]:
+  """aminx's chi1-column table, by import where possible, else as data.
+
+  WHY BOTH ROUTES EXIST. The table is aminx's
+  ``chi_position_mask``, and importing it is the honest default -- it keeps the
+  screen from hardcoding which residues have chi1, which the confirm's own
+  helper is careful about. But the venv that produced the graded sequence run
+  (torch 2.4.1+cu121) has no aminx installed, and the venv that has aminx runs
+  a different torch. Reinstalling either to satisfy an import would change the
+  arm being measured in order to measure it.
+
+  So the table may instead be passed as a JSON list of booleans, exported from
+  aminx in a venv that has it. That is still aminx's table, with a recorded
+  provenance, and ``main`` checks it against the reference data before using
+  it -- so a wrong or stale file is refused rather than silently screening the
+  wrong residues.
+  """
+  if path is not None:
+    loaded = json.loads(path.read_text(encoding="utf-8"))
+    values = loaded["has_chi1"] if isinstance(loaded, dict) else loaded
+    table = np.asarray(values, dtype=np.bool_)
+    if table.ndim != 1 or table.size < 2:
+      msg = f"chi table from {path} has shape {table.shape}; expected a 1-D list of bools"
+      raise ValueError(msg)
+    return table, int(table.size), f"file:{path}"
+
+  from aminx.families.laser_mpnn.featurize import LASER_ALPHABET  # noqa: PLC0415
+  from aminx.model.laser.joint_decode import chi_position_mask  # noqa: PLC0415
+
+  alphabet = len(LASER_ALPHABET)
+  mask = np.asarray(chi_position_mask(np.arange(alphabet, dtype=np.int64)), dtype=np.bool_)
+  if mask.shape != (alphabet, 4):
+    msg = f"chi mask shape {mask.shape} != ({alphabet}, 4)"
+    raise RuntimeError(msg)
+  return mask[:, 0], alphabet, "import:aminx.model.laser.joint_decode.chi_position_mask"
+
+
 def _group_size(*sample_sets: np.ndarray) -> int:
   """The one group size every comparison in a run must use.
 
@@ -311,7 +348,28 @@ def _self_test() -> dict[str, Any]:
   if not worst < 0.75:
     failed.append(f"count_matching_did_not_detect_asymmetry(worst={worst:.3f})")
 
-  # 9. grading order: an unverified instrument outranks every other verdict
+  # 9. a chi table passed as data must round-trip, and a malformed one must
+  #    raise rather than be coerced into something plausible
+  checks += 1
+  import tempfile  # noqa: PLC0415
+
+  with tempfile.TemporaryDirectory() as tmp:
+    good = Path(tmp) / "t.json"
+    good.write_text(json.dumps({"has_chi1": [True, False, True]}), encoding="utf-8")
+    loaded, size, source = _resolve_chi_table(good)
+    if size != 3 or not source.startswith("file:") or loaded.tolist() != [True, False, True]:
+      failed.append("chi_table_file_did_not_round_trip")
+    checks += 1
+    bad = Path(tmp) / "b.json"
+    bad.write_text(json.dumps([True]), encoding="utf-8")
+    try:
+      _resolve_chi_table(bad)
+    except ValueError:
+      pass
+    else:
+      failed.append("malformed_chi_table_accepted")
+
+  # 10. grading order: an unverified instrument outranks every other verdict
   checks += 1
   base = {"self_test_passed": True, "refusal": None, "control_fired": True, "within_floor": True}
   if _grade({**base, "self_test_passed": False}) != "instrument_unverified":
@@ -359,6 +417,12 @@ def main() -> int:
   parser.add_argument("--n", type=int, default=1000)
   parser.add_argument("--min-p", type=float, default=0.0)
   parser.add_argument("--seed", type=int, default=20261006)
+  parser.add_argument(
+    "--chi-table",
+    type=Path,
+    help="JSON list of per-letter has-chi1 booleans exported from aminx. "
+    "Omit to import the table directly (needs aminx in this venv).",
+  )
   parser.add_argument("--self-test-only", action="store_true")
   args = parser.parse_args()
 
@@ -390,15 +454,35 @@ def main() -> int:
     return 1
 
   import laser_batch_equivalence as seqrun  # noqa: PLC0415
-  from laser_sample_dist_pilot import _chi_table  # noqa: PLC0415
 
   reference = seqrun._load_reference(args.reference_unit)
   ref_aa = np.asarray(reference["sequences"], dtype=np.int64)
-  ref_chi = _chi1_bins(_degrees(reference["chi1_degrees"]))
+  ref_degrees = _degrees(reference["chi1_degrees"])
+  ref_chi = _chi1_bins(ref_degrees)
   mask = np.asarray(reference["mask"], dtype=np.bool_)
   temperature = float(reference["sample_temperature"])
-  table, alphabet = _chi_table()
-  table = np.asarray(table, dtype=np.bool_)
+
+  table, alphabet, table_source = _resolve_chi_table(args.chi_table)
+  # The table is aminx's, but it arrives here either by import or as data, so
+  # it is checked against the reference rather than trusted. Any amino acid
+  # actually observed with a chi1 angle must be marked as having one; if not,
+  # the table and the data disagree and no comparison is meaningful.
+  observed = {int(a) for a in np.unique(ref_aa[np.isfinite(ref_degrees)])}
+  contradicted = sorted(a for a in observed if not bool(table[a]))
+  if contradicted:
+    _emit(
+      args.out,
+      {
+        **base,
+        "refusal": "chi_table_inconsistent",
+        "verdict": "chi_table_inconsistent",
+        "chi_table_source": table_source,
+        "contradicted_amino_acids": contradicted,
+      },
+    )
+    _LOG.error("chi table says these have no chi1 but the reference shows one: %s", contradicted)
+    return 1
+
   modal = _modal_aa(ref_aa, alphabet)
 
   screened = int(sum(1 for p in range(len(modal)) if table[int(modal[p])] and mask[p]))
@@ -436,6 +520,8 @@ def main() -> int:
     "control_m": _CONTROL_M,
     "n_reference": int(len(ref_aa)),
     "n_gpu": int(len(gpu_aa)),
+    "chi_table_source": table_source,
+    "chi_table_n_with_chi1": int(table.sum()),
     "group_size": half,
     "positions_screened": screened,
     "positions_total": int(len(modal)),
