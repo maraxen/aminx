@@ -253,6 +253,15 @@ def main() -> int:
   parser.add_argument("--repo", type=Path, required=True, help="checkout to resolve commits in")
   parser.add_argument("--bth", default="bth", help="bathos executable")
   parser.add_argument("--project", default="aminx")
+  parser.add_argument(
+    "--extra-rows",
+    type=Path,
+    help="JSON list of catalog rows exported from ANOTHER machine, merged by "
+    "repo-relative path keeping the EARLIEST run. A multi-machine project's "
+    "catalogs are disjoint, and the earliest run is the one a sidecar had to "
+    "precede, so auditing one catalog alone can call a sidecar clean that an "
+    "earlier run elsewhere makes late.",
+  )
   parser.add_argument("--self-test-only", action="store_true")
   args = parser.parse_args()
 
@@ -280,13 +289,30 @@ def main() -> int:
     _LOG.error("catalog query returned nothing")
     return 1
 
-  buckets: dict[str, list[dict[str, Any]]] = {"clean": [], "violation": [], "unverifiable": []}
+  n_extra = 0
+  if args.extra_rows is not None and args.extra_rows.is_file():
+    extra = json.loads(args.extra_rows.read_text(encoding="utf-8"))
+    n_extra = len(extra)
+    rows = [*rows, *extra]
+
+  # Collapse to ONE row per repo-relative sidecar, keeping the EARLIEST run
+  # across every catalog seen. The earliest run is the one the sidecar had to
+  # precede, so a later run elsewhere must never mask it.
+  earliest: dict[str, dict[str, Any]] = {}
   skipped = 0
   for row in rows:
     rel = repo_relative(str(row["sidecar_path"]))
     if rel is None:
       skipped += 1
       continue
+    prior = earliest.get(rel)
+    if prior is None or str(row["first_run"]) < str(prior["first_run"]):
+      earliest[rel] = {**row, "_rel": rel}
+    if prior is not None:
+      earliest[rel]["n"] = int(prior.get("n", 0)) + int(row.get("n", 0))
+
+  buckets: dict[str, list[dict[str, Any]]] = {"clean": [], "violation": [], "unverifiable": []}
+  for rel, row in sorted(earliest.items()):
     kind, detail = classify(args.repo, rel, str(row["first_run"]), str(row["first_git"]))
     detail["runs"] = row["n"]
     buckets[kind].append(detail)
@@ -297,6 +323,8 @@ def main() -> int:
     "refusal": None,
     "project": args.project,
     "n_catalog_rows": len(rows),
+    "n_rows_from_other_catalogs": n_extra,
+    "n_distinct_sidecars": len(earliest),
     "n_skipped_unanchorable": skipped,
     "n_audited": audited,
     "n_clean": len(buckets["clean"]),
