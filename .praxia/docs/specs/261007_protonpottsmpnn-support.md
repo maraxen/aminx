@@ -730,3 +730,71 @@ Build the env with foundry + `ipdb` only and try to import the V1 entry point. T
 answers (1) above and tests §11a's "pre-labelled" branch directly: if the minimal env can run
 inference on a pre-annotated structure, the labelling fork is genuinely optional and §11a can be
 decided on merits rather than on necessity.
+
+## 17. P1 BUILT. The env resolves on titanix — with one pin I chose, and should not have
+
+Built 2026-10-07 at `titanix:~/projects/aminx-oracles-protonpotts/`, following §16's
+recommendation. **P1's gate ("env resolves; manifest") is met.**
+
+### 17.1 What is there
+
+| | |
+| :-- | :-- |
+| Upstream | `ProtonPottsMPNN/` cloned at `09682abfa7d20e0abcdeea0490b7a4b1c190aee3` (verified; no LFS — `.gitattributes` absent and `checkpoints/` is 21 MB of plain objects, so the clone is complete) |
+| Manifest | `pyproject.toml` + `uv.lock`, mirroring `aminx-oracles/`'s shape |
+| Env | `.venv`, Python 3.12, **120 packages, 2.0 GB** |
+| Key pins | `torch==2.14.1+cpu`, `atomworks==3.0.0`, `numpy==2.5.3`, `lightning==2.6.6`, `biotite==1.6.0`, `ipdb==0.13.13`, `pandas==3.0.6` |
+
+Deps are exactly §16.4's minimum: `rc-foundry` (editable, from the vendored tree) + `ipdb` +
+an explicit `torch`. None of `requirements-extra.txt`'s labeller or notebook deps.
+
+### 17.2 Verified by execution, not by reading
+
+- `import mpnn, foundry` resolves to the vendored tree — upstream's own `install.sh` assertion
+  (`'ProtonPottsMPNN' in inspect.getfile(mpnn)`) passes.
+- `torch 2.14.1+cpu`, `torch.version.cuda is None`.
+- `from mpnn.transforms import ev6` succeeds, and **`'ipdb' in sys.modules` is `True`
+  afterwards.** §16.3 predicted this statically; it is now measured. The "dev dependency" really
+  is a hard runtime requirement.
+- All **13** `atomworks.*` modules foundry imports resolve under atomworks **3.0.0**, against
+  foundry's `>=2.1.1` — a major version ahead. Import surface intact; *behaviour* under 3.0 is
+  **not** tested by this.
+
+### 17.3 A pin I got wrong, recorded because it was my own reasoning
+
+`requirements-extra.txt` pins `pandas>=2.1,<3`, commenting: *"pandas 3.0 defaults to
+Arrow-backed strings, which FLAML 2.6 can't index (ArrowStringArray has no .iloc); pin to the
+2.x series **the model was developed with**."*
+
+§16.2 read that as a FLAML-only constraint and concluded it "relaxes if the labeller leaves V1".
+Excluding the extras therefore let pandas resolve to **3.0.6**. That inference is only half
+supported: the stated *reason* is FLAML, but the stated *scope* is "the series the model was
+developed with", which is broader. Any foundry path that indexes a pandas string column could
+hit the same `ArrowStringArray` edge with no FLAML involved.
+
+**I should have kept the pin and dropped it later with evidence, rather than dropping it on an
+inference.** It is not a measured failure — nothing has exercised a dataframe path yet — so it
+is recorded here rather than silently "fixed": the honest state is an unvalidated relaxation.
+Next action before any P4 dump: either pin `pandas<3` and re-sync (cheap, reversible, matches
+upstream), or exercise a dataframe-bearing path and show 3.0 is fine. Prefer the pin.
+
+Two further version gaps worth stating now rather than discovering mid-dump: `numpy==2.5.3`
+here against `numpy<2` in `aminx-oracles/`, and `torch 2.14` here against `torch==2.4.1` there.
+Both are expected — the envs are deliberately separate — but it means **no oracle tensor from
+one env should ever be compared bit-for-bit against the other's** without saying so.
+
+### 17.4 §11c is now answered on evidence
+
+"A second oracle environment on titanix" costs **one `uv sync`, 2.0 GB, and ~1 minute**, and it
+was forced rather than chosen: `aminx-oracles/` pins `requires-python >=3.11,<3.12` and
+`rc-foundry` pins `>=3.12,<3.13`. They cannot share an interpreter, so this was never really a
+decision about preference.
+
+### 17.5 What P1 did NOT establish
+
+The env imports; it has not run the model. Specifically still open: loading the checkpoint
+through foundry's own loader (which is where §15's conversion-time pair-order permutation
+lives), whether HBPLUS must be on PATH for a V1 run (§16.5), and the two `atomworks` data
+mirrors it warns about at import — `CCD_MIRROR_PATH` and `PDB_MIRROR_PATH` are unset, which
+atomworks reports as "will not be able to use function requiring this variable". That is likely
+to matter for featurization (P5) and is not yet scoped.
