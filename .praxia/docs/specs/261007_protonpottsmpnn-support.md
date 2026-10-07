@@ -103,6 +103,33 @@ It is **not yet proven numerically**; that is P6's gate (0 unmapped keys plus
 `dtypes = {'torch.float32': 120}`. No f64 anywhere in the checkpoint, consistent with the
 standing constraint that f64 is for parity assertions and never for production.
 
+### Re-running the probe
+
+The probe script itself was throwaway (a spike produces an answer, not a finding), but the
+*loading recipe* is the non-obvious part and P2 needs it, so it is recorded here rather than
+rediscovered. The project venv has no `omegaconf`, so an ephemeral environment is the cheapest
+route:
+
+```bash
+uv run --no-project --with omegaconf --with torch python -I <probe.py> \
+  /home/marielle/repos/ProtonPottsMPNN/checkpoints/potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt
+```
+
+and inside it, before `torch.load(..., weights_only=True)`:
+
+```python
+torch.serialization.add_safe_globals([
+    DictConfig, ListConfig, ContainerMetadata, Metadata, AnyNode, ValueNode,
+    Any, dict, list, tuple, set, int, float, str, bool, bytes,
+    collections.defaultdict, collections.OrderedDict,
+    pathlib.PosixPath, pathlib.PurePosixPath,
+])
+```
+
+Two traps worth keeping: `train_cfg` is an `omegaconf.DictConfig`, **not** a `dict`, so a plain
+`isinstance(cfg, dict)` check silently skips it — use `OmegaConf.to_container`. And run the
+probe with `python -I`, since the checkpoint is untrusted third-party data.
+
 ### Still open after P0
 
 `etab_source` / `field_source` are not in `train_cfg` — upstream infers them from the weights
@@ -363,3 +390,23 @@ merge rule (reciprocal-only `0.5(e+eᵀ)`) and the conditional-energy convention
 `edge` and `etab_out`'s 128→900 shape agrees, so this is strongly indicated but not measured);
 the design engine's internals and file size; the paper citation. **P2 exists to convert these.**
 Nothing in §7–§8 that depends on them should be treated as settled until it does.
+
+## 13. Where this work is tracked
+
+Checked 2026-10-07, because it was not obvious and looking in the wrong place says "untracked".
+
+**The sprint's remaining work lives in `praxia debt`, not the backlog.** Roughly 30 open debt
+rows cover it — `#2417` (the 0.9539 refine gap), `#2433`/`#2443`/`#2459`/`#2435` (unimplemented
+and inert Options fields), `#2445`, `#2481` (the χ1 control that cannot fail), `#2494`, `#2506`,
+`#2507`, `#2309`, `#2319` (the redsox gate checklist), `#2067`–`#2070` (unported features).
+The backlog's open rows are, by contrast, entirely re-homed cross-repo items from tev_design and
+xtrax — none of them is Potts/LASEr sprint work.
+
+Three things were tracked in neither and are now filed:
+
+| row | covers |
+| :-- | :-- |
+| backlog **#5780** | the re-wave as a unit: the single scoped batch, A1's mechanical application, redsox, and the eight-row re-measurement |
+| backlog **#5781** | this spec — ProtonPottsMPNN V1, P1–P10 |
+| backlog **#5782** | the three unmeasured Potts distributional cells, and the decision they wait on |
+
