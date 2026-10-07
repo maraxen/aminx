@@ -1129,3 +1129,67 @@ it needs no user decision.
 Unchanged: everything from P3 on touches `src/aminx/` and is blocked by THE FREEZE until #165
 merges. `aminx-oracles-protonpotts/` remains unscoped, so P1/P4 stay the available work.
 
+## 22. MEASURED: the V1 engine runs forward. P4 is fully reachable, and a silent v4/v6 hazard
+
+Second spike, same day, same single intervention (HBPLUS block neutralised, nothing else).
+Loads the shipped v6 checkpoint and calls upstream's own `load_model` + `run_forward`.
+
+```
+model loaded: PottsMPNN
+extended_vocab_name = 'v6'            <- auto-detected from the checkpoint
+etab_out   (1, 229, 48, 30, 30) torch.float32   finite, absmax 36.9262
+E_idx      (1, 229, 48)         torch.int64
+S_argmax   (1, 229)
+S_sampled  (1, 229)
+log_probs  (1, 229, 30)
+```
+
+Checkpoint: `checkpoints/potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt`.
+
+### 22.1 What this settles
+
+- **P4 is fully reachable.** `etab_out` is the tensor the oracle dumps exist to capture, and it
+  comes out finite on upstream's own example with no HBPLUS anywhere in the path. The P1→P4
+  critical path is open.
+- **V = 30 confirmed by EXECUTION**, not only by weight-shape inference. §1a read 30 off the
+  weights; the running engine emits `[1, L, K, 30, 30]`. Independent confirmation of §1a's
+  central measurement.
+- **K = 48** neighbours in the Potts graph — recorded because it is a featurizer/geometry
+  constant the port must match and it had not been measured before.
+- `load_model` **auto-detects the vocabulary** from `train_cfg.extended_vocab` and reports
+  `extended_vocab_name='v6'` with no explicit argument, exactly as its docstring claims.
+
+### 22.2 ⚠ A silent v4/v6 mismatch, and it hides in precisely the cell we can already run
+
+§19.2 flagged that `_get_potts_pipeline` defaults `extended_vocab="v4"`. §22.1 shows the *model*
+auto-detects v6. Those two facts together are worse than either alone:
+
+**The model self-corrects to v6; the featurizer does not.** A caller who uses
+`prepare_potts_input(pdb)` without passing `extended_vocab="v6"` gets a v4-built `S` fed into a
+v6-sized model — and nothing raises, because `S` is `int64 [1, L]` either way.
+
+Why it cannot be caught by the obvious test: `potts_token_order = token_order + PROTONATION_TOKENS`
+and `potts_v6_token_order = token_order + POTTS_MPNN_V6_PROTONATION_TOKENS` share the **same
+21-token `token_order` prefix** (`token_encodings.py:140,158`). So for any structure with no
+protonation labels, v4 and v6 produce **bit-identical `S`**. The vocabularies diverge only at
+indices ≥ 21 — the 11 v4 protonation tokens versus the 9 v6 ones.
+
+The consequence is sharp, and it compounds §21.3: **the annotation-free cell cannot detect this
+bug, and the labelled cell is the only one that can.** A port validated solely on the cell that
+runs today would pass while carrying a wrong-vocabulary featurizer. So §21.3's constraint is not
+merely about avoiding a vacuous comparison — it is the only thing standing between this defect and
+a green parity suite.
+
+Recorded as a hard requirement for P5/P6: **pass `extended_vocab` explicitly at every featurizer
+construction site; never rely on the default.** And the port's own featurizer must take the
+vocabulary as a parameter rather than a constant — which is the same conclusion §15.3 reached from
+`num_atoms`, arrived at from a second direction.
+
+### 22.3 Still open after this
+
+- §15.3's `num_virtual_atoms` question is **not** answered by `etab_out`'s shape — that axis is
+  the vocabulary, not the atom-pair count. Still an open measurement, and it is the one that
+  decides whether aminx's literal `25` is wrong.
+- Nothing here exercises protonation tokens 21–29; `S` is still canonical-only.
+- The engine ran on CPU torch. No GPU/f32 determinism claim is made or implied.
+
