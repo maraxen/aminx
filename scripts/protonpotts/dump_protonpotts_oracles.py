@@ -68,6 +68,14 @@ CYCLE = {
 }
 MIN_PER_TYPE = 3  # §26.3's cell-selection criterion
 EXTENDED_VOCAB = "v6"
+SEED = 0
+"""Seeded identically before EACH cell, so the only difference between them is the labels.
+
+Without this the oracle is not reproducible: `run_forward` samples (`pottsmpnn.py:500`
+randperm, `:544` multinomial), so `log_probs` -- the one protonation-sensitive observable --
+came out different on every run (37.1461 / 41.9841 / 48.0462 / 45.9002 on one identical cell)
+and two runs wrote npz files with different sha256. See §27 and debt #2583.
+"""
 
 
 def _sha256_file(path: Path) -> str:
@@ -138,6 +146,7 @@ def _build_cell(checkpoint: Path, pdb: Path, *, labelled: bool):  # noqa: ANN202
     (lambda **_: [labeller]) if labelled else (lambda **_: [])
   )
   inference._PIPELINE_CACHE.clear()  # noqa: SLF001 -- trap 1; no public API for this
+  torch.manual_seed(SEED)  # identically for both cells, so only the labels differ
 
   model = inference.load_model(str(checkpoint))
   batch = inference.prepare_potts_input(str(pdb), extended_vocab=EXTENDED_VOCAB)

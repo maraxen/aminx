@@ -1680,3 +1680,109 @@ alone passed on all four runs. A one-sided instrument would have seen nothing wr
 
 Until step 2 passes, the dumper's self-checks are the right behaviour but its output must not
 be used, and `.praxia/spikes` / `oracles*/` artifacts from today are throwaway.
+
+---
+
+## §28 — with the sampler seeded, the labels have no measurable effect: the "positive control" was noise
+
+§27 said the v6 path is nondeterministic and left `etab_out`/`E_idx` unexplained. Chasing that
+produced two corrections, one of them to §27 itself, and then a third result that undercuts
+the foundation §23 and §26 were built on. Taking them in order.
+
+### §28.1 CORRECTION to §27 — `etab_out`/`E_idx` nondeterminism was overstated
+
+§27 reported `etab_out identical=False max|delta|=1.56884` and `E_idx identical=False` from a
+single pair of runs, and generalised that to "every output varies". That generalisation does
+not hold. Measured over **32 pairs** (8 pairs × {default 10 threads, 1 thread} × {seeded,
+unseeded}):
+
+```
+UNSEEDED threads=10  etab differs 0/8  E_idx differs 0/8
+UNSEEDED threads= 1  etab differs 0/8  E_idx differs 0/8
+seeded   threads=10  etab differs 0/8  E_idx differs 0/8
+seeded   threads= 1  etab differs 0/8  E_idx differs 0/8
+```
+
+Zero disagreements in 32 pairs, seeded *or not*. A separate bisect run also showed
+`etab_out=SAME  E_idx=SAME` on its baseline. So §27's observation stands as **one anomaly in
+roughly 35 pairs, unexplained and not reproduced** — not as an established property. The
+thread-count hypothesis (a multi-threaded reduction flipping a k-NN near-tie) is **not
+supported**: 1 thread and 10 threads behave identically.
+
+What *is* established: the run is on **CPU** (`cuda available = False`, TF32 off,
+`cudnn.benchmark` off), which independently kills the GPU-kernel and TF32 candidates §27
+listed as unchecked.
+
+### §28.2 The real nondeterminism is the sampler, and seeding fixes it
+
+```
+baseline       etab_out=SAME  E_idx=SAME  log_probs=diff(39.64)
+seeded         etab_out=SAME  E_idx=SAME  log_probs=SAME
+deterministic  etab_out=SAME  E_idx=SAME  log_probs=SAME
+cpu            etab_out=SAME  E_idx=SAME  log_probs=SAME
+```
+
+`torch.manual_seed` alone makes `log_probs` reproducible. That narrows the cause to **RNG
+consumption by the Gibbs sampler** (`pottsmpnn.py:500` `randperm`, `:544` `multinomial`), not
+to kernel nondeterminism — `torch.use_deterministic_algorithms(True)` adds nothing beyond the
+seed. The dumper now seeds identically before each cell.
+
+### §28.3 AND THEN THE RESULT THAT MATTERS: the label effect vanishes
+
+With the seed in place, the dumper's positive control — `log_probs` must differ between the
+unlabelled and labelled cells — collapses:
+
+| run | `log_probs` max&#124;delta&#124;, labelled vs unlabelled |
+|---|---|
+| unseeded ×4 | 37.1461 / 41.9841 / 48.0462 / 45.9002 |
+| **seeded ×3** | **0.000164986 / 0.000161171 / exactly 0** |
+
+Three to five orders of magnitude smaller, and on the third seeded run **exactly zero**, which
+tripped the positive control and correctly refused to write.
+
+**So the 37–52 deltas reported in §23.2, §26.1, §26.2 and §26.3 were sampler noise, not an
+effect of the protonation labels.** Every one of those numbers was a difference between two
+independent draws from a stochastic decoder, and the labels contributed nothing detectable to
+them. §23.2's claim that `max|delta| = 48.2565` on `log_probs` is "a positive control for the
+instrument, available before any parity run" is **withdrawn**: it was a measurement of the
+sampler's variance.
+
+The residual 1.6e-4 is at f32 round-off for quantities of this magnitude and must not be read
+as a small real effect until something demonstrates it is one.
+
+### §28.4 What this leaves standing, and what it blocks
+
+Still good: §24 (checkpoint geometry), §25 (the alphabet tables and the v4/v6 collision),
+§26's **coverage** results. `S` is deterministic, and that the labelled cell's `S` reaches all
+nine indices 21–29 is unaffected — the labels demonstrably reach **featurization**.
+
+Blocked: **we currently have no observable that demonstrably responds to protonation labels.**
+`etab_out`/`E_idx` do not (structure-only). `log_probs` does not, once the sampler is
+controlled. `S` does, but `S` is the *input* — comparing it validates the featurizer, not the
+model. A `protonpotts_*` parity wave cannot be built until one exists, because otherwise the
+wave validates nothing about protonation however many tokens its cell carries.
+
+This is the same vacuity trap §23.3 and §26.4 were written to prevent, one level deeper: both
+rules assumed `log_probs` was a working protonation-sensitive observable. It is not.
+
+### §28.5 The most likely resolution, not yet tested
+
+§23.3's own wording offered an alternative I never implemented: *"`log_probs`, **or an energy
+evaluated at `S`**"*. That clause is probably the answer. A Potts model's protonation
+sensitivity should live in
+
+```
+E(S) = sum over edges (i,j) of etab_out[i, j, S_i, S_j]   (plus the self/field terms)
+```
+
+which is **not** any tensor the engine returns — it must be computed from `etab_out`, `E_idx`
+and `S`. It is sequence-dependent by construction, it is deterministic (both inputs are), and
+it is exactly where a 30-token vocabulary would express a protonation preference.
+
+Next step for P4: compute `E(S)` for the labelled and unlabelled cells and check it moves.
+If it does, that is the wave's observable and the dumper should capture it. If it does **not**,
+then this checkpoint's protonation tokens have no effect on any model output at inference, and
+that is a much larger finding about the upstream model than about our port.
+
+Do not seal any oracle, and do not write a `protonpotts_*` pre-registration naming `log_probs`
+as its protonation observable, until that question is answered.
