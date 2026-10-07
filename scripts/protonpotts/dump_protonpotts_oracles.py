@@ -53,7 +53,9 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -360,6 +362,43 @@ def main() -> int:
   )
   logger.info("wrote %s (sha256 %s)", out_path, sha)
   logger.info("wrote %s", manifest)
+
+  # Emit results for bathos to GRADE against the sidecar's [outcomes]. Without this the run is
+  # tracked but records `outcome = "unknown"` at exit 0 -- indistinguishable from a graded pass
+  # in every console line, and visible only in the record. Measured on run 97aa0238: sidecar
+  # matched correctly, outcome 'unknown', because nothing was emitted here.
+  results_path = os.environ.get("BTH_RESULTS_PATH")
+  if results_path:
+    Path(results_path).write_text(
+      json.dumps(
+        {
+          # Boolean flags first: bathos grades `[outcomes].condition` as a DuckDB SQL
+          # expression over these, so prose conditions never evaluate. Measured on run
+          # 8c73fe9c, which recorded outcome='error' with
+          # "Failed to evaluate outcome 'pass': Parser Error: syntax error at or near \"All\"".
+          "coverage_full": len(covered) == len(V6_PROTONATION),
+          "positive_control_fired": delta > 0.0,
+          "field_non_degenerate": min(contrasts.values()) > 0.0,
+          "artifact_written": out_path.exists(),
+          "covered_protonation_indices": covered,
+          "n_covered": len(covered),
+          "titratable_counts": counts,
+          "positive_control_H_S_delta": delta,
+          "H_S_unlabelled": h_plain,
+          "H_S_labelled": h_labelled,
+          "field_contrasts": contrasts,
+          "etab_bit_identical": True,  # we exit non-zero above if it is not
+          "oracle_sha256": sha,
+          "labels_are_chemistry": False,
+        },
+        indent=2,
+        sort_keys=True,
+      ),
+      encoding="utf-8",
+    )
+    logger.info("emitted results to %s", results_path)
+  else:
+    logger.warning("BTH_RESULTS_PATH unset: this run will record outcome 'unknown'")
   return 0
 
 

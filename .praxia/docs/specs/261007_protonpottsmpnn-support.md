@@ -2132,3 +2132,74 @@ Two separate wrong conclusions in this document (§28's "thread count not suppor
 configuration that cannot exhibit the effect, and reading the resulting null as informative.**
 Before accepting a negative, check that the configuration reproduces the phenomenon at all —
 a positive control on the *setup*, not just on the measurement.
+
+---
+
+## §33 — P4 CLOSED: graded `pass` by record, after a three-step grading trap
+
+P4's oracle is complete: reproducible, pre-registered, and **graded `pass` by its record** —
+not by exit code or console text.
+
+```
+bth sql "SELECT id, status, outcome, exit_code, outcome_is_residual FROM runs WHERE id LIKE 'e1967527%'"
+  e1967527-af98-4b79-86f8-5f2aae3178ba | completed | pass | 0 | false
+```
+
+Getting there took three runs, each failing in a way that **looks identical from the console**.
+All three printed the same controls, wrote the same artifact and exited 0.
+
+| run | record says | cause |
+|---|---|---|
+| `97aa0238` | `outcome = "unknown"` | nothing emitted for bathos to grade |
+| `8c73fe9c` | `outcome = "error"` | emitted, but `[outcomes].condition` was prose |
+| `e1967527` | **`outcome = "pass"`** | conditions rewritten as SQL over emitted flags |
+
+### §33.1 Two traps, both invisible without the record
+
+**1. Tracking is not grading.** `bth run` matched the sidecar correctly — `sidecar_path`
+resolved to the right file on the very first run — and still recorded `outcome = "unknown"`,
+because the script emitted no results. A sidecar can be perfectly discovered, perfectly valid,
+and grade nothing. The fix is to write the results JSON to `$BTH_RESULTS_PATH`.
+
+**2. `[outcomes].condition` is a DuckDB SQL expression, not prose.** Mine began *"All four
+hypotheses hold: …"*, which produced
+
+```
+Failed to evaluate outcome 'pass': Parser Error: syntax error at or near "All"
+```
+
+visible only in `outcome_error_reason`. Prose belongs in `decision` and `reasoning`; the
+`condition` must be a boolean expression over emitted fields. So the script now emits flags —
+`coverage_full`, `positive_control_fired`, `field_non_degenerate`, `etab_bit_identical`,
+`artifact_written` — and the conditions are built from those.
+
+Both traps share the shape this project keeps hitting: **exit 0 plus confident console output,
+with the real state only in the record.** Which is exactly why the standing rule says verify by
+record. It earned its place three times in one afternoon.
+
+### §33.2 How widespread is the prose-condition problem? Mostly not.
+
+Checked rather than assumed: **341 `condition` lines across 91 sidecars, of which 3 look like
+prose** by a crude heuristic (capitalised word followed by lowercase words). Two files:
+
+- `scripts/recapture/pottsmpnn_to_eqx.bth.toml` — **the one I copied my sidecar's style from**,
+  which is how the defect propagated
+- `scripts/benchmarks/sprint23_capability_analysis.py.bth.toml`
+
+So this is **not** a systemic failure of the sidecar corpus; the convention is followed almost
+everywhere. Worth fixing those two, but not worth a sweep. Both are in scoped or
+semi-scoped paths, so neither lands during the freeze.
+
+### §33.3 P4's final state
+
+- Oracle: `oracle_f32.npz`, sha256 `bbb6828335d28e7427b18d7bdc1c39138e8716022fb54c1a875e4fcd3d6a0d6e`,
+  identical across **six** runs now (four bare + two bathos-tracked).
+- Pre-registered before the first run, amended once when hypothesis 2 was falsified (§29.4),
+  with the amendment and its cause recorded in the metadata block rather than edited in place.
+- Both controls pass; `etab_bit_identical` true; coverage 9/9.
+- Tolerance scale recorded in the manifest and the results: `ASP_P_vs_D` 0.2093,
+  `GLU_P_vs_D` 0.1217, `HIS_P_vs_S` 0.1756 — the smallest governs (§29.3).
+
+What P4 is **not**: a parity result. Nothing has been compared against aminx, because there is
+no aminx-side ProtonPotts implementation — §11c is still open. This is the oracle only, and the
+sidecar says so.

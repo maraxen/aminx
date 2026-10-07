@@ -73,49 +73,46 @@ decision. This captures the oracle only.
 """
 
 [outcomes.pass]
-condition = """
-All four hypotheses hold: S covers all nine indices 21-29; log_probs max|delta| between the
-unlabelled and labelled cells is strictly > 0; etab_out is bit-identical between them; and
-oracle_f32.npz plus oracle_manifest.toml are written with a resolvable sha256.
-"""
+condition = "coverage_full AND positive_control_fired AND field_non_degenerate AND etab_bit_identical AND artifact_written"
+decision = "Treat oracle_f32.npz as a usable ProtonPotts v6 oracle for a later protonpotts_* parity wave, at the tolerance scale recorded in field_contrasts."
 reasoning = """
 Coverage plus BOTH controls is the minimum that makes the oracle usable. Coverage without the
 positive control is a cell whose labels may never have reached the model. The positive control
 without the negative one cannot distinguish "the labels changed the output" from "the two runs
-differ for some unrelated reason" -- and the two cells are built in one process through a
-pipeline that is memoised on arguments which do NOT include the annotation block (§23.4), so
-"differ for an unrelated reason" is a live failure mode here, not a hypothetical.
+differ for some unrelated reason" -- and that is a LIVE failure mode here, not hypothetical:
+the two cells are built in one process through a pipeline memoised on arguments that exclude
+the annotation block (s23.4), and multi-threaded reductions were measured flipping k-NN ties in
+9 of 12 processes before threads were pinned (s32).
 """
 is_residual = false
 
 [outcomes.marginal]
-condition = """
-Both controls behave as predicted, but S covers only some of indices 21-29 (cell too small in
-at least one titratable type).
-"""
+condition = "NOT coverage_full AND positive_control_fired AND field_non_degenerate AND etab_bit_identical"
+decision = "Do not seal. Pick a cell with >= 3 HIS, >= 3 ASP and >= 3 GLU (s26.3) and re-run."
 reasoning = """
-A partial-coverage dump is still a valid PottsMPNN structure oracle and a valid partial
-protonation oracle, but a wave built on it cannot claim to validate the P/S/A or P/D/A
-discrimination for the uncovered residue types. Per §26.4 such a wave must state which indices
-it covered. The script currently REFUSES to write in this case rather than recording a partial
-dump that reads as complete later; this outcome exists so that refusal is a pre-registered
-decision and not an implementation accident.
+A partial-coverage dump is a valid structure oracle and a valid PARTIAL protonation oracle, but
+a wave built on it cannot claim to validate P/S/A or P/D/A discrimination for the uncovered
+residue types, and per s26.4 must state which indices it covered. The script currently refuses
+to write in this case; this outcome exists so that refusal is a pre-registered decision rather
+than an implementation accident.
 """
 is_residual = false
 
 [outcomes.fail]
-condition = """
-log_probs is identical across the two cells (labels never reached the model), OR etab_out
-differs across them (the cells differ by more than their labels, or the architecture is not
-what §23.2 measured), OR the script crashes.
-"""
+condition = "NOT positive_control_fired OR NOT field_non_degenerate OR NOT etab_bit_identical"
+decision = "Do not seal and do not write a protonpotts_* pre-registration against this dump. Diagnose which control fired before changing anything."
 reasoning = """
-Either control failing invalidates the dump, in opposite ways. An identical log_probs means
-the protonation path is inert and the oracle cannot detect a protonation defect. A differing
-etab_out means the two cells are not a controlled pair, so the log_probs difference cannot be
-attributed to the labels at all. Neither may be relaxed to make a run pass: the tolerances here
-are exact equality and strict inequality, chosen because both quantities were MEASURED at those
-values (§23.2 -- max|delta| = 0 on etab_out, 48.2565 on log_probs) rather than assumed.
+Either control failing invalidates the dump, in opposite ways. An identical H(S) means the
+protonation path is inert and the oracle cannot detect a protonation defect. A differing
+etab_out means the two cells are not a controlled pair, so any H(S) difference cannot be
+attributed to the labels. Neither may be relaxed to make a run pass: the thresholds are exact
+equality and strict inequality, chosen because both were MEASURED at those values, not assumed.
+
+NOTE ON THIS BRANCH'S REACHABILITY: the script exits non-zero BEFORE emitting results when a
+control fires, so a failing run records a non-zero exit with no graded row rather than
+outcome='fail'. That is unambiguous (exit != 0 is never a pass) but it does mean this condition
+is evaluated only in the hypothetical where results are emitted anyway. Recorded rather than
+papered over.
 """
 is_residual = true
 
@@ -123,7 +120,10 @@ is_residual = true
 covered_protonation_indices = { type = "list[int]", doc = "Indices >= 21 present in labelled S" }
 n_covered = { type = "int", doc = "Count of distinct protonation indices covered; 9 is full" }
 titratable_counts = { type = "dict[str, int]", doc = "HIS/ASP/GLU residue counts in the cell" }
-positive_control_logprobs_delta = { type = "float", doc = "max|delta| log_probs, labelled vs unlabelled; must be > 0" }
+positive_control_H_S_delta = { type = "float", doc = "|H(S) labelled - H(S) unlabelled|; must be > 0. AMENDED from positive_control_logprobs_delta, see the metadata block" }
+H_S_unlabelled = { type = "float", doc = "Potts Hamiltonian at the unlabelled sequence" }
+H_S_labelled = { type = "float", doc = "Potts Hamiltonian at the labelled sequence" }
+field_contrasts = { type = "dict[str, float]", doc = "Single-site field P-vs-D contrasts at positions holding the parent residue. THE TOLERANCE SCALE -- see §29.3; the smallest of these governs" }
 etab_bit_identical = { type = "bool", doc = "Negative control; must be true" }
 oracle_sha256 = { type = "str", doc = "sha256 of oracle_f32.npz" }
 
