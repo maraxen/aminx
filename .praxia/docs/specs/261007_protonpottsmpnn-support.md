@@ -1193,3 +1193,81 @@ vocabulary as a parameter rather than a constant — which is the same conclusio
 - Nothing here exercises protonation tokens 21–29; `S` is still canonical-only.
 - The engine ran on CPU torch. No GPU/f32 determinism claim is made or implied.
 
+## 23. A non-vacuous cell is constructible — and `etab_out` is NOT the observable that makes it so
+
+Two more spikes. The first builds the labelled cell §21.3 demanded; the second checks whether it
+actually bites, and the answer corrects §22.1.
+
+### 23.1 The labelled cell runs, and it confirms the alphabet indexing by execution
+
+Instead of deleting the annotation block, **substitute** a deterministic synthetic labeller for it
+(`HIS→HIS-S`, `ASP→ASP-D`, `GLU→GLU-P` by `res_name`); everything downstream stays upstream's own.
+
+```
+labelled 183/1689 atoms across ['ASP', 'GLU', 'HIS']
+S min=0 max=27 distinct=[0,1,2,4,5,7,9,10,11,12,13,14,15,16,17,18,19, 22,25,27]
+etab_out (1,229,48,30,30) finite
+PASS: non-vacuous labelled cell runs end-to-end with NO HBPLUS
+```
+
+The three protonation indices are **22, 25, 27**. Under §21.4's ordering (21 standard, then
+`HIS-{P,S,A}`, `ASP-{P,D,A}`, `GLU-{P,D,A}` at 21–29) those are exactly `HIS-S`, `ASP-D`, `GLU-P`
+— precisely the three labels injected. So **§21.4's index arithmetic is confirmed by execution**,
+not merely read off a tuple. Corroborating detail: indices 3, 6 and 8 (`ASP`, `GLU`, `HIS`) have
+*vanished* from the distinct set, as they must if every titratable residue was relabelled.
+
+So the pre-labelled design needs no HBPLUS even for a cell that exercises the new tokens.
+
+### 23.2 ⚠ But `etab_out` is invariant to `S` — measured, bit-exact
+
+Both cells reported `absmax=36.9262`, identical to six figures. Running them in one process and
+differencing the tensors:
+
+```
+S differs at 21/229 positions   (max 19 unlabelled -> 27 labelled)
+etab_out   identical=True   max|delta|=0
+E_idx      identical=True
+log_probs  identical=False  max|delta|=48.2565
+```
+
+`etab_out` is **bit-identical** while `S` changes at 21 positions. That is by construction, not a
+bug: a Potts model emits an energy *function* over the vocabulary from the structure encoder, and
+the sequence selects entries from it afterwards. `E_idx` is likewise structure-only.
+
+**This corrects §22.1.** I wrote there that `etab_out` "is the tensor the oracle dumps exist to
+capture". It is *a* tensor worth capturing, but it cannot be the one that validates protonation
+handling, because protonation labels do not reach it.
+
+### 23.3 The precise statement, replacing §21.3's rule
+
+Being exact about what `etab_out` does and does not cover, because "vacuous" is too blunt:
+
+| observable | validates | does NOT validate |
+| :-- | :-- | :-- |
+| `etab_out` (1,L,K,30,30) | encoder + Potts head at V=30; the architecture port; a wrong *vocabulary width* | anything about whether labels reach `S` |
+| `E_idx` (1,L,K) | the neighbour graph, K=48 | same |
+| `log_probs` (1,L,30) | the label→`S`→score path; sequence dependence | — |
+
+The consequence for §22.2's silent v4/v6 featurizer mismatch is sharp: **`etab_out` would not
+catch it either**, since that defect corrupts `S` and `etab_out` ignores `S`. Only a
+sequence-dependent observable can.
+
+**Superseding §21.3's wording.** The constraint is not merely "at least one cell must carry
+protonation labels" — it is:
+
+> A `protonpotts_*` wave must compare at least one **sequence-dependent** observable
+> (`log_probs`, or an energy evaluated at `S`) on a cell whose `S` contains tokens ≥ 21.
+> A wave comparing only `etab_out`/`E_idx` is PottsMPNN structure parity, however many
+> protonation tokens the cell contains.
+
+`max|delta| = 48.2565` on `log_probs` between the two cells is the margin showing that observable
+genuinely moves — it is a positive control for the instrument, available before any parity run.
+
+### 23.4 One caching trap worth keeping
+
+`_get_potts_pipeline` memoises on `(device, build_bond_labels, hbond_scope, extended_vocab,
+use_salt_bridge, deterministic, protonation_seed)` — **not** on the annotation block. Patching
+`get_protonation_state_transforms` between two cells in one process therefore has no effect unless
+`PI._PIPELINE_CACHE` is cleared first. The §23.2 comparison clears it explicitly; without that it
+would have silently compared the first cell against itself and "proved" invariance trivially.
+
