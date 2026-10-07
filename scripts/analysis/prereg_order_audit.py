@@ -97,7 +97,20 @@ def repo_relative(sidecar_path: str) -> str | None:
 
 
 def add_commit(repo: Path, rel: str) -> tuple[str, str] | None:
-  code, out = _git(repo, "log", "--follow", "--diff-filter=A", "--format=%H %cI", "--", rel)
+  """(sha, AUTHOR date) of the commit that added this path.
+
+  AUTHOR date, not committer date, and the difference is not cosmetic. A rebase
+  or squash rewrites the committer date to the moment of the rewrite while
+  preserving the author date. Using %cI made every file that arrived via a
+  rebase look as though it had been committed days AFTER the runs citing it:
+  a first pass over the local catalog reported 65 violations in 78 sidecars,
+  with dozens sharing the committer timestamp 2026-09-30T08:50:45 -- the
+  signature of one bulk rewrite, not of 65 post-hoc registrations. Checked
+  against a flagged commit: committer 2026-09-30T08:50:45, author
+  2026-09-24T11:17:48. The author date is the one that answers "when was this
+  written".
+  """
+  code, out = _git(repo, "log", "--follow", "--diff-filter=A", "--format=%H %aI", "--", rel)
   if code != 0 or not out:
     return None
   sha, _, when = out.splitlines()[-1].partition(" ")
@@ -165,6 +178,24 @@ def _self_test(repo: Path) -> dict[str, Any]:
   checks += 1
   if classify(repo, "scripts/does_not_exist.bth.toml", late_run, "HEAD")[0] != "unverifiable":
     failed.append("missing_path_not_unverifiable")
+
+  # The date field must be the AUTHOR date. Committer dates are rewritten by
+  # rebase, which made a first pass report 65 violations in 78 sidecars out of
+  # one bulk rewrite. Pinned by checking a commit whose two dates differ: if
+  # add_commit ever returns the committer date again, this fires.
+  checks += 1
+  _code, out = _git(repo, "log", "--format=%H %aI %cI", "-200")
+  divergent = None
+  for line in out.splitlines():
+    sha, author, committer = (line.split() + ["", ""])[:3]
+    if author and committer and author[:19] != committer[:19]:
+      divergent = (sha, author, committer)
+      break
+  if divergent is not None:
+    sha, author, _committer = divergent
+    code, out = _git(repo, "log", "-1", "--format=%aI", sha)
+    if code == 0 and out.strip()[:19] != author[:19]:
+      failed.append("date_field_is_not_author_date")
 
   return {
     "self_test_passed": not failed,
