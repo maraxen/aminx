@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **Training numerics** (`TrainingSpecification.weight_decay_mask`, default `"no_bias"`).
+  No-warmup AdamW now skips decay on 1-D parameters, matching the warmup path.
+  `weight_decay_mask="all"` decays every inexact parameter and restores the previous
+  no-warmup behaviour. Gradient accumulation averages micro-batch loss and gradients.
+  Resume continues the checkpoint PRNG key and the epoch stored in `extras["epoch"]`
+  (the loader has no fixed steps-per-epoch, so the epoch is not derived from `step`).
+  Checkpoints written before this change cannot be resumed: the restore template now
+  includes that epoch leaf, and older checkpoints saved `extras={}`.
+
 - **Runner buckets residue length by default** (xtrax `BUCKET_LADDER`). Seeded sample
   outputs change. Past the bucket, sampled tokens are X and logits are 0 (previously
   computed values). Old specs replay with bucketing on; pass `--no-length-bucketing` /
