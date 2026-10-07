@@ -82,14 +82,13 @@ def _resampled_tv(
   rng: np.random.Generator,
   *,
   n_resample: int,
+  half: int,
 ) -> list[float]:
-  """TV between random equal-size halves of two sample sets.
+  """TV between random ``half``-sized subsets of two sample sets.
 
-  Splitting both sides to the SAME size matters: TV is biased upward at small
-  n, so comparing a 1000-vs-1000 number against a 500-vs-500 floor would
-  manufacture an apparent difference out of sample size alone.
+  ``half`` is supplied by the caller, never derived here, so that the floor and
+  the cross are forced to the SAME group size. See ``_group_size``.
   """
-  half = min(len(left), len(right)) // 2
   out: list[float] = []
   for _ in range(n_resample):
     i = rng.permutation(len(left))[:half]
@@ -104,13 +103,13 @@ def _within_tv(
   rng: np.random.Generator,
   *,
   n_resample: int,
+  half: int,
 ) -> list[float]:
-  """TV of a sample set against ITSELF, over random disjoint halves.
+  """TV of a sample set against ITSELF, over random disjoint ``half``-sized groups.
 
-  This is the floor. The two halves are disjoint by construction, so they are
+  This is the floor. The two groups are disjoint by construction, so they are
   genuinely independent draws from one distribution.
   """
-  half = len(samples) // 2
   out: list[float] = []
   for _ in range(n_resample):
     order = rng.permutation(len(samples))
@@ -118,6 +117,22 @@ def _within_tv(
       stats.mean_tv(samples[order[:half]], samples[order[half : 2 * half]], _ALPHABET, mask)
     )
   return out
+
+
+def _group_size(*sample_sets: np.ndarray) -> int:
+  """The one group size every comparison in a run must use.
+
+  THIS IS LOAD-BEARING, and getting it wrong is the failure this run is most
+  likely to make. Total variation between two empirical distributions is biased
+  UPWARD at small n -- two halves of one distribution look more different the
+  fewer samples each holds. So a floor measured at 500-vs-500 and a cross
+  measured at 50-vs-50 differ for a reason that has nothing to do with the
+  samplers, and the run would report a difference it manufactured itself.
+  Deriving the size once, from the SMALLEST set in the comparison, is what stops
+  that; a smoke run at n=100 against a 1000-sample reference produced exactly
+  that false "not equivalent" before this existed.
+  """
+  return min(len(s) for s in sample_sets) // 2
 
 
 def _grade(payload: dict[str, Any]) -> str:
@@ -160,7 +175,8 @@ def _self_test() -> dict[str, Any]:
   same_2 = draw(p_a, n, rng)
   different = draw(p_b, n, rng)
 
-  floor = _within_tv(same_1, mask, np.random.default_rng(1), n_resample=60)
+  half = _group_size(same_1, same_2, different)
+  floor = _within_tv(same_1, mask, np.random.default_rng(1), n_resample=60, half=half)
   edge = float(np.quantile(floor, _FLOOR_QUANTILE))
 
   # 1. A set against itself is exactly zero -- the metric has no constant offset.
@@ -172,7 +188,9 @@ def _self_test() -> dict[str, Any]:
   #    floor. If this fails the metric false-alarms and would call a correct
   #    batched sampler broken.
   checks += 1
-  same_cross = _median(_resampled_tv(same_1, same_2, mask, np.random.default_rng(2), n_resample=60))
+  same_cross = _median(
+    _resampled_tv(same_1, same_2, mask, np.random.default_rng(2), n_resample=60, half=half)
+  )
   if same_cross > edge:
     failed.append(f"false_alarm_on_identical_distributions:{same_cross:.4f}>{edge:.4f}")
 
@@ -180,10 +198,26 @@ def _self_test() -> dict[str, Any]:
   #    genuinely different distributions must land ABOVE the floor.
   checks += 1
   diff_cross = _median(
-    _resampled_tv(same_1, different, mask, np.random.default_rng(3), n_resample=60)
+    _resampled_tv(same_1, different, mask, np.random.default_rng(3), n_resample=60, half=half)
   )
   if diff_cross <= edge:
     failed.append(f"blind_to_different_distributions:{diff_cross:.4f}<={edge:.4f}")
+
+  # 3b. THE SIZE-BIAS TRAP, pinned. A smoke run produced a confident, entirely
+  #     false "not equivalent" by measuring the floor at 500-vs-500 and the
+  #     cross at 50-vs-50. This asserts the bias is real and large, so that any
+  #     future change which lets the floor and the cross drift to different
+  #     group sizes fails here rather than in a published verdict.
+  checks += 1
+  small = _median(_within_tv(same_1, mask, np.random.default_rng(4), n_resample=60, half=25))
+  large = _median(_within_tv(same_1, mask, np.random.default_rng(5), n_resample=60, half=half))
+  if not small > large * 1.5:
+    failed.append(f"size_bias_not_demonstrated:small={small:.4f} large={large:.4f}")
+
+  # 3c. _group_size must take the SMALLEST set, not the first or the largest.
+  checks += 1
+  if _group_size(np.zeros((1000, 4)), np.zeros((100, 4))) != 50:
+    failed.append("group_size_does_not_follow_smallest_set")
 
   # 4. Symmetry: TV is a metric, and an asymmetric implementation would make the
   #    verdict depend on argument order.
@@ -312,7 +346,9 @@ def _sample_batched(
       seqs.append(
         sampled.sampled_sequence_indices.detach().cpu().numpy().reshape(args.copies, -1)
       )
-      chis.append(sampled.sampled_chi_angles.detach().cpu().numpy().reshape(args.copies, -1, 4))
+      # sampled_chi_degrees, not sampled_chi_angles: upstream reports DEGREES
+      # here, so no radian conversion is applied downstream.
+      chis.append(sampled.sampled_chi_degrees.detach().cpu().numpy().reshape(args.copies, -1, 4))
   elapsed = time.perf_counter() - started
 
   seq = np.concatenate(seqs, axis=0)[:total]
@@ -334,9 +370,18 @@ def _sample_batched(
 
 
 def _chi_bins(chi: np.ndarray) -> np.ndarray:
-  """χ1 in degrees to the confirm's 36 bins of 10°, matching sample_dist_stats."""
-  degrees = np.degrees(chi[:, :, 0].astype(np.float64))
-  return np.floor((degrees % 360.0) / (360.0 / stats.CHI_BINS)).astype(np.int64) % stats.CHI_BINS
+  """χ1 to the confirm's 36 bins of 10°, matching sample_dist_stats.CHI_BINS.
+
+  Upstream already reports DEGREES (``sampled_chi_degrees``), so nothing is
+  converted. Residues without a χ1 carry NaN; those are dropped rather than
+  floored, since ``int(nan)`` is undefined and would silently become a bin.
+  """
+  degrees = chi[:, :, 0].astype(np.float64)
+  finite = degrees[np.isfinite(degrees)]
+  if finite.size == 0:
+    return np.empty(0, dtype=np.int64)
+  width = 360.0 / stats.CHI_BINS
+  return (np.floor((finite % 360.0) / width).astype(np.int64)) % stats.CHI_BINS
 
 
 def _emit(out: Path, payload: dict[str, Any]) -> None:
@@ -422,9 +467,12 @@ def main() -> int:
   )
 
   rng = np.random.default_rng(args.seed)
-  floor = _within_tv(ref_seq, mask, rng, n_resample=_N_RESAMPLE)
-  cross = _resampled_tv(ref_seq, gpu_seq, mask, rng, n_resample=_N_RESAMPLE)
-  control = _resampled_tv(ref_seq, ctrl_seq, mask, rng, n_resample=_N_RESAMPLE)
+  # One group size for the floor AND both crosses, derived from the smallest
+  # set. See _group_size: this is what keeps the comparison honest.
+  half = _group_size(ref_seq, gpu_seq, ctrl_seq)
+  floor = _within_tv(ref_seq, mask, rng, n_resample=_N_RESAMPLE, half=half)
+  cross = _resampled_tv(ref_seq, gpu_seq, mask, rng, n_resample=_N_RESAMPLE, half=half)
+  control = _resampled_tv(ref_seq, ctrl_seq, mask, rng, n_resample=_N_RESAMPLE, half=half)
   edge = float(np.quantile(floor, _FLOOR_QUANTILE))
 
   payload = {
@@ -437,13 +485,17 @@ def main() -> int:
     "n_gpu": int(len(gpu_seq)),
     "gpu": gpu_info,
     "control": ctrl_info,
+    "group_size": half,
     "floor_median": round(_median(floor), 6),
     "floor_edge_q97_5": round(edge, 6),
     "cross_median": round(_median(cross), 6),
     "control_median": round(_median(control), 6),
     "control_fired": _median(control) > edge,
     "within_floor": _median(cross) <= edge,
-    "chi1_bins_sampled": int(_chi_bins(gpu_chi).max()) if len(gpu_chi) else None,
+    # A sanity field, not a graded quantity: it records that χ1 was actually
+    # produced and spans more than one bin, so a later χ1 equivalence run has
+    # something to work with. χ1 equivalence itself is NOT measured here.
+    "chi1_distinct_bins": int(np.unique(_chi_bins(gpu_chi)).size),
   }
   payload["verdict"] = _grade(payload)
   _emit(args.out, payload)
