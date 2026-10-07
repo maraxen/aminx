@@ -798,3 +798,99 @@ lives), whether HBPLUS must be on PATH for a V1 run (§16.5), and the two `atomw
 mirrors it warns about at import — `CCD_MIRROR_PATH` and `PDB_MIRROR_PATH` are unset, which
 atomworks reports as "will not be able to use function requiring this variable". That is likely
 to matter for featurization (P5) and is not yet scoped.
+
+## 18. Running the env corrected three of my own claims, and answered §11a with evidence
+
+Everything here is **measured on titanix**, by building the engine and featurizing upstream's
+own example. It supersedes §16's static tracing wherever the two disagree — and they disagree
+three times, which is the point of building the thing.
+
+### 18.1 I was WRONG that propka is off the V1 path
+
+§16.2 said propka was unreachable. The engine build failed immediately on it. The real chain is
+two hops deeper than I traced:
+
+```
+mpnn/inference_engines/potts_mpnn_ph.py:56 -> mpnn.potts_inference
+mpnn/potts_inference.py:22                 -> mpnn.pipelines.potts_mpnn
+mpnn/pipelines/potts_mpnn.py:40            -> mpnn.transforms.pka_annotation
+mpnn/transforms/pka_annotation.py:10       -> import propka.run
+```
+
+**Why I got it wrong:** I grepped the repo's top-level `inference/` and `scoring/` directories
+for importers of `pipelines.potts_mpnn` and found none — true, and irrelevant, because the V1
+engine lives *inside* the foundry package at `mpnn/inference_engines/`. The right question was
+"what does the entry point import, transitively", not "what does this directory import".
+Third instance of this trap in this project; the first two are §4's FLAML correction and
+§16.3's ipdb chain.
+
+### 18.2 atomworks 3.0 BREAKS V1 — measured, and foundry's floor has no ceiling
+
+`rc-foundry` asks `atomworks[ml]>=2.1.1` with **no upper bound**, so 3.0.0 resolved. Under it,
+`_build_context` dies inside atomworks itself:
+
+```
+mpnn/utils/inference.py:713 -> atomworks.io.parser.parse_atom_array
+atomworks/io/_pipeline.py:148 -> template.add_missing_atoms
+ValueError: Input atom_array is missing 'charge' annotation.
+  Ensure the structure was loaded via parse() or get_structure(), which always sets charge.
+```
+
+The irony is exact: the structure *was* loaded via `get_structure()` — upstream's own notebook
+does `PDBFile.read(str(PDB)).get_structure(model=1)` at `design_ph.py:58`. biotite's
+`get_structure` does not set `charge`; atomworks 3.0 began requiring it. Pinned
+`atomworks[ml]>=2.1.1,<3`, which resolves 2.2.1, and the parse then succeeds.
+
+§17.2 recorded that all 13 atomworks modules *imported* fine under 3.0 and explicitly said
+behaviour was untested. It was right to say so: the import surface was intact and the
+behaviour was not.
+
+### 18.3 §11a is answered on evidence: HBPLUS is on the default V1 path, and its default is unrunnable
+
+With atomworks pinned, featurization proceeds all the way to:
+
+```
+mpnn/transforms/bond_annotation.py:339 calculate_hbonds
+mpnn/transforms/bond_annotation.py:199 _run_hbplus_cmd -> subprocess.run
+FileNotFoundError: '/Users/chrjac/Library/CloudStorage/OneDrive-DanmarksTekniskeUniversitet/PHD/tools/hbplus/hbplus'
+```
+
+Two things follow, and the second is an upstream defect worth reporting:
+
+1. **HBPLUS really is on the default V1 featurization path** — not post-hoc, not optional. This
+   confirms §4's CORRECTION by execution and closes the last doubt about it.
+2. **The default is a hardcoded path to the upstream author's own laptop.**
+   `bond_annotation.py:289-297` reads `HBPLUS_PATH` from the environment, then at `:292`
+   assigns that absolute Mac path when it is unset — which makes the helpful error at `:296`
+   (*"HBPLUS_PATH environment variable not set. Please set it..."*) **unreachable dead code**,
+   because the `:294` emptiness check can never be true after `:292`. So a clean checkout gets
+   a raw `FileNotFoundError` naming a stranger's OneDrive instead of the actionable message the
+   author wrote.
+
+**Consequence for decision §11a.** The "end-to-end labelling" branch does not merely add
+FLAML + xgboost + lightgbm + `sklearn<1.9`; it requires an **HBPLUS binary**, which is not on
+PyPI, must be obtained and built separately, and which upstream cannot even locate portably.
+The "consume pre-labelled structures" branch (`transforms/precomputed.py` +
+`ApplyProtonationThreshold`, §4) is therefore not just the lighter option — on this evidence it
+is the only one that runs anywhere but the author's machine without extra tooling.
+**Recommend (a) = pre-labelled**, and treat end-to-end labelling as a later, separately-scoped
+capability.
+
+### 18.4 The env as it now stands
+
+`rc-foundry` (editable) + `torch>=2.2,<3` (CPU) + `ipdb` + `pandas>=2.1,<3` + `propka>=3.5` +
+`atomworks[ml]>=2.1.1,<3`. **Every pin beyond `rc-foundry` was added because something failed**,
+and the manifest says which failure next to each one. Still absent, and now known not to block
+engine construction: `flaml`, `xgboost`, `lightgbm`, `scikit-learn`, `shap`.
+
+Verified: the engine **builds** from the v6 checkpoint. Featurization gets as far as HBPLUS and
+stops there for an environmental reason, not a dependency one.
+
+### 18.5 Next, in order
+
+1. Decide §11a (recommendation above). If pre-labelled, find the `precomputed.py` entry point
+   and re-run the context build through it — that is the real V1 smoke test.
+2. If end-to-end is wanted instead, obtain HBPLUS and set `HBPLUS_PATH`; the hardcoded fallback
+   should be reported upstream regardless.
+3. Only then P4's oracle dumps. Nothing should be dumped from an env whose featurization path
+   has never completed once.
