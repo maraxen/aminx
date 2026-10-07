@@ -17,7 +17,7 @@ class TrainingMetrics(eqx.Module):
   loss: jax.Array
   accuracy: jax.Array
   perplexity: jax.Array
-  learning_rate: jax.Array | float
+  learning_rate: jax.Array | float | None = None
   grad_norm: jax.Array | None = None
 
   def to_dict(self) -> dict[str, float | None]:
@@ -26,8 +26,9 @@ class TrainingMetrics(eqx.Module):
       "loss": float(jax.device_get(self.loss)),
       "accuracy": float(jax.device_get(self.accuracy)),
       "perplexity": float(jax.device_get(self.perplexity)),
-      "learning_rate": float(jax.device_get(self.learning_rate)),
     }
+    if self.learning_rate is not None:
+      metrics_dict["learning_rate"] = float(jax.device_get(self.learning_rate))
     if self.grad_norm is not None:
       metrics_dict["grad_norm"] = float(jax.device_get(self.grad_norm))
     return metrics_dict
