@@ -1,0 +1,103 @@
+[metadata]
+title = "Does GPU + batched LASEr sampling draw the same chi1 distribution, not just the same sequences?"
+created = "261006"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Run 04e881a5 established that GPU + num_copies batching leaves the SEQUENCE distribution alone (cross 0.0613 against a floor edge of 0.0650, control at 0.1621). Its own pre-registration named chi1 under what_is_deliberately_not_measured: it kept only chi1_distinct_bins, a count of occupied bins, and discarded the control arm's chi entirely. A count of 36 occupied bins is satisfied by any non-degenerate distribution, including a badly wrong one, so the side-chain half of the sampler is unmeasured rather than confirmed. LASErMPNN samples sequence and chi1 jointly, so batching could in principle preserve the marginal over sequences while perturbing the torsions conditioned on them. If batched sampling is equivalent in chi1 too, the cross chi1 total variation against the completed CPU reference unit will sit inside the floor that reference shows against ITSELF at the same group size; if batching perturbs the torsions, it will sit above that floor."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.chi1_batched_equivalent]
+condition = "self_test_passed AND refusal IS NULL AND control_fired AND within_floor"
+decision = "Record that GPU + num_copies batching is indistinguishable from the CPU unbatched sampler in chi1 as well as in sequence, for the UNSHIMMED arm only, on this structure and cell. Together with 04e881a5 this closes the chi1 gap that run explicitly left open. It still does NOT license batching the shimmed arm, which needs a batch-aware injected_uniform_draws cursor and remains a separate question."
+reasoning = "Two independent draws from one distribution do not give TV = 0, they give the sampling floor at that effective n. A cross chi1 TV at or below the 97.5th percentile of the reference-against-itself TV is inside the noise this many samples can resolve. The control firing is what makes that a statement about the sampler rather than a statement about a blunt metric."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND control_fired AND within_floor)"
+
+[outcomes.chi1_batched_not_equivalent]
+condition = "self_test_passed AND refusal IS NULL AND control_fired AND NOT within_floor"
+decision = "Do NOT batch the confirm, even though the sequence distribution matched. Report the cross chi1 TV, the floor, the count-matched cross and modal_count_ratio_min together, so a reader can tell a genuine torsion difference from a per-position count asymmetry. A sequence-only equivalence result must not be cited as licensing batching after this fires."
+reasoning = "The confirm grades chi1 as well as sequence, so a sampler that reproduces sequences while perturbing torsions is still wrong for its purpose. Speed cannot buy a wrong answer, and a partial equivalence is not equivalence."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND control_fired AND NOT within_floor)"
+
+[outcomes.control_did_not_fire]
+condition = "self_test_passed AND refusal IS NULL AND NOT control_fired"
+decision = "No conclusion about chi1 equivalence. A deliberately-different draw (the same sampler at control_m x the cell temperature) failed to separate from the floor on REAL data, so this instrument cannot distinguish chi1 distributions at this structure, group size and modal-screen occupancy. Raise n or the control separation and re-run; do not report equivalence."
+reasoning = "The chi1 screen keeps only samples carrying the modal amino acid, so the effective n per position is much smaller than the number of designs and the metric is correspondingly blunter than the sequence one. Power that held for sequences cannot be assumed here -- it has to fire on this data."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS NOT NULL OR control_fired"
+
+[outcomes.chi_screen_empty]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'chi_screen_empty'"
+decision = "No conclusion. No designed position had a modal amino acid carrying chi1, so there was nothing to compare. Investigate the screen and the reference unit before re-running."
+reasoning = "An empty screen makes mean_tv_chi1 an average over no positions. Refusing is the only honest behaviour; a mean over nothing must never be reported as agreement."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'chi_screen_empty'"
+
+[outcomes.cuda_unavailable]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'cuda_unavailable'"
+decision = "No conclusion. Re-run where the requested CUDA device resolves."
+reasoning = "A cuda request that silently fell back to CPU would compare the CPU sampler against itself and return a reassuring verdict about a question that was never asked."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'cuda_unavailable'"
+
+[outcomes.reference_absent]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'reference_absent'"
+decision = "No conclusion. Re-run where the completed U2 unit JSON resolves."
+reasoning = "A missing reference is an environment fact and must not be reported as agreement."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'reference_absent'"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "Twelve synthetic checks run before any real sample is read. The decisive pair is a NEGATIVE control (two draws from one torsion distribution must sit INSIDE the floor, or the metric false-alarms and would call a correct sampler broken) and a POSITIVE control (a visibly concentrated torsion distribution must sit ABOVE it, or the metric is blind and would call a broken sampler correct). A check that can only pass is not a check."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[result_schema]
+verdict = "str"
+refusal = "str"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+floor_median = "float"
+floor_edge = "float"
+cross_median = "float"
+control_median = "float"
+count_matched_cross = "float"
+modal_count_ratio_min = "float"
+control_fired = "bool"
+within_floor = "bool"
+group_size = "int"
+positions_screened = "int"
+positions_total = "int"
+n_reference = "int"
+n_gpu = "int"
+
+[data]
+reference = "The same already-completed CPU unit U2 that 04e881a5 used: unshimmed, 1000 designs, structure 4jnj-1_prot, T = 1.0, min_p = 0, at /home/solab/projects/laser-confirm-gpu2/units/348b09c3....json. Its payload carries chi1_degrees of shape (1000, 115) alongside its sequences, 94585 of 115000 entries non-null -- the nulls are residues whose identity has no chi1. The SHIMMED sibling unit (U1) is explicitly refused by the loader."
+comparison = "1000 designs drawn GPU-batched with num_copies = 50 at the SAME temperature, min_p, checkpoint and PDB, through _sample_batched IMPORTED from laser_batch_equivalence rather than copied, so the arm is literally the code path run 04e881a5 graded."
+statistic = "sample_dist_stats.mean_tv_chi1 -- the confirm's OWN chi1 estimator, reused unmodified: positions where the upstream modal amino acid has chi1, restricted to samples carrying that amino acid, total variation over CHI_BINS = 36 bins of 10 degrees, averaged over the designed-position mask. Conditioning on the modal amino acid is what keeps this a question about torsions rather than about composition."
+deviation_from_the_confirm = "The confirm takes its modal-amino-acid screen from U1, its shimmed upstream anchor. There is no U1 in this comparison, so the screen is taken from the CPU reference, which is the upstream arm here. Same role, different arm, named explicitly rather than left for a reader to infer."
+floor_is_measured_not_assumed = "The floor is the chi1 TV the reference shows against ITSELF over 200 random disjoint splits at the shared group size. Its 97.5th percentile is the pre-registered upper edge. Every comparison in the run uses the one group size returned by _group_size, because TV is biased upward at small n -- the sequence instrument produced a false not-equivalent verdict from exactly that mismatch before its own _group_size existed, and the guard is carried over here deliberately."
+the_bias_this_design_has_that_the_sequence_one_did_not = "Equalising DESIGNS per arm does not equalise n for chi1: the estimator keeps only samples whose amino acid matches the modal one, so a position's effective n is its modal-amino-acid count, which differs per position and per arm. Two arms with identical torsions but slightly different composition would therefore show nonzero chi1 TV. This is handled three ways and not assumed away: the floor prices ordinary sampling noise; count_matched_cross recomputes the cross after truncating both sides to a common per-position count; and modal_count_ratio_min reports the worst per-position asymmetry so the room the effect had is visible."
+which_number_grades = "mean_tv_chi1 alone. count_matched_cross is a ROBUSTNESS CHECK and is reported, never graded. Choosing between two estimators after seeing both is how a result gets talked into existence, so the graded one is fixed here, in advance."
+negative_control_required_to_fire = "A second GPU batch drawn at control_m = 1.5 x the cell temperature must land ABOVE the floor edge. This is a real-data power check distinct from the synthetic self-test, and it matters more here than it did for sequences: the modal screen shrinks the effective n per position well below the design count, so the chi1 metric is blunter than the sequence metric and its power cannot be inherited from 04e881a5."
+what_is_deliberately_not_measured = "The SHIMMED arm (U1), for the same reason as 04e881a5: injected_uniform_draws expects a (1, _DRAWS_PER_RESIDUE * length) stream and asserts the cursor consumed exactly that many draws. Also not measured: chi2-chi4, which the unit does not store; joint sequence-and-chi1 dependence, as opposed to the chi1 marginal conditioned on the modal amino acid; and equivalence on structures other than the one reference unit available."
+instrument_self_test = "12 checks on synthetic data before any real sample is read: a NEGATIVE control (two draws from one uniform-bin distribution sit inside the floor), a POSITIVE control (a concentrated distribution sits above it), the small-n bias demonstration, _group_size following the smallest set, the modal screen REFUSING a residue with no chi1, NaN chi1 mapping to the out-of-range sentinel rather than bin 0, bin edges at the +/-180 wrap, count matching detecting a deliberately lopsided pair, and four grader controls proving every verdict is reachable and correctly ordered."
+why_it_does_not_disturb_the_confirm = "Measured before launching: GPUs 2 and 3 are at 5 MiB and 38 MiB of 24576 MiB and 0% utilisation, because the confirm's current phase runs its upstream arms on a CPU-only torch build. This run uses an idle GPU and ~2000 designs total. It reads a completed unit file and writes nothing into the confirm's work directory. Threads are capped so it does not compete for the CPU the confirm is actually bound on."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[provenance]
+note = "Closes the chi1 gap that run 04e881a5's own pre-registration named under what_is_deliberately_not_measured. A separate script and a separate sidecar rather than an amendment to that one, deliberately: bathos resolves a sidecar by script stem, so extending laser_batch_equivalence.py would change its script_sha256 and leave the graded sequence run no longer corresponding to its own script. Lives in scripts/analysis/, outside _SCOPED_PREFIXES (verified at tests/knob_gate/_coverage.py:21-28), so it costs the frozen ledger nothing. NOT a redsox vehicle; no manifest row. It amends no file, changes no tolerance, and proposes no band."
+invocation = "bth run --project-slug aminx -- <venv-python> scripts/analysis/laser_batch_chi1_equivalence.py --reference-unit <U2 unit json> --laser-root <dir> --checkpoint <pt> --pdb <pdb> --device cuda:3 --out <json>"
+coupling_to_note = "_sample_batched is imported from laser_batch_equivalence rather than copied. That is deliberate -- it keeps this arm identical to the graded one instead of a lookalike -- but it is a real coupling: a future edit to that function changes this run's results too, and both scripts would need re-running."
+
+[resume]
+unit = "none -- two 1000-design GPU draws, a few minutes total; a re-run redraws from the recorded seed"
+max_attempts = 2
