@@ -428,3 +428,72 @@ separation audit contains zero hits for `model/`, `features.py` or `top_k` — I
 grep), §7b's identification of `_top_k_row_chunked` as a duplicated primitive, and §11's point
 that a widths-only check cannot catch an ordering divergence. Debt #2561 stands, with the
 "strictly better" wording flagged for correction pending §8.7.
+
+## 9. Three of the §8.7 leads, settled by hand
+
+Probed while CI ran. All three were read-only; nothing scoped was touched.
+
+### 9.1 The missing featurizer is real, and it is the LARGEST one
+
+`families/laser_mpnn/featurize.py` is **1505 lines**, and its own docstring says: *"Host-numpy
+LASErMPNN featurizer. Ports inference parsing in `run_inference.py` (`ProteinComplexData`) and
+the post-`construct_graphs` first-shell mask... Geometry is NumPy; nothing here is traced by
+JAX."* §1f's count of four is wrong; it is at least six once this, `model/packer.py` and
+`model/laser/graphs.py` are counted separately.
+
+**And it is a better example for §4 than anything I used.** It is host-side parsing and
+geometry with no weights in it — by this document's own rule (*"if it would still make sense
+without weights, it is proxide's"*) a 1505-line module sitting in aminx is the single largest
+live violation of the boundary I proposed. I argued the rule from small cases and missed the
+biggest one.
+
+### 9.2 proxide's Rust kernel really does zero-fill — but the divergence is LATENT, not live
+
+Confirmed at `radial_basis.rs:122-125`: `if coord_a[0].is_nan() || coord_b[0].is_nan() { continue; }`,
+over a buffer pre-zeroed by `vec![0.0f32; ...]` at `:106`. A missing atom leaves that pair's
+whole 16-wide block at exactly `0.0`.
+
+aminx cannot reach that state at all: `utils/coordinates.py:123-129` **unconditionally** computes
+a virtual C-beta from the N→CA and CA→C bond vectors (`compute_c_beta`) and never reads a CB
+column from the input. So aminx always has a finite CB, for Gly and non-Gly alike.
+
+That makes the divergence **wider than the audit claimed** — it is not only Gly. Because aminx
+always uses the *idealized* CB while proxide uses whatever its caller put in the CB slot, the
+two disagree on every residue whose crystallographic CB deviates from ideal geometry, not just
+on the ones that have none. (proxide's kernel does not build CB itself; `radial_basis.rs:82,88`
+documents `backbone_coords` as an *input*, `(N_res, 5, 3)` = `[N, CA, C, CB, O]`.)
+
+**But it is not a live defect.** Every caller that passes `rbf_features=` — `export/wrappers.py:203,266,441`
+and `scripts/browser_validation/p07_split_{export,feasibility}.py` — computes that tensor with
+**aminx's own** `compute_radial_basis`. Nothing in the repo feeds a proxide-computed RBF into
+the seam. So this is the same verdict shape as §14 of the ProtonPottsMPNN spec: a real
+convention divergence, latent because the two sides are not currently wired together, and a
+trap for whoever wires them. **Downgrade from "defect" to "latent"** — and note the seam's own
+comment at `features.py:330` ("assuming they match proxide's implicit indices") is an unchecked
+contract exactly here.
+
+### 9.3 "Strictly better" in §7b is WRONG — aminx's padding is incidentally the safer behaviour
+
+`utils/safe_map.py:34-40` states it outright: *"It never lets XLA compile a vmapped chunk of
+size exactly 1 (aminx #2391). On one GPU stack (TITAN RTX, jax 0.10.2, CUDA 12.9) a jitted
+size-1 batch around a matmul whose intermediate is square returned wrong activations silently.
+A chunk of 1 arises three ways... a remainder of 1 (`n % batch_size == 1`; lax.map vmaps the
+remainder)."*
+
+Padding to a multiple of `row_chunk` **structurally cannot produce a remainder**, so
+`_top_k_row_chunked` is immune to that hazard by construction. xtrax's `chunked_map` produces a
+remainder by design — that is precisely the property §7b praised — and lacks the guard. So the
+swap trades wasted work for exposure to a known silent-miscompute. The *sequencing* in debt
+#2561 was right (blocked on xtrax #2520); the word **"strictly better" is not**, and #2561's
+wording is corrected accordingly.
+
+The same docstring also confirms the intended direction independently of my argument: *"the
+same guard belongs in xtrax's `chunked_map`, after which this helper is a re-export and then
+removed (aminx debt #2371)."*
+
+### 9.4 Still unverified
+
+The foundry conversion-time column permutation (`mpnn/utils/weights.py:225-278`) as an
+alternative to a runtime `pair_order` field, the three-vs-one `row_chunk` call sites, and the
+`potts_mpnn/model.py:30-38` hardcodes bypassing `get_topology_for_checkpoint`. Not cited
+anywhere until probed.
