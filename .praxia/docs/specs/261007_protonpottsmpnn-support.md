@@ -931,11 +931,34 @@ have sent the next session into the training path looking for an inference smoke
 comment states the contract: when true, the cleaned+annotated FULL structure is supplied by the
 loader, so the pipeline *"SKIPS `get_cleanup_transforms` and the whole HBPLUS/annotation block — it
 runs only the chain crop + featurization tail."* `precomputed_dir` is informational there; the
-loader owns the lookup. So pre-labelled is a **supported upstream configuration**, not a bypass we
-invent — which is the strongest form this decision could have taken.
+loader owns the lookup.
 
 At `is_inference=True` the chain crop is `Identity()` anyway (`:248`), so the inference +
 precomputed combination reduces to the featurization tail alone.
+
+> **CORRECTION, same day, before this paragraph was acted on.** The sentence that stood here —
+> *"pre-labelled is a supported upstream configuration, not a bypass we invent"* — is true of the
+> PIPELINE layer and **false of the INFERENCE layer**, and the distinction is the whole
+> difference between "already works" and "we must build it."
+>
+> `potts_inference.py:113-121` builds the V1 pipeline with an explicit argument list that **does
+> not include `precomputed`**, so it takes the default `False` and the inference path always runs
+> the full HBPLUS/annotation block. Grepping every caller that sets the flag in the whole
+> repository returns exactly two, both in the trainer: `train.py:306` and `train.py:323`. There
+> are **zero** inference callers, and `grep -rn precomputed inference_engines/ potts_inference.py`
+> returns nothing at all.
+>
+> So `precomputed=True` is, in practice, a training-only flag. Reaching it from inference means
+> calling `build_mpnn_transform_pipeline` directly and bypassing `prepare_potts_input`, or
+> patching the engine. That is a small job, but it is a job, and it was not visible from the
+> pipeline's docstring alone. **I read the flag's definition and inferred its reachability; the
+> call sites say otherwise.** Same shape as §18.1 — the fourth time on this spec that reading a
+> definition rather than its callers produced a wrong claim.
+>
+> One more thing the call site shows: `_get_potts_pipeline` defaults `extended_vocab="v4"`, but
+> §1a measured the checkpoint at v6. Any caller we write must pass `extended_vocab="v6"`
+> explicitly or it will silently featurize under the wrong vocabulary — and the vocabulary owns
+> the H-bond cutoffs (§19.3), so this is not a cosmetic default.
 
 ### 19.3 What aminx must therefore supply — a block, not a threshold
 
@@ -958,7 +981,48 @@ would be silently under-specified for exactly the checkpoint we are porting.
 
 ### 19.4 What this decision does NOT settle
 
-It does not make V1 runnable yet — it names the configuration under which it becomes runnable. The
-featurization path still has never completed once in this env, so §18.5's rule stands unchanged:
-nothing is dumped for P4 until it does. The open decisions are now §11b (design engine in V1) and
-§11c (public alphabet width).
+It does not make V1 runnable yet, and per §19.2's correction it does not even name a reachable
+configuration — the flag it relies on has no inference caller. The featurization path still has
+never completed once in this env, so §18.5's rule stands unchanged: nothing is dumped for P4 until
+it does. §20 states what still has to be chosen to get there. The open decisions for the user are
+now §11b (design engine in V1) and §11c (public alphabet width), plus §20's dump-input question.
+
+## 20. The decision governs AMINX's runtime; it does not by itself unblock the ORACLE DUMPS
+
+These are two different questions and §19 ran them together. Separating them:
+
+- **What must aminx do at runtime?** Consume labels. Settled by §11a.
+- **What must happen once, to produce P4's reference tensors?** Upstream has to featurize a real
+  structure. Under `precomputed=False` that needs HBPLUS. Under `precomputed=True` it needs an
+  annotated structure — which something has to have annotated.
+
+So the labels have to come from somewhere even in the pre-labelled world, and **HBPLUS is absent
+from titanix**: `which hbplus` is empty, no `hbplus*` anywhere under a depth-4 filesystem sweep,
+and there is no conda/mamba/micromamba on the box to fetch one from a bioconda channel.
+
+Three ways out, with the one I would not pick named as such:
+
+1. **Build HBPLUS once** on titanix, set `HBPLUS_PATH`, run the default path. Cleanest reference
+   tensors — they are the labels the model was trained to expect. Cost: obtaining and compiling
+   third-party C source, which is a user-facing step, not one to take unasked.
+2. **Synthesise labels** and drive `precomputed=True` directly. Legitimate *for a parity test*,
+   because parity asks whether two implementations agree on the same input — the labels are an
+   input, and they do not need to be chemically correct, only identical on both sides and
+   well-formed. **Caveat that decides whether this works at all:** §19.3 established that v6 also
+   consumes `data["hbond_records"]` directly, so synthetic per-residue labels are not sufficient
+   on their own; the bond records must be synthesised too, and it is unverified whether EV6's
+   feature path tolerates an empty or hand-built bond list. Spike that before committing to it.
+3. **Reuse a PKAD benchmark structure** — `benchmarks/data/PKAD/pdb_cache/` ships real PDBs
+   (3EVQ, 3RUZ, 1NLX, …). This does NOT dodge the problem: they are inputs, not annotations, so
+   they still need HBPLUS. Named only so nobody mistakes the cache for a shipped snapshot. No
+   annotated snapshot is vendored anywhere in the repo.
+
+**Not recommended: deciding this silently inside P4.** It changes what the reference tensors mean
+— option 1 dumps the model's real operating point, option 2 dumps an arbitrary but reproducible
+one — and that belongs in the pre-registration, not in a dump script.
+
+Worth recording while the tree is in front of us: the FLAML labeller pickles **are** vendored
+(`labeller/models/automl_feature_{acid,HIS}/{full,fold1..5}.pkl`, present in the clone, not LFS
+pointers). So the end-to-end branch was never blocked on the *models* — only ever on the HBPLUS
+binary that feeds them.
+
