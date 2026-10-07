@@ -1,10 +1,10 @@
-# 261006-cisternal-cutover-spec Internal Docs
+# 261006-xtrax-usage-audit Internal Docs
 
 ## Daily
 - [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
 
 ## Handoffs
-- [261006_xtrax-track-b-brief](handoffs/261006_xtrax-track-b-brief.md) — A ready-to-run brief for an xtrax session: fix the skill gaps (xtrax debt #2496-#2503) and upstream the chunked_map size-1 guard (aminx #2371).
+- [261006_xtrax-track-b-brief](handoffs/261006_xtrax-track-b-brief.md) — A ready-to-run brief for an xtrax session. It fixes the skill gaps filed as xtrax debt
 - [260930_advisor-message-final](handoffs/260930_advisor-message-final.md) — The Slack message handed to the advisor for v0.2.0a3, with the claim-to-run-id mapping behind every figure it quotes.
 - [260930_browser-split-merge-readiness](handoffs/260930_browser-split-merge-readiness.md) — What actually blocks merging feat/t11d-session-release, measured rather than assumed — including an export-safety fix the branch has and main does not.
 - [260930_reference-parity-coverage-debt](handoffs/260930_reference-parity-coverage-debt.md) — The direct split-vs-reference measurement is the narrowest link in the browser validation chain; what it skips, why, and the cheapest order to close it.
@@ -22,6 +22,7 @@
 
 ## Specs
 - [261006_aminx-cisternal-cutover](specs/261006_aminx-cisternal-cutover.md) — Make aminx agent-native through cisternal: a manifest-driven plugin bundle of targeted skills (using-aminx router + five task skills), an aminx-mcp server wired with @cisternal.tool over host.runner (launched via uvx by default, switchable to a local venv), cisternal provenance/telemetry for campaign runs; the Typer-to-cyclopts CLI port is deferred.
+- [261006_runner-length-bucketing-xtrax-adoption](specs/261006_runner-length-bucketing-xtrax-adoption.md) — The core runner trims each batch from the loader's max_length to the smallest xtrax BUCKET_LADDER rung that covers it, then re-pads the outputs. On by default, with length_bucketing=False to opt out. Also retires the private bucket ladders and dead xtrax duplicates, and adopts device_memory_budget and loop_scaling. Closes
 - [261002_streaming-xtrax-migration-scope](specs/261002_streaming-xtrax-migration-scope.md) — Opus-tier scoping report (task 261002_streaming-xtrax-migration, debt #2421): premise check, current-state map, xtrax capability map, gap analysis, target architecture, preemption/resume design, staged plan, asks of xtrax, decisions. Includes the verified reuse-safety defect in the campaign row hash.
 - [261001_aminx-hub](specs/261001_aminx-hub.md) — A hub project separate from the aminx package (aminx keeps its name; working slug aminx-hub, final repo name, PyPI policy and domain are the S3-01 user decision): a static GitHub Pages site whose catalog is generated from S4 manifests, with ORT-Web, Pyodide, localfold and remote executors and py2Dmol as the viewer.
 - [261001_aminx-identity-and-hub-naming](specs/261001_aminx-identity-and-hub-naming.md) — aminx keeps its name and PyPI identity (no rename). S3 records the separate hub's identity (repo slug, PyPI policy, praxia.science domain, bathos slug, orchestrator-name collision), cleans the previous rename's stale names, guards release uniqueness, and checks the spec set's assembly mechanically.
@@ -61,6 +62,7 @@
 ## Actuation Surfaces
 
 ## Audits
+- [261007_aminx-xtrax-separation-audit](audits/261007_aminx-xtrax-separation-audit.md) — Deep audit (4 domain auditors, spot-verified) of where aminx still owns generic run, IO, execution, config and training contracts that xtrax should own, where xtrax holds aminx-specific logic, and the debts and sprint shape to fix it.
 - [261006_xtrax-usage-audit](audits/261006_xtrax-usage-audit.md) — Static inventory of all 619 public xtrax symbols against aminx (bathos da99c566, pass) plus per-capability verdicts. Includes duplicates to replace, gaps worth adopting, things that don't apply, and the native hook for runner length bucketing.
 - [260928_t5a-calibrate-attempt-history](audits/260928_t5a-calibrate-attempt-history.md) — All four tracked runs of layer_c_calibrate (one pass, three prior), and the one post-registration sidecar edit
 - [260928_t8-layer-c-bench-verdict](audits/260928_t8-layer-c-bench-verdict.md) — T8 tracked run edf8926e graded ctrl_blind; planted 5 ms control reads ~16 ms systematically; timing sentences not citable; v2 needs a dose-response instrument check
