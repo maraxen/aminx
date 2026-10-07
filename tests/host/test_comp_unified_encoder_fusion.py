@@ -77,6 +77,18 @@ def _make_fake_protein(batch_size: int = 1, seq_len: int = 10) -> Protein:
     )
 
 
+def _mock_sampling_spec() -> MagicMock:
+    """MagicMock spec with the planner fields make_inference_plan's topology check reads."""
+    spec = MagicMock()
+    spec.batch_size = 1
+    spec.samples_batch_size = 1
+    spec.temperature = [1.0]
+    spec.backbone_noise = [0.0]
+    spec.carry_specs = None
+    spec.dedup_specs = None
+    return spec
+
+
 def _make_mock_stage_set(encoding_fusion=None, encoder_sink=None) -> MagicMock:
     """Create a MagicMock stage_set with specified fusion/sink."""
     ss = MagicMock(spec=StageSet)
@@ -258,7 +270,7 @@ def test_make_inference_plan_wires_fusion_when_avg():
     mock_model.w_s_embed = MagicMock()
     mock_model.w_s_embed.weight = jnp.zeros((21, 128))
 
-    spec = MagicMock()
+    spec = _mock_sampling_spec()
     spec.average_node_features = True
     spec.use_rolling_state = False
     spec.multi_state_strategy = "arithmetic_mean"
@@ -292,7 +304,7 @@ def test_make_inference_plan_no_fusion_when_no_avg():
     mock_model.w_s_embed = MagicMock()
     mock_model.w_s_embed.weight = jnp.zeros((21, 128))
 
-    spec = MagicMock()
+    spec = _mock_sampling_spec()
     spec.average_node_features = False
     spec.use_rolling_state = False
     spec.multi_state_strategy = "arithmetic_mean"
@@ -637,7 +649,7 @@ def test_ste_routes_via_stage_set():
     mock_model.w_s_embed = MagicMock()
     mock_model.w_s_embed.weight = jnp.zeros((21, 128))
 
-    spec = MagicMock()
+    spec = _mock_sampling_spec()
     spec.average_node_features = False
     spec.use_rolling_state = False
     spec.multi_state_strategy = "arithmetic_mean"
