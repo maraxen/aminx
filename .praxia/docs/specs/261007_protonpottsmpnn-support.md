@@ -1418,8 +1418,25 @@ present — which is what makes the mismatch silent. Above index 20 they disagre
 
 Not one index above 20 agrees. The v6 column is **measured**, not read — §23's spike injected
 `HIS-S`/`ASP-D`/`GLU-P` and observed `S` taking 22/25/27, which is exactly what this table
-predicts. The v4 column is arithmetic over the tuple at `:124-139` and is **unverified by
-execution** (no labelled v4 cell has been run).
+predicts. The v4 column was arithmetic over the tuple at `:124-139` when first written.
+
+**UPDATE, same day — the v4 row is no longer unverified.** `tests/protonpotts/`
+`test_vocab_index_tables.py` now pins both extension tuples as literals and asserts them
+against upstream, and it was run in the `aminx-oracles-protonpotts` env on titanix where
+upstream *is* importable: **8 passed, 0 skipped** — so the three conformance assertions
+genuinely executed rather than skipping. That also confirmed `len(token_order) == 21` and both
+full widths (32 / 30) by execution.
+
+Be precise about what that buys. The v4 row is now verified at the **declaration** level — the
+tuple's content and order, and the 21-token prefix it sits behind. It is still unverified at
+the **inference** level: no labelled v4 cell has been run, so "a v4 checkpoint actually emits
+`ASP-D` at index 27 in a forward pass" rests on the shared `token_order + <extension>`
+construction rather than on an observation. For v6 that step *was* observed (§23). The
+distinction matters only if upstream ever gives the two vocabularies different assembly paths.
+
+The instrument is control-verified: mutating a single pinned token (`ASP-D` → `ASP-X` at index
+27) fails 3 of the 8 tests, including the upstream conformance one. A pinning test that cannot
+fail is not a pin.
 
 Read index 27 across the row: **v4 says `ASP-D`, v6 says `GLU-P`.** Feed a v6-produced `S` to a
 v4-expecting consumer and an aspartate silently becomes a protonated glutamate. Different
@@ -1452,15 +1469,15 @@ I am not treating this as settling §11c. It is one input, and the user's call.
 Independent of the alphabet decision, the v4/v6 collision deserves a guard, because the default
 is `v4` and every cell run so far has had to pass `extended_vocab="v6"` explicitly:
 
-1. **Assert the vocabulary, don't inherit it.** Any aminx-side ProtonPotts entry point should
+1. ~~**Pin the index tables.**~~ **DONE** — `tests/protonpotts/test_vocab_index_tables.py`, 8 passed on titanix, negative control fires.
+2. **Assert the vocabulary, don't inherit it.** Any aminx-side ProtonPotts entry point should
    require the vocabulary name explicitly and fail on absence, rather than defaulting. The
    upstream default being `v4` while the checkpoint in hand is v6 is a trap the current spikes
    avoid only by always passing the flag.
-2. **Pin the index tables.** Whatever §11c decides, the table in §25.3 should become a test
-   asserting both orderings by index, so an upstream reorder is loud. This needs no alphex.
 3. **If alphex is to own this**, the work is in alphex: either multi-character token support
    (contradicting `260814_alphabet-contract.md:479`) or a distinct residue-variant concept
    layered above `Alphabet`. Either is a spec'd change to another repo and should be filed
    there, not assumed here.
 
-Item 2 is unblocked and cheap. Items 1 and 3 wait on §11c.
+Item 1 is done — it needed no alphex, no checkpoint and no decision, which is why it went
+first. Items 2 and 3 wait on §11c.
