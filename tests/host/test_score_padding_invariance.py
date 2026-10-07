@@ -19,9 +19,8 @@ reasoning that made it look otherwise -- "monotone in pad length, therefore not 
 -- was itself wrong: a uniform permutation over 512 positions has different statistics from
 one over 214, so an order effect *can* trend monotonically with length.
 
-This gates real work. The length-bucketing layer (``tiling/buckets.py``) exists, is
-documented as live by ``tiling/axes.py``, and has zero call sites. Wiring it up *changes the
-pad length* of every scored structure, so it is only safe if this test passes. If it fails,
+This gates real work. Runner length bucketing (``aminx.host.bucketing``, spec S8) *changes
+the pad length* of every scored structure, so it is only safe if this test passes. If it fails,
 the failure is a genuine masking leak and must be fixed before bucketing lands -- not
 absorbed as noise.
 

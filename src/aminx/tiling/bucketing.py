@@ -2,8 +2,8 @@
 
 This module groups a batch of sequences by bucket assignment and calls
 BatchPlanner.plan() once per bucket, preventing recompilation on every
-novel sequence length. Distinct from tiling/buckets.py, which pads
-*individual* sequences to length-bucket ceilings.
+novel sequence length. Bucket selection is delegated to
+``xtrax.tiling.select_bucket``.
 
 JAX constraint: bucket boundaries are static (config-loaded at init);
 individual sequence lengths are dynamic but map to static bucket keys.
@@ -61,10 +61,15 @@ def select_bucket(seq_len: int, config: BucketingConfig) -> int:
         If seq_len exceeds all configured buckets.
 
     """
-    for bucket in config.buckets:
-        if seq_len <= bucket:
-            return bucket
-    raise ValueError(f"{seq_len} exceeds all buckets {config.buckets}")
+    from xtrax.tiling import select_bucket as xtrax_select_bucket  # noqa: PLC0415
+
+    try:
+        return xtrax_select_bucket(seq_len, boundaries=tuple(config.buckets))
+    except ValueError as exc:
+        if seq_len >= 0 and config.buckets and seq_len > config.buckets[-1]:
+            msg = f"{seq_len} exceeds all buckets {config.buckets}"
+            raise ValueError(msg) from exc
+        raise
 
 
 def group_by_bucket(

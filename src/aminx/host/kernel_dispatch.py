@@ -16,6 +16,12 @@ from aminx.host._sampling_helper import (
   _prepare_fixed_controls,
   _prepare_ligand_context,
 )
+from aminx.host.bucketing import (
+  repad_residue_axis,
+  residue_axis,
+  sample_rung,
+  trim_residue_axis,
+)
 from aminx.host.logit_aggregation import compute_pseudo_perplexity
 from aminx.host.plan import (
   AxisNames,
@@ -31,6 +37,7 @@ from aminx.inference.bundle_builder import (
   with_decoding_order,
 )
 from aminx.run.specs import SamplingSpecification
+from aminx.utils.aa_convert import MPNN_ALPHABET
 from aminx.utils.safe_map import safe_map as _safe_map
 
 if TYPE_CHECKING:
@@ -42,6 +49,60 @@ if TYPE_CHECKING:
     ProteinSequence,
   )
   from aminx.utils.data_structures import Protein
+
+
+# Sampled-token fill past the rung: X, so the re-padded tail is not read as Alanine (0).
+_SEQUENCE_PAD_TOKEN = MPNN_ALPHABET.index("X")
+
+
+def _spec_sample_rung(
+  spec: SamplingSpecification,
+  batched_ensemble: Protein,
+  plan: InferencePlan | None = None,
+  *,
+  quiet: bool = False,
+) -> int | None:
+  """Return the rung :func:`_sample_batch` trims this batch to, or ``None``.
+
+  The one place the sample-side decision is made from a spec. ``_sample_batch``
+  trims with it and the runner's padding warning compares against it.
+
+  Parameters
+  ----------
+  spec : SamplingSpecification
+    Sampling spec. Duck-typed specs (tests, older callers) may lack
+    ``max_length``/``length_bucketing``; missing means no trim.
+  batched_ensemble : Protein
+    The loader batch.
+  plan : InferencePlan or None, optional
+    Plan whose ``stage_set`` sinks block the trim. ``None`` means no sinks.
+  quiet : bool, optional
+    Suppress skip-guard INFO lines.
+
+  Returns
+  -------
+  int or None
+    The rung, or ``None`` to keep the padded length.
+
+  """
+  # getattr: test doubles and older plans may omit either sink field (or set it to None).
+  stage_set = getattr(plan, "stage_set", None)
+  has_sinks = bool(
+    getattr(stage_set, "encoder_sink", None) or getattr(stage_set, "decoder_sink", None),
+  )
+  return sample_rung(
+    batched_ensemble.mask,
+    batched_ensemble.coordinates.shape[1],
+    max_length=getattr(spec, "max_length", None),
+    enabled=getattr(spec, "length_bucketing", False),
+    pass_mode=getattr(spec, "pass_mode", "intra"),
+    bias=getattr(spec.run_spec.sampling, "bias", None),
+    tie_group_map=spec.tie_group_map,
+    state_position_map=spec.state_position_map,
+    structure_mapping=spec.structure_mapping,
+    has_stage_sinks=has_sinks,
+    quiet=quiet,
+  )
 
 
 def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
@@ -151,7 +212,7 @@ def _structure_bundle_kwargs(
   return kwargs
 
 
-def _sample_batch(
+def _sample_batch(  # noqa: PLR0915
   spec: SamplingSpecification,
   batched_ensemble: Protein,
   plan: InferencePlan,
@@ -179,8 +240,16 @@ def _sample_batch(
   seq_len = batched_ensemble.coordinates.shape[1]
   batch_size = batched_ensemble.coordinates.shape[0]
 
-  # 2. Plan batching
-  batch_plan = make_sampling_planner(spec, n_samples_override=target_num_samples, seq_len=seq_len)
+  # Rung is a Python int or None. None means the rest of this function is the
+  # pre-bucketing path: nothing is sliced, re-padded, or re-read.
+  rung = _spec_sample_rung(spec, batched_ensemble, plan)
+
+  # 2. Plan batching. With rung None this receives the padded seq_len, as before.
+  batch_plan = make_sampling_planner(
+    spec,
+    n_samples_override=target_num_samples,
+    seq_len=rung if rung is not None else seq_len,
+  )
 
   structures_bs, samples_bs, temps_bs, noises_bs = extract_batch_sizes(batch_plan)
 
@@ -240,6 +309,33 @@ def _sample_batch(
     canonical_structure_ids=canonical_structure_ids,
     batch_structure_ids=batch_structure_ids,
   )
+  # Validation above uses the padded length. Trim only after that, and only when
+  # a rung was selected. Axes live in SAMPLE_RESIDUE_AXES.
+  if rung is not None:
+    coords_for_vmap = trim_residue_axis(coords_for_vmap, rung, residue_axis("coords"))
+    mask_for_vmap = trim_residue_axis(mask_for_vmap, rung, residue_axis("mask"))
+    residue_index_for_vmap = trim_residue_axis(
+      residue_index_for_vmap, rung, residue_axis("residue_index"),
+    )
+    chain_index_for_vmap = trim_residue_axis(
+      chain_index_for_vmap, rung, residue_axis("chain_index"),
+    )
+    tie_map_for_vmap = trim_residue_axis(tie_map_for_vmap, rung, residue_axis("tie_group_map"))
+    state_position_map_for_vmap = trim_residue_axis(
+      state_position_map_for_vmap, rung, residue_axis("state_position_map"),
+    )
+    mapping_for_vmap = trim_residue_axis(
+      mapping_for_vmap, rung, residue_axis("structure_mapping"),
+    )
+    fixed_mask_for_vmap = trim_residue_axis(fixed_mask_for_vmap, rung, residue_axis("fixed_mask"))
+    fixed_tokens_for_vmap = trim_residue_axis(
+      fixed_tokens_for_vmap, rung, residue_axis("fixed_tokens"),
+    )
+    ligand_context = {
+      key: trim_residue_axis(value, rung, residue_axis(key))
+      for key, value in ligand_context.items()
+    }
+    trimmed_bias = trim_residue_axis(spec.run_spec.sampling.bias, rung, residue_axis("bias"))
   state_weights = (
     jnp.asarray(spec.state_weights, dtype=jnp.float32) if spec.state_weights is not None else None
   )
@@ -259,11 +355,18 @@ def _sample_batch(
   # sample key (fold_in), so the decode's own key stream is untouched. Without this, a
   # sample_ar bundle decodes in the fixed N->C order of schedule="fixed_n_to_c".
   custom_order_fn = getattr(spec.run_spec.sampling, "decoding_order_fn", None)
-  order_num_groups = (
-    int(jnp.max(jnp.asarray(spec.tie_group_map))) + 1
-    if custom_order_fn is not None and spec.tie_group_map is not None
-    else None
-  )
+  if rung is not None:
+    order_num_groups = (
+      int(jnp.max(tie_map_for_vmap)) + 1
+      if custom_order_fn is not None and tie_map_for_vmap is not None
+      else None
+    )
+  else:
+    order_num_groups = (
+      int(jnp.max(jnp.asarray(spec.tie_group_map))) + 1
+      if custom_order_fn is not None and spec.tie_group_map is not None
+      else None
+    )
 
   def _with_sample_order(bundle: Any, sample_key: Any) -> Any:  # noqa: ANN401
     return with_decoding_order(
@@ -276,7 +379,8 @@ def _sample_batch(
   def _bundle_kwargs(structure_idx: Any) -> dict[str, Any]:  # noqa: ANN401
     # `bias` is read here, inside the traced closure, exactly where each inline copy read
     # it before this helper existed -- so the refactor does not move the spec access.
-    bias = spec.run_spec.sampling.bias
+    # rung is a Python value, so the spec attribute is read only when rung is None.
+    bias = trimmed_bias if rung is not None else spec.run_spec.sampling.bias
     return _structure_bundle_kwargs(
       structure_idx,
       per_structure=per_structure,
@@ -529,6 +633,18 @@ def _sample_batch(
   sampled_sequences = jnp.transpose(sampled_sequences, (0, 3, 1, 2, 4))
   sampled_logits = jnp.transpose(sampled_logits, (0, 3, 1, 2, 4, 5))
 
+  pseudo_perplexity = None
+  if rung is not None:
+    # PPL on the trimmed arrays, then re-pad so every consumer sees the padded shape.
+    if spec.run_spec.sampling.compute_pseudo_perplexity:
+      pseudo_perplexity = compute_pseudo_perplexity(
+        sampled_logits, sampled_sequences, mask_for_vmap,
+      )
+    sampled_sequences = repad_residue_axis(
+      sampled_sequences, seq_len, -1, fill=_SEQUENCE_PAD_TOKEN,
+    )
+    sampled_logits = repad_residue_axis(sampled_logits, seq_len, -2)
+
   # 7. io_callback emission — stage tensors to active sink (if any)
   _effective_chunk_start = chunk_sample_start if chunk_sample_start is not None else 0
 
@@ -553,12 +669,11 @@ def _sample_batch(
       ordered=False,
     )
 
-  # 8. IO & Metadata
-  if spec.run_spec.sampling.compute_pseudo_perplexity:
+  # 8. IO & Metadata. Unbucketed runs compute PPL here, on the padded arrays, as before.
+  if rung is None and spec.run_spec.sampling.compute_pseudo_perplexity:
     mask = batched_ensemble.mask
     if mask is None:
       mask = jnp.ones(batched_ensemble.coordinates.shape[:2], dtype=jnp.float32)
     pseudo_perplexity = compute_pseudo_perplexity(sampled_logits, sampled_sequences, mask)
-    return sampled_sequences, sampled_logits, pseudo_perplexity
 
-  return sampled_sequences, sampled_logits, None
+  return sampled_sequences, sampled_logits, pseudo_perplexity

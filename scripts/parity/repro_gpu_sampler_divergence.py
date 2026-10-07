@@ -53,6 +53,8 @@ def main() -> None:
   results = {}
   for name, dev in (("gpu", gpu), ("cpu", cpu)):
     with jax.default_device(dev):
+      # shared_sample -> aminx_kwargs sets length_bucketing=False. Recorded parity runs
+      # predate S8; opting out keeps this GPU/CPU comparison on the fixed padded length.
       results[name] = e2e.shared_sample("pmpnn", knob, ctx, n_draws=n)
   (seq_g, log_g), (seq_c, log_c) = results["gpu"], results["cpu"]
   print(f"knob={knob} n={n} padded_length={e2e._pad(knob)} gpu={gpu.device_kind}")

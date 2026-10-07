@@ -1,0 +1,44 @@
+[experiment]
+hypothesis = "A static (ast-only) scan can enumerate every public symbol of the pinned xtrax (0.4.0a11) and classify each as used by aminx src, used only by tests/scripts, or unused, with xtrax re-exports resolved to the defining module. The instrument is trusted only if a known src use (xtrax.tiling.bucket.select_bucket, via aminx/export/buckets.py) is detected, a known non-use (xtrax.tiling.iterator.BucketIterator) is reported unused, and a planted synthetic import of BucketIterator IS detected (so 'unused' is not a scanner that never sees anything)."
+stage_name = "inventory"
+novel = false
+task_id = "261006_xtrax-native-audit"
+
+[outcomes.pass]
+condition = "controls_ok = true AND parse_errors = 0 AND n_symbols > 0"
+decision = "Use the inventory JSON as the factual base of the xtrax-usage audit (debt #2493): per-symbol and per-subpackage used/unused classification, unresolved imports, and internal (non-public) xtrax symbols aminx reaches into."
+reasoning = "All three controls behaving shows the scanner both detects uses and does not invent them; zero parse errors means no aminx file was silently skipped."
+is_residual = false
+
+[outcomes.marginal]
+condition = "controls_ok = true AND parse_errors > 0"
+decision = "The classification holds for the files that parsed; list the unparsed files in the audit and treat their xtrax usage as unknown rather than absent."
+reasoning = "A file that failed to parse contributes no uses, which would bias symbols toward 'unused'."
+is_residual = false
+
+[outcomes.fail]
+condition = "controls_ok = false"
+decision = "Do not cite the inventory. Fix the scanner (re-export resolution, attribute-chain handling, or the surface rules) until the controls behave, then re-run."
+reasoning = "A failed positive control means real uses are missed; a failed negative or planted control means 'unused' is unreliable."
+is_residual = true
+
+[result_schema]
+xtrax_version = "str"
+n_modules = "int"
+n_symbols = "int"
+n_used_src = "int"
+n_used_tests_or_scripts_only = "int"
+n_unused = "int"
+n_unresolved_imports = "int"
+n_internal_symbols_used = "int"
+parse_errors = "int"
+positive_control_ok = "bool"
+negative_control_ok = "bool"
+planted_control_detected = "bool"
+controls_ok = "bool"
+
+[result_schema.provenance]
+script_commit = "git log --oneline -1"
+related_debt = "#2493 (audit and replace aminx duplicates of xtrax), #2371, #2421, #2156, #2157, #2358"
+hardware_targets = ["local WSL2 CPU; static analysis, no JAX import"]
+notes = "Static scan: dynamic access (getattr with computed names, importlib by string) is not seen. 'Unused' means no static reference in aminx src/tests/scripts at the scanned commit. No exploratory run of this script preceded this registration."

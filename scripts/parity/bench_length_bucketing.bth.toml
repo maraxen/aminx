@@ -1,0 +1,39 @@
+[experiment]
+hypothesis = "With S8 runner length bucketing on (default), runner sample on 1ubq (span 76, padded to max_length 512) runs at the 128 rung and its steady-state wall clock on titanix CPU is at least 3x faster than with length_bucketing=False. The 3pgk control (span 415) stays at the 512 rung, so its opt-out/bucketed ratio sits within 0.8-1.25: an instrument that reported a speedup everywhere would fail this control."
+stage_name = "g_speed"
+novel = false
+task_id = "261006_runner-bucketing"
+
+[outcomes.pass]
+condition = "all_cells_ok = true AND control_ok = true AND speedup_1ubq >= 3.0"
+decision = "G-SPEED passes: cite the 1ubq speedup and the 3pgk control ratio in the S8 PR and CHANGELOG; runner bucketing ships default-on."
+reasoning = "The expected rung drop 512 -> 128 cuts AR decode length 4x; a >=3x end-to-end gain with an unchanged control shows the trim reached the hot path."
+is_residual = false
+
+[outcomes.marginal]
+condition = "all_cells_ok = true AND control_ok = true AND speedup_1ubq >= 1.5 AND speedup_1ubq < 3.0"
+decision = "Bucketing helps but less than expected: profile where the remaining time goes (encode, host IO, fixed overhead) before claiming the 3x figure; default-on stays, the PR states the measured number."
+reasoning = "A real but sub-3x gain means a non-length-scaling cost dominates at this size, not that the trim failed."
+is_residual = false
+
+[outcomes.fail]
+condition = "all_cells_ok = false OR control_ok = false OR speedup_1ubq < 1.5"
+decision = "Do not cite a speedup. If the control is out of band, the timing instrument is unreliable (noise, thermal, contention): fix the harness and rerun. If 1ubq shows < 1.5x with a good control, the trim is not reaching the decode: debug S8-03 before merging."
+reasoning = "Either the measurement or the mechanism is broken; neither supports the G-SPEED claim."
+is_residual = true
+
+[result_schema]
+all_cells_ok = "bool"
+speedup_1ubq = "float"
+control_ratio_3pgk = "float"
+control_ok = "bool"
+reused_cells = "list[str]"
+failed_cells = "dict"
+source_sha256 = "str"
+reps = "int"
+
+[result_schema.provenance]
+script_commit = "git log --oneline -1"
+related_debt = "aminx #2493, #2358; spec .praxia/docs/specs/261006_runner-length-bucketing-xtrax-adoption.md (S8-06, G-SPEED)"
+hardware_targets = ["titanix CPU (jax CPU backend), OMP_NUM_THREADS=8"]
+notes = "Four cells (1ubq|3pgk x bucketed|optout), each in its own subprocess with a 1800 s timeout and an atomic per-cell JSON; reruns reuse a cell only when the sha256 key over structure file, params, reps and the src/aminx tree matches. Statistic: median of 3 timed calls after one warm-up call (warm-up = compile, recorded but not graded). num_samples 4, temperature 0.1, seed 7, max_length 512. No exploratory run of this script preceded this registration."

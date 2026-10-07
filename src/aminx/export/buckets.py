@@ -4,9 +4,9 @@ Padding a variable-length structure up to a small, fixed set of bucket sizes bou
 recompilation for a downstream export target (ONNX/IREE) the same way
 ``aminx.tiling.bucketing`` bounds it for inference: a handful of static shapes instead of
 one per distinct length. This module is deliberately separate from both
-``aminx.tiling.bucketing`` (inference-time batch grouping) and ``aminx.tiling.buckets``
-(the ``LENGTH_BUCKETS`` inference-padding ladder, V7) -- the export ladder is its own
-pinned set (``EXPORT_BUCKETS``), and the two must not be conflated (ODQ-B1).
+``aminx.tiling.bucketing`` (inference-time batch grouping) and the runner's length
+bucketing (``aminx.host.bucketing``, on the xtrax ``BUCKET_LADDER``) -- the export ladder
+is its own pinned set (``EXPORT_BUCKETS``), and they must not be conflated (ODQ-B1).
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from xtrax.tiling import select_bucket as _xtrax_select_bucket
 from aminx.tiling.errors import TilingError
 
 #: Pinned export bucket ladder (D-C). Distinct from ``tiling/bucketing.py``'s
-#: ``BucketingConfig`` default and from ``tiling/buckets.py``'s ``LENGTH_BUCKETS`` --
+#: ``BucketingConfig`` default and from the runner's xtrax ``BUCKET_LADDER`` --
 #: neither is changed by this module (ODQ-B1).
 EXPORT_BUCKETS: tuple[int, ...] = (128, 256, 512, 1024)
 
