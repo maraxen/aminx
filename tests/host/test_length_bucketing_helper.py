@@ -15,6 +15,7 @@ from aminx.host.bucketing import (
   repad_residue_axis,
   rung_for,
   sample_rung,
+  score_rung,
   trim_residue_axis,
 )
 from aminx.run.spec_json import (
@@ -173,3 +174,46 @@ def test_state_position_map_trims_the_last_axis() -> None:
   padded = repad_residue_axis(trimmed, 5, -1)
   assert padded.shape == spm.shape
   assert np.all(padded[:, :, 3:] == 0)
+
+
+def test_repad_fill_value_for_numpy_and_jax() -> None:
+  import jax.numpy as jnp  # noqa: PLC0415
+
+  host = repad_residue_axis(np.zeros((2, 3), dtype=np.int32), 5, -1, fill=20)
+  assert np.array_equal(host[:, 3:], np.full((2, 2), 20))
+  dev = repad_residue_axis(jnp.zeros((2, 3), dtype=jnp.int32), 5, -1, fill=20)
+  assert np.array_equal(np.asarray(dev)[:, 3:], np.full((2, 2), 20))
+  assert np.all(np.asarray(dev)[:, :3] == 0)
+
+
+def test_sample_rung_stage_sinks_keep_padded_length(caplog: pytest.LogCaptureFixture) -> None:
+  mask = np.zeros((1, 512), dtype=np.float32)
+  mask[0, :76] = 1
+  kwargs = {"max_length": 512, "enabled": True}
+  assert sample_rung(mask, 512, **kwargs) == 128
+  with caplog.at_level(logging.INFO, logger="aminx.host.bucketing"):
+    assert sample_rung(mask, 512, has_stage_sinks=True, **kwargs) is None
+  assert "stage sinks" in caplog.text
+
+
+def test_sample_rung_quiet_suppresses_skip_logs(caplog: pytest.LogCaptureFixture) -> None:
+  mask = np.zeros((1, 512), dtype=np.float32)
+  mask[0, :76] = 1
+  with caplog.at_level(logging.INFO, logger="aminx.host.bucketing"):
+    assert sample_rung(mask, 512, max_length=512, enabled=True, has_stage_sinks=True, quiet=True) is None
+  assert "length bucketing skipped" not in caplog.text
+
+
+def test_score_rung_covers_span_and_longest_sequence_and_skips_unbucketed_paths() -> None:
+  mask = np.zeros((2, 512), dtype=np.float32)
+  mask[0, :76] = 1
+  kwargs = {"max_length": 512, "enabled": True}
+  assert score_rung(mask, 512, **kwargs) == 128
+  assert score_rung(mask, 512, longest_sequence=200, **kwargs) == 256
+  assert score_rung(mask, 512, average_node_features=True, **kwargs) is None
+  assert score_rung(mask, 512, multistate=True, **kwargs) is None
+  assert score_rung(mask, 512, pass_mode="inter", **kwargs) is None
+  assert score_rung(mask, 512, max_length=None, enabled=True) is None
+  assert score_rung(mask, 512, max_length=512, enabled=False) is None
+  assert score_rung(None, 512, **kwargs) is None
+  assert score_rung(mask, 128, **kwargs) is None  # rung would not shrink the batch

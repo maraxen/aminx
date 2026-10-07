@@ -215,7 +215,6 @@ pylint.max-args = 15
 "src/aminx/run/**/*.py" = ["N806", "N803"]
 "src/aminx/run/multistate_pools.py" = ["N806", "N803"]
 "src/aminx/run/sampling.py" = ["N806", "N803"]
-"src/aminx/host/stage_adapter.py" = ["ANN002", "ANN003", "ANN401"]  # *args/**kwargs needed for chaining arbitrary sinks
 "tests/test_adapter.py" = ["S101", "T201", "ANN201", "INP001", "PLC0415", "SLF001"]
 "scripts/**/*.py" = ["T201", "INP001"]
 

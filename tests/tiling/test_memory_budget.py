@@ -194,3 +194,29 @@ def test_headroom_not_applied_to_configured_layers(tmp_path: Path) -> None:
   no_arg = {key: value for key, value in environ.items() if key != MEMORY_BUDGET_ENV}
   assert memory_budget_source(headroom=0.25, start=start, environ=environ)[0] == 2000
   assert memory_budget_source(headroom=0.25, start=start, environ=no_arg)[0] == 3000
+
+
+def test_default_call_caches_file_layers_until_cleared(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The planners' no-argument call walks and parses config once per process (per cwd), not per batch."""
+  start, environ = _isolated(tmp_path)
+  _write_pyproject(start, "[tool.aminx]\nmemory_budget_bytes = 1000\n")
+  monkeypatch.chdir(start)
+  monkeypatch.delenv(MEMORY_BUDGET_ENV, raising=False)
+  monkeypatch.setenv("XDG_CONFIG_HOME", environ["XDG_CONFIG_HOME"])
+  memory_budget.clear_memory_budget_cache()
+  try:
+    assert resolve_memory_budget_bytes() == 1000
+    _write_pyproject(start, "[tool.aminx]\nmemory_budget_bytes = 2000\n")
+    assert resolve_memory_budget_bytes() == 1000  # cached: a mid-run edit does not move the budget
+    # Explicit start/environ (tests, tools) is never cached.
+    assert memory_budget_source(start=start, environ=environ)[0] == 2000
+    # The env layer is read on every call, ahead of the cache.
+    monkeypatch.setenv(MEMORY_BUDGET_ENV, "5000")
+    assert resolve_memory_budget_bytes() == 5000
+    monkeypatch.delenv(MEMORY_BUDGET_ENV)
+    memory_budget.clear_memory_budget_cache()
+    assert resolve_memory_budget_bytes() == 2000
+  finally:
+    memory_budget.clear_memory_budget_cache()

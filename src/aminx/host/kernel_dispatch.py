@@ -37,6 +37,7 @@ from aminx.inference.bundle_builder import (
   with_decoding_order,
 )
 from aminx.run.specs import SamplingSpecification
+from aminx.utils.aa_convert import MPNN_ALPHABET
 from aminx.utils.safe_map import safe_map as _safe_map
 
 if TYPE_CHECKING:
@@ -48,6 +49,60 @@ if TYPE_CHECKING:
     ProteinSequence,
   )
   from aminx.utils.data_structures import Protein
+
+
+# Sampled-token fill past the rung: X, so the re-padded tail is not read as Alanine (0).
+_SEQUENCE_PAD_TOKEN = MPNN_ALPHABET.index("X")
+
+
+def _spec_sample_rung(
+  spec: SamplingSpecification,
+  batched_ensemble: Protein,
+  plan: InferencePlan | None = None,
+  *,
+  quiet: bool = False,
+) -> int | None:
+  """Return the rung :func:`_sample_batch` trims this batch to, or ``None``.
+
+  The one place the sample-side decision is made from a spec. ``_sample_batch``
+  trims with it and the runner's padding warning compares against it.
+
+  Parameters
+  ----------
+  spec : SamplingSpecification
+    Sampling spec. Duck-typed specs (tests, older callers) may lack
+    ``max_length``/``length_bucketing``; missing means no trim.
+  batched_ensemble : Protein
+    The loader batch.
+  plan : InferencePlan or None, optional
+    Plan whose ``stage_set`` sinks block the trim. ``None`` means no sinks.
+  quiet : bool, optional
+    Suppress skip-guard INFO lines.
+
+  Returns
+  -------
+  int or None
+    The rung, or ``None`` to keep the padded length.
+
+  """
+  # getattr: test doubles and older plans may omit either sink field (or set it to None).
+  stage_set = getattr(plan, "stage_set", None)
+  has_sinks = bool(
+    getattr(stage_set, "encoder_sink", None) or getattr(stage_set, "decoder_sink", None),
+  )
+  return sample_rung(
+    batched_ensemble.mask,
+    batched_ensemble.coordinates.shape[1],
+    max_length=getattr(spec, "max_length", None),
+    enabled=getattr(spec, "length_bucketing", False),
+    pass_mode=getattr(spec, "pass_mode", "intra"),
+    bias=getattr(spec.run_spec.sampling, "bias", None),
+    tie_group_map=spec.tie_group_map,
+    state_position_map=spec.state_position_map,
+    structure_mapping=spec.structure_mapping,
+    has_stage_sinks=has_sinks,
+    quiet=quiet,
+  )
 
 
 def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
@@ -186,19 +241,8 @@ def _sample_batch(  # noqa: PLR0915
   batch_size = batched_ensemble.coordinates.shape[0]
 
   # Rung is a Python int or None. None means the rest of this function is the
-  # pre-bucketing path: nothing is sliced, re-padded, or re-read. getattr: duck-typed
-  # specs (tests, older callers) may lack these fields; no max_length means no trim.
-  rung = sample_rung(
-    batched_ensemble.mask,
-    seq_len,
-    max_length=getattr(spec, "max_length", None),
-    enabled=getattr(spec, "length_bucketing", False),
-    pass_mode=getattr(spec, "pass_mode", "intra"),
-    bias=getattr(spec.run_spec.sampling, "bias", None),
-    tie_group_map=spec.tie_group_map,
-    state_position_map=spec.state_position_map,
-    structure_mapping=spec.structure_mapping,
-  )
+  # pre-bucketing path: nothing is sliced, re-padded, or re-read.
+  rung = _spec_sample_rung(spec, batched_ensemble, plan)
 
   # 2. Plan batching. With rung None this receives the padded seq_len, as before.
   batch_plan = make_sampling_planner(
@@ -596,7 +640,9 @@ def _sample_batch(  # noqa: PLR0915
       pseudo_perplexity = compute_pseudo_perplexity(
         sampled_logits, sampled_sequences, mask_for_vmap,
       )
-    sampled_sequences = repad_residue_axis(sampled_sequences, seq_len, -1)
+    sampled_sequences = repad_residue_axis(
+      sampled_sequences, seq_len, -1, fill=_SEQUENCE_PAD_TOKEN,
+    )
     sampled_logits = repad_residue_axis(sampled_logits, seq_len, -2)
 
   # 7. io_callback emission — stage tensors to active sink (if any)

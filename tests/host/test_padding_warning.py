@@ -145,22 +145,76 @@ def test_never_raises_from_its_own_computation():
         check(SimpleNamespace(mask=np.array([["a", "b"]], dtype=object)))  # non-numeric
 
 
+def _rung_of_sample_spec(**overrides: object):
+    """The runner's sample-side rung_fn over a duck-typed spec: the decision _sample_batch trims with."""
+    from aminx.host.kernel_dispatch import _spec_sample_rung
+
+    fields = {
+        "max_length": 512,
+        "length_bucketing": True,
+        "pass_mode": "intra",
+        "tie_group_map": None,
+        "state_position_map": None,
+        "structure_mapping": None,
+    }
+    bias = overrides.pop("bias", None)
+    plan = overrides.pop("plan", None)
+    fields.update(overrides)
+    spec = SimpleNamespace(run_spec=SimpleNamespace(sampling=SimpleNamespace(bias=bias)), **fields)
+
+    def rung_fn(batch: SimpleNamespace) -> int | None:
+        full = SimpleNamespace(mask=batch.mask, coordinates=np.zeros((*batch.mask.shape, 4, 3)))
+        return _spec_sample_rung(spec, full, plan, quiet=True)
+
+    return rung_fn
+
+
 def test_bucketing_on_compares_the_span_to_the_rung():
     """76 residues at pad 512 rung to 128, which is under 2x the span, so the check stays silent."""
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        _PaddingCheck("sample", length_bucketing=True)(_batch([76], 512))
+        _PaddingCheck("sample", rung_fn=_rung_of_sample_spec())(_batch([76], 512))
 
 
 def test_bucketing_off_still_warns_on_the_padded_length():
     with pytest.warns(UserWarning, match=r"max_length=512.*spans 76"):
-        _PaddingCheck("sample", length_bucketing=False)(_batch([76], 512))
+        _PaddingCheck("sample", rung_fn=_rung_of_sample_spec(length_bucketing=False))(_batch([76], 512))
 
 
 def test_bucketing_on_still_warns_when_the_span_is_past_the_ladder():
     """A span past the last rung is not trimmed, so the padded length is what the warning sees."""
     with pytest.warns(UserWarning, match=r"spans 3000 residues"):
-        _PaddingCheck("sample", length_bucketing=True)(_batch([3000], 8192))
+        _PaddingCheck("sample", rung_fn=_rung_of_sample_spec(max_length=8192))(_batch([3000], 8192))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"pass_mode": "inter"}, id="inter"),
+        pytest.param({"bias": np.zeros((76, 21), dtype=np.float32)}, id="real-length-bias"),
+        pytest.param({"tie_group_map": np.full((512,), 300, dtype=np.int32)}, id="tie-id-past-rung"),
+        pytest.param(
+            {"plan": SimpleNamespace(stage_set=SimpleNamespace(encoder_sink=(object(),), decoder_sink=()))},
+            id="stage-sink",
+        ),
+    ],
+)
+def test_bucketing_on_warns_when_a_skip_guard_keeps_the_batch_padded(overrides: dict) -> None:
+    """Bucketing is on but the dispatch will not trim, so the batch decodes at 512 and the user is told."""
+    with pytest.warns(UserWarning, match=r"max_length=512.*spans 76"):
+        _PaddingCheck("sample", rung_fn=_rung_of_sample_spec(**overrides))(_batch([76], 512))
+
+
+def test_score_check_warns_for_the_unbucketed_averaged_path():
+    from aminx.host.bucketing import score_rung
+
+    def rung_fn(batch: SimpleNamespace) -> int | None:
+        return score_rung(
+            batch.mask, batch.mask.shape[1], max_length=512, enabled=True, average_node_features=True,
+        )
+
+    with pytest.warns(UserWarning, match=r"max_length=512.*spans 76"):
+        _PaddingCheck("score", rung_fn=rung_fn)(_batch([76], 512))
 
 
 def test_suggestion_rounds_up_to_a_multiple_of_32_and_never_below_the_span():

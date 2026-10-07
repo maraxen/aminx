@@ -103,12 +103,12 @@ def test_g_optout_matches_golden() -> None:
 
 @pytest.mark.slow
 @pytest.mark.requires_weights
-def test_g_shape_bucketed_sample_keeps_padded_shape_and_zero_tail() -> None:
-  """Bucketed 1ubq keeps the golden shapes; the re-padded tail past the rung is 0.
+def test_g_shape_bucketed_sample_keeps_padded_shape_and_x_tail() -> None:
+  """Bucketed 1ubq keeps the golden shapes; past the rung, tokens are X (20) and logits 0.
 
   The opt-out golden samples every padded position (tokens and logits are nonzero
   out to 511), so masked positions inside the rung (76-127) are sampled too. Only
-  the re-pad past the rung is guaranteed to be zero.
+  the re-pad past the rung is fixed: X, not token 0, which is Alanine.
   """
   pytest.importorskip("aminx")
   from aminx.host.runner import sample  # noqa: PLC0415
@@ -126,7 +126,7 @@ def test_g_shape_bucketed_sample_keeps_padded_shape_and_zero_tail() -> None:
   logits = np.asarray(result["logits"])
   assert list(sequences.shape) == meta["arrays"]["1ubq__sample__sequences"]
   assert list(logits.shape) == meta["arrays"]["1ubq__sample__logits"]
-  assert np.all(sequences[..., _UBQ_RUNG:] == 0)
+  assert np.all(sequences[..., _UBQ_RUNG:] == 20)
   assert np.all(logits[..., _UBQ_RUNG:, :] == 0)
   assert np.any(logits[..., :_UBQ_SPAN, :] != 0)
   real = sequences[..., :_UBQ_SPAN]
@@ -188,6 +188,39 @@ def test_g_invariance_score_noise0(pdb_name: str, chain_id: str | None) -> None:
     pytest.skip(f"structure fixture missing: {pdb}")
   bucketed, opted_out = _score_pair(pdb, backbone_noise=0.0, chain_id=chain_id)
   np.testing.assert_allclose(bucketed, opted_out, rtol=1e-6)
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+def test_averaged_score_path_is_not_bucketed() -> None:
+  """average_node_features=True keeps the padded length (S8 v1 non-goal), so it is bit-identical.
+
+  This path draws backbone noise at the coordinate shape, so a trim would change the
+  noise draw and the score. Before the fix it was trimmed despite being documented as
+  unbucketed. One noise level: with two or more, this path fails its R3 check under
+  vmap (TracerBoolConversionError) with bucketing on or off alike (aminx debt #2517).
+  """
+  pytest.importorskip("aminx")
+  from aminx.host.runner import score  # noqa: PLC0415
+  from aminx.run.specs import ScoringSpecification  # noqa: PLC0415
+
+  def once(length_bucketing: bool) -> np.ndarray:
+    result = score(
+      ScoringSpecification(
+        inputs=str(_DATA / "1ubq.pdb"),
+        checkpoint_id=_CHECKPOINT,
+        sequences_to_score=["A" * 10],
+        average_node_features=True,
+        backbone_noise=0.1,
+        random_seed=42,
+        max_length=512,
+        length_bucketing=length_bucketing,
+        return_logits=False,
+      ),
+    )
+    return np.asarray(result["scores"])
+
+  assert np.array_equal(once(True), once(False))
 
 
 @pytest.mark.slow

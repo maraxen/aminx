@@ -7,6 +7,8 @@ from __future__ import annotations
 import logging
 import sys
 import warnings
+from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any, cast
 
 import jax
@@ -24,8 +26,8 @@ from aminx.host._sampling_helper import (
   _prepare_ligand_context,
   _structure_ids_for_batch,
 )
-from aminx.host.bucketing import batch_span, repad_residue_axis, rung_for, trim_residue_axis
-from aminx.host.kernel_dispatch import _sample_batch
+from aminx.host.bucketing import batch_span, repad_residue_axis, score_rung, trim_residue_axis
+from aminx.host.kernel_dispatch import _sample_batch, _spec_sample_rung
 from aminx.host.logit_aggregation import (
   aggregate_logits,
   aggregate_pseudo_perplexities,
@@ -102,16 +104,22 @@ class _PaddingCheck:
   The suggestion is therefore never below the span, and the message says to size it to the longest chain across
   ALL inputs, since only the first offending batch is examined.
 
-  ``length_bucketing=False`` (the constructor default) compares the span to the padded length, which is
-  what ``_PaddingCheck("sample")`` has always done. The runner passes the spec flag explicitly. When it
-  is true, the comparison uses the xtrax rung instead, so a batch whose padding the rung removes stays
-  silent, and a span past the ladder (or bucketing left off) still warns.
+  ``rung_fn=None`` (the constructor default) compares the span to the padded length, which is what
+  ``_PaddingCheck("sample")`` has always done. The runner passes ``rung_fn``: the same per-batch decision
+  the dispatch trims with (``_spec_sample_rung`` / ``score_rung``). When it returns a rung, the comparison
+  uses that rung, so a batch whose padding is actually removed stays silent; when it returns ``None``
+  (bucketing off, a skip guard, a span past the ladder) the batch runs padded and still warns.
   """
 
-  def __init__(self, entry: str, *, length_bucketing: bool = False) -> None:
+  def __init__(
+    self,
+    entry: str,
+    *,
+    rung_fn: Callable[[Any], int | None] | None = None,
+  ) -> None:
     self._entry = entry
     self._warned = False
-    self._length_bucketing = length_bucketing
+    self._rung_fn = rung_fn
 
   def __call__(self, batched_ensemble: Any) -> None:  # noqa: ANN401
     if self._warned:
@@ -128,8 +136,11 @@ class _PaddingCheck:
     except (TypeError, ValueError):  # advisory only: a malformed batch is never worth failing a run
       return
     compared = padded
-    if self._length_bucketing:
-      rung = rung_for(real, padded, enabled=True)
+    if self._rung_fn is not None:
+      try:
+        rung = self._rung_fn(batched_ensemble)
+      except (TypeError, ValueError, AttributeError):  # advisory only, as above
+        rung = None
       if rung is not None:
         compared = rung
     suggested = -(-real // _PADDING_BUCKET) * _PADDING_BUCKET
@@ -319,7 +330,10 @@ def sample(
   structure_batch_count = StreamingBatchHost.structure_batch_count(protein_iterator)
   grid_lineage = _resolve_grid_lineage(spec)
 
-  padding_check = _PaddingCheck("sample", length_bucketing=spec.length_bucketing)
+  padding_check = _PaddingCheck(
+    "sample",
+    rung_fn=lambda batch: _spec_sample_rung(spec, batch, plan, quiet=True),
+  )
   with streaming_tensor_sink_session():
     for batch_idx, batched_ensemble in enumerate(protein_iterator):
       padding_check(batched_ensemble)
@@ -851,7 +865,21 @@ def score(  # noqa: PLR0915
   # that is host-side streaming-iterator drainage, not JAX computation, the same
   # exemption generate_multistate_conditional_logits.py's own docstring gives its
   # result-writing loop.
-  padding_check = _PaddingCheck("score", length_bucketing=spec.length_bucketing)
+  longest_sequence = max((int(seq.shape[0]) for seq in sequence_indices_list), default=0)
+
+  def _score_rung_of(batch: Any) -> int | None:  # noqa: ANN401
+    return score_rung(
+      batch.mask,
+      batch.coordinates.shape[1],
+      max_length=spec.max_length,
+      enabled=spec.length_bucketing,
+      pass_mode=spec.pass_mode,
+      longest_sequence=longest_sequence,
+      average_node_features=spec.average_node_features,
+      multistate=spec.state_position_map is not None,
+    )
+
+  padding_check = _PaddingCheck("score", rung_fn=_score_rung_of)
   for _batch_idx, batched_ensemble in enumerate(protein_iterator):
     padding_check(batched_ensemble)
     batch_size = batched_ensemble.coordinates.shape[0]
@@ -925,33 +953,16 @@ def score(  # noqa: PLR0915
     else:
       batch_ligand = (None, None, None)
 
-    # Rung uses the structure span and the longest unpadded sequence. None keeps
-    # the arrays below unread-as-trimmed: the activation estimate and the vmap
-    # receive the padded tensors.
+    # One rung decision per batch (score_rung), shared with the padding warning.
+    # None keeps every array below at its padded length. The averaged-feature
+    # path is never trimmed in S8 v1.
+    rung = _score_rung_of(batched_ensemble)
     score_coords = batched_ensemble.coordinates
     score_mask = batched_ensemble.mask
     score_residue_index = batched_ensemble.residue_index
     score_chain_index = batched_ensemble.chain_index
     score_sequences = stacked_sequences
     score_ligand = batch_ligand
-    rung = None
-    if (
-      spec.max_length is not None
-      and spec.length_bucketing
-      and spec.pass_mode != "inter"  # noqa: S105
-      and batched_ensemble.mask is not None
-      and not isinstance(batched_ensemble.mask, jax.core.Tracer)
-    ):
-      longest_unpadded = max(int(seq.shape[0]) for seq in sequence_indices_list)
-      span = max(batch_span(batched_ensemble.mask), longest_unpadded)
-      rung = rung_for(
-        span,
-        struct_len,
-        enabled=spec.length_bucketing,
-        pass_mode=spec.pass_mode,
-      )
-      if rung is not None and rung >= struct_len:
-        rung = None
     if rung is not None:
       score_coords = trim_residue_axis(score_coords, rung, 1)
       score_mask = trim_residue_axis(score_mask, rung, 1)
@@ -960,9 +971,7 @@ def score(  # noqa: PLR0915
       score_sequences = trim_residue_axis(score_sequences, rung, 1)
       score_ligand = tuple(trim_residue_axis(part, rung, 1) for part in score_ligand)
 
-    if rung is not None and split_fns is not None:
-      from types import SimpleNamespace  # noqa: PLC0415
-
+    if split_fns is not None:
       activation_bytes = _candidate_activation_bytes(
         split_fns,
         spec.multi_state_strategy,
@@ -975,19 +984,6 @@ def score(  # noqa: PLR0915
         score_ligand,
         batch_keys[0, 0],
         score_sequences[0],
-        batch_size=batch_size,
-        estimate_cache=activation_estimates,
-      )
-    elif rung is not None:
-      activation_bytes = rung * 21 * 4  # trimmed (L, 21) float32 logits per candidate
-    elif split_fns is not None:
-      activation_bytes = _candidate_activation_bytes(
-        split_fns,
-        spec.multi_state_strategy,
-        batched_ensemble,
-        batch_ligand,
-        batch_keys[0, 0],
-        stacked_sequences[0],
         batch_size=batch_size,
         estimate_cache=activation_estimates,
       )

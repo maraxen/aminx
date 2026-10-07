@@ -120,6 +120,7 @@
   "src/aminx/host/bucketing.py::residue_axis": "P26",
   "src/aminx/host/bucketing.py::rung_for": "P26",
   "src/aminx/host/bucketing.py::sample_rung": "P26",
+  "src/aminx/host/bucketing.py::score_rung": "P26",
   "src/aminx/host/bucketing.py::trim_residue_axis": "P26",
   "src/aminx/host/campaign.py::InputHashMismatchError": "P28",
   "src/aminx/host/campaign.py::InputHashUnavailableError": "P28",
@@ -514,6 +515,7 @@
   "src/aminx/tiling/iterator.py::VmapIterator": {
     "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
   },
+  "src/aminx/tiling/memory_budget.py::clear_memory_budget_cache": "P26",
   "src/aminx/tiling/memory_budget.py::memory_budget_source": "P26",
   "src/aminx/tiling/memory_budget.py::resolve_memory_budget_bytes": "P26",
   "src/aminx/tiling/pad.py::pad_bundle": "P27",

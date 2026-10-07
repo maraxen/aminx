@@ -2,7 +2,8 @@
 
 Cells are (structure, mode) pairs; each runs in its own subprocess with its own timeout and writes
 ``<out>/cells/<cell>.json`` on completion, so a crash or timeout loses at most one cell. A rerun reuses a
-cell only when its key (sha256 of the structure file, the call parameters and the aminx source tree) matches,
+cell only when its key (sha256 of the structure file, the call parameters, the aminx source tree, and the
+runtime: xtrax/jax/jaxlib/plugin versions, JAX_PLATFORMS, XLA_FLAGS, host) matches,
 and the summary records which cells were reused.
 
 Per cell: one warm-up call (pays compilation), then ``--reps`` timed calls in the same process; the cell's
@@ -21,6 +22,7 @@ import hashlib
 import json
 import logging
 import os
+import platform
 import statistics
 import subprocess
 import sys
@@ -51,13 +53,38 @@ def _source_hash() -> str:
   return digest.hexdigest()
 
 
-def _cell_key(structure: str, mode: str, reps: int, source_hash: str) -> str:
+def _runtime_identity() -> dict[str, object]:
+  """What else decides a timing besides aminx source: libraries, backend selection, and machine.
+
+  xtrax owns ``BUCKET_LADDER``/``select_bucket``; jax/jaxlib (and any PJRT plugin) own the compiled
+  code. Read from package metadata so the parent process never initialises a JAX backend.
+  """
+  from importlib import metadata
+
+  packages = {}
+  for dist in metadata.distributions():
+    name = (dist.metadata["Name"] or "").lower()
+    if name in {"xtrax", "jax", "jaxlib", "equinox"} or name.startswith(("jax-cuda", "jax_cuda", "jax-rocm")):
+      packages[name] = dist.version
+  return {
+    "packages": dict(sorted(packages.items())),
+    "jax_platforms": os.environ.get("JAX_PLATFORMS", ""),
+    "xla_flags": os.environ.get("XLA_FLAGS", ""),
+    "host": platform.node(),
+    "machine": platform.machine(),
+  }
+
+
+def _cell_key(
+  structure: str, mode: str, reps: int, source_hash: str, runtime: dict[str, object],
+) -> str:
   payload = {
     "structure_sha256": _sha256_file(_DATA / STRUCTURES[structure]),
     "mode": mode,
     "params": PARAMS,
     "reps": reps,
     "source_sha256": source_hash,
+    "runtime": runtime,
   }
   return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
@@ -127,13 +154,14 @@ def main() -> int:
     return 0
 
   source_hash = _source_hash()
+  runtime = _runtime_identity()
   records: dict[str, dict] = {}
   reused: list[str] = []
   failed: dict[str, str] = {}
   for structure in STRUCTURES:
     for mode in MODES:
       name = f"{structure}__{mode}"
-      key = _cell_key(structure, mode, args.reps, source_hash)
+      key = _cell_key(structure, mode, args.reps, source_hash, runtime)
       path = cells_dir / f"{name}.json"
       prior = _load_complete(path, key)
       if prior is not None:
@@ -170,6 +198,7 @@ def main() -> int:
     "reused_cells": reused,
     "failed_cells": failed,
     "source_sha256": source_hash,
+    "runtime": runtime,
     "params": PARAMS,
     "reps": args.reps,
   }

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 MEMORY_BUDGET_ENV = "AMINX_MEMORY_BUDGET_BYTES"
 _DEFAULT_LIMIT_BYTES = 4 * 1024**3
 _default_warned = [False]
+_file_budget_cache: dict[tuple[str, str, str], tuple[int, str] | None] = {}
 
 
 def resolve_memory_budget_bytes(
@@ -104,14 +105,9 @@ def memory_budget_source(
   if from_env is not None:
     return from_env, f"${MEMORY_BUDGET_ENV}"
 
-  origin = Path.cwd() if start is None else start
-  from_project = _pyproject_budget(origin)
-  if from_project is not None:
-    return from_project
-
-  from_user = _user_config_budget(env)
-  if from_user is not None:
-    return from_user
+  from_files = _file_budget(start, env, cache=start is None and environ is None)
+  if from_files is not None:
+    return from_files
 
   from_device = _device_budget(headroom)
   if from_device is not None:
@@ -120,6 +116,36 @@ def memory_budget_source(
   value = int(_DEFAULT_LIMIT_BYTES * headroom)
   _warn_default_once(value, headroom)
   return value, "default"
+
+
+def clear_memory_budget_cache() -> None:
+  """Forget the cached ``pyproject.toml`` / user-config layers (see :func:`memory_budget_source`)."""
+  _file_budget_cache.clear()
+
+
+def _file_budget(
+  start: Path | None,
+  env: Mapping[str, str],
+  *,
+  cache: bool,
+) -> tuple[int, str] | None:
+  """Layers 3-4 (``[tool.aminx]`` then the user config).
+
+  With ``cache`` (the default-argument call the planners make once per batch),
+  the result is memoised per process on (cwd, ``XDG_CONFIG_HOME``, ``HOME``), so a
+  long run does not walk the directory tree and parse TOML on every batch, and a
+  config edit mid-run cannot change the budget between batches.
+  """
+  origin = Path.cwd() if start is None else start
+  key = (str(origin), env.get("XDG_CONFIG_HOME", ""), env.get("HOME", ""))
+  if cache and key in _file_budget_cache:
+    return _file_budget_cache[key]
+  found = _pyproject_budget(origin)
+  if found is None:
+    found = _user_config_budget(env)
+  if cache:
+    _file_budget_cache[key] = found
+  return found
 
 
 def _positive_int(value: object, *, where: str) -> int:

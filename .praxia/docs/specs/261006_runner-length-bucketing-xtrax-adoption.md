@@ -44,7 +44,7 @@ status: draft
 | A10 | Max checkpoint k-NN is 48, at most the smallest rung (64) | verified (naming) | checkpoint ids `*_v_48_*` and `*_v_32_*` |
 | A11 | No test or golden pins an exact seeded runner sample | recon | blast-radius recon, 261006 |
 | A12 | Tie-group ids must be below the trimmed length | recon | `decoding_order.py:134` |
-| A13 | Logits at masked positions today are not relied on downstream; the re-padded tail is 0 | **partly refuted 261006**: the opt-out path samples every padded position (golden tokens and logits are nonzero out to 511), so under bucketing masked positions inside the rung are sampled and only the tail past the rung is 0 | settled by G-OPTOUT (old path unchanged) and G-SHAPE |
+| A13 | Logits at masked positions today are not relied on downstream; the re-padded tail is 0 | **partly refuted 261006**: the opt-out path samples every padded position (golden tokens and logits are nonzero out to 511), so under bucketing masked positions inside the rung are sampled and only the tail past the rung is fixed (tokens X, logits 0) | settled by G-OPTOUT (old path unchanged) and G-SHAPE |
 | A14 | `xtrax.tiling.device_memory_budget` raises on devices without `bytes_limit` (CPU) | verified | `xtrax/tiling/estimators.py:52-56` |
 | A15 | `xtrax.profiling.loop_scaling` can bound the AR decode scan body's growth from jaxpr | **unverified** | spiked in S8-10 before it is built on |
 
@@ -115,7 +115,7 @@ After the transpose (`~:527`):
 |---|---|
 | **G-OPTOUT** | With `length_bucketing=False`, `sample` and `score` outputs equal a golden captured at the pre-change base commit (S8-01) bit for bit: 1ubq, seed 7, 2 samples, temperature 0.1, max_length 512. |
 | **G-INVARIANCE** | At noise 0, `score` bucketed equals opt-out within rel 1e-6 on 1ubq, 5awl (10 residues, below k), a two-chain fixture, a gapped fixture (unresolved backbone) and a ligand fixture. Negative control: scoring a different sequence must differ (noise cannot serve, see A4). |
-| **G-SHAPE** | Bucketed sample outputs have exactly the opt-out shapes (padded L), the re-padded tail past the rung is 0 (masked positions inside the rung are sampled, as in opt-out), and real positions are valid tokens. |
+| **G-SHAPE** | Bucketed sample outputs have exactly the opt-out shapes (padded L), past the rung the re-padded tokens are X (20, amended 261006 after review: token 0 is Alanine) and the logits are 0 (masked positions inside the rung are sampled, as in opt-out), and real positions are valid tokens. |
 | **G-CONTROLS** | Under bucketing, fixed positions keep their `fixed_tokens`, tied groups share tokens, and bias at a real position still moves its logits. Negative control: the same bias placed past the span has no effect. |
 | **G-COMPILE** | Inputs spanning 3 lengths in 2 rungs trace `decode` exactly 2 times (counted with `JAX_LOG_COMPILES` or a trace counter). |
 | **G-SPEED** | bathos, pre-registered, titanix CPU, chunked per cell. Expect bucketed `sample` on 1ubq (76 → 128) ≥ 3× faster than opt-out. Control: 3pgk (415 → 512) within 0.8–1.25×. |
@@ -211,3 +211,12 @@ gate = "tests/agent green; parity on returned spec"
 | Old campaign units reused across the numerics change | The epoch bump. |
 | Users replaying old seeded specs get different sequences | The CHANGELOG, the docs, and `--no-length-bucketing`. |
 | Score drift at noise > 0 | Does not arise: the plain score path ignores backbone_noise (A4, debt #2509). G-INVARIANCE's negative control scores a different sequence instead, which proves the instrument fires. |
+
+## 7. Review amendments (261006, PR #196 code review)
+
+- The rung is decided in one place per entry point (`bucketing.sample_rung` via `kernel_dispatch._spec_sample_rung`, and `bucketing.score_rung`), and the padding warning calls the same function, so it warns whenever a batch really runs padded (inter, skip guards, a span past the ladder).
+- The averaged-feature score path was being trimmed despite A4 and §non-goals; `score_rung` now returns `None` for it (and for fused multi-state). Covered by `test_averaged_score_path_is_not_bucketed`.
+- A plan with encoder or decoder stage sinks keeps the padded length (sinks fire inside the trimmed computation and would see per-batch shapes).
+- Sampled tokens past the rung are X (20), not 0 (Alanine).
+- `resolve_memory_budget_bytes()` memoises the file layers per process for the default (no `start`/`environ`) call the planners make once per batch.
+- The G-SPEED bench resume key now includes xtrax/jax/jaxlib/plugin versions, `JAX_PLATFORMS`, `XLA_FLAGS` and host. Run 392a3deb was taken under the old key; its cells are not reusable under the new one.
