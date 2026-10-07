@@ -32,12 +32,16 @@ classifiers = [
 
 [project.scripts]
 aminx = "aminx.cli:main"
+aminx-mcp = "aminx.agent.mcp:main"
 
 [project.urls]
 repository = "https://github.com/maraxen/Aminx.git"
 documentation = "https://aminx.readthedocs.io"
 
 [project.optional-dependencies]
+agent = [
+    "cisternal>=0.1.1a15,<0.2",
+]
 benchmark = [
     "torch>=2.12.0",
     "prody>=2.6.1",
@@ -289,7 +293,7 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-aminx = ["py.typed"]
+aminx = ["py.typed", "agent_plugin.json"]
 
 # Weights are tracked in the source tree but must NOT ride along in the wheel. Modern
 # setuptools auto-includes them, which took a25 from 499,612 bytes (a24, zero weight files)

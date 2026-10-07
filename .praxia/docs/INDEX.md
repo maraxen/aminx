@@ -1,4 +1,4 @@
-# 261001-xtrax-a11-pin Internal Docs
+# 261006-cisternal-cutover-spec Internal Docs
 
 ## Daily
 - [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
@@ -13,13 +13,14 @@
 - [260601_benchmark-wave2-ready](handoffs/260601_benchmark-wave2-ready.md)
 
 ## Plans
-- [261001_ecosystem-backlog-dag](plans/261001_ecosystem-backlog-dag.md) — Combined backlog DAG of the six 261001 ecosystem specs (S1-S6) after the no-rename decision: 213 PR-sized items, mermaid graph, topological order, critical path, startable items, consolidated user questions (hub identity first), what the no-rename decision removed, and a code-checked acyclicity result.
+- [261001_ecosystem-backlog-dag](plans/261001_ecosystem-backlog-dag.md) — Combined backlog DAG of the 261001 ecosystem specs (S1-S6, after the no-rename decision) plus the 261006 S7 cisternal-cutover spec: 233 PR-sized items, mermaid graph, topological order, critical path, startable items, consolidated user questions (hub identity first), what the no-rename decision removed, and a code-checked acyclicity result.
 - [260709_proteinebm-epic-backlog-dag](plans/260709_proteinebm-epic-backlog-dag.md) — **PROPOSAL, gated on user review before praxia filing** (task `260709_aminxtension`) — EPIC + backlog DAG for the ProteinEBM energy/score path, output of the compose→brainstorm→adversarial-critique pipeline (challenger `not_ready` + defender `needs_revision`, both resolved). Resolves design forks 1–11 (readout = additive `StageSet` peer slots; 2nd-order AD via nested `jax.grad`+`checkpoint` + new invariant gate; orbax weight-port + validation-retrain; buckets `(64,128,256,512)`; Langevin = outer `CarrySpec`+`Scan` / inner `while_loop` + net-new model-swap; Engine for E8 only). Corrected DAG (E0–E12 + gates E3.5/E4.5, E11a–d) fixing the 2 BLOCKERs (schedule_selector/`AxisBoundary` model-swap; scalar-energy≠`DecodeOutput`) + 5 MAJORs. Includes bathos parity/claim(Union Gate)/throughput instruments. Filing plan in §5 (not executed).
 - [260614_runspec-migration-map](plans/260614_runspec-migration-map.md) — RS-1 host-field inventory: 67 fields, 22 migrated, 16 to migrate, 9 RS-gaps, 21 protein-only
 - [260525_comp-unified-encoder-fusion](plans/260525_comp-unified-encoder-fusion.md) — COMP-UNIFIED: encoder fusion via InferencePlan; eliminate averaged-path branch
 - [260522_comp-new-sink-unify](plans/260522_comp-new-sink-unify.md) — COMP-NEW: unify result-sink topology; streaming_tensor_sink_session for non-streaming path
 
 ## Specs
+- [261006_aminx-cisternal-cutover](specs/261006_aminx-cisternal-cutover.md) — Make aminx agent-native through cisternal: a manifest-driven plugin bundle of targeted skills (using-aminx router + five task skills), an aminx-mcp server wired with @cisternal.tool over host.runner (launched via uvx by default, switchable to a local venv), cisternal provenance/telemetry for campaign runs; the Typer-to-cyclopts CLI port is deferred.
 - [261002_streaming-xtrax-migration-scope](specs/261002_streaming-xtrax-migration-scope.md) — Opus-tier scoping report (task 261002_streaming-xtrax-migration, debt #2421): premise check, current-state map, xtrax capability map, gap analysis, target architecture, preemption/resume design, staged plan, asks of xtrax, decisions. Includes the verified reuse-safety defect in the campaign row hash.
 - [261001_aminx-hub](specs/261001_aminx-hub.md) — A hub project separate from the aminx package (aminx keeps its name; working slug aminx-hub, final repo name, PyPI policy and domain are the S3-01 user decision): a static GitHub Pages site whose catalog is generated from S4 manifests, with ORT-Web, Pyodide, localfold and remote executors and py2Dmol as the viewer.
 - [261001_aminx-identity-and-hub-naming](specs/261001_aminx-identity-and-hub-naming.md) — aminx keeps its name and PyPI identity (no rename). S3 records the separate hub's identity (repo slug, PyPI policy, praxia.science domain, bathos slug, orchestrator-name collision), cleans the previous rename's stale names, guards release uniqueness, and checks the spec set's assembly mechanically.

@@ -6,8 +6,8 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE.parent.parent / "docs/plans/261001_ecosystem-backlog-dag.md"
 t = (HERE / "plan_template.md").read_text()
 rep = {
-    "toolchain (OQ-29) | 136": "toolchain (OQ-30) | 136",
-    "with a named reviewer (OQ-34) | 33": "with a named reviewer (OQ-35) | 33",
+    "toolchain (OQ-29) | 137": "toolchain (OQ-30) | 137",
+    "with a named reviewer (OQ-34) | 34": "with a named reviewer (OQ-35) | 34",
     "clone location (OQ-16 to OQ-18) | 22": "clone location (OQ-17 to OQ-19) | 22",
     "| 6 (between S3 items) |": "| 6 (from kept S3 items) |",
 }
