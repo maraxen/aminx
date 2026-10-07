@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import xtrax.tiling.estimators as estimators  # noqa: TID251
 
-import aminx.host.memory_budget as memory_budget
-from aminx.host.memory_budget import (
+import aminx.tiling.memory_budget as memory_budget
+from aminx.tiling.memory_budget import (
   MEMORY_BUDGET_ENV,
   memory_budget_source,
   resolve_memory_budget_bytes,
@@ -172,7 +172,7 @@ def test_device_failure_uses_default_and_logs_once(
 
   _patch_device(monkeypatch, boom)
   memory_budget._default_warned[0] = False
-  with caplog.at_level(logging.INFO, logger="aminx.host.memory_budget"):
+  with caplog.at_level(logging.INFO, logger="aminx.tiling.memory_budget"):
     first, source = memory_budget_source(headroom=0.5, start=start, environ=environ)
     second, source2 = memory_budget_source(headroom=0.5, start=start, environ=environ)
   assert first == int(_GIB * 0.5)
@@ -180,7 +180,7 @@ def test_device_failure_uses_default_and_logs_once(
   assert source == "default"
   assert source2 == "default"
   # INFO, not WARNING: the default layer is the normal CPU path.
-  records = [record for record in caplog.records if record.name == "aminx.host.memory_budget"]
+  records = [record for record in caplog.records if record.name == "aminx.tiling.memory_budget"]
   assert [record.levelno for record in records] == [logging.INFO]
   assert "default" in records[0].getMessage()
   assert MEMORY_BUDGET_ENV in records[0].getMessage()

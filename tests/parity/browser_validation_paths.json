@@ -116,7 +116,11 @@
   "src/aminx/host/averaging.py::make_encoding_sampling_split_fn": "P15",
   "src/aminx/host/bucketing.py::batch_span": "P26",
   "src/aminx/host/bucketing.py::bucket_ladder": "P26",
+  "src/aminx/host/bucketing.py::repad_residue_axis": "P26",
+  "src/aminx/host/bucketing.py::residue_axis": "P26",
   "src/aminx/host/bucketing.py::rung_for": "P26",
+  "src/aminx/host/bucketing.py::sample_rung": "P26",
+  "src/aminx/host/bucketing.py::trim_residue_axis": "P26",
   "src/aminx/host/campaign.py::InputHashMismatchError": "P28",
   "src/aminx/host/campaign.py::InputHashUnavailableError": "P28",
   "src/aminx/host/campaign.py::LegacyV2DoneMarkerError": "P28",
@@ -159,8 +163,6 @@
   "src/aminx/host/logit_aggregation.py::pad_to_max": {
     "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
   },
-  "src/aminx/host/memory_budget.py::memory_budget_source": "P26",
-  "src/aminx/host/memory_budget.py::resolve_memory_budget_bytes": "P26",
   "src/aminx/host/output_sinks.py::EncoderIntermediateStagingSink": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
   },
@@ -512,6 +514,8 @@
   "src/aminx/tiling/iterator.py::VmapIterator": {
     "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
   },
+  "src/aminx/tiling/memory_budget.py::memory_budget_source": "P26",
+  "src/aminx/tiling/memory_budget.py::resolve_memory_budget_bytes": "P26",
   "src/aminx/tiling/pad.py::pad_bundle": "P27",
   "src/aminx/tiling/planner.py::estimate_memory_theoretical": {
     "internal": "memory/axis strategy planning shared across P-IDs, no dedicated P-ID"

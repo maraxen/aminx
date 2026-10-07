@@ -7,7 +7,7 @@ from xtrax.tiling import AxisSpec, BatchPlanner, MemoryBudget
 from xtrax.tiling import ChunkedMap as XtraxChunkedMap
 from xtrax.tiling import Vmap as XtraxVmap
 
-from aminx.host.memory_budget import resolve_memory_budget_bytes
+from aminx.tiling.memory_budget import resolve_memory_budget_bytes
 from aminx.tiling.strategy import SafeMap, Vmap
 
 if TYPE_CHECKING:

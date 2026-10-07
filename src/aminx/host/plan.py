@@ -17,9 +17,9 @@ import numpy as np
 from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, ChunkedMap, MemoryBudget
 from xtrax.tiling import BudgetInfeasibleError as _XtraxBudgetInfeasibleError
 
-from aminx.host.memory_budget import resolve_memory_budget_bytes
 from aminx.tiling.axes import N_NOISES, N_SAMPLES, N_STRUCTURES, N_TEMPERATURES
 from aminx.tiling.errors import TilingError
+from aminx.tiling.memory_budget import resolve_memory_budget_bytes
 from aminx.tiling.planner import estimate_memory_theoretical
 
 if TYPE_CHECKING:

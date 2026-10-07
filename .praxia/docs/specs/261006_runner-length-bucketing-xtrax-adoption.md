@@ -119,7 +119,7 @@ After the transpose (`~:527`):
 | **G-CONTROLS** | Under bucketing, fixed positions keep their `fixed_tokens`, tied groups share tokens, and bias at a real position still moves its logits. Negative control: the same bias placed past the span has no effect. |
 | **G-COMPILE** | Inputs spanning 3 lengths in 2 rungs trace `decode` exactly 2 times (counted with `JAX_LOG_COMPILES` or a trace counter). |
 | **G-SPEED** | bathos, pre-registered, titanix CPU, chunked per cell. Expect bucketed `sample` on 1ubq (76 → 128) ≥ 3× faster than opt-out. Control: 3pgk (415 → 512) within 0.8–1.25×. |
-| **G-SUITE** | Full `tests/host`, `tests/agent` and `tests/tiling` on titanix; the parity e2e cells (`scripts/parity/e2e_run_api_parity.py`) pass with the pad512 cell opted out. |
+| **G-SUITE** | Full default `tests/` suite (repo addopts; includes `tests/host` and `tests/tiling`) on titanix; the parity e2e cells (`scripts/parity/e2e_run_api_parity.py`) pass. (Amended at run time: this row first named `tests/agent`, which exists only on PR #195, and opted out pad512; that cell also pins `length_bucketing=False` and costs ~7 min, so every cell runs and the registered e2e verdict applies unchanged.) |
 
 ## 5. Items
 
