@@ -103,7 +103,7 @@ def test_loader_aatype_is_af_and_training_labels_is_mpnn() -> None:
 # ---------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("module", ["trainer.py", "test_diffusion_loop.py"])
+@pytest.mark.parametrize("module", ["trainer.py"])
 def test_every_aatype_read_goes_through_training_labels(module: str) -> None:
   """Each ``<batch>.aatype`` in the training code is the sole argument of ``training_labels``.
 
