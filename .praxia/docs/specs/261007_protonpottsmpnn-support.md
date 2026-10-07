@@ -1325,3 +1325,142 @@ Incidental confirmation: 416 is also the literal at aminx's `ligand_features.py:
 constant — `:249` is a comment, per §8's audit correction), so that site is consistent with this
 checkpoint too.
 
+
+---
+
+## §25 — alphex and the variable alphabet: not used, and not usable as it stands
+
+Asked directly by the user 2026-10-07: *"are we using alphex to manage the variable
+alphabet?"* The short answer is **no**, on both halves — we are not using it, and the library
+cannot currently express the alphabet in question. But the question lands on exactly the right
+seam, and §25.3 below records a defect it makes visible that no earlier section had.
+
+### §25.1 What alphex is to aminx today
+
+`alphex` is the ecosystem's single-declaration alphabet library
+(`/home/marielle/projects/alphex`, PyPI). aminx already depends on it — but **dev group only**,
+`pyproject.toml:306-312`, under decision D4:
+
+> `# Phase 0 alphabet conformance (decision D4). DEV GROUP ONLY -- nothing under src/`
+> `# imports this, so no runtime dependency edge is created.`
+
+Its entire use is `tests/test_alphabet_conformance.py`, which *pins* aminx's alphabet constants
+against alphex's declarations rather than *sourcing* them from it. That file's own docstring is
+explicit about the status:
+
+> *"Phase 0 (decision D4): **dev-dependency-only**. Nothing under `src/` imports the library."*
+
+It asserts three things, all at width 21: `MPNN_ALPHABET`/`AF_ALPHABET` match
+`known.MPNN_X_21`/`known.AF_X_21`, the two orderings differ at 17 of 20 positions, and
+`aminx.potts.model.POTTS_ALPHABET` matches the MPNN declaration with `X` at 20.
+
+**So the existing Potts alphabet IS covered by alphex — at 21 tokens.** Nothing above index 20
+is.
+
+This spec, all 1327 lines of it before this section, **never mentions alphex**. That is the
+honest state: the ProtonPotts alphabet work was designed without reference to the library that
+exists for exactly this problem.
+
+### §25.2 Why it cannot express the v6 alphabet as it stands
+
+`Alphabet.__post_init__` rejects multi-character symbols outright
+(`alphex/src/alphex/alphabet.py:89-91`):
+
+```python
+if any(len(c) != 1 for c in self.symbols):
+    msg = f"symbols must be single characters, got {self.symbols!r}"
+    raise AlphabetDeclarationError(msg)
+```
+
+Every protonation token is multi-character — `HIS-P`, `ASP-D`, `GLU-A`. And this is not an
+oversight to be patched casually: alphex's own contract spec
+(`alphex/.praxia/docs/specs/260814_alphabet-contract.md:479`) lists multi-character tokens as a
+surveyed case with the resolution **"declare unrepresentable"**, and the API surface spec
+(`260814_alphabet-api-surface.md:562`) gives them a dedicated error, `MultiCharTokenError`.
+Refusing them is a *decided* behaviour, not a gap.
+
+The two escape hatches both fail on meaning rather than on mechanism:
+
+| route | why it does not work |
+|---|---|
+| declare the 9 tokens as `specials` | `SpecialKind` has 8 members (`UNKNOWN`, `GAP`, `STOP`, `MASK`, `BOS`, `EOS`, `PAD`, `CHAIN_BREAK`) and none is a residue variant. A protonation state is not a sentinel. |
+| declare indices 21–29 as `unclaimed` | `unclaimed` means *this index carries no meaning*. alphex's own declaration error calls an unaccounted index "how a lookup table silently clamps". Declaring nine meaningful residue variants as meaningless is worse than not declaring them. |
+| assign single-char surrogates | Possible, but invents a symbol vocabulary that exists nowhere upstream, so the declaration would no longer be checkable against the source it is meant to pin. |
+
+So using alphex here is **a change to alphex**, not a change to aminx. That is a real option —
+alphex is ours — but it is a scoped piece of work on another repo, not a wiring task.
+
+### §25.3 THE DEFECT THIS QUESTION EXPOSES: v4 and v6 collide above index 20
+
+Re-reading `token_encodings.py` to answer the question surfaced something §22.2 recorded only
+as a risk. There are **two** extended vocabularies upstream, not one, and they are both live:
+
+- **v3/v4 → 32 tokens** = 21 standard + `PROTONATION_TOKENS` (11), `token_encodings.py:124-139`.
+  This is the **default** (`potts_inference.py:94-121`, `extended_vocab: str = "v4"`).
+- **v6 → 30 tokens** = 21 standard + `POTTS_MPNN_V6_PROTONATION_TOKENS` (9), `:138-146`.
+
+They share the same 21-token prefix, so `S` is bit-identical when no protonation labels are
+present — which is what makes the mismatch silent. Above index 20 they disagree **completely**:
+
+| index | v4 (32-token) | v6 (30-token) |
+|---|---|---|
+| 21 | `HID` | `HIS-P` |
+| 22 | `HIE` | `HIS-S` |
+| 23 | `HIS-P` | `HIS-A` |
+| 24 | `HIS-D` | `ASP-P` |
+| 25 | `HIS-A` | **`ASP-D`** |
+| 26 | `ASP-P` | `ASP-A` |
+| 27 | **`ASP-D`** | **`GLU-P`** |
+| 28 | `ASP-A` | `GLU-D` |
+| 29 | `GLU-P` | `GLU-A` |
+| 30 | `GLU-D` | — |
+| 31 | `GLU-A` | — |
+
+Not one index above 20 agrees. The v6 column is **measured**, not read — §23's spike injected
+`HIS-S`/`ASP-D`/`GLU-P` and observed `S` taking 22/25/27, which is exactly what this table
+predicts. The v4 column is arithmetic over the tuple at `:124-139` and is **unverified by
+execution** (no labelled v4 cell has been run).
+
+Read index 27 across the row: **v4 says `ASP-D`, v6 says `GLU-P`.** Feed a v6-produced `S` to a
+v4-expecting consumer and an aspartate silently becomes a protonated glutamate. Different
+residue, different charge, different chemistry — and shape-valid, dtype-valid, in range, and
+silent. It is the same failure mode as alphex's founding example ("build a lookup table from
+one and label it with the other, and 17 of 20 residues are silently permuted... nothing
+raises"), reproduced one level up in the index space.
+
+Worth noting since it will confuse the next reader: the comment above `PROTONATION_TOKENS`
+says *"8 protonation-state variants"* while the tuple holds **11** and the comment four lines
+below correctly says 11. Upstream doc slip; the tuple is the truth.
+
+### §25.4 What this means for §11c
+
+§11c is open: **public alphabet of 30 tokens, or 21 + a protonation side channel?** §25 does
+not decide it, but it supplies an argument neither option had:
+
+- **21 + side channel** keeps aminx's public alphabet inside what alphex can already declare
+  and what `test_alphabet_conformance.py` already pins, and moves protonation into a channel
+  where a width/meaning mismatch is a *type* error rather than an *index* error. The v4/v6
+  collision above becomes unexpressible rather than merely detectable.
+- **30 tokens** is closer to upstream and avoids a translation seam, but leaves the widest,
+  most collision-prone part of the index space outside any declaration — unless alphex grows
+  multi-character support first, which is a decided-against behaviour in its own contract.
+
+I am not treating this as settling §11c. It is one input, and the user's call.
+
+### §25.5 What is actionable now, regardless of §11c
+
+Independent of the alphabet decision, the v4/v6 collision deserves a guard, because the default
+is `v4` and every cell run so far has had to pass `extended_vocab="v6"` explicitly:
+
+1. **Assert the vocabulary, don't inherit it.** Any aminx-side ProtonPotts entry point should
+   require the vocabulary name explicitly and fail on absence, rather than defaulting. The
+   upstream default being `v4` while the checkpoint in hand is v6 is a trap the current spikes
+   avoid only by always passing the flag.
+2. **Pin the index tables.** Whatever §11c decides, the table in §25.3 should become a test
+   asserting both orderings by index, so an upstream reorder is loud. This needs no alphex.
+3. **If alphex is to own this**, the work is in alphex: either multi-character token support
+   (contradicting `260814_alphabet-contract.md:479`) or a distinct residue-variant concept
+   layered above `Alphabet`. Either is a spec'd change to another repo and should be filed
+   there, not assumed here.
+
+Item 2 is unblocked and cheap. Items 1 and 3 wait on §11c.
