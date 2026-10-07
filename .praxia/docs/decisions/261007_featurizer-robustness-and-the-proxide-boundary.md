@@ -123,10 +123,15 @@ class FeatureSpec:
   knn_invalid: Literal["inf", "row_max"]    # the Potts docstring item 1
   ca_rbf_source: Literal["raw", "adjusted"] # item 2
   rbf_atom_mask: bool                       # the foundry innovation
+  pos_embed_dim: int                        # 16 -- NOT the same number as rbf_count
   @property
   def edge_in_dim(self) -> int:
-    return self.rbf_count * (len(self.pair_order) + 1)  # +1 slot for positional
+    return self.pos_embed_dim + self.rbf_count * len(self.pair_order)
 ```
+
+(An earlier draft wrote this as `rbf_count * (len(pair_order) + 1)`, which is right only by
+the coincidence that both widths are 16 on the stock path. `packer.py:385` is
+`num_positional_embeddings + num_rbf * 25` with the two genuinely independent — see §8.2.)
 
 Three rules make it robust rather than merely indirected:
 
@@ -204,14 +209,21 @@ the consolidation twice as expensive.
 
 Proposed order, each independently useful:
 
-1. **Derive, don't declare** (small, mechanical, zero behaviour change): replace the three `25`
-   literals with `len(BACKBONE_PAIRS)`, `rbf_dim` with `RADIAL_BASES`, `PAIR_DIM` with
-   `N_AA ** 2` where it is spelled `400`. Pure refactor; the parity waves are the regression test.
+1. **Derive, don't declare** (small, mechanical, zero behaviour change) — **but not the way an
+   earlier draft of this line said; see §8.2 before doing it.** Each site derives from its *own*
+   quantity: `features.py:294` from `len(BACKBONE_PAIRS)`; `packer.py:385` from
+   `len(backbone_coords) ** 2`, because packer builds its pairs with its own 5×5 nested loop
+   (`packer.py:502-505`) and never imports `BACKBONE_PAIRS`; `ligand_features.py:250`'s literal
+   `416` from its own inline pair list (`:331-358`). **Do not rewrite `400` globally**: it means
+   25×16 at `families/potts_mpnn/features.py:44` and 20×20 at `potts_head.py:26-27`. Pure
+   refactor; the parity waves are the regression test.
 2. **`FeatureSpec` + load-time conformance check**, with every existing family resolving to a
    spec that reproduces today's behaviour exactly. Waves must stay green with zero band changes.
 3. **Checkpoint-stated config beats filename**, `get_topology_for_checkpoint` demoted to legacy
    fallback.
-4. **Unify the two `radial_basis.py`**, parameterizing proxide's on pair order.
+4. **Unify the RBF kernels** — targeting the **Rust** crate, not the dead Python fork. See §8.5:
+   `proxide/crates/proxide-geometry/src/geometry/radial_basis.rs` is the shipping implementation
+   and it carries its own `const BACKBONE_PAIRS` under a *different slot convention*.
 5. **Collapse the forks**: Potts' three documented deviations become spec fields; `potts_edge_features`
    becomes a spec, not a module.
 
@@ -300,3 +312,119 @@ it would still make sense without weights, it is proxide's; if it needs both, it
 (xtrax #2522), the generic half of `host/bucketing.py` (#2537), and dead `tiling/bucketing.py`
 / `tiling/pad.py` (#2532) are all already filed from the #198 audit. **#2561 is the only new
 one**, and it is new precisely because the audit stopped at the model boundary.
+
+## 8. Audit corrections (2026-10-07)
+
+An adversarial audit was run against §§1-7 at the user's request. It returned `needs_work`. The
+corrections below are the ones **I re-verified by hand** — a subagent report is a lead, not a
+fact, and I did not take any of these on report alone. Items the audit raised that I did not
+re-verify are listed in §8.7 as unconfirmed leads.
+
+### 8.1 `ligand_features.py:249` is a COMMENT, not a literal
+
+`:249` reads `# edge_in = 16 + 16 * 25 = 416`. The actual code is `:250`,
+`eqx.nn.Linear(416, edge_features, ...)` — a bare `416`, which is *worse* than the `25` I
+reported, because the derivation exists only in prose beside it. §1a's "three places" is also
+wrong as a count: `model/laser/graphs.py` and `model/laser/encoders.py` carry further 25s, and
+`laser/` is under `model/`, so §6's "verified over `src/aminx/model`" was not the exhaustive
+sweep I claimed.
+
+### 8.2 The three `25`s are NOT the same quantity — and §5 step 1 was wrong because of it
+
+`packer.py:385` is `num_positional_embeddings + num_rbf * 25`, and packer builds its pairs with
+its own 5×5 nested loop over `[n, ca, c, o, cb]` (`packer.py:502-505`). It never imports
+`BACKBONE_PAIRS`. Rewriting its `25` as `len(BACKBONE_PAIRS)` — which §5 step 1 originally
+instructed — would have introduced a dependency on a table packer does not use, coupling two
+things that only happen to share a number. Corrected in §5.
+
+Same class of error on `400`: it is 25×16 at `families/potts_mpnn/features.py:44` and 20×20 at
+`potts_head.py:26-27`. A global rewrite to `N_AA ** 2` would corrupt the first. Also corrected.
+
+**This is the most valuable thing the audit found**, because §5 step 1 was phrased as a
+mechanical instruction someone could have followed.
+
+### 8.3 `rbf_dim` and `pos_embed_dim` are dead, so §1c overstated the risk
+
+Both are declared `eqx.field(static=True)` at `features.py:270-271` and assigned at `:289-290`,
+and **read nowhere** in `src/`, `tests/` or `scripts/` (grep). They are write-only. They
+therefore cannot "silently disagree" with `RADIAL_BASES` — nothing consumes them. My line
+citation was also off by three (`:286-288` → `:289-291`).
+
+`POS_EMBED_DIM` (`:57`) and `MAXIMUM_RELATIVE_FEATURES` (`:56`) are likewise unused in `src/`;
+the comment at `:294` cites `POS_EMBED_DIM` while the code beside it writes `16`.
+
+**The sharper point the audit made, which I should have made myself:** a wrong *width* is a
+loud failure — a matmul or deserialisation shape error. Only a wrong *order* is silent. §1c
+blurred the two. That does not weaken §3's conformance-check requirement; it sharpens it, since
+it means the `pair_order` stamp is doing essentially all the work and the width check almost
+none.
+
+### 8.4 Nothing imports proxide's Python RBF — downgrade §4a's consequence
+
+`grep` over `src/`, `tests/`, `scripts/` for `proxide.geometry` returns **zero hits**. So "any
+f64 work routed through `proxide.geometry` re-finds a bug aminx already fixed" is speculative,
+not a live hazard. **Downgraded.** The *drift* claim itself stands — aminx has `rbf_centers(dtype)`
+and proxide does not, verified by diff, and nothing in proxide has a fix aminx lacks.
+
+### 8.5 The shipping proxide kernel is Rust, and it asserts a DIFFERENT slot convention
+
+This is the finding that most changes the picture, and it strengthens §4's thesis while
+invalidating §4a's target.
+
+`proxide/crates/proxide-geometry/src/geometry/radial_basis.rs` holds the live implementation:
+`pub const BACKBONE_PAIRS: [[usize; 2]; 25]` at `:25`, with `RBF_MIN`/`RBF_MAX`/`RBF_SIGMA`
+declared **`f32`** at `:14-18`. Its own doc comment reads `/// Backbone atom indices: N=0, CA=1,
+C=2, CB=3, O=4` — the **atom37** layout, with CB at 3 and O at 4 — whereas aminx's
+`BACKBONE_PAIRS` is written against the **PDB** layout (`utils/atom_ordering.py:33-41`: O at 3,
+CB at 4). Two tables of the same 25 pairs under two different slot conventions, feeding the
+same `rbf_features` seam at `ProteinFeatures.__call__`.
+
+So: proxide does not merely *have* an opinion about pair order, it has a **different** one, in
+the half that actually ships. §4's "proxide must become parameterized, not opinionated" is more
+urgent than written; §4a's "unify the two `radial_basis.py` files" is aimed at dead code.
+
+### 8.6 §7c is STRONGER than I wrote: xtrax already documents both hazards
+
+`xtrax/export/safety.py:11-24` already names `"unlegalizable-op" — currently jax.lax.top_k,
+which lowers to a stablehlo.composite wrapping chlo.top_k that the importer marks explicitly
+illegal`, and `"sort-stability" — ... silently produces different index results on ties,
+invisible to a float-tolerance parity check because the divergence lives entirely in integer
+indices.` That is aminx's `top_k` docstring reasoning, already in xtrax, with `_TOP_K_DETAIL`
+at `:298` saying the obvious replacement "inherits the sort-stability problem and needs the same
+tiebreak fix."
+
+xtrax already **diagnoses** this and does not **supply** the cure; aminx has the cure. Moving
+`top_k` is not a proposal to relocate protein code — it is completing something xtrax started.
+I did not cite this and should have.
+
+### 8.7 Raised by the audit, NOT re-verified by me — treat as leads
+
+- That `families/laser_mpnn/featurize.py` (≈1505 lines) is the real LASEr featurizer, making
+  the featurizer count ≥6 rather than 4.
+- That foundry already permutes weight columns at conversion time
+  (`mpnn/utils/weights.py:225-278`), which would be an alternative to a runtime `pair_order`
+  field that §3 does not consider. If true this is a genuine design fork worth weighing.
+- That `row_chunk` has three call sites (`export/wrappers.py:193,256,431`) plus two scripts, not
+  one, and that the other four `top_k` sites cannot receive it at all — so the IREE fix covers
+  only `select_neighbors`.
+- That proxide's Rust kernel zero-fills a missing Gly CB while aminx builds a virtual CB, a
+  substantive numerical divergence across the `rbf_features` seam.
+- That padding to a multiple of `row_chunk` *incidentally* avoids the #2391 size-1 remainder
+  hazard that xtrax's `chunked_map` lacks a guard for — i.e. aminx's version may be safer on
+  that axis, not merely more wasteful. If so, "strictly better" in §7b is wrong.
+- That `families/potts_mpnn/model.py:30-38` hardcodes `48/32/21`, bypassing
+  `get_topology_for_checkpoint` entirely, so §1e's "load-bearing" holds for stock/ligand/packer
+  but not for Potts.
+- That §3's "legacy fallback for the eight `LEGACY_ALIAS_MAP` names" undercounts: all 15
+  packaged `.eqx.zst` carry no config.
+
+The first, fourth and fifth of these would each change a recommendation if true. They are the
+next things to probe, and none should be cited until they are.
+
+### 8.8 What the audit did NOT overturn
+
+§2 (the three good precedents), §3's core design, §4's mechanism-vs-convention rule, §7a (the
+separation audit contains zero hits for `model/`, `features.py` or `top_k` — I re-ran that
+grep), §7b's identification of `_top_k_row_chunked` as a duplicated primitive, and §11's point
+that a widths-only check cannot catch an ordering divergence. Debt #2561 stands, with the
+"strictly better" wording flagged for correction pending §8.7.
