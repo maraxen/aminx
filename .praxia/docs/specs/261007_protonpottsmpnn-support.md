@@ -2030,3 +2030,105 @@ dumper pass, and the experiment has now come down on the side where **it is the 
 `etab_out` really is `S`-invariant, so a nonzero delta really does mean the two cells differ by
 more than their labels. Deleting it would have silently admitted the ~1/3 of runs that are
 wrong for an unknown reason.
+
+---
+
+## §32 — found it: multi-threaded reduction flips k-NN ties, and §31's conclusion was my own confound
+
+### §32.1 CORRECTION to §31 — the dumper was innocent
+
+§31 concluded "the difference is in the *dumper*, not the model", because the spike never fired
+and the dumper fired ~1/3. That conclusion was wrong, and the reason is a confound in the arms
+I designed in §30.4:
+
+| | first two cells of the process? | labelling differs between them? |
+|---|---|---|
+| arm A | **yes** | no (plain vs plain) |
+| arm C | no (warmed first) | **yes** |
+| **dumper** | **yes** | **yes** |
+
+**Neither arm tested both at once**, so "the spike never fires" was never evidence that the
+dumper's configuration is safe — the spike had never run the dumper's configuration. Running
+exactly it (two cells per process, plain then labelled, then exit):
+
+```
+etab_delta=0         E_idx_same=True   E_idx_diffs=0
+etab_delta=0         E_idx_same=True   E_idx_diffs=0
+etab_delta=0.941982  E_idx_same=False  E_idx_diffs=6
+etab_delta=0.941982  E_idx_same=False  E_idx_diffs=6
+etab_delta=4.76804   E_idx_same=False  E_idx_diffs=6
+etab_delta=0         E_idx_same=True   E_idx_diffs=0
+```
+
+Reproduced in the spike, 3/6, with the same recurring discrete values. The dumper was never
+special.
+
+### §32.2 The mechanism: it is `E_idx`, every time
+
+The new column is what matters. **`E_idx` differs at exactly 6 entries whenever `etab_out`
+moves, and at 0 entries whenever it does not** — perfect correlation across all six runs, and
+the same 6 whichever delta appears. Out of `L × K = 153 × 48 = 7344` neighbour slots.
+
+So nothing about the *energies* is unstable. The **neighbour graph** changes, and `etab_out`
+simply reports a different set of pairs. That reframes the whole investigation: §27 spent its
+effort on "which outputs are nondeterministic" when the live question was "why does the k-NN
+pick different neighbours".
+
+### §32.3 It is thread count — and §28 tested that, in the wrong configuration
+
+Twelve fresh processes in each arm, identical in every other respect:
+
+```
+1-thread     (OMP_NUM_THREADS=1 MKL_NUM_THREADS=1):   0 fired / 12
+multi-thread (default, 10 torch threads):             9 fired / 12
+```
+
+**0/12 against 9/12.** Fisher exact ≈ 2e-5. This is the cause.
+
+The reading: a multi-threaded float reduction in the pairwise-distance computation produces
+last-bit differences depending on how work is partitioned across threads, which varies per
+process. Where two neighbours are near-tied, that flips the `topk` ordering, six slots change,
+and `etab_out` moves by O(1) because it is reporting different pairs — not because any energy
+changed.
+
+**§28 explicitly tested thread count and reported it "NOT supported".** That test ran the
+*plain vs plain* configuration, which never fires at any thread count, so it could only ever
+return 0/8 in both arms. Same confound as §32.1, one section earlier. A negative result from a
+configuration that cannot produce a positive is not a negative result.
+
+### §32.4 Consequences
+
+1. **Pin threads for oracle dumps.** `OMP_NUM_THREADS=1` / `MKL_NUM_THREADS=1` (or
+   `torch.set_num_threads(1)`) for any run whose artifact is meant to be reproducible. Slower,
+   and worth it for a dump that is generated once and compared forever.
+2. **This is not a ProtonPotts bug and probably not ours either** — near-tied neighbours are a
+   property of the structure, and any k-NN over float distances has this exposure. But it does
+   mean **`E_idx` is an unsafe parity observable near ties** for *any* MPNN-family port,
+   including the Potts/LASEr work. Whether those oracles pinned threads is worth checking; I
+   have not.
+3. **Keep the negative control, now understood.** §30.3 forbade deleting it to make the dumper
+   pass; §31 kept it on the evidence then available. It turns out to be detecting a real
+   defect in how the dump is *run*, which is exactly what a control is for.
+4. §23.2 stands as restored in §31 — `etab_out` is `S`-invariant. Nothing here disturbs that;
+   the firing runs differ by neighbour graph, not by `S`.
+
+### §32.5 Verified: the dump is now reproducible
+
+`torch.set_num_threads(1)` added to the dumper, then four fresh runs:
+
+```
+bit-identical / bit-identical / bit-identical / bit-identical
+sha256 (all four): bbb6828335d28e7427b18d7bdc1c39138e8716022fb54c1a875e4fcd3d6a0d6e
+```
+
+Four clean runs, **one** distinct hash. Proven by comparing artifacts, not by asserting the
+fix was applied — which is what §27.5 step 2 demanded and is now satisfied. **P4's oracle is
+reproducible.**
+
+### §32.6 Method note worth carrying
+
+Two separate wrong conclusions in this document (§28's "thread count not supported", §31's
+"the anomaly is in the dumper") came from the same mistake: **testing a factor in a
+configuration that cannot exhibit the effect, and reading the resulting null as informative.**
+Before accepting a negative, check that the configuration reproduces the phenomenon at all —
+a positive control on the *setup*, not just on the measurement.

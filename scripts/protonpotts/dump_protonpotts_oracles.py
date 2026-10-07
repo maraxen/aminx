@@ -34,6 +34,14 @@ TWO TRAPS THIS SCRIPT EXISTS TO NOT FALL INTO, both measured, both in the spec.
    discrimination is entirely broken (§26). We assert 9/9 coverage and refuse to write a dump
    otherwise, rather than recording a partial dump that reads as complete later.
 
+3. MULTI-THREADED REDUCTIONS MAKE THE DUMP NON-REPRODUCIBLE (§32, measured: 9 of 12 runs
+   affected at the default 10 threads, 0 of 12 at one thread). Thread partitioning varies per
+   process, which changes pairwise distances in the last bits, which flips `topk` ordering
+   where two neighbours are near-tied. Exactly 6 of 7344 `E_idx` slots change, and `etab_out`
+   then moves by O(1) -- not because any energy changed, but because it is reporting a
+   different set of pairs. `torch.set_num_threads(1)` costs wall-clock on a dump that is
+   generated once and compared forever.
+
 THE LABELS ARE NOT CHEMISTRY. `CyclingProtonationLabels` assigns states by position in an
 enumeration. The output is wrong as chemistry and predicts nothing. That is adequate for
 parity and ONLY for parity: a parity wave compares two implementations on identical inputs, so
@@ -147,6 +155,7 @@ def _build_cell(checkpoint: Path, pdb: Path, *, labelled: bool):  # noqa: ANN202
   )
   inference._PIPELINE_CACHE.clear()  # noqa: SLF001 -- trap 1; no public API for this
   torch.manual_seed(SEED)  # identically for both cells, so only the labels differ
+  torch.set_num_threads(1)  # trap 3, see below
 
   model = inference.load_model(str(checkpoint))
   batch = inference.prepare_potts_input(str(pdb), extended_vocab=EXTENDED_VOCAB)
