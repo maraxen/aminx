@@ -1026,3 +1026,106 @@ Worth recording while the tree is in front of us: the FLAML labeller pickles **a
 pointers). So the end-to-end branch was never blocked on the *models* — only ever on the HBPLUS
 binary that feeds them.
 
+## 21. MEASURED: V1 featurization completes with NO annotation and NO HBPLUS. §18.5's gate is met
+
+Spiked on titanix, 2026-10-07. This is the first time the featurization path has completed in this
+environment, which was the standing precondition on P4.
+
+### 21.1 The spike, and why it is faithful
+
+One intervention only: `mpnn.pipelines.potts_mpnn.get_protonation_state_transforms` — the sole
+HBPLUS consumer — replaced by `lambda **kw: []`. Everything else, **including the structure
+parse**, is upstream's own: the spike calls `prepare_potts_input(pdb, extended_vocab="v6")`, which
+is the V1 entry point. Input was upstream's shipped example,
+`inference/examples/pdl1_seed_binder.pdb` (1689 atoms).
+
+```
+network_input keys: ['atom_array', 'input_features']
+X    (1, 229, 37, 3) torch.float32
+X_m  (1, 229, 37)    torch.bool
+S    (1, 229)        torch.int64
+S    min=0 max=19 n_distinct=20
+```
+
+`input_features` carries the full 19-key surface (`R_idx`, `bias`, `pair_bias`,
+`designed_residue_mask`, `chain_labels`, `residue_mask`, `symmetry_*`, …), i.e. the real network
+input, not a stub.
+
+A first attempt failed differently and the distinction matters: calling
+`build_mpnn_transform_pipeline` on a bare `PDBFile.get_structure()` died at
+`RemoveUnresolvedPNUnits` for missing `pn_unit_iid` / `occupancy`. That is **input preparation**,
+not HBPLUS — `MPNNInferenceInput.from_atom_array_and_dict` supplies those annotations. Routing
+through `prepare_potts_input` fixed it.
+
+### 21.2 This retires §20's expensive caveat
+
+§20 said synthesising labels was gated on an unverified question — whether EV6 tolerates a
+hand-built `hbond_records`. **That question does not need answering**, for two independent
+reasons, both now confirmed:
+
+1. `hbond_records` is consumed by **EV6 the labeller** (`ev6/predictor.py:113-121`,
+   `vocab_annotation.py:120,135`), which lives inside the annotation block. Skip the block and EV6
+   never runs. (Also worth noting from `predictor.py:117`: passing `hbond_records` *"skips two
+   HBPLUS subprocess calls"* — so EV6 given `None` would invoke HBPLUS itself. A further reason
+   not to route through it.)
+2. `BuildBondEdgeLabels` — the only tail consumer of bond labels — is gated on
+   `build_bond_labels`, which **defaults `False`** (`potts_mpnn.py:186`). The default featurization
+   never asks for them.
+
+And the labels themselves turn out to be optional, not merely synthesisable:
+`EncodePottsMPNNNonAtomizedTokens.check_input` requires only `atomize`, `res_name`, `occupancy`,
+and `_build_protonation_aware_seq` says so outright — *"`protonation_label` is optional; when
+absent the function behaves identically to the standard encoder"* — gating on
+`has_protonation = "protonation_label" in atom_array.get_annotation_categories()`. So §20 option 2
+is cheaper than written: **no synthesis at all** is needed for a canonical-token cell.
+
+### 21.3 ⚠ But this cell is VACUOUS with respect to the capability being ported
+
+`S max=19`, `n_distinct=20` — the twenty standard amino acids and nothing else. Not even `UNK`
+(index 20) appeared, and **no protonation token did**, because with no labels every residue falls
+back to its canonical `res_name`.
+
+So a parity suite built only on this cell would compare aminx against upstream on a path where
+ProtonPottsMPNN is indistinguishable from PottsMPNN. That is precisely the vacuity failure this
+project already audits for (T0 found exactly one genuinely vacuous comparison field and it was
+treated as a defect). **Stated as a pre-registration constraint: no `protonpotts_*` wave may
+consist solely of cells whose `S` never exceeds 20.** At least one cell must carry populated
+protonation labels, which is now easy — the label is just an atom-array annotation, and the
+fallback is keyed on its presence.
+
+### 21.4 The v6 alphabet, read off the source — this makes §11c concrete
+
+`token_encodings.py:135-162`. **30 = 21 standard + 9 protonation**, where 21 is
+`STANDARD_AA + (UNKNOWN_AA,)` at indices 0–20, and the 9 occupy **21–29**:
+
+| residue | tokens |
+| :-- | :-- |
+| HIS | `HIS-P` (protonated), `HIS-S` (neutral), `HIS-A` (ambiguous) |
+| ASP | `ASP-P`, `ASP-D` (deprotonated), `ASP-A` |
+| GLU | `GLU-P`, `GLU-D`, `GLU-A` |
+
+Two facts that bear directly on the public-alphabet decision:
+
+- The extension touches **exactly three residues**, each getting exactly three states. A 21-token
+  public alphabet plus a side channel therefore needs only a small per-position enum that is
+  non-null at H/D/E and null everywhere else — far lighter than threading width 30 through every
+  sink and every `sequences_to_score` caller.
+- v6 **predicts charge state, not tautomer**: the source comment records that neutral His is a
+  *single* token `HIS-S` because the HID/HIE tautomers and the rare imidazolate `HIS-D` are
+  deliberately dropped. So the side channel does not need to carry tautomer information — a
+  3-valued charge state per titratable residue is complete. This also confirms §2a's reading that
+  v6 is deliberately weight-incompatible with the 32-token v3/v4 encodings.
+
+I am not deciding §11c here — it stays the user's — but the option space is narrower and cheaper
+than the spec implied.
+
+### 21.5 Where this leaves the task graph
+
+P4's precondition is now **met**: featurization has completed once. What is still unestablished is
+whether the *engine* runs forward on these features to produce energies — the spike stopped at
+featurization and did not load the checkpoint through `potts_mpnn_ph`. That is the next probe, and
+it needs no user decision.
+
+Unchanged: everything from P3 on touches `src/aminx/` and is blocked by THE FREEZE until #165
+merges. `aminx-oracles-protonpotts/` remains unscoped, so P1/P4 stay the available work.
+
