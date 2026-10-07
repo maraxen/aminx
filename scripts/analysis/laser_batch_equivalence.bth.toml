@@ -9,39 +9,39 @@ stage_name = "diagnosis"
 novel = true
 
 [outcomes.batched_equivalent]
-condition = "self_test_passed AND refusal == null AND control_fired AND within_floor"
+condition = "self_test_passed AND refusal IS NULL AND control_fired AND within_floor"
 decision = "Record that GPU + num_copies batching is distributionally indistinguishable from the CPU unbatched sampler at this sample size, for the UNSHIMMED arm only, on this structure and cell. This licenses a follow-up proposal to batch the unshimmed arms of the confirm; it does NOT license batching the shimmed arm, which needs a batch-aware injected_uniform_draws cursor and is a separate question. Any change to scripts/parity/ is scoped and rides the post-merge re-wave."
 reasoning = "Two independent draws from one distribution do not give TV = 0, they give the sampling floor at that n. A cross-TV at or below the 97.5th percentile of the reference-against-itself TV is inside the noise this many samples can resolve, so it is not evidence of a different distribution. The control firing is what makes that statement meaningful rather than a statement about a blunt metric."
 is_residual = false
-adversarial_check = "NOT (self_test_passed AND refusal == null AND control_fired AND within_floor)"
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND control_fired AND within_floor)"
 
 [outcomes.batched_not_equivalent]
-condition = "self_test_passed AND refusal == null AND control_fired AND NOT within_floor"
+condition = "self_test_passed AND refusal IS NULL AND control_fired AND NOT within_floor"
 decision = "Do NOT batch the confirm. Report the cross TV and the floor so the size of the discrepancy is on the record, and treat the ~30-45x spike number as unusable for the confirm until the cause is found. The confirm continues unbatched."
 reasoning = "A sampler that is faster and draws a different distribution is a defect, not a speedup, and the confirm's entire purpose is to measure a distribution. Speed cannot buy a wrong answer."
 is_residual = false
-adversarial_check = "NOT (self_test_passed AND refusal == null AND control_fired AND NOT within_floor)"
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND control_fired AND NOT within_floor)"
 
 [outcomes.control_did_not_fire]
-condition = "self_test_passed AND refusal == null AND NOT control_fired"
+condition = "self_test_passed AND refusal IS NULL AND NOT control_fired"
 decision = "No conclusion about equivalence. A deliberately-different draw (the same sampler at control_temperature_scale x the cell temperature) failed to separate from the floor on REAL data, so this instrument cannot distinguish distributions on this structure at this sample size. Raise n or the control separation and re-run; do not report equivalence."
 reasoning = "A metric too blunt to detect a distribution it is TOLD is different would report equivalence for anything, including a broken sampler. The synthetic self-test checks the metric in principle; this checks it on the actual structure, sample size and alphabet occupancy of the real comparison, where it could still be underpowered."
 is_residual = true
-adversarial_check = "NOT self_test_passed OR refusal != null OR control_fired"
+adversarial_check = "NOT self_test_passed OR refusal IS NOT NULL OR control_fired"
 
 [outcomes.cuda_unavailable]
-condition = "self_test_passed AND refusal == 'cuda_unavailable'"
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'cuda_unavailable'"
 decision = "No conclusion. Re-run where the requested CUDA device resolves."
 reasoning = "A cuda request that silently fell back to CPU would compare the CPU sampler against itself and return a reassuring verdict about a question that was never asked. Refusing is the only safe behaviour."
 is_residual = true
-adversarial_check = "NOT self_test_passed OR refusal != 'cuda_unavailable'"
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'cuda_unavailable'"
 
 [outcomes.reference_absent]
-condition = "self_test_passed AND refusal == 'reference_absent'"
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'reference_absent'"
 decision = "No conclusion. Re-run where the completed U2 unit JSON resolves."
 reasoning = "A missing reference is an environment fact and must not be reported as agreement."
 is_residual = true
-adversarial_check = "NOT self_test_passed OR refusal != 'reference_absent'"
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'reference_absent'"
 
 [outcomes.instrument_unverified]
 condition = "NOT self_test_passed"
