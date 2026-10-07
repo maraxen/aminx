@@ -656,3 +656,77 @@ therefore **blocked by THE FREEZE until PR #165 merges**.
 `path.startswith(prefix)` and `_SCOPED_PREFIXES` contains `aminx-oracles/`, which
 `aminx-oracles-protonpotts/` does not start with. So P1 and P4 can proceed during the freeze —
 they are the only ProtonPottsMPNN tasks that can.
+
+## 16. P1: what the V1 oracle environment actually needs (traced, not assumed)
+
+Traced 2026-10-07 while PR #165's CI ran. This sizes open decision §11c and sharpens §11a. It
+is **static import tracing, not a built env** — every line below is a read of source at
+file:line, and the authoritative check is still to build it and import the V1 entry point. Do
+not treat this as P1's gate being met.
+
+### 16.1 Upstream's own recipe
+
+`install.sh` is `uv venv --clear --python 3.12 .venv` then a **single** resolution:
+`uv pip install --python .venv/bin/python -e ./foundry -r requirements-extra.txt`. Its comment
+says why it is one command: *"the resolver keeps BOTH sets — installing them separately can
+prune the extras."*
+
+`foundry/pyproject.toml`'s base dependencies are the heavy half and are not optional: `torch`,
+`lightning`, `wandb`, **`atomworks[ml]>=2.1.1`**, `hydra-core`, `rootutils`, `environs`,
+`jaxtyping`, `beartype`, `typer`, `loralib`, `einops`, `einx`, `opt_einsum`, `dm-tree`,
+`zstandard`, `pandas`, `ipykernel`, `assertpy`, `toolz`.
+
+### 16.2 `requirements-extra.txt` is mostly NOT V1 — with one exception that is
+
+The extras file is the labeller, the notebook and training. Traced per entry:
+
+| Dep | On the V1 path? | Evidence |
+| :-- | :-- | :-- |
+| `propka>=3.5` | **NO** | `import propka.run` is module-level at `transforms/pka_annotation.py:10`, and `pka_annotation` is imported by exactly one file, `pipelines/potts_mpnn.py:40`. `inference/` and `scoring/` import that pipeline **nowhere** (grep: zero hits). |
+| `ipdb` | **YES — mandatory** | see §16.3 |
+| `flaml`, `xgboost`, `lightgbm`, `scikit-learn<1.9`, `shap` | **only under §11a's labelling fork** | these are the EV6 labeller; needed iff aminx labels protonation rather than consuming it |
+| `matplotlib`, `nbconvert`, `nbformat`, `jupyterlab` | no | notebook only |
+| `pandas>=2.1,<3` | yes, but foundry already requires `pandas` | the pin exists because *"pandas 3.0 defaults to Arrow-backed strings, which FLAML 2.6 can't index"* — i.e. it is a FLAML constraint, so it relaxes if the labeller leaves V1 |
+
+### 16.3 `ipdb` is required by a lazy import that V1 is guaranteed to make
+
+This is the §4 transitive-import trap again, and it is worth stating precisely because the
+"it's only a dev dependency" reading is wrong.
+
+- `transforms/bond_annotation.py:20` — `import ipdb`, **module level**.
+- `transforms/ev6/features.py:32` — `from mpnn.transforms.bond_annotation import calculate_hbonds`,
+  **module level**. So importing `ev6` imports `bond_annotation` imports `ipdb`.
+- `transforms/extended_vocab_v6.py:77,91` and `transforms/vocab_annotation.py:192` import
+  `mpnn.transforms.ev6` **function-locally** — lazy, so a bare `import mpnn` does not pull it.
+
+A lazy import is eager once its caller runs. §1a measured `train_cfg.extended_vocab='v6'` off
+the checkpoint, so the V1 path *will* enter EV6, and `ipdb` becomes a hard runtime requirement.
+`requirements-extra.txt` says as much in a comment — *"foundry's bond_annotation.py has a
+top-level `import ipdb` (a dev dependency)"* — and it would be easy to drop while trimming
+"dev" deps.
+
+### 16.4 The minimal V1 environment, and what it means for §11c
+
+**`-e ./foundry` plus `ipdb`.** Nothing else from `requirements-extra.txt`, *unless* §11a is
+decided toward end-to-end labelling, which adds FLAML + xgboost + lightgbm + `sklearn<1.9` +
+the `pandas<3` pin.
+
+So §11c's "a second environment" is real but is **one `uv` resolution over foundry's own
+dependency set**, not foundry-plus-the-extras. The heavy items are `torch` and
+`atomworks[ml]` — both unavoidable, since atomworks defines the token contract §3 depends on.
+
+Two things still unverified, and they are what P1's gate actually requires:
+1. **Does `atomworks[ml]>=2.1.1` resolve from PyPI on titanix's Python 3.12?** If it is not
+   published, the whole env plan changes and §11c becomes a much larger question. Not checked.
+2. **Does HBPLUS need to be on PATH for V1?** `ev6/features.py:7` says it uses
+   `bond_annotation.calculate_hbonds` *"instead of a private HBPLUS invocation"*, and
+   `bond_annotation.py:198` is `_run_hbplus_cmd`. Whether a V1 inference run actually shells out
+   depends on whether annotations are precomputed (`transforms/precomputed.py`, §4). This is the
+   same question as §11a from the other side.
+
+### 16.5 Recommendation
+
+Build the env with foundry + `ipdb` only and try to import the V1 entry point. That both
+answers (1) above and tests §11a's "pre-labelled" branch directly: if the minimal env can run
+inference on a pre-annotated structure, the labelling fork is genuinely optional and §11a can be
+decided on merits rather than on necessity.
