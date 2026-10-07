@@ -60,7 +60,6 @@ from aminx.run.specs import (
   JacobianSpecification,
   SamplingSpecification,
   ScoringSpecification,
-  pop_deprecated_spec_kwargs,
 )
 
 from .prep import prep_protein_stream_and_model
@@ -280,9 +279,7 @@ def sample(
 
   """
   if spec is None:
-    kw = dict(kwargs)
-    pop_deprecated_spec_kwargs(kw)
-    spec = SamplingSpecification(**kw)
+    spec = SamplingSpecification(**kwargs)
 
   # F002/F003 guard [260826_aminx-invariant-audit]: runner.sample cannot honour
   # multistate spec fields.  score() routes through _score_fused_multistate which
@@ -728,9 +725,7 @@ def score(  # noqa: PLR0915
 
   """
   if spec is None:
-    kw = dict(kwargs)
-    pop_deprecated_spec_kwargs(kw)
-    spec = ScoringSpecification(**kw)
+    spec = ScoringSpecification(**kwargs)
 
   if spec.output_h5_path:
     msg = "score runner: HDF5 streaming output not yet implemented; omit --output-h5-path for in-memory results"
@@ -1287,9 +1282,7 @@ def inspect(  # noqa: PLR0915
 
   """
   if spec is None:
-    kw = dict(kwargs)
-    pop_deprecated_spec_kwargs(kw)
-    spec = InspectionSpecification(**kw)
+    spec = InspectionSpecification(**kwargs)
 
   # F005 guard [260826_aminx-invariant-audit]: runner.inspect cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit
@@ -1601,9 +1594,7 @@ def jacobian(
   ``aminx.utils.reverse_jac``).
   """
   if spec is None:
-    kw = dict(kwargs)
-    pop_deprecated_spec_kwargs(kw)
-    spec = JacobianSpecification(**kw)
+    spec = JacobianSpecification(**kwargs)
 
   # F005 guard [260826_aminx-invariant-audit]: runner.jacobian cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit
