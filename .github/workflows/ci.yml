@@ -43,19 +43,27 @@ jobs:
         run: npm install -g @ast-grep/cli
       - name: Install dependencies and run tests
         run: |
-          uv sync --extra cpu --extra dev --extra tests --extra onnx --extra agent
+          # --extra laser brings ProDy, which families/laser_mpnn/featurize.py imports. Without it
+          # every tests/port/test_laser_*.py and tests/knob_semantics/test_laser_*.py module fails at
+          # COLLECTION, so the LASEr waves were never actually executed here (aminx #165 CI).
+          uv sync --extra cpu --extra dev --extra tests --extra onnx --extra agent --extra laser
 
           # The ONNX parity tests skip (rather than error) when the toolchain is absent, so a broken install
           # would quietly turn them into skips. Fail the job instead (aminx debt #2392).
           uv run python -c "import onnx, onnxruntime, jax2onnx; print('onnx', onnx.__version__, '| onnxruntime', onnxruntime.__version__, '| jax2onnx ok')"
 
+          # redsox_gate is excluded everywhere: the knob-gate harness imports `redsox`, which is not
+          # published and is installed only on the gate host, and it is driven by
+          # scripts/redsox/run_gate.py rather than by this job. Its tests import redsox at call time
+          # precisely so a missing install FAILS loudly where the gate actually runs -- excluding the
+          # marker here keeps that signal on the gate host instead of reading as a red CI run.
           # Determine marker expression based on event type
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "Pull request: running fast tests (excluding slow, parity_heavy, parity_audit)."
-            MARKER="not slow and not parity_heavy and not parity_audit"
+            echo "Pull request: running fast tests (excluding slow, parity_heavy, parity_audit, redsox_gate)."
+            MARKER="not slow and not parity_heavy and not parity_audit and not redsox_gate"
           else
-            echo "Push to main: excluding parity_heavy and parity_audit (run in parity workflows)."
-            MARKER="not parity_heavy and not parity_audit"
+            echo "Push to main: excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
+            MARKER="not parity_heavy and not parity_audit and not redsox_gate"
           fi
 
           uv run pytest -n auto --cov=src --cov-report=xml --cov-report=term -m "$MARKER"
