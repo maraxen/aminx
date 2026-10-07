@@ -1582,3 +1582,101 @@ But the scan above is a reminder that upstream vendors `benchmarks/data/PKAD/`, 
 carrying **experimental** values. If a later wave wants labels that are chemically grounded
 rather than merely valid, that is where they would come from, and it needs no HBPLUS either.
 Not required for P4; recorded so §20's route list is not read as exhaustive.
+
+---
+
+## §27 — the upstream v6 inference path is NONDETERMINISTIC, and that invalidates §23.2
+
+The P4 dumper ran, covered 9/9, and both controls behaved. Then the same command on the same
+cell produced a different number, so I checked instead of moving on. **Every output of the v6
+inference path varies run to run on bit-identical inputs.** This is the most consequential
+finding in this document so far, because several earlier sections rest on single draws from
+what turns out to be a distribution.
+
+### §27.1 The measurement
+
+Same cell, same checkpoint, two `run_forward` calls in one process, pipeline cache cleared
+between them, no protonation labels involved at all (so nothing here is about labelling):
+
+```
+X           identical=True
+S           identical=True
+etab_out    identical=False  max|delta|=1.56884
+E_idx       identical=False
+log_probs   identical=False  max|delta|=45.7627
+S_sampled   identical=False
+S_argmax    identical=False
+```
+
+**The inputs are bit-identical and every output differs.** Corroborating, from four runs of
+the P4 dumper on the identical cell, the "positive control" `log_probs` delta came out
+`37.1461 / 41.9841 / 48.0462 / 45.9002`, and two successful runs wrote `oracle_f32.npz` files
+with different sha256 (`01584ded…` vs `7caa4d61…`).
+
+### §27.2 What this invalidates
+
+**§23.2's central claim — "`etab_out` is invariant to `S`, measured bit-exact, max|delta| = 0"
+— must not be cited.** It is not disproven, but the instrument that produced it is unstable:
+the same quantity now differs by 1.57 on inputs that do not differ at all. A single
+observation of exact equality from a nondeterministic process is a coincidence until repeated,
+and it was not repeated. Everything §23.2 and §22.1 concluded about which observables can
+validate protonation handling is **suspended**, not settled.
+
+**§26's log_probs deltas are draws, not measurements.** The numbers in §26.1–§26.3 (52.8716,
+38.3736, 37.1461) were each one sample. They are still evidence that labels *reach* the model —
+a nonzero delta is nonzero — but no comparison *between* those numbers means anything, and
+none of them should be quoted as "the" effect size.
+
+**The P4 dump artifacts are unusable and must not be sealed.** An oracle whose sha256 changes
+per run cannot anchor a parity wave at any tolerance tighter than the run-to-run spread, and
+that spread is currently unmeasured.
+
+§24, §25 and the §26 *coverage* results are untouched: checkpoint geometry, the alphabet
+tables, and which token indices appear in `S` are all deterministic (`S` is identical above).
+
+### §27.3 Attribution — partial, and two obvious explanations ruled out by reading
+
+`model/pottsmpnn.py:500` uses `torch.randperm` and `:544` `torch.multinomial`. That is the
+Gibbs/sampling path, and it straightforwardly explains `S_sampled`, `S_argmax` and `log_probs`.
+
+**It does not explain `etab_out` and `E_idx`**, which should be pure functions of the
+structure. That is the open question, and it is the more serious half: if the energy table
+itself is not reproducible, the Potts port's own notion of structure parity is in question for
+this model.
+
+Two candidate causes checked and **excluded**:
+
+| candidate | why it is not the cause |
+|---|---|
+| dropout active at inference (cf. aminx debt #2051) | `load_model` ends `return model.eval().to(device)` (`potts_inference.py:82`) — eval mode *is* set |
+| coordinate augmentation | `structure_noise` defaults to `0.0` (`potts_inference.py:36`) and the only `randn_like` sites multiply by it (`graph_embeddings.py:689, 2387, 2390`), so they contribute exactly zero |
+
+Both were plausible and both are wrong, which is why they are recorded — the next reader
+should not spend the same time on them.
+
+### §27.4 The control earned its place
+
+The negative control pre-registered in `dump_protonpotts_oracles.bth.toml` — *`etab_out` must
+be bit-identical between the two cells* — **fired on one of four runs**. That is the control
+doing precisely the job it was added for: distinguishing "the labels changed the output" from
+"the two runs differ for an unrelated reason". Without it, the dumper would have written four
+mutually inconsistent oracles, all reporting a healthy positive control, and the defect would
+have surfaced much later as an unreproducible parity failure.
+
+Worth stating plainly because it cuts against the temptation to simplify: the positive control
+alone passed on all four runs. A one-sided instrument would have seen nothing wrong.
+
+### §27.5 What has to happen before P4 can produce an oracle
+
+1. **Find the source of `etab_out`/`E_idx` nondeterminism.** Not the sampler — those two are
+   upstream of it. Candidates not yet checked: tie-breaking in the k-NN that builds `E_idx`,
+   a non-deterministic reduction/scatter kernel, or TF32/cuDNN autotuning if this ran on GPU.
+2. **Then make the dump reproducible**, by seeding (`torch.manual_seed` plus
+   `torch.use_deterministic_algorithms(True)`) or by eliminating the cause, and *prove* it by
+   dumping twice and comparing sha256 — not by asserting a seed was set.
+3. **Re-establish §23.2 under that determinism.** Whether `etab_out` depends on `S` is a real
+   and load-bearing question, and it currently has no trustworthy answer.
+4. Only then seal an oracle.
+
+Until step 2 passes, the dumper's self-checks are the right behaviour but its output must not
+be used, and `.praxia/spikes` / `oracles*/` artifacts from today are throwaway.
