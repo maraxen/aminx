@@ -1,7 +1,24 @@
 [metadata]
 title = "ProtonPottsMPNN v6 oracle dump (P4)"
 created = "261007"
+amended = "261007"
 schema_version = "0.3"
+
+# AMENDMENT, 261007, same day, BEFORE the amended version has been run.
+#
+# Hypothesis 2 below named `log_probs` as the positive control. It was FALSIFIED, not found
+# inconvenient. With the Gibbs sampler seeded (`torch.manual_seed` before each cell), the
+# log_probs difference between the labelled and unlabelled cells collapsed from 37-52 to
+# 0.000165 / 0.000161 / exactly 0 across three runs -- i.e. the 37-52 figures that motivated
+# the original criterion were sampler variance, not a label effect. Spec §28.
+#
+# The replacement observable is `H(S)` via upstream's own `PottsMPNN.calc_potts_eners`, plus
+# the single-site field restricted to the protonation columns 21-29. §29 measured that the
+# extension region is non-degenerate, so these do respond to labels.
+#
+# Recording this as an amendment with its cause, rather than editing hypothesis 2 in place,
+# because a pre-registration whose criteria can be silently rewritten after a run is not one.
+# The amendment is committed before the amended script is run.
 
 [experiment]
 hypothesis = """
@@ -17,9 +34,22 @@ Four claims, all falsifiable by this run:
    protonation indices 21-29. (§26.3 measured 9/9 on PKAD 1BVC; this run re-establishes it
    under a sidecar rather than citing the exploratory spike.)
 
-2. POSITIVE CONTROL. `log_probs` differs between the unlabelled and labelled cells. If it does
-   not, the labels never reached the model and every downstream comparison is vacuous -- in
-   the way that still looks like a clean pass.
+2. POSITIVE CONTROL. [AMENDED 261007 -- see the metadata block. The original read "`log_probs`
+   differs between the unlabelled and labelled cells"; that was falsified once the sampler was
+   seeded, because the apparent difference was sampler variance.]
+
+   `H(S)`, computed by upstream's own `PottsMPNN.calc_potts_eners`, differs between the
+   unlabelled and labelled cells, AND the single-site field (`etab[:, 0].diagonal()`) at
+   columns 21-29 is non-degenerate at titratable positions. If neither moves, the protonation
+   vocabulary is inert at inference and every downstream comparison is vacuous -- in the way
+   that still looks like a clean pass.
+
+   TOLERANCE SCALE, pre-registered here because getting it wrong is the likely failure: §29.3
+   measured the ambiguity penalty (`-A` vs its siblings) at ~4.5-6.3 but the
+   protonated-vs-deprotonated contrast at only 0.209 (ASP) and 0.036 (GLU). Any band derived
+   from the overall spread or from the table's abs-max (12.41) is one to two orders of
+   magnitude too loose to detect a broken P/D discrimination. The band is set against the
+   0.036 GLU-P/GLU-D scale, the smallest contrast the vocabulary is meant to express.
 
 3. NEGATIVE CONTROL. `etab_out` is BIT-IDENTICAL between the two cells. §23.2 measured this: a
    Potts model emits an energy function from the structure encoder and the sequence selects

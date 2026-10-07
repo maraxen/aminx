@@ -181,20 +181,47 @@ def _check_cell_is_adequate(counts: dict[str, int], covered: list[int]) -> None:
     raise SystemExit(msg)
 
 
-def _check_non_vacuous(plain_logprobs: np.ndarray, labelled_logprobs: np.ndarray) -> float:
+def _check_non_vacuous(plain_energy: float, labelled_energy: float) -> float:
   """Positive control, run before the dump is written, not asserted about afterwards.
 
-  If log_probs does not move between the unlabelled and labelled cells, the labels are not
-  reaching the model and every downstream comparison is vacuous -- in exactly the way that
-  still looks like a clean pass.
+  AMENDED: this used to test `log_probs`. §28 falsified that -- once the Gibbs sampler is
+  seeded, `log_probs` stops responding to the labels entirely (the 37-52 deltas that motivated
+  it were sampler variance). `H(S)` is the replacement: sequence-dependent by construction and
+  deterministic, since `etab_out` and `S` both are.
   """
-  delta = float(np.abs(plain_logprobs - labelled_logprobs).max())
+  delta = abs(plain_energy - labelled_energy)
   if delta == 0.0:
     raise SystemExit(
-      "log_probs is identical between the unlabelled and labelled cells: the labels are not "
-      "reaching the model, so these dumps would be vacuous. Refusing to write."
+      "H(S) is identical between the unlabelled and labelled cells: the labels are not "
+      "reaching the energy, so these dumps would be vacuous. Refusing to write."
     )
   return delta
+
+
+def _check_field_non_degenerate(field: np.ndarray) -> dict[str, float]:
+  """Second half of the positive control: does the TABLE distinguish the protonation tokens?
+
+  `H(S)` differing is necessary but weak on its own -- indexing a table at different indices
+  gives different numbers by arithmetic, whether or not the model learned anything. This asks
+  the stronger question directly, and needs no labels.
+
+  Returns the per-residue P-vs-D contrasts, which are what a tolerance band must be set
+  against: §29.3 measured them at 0.209 (ASP) and 0.036 (GLU), against an ambiguity penalty of
+  4.5-6.3 and a table abs-max of 12.41. A band taken from the spread rather than from these
+  would be one to two orders of magnitude too loose.
+  """
+  contrasts = {
+    "ASP_P_vs_D": float(np.abs(field[:, 24] - field[:, 25]).max()),
+    "GLU_P_vs_D": float(np.abs(field[:, 27] - field[:, 28]).max()),
+    "HIS_P_vs_S": float(np.abs(field[:, 21] - field[:, 22]).max()),
+  }
+  if max(contrasts.values()) == 0.0:
+    raise SystemExit(
+      f"the single-site field does not distinguish any protonation pair {contrasts}: the v6 "
+      "vocabulary is inert at inference, so no parity wave on it can mean anything. "
+      "Refusing to write."
+    )
+  return contrasts
 
 
 def _check_etab_invariant(plain_etab: np.ndarray, labelled_etab: np.ndarray) -> None:
@@ -237,12 +264,26 @@ def main() -> int:
   logger.info("titratable counts %s; covered %d/9 %s", counts, len(covered), covered)
   _check_cell_is_adequate(counts, covered)
 
-  delta = _check_non_vacuous(
-    _as_numpy(plain_out.log_probs), _as_numpy(lab_out.log_probs)
+  from mpnn.model.pottsmpnn import PottsMPNN
+
+  # H(S) on ONE etab under both sequences, so the only thing varying is S.
+  etab, e_idx = lab_out.etab_out, lab_out.E_idx
+  h_plain = float(PottsMPNN.calc_potts_eners(etab, e_idx, plain_features["S"])[0])
+  h_labelled = float(PottsMPNN.calc_potts_eners(etab, e_idx, lab_features["S"])[0])
+  delta = _check_non_vacuous(h_plain, h_labelled)
+  logger.info(
+    "positive control A: H(S) plain=%.6f labelled=%.6f delta=%+.6f", h_plain, h_labelled, delta
   )
-  logger.info("positive control: log_probs max|delta| labelled vs unlabelled = %.6g", delta)
+
+  field = _as_numpy(etab.squeeze(0)[:, 0].diagonal(dim1=-2, dim2=-1))  # [L, V]
+  contrasts = _check_field_non_degenerate(field)
+  logger.info("positive control B: single-site field P-vs-D contrasts %s", contrasts)
+  logger.info(
+    "  tolerance must be set against the SMALLEST of these (§29.3), not the overall spread"
+  )
+
   _check_etab_invariant(_as_numpy(plain_out.etab_out), _as_numpy(lab_out.etab_out))
-  logger.info("negative control: etab_out bit-identical across the two cells, as §23.2 found")
+  logger.info("negative control: etab_out bit-identical across the two cells (structure-only)")
 
   payload = {
     "S_unlabelled": _as_numpy(plain_features["S"]),
@@ -251,8 +292,14 @@ def main() -> int:
     "X_m": _as_numpy(lab_features["X_m"]),
     "etab_out": _as_numpy(lab_out.etab_out),
     "E_idx": _as_numpy(lab_out.E_idx),
+    # Demoted to recorded quantities, NOT controls: §28 showed log_probs does not respond to
+    # the labels once the sampler is seeded.
     "log_probs_unlabelled": _as_numpy(plain_out.log_probs),
     "log_probs_labelled": _as_numpy(lab_out.log_probs),
+    # The protonation-sensitive observables (§29).
+    "single_site_field": field,
+    "H_S_unlabelled": np.asarray(h_plain),
+    "H_S_labelled": np.asarray(h_labelled),
   }
   out_path = args.out / "protonpotts_v6" / "oracle_f32.npz"
   out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -271,7 +318,11 @@ def main() -> int:
         f"labeller = {_toml_str('cycling, ordinal-within-type')}",
         f"titratable_counts = {{ {', '.join(f'{k} = {v}' for k, v in sorted(counts.items()))} }}",
         f"covered_protonation_indices = [{', '.join(str(i) for i in covered)}]",
-        f"positive_control_logprobs_delta = {delta!r}",
+        f"positive_control_H_S_delta = {delta!r}",
+        f"H_S_unlabelled = {h_plain!r}",
+        f"H_S_labelled = {h_labelled!r}",
+        "[field_contrasts]  # tolerance scale; see spec §29.3",
+        *(f"{k} = {v!r}" for k, v in sorted(contrasts.items())),
         "",
         "[[dump]]",
         f"wave = {_toml_str('protonpotts_v6')}",

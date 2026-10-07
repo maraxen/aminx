@@ -1786,3 +1786,94 @@ that is a much larger finding about the upstream model than about our port.
 
 Do not seal any oracle, and do not write a `protonpotts_*` pre-registration naming `log_probs`
 as its protonation observable, until that question is answered.
+
+---
+
+## §29 — the extension region DOES carry signal, but almost none of it is P-vs-D
+
+§28 left P4 blocked with no observable responding to protonation labels. The untested
+candidate was §23.3's "an energy evaluated at `S`". It works, the blocker lifts, and the
+measurement immediately constrains how the wave's tolerance may be set.
+
+### §29.1 Two tests, because the obvious one is nearly vacuous
+
+**A — `H(S)`.** Upstream has its own scorer, `PottsMPNN.calc_potts_eners`
+(`model/pottsmpnn.py:300-314`), `H(s) = Σ_i Σ_k etab[i,k,s_i,s_{E_idx[i,k]}]`. Used rather
+than reimplemented.
+
+Note what A alone does *not* prove. Evaluated on **one** `etab` with two different `S`, it will
+differ whenever `S` differs — indexing a table at different indices gives different numbers by
+arithmetic, regardless of whether the model learned anything. So A is reported for magnitude,
+not as evidence.
+
+**B — is the extension region of the table non-degenerate?** The single-site field is
+`etab[:, 0].diagonal()` → `[L, V]` (convention confirmed at `pottsmpnn.py:401`). At a
+titratable position, compare the field entries for the parent token and its three protonation
+tokens. This needs **no labels at all**, is fully deterministic, and is the decisive one.
+
+### §29.2 Measured (1BVC, v6 checkpoint, seeded)
+
+```
+etab_out (1, 153, 48, 30, 30)   single-site field (153, 30)
+field abs-max over the whole table = 12.4132
+
+HIS @pos11: parent=-4.39852  HIS-P=-4.43930  HIS-S=-4.31135  HIS-A=-4.48335
+  spread among the 3 states = 0.171997   max spread over all 12 HIS positions = 0.278798
+ASP @pos19: parent=-4.70759  ASP-P=-4.50254  ASP-D=-4.71181  ASP-A=-10.94776
+  spread among the 3 states = 6.44522    max spread over all  7 ASP positions = 6.75074
+GLU @pos3 : parent=-4.40029  GLU-P=-4.42511  GLU-D=-4.38911  GLU-A=-8.88752
+  spread among the 3 states = 4.49841    max spread over all 14 GLU positions = 5.06311
+
+H(S) plain=-34724.792969  relabelled=-34448.917969  delta=+275.875  (S changed at 33 positions)
+```
+
+**The extension region carries signal.** The 30-token vocabulary is not inert, `H(S)` is a
+valid sequence-dependent and deterministic observable, and P4 is unblocked.
+
+### §29.3 THE PART THAT CONSTRAINS THE WAVE: the signal is an ambiguity penalty
+
+Read the three numbers in each row rather than their spread. For ASP and GLU, the large spread
+comes almost entirely from the **`-A` (ambiguous) state being heavily penalised** — `ASP-A` at
+−10.95 against `ASP-P` −4.50 and `ASP-D` −4.71; `GLU-A` at −8.89 against −4.43 and −4.39. The
+chemically interesting contrast is much smaller:
+
+| contrast | magnitude |
+|---|---|
+| `ASP-A` vs its P/D siblings | ≈ 6.3 |
+| `GLU-A` vs its P/D siblings | ≈ 4.5 |
+| **`ASP-P` vs `ASP-D`** | **0.209** |
+| **`GLU-P` vs `GLU-D`** | **0.036** |
+| `HIS-P`/`HIS-S`/`HIS-A` spread | 0.172 |
+
+So the model mostly encodes *"I have no evidence here"* versus *"I have evidence"*. The
+protonated-versus-deprotonated discrimination — the thing a protonation-aware model exists
+for — moves the field by **0.04 to 0.21**, around 150× smaller than the ambiguity penalty and
+roughly 350× smaller than the table's abs-max of 12.41.
+
+**Consequence for P4, and it is the main point of this section:** a tolerance band derived
+from the overall spread (6.75) or from the table's scale (12.41) would be one to two orders of
+magnitude too loose to notice a completely broken P/D discrimination. A wave that passes under
+such a band validates the ambiguity penalty and nothing else. **The band must be set against
+the 0.036 `GLU-P`/`GLU-D` scale**, which is the smallest contrast the vocabulary is supposed to
+express, and the pre-registration must say so.
+
+HIS is the other way round: its three states sit within 0.17 of each other with no large
+ambiguity penalty, so HIS carries the least separable signal of the three despite the
+checkpoint being named `…his0.3_acid0.06`. Whether that is expected is a question for the
+upstream author, not something to infer here.
+
+### §29.4 What P4 captures now
+
+The dumper's protonation observable changes from `log_probs` to:
+
+- **`H(S)`** on the labelled and unlabelled cells, via upstream's `calc_potts_eners`.
+- **the single-site field restricted to columns 21–29**, which is the targeted quantity and
+  the one whose per-contrast scale §29.3 just pinned.
+
+`etab_out`/`E_idx` stay in the dump as PottsMPNN structure parity. `log_probs` stays too, but
+**demoted to a recorded quantity rather than a control** — §28 showed it does not respond to
+labels once seeded.
+
+This supersedes the original pre-registration's hypothesis 2, whose positive control named
+`log_probs`. That hypothesis was **falsified**, not relaxed; the amended sidecar records the
+falsification and the replacement rather than quietly editing the criterion.
