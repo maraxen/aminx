@@ -14,11 +14,6 @@ Entry Points
    :undoc-members:
    :show-inheritance:
 
-.. automodule:: aminx.inference.driver
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 Kernels
 -------
 

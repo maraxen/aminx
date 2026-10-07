@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Removed
+
+- **`aminx.profiling`** (`hlo_tools`, `sampler_profile`). No importers.
+- **`aminx.training.train_diffusion`** and its in-tree test `training/test_diffusion_loop.py`.
+- **`aminx.inference.driver`** (`decode`, `infer_topology`, topology constants). `decode` raised `NotImplementedError`; topology routing lives on the plan mode classes. `aminx.host.plan.PlanTopologyError` and `aminx.tiling.errors` are unchanged.
+- **Host sinks with no production callers:** `JacobianAccumulationSink`, `jacobian_sink_session`, `stage_jacobian_io`, `scoring_tensor_sink_session`, `active_scoring_sink`, `EncoderIntermediateStagingSink`, `encoder_sink_session`, `active_encoder_staging_sink`, `take_encoder_intermediates`, `IoCallbackEncoderSink`, and `_noop_sampling_chunk_io`. Streaming tensor sinks stay.
+- **`aminx.utils.atomic_write`** and **`aminx.utils.testing.get_tolerances`**.
+
 ### Changed
 
 - **Runner buckets residue length by default** (xtrax `BUCKET_LADDER`). Seeded sample

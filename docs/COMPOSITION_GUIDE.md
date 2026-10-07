@@ -11,13 +11,13 @@ The pipeline has three layers:
 ```
 Spec / host layer        StageSet (what to do)      JAX-traced kernel
 ─────────────────        ──────────────────────      ────────────────────
-SamplingSpecification ──► make_inference_plan ──► driver.decode
+SamplingSpecification ──► make_inference_plan ──► plan.decode_fn
 InferencePlan                 │                         │
   .sample()                   ▼                         ▼
-  .score()               StageSet slots           infer_topology(stage_set)
-                              │                    ├─ AR scan
-                         encode_fn                 ├─ conditional vmap
-                         logit_transform           └─ unconditional vmap
+  .score()               StageSet slots           mode class
+                              │                    ├─ AutoregressiveDecode
+                         encode_fn                 ├─ ConditionalDecode
+                         logit_transform           └─ UnconditionalDecode
                          ar_logit_transform
                          decode_step
                          sample_step
@@ -39,19 +39,13 @@ InferencePlan                 │                         │
 | `sample_step` | any \| `None` | `None` | Sampling function; `None` means scoring mode |
 | `tie_group_fuse` | `TieGroupFuseFn \| None` | `TieGroupProductOfExperts` | Tied-position fusion strategy; `None` falls back to logsumexp-mean |
 
-**Topology is inferred at call time** by `driver.infer_topology(stage_set)`:
-
-```python
-if stage_set.sample_step is not None:          → TOPOLOGY_AR
-elif isinstance(decode_step, UnconditionalDecodeStep): → TOPOLOGY_UNCONDITIONAL
-else:                                          → TOPOLOGY_CONDITIONAL_SCORE
-```
+**Decode mode is chosen when the plan is built.** `make_inference_plan` resolves a mode class from the stage set: `sample_step` selects `AutoregressiveDecode`, `UnconditionalDecodeStep` selects `UnconditionalDecode`, and the remaining cases select `ConditionalDecode`.
 
 ---
 
 ## The five extension points
 
-**Plain callables and lambdas work directly** — the driver uses `eqx.filter_jit` throughout, which automatically marks non-array objects (including functions) as static. Use `eqx.Module` only when the callable needs **trainable array leaves** (e.g. `weights` that flow through grad).
+**Plain callables and lambdas work directly** — `eqx.filter_jit` marks non-array objects (including functions) as static. Use `eqx.Module` only when the callable needs **trainable array leaves** (e.g. `weights` that flow through grad).
 
 ```python
 # Simplest case: stateless function, no registration needed
@@ -110,9 +104,8 @@ class TemperatureARFuse(eqx.Module):
         return jax.scipy.special.logsumexp(logits / self.temperature, axis=0) - jnp.log(logits.shape[0])
 ```
 
-The driver vmaps this over `L` positions automatically:
+The autoregressive decode mode vmaps this over `L` positions:
 ```python
-# in driver._decode_ar:
 combined = jax.vmap(stage_set.ar_logit_transform, in_axes=1, out_axes=0)(logits)
 ```
 
@@ -161,7 +154,7 @@ class GumbelTopKStep(eqx.Module):
         return jnp.argmax((logits + gumbel) / self.tau)
 ```
 
-> **Note:** the current `_decode_ar` in `driver.py` uses `jax.random.categorical` directly. Wiring `sample_step` into the AR scan body as a fully composable delegate is a potential future enhancement. For now, `sample_step` presence (non-None) flags AR topology; the sampling method itself uses `jax.random.categorical`.
+> **Note:** a non-`None` `sample_step` selects `AutoregressiveDecode` when the plan is built. The sampling method is that mode class, wired as `InferencePlan.decode_fn`.
 
 ---
 
@@ -228,7 +221,6 @@ import jax
 import jax.numpy as jnp
 from aminx.host.plan import InferencePlan, InferenceComponents, make_inference_plan
 from aminx.inference.encode import make_encode_fn
-from aminx.inference import driver
 from aminx.inference.logits import GeometricMeanLogits, ARLogitFuse
 from aminx.types.stages import StageSet
 
@@ -245,7 +237,6 @@ stage_set = StageSet(
 
 components = InferenceComponents(
     encode_fn=make_encode_fn(model, use_rolling_state=False),
-    driver=driver.decode,
     stage_set=stage_set,
 )
 
@@ -266,7 +257,7 @@ These are the JAX-traced invariants. Modifying them breaks JIT retracing contrac
 |-----------|-----|
 | `InferenceBundle` and sub-bundles | JIT boundary — shapes must be static at trace time |
 | `state_weights` as traced leaf | Must flow through AD; never mark `static=True` |
-| Scatter/scan layout in `driver._decode_ar` | Rewriting changes numerical output |
+| Scatter/scan layout in `AutoregressiveDecode` | Rewriting changes numerical output |
 | `SamplerFn` / `ScoreFn` top-level signatures | External callers (runner, averaging) depend on these |
 
 ---
@@ -282,4 +273,4 @@ These are the JAX-traced invariants. Modifying them breaks JIT retracing contrac
 | New decode variant | `types/stages.py` — add eqx.Module implementation |
 | New host dispatch path | `host/kernel_dispatch.py` — add case to `resolve_kernel_fn` |
 | New experiment plan | `host/plan.py` — extend `make_inference_plan` or build components directly |
-| Topology routing | `inference/driver.py` — extend `infer_topology` and add `_decode_*` function |
+| Decode-mode routing | `host/plan.py` — `make_inference_plan` resolves the mode class |

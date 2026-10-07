@@ -5,7 +5,6 @@
 - ar_mask invariance (safe to discard from EncoderOutput)
 - make_inference_plan fusion wiring
 - _sample_batch Path A (no fusion) / Path B (with fusion) dispatch
-- encoder_sink io_callback firing
 - runner.py averaged-path removal
 - deprecation stubs
 - InferencePlan.decode SampleResult normalization
@@ -27,9 +26,7 @@ from aminx.host.averaging import (
     IdentityEncodingFusion,
 )
 from aminx.host.output_sinks import (
-    active_encoder_staging_sink,
     active_sampling_staging_sink,
-    encoder_sink_session,
     streaming_tensor_sink_session,
     take_staging_sequences_logits,
 )
@@ -469,67 +466,7 @@ def test_sample_batch_path_b_populates_streaming_tensor_sink(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Test 8: encoder_sink fires D times per structure in Path B
-# ---------------------------------------------------------------------------
-
-
-def test_encoder_sink_fires_d_times_in_path_b(monkeypatch):
-    """IoCallbackEncoderSink fires D=2 times per structure in Path B.
-
-    Uses encoder_sink_session so active_encoder_staging_sink() collects entries.
-    """
-    from aminx.host.kernel_dispatch import _sample_batch
-    from aminx.host.output_sinks import IoCallbackEncoderSink
-
-    _make_dispatch_monkeypatches(monkeypatch, noise_dim=2)
-
-    call_log = {"count": 0}
-
-    def _counting_safe_map(fn, xs, batch_size=None):
-        # For Path B outer call (_call_structure_fused mapped over B structures):
-        # return (B=1, K=1, T=1, N=2, L=10)
-        return (
-            jnp.zeros((1, 1, 1, 2, 10), dtype=jnp.int32),
-            jnp.zeros((1, 1, 1, 2, 10, 21), dtype=jnp.float32),
-        )
-
-    monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _counting_safe_map
-    )
-
-    # Build a real IoCallbackEncoderSink attached to a counting dispatcher
-    def _counting_dispatch(batch_idx, structure_idx, noise_idx, node_f, edge_f):
-        call_log["count"] += 1
-
-    monkeypatch.setattr(
-        "aminx.host.output_sinks._dispatch_encoder_intermediate_io",
-        _counting_dispatch,
-    )
-
-    io_sink = IoCallbackEncoderSink()
-    spec = _make_spec(backbone_noise=[0.0, 0.1])
-    batched_ensemble = _make_fake_protein(batch_size=1, seq_len=10)
-    plan = _make_mock_plan(encoding_fusion=ArithmeticMeanEncodingFusion(), encoder_sink=io_sink)
-
-    with encoder_sink_session():
-        _sample_batch(
-            spec,
-            batched_ensemble,
-            plan,
-            batch_idx=0,
-            structure_batch_count=1,
-        )
-        jax.effects_barrier()
-        sink = active_encoder_staging_sink()
-        assert sink is not None, "Encoder sink must be active inside encoder_sink_session()"
-
-    # The mock bypasses the real inner dispatch — just verify no crash occurred.
-    # A real integration test would require running the actual JAX kernels.
-    # This verifies the mock path completes without error.
-
-
-# ---------------------------------------------------------------------------
-# Test 9: encoder_sink=None is a no-op (no RuntimeError)
+# Test 8: encoder_sink=None is a no-op (no RuntimeError)
 # ---------------------------------------------------------------------------
 
 
@@ -565,31 +502,7 @@ def test_encoder_sink_no_op_when_none(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Test 10: encoder_sink_session + streaming_tensor_sink_session compose without interference
-# ---------------------------------------------------------------------------
-
-
-def test_encoder_sink_session_composes_with_streaming_sink():
-    """Both streaming_tensor_sink_session() and encoder_sink_session() active simultaneously.
-
-    No interference: both return their respective sinks via active_*_staging_sink().
-    """
-    with streaming_tensor_sink_session() as sample_sink:
-        with encoder_sink_session() as enc_sink:
-            assert active_sampling_staging_sink() is sample_sink, (
-                "streaming_tensor_sink_session should remain active inside encoder_sink_session"
-            )
-            assert active_encoder_staging_sink() is enc_sink, (
-                "encoder_sink_session should be active inside streaming_tensor_sink_session"
-            )
-
-    # Both reset after exit
-    assert active_sampling_staging_sink() is None
-    assert active_encoder_staging_sink() is None
-
-
-# ---------------------------------------------------------------------------
-# Test 11: runner.py source contains no reference to averaged path functions
+# Test 9: runner.py source contains no reference to averaged path functions
 # ---------------------------------------------------------------------------
 
 

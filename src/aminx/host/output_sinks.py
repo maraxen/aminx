@@ -10,18 +10,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
-from typing import TYPE_CHECKING
 
-import equinox as eqx
-import jax
-import jax.experimental
 import numpy as np
 
 from aminx.registry import OUTPUT_SINKS
-from aminx.types.protocols import DesignSink
-
-if TYPE_CHECKING:
-  from aminx.types.bundles import EncoderOutput
 
 
 class NoopDesignSink:
@@ -102,24 +94,17 @@ _streaming_tensor_sink_ctx: ContextVar[StreamingTensorStagingSink | None] = Cont
   default=None,
 )
 
-_scoring_tensor_sink_ctx: ContextVar[DesignSink | None] = ContextVar(
-  "_scoring_tensor_sink_ctx",
-  default=None,
-)
-
-# io_callback host threads may not inherit ContextVar (see _jacobian_sink_ctx's
-# identical fallback below, and jax.experimental.io_callback's own docs: unordered
-# callbacks dispatch via a background thread pool, not necessarily the thread that
-# entered the session). Confirmed empirically for streaming_tensor_sink_session:
-# single-structure batches happened to land the callback on the calling thread
-# (ContextVar visible, bug masked); multi-structure batches (e.g. a PoE bead's
-# multi-input fusion) landed it on a different thread, where the ContextVar reads
-# back None and the write silently no-ops -- surfaced as "Streaming tensor sink
-# missing entry" on read-back. campaign run/worker never run more than one row's
-# session concurrently in-process (run_manifest_row executes rows sequentially),
-# so a plain module global is safe here: there is exactly one active sink at a time.
+# io_callback host threads may not inherit ContextVar: unordered callbacks dispatch
+# via a background thread pool, not necessarily the thread that entered the session.
+# Confirmed empirically for streaming_tensor_sink_session: single-structure batches
+# happened to land the callback on the calling thread (ContextVar visible, bug masked);
+# multi-structure batches (e.g. a PoE bead's multi-input fusion) landed it on a
+# different thread, where the ContextVar reads back None and the write silently
+# no-ops -- surfaced as "Streaming tensor sink missing entry" on read-back. campaign
+# run/worker never run more than one row's session concurrently in-process
+# (run_manifest_row executes rows sequentially), so a plain module global is safe
+# here: there is exactly one active sink at a time.
 _active_streaming_tensor_sink_io: StreamingTensorStagingSink | None = None
-_active_scoring_sink_io: DesignSink | None = None
 
 
 @contextmanager
@@ -159,216 +144,6 @@ def active_sampling_staging_sink() -> StreamingTensorStagingSink | None:
   if sink is not None:
     return sink
   return _active_streaming_tensor_sink_io
-
-
-def active_scoring_sink() -> DesignSink | None:
-  """Return the active scoring sink, if any."""
-  sink = _scoring_tensor_sink_ctx.get()
-  if sink is not None:
-    return sink
-  return _active_scoring_sink_io
-
-
-@contextmanager
-def scoring_tensor_sink_session(sink: DesignSink) -> Iterator[DesignSink]:
-  """Optional host session for scoring tensor staging (streaming HDF5 follow-ups)."""
-  global _active_scoring_sink_io  # noqa: PLW0603
-  token: Token[DesignSink | None] = _scoring_tensor_sink_ctx.set(sink)
-  _active_scoring_sink_io = sink
-  try:
-    yield sink
-  finally:
-    _active_scoring_sink_io = None
-    _scoring_tensor_sink_ctx.reset(token)
-
-
-class EncoderIntermediateStagingSink:
-  """Stages encoder intermediate io_callback payloads.
-
-  Keyed by (batch_idx, structure_idx, noise_idx).
-  """
-
-  __slots__ = ("_pending",)
-
-  def __init__(self) -> None:
-    self._pending: dict[tuple[int, int, int], tuple[np.ndarray, np.ndarray]] = {}
-
-  def on_encoder_intermediate(
-    self,
-    batch_idx: object,
-    structure_idx: object,
-    noise_idx: object,
-    node_features: object,
-    edge_features: object,
-  ) -> None:
-    key = (
-      int(np.asarray(batch_idx)),
-      int(np.asarray(structure_idx)),
-      int(np.asarray(noise_idx)),
-    )
-    self._pending[key] = (np.asarray(node_features), np.asarray(edge_features))
-
-  def take_intermediates(
-    self,
-    batch_idx: int,
-    structure_idx: int,
-    noise_idx: int,
-  ) -> tuple[np.ndarray, np.ndarray]:
-    key = (batch_idx, structure_idx, noise_idx)
-    try:
-      return self._pending.pop(key)
-    except KeyError as e:
-      pending = list(self._pending.keys())
-      msg = f"Encoder intermediate sink missing entry for {key=}; pending={pending}"
-      raise RuntimeError(msg) from e
-
-
-_encoder_intermediate_sink_ctx: ContextVar[EncoderIntermediateStagingSink | None] = ContextVar(
-  "_encoder_intermediate_sink_ctx",
-  default=None,
-)
-
-# See _active_streaming_tensor_sink_io's comment above: same io_callback
-# cross-thread ContextVar gap applies here.
-_active_encoder_intermediate_sink_io: EncoderIntermediateStagingSink | None = None
-
-
-@contextmanager
-def encoder_sink_session() -> Iterator[EncoderIntermediateStagingSink]:
-  """Activate a fresh staging sink for encoder intermediate captures."""
-  global _active_encoder_intermediate_sink_io  # noqa: PLW0603
-  sink = EncoderIntermediateStagingSink()
-  token: Token[EncoderIntermediateStagingSink | None] = _encoder_intermediate_sink_ctx.set(sink)
-  _active_encoder_intermediate_sink_io = sink
-  try:
-    yield sink
-  finally:
-    _active_encoder_intermediate_sink_io = None
-    _encoder_intermediate_sink_ctx.reset(token)
-
-
-def take_encoder_intermediates(
-  batch_idx: int,
-  structure_idx: int,
-  noise_idx: int,
-) -> tuple[np.ndarray, np.ndarray]:
-  """Drain encoder intermediate payload for this (batch, structure, noise) key."""
-  sink = active_encoder_staging_sink()
-  if sink is None:
-    msg = "Encoder intermediate sink is not active."
-    raise RuntimeError(msg)
-  return sink.take_intermediates(batch_idx, structure_idx, noise_idx)
-
-
-def active_encoder_staging_sink() -> EncoderIntermediateStagingSink | None:
-  """Return the active encoder intermediate sink, if any."""
-  sink = _encoder_intermediate_sink_ctx.get()
-  if sink is not None:
-    return sink
-  return _active_encoder_intermediate_sink_io
-
-
-def _dispatch_encoder_intermediate_io(
-  batch_idx: object,
-  structure_idx: object,
-  noise_idx: object,
-  node_features: object,
-  edge_features: object,
-) -> None:
-  """io_callback target: routes encoder intermediate to active staging sink."""
-  sink = active_encoder_staging_sink()
-  if sink is None:
-    return
-  sink.on_encoder_intermediate(batch_idx, structure_idx, noise_idx, node_features, edge_features)
-
-
-class IoCallbackEncoderSink(eqx.Module):
-  """Fires jax.experimental.io_callback per noise-level encoding into the active encoder sink."""
-
-  def __call__(
-    self,
-    enc: EncoderOutput,
-    batch_idx: object,
-    structure_idx: object,
-    noise_idx: object,
-  ) -> None:
-    jax.experimental.io_callback(
-      _dispatch_encoder_intermediate_io,
-      None,
-      batch_idx,
-      structure_idx,
-      noise_idx,
-      enc.node_features,
-      enc.edge_features,
-      ordered=False,
-    )
-
-
-class JacobianAccumulationSink:
-  """Accumulates Jacobian tensors on the host (runner drain or ``io_callback`` staging)."""
-
-  __slots__ = ("_pending",)
-
-  def __init__(self) -> None:
-    self._pending: list[np.ndarray] = []
-
-  def on_jacobian(self, _structure_idx: object, jacobian_host: object) -> None:
-    self._pending.append(np.asarray(jacobian_host))
-
-  def take_all(self) -> list[np.ndarray]:
-    return list(self._pending)
-
-
-_jacobian_sink_ctx: ContextVar[JacobianAccumulationSink | None] = ContextVar(
-  "_jacobian_sink_ctx",
-  default=None,
-)
-
-# io_callback host threads may not inherit ContextVar; session sets this fallback.
-_active_jacobian_sink_io: JacobianAccumulationSink | None = None
-
-
-@contextmanager
-def jacobian_sink_session() -> Iterator[JacobianAccumulationSink]:
-  """Activate accumulation sink for jacobian ``io_callback`` staging."""
-  global _active_jacobian_sink_io  # noqa: PLW0603
-  sink = JacobianAccumulationSink()
-  token: Token[JacobianAccumulationSink | None] = _jacobian_sink_ctx.set(sink)
-  _active_jacobian_sink_io = sink
-  try:
-    yield sink
-  finally:
-    _active_jacobian_sink_io = None
-    _jacobian_sink_ctx.reset(token)
-
-
-def active_jacobian_sink() -> JacobianAccumulationSink | None:
-  """Return the active jacobian accumulation sink, if any."""
-  sink = _jacobian_sink_ctx.get()
-  if sink is not None:
-    return sink
-  return _active_jacobian_sink_io
-
-
-def _dispatch_jacobian_io(structure_idx: object, jacobian_host: object) -> None:
-  """io_callback target: append Jacobian host array to active accumulation sink."""
-  sink = active_jacobian_sink()
-  if sink is None:
-    return
-  sink.on_jacobian(structure_idx, jacobian_host)
-
-
-@jax.jit
-def stage_jacobian_io(structure_idx: jax.Array, jacobian: jax.Array) -> jax.Array:
-  """Stage a Jacobian to the host sink inside a JIT boundary."""
-  jax.experimental.io_callback(
-    _dispatch_jacobian_io,
-    None,
-    structure_idx,
-    jacobian,
-    ordered=False,
-  )
-  return jacobian
 
 
 def _register_default_output_sinks() -> None:
