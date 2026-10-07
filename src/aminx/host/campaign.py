@@ -702,6 +702,10 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
   stamp's ``producer`` for audit but is deliberately not part of the hash (a numerics-neutral commit must not
   invalidate a finished campaign; bump the epoch when numerics move).
 
+  A finished unit whose ``random_seed`` is 0 holds output from the old seed-42 execution. Those units alone get a
+  ``seed0_semantics`` component so reuse is refused; every other payload is hashed exactly as before. This is not a
+  numerics-epoch bump.
+
   Returns ``(input_hash, components)``; ``components`` are the inputs to the hash, stored in the stamp so a mismatch
   can be explained.
   """
@@ -720,6 +724,10 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
       "numerics_epoch": SAMPLING_NUMERICS_EPOCH,
     },
   }
+  # Only seed 0. Adding the key for any other seed would change that unit's hash.
+  recorded_seed = sampling_spec_payload.get("random_seed")
+  if recorded_seed == 0 and not isinstance(recorded_seed, bool):
+    components["seed0_semantics"] = 2
   return hashlib.sha256(canonical_json_bytes(components)).hexdigest(), components
 
 
