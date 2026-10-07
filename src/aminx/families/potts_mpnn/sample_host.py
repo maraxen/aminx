@@ -36,7 +36,7 @@ from aminx.families.potts_mpnn.refine import BindingTables, PottsRefine, check_t
 from aminx.host.family_driver import FamilyBatch, SinkArraySpec
 from aminx.host.omit_aa_bias import omit_letter_indices
 from aminx.run.options import PottsMPNNOptions
-from aminx.tiling.buckets import LENGTH_BUCKETS
+from aminx.host.bucketing import bucket_ladder
 
 log = logging.getLogger(__name__)
 
@@ -375,7 +375,7 @@ def sample_axes(spec: Any, batch: FamilyBatch) -> list[AxisSpec]:  # noqa: ANN40
       cardinality=max(len(batch.input_indices), 1),
       default_batch_size=1,
       heterogeneous=True,
-      bucket_boundaries=LENGTH_BUCKETS,
+      bucket_boundaries=bucket_ladder(),
     ),
     AxisSpec(name="samples", cardinality=n_samples, default_batch_size=n_samples),
   ]

@@ -50,7 +50,7 @@ from aminx.families.potts_mpnn.sample_host import (
 from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, FamilyStages, SinkArraySpec
 from aminx.host.prep import _resolve_local_checkpoint_from_registry
 from aminx.run.options import PottsMPNNOptions
-from aminx.tiling.buckets import LENGTH_BUCKETS
+from aminx.host.bucketing import bucket_ladder
 from aminx.types.boundaries import AxisBoundary
 
 log = logging.getLogger(__name__)
@@ -305,7 +305,7 @@ class PottsMPNNDriver:
         cardinality=max(len(batch.input_indices), 1),
         default_batch_size=1,
         heterogeneous=True,
-        bucket_boundaries=LENGTH_BUCKETS,
+        bucket_boundaries=bucket_ladder(),
       ),
       AxisSpec(
         name="mutants",
