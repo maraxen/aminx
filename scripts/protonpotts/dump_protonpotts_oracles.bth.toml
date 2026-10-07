@@ -1,0 +1,110 @@
+[metadata]
+title = "ProtonPottsMPNN v6 oracle dump (P4)"
+created = "261007"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4 of `.praxia/docs/specs/261007_protonpottsmpnn-support.md`: capture upstream ProtonPottsMPNN
+(v6, 30-token) outputs on a cell that exercises the ENTIRE protonation extension region, so a
+later `protonpotts_*` parity wave has an oracle that is not vacuous with respect to protonation
+handling.
+
+Four claims, all falsifiable by this run:
+
+1. COVERAGE. A single cell with >= 3 HIS, >= 3 ASP and >= 3 GLU, labelled by cycling on the
+   ordinal of each titratable residue within its type, yields an `S` covering all nine v6
+   protonation indices 21-29. (§26.3 measured 9/9 on PKAD 1BVC; this run re-establishes it
+   under a sidecar rather than citing the exploratory spike.)
+
+2. POSITIVE CONTROL. `log_probs` differs between the unlabelled and labelled cells. If it does
+   not, the labels never reached the model and every downstream comparison is vacuous -- in
+   the way that still looks like a clean pass.
+
+3. NEGATIVE CONTROL. `etab_out` is BIT-IDENTICAL between the two cells. §23.2 measured this: a
+   Potts model emits an energy function from the structure encoder and the sequence selects
+   entries afterwards. This is the half that makes the instrument a check rather than a
+   one-sided detector -- a positive control alone proves only that *something* changed.
+
+4. The dump is reproducible from its recorded inputs: checkpoint path, PDB path, extended
+   vocabulary name, titratable counts, covered indices, and the artifact's sha256 all land in
+   `oracle_manifest.toml`.
+
+NOT A CLAIM, and recorded here so it cannot be read as one later: the protonation labels are
+NOT chemistry. They are assigned by position in an enumeration, are wrong as chemistry, and
+predict nothing. They are adequate for parity and only for parity, because a parity wave
+compares two implementations on IDENTICAL inputs -- the labels must be valid tokens that
+exercise the vocabulary, not correct ones. No number derived from these dumps may be presented
+as a protonation-state or pKa result.
+
+ALSO NOT A CLAIM: this run compares nothing against aminx. There is no aminx-side ProtonPotts
+implementation yet -- §11c (30-token public alphabet vs 21 + side channel) is an open user
+decision. This captures the oracle only.
+"""
+
+[outcomes.pass]
+condition = """
+All four hypotheses hold: S covers all nine indices 21-29; log_probs max|delta| between the
+unlabelled and labelled cells is strictly > 0; etab_out is bit-identical between them; and
+oracle_f32.npz plus oracle_manifest.toml are written with a resolvable sha256.
+"""
+reasoning = """
+Coverage plus BOTH controls is the minimum that makes the oracle usable. Coverage without the
+positive control is a cell whose labels may never have reached the model. The positive control
+without the negative one cannot distinguish "the labels changed the output" from "the two runs
+differ for some unrelated reason" -- and the two cells are built in one process through a
+pipeline that is memoised on arguments which do NOT include the annotation block (§23.4), so
+"differ for an unrelated reason" is a live failure mode here, not a hypothetical.
+"""
+is_residual = false
+
+[outcomes.marginal]
+condition = """
+Both controls behave as predicted, but S covers only some of indices 21-29 (cell too small in
+at least one titratable type).
+"""
+reasoning = """
+A partial-coverage dump is still a valid PottsMPNN structure oracle and a valid partial
+protonation oracle, but a wave built on it cannot claim to validate the P/S/A or P/D/A
+discrimination for the uncovered residue types. Per §26.4 such a wave must state which indices
+it covered. The script currently REFUSES to write in this case rather than recording a partial
+dump that reads as complete later; this outcome exists so that refusal is a pre-registered
+decision and not an implementation accident.
+"""
+is_residual = false
+
+[outcomes.fail]
+condition = """
+log_probs is identical across the two cells (labels never reached the model), OR etab_out
+differs across them (the cells differ by more than their labels, or the architecture is not
+what §23.2 measured), OR the script crashes.
+"""
+reasoning = """
+Either control failing invalidates the dump, in opposite ways. An identical log_probs means
+the protonation path is inert and the oracle cannot detect a protonation defect. A differing
+etab_out means the two cells are not a controlled pair, so the log_probs difference cannot be
+attributed to the labels at all. Neither may be relaxed to make a run pass: the tolerances here
+are exact equality and strict inequality, chosen because both quantities were MEASURED at those
+values (§23.2 -- max|delta| = 0 on etab_out, 48.2565 on log_probs) rather than assumed.
+"""
+is_residual = true
+
+[result_schema]
+covered_protonation_indices = { type = "list[int]", doc = "Indices >= 21 present in labelled S" }
+n_covered = { type = "int", doc = "Count of distinct protonation indices covered; 9 is full" }
+titratable_counts = { type = "dict[str, int]", doc = "HIS/ASP/GLU residue counts in the cell" }
+positive_control_logprobs_delta = { type = "float", doc = "max|delta| log_probs, labelled vs unlabelled; must be > 0" }
+etab_bit_identical = { type = "bool", doc = "Negative control; must be true" }
+oracle_sha256 = { type = "str", doc = "sha256 of oracle_f32.npz" }
+
+[result_schema.provenance]
+checkpoint = { type = "str", doc = "Path to the v6 ProtonPottsMPNN checkpoint" }
+pdb = { type = "str", doc = "Path to the input structure" }
+extended_vocab = { type = "str", doc = "Vocabulary name passed to prepare_potts_input; must be v6" }
+labeller = { type = "str", doc = "Labelling scheme; cycling, ordinal-within-type" }
+labels_are_chemistry = { type = "bool", doc = "Always false. See the hypothesis block." }
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+protonpottsmpnn_commit = { type = "string", required = true, doc = "ProtonPottsMPNN checkout SHA (pinned at 09682ab)" }
+torch_version = { type = "string", required = false, doc = "PyTorch version" }
