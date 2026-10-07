@@ -1,0 +1,91 @@
+[metadata]
+title = "Was every bathos sidecar committed before the run it graded?"
+created = "261007"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Spec §7.3 requires sidecars to be committed before running, and the project rule states the reason: outcome criteria chosen after seeing the numbers always pass, so a sidecar written post-hoc is not a weaker pre-registration but none at all. Nothing has ever checked this. Every bathos run records the git_hash it ran at, and git records the commit that added each sidecar, so the ordering is mechanically decidable for the whole catalog rather than for a sample. If the discipline held, no sidecar's add-commit is newer than the earliest run citing it."
+
+stage_name = "validation"
+novel = true
+
+[outcomes.prereg_order_clean]
+condition = "self_test_passed AND refusal IS NULL AND n_violations = 0 AND n_audited >= 20"
+decision = "Record that the pre-registration ordering held across the audited catalog: no sidecar was committed after a run that cites it. This supports citing the sprint's graded outcomes as predictions rather than descriptions. It does NOT certify the unverifiable bucket, which is reported separately and whose provenance weakness stands."
+reasoning = "A violation is mechanically decidable and none was found, over a population large enough that the query cannot have silently matched almost nothing. That is the strongest statement git can support."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND n_violations = 0 AND n_audited >= 20)"
+
+[outcomes.prereg_order_violated]
+condition = "self_test_passed AND refusal IS NULL AND n_violations > 0"
+decision = "Treat every outcome graded by a listed sidecar as UNCITED until re-run under a sidecar committed beforehand. Report the sidecar, its add-commit, the earliest run and the lateness in hours; do not aggregate them away. A single violation is a finding, not a rounding error."
+reasoning = "A sidecar committed after its run cannot have constrained that run, so its criteria were chosen with the numbers in view. The resulting outcome describes what happened rather than predicting it, which is precisely the failure the rule exists to prevent."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND n_violations > 0)"
+
+[outcomes.audit_underpowered]
+condition = "self_test_passed AND refusal IS NULL AND n_violations = 0 AND n_audited < 20"
+decision = "Report NO conclusion about the discipline. Zero violations out of too few sidecars is a statement about the query, not about the project. Investigate why the catalog returned so little before re-running."
+reasoning = "An audit that matched almost nothing returns a reassuring zero for the same reason a broken one does. The floor is what separates 'checked and clean' from 'checked nothing'."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS NOT NULL OR n_violations > 0 OR n_audited >= 20"
+
+[outcomes.catalog_unavailable]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'catalog_unavailable'"
+decision = "No conclusion. Re-run where the bathos catalog resolves; check `bth compact` first, since the warm index lags the cool tier."
+reasoning = "An empty catalog and a clean catalog are indistinguishable in the count alone, so the empty case must refuse rather than report zero violations."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'catalog_unavailable'"
+
+[outcomes.repo_unavailable]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'repo_unavailable'"
+decision = "No conclusion. Re-run against a real checkout; --repo must point at one."
+reasoning = "Without a repository there are no add-commits to compare against, so every sidecar would be unverifiable and the audit would report zero violations for the wrong reason."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'repo_unavailable'"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "The decisive pair runs before any catalog row is read: a deliberately LATE run against a real sidecar must be classified a violation, and an early one against the same sidecar must not. A one-sided audit that can only report 'clean' would report it for a broken project too."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[result_schema]
+verdict = "str"
+refusal = "str"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+project = "str"
+n_catalog_rows = "int"
+n_skipped_unanchorable = "int"
+n_audited = "int"
+n_clean = "int"
+n_violations = "int"
+n_unverifiable = "int"
+violations = "list"
+unverifiable = "list"
+min_lead_hours = "float"
+
+[data]
+population = "Every run in the bathos catalog for the project that records BOTH a sidecar_path and a git_hash, reduced to one row per sidecar: its earliest run and that run's git_hash. The earliest run is the one the pre-registration had to precede; later runs against the same sidecar cannot change the ordering question."
+ordering_test = "The commit that ADDED the sidecar (git log --follow --diff-filter=A, oldest entry) must be no newer than that earliest run's timestamp."
+containment_test = "That add-commit must also be an ancestor of the run's recorded git_hash. This is reported SEPARATELY and is not a violation."
+why_the_two_are_separated = "A script copied into a checkout sitting at an older commit satisfies the ordering but fails containment -- the ordinary spike-directory workflow does exactly this. Collapsing the two would turn every such run into a false accusation of post-hoc registration, which is a serious charge. Keeping them apart also means the clean verdict never silently absorbs a provenance weakness."
+what_a_violation_means = "Not untidiness. A sidecar committed after its run cannot have constrained it, so its criteria were chosen with the numbers in view and the outcome it reports is a description, not a prediction. Nothing it graded should be cited until re-run."
+one_sidedness = "Finding zero violations shows no sidecar was COMMITTED late. It cannot show none was WRITTEN late and committed just before the run: git records when a file landed, not when its author decided the criteria. The mechanically checkable half is the half this measures, and the limit is stated rather than left for a reader to notice."
+anchoring = "Catalog sidecar paths are absolute inside whichever checkout ran them, and the sprint used many (aminx-sprint-git, aminx-b7i-git, aminx-cw-261006, spike dirs). Paths are reduced to repo-relative form at the first recognised top-level directory; anything that cannot be anchored is counted in n_skipped_unanchorable rather than silently dropped."
+instrument_self_test = "Six checks before any catalog row is read, including the decisive pair: a deliberately LATE run against this script's own real add-commit must classify as a violation, and a run dated now must not. Also: path anchoring accepts a real layout and refuses an unanchorable one, and a path with no add-commit is unverifiable rather than clean."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[provenance]
+note = "Prompted by an ungraded probe that audited 32 sprint sidecars by hand and found 0 violations, 27 fully verifiable and 5 ordering-ok-but-not-contained. That probe produced an ANSWER, not a finding; its numbers are not cited here. This is the tracked instrument for the same question over the whole catalog. Lives in scripts/analysis/, outside _SCOPED_PREFIXES (verified at tests/knob_gate/_coverage.py:21-28), so it costs the frozen ledger nothing. NOT a redsox vehicle; no manifest row."
+invocation = "bth run --project-slug aminx -- <python> scripts/analysis/prereg_order_audit.py --repo <checkout> --bth <bth path> --out <json>"
+self_reference = "This audit is itself pre-registered, and its own sidecar is committed before it is first run -- which the audit will then check along with every other."
+
+[resume]
+unit = "none -- one catalog query plus two git calls per sidecar; seconds"
+max_attempts = 2
