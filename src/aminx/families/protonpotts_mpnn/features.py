@@ -176,6 +176,20 @@ def _backbone_resolved(residue: _Residue) -> bool:
   )
 
 
+def kept_residues(path: str | Path) -> list[tuple[str, int, str, str]]:
+  """``(chain, number, insertion code, name)`` of the residues ``featurize_pdb`` KEEPS, in its order.
+
+  ``loaded_residues`` minus the residues whose backbone is unresolved. Row ``i`` of every
+  ``featurize_pdb`` array describes entry ``i`` here; this is how a residue named by chain and
+  number is found in ``S``.
+  """
+  return [
+    (r.chain, r.number, r.insertion_code, r.name)
+    for r in _keep_last_by_number(_read_residues(Path(path)))
+    if _backbone_resolved(r)
+  ]
+
+
 def featurize_pdb(
   path: str | Path,
   protonation_labels: Sequence[str] | None = None,

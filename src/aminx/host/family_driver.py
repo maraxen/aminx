@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 # Canonical 21-letter alphabet stamped on driver sink roots (X is the gap token).
 ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
 
-DRIVER_MODEL_FAMILIES: frozenset[str] = frozenset({"pottsmpnn", "lasermpnn"})
+DRIVER_MODEL_FAMILIES: frozenset[str] = frozenset({"pottsmpnn", "protonpottsmpnn", "lasermpnn"})
 
 
 class FamilyBatch(NamedTuple):

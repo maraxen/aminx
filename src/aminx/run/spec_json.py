@@ -20,7 +20,7 @@ from typing import Any, Final, Literal
 import numpy as np
 from xtrax.config import classify_schema_version
 
-from aminx.run.options import LaserOptions, PottsMPNNOptions
+from aminx.run.options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
 from aminx.run.specs import (
   InspectionSpecification,
   JacobianSpecification,
@@ -31,6 +31,7 @@ from aminx.run.specs import (
 
 _OPTIONS_FIELDS: dict[str, type[Any]] = {
   "potts_mpnn": PottsMPNNOptions,
+  "protonpotts": ProtonPottsOptions,
   "laser": LaserOptions,
 }
 

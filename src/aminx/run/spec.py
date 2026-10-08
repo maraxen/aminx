@@ -24,7 +24,7 @@ from xtrax.run import RunSpec as _XtraxRunSpec
 from aminx.types.stages import DecodingFusionFn, EncodingFusionFn
 
 if TYPE_CHECKING:
-  from aminx.run.options import LaserOptions, PottsMPNNOptions
+  from aminx.run.options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
 
 
 class IOConfig(eqx.Module):
@@ -153,6 +153,7 @@ class RunSpec(_XtraxRunSpec):
   plan: PlannerTopology = field(default_factory=lambda: None)  # type: ignore
   sampling: SamplingConfig = field(default_factory=lambda: None)  # type: ignore
   potts_mpnn: PottsMPNNOptions | None = eqx.field(static=True, default=None)
+  protonpotts: ProtonPottsOptions | None = eqx.field(static=True, default=None)
   laser: LaserOptions | None = eqx.field(static=True, default=None)
   encoding_fusion: EncodingFusionFn | None = eqx.field(static=True, default=None)
   decoding_fusion: DecodingFusionFn | None = eqx.field(static=True, default=None)
@@ -476,8 +477,12 @@ def build_run_spec(spec: object) -> RunSpec:
   family = getattr(spec, "model_family", None)
   potts_mpnn = getattr(spec, "potts_mpnn", None)
   laser = getattr(spec, "laser", None)
+  protonpotts = getattr(spec, "protonpotts", None)
   if potts_mpnn is not None and family != "pottsmpnn":
     msg = f"potts_mpnn options require model_family 'pottsmpnn', got {family!r}"
+    raise ValueError(msg)
+  if protonpotts is not None and family != "protonpottsmpnn":
+    msg = f"protonpotts options require model_family 'protonpottsmpnn', got {family!r}"
     raise ValueError(msg)
   if laser is not None and family != "lasermpnn":
     msg = f"laser options require model_family 'lasermpnn', got {family!r}"
@@ -532,5 +537,6 @@ def build_run_spec(spec: object) -> RunSpec:
     plan=plan,
     sampling=sampling,
     potts_mpnn=potts_mpnn,
+    protonpotts=protonpotts,
     laser=laser,
   )

@@ -58,9 +58,10 @@ def _resolve_local_checkpoint_from_registry(spec: Specs) -> str | None:
     )
     raise ValueError(msg)
   checkpoint_name = spec.checkpoint_id if isinstance(spec.checkpoint_id, str) else ""
-  driver_family = spec.model_family in {"pottsmpnn", "lasermpnn"} or checkpoint_name.startswith(
+  driver_family = spec.model_family in {"pottsmpnn", "protonpottsmpnn", "lasermpnn"} or checkpoint_name.startswith(
     (
       "pottsmpnn_",
+      "protonpottsmpnn_",
       "lasermpnn_",
     ),
   )

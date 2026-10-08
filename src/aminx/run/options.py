@@ -1,4 +1,4 @@
-"""Flat option dataclasses for driver-family knobs (PottsMPNN and LASErMPNN)."""
+"""Flat option dataclasses for driver-family knobs (PottsMPNN, ProtonPottsMPNN and LASErMPNN)."""
 
 from __future__ import annotations
 
@@ -31,6 +31,28 @@ class PottsMPNNOptions:
   emit_etab: bool = False
   emit_dense_hJ: bool = False  # noqa: N815 -- upstream knob name
   chain_design_mask_json: str | None = None
+
+
+@dataclass(frozen=True)
+class ProtonPottsOptions:
+  """ProtonPottsMPNN inference knobs. ``None`` on the spec means family defaults.
+
+  Residues are addressed as ``"<chain>:<number>"`` (``"A:42"``), or ``"<chain>:<number><insertion>"``
+  where the file carries an insertion code. A token is a v6 protonation token (``"HIS-P"``), a
+  one-letter standard residue, or ``"X"``.
+
+  Attributes:
+    protonation_labels_json: Path to a JSON object ``{"A:42": "HIS-P", ...}`` of pre-assigned
+      protonation labels for the reference structure (aminx consumes labels; it does not assign
+      them, spec §11a). ``None`` means no labels, so every residue is a standard residue.
+    variants_json: Path to a JSON object ``{name: variant}``. A variant is either pins applied on
+      top of the reference sequence, ``{"A:42": "HIS"}``, or a full per-residue token list whose
+      length is the number of residues kept after featurisation. ``score:ddg`` requires it;
+      ``score:energy`` scores the reference plus each variant.
+  """
+
+  protonation_labels_json: str | None = None
+  variants_json: str | None = None
 
 
 @dataclass(frozen=True)

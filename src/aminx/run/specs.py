@@ -30,7 +30,7 @@ if TYPE_CHECKING:
   from aminx.utils.decoding_order import DecodingOrderFn
 
   from .batch_mapping import MappedBy
-  from .options import LaserOptions, PottsMPNNOptions
+  from .options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
 
 
 # Type aliases for convenience
@@ -193,7 +193,9 @@ class RunSpecification:
   # sidechain context injection (host/_sampling_helper.py::_prepare_ligand_context)
   # independent of checkpoint_id, and a caller who forgot to set it got a silent no-op
   # (found live 2026-07-14).
-  model_family: Literal["proteinmpnn", "ligandmpnn", "pottsmpnn", "lasermpnn"] | None = None
+  model_family: Literal[
+    "proteinmpnn", "ligandmpnn", "pottsmpnn", "protonpottsmpnn", "lasermpnn",
+  ] | None = None
   checkpoint_id: str | None = None
   model_local_path: str | Path | None = None
   checkpoint_registry_path: str | Path | None = None
@@ -284,6 +286,8 @@ class RunSpecification:
   sidechain_conditioning: bool = False
   potts_mpnn: PottsMPNNOptions | None = None
   """PottsMPNN knobs. ``None`` means the family defaults; set only for ``pottsmpnn``."""
+  protonpotts: ProtonPottsOptions | None = None
+  """ProtonPottsMPNN knobs. ``None`` means the family defaults; set only for ``protonpottsmpnn``."""
   laser: LaserOptions | None = None
   """LASErMPNN knobs. ``None`` means the family defaults; set only for ``lasermpnn``."""
 
@@ -460,6 +464,8 @@ class RunSpecification:
     checkpoint_name = self.checkpoint_id if isinstance(self.checkpoint_id, str) else ""
     if self.model_family is None and checkpoint_name.startswith("pottsmpnn_"):
       object.__setattr__(self, "model_family", "pottsmpnn")
+    elif self.model_family is None and checkpoint_name.startswith("protonpottsmpnn_"):
+      object.__setattr__(self, "model_family", "protonpottsmpnn")
     elif self.model_family is None and checkpoint_name.startswith("lasermpnn_"):
       object.__setattr__(self, "model_family", "lasermpnn")
 
@@ -527,6 +533,7 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   "ligandmpnn": frozenset({"nll"}),
   "membrane": frozenset({"nll"}),
   "pottsmpnn": frozenset({"nll", "logits", "energy", "ddg"}),
+  "protonpottsmpnn": frozenset({"energy", "ddg"}),
   "lasermpnn": frozenset(
     {"nll", "logits", "proofread_unconditional", "proofread_conditional"},
   ),

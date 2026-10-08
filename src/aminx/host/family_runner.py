@@ -221,7 +221,7 @@ def run_family_driver(
     "model_family": str(spec.model_family),
     "purpose": purpose,
     "output_kind": output_kind,
-    "alphabet": ALPHABET,
+    "alphabet": getattr(driver, "root_alphabet", ALPHABET),
     "skipped_inputs": skipped,
   }
   if sink is not None:
