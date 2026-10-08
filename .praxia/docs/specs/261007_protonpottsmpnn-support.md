@@ -2394,3 +2394,53 @@ checked by the 19/19 per-wave Potts oracles and the Potts family suite on the co
 4. The labelled cell is the only one that can detect a wrong-vocabulary featurizer; the annotation-free cell cannot (§22.2),
    so the P5 wave must include it (§21.3).
 5. Compare neighbour tensors with the same care as everywhere else: `E_idx` is an unsafe parity observable near ties (§32).
+
+## 37. P5 plan (261008): what the oracle can and cannot grade today
+
+Read off the carried P4 dumper and the upstream transforms, not assumed.
+
+### 37.1 The P4 oracle is narrower than P5's wave table needs
+
+`oracle_f32.npz` (sha `bbb68283…`, PKAD 1BVC, L=153) holds `S_unlabelled`, `S_labelled`, `X (1,153,37,3)`,
+`X_m (1,153,37)`, `etab_out (1,153,48,30,30)`, `E_idx`, `log_probs_*`, `single_site_field`, `H_S_*`. It does **not**
+hold `R_idx`, `chain_labels`, `residue_mask`, `Y`, `Y_t`, `Y_m`, so `protonpotts_features` (§7: "the nine tensors")
+can grade 3 of 9 keys today. Its labelled cell uses **synthetic cycling labels** (`CyclingProtonationLabels`), so
+it carries no annotator output either: `protonpotts_protonation` has no ground truth in it, and under decision (a)
+(pre-labelled) aminx does not assign labels at all. Two consequences:
+
+1. A **feature-dict dump (P4b)** is needed before `protonpotts_features` can be graded: dump all nine keys for the
+   PKAD cell and at least one ligand-bearing cell (so `Y/Y_t/Y_m` are non-empty), plus a multi-chain cell for
+   `chain_labels`/`R_idx`. Pre-registered, thread-pinned, run on titanix from a clean commit.
+2. `protonpotts_protonation` is re-scoped: aminx reads labels, so the wave grades **label consumption** (every label
+   reaches `S`, every refusal fires), not label assignment. The "match rate vs the annotator" in §7 applies only if
+   the user later asks aminx to assign labels (reopening §11a).
+
+### 37.2 Done in this slice
+
+- **P3 vocab** `src/aminx/families/protonpotts_mpnn/vocab.py`: one named alphabet `protonpottsmpnn_v6_30`
+  (`pair_side=30`, verified from `etab_out`'s shape), indices 0-20 identical to `pottsmpnn_21`, the nine v6 tokens at
+  21-29, `canonical_letter` projection, and `upstream_to_aminx_index` for comparing dumps. Foundry's prefix order
+  (`ARND…`, atomworks `STANDARD_AA` + `UNK`) was verified against atomworks on titanix.
+- **`S` encoder** `sequence.py`: port of `_build_protonation_aware_seq` at inference, stricter on invalid input only
+  (v4 labels and parent-residue mismatches raise instead of resolving to `UNK` / passing silently).
+- New package, imported by nothing: no Potts or LASEr ledger row's closure contains it.
+
+### 37.3 Next slices, in order
+
+1. **P4b dump** (pre-registered, thread-pinned): the nine feature keys on the cells above.
+2. **Atom layout.** Upstream `X` is `(L, 37, 3)` in foundry atom order; aminx's Potts featurizer packs the legacy
+   ProteinMPNN batch (`PottsFeatures.x`). Decide, from the dump, whether aminx emits the 37-atom tensor or only the
+   backbone slice the encoder consumes; grade whatever it emits against the dump, coordinates to a measured floor
+   (decision 11e).
+3. **`R_idx` / `chain_labels` / `residue_mask`** from the host structure, exact on ints.
+4. **Ligand triple** `Y/Y_t/Y_m` by reuse of the LigandMPNN path (§3); exact on the mask and atomic numbers.
+5. Every featurizer construction passes the vocabulary explicitly (§22.2); there is no default.
+
+### 37.4 Unverified, named so nobody assumes
+
+- That aminx can emit foundry's `X` atom ordering without a new parser: not read yet.
+- Whether foundry's `R_idx` / `chain_labels` conventions (offsets, chain-break handling) match aminx's `residue_idx` /
+  `chain_encoding`: not read yet.
+- The oracle-conformance test of `S` reconstructs names from foundry order and labels from the extension indices, so
+  it checks the extension-region mapping (a wrong order would break the parent-residue check) but is not independent
+  of the foundry prefix table.
