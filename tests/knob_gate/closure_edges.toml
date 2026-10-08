@@ -84,3 +84,35 @@ dynamic_ok = [
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]
+
+# protonpotts_parity (spec 261007 section 50). The vehicle runs the seven wave scripts as SUBPROCESSES, which no import
+# statement shows, so every one of them is declared `soft`, together with the checkpoint converter they load by path.
+# The ProtonPotts family package is reached only through the string table in host/runner.py, hence `soft` too.
+# scripts/convert_weights.py is loaded by the converter via spec_from_file_location and is not under a closure root,
+# so it is declared `data`: any change to it stales the row.
+[slug.protonpotts_parity]
+soft = [
+  "aminx.families.protonpotts_mpnn",
+  "convert_protonpotts_checkpoint",
+  "protonpotts_features_parity",
+  "protonpotts_encoder_parity",
+  "protonpotts_energy_parity",
+  "protonpotts_driver_parity",
+  "protonpotts_ph_block_parity",
+  "protonpotts_ph_greedy_parity",
+  "protonpotts_ph_driver_parity",
+]
+data = ["scripts/convert_weights.py"]
+# The four scripts/parity sites load the converter (declared soft) or scripts/convert_weights.py (declared data).
+# runner.py / weights.py / the Potts driver are the same three sites the Potts rows declare: the family string table
+# (protonpotts_mpnn is declared soft above), packaged weights (non-.py under src/aminx/, global), and the Potts
+# recapture converter (scripts/recapture/ is a global prefix).
+dynamic_ok = [
+  "scripts/parity/convert_protonpotts_checkpoint.py",
+  "scripts/parity/protonpotts_driver_parity.py",
+  "scripts/parity/protonpotts_encoder_parity.py",
+  "scripts/parity/protonpotts_energy_parity.py",
+  "src/aminx/host/runner.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
