@@ -2444,3 +2444,48 @@ it carries no annotator output either: `protonpotts_protonation` has no ground t
 - The oracle-conformance test of `S` reconstructs names from foundry order and labels from the extension indices, so
   it checks the extension-region mapping (a wrong order would break the parent-residue check) but is not independent
   of the foundry prefix table.
+
+## 38. P4b CLOSED (261008): the feature-dict oracle, graded `pass` by record, and P5 is six keys, not nine
+
+Bathos run `6a8ee503-e077-4cee-95fe-aaf60d2156d2`: `status completed`, `outcome pass`, `exit_code 0`,
+`git_dirty False`, `git_hash 1512ea0d` (the commit that adds `scripts/protonpotts/dump_protonpotts_features.*`, pre-registered
+before the run), verified from the cool-tier record. Featurizer only: no checkpoint, no forward pass; torch threads pinned to 1.
+
+All five pre-registered claims held: keys complete, **no ligand triple**, chain-key positive and negative controls, labels reach `S`
+and nothing else (9/9 protonation indices, `S` differs exactly at labelled positions, the five structure keys bit-identical),
+and a fresh-process re-run gives identical content hashes.
+
+Where it lives: `titanix:~/projects/aminx-oracles-protonpotts/features_v6/` (`features_manifest.json` plus
+`protonpotts_v6_features/{pkad_unlabelled,pkad_labelled,multichain,ligand}.npz`). Content sha256 (arrays, not file bytes):
+
+| cell | content sha256 |
+| :-- | :-- |
+| `pkad_unlabelled` (1BVC, L=153) | `b27d84c1fa899bc128fbdf030643d5e69ca0b6a33e56f1427aea89fe96260e5d` |
+| `pkad_labelled` | `bb5c2587d274b6736a4dc1d1f824b81787f289937d0d83c27a9910c61b61816f` |
+| `multichain` (6m0j, L=789, chains 596+193) | `c8b1d8c9124e6e436779ac4e17a80b60becce2ed34717193dea90f451c9ec6af` |
+| `ligand` (swe1_ligand, L=819) | `bd134d1b0ee7786444366849629e4cfe59048ba1c4e0d1324766e04c333e54aa` |
+
+### 38.1 This CORRECTS §3 and §7: the Potts path has six feature keys, not nine
+
+`X (1,L,37,3) f32`, `X_m (1,L,37) bool`, `S (1,L) i64`, `R_idx (1,L) i32`, `chain_labels (1,L) i64`, `residue_mask (1,L) bool`
+(plus a `temperature` array that is an inference knob, not a feature, and is excluded from parity). `Y`, `Y_t`, `Y_m` are
+**absent in every cell, including the ligand-bearing one**: they belong to the generic MPNN transform, not to this model's
+inference path. So P5 does not build the ligand triple, and the §37.3 slice 4 is dropped. §3 read the wrong transform.
+
+### 38.2 Conventions the aminx featurizer must reproduce (read off the dump, not assumed)
+
+- `R_idx` is the residue number **relative to each chain's start** (each chain restarts at 0) and **keeps numbering gaps**: in
+  6m0j the steps are +2 at two missing residues and the second chain restarts at 0.
+- `chain_labels` are consecutive integers per chain in file order.
+- `residue_mask` is all true in all four cells (no case yet exercises a false entry).
+- `X_m`: atoms 0-3 (backbone) are present for every residue; 4-14 heavy atoms per residue. `X` is **not** zero where `X_m` is
+  false in every cell (1BVC keeps coordinates for masked atoms), so `X` is compared **only where `X_m` is true**.
+- The ligand-bearing cell keeps ligand atoms out of `X` and `S` entirely.
+
+### 38.3 Unverified, named
+
+- Chain labels for `swe1_ligand` are all 0 although it is a complex: whether that is "one chain in the file" or "ligand-adjacent
+  chains merged" is not established; it matters for how aminx reads chains.
+- Nothing yet tests an input with `residue_mask` false or an insertion code; the three structures here do not exercise them.
+- The dump is f32 end to end; the coordinate tolerance is still to be set by a floor run (decision 11e), which needs the aminx
+  side to exist first.
