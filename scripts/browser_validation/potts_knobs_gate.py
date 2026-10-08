@@ -12,6 +12,10 @@ seed: decoded tokens, decoding order and refined tokens exact, sample energy max
 (the X0/X2 bars). Each control must also visibly ACT (knob effects, below), because an ignored
 control passes exactness trivially when both arms ignore it the same way -- except the JAX arm is
 aminx's own prepare_sample, so inertness there would be an aminx defect worth knowing either way.
+
+The JAX arm (`jax_reference`), the per-sample grading (`grade_sample`) and the cross-seed comparator
+control (`cross_seed_hits`) are importable so the browser-page parity gate (potts_browser_parity.py)
+grades against exactly the same reference and comparator as this gate.
 """
 
 from __future__ import annotations
@@ -33,8 +37,20 @@ REPO = Path(__file__).resolve().parents[2]
 if str(REPO) not in sys.path:
   sys.path.insert(0, str(REPO))
 
-from scripts.browser_validation.potts_export_gate import CHECKPOINT_SHA256, N_MUTANTS, _cells, _sha256  # noqa: E402
-from scripts.browser_validation.potts_loop_gate import _verify_artifacts, _write  # noqa: E402
+from scripts.browser_validation.potts_export_gate import (
+  CHECKPOINT_SHA256,
+  N_MUTANTS,
+  _cells,
+  _sha256,
+  _structures,
+)
+from scripts.browser_validation.potts_loop_gate import _verify_artifacts, _write
+
+
+def _require(ok: bool, msg: str) -> None:  # noqa: FBT001 -- a plain predicate, not a flag
+  """Raise RuntimeError(msg) unless `ok`. Keeps raise statements out of try blocks (TRY301)."""
+  if not ok:
+    raise RuntimeError(msg)
 
 logger = logging.getLogger("potts_knobs_gate")
 
@@ -78,7 +94,135 @@ def _spec(controls: dict[str, Any]) -> SimpleNamespace:
   )
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912, PLR0915
+def jax_reference(
+  potts_root: Path,
+  work_dir: Path,
+  cells: tuple[tuple[str, int], ...] = CELLS,
+  seeds: tuple[int, ...] = SEEDS,
+  case_names: frozenset[str] | None = None,
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+  """JAX arm: aminx's own sample path plus the export-gate graph functions, per (case, cell, seed).
+
+  Returns `(refs, node_cells)`. `refs` maps sample id -> reference outputs (tokens, order, refined
+  tokens, energy, and the controls used). `node_cells` is the cell list the browser runner consumes
+  (absolute PDB paths and float32 noise files written under `work_dir/<sample id>/`). `case_names`
+  restricts the cases built (None = all nine). Imports JAX; only call from a gate allowed to.
+  """
+  import jax  # noqa: PLC0415
+  import jax.numpy as jnp  # noqa: PLC0415
+
+  if jax.config.jax_enable_x64:
+    msg = "jax_enable_x64 is set; refusing"
+    raise RuntimeError(msg)
+  from aminx.families.potts_mpnn.driver import (  # noqa: PLC0415
+    PottsMPNNDriver,
+    _chain_sequences,
+    _featurize_one,
+  )
+  from aminx.families.potts_mpnn.etab import model_to_etab, pad_etab_energy  # noqa: PLC0415
+  from aminx.families.potts_mpnn.featurize import parse_pdb_upstream  # noqa: PLC0415
+  from aminx.families.potts_mpnn.sample_host import prepare_sample  # noqa: PLC0415
+  from aminx.run.options import PottsMPNNOptions  # noqa: PLC0415
+
+  ckpt = potts_root / "vanilla_model_weights" / "pottsmpnn_20.pt"
+  if _sha256(ckpt) != CHECKPOINT_SHA256:
+    msg = f"{ckpt} does not match the pinned checkpoint"
+    raise RuntimeError(msg)
+  model = PottsMPNNDriver().load(SimpleNamespace(model_local_path=str(ckpt), num_samples=1, potts_mpnn=None,
+                                                 run_spec=None))
+  # Graph functions only; _cells' own sample data is not used here.
+  _unused, fns = _cells(model, _structures(potts_root / "inputs" / "example_pdbs"), seed=0)
+  options = PottsMPNNOptions()
+  pdb_dir = potts_root / "inputs" / "example_pdbs"
+
+  refs: dict[str, dict[str, Any]] = {}
+  node_cells: list[dict[str, Any]] = []
+  for pdb_name, bucket in cells:
+    parsed = parse_pdb_upstream(pdb_dir / pdb_name, skip_gaps=options.skip_gaps)[0]
+    features = _featurize_one(parsed, options, str(parsed["name"]))
+    chains = tuple((c.letter, c.sequence) for c in _chain_sequences(parsed, features))
+    l_total = int(features.L_total)
+    base = prepare_sample(features, chains, options, _spec({}), l_pad=bucket)
+    enc = [np.asarray(x) for x in jax.jit(fns[bucket]["encode"])(
+      base.coords, base.present, base.residue_idx, base.chain_index, base.pad_valid)]
+    h_v, h_e, e_idx, forward, table = enc
+    etab_pad = np.asarray(pad_etab_energy(jnp.asarray(forward)))
+    for case, cfg in _cases(l_total).items():
+      if case_names is not None and case not in case_names:
+        continue
+      r = prepare_sample(features, chains, options, _spec(cfg["controls"]), l_pad=bucket)
+      opt = cfg["options"]
+      for seed in seeds:
+        rng = np.random.default_rng(seed)
+        randn = rng.standard_normal(bucket).astype(np.float32)
+        uniforms = rng.uniform(size=bucket).astype(np.float32)
+        refine_uniforms = rng.uniform(size=(8, bucket)).astype(np.float32)
+        dec_in = [h_v, h_e, e_idx, r.present, r.pad_valid, r.s_true, r.chain_mask, r.chain_m_pos, r.tie_groups,
+                  r.tied_beta, randn, uniforms, r.omit, r.bias, r.bias_by_res, r.pssm_coef, r.pssm_bias,
+                  r.pssm_log_odds_mask, r.omit_aa_mask, np.asarray([opt["temperature"]], np.float32)]
+        seq, _rank, order, _hvs = (np.asarray(x) for x in jax.jit(fns[bucket]["decode"])(*dec_in))
+        etab_seqs = np.repeat(np.asarray(model_to_etab(jnp.asarray(seq)))[None], N_MUTANTS, 0).astype(np.int32)
+        energy = float(np.asarray(jax.jit(fns[bucket]["energy"])(table, e_idx, r.pad_valid, etab_seqs)[0])[0])
+        refined = None
+        if opt["refine"]:
+          ref_in = [seq.astype(np.int32), etab_pad, e_idx, r.pad_valid, r.present, r.chain_mask, r.chain_m_pos,
+                    order.astype(np.int32), refine_uniforms, r.omit, r.bias, r.bias_by_res, r.pssm_coef,
+                    r.pssm_bias, r.pssm_log_odds_mask, r.omit_aa_mask, r.tie_groups, r.tied_beta, h_v, h_e,
+                    np.asarray([opt["optimizationTemperature"]], np.float32)]
+          refined = np.asarray(jax.jit(fns[bucket]["refine"])(*ref_in)[0])
+        sid = f"{case}__{pdb_name.removesuffix('.pdb')}_L{bucket}__s{seed}"
+        refs[sid] = {"case": case, "pdb": pdb_name, "bucket": bucket, "seed": seed, "l_total": l_total,
+                     "sequence": seq, "decoding_order": order, "refined_sequence": refined,
+                     "sample_energy": energy, "s_true": np.asarray(r.s_true),
+                     "designable": (np.asarray(r.chain_m_pos) * np.asarray(r.chain_mask) > 0)[:l_total],
+                     "controls": cfg["controls"]}
+        cdir = work_dir / sid
+        cdir.mkdir(parents=True, exist_ok=True)
+        node_cells.append({
+          "id": sid, "pdb": str(pdb_dir / pdb_name), "bucket": bucket, "controls": cfg["controls"],
+          "options": opt, "out_dir": str(cdir),
+          "noise": {"randn": _write(randn, cdir / "randn.bin"), "uniforms": _write(uniforms, cdir / "uniforms.bin"),
+                    "refineUniforms": _write(refine_uniforms, cdir / "refine_uniforms.bin")},
+        })
+  return refs, node_cells
+
+
+def grade_sample(sid: str, ref: dict[str, Any], g: dict[str, Any]) -> dict[str, Any]:
+  """Exactness row for one browser sample `g` ({ok, error, outputs}) against its JAX reference."""
+  row = {k: ref[k] for k in ("case", "pdb", "bucket", "seed")} | {"id": sid, "ran": g["ok"]}
+  if not g["ok"]:
+    row.update(passed=False, error=(g["error"] or "")[:1500])
+    return row
+  o = g["outputs"]
+  row["sequence_exact"] = bool(np.array_equal(o["sequence"], ref["sequence"]))
+  row["order_exact"] = bool(np.array_equal(o["decoding_order"], ref["decoding_order"]))
+  if ref["refined_sequence"] is None:
+    row["refined_exact"] = "refined_sequence" not in o
+  else:
+    row["refined_exact"] = bool(np.array_equal(o.get("refined_sequence"), ref["refined_sequence"]))
+  row["energy_rel"] = abs(o["sample_energy"] - ref["sample_energy"]) / max(abs(ref["sample_energy"]), 1e-30)
+  row["passed"] = (row["sequence_exact"] and row["order_exact"] and row["refined_exact"]
+                   and row["energy_rel"] <= FLOAT_REL_BAR)
+  return row
+
+
+def cross_seed_hits(refs: dict[str, dict[str, Any]], got: dict[str, dict[str, Any]]) -> tuple[int, int]:
+  """Comparator control: each browser sample vs the JAX tokens of the OTHER seed, same case/cell.
+
+  Returns `(hits, n)` where `hits` counts samples whose tokens differ from the other seed's (the
+  comparator is live if every sample is flagged) and `n` counts samples that ran.
+  """
+  hits, n = 0, 0
+  for sid, ref in refs.items():
+    other = sid.rsplit("__s", 1)[0] + f"__s{SEEDS[1] if ref['seed'] == SEEDS[0] else SEEDS[0]}"
+    g = got.get(sid)
+    if g and g["ok"]:
+      n += 1
+      hits += int(not np.array_equal(g["outputs"]["sequence"], refs[other]["sequence"]))
+  return hits, n
+
+
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0915
   parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
   parser.add_argument("--out", type=Path, required=True)
   parser.add_argument("--work-dir", type=Path, required=True)
@@ -101,81 +245,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912, PLR0915
   args.work_dir.mkdir(parents=True, exist_ok=True)
   t0 = time.perf_counter()
   try:
-    import jax  # noqa: PLC0415
-    import jax.numpy as jnp  # noqa: PLC0415
-
-    if jax.config.jax_enable_x64:
-      msg = "jax_enable_x64 is set; refusing"
-      raise RuntimeError(msg)
-    from aminx.families.potts_mpnn.driver import PottsMPNNDriver, _chain_sequences, _featurize_one  # noqa: PLC0415
-    from aminx.families.potts_mpnn.etab import model_to_etab, pad_etab_energy  # noqa: PLC0415
-    from aminx.families.potts_mpnn.featurize import parse_pdb_upstream  # noqa: PLC0415
-    from aminx.families.potts_mpnn.sample_host import prepare_sample  # noqa: PLC0415
-    from aminx.run.options import PottsMPNNOptions  # noqa: PLC0415
-
     _verify_artifacts(args.models, args.manifest_sha256)
     result["artifacts_verified"] = True
     result["manifest_sha256"] = args.manifest_sha256
-    ckpt = args.potts_root / "vanilla_model_weights" / "pottsmpnn_20.pt"
-    if _sha256(ckpt) != CHECKPOINT_SHA256:
-      msg = f"{ckpt} does not match the pinned checkpoint"
-      raise RuntimeError(msg)
-    model = PottsMPNNDriver().load(SimpleNamespace(model_local_path=str(ckpt), num_samples=1, potts_mpnn=None,
-                                                   run_spec=None))
-    # Graph functions only; _cells' own sample data is not used here.
-    from scripts.browser_validation.potts_export_gate import _structures  # noqa: PLC0415
-
-    _unused, fns = _cells(model, _structures(args.potts_root / "inputs" / "example_pdbs"), seed=0)
-    options = PottsMPNNOptions()
-    pdb_dir = args.potts_root / "inputs" / "example_pdbs"
-
-    refs: dict[str, dict[str, Any]] = {}
-    node_cells = []
-    for pdb_name, bucket in CELLS:
-      parsed = parse_pdb_upstream(pdb_dir / pdb_name, skip_gaps=options.skip_gaps)[0]
-      features = _featurize_one(parsed, options, str(parsed["name"]))
-      chains = tuple((c.letter, c.sequence) for c in _chain_sequences(parsed, features))
-      l_total = int(features.L_total)
-      base = prepare_sample(features, chains, options, _spec({}), l_pad=bucket)
-      enc = [np.asarray(x) for x in jax.jit(fns[bucket]["encode"])(
-        base.coords, base.present, base.residue_idx, base.chain_index, base.pad_valid)]
-      h_v, h_e, e_idx, forward, table = enc
-      etab_pad = np.asarray(pad_etab_energy(jnp.asarray(forward)))
-      for case, cfg in _cases(l_total).items():
-        r = prepare_sample(features, chains, options, _spec(cfg["controls"]), l_pad=bucket)
-        opt = cfg["options"]
-        for seed in SEEDS:
-          rng = np.random.default_rng(seed)
-          randn = rng.standard_normal(bucket).astype(np.float32)
-          uniforms = rng.uniform(size=bucket).astype(np.float32)
-          refine_uniforms = rng.uniform(size=(8, bucket)).astype(np.float32)
-          dec_in = [h_v, h_e, e_idx, r.present, r.pad_valid, r.s_true, r.chain_mask, r.chain_m_pos, r.tie_groups,
-                    r.tied_beta, randn, uniforms, r.omit, r.bias, r.bias_by_res, r.pssm_coef, r.pssm_bias,
-                    r.pssm_log_odds_mask, r.omit_aa_mask, np.asarray([opt["temperature"]], np.float32)]
-          seq, _rank, order, _hvs = (np.asarray(x) for x in jax.jit(fns[bucket]["decode"])(*dec_in))
-          etab_seqs = np.repeat(np.asarray(model_to_etab(jnp.asarray(seq)))[None], N_MUTANTS, 0).astype(np.int32)
-          energy = float(np.asarray(jax.jit(fns[bucket]["energy"])(table, e_idx, r.pad_valid, etab_seqs)[0])[0])
-          refined = None
-          if opt["refine"]:
-            ref_in = [seq.astype(np.int32), etab_pad, e_idx, r.pad_valid, r.present, r.chain_mask, r.chain_m_pos,
-                      order.astype(np.int32), refine_uniforms, r.omit, r.bias, r.bias_by_res, r.pssm_coef,
-                      r.pssm_bias, r.pssm_log_odds_mask, r.omit_aa_mask, r.tie_groups, r.tied_beta, h_v, h_e,
-                      np.asarray([opt["optimizationTemperature"]], np.float32)]
-            refined = np.asarray(jax.jit(fns[bucket]["refine"])(*ref_in)[0])
-          sid = f"{case}__{pdb_name.removesuffix('.pdb')}_L{bucket}__s{seed}"
-          refs[sid] = {"case": case, "pdb": pdb_name, "bucket": bucket, "seed": seed, "l_total": l_total,
-                       "sequence": seq, "decoding_order": order, "refined_sequence": refined,
-                       "sample_energy": energy, "s_true": np.asarray(r.s_true),
-                       "designable": (np.asarray(r.chain_m_pos) * np.asarray(r.chain_mask) > 0)[:l_total],
-                       "controls": cfg["controls"]}
-          cdir = args.work_dir / sid
-          cdir.mkdir(exist_ok=True)
-          node_cells.append({
-            "id": sid, "pdb": str(pdb_dir / pdb_name), "bucket": bucket, "controls": cfg["controls"],
-            "options": opt, "out_dir": str(cdir),
-            "noise": {"randn": _write(randn, cdir / "randn.bin"), "uniforms": _write(uniforms, cdir / "uniforms.bin"),
-                      "refineUniforms": _write(refine_uniforms, cdir / "refine_uniforms.bin")},
-          })
+    refs, node_cells = jax_reference(args.potts_root, args.work_dir)
     result["jax_arm_ok"] = True
     logger.info("JAX arm: %d samples in %.1fs", len(refs), time.perf_counter() - t0)
 
@@ -188,9 +261,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912, PLR0915
        "--cells", str(cells_path), "--out", str(out_path)],
       capture_output=True, text=True, timeout=7200, check=False,
     )
-    if proc.returncode != 0 or not out_path.exists():
-      msg = f"node runner rc={proc.returncode}: {proc.stderr[-3000:]}"
-      raise RuntimeError(msg)
+    _require(
+      proc.returncode == 0 and out_path.exists(),
+      f"node runner rc={proc.returncode}: {proc.stderr[-3000:]}",
+    )
     node = json.loads(out_path.read_text())
     result["node_ok"] = True
     got = {}
@@ -203,22 +277,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912, PLR0915
 
     # ---- exactness ----------------------------------------------------------------------------
     for sid, ref in refs.items():
-      g = got.get(sid, {"ok": False, "error": "missing", "outputs": {}})
-      row = {k: ref[k] for k in ("case", "pdb", "bucket", "seed")} | {"id": sid, "ran": g["ok"]}
-      if not g["ok"]:
-        row.update(passed=False, error=(g["error"] or "")[:1500])
-      else:
-        o = g["outputs"]
-        row["sequence_exact"] = bool(np.array_equal(o["sequence"], ref["sequence"]))
-        row["order_exact"] = bool(np.array_equal(o["decoding_order"], ref["decoding_order"]))
-        if ref["refined_sequence"] is None:
-          row["refined_exact"] = "refined_sequence" not in o
-        else:
-          row["refined_exact"] = bool(np.array_equal(o.get("refined_sequence"), ref["refined_sequence"]))
-        row["energy_rel"] = abs(o["sample_energy"] - ref["sample_energy"]) / max(abs(ref["sample_energy"]), 1e-30)
-        row["passed"] = (row["sequence_exact"] and row["order_exact"] and row["refined_exact"]
-                         and row["energy_rel"] <= FLOAT_REL_BAR)
-      result["samples"].append(row)
+      result["samples"].append(grade_sample(sid, ref, got.get(sid, {"ok": False, "error": "missing", "outputs": {}})))
 
     # ---- knob effects (on the JAX reference, which the browser arm must equal exactly) --------
     def by(case: str) -> list[dict[str, Any]]:
@@ -252,18 +311,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0912, PLR0915
     result["knob_effects_ok"] = all(eff.values())
 
     # Comparator control: each browser sample vs the JAX tokens of the OTHER seed, same case/cell.
-    hits, n = 0, 0
-    for sid, ref in refs.items():
-      other = sid.rsplit("__s", 1)[0] + f"__s{SEEDS[1] if ref['seed'] == SEEDS[0] else SEEDS[0]}"
-      g = got.get(sid)
-      if g and g["ok"]:
-        n += 1
-        hits += int(not np.array_equal(g["outputs"]["sequence"], refs[other]["sequence"]))
+    hits, n = cross_seed_hits(refs, got)
     result["control_tokens_detected"] = n > 0 and hits == n
     result["n_samples"] = len(result["samples"])
     result["n_pass"] = sum(bool(r.get("passed")) for r in result["samples"])
     result["all_exact"] = result["n_samples"] > 0 and result["n_pass"] == result["n_samples"]
-  except Exception as exc:  # noqa: BLE001 -- a graded run must still emit and exit 0
+  except Exception as exc:
     logger.exception("knobs gate failed")
     result["error"] = f"{type(exc).__name__}: {exc}"[:4000]
   result["elapsed_s"] = time.perf_counter() - t0
