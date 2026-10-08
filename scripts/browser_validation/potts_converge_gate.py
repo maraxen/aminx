@@ -101,13 +101,18 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
       parsed = parse_pdb_upstream(pdb_dir / pdb_name, skip_gaps=options.skip_gaps)[0]
       features = _featurize_one(parsed, options, str(parsed["name"]))
       chains = tuple((c.letter, c.sequence) for c in _chain_sequences(parsed, features))
-      r = prepare_sample(features, chains, options, _spec({}), l_pad=bucket)
+      r_np = prepare_sample(features, chains, options, _spec({}), l_pad=bucket)
+      # Closed-over arrays must be JAX arrays: refine.py indexes them with traced positions.
+      r = SimpleNamespace(**{k: (jnp.asarray(v) if isinstance(v, np.ndarray) else v)
+                             for k, v in r_np._asdict().items()})
       h_v, h_e, e_idx, forward, _table = (np.asarray(x) for x in jax.jit(fns[bucket]["encode"])(
-        r.coords, r.present, r.residue_idx, r.chain_index, r.pad_valid))
+        r_np.coords, r_np.present, r_np.residue_idx, r_np.chain_index, r_np.pad_valid))
       etab_pad = pad_etab_energy(jnp.asarray(forward))
       tables = _dummy_binding(bucket, 22, jnp.float32)
 
-      def converge(seq, order, uniforms, *, _r=r, _etab=etab_pad, _e=e_idx, _hv=h_v, _he=h_e, _tables=tables):  # noqa: ANN001, ANN202
+      e_j, hv_j, he_j = jnp.asarray(e_idx), jnp.asarray(h_v), jnp.asarray(h_e)
+
+      def converge(seq, order, uniforms, *, _r=r, _etab=etab_pad, _e=e_j, _hv=hv_j, _he=he_j, _tables=tables):  # noqa: ANN001, ANN202
         out = refiner(
           "potts_converge", seq, _etab, _e, _r.pad_valid, _r.present, _r.chain_mask, _r.chain_m_pos, order,
           uniforms, _r.omit, _r.bias, _r.bias_by_res, _r.pssm_coef, _r.pssm_bias, _r.pssm_log_odds_mask,
@@ -124,9 +129,10 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
         randn = rng.standard_normal(bucket).astype(np.float32)
         uniforms = rng.uniform(size=bucket).astype(np.float32)
         refine_uniforms = rng.uniform(size=(MAX_ITERS, bucket)).astype(np.float32)
-        dec_in = [h_v, h_e, e_idx, r.present, r.pad_valid, r.s_true, r.chain_mask, r.chain_m_pos, r.tie_groups,
-                  r.tied_beta, randn, uniforms, r.omit, r.bias, r.bias_by_res, r.pssm_coef, r.pssm_bias,
-                  r.pssm_log_odds_mask, r.omit_aa_mask, np.asarray([DECODE_TEMPERATURE], np.float32)]
+        dec_in = [h_v, h_e, e_idx, r_np.present, r_np.pad_valid, r_np.s_true, r_np.chain_mask, r_np.chain_m_pos,
+                  r_np.tie_groups, r_np.tied_beta, randn, uniforms, r_np.omit, r_np.bias, r_np.bias_by_res,
+                  r_np.pssm_coef, r_np.pssm_bias, r_np.pssm_log_odds_mask, r_np.omit_aa_mask,
+                  np.asarray([DECODE_TEMPERATURE], np.float32)]
         seq, _rank, order, _hvs = (np.asarray(x) for x in jax.jit(fns[bucket]["decode"])(*dec_in))
         refined, n_iters, ener = (np.asarray(x) for x in converge_jit(
           jnp.asarray(seq, jnp.int32), jnp.asarray(order, jnp.int32), jnp.asarray(refine_uniforms)))
