@@ -190,7 +190,15 @@ def config_from_options(options: ProtonPottsOptions) -> PHDesignConfig:
   ``ProtonPottsOptions`` (e.g. ``seed_source``, ``placement_by``) keep their production defaults.
   """
   default = PHDesignConfig()
+  # Centre-free design (greedy, whole chain, no centres named) is upstream's center_count == 0 (lines 257-262).
+  centre_free = (
+    options.design_method == "greedy_energy_block"
+    and options.infill_scope == "chain"
+    and not options.center_types
+    and not options.explicit_centers
+  )
   return PHDesignConfig(
+    center_count=0 if centre_free else default.center_count,
     method=options.design_method,
     binder_chain=options.binder_chain,
     center_types=tuple(options.center_types),

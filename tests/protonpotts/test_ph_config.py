@@ -162,3 +162,16 @@ def test_options_accept_dict_dep_map() -> None:
   options = ProtonPottsOptions(dep_map={"HIS-P": ["HIS-S"]})  # type: ignore[arg-type]
   assert options.dep_map == (("HIS-P", ("HIS-S",)),)
   hash(options)
+
+
+def test_centre_free_options_map_to_center_count_zero() -> None:
+  options = ProtonPottsOptions(
+    binder_chain="A", design_method="greedy_energy_block", infill_scope="chain", center_types=()
+  )
+  config = config_from_options(options)
+  assert config.center_count == 0
+  # centres named, or a non-chain scope, are not centre-free
+  named = config_from_options(
+    ProtonPottsOptions(binder_chain="A", design_method="greedy_energy_block", infill_scope="chain")
+  )
+  assert named.center_count == len(named.center_types)
