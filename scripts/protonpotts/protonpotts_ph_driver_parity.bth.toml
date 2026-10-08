@@ -29,9 +29,14 @@ Per (cell x call), eight comparisons in all, the driver's result must match:
   4. the summed selectivity gap of the block call within the same kind of band.
 
 The comparison is an INSTRUMENT only if deliberate errors in the user path are rejected by the same comparison (spec §6).
-Five must be: combined_lambda 0.4 for 0.3, block size 2 for 3, the forbidden-token list reduced to UNK alone, the
+Five must be: combined_lambda 0.6 for 0.3, block size 2 for 3, the forbidden-token list reduced to UNK alone, the
 repetitive-window penalty off, and a wrong deprotonated contrast token (HIS-A for HIS-S). A control is rejected when the
 comparison fails on at least one of the control cell's two calls.
+
+AMENDMENT (before the first graded run, 261008): the control was registered as combined_lambda 0.4. An exploratory run of the driver showed that on
+1BVC the T=0 block design is identical for lambda 0.3 and 0.4 (the optimum is flat there), so that control cannot discriminate on the control cell, whereas
+lambda 0.0-0.2 and 0.6-1.0 all change it. The control is therefore strengthened to lambda 0.6. No pass criterion, tolerance or count changed (n_listed stays
+5). The exploratory numbers are not cited.
 
 PREDICTION, stated before the run so it can be wrong: all eight comparisons pass and all five controls are rejected. The
 risk specific to this wave is float32 noise in the aminx encoder flipping an argmin near a tie, which would show as a token
