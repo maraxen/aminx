@@ -63,6 +63,11 @@ from oracle_shims.laser import (
 logger = logging.getLogger("dump_laser_oracles")
 
 SEED = 0
+# Multi-threaded float reductions in the pairwise distances flip near-tied neighbours between
+# processes, so pr_pr_idx / lig_pr_idx (saved below, and compared exactly by aminx's tests) are not
+# reproducible at default threads. Measured on ProtonPotts: 9/12 processes flipped at 10 threads,
+# 0/12 at 1. aminx debt #2584; spec 261007_protonpottsmpnn-support §32.
+TORCH_NUM_THREADS = 1
 SEQ_TEMPERATURE = 0.3
 CHI_TEMPERATURE = 0.3
 N_DECODE_DRAWS = 8
@@ -696,6 +701,7 @@ def _write_manifest(
   lines = [
     f"upstream_commit = {_toml_str(commit)}",
     f"torch_version = {_toml_str(torch.__version__)}",
+    f"torch_num_threads = {torch.get_num_threads()}",
     f"seed = {SEED}",
     f"shim_sha256 = {_toml_str(shim_sha256())}",
     f"shim_sites = {_toml_list(SHIM_SITES)}",
@@ -1149,6 +1155,7 @@ def main() -> None:
     ),
   )
   args = parser.parse_args()
+  torch.set_num_threads(TORCH_NUM_THREADS)
   package = _package_dir(args.laser_root)
   # The pinned checkout directory is named LASErMPNN, so its parent is the import root.
   sys.path.insert(0, str(package.parent))

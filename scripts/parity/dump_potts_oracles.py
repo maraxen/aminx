@@ -51,6 +51,11 @@ from oracle_shims.potts import (
 logger = logging.getLogger("dump_potts_oracles")
 
 SEED = 0
+# Multi-threaded float reductions in the pairwise distances flip near-tied neighbours between
+# processes, so E_idx (saved below, and compared exactly by aminx's tests) is not reproducible at
+# default threads. Measured on ProtonPotts: 9/12 processes flipped at 10 threads, 0/12 at 1.
+# aminx debt #2584; spec 261007_protonpottsmpnn-support §32.
+TORCH_NUM_THREADS = 1
 VOCAB = 21
 REFINE_OMIT_INDEX = 20  # X in the ProteinMPNN alphabet
 N_RANDOM = 200
@@ -1120,6 +1125,7 @@ def _write_manifest(
   lines = [
     f"upstream_commit = {_toml_str(commit)}",
     f"torch_version = {_toml_str(torch.__version__)}",
+    f"torch_num_threads = {torch.get_num_threads()}",
     f"seed = {SEED}",
     f"shim_sha256 = {_toml_str(shim_sha256())}",
     f"shim_sites = {_toml_list(SHIM_SITES)}",
@@ -1751,6 +1757,7 @@ def main() -> None:
     ),
   )
   args = parser.parse_args()
+  torch.set_num_threads(TORCH_NUM_THREADS)
   potts_root = Path(args.potts_root).resolve()
   sys.path.insert(0, str(potts_root))
   import potts_mpnn_utils as potts  # noqa: PLC0415

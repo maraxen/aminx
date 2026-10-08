@@ -61,12 +61,18 @@ jobs:
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo "Pull request: running fast tests (excluding slow, parity_heavy, parity_audit, redsox_gate)."
             MARKER="not slow and not parity_heavy and not parity_audit and not redsox_gate"
+            # No coverage on PRs: four #165 runs were killed by "The runner has received a shutdown
+            # signal" at ~91% of the suite, and coverage is the likeliest extra load on a 4-vCPU
+            # runner. Codecov uploads only on main anyway. Fallback if this is not enough: -n 2;
+            # long-term fix: shard the job (aminx debt #2585, #2582).
+            COV_ARGS=""
           else
             echo "Push to main: excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
             MARKER="not parity_heavy and not parity_audit and not redsox_gate"
+            COV_ARGS="--cov=src --cov-report=xml --cov-report=term"
           fi
 
-          uv run pytest -n auto --cov=src --cov-report=xml --cov-report=term -m "$MARKER"
+          uv run pytest -n auto $COV_ARGS -m "$MARKER"
       - name: Upload coverage to Codecov
         if: github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4
