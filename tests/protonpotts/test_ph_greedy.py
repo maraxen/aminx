@@ -170,10 +170,11 @@ def test_zscale_matches_full_energy_enumeration() -> None:
   p = _problem(1)
   res = _run(p)
   valid_idx = np.flatnonzero(p.valid)
+  start = _canonical(p.seq0, p.designable, p.valid)  # upstream canonicalises BEFORE freezing the z-scale (2440-2452)
   deltas = []
   for i in p.designable:
-    mut = _single_mutants(p, p.seq0, np.array([i]))[0]
-    deltas.append(mut[valid_idx] - mut[p.seq0[i]])
+    mut = _single_mutants(p, start, np.array([i]))[0]
+    deltas.append(mut[valid_idx] - mut[start[i]])
   vals = np.concatenate(deltas)
   expected = max(float(vals.std()), 1e-6)  # population std, floored
   assert np.isfinite(vals).all()
@@ -305,7 +306,7 @@ def test_refusals_and_degenerate_inputs() -> None:
   with pytest.raises(ValueError):
     _run(sampled, uniforms=np.zeros(3, dtype=np.float32))
   # combined_lambda and zscale_mode are ignored by greedy, not refused.
-  ignored = PHDesignConfig(binder_chain="A", zscale_mode="knn", combined_lambda=0.9)
+  ignored = PHDesignConfig(binder_chain="A", zscale_mode="single_mutation", combined_lambda=0.9)
   assert int(_run(p, config=ignored).steps) >= 0
   # No designable positions: untouched sequence, unit z-scale, no steps.
   empty = _run(p, designable=np.zeros(0, dtype=np.int64))

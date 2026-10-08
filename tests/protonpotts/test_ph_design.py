@@ -158,7 +158,8 @@ def test_replay_matches_direct_block_descent(seed):
     pin_dep[i, : len(pin.dep_idxs)] = pin.dep_idxs
     pin_dep_valid[i, : len(pin.dep_idxs)] = True
   residue = np.where(p.binder, p.res_id, -SENTINEL - 100 * np.arange(p.length))
-  for sample, design in enumerate(got):
+  for design in got:
+    sample = design.sample  # designs come back sorted by energy; `sample` is the original draw index
     direct = block_descent(
       jnp.asarray(p.table),
       jnp.asarray(p.e_idx),
