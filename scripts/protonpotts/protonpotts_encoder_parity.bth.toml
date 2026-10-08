@@ -1,0 +1,74 @@
+[metadata]
+title = "protonpotts_encoder wave: the converted aminx encoder and Potts head vs upstream, layer by layer"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+The aminx PottsMPNN over the 30-token v6 alphabet, loaded from the converted v6 checkpoint
+(`aminx.families.protonpotts_mpnn.convert` plus `scripts/protonpotts/convert_protonpotts_checkpoint.py`),
+reproduces upstream's encoder and Potts head on four cells (1BVC, 6m0j, 1OLR, 1EL1), against the sealed P4e
+dump:
+
+  - float64: the layer-0 input and every encoder layer's h_V and h_E, and the head table before the
+    reciprocal merge (etab_premerge), each within 1e-9 absolute;
+  - float32: each of those arrays within 10x the MEASURED upstream f32-vs-f64 spread of that array (never
+    below 1e-7), the band being a measured floor and not a guess (decision 11e);
+  - E_idx exactly equal, both precisions.
+
+The conversion has to permute three orderings foundry and aminx disagree on (the 25 atom-pair blocks of
+edge_embedding.weight, the token rows of W_s and W_out, and both token axes of etab_out), none of which
+raises a shape error. The encoder's activations do not depend on token order, so etab_premerge is the
+observable that can catch a wrong token or etab permutation.
+
+The comparison is an INSTRUMENT only if deliberate perturbations are rejected by it (spec §6): five wrong
+conversions (pair order not permuted; pair order permuted by the inverse; token order not permuted; etab not
+permuted; etab permuted on its first axis only) and two nudges of a correct output, one just outside the f64
+tolerance and one at four times the f32 band. All seven must be rejected.
+
+PREDICTION, stated before the run so it can be wrong: the converted model passes all four cells in both
+precisions, and all seven perturbations are rejected. If the conversion is wrong in a way the unit tests of
+the permutation arithmetic could not see, this is where it shows.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 4 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed"
+decision = "protonpotts_encoder is graded: the converted checkpoint reproduces upstream's encoder and pre-merge head in both precisions and each perturbation is rejected."
+reasoning = "All four cells are within the f64 tolerance and the measured f32 band, E_idx is exact, the weights came from the dumped checkpoint, and all seven controls fail."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 4 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 4 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed)"
+decision = "Do not treat the conversion as graded. Read per_cell: the first layer whose f64 difference leaves tolerance names where to look (layer 0 input: featurization or edge embedding; a later layer: encoder weights; etab_premerge only: the token or etab permutation). An undetected perturbation means the comparison cannot discriminate that error."
+reasoning = "Either a cell is outside its band, E_idx differs, the checkpoint does not match the dump, or a perturbation was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 4 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+n_f64_ok = "int"
+n_f32_ok = "int"
+n_e_idx_exact = "int"
+checkpoint_matches = "bool"
+worst_f64_abs = "float"
+worst_f32_over_band_floor = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_cell = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+dumps = "P4e encoder dump (scripts/protonpotts/dump_protonpotts_encoder.py); content hashes in spec §41"
+features = "sealed P4b / P4c / P4d feature dumps"
+tolerances = "f64 1e-9 absolute; f32 10x the measured upstream f32-vs-f64 spread per array, minimum 1e-7; E_idx exact"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_encoder_parity.py --state-npz <v6_state.npz> --encoder-dir <P4e out dir> --features-dir ~/projects/aminx-oracles-protonpotts, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."
