@@ -22,6 +22,20 @@ from aminx.model.packer import Packer
 NUM_LIGAND_CONTEXT_LAYERS = 2
 
 
+def _check_shape(what: str, pt_value: np.ndarray, skeleton_leaf: Any) -> None:
+    """Refuse to write a checkpoint array into a skeleton leaf of a different shape.
+
+    A skeleton leaf of None (e.g. a LayerNorm built without a weight) has shape None here,
+    so any checkpoint array written into it is also refused.
+    """
+    skeleton_shape = None if skeleton_leaf is None else tuple(skeleton_leaf.shape)
+    if tuple(pt_value.shape) != skeleton_shape:
+        raise ValueError(
+            f"{what}: checkpoint {tuple(pt_value.shape)} vs skeleton {skeleton_shape} "
+            "(a vocabulary/width mismatch would otherwise be written in silently)"
+        )
+
+
 def convert_linear_layer(
     pt_weight: np.ndarray,
     pt_bias: np.ndarray | None,
@@ -42,6 +56,13 @@ def convert_linear_layer(
             if pt_bias is not None else \
             "skeleton has a bias the checkpoint does not (random init would ship as if trained)"
         raise ValueError(f"bias mismatch converting Linear{tuple(pt_weight.shape)}: {side}")
+
+    # A width or vocabulary mismatch (e.g. a 900-row etab_out loaded into a 400-row skeleton,
+    # or a 30-token W_out into a 21-token skeleton) used to be written in silently and only
+    # failed much later, or not at all. Both layouts are [out, in], so compare them directly.
+    _check_shape("weight shape mismatch converting Linear", pt_weight, jax_layer.weight)
+    if pt_bias is not None and jax_layer.bias is not None:
+        _check_shape("bias shape mismatch converting Linear", pt_bias, jax_layer.bias)
 
     jax_weight = jnp.array(pt_weight)
 
@@ -84,6 +105,8 @@ def convert_layer_norm(
     jax_norm: eqx.nn.LayerNorm,
 ) -> eqx.nn.LayerNorm:
     """Convert PyTorch LayerNorm to JAX."""
+    _check_shape("weight shape mismatch converting LayerNorm", pt_weight, jax_norm.weight)
+    _check_shape("bias shape mismatch converting LayerNorm", pt_bias, jax_norm.bias)
     new_norm = eqx.tree_at(lambda n: n.weight, jax_norm, jnp.array(pt_weight))
     new_norm = eqx.tree_at(lambda n: n.bias, new_norm, jnp.array(pt_bias))
     return new_norm
@@ -94,6 +117,7 @@ def convert_embedding(
     jax_embed: eqx.nn.Embedding,
 ) -> eqx.nn.Embedding:
     """Convert PyTorch Embedding to JAX."""
+    _check_shape("weight shape mismatch converting Embedding", pt_weight, jax_embed.weight)
     return eqx.tree_at(lambda e: e.weight, jax_embed, jnp.array(pt_weight))
 
 
@@ -751,12 +775,16 @@ def convert_physics_encoder(
             jax_model.encoder.physics_projection,
         ),
     )
+    pt_norm_weight = pt_state_dict["features.norm_nodes.weight"]
+    pt_norm_bias = pt_state_dict["features.norm_nodes.bias"]
+    _check_shape("weight shape mismatch converting physics_norm", pt_norm_weight, jax_model.encoder.physics_norm.weight)
+    _check_shape("bias shape mismatch converting physics_norm", pt_norm_bias, jax_model.encoder.physics_norm.bias)
     jax_model = eqx.tree_at(
         lambda m: (m.encoder.physics_norm.weight, m.encoder.physics_norm.bias),
         jax_model,
         (
-            jnp.array(pt_state_dict["features.norm_nodes.weight"]),
-            jnp.array(pt_state_dict["features.norm_nodes.bias"]),
+            jnp.array(pt_norm_weight),
+            jnp.array(pt_norm_bias),
         ),
     )
     jax_model = eqx.tree_at(
