@@ -2286,3 +2286,81 @@ Input was the **measured** state_dict, dumped on titanix:
   has nothing to do with the port. Fix: `torch.set_num_threads(1)` in both dumpers plus the
   thread count in the manifest, as the ProtonPotts dumper already does. Scoped
   (`scripts/parity/`), so it rides the re-wave — the user's call.
+
+---
+
+## §35 — P7 plan: generic-`V` Potts refactor (Haiku draft at `9b520400`, Opus-verified)
+
+Drafted read-only by a Haiku 5.5 agent against the tree #165 will merge (`9b520400`); the
+load-bearing claims were spot-checked by Opus. Nothing here has run. Execution waits on the
+post-merge re-wave (§10). Full draft: `.praxia/subagent_outputs/toolu_01TeT9DGcKDz1SAn5fuA81zZ.1.md`
+(main checkout).
+
+### §35.1 Census gaps closed
+
+- **The generic runner IS reachable from Potts.** `PottsMPNNDriver.mpnn_fallback_purposes =
+  {jacobian, inspect, score:nll, score:logits}` (`families/potts_mpnn/driver.py:233`, verified)
+  fall through to the generic ProteinMPNN path (`host/runner.py:349, 812, 1395, 1718`), whose
+  loader has no `pottsmpnn` branch (inferred: builds a 21-wide model). At `V != 21` these must
+  **refuse**, not fall through — otherwise a 30-token path silently loads a 21-wide model.
+- `driver.py:59` `_CANONICAL` is the 20 standard residues for DMS enumeration — **not width**.
+  It stays 20 at V=30 (protonation variants are not mutation targets).
+- `potts/cli.py:39` `n_canonical=20` belongs to the TRW `aminx.potts` model, not PottsMPNN.
+  **Out of P7 scope.**
+- §34.2 corrections: `refine.py:115` is a docstring; the literal is `decode.py:77` only.
+
+### §35.2 The alphabet object — and the agent's "open decision" that is not one
+
+alphex is dev-only (D4, `pyproject.toml:314`), so the object is plain `src/` code; proposed home
+`src/aminx/utils/alphabet.py`. Fields, each traced to a consumer: `name` (required — §11c),
+`symbols`, `size`, `standard_symbols` (20), `x_index`, a **pair-table layout**, and (for P9) a
+designable mask.
+
+The draft flagged "the V=30 etab layout is undefined" as a user decision. **It is not — §2a
+settles it.** Upstream's head maps 128 → `potts_vocab_size`², and `calc_potts_eners` indexes
+the table directly by sequence tokens (`etab[…, s_i, s_j]`), so ProtonPotts' `(900, 128)`
+head is **30×30 indexed by model token, identity layout.** Collapsing protonation to the parent
+residue would break parity and is not an option. What IS real is the structural difference:
+
+| | model vocab | pair side | model → etab |
+|---|---|---|---|
+| shipped PottsMPNN | 21 | **20** | remap table (`etab.py:27,29`; etab `X`=21, gap=20, `N_ETAB`=22) |
+| ProtonPotts v6 | 30 | **30** | **identity** |
+
+So `pair_side` and `size` must be separate fields, and the layout must be either a remap table or
+the identity. Note also `sample_host.py:329-331` pads `S` with the **etab** `X` (21), not the
+model `X` (20) — verified; one object must own both indices or this mis-pads silently.
+
+### §35.3 Ordered steps (one commit each)
+
+| step | change | gate (must stay green) |
+|---|---|---|
+| S0 | capture the pass baseline of every gate below at the merged HEAD, on titanix | baseline recorded |
+| S1 | add `utils/alphabet.py` with the shipped alphabet; **new test asserts it reproduces every old constant exactly** (`N_AA`, `PAIR_DIM`, `ETAB_*`, `N_ETAB`, `_VOCAB`, `_CANONICAL`, `MODEL_ALPHABET`) | new test + `tests/test_alphabet_conformance.py` |
+| S2 | unlink the two `N_AA = 20` (`etab.py:21`, `potts_head.py:26`) → one source | `tests/port/test_potts_head.py`, `test_potts_merge_pair_d{2,4}.py`, `tests/families/potts_mpnn/test_etab.py` |
+| S3 | **converter weight-shape assertions** (`convert_weights.py` checks bias only) + a loader width check (`_load_eqx`, `driver.py:829-832`, deserialises into a fixed skeleton); new test: `(900,128)` `etab_out` against V=21 raises | `scripts/recapture/test_pottsmpnn_to_eqx.py`, `tests/families/potts_mpnn/test_model.py` |
+| S4 | `PottsHead` takes `pair_side` | S2's set |
+| S5 | model vocab (`model.py:31, 71-72`) → `alphabet.size` | `test_pottsmpnn_full.py`, `test_declayer_f64.py` + references |
+| S6 | featurize (`featurize.py:17, 117-120, 168, 175, 338`); remove the silent 21-letter fallback | `test_featurize*.py`, references `a0_featurize`, `b0_featurize` |
+| S7 | etab tables (`etab.py:27, 29, 57`) from the layout field | `test_etab.py`, `test_potts_energy.py`, merge tests |
+| S8 | `decode.py:77` `X` mask → `alphabet.x_index`; designable-mask field, no behaviour change at V=21 | padding-invariance tests, `test_potts_*_knobs.py`, `tests/parity/test_potts_*.py` |
+| S9 | `sample_host.py` 43, 252-266, 329-331, 413 → alphabet | `test_sample.py`, `test_driver.py` |
+| S10 | `_CANONICAL` → `standard_symbols` | `test_driver.py`, `test_divergence_*.py`, `tests/host/test_fixed_arms.py` |
+| S11 | the four fallback purposes **refuse** at `V != 21` | new test + `test_driver.py` |
+| S12 | sink dims (`sample_host.py:413`) last | S9's set |
+
+Ordering rationale: the constant-equivalence test (S1) and the shape assertions (S3) come before
+anything that could change V=21 behaviour, so a regression fails loudly at the step that caused
+it instead of surfacing as a parity drift later.
+
+### §35.4 Risks carried into execution
+
+- **`features.py:44` `L K 400` is 25×16 RBF, not `PAIR_DIM`.** A global replace of 400 corrupts
+  featurization.
+- `scripts/parity/potts_*.py` import private names from `families/potts_mpnn`; renames break the
+  parity scripts too — each step's gate must include them.
+- P7 generalises **width only**. ProtonPotts' merge (reciprocal-only) and energy (directed
+  double-count) differ from aminx's `merge_pair` (§2a) and are P7's *consumers*, not part of it —
+  do not "fix" `merge_pair` inside P7.
+- At V=30, protonation tokens are drawable unless the designable mask says otherwise; that
+  semantics is P9's to define, P7 only provides the field.
