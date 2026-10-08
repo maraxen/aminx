@@ -20,6 +20,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
 from aminx.utils.concatenate import concatenate_neighbor_nodes
 
 if TYPE_CHECKING:
@@ -50,6 +51,16 @@ def floor_temperature(temperature: float) -> float:
   return float(temperature)
 
 
+def floor_temperature_array(temperature: Float[Array, ""], dtype: jnp.dtype) -> Float[Array, ""]:
+  """``floor_temperature`` for a traced scalar: ``0`` becomes ``1e-6``, as ``dtype``.
+
+  Lets an exported graph take temperature as a runtime input; a Python float still goes
+  through ``floor_temperature`` and gives the same value.
+  """
+  value = jnp.asarray(temperature, dtype=dtype)
+  return jnp.where(value == 0, jnp.asarray(1.0e-6, dtype=dtype), value)
+
+
 def categorical_draw(probs: Float[Array, " V"], uniform: Float[Array, ""]) -> Int[Array, ""]:
   """Inverse-CDF draw shared with the oracle shim.
 
@@ -65,8 +76,14 @@ def categorical_draw(probs: Float[Array, " V"], uniform: Float[Array, ""]) -> In
   return jnp.minimum(index, last)
 
 
-def mask_refine_x(logits: Float[Array, " V"]) -> Float[Array, " V"]:
-  """Make model index 20 (``X``) structurally undrawable.
+def mask_refine_x(
+  logits: Float[Array, " V"],
+  x_index: int = POTTS_MPNN.x_index,
+) -> Float[Array, " V"]:
+  """Make the ``X`` index structurally undrawable.
+
+  ``x_index`` defaults to the shipped alphabet's X (index 20, ``POTTS_MPNN``).
+  It must be a Python ``int`` (static), not a traced value.
 
   Upstream refine builds 20 candidates and then draws from 21 letters, raising
   ``IndexError`` when ``X`` is selected (debt #2260). The f64 oracles mask that
@@ -74,8 +91,8 @@ def mask_refine_x(logits: Float[Array, " V"]) -> Float[Array, " V"]:
   before the softmax keeps the draw inside ``0..19`` even when the unmasked
   ``X`` logit is the largest. This port does not reproduce the ``IndexError``.
   """
-  x_index = jnp.int32(20)
-  return logits.at[x_index].add(jnp.asarray(-_OMIT_SCALE, dtype=logits.dtype))
+  x_slot = jnp.int32(x_index)
+  return logits.at[x_slot].add(jnp.asarray(-_OMIT_SCALE, dtype=logits.dtype))
 
 
 def pssm_mix(
@@ -268,14 +285,21 @@ class PottsARDecode(eqx.Module):
     pssm_log_odds_mask: Float[Array, "L V"],
     omit_aa_mask: Float[Array, "L V"],
     *,
-    temperature: float,
+    temperature: float | Float[Array, ""],
     pssm_multi: float,
     pssm_bias_flag: bool,
     pssm_log_odds_flag: bool,
     decoding_order: Int[Array, " L"] | None = None,
   ) -> ARResult:
-    """Decode one structure. ``uniforms[k]`` is the k-th multinomial call."""
-    temperature_value = _as_dtype(floor_temperature(temperature), h_v.dtype)
+    """Decode one structure. ``uniforms[k]`` is the k-th multinomial call.
+
+    ``temperature`` may be a Python float or a scalar array (a runtime input of an
+    exported graph); both are floored the same way.
+    """
+    if isinstance(temperature, (int, float)):
+      temperature_value = _as_dtype(floor_temperature(temperature), h_v.dtype)
+    else:
+      temperature_value = floor_temperature_array(temperature, h_v.dtype)
     group_order, size, rank_flat, _order = schedule_groups(
       tie_groups.astype(jnp.int32),
       pad_valid,

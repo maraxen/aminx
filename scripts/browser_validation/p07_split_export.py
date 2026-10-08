@@ -52,7 +52,41 @@ if str(_REPO_ROOT) not in sys.path:
 logger = logging.getLogger("p07_split_export")
 
 BUCKETS = (128, 256)
-N_TOKENS = 21
+
+# Model family this export describes. The browser sampler (browser/aminx-sampler/)
+# reads the manifest to pick its alphabet, token count, omit bias and per-graph input
+# names, so a second family (PottsMPNN) reuses the same split sampler by exporting its
+# own manifest rather than by editing JS constants.
+FAMILY = "proteinmpnn"
+ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
+N_TOKENS = len(ALPHABET)
+OMIT_BIAS = -1e8
+
+# Positional input names per graph, in the same order as the graph functions' arguments
+# (_build_graphs) and the JS INPUT_ORDER constants in browser/aminx-sampler/split_driver.mjs.
+# These are logical names; the ONNX tensor names jax2onnx assigns are positional (in_0, ...).
+GRAPH_INPUT_NAMES = {
+  "encoder": ("coords", "mask", "residue_index", "chain_index"),
+  "wave": ("decoding_order", "tie_group_map"),
+  "decoder": (
+    "node_features",
+    "edge_features",
+    "neighbor_indices",
+    "mask",
+    "ar_mask",
+    "sequence_oh",
+  ),
+  "fuse": (
+    "logits",
+    "cond_bias",
+    "mask_group",
+    "fixed_mask",
+    "fixed_tokens",
+    "group_id",
+    "temperature",
+    "gumbel_noise",
+  ),
+}
 
 
 def _sha256(path: Path) -> str:
@@ -319,6 +353,10 @@ def _convert_bucket(probe: dict[str, Any], out_dir: Path) -> dict[str, Any]:
   bucket = probe["bucket"]
   entries: dict[str, Any] = {}
   for key, (fn, arrays) in probe["specs"].items():
+    names = GRAPH_INPUT_NAMES[key]
+    if len(names) != len(arrays):
+      msg = f"{key}: {len(names)} input names for {len(arrays)} graph inputs"
+      raise RuntimeError(msg)
     path = out_dir / f"p07_{key}_L{bucket}.onnx"
     logger.info("exporting %s L=%d -> %s", key, bucket, path.name)
     _convert(fn, arrays, f"p07_{key}_L{bucket}", path)
@@ -326,6 +364,7 @@ def _convert_bucket(probe: dict[str, Any], out_dir: Path) -> dict[str, Any]:
       "file": path.name,
       "bytes": path.stat().st_size,
       "sha256": _sha256(path),
+      "input_names": list(names),
       "input_shapes": [list(a.shape) for a in arrays],
       "input_dtypes": [str(a.dtype) for a in arrays],
     }
@@ -410,7 +449,10 @@ def main(argv: list[str] | None = None) -> int:
     manifest = {
       "git_hash": git_hash,
       "checkpoint_id": "proteinmpnn_v_48_020",
-      "alphabet": "ACDEFGHIKLMNPQRSTVWYX",
+      "family": FAMILY,
+      "alphabet": ALPHABET,
+      "n_tokens": N_TOKENS,
+      "omit_bias": OMIT_BIAS,
       "buckets": exported,
     }
     manifest_path = args.manifest or (args.out_dir / "MANIFEST.json")

@@ -23,22 +23,33 @@ import jax.numpy as jnp
 from jax import typing as jxtyping
 from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray
 
-N_AA = 20
-PAIR_DIM = N_AA * N_AA
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN, PottsAlphabet
+
+N_AA = POTTS_MPNN.pair_side
+PAIR_DIM = POTTS_MPNN.pair_dim
 
 
 class PottsHead(eqx.Module):
-  """Linear map from edge features to a masked ``(L, K, 20, 20)`` pair table.
+  """Linear map from edge features to a masked pair table.
 
-  Slot 0 is the self interaction: off-diagonal entries are cleared with
-  ``eye(20)`` after the edge mask, matching upstream.
+  The table is ``pair_side x pair_side`` (``(L, K, 20, 20)`` for the shipped
+  alphabet). Slot 0 is the self interaction: off-diagonal entries are cleared
+  with ``eye(pair_side)`` after the edge mask, matching upstream.
   """
 
   linear: eqx.nn.Linear
+  pair_side: int = eqx.field(static=True)
 
-  def __init__(self, hidden_dim: int, *, key: PRNGKeyArray) -> None:
-    """Initialize the ``H -> 400`` projection."""
-    self.linear = eqx.nn.Linear(hidden_dim, PAIR_DIM, key=key)
+  def __init__(
+    self,
+    hidden_dim: int,
+    *,
+    key: PRNGKeyArray,
+    alphabet: PottsAlphabet = POTTS_MPNN,
+  ) -> None:
+    """Initialize the ``H -> pair_dim`` projection for ``alphabet``."""
+    self.pair_side = alphabet.pair_side
+    self.linear = eqx.nn.Linear(hidden_dim, alphabet.pair_dim, key=key)
 
   def with_weights(
     self,
@@ -61,6 +72,8 @@ class PottsHead(eqx.Module):
     pad_valid: Bool[Array, " L"],
   ) -> Float[Array, "L K 20 20"]:
     """Project edge features and apply the PottsHead mask.
+
+    The table side is ``self.pair_side`` (20 for the shipped alphabet).
 
     Parameters
     ----------
@@ -85,10 +98,10 @@ class PottsHead(eqx.Module):
       raise ValueError(msg)
     projected = edge_features @ self.linear.weight.T + bias
     length, k, _ = edge_features.shape
-    tables = projected.reshape(length, k, N_AA, N_AA)
+    tables = projected.reshape(length, k, self.pair_side, self.pair_side)
     scale = _edge_scale(e_idx, present, pad_valid, tables.dtype)
     tables = tables * scale[..., None, None]
-    eye = jnp.eye(N_AA, dtype=tables.dtype)
+    eye = jnp.eye(self.pair_side, dtype=tables.dtype)
     slot0 = tables[:, 0] * eye
     return tables.at[:, 0].set(slot0)
 

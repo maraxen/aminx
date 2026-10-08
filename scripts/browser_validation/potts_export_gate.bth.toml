@@ -1,0 +1,71 @@
+[metadata]
+title = "X2 gate: shipped PottsMPNN graphs (encode, energy, decode, refine) with the real checkpoint on ORT-CPU and ORT-Web"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "With the sha256-pinned vanilla PottsMPNN checkpoint (pottsmpnn_20.pt) and the sha256-pinned upstream example PDBs (3dkm, 3gg7, 4jox) featurized through the driver's own path and padded to each bucket they fit (128: 3dkm; 256: all three), the four graphs a browser Potts sampler ships -- encode (encoder + Potts head + merged/padded energy table), energy (batched sequence energies, the score:energy / score:ddg path, native plus 7 single mutants), decode (PottsARDecode, untied; noise, uniforms and temperature as inputs, fed temperature 0.1) and refine (one default 'potts' sweep; optimization_temperature as an input, fed 0.0 and floored in-graph to 1e-6) -- export once per bucket through xtrax.export.convert_to_onnx (0.4.0a11, opset 23), and each graph, run in isolation on its own JAX-computed inputs, reproduces JAX on ONNX Runtime CPU and on onnxruntime-web wasm under Node (1 thread): integers exact (tokens, ranks, orders, neighbour indices), floats max|d|/max|ref| <= 1e-4. The bars and comparator are the X0 spike's (runs 1340fe84 / 241749b2, random init), fixed before any real-weight number exists. A sha256 MANIFEST (family, alphabet, etab alphabet, per-graph input names/dtypes/shapes, checkpoint hash) is written for the browser loader (X1 format)."
+stage_name = "validation"
+novel = true
+# Revision 261008c (#5814): the refine graph also returns ener_delta, for the JS potts_converge loop;
+# the comparator covers it like every other float output. Bars, controls and cells unchanged.
+# Revision 261008b (#5815): temperature is a runtime input of decode and refine (run d6506199
+# predates this and baked it). Bars, controls and cells unchanged.
+# No [reproduction]: novel. No [differential]: no effect is sized; agreement is graded per check.
+# Layer a (JAX vs upstream PyTorch) is NOT re-measured here: it is the sealed Potts parity record
+# (potts waves; per-wave port oracles re-run green at 159f38ee, spec §8.1).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false"
+decision = "The JAX arm did not complete (checkpoint or PDB hash mismatch, featurization, reference evaluation or controls). Nothing was compared; cite nothing."
+reasoning = "Without the reference outputs every per-graph status is meaningless, and a hash mismatch means the run measured different weights or structures than registered."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND NOT (control_float_detected = true AND control_int_detected = true)"
+decision = "The comparator failed to flag a planted difference (perturbed Potts-head weights on the encode outputs, reversed uniforms on the decoded tokens). Passes from this run are not evidence."
+reasoning = "A comparator that cannot see either planted difference would also pass a broken export."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND all_exported = true AND all_pass = true"
+decision = "All eight artifacts (4 graphs x buckets 128, 256) export and every per-structure check agrees with JAX on ORT-CPU and ORT-Web. The manifest's artifacts are layer-b/c clean for the decided first target (score + sample with the one-sweep refine); X3/X5 build the browser loop on these exact bytes."
+reasoning = "Both controls fired, so agreement on every graph, bucket and structure on both backends is real agreement with the real model."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND all_exported = true AND all_pass = true)"
+decision = "At least one artifact failed to export, or at least one graph/bucket/structure check failed to load, run or agree on a backend. No artifact from this run may be shipped; the per-check record names what to fix."
+reasoning = "The instrument is verified, so a failing check is a real export defect with the real weights, not a harness fault."
+is_residual = true
+
+[result_schema]
+versions = "dict"
+jax_arm_ok = "bool"
+jax_enable_x64 = "bool"
+checkpoint_sha256 = "str"
+cells = "list"
+graphs = "dict"
+n_cells = "int"
+n_graph_checks = "int"
+n_pass_cpu = "int"
+n_pass_web = "int"
+all_exported = "bool"
+all_pass = "bool"
+control_float_detected = "bool"
+control_int_detected = "bool"
+ort_web_available = "bool"
+manifest_sha256 = "str"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }

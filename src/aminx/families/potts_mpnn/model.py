@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN, PottsAlphabet
 from aminx.families.potts_mpnn.features import potts_edge_features
 from aminx.families.potts_mpnn.potts_head import PottsHead
 from aminx.model.decoder import (
@@ -28,7 +29,7 @@ _ENCODER_LAYERS = 3
 _DECODER_LAYERS = 3
 _K_NEIGHBORS = 48
 _POSITIONAL_EMBEDDINGS = 32
-_VOCAB = 21
+_VOCAB = POTTS_MPNN.size
 
 
 class PottsMPNNOutput(NamedTuple):
@@ -57,9 +58,16 @@ class PottsMPNN(eqx.Module):
 
   mpnn: Aminx
   potts_head: PottsHead
+  alphabet: PottsAlphabet = eqx.field(static=True)
 
-  def __init__(self, *, key: jax.Array) -> None:
+  def __init__(
+    self,
+    *,
+    key: jax.Array,
+    alphabet: PottsAlphabet = POTTS_MPNN,
+  ) -> None:
     mpnn_key, head_key = jax.random.split(key)
+    self.alphabet = alphabet
     self.mpnn = Aminx(
       node_features=_NODE_FEATURES,
       edge_features=_EDGE_FEATURES,
@@ -68,11 +76,11 @@ class PottsMPNN(eqx.Module):
       num_decoder_layers=_DECODER_LAYERS,
       k_neighbors=_K_NEIGHBORS,
       num_positional_embeddings=_POSITIONAL_EMBEDDINGS,
-      num_amino_acids=_VOCAB,
-      vocab_size=_VOCAB,
+      num_amino_acids=alphabet.size,
+      vocab_size=alphabet.size,
       key=mpnn_key,
     )
-    self.potts_head = PottsHead(_EDGE_FEATURES, key=head_key)
+    self.potts_head = PottsHead(_EDGE_FEATURES, key=head_key, alphabet=alphabet)
 
   def __call__(
     self,

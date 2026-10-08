@@ -15,13 +15,27 @@ from __future__ import annotations
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
 from aminx.families.potts_mpnn.featurize import MODEL_ALPHABET
 
-ETAB_ALPHABET = f"{MODEL_ALPHABET[:-1]}-X"
-N_AA = 20
+ETAB_ALPHABET = "".join(POTTS_MPNN.etab_symbols)
+N_AA = POTTS_MPNN.pair_side
 N_ETAB = len(ETAB_ALPHABET)
 ETAB_GAP = ETAB_ALPHABET.index("-")
 ETAB_X = ETAB_ALPHABET.index("X")
+
+# The remap tables below assume the shipped layout: the first N_AA letters agree
+# between the model and etab alphabets, and X sits at the model's x_index and at
+# etab ETAB_X. Fail at import rather than remap silently under a different layout.
+if ETAB_ALPHABET[:N_AA] != MODEL_ALPHABET[:N_AA] or (
+  MODEL_ALPHABET[POTTS_MPNN.x_index] != "X" or ETAB_ALPHABET[ETAB_X] != "X"
+):
+  msg = (
+    f"Potts alphabet layout mismatch: etab {ETAB_ALPHABET!r} and model {MODEL_ALPHABET!r} "
+    f"must agree on the first {N_AA} letters with X at model x_index {POTTS_MPNN.x_index} "
+    f"and etab index {ETAB_X}. The remap tables assume this layout."
+  )
+  raise RuntimeError(msg)
 
 # Model index p maps to etab index. Model X (last letter) lands on etab X.
 _MODEL_TO_ETAB = jnp.asarray([*range(N_AA), ETAB_X], dtype=jnp.int32)
@@ -97,8 +111,9 @@ def merge_pair(
   slots = jnp.arange(k)
   rev_slot = jnp.max(jnp.where(reverse_hits, slots, -1), axis=-1)
   has_reverse = rev_slot >= 0
-  missing = jnp.zeros_like(in_range)
-  both_valid = pad_valid[:, None] & jnp.where(in_range, pad_valid[safe_neighbour], missing)
+  # ``in_range & x`` is ``where(in_range, x, False)`` for booleans. The ``&`` form avoids a
+  # BOOL ``Where``, which ONNX Runtime has no kernel for (export spike run 1340fe84).
+  both_valid = pad_valid[:, None] & in_range & pad_valid[safe_neighbour]
   merges = has_reverse & both_valid
   if exclude_self:
     merges = merges & (rev_slot != 0)
@@ -181,7 +196,9 @@ def positional_potts_energy(
   column = jnp.broadcast_to(amino[:, None, None], (n_pairs, alphabet, 1))
   pair_energy = jnp.take_along_axis(pair_etab, column, axis=-1).squeeze(-1)
   neighbour_ok = in_range & pad_valid[safe] & pad_valid[pos]
-  pair_energy = jnp.where(neighbour_ok[:, None], pair_energy, 0)
+  # Explicit-dtype zero: a weak-typed ``0`` lowers to an int32 ``Where`` branch under
+  # jax2onnx, which ONNX type inference rejects (export spike run 1340fe84).
+  pair_energy = jnp.where(neighbour_ok[:, None], pair_energy, jnp.zeros_like(pair_energy))
   total = self_energy + pair_energy.sum(axis=0)
   return jnp.where(pad_valid[pos], total, jnp.zeros_like(total))
 
@@ -200,8 +217,8 @@ def _batch_energy(
   length, k, _, _ = etab.shape
   in_range = (e_idx >= 0) & (e_idx < length)
   safe = jnp.clip(e_idx, 0, length - 1)
-  missing = jnp.zeros_like(in_range)
-  edge_ok = pad_valid[:, None] & jnp.where(in_range, pad_valid[safe], missing)
+  # ``&``, not a BOOL ``where``: see merge_pair.
+  edge_ok = pad_valid[:, None] & in_range & pad_valid[safe]
   rows = jnp.arange(length)[:, None]
   slots = jnp.arange(k)[None, :]
   amino_i = sequences[:, :, None]

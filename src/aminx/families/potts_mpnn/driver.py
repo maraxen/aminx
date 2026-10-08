@@ -24,6 +24,7 @@ import jax.numpy as jnp
 import numpy as np
 from xtrax.tiling import AxisSpec, BatchPlanner
 
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
 from aminx.families.potts_mpnn.etab import (
   ETAB_ALPHABET,
   merge_pair,
@@ -56,7 +57,8 @@ from aminx.types.boundaries import AxisBoundary
 log = logging.getLogger(__name__)
 
 _HANDLED = frozenset({"score:energy", "score:ddg", "sample"})
-_CANONICAL = "ACDEFGHIKLMNPQRSTVWY"
+# DMS mutation targets: the standard residues, not the model width.
+_CANONICAL = "".join(POTTS_MPNN.standard_symbols)
 _ETAB_INDEX = {letter: index for index, letter in enumerate(ETAB_ALPHABET)}
 _PARTITION_BUCKETS = (8, 16, 32, 48, 64, 96, 128, 256, 512, 1024)
 
@@ -260,8 +262,21 @@ class PottsMPNNDriver:
     return _load_eqx(Path(artifact))
 
   def mpnn_core(self, model: eqx.Module) -> Any:  # noqa: ANN401
-    """Embedded stock ProteinMPNN used by fallback purposes."""
-    return cast("PottsMPNN", model).mpnn
+    """Embedded stock ProteinMPNN used by fallback purposes.
+
+    Every fallback purpose reaches its model through here (``host/prep.py``).
+    The generic MPNN path tokenizes and reads logits in the 21-token ProteinMPNN
+    alphabet, so any other alphabet is refused rather than silently misread.
+    """
+    potts = cast("PottsMPNN", model)
+    if potts.alphabet != POTTS_MPNN:
+      msg = (
+        f"{self.name}: fallback purposes ({', '.join(sorted(self.mpnn_fallback_purposes))}) "
+        f"assume the {POTTS_MPNN.name!r} alphabet; this model uses "
+        f"{potts.alphabet.name!r} (size {potts.alphabet.size})"
+      )
+      raise ValueError(msg)
+    return potts.mpnn
 
   def batches(self, spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
     """One structure per batch, featurized by the A0 host port."""
