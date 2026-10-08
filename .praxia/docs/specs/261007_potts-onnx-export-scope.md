@@ -264,3 +264,21 @@ decode -> energy -> one-sweep refine, exact against aminx.
 - Headless Chromium run (layer c in a real browser, COOP/COEP, threads) and the benchmark.
 - `potts_converge` JS driver (X4 #5814); `nodes`/binding modes deferred.
 - Distribution (decision 3).
+
+## 11. Temperature as a runtime input (#5815 item 1, 261008)
+
+`e512352d`: `PottsARDecode` accepts temperature as a float (unchanged path) or a scalar array
+(`floor_temperature_array`, same 0 -> 1e-6 floor); the decode and refine graphs take
+`temperature` as their last input (shape `[1]`, recorded in the manifest; refine is fed the raw
+`optimization_temperature` and floors in-graph). Unit test `test_decode_temperature_input.py`
+(array == float under jit at 0.0/0.1/1.0; a hotter temperature changes the draw) and the Potts
+family suite pass on titanix (88 passed, 1 expected skip); `potts_order` port wave 3/3.
+
+- X2 gate re-export **`3cb2974b` pass by record** (clean, `e512352d`): 20/20 on ORT-CPU and
+  ORT-Web, same per-graph errors as `d6506199`. Manifest sha256 `7e6db052…`.
+- Loop gate **`7f760bde` pass** (cool-tier record; the warm index row was stale `running`):
+  15/15 token-exact, energy <= 2.8e-6 rel, both controls fired, on the `7e6db052…` artifacts.
+  (Run `242518a8` errored before grading on a harness bug — `float()` of the `[1]`-shaped
+  temperature — fixed in `f2f50a7a`.)
+
+These `7e6db052…` artifacts supersede the `d35365c2…` set for everything downstream.
