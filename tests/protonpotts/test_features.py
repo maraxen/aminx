@@ -329,6 +329,8 @@ _CELLS = [
   ("features_v6_p4c/protonpotts_v6_features_p4c", "many_gaps", f"{_FIRE}/1BAH.pdb"),
   ("features_v6_p4c/protonpotts_v6_features_p4c", "gap_and_drops", "inputs/example_pdbs/2yc3.pdb"),
   ("features_v6_p4c/protonpotts_v6_features_p4c", "icode", f"{_FIRE}/1TPK.pdb"),
+  # P4d (run 7ec1f6b9): a residue where ONLY O fails the 0.8 backbone threshold; same dumper as P4c.
+  ("features_v6_p4d/protonpotts_v6_features_p4c", "only_o_1olr", f"{_FIRE}/1OLR.pdb"),
 ]
 # The dumper's labelling rule (dump_protonpotts_oracles.py:74): cycle by ordinal within residue type.
 _CYCLE = {

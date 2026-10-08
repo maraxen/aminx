@@ -1,0 +1,61 @@
+[metadata]
+title = "protonpotts_features wave: the aminx featurizer vs the sealed upstream feature dumps"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+The aminx ProtonPotts v6 featurizer (`aminx.families.protonpotts_mpnn.features.featurize_pdb`) reproduces
+upstream's feature dict EXACTLY on every structure upstream featurizes, and refuses the one it refuses:
+
+  - ten structures (P4b run 6a8ee503: 1BVC unlabelled and labelled, 6m0j, swe1_ligand; P4c run 9a9b75bb:
+    1CQW, 1EL1, 1BAH, 2yc3, 1TPK; P4d run 7ec1f6b9: 1OLR), all six keys R_idx, chain_labels, residue_mask, X_m, S and X exact, X
+    compared everywhere (masked atoms included);
+  - one structure (1IFC) that upstream refuses ("atom_array cannot be empty"): the featurizer must refuse it.
+
+The comparison is an INSTRUMENT only if deliberate perturbations are rejected by it (spec §6), so the run
+also applies eleven perturbations, six that make a featurizer rule wrong (backbone threshold 0.8 -> 0.5,
+atom threshold just below 0.5, O dropped from the backbone set, arginine fix off, keep-last off, atom
+threshold 0.8) and five that corrupt an output (R_idx, S, chain_labels, X_m, X by 1e-4). Every one must be
+detected by at least one cell.
+
+Labels are the dumper's cycling labels, not chemistry (§26.5).
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_cells_exact = 10 AND refusal_matched AND n_listed = 11 AND n_failed = n_listed"
+decision = "protonpotts_features is graded: the featurizer is exact on every sealed cell and each perturbation is detected."
+reasoning = "All ten featurized structures match upstream on all six keys, the refused structure is refused, and all eleven controls fail."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_cells_exact = 10 AND refusal_matched AND n_listed = 11 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_cells_exact = 10 AND refusal_matched AND n_listed = 11 AND n_failed = n_listed)"
+decision = "Do not treat the featurizer as graded. Read which half failed: a clean mismatch is a featurizer defect; an undetected perturbation means the dumps cannot discriminate that rule (add a cell, do not loosen the control)."
+reasoning = "Either a featurized cell differs from upstream, the refusal did not match, or a perturbation was not detected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_cells_exact = 10 AND refusal_matched AND n_listed = 11 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells_exact = "int"
+n_cells = "int"
+refusal_matched = "bool"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+features_dir = "titanix:~/projects/aminx-oracles-protonpotts (features_v6, features_v6_p4c)"
+potts_repo = "titanix:~/repos/PottsMPNN (the structures)"
+oracle_runs = "P4b 6a8ee503, P4c 9a9b75bb, P4d 7ec1f6b9; content hashes in spec §38, §39, §40"
+not_included = "1HGU: upstream refuses it (an unexplained unknown-atom-token error); the featurizer accepts it. A known divergence, spec §40, not a graded cell."
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_features_parity.py --features-dir ~/projects/aminx-oracles-protonpotts --potts-repo ~/repos/PottsMPNN, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first run. Not a redsox ledger row: ProtonPotts has no ledger rows until P10."
