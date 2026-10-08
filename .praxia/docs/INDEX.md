@@ -1,4 +1,4 @@
-# 261007-165-merge Internal Docs
+# 261008_potts-integration Internal Docs
 
 ## Daily
 - [261005_overnight-decisions](daily/261005_overnight-decisions.md) — What landed overnight with its verified evidence, the four open decisions each priced, and the corrections made to earlier claims
@@ -24,6 +24,7 @@
 - [260522_comp-new-sink-unify](plans/260522_comp-new-sink-unify.md) — COMP-NEW: unify result-sink topology; streaming_tensor_sink_session for non-streaming path
 
 ## Specs
+- [261007_potts-onnx-export-scope](specs/261007_potts-onnx-export-scope.md) — Scope, phase plan and acceleration levers for shipping Potts-family ONNX exports, reusing the ProteinMPNN split-export process
 - [261006_aminx-cisternal-cutover](specs/261006_aminx-cisternal-cutover.md) — Make aminx agent-native through cisternal: a manifest-driven plugin bundle of targeted skills (using-aminx router + five task skills), an aminx-mcp server wired with @cisternal.tool over host.runner (launched via uvx by default, switchable to a local venv), cisternal provenance/telemetry for campaign runs; the Typer-to-cyclopts CLI port is deferred.
 - [261006_runner-length-bucketing-xtrax-adoption](specs/261006_runner-length-bucketing-xtrax-adoption.md) — The core runner trims each batch from the loader's max_length to the smallest xtrax BUCKET_LADDER rung that covers it, then re-pads the outputs. On by default, with length_bucketing=False to opt out. Also retires the private bucket ladders and dead xtrax duplicates, and adopts device_memory_budget and loop_scaling. Closes
 - [261002_streaming-xtrax-migration-scope](specs/261002_streaming-xtrax-migration-scope.md) — Opus-tier scoping report (task 261002_streaming-xtrax-migration, debt #2421): premise check, current-state map, xtrax capability map, gap analysis, target architecture, preemption/resume design, staged plan, asks of xtrax, decisions. Includes the verified reuse-safety defect in the campaign row hash.
@@ -93,6 +94,7 @@
 - [260605_caliby-nature-and-dataset](research/260605_caliby-nature-and-dataset.md) — Caliby nature and dataset investigation
 
 ## Decisions
+- [261008_per-row-closure-staleness](decisions/261008_per-row-closure-staleness.md) — Ledger rows go stale only when a changed path is in that row's import closure, not on any scoped-prefix change; fail-safe rules, declared edges, and a run-time loaded-files check.
 - [261005_tiling-plan-discarded-stage2-2371](decisions/261005_tiling-plan-discarded-stage2-2371.md) — Measured evidence that BatchPlanner says Vmap+Bucket for the sample axes while execution is a Python loop, plus the T2.GATE blocker on deleting aminx's duplicate strategy types
 - [261004_laser-pdb-output-scope](decisions/261004_laser-pdb-output-scope.md) — Decision request: upstream LASEr writes PDBs through backbone N-H imputation, titratable-H cleanup with a geometric H-bond detector, and probability B-factors -- none of which the spec names; choose minimal writer vs full parity port
 - [261004_sample-dist-pilot-fixtures-and-low-t](decisions/261004_sample-dist-pilot-fixtures-and-low-t.md) — Decision request before the Potts sample_dist pilot runs: spec names no pssm or tied fixture, and the T=0.1 near-margin control looks unworkable (as with ProteinMPNN 260929)

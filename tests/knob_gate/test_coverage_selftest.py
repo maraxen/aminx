@@ -22,6 +22,7 @@ import pyarrow.parquet as pq
 import pytest
 
 import knob_gate._coverage as coverage_module
+from knob_gate._closure import Closure
 from knob_gate._coverage import CoolRun, check_branch_coverage
 
 FIXTURES = Path(__file__).resolve().parents[1] / "port" / "selftest_coverage"
@@ -113,6 +114,13 @@ def _grade(case_dir: Path, case: dict[str, object], run: CoolRun, *, use_catalog
     "registry_sha256": lambda artifact: registry.get(str(artifact)),
     "sidecar_digest": lambda _slug: digest,
   }
+  if "closure_files" in case:
+    raw_files = case["closure_files"]
+    if not isinstance(raw_files, list):
+      msg = f"{case_dir.name}: closure_files must be a list"
+      raise TypeError(msg)
+    closure_files = frozenset(str(path) for path in raw_files)
+    kwargs["closure_for"] = lambda slug: Closure(slug, closure_files)
   if not use_catalog:
     kwargs["resolve_run"] = resolve_run
   return check_branch_coverage(

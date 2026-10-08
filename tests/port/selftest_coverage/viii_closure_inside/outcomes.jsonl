@@ -1,0 +1,2 @@
+{"exc_type": null, "mutant": null, "nodeid": "tests/port/selftest/test_kernel.py::test_tier_2_sign_flipped_kernel_fails", "outcome": "passed", "wasxfail": false, "wave": "port_selftest", "when": "call"}
+{"exc_type": "AssertionError", "mutant": "selftest_ok", "nodeid": "tests/port/selftest/test_kernel.py::test_tier_2_sign_flipped_kernel_fails", "outcome": "failed", "wasxfail": false, "wave": "port_selftest", "when": "call"}

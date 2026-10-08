@@ -1,0 +1,32 @@
+{
+  "expected": "pass",
+  "ancestor": true,
+  "changed": [
+    "src/aminx/families/other_family/driver.py",
+    "tests/port/test_something_new.py"
+  ],
+  "closure_files": [
+    "scripts/parity/pottsmpnn_selftest.py",
+    "src/aminx/families/potts_mpnn/driver.py"
+  ],
+  "registry": {
+    "weights/potts.bin": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "sidecar_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+  "run_id": "run-viii_closure_outside",
+  "run": {
+    "status": "completed",
+    "outcome": "pass",
+    "git_dirty": false,
+    "git_hash": "0123456789abcdef0123456789abcdef01234567",
+    "sidecar_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "argv": [
+      "python",
+      "--mutants",
+      "sc_row"
+    ]
+  },
+  "dir8": null,
+  "write_controls": true,
+  "use_default_resolve": false
+}

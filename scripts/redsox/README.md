@@ -14,18 +14,51 @@ checks, and which names every condition separately.
 
 ## The ordering constraint, which is the thing that bites
 
-`_touches_scoped` is **global, not per-slug** (`_coverage.py:242-250`). One
-commit under any of
+**Since 261008 staleness is per row, not global.** Before that, one commit under
+any scoped path invalidated every row, whatever it contained and whichever
+vehicle it could not possibly affect: a one-line docstring change to
+`src/aminx/cli.py` (04d689b3) discarded three hours of parity evidence, and
+PR #205's edits under `src/aminx/families/potts_mpnn/` would have discarded the
+four LASEr rows (7.75 h of compute) as well.
 
-    src/aminx/  scripts/parity/  scripts/recapture/  tests/port/
-    aminx-oracles/  pyproject.toml  uv.lock
+A row is now stale when a path changed since its run commit is in **that row's
+import closure** (`tests/knob_gate/_closure.py`): the static import closure of
+`scripts/parity/<slug>.py` over `src/` and `scripts/parity/`, plus the edges
+declared for the slug in `tests/knob_gate/closure_edges.toml`. The gate uses
+`row_is_stale` (`_coverage.py:_validate_sidecar`), and so do `verify_wave.py` and
+`stale_rows.py`.
 
-invalidates **every** row in the ledger at once, whatever the commit contained.
-It is path-based and does not inspect the diff: a one-line docstring change to
-`src/aminx/cli.py` (04d689b3) discarded three hours of parity evidence.
+    uv run python3 scripts/redsox/stale_rows.py     # which rows must re-run, and why
+    scripts/redsox/launch_wave.sh --stale-only 1    # launch only the stale slugs of a group
 
-So ledger rows **cannot be accumulated incrementally**. The vehicle wave runs
-*after* the last scoped commit, and nothing scoped may land afterwards.
+It over-approximates and **fails safe**: anything the scanner cannot prove
+irrelevant makes the row stale, never fresh.
+
+- `pyproject.toml`, `uv.lock`, `scripts/recapture/`, `aminx-oracles/` stay
+  **global** (any change invalidates every row).
+- A non-`.py` file under `src/aminx/` or `scripts/parity/` (packaged weights,
+  fixtures) is global unless a slug declares it as `data`. A vehicle's own
+  `.bth.toml` is the exception: `sidecar_sha256` already pins it per row.
+- A dynamic import (`import_module(<variable>)`, `spec_from_file_location`,
+  `importlib.resources.files`, entry points) inside a closure makes the closure
+  unsound, and the row falls back to the global rule, unless the slug lists that
+  file under `dynamic_ok` with its reason.
+- `tests/port/` is **no longer scoped for rows**: no graded vehicle imports from
+  it, and the port suite is re-run by the gate's step 2 on every gate run.
+
+The declarations are reviewed claims. `closure_hook/` is how a real run checks
+them: `launch_wave.sh` records every repo file each vehicle process actually
+loads (`loaded_files.json` beside `branch_controls.json`), and `verify_wave.py`
+fails the row if a loaded file is outside its closure. It edits no vehicle,
+because a vehicle is in its own closure. **A run from before the hook has no
+such file, and `verify_wave.py` reports that without failing it**, so the first
+wave after this change is the first one that validates the rule against a real
+execution rather than a static argument.
+
+Shared core code (`src/aminx/__init__.py`, `host/runner.py`, the model
+packages every vehicle imports) is in every closure, so changing it still
+invalidates every row. That is the intended behaviour, and
+`test_closure_selftest.py` pins it as a negative control.
 
 `tests/knob_gate/` and `scripts/redsox/` are **not** scoped, so manifests,
 ledger ids and this tooling can be edited freely before or after the wave.

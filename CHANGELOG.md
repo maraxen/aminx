@@ -12,6 +12,8 @@
 
 ### Changed
 
+- **Redsox ledger staleness is now per row.** A row goes stale only when a changed path is in its own import closure (`tests/knob_gate/_closure.py`, `closure_edges.toml`), not on any scoped-prefix change. Anything the scanner cannot prove irrelevant still makes the row stale. New: `scripts/redsox/stale_rows.py`, `launch_wave.sh --stale-only`, and a run-time loaded-files check (`scripts/redsox/closure_hook`). `tests/port/` is no longer scoped for rows. See `.praxia/docs/decisions/261008_per-row-closure-staleness.md`.
+
 - **Training numerics** (`TrainingSpecification.weight_decay_mask`, default `"no_bias"`).
   No-warmup AdamW now skips decay on 1-D parameters, matching the warmup path.
   `weight_decay_mask="all"` decays every inexact parameter and restores the previous

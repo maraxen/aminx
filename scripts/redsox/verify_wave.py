@@ -50,13 +50,12 @@ def _repo() -> Path:
 REPO = _repo()
 sys.path.insert(0, str(REPO / "tests" / "knob_gate"))
 
+from _closure import loaded_outside_closure, row_is_stale  # noqa: E402
 from _coverage import (  # noqa: E402
-  _SCOPED_FILES,
-  _SCOPED_PREFIXES,
   _argv_mutants,
-  _touches_scoped,
   _weights_required,
   default_changed_paths,
+  default_closure_for,
   default_is_ancestor,
   default_registry_sha256,
   default_resolve_run,
@@ -82,19 +81,15 @@ def _ledger_ids() -> dict[str, str]:
   return {slug: body["bth_run_id"] for slug, body in table.items() if "bth_run_id" in body}
 
 
-def _scoped_hits(paths: list[str]) -> list[str]:
+def _scoped_hits(paths: list[str], slug: str) -> list[str]:
   """The offending paths, for the message only.
 
-  The VERDICT comes from the gate's ``_touches_scoped``; this just names which
-  paths made it say yes, because "a scoped path landed since that run" is
-  unactionable without knowing which commit did it.
+  The VERDICT comes from the gate's ``row_is_stale``; this just names which
+  paths made it say yes, by asking it about each path alone, because "a scoped
+  path landed since that run" is unactionable without knowing which commit did it.
   """
-  hits = []
-  for raw in paths:
-    path = str(raw).replace("\\", "/").lstrip("./")
-    if path in _SCOPED_FILES or any(path.startswith(p) for p in _SCOPED_PREFIXES):
-      hits.append(path)
-  return hits
+  closure = default_closure_for(slug)
+  return [str(p) for p in paths if row_is_stale([str(p)], closure)]
 
 
 def _resolve_hint(run_id: str) -> str:
@@ -146,10 +141,10 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   if git_hash:
     ok &= _report("ancestor of HEAD", default_is_ancestor(git_hash))
     changed = default_changed_paths(git_hash)
-    hits = _scoped_hits(changed)
+    hits = _scoped_hits(changed, slug)
     ok &= _report(
-      "no scoped path since",
-      not _touches_scoped(changed),
+      "no path in the row's closure since",
+      not row_is_stale(changed, default_closure_for(slug)),
       f"{len(hits)} scoped: {sorted(set(hits))[:3]}" if hits else "",
     )
 
@@ -180,6 +175,26 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   if not controls_path.is_file():
     return _report("controls file exists", False, str(controls_path))
   controls = json.loads(controls_path.read_text(encoding="utf-8"))
+
+  # The closure rule is only as good as its declarations. launch_wave.sh records
+  # which files the run really loaded (scripts/redsox/closure_hook); compare that to
+  # the row's closure. A run from before the hook has no file, which is reported
+  # without failing: the gate never required it.
+  loaded_path = controls_path.parent / "loaded_files.json"
+  if loaded_path.is_file():
+    closure = default_closure_for(slug)
+    loaded = json.loads(loaded_path.read_text(encoding="utf-8")).get("loaded", [])
+    if closure is None:
+      ok &= _report("loaded files inside closure", False, "closure unavailable")
+    else:
+      outside = loaded_outside_closure(loaded, closure)
+      ok &= _report(
+        "loaded files inside closure",
+        not outside,
+        f"{len(loaded)} loaded" if not outside else f"NOT in closure: {outside[:4]}",
+      )
+  else:
+    logger.info("    [n/a ] loaded files inside closure    no loaded_files.json (run predates the hook)")
 
   ok &= _report(
     "controls clean == pass", controls.get("clean") == "pass", repr(controls.get("clean"))

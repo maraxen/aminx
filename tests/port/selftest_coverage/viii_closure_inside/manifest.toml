@@ -1,0 +1,19 @@
+[[branch]]
+id = "selftest_ok"
+stage = "port_selftest"
+fixture = "selftest_ok"
+mutant = "selftest_ok"
+
+[branch.vehicle]
+kind = "pytest"
+nodeids = ["tests/port/selftest/test_kernel.py::test_tier_2_sign_flipped_kernel_fails"]
+
+[[branch]]
+id = "sc_row"
+stage = "port_selftest"
+fixture = "sc_row"
+mutant = "sc_row"
+
+[branch.vehicle]
+kind = "sidecar"
+slug = "pottsmpnn_selftest"
