@@ -304,3 +304,38 @@ Tied positions excluded (not wired on the Python sample path; debt 2443).
 Remaining for shipping: headless Chromium (real browser, COOP/COEP, threads) + benchmark; energy-graph
 row count for DMS scoring; `potts_converge` JS driver; ProtonPotts (#5816, blocked on #5781);
 distribution (decision 3).
+
+## 13. Final artifact set and gate record (261008) — first target shippable
+
+Final artifacts: manifest sha256 **`cf960131…`** (refine graph returns `(sequence, ener_delta)`;
+temperature an input). Titanix: `~/bv/potts-export/final_cf960131…/`. Not committed (decision 3).
+Every run below verified by its cool-tier record: `completed`, `pass`, exit 0, `git_dirty=false`.
+
+| gate | run | commit | result |
+|---|---|---|---|
+| X2 export (4 graphs x 2 buckets, ORT-CPU + ORT-Web) | `272157f7` | `c64baf23` | 20/20, worst 2.7e-6 rel |
+| loop (shipping JS chain, Node wasm) | `5d820c04` | `c64baf23` | 15/15 token-exact |
+| runtime controls (full PDB->controls->sample path) | `9abf3430` | `c64baf23` | 36/36 exact, all 7 control effects |
+| potts_converge (JS loop over one-sweep graph) | `99ae1cf0` | `9f189632` | 4/4 exact, n_iters equal |
+| headless Chromium 153, COOP/COEP, 1 and 4 threads | `37893cdf` | `9f189632` | 16/16 exact; isolated; ORT-reported threads 1 and 4 |
+| browser benchmark | `81e77d84` | `9f189632` | timer control 250.3 ms of 250 planted (in window) |
+
+**Benchmark (a measurement of this configuration only: headless Chromium 153, titanix, wasm,
+reported threads as stated; 2 cells 3dkm L128 + 3gg7 L256, 3 reps after warm-up, medians pooled
+over both cells):** per-design wall (encode + decode + energy + one refine sweep) median **1.93 s at
+1 thread** (min 1.00 s, max 2.85 s) and **1.20 s at 4 threads** (min 0.55 s, max 1.80 s); input
+prep ~2 ms; one-off session creation ~1.7 s. (Min/max track the two lengths; per-length medians
+were not split out — next benchmark should report per cell.)
+
+**`potts_converge` finding:** every converge sample, in aminx (and so upstream) as well as the
+browser, ran the full **1000 sweeps** — `ener_delta` never reaches exactly 0, because the untied
+sweep accumulates the chosen tokens' absolute positional energies rather than a change. So
+converge mode costs ~1000x the default refine. Faithful, but worth surfacing in any UI.
+
+Dirty-record note: Chromium/bench runs `e6b42766`/`f2d1f0f1` and converge `6b54551d` recorded
+`git_dirty=true` (an untracked `browser/layer_c/node_modules` symlink; `browser/**/node_modules/`
+ignores directories only). Superseded by the clean runs above; not cited.
+
+Open after the first target: ProtonPotts (#5816, blocked on #5781 + P7 merge), DMS scoring via the
+fixed 8-row energy graph (JS chunking), per-length benchmark split, distribution (decision 3),
+WebGPU (needs the E/W/D/F split for control flow), `nodes`/binding refine modes.
