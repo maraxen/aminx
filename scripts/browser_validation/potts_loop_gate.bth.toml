@@ -8,6 +8,10 @@ hypothesis = "The shipping browser/potts-sampler/potts_sampler.mjs, run under No
 stage_name = "validation"
 novel = true
 # No [reproduction]: novel. No [differential]: agreement is graded per sample.
+# Revision 261008 (after run b0e1e1b8 graded instrument_unverified): the ENERGY control was
+# cross-seed energy, which did not fire because low-temperature draws differing by a few residues
+# can land within 1e-4 relative energy. It is now the X0/X2 planted difference (perturbed Potts
+# head, same sequence). Pass bars and per-sample criteria are unchanged.
 # The JS PDB->input builder is graded separately (X3a); this gate feeds Python-prepared inputs so a
 # failure here is the loop, not the parser.
 
@@ -25,8 +29,8 @@ is_residual = true
 
 [outcomes.instrument_unverified]
 condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND NOT (control_tokens_detected = true AND control_energy_detected = true)"
-decision = "Comparing each JS sample against the JAX reference of a DIFFERENT seed in the same cell was not flagged for every sample, on tokens or on energy. Passes from this run are not evidence."
-reasoning = "A comparator that cannot tell two different draws apart would also pass a loop that ignores its noise inputs."
+decision = "A planted difference was not flagged for every sample: the JS tokens against the JAX tokens of a DIFFERENT seed in the same cell, or the JS sample energy against JAX's energy of the SAME sequence under a 1e-2-perturbed Potts head (the X0/X2 float control). Passes from this run are not evidence."
+reasoning = "A comparator that cannot tell two different draws apart, or a perturbed model's energy from the real one, would also pass a loop that ignores its noise inputs or its energy table."
 is_residual = true
 
 [outcomes.pass]

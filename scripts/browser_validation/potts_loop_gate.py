@@ -117,7 +117,20 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
       raise RuntimeError(msg)
     model = PottsMPNNDriver().load(SimpleNamespace(model_local_path=str(ckpt), num_samples=1, potts_mpnn=None,
                                                    run_spec=None))
-    cells, fns = _cells(model, _structures(args.potts_root / "inputs" / "example_pdbs"), seed=0)
+    structures = _structures(args.potts_root / "inputs" / "example_pdbs")
+    cells, fns = _cells(model, structures, seed=0)
+    # Energy control model: the X0/X2 planted difference (1e-2 noise on every float leaf of the
+    # Potts head). Run 1 (b0e1e1b8) used a cross-seed energy control, which did not fire: two
+    # low-temperature draws can differ by a few residues and land within 1e-4 relative energy.
+    import equinox as eqx  # noqa: PLC0415
+
+    noise_key = jax.random.PRNGKey(1)
+    perturbed_head = jax.tree_util.tree_map(
+      lambda leaf: leaf + 1e-2 * jax.random.normal(noise_key, leaf.shape, leaf.dtype)
+      if (eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating)) else leaf,
+      model.potts_head,
+    )
+    p_cells, _ = _cells(eqx.tree_at(lambda m: m.potts_head, model, perturbed_head), structures, seed=0)
 
     # ---- JAX reference chain per (cell, seed), identical noise for both arms ---------------
     node_cells = []
@@ -149,9 +162,12 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
         ref_in[7] = order.astype(np.int32)  # upstream_refine_order, one sample: the AR order
         ref_in[8] = refine_uniforms
         refined = np.asarray(jax.jit(fns[bucket]["refine"])(*ref_in)[0])
+        p_table = p_cells[ci]["reference"]["encode"][4]
+        p_energy = float(np.asarray(jax.jit(fns[bucket]["energy"])(p_table, e_idx, struct["pad_valid"],
+                                                                    etab_seqs)[0])[0])
         sid = f"c{ci}_s{seed}"
         refs[sid] = {"sequence": seq, "decoding_order": order, "rank_flat": rank_flat,
-                     "refined_sequence": refined, "sample_energy": energy,
+                     "refined_sequence": refined, "sample_energy": energy, "control_energy": p_energy,
                      "structure": cell["structure"], "bucket": bucket, "l_total": cell["l_total"], "seed": seed}
         noise_specs = {
           "randn": _write(randn, cell_dir / f"randn_{seed}.bin"),
@@ -203,8 +219,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
                          and row["energy_rel"] <= FLOAT_REL_BAR)
       result["samples"].append(row)
 
-    # Controls: each JS sample against the JAX reference of the NEXT seed in the same cell must
-    # fail the same comparator, on tokens and on energy.
+    # Controls: tokens -- each JS sample vs the JAX tokens of the NEXT seed in the same cell;
+    # energy -- each JS sample energy vs JAX's energy of the SAME sequence under the perturbed
+    # Potts head. Both must fail the comparator for every sample.
     tok_hits, en_hits, n_ctrl = 0, 0, 0
     for sid, ref in refs.items():
       ci, seed = sid.split("_s")
@@ -214,7 +231,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
         continue
       n_ctrl += 1
       tok_hits += int(not np.array_equal(g["outputs"]["sequence"], refs[nxt]["sequence"]))
-      en_hits += int(_rel(refs[nxt]["sample_energy"], g["outputs"]["sample_energy"]) > FLOAT_REL_BAR)
+      en_hits += int(_rel(ref["control_energy"], g["outputs"]["sample_energy"]) > FLOAT_REL_BAR)
     result["control_tokens_detected"] = n_ctrl > 0 and tok_hits == n_ctrl
     result["control_energy_detected"] = n_ctrl > 0 and en_hits == n_ctrl
     result["n_samples"] = len(result["samples"])
