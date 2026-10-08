@@ -2789,3 +2789,37 @@ seeded inverse-CDF shim that records every `(uniform, choice)`. Per cell: block 
 Not yet verified: engine arithmetic in float64 (the `.float()` calls at 2259-2261 and 2427-2429 are exact 0/1 masks, but are multiplied by `repetitive_window_weight`, so f64 exactness
 needs `weight=1.0`, which is the production value); that `prepare_potts_input(..., designed_chains=...)` yields the same residues and `E_idx` order as the sealed tables (the dump
 asserts it); `unknown_token_indices` contents.
+
+## 46. P9 build: the upstream dump (P4g) and the first modules (261008)
+
+### 46.1 `dump_protonpotts_ph.py` (P4g): GRADED `pass` by record, after one failed graded attempt
+
+The first graded run (`3f5fa779`, commit `c2886885`) FAILED on the second cell: `IndexError: index 789 is out of bounds` in upstream's `_ranked_candidates`. The cause was in
+the dump script, not upstream: it read the structure with biotite (`PDBFile.get_structure`) while the sealed tables came through `prepare_potts_input(<path>)`, whose atomworks loader
+treats occupancy and alternate locations differently, so for 6m0j the engine featurised more residues than the 789 in the sealed table. The script now builds the atom array
+with `MPNNInferenceInput.from_atom_array_and_dict(input_dict={"structure_path": ...})`, the loader `prepare_potts_input` itself uses for a path. An exploratory single-cell run of the fix
+preceded the second graded run; its numbers are not cited. The sidecar's criteria were not touched. (The sidecar says "from a clean checkout of the commit that adds this file"; the
+graded run was at `e529ac3b`, which fixes the script.)
+
+Run `cbb47878`, clean tree at `e529ac3b`, outcome `pass`, all six flags true across 4 cells: the engine saw the sealed inputs (native `S` and `E_idx` equal in every cell and precision),
+every configuration is complete, the shim is the only randomness (T = 0 draws nothing, T > 0 draws), f64 is genuinely double and differs from f32, and a fresh process reproduces every hash.
+Output: `~/projects/aminx-oracles-protonpotts/features_v6_p4g/` on titanix.
+
+**Measured, not required:** the final sequences are IDENTICAL in f32 and f64 for every call in every cell (fraction 1.0), with the same uniforms. So on this set the f32 flip rate is zero and the aminx
+f32 criterion can be exact tokens as well, with the caveat that a draw landing within float noise of a CDF boundary could still flip (none did).
+
+### 46.2 Modules built by Haiku agents (tests run by the orchestrator on titanix)
+
+| module | what | tests |
+|---|---|---|
+| `ph_potentials.py` | `candidate_energies`, `candidate_energies_at`, `block_stability_potentials` (JAX; incoming and outgoing edges) | 11 pass: finite-difference and joint-assignment identities against the existing `potts_energy`, on graphs with one-way edges |
+| `ph_plan.py` | valid-token mask, neighbour mask, designable set, block partners/table, placement scores, centre-type/explicit/centre-free plans (numpy) | pass (hand-derived literals) |
+| `ph_config.py` + `ProtonPottsOptions` design fields | validated `PHDesignConfig` with the production defaults; refuses the deferred methods naming #2616/#2617 | pass |
+
+The 74 tests of these three plus `test_driver.py` and `test_ph_potentials.py` passed on first execution in a separate worktree (`aminx-tests`) on titanix. Deviation recorded: `ph_potentials` counts a
+`k >= 1` self-edge on the diagonal where upstream skips it; kNN graphs have none, and the identity with `potts_energy` stays exact.
+Debt filed for what the port refuses: #2621 (unported upstream knobs, no trajectory).
+
+### 46.3 Next
+
+`ph_descent.py` (the JAX block-descent sweep, in progress), the greedy variant, the design/score glue and the `sample` / `score:selectivity` wiring, then the `protonpotts_ph_design` wave against P4g.
