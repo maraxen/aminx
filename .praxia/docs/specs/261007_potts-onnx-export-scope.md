@@ -339,3 +339,15 @@ ignores directories only). Superseded by the clean runs above; not cited.
 Open after the first target: ProtonPotts (#5816, blocked on #5781 + P7 merge), DMS scoring via the
 fixed 8-row energy graph (JS chunking), per-length benchmark split, distribution (decision 3),
 WebGPU (needs the E/W/D/F split for control flow), `nodes`/binding refine modes.
+
+## 14. Integration with P7 (261008) — one scoped batch
+
+`wt/261008-potts-integration` = P7 (`wt/261008-protonpotts-p7`, S1-S12) merged with this export
+branch (`dce156d1`). Source merged without conflicts. On titanix at `dce156d1`: P7 test set + Potts
+family suite **229 passed, 1 expected skip**; per-wave Potts port oracles **19/19**; X2 export gate
+**`7764fbaf` pass by record** (clean), 20/20 on ORT-CPU and ORT-Web — and its manifest sha256 is
+**`cf960131…`, byte-identical to the export branch's final artifacts**: P7's generic-alphabet
+refactor does not change one byte of the exported graphs at V=21.
+
+Merge order: PR #204 (ledger, unscoped) first; then this batch, which touches scoped paths and so
+invalidates every ledger row -> one re-wave + one gate afterwards.
