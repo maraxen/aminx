@@ -20,6 +20,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
 from aminx.utils.concatenate import concatenate_neighbor_nodes
 
 if TYPE_CHECKING:
@@ -65,8 +66,14 @@ def categorical_draw(probs: Float[Array, " V"], uniform: Float[Array, ""]) -> In
   return jnp.minimum(index, last)
 
 
-def mask_refine_x(logits: Float[Array, " V"]) -> Float[Array, " V"]:
-  """Make model index 20 (``X``) structurally undrawable.
+def mask_refine_x(
+  logits: Float[Array, " V"],
+  x_index: int = POTTS_MPNN.x_index,
+) -> Float[Array, " V"]:
+  """Make the ``X`` index structurally undrawable.
+
+  ``x_index`` defaults to the shipped alphabet's X (index 20, ``POTTS_MPNN``).
+  It must be a Python ``int`` (static), not a traced value.
 
   Upstream refine builds 20 candidates and then draws from 21 letters, raising
   ``IndexError`` when ``X`` is selected (debt #2260). The f64 oracles mask that
@@ -74,8 +81,8 @@ def mask_refine_x(logits: Float[Array, " V"]) -> Float[Array, " V"]:
   before the softmax keeps the draw inside ``0..19`` even when the unmasked
   ``X`` logit is the largest. This port does not reproduce the ``IndexError``.
   """
-  x_index = jnp.int32(20)
-  return logits.at[x_index].add(jnp.asarray(-_OMIT_SCALE, dtype=logits.dtype))
+  x_slot = jnp.int32(x_index)
+  return logits.at[x_slot].add(jnp.asarray(-_OMIT_SCALE, dtype=logits.dtype))
 
 
 def pssm_mix(

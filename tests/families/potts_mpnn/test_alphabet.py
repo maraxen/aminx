@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+import jax.numpy as jnp
+import numpy as np
 import pytest
 
-from aminx.families.potts_mpnn import etab, potts_head
+from aminx.families.potts_mpnn import decode, etab, featurize, potts_head
 from aminx.families.potts_mpnn.alphabet import POTTS_MPNN, PottsAlphabet
 from aminx.families.potts_mpnn.featurize import MODEL_ALPHABET
 
@@ -84,3 +86,40 @@ def test_multi_character_tokens_construct() -> None:
   assert alphabet.size == 3
   assert alphabet.pair_dim == 9
   assert alphabet.symbols[1] == "HIS-P"
+
+
+def test_featurize_alphabet_reads_potts_alphabet() -> None:
+  """featurize.MODEL_ALPHABET and X_INDEX come from POTTS_MPNN with the same types."""
+  assert featurize.MODEL_ALPHABET == "ACDEFGHIKLMNPQRSTVWYX"
+  assert isinstance(featurize.MODEL_ALPHABET, str)
+  assert featurize.X_INDEX == 20
+  assert isinstance(featurize.X_INDEX, int)
+
+
+def test_etab_alphabet_reads_potts_alphabet() -> None:
+  """etab.ETAB_ALPHABET and the remap tables keep their shipped values and dtype."""
+  assert etab.ETAB_ALPHABET == "ACDEFGHIKLMNPQRSTVWY-X"
+  assert np.asarray(etab._MODEL_TO_ETAB).tolist() == [*range(20), 21]
+  assert np.asarray(etab._MODEL_TO_ETAB).dtype == np.int32
+  assert np.asarray(etab._ETAB_TO_MODEL).tolist() == [*range(20), -1, 20]
+  assert np.asarray(etab._ETAB_TO_MODEL).dtype == np.int32
+
+
+def test_mask_refine_x_default_masks_index_20() -> None:
+  """With the default x_index, only model X (index 20) receives the -1e8 offset."""
+  masked = np.asarray(decode.mask_refine_x(jnp.zeros(21)))
+  assert masked[20] == pytest.approx(-decode._OMIT_SCALE)
+  assert np.all(masked[:20] == 0.0)
+
+
+def test_mask_refine_x_explicit_index() -> None:
+  """An explicit x_index masks only that slot on a length-5 vector."""
+  masked = np.asarray(decode.mask_refine_x(jnp.zeros(5), x_index=3))
+  assert masked[3] == pytest.approx(-decode._OMIT_SCALE)
+  assert np.all(np.delete(masked, 3) == 0.0)
+
+
+def test_parser_gap_index_is_upstream_gap() -> None:
+  """The literal 20s in the parser index upstream's _ALPHA_3, where 20 is GAP."""
+  assert featurize._AA_3_N["GAP"] == 20
+  assert featurize._ALPHA_3[20] == "GAP"

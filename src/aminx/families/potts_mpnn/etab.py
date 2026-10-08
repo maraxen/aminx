@@ -18,11 +18,24 @@ from jaxtyping import Array, Bool, Float, Int
 from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
 from aminx.families.potts_mpnn.featurize import MODEL_ALPHABET
 
-ETAB_ALPHABET = f"{MODEL_ALPHABET[:-1]}-X"
+ETAB_ALPHABET = "".join(POTTS_MPNN.etab_symbols)
 N_AA = POTTS_MPNN.pair_side
 N_ETAB = len(ETAB_ALPHABET)
 ETAB_GAP = ETAB_ALPHABET.index("-")
 ETAB_X = ETAB_ALPHABET.index("X")
+
+# The remap tables below assume the shipped layout: the first N_AA letters agree
+# between the model and etab alphabets, and X sits at the model's x_index and at
+# etab ETAB_X. Fail at import rather than remap silently under a different layout.
+if ETAB_ALPHABET[:N_AA] != MODEL_ALPHABET[:N_AA] or (
+  MODEL_ALPHABET[POTTS_MPNN.x_index] != "X" or ETAB_ALPHABET[ETAB_X] != "X"
+):
+  msg = (
+    f"Potts alphabet layout mismatch: etab {ETAB_ALPHABET!r} and model {MODEL_ALPHABET!r} "
+    f"must agree on the first {N_AA} letters with X at model x_index {POTTS_MPNN.x_index} "
+    f"and etab index {ETAB_X}. The remap tables assume this layout."
+  )
+  raise RuntimeError(msg)
 
 # Model index p maps to etab index. Model X (last letter) lands on etab X.
 _MODEL_TO_ETAB = jnp.asarray([*range(N_AA), ETAB_X], dtype=jnp.int32)

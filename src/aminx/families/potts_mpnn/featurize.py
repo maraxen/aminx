@@ -14,8 +14,10 @@ from typing import Any, cast
 import numpy as np
 from jaxtyping import Bool, Float, Int
 
-MODEL_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
-X_INDEX = MODEL_ALPHABET.index("X")
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
+
+MODEL_ALPHABET = "".join(POTTS_MPNN.symbols)
+X_INDEX = POTTS_MPNN.x_index
 
 _ALPHA_1 = "ARNDCQEGHILKMFPSTWYV-"
 _ALPHA_3 = [
@@ -160,6 +162,9 @@ def _parse_biounits(
   if not xyz:
     return "no_chain", "no_chain"
 
+  # The literal 20s below index UPSTREAM's three-letter parse alphabet (_ALPHA_3),
+  # where 20 is "GAP". They are NOT the model alphabet's X (POTTS_MPNN.x_index).
+  # Do not "fix" them to x_index; they are part of a faithful port of the parser.
   seq_idx: list[int] = []
   xyz_rows: list[np.ndarray] = []
   for resn in range(min_resn, max_resn + 1):
