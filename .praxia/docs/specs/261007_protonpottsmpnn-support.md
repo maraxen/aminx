@@ -2724,3 +2724,26 @@ a 4x-band nudge). The prediction held: dropped residues (1OLR, 6m0j) and chain o
 P8 is closed for `score:energy|ddg`. Not covered: `score:ddg` has no wave of its own (its value is `E(variant) - E(reference)` and is unit tested), the driver is
 f32 only, and labels come from a JSON file (the upstream labeller is out of scope, §11a). Next: P9 (pH design engine and the selectivity-gap purposes, which is where
 `sample` and the designable mask belong), P10 (knob surface, `_WEIGHT_PREFIXES`, ledger re-freeze, ADR), then the final `--stale-only` re-wave.
+
+## 44. P9 decisions (user, 261008) and the debt they create
+
+Upstream's `PottsMPNNPHEngine` (`inference_engines/potts_mpnn_ph.py`, 2,731 lines) has eight design methods and two backends (the Potts head, the decoder field).
+Its production example (`inference/design_ph.py`) uses `block_descent`, block size 3, λ = 0.3 (manuscript Eq. 6, `O = (1-λ)·z(H_stab) + λ·z(Σ sel)`), and the v6
+contrast map `HIS-P→HIS-S`, `ASP-P→ASP-D`, `GLU-P→GLU-D`. The engine's own default map is the v3/v4 one (`HID/HIE`), which upstream refuses against a v6 checkpoint.
+
+| # | Decision |
+|---|---|
+| 1 | **Methods in V1:** `block_descent` and `greedy_energy_block` (centre-free). Deferred, and tracked as debt: `converged_mcmc`, `two_phase`, `converged_mcmc_combined` (legacy). |
+| 2 | **Backend:** the Potts head only. The decoder-backed methods (`autoregressive`, `mpnn_sample`, `selective_source="decoder"`, `gibbs`, `backend="mpnn"`) are out of V1 because the 30-token decoder is not ported or graded. Tracked as debt. |
+| 3 | **Surface:** design through the `sample` purpose with design options; a read-only `score:selectivity` for the gap `E_P - E_D` of given centres. |
+| 4 | **Centres:** both engine-ranked placement (`topk_sites`, `samples_per_site`) and explicit `{res_id, type}` pins; a required `binder_chain` option, the rest of the structure fixed. |
+| 5 | **Defaults:** the example's production settings (v6 contrast map, λ = 0.3, block size 3); upstream's forbidden-token list (`HIS-A`, `ASP-A`, `GLU-A`, `HIS-D`) kept as an option. |
+| 6 | **Designable mask:** mirror upstream exactly, through the forbidden-token option; confirm what upstream permits from the block-descent path before the port. |
+
+**Parity mechanism (mine to settle, recorded for the pre-registration).** A draw shim injects uniforms into the upstream engine (as the Potts dumps did), so both sides
+see identical random numbers: exact tokens in f64, a match rate in f32 whose threshold is pre-registered from the measured upstream f32-vs-f64 flip rate. Controls (spec §6):
+a flipped protonation assignment, a mis-scaled selectivity weight, a permuted block order.
+
+**Debt filed 261008** (praxia debt): #2615 ProteinSMC kernels for MPNN, PottsMPNN and ProtonPottsMPNN sampling (user request); #2616 deferred placement methods;
+#2617 the 30-token decoder and decoder-backed design/sampling; #2618 ProtonPottsDriver gaps (no `score:ddg` wave, f32 only, JSON labels only, PDB only, no variant
+names in results); #2619 host-featurizer open items (§40.5); #2620 two pre-existing order-dependent/missing-dependency test failures.
