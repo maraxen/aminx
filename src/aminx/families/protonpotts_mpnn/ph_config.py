@@ -198,7 +198,7 @@ def config_from_options(options: ProtonPottsOptions) -> PHDesignConfig:
     and not options.explicit_centers
   )
   return PHDesignConfig(
-    center_count=0 if centre_free else default.center_count,
+    center_count=0 if centre_free else 1,  # 1 is the dataclass default; center_types then sets it
     method=options.design_method,
     binder_chain=options.binder_chain,
     center_types=tuple(options.center_types),

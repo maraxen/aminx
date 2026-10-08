@@ -149,7 +149,7 @@ def main() -> int:
     base = block_options(chain)
     swapped_dep = (("HIS-P", ("HIS-A",)), ("ASP-P", ("ASP-D",)), ("GLU-P", ("GLU-D",)))
     variants = {
-      "combined_lambda_0p4": dataclasses.replace(base, combined_lambda=0.4),
+      "combined_lambda_0p6": dataclasses.replace(base, combined_lambda=0.6),
       "block_size_2": dataclasses.replace(base, block_size=2),
       "forbidden_tokens_reduced_to_unk": dataclasses.replace(base, forbidden_tokens=("UNK",)),
       "repetitive_window_off": dataclasses.replace(base, repetitive_window_weight=0.0),
