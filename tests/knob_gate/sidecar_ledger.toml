@@ -76,131 +76,68 @@
 # previously looked like a missing record.
 
 [sidecar.laser_proofread_parity]
-# REWRITTEN 261004 at 719c33e0 (wave group 1 of the re-wave after the scoped
-# batch). Run 182ab6d4, read from the cool-tier parquet: completed, outcome
-# pass, git_dirty False, adversarial check fired, 3.46 h. clean pass at
-# max_abs_mean 4.218847493575595e-15 / max_abs_std 9.499345754448996e-15 --
-# BIT-IDENTICAL to the superseded 87098798. That settles a real question:
-# #2424 (37df972b) modified _proofread_batch, which this conditional path
-# shares, and the conditional numbers did not move by one bit. All four
-# controls failed (reduction_swap, ddof_0, scalar_off, vector_on).
-# verify_wave.py --run laser_proofread_parity=182ab6d4-... : would grade, all
-# 14 conditions PASS.
-#
-# THE FIRST GROUP-1 RUN OF THIS SLUG (f7887e2f) WAS OOM-KILLED, NOT FAILED BY
-# CODE. It recorded outcome fail with clean "error" / NaN and no traceback:
-# titanix hit a global OOM at 20:18-20:29 (three wave arms plus another
-# session's ColabFold + AF3 memory harness; journalctl -k shows a 3.9 GB
-# python3 killed at 20:19:27, alongside a vLLM worker and other users'
-# desktops). Evidence it was the environment: no cells_clean.json while every
-# mutant arm wrote one; a solo reproduction ran clean; and this re-run --
-# same commit, same code, alone, fresh work dir /tmp/..._719c33e0_r2 -- passes
-# bit-identically. Also: this vehicle drops arm stderr
-# (laser_proofread_parity.py:585, unlike the unconditional vehicle since
-# 37df972b), which is why the failure carried no cause; fixing that is
-# scoped and waits for the next scoped batch.
-bth_run_id = "182ab6d4-4814-4516-8c94-97f9900216f1"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 4.41 h. clean pass at max_abs_mean 4.218847493575595e-15 / max_abs_std 9.499345754448996e-15; 4 of 4 controls failed (reduction_swap, ddof_0, scalar_off, vector_on).
+# BIT-IDENTICAL to the superseded 182ab6d4 (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "a890a56a-a9da-43cb-aa62-ba6bb556f4b0"
 
 [sidecar.laser_proofread_unconditional_parity]
-# NEW SLUG (#2424). First graded run, at 719c33e0, pre-registered in aef77a56
-# BEFORE the vehicle or the fix existed. Record (cool-tier parquet):
-# status=completed, outcome=pass, git_dirty=False, adversarial_check=fired;
-# recorded result {clean: pass, n_listed: 3, n_failed: 3,
-# max_abs_mean: 2.976243740349105e-08} -- >3000x inside the 1e-4 band, at the
-# instrument floor (the ungraded unc_both_off positive control read 2.96e-8).
-# All three controls failed, including unc_no_dropout, which IS the pre-fix
-# #2424 code path. verify_wave.py --run
-# laser_proofread_unconditional_parity=30ca082e-... returns "would grade" with
-# all 14 conditions PASS.
-bth_run_id = "30ca082e-f118-45d6-8a57-e98612da3b8b"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 0.17 h. clean pass at max_abs_mean 2.976243740349105e-08; 3 of 3 controls failed (incl. unc_no_dropout, the pre-#2424 path).
+# BIT-IDENTICAL to the superseded 30ca082e (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "4a93eb9b-c301-40ca-8794-05dd3a2d6fef"
 
 [sidecar.laser_decode_e2e]
-# REWRITTEN 261003 at 719c33e0 (wave group 1 of the re-wave after the #2445 /
-# #2424 / tied_beta / l_pad / partition-noise / order-oracle scoped batch).
-# Run 5b2c16ee, read from the cool-tier parquet: status completed, outcome pass,
-# git_dirty False, adversarial check fired, 3.14 h. Recorded result: clean pass
-# at sequence_agreement 1.0, chi_bin_agreement 1.0, max_circular_delta
-# 5.684341886080802e-14 -- BIT-IDENTICAL to the superseded 8647668d run at
-# eb4ee606, so no commit in the scoped batch moved a number on this vehicle.
-# All five controls failed (reversed_order, chi_bin_plus_one, offset_zero,
-# chi2_equals_chi1, lambda_on_logits). verify_wave.py --run
-# laser_decode_e2e=5b2c16ee-... returns "would grade", all 14 conditions PASS.
-# Supersedes 8647668d (eb4ee606, invalidated by the scoped batch).
-bth_run_id = "5b2c16ee-a65d-4735-a4e1-27f945e91e5f"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 3.08 h. clean pass at sequence_agreement 1.0, chi_bin_agreement 1.0, max_circular_delta 5.684341886080802e-14; 5 of 5 controls failed.
+# BIT-IDENTICAL to the superseded 5b2c16ee (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "adb20247-e67d-4a3c-a6d2-4ac71711d456"
 
 [sidecar.potts_ar_decode]
-# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
-# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
-# the cool-tier parquet: completed, outcome pass, git_dirty False,
-# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
-# Run 7dfb9a68. clean pass at exact token match 1.0 over 18 units, BIT-
-# IDENTICAL to the superseded 28f8d7a2; ar_mask_present_chain_m_pos failed
-# (this run's recorded result carries the status, not the control's value).
-# None of tied_beta's deletion, l_pad, partition noise or the order oracles
-# moved the AR decode.
-bth_run_id = "7dfb9a68-aecf-4d48-8bc3-17a007b91893"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 0.06 h. clean pass at exact token match 1.0 over 18 units (0 reused); ar_mask_present_chain_m_pos failed.
+# BIT-IDENTICAL to the superseded 7dfb9a68 (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "e968ce0b-284d-40fc-a2fd-c2ec7f87ba07"
 
 [sidecar.potts_energy_parity]
-# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
-# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
-# the cool-tier parquet: completed, outcome pass, git_dirty False,
-# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
-# Run 06f329d4. clean pass at max_abs_delta 0.000732421875 with
-# analytic_abs_err exactly 0.0 over 21 units -- BIT-IDENTICAL to the
-# superseded bf6244f3. analytic_abs_err 0.0 is exact, not merely in-band: the
-# closed-form energy and the assembled etab agree bitwise, so the 7.3e-4 is the
-# Potts etab against upstream's and nothing else. permute_etab_out_rows failed
-# (1218.3 in the previous run; this run records the status only).
-bth_run_id = "06f329d4-b12d-4fad-945e-fb61f5b703db"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 0.03 h. clean pass at max_abs_delta 0.000732421875, analytic_abs_err 0.0 over 21 units (0 reused); permute_etab_out_rows failed.
+# BIT-IDENTICAL to the superseded 06f329d4 (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "1a86160a-584f-4bd9-a42a-961d4865df93"
 
 [sidecar.laser_score_parity]
-# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
-# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
-# the cool-tier parquet: completed, outcome pass, git_dirty False,
-# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
-# Run d29f813c. clean pass at max_abs_delta 2.3499874934884701e-07, BIT-
-# IDENTICAL to the superseded 92992234; permute_decoder_layer failed.
-# THE OLD CAVEAT IS NOW RESOLVED, NOT JUST REPEATED. The previous row said this
-# clean number passes on the rtol term against an unmeasured atol, pending the
-# floor measurement. Both measurements have since run: e47bfaab (floor, outcome
-# noise_reaches_defect_scale for the laser_score PORT tier) and 18b97f4f
-# (attribution: aminx's f32 error equals upstream's to 0.1%, ratios
-# 0.9987-1.0008). This vehicle's own band was never the problem -- it passes.
-# The open item is the port wave's tier-3 test design, which is the user's
-# decision: .praxia/docs/decisions/261003_laser-score-tier3-f32-design.md.
-# Older history of this row (the f11f2bf1 absolute weights path; the missing
-# launch_wave.sh entry fixed in ff4fe017) is in this file's commit history.
-bth_run_id = "d29f813c-fb26-41e2-a76e-4d63f31cf539"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 0.09 h. clean pass at max_abs_delta 2.3499874934884701e-07; permute_decoder_layer failed. The laser_score PORT tier-3 design question (decision doc 261003) is unaffected.
+# BIT-IDENTICAL to the superseded d29f813c (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "94ae3110-7cb8-45a5-a0d7-ed200522c8bc"
 
 [sidecar.potts_ar_refine_exact]
-# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
-# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Run
-# 1a98f24f, read from the cool-tier parquet: completed, outcome pass,
-# git_dirty False, adversarial check fired, 1.0 h. clean pass at match 1.0
-# over 1500 units (0 reused), BIT-IDENTICAL to the superseded a6c87107; all
-# three controls failed (ar_mask_present_chain_m_pos, ntoc_refine_order,
-# wrong_partition_sign -- this run records their status, not their values).
-# The refine path is where tied_beta, l_pad and the partition-noise stream
-# could plausibly have leaked in; none moved it.
-# verify_wave.py with all eight re-measured ids: would grade ALL EIGHT,
-# would NOT grade (none).
-bth_run_id = "1a98f24f-1085-4076-a64c-358f6e9aa374"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 1.01 h. clean pass at match 1.0 over 1500 units (0 reused); 3 of 3 controls failed.
+# BIT-IDENTICAL to the superseded 1a98f24f (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "f54e0dbd-36e1-4c12-b369-43257a9ace73"
 
 [sidecar.potts_ddg_megascale]
-# REWRITTEN 261003 at 124f6e9e (wave group 3 of the re-wave after the scoped
-# batch ending 719c33e0; 719c33e0..124f6e9e is ledger + docs only). Run
-# b035f912, read from the cool-tier parquet: completed, outcome pass,
-# git_dirty False, adversarial check fired, 17.5 min, 696 units computed, 0
-# reused. clean max_abs_delta 0.0001220703125 (band <= 5e-4);
-# skip_transpose_merge_pair 11.645767211914062 (fail threshold 5e-3).
-# BIT-IDENTICAL to the superseded 49243551 run. In particular the
-# partition-noise fix (2d780d97) moved nothing here, as it should not: this
-# vehicle runs with backbone noise off, and stream 0 keeps the complex's key.
-# verify_wave.py --run potts_ddg_megascale=b035f912-... : would grade, all 14
-# conditions PASS. Ran concurrently with the laser_proofread_parity re-run
-# (two arms, >=46 GB available), NOT stacked with group 2 -- see the 20:18
-# OOM note on laser_proofread_parity.
-bth_run_id = "b035f912-b2a4-406c-a5a6-b1be69657a18"
+# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
+# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
+# 0.24 h, 696 units computed, 0 reused. clean max_abs_delta 0.0001220703125 (band <= 5e-4); skip_transpose_merge_pair 11.645767211914062 (fail threshold 5e-3).
+# BIT-IDENTICAL to the superseded b035f912 (see this file's history). verify_wave.py with all
+# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
+bth_run_id = "e567cfd0-cb2d-4776-be77-841cd8793e67"
 
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
