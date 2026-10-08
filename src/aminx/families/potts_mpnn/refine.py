@@ -600,7 +600,7 @@ def _untied_energy_sweep(
       uniform=uniforms[iteration, cursor],
     )
     seq_c = seq_c.at[position].set(jnp.where(active, token, seq_c[position]))
-    ener = ener + jnp.where(active, chosen, 0)
+    ener = ener + jnp.where(active, chosen, jnp.zeros_like(chosen))
     cursor = cursor + jnp.where(active, jnp.int32(1), jnp.int32(0))
     return (seq_c, ener, cursor), None
 
@@ -867,7 +867,7 @@ def _average_member_energy(
     use = valid
     if binding == "only":
       use = use & tables.inter_mask[safe]
-    total_c = total_c + jnp.where(use, energy, 0)
+    total_c = total_c + jnp.where(use, energy, jnp.zeros_like(energy))
     count_c = count_c + jnp.where(use, 1, 0)
     last_c = jnp.where(slot == (group_size - 1), use, last_c)
     return (total_c, count_c, last_c), None

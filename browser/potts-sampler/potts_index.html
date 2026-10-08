@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>aminx PottsMPNN sampler — browser harness</title>
+  </head>
+  <body>
+    <!-- Headless harness page. No UI: scripts/browser_validation/potts_browser_parity.py and
+         potts_browser_bench.py drive it through browser/layer_c/run_p07.mjs, which reads
+         window.__PARITY_RESULT__ / __PARITY_DONE__ / __PARITY_ERROR__. The text below only
+         helps a human who opens the served URL directly while debugging. -->
+    <p>Running the PottsMPNN browser sampler. Results land on
+      <code>window.__PARITY_RESULT__</code>.</p>
+    <script type="module" src="./potts_page.mjs"></script>
+  </body>
+</html>

@@ -19,7 +19,10 @@
 // instead of hand-flattening indices.
 
 export const UNDRAWN_TOKEN = -1;
-const N_TOKENS = 21;
+// ProteinMPNN's token count, used when a caller does not pass `nTokens`. The loop
+// is alphabet-agnostic: every per-token dimension comes from runSplitDecode's
+// `nTokens` parameter.
+export const DEFAULT_N_TOKENS = 21;
 
 /** Flatten nested arrays / typed arrays into a flat plain Array, row-major. */
 function flattenValues(node) {
@@ -96,11 +99,12 @@ function logSoftmaxRow(row) {
  * @param {object} params.waveInputs passed through verbatim to runWave
  * @param {{shape:number[],data}} params.tieGroupMap int32[L] tie-group id per position
  * @param {{shape:number[],data}} params.mask float32[L] decoder mask input (loop invariant)
- * @param {{shape:number[],data}} params.condBias float32[L,21] additive logit bias
+ * @param {{shape:number[],data}} params.condBias float32[L,nTokens] additive logit bias
  * @param {{shape:number[],data}} params.fixedMask float32[L]
  * @param {{shape:number[],data}} params.fixedTokens int32[L]
  * @param {{shape:number[],data}} params.temperature float32[]
- * @param {{shape:number[],data}} params.gumbelNoise float32[L,21]
+ * @param {{shape:number[],data}} params.gumbelNoise float32[L,nTokens]
+ * @param {number} [params.nTokens=DEFAULT_N_TOKENS] alphabet size (21 for ProteinMPNN)
  * @returns {Promise<{tokens: {shape:number[],data:Int32Array}, logProbs: {shape:number[],data:Float32Array}}>}
  */
 export async function runSplitDecode(callbacks, params) {
@@ -117,6 +121,13 @@ export async function runSplitDecode(callbacks, params) {
     temperature,
     gumbelNoise,
   } = params;
+  const N_TOKENS = params.nTokens ?? DEFAULT_N_TOKENS;
+  if (!Number.isInteger(N_TOKENS) || N_TOKENS < 1) {
+    throw new Error(`nTokens must be a positive integer, got ${N_TOKENS}`);
+  }
+  if (condBias.shape[1] !== N_TOKENS) {
+    throw new Error(`condBias has ${condBias.shape[1]} tokens per position, nTokens is ${N_TOKENS}`);
+  }
 
   const encOut = await runEncoder(encoderInputs);
   const { node_features, edge_features, neighbor_indices } = encOut;
@@ -135,7 +146,7 @@ export async function runSplitDecode(callbacks, params) {
     if (at(fixedMask, pos) > 0.5) sequence[pos] = at(fixedTokens, pos);
   }
 
-  const logitsStack = []; // nWaves entries, each {shape:[G,21], data}
+  const logitsStack = []; // nWaves entries, each {shape:[G,nTokens], data}
 
   for (let w = 0; w < nWaves; w += 1) {
     const groupId = new Int32Array(G);

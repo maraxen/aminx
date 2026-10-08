@@ -1,0 +1,79 @@
+[metadata]
+title = "X5b browser parity: the shipping PottsMPNN page in headless Chromium, token-exact vs JAX, at 1 and 4 threads"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On the temperature-input X2 artifacts (manifest sha256 passed in and verified), the shipping browser page browser/potts-sampler/potts_index.html + potts_page.mjs, served over HTTP with COOP/COEP and driven in headless Chromium through browser/layer_c/run_p07.mjs unchanged, runs the full browser path per sample (PDB text -> buildPottsInputs -> applyPottsControls -> sampler.sample) and reproduces aminx's JAX reference token-exactly (decoded tokens, decoding order, refined tokens) with sample energy max|d|/|ref| <= 1e-4, for the cases default and combined x cells 3dkm L128 and 3gg7 L256 x seeds 21 and 22 (8 samples), at numThreads 1 AND at numThreads 4. The JAX reference, per-sample grading and the cross-seed comparator are imported from potts_knobs_gate.py, so this gate grades against exactly the reference the Node knobs gate (X5) grades against. WHY THIS EXISTS SEPARATELY FROM X5: X5 (potts_knobs_gate, Node, 1 thread) proved the same .mjs chain under Node, which is not a browser: no cross-origin isolation, no browser APIs, a different module loader, and threaded wasm is not expected to initialise from a file:// path (run 98a62501 for the P07 split). A page is the environment this code ships into. The page grades nothing; it reports its outputs, and every comparison and threshold lives in this tracked script. crossOriginIsolated and the EFFECTIVE thread count, as ORT reports it after init (not as requested), are recorded per run, so a silently single-threaded or non-isolated multithreaded run appears as data rather than being mistaken for a threading result."
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: exactness, the comparator control and isolation are graded per run.
+# The comparator's sensitivity is the cross-seed token control (every browser sample must differ from the
+# JAX tokens of the other seed in the same case and cell); the energy comparator's sensitivity was established
+# in the loop gate (run 7f760bde).
+# Timings are NOT graded here: the page's wall times are published by potts_browser_bench.py, which carries
+# its own planted-delay timer control.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "not_isolated", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR browser_complete = false"
+decision = "The JAX arm, the artifact verification, or the browser run at one of the two thread settings did not complete at full size (8 samples per setting, every page cell ran). Nothing was compared against a complete browser run; cite nothing from this run."
+reasoning = "A partial browser run must not borrow the authority of a complete one, and a Chromium launch failure or a page that throws produces no measurement at all."
+is_residual = true
+
+[outcomes.not_isolated]
+condition = "browser_complete = true AND isolated_at_4 = false"
+decision = "The page ran at 4 requested threads without crossOriginIsolated. Multithreaded results from this run are not a threading result and must not be cited as one."
+reasoning = "SharedArrayBuffer-backed multithreaded wasm needs COOP/COEP. Without isolation ORT silently falls back, so the threaded arm would be the single-threaded arm under another name."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "browser_complete = true AND isolated_at_4 = true AND control_tokens_detected = false"
+decision = "At one of the thread settings, a browser sample compared against the JAX tokens of the OTHER seed (same case and cell) was not flagged as different for every sample. The token comparator cannot be shown to tell two draws apart, so passes from this run are not evidence."
+reasoning = "A comparator that cannot distinguish seeds would also pass a page that ignores its noise or its controls. The control must be live at both thread settings."
+is_residual = true
+
+[outcomes.fail]
+condition = "browser_complete = true AND isolated_at_4 = true AND control_tokens_detected = true AND all_exact = false"
+decision = "At least one browser sample at one thread setting disagrees with aminx's JAX reference: tokens, decoding order, refined tokens, or sample energy beyond 1e-4 relative. The per-sample record names the case, cell, seed and thread setting. The page is not validated at that setting."
+reasoning = "Under Node (X5) the same chain is exact. A disagreement here localises to the browser environment (isolation, threading, module loader, Chromium's wasm build) or to the page's own input plumbing (fetch, typed-array views, the noise and PDB files), not to the arithmetic. Token inequality is listed first in the record because a changed token is a changed design."
+is_residual = true
+
+[outcomes.pass]
+condition = "browser_complete = true AND isolated_at_4 = true AND control_tokens_detected = true AND all_exact = true"
+decision = "The shipping page reproduces aminx's JAX tokens exactly, order and refined sequence included, on all 8 samples at 1 thread and all 8 at 4 threads, with the comparator demonstrably live at both settings and crossOriginIsolated true at 4 threads. The browser path is validated in headless Chromium for these cases and cells."
+reasoning = "Exact tokens from a real page, at both thread settings, with a sensitive comparator and a recorded isolation state, is what licenses describing the page as validated rather than as expected to work. It licenses nothing about WebGPU, other browsers or hardware, the other seven X5 cases, or speed (see potts_browser_bench)."
+is_residual = false
+
+[result_schema]
+manifest_sha256 = "str"
+artifacts_verified = "bool"
+jax_arm_ok = "bool"
+jax_version = "str"
+onnxruntime_web_version = "str"
+playwright_version = "str"
+node_version = "str"
+n_expected_per_thread = "int"
+threads_requested = "list"
+runs = "list"
+browser_complete = "bool"
+isolated_at_4 = "bool"
+control_tokens_detected = "bool"
+all_exact = "bool"
+outcome = "str"
+float_rel_bar = "float"
+error = "str"
+git_hash = "str"
+git_clean = "bool"
+elapsed_s = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_web_version = { type = "string", required = true }
+playwright_version = { type = "string", required = true }

@@ -51,6 +51,16 @@ def floor_temperature(temperature: float) -> float:
   return float(temperature)
 
 
+def floor_temperature_array(temperature: Float[Array, ""], dtype: jnp.dtype) -> Float[Array, ""]:
+  """``floor_temperature`` for a traced scalar: ``0`` becomes ``1e-6``, as ``dtype``.
+
+  Lets an exported graph take temperature as a runtime input; a Python float still goes
+  through ``floor_temperature`` and gives the same value.
+  """
+  value = jnp.asarray(temperature, dtype=dtype)
+  return jnp.where(value == 0, jnp.asarray(1.0e-6, dtype=dtype), value)
+
+
 def categorical_draw(probs: Float[Array, " V"], uniform: Float[Array, ""]) -> Int[Array, ""]:
   """Inverse-CDF draw shared with the oracle shim.
 
@@ -275,14 +285,21 @@ class PottsARDecode(eqx.Module):
     pssm_log_odds_mask: Float[Array, "L V"],
     omit_aa_mask: Float[Array, "L V"],
     *,
-    temperature: float,
+    temperature: float | Float[Array, ""],
     pssm_multi: float,
     pssm_bias_flag: bool,
     pssm_log_odds_flag: bool,
     decoding_order: Int[Array, " L"] | None = None,
   ) -> ARResult:
-    """Decode one structure. ``uniforms[k]`` is the k-th multinomial call."""
-    temperature_value = _as_dtype(floor_temperature(temperature), h_v.dtype)
+    """Decode one structure. ``uniforms[k]`` is the k-th multinomial call.
+
+    ``temperature`` may be a Python float or a scalar array (a runtime input of an
+    exported graph); both are floored the same way.
+    """
+    if isinstance(temperature, (int, float)):
+      temperature_value = _as_dtype(floor_temperature(temperature), h_v.dtype)
+    else:
+      temperature_value = floor_temperature_array(temperature, h_v.dtype)
     group_order, size, rank_flat, _order = schedule_groups(
       tie_groups.astype(jnp.int32),
       pad_valid,

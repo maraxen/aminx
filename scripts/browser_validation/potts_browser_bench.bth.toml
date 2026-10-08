@@ -1,0 +1,60 @@
+[metadata]
+title = "X5b browser bench: per-design wall time of the PottsMPNN page in headless Chromium, with a browser timer control"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "With the page's own clock (performance.now) first shown to detect a deliberately planted delay, the median per-design wall time of the shipping PottsMPNN browser path (PDB text -> buildPottsInputs -> applyPottsControls -> sampler.sample: encode, decode, energy, refine) can be measured in headless Chromium at a recorded thread count, with the prep and sample stages split, and the per-bucket session-creation cost, for cells 3dkm L128 and 3gg7 L256 (default controls, seed 21), after one warm-up and three measured repetitions per cell, at numThreads 1 and at numThreads 4. NO PERFORMANCE DIRECTION IS PRE-REGISTERED, exactly as in the P07 split bench (G4b): this gate measures a quantity rather than testing a claim about it, and the graded pass/fail is MEASUREMENT VALIDITY. The one pre-registered pass/fail is the control: a planted delay of planted_ms, timed in the page through the same performance.now clock and the same await wrapper as the real cells, must return within [0.9 x planted, planted + 2000 ms]. The lower bound catches a clock that does not advance, is coarsened under the isolation settings this harness enables, or measures a region that is not running; the upper catches a machine too loaded for millisecond resolution. Outside that window the run grades timer_blind and no timing from it may be cited. The effective ORT thread count (as reported after init) and crossOriginIsolated are recorded as the page reports them, not as requested, so a silently single-threaded or non-isolated run appears as data. Site assembly, the harness runner and the cell construction are imported from potts_browser_parity, so the parity and bench gates serve byte-identical sites."
+stage_name = "validation"
+claim_discriminates = ["H_browser_timer_sound", "H_browser_timer_blind"]
+claim_isolates = ["C_browser_potts_bench_instrument"]
+novel = true
+# No [reproduction]: novel = true replaces it (same convention as the sibling gates).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "timer_blind"]
+
+# First matching branch wins: incomplete, timer_blind, pass.
+
+[outcomes.incomplete]
+condition = "bench_ok = false OR cells_total < 2 OR reps < 3 OR git_clean = false OR failure <> ''"
+decision = "The benchmark did not run to size: the browser harness failed at one of the thread settings, a cell did not complete all its repetitions, the tree was dirty in a code path, or an exception was raised. No timing may be quoted."
+reasoning = "Three repetitions is the floor for a median at all, and two cells the floor for the figure to describe more than one bucket. A partial run invites quoting whichever subset finished."
+is_residual = true
+
+[outcomes.timer_blind]
+condition = "ctrl_in_window = false"
+decision = "At one of the thread settings the page's clock did not show the planted delay within [0.9 x planted_ms, planted_ms + 2000], or the environment was too loaded for the measurement to mean anything. NO TIMING FROM THIS RUN MAY BE REPORTED OR CITED."
+reasoning = "This is the gate's reason for existing. Browsers coarsen performance.now under some isolation and security settings, precisely the settings this harness enables, so assuming the clock is sound because it is sound under Node would assume away the specific risk."
+is_residual = true
+
+[outcomes.pass]
+condition = "bench_ok = true AND ctrl_in_window = true"
+decision = "The browser clock is demonstrably sensitive at both thread settings and every cell completed its warm-up and repetitions. The recorded medians (full path, with prep and sample stages) and session-creation costs may be reported AS MEASUREMENTS OF THIS CONFIGURATION: headless Chromium, the recorded thread count and isolation state, this machine."
+reasoning = "A sound clock plus complete coverage is what licenses quoting a browser timing at all. It licenses nothing about other browsers, other hardware, WebGPU, the other X5 cases, or the Node timings."
+is_residual = false
+
+[result_schema]
+reps = "int"
+warmup = "int"
+planted_ms = "float"
+ctrl_measured_ms = "float"
+ctrl_in_window = "bool"
+cells_total = "int"
+bench_ok = "bool"
+threads_requested = "list"
+runs = "list"
+onnxruntime_web_version = "str"
+playwright_version = "str"
+node_version = "str"
+outcome = "str"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+elapsed_s = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+onnxruntime_web_version = { type = "string", required = true }
+playwright_version = { type = "string", required = true }
