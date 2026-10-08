@@ -1,0 +1,75 @@
+[metadata]
+title = "ProtonPottsMPNN v6 feature-dict dump (P4b)"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4b of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§37): capture upstream's FEATURE DICT
+(not model outputs) on four cells, so `protonpotts_features` can be graded on every key the model's
+inference path consumes, not on the 3 keys the P4 oracle happens to hold.
+
+Claims, all falsifiable by this run:
+
+1. COMPLETE. Every cell has the six keys X, X_m, S, R_idx, chain_labels, residue_mask.
+2. NO LIGAND TRIPLE. None of Y, Y_t, Y_m appears in any cell, including the ligand-bearing one. (An
+   exploratory probe on 261008 saw this; it is re-established here under a sidecar. Spec §3's "nine
+   keys" came from the generic MPNN transform, not from this model's path.)
+3. CHAIN KEYS FIRE. The two-chain cell has >= 2 distinct chain_labels (positive control) and the
+   single-chain PKAD cell has exactly 1 (negative control).
+4. LABELS REACH S AND NOTHING ELSE. In the labelled PKAD cell S covers all nine v6 protonation indices
+   21-29 and differs from the unlabelled S at exactly the positions whose labelled value is >= 21; the
+   unlabelled S has no index >= 21; X, X_m, R_idx, chain_labels and residue_mask are bit-identical
+   between the two.
+5. REPRODUCIBLE. A second run in a fresh process gives identical content hashes for all four cells,
+   with torch threads pinned to 1 (spec §32).
+
+Labels are cycling labels, not chemistry (§26.5). Nothing here is a protonation-state result.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "keys_complete AND ligand_triple_absent AND single_chain_control AND multichain_fired AND coverage_full AND labels_reach_s AND unlabelled_clean AND structure_invariant AND reproducible AND n_cells = 4"
+decision = "The feature dumps are the oracle for protonpotts_features. Seal them (record the content hashes) and build the aminx featurizer against them."
+reasoning = "All five claims hold, so the dump exercises chain boundaries and the labels path, is complete, and is reproducible."
+is_residual = false
+adversarial_check = "NOT (keys_complete AND ligand_triple_absent AND single_chain_control AND multichain_fired AND coverage_full AND labels_reach_s AND unlabelled_clean AND structure_invariant AND reproducible AND n_cells = 4)"
+
+[outcomes.fail]
+condition = "NOT (keys_complete AND ligand_triple_absent AND single_chain_control AND multichain_fired AND coverage_full AND labels_reach_s AND unlabelled_clean AND structure_invariant AND reproducible AND n_cells = 4)"
+decision = "Do not seal. Read which flag is false: a missing key or a present ligand triple changes P5's scope; a non-reproducible dump needs the cause found before it anchors anything."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "keys_complete AND ligand_triple_absent AND single_chain_control AND multichain_fired AND coverage_full AND labels_reach_s AND unlabelled_clean AND structure_invariant AND reproducible AND n_cells = 4"
+
+[result_schema]
+keys_complete = "bool"
+ligand_triple_absent = "bool"
+single_chain_control = "bool"
+multichain_fired = "bool"
+coverage_full = "bool"
+labels_reach_s = "bool"
+unlabelled_clean = "bool"
+structure_invariant = "bool"
+reproducible = "bool"
+n_cells = "int"
+n_covered = "int"
+n_s_changed = "int"
+n_chains_multichain = "int"
+n_residues_ligand_cell = "int"
+content_sha256_pkad_unlabelled = "str"
+labels_are_chemistry = "bool"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, extended_vocab v6, no checkpoint and no forward pass"
+pkad_pdb = "PottsMPNN/energy_benchmark_datasets/fireprot_pdbs/1BVC.pdb (the P4 cell)"
+multichain_pdb = "PottsMPNN/energy_benchmark_datasets/covid_pdbs/6m0j.pdb"
+ligand_pdb = "PottsMPNN/inputs/example_pdbs/swe1_ligand.pdb"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/dump_protonpotts_features.py --pkad-pdb ... --multichain-pdb ... --ligand-pdb ... --out <dir>, in the aminx-oracles-protonpotts env from a clean checkout of the commit that adds this file. Written and committed before the first run. The reproducibility claim is checked by re-running the featurizer in a fresh subprocess of this same script."
