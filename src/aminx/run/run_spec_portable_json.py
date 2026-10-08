@@ -11,8 +11,8 @@ Full Equinox / PyTree serialization is out of scope. Wire format versions:
 
 :func:`run_spec_portable_to_dict` always emits **v2**. Note: :func:`run_spec_portable_to_dict`
 raises :exc:`ValueError` when serializing specs with ``grid.grid_mode=True`` or
-``ligand.model_family='ligandmpnn'`` (not representable in v2 wire format until v3 is
-defined); use the full spec_json (campaign path) for such specs.
+``ligand.model_family`` other than ``'proteinmpnn'`` (not representable in v2 wire
+format until v3 is defined); use the full spec_json (campaign path) for such specs.
 """
 
 from __future__ import annotations
@@ -149,10 +149,12 @@ def run_spec_portable_to_dict(run_spec: RunSpec) -> dict[str, Any]:
     )
     raise ValueError(msg)
 
-  # Guard: ligandmpnn runs are not representable in v2 portable format
-  if run_spec.ligand.model_family == "ligandmpnn":
+  # Guard: only proteinmpnn is representable in v2. ligandmpnn and the driver
+  # families carry no family field on the wire and would round-trip as proteinmpnn.
+  family = run_spec.ligand.model_family
+  if family != "proteinmpnn":
     msg = (
-      "[portable_run_spec] ligandmpnn runs are not representable in the v2 portable "
+      f"[portable_run_spec] {family} runs are not representable in the v2 portable "
       "wire format (v3 not yet defined); use the full spec_json (campaign) path instead."
     )
     raise ValueError(msg)

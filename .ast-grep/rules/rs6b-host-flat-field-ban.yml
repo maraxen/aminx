@@ -13,6 +13,8 @@ message: |
     - spec.fixed_tokens             → spec.run_spec.sampling.fixed_tokens
     - spec.use_unified_driver       → spec.run_spec.plan.use_unified_driver
     - spec.compute_pseudo_perplexity → spec.run_spec.sampling.compute_pseudo_perplexity
+    - spec.omit_aa                  → spec.run_spec.sampling.omit_aa
+    - spec.omit_aa_per_position     → spec.run_spec.sampling.omit_aa_per_position
 
   NOTE — ast-grep limitation: fields declared on the base RunSpecification
   (backbone_noise, random_seed, fixed_mask, cache_path) and fields shared
@@ -43,3 +45,5 @@ rule:
     - pattern: spec.fixed_tokens
     - pattern: spec.use_unified_driver
     - pattern: spec.compute_pseudo_perplexity
+    - pattern: spec.omit_aa
+    - pattern: spec.omit_aa_per_position

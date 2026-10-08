@@ -51,6 +51,11 @@ logs/
 .praxia/pytest_errors/
 .praxia/*_console*.log
 .praxia/fast_pytest*.log
+# `praxia dispatch` writes its own envelope.json here, INSIDE the worktree it is
+# about to materialize into, and then refuses the dispatch because that same file
+# makes the tree unclean. Untracked-and-ignored is the only state that satisfies
+# its precondition, so this entry is what lets a surface dispatch run at all.
+.praxia/dispatch/
 venv/
 scratch/
 
@@ -86,6 +91,15 @@ browser/layer_c/.test-site/
 # Claude Code background-job scratch space (per-job tmp dirs; should never
 # land under the repo, but a relative path can resolve here by mistake).
 .claude/jobs/
+
+# Gate output. Bathos also creates outputs/<id8>/ after it has captured git
+# state (runner.py), so a tracked tree would look dirty the moment a run starts.
+/outputs/
+
+# xtrax scratch/cache written beside the checkout during a run. Left untracked
+# it dirties the tree, and the section 1c ledger REJECTS a run whose record says
+# git_dirty -- so an ignorable cache can silently cost a gate-eligible result.
+.xtrax/
 
 # Browser-validation (Phase 1 T4): read-only reference clones fetched fresh by
 # pins.py, and per-run outputs (parity results, titanix rsync mirrors, run

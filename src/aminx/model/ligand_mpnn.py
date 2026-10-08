@@ -323,7 +323,7 @@ class PrxteinLigandMPNN(eqx.Module):
         Chain mask to gate side chains (1=designable, 0=fixed). Shape ``(L,)`` or None.
         Only used when use_side_chains=True. Default: None.
     inference : bool
-        Not used; accepted for API uniformity. Default: True.
+        When True, encoder and context-encoder dropout is disabled. Default: True.
 
     Returns
     -------
@@ -371,7 +371,7 @@ class PrxteinLigandMPNN(eqx.Module):
     mask_attend = jnp.take_along_axis(mask_2d, E_idx.astype(jnp.int32), axis=1)
 
     for layer in self.encoder.layers:
-      h_V, h_E = layer(h_V, h_E, E_idx, mask, mask_attend, inference=True)
+      h_V, h_E = layer(h_V, h_E, E_idx, mask, mask_attend, inference=inference)
 
     h_V_C = jax.vmap(self.w_c)(h_V)
     h_E_context = jax.vmap(jax.vmap(self.w_v))(V)
@@ -390,7 +390,7 @@ class PrxteinLigandMPNN(eqx.Module):
             edge,
             mask_l,
             attention_mask=mask_e,
-            inference=True,
+            inference=inference,
           ),
         )(Y_nodes, Y_edges, Y_m_out, Y_m_edges)
 
@@ -400,7 +400,7 @@ class PrxteinLigandMPNN(eqx.Module):
           h_E_context_cat,
           mask,
           attention_mask=Y_m_out,
-          inference=True,
+          inference=inference,
         )
     else:
       Y_nodes = map_chunks_axis0(
@@ -433,11 +433,11 @@ class PrxteinLigandMPNN(eqx.Module):
               edge,
               mask_l,
               attention_mask=mask_e,
-              inference=True,
+              inference=inference,
             ),
           )(Yn, Ye, Ymm, Yme)
           he_cat = jnp.concatenate([hec, Yn_out], axis=-1)
-          hv_out = ctx_layer(hv, he_cat, msk, attention_mask=Ymm, inference=True)
+          hv_out = ctx_layer(hv, he_cat, msk, attention_mask=Ymm, inference=inference)
           return Yn_out, hv_out
 
         Y_nodes, h_V_C = map_chunks_axis0_multi(
@@ -447,6 +447,6 @@ class PrxteinLigandMPNN(eqx.Module):
         )
 
     h_V_C = jax.vmap(self.v_c)(h_V_C)
-    h_V = h_V + jax.vmap(self.v_c_norm)(self.dropout(h_V_C, key=keys[1], inference=True))
+    h_V = h_V + jax.vmap(self.v_c_norm)(self.dropout(h_V_C, key=keys[1], inference=inference))
 
     return h_V, h_E, E_idx

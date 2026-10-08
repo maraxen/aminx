@@ -1,0 +1,46 @@
+[metadata]
+title = "Potts distributional PILOT -- uncontested cells (plain@0.3, plain@1.0, refine@0.3)"
+created = "261004"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "For the Potts distributional cells that do not depend on the user's open decisions (plain T=0.3, plain T=1.0, refine T=0.3), the spec's pilot derivation (spec 'Pilot' paragraph: Delta0_s = D(U3,U1) - D(U2,U1); h_hat = half-width of the two-sided 90% bootstrap CI of mean_s Delta0_s, B=2000; q_hat = max over pilot structures of the 97.5th bootstrap percentile; delta = clip(max(2 h_hat, q_hat/2), 0.01, 0.05); smallest m in {1.1, 1.25, 1.5} with Delta_neg(m) >= delta + 2 h_hat; escalate to n=4000 once, then instrument_invalid) yields a usable delta and m for every selected cell at n=1000 on the pilot structures 2yc3 and 3dkm, and the shim check passes (the iid-uniform shim does not distort upstream sampling: mean_s[D(U2,U1) - D(U3,U1)] <= h_hat)."
+stage_name = "pilot"
+novel = true
+
+[outcomes.derived]
+condition = "all_cells_derived AND shim_ok AND NOT any_instrument_invalid"
+decision = "Carry each selected cell's delta, m and n (as recorded in this run's result) into the confirmatory sidecar for those cells, committed before the confirmatory run. Per spec this pilot is exploratory and cites nothing itself."
+reasoning = "Every selected cell produced a clipped delta and a qualifying near-margin m, and the shim does not distort upstream sampling."
+is_residual = false
+adversarial_check = "NOT (all_cells_derived AND shim_ok AND NOT any_instrument_invalid)"
+
+[outcomes.instrument_invalid]
+condition = "any_instrument_invalid OR NOT shim_ok"
+decision = "No confirmatory run for the affected cells: the shim distorts sampling or a cell failed even after the n=4000 re-pilot. Report which cells; the distributional tier cannot validate them."
+reasoning = "Spec: shim check failure or a failed re-pilot is instrument_invalid."
+is_residual = true
+adversarial_check = "NOT (any_instrument_invalid OR NOT shim_ok)"
+
+[outcomes.not_derived]
+condition = "shim_ok AND NOT any_instrument_invalid AND NOT all_cells_derived"
+decision = "Some selected cell has no usable delta/m; report it per cell. No confirmatory run for it."
+reasoning = "Residual: neither cleanly derived nor flagged invalid."
+is_residual = true
+adversarial_check = "NOT (shim_ok AND NOT any_instrument_invalid AND NOT all_cells_derived)"
+
+[result_schema]
+all_cells_derived = "bool"
+any_instrument_invalid = "bool"
+shim_ok = "bool"
+cells = "dict"
+cells_selected = "list"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+
+[data]
+cells_selected = "plain@0.3,plain@1.0,refine@0.3 -- passed as --cells. EXCLUDED on purpose: plain@0.1 (the T=0.1 lane is a pending user decision, .praxia/docs/decisions/261004_sample-dist-pilot-fixtures-and-low-t.md), pssm@0.3 and tied@0.3 (their fixtures are unspecified by the spec; same doc). This run says nothing about those cells."
+structures = "inputs/example_pdbs/{2yc3,3dkm}.pdb, pinned by SHA-256 in the driver"
+prior_exposure = "Only an n=50, B=50 smoke cell (plain@0.1) has been seen, and it is not in this selection."
+cost = "3 cells x 2 structures x 6 upstream runs (U1, U2, U3, C_1.1, C_1.25, C_1.5) x n=1000, plus n=4000 re-pilots only for cells that escalate; per-unit resume."

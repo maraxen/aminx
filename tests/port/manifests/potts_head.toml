@@ -1,0 +1,12 @@
+[manifest]
+wave_id = "potts_head"
+task_id = "260929_pottsmpnn-lasermpnn-xtrax-composition"
+manifest_hash = "sha256:45b3bbeb87ffde5d815c252bdb0c660b416e144c4a7a13464172521b6a4b96bf"
+created_at = "2026-09-29T00:00:00Z"
+paper_mask_enforced = true
+
+[[kernels]]
+order = 1
+qualname = "aminx.families.potts_mpnn.potts_head.PottsHead"
+module_path = "src/aminx/families/potts_mpnn/potts_head.py"
+depends_on = []

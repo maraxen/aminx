@@ -1,0 +1,69 @@
+[metadata]
+title = "PottsMPNN autoregressive decode parity"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "PottsARDecode matches upstream sample tokens on the example PDBs when uniforms are injected. Exact match is pass; [0.99, 1) is inconclusive; below 0.99 is fail."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Every token matches and ar_mask_present_chain_m_pos failed."
+reasoning = "Match is 1.0 on the clean arm, and the autoregressive mask that multiplies by chain_M_pos is outside the pass band."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Token match is in [0.99, 1). Do not claim exact decode parity."
+reasoning = "The negative control still fails, so the comparison is alive, but at least one site disagrees."
+is_residual = true
+adversarial_check = "NOT (clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed)"
+decision = "Do not treat autoregressive decode as parity."
+reasoning = "Match below 0.99, an empty mutant list, or a negative control that does not fail falsifies the vehicle."
+is_residual = true
+adversarial_check = "clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+match = "float"
+n_units = "int"
+n_reused = "int"
+n_computed = "int"
+cache_dir = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+potts_root_env = "AMINX_POTTS_ROOT (defaults to ~/repos/PottsMPNN)"
+example_pdbs = "/home/marielle/repos/PottsMPNN/inputs/example_pdbs"
+checkpoint = "/home/marielle/repos/PottsMPNN/vanilla_model_weights/pottsmpnn_20.pt"
+checkpoint_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+"2yc3.pdb" = "ef62cf3625931b1c0abef080baa36677e53dca1dbaaa7d1740c9e9888e24e2ca"
+"3dkm.pdb" = "3d847d573e648b631983885a02f41bc14d8a8a11ac893b1c8c76ec5c46781c86"
+"3gg7.pdb" = "2203e4a69287a5b968a78df5fb80b29f10fbdb37f73f64363cefbee8f1899712"
+"4jox.pdb" = "c16543717793ced9e9475df6213a52054d05b70dd02069d41fac82e164f09ee8"
+"6w25.pdb" = "4a9a6dc228bf3953a746d09f29e6116f07c1f2cfc152030fe878728c65cca086"
+"swe1_ligand.pdb" = "493352b8c64c02c133f1143c1705e7b5217e0f67127bd22e6b3964319b6445c6"
+fixed_positions_json = "scripts/parity/fixtures/potts_ar_fixed_positions.json"
+fixed_positions_sha256 = "d4a3cd25332b65ced7a0874288336cacd952a992a6db9673a055b869712f8a0a"
+pass_band = "token match = 1.0"
+inconclusive_band = "[0.99, 1.0)"
+fail_band = "< 0.99"
+negative_control = "ar_mask_present_chain_m_pos"
+
+[provenance]
+note = "Graded invocation writes the arm payload with --payload-out and reads the upstream checkout from AMINX_POTTS_ROOT. Not run by the A5 fixer. Each example PDB is one unit. The negative control ar_mask_present_chain_m_pos must FAIL."
+
+[resume]
+unit = "one PDB for one arm, and one PDB for the oracle worker"
+cache_key = "sha256 of unit id, arm id, checkpoint sha256, input PDB sha256, script sha256"
+max_attempts = 3

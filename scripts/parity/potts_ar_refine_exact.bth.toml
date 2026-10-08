@@ -1,0 +1,62 @@
+[metadata]
+title = "PottsMPNN exact autoregressive-then-refine parity"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "MPNNEncode then PottsARDecode then PottsRefine matches upstream tokens on the example PDBs across 50 seeds in f64. Exact match is pass; [0.99, 1) is inconclusive; below 0.99 is fail."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Exact tokens match and every named negative control failed."
+reasoning = "Match is 1.0, and ar_mask_present_chain_m_pos, wrong_partition_sign, and ntoc_refine_order are all outside the pass band."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Token match is in [0.99, 1). Do not claim exact AR-then-refine parity."
+reasoning = "All three negative controls still fail, but the clean arm is not an exact match."
+is_residual = true
+adversarial_check = "NOT (clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed)"
+decision = "Do not treat the AR-then-refine path as exact."
+reasoning = "Match below 0.99, a missing control, or any of the three negative controls passing falsifies the vehicle."
+is_residual = true
+adversarial_check = "clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+match = "float"
+n_units = "int"
+n_reused = "int"
+n_computed = "int"
+cache_dir = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+potts_root_env = "AMINX_POTTS_ROOT (defaults to ~/repos/PottsMPNN)"
+n_seeds = 50
+checkpoint_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+fixed_positions_json = "scripts/parity/fixtures/potts_ar_fixed_positions.json"
+fixed_positions_sha256 = "d4a3cd25332b65ced7a0874288336cacd952a992a6db9673a055b869712f8a0a"
+pass_band = "token match = 1.0"
+inconclusive_band = "[0.99, 1.0)"
+fail_band = "< 0.99"
+negative_controls = "ar_mask_present_chain_m_pos, wrong_partition_sign, ntoc_refine_order"
+
+[provenance]
+note = "Graded invocation writes the arm payload with --payload-out and reads the upstream checkout from AMINX_POTTS_ROOT. Not run by the A5 fixer. Each example PDB times each of 50 seeds is one unit. All three negative controls must FAIL."
+
+[resume]
+unit = "one PDB and one seed for one arm"
+cache_key = "sha256 of unit id, arm id, checkpoint sha256, input PDB sha256, script sha256"
+max_attempts = 3

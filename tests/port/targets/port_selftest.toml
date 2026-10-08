@@ -1,0 +1,21 @@
+# Port self-test wave. Sign-flipped kernel fails tier 2; retrace-per-call fails tier 5.
+[port]
+wave_id = "port_selftest"
+oracle_id = "ref:tests/port/reference/port_selftest:v1:sha256:523804d2c4b406bedd95b048d346895b9fd30a101b47f8a507867ef7172a3528"
+symbol_qualname = "port_selftest.kernel.sign_flipped_kernel"
+reference_subtree = "reference/port_selftest"
+
+[capabilities]
+stochastic = false
+dynamic_shape = false
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=1e-10,atol=1e-12"
+tolerance_policy_f32 = "rtol=1e-5,atol=1e-6"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true

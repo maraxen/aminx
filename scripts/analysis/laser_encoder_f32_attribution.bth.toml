@@ -1,0 +1,104 @@
+[metadata]
+title = "Is the laser_encoder f32 disagreement a port defect, or float32 itself?"
+created = "261006"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Graded run 91dfbf20 returned noise_reaches_defect_scale for laser_encoder and its pre-registered decision names the PORT ('a numerical-stability question about the port'). That attribution is untested. If aminx-f32 disagrees with upstream-f32 by no more than about twice upstream-f32's own disagreement with upstream-f64, then the deviation is the size of float32 rounding itself, the tier is asking f32 to be more reproducible than f32 is, and there is no aminx stability defect to chase. If instead the port's disagreement exceeds upstream's own f32 rounding by an order of magnitude, the escalation points somewhere real in aminx."
+stage_name = "diagnosis"
+novel = false
+
+[outcomes.within_f32_noise]
+condition = "self_test_passed AND units_absent == [] AND oracle_absent == [] AND n_comparable > 0 AND worst_ratio <= 2.0"
+decision = "Withdraw the PORT attribution in run 91dfbf20's escalation. The laser_encoder f32 tier is comparing two float32 implementations whose disagreement is the size of float32 rounding, exactly as run 18b97f4f established for laser_score. The open question is then the same FORM question the user already decided for laser_score (option 3, scale-relative), NOT a bug hunt in aminx. Still do not widen the element-wise band: the floor run showed that widening it to admit this deviation leaves it within ~4x of a 1e-2 defect."
+reasoning = "Two independent float32 implementations each within e of a double-precision truth may differ from one another by up to 2e. A worst-case ratio inside that bound is therefore fully explained by rounding, and attributing it to a defect in one of the two implementations would be unfounded."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND units_absent == [] AND oracle_absent == [] AND n_comparable > 0 AND worst_ratio <= 2.0)"
+
+[outcomes.larger_than_upstream_rounding]
+condition = "self_test_passed AND units_absent == [] AND oracle_absent == [] AND n_comparable > 0 AND worst_ratio > 2.0 AND worst_ratio <= 10.0"
+decision = "Report both halves and let the user choose. The port's f32 disagreement is real but modest -- bigger than rounding alone explains, smaller than an order of magnitude. Name the worst field and pair so a later investigation has a starting point. Do NOT widen any band and do NOT open a defect on this evidence alone."
+reasoning = "This band is deliberately left undecided because it is the region where the honest answer is 'some of both'. Forcing it into either neighbouring verdict would manufacture a conclusion the measurement does not support."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR units_absent != [] OR oracle_absent != [] OR n_comparable == 0 OR worst_ratio <= 2.0 OR worst_ratio > 10.0"
+
+[outcomes.port_exceeds_upstream_f32]
+condition = "self_test_passed AND units_absent == [] AND oracle_absent == [] AND n_comparable > 0 AND worst_ratio > 10.0"
+decision = "The escalation in run 91dfbf20 stands and points at aminx. Open a stability investigation against the worst field and pair this run names. Still do NOT widen the band -- that is what the escalation already refused."
+reasoning = "A disagreement an order of magnitude beyond upstream's own f32 rounding is not explained by rounding; the two implementations are accumulating differently, which is a property of the port worth fixing rather than a property of float32 worth tolerating."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR units_absent != [] OR oracle_absent != [] OR n_comparable == 0 OR worst_ratio <= 10.0"
+
+[outcomes.no_comparable_entries]
+condition = "self_test_passed AND units_absent == [] AND oracle_absent == [] AND n_comparable == 0"
+decision = "No conclusion. Every field's upstream f32 and f64 arrays were bitwise equal, so there is no rounding baseline to attribute against."
+reasoning = "A ratio needs a non-zero denominator. If upstream's own f32 path introduces no error anywhere, this instrument cannot separate the two worlds and must say so rather than divide by zero or report an infinite ratio as a defect."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR units_absent != [] OR oracle_absent != [] OR n_comparable > 0"
+
+[outcomes.units_absent]
+condition = "self_test_passed AND units_absent != []"
+decision = "No conclusion. Re-run where the floor run's f32 units resolve."
+reasoning = "D_port is read from graded run 91dfbf20's persisted units, addressed by a DERIVED cache key rather than by scanning the directory. If a derived key is missing, the honest response is to stop: attributing over whichever units happen to be present would silently report a subset as if it were the population, and could mistake an f64 unit for an f32 one."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR units_absent == []"
+
+[outcomes.oracle_absent]
+condition = "self_test_passed AND units_absent == [] AND oracle_absent != []"
+decision = "No conclusion. Re-run where the sealed dumps resolve."
+reasoning = "The dumps live outside the tree and are checked by oracle_manifest.toml; their absence is an environment fact and must not be reported as a measurement."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR units_absent != [] OR oracle_absent == []"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "13 synthetic checks run before any dump or unit is read, including four grader negative controls covering all three measured verdicts plus the refusal, and a check that this script's cache-key derivation still matches the shared module's. If any fails, the instrument is not known to be able to return a non-pass."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[result_schema]
+verdict = "str"
+wave = "str"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+units_absent = "list"
+oracle_absent = "list"
+n_pairs = "int"
+n_fields = "int"
+n_comparable = "int"
+n_zero_baseline = "int"
+worst_ratio = "float"
+worst_entry = "dict"
+median_ratio = "float"
+n_above_noise = "int"
+n_above_divergence = "int"
+per_field = "dict"
+noise_ratio_threshold = "float"
+divergence_ratio_threshold = "float"
+floor_run_script_sha256 = "str"
+floor_run_verdict = "str"
+script_sha256 = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+wave = "laser_encoder only"
+quantities = "Per (pair, field): D_port = max|aminx_f32 - upstream_f32|, D_upstream = max|upstream_f32 - upstream_f64|, R = D_port / D_upstream."
+d_port_source = "NOT recomputed. Read from the persisted units of graded run 91dfbf20-311f-4730-a0d0-35baadd55064 (outcome noise_reaches_defect_scale, git_hash 6b9ba574, git_dirty false, 471.8 s), whose per-unit cache key is sha256(script_sha | wave | pair | precision)[:16]. Every input to that key is recorded in that run's result JSON, so the f32 units are addressed EXACTLY and an f64 unit cannot be mistaken for an f32 one. A missing derived key stops the run."
+d_upstream_source = "The two sealed dumps, subtracted. No model is run and no aminx code is executed to obtain it, which is why this measurement costs seconds rather than the floor run's 471.8 s."
+why_threshold_is_2_not_1 = "Two independent float32 implementations each within e of a double-precision truth may differ from EACH OTHER by up to 2e. Demanding R <= 1 would fail implementations doing nothing wrong. Fixed before the run; not tuned to the data."
+zero_baseline_handling = "Where upstream's f32 and f64 arrays are bitwise equal, D_upstream is 0 and R is undefined: that entry carries no float32 rounding and can attribute nothing. Such entries are COUNTED as n_zero_baseline and EXCLUDED from the ratio rather than being assigned an infinite R, so an attribution resting on few comparable entries is visible as such."
+known_vacuous_field = "lig_vectors has shape (N, 0, 3) for every pair in this dump -- ligand atoms are present (N = 31..93, lig_scalars is (N, 256)) but the vector channel count is zero. It contributes 0 elements and will land in n_zero_baseline. Recorded here so its absence from the comparable set is expected rather than surprising."
+precedent = "Run 18b97f4f performed the equivalent attribution for laser_score and found aminx-f32 and upstream-f32 agree with each other far more tightly than either agrees with an f64 truth, which is why laser_score's tier-3 became a design question rather than a bug hunt. Whether laser_encoder is in the same world is NOT assumed here."
+instrument_self_test = "13 synthetic checks before any dump or unit is read: cache-key agreement with the shared module, key sensitivity to precision, a hand-computed rounding baseline, shared-vs-one-sided NaN, the empty-field case, inclusive threshold boundaries, a check that a missing unit OUTRANKS a measured ratio, and FOUR grader negative controls covering all three measured verdicts plus the no-comparable-entries refusal. All four were additionally forced during development and each fired: a grader pinned to within_f32_noise, a grader pinned to port_exceeds_upstream_f32, a rounding function that always returns 0, and a constant cache key."
+
+[provenance]
+note = "Ungraded diagnostic following graded run 91dfbf20. NOT a redsox vehicle; no manifest row -- laser_encoder is not one of the 8 gate slugs. Lives in scripts/analysis/, outside _SCOPED_PREFIXES (verified at tests/knob_gate/_coverage.py:21-28), so it costs the frozen ledger nothing. This run proposes no band and amends no file; in particular it does NOT revisit the floor run's refusal to widen, which stands under every outcome below."
+invocation = "bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/laser_encoder_f32_attribution.py --floor-result <path> --floor-work-dir <dir> --out <json>"
+
+[resume]
+unit = "none -- the run reads persisted artifacts and sealed dumps and completes in seconds, so there is nothing to resume"
+max_attempts = 1

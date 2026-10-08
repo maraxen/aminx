@@ -137,6 +137,11 @@ OBSERVATIONS: dict[str, Verdict] = {
   "fixed_positions": Bundle(param="fixed_mask", reason="unioned into fixed_mask, _sampling_helper.py:482 -- a full-length mask despite the name"),
   "fixed_tokens": Bundle(param="fixed_tokens", reason="_prepare_fixed_controls, _sampling_helper.py:484-497"),
   "bias": Bundle(param="bias", reason="threaded to the bundle at kernel_dispatch.py:227 and multistate_poe.py:332"),
+  "omit_aa": Bundle(param="bias", reason="compiled to -1e8 at designed positions and added to bias, kernel_dispatch.py:277-291 (omit_aa_bias.compile_omit_aa_bias)"),
+  "omit_aa_per_position": Bundle(param="bias", reason="compiled with omit_aa into bias, kernel_dispatch.py:277-291"),
+  # --- driver-family options: campaign refuses pottsmpnn/lasermpnn (T0.5 consumer branch) --
+  "potts_mpnn": NotApplicable(reason="PottsMPNNOptions require model_family pottsmpnn (build_run_spec ValueError otherwise), and campaign mode refuses driver families (T0.5)"),
+  "laser": NotApplicable(reason="LaserOptions require model_family lasermpnn (build_run_spec ValueError otherwise), and campaign mode refuses driver families (T0.5)"),
   "tie_group_map": Bundle(param="tie_group_map", reason="threaded to the bundle at kernel_dispatch.py:228"),
   "state_weights": Bundle(param="state_weights", reason="threaded to the bundle at kernel_dispatch.py:229"),
   "state_position_map": Bundle(param="state_position_map", reason="broadcast + threaded at kernel_dispatch.py:230-232"),

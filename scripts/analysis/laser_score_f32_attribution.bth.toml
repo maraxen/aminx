@@ -1,0 +1,77 @@
+[metadata]
+title = "laser_score f32: is aminx's float32 error worse than upstream's? (debt #2445)"
+created = "261003"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "laser_score's tier-3 failure (run e47bfaab: aminx-f32 vs upstream-f32 disagree up to 5.4e-4, too close to a 1e-2 defect for any band) does NOT come from aminx being numerically worse than upstream. Measured against a float64 truth (aminx-f64 at each f32 dump's own decoding order, validated against upstream-f64 within 1e-10 of scale), aminx's scale-normalised f32 error E_aminx is at most 2x upstream's E_upstream on every field where upstream's error is nonzero -- i.e. both f32 implementations err comparably, and the margin failure is a property of comparing two float32 implementations rather than a port defect."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.aminx_no_worse_than_upstream]
+condition = "self_test_passed AND oracle_present AND truth_valid AND any_rateable AND NOT aminx_worse"
+decision = "Do NOT open a stability hunt in aminx: there is no target. Do NOT change any tolerance from this run. Escalate the tier-3 DESIGN question for laser_score to the user -- a pairwise f32-vs-f32 band cannot meet the 10x defect margin when both sides carry this much float32 error -- with candidate designs (e.g. grade aminx-f32 against the f64 reference with a measured band) as options, not as a decision taken here."
+reasoning = "If aminx's float32 error is no larger than upstream's against the same truth, then aminx is at least as accurate as the reference implementation, and the observed disagreement is mostly the two implementations' independent (or shared) float32 errors. Hunting for an instability in aminx would be hunting for something the measurement says is not there."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND oracle_present AND truth_valid AND any_rateable AND NOT aminx_worse)"
+
+[outcomes.aminx_worse]
+condition = "self_test_passed AND oracle_present AND truth_valid AND aminx_worse"
+decision = "aminx's f32 path is genuinely less accurate than upstream's on the fields in worse_fields. Open a stability investigation starting at the EARLIEST such field in network depth (ligand_scalars -> encoder -> lig_prot_edges -> logits -> log-probs). Do NOT change any tolerance."
+reasoning = "A ratio above 2 against a validated truth means aminx loses precision that upstream keeps, which is a port property worth fixing and exactly what the first escalation presumed."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT oracle_present OR NOT truth_valid OR NOT aminx_worse"
+
+[outcomes.truth_invalid]
+condition = "self_test_passed AND oracle_present AND NOT truth_valid"
+decision = "Discard every ratio. aminx-f64 does not match upstream-f64 within 1e-10 of scale at the dumps' shared decoding orders, so it is not a truth for this comparison. Find why tier 2 and this disagree before measuring anything else."
+reasoning = "Both errors are measured against aminx-f64. If that proxy is off, both numbers describe the proxy, not float32. This is re-measured per pair here precisely so the conclusion does not rest on an earlier tier-2 run from a different tree."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT oracle_present OR truth_valid"
+
+[outcomes.inconclusive]
+condition = "self_test_passed AND oracle_present AND truth_valid AND NOT any_rateable"
+decision = "No conclusion: upstream's f32 error is zero on every field, so no ratio exists."
+reasoning = "A ratio against zero is undefined; reachable only if the f32 dump were secretly f64."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT oracle_present OR NOT truth_valid OR any_rateable"
+
+[outcomes.oracle_absent]
+condition = "self_test_passed AND NOT oracle_present"
+decision = "No conclusion. Re-run where the sealed dumps resolve."
+reasoning = "Absent dumps are an environment fact, not a measurement."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR oracle_present"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number; fix the instrument and re-run."
+reasoning = "The 8 synthetic checks include cases that MUST NOT grade as parity (aminx 100x worse; invalid truth; zero upstream error; instrument failure; no pairs) and NaN masking. If any fails, the classifier is not known to be able to return the answer this experiment is looking for."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[result_schema]
+verdict = "str"
+self_test_passed = "bool"
+self_test_failed = "list"
+truth_valid = "bool"
+truth_worst = "float"
+n_pairs = "int"
+oracle_present = "bool"
+any_rateable = "bool"
+aminx_worse = "bool"
+ratios = "dict"
+e_aminx_max = "dict"
+e_upstream_max = "dict"
+e_between_max = "dict"
+worse_fields = "list"
+unrateable_fields = "list"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+
+[data]
+exploratory_peek_disclosed = "Before this sidecar was written, ONE inspection read (not tracked, not cited) loaded both dumps to check that decoding orders agree (63/63) and printed, for the first pair only, upstream-f32 vs upstream-f64 max abs on two fields: chi_logits 1.5e-2, sequence_logits 1.2e-2. That suggested upstream's own f32 error is large. It is disclosed here because it was seen before the criteria were fixed; the 2x threshold and the truth bar were chosen on general grounds (2x = clearly worse, not noise between two f32 implementations; 1e-10 = two orders above the 7.8e-13 tier-2 agreement), not tuned to that number, and no conclusion is drawn from it."
+why_2x = "Two float32 implementations of the same network differ in summation order, fused ops and library kernels, so their errors against a common truth will not be equal even when neither is defective. 2x is a deliberately loose 'clearly worse' bar so that a pass means parity, not luck."
+truth_choice = "aminx-f64, not upstream-f64 from the f64 dump, is the truth for e_aminx and e_upstream so that both are measured against the identical array; truth_vs_up64 shows the two truths agree."
+cost = "63 pairs x 2 forward passes (f64 + f32), one resumable unit per pair, GPU."

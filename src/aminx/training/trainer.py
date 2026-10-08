@@ -526,6 +526,7 @@ def train_step(  # noqa: PLR0915
       structure_mapping=None,  # training is usually single-state
       initial_node_features=phys_feat,
       prng_key=key,
+      inference=False,
     )
 
     if training_mode == "diffusion":

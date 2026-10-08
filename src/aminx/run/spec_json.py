@@ -20,6 +20,7 @@ from typing import Any, Final, Literal
 import numpy as np
 from xtrax.config import classify_schema_version
 
+from aminx.run.options import LaserOptions, PottsMPNNOptions
 from aminx.run.specs import (
   InspectionSpecification,
   JacobianSpecification,
@@ -27,6 +28,11 @@ from aminx.run.specs import (
   SamplingSpecification,
   ScoringSpecification,
 )
+
+_OPTIONS_FIELDS: dict[str, type[Any]] = {
+  "potts_mpnn": PottsMPNNOptions,
+  "laser": LaserOptions,
+}
 
 _SPEC_CLASS_BY_NAME: dict[str, type[RunSpecification]] = {
   "RunSpecification": RunSpecification,
@@ -271,6 +277,9 @@ def run_specification_to_json_dict(spec: RunSpecification) -> dict[str, Any]:
       # __post_init__ rebuilds it from serialized fields; carrying it would be redundant, and
       # it is a nested dataclass _to_json_value cannot encode anyway.
       continue
+    if f.name in _OPTIONS_FIELDS:
+      payload[f.name] = _options_to_json_value(getattr(spec, f.name), field_name=f.name)
+      continue
     raw = getattr(spec, f.name)
     if f.name == "inputs":
       payload[f.name] = _ensure_jsonable_inputs(raw, f.name)
@@ -284,8 +293,43 @@ def run_specification_to_json(spec: RunSpecification, *, indent: int | None = 2)
   return json.dumps(run_specification_to_json_dict(spec), indent=indent, sort_keys=True)
 
 
+def _options_to_json_value(value: object, *, field_name: str) -> object:
+  """Encode an options dataclass as ``{field: json value}``, or ``None``."""
+  if value is None:
+    return None
+  if not is_dataclass(value):
+    msg = f"Field {field_name!r}: expected an options dataclass, got {type(value).__name__}"
+    raise SpecJSONEncodeError(msg)
+  return {
+    item.name: _to_json_value(getattr(value, item.name), field_name=f"{field_name}.{item.name}")
+    for item in fields(value)
+  }
+
+
+def options_from_json_value(cls: type[Any], value: Any) -> Any:
+  """Decode a JSON object into ``cls``. Unknown keys raise :class:`SpecJSONDecodeError`."""
+  if value is None:
+    return None
+  if not isinstance(value, Mapping):
+    msg = f"{cls.__name__} JSON must be an object or null, got {type(value).__name__}"
+    raise SpecJSONDecodeError(msg)
+  known = {item.name: item for item in fields(cls)}
+  unknown = sorted(set(value) - set(known))
+  if unknown:
+    msg = f"Unknown {cls.__name__} field(s): {unknown}"
+    raise SpecJSONDecodeError(msg)
+  kwargs: dict[str, Any] = {}
+  for name, raw in value.items():
+    item = known[name]
+    decoded = tuple(raw) if isinstance(raw, list) and isinstance(item.default, tuple) else raw
+    kwargs[name] = decoded
+  return cls(**kwargs)
+
+
 def _coerce_field_value(_cls: type[Any], field_name: str, value: Any) -> Any:
   """Best-effort coercion from JSON into constructor-friendly values."""
+  if field_name in _OPTIONS_FIELDS:
+    return options_from_json_value(_OPTIONS_FIELDS[field_name], value)
   if value is None:
     return None
   if field_name.endswith("_path") or field_name in {
@@ -310,13 +354,20 @@ def _coerce_field_value(_cls: type[Any], field_name: str, value: Any) -> Any:
       return value
     if isinstance(value, list) and all(isinstance(x, str) for x in value):
       return value
+  if field_name == "temperature" and isinstance(value, list):
+    if all(isinstance(x, (int, float)) or x is None for x in value):
+      return tuple(None if x is None else float(x) for x in value)
   if (
-    field_name in {"backbone_noise", "estat_noise", "vdw_noise", "temperature"}
+    field_name in {"backbone_noise", "estat_noise", "vdw_noise"}
     and isinstance(value, list)
     and value
     and all(isinstance(x, (int, float)) for x in value)
   ):
     return tuple(float(x) for x in value)
+  if field_name == "omit_aa" and isinstance(value, list):
+    return tuple(str(x) for x in value)
+  if field_name == "omit_aa_per_position" and isinstance(value, Mapping):
+    return {int(key): str(letters) for key, letters in value.items()}
   if field_name == "tied_positions" and isinstance(value, list):
     if not value:
       return []

@@ -1,0 +1,55 @@
+# laser_decode_step: one autoregressive residue of LASErMPNN.sample.
+# oracle_id hashes tests/port/reference/laser_decode_step/{algo.py,sealed.py}.
+# The npz files stay outside this tree; sealed.load checks oracle_manifest.toml.
+#
+# f64 atol is the house pairing for the declared rtol and is NOT measured.
+# f32 atol IS measured (261003, debt #2445) -- see [tolerance_basis].
+[port]
+wave_id = "laser_decode_step"
+oracle_id = "ref:tests/port/reference/laser_decode_step:v1:sha256:df0f9d92dd12aeeb6f4b72aa7e64eae9deb521d654abe84f632ea160c1654baa"
+symbol_qualname = "aminx.model.laser.joint_decode.LaserJointDecode"
+reference_subtree = "reference/laser_decode_step"
+
+[capabilities]
+stochastic = true
+dynamic_shape = true
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=1e-8,atol=1e-11"
+tolerance_policy_f32 = "rtol=1e-4,atol=2e-3"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true
+
+[amendment]
+# Measured, and the amendment itself was pre-registered (64274bcf) -- unlike
+# laser_layers', this does not depart from the spec, whose f32 band was declared
+# "house-paired and NOT measured". Revert to the original bound below if refused.
+original_tolerance_policy_f32 = "rtol=1e-4,atol=1e-7"
+
+[tolerance_basis]
+f64_atol_basis = "house-paired and NOT measured"
+f32_atol_basis = """
+measured; graded run e47bfaab-f1be-4386-a6c3-1ee6bd8c123f (scripts/analysis/
+laser_f32_tolerance_floor.py @ b880882e, clean tree), per-wave verdict PASS under
+the rule pre-registered in 64274bcf before the run. Only atol moved: it was the
+binding term (76% of the band at the worst element), so rtol stays 1e-4.
+
+  f64 tier, re-measured in the same run: passes rtol=1e-8,atol=1e-11 on every
+    field (max abs 2.4e-13), so the f32 gap is float32 accumulation and not a
+    port defect.
+  f32 absolute floor: 1.08e-4 (904 f32 ulp), on chi_logits; sequence_logits
+    6.4e-5, chi_degrees 1.5e-5. 63 pairs, 3 fields, every element admitted.
+  proposed atol = ceil_1sf(10 x floor) = 2e-3.
+  teeth: an injected 1e-2 relative defect is rejected (0 elements admitted),
+    and the band is 0.046 of that defect's absolute size -- inside the
+    pre-registered 10x margin.
+
+The old atol=1e-7 was below one float32 ulp for any |ref| > ~1, so it could
+not have passed on these magnitudes. laser_score, measured in the same run,
+did NOT clear the 10x margin and was deliberately left unchanged.
+"""

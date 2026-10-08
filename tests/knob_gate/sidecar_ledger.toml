@@ -1,0 +1,229 @@
+# T0.4 shipped no rows. Owning tasks record [sidecar.<slug>] after the vehicle run.
+#
+# Every id here is a bathos run checked against the step 1c conditions BEFORE
+# being written: outcome == 'pass', status 'completed', git_dirty FALSE, git_hash
+# an ancestor of HEAD that does not touch scoped paths, sidecar_sha256 matching
+# the sidecar on disk, --mutants present in argv and equal to the manifest row
+# ids, --output-paths containing /<slug>/<git sha8>/branch_controls.json, and
+# every weights key resolving in tests/knob_gate/checkpoint_registry.json.
+#
+# FIVE TRAPS, each of which produces a run that looks entirely successful and
+# fails step 1c for a reason unrelated to the measurement:
+#   1. --mutants MUST BE IN ARGV. _argv_mutants returns None when the flag is
+#      absent, so a run relying on the script's default mutant list fails.
+#   2. THE TREE MUST BE CLEAN. .praxia/audits.jsonl is TRACKED and is appended to
+#      by anything running pytest, so a gate run leaves every later vehicle run
+#      recording git_dirty = true until it is restored.
+#   3. THE WEIGHTS KEY MUST BE THE STABLE IDENTIFIER, not an absolute path.
+#      scripts/parity/artifact_key.py derives it; controls written before
+#      6cb81d49 carry absolute paths and will never validate.
+#   4. A POSITIVE CONTROL MUST NOT RIDE ALONG ON A GRADED RUN. _argv_mutants
+#      reads the RAW --mutants string, so laser_proofread_parity's
+#      scalar_both_off lands in `listed` even though the script excludes it
+#      from n_listed, n_failed and the controls mutants dict. It has no
+#      manifest row (it must PASS, and every manifest row must report
+#      "failed"), so listed != row_ids and the run is ineligible. Run the
+#      positive control as its own separate invocation.
+#   5. THE ID BELOW MUST BE THE FULL UUID. default_resolve_run stats
+#      run_<id>.parquet by exact filename, so the 8-char prefix that every log
+#      line and bth listing prints does not resolve. verify_wave.py globs the
+#      prefix and prints the full id rather than blaming the catalog.
+#
+# AND ONE SCHEDULING CONSTRAINT that is not a per-run trap: _touches_scoped is
+# GLOBAL, not per-slug, so ONE commit under src/aminx/ (or scripts/parity/,
+# scripts/recapture/, tests/port/, aminx-oracles/, pyproject.toml, uv.lock)
+# invalidates EVERY row in this file at once. Ledger rows cannot be collected
+# incrementally: the whole vehicle wave runs after the last such commit.
+
+[sidecar]
+
+# EVERY ID BELOW IS STALE, AND THE FIRST ONE TO BREAK THEM WAS A DOCSTRING.
+#
+# Measured with scripts/redsox/verify_wave.py: both Potts runs fail exactly one
+# condition -- "no scoped path since" -- and pass every other. (Written when
+# verify_wave reported nine; it reports 14 now. The count in prose drifts as
+# conditions are added, the "exactly one failure" does not.)
+# The scoped commit it names first is 04d689b3, "--model-family help listed
+# only two of the four families": a one-line change to a help string in
+# src/aminx/cli.py. _touches_scoped is path-based and does not care that the
+# change was documentation, so that commit alone discarded three hours of
+# parity evidence, before any of the later fixes landed. The rows were already
+# dead when the "VERIFIED" comment below was read into this file.
+#
+# laser_decode_e2e fails a second condition too: its controls carry an absolute
+# /home/solab/repos/LASErMPNN/... weights key, which the registry cannot
+# resolve (trap 3). It ran at f5c44847, older still.
+#
+# check_branch_coverage does NOT return "pass" on this file right now, and that
+# is expected rather than a regression. The ids are kept because they still
+# name the runs that produced the measurements; they are not evidence of a
+# green gate. Replace all six after the wave
+# (scripts/redsox/launch_wave.sh), which is the only point at which this file
+# can be made true. Run verify_wave.py BEFORE writing a row: it reports each
+# condition separately, which is the only way to tell these cases apart.
+
+# THE LEDGER WAVE, 261002. Five of the six slugs below were run at a frozen
+# scoped tree and verified by scripts/redsox/verify_wave.py, which reports each of
+# step 1c's conditions separately: every one of the five returned "would grade"
+# with no condition failing. Two trees are involved and that is deliberate --
+# group 1 ran at 21321ce4 and wave 2 at 7c3dd246, and `git diff --name-only
+# 21321ce4 7c3dd246` touches NO path under src/aminx/, scripts/parity/,
+# scripts/recapture/, tests/port/, aminx-oracles/, pyproject.toml or uv.lock, so
+# _touches_scoped is empty across the pair and all five rows stand together.
+#
+# Every id below is the FULL uuid. An 8-character prefix does not resolve
+# (trap 4), and verify_wave.py's _resolve_hint exists because that failure
+# previously looked like a missing record.
+
+[sidecar.laser_proofread_parity]
+# REWRITTEN 261004 at 719c33e0 (wave group 1 of the re-wave after the scoped
+# batch). Run 182ab6d4, read from the cool-tier parquet: completed, outcome
+# pass, git_dirty False, adversarial check fired, 3.46 h. clean pass at
+# max_abs_mean 4.218847493575595e-15 / max_abs_std 9.499345754448996e-15 --
+# BIT-IDENTICAL to the superseded 87098798. That settles a real question:
+# #2424 (37df972b) modified _proofread_batch, which this conditional path
+# shares, and the conditional numbers did not move by one bit. All four
+# controls failed (reduction_swap, ddof_0, scalar_off, vector_on).
+# verify_wave.py --run laser_proofread_parity=182ab6d4-... : would grade, all
+# 14 conditions PASS.
+#
+# THE FIRST GROUP-1 RUN OF THIS SLUG (f7887e2f) WAS OOM-KILLED, NOT FAILED BY
+# CODE. It recorded outcome fail with clean "error" / NaN and no traceback:
+# titanix hit a global OOM at 20:18-20:29 (three wave arms plus another
+# session's ColabFold + AF3 memory harness; journalctl -k shows a 3.9 GB
+# python3 killed at 20:19:27, alongside a vLLM worker and other users'
+# desktops). Evidence it was the environment: no cells_clean.json while every
+# mutant arm wrote one; a solo reproduction ran clean; and this re-run --
+# same commit, same code, alone, fresh work dir /tmp/..._719c33e0_r2 -- passes
+# bit-identically. Also: this vehicle drops arm stderr
+# (laser_proofread_parity.py:585, unlike the unconditional vehicle since
+# 37df972b), which is why the failure carried no cause; fixing that is
+# scoped and waits for the next scoped batch.
+bth_run_id = "182ab6d4-4814-4516-8c94-97f9900216f1"
+
+[sidecar.laser_proofread_unconditional_parity]
+# NEW SLUG (#2424). First graded run, at 719c33e0, pre-registered in aef77a56
+# BEFORE the vehicle or the fix existed. Record (cool-tier parquet):
+# status=completed, outcome=pass, git_dirty=False, adversarial_check=fired;
+# recorded result {clean: pass, n_listed: 3, n_failed: 3,
+# max_abs_mean: 2.976243740349105e-08} -- >3000x inside the 1e-4 band, at the
+# instrument floor (the ungraded unc_both_off positive control read 2.96e-8).
+# All three controls failed, including unc_no_dropout, which IS the pre-fix
+# #2424 code path. verify_wave.py --run
+# laser_proofread_unconditional_parity=30ca082e-... returns "would grade" with
+# all 14 conditions PASS.
+bth_run_id = "30ca082e-f118-45d6-8a57-e98612da3b8b"
+
+[sidecar.laser_decode_e2e]
+# REWRITTEN 261003 at 719c33e0 (wave group 1 of the re-wave after the #2445 /
+# #2424 / tied_beta / l_pad / partition-noise / order-oracle scoped batch).
+# Run 5b2c16ee, read from the cool-tier parquet: status completed, outcome pass,
+# git_dirty False, adversarial check fired, 3.14 h. Recorded result: clean pass
+# at sequence_agreement 1.0, chi_bin_agreement 1.0, max_circular_delta
+# 5.684341886080802e-14 -- BIT-IDENTICAL to the superseded 8647668d run at
+# eb4ee606, so no commit in the scoped batch moved a number on this vehicle.
+# All five controls failed (reversed_order, chi_bin_plus_one, offset_zero,
+# chi2_equals_chi1, lambda_on_logits). verify_wave.py --run
+# laser_decode_e2e=5b2c16ee-... returns "would grade", all 14 conditions PASS.
+# Supersedes 8647668d (eb4ee606, invalidated by the scoped batch).
+bth_run_id = "5b2c16ee-a65d-4735-a4e1-27f945e91e5f"
+
+[sidecar.potts_ar_decode]
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
+# the cool-tier parquet: completed, outcome pass, git_dirty False,
+# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
+# Run 7dfb9a68. clean pass at exact token match 1.0 over 18 units, BIT-
+# IDENTICAL to the superseded 28f8d7a2; ar_mask_present_chain_m_pos failed
+# (this run's recorded result carries the status, not the control's value).
+# None of tied_beta's deletion, l_pad, partition noise or the order oracles
+# moved the AR decode.
+bth_run_id = "7dfb9a68-aecf-4d48-8bc3-17a007b91893"
+
+[sidecar.potts_energy_parity]
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
+# the cool-tier parquet: completed, outcome pass, git_dirty False,
+# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
+# Run 06f329d4. clean pass at max_abs_delta 0.000732421875 with
+# analytic_abs_err exactly 0.0 over 21 units -- BIT-IDENTICAL to the
+# superseded bf6244f3. analytic_abs_err 0.0 is exact, not merely in-band: the
+# closed-form energy and the assembled etab agree bitwise, so the 7.3e-4 is the
+# Potts etab against upstream's and nothing else. permute_etab_out_rows failed
+# (1218.3 in the previous run; this run records the status only).
+bth_run_id = "06f329d4-b12d-4fad-945e-fb61f5b703db"
+
+[sidecar.laser_score_parity]
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Read from
+# the cool-tier parquet: completed, outcome pass, git_dirty False,
+# adversarial check fired. verify_wave: would grade, all 14 conditions PASS.
+# Run d29f813c. clean pass at max_abs_delta 2.3499874934884701e-07, BIT-
+# IDENTICAL to the superseded 92992234; permute_decoder_layer failed.
+# THE OLD CAVEAT IS NOW RESOLVED, NOT JUST REPEATED. The previous row said this
+# clean number passes on the rtol term against an unmeasured atol, pending the
+# floor measurement. Both measurements have since run: e47bfaab (floor, outcome
+# noise_reaches_defect_scale for the laser_score PORT tier) and 18b97f4f
+# (attribution: aminx's f32 error equals upstream's to 0.1%, ratios
+# 0.9987-1.0008). This vehicle's own band was never the problem -- it passes.
+# The open item is the port wave's tier-3 test design, which is the user's
+# decision: .praxia/docs/decisions/261003_laser-score-tier3-f32-design.md.
+# Older history of this row (the f11f2bf1 absolute weights path; the missing
+# launch_wave.sh entry fixed in ff4fe017) is in this file's commit history.
+bth_run_id = "d29f813c-fb26-41e2-a76e-4d63f31cf539"
+
+[sidecar.potts_ar_refine_exact]
+# Re-measured 261004 at e9ef452f (wave group 2 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..e9ef452f is ledger + docs only). Run
+# 1a98f24f, read from the cool-tier parquet: completed, outcome pass,
+# git_dirty False, adversarial check fired, 1.0 h. clean pass at match 1.0
+# over 1500 units (0 reused), BIT-IDENTICAL to the superseded a6c87107; all
+# three controls failed (ar_mask_present_chain_m_pos, ntoc_refine_order,
+# wrong_partition_sign -- this run records their status, not their values).
+# The refine path is where tied_beta, l_pad and the partition-noise stream
+# could plausibly have leaked in; none moved it.
+# verify_wave.py with all eight re-measured ids: would grade ALL EIGHT,
+# would NOT grade (none).
+bth_run_id = "1a98f24f-1085-4076-a64c-358f6e9aa374"
+
+[sidecar.potts_ddg_megascale]
+# REWRITTEN 261003 at 124f6e9e (wave group 3 of the re-wave after the scoped
+# batch ending 719c33e0; 719c33e0..124f6e9e is ledger + docs only). Run
+# b035f912, read from the cool-tier parquet: completed, outcome pass,
+# git_dirty False, adversarial check fired, 17.5 min, 696 units computed, 0
+# reused. clean max_abs_delta 0.0001220703125 (band <= 5e-4);
+# skip_transpose_merge_pair 11.645767211914062 (fail threshold 5e-3).
+# BIT-IDENTICAL to the superseded 49243551 run. In particular the
+# partition-noise fix (2d780d97) moved nothing here, as it should not: this
+# vehicle runs with backbone noise off, and stream 0 keeps the complex's key.
+# verify_wave.py --run potts_ddg_megascale=b035f912-... : would grade, all 14
+# conditions PASS. Ran concurrently with the laser_proofread_parity re-run
+# (two arms, >=46 GB available), NOT stacked with group 2 -- see the 20:18
+# OOM note on laser_proofread_parity.
+bth_run_id = "b035f912-b2a4-406c-a5a6-b1be69657a18"
+
+# NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
+# row, so check_branch_coverage should leave instrument_invalid.
+
+# POSITIVE CONTROL, run 56b0ddaa-572c-49da-99ae-f5b4cb9402d1 at 7aee0c01.
+# Deliberately NOT a row here: it is ungraded, writes no branch_controls.json and
+# must never be mistaken for a ledger run (trap 4). Recorded because it is the
+# instrument floor the negative controls are read against.
+#
+#   clean              band pass  max_abs_mean 4.218847e-15  max_abs_std 9.499346e-15
+#   scalar_both_off    band pass  max_abs_mean 7.327472e-15  max_abs_std 7.546914e-15
+#
+# scalar_both_off is a no-op mutation, so it must SURVIVE, and it does -- at the
+# same 1e-15 order as the clean arm. The clean arm reproduces the graded run's
+# numbers to every digit (4.218847493575595e-15 / 9.499345754448996e-15), which
+# is a separate fact worth having: the vehicle is deterministic across runs and
+# across commits.
+#
+# THE RECORD READS outcome=fail AND THAT IS THE CONTROL PASSING. The sidecar's
+# criteria are written for a graded run, where every mutant must be killed; here
+# the single mutant is one that must not be. sidecar_sha256 is present on the
+# record, so the sidecar resolved -- this is not the wrapper trap that leaves
+# outcome empty. adversarial_check_result: fired.
+#
+# So the vehicle's floor is ~1e-14 while its graded negative controls failed at
+# 1e-2 and larger, which is the separation the gate depends on.

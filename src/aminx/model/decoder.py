@@ -335,10 +335,12 @@ class DecoderLayer(eqx.Module):
       mask_cast = attention_mask.astype(message.dtype)
       message = jnp.expand_dims(mask_cast, -1) * message
 
-    # Stability fix: Accumulate message sums in float32
-    message_f32 = message.astype(jnp.float32)
-    aggregated_message_f32 = jnp.sum(message_f32, -2) / scale
-    aggregated_message = aggregated_message_f32.astype(message.dtype)
+    # Accumulate in at least float32. f32/bf16/f16 stay float32 (byte-identical
+    # with the previous hardcoded cast); f64 promotes to float64.
+    acc_dtype = jnp.promote_types(message.dtype, jnp.float32)
+    message_acc = message.astype(acc_dtype)
+    aggregated_message_acc = jnp.sum(message_acc, -2) / scale
+    aggregated_message = aggregated_message_acc.astype(message.dtype)
 
     # Aggregate messages and apply dropout
     h_V = node_features + self.dropout1(aggregated_message, key=keys[0], inference=inference)

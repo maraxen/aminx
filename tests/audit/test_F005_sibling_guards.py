@@ -9,11 +9,15 @@ campaign verbs) — mirroring the F002 guard shape from 7460516a.
 from __future__ import annotations
 
 import importlib.metadata as im
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-PDB = "/home/marielle/projects/aminx/tests/data/1ubq.pdb"
+# Resolved from this file, not from an absolute path into the main checkout:
+# a worktree is an isolated copy, so an absolute path silently reads main's
+# fixture while the tree under test is the worktree's.
+PDB = str(Path(__file__).resolve().parents[2] / "tests/data/1ubq.pdb")
 
 
 def _stamp() -> str:

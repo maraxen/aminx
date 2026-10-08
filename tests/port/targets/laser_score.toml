@@ -1,0 +1,123 @@
+# laser_score: teacher-forced get_logits_for_score.
+# oracle_id hashes tests/port/reference/laser_score/{algo.py,sealed.py}.
+# The npz files stay outside this tree; sealed.load checks oracle_manifest.toml.
+#
+# atol is the house pairing for the declared rtol. It is NOT a measured deviation.
+[port]
+wave_id = "laser_score"
+oracle_id = "ref:tests/port/reference/laser_score:v1:sha256:4bea8c139002d8d6788bf0c75ae6bbe7503f7e32b01dbf3cc7b24aa454ec6b6b"
+symbol_qualname = "aminx.model.laser.decoder.LaserDecoder"
+reference_subtree = "reference/laser_score"
+
+[capabilities]
+stochastic = false
+dynamic_shape = true
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=1e-8,atol=1e-11"
+tolerance_policy_f32 = "scale_rel=4e-4"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true
+
+[tolerance_basis]
+f64_atol_basis = "house-paired and NOT measured"
+f32_atol_basis = """
+MEASURED AND DELIBERATELY NOT WIDENED. Graded run
+e47bfaab-f1be-4386-a6c3-1ee6bd8c123f (scripts/analysis/
+laser_f32_tolerance_floor.py @ b880882e, clean tree) returned
+noise_reaches_defect_scale for this wave, whose pre-registered decision
+(64274bcf) is: escalate, do NOT widen. So this band stays red at tier 3 and the
+redsox gate keeps rc = 1 on it (debt #2445). Do not move it without a new
+measurement that clears the margin.
+
+  SUPERSEDED 2026-10-06 -- that measurement now exists (run 3af3be02, below),
+  and the band did not move: the RULE changed form. The paragraph above is kept
+  because it records why widening was refused, which is still the right call.
+
+  f64 tier passes rtol=1e-8,atol=1e-11 on all 9 fields (max abs 7.8e-13): the
+    port computes the same function as upstream. This is float32, not a defect.
+  f32 absolute floor 5.36e-4 (4496 ulp) on chi_logits. The error grows with
+    depth: ligand_scalars 7.2e-6 -> encoder_scalars/edges 5.6-7.3e-5 ->
+    lig_prot_edges 1.8e-4 -> seq/chi log-probs ~2e-4 -> sequence_logits 3.0e-4
+    -> chi_logits 5.4e-4. Roughly 10x amplification encoder -> heads.
+  the rule's band (atol 6e-3) would be 0.61 of an injected 1e-2 relative
+    defect's absolute size -- not the 10x separation required -- so a band wide
+    enough to admit this noise could not tell it from a real 1% error.
+
+ATTRIBUTED (261003): NOT A PORT DEFECT, AND NOT FIXABLE BY A BAND. Graded run
+18b97f4f-968d-4417-91e8-ede3dbf01258 (scripts/analysis/
+laser_score_f32_attribution.py @ 6a24c7a7, pre-registered there) measured each
+f32 implementation against an f64 truth (aminx-f64, matching upstream-f64 to
+6e-14) over all 63 pairs. Outcome aminx_no_worse_than_upstream: on every field
+E_aminx / E_upstream is 0.9987-1.0008. Scale-relative maxima:
+
+  field              aminx-vs-truth  upstream-vs-truth  aminx-vs-upstream
+  ligand_scalars     2.88e-2         2.88e-2            1.3e-6
+  sequence_logits    5.47e-3         5.47e-3            2.5e-5
+  chi_logits         3.67e-3         3.67e-3            2.8e-5
+
+The two f32 implementations agree with EACH OTHER ~200x more tightly than
+either agrees with f64: they make the same error. It is largest at
+ligand_scalars, the earliest field measured, and shrinks downstream, so it is
+not accumulation through depth. That points at a shared f32 effect early in the
+pipeline; this run localises it to a field, not to a specific op (the "10x
+amplification" above describes the aminx-vs-upstream difference, which is a
+different quantity). So there is no stability target in aminx.
+
+What this leaves is a TEST-DESIGN question, which is the user's: this tier
+compares two f32 implementations with a pairwise band, and the pre-registered
+10x defect margin cannot be met on these magnitudes by any band. Options to
+put to the user, not decided here: keep the band and accept tier 3 red for
+this wave; grade aminx-f32 against the f64 reference with a measured band; or
+compare on a scale-relative basis. No tolerance changes from this run.
+
+DECIDED 2026-10-06: THE USER CHOSE OPTION 3, SCALE-RELATIVE. So
+tolerance_policy_f32 above is no longer an rtol/atol pair at all. The assertion
+in tests/port/test_laser_score.py changed FORM, from an element-wise envelope
+to a reduction per field per pair:
+
+    max|got - ref|  <=  4e-4 * max|ref|
+
+That the form changed, and not merely the number, is what makes this legitimate
+rather than a widening. The paragraph above explains why no element-wise band
+could work: the two f32 implementations make the same error, so any envelope
+loose enough to admit it is also loose enough to admit a 1% defect.
+
+THE BAND IS MEASURED, NOT CHOSEN. Graded run 3af3be02
+(scripts/analysis/laser_score_scale_relative_floor.py @ 0e642d44, 458 s,
+status=completed / outcome=pass / exit_code=0 / git_dirty=False, sidecar
+c40240fe...). Its artifact resolves at
+outputs/laser_score_scale_relative_floor/0e642d44/result.json and reports:
+
+  proposed_tol         = 4e-4        floor_scale_relative = 3.6297e-05
+  headroom             = 10.0        control_scale_margin = 10.0
+  control_rejected     = true        below_control_scale  = true
+  n_pairs              = 63          n_fields             = 9
+  loo_all_admitted     = true        loo_worst_ratio      = 0.121
+  floor_field = seq_log_prob         floor_pair = soluble_65000__107m_1
+
+Three properties of that record carry the argument, beyond the headline:
+n_pairs = 63 is the whole population this tier asserts over, not a sample of
+it; control_rejected = true means the instrument still fails what it should
+fail; and loo_all_admitted = true with loo_worst_ratio = 0.121 means no single
+pair props the floor up.
+
+NOTE the margin is 10x, not the 100x quoted in some earlier notes. The band
+itself, 4e-4, was right in those notes.
+
+THE f64 TIER IS UNTOUCHED and remains element-wise at rtol=1e-8, atol=1e-11.
+It is the real correctness check; f64 is a parity dtype and is never used in
+production. No option in the decision doc changes it.
+
+The key name f32_atol_basis is now a misnomer -- the f32 band is not an atol.
+It is kept so the history above stays at its original key rather than being
+silently relocated.
+
+Do not move 4e-4 without a NEW pre-registered measurement that clears the 10x
+margin, exactly as the superseded paragraph required of the old band.
+"""

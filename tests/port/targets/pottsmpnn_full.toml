@@ -1,0 +1,21 @@
+# etab_forward plus teacher-forced log-probs. max_traces is 1 per static bucket.
+[port]
+wave_id = "pottsmpnn_full"
+oracle_id = "ref:tests/port/reference/pottsmpnn_full:v1:sha256:0fe956b3e4b4e151df4eea5924f6975a7fdf020abacec41d03b6cfcffb981e85"
+symbol_qualname = "aminx.families.potts_mpnn.model.PottsMPNN"
+reference_subtree = "reference/pottsmpnn_full"
+
+[capabilities]
+stochastic = false
+dynamic_shape = true
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "atol=1e-8"
+tolerance_policy_f32 = "log-prob atol=1e-4"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true

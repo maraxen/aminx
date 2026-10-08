@@ -1,0 +1,102 @@
+[metadata]
+title = "redsox knob coverage r2: is the uncovered blocker closed, and did it close honestly"
+created = "261003"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+REVISION 2. Revision 1's criteria have expired and these replace them; revision 1's
+record (bathos fa2fac73) stands as written and nothing in it is retracted.
+
+Revision 1 asked whether the gate's `uncovered` blocker was test debt or decision debt
+and pre-registered `pass` as `control_detected AND n_missing_test = 0 AND n_unreached >
+0`. It measured 3 unreached fields with ZERO missing tests, so the blocker was entirely
+structural and went to the user as a scope decision. Commit 1d11963c implemented that
+decision -- two orthogonal row markers, `upstream = false` and `kind = "inert"` -- which
+makes revision 1's `n_unreached > 0` clause false by construction. Criteria that can no
+longer be satisfied are not criteria, so this is a new pre-registration, not an edited
+outcome on the old one.
+
+The claim now has two halves, and the second is the one that can embarrass us.
+
+  n_unreached = 0            Every field in NEW_FIELDS is reached by a test whose
+                             prefix matches the naming row's own declared `kind`.
+                             The blocker is closed.
+
+  n_inert_unsafeguarded = 0  Every field credited by an INERTNESS test is also recorded
+                             `not_plumbed` in tests/lint/options_plumbing_allowlist.toml.
+                             The blocker closed honestly.
+
+The second half exists because the first is cheap to fake. `kind = "inert"` lets a knob
+be covered by a test proving it reaches nothing -- correct for a field like
+emit_dense_hJ, which is declared in options.py and read nowhere in src/ -- and is one
+short step from "mark it inert and move on". The safeguard is that an inert credit must
+be backed by an allowlist row which test_allowlist_has_no_fixed_entries DELETES the
+moment the field becomes plumbed, so the credit cannot outlive the defect. Reporting
+n_unreached = 0 without checking that would be reporting the easy half.
+
+SCOPE, STATED BECAUSE REVISION 1 DID NOT. This script reads the alias map; it does not
+run pytest. The gate additionally requires each named nodeid to appear in this run's own
+outcomes file (AMINX_REDSOX_OUTCOMES_READ), which exists only after a gate run. So
+n_unreached = 0 here is NECESSARY BUT NOT SUFFICIENT for test_parity_ids_passed: it says
+every field is named by a correctly-prefixed test, not that every such test passed. The
+gate run is the complement; the two together are the claim. Revision 1 had the identical
+limitation silently.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "controls_detected = true AND n_unreached = 0 AND n_inert_unsafeguarded = 0"
+decision = "The uncovered blocker is structurally closed and every inert credit is backed by tracked not_plumbed debt. Proceed to the gate run, which measures the half this script cannot: that each named test actually passed."
+reasoning = "controls_detected proves the instrument discriminates the two prefixes rather than unioning them, so a zero is evidence instead of an artefact. n_inert_unsafeguarded = 0 is a separate clause and not folded into the first, because a run could drive n_unreached to zero purely by marking rows inert and that is the failure mode the clause exists to catch."
+is_residual = false
+adversarial_check = "NOT (controls_detected = true AND n_unreached = 0 AND n_inert_unsafeguarded = 0)"
+
+[outcomes.unsafeguarded_inert]
+condition = "controls_detected = true AND n_inert_unsafeguarded > 0"
+decision = "Do not report the blocker closed. Either add the field to the plumbing allowlist with a reason, or stop marking its row inert. Checked before the n_unreached clause deliberately."
+reasoning = "An inert credit with no allowlist row has nothing policing it: the debt is untracked and no test retires the credit when the knob is wired, so the gate would certify coverage for a field whose only evidence is an assertion that it does nothing. That is worse than an open blocker, because an open blocker is visible."
+is_residual = true
+adversarial_check = "n_inert_unsafeguarded = 0"
+
+[outcomes.fail]
+condition = "controls_detected = true AND n_unreached > 0 AND n_inert_unsafeguarded = 0"
+decision = "The blocker is not closed. Read by_mechanism: MISSING_TEST is work, KIND_MISMATCH is a mismarked row, NO_ROW needs an __aminx_only__ row, PREFIX_MISMATCH needs a judgement about what the test proves. Each mechanism has a different remedy and they must not be merged."
+reasoning = "1d11963c was supposed to make every NEW_FIELDS entry reachable. A nonzero count means it did not, and the mechanism breakdown says which of four unrelated remedies applies. Reporting a bare count would invite the wrong one."
+is_residual = true
+adversarial_check = "n_unreached = 0"
+
+[outcomes.inconclusive]
+condition = "controls_detected != true"
+decision = "Discard every count. Fix the classifier before drawing any conclusion, especially from a zero."
+reasoning = "Eight checks across three groups must all fire. The sharp ones are semantics_row_rejects_inert_test and inert_row_rejects_semantics_test: if either returns COVERABLE the classifier is accepting the two prefixes interchangeably, which is exactly the cheap way to drive n_unreached to zero, and every number in the result would be worthless. The others pin MISSING_TEST in both directions, PREFIX_MISMATCH, the inert-accepts-inert direction, and the safeguard in both directions."
+is_residual = true
+adversarial_check = "controls_detected = true"
+
+[result_schema]
+n_new_fields = "int"
+n_coverable = "int"
+n_unreached = "int"
+n_missing_test = "int"
+n_kind_mismatch = "int"
+n_prefix_mismatch = "int"
+n_no_row = "int"
+n_excluded_only = "int"
+n_inert_credited = "int"
+n_inert_unsafeguarded = "int"
+n_aminx_only_rows = "int"
+controls_detected = "bool"
+
+[data]
+revision = "2; supersedes revision 1 (bathos fa2fac73), whose pass clause n_unreached > 0 became false when commit 1d11963c closed the blocker"
+why_new_criteria_not_an_edited_outcome = "Revision 1's pass condition is unsatisfiable at this tree, so a run under it could only miss vacuously. Editing its outcomes to match what 1d11963c achieved would be choosing criteria after seeing the result, which is the exact failure the pre-registration rule exists to stop. The old record is left intact."
+the_cheap_fix_this_is_designed_to_catch = "Accept either test prefix on any row, or mark rows inert until nothing is uncovered. Both drive n_unreached to zero. The kind-discrimination controls catch the first and n_inert_unsafeguarded catches the second."
+renamed_mechanism = "NO_REFERENCE_FIELD -> NO_ROW. Revision 1's name asserted a structural dead end: test_rows_bijective pinned {row.ref} == REF_F flat, so a field with no upstream analogue could not be named by any row. Since 1d11963c it can, via __aminx_only__<field> with upstream = false, so the remedy is ordinary work and the old name would be a false claim."
+measurement_reuses_the_gate_reading = "classify() mirrors the gate on every load-bearing point: live = equivalence != exclusion, only live rows cover, the accepted prefix comes per-row from that row's own kind, and the safeguard ranges over ALL naming rows rather than only live ones, because test_row_markers_are_declared does the same."
+what_this_cannot_see = "Whether the named tests passed. That needs the gate's own outcomes file and is the gate run's job; n_unreached = 0 is necessary, not sufficient."
+cost = "Reads two TOML files and imports aminx.run.options. Sub-second, no GPU, no checkpoints, nothing to resume."
+first_r2_run_was_ungraded_and_is_superseded = "Run 94e0bfde exited 0 and printed every count, but its record carries outcome = 'unknown' and output_paths = [], so the [outcomes] conditions below were NEVER evaluated. Cause, read from runner.py:_read_result_emission: bathos takes the result from $BTH_RESULTS_PATH, else an adjacent <stem>.bth-results.json, else a single path registered via `bth run --output-file`. A bare `--out` is none of the three. The script now also writes $BTH_RESULTS_PATH and warns when it is unset, so grading no longer depends on remembering a flag. This [data] note and that emission are the ONLY changes: the [outcomes] and [result_schema] blocks are byte-identical to the ones committed in 0d8d63c1 before any run, so the criteria were not moved after seeing numbers. The re-run is deterministic over the same two files and is expected to report the same counts; it exists to make the record evaluate them."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }

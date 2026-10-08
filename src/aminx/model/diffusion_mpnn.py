@@ -167,9 +167,12 @@ class DiffusionAminx(Aminx):
     structure_mapping: jax.Array | None = None,
     initial_node_features: jax.Array | None = None,
     timestep: jax.Array | None = None,
+    inference: bool = True,
     **kwargs: Any,
   ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Encoder-only entry point with diffusion timestep support.
+
+    ``inference`` is forwarded to ``Aminx`` so encoder dropout follows the caller.
 
     Returns:
         3-tuple of (node_features, edge_features, edge_indices).
@@ -186,6 +189,7 @@ class DiffusionAminx(Aminx):
       backbone_noise_mode=backbone_noise_mode,
       structure_mapping=structure_mapping,
       initial_node_features=initial_node_features,
+      inference=inference,
       **kwargs,
     )
 

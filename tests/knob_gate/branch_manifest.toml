@@ -1,0 +1,231 @@
+# T0.4 shipped no rows. Each stage task appends its own [[branch]] entries.
+#
+# For a sidecar-backed vehicle the row `id` MUST equal the mutant name:
+# _coverage.py:427 collects sidecar_ids[slug] from the `id` field, and :309
+# requires that set to equal _argv_mutants(run.argv). So a row whose id differs
+# from the mutant it names silently fails step 1c with no other symptom.
+#
+# A row only grades once its vehicle has a run that is outcome == 'pass',
+# status 'completed', NOT git_dirty, at a commit that is an ancestor of HEAD and
+# does not touch scoped paths, whose sidecar_sha256 still matches the sidecar on
+# disk, and whose --output-paths include /<slug>/<git sha8>/branch_controls.json.
+
+[[branch]]
+id = "reversed_order"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "reversed_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "chi_bin_plus_one"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "chi_bin_plus_one"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "offset_zero"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "offset_zero"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "chi2_equals_chi1"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "chi2_equals_chi1"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "lambda_on_logits"
+stage = "B5b"
+fixture = "laser_decode_e2e_examples"
+mutant = "lambda_on_logits"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_decode_e2e"
+
+[[branch]]
+id = "ar_mask_present_chain_m_pos"
+stage = "A5"
+fixture = "potts_example_pdbs"
+mutant = "ar_mask_present_chain_m_pos"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_decode"
+
+[[branch]]
+id = "permute_etab_out_rows"
+stage = "A5"
+fixture = "potts_example_pdbs"
+mutant = "permute_etab_out_rows"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_energy_parity"
+
+# B7 laser_proofread_parity. FOUR rows, the four negative controls.
+# scalar_both_off is the POSITIVE control and deliberately has no row here:
+# every row above must report "failed" (_coverage.py:328) and a positive
+# control must pass. It must also stay out of the graded run's --mutants,
+# because :309 compares the raw argv string to exactly this set of ids.
+
+[[branch]]
+id = "reduction_swap"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "reduction_swap"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+[[branch]]
+id = "ddof_0"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "ddof_0"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+[[branch]]
+id = "scalar_off"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "scalar_off"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+[[branch]]
+id = "vector_on"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "vector_on"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_parity"
+
+# B7 laser_proofread_unconditional_parity. THREE rows, the three negative
+# controls. unc_both_off is the POSITIVE control and deliberately has no row
+# here: every row must report "failed" (_coverage.py:328) and a positive
+# control must pass. It must also stay out of the graded run's --mutants,
+# because :309 compares the raw argv string to exactly this set of ids.
+
+[[branch]]
+id = "unc_no_dropout"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "unc_no_dropout"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_unconditional_parity"
+
+[[branch]]
+id = "unc_scalar_off"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "unc_scalar_off"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_unconditional_parity"
+
+[[branch]]
+id = "unc_vector_on"
+stage = "B7"
+fixture = "laser_proofread_examples"
+mutant = "unc_vector_on"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_proofread_unconditional_parity"
+
+# A6 potts_ar_refine_exact. Three rows. ar_mask_present_chain_m_pos is also a
+# potts_ar_decode mutant, but the id lives under this slug's own set: :427
+# keys sidecar_ids by slug, so the same mutant name under two slugs is two
+# independent rows and each slug's --mutants must match its own set.
+
+[[branch]]
+id = "ar_mask_present_chain_m_pos"
+stage = "A6"
+fixture = "potts_example_pdbs"
+mutant = "ar_mask_present_chain_m_pos"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_refine_exact"
+
+[[branch]]
+id = "wrong_partition_sign"
+stage = "A6"
+fixture = "potts_ar_refine_examples"
+mutant = "wrong_partition_sign"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_refine_exact"
+
+[[branch]]
+id = "ntoc_refine_order"
+stage = "A6"
+fixture = "potts_ar_refine_examples"
+mutant = "ntoc_refine_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ar_refine_exact"
+
+# B4 laser_score_parity. This vehicle was built, pre-registered and run to a
+# clean pass with its control firing (run at f11f2bf1: clean "pass",
+# permute_decoder_layer "failed") and then never listed here, so the gate did
+# not require it. Listed now; it needs a re-run at the frozen tree because the
+# f11f2bf1 controls carry an absolute weights key (trap 3).
+
+[[branch]]
+id = "permute_decoder_layer"
+stage = "B4"
+fixture = "laser_score_examples"
+mutant = "permute_decoder_layer"
+[branch.vehicle]
+kind = "sidecar"
+slug = "laser_score_parity"
+
+# A6 potts_ddg_megascale. Listed 261002, after being run for the first time:
+# run 90f945fc-49fc-4474-af22-124f817188db at e3bc540e, outcome pass, 202804
+# rows across 371 per-PDB resumable units per arm, finished in ~25 minutes.
+#
+#   clean                      pass  max_abs_delta 1.2207e-4   (band <= 5e-4)
+#   skip_transpose_merge_pair  fail  max_abs_delta 11.6458     (fail above 5e-3)
+#
+# The control misses by more than three orders of magnitude above its own fail
+# threshold, against a clean arm four times inside the pass band, so the vehicle
+# separates by a wide margin on the largest fixture in the sprint.
+#
+# The note that used to sit here said to run it before listing it, because
+# listing a vehicle nobody had exercised would make the gate red on it. That has
+# now happened in the stated order.
+
+[[branch]]
+id = "skip_transpose_merge_pair"
+stage = "A6"
+fixture = "megascale_test_subset"
+mutant = "skip_transpose_merge_pair"
+[branch.vehicle]
+kind = "sidecar"
+slug = "potts_ddg_megascale"
+
+# STILL UNLISTED, deliberately, one spec-listed sidecar vehicle:
+#
+#   potts_refine         clean arm FAILS at match 0.9539 (debt #2417, P1), and
+#                        it sits in the spec's WAVE table rather than the
+#                        sidecar table, so whether it owes a row here is a
+#                        genuine question rather than an oversight. Its control
+#                        unmasked_x_logit returns a result bit-identical to the
+#                        clean arm, which is ambiguous while clean is failing
+#                        (see #2370) -- it can mean the control is inert OR
+#                        that one defect swamps both. Resolve #2417 first.

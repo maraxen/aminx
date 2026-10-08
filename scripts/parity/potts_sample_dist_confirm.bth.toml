@@ -1,0 +1,67 @@
+[metadata]
+title = "Potts distributional CONFIRMATORY round 2 -- refine@0.3 with matched refine order (aminx production sampler vs upstream)"
+created = "261005"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Round 2, refine@0.3 only. Given the SAME refine-order semantics as the upstream arms, aminx's production PottsMPNN AR-then-potts-refine sampler (float32, its own jax.random keys) draws per-position amino-acid distributions indistinguishable from upstream PottsMPNN within the pilot-derived margin at T=0.3, on the four confirmatory structures 3gg7, 4jox, 6w25 and swe1_ligand. Round 1 (bathos 1cfc1e9d @ 0574175d, outcome fail; plain@1.0 passed there and is NOT re-run) compared aminx refining N-to-C against upstream arms refining each sample in that sample's own AR decoding order; debt 2474. Spec rule per cell: pooled Delta_bar = mean_s [D(A,U1) - D(U2,U1)]; pass = 95% one-sided bootstrap upper bound < delta AND max_s Delta_s < 2 delta; fail = 90% CI lower bound > delta; else inconclusive. Sidecar pass iff every selected cell passes. The instrument must also discriminate: every negative control of a selected cell (aminx at m*T, m=1.5 for refine@0.3) must grade 'fail' under the same rule."
+stage_name = "confirmatory"
+novel = true
+
+[outcomes.pass]
+condition = "sidecar_verdict = 'pass' AND controls_all_fail = true AND smoke = false"
+decision = "List potts_sample_dist refine@0.3 as passing in the distributional tier, alongside plain@1.0 (passed in round 1, bathos 1cfc1e9d), and record debt 2474 as an instrument mismatch rather than an aminx refine defect; the remaining Potts cells (plain@0.1, pssm@0.3, tied@0.3) wait on the user's decision doc and plain@0.3 stays instrument_invalid."
+reasoning = "Every selected cell sits inside the pre-registered margin and every negative control was detected, so the test had power to see a near-margin defect."
+is_residual = false
+adversarial_check = "NOT (sidecar_verdict = 'pass' AND controls_all_fail = true AND smoke = false)"
+
+[outcomes.fail]
+condition = "sidecar_verdict = 'fail' AND controls_all_fail = true AND smoke = false"
+decision = "aminx's sampling distribution differs from upstream beyond delta in at least one selected cell even with matched refine order: keep debt 2474 open, append the per-structure Delta_s, and investigate the refine stage itself before any listing."
+reasoning = "The instrument discriminates (controls fail) and a main cell's 90% lower bound exceeds delta."
+is_residual = false
+adversarial_check = "NOT (sidecar_verdict = 'fail' AND controls_all_fail = true AND smoke = false)"
+
+[outcomes.instrument_invalid]
+condition = "controls_all_fail = false AND smoke = false"
+decision = "A negative control did not grade 'fail', so a pass here would mean nothing: report which control and cell; no listing."
+reasoning = "Spec: negative controls must fail."
+is_residual = true
+adversarial_check = "NOT (controls_all_fail = false AND smoke = false)"
+
+[outcomes.inconclusive]
+condition = "sidecar_verdict = 'inconclusive' AND controls_all_fail = true AND smoke = false"
+decision = "Report per cell; no listing and no failure claim. Any n escalation is a NEW pre-registration."
+reasoning = "Spec: neither the pass nor the fail bound is met."
+is_residual = true
+adversarial_check = "NOT (sidecar_verdict = 'inconclusive' AND controls_all_fail = true AND smoke = false)"
+
+[outcomes.smoke]
+condition = "smoke = true"
+decision = "Plumbing check only (n=50, B=50, one structure); cites nothing."
+reasoning = "A smoke run is not the confirmatory test."
+is_residual = true
+adversarial_check = "NOT (smoke = true)"
+
+[result_schema]
+sidecar_verdict = "str"
+controls_all_fail = "bool"
+n_controls = "int"
+cells = "dict"
+cells_selected = "list"
+structures = "dict"
+pilot_run_id = "str"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+smoke = "bool"
+confirm_round = "int"
+
+[data]
+pilot = "bathos run 6b47d40c-32e4-434b-b94f-fa2f8c077f2d (scripts/parity/potts_sample_dist_pilot.py @ 96a148ba, clean tree), outcome instrument_invalid ONLY because plain@0.3 failed the shim check (mean gap 0.002135 > h_hat 0.002087). plain@1.0 and refine@0.3 each derived a delta and m with shim_ok, and are carried here unchanged."
+constants = "plain@1.0: delta 0.01, m 1.1, h_hat 0.0022991985350076035, n 1000. refine@0.3: delta 0.01, m 1.5, h_hat 0.0020500332952815914, n 1000. B = 2000. These are module constants in the driver and are not recomputed."
+excluded = "plain@0.3 (pilot instrument_invalid; the spec provides no re-pilot for a shim-check failure). plain@0.1, pssm@0.3, tied@0.3: pending user decision .praxia/docs/decisions/261004_sample-dist-pilot-fixtures-and-low-t.md. This run says nothing about them."
+structures = "PottsMPNN inputs/example_pdbs/{3gg7,4jox,6w25,swe1_ligand}.pdb pinned by SHA-256 in the driver (3gg7 2203e4a6..., 4jox c1654371..., 6w25 4a9a6dc2..., swe1_ligand 493352b8...). Never seen by the pilot."
+arms = "A and controls: aminx production SampleStages path, float32, jax.random keys from the unit seed. Refine arms draw each of the n sequences in its OWN runner.sample call with num_samples=1 and a per-draw sha256 seed, so aminx refines in that sample's AR decoding order exactly as the upstream arms do (round 1 drew all n in one call and hit upstream's num_samples>1 N-to-C refine-order quirk, spec line ~937, which aminx faithfully reproduces). U1: upstream with iid-uniform shim. U2: upstream unshimmed. Seeds disjoint across all units, from round 1 (prefix 'confirm|') and from the pilot's; round 2 claims the prefix 'confirm2|' and the result carries confirm_round = 2."
+resume = "Every (cell, structure, run) unit persisted with a completion stamp via graded_resume and reused only on matching input/checkpoint/script SHA-256; aminx units run one subprocess each with a per-unit timeout; no whole-run timeout."
+prior_exposure = "Round 1 (bathos 1cfc1e9d) drew these structures on both sides and its numbers are public in that record, so round 2 is NOT blind to them. What round 2 changes is the aminx refine order only; the margin (delta 0.01) and m (1.5) come from the pilot and are unchanged, the structures and the grading rule are unchanged, and round 2 uses fresh seeds in a round-specific work dir so no round-1 unit is reused. A --smoke run (smoke=true, its own outcome) may precede this to check plumbing."

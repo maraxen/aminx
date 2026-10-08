@@ -1,0 +1,98 @@
+{
+  "n_new_fields": 51,
+  "n_coverable": 51,
+  "n_unreached": 0,
+  "n_missing_test": 0,
+  "n_kind_mismatch": 0,
+  "n_prefix_mismatch": 0,
+  "n_no_row": 0,
+  "n_excluded_only": 0,
+  "n_inert_credited": 2,
+  "n_inert_unsafeguarded": 0,
+  "n_aminx_only_rows": 2,
+  "controls_detected": true,
+  "controls": {
+    "no_ids_is_missing_test": true,
+    "semantics_id_is_coverable": true,
+    "semantics_row_rejects_inert_test": true,
+    "inert_row_rejects_semantics_test": true,
+    "inert_row_accepts_inert_test": true,
+    "unprefixed_id_is_prefix_mismatch": true,
+    "inert_without_allowlist_is_flagged": true,
+    "inert_with_allowlist_is_not_flagged": true
+  },
+  "by_mechanism": {
+    "COVERABLE": [
+      "ala_budget",
+      "bias_by_res_json",
+      "binding_energy_json",
+      "binding_energy_optimization",
+      "budget_residue_selection",
+      "chain_design_mask_json",
+      "chi_min_p",
+      "chi_temp",
+      "constrain_ala_gly_to_exposed_non_ss",
+      "disable_charged_fs",
+      "disabled_residues",
+      "emit_dense_hJ",
+      "emit_etab",
+      "exclude_chains",
+      "fix_from_bfactor",
+      "fs_sequence_temp",
+      "gly_budget",
+      "ignore_chain_mask_zeros",
+      "ignore_ligand",
+      "mean_norm",
+      "mutant_csv",
+      "mutant_fasta",
+      "n_decoding_orders",
+      "n_dropouts",
+      "noncanonical_aa_ligand",
+      "omit_aa",
+      "omit_aa_per_position",
+      "optimization_mode",
+      "optimization_temperature",
+      "optimize_fasta",
+      "optimize_pdb",
+      "output_fasta",
+      "output_fasta_only",
+      "output_kind",
+      "proofread_dropout",
+      "pssm_bias_flag",
+      "pssm_json",
+      "pssm_log_odds_flag",
+      "pssm_multi",
+      "pssm_threshold",
+      "repack_all",
+      "repack_only",
+      "selection_string",
+      "seq_min_p",
+      "skip_gaps",
+      "strict_load",
+      "tied_beta",
+      "tied_epistasis",
+      "tied_interpolation_lambda",
+      "tied_second_input",
+      "use_water"
+    ]
+  },
+  "unreached": [],
+  "inert": [
+    {
+      "field": "emit_dense_hJ",
+      "credited": true,
+      "unsafeguarded": false,
+      "matched_ids": [
+        "tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_emit_dense_hJ"
+      ]
+    },
+    {
+      "field": "tied_beta",
+      "credited": true,
+      "unsafeguarded": false,
+      "matched_ids": [
+        "tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_fixed_mask_and_tied_beta"
+      ]
+    }
+  ]
+}

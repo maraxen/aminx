@@ -1,0 +1,37 @@
+[metadata]
+title = "Which tests does the spec name that do not exist?"
+created = "261002"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The sprint's remaining test work has been carried as a recollection -- 'the knob tests the spec names but that do not exist' -- which is unreproducible and, being a memory, is as likely to be too short as too long. This derives the list: every `test_[a-z0-9_]+` token in the spec, resolved against the suite. THE RESOLVER IS THE EXPERIMENT, not the sweep. A spec token legitimately resolves three ways -- a test FUNCTION, a test MODULE (tests/.../<name>.py), or a unique PREFIX of a parametrised name -- and a token ending in '_' is a family prefix the prose completed in words, not a name at all. A naive version (regex over the spec, `^def test_` over tests/) reports 35 missing; 11 of those are artefacts of that naivety. The number this run reports is only meaningful if the resolver is neither trivially permissive nor trivially strict, which is what the outcomes below test."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.pass]
+condition = "n_named > 0 AND n_present > 0 AND n_missing > 0"
+decision = "Treat `missing` as the derived backlog of spec-named tests that do not exist, and work it instead of the recollection."
+reasoning = "The spec parsed, and the resolver both accepted and rejected names -- so it is discriminating rather than degenerate in either direction."
+is_residual = false
+adversarial_check = "A resolver that accepted EVERYTHING would report n_missing = 0; one that accepted NOTHING would report n_present = 0. Both are excluded by this condition. Spot-check by hand: at least one name must resolve via each of the three routes -- a function, a module (test_knob_superset is tests/knob_gate/test_knob_superset.py), and a prefix -- and at least one reported-missing name must be confirmed absent with `grep -rn 'def <name>' tests/`."
+
+[outcomes.spec_unparsed]
+condition = "n_named = 0"
+decision = "Do not use the list. Fix the spec path or the token pattern first."
+reasoning = "No named tests found at all means the spec was not read, not that it names none -- it names dozens in prose."
+is_residual = false
+adversarial_check = "Confirm the spec file exists at the hardcoded path and contains the literal 'test_' before accepting this outcome."
+
+[outcomes.resolver_degenerate]
+condition = "n_named > 0 AND (n_present = 0 OR n_missing = 0)"
+decision = "Do not cite the count. The resolver collapsed in one direction and the list is an artefact."
+reasoning = "n_present = 0 means nothing resolved, so the suite was not scanned; n_missing = 0 means everything resolved, which given the known-absent test_knob_semantics_laser_noise (blocked on debt 2434) cannot be true."
+is_residual = true
+adversarial_check = "test_knob_semantics_laser_noise is quoted verbatim in spec 6.3 and is known not to exist -- it is blocked on debt 2434. If it does not appear in `missing`, this outcome is correct and the run is void."
+
+[result_schema]
+n_named = "int"
+n_present = "int"
+n_missing = "int"
+missing = "list"
+fragments = "list"

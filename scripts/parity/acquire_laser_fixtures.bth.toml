@@ -1,0 +1,36 @@
+[metadata]
+title = "LASEr Zenodo fixture acquisition (B1a)"
+created = "260929"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Reassembling the two Zenodo LASEr protonated-PDB chunks yields md5 c9418cb9368c8068a6053feebbff5fda, and in-archive selection writes 20 laser_score_parity complexes whose on-disk SHA-256 values match fixtures_manifest.toml."
+stage_name = "validation"
+novel = false
+
+[outcomes.pass]
+condition = "md5_ok = true AND n_selected = 20 AND n_written = 20 AND all_hashes_match = true"
+decision = "Pin tests/fixtures/laser from this run: the archive matches the upstream md5 and the 20 extracted PDBs re-hash to the manifest."
+reasoning = "The documented Zenodo md5 plus a same-pass sha256, a 20-id held-out selection, and a re-hash of the written files are the B1(a) acceptance checks."
+is_residual = false
+adversarial_check = "NOT (md5_ok = true AND n_selected = 20 AND n_written = 20 AND all_hashes_match = true)"
+
+[outcomes.fail]
+condition = "NOT (md5_ok = true AND n_selected = 20 AND n_written = 20 AND all_hashes_match = true)"
+decision = "Do not pin the fixture directory; the archive checksum, the selection count, or a written-file hash failed."
+reasoning = "A wrong md5, fewer or more than 20 complexes, or a manifest hash that does not match the bytes on disk falsifies the acquisition."
+is_residual = true
+adversarial_check = "md5_ok = true AND n_selected = 20 AND n_written = 20 AND all_hashes_match = true"
+
+[result_schema]
+md5_ok = "bool"
+n_selected = "int"
+n_written = "int"
+all_hashes_match = "bool"
+archive_sha256 = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[provenance]
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/acquire_laser_fixtures.py --work-dir <scratch> --laser-root ~/repos/LASErMPNN --out tests/fixtures/laser. --dry-run and --selftest do not download the archive. Parts are skipped when their size already equals the Zenodo API size; HTTP Range is not used. Pass and fail conditions are logical complements."

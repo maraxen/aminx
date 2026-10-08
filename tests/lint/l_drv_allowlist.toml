@@ -1,0 +1,75 @@
+# L-DRV R3 allowlist. Each [[entries]] row permits lax.scan / lax.while_loop /
+# lax.fori_loop at one (path, enclosing qualname). reason must be
+# "sequential_dependency". Potts AR steps, refine sweeps, and the converge
+# while_loop are sequential: each step reads the sequence or hidden state the
+# previous step wrote.
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/decode.py"
+qualname = "PottsARDecode.__call__"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/decode.py"
+qualname = "_decode_group"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "PottsRefine._potts"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_untied_nodes_sweep"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_untied_energy_sweep"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_tied_nodes_sweep"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_tied_nodes_group"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_tied_energy_sweep"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_visit_tied_group"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_visit_tied_group.designed"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/potts_mpnn/refine.py"
+qualname = "_average_member_energy"
+reason = "sequential_dependency"
+
+# Each decoded residue is readable by later residues only after this step
+# writes its sequence embedding, χ RBF and decoder row.
+[[entries]]
+path = "src/aminx/model/laser/joint_decode.py"
+qualname = "_scan_residues"
+reason = "sequential_dependency"
+
+# Tied step t reads the shared sequence embedding and each structure's χ RBF
+# that step t-1 wrote. Structure 2's χ draw also waits on structure 1's draw
+# so the (step, χ, structure) uniform stream stays in upstream order.
+[[entries]]
+path = "src/aminx/model/laser/tied.py"
+qualname = "_scan_tied"
+reason = "sequential_dependency"

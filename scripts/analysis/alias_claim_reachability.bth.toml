@@ -1,0 +1,72 @@
+[metadata]
+title = "Are the alias map's equivalence claims reachable in the implementation? (revision 2)"
+created = "261002"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "alias_map.toml records, for each upstream knob, the aminx field it corresponds to, and test_parity_ids_passed enshrines those claims by requiring each live row to name a passing test; a row whose target field the implementation never consumes asserts a correspondence the code does not make, so the knob is accepted and silently ignored. TWO INSTANCES ARE ALREADY CONFIRMED BY HAND and are declared here so neither can be mistaken for a prediction: (1) the seven backbone_noise / bb_noise rows map to `noise`, which the LASEr subtree never reads although utils/coordinates.py:44 reads it generically with the per-atom rule the spec calls LASEr's negative control (aminx debt 2434); (2) LaserOptions.chi_temp appears as an exact token NOWHERE but its own dataclass line run/options.py:42, because the laser subtree spells the parameter chi_temperature, so the Options field is inert. The open question this probe settles is the COMPLETE list of both classes across all live rows, which no single grep can answer."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.all_claims_reachable]
+condition = "n_unreachable = 0 AND n_inert_options = 0 AND n_outside_family = 0"
+decision = "Treat every live alias row's target as consumed and stop looking for this defect class."
+reasoning = "All three questions clean means no live row maps to a field the implementation ignores."
+is_residual = false
+adversarial_check = "This outcome CANNOT be correct: noise and chi_temp are both confirmed instances, so it firing is proof the probe is broken. Revision 1 failed exactly here -- it reported a hit list that omitted noise because it only asked the family question of fields mapped from a single family, and noise is mapped from two."
+
+[outcomes.unreachable_targets]
+condition = "n_unreachable > 0"
+decision = "File each unreachable target as debt and correct or exclude its alias rows before the gate enshrines them."
+reasoning = "Zero reads anywhere under src/aminx means the row names a consumer that does not exist."
+is_residual = false
+adversarial_check = "Confirm each hit by word-boundary grep as well as by the ast walk; a file the walk failed to parse would under-count reads and manufacture this outcome. The run logs every skipped file."
+
+[outcomes.inert_option_fields]
+condition = "n_unreachable = 0 AND n_inert_options > 0"
+decision = "File the inert fields as debt, one item for the set. Each is a knob the public Options surface accepts and forwards to nothing, so its alias rows' equivalence claim is unsupported however many tests name the field. Fix after the freeze -- run/options.py is scoped."
+reasoning = "A field read nowhere outside its own dataclass definition is declared and dead. This is sharper than the family question: it needs no view on which subtree ought to own the knob."
+is_residual = false
+adversarial_check = "chi_temp MUST appear in this set; its absence means the exact-token logic regressed. For each other hit, confirm with `grep -rnw <field> src/aminx/` that the only match is the dataclass line, and check the knob is not reached through a differently-named parameter that IS plumbed -- the point is the Options field being dead, not the capability being absent."
+
+[outcomes.family_knob_handled_generically]
+condition = "n_unreachable = 0 AND n_inert_options = 0 AND n_outside_family > 0"
+decision = "Review each hit against the spec: a family whose upstream rule differs from the generic one needs its own stage, and until it has one the row's claim is unsupported. File debt per family rule, not per row."
+reasoning = "The field is consumed, so the claim is not vacuous, but not by the family it is mapped from -- the shape of the confirmed noise defect."
+is_residual = false
+adversarial_check = "noise_is_a_hit in the payload MUST be true. If it is false this outcome is unreliable, because noise is the instance the probe was built to catch. Also confirm each hit is genuinely family-specific rather than a runner knob the exclusion list missed; that list is in the payload so it can be corrected and the probe re-run."
+
+[result_schema]
+outcome = "str, one of all_claims_reachable / unreachable_targets / inert_option_fields / family_knob_handled_generically"
+revision = "int, 2"
+n_target_fields = "int, distinct target fields named by live rows"
+n_family_field_pairs = "int, (family, field) pairs the live rows create"
+n_unreachable = "int, question A hits"
+n_inert_options = "int, question B hits"
+n_outside_family = "int, question C hits, keyed family:field"
+unreachable = "dict, field -> the refs asserting it"
+inert_options = "dict, field -> the refs asserting it"
+inert_options_by_family = "dict, family -> its inert Options fields"
+outside_family = "dict, family:field -> the refs asserting it"
+noise_is_a_hit = "bool, the revision-1 regression guard; see the adversarial checks"
+runner_knobs_excluded_from_question_c = "list, the judgement call recorded verbatim"
+
+[dependencies]
+inputs = ["tests/knob_gate/alias_map.toml", "src/aminx/**/*.py"]
+
+[data]
+questions = "A: field read anywhere under src/aminx. B: family Options field read anywhere outside run/options.py. C: per (family, field) pair, field read inside that family's own subtree."
+outcome_precedence = "A, then B, then C -- each needs strictly less judgement than the next, so the least arguable finding is reported first. The payload always carries all three counts, so precedence hides nothing."
+why_ast_not_grep = "Reads come from an ast walk over Name / Attribute / keyword / arg nodes. The distinction is load-bearing twice: a grep for `noise` credits any file saying backbone_noise_mode, and a grep for `chi_temp` credits `chi_temperature` -- which is exactly the rename that hides the unplumbed field."
+why_pairs_not_fields = "Revision 1 asked the family question only of fields mapped from exactly one family, so `noise`, mapped from both, was skipped and the confirmed instance was missed. The claim is per (family, field), so the probe is too."
+known_instances = "noise, 7 rows (debt 2434). chi_temp, mapped from laser rows; exact token only at run/options.py:42."
+upstream_rule_for_noise = "pdb_dataset.py:412-415 -- when bb_noise > 0, round coords to 2 decimals then add one randn((N,1,3)) per residue shared by all 5 backbone atoms. aminx's only noise is iid per atom (utils/coordinates.py:44), the spec's negative control."
+limitation = "A field read inside its family subtree is credited as handled without checking the handling is CORRECT, and question B credits any read outside the dataclass even if it is only a passthrough. This probe can show a claim is unsupported; it can never show one is sound."
+revision_1_void = "Revision 1 (commits d11ecdf8 + ad05178f) ran once, fired family_knob_handled_generically with 11 hits, and is VOID: its own adversarial check required noise to appear and it did not. None of its numbers are reused or cited."
+freeze_safety = "scripts/analysis/ is not in _SCOPED_PREFIXES, so this does not invalidate the running sidecar ledger wave."
+
+[provenance]
+task_id = "260929_potts-laser-xtrax-compose"
+
+[resume]
+strategy = "none -- a single ast pass over one repo, seconds, nothing to checkpoint"

@@ -27,6 +27,8 @@ from aminx.host._sampling_helper import (
   _structure_ids_for_batch,
 )
 from aminx.host.bucketing import batch_span, repad_residue_axis, score_rung, trim_residue_axis
+from aminx.host.family_driver import FAMILY_DRIVERS, FamilyDriver
+from aminx.host.family_runner import run_family_driver
 from aminx.host.kernel_dispatch import _sample_batch, _spec_sample_rung
 from aminx.host.logit_aggregation import (
   aggregate_logits,
@@ -61,6 +63,60 @@ from aminx.run.specs import (
   SamplingSpecification,
   ScoringSpecification,
 )
+
+# Families whose dispatch REQUIRES a registered FamilyDriver. The stock MPNN path
+# cannot serve these, so a missing driver is an error, never a silent fallback.
+# Keyed by family so adding a third family is a one-line table entry rather than
+# another hand-written branch that the next family forgets to add -- which is the
+# shape this replaced, one `if family == ...` per family.
+_DRIVER_BACKED_FAMILIES: dict[str, str] = {
+  "pottsmpnn": "aminx.families.potts_mpnn",
+  "lasermpnn": "aminx.families.laser_mpnn",
+}
+
+
+def _family_driver_for(spec: Any) -> FamilyDriver | None:  # noqa: ANN401
+  """Return the driver for ``spec``, importing its family package on first use.
+
+  A driver already registered under the family key is left in place so tests can
+  install a stand-in before dispatch.
+
+  A driver-backed family RAISES when no driver resolves, rather than returning
+  None. That distinction is the point: every call site reads
+
+      if (d := _family_driver_for(spec)) is not None:
+          ... guards that raise for unsupported purposes ...
+          return run_family_driver(d, spec, purpose)
+
+  so a None skips the entire block -- including those guards -- and falls through
+  to the stock ProteinMPNN path, answering the request with a different model.
+
+  ON DEBT #2403, CORRECTED. That debt was filed against a tree where only
+  ``pottsmpnn`` was imported here, and claimed a lasermpnn request silently
+  returned ProteinMPNN results. That overstated it: the lasermpnn import was
+  added by 2f95e187, the SAME commit that introduced LaserDriver, so no tree ever
+  had the driver without its import. What was real is narrower -- a branch
+  carrying the LASEr featurizer but not the driver resolved None and fell
+  through silently instead of saying so. The table and the raise fix that, and
+  keep a third family from re-introducing it.
+  """
+  family = getattr(spec, "model_family", None)
+  module = _DRIVER_BACKED_FAMILIES.get(family) if isinstance(family, str) else None
+  if module is not None and FAMILY_DRIVERS.get(family) is None:
+    import importlib  # noqa: PLC0415
+
+    importlib.import_module(module)
+
+  driver = FAMILY_DRIVERS.get(family)
+  if driver is None and module is not None:
+    msg = (
+      f"model_family={family!r} requires a registered FamilyDriver, but none resolved "
+      f"after importing {module!r}. Refusing to fall back to the stock MPNN path, "
+      f"which would silently return ProteinMPNN results for a {family} request."
+    )
+    raise RuntimeError(msg)
+  return driver
+
 
 from .prep import prep_protein_stream_and_model
 
@@ -281,6 +337,18 @@ def sample(
   if spec is None:
     spec = SamplingSpecification(**kwargs)
 
+  # FamilyDriver dispatch. An empty registry leaves this path untouched.
+  purpose = "sample"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
+
   # F002/F003 guard [260826_aminx-invariant-audit]: runner.sample cannot honour
   # multistate spec fields.  score() routes through _score_fused_multistate which
   # performs real cross-state fusion; sample() has no such path (the internal
@@ -292,7 +360,9 @@ def sample(
   if spec.state_position_map is not None or spec.multi_state_strategy != _multistate_default:
     _bad_fields = []
     if spec.state_position_map is not None:
-      _bad_fields.append(f"state_position_map (shape {getattr(spec.state_position_map, 'shape', type(spec.state_position_map))})")
+      _bad_fields.append(
+        f"state_position_map (shape {getattr(spec.state_position_map, 'shape', type(spec.state_position_map))})",
+      )
     if spec.multi_state_strategy != _multistate_default:
       _bad_fields.append(f"multi_state_strategy={spec.multi_state_strategy!r}")
     msg = (
@@ -319,7 +389,9 @@ def sample(
   # Non-streaming path uses io_callback staging via streaming_tensor_sink_session;
   # drains per-batch via take_staging_sequences_logits.
   all_sequences, all_pseudo_perplexities = [], []
-  needs_logits = spec.run_spec.sampling.return_logits or spec.run_spec.sampling.return_logit_fingerprint
+  needs_logits = (
+    spec.run_spec.sampling.return_logits or spec.run_spec.sampling.return_logit_fingerprint
+  )
   all_logits = [] if needs_logits else None
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -387,7 +459,9 @@ def sample(
       "structure_ids": resolved_structure_ids,
     },
   }
-  aggregated_logits = aggregate_logits(all_logits, max_len) if needs_logits and all_logits is not None else None
+  aggregated_logits = (
+    aggregate_logits(all_logits, max_len) if needs_logits and all_logits is not None else None
+  )
   if spec.run_spec.sampling.return_logits and aggregated_logits is not None:
     results["logits"] = aggregated_logits
   if spec.run_spec.sampling.return_logit_fingerprint and aggregated_logits is not None:
@@ -727,6 +801,17 @@ def score(  # noqa: PLR0915
   if spec is None:
     spec = ScoringSpecification(**kwargs)
 
+  purpose = f"score:{spec.output_kind}"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
+
   if spec.output_h5_path:
     msg = "score runner: HDF5 streaming output not yet implemented; omit --output-h5-path for in-memory results"
     raise NotImplementedError(msg)
@@ -832,7 +917,10 @@ def score(  # noqa: PLR0915
   # Length bucketing (S8 v1) does not trim _score_fused_multistate or _score_averaged_jit.
   if spec.state_position_map is not None:
     return _score_fused_multistate(
-      spec, protein_iterator, score_fn, sequence_indices_list,
+      spec,
+      protein_iterator,
+      score_fn,
+      sequence_indices_list,
     )
 
   from aminx.sampling.conditional_logits import _plan_axis_strategy  # noqa: PLC0415
@@ -989,7 +1077,10 @@ def score(  # noqa: PLR0915
       # estimate. See #147.
       activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
     strategy = _plan_axis_strategy(
-      N_CANDIDATES, n_candidates, None, activation_bytes_per_element=activation_bytes,
+      N_CANDIDATES,
+      n_candidates,
+      None,
+      activation_bytes_per_element=activation_bytes,
     )
     candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
@@ -1056,7 +1147,8 @@ def score(  # noqa: PLR0915
           )
 
       return _candidate_iterator(
-        _score_one_candidate, {"key": struct_keys, "seq": _stacked_sequences},
+        _score_one_candidate,
+        {"key": struct_keys, "seq": _stacked_sequences},
       )
 
     # The third output (a decoding order) is discarded: scoring is full-context, see the
@@ -1138,7 +1230,9 @@ def _score_fused_multistate(  # not length-bucketed in S8 v1
   for batched_ensemble in protein_iterator:
     batch_size = batched_ensemble.coordinates.shape[0]
     batch_structure_ids = _structure_ids_for_batch(
-      canonical_structure_ids, structure_offset=structure_offset, batch_size=batch_size,
+      canonical_structure_ids,
+      structure_offset=structure_offset,
+      batch_size=batch_size,
     )
     for struct_idx in range(batch_size):
       all_coords.append(batched_ensemble.coordinates[struct_idx])
@@ -1184,7 +1278,9 @@ def _score_fused_multistate(  # not length-bucketed in S8 v1
   stacked_sequences = jnp.stack(padded_seqs, axis=0)  # (C, struct_len)
   n_candidates = stacked_sequences.shape[0]
   candidate_keys = jax.random.split(
-    jax.random.PRNGKey(spec.run_spec.sampling.random_seed), n_candidates,
+    # No fallback to seed 42: main's #2528 fix makes random_seed=0 mean seed 0.
+    jax.random.PRNGKey(spec.run_spec.sampling.random_seed),
+    n_candidates,
   )
 
   # Candidate (sequences-to-score) axis dispatched via aminx's own BatchPlanner ->
@@ -1198,7 +1294,10 @@ def _score_fused_multistate(  # not length-bucketed in S8 v1
 
   activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
   strategy = _plan_axis_strategy(
-    N_CANDIDATES, n_candidates, None, activation_bytes_per_element=activation_bytes,
+    N_CANDIDATES,
+    n_candidates,
+    None,
+    activation_bytes_per_element=activation_bytes,
   )
   candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
 
@@ -1219,7 +1318,8 @@ def _score_fused_multistate(  # not length-bucketed in S8 v1
     )
 
   all_scores, all_logits, _ = candidate_iterator(
-    _score_one_candidate, {"key": candidate_keys, "seq": stacked_sequences},
+    _score_one_candidate,
+    {"key": candidate_keys, "seq": stacked_sequences},
   )
 
   # Leading dim of 1: ONE fused "structure", not len(spec.inputs) independent ones.
@@ -1283,6 +1383,17 @@ def inspect(  # noqa: PLR0915
   """
   if spec is None:
     spec = InspectionSpecification(**kwargs)
+
+  purpose = "inspect"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
 
   # F005 guard [260826_aminx-invariant-audit]: runner.inspect cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit
@@ -1595,6 +1706,17 @@ def jacobian(
   """
   if spec is None:
     spec = JacobianSpecification(**kwargs)
+
+  purpose = "jacobian"
+  if (d := _family_driver_for(spec)) is not None:
+    if getattr(spec, "decoding_order_fn", None) is not None:
+      msg = f"{d.name} does not support decoding_order_fn"
+      raise ValueError(msg)
+    if d.handles(spec, purpose):
+      return run_family_driver(d, spec, purpose)
+    if purpose not in d.mpnn_fallback_purposes:
+      msg = f"{d.name} does not support {purpose} in v1"
+      raise ValueError(msg)
 
   # F005 guard [260826_aminx-invariant-audit]: runner.jacobian cannot honour
   # spec.state_position_map -- no code path in this body reads it (AST hit

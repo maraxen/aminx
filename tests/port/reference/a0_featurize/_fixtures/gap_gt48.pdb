@@ -1,0 +1,8 @@
+ATOM      1    N ALA A   1       1.000   1.000   2.000
+ATOM      2   CA ALA A   1       2.000   1.000   2.000
+ATOM      3    C ALA A   1       3.000   1.000   2.000
+ATOM      4    O ALA A   1       4.000   1.000   2.000
+ATOM      5    N VAL A  70      20.000   1.000   2.000
+ATOM      6   CA VAL A  70      21.000   1.000   2.000
+ATOM      7    C VAL A  70      22.000   1.000   2.000
+ATOM      8    O VAL A  70      23.000   1.000   2.000

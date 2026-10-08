@@ -1,9 +1,11 @@
-# 261006-xtrax-usage-audit Internal Docs
+# 261007-165-merge Internal Docs
 
 ## Daily
+- [261005_overnight-decisions](daily/261005_overnight-decisions.md) — What landed overnight with its verified evidence, the four open decisions each priced, and the corrections made to earlier claims
 - [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
 
 ## Handoffs
+- [261006_a1-laser-score-option3-envelope](handoffs/261006_a1-laser-score-option3-envelope.md) — Exact scope, anchors, measured band and acceptance criteria for the only gate-clearing item, so the decision becomes one dispatch
 - [261006_xtrax-track-b-brief](handoffs/261006_xtrax-track-b-brief.md) — A ready-to-run brief for an xtrax session. It fixes the skill gaps filed as xtrax debt
 - [260930_advisor-message-final](handoffs/260930_advisor-message-final.md) — The Slack message handed to the advisor for v0.2.0a3, with the claim-to-run-id mapping behind every figure it quotes.
 - [260930_browser-split-merge-readiness](handoffs/260930_browser-split-merge-readiness.md) — What actually blocks merging feat/t11d-session-release, measured rather than assumed — including an export-safety fix the branch has and main does not.
@@ -14,6 +16,7 @@
 - [260601_benchmark-wave2-ready](handoffs/260601_benchmark-wave2-ready.md)
 
 ## Plans
+- [261005_rewave-composition-scoped-batch](plans/261005_rewave-composition-scoped-batch.md) — Decision-ready menu of every scoped-pending item with its blast radius, which ones change measured numbers, and the sequencing constraint that makes one of them expensive
 - [261001_ecosystem-backlog-dag](plans/261001_ecosystem-backlog-dag.md) — Combined backlog DAG of the 261001 ecosystem specs (S1-S6, after the no-rename decision) plus the 261006 S7 cisternal-cutover spec: 233 PR-sized items, mermaid graph, topological order, critical path, startable items, consolidated user questions (hub identity first), what the no-rename decision removed, and a code-checked acyclicity result.
 - [260709_proteinebm-epic-backlog-dag](plans/260709_proteinebm-epic-backlog-dag.md) — **PROPOSAL, gated on user review before praxia filing** (task `260709_aminxtension`) — EPIC + backlog DAG for the ProteinEBM energy/score path, output of the compose→brainstorm→adversarial-critique pipeline (challenger `not_ready` + defender `needs_revision`, both resolved). Resolves design forks 1–11 (readout = additive `StageSet` peer slots; 2nd-order AD via nested `jax.grad`+`checkpoint` + new invariant gate; orbax weight-port + validation-retrain; buckets `(64,128,256,512)`; Langevin = outer `CarrySpec`+`Scan` / inner `while_loop` + net-new model-swap; Engine for E8 only). Corrected DAG (E0–E12 + gates E3.5/E4.5, E11a–d) fixing the 2 BLOCKERs (schedule_selector/`AxisBoundary` model-swap; scalar-energy≠`DecodeOutput`) + 5 MAJORs. Includes bathos parity/claim(Union Gate)/throughput instruments. Filing plan in §5 (not executed).
 - [260614_runspec-migration-map](plans/260614_runspec-migration-map.md) — RS-1 host-field inventory: 67 fields, 22 migrated, 16 to migrate, 9 RS-gaps, 21 protein-only
@@ -31,6 +34,7 @@
 - [261001_spec-system-unification](specs/261001_spec-system-unification.md) — Collapse the RunSpec pytree and the RunSpecification dataclass facade (synced via _sync_run_spec) into one nested RunSpec model with a field registry and generated codecs, migrated in PR-sized slices behind byte-identical goldens.
 - [261001_xtrax-model-contract](specs/261001_xtrax-model-contract.md) — L1 contract (port types, model manifest, param JSON Schema, graph IR v2 with per-executor bindings, scorer protocols, shared ONNX export route) that lets models compose and be served by the hub (a separate project, working slug aminx-hub, final name pending S3-01) without importing each other.
 - [260929_p07-split-export](specs/260929_p07-split-export.md) — Split the monolithic P07 ONNX export into an encoder graph and a per-step decoder graph so the AR loop and its branch decision move to JavaScript, enabling one implementation across wasm (CPU) and WebGPU.
+- [260929_pottsmpnn-lasermpnn-xtrax-composition](specs/260929_pottsmpnn-lasermpnn-xtrax-composition.md) — Port KeatingLab PottsMPNN and polizzilab LASErMPNN into aminx as xtrax-composed FamilyDrivers dispatched from aminx.host.runner, with redsox knob-superset, xtrax-tier parity, and bathos-preregistered gates
 - [260926_aminx-browser-export-phase2a](specs/260926_aminx-browser-export-phase2a.md) — Sprint spec: RNG-free export wrappers for P03/P04, jax2onnx→ORT-CPU and IREE-native layer-(b) parity, ORT Web layer-(c) parity in headless Chromium, ORT/JAX profiling incl. a loop-body scaling report, a Playwright benchmark with an interleaved native arm, and an independent track that fixes the batched sampling harness and re-estimates the Phase-1 sampling budget on titanix GPU 2.
 - [260923_aminx-browser-validation-carry-forward](specs/260923_aminx-browser-validation-carry-forward.md) — Mechanical, fail-closed amendments from the final adversarial round that ride in the Phase-1 fixer prompts, plus upstream bathos bugs to file
 - [260923_aminx-browser-validation](specs/260923_aminx-browser-validation.md) — aminx MPNN browser validation — layered parity (PyTorch → JAX → exported artifact → browser) and in-browser benchmarking for every inference path
@@ -64,6 +68,7 @@
 ## Audits
 - [261007_aminx-xtrax-separation-audit](audits/261007_aminx-xtrax-separation-audit.md) — Deep audit (4 domain auditors, spot-verified) of where aminx still owns generic run, IO, execution, config and training contracts that xtrax should own, where xtrax holds aminx-specific logic, and the debts and sprint shape to fix it.
 - [261006_xtrax-usage-audit](audits/261006_xtrax-usage-audit.md) — Static inventory of all 619 public xtrax symbols against aminx (bathos da99c566, pass) plus per-capability verdicts. Includes duplicates to replace, gaps worth adopting, things that don't apply, and the native hook for runner length bucketing.
+- [260929_potts-laser-spec-adversarial-log](audits/260929_potts-laser-spec-adversarial-log.md) — Sequential challenger→defender rounds for specs/260929_pottsmpnn-lasermpnn-xtrax-composition.md until convergence
 - [260928_t5a-calibrate-attempt-history](audits/260928_t5a-calibrate-attempt-history.md) — All four tracked runs of layer_c_calibrate (one pass, three prior), and the one post-registration sidecar edit
 - [260928_t8-layer-c-bench-verdict](audits/260928_t8-layer-c-bench-verdict.md) — T8 tracked run edf8926e graded ctrl_blind; planted 5 ms control reads ~16 ms systematically; timing sentences not citable; v2 needs a dose-response instrument check
 - [260926_mpnn-reference-parity-verdict](audits/260926_mpnn-reference-parity-verdict.md) — Browser-validation Phase 1 literature-parity verdict: global FAIL (sampling prerequisite missing + 8 confirmed core defects); 3/17 paths advance
@@ -71,7 +76,11 @@
 - [260716_proteinebm-parity-report](audits/260716_proteinebm-parity-report.md) — Reviews what "parity" means for the merged ProteinEBM epic: throughput parity is real+strong (11–92× vs PyTorch); numerical port parity (E3.5) freshly re-confirmed today across 20 synthetic trials (cosine similarity ≥0.999999998); real-world validation (E7 LplA, 101 real mutants) gives Spearman 0.402 (p=3.1e-5); the paper's own headline Spearman targets (0.838 decoy, 0.686 ΔΔG) remain **not measured** by deliberate scope decision. `tests/ebm/` freshly re-run: 261 passed, 4 skipped, 0 failed.
 
 ## Research
+- [261003_spec-named-tests-triage](research/261003_spec-named-tests-triage.md) — Triage of every test name the potts/laser spec cites but that does not exist, into genuinely-missing, covered-under-another-name, blocked, and false-positive
+- [261003_z1-gate-blocker-anatomy](research/261003_z1-gate-blocker-anatomy.md) — The redsox step-2 knob blocker reduces to 3 fields of decision debt and 0 of test debt; every other condition of test_parity_ids_passed is measured empty
 - [261001_ecosystem-hub-recon-brief](research/261001_ecosystem-hub-recon-brief.md) — Verified facts, user decisions and open questions shared by the six 261001 ecosystem specs (spec unification, EBM extraction, molxmpnn rename, xtrax contract, aminx hub, pipeline editor).
+- [260929_potts-laser-t02-probe-report](research/260929_potts-laser-t02-probe-report.md) — Resolution of every T0.2 open item in the potts/laser xtrax-composition spec (runner helpers, model_family consumers, torch checkpoint key audits, verbatim upstream transcriptions, LASEr graph/scatter/draw/dropout enumerations, aminx float32 and self-slot behaviour) plus spec corrections found while probing
+- [260929_potts-laser-t02b-xtrax-a10-reverify](research/260929_potts-laser-t02b-xtrax-a10-reverify.md) — Claim-by-claim re-check of every xtrax-derived and aminx-anchor fact in the spec against installed xtrax 0.4.0a10 and main's 9e6c340a/#160, after the r13 rebase
 - [260712_jax-xla-scf-if-gradient-regression-bug-report](research/260712_jax-xla-scf-if-gradient-regression-bug-report.md) — DRAFT, not yet filed: jax.grad scf.if crash, jaxlib 0.9.2→0.10.2 regression, cross-arch confirmed, repro needs an unpushed-branch fix before submission
 - [260622_1203_proxide-heterogeneous-inputs](research/260622_1203_proxide-heterogeneous-inputs.md) — Proxide Adapter Surface and Aminx CLI Integration
 - [260617_xtrax-tiling-prolix-compat](research/260617_xtrax-tiling-prolix-compat.md) — xtrax.tiling CORE — prolix 6-axis planner compatibility
@@ -84,6 +93,11 @@
 - [260605_caliby-nature-and-dataset](research/260605_caliby-nature-and-dataset.md) — Caliby nature and dataset investigation
 
 ## Decisions
+- [261005_tiling-plan-discarded-stage2-2371](decisions/261005_tiling-plan-discarded-stage2-2371.md) — Measured evidence that BatchPlanner says Vmap+Bucket for the sample axes while execution is a Python loop, plus the T2.GATE blocker on deleting aminx's duplicate strategy types
+- [261004_laser-pdb-output-scope](decisions/261004_laser-pdb-output-scope.md) — Decision request: upstream LASEr writes PDBs through backbone N-H imputation, titratable-H cleanup with a geometric H-bond detector, and probability B-factors -- none of which the spec names; choose minimal writer vs full parity port
+- [261004_sample-dist-pilot-fixtures-and-low-t](decisions/261004_sample-dist-pilot-fixtures-and-low-t.md) — Decision request before the Potts sample_dist pilot runs: spec names no pssm or tied fixture, and the T=0.1 near-margin control looks unworkable (as with ProteinMPNN 260929)
+- [261003_laser-score-tier3-f32-design](decisions/261003_laser-score-tier3-f32-design.md) — Decision request: aminx and upstream make the same f32 error vs f64, so no pairwise f32 band can separate noise from a 1% defect; three options for the user
+- [260929_pottsmpnn-lasermpnn-family-drivers](decisions/260929_pottsmpnn-lasermpnn-family-drivers.md) — PottsMPNN and LASErMPNN are xtrax-composed FamilyDrivers; 260605 governs only aminx.potts
 - [260713_no-real-multistate-sampling-path-exists](decisions/260713_no-real-multistate-sampling-path-exists.md) — **MVP implemented 2026-07-13**: no campaign-reachable path ever built a genuine `num_states>1` bundle for AR sampling — every necklace "PoE" row was 4 independent unfused single-state decodes. Related silent-corruption bug fixed in PR #100 (merged). New `aminx.sampling.multistate_poe` module (branch `feat-poe-stacked-bundle-sampling`) ships genuine cross-state fusion, confirmed end-to-end against real reference PDBs; the general xtrax-composable dispatch-axis version remains real tech debt — see debt #589.
 - [260709_n-states-heterogeneous-flag-unenforced](decisions/260709_n-states-heterogeneous-flag-unenforced.md) — **Open, deferred**: `N_STATES.heterogeneous=True` is unwired from the real encode path and currently unenforceable (bundle can't hold ragged states at all); zero blast radius today, decision needed (relabel vs. implement) is out of scope for PR #92.
 - [260706_bucketing-pad-stay-local-epic-1541-p3-scope-closed](decisions/260706_bucketing-pad-stay-local-epic-1541-p3-scope-closed.md) — **Accepted 2026-07-06**: EPIC #1541 P3 scoping closed — `bucketing.py`/`pad.py` stay local (planner companion / pure domain logic). `aminx.tiling` will NOT be fully deletable as originally envisioned; recommends updating backlog #1483 accordingly.
@@ -99,6 +113,9 @@
 ## Preregistration
 
 ## Reference
+- [261005_laser-confirm-run-readiness](reference/261005_laser-confirm-run-readiness.md) — The resume machinery for the ~60 h LASEr distributional run is correct and already proven by tonight's Potts run; its cache key includes the script hash, so the driver must be frozen before launch
+- [261005_using-aminx-skill-family-update](reference/261005_using-aminx-skill-family-update.md) — Exact anchored edits to add PottsMPNN/LASErMPNN to the user's global using-aminx skill, including one stale line that is now wrong rather than merely incomplete
+- [261002_using-aminx-driver-families](reference/261002_using-aminx-driver-families.md) — The PottsMPNN/LASErMPNN section for the using-aminx skill, plus the frontmatter edits, staged here because ~/.claude/skills is sandbox-write-protected
 
 ## Roadmaps
 - [260508_active-roadmap](roadmaps/260508_active-roadmap.md) — **Active** — MODELINPUTS PR-4/5, EncoderPreFn/PostFn, multi_state_temperature

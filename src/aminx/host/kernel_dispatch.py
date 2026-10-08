@@ -23,6 +23,7 @@ from aminx.host.bucketing import (
   trim_residue_axis,
 )
 from aminx.host.logit_aggregation import compute_pseudo_perplexity
+from aminx.host.omit_aa_bias import compile_omit_aa_bias, omit_aa_is_active
 from aminx.host.plan import (
   AxisNames,
   compute_sample_keys,
@@ -36,6 +37,7 @@ from aminx.inference.bundle_builder import (
   decoding_order_key,
   with_decoding_order,
 )
+from aminx.run.spec import mpnn_temperatures
 from aminx.run.specs import SamplingSpecification
 from aminx.utils.aa_convert import MPNN_ALPHABET
 from aminx.utils.safe_map import safe_map as _safe_map
@@ -254,7 +256,7 @@ def _sample_batch(  # noqa: PLR0915
   structures_bs, samples_bs, temps_bs, noises_bs = extract_batch_sizes(batch_plan)
 
   noises = jnp.asarray(spec.run_spec.sampling.backbone_noise)
-  temperatures = jnp.asarray(spec.run_spec.sampling.temperature)
+  temperatures = jnp.asarray(mpnn_temperatures(spec.run_spec))
 
   # The unified driver indexes these per-structure arrays by a (possibly traced)
   # structure index under vmap. Convert to JAX arrays so traced indexing lowers to a
@@ -381,6 +383,24 @@ def _sample_batch(  # noqa: PLR0915
     # it before this helper existed -- so the refactor does not move the spec access.
     # rung is a Python value, so the spec attribute is read only when rung is None.
     bias = trimmed_bias if rung is not None else spec.run_spec.sampling.bias
+    if omit_aa_is_active(
+      spec.run_spec.sampling.omit_aa,
+      spec.run_spec.sampling.omit_aa_per_position,
+    ):
+      fixed_mask = per_structure["fixed_mask"]
+      if fixed_mask is None:
+        msg = "omit_aa requires fixed_mask"
+        raise ValueError(msg)
+      # With a rung selected, `bias` and `per_structure["fixed_mask"]` were both trimmed to
+      # it above, so the penalty has to be built at the rung length -- the padded `seq_len`
+      # would not broadcast against the trimmed mask row.
+      bias = compile_omit_aa_bias(
+        bias,
+        fixed_mask_row=fixed_mask[structure_idx],
+        omit_aa=spec.run_spec.sampling.omit_aa,
+        omit_aa_per_position=spec.run_spec.sampling.omit_aa_per_position,
+        seq_len=rung if rung is not None else seq_len,
+      )
     return _structure_bundle_kwargs(
       structure_idx,
       per_structure=per_structure,
@@ -506,11 +526,16 @@ def _sample_batch(  # noqa: PLR0915
         return _dispatch_axis(temp_decision.strategy, _dispatch_temp, temperatures)
 
       # Map decode over K fused encodings (use _safe_map for this axis as it has no AxisDecision)
-      stacked_sequences, stacked_logits = _safe_map(_call_decode_one_enc, fused_enc, batch_size=None)
+      stacked_sequences, stacked_logits = _safe_map(
+        _call_decode_one_enc,
+        fused_enc,
+        batch_size=None,
+      )
 
       # Apply decode fusion if specified (e.g. logit ensembling, best-of-K)
       if plan.stage_set.decoding_fusion is not None:
         from aminx.types.bundles import DecodeOutput
+
         stacked_out = DecodeOutput(sequences=stacked_sequences, logits=stacked_logits)
         fused_out = plan.stage_set.decoding_fusion(stacked_out)
         stacked_sequences, stacked_logits = fused_out.sequences, fused_out.logits
@@ -610,11 +635,16 @@ def _sample_batch(  # noqa: PLR0915
         return _safe_map(_dispatch_temp, temperatures, batch_size=temps_bs)
 
       # Map decode over K fused encodings
-      stacked_sequences, stacked_logits = _safe_map(_call_decode_one_enc, fused_enc, batch_size=None)
+      stacked_sequences, stacked_logits = _safe_map(
+        _call_decode_one_enc,
+        fused_enc,
+        batch_size=None,
+      )
 
       # Apply decode fusion if specified (e.g. logit ensembling, best-of-K)
       if plan.stage_set.decoding_fusion is not None:
         from aminx.types.bundles import DecodeOutput
+
         stacked_out = DecodeOutput(sequences=stacked_sequences, logits=stacked_logits)
         fused_out = plan.stage_set.decoding_fusion(stacked_out)
         stacked_sequences, stacked_logits = fused_out.sequences, fused_out.logits

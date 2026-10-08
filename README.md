@@ -325,8 +325,9 @@ aminx run sample \
 aminx run sample --inputs structure.pdb --emit-json
 aminx run sample --inputs structure.pdb --emit-json --out sample_spec.json
 
-# score, jacobian, and inspect accept the same options;
-# pass --emit-json to get the spec — the runner for these paths is not yet wired
+# score, jacobian, and inspect accept the same options and all run end-to-end;
+# pass --emit-json to get the spec without running it
+aminx run score --inputs structure.pdb --sequences-to-score ACDEFGHIKLMNPQRSTVWY
 aminx run score --inputs structure.pdb --sequences-to-score ACDEFGHIKLMNPQRSTVWY --emit-json
 ```
 
@@ -340,6 +341,85 @@ aminx run --checkpoint-id proteinmpnn_v_48_020 --chain-id C --random-seed 5 --ma
 `aminx run sample --chain-id C ...` is rejected (`No such option`). Fields that are not JSON-serialisable (`bias`, `fixed_positions`, `fixed_tokens`, `fixed_mask`, `state_weights`, `decode_fn`) cannot be set from the CLI; use the Python API. Spec construction failures exit 1; an unwired runner exits 2.
 
 `--max-length` is the length every per-position array is padded to (default 512). Default runs then trim each batch to the xtrax `BUCKET_LADDER` rung that covers the residue span and re-pad outputs to `--max-length`. `--no-length-bucketing` (or `length_bucketing=False`) restores fixed padding, and the autoregressive decode runs at that padded length, so for a short chain it dominates the cost: on one CPU, a 93-residue chain took roughly 86 s/sample at 512 and a small fraction of that at 96.
+
+#### Driver families — PottsMPNN and LASErMPNN
+
+`--model-family` selects the inference family. `proteinmpnn` and `ligandmpnn` run
+the stock MPNN path; `pottsmpnn` and `lasermpnn` route through the `FamilyDriver`
+seam to a vendored port of the upstream model, and accept family-specific knobs.
+
+| `--model-family` | `--output-kind` values accepted |
+| :--- | :--- |
+| `proteinmpnn`, `ligandmpnn`, `membrane` | `nll` |
+| `pottsmpnn` | `nll`, `logits`, `energy`, `ddg` |
+| `lasermpnn` | `nll`, `logits`, `proofread_unconditional`, `proofread_conditional` |
+
+An `--output-kind` a family does not support is rejected at spec construction
+(exit 1) rather than silently falling back to the MPNN path.
+
+Family knobs are passed as a JSON object, one flag per family, whose fields are
+the `PottsMPNNOptions` / `LaserOptions` dataclass fields (`src/aminx/run/options.py`).
+Omitting the flag means family defaults:
+
+```bash
+# PottsMPNN pair-energy scoring
+aminx run score \
+  --inputs complex.pdb \
+  --model-family pottsmpnn \
+  --model-local-path weights/pottsmpnn_20.eqx \
+  --output-kind energy \
+  --potts-options-json '{"optimization_mode": "potts", "mean_norm": true}'
+
+# PottsMPNN binding ddG over a mutant set
+aminx run score \
+  --inputs complex.pdb \
+  --model-family pottsmpnn \
+  --output-kind ddg \
+  --potts-options-json '{"binding_energy_optimization": "both", "mutant_csv": "mutants.csv"}'
+
+# LASErMPNN conditional proofreading
+aminx run score \
+  --inputs complex.pdb \
+  --model-family lasermpnn \
+  --output-kind proofread_conditional \
+  --laser-options-json '{"n_decoding_orders": 2, "n_dropouts": 2}'
+```
+
+##### Proofreading: shapes and cost
+
+Both proofread kinds return **one ensemble per structure**, not one per scored
+candidate: proofreading reads the structure's own sequence, so the arrays are
+`proofread_mean (R, 21)`, `proofread_std (R, 21)`,
+`proofread_mean_plus_std (R, 21)` and `residue_ids (R,)`, where `R` is the focus
+set — the first-shell ligand contact residues, or the residues selected by
+`selection_string`. `proofread_std` and `proofread_mean_plus_std` are
+conditional-only.
+
+Conditional proofreading is **expensive and the defaults are large**:
+`n_decoding_orders` and `n_dropouts` both default to `10`, and the cost is
+`n_decoding_orders × n_dropouts` eager decodes *per focus residue* — 100 decodes
+per residue at the defaults, each running under `jax.disable_jit` so the host can
+hand a different dropout mask to every call. Reduce both for exploratory runs.
+`n_decoding_orders = 1` leaves `proofread_std` all-NaN by construction: that is
+the ddof=1 standard deviation of a single sample, and it is kept rather than
+silently replaced.
+
+##### Known divergence
+
+`--output-kind proofread_unconditional` currently ignores `proofread_dropout`.
+Upstream keeps every `nn.Dropout` in train mode for that forward pass
+(`run_proofreading.py:20-28,205`) and aminx applies none, so the two differ
+whenever `proofread_dropout` is true (the default). Tracked as debt #2424; the
+conditional path is unaffected and is parity-verified.
+
+##### The `potts` sub-app
+
+PottsMPNN also has a dedicated command group for upstream-shaped workflows:
+
+```bash
+aminx potts --help          # etab emission, dense h/J, upstream-compatible entry points
+aminx spec emit-potts       # write a PottsRunSpec JSON
+```
 
 ##### Heterogeneous inputs — local files and remote structures
 

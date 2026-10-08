@@ -1,0 +1,129 @@
+[metadata]
+title = "LASEr float32 parity floor for the laser_encoder wave"
+created = "261006"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The laser_encoder port wave fails its float32 band (rtol=1e-4, atol=1e-7) on every (checkpoint, fixture) pair while passing the ~1e4x tighter f64 band (rtol=1e-8, atol=1e-11) on every pair; so the disagreement is float32 accumulation rather than an algorithmic defect, and a band derived by moving ONLY the term the measurement shows to bind -- atol to ceil_one_significant_figure(10 * measured absolute floor), or rtol to ceil_one_significant_figure(10 * relative floor conditioned on |ref| > 0.1) -- will admit every element of every float field of every pair while still rejecting an injected 1e-2 relative defect with a 10x margin."
+stage_name = "diagnosis"
+novel = false
+
+[outcomes.pass]
+condition = "self_test_passed AND f64_passes AND f32_violated AND all_admitted AND control_rejected AND below_control_scale"
+decision = "Propose amending [parity] tolerance_policy_f32 and [tolerance_basis] f32_atol_basis in tests/port/targets/laser_encoder.toml to the band this run derives, moving ONLY the binding term and citing this run. tests/port/ is a scoped path under the freeze, so the amendment lands in the single post-merge re-wave, never on its own."
+reasoning = "f64 passing at 1e-8 while f32 fails at 1e-4 localises the disagreement to float32 accumulation: math that agrees to one part in 1e8 in double is not computing a different function. Admitting every element at the proposed band shows the band is a floor over the population the tier actually asserts on, not a fit to the single worst element. Rejecting a 1e-2 relative defect, with the proposed band at least 10x below that defect's absolute size, shows the widened band still has teeth."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND f64_passes AND f32_violated AND all_admitted AND control_rejected AND below_control_scale)"
+
+[outcomes.defect_not_tolerance]
+condition = "self_test_passed AND NOT f64_passes"
+decision = "Do NOT touch any tolerance. Escalate: the f64 tier is also failing, so the port disagrees with upstream for a reason float32 does not explain. Fix the port."
+reasoning = "This is the outcome that stops a real defect being laundered into a tolerance, and it is why f64 is RE-MEASURED here rather than assumed. It is a live possible result, not a formality: the belief that laser_encoder's f64 tier is green comes from a pytest run in a different tree than this measurement."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR f64_passes"
+
+[outcomes.tolerance_was_fine]
+condition = "self_test_passed AND f64_passes AND NOT f32_violated"
+decision = "Do NOT change the tolerance. The wave's f32 tier went red for something other than the numeric band -- a tier-1 dtype or shape mismatch, or one of the four _EXACT index/edge fields. Go read the failures and find it."
+reasoning = "If no element is outside atol + rtol*|ref| then the band is not what failed, and widening it would be both unjustified and leave the real failure in place. This outcome is genuinely reachable: the premise comes from a wave-level pytest result, and test_laser_encoder._run also compares four _EXACT fields (pr_pr_idx, lig_pr_idx, sequence_indices, chain_mask) by exact equality, which no tolerance governs."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR f32_violated"
+
+[outcomes.noise_reaches_defect_scale]
+condition = "self_test_passed AND f64_passes AND f32_violated AND NOT below_control_scale"
+decision = "Escalate. Do NOT widen. float32 noise in this wave is within 10x of a defect worth catching, which is a numerical-stability question about the port, not a test-tolerance question."
+reasoning = "A proposed band within 10x of a 1e-2 relative defect cannot separate accumulation noise from a real error, so widening there deletes the assertion's value instead of calibrating it."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR NOT f32_violated OR below_control_scale"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "29 synthetic checks run before any oracle is touched: 22 from the shared instrument (including its two grader negative controls) and 7 from this driver. If any fails, the instrument is not known to be able to return a non-pass, and a floor measured by such an instrument is worthless."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[outcomes.oracle_absent]
+condition = "self_test_passed AND oracle_absent != []"
+decision = "No conclusion. Re-run where the sealed dumps resolve."
+reasoning = "The dumps live outside the tree and are checked by oracle_manifest.toml; their absence is an environment fact and must not be reported as a measurement. This wave has already produced one false 'defect' from an environment gap (a dropped AMINX_PORT_WAVE made the oracle fixture resolve to port_selftest and 126 tier-1 tests fail with a confident AttributeError in 14 seconds)."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR oracle_absent == []"
+
+[outcomes.fail]
+condition = "self_test_passed AND f64_passes AND f32_violated AND below_control_scale AND NOT (all_admitted AND control_rejected)"
+decision = "Do not change the tolerance. The derivation rule did not produce a usable band."
+reasoning = "Either an element falls outside a band derived with 10x headroom over the measured floor -- meaning one maximum does not characterise the population -- or the injected defect was admitted, meaning the band is too wide to test anything. Both say the rule failed, not that the band should move anyway."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR NOT f64_passes OR NOT f32_violated OR NOT below_control_scale OR (all_admitted AND control_rejected)"
+
+[result_schema]
+verdict = "str"
+wave = "str"
+oracle_absent = "list"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+f64_passes = "bool"
+f32_violated = "bool"
+current_rtol_f32 = "float"
+current_atol_f32 = "float"
+current_rtol_f64 = "float"
+current_atol_f64 = "float"
+n_pairs = "int"
+n_fields = "int"
+floor_abs = "float"
+floor_rel_unconditioned = "float"
+floor_rel_conditioned = "float"
+floor_abs_in_eps = "float"
+binding_term = "str"
+binding_ref = "float"
+binding_atol_share = "float"
+proposed_rtol = "float"
+proposed_atol = "float"
+all_admitted = "bool"
+n_not_admitted = "int"
+n_zero_mag_blocked = "int"
+control_rejected = "bool"
+n_control_admitted = "int"
+below_control_scale = "bool"
+control_scale_ratio = "float"
+control_1e3_margin = "float"
+n_reused = "int"
+n_computed = "int"
+script_sha256 = "str"
+shared_instrument_sha256 = "str"
+work_dir = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+wave = "laser_encoder only. It is graded on its own: a band shared with another wave would be the looser of the two."
+what_triggered_this = "The laser_encoder f32 tier was executed for the FIRST TIME on 261006 at commit e4487402 on titanix, with AMINX_PORT_WAVE=laser_encoder set. Result: 63 failed, 189 passed, 63 skipped in 1287.26s. By tier -- test_tier_1_dtype_shape 126/126 pass, test_tier_2_f64 63/63 pass, test_tier_3_f32 63/63 FAIL, test_tier_5_trace_budget 63 skipped. Reported deviations span 1.602173e-04 to 3.900528e-04 against atol=1e-7+rtol=1e-4, i.e. roughly 4x over, the same ratio laser_layers showed."
+why_this_run_is_authorised = "tests/port/targets/laser_encoder.toml states in its header 'atol is the house pairing for the declared rtol ... It is NOT a measured deviation. The orchestrator sets it from the graded run', and both [tolerance_basis] entries read 'house-paired and NOT measured'. This is that graded run. No band is widened to make a wave go green; a band is derived and reported."
+model = "aminx.model.laser.encoders.LaserEncoder, weights from the LASErMPNN checkpoints the port tests already name"
+reference = "the sealed upstream dumps resolved by tests/port/reference/laser_encoder/algo.load(precision); the npz files live outside the tree and are checked against oracle_manifest.toml"
+pairs = "every (checkpoint, fixture) pair the dump declares, read from the test module's own _PAIRS at import time -- 63, per the pytest run above"
+fields = "the 7 entries of test_laser_encoder._FLOATS (prot_scalars, prot_vectors, lig_scalars, lig_vectors, pr_pr_eattr, lig_pr_eattr, chi_angles). The 4 _EXACT fields are compared by the test but are not float bands and are not measured here."
+precisions = "f64 AND f32. f64 is not optional: it is the precondition that separates float32 accumulation from an algorithmic defect."
+job_size = "63 pairs x 2 precisions = 126 forward passes, yielding 63 x 7 x 2 = 882 FieldStats. NOT subsampled: all_admitted has to hold over the population the tier actually asserts on. No whole-run timeout; per-unit resume bounds an interruption to the single in-flight unit."
+positional_pairing_is_structurally_sound_here = "VERIFIED BY READING THE SOURCE, not assumed, because the sibling laser_layers measurement had to solve exactly this problem the hard way. test_laser_encoder.py declares _FLOATS at line 55, and its _run (line 231) loops over _EXACT + _FLOATS but reaches _rows_over ONLY through the 'elif numeric:' branch at line 268 -- the _EXACT fields are caught by the preceding 'if field in _EXACT' branch and never call it. So _rows_over fires exactly once per _FLOATS entry, in _FLOATS order. The shared _measure_unit additionally refuses to proceed unless the recorded call count equals len(_FLOATS). test_laser_layers.py has no _FLOATS at all, which is why THAT measurement needed a bespoke script that verifies each recorded array against its claimed dump key element-for-element; none of that machinery is needed here."
+derivation_rule = "Inherited UNCHANGED from laser_f32_tolerance_floor: e* = the violating element with the largest |err|/band; binding = 'atol' if atol >= rtol*|ref(e*)| else 'rtol'. If atol binds, proposed_atol = ceil_one_significant_figure(10 * max absolute deviation) and rtol is UNCHANGED. If rtol binds, proposed_rtol = ceil_one_significant_figure(10 * max relative deviation over |ref| > 0.1) and atol is UNCHANGED. Fixed BEFORE this run; neither value is chosen."
+negative_control_graded = "A 1e-2 relative defect injected at the largest-magnitude element of each float field; the proposed band must reject it AND stay at least 10x below its absolute size. The 1e-3 margin is still computed and reported as control_1e3_margin so the weaker guarantee is visible; this run does NOT claim a 1e-3 defect would be caught with margin."
+instrument_self_test = "29 checks before any oracle is touched. 22 are the shared instrument's, including its two grader negative controls (an f64 violation must grade defect_not_tolerance; a clean f32 must grade tolerance_was_fine). 7 are this driver's, covering the combined code hash and the payload assembly. All four of the driver's failure modes were demonstrated to fire: a payload that hardcodes 'pass', a payload that hardcodes 'defect_not_tolerance', a digest that drops the shared half, and a digest that is order-insensitive."
+a_vacuous_check_was_found_and_fixed_before_this_run = "DISCLOSED. The driver's first version checked that the payload carries the grader's verdict using ONE synthetic result, which graded 'pass'. A negative control run during development showed that an assembler hardcoding 'pass' -- precisely the dangerous hardcode -- satisfied that check. It was replaced with a PAIR of fakes grading 'pass' and 'defect_not_tolerance', so no constant can satisfy both. Recorded here because the check was written by the same process that is now vouching for the instrument, and a self-test that cannot fail is the failure this project has already paid for."
+
+[provenance]
+note = "Ungraded diagnostic. NOT a redsox vehicle; no manifest row -- laser_encoder is not one of the 8 gate slugs. Lives in scripts/analysis/ because scripts/parity/ and tests/port/ are _touches_scoped paths and a new file in either would invalidate every sidecar_ledger.toml row mid-freeze; scripts/analysis/ is outside _SCOPED_PREFIXES (verified at tests/knob_gate/_coverage.py:21-28). Reading this measurement does NOT require amending any scoped file, so the measurement runs now and the amendment rides the post-merge re-wave."
+why_a_new_stem_rather_than_a_flag = "The shared instrument laser_f32_tolerance_floor.py is already generic -- it resolves port.test_<wave> and port.reference.<wave>.algo by name and reads _RTOL/_ATOL off the module -- and only its _WAVES tuple (line 184) scopes it to laser_score and laser_decode_step. Adding 'laser_encoder' there would have been one token. It was NOT done, because bathos resolves a sidecar by script stem, so a third wave would have had to ride laser_f32_tolerance_floor.bth.toml -- the pre-registration of two runs that have ALREADY been graded (e47bfaab, 3af3be02). Editing a pre-registration after its run is the exact failure the sidecar discipline exists to prevent. The shared instrument is left byte-identical, so neither graded run's script hash or provenance moves, and this driver imports it rather than copying it."
+cache_identity = "The resume cache key is sha256(shared instrument bytes || this driver's bytes), in that order. Hashing only the driver would let a change to the shared derivation rule silently reuse units measured under the old rule -- the one way a resume corrupts a result rather than merely wasting time. Both halves' hashes are reported (script_sha256, shared_instrument_sha256)."
+invocation = "bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/laser_encoder_f32_floor.py --work-dir <dir> --out <json>"
+not_ratified_by_this_run = "Nothing in tests/port/targets/laser_encoder.toml is amended by running this, and this run says nothing about the separate [amendment] block in laser_layers.toml that is still marked AWAITING USER RATIFICATION."
+
+[resume]
+unit = "one (pair, precision) pair for this wave"
+cache_key = "sha256 of (shared instrument bytes || driver bytes), the wave, the pair and the precision"
+stamp_order = "the per-unit JSON body is written first and its .done stamp second, so a crash between them leaves an unstamped body that is recomputed rather than trusted"
+invalidation = "both scripts' bytes are part of the key, so editing either recomputes every unit; a body that no longer matches the FieldStats dataclass is also recomputed rather than coerced"
+max_attempts = 1

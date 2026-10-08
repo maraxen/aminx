@@ -15,6 +15,18 @@ AtomPairRBF = Float[Array, "K R D"]
 RADIAL_BASES = 16
 RADIAL_BASE_MINIMUM, RADIAL_BASE_MAXIMUM = 2.0, 22.0
 RBF_CENTERS = jnp.linspace(RADIAL_BASE_MINIMUM, RADIAL_BASE_MAXIMUM, RADIAL_BASES)
+
+
+def rbf_centers(dtype: jnp.dtype) -> jax.Array:
+  """RBF centres built in ``dtype`` at call time.
+
+  ``RBF_CENTERS`` is materialised at import, so it is float32 whenever
+  ``jax_enable_x64`` is switched on after import; a float64 forward then uses
+  float32-rounded centres. Float32 values are identical to ``RBF_CENTERS``.
+  """
+  return jnp.linspace(RADIAL_BASE_MINIMUM, RADIAL_BASE_MAXIMUM, RADIAL_BASES, dtype=dtype)
+
+
 RBF_SIGMA = (RADIAL_BASE_MAXIMUM - RADIAL_BASE_MINIMUM) / RADIAL_BASES
 
 BACKBONE_PAIRS = jnp.array(
@@ -65,7 +77,11 @@ def compute_radial_basis(
     distance = jnp.sqrt(DISTANCE_EPSILON + distance_sq)
     neighbor_distances = jnp.take_along_axis(distance, neighbor_indices, axis=1)
     return jnp.exp(
-      -(jnp.square((neighbor_distances[..., None] - RBF_CENTERS) / RBF_SIGMA)),
+      -(
+        jnp.square(
+          (neighbor_distances[..., None] - rbf_centers(neighbor_distances.dtype)) / RBF_SIGMA,
+        )
+      ),
     )
 
   return (

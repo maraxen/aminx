@@ -1,0 +1,9 @@
+[[branch]]
+id = "sc_row"
+stage = "port_selftest"
+fixture = "sc_row"
+mutant = "sc_row"
+
+[branch.vehicle]
+kind = "sidecar"
+slug = "pottsmpnn_selftest"

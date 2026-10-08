@@ -1,0 +1,2 @@
+# Goldens are host/GPU-specific and large; kept on titanix, hashes committed (spec T0.5a).
+*.npz

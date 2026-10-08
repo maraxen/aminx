@@ -367,7 +367,11 @@ def _prepare_ligand_context(
     msg = "sidechain_conditioning=True requires atom_mask or full_atom_mask."
     raise ValueError(msg)
   atom_37_mask = jnp.asarray(atom_37_mask_source, dtype=jnp.float32)
-  if atom_37_mask.ndim != 3 or atom_37_mask.shape[0] != batch_size or atom_37_mask.shape[1] != seq_len:
+  if (
+    atom_37_mask.ndim != 3
+    or atom_37_mask.shape[0] != batch_size
+    or atom_37_mask.shape[1] != seq_len
+  ):
     msg = "atom mask must have shape (batch, residues, atoms) for sidechain conditioning."
     raise ValueError(msg)
 
@@ -526,8 +530,12 @@ def fixed_provenance_outputs(
   # comparing sequences against it needs the same indexing, and slicing here would invent a
   # second convention to get wrong.
   if sampling.fixed_tokens is not None:
-    arrays["fixed_tokens"] = np.asarray(sampling.fixed_tokens).reshape(-1)[:seq_len].astype(
-      np.int32,
+    arrays["fixed_tokens"] = (
+      np.asarray(sampling.fixed_tokens)
+      .reshape(-1)[:seq_len]
+      .astype(
+        np.int32,
+      )
     )
     # Name the alphabet AS DATA, not in a key name. The consumer-side bug this audit found was
     # exactly a rename stripping an `_af` suffix and taking the convention with it: a rename

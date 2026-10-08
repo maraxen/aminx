@@ -1,0 +1,3143 @@
+# Alias map for tests/knob_gate/reference_surfaces.py (spec 6.3/6.4).
+# One row per reference field; test_rows_bijective enforces the bijection.
+# Every row carries its own evidence in `note` -- spec section, upstream
+# file:line, or the generated reference_surfaces.py comment it rests on.
+#
+# The header used to say "parity_test_ids are still empty for every live row;
+# the Potts knob_semantics suite does not exist yet". Both halves are stale as
+# of 261003: the suite exists and `unwired` measures 0 of 212 live rows.
+#
+# TWO OPTIONAL MARKERS, ADDED 261003, EACH DOING EXACTLY ONE JOB. They are
+# orthogonal and a row may carry both, which is why they are not one enum --
+# emit_dense_hJ is aminx-only AND inert.
+#
+#   upstream = false   This field has no upstream analogue, so no reference
+#                      surface names it. Exempts the row from
+#                      test_rows_bijective's `== REF_F` and from the
+#                      superset hypothesis (there is no upstream side to map
+#                      from). The ref must be spelled `__aminx_only__<field>`
+#                      and must not collide with a real reference field.
+#                      Default: true.
+#
+#   kind = "inert"     This knob reaches nothing, so it has no semantics to
+#                      pin and a test_knob_semantics_ test would be a false
+#                      claim. Coverage is instead satisfied by a
+#                      test_knob_inert_ test, which PROVES the inertness.
+#                      Default: "semantics".
+#
+#                      SAFEGUARDED, so this is not a way to wave a knob
+#                      through: every inert target that the gate actually
+#                      demands coverage for (i.e. is in NEW_FIELDS) must ALSO
+#                      be listed not_plumbed in
+#                      tests/lint/options_plumbing_allowlist.toml, and
+#                      test_allowlist_has_no_fixed_entries deletes that row
+#                      the moment the field becomes plumbed. So the credit
+#                      cannot outlive the defect. The defect stays tracked as
+#                      debt either way -- the gate is not what tracks defects.
+
+[[row]]
+ref = "laser_checkpoint__build_hydrogens"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__lig_lig_knn_graph_k"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__lig_pr_distance_cutoff"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__lig_pr_knn_graph_k"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_checkpoint__graph_structure__pr_pr_knn_graph_k"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* / graph_structure.* / build_hydrogens are checkpoint-derived"
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__batch"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData featurizer output, not a knob."
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__budget_residue_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Boolean mask materialised from the --budget_residue_sele_string selection; that string is the knob (-> budget_residue_selection)."
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__chi_angle_sample_temperature"
+targets = ["chi_temp"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
+note = "Model-level spelling of the chi sampling temperature."
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__chi_min_p"
+targets = ["chi_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__disable_charged_residue_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Mask materialised from --disable_charged_fs (batch_data.first_shell_ligand_contact_mask); that flag is the knob."
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__ignore_chain_mask_zeros"
+targets = ["ignore_chain_mask_zeros"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__return_encoder_embeddings"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Analysis-only side output: returns raw encoder node/edge tensors (prot_nodes.scalars, pr_pr_eattr, lig_nodes.scalars, lig_pr_eattr, utils/model.py:939) instead of the sampled output. Not a sampling semantic, and no aminx output kind corresponds. Flagged as a candidate for a deferred debt if the embeddings should be exposed."
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__seq_min_p"
+targets = ["seq_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_sample__sequence_sample_temperature"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "Model-level spelling; follows the __sequence_temp -> temperature rule (spec 6.3), family default None, 0/0.0 -> argmax per spec 2.3."
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__batch1"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData for the first tied structure, not a knob."
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__batch2"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData for the second tied structure; the knob that selects it is __input_pdb_code_2 -> tied_second_input."
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__budget_residue_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Boolean mask materialised from the --budget_residue_sele_string selection; that string is the knob (-> budget_residue_selection)."
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__chi_angle_sample_temperature"
+targets = ["chi_temp"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
+note = "Model-level spelling of the chi sampling temperature."
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__lambda_"
+targets = ["tied_interpolation_lambda"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_interpolation_lambda",
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_lambda",
+]
+note = "Model-level spelling of the tied mixing weight (utils/model.py:626)."
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_model_LASErMPNN_tied_sample__sequence_sample_temperature"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "Model-level spelling; follows the __sequence_temp -> temperature rule (spec 6.3), family default None, 0/0.0 -> argmax per spec 2.3."
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__batch"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData featurizer output, not a knob."
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__disable_charged_residue_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Mask materialised from --disable_charged_fs (batch_data.first_shell_ligand_contact_mask); that flag is the knob."
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__ignore_chain_mask_zeros"
+targets = ["ignore_chain_mask_zeros"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__return_encoder_embeddings"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Analysis-only side output: returns raw encoder node/edge tensors (prot_nodes.scalars, pr_pr_eattr, lig_nodes.scalars, lig_pr_eattr, utils/model.py:939) instead of the sampled output. Not a sampling semantic, and no aminx output kind corresponds. Flagged as a candidate for a deferred debt if the embeddings should be exposed."
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__seq_min_p"
+targets = ["seq_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
+note = ""
+
+[[row]]
+ref = "laser_model_ligandmpnn_LigandMPNN_sample__sequence_sample_temperature"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "Model-level spelling; follows the __sequence_temp -> temperature rule (spec 6.3), family default None, 0/0.0 -> argmax per spec 2.3."
+
+[[row]]
+ref = "laser_run_batch_inference__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__budget_residue_sele_string"
+targets = ["budget_residue_selection"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_budget_residue_selection"]
+note = "Selection string for the ala/gly budget residues."
+
+[[row]]
+ref = "laser_run_batch_inference__chi_min_p"
+targets = ["chi_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__chi_temp"
+targets = ["chi_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
+targets = ["constrain_ala_gly_to_exposed_non_ss"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_constrain_ala_gly_to_exposed_non_ss"]
+note = "Abbreviated on the aminx side; same knob."
+
+[[row]]
+ref = "laser_run_batch_inference__designs_per_batch"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference__designs_per_input"
+targets = ["num_samples"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
+note = "Designs produced per input structure."
+
+[[row]]
+ref = "laser_run_batch_inference__disable_charged_fs"
+targets = ["disable_charged_fs"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__first_shell_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = "Batch-CLI spelling of the first-shell sequence temperature."
+
+[[row]]
+ref = "laser_run_batch_inference__fix_beta"
+targets = ["fix_from_bfactor"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
+note = "Fixes positions from the B-factor column; renamed for clarity."
+
+[[row]]
+ref = "laser_run_batch_inference__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_batch_inference__fs_calc_ca_distance"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_batch_inference__fs_no_calc_burial"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_batch_inference__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__ignore_key_mismatch"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
+note = "store_false, passed as strict= (run_batch_inference.py:250,379); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_batch_inference__ignore_ligand"
+targets = ["ignore_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__inference_device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = "Device selection (spec 6.3: device -> exclusion device)."
+
+[[row]]
+ref = "laser_run_batch_inference__input_pdb_directory"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Directory of input structures."
+
+[[row]]
+ref = "laser_run_batch_inference__inputs_processed_simultaneously"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference__model_weights_path"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "Follows the model_weights / check_path rule (spec 6.3)."
+
+[[row]]
+ref = "laser_run_batch_inference__noncanonical_aa_ligand"
+targets = ["noncanonical_aa_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__output_fasta"
+targets = ["output_fasta"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__output_fasta_only"
+targets = ["output_fasta_only"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta_only"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__output_pdb_directory"
+targets = ["output_dir"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = "Directory for written structures."
+
+[[row]]
+ref = "laser_run_batch_inference__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__repack_only_input_sequence"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
+note = "repack_only_input_sequence maps to repack_only"
+
+[[row]]
+ref = "laser_run_batch_inference__seq_min_p"
+targets = ["seq_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_batch_inference__use_water"
+targets = ["use_water"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_use_water"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__budget_residue_sele_string"
+targets = ["budget_residue_selection"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_budget_residue_selection"]
+note = "Selection string for the ala/gly budget residues."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__chi_min_p"
+targets = ["chi_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__chi_temp"
+targets = ["chi_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__designs_per_batch"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__designs_per_input"
+targets = ["num_samples"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
+note = "Designs produced per input structure."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__disable_charged_fs"
+targets = ["disable_charged_fs"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__first_shell_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = "Batch-CLI spelling of the first-shell sequence temperature."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fix_beta"
+targets = ["fix_from_bfactor"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
+note = "Fixes positions from the B-factor column; renamed for clarity."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fs_calc_ca_distance"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__fs_no_calc_burial"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__ignore_key_mismatch"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
+note = "store_false, passed as strict= (run_batch_inference.py:250,379); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__ignore_ligand"
+targets = ["ignore_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__inference_device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = "Device selection (spec 6.3: device -> exclusion device)."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__input_pdb_directory"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Directory of input structures."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__inputs_processed_simultaneously"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__model_weights_path"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "Follows the model_weights / check_path rule (spec 6.3)."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__noncanonical_aa_ligand"
+targets = ["noncanonical_aa_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__output_fasta"
+targets = ["output_fasta"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__output_fasta_only"
+targets = ["output_fasta_only"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_output_fasta_only"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__output_pdb_directory"
+targets = ["output_dir"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = "Directory for written structures."
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__repack_only_input_sequence"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
+note = "repack_only_input_sequence maps to repack_only"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__seq_min_p"
+targets = ["seq_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__use_water"
+targets = ["use_water"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_use_water"]
+note = ""
+
+[[row]]
+ref = "laser_run_batch_inference_ligandmpnn__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__backbone_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
+note = """\
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
+
+[[row]]
+ref = "laser_run_inference__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference__disable_charged_fs"
+targets = ["disable_charged_fs"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference__entropy_decoder"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "entropy_decoder deferred (aminx tech debt 2069)"
+
+[[row]]
+ref = "laser_run_inference__fix_beta"
+targets = ["fix_from_bfactor"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
+note = "Fixes positions from the B-factor column; renamed for clarity."
+
+[[row]]
+ref = "laser_run_inference__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference__fs_calc_ca_distance"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference__fs_no_calc_burial"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference__fs_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference__ignore_ligand"
+targets = ["ignore_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference__input_pdb_code"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Input structure."
+
+[[row]]
+ref = "laser_run_inference__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_inference__noncanonical_aa_ligand"
+targets = ["noncanonical_aa_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference__output_path"
+targets = ["output_dir"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = "Where outputs are written."
+
+[[row]]
+ref = "laser_run_inference__repack_only"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference__strict_load"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
+note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__backbone_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
+note = """\
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__disable_charged_fs"
+targets = ["disable_charged_fs"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__entropy_decoder"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "entropy_decoder deferred (aminx tech debt 2069)"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fix_beta"
+targets = ["fix_from_bfactor"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
+note = "Fixes positions from the B-factor column; renamed for clarity."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_calc_ca_distance"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_no_calc_burial"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__fs_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__ignore_ligand"
+targets = ["ignore_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__input_pdb_code"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Input structure."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__noncanonical_aa_ligand"
+targets = ["noncanonical_aa_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__output_path"
+targets = ["output_dir"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = "Where outputs are written."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__repack_only"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn__strict_load"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
+note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__batch_data"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData featurizer output, not a knob."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__bb_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
+note = """\
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__budget_residue_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Boolean mask materialised from the --budget_residue_sele_string selection; that string is the knob (-> budget_residue_selection)."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__chi_min_p"
+targets = ["chi_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__chi_temp"
+targets = ["chi_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__disable_charged_fs"
+targets = ["disable_charged_fs"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__fs_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__ignore_chain_mask_zeros"
+targets = ["ignore_chain_mask_zeros"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__model"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The loaded nn.Module, not a knob."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__params"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The loaded checkpoint params dict, not a knob."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__seq_min_p"
+targets = ["seq_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__use_edo"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "Entropy-decoder feature, deferred with the __entropy_decoder CLI rows. Consumed, not inert (run_inference.py:536 'if not use_edo:'), so this is a deferral and not a no_op."
+
+[[row]]
+ref = "laser_run_inference_ligandmpnn_sample_model__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__batch_data"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData featurizer output, not a knob."
+
+[[row]]
+ref = "laser_run_inference_sample_model__bb_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
+note = """\
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
+
+[[row]]
+ref = "laser_run_inference_sample_model__budget_residue_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Boolean mask materialised from the --budget_residue_sele_string selection; that string is the knob (-> budget_residue_selection)."
+
+[[row]]
+ref = "laser_run_inference_sample_model__chi_min_p"
+targets = ["chi_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_min_p"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__chi_temp"
+targets = ["chi_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__disable_charged_fs"
+targets = ["disable_charged_fs"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__fs_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__ignore_chain_mask_zeros"
+targets = ["ignore_chain_mask_zeros"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__model"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The loaded nn.Module, not a knob."
+
+[[row]]
+ref = "laser_run_inference_sample_model__params"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The loaded checkpoint params dict, not a knob."
+
+[[row]]
+ref = "laser_run_inference_sample_model__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__seq_min_p"
+targets = ["seq_min_p"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_minp_only_when_temperature_set"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_sample_model__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_sample_model__use_edo"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "Entropy-decoder feature, deferred with the __entropy_decoder CLI rows. Consumed, not inert (run_inference.py:536 'if not use_edo:'), so this is a deferral and not a no_op."
+
+[[row]]
+ref = "laser_run_inference_sample_model__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__backbone_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
+note = """\
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
+
+[[row]]
+ref = "laser_run_inference_tied__budget_residue_sele_string"
+targets = ["budget_residue_selection"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_budget_residue_selection"]
+note = "Selection string for the ala/gly budget residues."
+
+[[row]]
+ref = "laser_run_inference_tied__constrain_ala_gly_sampling_to_exposed_non_secondary_structure"
+targets = ["constrain_ala_gly_to_exposed_non_ss"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_constrain_ala_gly_to_exposed_non_ss"]
+note = "Abbreviated on the aminx side; same knob."
+
+[[row]]
+ref = "laser_run_inference_tied__designs_per_input"
+targets = ["num_samples"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
+note = "Designs produced per input structure."
+
+[[row]]
+ref = "laser_run_inference_tied__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__disable_charged_fs"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Dead tied flag (spec 6.3, re-verified at e70f2c6d): disable_charged_fs reaches sample_model (run_inference_tied.py:764, passed :920) but dies there -- :620 has the disable_charged_residue_mask= argument commented out. The Options-level ValueError for tied + disable_charged_fs is deliberately stricter than upstream, which accepts the flag silently."
+
+[[row]]
+ref = "laser_run_inference_tied__disabled_residues"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Dead tied-CLI flag (spec 6.3, re-verified at e70f2c6d): run_inference_tied.py:884 parses --disabled_residues, but the module's own run_inference(...) signature :760-766 has no disabled_residues parameter, so the parsed value is never passed. Parsed, never consumed."
+
+[[row]]
+ref = "laser_run_inference_tied__entropy_decoder"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "entropy_decoder deferred (aminx tech debt 2069)"
+
+[[row]]
+ref = "laser_run_inference_tied__fix_beta"
+targets = ["fix_from_bfactor"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_fix_from_bfactor"]
+note = "Fixes positions from the B-factor column; renamed for clarity."
+
+[[row]]
+ref = "laser_run_inference_tied__fs_calc_burial_hull_alpha_value"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference_tied__fs_calc_ca_distance"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference_tied__fs_no_calc_burial"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "no_op per spec 6.3/6.4: T0.2 showed the value is overwritten by construct_graphs (pdb_dataset.py:590), so set == unset byte-identical. Deliberately not an Options field (spec 6.1)."
+
+[[row]]
+ref = "laser_run_inference_tied__fs_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__ignore_ligand"
+targets = ["ignore_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__input_pdb_code_1"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "First tied input structure."
+
+[[row]]
+ref = "laser_run_inference_tied__input_pdb_code_2"
+targets = ["tied_second_input"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_second_input"]
+note = "Second tied input structure; the aminx knob that selects it."
+
+[[row]]
+ref = "laser_run_inference_tied__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_inference_tied__noncanonical_aa_ligand"
+targets = ["noncanonical_aa_ligand"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_noncanonical_aa_ligand"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__output_path"
+targets = ["output_dir"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = "Where outputs are written."
+
+[[row]]
+ref = "laser_run_inference_tied__repack_only"
+targets = ["repack_only"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_repack_only"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_tied__strict_load"
+targets = ["strict_load"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_strict_load"]
+note = "CLI --ignore_statedict_mismatch is store_false (run_inference.py:783); dest True ≡ strict_load=True; name/polarity inversion"
+
+[[row]]
+ref = "laser_run_inference_tied__tied_probability_interpolation_lambda"
+targets = ["tied_interpolation_lambda"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_interpolation_lambda",
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_lambda",
+]
+note = "Tied-CLI spelling of the two-structure mixing weight; weights structure 1, default 0.0 = structure 2 only (spec 6.5)."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__ala_budget"
+targets = ["ala_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_budget_counts_fixed"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__batch_data1"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData for the first tied structure, not a knob."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__batch_data2"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "BatchData for the second tied structure; the knob that selects it is __input_pdb_code_2 -> tied_second_input."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__bb_noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_noise.py::test_knob_semantics_laser_noise"]
+note = """\
+LASEr bb_noise / CLI dest backbone_noise maps to noise, with a DIFFERENT rule from Potts: utils/pdb_dataset.py:411-413 rounds coordinates to 2 decimals then adds one randn((L,1,3)) draw per residue, broadcast across all 5 backbone atoms -- a rigid per-residue translation. Spec 6.3 names iid-per-atom as this knob's NEGATIVE CONTROL, and the named test asserts the shape is rejected rather than broadcast. Implemented 261003 (debt 2434 closed): driver.apply_backbone_noise, applied in _prepare when the spec carries a backbone noise bundle."""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__budget_residue_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Boolean mask materialised from the --budget_residue_sele_string selection; that string is the knob (-> budget_residue_selection)."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__chi_temp"
+targets = ["chi_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_chi_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__disable_charged_fs"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Dead tied flag (spec 6.3, re-verified at e70f2c6d): disable_charged_fs reaches sample_model (run_inference_tied.py:764, passed :920) but dies there -- :620 has the disable_charged_residue_mask= argument commented out. The Options-level ValueError for tied + disable_charged_fs is deliberately stricter than upstream, which accepts the flag silently."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__disable_pbar"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__disabled_residues"
+targets = ["disabled_residues"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_disabled_floor_vs_charged_neginf"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__fs_sequence_temp"
+targets = ["fs_sequence_temp"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_fs_sequence_temp"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__gly_budget"
+targets = ["gly_budget"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_gly_budget"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__ignore_chain_mask_zeros"
+targets = ["ignore_chain_mask_zeros"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_writes_x",
+  "tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_ignore_chain_mask_zeros_inverts_disabled",
+]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__interpolation_lambda"
+targets = ["tied_interpolation_lambda"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_interpolation_lambda",
+  "tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_tied_lambda",
+]
+note = "sample_model spelling of the tied mixing weight."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__model"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The loaded nn.Module, not a knob."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__params"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The loaded checkpoint params dict, not a knob."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__sequence_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "family default None; maps to temperature"
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__use_edo"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2069"
+parity_test_ids = []
+note = "Entropy-decoder feature, deferred with the __entropy_decoder CLI rows. Consumed, not inert (run_inference.py:536 'if not use_edo:'), so this is a deferral and not a no_op."
+
+[[row]]
+ref = "laser_run_inference_tied_sample_model__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_predict_partial_charges__input_pdb"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Input structure path. Mapped rather than excluded for consistency with the already-filled __model_weights row on this surface; note the tension with spec 6.4, which lists run_predict_partial_charges.* as deferred -- that deferral concerns the partial-charge model, not the path plumbing."
+
+[[row]]
+ref = "laser_run_predict_partial_charges__model_weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "laser_run_predict_partial_charges__output_pdb"
+targets = ["output_dir"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = "Output structure path; see the __input_pdb note on this surface."
+
+[[row]]
+ref = "laser_run_proofreading__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__disable_inference_dropout"
+targets = ["proofread_dropout"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_proofread_dropout"]
+note = "inverted relative to proofread_dropout"
+
+[[row]]
+ref = "laser_run_proofreading__n_decoding_orders"
+targets = ["n_decoding_orders"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_n_decoding_orders"]
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__n_dropouts"
+targets = ["n_dropouts"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_n_dropouts"]
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__output_dir"
+targets = ["output_dir"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__pdb_file"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Input structure."
+
+[[row]]
+ref = "laser_run_proofreading__repack_all"
+targets = ["repack_all"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_joint_decode.py::test_knob_semantics_repack_all"]
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__selection_string"
+targets = ["selection_string"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_laser_proofread_tied.py::test_knob_semantics_selection_string"]
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__silent"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = ""
+
+[[row]]
+ref = "laser_run_proofreading__weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "Follows the model_weights / check_path rule (spec 6.3)."
+
+[[row]]
+ref = "laser_thread_and_score_sequences__backbone"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Input backbone structure."
+
+[[row]]
+ref = "laser_thread_and_score_sequences__fasta"
+targets = ["sequences_to_score"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_sequences_to_score"]
+note = "Sequences threaded onto the backbone and scored."
+
+[[row]]
+ref = "laser_thread_and_score_sequences__output_dir"
+targets = ["output_dir"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = ""
+
+[[row]]
+ref = "laser_thread_and_score_sequences__weights"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "Follows the model_weights / check_path rule (spec 6.3)."
+
+[[row]]
+ref = "potts_assign_fixed_chains__chain_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_assign_fixed_chains__input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_assign_fixed_chains__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_energy_prediction__config"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The cfg object itself, not a knob; its keys are the pottsmpnn_cfg rows."
+
+[[row]]
+ref = "potts_make_bias_AA__AA_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_bias_AA__bias_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_bias_AA__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_bias_per_res_dict__input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_bias_per_res_dict__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__chain_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__position_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_fixed_positions_dict__specify_non_fixed"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__chain_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__homooligomer"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__pos_neg_chain_betas"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__pos_neg_chain_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pos_neg_tied_positions_dict__position_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pssm_input_dict__PSSM_input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pssm_input_dict__jsonl_input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_pssm_input_dict__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_tied_positions_dict__chain_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_tied_positions_dict__homooligomer"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_tied_positions_dict__input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_tied_positions_dict__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_make_tied_positions_dict__position_list"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_mutation_search__allowed_from_aas"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__allowed_to_aas"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__binding_energy_cutoff"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__binding_energy_json"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__cfg_path"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__disallowed_chains"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__energy_mode"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__max_keep_per_depth"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__max_mutations"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__no_pareto_front"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__pdb_paths"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__per_position_quota"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__plot_dir"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__rrf_k"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__top_percent"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_mutation_search__top_percent_decay_base"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2070"
+parity_test_ids = []
+note = "mutation_search.* deferred (aminx tech debt 2070)"
+
+[[row]]
+ref = "potts_parse_multiple_chains__ca_only"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2068"
+parity_test_ids = []
+note = "CA-only deferred (aminx tech debt 2068)"
+
+[[row]]
+ref = "potts_parse_multiple_chains__input_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_parse_multiple_chains__output_path"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream helper_scripts/ utility that AUTHORS the json a pottsmpnn_cfg row consumes. aminx accepts the json directly, so the authoring interface is not part of the inference surface and has no Options field to map to."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__S_true"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__X"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__bias_AAs_np"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__bias_AA_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__bias_by_res"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__bias_by_res_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__chain_M_pos"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__chain_encoding_all"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__chain_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__omit_AA_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__omit_AA_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__omit_AAs_np"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__omit_AAs."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_bias"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__pssm_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_bias_flag"
+targets = ["pssm_bias_flag"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_precedence",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_precedence_latent_without_weight",
+]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row. Upstream wraps it in bool() at the call site."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_coef"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__pssm_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_log_odds_flag"
+targets = ["pssm_log_odds_flag"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_log_odds_flag"]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row. Upstream wraps it in bool() at the call site."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_log_odds_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__pssm_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__pssm_multi"
+targets = ["pssm_multi"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_multi"]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__randn"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is the RNG draw itself (randn = torch.randn(chain_mask.shape), sample_seqs.py:222); its seed path is the fix_decoding_order / decoding_order_offset -> random_seed rows."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__residue_idx"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_sample__temperature"
+targets = ["temperature"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__S_true"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__X"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__bias_AAs_np"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__bias_AA_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__bias_by_res"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__bias_by_res_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__chain_M_pos"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__chain_encoding_all"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__chain_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__omit_AA_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__omit_AA_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__omit_AAs_np"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__omit_AAs."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_bias"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__pssm_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_bias_flag"
+targets = ["pssm_bias_flag"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_precedence",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_precedence_latent_without_weight",
+]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row. Upstream wraps it in bool() at the call site."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_coef"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__pssm_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_log_odds_flag"
+targets = ["pssm_log_odds_flag"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_log_odds_flag"]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row. Upstream wraps it in bool() at the call site."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_log_odds_mask"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__pssm_json."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__pssm_multi"
+targets = ["pssm_multi"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_multi"]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__randn"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is the RNG draw itself (randn = torch.randn(chain_mask.shape), sample_seqs.py:222); its seed path is the fix_decoding_order / decoding_order_offset -> random_seed rows."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__residue_idx"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is featurizer output parsed from the input structure, not a user knob."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__temperature"
+targets = ["temperature"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is passed straight through from cfg.inference at sample_seqs.py:227-241, so it is the same knob as its pottsmpnn_cfg row."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__tied_beta"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. Like tied_pos, this is a value the CLI MATERIALISES before the call, not a knob of its own: potts_mpnn_utils.py:444 inits it as np.ones(L_max), :456 fills it per position from the tied_positions JSON weights, :1571 indexes it as tied_beta[t]. Knob: pottsmpnn_cfg__inference__tied_positions_json; featurize._tied_groups reproduces the derivation (tests/families/potts_mpnn/test_featurize.py::test_chain_order_masks_residue_idx_and_annotations). 261003: was targets = ['tied_beta'], kind = 'inert', crediting a test that proved PottsMPNNOptions.tied_beta inert. That field was DELETED rather than plumbed -- plumbing a scalar would have invented semantics upstream does not have -- so the row returns to the exclusion its sibling tied_pos always had. test_tied_beta_is_derived_and_not_an_option pins that an old config naming it fails loudly."
+
+[[row]]
+ref = "potts_potts_mpnn_utils_PottsMPNN_tied_sample__tied_pos"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "PottsMPNN.sample/.tied_sample have zero call sites upstream (verified at 0cb0a58: the only '.sample(' hit repo-wide is random.sample, training/utils.py:266); the live CLI path is decoder potts_mpnn_utils.py:1415 / tied_decoder :1599, called from sample_seqs.py:226,235. Every parameter below also exists, identically named, on the live pair, so rows are classified by parameter semantics rather than by the dead copy. This one is a value the CLI MATERIALISES before the call (sample_seqs.py:227-241), not a knob of its own; the knob is the pottsmpnn_cfg row named in this note. Knob: pottsmpnn_cfg__inference__tied_positions_json."
+
+[[row]]
+ref = "potts_sample_seqs__config"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "The cfg object itself, not a knob; its keys are the pottsmpnn_cfg rows."
+
+[[row]]
+ref = "potts_training__backbone_noise"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__batch_size"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__debug"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__dropout"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__gradient_norm"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__hidden_dim"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__max_protein_length"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__mixed_precision"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__num_decoder_layers"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__num_encoder_layers"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__num_epochs"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__num_examples_per_epoch"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__num_neighbors"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__path_for_outputs"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__path_for_training_data"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__previous_checkpoint"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__reload_data_every_n_epochs"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__rescut"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "potts_training__save_model_every_n_epochs"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Training is a v1 non-goal (spec 'Non-goals (v1)'); no inference counterpart."
+
+[[row]]
+ref = "pottsmpnn_cfg__chain_dict_json"
+targets = ["fixed_mask", "chain_design_mask_json"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
+note = """\
+chain dict JSON maps onto fixed_mask and chain_design_mask_json. _chain_dict \
+(driver.py:618-628) feeds tied_featurize_port, and A0 row order is sorted \
+designed chains then sorted fixed chains (spec :511), so naming B designed and A \
+fixed SWAPS the row order -- the test pins that as an exact identity on the \
+scored energy rather than as a "something changed" check."""
+
+[[row]]
+ref = "pottsmpnn_cfg__dev"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = "Device selection (spec 6.3: device -> exclusion device)."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__bias_AA_json"
+targets = ["bias"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_bias"]
+note = "Per-amino-acid logit bias; aminx carries it as the generic bias input."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__bias_by_res_json"
+targets = ["bias_by_res_json"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_bias_by_res_json"]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__binding_energy_cutoff"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2433"
+parity_test_ids = []
+note = "Specced as a PottsMPNNOptions field (spec 6.1) but absent from src/aminx/run/options.py, so there is no target to map to. Filed as aminx debt 2433; src/aminx/ is a _touches_scoped prefix so the field cannot be added without invalidating every sidecar ledger row mid-wave."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__binding_energy_json"
+targets = ["binding_energy_json"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_binding_energy_json"]
+note = """\
+Structure name -> list of partitions, each a list of chain letters \
+(driver.py:632-640); _partition_graphs subtracts the partitions' own energies \
+from the complex, giving a binding ddG (spec :512). A single partition covering \
+every chain therefore cancels to exactly 0, which is how the test pins the \
+subtraction rather than merely observing the number move."""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__binding_energy_optimization"
+targets = ["binding_energy_optimization"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_binding_energy_optimization"]
+note = """\
+NOT identical to upstream: the sample path implements "none" and REFUSES "both" \
+and "only" (sample_host.py:757-775), because a zero binding table would leave \
+"both" equal to "none" and update no positions under "only". The refusal is the \
+implemented contract and is what the test asserts. Measured 261002: the field is \
+inert in score:ddg -- all three values give bit-identical output -- so binding in \
+scoring is selected by binding_energy_json alone."""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__chain_dict"
+targets = ["fixed_mask", "chain_design_mask_json"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
+note = "Follows the *__chain_dict_json rule (spec 6.3); same test, same semantics."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__chain_ranges"
+targets = ["fixed_mask"]
+equivalence = "semantic"
+kind = "inert"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_fixed_mask"]
+note = "Per-chain inclusive 1-indexed residue ranges (run_utils.py:925,1010-1011); expressed in aminx as a fixed mask over everything outside the range. 261003: kind = 'inert'. spec.fixed_mask is read nowhere on this path -- Potts featurize builds a LOCAL fixed_mask from fixed_position_dict (featurize.py:388-392) that the driver never passes (debt 2443). fixed_mask is a RunSpecification field rather than an Options field, so it is not in NEW_FIELDS and the gate demands no coverage for it; the kind is set for consistency with the test it names, and the allowlist safeguard applies only to inert targets the gate actually demands."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__ddG"
+targets = ["output_kind"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_kind"]
+note = "True ≡ output_kind ddg; False ≡ energy"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__decoding_order_offset"
+targets = ["random_seed"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_random_seed"]
+note = "seeded-order test; order source is the driver, not decoding_order_fn"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__exclude_chains"
+targets = ["exclude_chains"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_exclude_chains"]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__filter"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Verified 261002: cfg.inference.filter IS read (run_utils.py:886 -> etab_utils.calc_eners(..., filter=cfg.inference.filter)), but it drops nothing. calc_eners builds its mask as `nrgs != torch.nan` (etab_utils.py:311), and x != NaN is True for every x under IEEE semantics, NaN included, so the mask is all-True. The docstring claims it filters sequences with NaN reference energies; `~torch.isnan(nrgs)` would. An upstream defect, not a design choice -- but the knob is still a no-op, so there is nothing for aminx to mirror. Was reason='upstream_noop', which is not in the harness vocabulary and failed test_exclusions; the mechanism belongs in this note, not in a one-off reason word."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__fix_decoding_order"
+targets = ["random_seed"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_random_seed"]
+note = "seeded-order test; order source is the driver, not decoding_order_fn"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__fixed_positions_json"
+targets = ["fixed_positions"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_fixed_positions"]
+note = "Per-chain fixed-position lists, taken as json by aminx."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__max_tokens"
+targets = ["batch_size"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_batch_size"]
+note = "output-invariance test; maps to batch_size"
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__mean_norm"
+targets = ["mean_norm"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_mean_norm"]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__noise"
+targets = ["noise"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_noise",
+  "tests/knob_semantics/test_potts_driver_knobs.py::test_potts_noise_is_per_atom_and_not_a_rigid_shift",
+  "tests/knob_semantics/test_potts_driver_knobs.py::test_potts_backbone_noise_level_reads_the_bundle",
+]
+note = """\
+eval augment_eps on all backbone atoms; knob test is iid Gaussian N/CA/C/O. \
+IMPLEMENTED 261003, closing debt 2442. Until then the bundle was built from \
+backbone_noise and consumed nowhere on the Potts path -- measured 261002, the \
+energy was identical at 0.02 through 10.0 while displacing the same \
+coordinates on disk by 0.02 moved it -- and this row named a tripwire that \
+asserted the defect. driver.apply_potts_backbone_noise now implements \
+X = X + augment_eps * randn_like(X) per potts_mpnn_utils.py:1169-1171, applied \
+after featurize so masks still see clean coordinates as upstream's ordering \
+requires. The per-atom shape is the load-bearing half: a (L,1,3) rigid draw is \
+REFUSED rather than broadcast, because broadcasting it is LASEr's rule and \
+would otherwise pass silently (spec 6.3 names each family's rule as the \
+other's negative control)."""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__num_samples"
+targets = ["num_samples"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_num_samples"]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__omit_AA_json"
+targets = ["omit_aa_per_position"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_omit_aa_per_position"]
+note = "Per-position omission lists (spec 6.1 new field)."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__omit_AAs"
+targets = ["omit_aa"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_omit_aa"]
+note = "Global omission list (spec 6.1 new field)."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimization_mode"
+targets = ["optimization_mode"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_optimization_mode",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_optimization_mode_rejects_unknown",
+]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimization_temperature"
+targets = ["optimization_temperature"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimize_fasta"
+targets = ["optimize_fasta"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_optimize_fasta"]
+note = """\
+upstream asserts optimize_fasta then reads out_dir/out_name.fasta (6.5b); aminx \
+takes the path directly. The DIVERGENCE is where the file comes from, not what \
+is done with it, so the test covers the shared semantics: records are selected \
+by header prefix (sample_host.py:173-184), seed the refinement, outrank \
+optimize_pdb at the if/elif (:302-312), and are rejected against L_total."""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__optimize_pdb"
+targets = ["optimize_pdb"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_optimize_pdb"]
+note = """\
+Refine from the structure's own sequence instead of decoding. Gated by \
+optimization_mode: `optimizing` is (optimize_pdb or optimize_fasta) and mode != \
+"none" (sample_host.py:299-301), and the copy of that predicate at :376 is what \
+chooses refined_sequence over sequence/sample_energy/sample_rank. Forces \
+num_samples=1 (:93-104)."""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_bias_flag"
+targets = ["pssm_bias_flag"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_precedence",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_precedence_latent_without_weight",
+]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_json"
+targets = ["pssm_json"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_pssm_json"]
+note = """\
+NOT PLUMBED (debt 2435, allowlisted): nothing reads options.pssm_json, so no \
+driver call site ever passes a pssm_dict to tied_featurize_port and \
+featurize.py:403-405 fills pssm_coef/pssm_bias with zeros and pssm_log_odds with \
+a uniform 10000.0. The named test asserts that the whole pssm group is therefore \
+inert (debt 2440) and fires when it is fixed; it is NOT a knob_semantics name and \
+this row is not coverage."""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_log_odds_flag"
+targets = ["pssm_log_odds_flag"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_log_odds_flag"]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_multi"
+targets = ["pssm_multi"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_pssm_multi"]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__pssm_threshold"
+targets = ["pssm_threshold"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_pssm_threshold"]
+note = """\
+IS read -- sample_host.py:295 feeds it to (log_odds > threshold) at :332 -- and \
+still cannot change anything, because pssm_json above is unplumbed and leaves \
+log_odds a uniform fill, so the mask is all-true or all-false together and \
+scales every amino acid alike. Measured 261002 under a control: seven pssm \
+settings, including all four on at once, give output identical to the default \
+while omit_aa moves it. Debt 2440. The named test asserts that and fires when it \
+is fixed; this row is not coverage."""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__skip_gaps"
+targets = ["skip_gaps"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_skip_gaps",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_skip_gaps_inert_without_a_gap",
+]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__temperature"
+targets = ["temperature"]
+equivalence = "identical"
+parity_test_ids = [
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor",
+  "tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_t0_floor_is_load_bearing",
+]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__tied_epistasis"
+targets = ["tied_epistasis"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_knobs.py::test_knob_semantics_tied_epistasis_leaked_pos"]
+note = ""
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__tied_positions_json"
+targets = ["tied_positions"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_tied_positions_is_ignored_by_the_potts_driver"]
+note = "Tied-position groups, taken as json by aminx."
+
+[[row]]
+ref = "pottsmpnn_cfg__inference__write_pdb"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2433"
+parity_test_ids = []
+note = "Specced as a PottsMPNNOptions field (spec 6.1) but absent from src/aminx/run/options.py, so there is no target to map to. Filed as aminx debt 2433; src/aminx/ is a _touches_scoped prefix so the field cannot be added without invalidating every sidecar ledger row mid-wave."
+
+[[row]]
+ref = "pottsmpnn_cfg__input_dir"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Directory of input structures."
+
+[[row]]
+ref = "pottsmpnn_cfg__input_list"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Input-list file; see the pottsmpnn_input_list surface."
+
+[[row]]
+ref = "pottsmpnn_cfg__model__check_path"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_checkpoint_id_and_model_local_path"]
+note = "weights path maps to checkpoint_id and model_local_path"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__edge_features"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__hidden_dim"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__num_edges"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__num_layers"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__potts_dim"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "model.* keys are checkpoint-derived"
+
+[[row]]
+ref = "pottsmpnn_cfg__model__vocab"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2067"
+parity_test_ids = []
+note = "MSA vocab-22 deferred (aminx tech debt 2067)"
+
+[[row]]
+ref = "pottsmpnn_cfg__mutant_csv"
+targets = ["mutant_csv"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_mutant_csv"]
+note = """\
+Table of substitutions resolved by driver.py:_from_csv. The `pdb` column selects \
+rows, `chain`/`mut_type` are colon-zipped so one row with two chains is one double \
+mutant, and the wild-type letter is checked against the structure. Positions are \
+0-based (spec "Index space", run_utils.py:737)."""
+
+[[row]]
+ref = "pottsmpnn_cfg__mutant_fasta"
+targets = ["mutant_fasta"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_mutant_fasta"]
+note = """\
+Candidates as whole sequences, resolved by driver.py:_from_fasta. The header names \
+the chains it replaces, so unnamed chains keep the structure's own sequence; with no \
+chain list the record must spell out every chain. Outranks mutant_csv \
+(driver.py:422-425), which is the order the spec gives at :511-512."""
+
+[[row]]
+ref = "pottsmpnn_cfg__out_dir"
+targets = ["output_dir"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_output_dir"]
+note = "Where outputs are written."
+
+[[row]]
+ref = "pottsmpnn_cfg__out_name"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Output filename stem; naming only, no behaviour."
+
+[[row]]
+ref = "pottsmpnn_input_list__designed_chains"
+targets = ["fixed_mask", "chain_design_mask_json"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
+note = "input-list designed chains map onto fixed_mask and chain_design_mask_json"
+
+[[row]]
+ref = "pottsmpnn_input_list__fixed_chains"
+targets = ["fixed_mask", "chain_design_mask_json"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_chain_design_mask_json"]
+note = "input-list fixed chains map onto fixed_mask and chain_design_mask_json"
+
+[[row]]
+ref = "pottsmpnn_input_list__pdb"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_inputs"]
+note = "Per-line structure path in the MANUAL input-list format (pdb|designed:chains|fixed:chains, sample_seqs.py:81-94)."
+
+# --- AMINX-ONLY ROWS, added 261003 (upstream = false). ------------------------
+# Two PottsMPNNOptions fields had NO row at all and could not have one: every
+# ref must be a reference_surfaces.py field name, and neither `etab` nor
+# `dense_hJ` appears anywhere in that file. So `covered` could never contain
+# them however many tests existed, and `uncovered` reported them as a coverage
+# hole that no test could close. emit_etab in particular was already
+# implemented AND already tested and the gate still could not see it.
+#
+# Reading that list as a test backlog would have generated work that could not
+# have closed the blocker, which is the whole reason the two markers exist.
+
+[[row]]
+ref = "__aminx_only__emit_etab"
+upstream = false
+targets = ["emit_etab"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_semantics_emit_etab"]
+note = "aminx-only: emits the Potts energy table and its neighbour index into the output (sample_host.py:394-400 declares potts_etab / potts_E_idx, :483-486 produces them). Upstream has no analogue -- it writes etab to disk from sample_seqs.py rather than exposing a knob -- so no reference surface names it. NOT inert: read outside options.py, which the plumbing allowlist header calls out explicitly as the contrast case. The existing test_knob_semantics_emit_etab pins both declared shapes (6,6,20,20) and (60,48,20,20), so this row needed only to exist."
+
+[[row]]
+ref = "__aminx_only__emit_dense_hJ"
+upstream = false
+kind = "inert"
+targets = ["emit_dense_hJ"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_emit_dense_hJ"]
+note = "aminx-only AND inert, which is why upstream and kind are separate markers rather than one enum. Declared at run/options.py:33 and read NOWHERE in src/; allowlisted not_plumbed, whose note says it 'is inert all the same'; spec line 638 says it converts host-side only. Covered by test_knob_inert_emit_dense_hJ, which uses emit_etab=True on the same harness as its control -- so 'adds no keys' cannot be confused with a test that cannot detect keys. Credit is tied to the allowlist row and dies with it (debt 2435)."

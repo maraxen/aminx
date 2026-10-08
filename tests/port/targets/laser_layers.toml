@@ -1,0 +1,67 @@
+# laser_layers: HomoGATv2, HeteroGATv2, GVP, DenseGVP, EquivariantLayerNorm.
+# oracle_id hashes tests/port/reference/laser_layers/{algo.py,sealed.py}.
+# The f64 npz is staged outside this tree; sealed.load checks oracle_manifest.toml.
+[port]
+wave_id = "laser_layers"
+oracle_id = "ref:tests/port/reference/laser_layers:v1:sha256:5fb11ec35bbca8903b38390d66bff4ef9a0fbdaffa98d41a256a55841ef1f78b"
+symbol_qualname = "aminx.model.laser.layers"
+reference_subtree = "reference/laser_layers"
+
+[capabilities]
+stochastic = false
+dynamic_shape = false
+
+[parity]
+ad_critical = false
+ad_critical_justification = ""
+tolerance_policy_f64 = "rtol=1e-9,atol=1e-12"
+tolerance_policy_f32 = "rtol=1e-5,atol=1e-6"
+max_traces = 1
+
+[access]
+reference_write_identities = ["reference-vendor"]
+fixer_read_only_on_reference = true
+
+[amendment]
+# AWAITING USER RATIFICATION. Revert to the original bounds below if refused.
+original_tolerance_policy_f64 = "rtol=1e-9"
+original_tolerance_policy_f32 = "rtol=1e-5"
+amended_on = "260930"
+graded_run = "2747efa8-eb24-4d80-a98c-48154528d553"
+graded_outcome = "pass"
+sidecar = "scripts/parity/laser_layers_tolerance.bth.toml"
+# What the spec pre-registered (section 7.2, line 1153) was a PURE relative bound,
+# unlike every neighbouring row in the same table (potts_head is
+# rtol=1e-10,atol=1e-12 / rtol=1e-5,atol=1e-6) and unlike the house comparison
+# helper tests/port/a1_compare.py::assert_close, which requires both and
+# delegates to np.testing.assert_allclose.
+rationale = """
+A pure relative bound admits an error of exactly 0 wherever the reference is
+exactly 0, i.e. it demands bit-exactness of a floating-point result, so it is
+unsatisfiable by ANY implementation rather than being a strict-but-meetable
+bound. Measured over all 63 (checkpoint, fixture) keys of
+protein_encoder_layers_0_hetgat__out__0__scalars, 2372352 elements: 881 are
+exactly 0.0 and a further 27409 are non-zero with |ref| < 1e-7. Injecting a
+round-off-scale error of 7.2e-15 is rejected on 86279 elements by pure
+rtol=1e-9 and on 0 elements by rtol=1e-9,atol=1e-12.
+"""
+controls = """
+Both controls run oracle-against-itself, so the instrument is tested rather than
+assumed. Positive: the identity is accepted on every one of 2372352 elements
+(0 rejected). Negative: a 1e-6 RELATIVE perturbation is still rejected on
+2321338 elements, 97.85%, far above the pre-registered 90% floor - so the amended
+bound remains able to detect a real port defect and did not pass by being loose.
+"""
+# Scope of the evidence, stated so it is not over-read:
+f64_atol_basis = "measured; graded run 2747efa8"
+f32_atol_basis = """
+NOT measured. 1e-6 is the house pairing for rtol=1e-5 (potts_head f32 is
+rtol=1e-5,atol=1e-6). The f32 tier had not run when this was written, because the
+f64 tier gated it. If the f32 tier shows a deviation above this bound, measure it
+and amend separately rather than widening this value.
+"""
+port_correctness_not_implied = """
+This amendment says nothing about whether the port is correct. It says the
+original bound could not distinguish a correct port from an incorrect one at
+round-off scale. Port correctness is what the amended wave then tests.
+"""

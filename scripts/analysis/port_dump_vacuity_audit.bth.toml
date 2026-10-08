@@ -1,0 +1,78 @@
+[metadata]
+title = "Which port-suite oracle comparisons are structurally vacuous?"
+created = "261006"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The laser_encoder f32 floor run (graded 91dfbf20) incidentally revealed that lig_vectors has shape (N, 0, 3) for all 63 pairs, so one of its seven declared float fields compares an empty array against an empty array at both precisions for every pair -- an assertion that cannot fail. That was found by accident. Scanning every sealed dump across every port wave will show whether laser_encoder's lig_vectors is an isolated case or whether other waves also carry comparison fields that assert over zero elements, inflating their apparent coverage in a way a green run hides."
+stage_name = "diagnosis"
+novel = true
+
+[outcomes.no_vacuous_fields]
+condition = "self_test_passed AND dumps_absent == [] AND n_arrays > 0 AND n_empty == 0"
+decision = "Record that the port suite has no structurally empty comparisons outside the laser_encoder lig_vectors case already known, and close the question. No file is amended."
+reasoning = "If no dumped array is empty then every assertion the tiers make is over at least one element, and the suite's reported coverage is honest on this axis."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND dumps_absent == [] AND n_arrays > 0 AND n_empty == 0)"
+
+[outcomes.vacuous_fields_present]
+condition = "self_test_passed AND dumps_absent == [] AND n_arrays > 0 AND n_empty > 0"
+decision = "Report every affected wave and field, with counts, so each can be judged on its own: an empty field may be correct by construction (a model that genuinely emits no vector channel) or a fixture-coverage gap (a field that would be populated by a fixture the wave does not use). Do NOT delete or alter any field, and do NOT change a tolerance -- this run establishes WHICH assertions are vacuous, not what should be done about any of them. tests/port/ is scoped, so any follow-up rides the post-merge re-wave."
+reasoning = "A tier reporting N passing assertions, some over zero elements, overstates its coverage, and the overstatement is invisible precisely when the run is green. Naming them converts an invisible gap into a reviewable list. Whether each is a defect is a judgement this instrument cannot make and does not attempt."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND dumps_absent == [] AND n_arrays > 0 AND n_empty > 0)"
+
+[outcomes.no_arrays_scanned]
+condition = "self_test_passed AND dumps_absent == [] AND n_arrays == 0"
+decision = "No conclusion. The dump roots resolved but contained no oracle_<precision>.npz files."
+reasoning = "Zero arrays scanned and zero empty arrays found are indistinguishable in the headline number, so the refusal has to be a separate verdict or an empty scan would read as a clean bill of health."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR dumps_absent != [] OR n_arrays > 0"
+
+[outcomes.dumps_absent]
+condition = "self_test_passed AND dumps_absent != []"
+decision = "No conclusion. Re-run where the dump roots resolve."
+reasoning = "A missing dump root is an environment fact and must not be reported as an absence of empty fields."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR dumps_absent == []"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "12 synthetic checks run against a real npz written by the self-test itself, before any sealed dump is opened. They include three false-positive controls -- a populated array, a 0-d scalar, and critically an ALL-ZERO array, which must NOT be called empty because it is a different and weaker problem -- plus two grader controls and a refusal control."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[result_schema]
+verdict = "str"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+dumps_absent = "list"
+dump_roots = "list"
+n_arrays = "int"
+n_empty = "int"
+n_waves_scanned = "int"
+n_waves_with_empties = "int"
+per_wave = "dict"
+script_sha256 = "str"
+
+[data]
+scope = "Every <wave>/oracle_f32.npz and <wave>/oracle_f64.npz under each --dump-root. Both the Potts set (a1_potts) and the owned LASEr set (b3_laser_owned) are in scope; both are the sets the port waves actually resolve."
+definition_of_empty = "An array with any zero-length axis, hence zero elements. (93, 0, 3) qualifies; (93, 256) does not. This is a STRUCTURAL property read from the array header: it does not depend on values, on tolerance, or on which fixture was used."
+what_is_deliberately_not_measured = "Arrays that are non-empty but identically zero. Those are a DIFFERENT and weaker problem -- they still assert that the port also produces zeros, so they are not vacuous, though they do defeat a scale-relative band. That case is already measured and recorded: graded run 7384a821 found 126 such entries in laser_layers (backbone_frame_vec_input_layer__out__scalars and backbone_frame_vec_norm__out__scalars, max_ref_magnitude exactly 0.0 across all 252 entries at both precisions). It is cited rather than re-derived, and detecting it here would require decompressing roughly 30 GB where emptiness needs only the headers. The self-test pins this distinction with an explicit false-positive control on an all-zero array."
+why_it_is_cheap = "No array is ever materialised. Each .npy member's shape is parsed from its header alone, dispatching on numpy's PUBLIC read_array_header_1_0 / read_array_header_2_0 rather than the private _read_array_header, with an unknown version raising instead of guessing. The dumps total ~30 GB and individual files reach 900 MB; the audit reads kilobytes. This matters beyond elegance: the box is concurrently carrying the LASEr distributional confirm, which is the critical path, and this run must not compete with it for I/O or CPU."
+known_case_expected_in_advance = "laser_encoder lig_vectors, shape (N, 0, 3) for all 63 pairs at both precisions, i.e. 126 empty arrays. Recorded here BEFORE the run so that finding it is a confirmation of the instrument rather than a discovery, and so that any count ABOVE 126 is visibly new."
+field_naming = "Counts are additionally grouped by the suffix after the last '__', which is how the port tests name what they compare, so a reader can tell one odd pair from a whole column of a tier."
+instrument_self_test = "12 checks against an npz the self-test writes itself: all members seen, header shapes correct, emptiness detected on a leading AND an interior zero axis, three false-positive controls (populated array, 0-d scalar, all-zero array), two grader verdict controls and a no-arrays refusal control. All five failure modes were additionally forced during development and each fired: _is_empty pinned True, pinned False, the grader pinned to each of its two measured verdicts, and a scan returning nothing. The scan-returns-nothing control initially CRASHED the self-test with a KeyError instead of reporting; the lookups were made defaulting so a partial scan now yields a complete failure list rather than aborting partway."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[provenance]
+note = "Ungraded diagnostic, prompted by an incidental finding in graded run 91dfbf20. NOT a redsox vehicle; no manifest row. Lives in scripts/analysis/, outside _SCOPED_PREFIXES (verified at tests/knob_gate/_coverage.py:21-28), so it costs the frozen ledger nothing. It reads sealed dumps and writes nothing near them; it amends no file and proposes no band."
+invocation = "bth run --project-slug aminx -- uv run --no-sync python3 scripts/analysis/port_dump_vacuity_audit.py --dump-root <dir> [--dump-root <dir>] --out <json>"
+
+[resume]
+unit = "none -- the run reads only array headers and completes in seconds"
+max_attempts = 1

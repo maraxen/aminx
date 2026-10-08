@@ -9,6 +9,8 @@ relates_to: 260605_integration-architecture-for-mistypotts
 
 ## Status: Accepted 2026-06-05
 
+**Amended by:** [`260929_pottsmpnn-lasermpnn-family-drivers`](260929_pottsmpnn-lasermpnn-family-drivers.md) — scope-narrowing: this decision governs `aminx.potts.*` only.
+
 This ADR documents the architectural decision to implement PottsModel as a standalone parallel model family, independent from the aminx.inference StageSet pipeline.
 
 ## Context: Integration of PottsTRWStructureModel into aminx.potts.PottsModel

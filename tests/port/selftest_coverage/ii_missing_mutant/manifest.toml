@@ -1,0 +1,9 @@
+[[branch]]
+id = "selftest_absent"
+stage = "port_selftest"
+fixture = "selftest_absent"
+mutant = "selftest_absent"
+
+[branch.vehicle]
+kind = "pytest"
+nodeids = ["tests/port/selftest/test_kernel.py::test_tier_2_sign_flipped_kernel_fails"]

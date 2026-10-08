@@ -147,6 +147,27 @@
   "src/aminx/host/campaign.py::validate_manifest_rows": "P28",
   "src/aminx/host/campaign.py::write_campaign_manifest": "P28",
   "src/aminx/host/campaign.py::write_manifest": "P28",
+  "src/aminx/host/family_driver.py::FamilyBatch": {
+    "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
+  },
+  "src/aminx/host/family_driver.py::FamilyDriver": {
+    "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
+  },
+  "src/aminx/host/family_driver.py::FamilyDriverRegistry": {
+    "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
+  },
+  "src/aminx/host/family_driver.py::FamilyStages": {
+    "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
+  },
+  "src/aminx/host/family_driver.py::SinkArraySpec": {
+    "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
+  },
+  "src/aminx/host/family_driver.py::refuse_driver_family": {
+    "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
+  },
+  "src/aminx/host/family_runner.py::run_family_driver": {
+    "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
+  },
   "src/aminx/host/logit_aggregation.py::LogitFingerprint": {
     "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
   },
@@ -164,6 +185,15 @@
   },
   "src/aminx/host/logit_aggregation.py::pad_to_max": {
     "internal": "post-hoc logit/perplexity aggregation for host runner output, covered through P26"
+  },
+  "src/aminx/host/omit_aa_bias.py::compile_omit_aa_bias": {
+    "internal": "Host-side omit_aa bias compilation consumed by the sampling kernels, covered through their P-IDs. The browser reimplements this in JS rather than importing it (scripts/browser_validation/layer_a_sampling.py::_omit_aa_bias), and p07_knobs_gate checks that reimplementation against _reference_omit_aa_bias."
+  },
+  "src/aminx/host/omit_aa_bias.py::omit_aa_is_active": {
+    "internal": "Host-side omit_aa bias compilation consumed by the sampling kernels, covered through their P-IDs. The browser reimplements this in JS rather than importing it (scripts/browser_validation/layer_a_sampling.py::_omit_aa_bias), and p07_knobs_gate checks that reimplementation against _reference_omit_aa_bias."
+  },
+  "src/aminx/host/omit_aa_bias.py::omit_letter_indices": {
+    "internal": "Host-side omit_aa bias compilation consumed by the sampling kernels, covered through their P-IDs. The browser reimplements this in JS rather than importing it (scripts/browser_validation/layer_a_sampling.py::_omit_aa_bias), and p07_knobs_gate checks that reimplementation against _reference_omit_aa_bias."
   },
   "src/aminx/host/output_sinks.py::NoopDesignSink": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
@@ -372,6 +402,171 @@
   "src/aminx/model/features.py::ProteinFeatures": "P03",
   "src/aminx/model/features.py::select_neighbors": "P03",
   "src/aminx/model/features.py::top_k": "P03",
+  "src/aminx/model/laser/decoder.py::LaserDecoder": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/decoder.py::ScoreForward": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/decoder.py::binned_degree_basis": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/decoder.py::score_structure": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/encoders.py::EncoderForward": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/encoders.py::LaserEncoder": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/encoders.py::RBFEncoding": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/encoders.py::encode_structure": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/encoders.py::ligand_atom_bucket": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/encoders.py::ligand_atom_features": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::GraphStructure": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::LaserGraphs": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::PackedEdges": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::build_laser_graphs": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::knn_graph": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::ligand_ligand_distances": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::ligand_protein_distances": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::ligand_protein_knn": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::pack_edges": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::protein_edge_distances": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/graphs.py::scatter_edge_values": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::DecodeForward": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::JointDecodeResult": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::JointStepInputs": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::LaserJointDecode": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::categorical_draw": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::chi_position_mask": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::circular_abs_delta_deg": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::decode_order": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::decode_residue": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/joint_decode.py::minp_warp_logits": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::AttentionAggregation": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::DenseGVP": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::DenseMLP": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::DenseResidualNodeUpdate": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::EquivariantDropout": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::EquivariantLayerNorm": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::GVP": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::HeteroGATv2": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::HomoGATv2": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::apply_layer_norm": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::apply_linear": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::masked_softmax": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/layers.py::norm_no_nan": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/proofread.py::closed_form_std": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/proofread.py::conditional_focus_probs": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/proofread.py::focus_rows": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/proofread.py::proofread_dropout": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/proofread.py::reduce_proofread": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/proofread.py::softmax_rows": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/proofread.py::unconditional_logits": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/tied.py::TiedDecodeResult": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/tied.py::mix_sequence_probabilities": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/tied.py::tied_chi_index": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
+  "src/aminx/model/laser/tied.py::tied_decode": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
   "src/aminx/model/ligand_features.py::PositionalEncodings": "P11",
   "src/aminx/model/ligand_features.py::ProteinFeaturesLigand": "P11",
   "src/aminx/model/ligand_mpnn.py::PrxteinLigandMPNN": "P11",

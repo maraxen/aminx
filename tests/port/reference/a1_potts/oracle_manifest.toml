@@ -1,0 +1,181 @@
+upstream_commit = "0cb0a58874e373d664114f1735deab77614e4ab5"
+torch_version = "2.4.1+cpu"
+seed = 0
+shim_sha256 = "8a25ef2353839992d0a308a4a5ba609810056278cf33b375c0839f6ecc70dbd2"
+shim_sites = ["potts_mpnn_utils.py:1405", "potts_mpnn_utils.py:1480", "potts_mpnn_utils.py:1590", "potts_mpnn_utils.py:1680", "run_utils.py:174", "run_utils.py:263", "run_utils.py:421", "run_utils.py:512", "potts_mpnn_utils.py:940", "potts_mpnn_utils.py:1156"]
+shimmed = true
+
+[[checkpoint]]
+id = "vanilla_20_f64"
+path = "vanilla_model_weights/pottsmpnn_20.pt"
+weights_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "vanilla_30_f64"
+path = "vanilla_model_weights/pottsmpnn_30.pt"
+weights_sha256 = "0491d76eea58ddb0c90f55114caa35e679f4ce0c940f906e33aadf00f6d1b92c"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "soluble_20_f64"
+path = "soluble_model_weights/sol_pottsmpnn_20.pt"
+weights_sha256 = "f203a69773df41a1b66512dc75a2eec28bfc4f28ec0c549e3f51567747e1607f"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "soluble_30_f64"
+path = "soluble_model_weights/sol_pottsmpnn_30.pt"
+weights_sha256 = "3253319101e25246ba7dfd9790f6eb61efaaec032fffc27609b011fe44c434f4"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "ft_f64"
+path = "ft_model_weights/potts_ft.pt"
+weights_sha256 = "b672ff4ed1492560558dbc666f3df17b57236955dca379008fa2bc60b436c71e"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "vanilla_20_f32"
+path = "vanilla_model_weights/pottsmpnn_20.pt"
+weights_sha256 = "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "vanilla_30_f32"
+path = "vanilla_model_weights/pottsmpnn_30.pt"
+weights_sha256 = "0491d76eea58ddb0c90f55114caa35e679f4ce0c940f906e33aadf00f6d1b92c"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "soluble_20_f32"
+path = "soluble_model_weights/sol_pottsmpnn_20.pt"
+weights_sha256 = "f203a69773df41a1b66512dc75a2eec28bfc4f28ec0c549e3f51567747e1607f"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "soluble_30_f32"
+path = "soluble_model_weights/sol_pottsmpnn_30.pt"
+weights_sha256 = "3253319101e25246ba7dfd9790f6eb61efaaec032fffc27609b011fe44c434f4"
+missing_keys = []
+unexpected_keys = []
+
+[[checkpoint]]
+id = "ft_f32"
+path = "ft_model_weights/potts_ft.pt"
+weights_sha256 = "b672ff4ed1492560558dbc666f3df17b57236955dca379008fa2bc60b436c71e"
+missing_keys = []
+unexpected_keys = []
+
+[[dump]]
+wave = "potts_head"
+precision = "f64"
+path = "potts_head/oracle_f64.npz"
+sha256 = "4bad82488791105f28ff66518611cd28d4b0d46c5007a5e36e0b18a9c84423c9"
+shimmed = false
+
+[[dump]]
+wave = "potts_merge_pair_d2"
+precision = "f64"
+path = "potts_merge_pair_d2/oracle_f64.npz"
+sha256 = "657ee24bdd6152050440c12110987b9582da062cf26d8c2e3e3290555dc84ca2"
+shimmed = false
+
+[[dump]]
+wave = "potts_merge_pair_d4"
+precision = "f64"
+path = "potts_merge_pair_d4/oracle_f64.npz"
+sha256 = "4e30f9546c8d04e9d30fb2abb128b2b36a67fb311eeb674cff2373138f18c07e"
+shimmed = false
+
+[[dump]]
+wave = "potts_energy"
+precision = "f64"
+path = "potts_energy/oracle_f64.npz"
+sha256 = "94c4036a9b7647eecf2ca3538470c4e1bab2b3fd284d074ff90118526a3e5d5c"
+shimmed = false
+
+[[dump]]
+wave = "potts_ar_decode"
+precision = "f64"
+path = "potts_ar_decode/oracle_f64.npz"
+sha256 = "3bad8ee084b1f59573ee199ae747cf3073befa1bc7359671e74478998bb61714"
+shimmed = true
+
+[[dump]]
+wave = "potts_refine"
+precision = "f64"
+path = "potts_refine/oracle_f64.npz"
+sha256 = "b3eaf178636e7ebc68f5b8e84d3d87eebfaf6e8ac8fc5e7c8ca89cc7448c0bbf"
+shimmed = true
+
+[[dump]]
+wave = "pottsmpnn_full"
+precision = "f64"
+path = "pottsmpnn_full/oracle_f64.npz"
+sha256 = "0fe956b3e4b4e151df4eea5924f6975a7fdf020abacec41d03b6cfcffb981e85"
+shimmed = false
+
+[[dump]]
+wave = "declayer_f64"
+precision = "f64"
+path = "declayer_f64.npz"
+sha256 = "62e55be135cd13a4c80463e42cbf06589357f693573f253a56232b8ce5b2d3fd"
+shimmed = false
+
+[[dump]]
+wave = "potts_head"
+precision = "f32"
+path = "potts_head/oracle_f32.npz"
+sha256 = "4fea049f8d26ea3b1a253b498329621e8641875dc7ace3b59ab0f18ad24a032a"
+shimmed = false
+
+[[dump]]
+wave = "potts_merge_pair_d2"
+precision = "f32"
+path = "potts_merge_pair_d2/oracle_f32.npz"
+sha256 = "09d291fa52848dd58b1de2b341e6620d65f2b71abd8da548aba4712470636c7c"
+shimmed = false
+
+[[dump]]
+wave = "potts_merge_pair_d4"
+precision = "f32"
+path = "potts_merge_pair_d4/oracle_f32.npz"
+sha256 = "70b20636f350cf6f262453874780bafad140ebebc897a4aa73752bdac79deeb5"
+shimmed = false
+
+[[dump]]
+wave = "potts_energy"
+precision = "f32"
+path = "potts_energy/oracle_f32.npz"
+sha256 = "9bb53449a2eb236ea94affff96bd0228345765496328ce795ee808332f14e26f"
+shimmed = false
+
+[[dump]]
+wave = "potts_ar_decode"
+precision = "f32"
+path = "potts_ar_decode/oracle_f32.npz"
+sha256 = "df35e378cde3225e32978f00c259797f37d44a7e33908c1b79c0d91481cef8fb"
+shimmed = true
+
+[[dump]]
+wave = "potts_refine"
+precision = "f32"
+path = "potts_refine/oracle_f32.npz"
+sha256 = "bddd54f33fa60428ad7c68f323792717dee3ea1327f207d31675d51fe84ea546"
+shimmed = true
+
+[[dump]]
+wave = "pottsmpnn_full"
+precision = "f32"
+path = "pottsmpnn_full/oracle_f32.npz"
+sha256 = "245bd1908c23f280a6c662a16c0c70521f8dd772732abebb320bb7846ff14edc"
+shimmed = false

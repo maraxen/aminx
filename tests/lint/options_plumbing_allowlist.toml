@@ -1,0 +1,65 @@
+# Family Options fields that are declared but read nowhere outside
+# src/aminx/run/options.py, i.e. accepted by the public surface and forwarded to
+# nothing. Originally measured by bathos run
+# b04a224d-c014-413a-bec0-a8de10dec24e at commit 10f5b537
+# (scripts/analysis/alias_claim_reachability.py revision 2, outcome
+# inert_option_fields); filed as aminx debt 2435.
+#
+# REVISED 261002: this list was nine rows and is now seventeen. Nothing regressed
+# -- the detector did. test_options_plumbing counted a field as read if its name
+# appeared as any identifier token anywhere in src/, which matches a name on any
+# object or none, so nine inert fields were hidden behind same-named function
+# parameters and locals, and one plumbed field (strict_load) was listed because
+# its read goes through getattr with a string constant that no token kind matched.
+#
+# Both directions are now measured off the OPTIONS OBJECT (see _fields_read), and
+# every row below was confirmed by reading the source, not only by the detector:
+# for each, `grep -rn "<field>" src/aminx/` outside the field's own dataclass
+# yields either nothing at all or only same-named parameters in model/laser/.
+#
+#   added   fs_sequence_temp, seq_min_p, chi_min_p, disabled_residues,
+#           disable_charged_fs, ala_budget, gly_budget, ignore_chain_mask_zeros
+#           (LaserOptions; model/laser/ implements each as a parameter of the
+#           same name and nothing passes the Options field to it -- the chi_temp
+#           failure, repeated eight times)
+#   added   tied_beta (PottsMPNNOptions; the name belongs to a per-position array
+#           from featurize._tied_groups, read off features/padded/ready)
+#   removed ala_budget, budget_residue_selection, chi_min_p, chi_temp,
+#           constrain_ala_gly_to_exposed_non_ss, disable_charged_fs,
+#           disabled_residues, fs_sequence_temp, gly_budget,
+#           ignore_chain_mask_zeros, seq_min_p, tied_interpolation_lambda,
+#           tied_second_input (261004: the LaserDriver `sample` purpose now reads
+#           all thirteen and passes them to decode_order / tied_decode; each
+#           already had a test_knob_semantics_ alias row, none was inert-kind)
+#   removed tied_beta (261003: the FIELD was deleted, not plumbed -- upstream
+#           derives tied_beta from tied_positions weights and never takes it as
+#           config; PottsMPNNOptions was never released, so nothing breaks)
+#   removed strict_load (IS read: laser_mpnn/driver.py:256 via getattr, enforced
+#           at :600 -- the row was always wrong)
+#
+# This file is a FREEZE OF A KNOWN DEFECT, not a permission. Every row is work to
+# do. test_options_plumbing fails both ways -- on a tenth field going inert, and on
+# a row here that is no longer inert -- so the list cannot silently rot, and
+# shrinking it is how the debt gets paid.
+#
+# `reason` must be "not_plumbed". A field that should genuinely never be read
+# outside its dataclass does not belong in an Options class at all.
+#
+# Two related cases deliberately NOT listed, because they are a different shape:
+#   noise          -- IS read, and as of 261003 by BOTH families with their own
+#                     rules, closing debt 2434 (LASEr) and 2442 (Potts). The
+#                     generic utils/coordinates.py:44 per-atom rule is what spec
+#                     6.3 calls LASEr's negative control, so neither family uses
+#                     it: laser_mpnn/driver.apply_backbone_noise does the rigid
+#                     (L,1,3) shift with 2dp rounding, potts_mpnn/driver.
+#                     apply_potts_backbone_noise does iid (L,4,3) randn_like.
+#   emit_etab      -- read outside options.py, so not inert.
+
+[[entries]]
+field = "emit_dense_hJ"
+options_class = "PottsMPNNOptions"
+reason = "not_plumbed"
+note = "aminx-defined; spec line 638 says it converts host-side only. No live alias row targets it, so the reachability probe did not report it, but it is inert all the same."
+
+# --- added 261002, all eight the same failure: model/laser/ implements the knob
+# --- as a parameter of the same name, and nothing passes the Options field to it.

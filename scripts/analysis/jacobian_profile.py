@@ -182,11 +182,27 @@ def main() -> int:
     apc = None
 
   if args.zarr_out is not None:
-    from xtrax.run import SinkSpec, ZarrStagingSink, fsync_tree, new_run_id, zarr_content_digest
+    from xtrax.run import (
+      SinkSpec,
+      ZarrStagingSink,
+      fsync_tree,
+      new_run_id,
+      zarr_content_digest,
+    )
 
-    # run_id is required by SinkSpec from xtrax 0.4.0a7 (same call as aminx.io.designs).
+    # run_id is REQUIRED and has no default: SinkSpec.__init__ raises
+    # "missing 1 required positional argument: 'run_id'", so --zarr-out could
+    # never have worked. It is the join key tying a store to the run that wrote
+    # it, and __post_init__ enforces str even outside the test env.
+    #
+    # new_run_id() is the right source here rather than anything derived: this
+    # script has no RunSpec to take an id from, and a fresh id per invocation
+    # is what makes xtrax's re-run policy do the useful thing -- pointing
+    # --zarr-out at an existing store raises ValueError instead of silently
+    # interleaving two profiles in one tree.
+    run_id = new_run_id()
     sink = ZarrStagingSink(
-      SinkSpec(run_id=new_run_id(), output_dir=args.zarr_out, format="zarr", flush_every=1),
+      SinkSpec(run_id=run_id, output_dir=args.zarr_out, format="zarr", flush_every=1),
     )
     arrays: dict[str, np.ndarray] = {
       "categorical_jacobian": jacobian_np,
@@ -199,6 +215,7 @@ def main() -> int:
     sink.drain()
     fsync_tree(args.zarr_out)
     payload["zarr_path"] = str(args.zarr_out)
+    payload["zarr_run_id"] = run_id
     payload["zarr_digest"] = zarr_content_digest(args.zarr_out)
 
   text = json.dumps(payload, indent=2, sort_keys=True)

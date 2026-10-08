@@ -1,0 +1,66 @@
+source_urls = [
+  "https://zenodo.org/records/17990180/files/reduce_filtered_pdb_bioasmb_two_letter_bug_fixed.zip.part.aa",
+  "https://zenodo.org/records/17990253/files/reduce_filtered_pdb_bioasmb_two_letter_bug_fixed.zip.part.ab",
+]
+zenodo_record_ids = [
+  "17990180",
+  "17990253",
+]
+archive_md5 = "c9418cb9368c8068a6053feebbff5fda"
+archive_sha256 = "3a407341dc60de1ddf3273e0a3a60066795516fd2de9642d31987bbb9210b8f6"
+archive_size = 50400784923
+selection_rule = "Deterministic selection of 20 complexes for laser_score_parity: read the LASEr split json(s) from <laser-root>/databases/dataset_split_info.zip (prefer a held-out/test split if one exists, else the lexicographically first split json and record that fallback), keep entries whose PDB in the zip has >=1 non-water, non-ion HETATM ligand with >=6 heavy atoms, and 50..300 protein residues (count CA atoms), sort assembly stems lexicographically, take the first 20 satisfying entries; entries 1-4 of that list are the B0 extras. Water resnames: DOD, H2O, HOH, SOL, TIP, TIP3, TIP4, WAT. Ion resnames: BA, BR, CA, CD, CL, CO, CS, CU, F, FE, HG, IOD, K, LI, MG, MN, NA, NH4, NI, NO3, PO4, RB, SO4, SR, ZN. A protein residue is one unique (chain, resSeq, iCode) with an ATOM CA (altLoc blank or A) in the first MODEL only. A heavy atom is a HETATM whose element is not H or D (altLoc blank or A), grouped by (chain, resSeq, iCode, resName). Split ids have the form <pdb>_<assembly>-<segment>-<chain> (cluster keys and members); each maps to its bioassembly stem (the id up to its first '-'), stems are deduplicated, and archive members <pdb>_<assembly>.pdb are matched by filename stem, so the selection unit is one whole bioassembly file. Selection reads zip members in-archive and does not extract the full dataset."
+split_file = "val_streptavidin_heldout_split_30pct_main_clusters.json"
+split_name = "val_streptavidin_heldout_split_30pct_main_clusters"
+split_fallback = false
+split_choice_note = "Prefer a split JSON whose filename contains 'test'. The pinned LASEr dataset_split_info.zip has none (probe finding B2; databases/README.md: LigandMPNN reconstruction is train-only, and the streptavidin held-out split ships train/val at 30% and 70% sequence identity). Held-out fallback: a filename containing both 'val' and 'held', preferring '30pct' main clusters, else the lexicographically first such file. If no test, val, or held-out JSON exists, use the lexicographically first JSON and set split_fallback."
+ordered_ids = [
+  "101m_1",
+  "102m_1",
+  "103m_1",
+  "104m_1",
+  "105m_1",
+  "106m_1",
+  "107m_1",
+  "108m_1",
+  "109m_1",
+  "110m_1",
+  "111m_1",
+  "112m_1",
+  "1a2t_1",
+  "1a2u_1",
+  "1a3t_1",
+  "1a3u_1",
+  "1a3v_1",
+  "1a6g_1",
+  "1a6k_1",
+  "1a6m_1",
+]
+b0_extras = [
+  "101m_1",
+  "102m_1",
+  "103m_1",
+  "104m_1",
+]
+
+[files]
+  "101m_1.pdb" = "5ee11918c0c71703859cc057cd3225583fb397909ba0e294c1f97f8e39448a9f"
+  "102m_1.pdb" = "cfb756a7e48b87344d4c9fb76ff93b29596f6b400c207a0e45f53066358e6ee4"
+  "103m_1.pdb" = "f8edd971b7754e0c30f7e3ae56fa64ad120338d50708873aa4019f180210201d"
+  "104m_1.pdb" = "44f0347958f06f13b8bd7f171d94cb54d3665c419539247eb21a127a1ef98ed8"
+  "105m_1.pdb" = "b5a7cc4df78e616eccd7ab40a9c0c4e834df3226fd006a3effe4a9927a7f68a1"
+  "106m_1.pdb" = "394e9198b3acf0ddaa8708befcb6c6f6aa5677c92f481460b4b49c00a4aea472"
+  "107m_1.pdb" = "06df4ea86fcfc2d00098bf35508bc6b4c46434c7b64e2d3197f5f5ce920287e7"
+  "108m_1.pdb" = "365823ee47097cf0a70e44116be1700f26f8ef716a960e117ea4500cef7c69f9"
+  "109m_1.pdb" = "70f9668ddcc8a318f19f99e99c0a75582bc4447fed9f6f608759c39632eb1c12"
+  "110m_1.pdb" = "08bcfa38a5124be0af00e2e6b2dddbf6bb62ca23ab80b3481386e6418ed03c3d"
+  "111m_1.pdb" = "11ab5ddc1a749f0e1009930b1c73b3d85cef86d0f16ea93868e63af456de205e"
+  "112m_1.pdb" = "a96332e78c3aa9bbbce569f82d267f41fedb54c8e0f50a699115593343ca97fb"
+  "1a2t_1.pdb" = "41a0165001f3a4d3a3e42b088bfcf09d092fd7ec9201cb2e16f873084360e219"
+  "1a2u_1.pdb" = "6da0dfe55467a502ba48fd6f2e89385a660b182495dcfe4ce71e82a10278d9a8"
+  "1a3t_1.pdb" = "45c400e65eed435821a66089e29892c87b674949b9046c660582fc18dbc62906"
+  "1a3u_1.pdb" = "dd2e8592c5ecde38d4875ddee4b4be60b7ca7c92ac0580adfba9f3df4618268d"
+  "1a3v_1.pdb" = "a70508c639430c8500412d39d1b6a75bf67609409cc7bb90c39333604bd67fa8"
+  "1a6g_1.pdb" = "ab5f5658e0239619f1ac1513881a72ce476a6d8440a23a07bfaa6fb1b923bcbf"
+  "1a6k_1.pdb" = "1a638e9304bfd3f54eb842fc58c6d1b48c6eb802ad722299b1b47e2b0276f2df"
+  "1a6m_1.pdb" = "cb5dac45f1fbdd6d25a12284c53e702b1c4f38c5f59fdc063a95eca9e877fa1e"

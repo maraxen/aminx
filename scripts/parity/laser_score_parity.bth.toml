@@ -1,0 +1,74 @@
+[metadata]
+title = "LASErMPNN score log-prob parity"
+created = "260930"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "LaserDriver score:nll matches upstream per-position sequence log-probabilities on 4jnj-1_prot.pdb and the 20 pinned complexes, with max |delta log-prob| <= 1e-4."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Log-prob parity is inside the pass band and permute_decoder_layer failed."
+reasoning = "Every |delta log-prob| is at most 1e-4, and the decoder-layer permutation is outside 1e-3."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed"
+decision = "Log-probs sit in (1e-4, 1e-3]; do not claim the pass band."
+reasoning = "The negative control still fails, so the comparison is alive, but at least one position is above 1e-4 and at most 1e-3."
+is_residual = false
+adversarial_check = "NOT (clean = 'inconclusive' AND n_listed > 0 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed)"
+decision = "Do not treat score:nll as parity; the band or the negative control failed."
+reasoning = "A deviation above 1e-3, an empty mutant list, or a negative control that does not fail falsifies the vehicle."
+is_residual = true
+adversarial_check = "clean IN ('pass', 'inconclusive') AND n_listed > 0 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+max_abs_delta = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+laser_root_env = "AMINX_LASER_ROOT (defaults to ~/repos/LASErMPNN)"
+example_pdb = "example_pdbs/4jnj-1_prot.pdb"
+example_sha256 = "0a933729c4915cfee14ff34408a57e1d65fd98845df189ba79ad4f4d8470ae7e"
+checkpoint = "model_weights/laser_weights_0p1A_nothing_heldout.pt"
+checkpoint_sha256 = "304fe02a4807c310bdd9d68c988ae87619da3cf2025d5c223fb31030aa411173"
+fixtures_manifest = "tests/fixtures/laser/fixtures_manifest.toml"
+pass_bound = "max |delta log-prob| <= 1e-4"
+inconclusive_bound = "(1e-4, 1e-3]"
+fail_bound = "> 1e-3"
+negative_control = "permute one decoder layer -> fail"
+"101m_1.pdb" = "5ee11918c0c71703859cc057cd3225583fb397909ba0e294c1f97f8e39448a9f"
+"102m_1.pdb" = "cfb756a7e48b87344d4c9fb76ff93b29596f6b400c207a0e45f53066358e6ee4"
+"103m_1.pdb" = "f8edd971b7754e0c30f7e3ae56fa64ad120338d50708873aa4019f180210201d"
+"104m_1.pdb" = "44f0347958f06f13b8bd7f171d94cb54d3665c419539247eb21a127a1ef98ed8"
+"105m_1.pdb" = "b5a7cc4df78e616eccd7ab40a9c0c4e834df3226fd006a3effe4a9927a7f68a1"
+"106m_1.pdb" = "394e9198b3acf0ddaa8708befcb6c6f6aa5677c92f481460b4b49c00a4aea472"
+"107m_1.pdb" = "06df4ea86fcfc2d00098bf35508bc6b4c46434c7b64e2d3197f5f5ce920287e7"
+"108m_1.pdb" = "365823ee47097cf0a70e44116be1700f26f8ef716a960e117ea4500cef7c69f9"
+"109m_1.pdb" = "70f9668ddcc8a318f19f99e99c0a75582bc4447fed9f6f608759c39632eb1c12"
+"110m_1.pdb" = "08bcfa38a5124be0af00e2e6b2dddbf6bb62ca23ab80b3481386e6418ed03c3d"
+"111m_1.pdb" = "11ab5ddc1a749f0e1009930b1c73b3d85cef86d0f16ea93868e63af456de205e"
+"112m_1.pdb" = "a96332e78c3aa9bbbce569f82d267f41fedb54c8e0f50a699115593343ca97fb"
+"1a2t_1.pdb" = "41a0165001f3a4d3a3e42b088bfcf09d092fd7ec9201cb2e16f873084360e219"
+"1a2u_1.pdb" = "6da0dfe55467a502ba48fd6f2e89385a660b182495dcfe4ce71e82a10278d9a8"
+"1a3t_1.pdb" = "45c400e65eed435821a66089e29892c87b674949b9046c660582fc18dbc62906"
+"1a3u_1.pdb" = "dd2e8592c5ecde38d4875ddee4b4be60b7ca7c92ac0580adfba9f3df4618268d"
+"1a3v_1.pdb" = "a70508c639430c8500412d39d1b6a75bf67609409cc7bb90c39333604bd67fa8"
+"1a6g_1.pdb" = "ab5f5658e0239619f1ac1513881a72ce476a6d8440a23a07bfaa6fb1b923bcbf"
+"1a6k_1.pdb" = "1a638e9304bfd3f54eb842fc58c6d1b48c6eb802ad722299b1b47e2b0276f2df"
+"1a6m_1.pdb" = "cb5dac45f1fbdd6d25a12284c53e702b1c4f38c5f59fdc063a95eca9e877fa1e"
+
+[provenance]
+note = "Graded invocation: uv run --no-sync python3 scripts/parity/laser_score_parity.py --mutants permute_decoder_layer --controls-out $SC/laser_score_parity/<git-sha8>/branch_controls.json. Bands are the spec §7.3 pre-registration (pass <= 1e-4, inconclusive (1e-4, 1e-3], fail > 1e-3) and are not adjustable. The clean arm and each mutant arm run in a fresh subprocess. Not run by the B4 fixer."
