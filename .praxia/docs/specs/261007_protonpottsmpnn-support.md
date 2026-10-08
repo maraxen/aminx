@@ -2604,3 +2604,46 @@ featurizer is therefore looser than upstream on at least this input, and nothing
 with different insertion codes, multi-model and CIF input; plus 1HGU above. `protonpotts_protonation` (re-scoped in §37.1 to label
 consumption) is covered by `encode_sequence` and the labelled-cell conformance, but has no wave of its own yet. P6 (encoder reuse and
 weight conversion, 0 unmapped keys) is next and is independent of the host side.
+
+## 41. P6: weight conversion, the P4e dump, and `protonpotts_encoder` GRADED `pass` by record (261008)
+
+### 41.1 The conversion
+
+`aminx.families.protonpotts_mpnn.convert` plus `scripts/protonpotts/convert_protonpotts_checkpoint.py` (unscoped on purpose: `scripts/recapture/` is a
+global scoped prefix, so extending the Potts converter there would have invalidated every ledger row). All **120 tensors** of the v6 checkpoint
+(`epoch-0125.ckpt`, sha256 `a3987225...fe7b`, upstream `09682abf`) are renamed and converted, with a shape check on every one. Three orderings
+differ between foundry and aminx and **none raises a shape error**, so each is a permutation that only a numerical comparison can validate:
+the 25 atom-pair RBF blocks of `edge_embedding.weight` (aminx slot holding pair (i,j) takes foundry block `5i+j`), the token rows of `W_s` and
+`W_out`, and both token axes of `etab_out` (900 = 30 x 30). 19 unit tests cover the permutation arithmetic; they cannot say the permutations are the
+*right* ones, which is what 41.3 is for.
+
+### 41.2 P4e dump: graded `pass`
+
+Bathos run `60351d47-c5fa-46a2-afb3-71aec5264c37`: `status completed`, `outcome pass`, `exit_code 0`, run from a clean checkout of `444abb9d` (the commit that
+pre-registers it). All flags true: features equal the sealed P4b/P4c/P4d hashes, complete, the f64 arrays are float64, the precisions differ, reproducible
+across a fresh process, E_idx stable across precisions, 4 cells (1BVC, 6m0j, 1OLR, 1EL1). Dump: `~/projects/aminx-oracles-protonpotts/features_v6_p4e`.
+
+Upstream is **not dtype-polymorphic**: a positional-encoding one-hot and the layer-0 zero node features are float32 in a double model, and the decoder
+fails on an index_put dtype mismatch. The dumper casts the exactly-0/1 one-hot and verifies the layer-0 features are all zero before casting; it
+stops after the head (the decoder is not needed).
+
+### 41.3 `protonpotts_encoder`: graded `pass`
+
+Bathos run `0c0c8475-ec3a-4e65-9520-c26bb9b9e051`: `status completed`, `outcome pass`, `exit_code 0`, same clean checkout `444abb9d`. All four cells match in
+float64 (**worst 9.2e-14** absolute, tolerance 1e-9) and in float32 (within the band set from the measured upstream f32-vs-f64 spread; **worst 1.38 x
+that floor** against an allowed 10 x), E_idx is exactly equal in both, and the checkpoint hash matches the dump. **All 7 perturbations are rejected**
+(pair order not permuted, pair order by the inverse permutation, token order not permuted, etab not permuted, etab first axis only, and the two output
+nudges). The comparison therefore discriminates each of the three layout errors; none could have been seen by a shape check.
+
+### 41.4 What the smoke runs found (numbers there are not cited)
+
+The first f64 comparison failed on every cell at about 4e-5, already visible at the layer-0 edge input (2.8e-6), i.e. before any encoder weight. The
+cause was in the *oracle*, not aminx: `torch.linspace` RBF centres are created at the default dtype, so an f64 upstream run still used float32
+centres. The dumper now sets the default dtype around the run. This is why the f64 claim in the sidecar says the only changes to upstream's computation
+are the one-hot cast and the default dtype. After it, the same comparison agrees to 1e-13, which is the evidence that the earlier gap was the oracle's.
+
+### 41.5 State
+
+P6 is closed. Not covered: the decoder and sampling (P7/P8), and `etab_postmerge` is dumped but the aminx head is compared before the reciprocal
+merge, as the sidecar states. Open items from §40.5 are unchanged. Next: P7 status check (generic V), the P8 driver, the P9 pH engine, the P10 knob
+surface, the ledger re-freeze and the final `--stale-only` re-wave.
