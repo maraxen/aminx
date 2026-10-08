@@ -97,8 +97,9 @@ def merge_pair(
   slots = jnp.arange(k)
   rev_slot = jnp.max(jnp.where(reverse_hits, slots, -1), axis=-1)
   has_reverse = rev_slot >= 0
-  missing = jnp.zeros_like(in_range)
-  both_valid = pad_valid[:, None] & jnp.where(in_range, pad_valid[safe_neighbour], missing)
+  # ``in_range & x`` is ``where(in_range, x, False)`` for booleans. The ``&`` form avoids a
+  # BOOL ``Where``, which ONNX Runtime has no kernel for (export spike run 1340fe84).
+  both_valid = pad_valid[:, None] & in_range & pad_valid[safe_neighbour]
   merges = has_reverse & both_valid
   if exclude_self:
     merges = merges & (rev_slot != 0)
@@ -181,7 +182,9 @@ def positional_potts_energy(
   column = jnp.broadcast_to(amino[:, None, None], (n_pairs, alphabet, 1))
   pair_energy = jnp.take_along_axis(pair_etab, column, axis=-1).squeeze(-1)
   neighbour_ok = in_range & pad_valid[safe] & pad_valid[pos]
-  pair_energy = jnp.where(neighbour_ok[:, None], pair_energy, 0)
+  # Explicit-dtype zero: a weak-typed ``0`` lowers to an int32 ``Where`` branch under
+  # jax2onnx, which ONNX type inference rejects (export spike run 1340fe84).
+  pair_energy = jnp.where(neighbour_ok[:, None], pair_energy, jnp.zeros_like(pair_energy))
   total = self_energy + pair_energy.sum(axis=0)
   return jnp.where(pad_valid[pos], total, jnp.zeros_like(total))
 
@@ -200,8 +203,8 @@ def _batch_energy(
   length, k, _, _ = etab.shape
   in_range = (e_idx >= 0) & (e_idx < length)
   safe = jnp.clip(e_idx, 0, length - 1)
-  missing = jnp.zeros_like(in_range)
-  edge_ok = pad_valid[:, None] & jnp.where(in_range, pad_valid[safe], missing)
+  # ``&``, not a BOOL ``where``: see merge_pair.
+  edge_ok = pad_valid[:, None] & in_range & pad_valid[safe]
   rows = jnp.arange(length)[:, None]
   slots = jnp.arange(k)[None, :]
   amino_i = sequences[:, :, None]
