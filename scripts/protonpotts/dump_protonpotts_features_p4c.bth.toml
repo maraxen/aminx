@@ -1,0 +1,67 @@
+[metadata]
+title = "ProtonPottsMPNN v6 feature-dict dump, P4c: the rules P4b could not settle"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4c of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§39). The aminx featurizer is exact on the
+four P4b cells on all six keys. Four rules it had to choose are not discriminated by those cells; this
+dump captures upstream's behaviour on structures chosen (by a scan of 137 available PDBs) to
+discriminate them:
+
+  only_o        1CQW: residues whose N, CA, C are resolved but O is not  -> is O a backbone atom?
+  gap           1EL1: one numbering gap, no occupancy failures           -> does R_idx follow numbering?
+  many_gaps     1BAH: two numbering gaps in a 34-residue chain
+  gap_and_drops 2yc3: a numbering gap AND residues with an unresolved backbone
+  icode         1TPK: an insertion code and a gap                        -> how are insertion codes numbered,
+                                                                            or are they refused?
+  many_drops    1IFC: 115 residues with an unresolved backbone           -> what if the first residue drops?
+
+Claims, falsifiable by this run:
+
+1. COMPLETE. Every cell that featurizes has all six keys X, X_m, S, R_idx, chain_labels, residue_mask.
+2. REPRODUCIBLE. A second run in a fresh process gives identical per-cell results (content hashes, or
+   the identical refusal), with torch threads pinned to 1.
+3. AT LEAST FOUR OF THE SIX FEATURIZE. A cell that upstream refuses is recorded as data (the error text
+   is in the manifest), and is NOT a failure of the dump; but if fewer than four featurize the dump
+   cannot discriminate the rules and the run is not usable.
+
+This dump makes no claim about WHICH rule upstream follows. That is decided by the aminx-side tests
+against these arrays, so the rule is read off upstream, not asserted here.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "keys_complete AND reproducible AND n_featurized >= 4 AND n_cells = 6"
+decision = "Seal the dumps and settle the four rules against them in the aminx featurizer tests."
+reasoning = "Every featurized cell is complete, the result is reproducible across processes, and enough cells featurized to discriminate the rules."
+is_residual = false
+adversarial_check = "NOT (keys_complete AND reproducible AND n_featurized >= 4 AND n_cells = 6)"
+
+[outcomes.fail]
+condition = "NOT (keys_complete AND reproducible AND n_featurized >= 4 AND n_cells = 6)"
+decision = "Do not seal. Read which flag is false; a non-reproducible dump needs its cause found first."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "keys_complete AND reproducible AND n_featurized >= 4 AND n_cells = 6"
+
+[result_schema]
+keys_complete = "bool"
+reproducible = "bool"
+n_cells = "int"
+n_featurized = "int"
+n_raised = "int"
+raised_cells = "list"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, extended_vocab v6, no checkpoint, no forward pass"
+cells = "1CQW, 1EL1, 1BAH (fireprot_pdbs); 2yc3 (example_pdbs); 1TPK, 1IFC (fireprot_pdbs)"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/dump_protonpotts_features_p4c.py --out <dir> --cell NAME=PATH ... in the aminx-oracles-protonpotts env from a clean checkout of the commit that adds this file. Written and committed before the first run."

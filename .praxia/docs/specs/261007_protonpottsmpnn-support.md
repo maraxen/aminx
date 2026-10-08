@@ -2474,8 +2474,8 @@ inference path. So P5 does not build the ligand triple, and the §37.3 slice 4 i
 
 ### 38.2 Conventions the aminx featurizer must reproduce (read off the dump, not assumed)
 
-- `R_idx` is the residue number **relative to each chain's start** (each chain restarts at 0) and **keeps numbering gaps**: in
-  6m0j the steps are +2 at two missing residues and the second chain restarts at 0.
+- `R_idx`: each chain restarts at 0. **CORRECTED in §39: it does NOT keep numbering gaps.** It is a plain count of the chain's
+  residues made before any residue is dropped; the `+2` steps in 6m0j are residues dropped afterwards, not missing numbers.
 - `chain_labels` are consecutive integers per chain in file order.
 - `residue_mask` is all true in all four cells (no case yet exercises a false entry).
 - `X_m`: atoms 0-3 (backbone) are present for every residue; 4-14 heavy atoms per residue. `X` is **not** zero where `X_m` is
@@ -2484,8 +2484,77 @@ inference path. So P5 does not build the ligand triple, and the §37.3 slice 4 i
 
 ### 38.3 Unverified, named
 
-- Chain labels for `swe1_ligand` are all 0 although it is a complex: whether that is "one chain in the file" or "ligand-adjacent
-  chains merged" is not established; it matters for how aminx reads chains.
+- ~~Chain labels for `swe1_ligand` are all 0 although it is a complex.~~ **Resolved in §39**: the file has one protein chain (A) and a
+  one-residue HETATM ligand chain (B), so one polymer chain is the right answer.
 - Nothing yet tests an input with `residue_mask` false or an insertion code; the three structures here do not exercise them.
 - The dump is f32 end to end; the coordinate tolerance is still to be set by a floor run (decision 11e), which needs the aminx
   side to exist first.
+
+## 39. P4c CLOSED and the aminx featurizer is bit-exact on every sealed cell (261008)
+
+### 39.1 The P4c oracle
+
+Bathos run `9a9b75bb-7380-4034-9e18-24d8fd9aaaf5`: `status completed`, `outcome pass`, `exit_code 0`, `git_dirty False`,
+`git_hash fb05fd6f` (the commit that pre-registers `scripts/protonpotts/dump_protonpotts_features_p4c.*`), verified from the cool-tier
+record. Featurizer only, threads pinned to 1. Dumps: `titanix:~/projects/aminx-oracles-protonpotts/features_v6_p4c/`.
+
+Six structures, chosen by a scan of the 137 available PDBs to discriminate the rules P4b could not. Five featurize; one is **refused by
+upstream** (recorded as data, not as a failure of the dump):
+
+| cell | structure | L | content sha256 |
+| :-- | :-- | --: | :-- |
+| `only_o` | 1CQW | 291 | `ee7afd1ccc101f97d4728e652eb95bd54eff5f991d5d870b5fd6bbf3e6ed9120` |
+| `gap` | 1EL1 | 130 | `06cccda657a7f34c1233bb7cd7c12bc0099629a6ec114ed863261ac8fd5a71c5` |
+| `many_gaps` | 1BAH | 34 | `d8e477435889917e5d6df7b88c96d09b77c95b2f9f1a072e5dbf6cea340bcf0d` |
+| `gap_and_drops` | 2yc3 | 214 | `7faae3f75562ceb3a6a3c234912b13359b84038c11824ec296a4675b9283423c` |
+| `icode` | 1TPK | 85 | `488a29a6283fb3807efb093bf7cfafc64cea3b58c6742286d0a56c14a033d313` |
+| `many_drops` | 1IFC | refused | `AssertionError: ... EncodePottsMPNNNonAtomizedTokens: atom_array cannot be empty` |
+
+### 39.2 Result: `featurize_pdb` is bit-exact on all ten cells
+
+`src/aminx/families/protonpotts_mpnn/features.py` reproduces `X, X_m, S, R_idx, chain_labels, residue_mask` exactly on the four P4b and
+five P4c cells that featurize, **including `X` everywhere (masked atoms too): maximum difference 0**, and refuses the sixth where
+upstream raises. So decision 11e's coordinate tolerance is measured: **zero** on these cells; no floor run is needed for them.
+The ProtonPotts suite passes 71 tests, of which `test_features.py` is 40: 30 synthetic rule-by-rule tests and 10 conformance tests against the sealed dumps. A mutation check of 18 single-rule mutants kills all 18.
+
+### 39.3 The rules, each with where it was read AND where it was measured
+
+| rule | upstream source | measured on |
+| :-- | :-- | :-- |
+| a residue is dropped if any of `N, CA, C, O` has occupancy **`<= 0.8`** or is absent | `pipelines/potts_mpnn.py:296-303` (`occupancy_threshold_backbone = 0.8`, `MaskResiduesWithSpecificUnresolvedAtoms`, then `RemoveUnresolvedTokens`); comparison is `<=` in atomworks | 6m0j (CA 0.50), 1CQW (run 306-309 incl. a GLY at 0.71-0.88), 2yc3 |
+| `X_m` is occupancy **`> 0.5`**, coordinates kept when masked | `EncodePottsMPNNNonAtomizedTokens(occupancy_threshold=0.5)` | 1BVC (alt-locs at exactly 0.50) |
+| first alternate location's coordinates | atomworks parse | 1BVC |
+| `ARG`: swap `NH1`/`NH2` coordinates if `NH1` is farther from `CD` | atomworks `resolve_arginine_naming_ambiguity` | 6m0j (18 atoms, 9 arginines) |
+| `R_idx` = index within chain over residues present **before** any drop | atomworks `get_within_group_res_idx` (an `arange`) | 1EL1 (numbered -1,1,2 -> 0,1,2), 6m0j (gaps = drops) |
+| same number, different residue name: keep the **last** name | atomworks `keep_last_residue` | 1TPK (42 ALA / 42A GLN) |
+| chains labelled in order of first appearance | `KeyToIntMapper` | 6m0j |
+| residues outside the 20 + UNK are atomized out | `AtomizeByCCDName(res_names_to_ignore=STANDARD_AA+UNK)` | **read only**; refused here |
+
+### 39.4 Three wrong hypotheses of mine, each refuted by data, recorded because the third was findable by reading
+
+1. *"R_idx follows the residue numbering"* (§38.2). Refuted by 1EL1. It is a count.
+2. *"a residue is dropped when its backbone is at or below 0.5"*. Refuted by 1CQW, where a glycine with every backbone atom at
+   0.71-0.88 is dropped.
+3. *"short leftover fragments are removed after dropping"*. Refuted by 2yc3, where a terminal fragment of length 1 is kept while 1CQW
+   drops a length-2 tail.
+
+The rule that explained all of it was a default argument two lines below the one I had read: **`occupancy_threshold_backbone: float = 0.8`
+beside `occupancy_threshold_sidechain: float = 0.5`**. The lesson, in the spec's own style: before fitting a rule to dumps, read the
+pipeline's whole signature for the parameter the rule would be named after.
+
+### 39.5 Still unverified, refused rather than guessed
+
+- Selenomethionine (`MSE`) to `MET` conversion, a blank chain id, and any non-standard residue in an `ATOM` record (upstream atomizes it
+  out of the residue tokens; no sealed cell shows how).
+- The same residue name at the same number with different insertion codes: `keep_last_residue` leaves both, which a unit test pins, but no
+  sealed cell has it.
+- `residue_mask` is all true in every cell and by upstream's construction (`np.ones`); there is nothing to mismatch.
+- Multi-model files, CIF input, hydrogens that collide with a 37-atom name, and chains that are not contiguous in the file.
+- Labels: the featurizer takes one label per *loaded* residue (`loaded_residues(path)`); labels come from the caller, since aminx reads
+  protonation states and does not assign them (decision a).
+
+### 39.6 Next
+
+`protonpotts_features` is closed on the host side. The remaining P5 work is the **wave**: a pre-registered `tests/port`-tier sidecar
+(or the existing wave harness) that runs this featurizer against the dumps under bathos with a perturbation control, as §6 requires,
+and the encoder input contract for P6. Nothing here touches a ledger row.
