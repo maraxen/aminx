@@ -8,7 +8,7 @@ import json
 from typer.testing import CliRunner
 
 from aminx.cli import _RunBase, _base_spec_kwargs, app, run_sample, spec_emit_sample
-from aminx.run.options import PottsMPNNOptions
+from aminx.run.options import PottsMPNNOptions, ProtonPottsOptions
 
 runner = CliRunner()
 
@@ -61,10 +61,12 @@ def test_base_spec_kwargs_parses_options_json() -> None:
         input_type="auto",
         input_cache_dir=None,
         potts_options_json=json.dumps({"optimization_mode": "nodes", "mean_norm": True}),
+        protonpotts_options_json=json.dumps({"variants_json": "v.json"}),
         laser_options_json=None,
     )
     kwargs = _base_spec_kwargs(base)
     assert kwargs["potts_mpnn"] == PottsMPNNOptions(optimization_mode="nodes", mean_norm=True)
+    assert kwargs["protonpotts"] == ProtonPottsOptions(variants_json="v.json")
     assert kwargs["laser"] is None
 
 
