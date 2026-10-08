@@ -1,0 +1,60 @@
+[metadata]
+title = "X3 loop gate: shipping potts_sampler.mjs (encode -> decode -> energy -> refine) token-exact vs JAX under Node wasm"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "The shipping browser/potts-sampler/potts_sampler.mjs, run under Node with onnxruntime-web 1.30 (wasm, 1 thread) on the X2 artifacts (verified by sha256 against the X2 MANIFEST d35365c2..., not re-exported), chains encode -> decode -> energy -> one default 'potts' refine sweep exactly as the JAX sampler does: for every (structure, bucket) cell of the X2 gate (3dkm L128, 4jox L128, 3dkm L256, 3gg7 L256, 4jox L256) and each of three noise seeds (11, 12, 13), given IDENTICAL decode randn/uniforms and refine uniforms and the Python driver's prepared structure arrays, the decoded sequence, the decoding order and the refined sequence are bit-identical to JAX, and the sample energy agrees within max|d|/|ref| <= 1e-4. JavaScript does no model arithmetic: it orders graph calls, maps model->etab indices, zero-pads the forward table to 22x22 for refine, and picks the refine order as upstream_refine_order does for one sample. The X0/X2 bars are unchanged."
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: agreement is graded per sample.
+# The JS PDB->input builder is graded separately (X3a); this gate feeds Python-prepared inputs so a
+# failure here is the loop, not the parser.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR node_ok = false"
+decision = "The JAX reference arm, the artifact verification against the X2 manifest, or the Node runner did not complete. Nothing was compared; cite nothing."
+reasoning = "Without verified artifacts the run would grade different bytes than X2 passed; without the reference or the runner there is no comparison."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND NOT (control_tokens_detected = true AND control_energy_detected = true)"
+decision = "Comparing each JS sample against the JAX reference of a DIFFERENT seed in the same cell was not flagged for every sample, on tokens or on energy. Passes from this run are not evidence."
+reasoning = "A comparator that cannot tell two different draws apart would also pass a loop that ignores its noise inputs."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = true AND control_energy_detected = true AND all_pass = true"
+decision = "The shipping JS loop reproduces the JAX sampler token-exactly on every cell and seed; the browser sampler path for the decided first target is correct under wasm, given correct inputs."
+reasoning = "Both controls fired, so exact agreement on all 15 samples is real agreement of the chained loop."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = true AND control_energy_detected = true AND all_pass = true)"
+decision = "At least one sample's tokens, order, refined tokens or energy disagree, or a sample did not run. The JS loop is not shippable; the per-sample record names the failing step."
+reasoning = "Each graph already passed in isolation (X2), so a failure here localizes to the JavaScript chaining."
+is_residual = true
+
+[result_schema]
+jax_arm_ok = "bool"
+artifacts_verified = "bool"
+node_ok = "bool"
+num_threads = "int"
+samples = "list"
+n_samples = "int"
+n_pass = "int"
+all_pass = "bool"
+control_tokens_detected = "bool"
+control_energy_detected = "bool"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
