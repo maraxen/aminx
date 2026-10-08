@@ -90,8 +90,14 @@ export async function createPottsSampler(ort, manifest, bucket, models) {
    * refineUniforms: Float32Array[8*B]}. `refine` toggles the default one-sweep refine
    * (optimization_mode "potts" is aminx's default, so a faithful sampler refines).
    * `numSamples` reproduces upstream_refine_order's keying quirk (>1 -> N-to-C sweep).
+   * `temperature` (decode) and `optimizationTemperature` (refine) are graph inputs; 0 is
+   * floored to 1e-6 inside the graphs, as upstream does.
    */
-  async function sample(inputs, noise, { refine = true, numSamples = 1 } = {}) {
+  async function sample(
+    inputs,
+    noise,
+    { refine = true, numSamples = 1, temperature = 0.1, optimizationTemperature = 0.0 } = {},
+  ) {
     const B = bucket;
     const [hV, hE, eIdx, forward, table] = await run(ort, sessions.encode, entry.graphs.encode, inputs);
     const enc = { h_v: hV, h_e: hE, e_idx: eIdx, forward, table };
@@ -103,6 +109,7 @@ export async function createPottsSampler(ort, manifest, bucket, models) {
       e_idx: enc.e_idx,
       randn: { data: noise.randn },
       uniforms: { data: noise.uniforms },
+      temperature: { data: Float32Array.of(temperature) },
     });
 
     // sample_energy = potts_energy(table, e_idx, pad_valid, model_to_etab(sequence)); the energy
@@ -137,6 +144,7 @@ export async function createPottsSampler(ort, manifest, bucket, models) {
       uniforms: { data: noise.refineUniforms },
       h_v: enc.h_v,
       h_e: enc.h_e,
+      temperature: { data: Float32Array.of(optimizationTemperature) },
     });
     result.refined_sequence = Int32Array.from(refined.data);
     return result;

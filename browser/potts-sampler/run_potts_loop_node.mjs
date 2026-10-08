@@ -55,7 +55,11 @@ for (const cell of cells) {
     for (const [name, spec] of Object.entries(cell.inputs)) inputs[name] = { data: readArray(spec) };
     const noise = {};
     for (const [name, spec] of Object.entries(cell.noise)) noise[name] = readArray(spec);
-    const out = await samplers.get(cell.bucket).sample(inputs, noise, { refine: cell.refine });
+    const out = await samplers.get(cell.bucket).sample(inputs, noise, {
+      refine: cell.refine,
+      temperature: cell.temperature,
+      optimizationTemperature: cell.optimization_temperature,
+    });
     mkdirSync(cell.out_dir, { recursive: true });
     for (const [name, value] of Object.entries(out)) {
       if (typeof value === "number") {

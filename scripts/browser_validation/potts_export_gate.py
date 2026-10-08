@@ -65,10 +65,10 @@ INPUT_NAMES = {
   "energy": ["table", "e_idx", "pad_valid", "sequences"],
   "decode": ["h_v", "h_e", "e_idx", "present", "pad_valid", "s_true", "chain_mask", "chain_m_pos",
              "tie_groups", "tied_beta", "randn", "uniforms", "omit", "bias", "bias_by_res",
-             "pssm_coef", "pssm_bias", "pssm_log_odds_mask", "omit_aa_mask"],
+             "pssm_coef", "pssm_bias", "pssm_log_odds_mask", "omit_aa_mask", "temperature"],
   "refine": ["sequence", "etab", "e_idx", "pad_valid", "present", "chain_mask", "chain_m_pos",
              "order", "uniforms", "omit", "bias", "bias_by_res", "pssm_coef", "pssm_bias",
-             "pssm_log_odds_mask", "omit_aa_mask", "tie_groups", "tied_beta", "h_v", "h_e"],
+             "pssm_log_odds_mask", "omit_aa_mask", "tie_groups", "tied_beta", "h_v", "h_e", "temperature"],
 }
 
 
@@ -110,7 +110,7 @@ def _cells(
   import jax  # noqa: PLC0415
   import jax.numpy as jnp  # noqa: PLC0415
 
-  from aminx.families.potts_mpnn.decode import PottsARDecode, floor_temperature  # noqa: PLC0415
+  from aminx.families.potts_mpnn.decode import PottsARDecode, floor_temperature_array  # noqa: PLC0415
   from aminx.families.potts_mpnn.etab import model_to_etab, pad_etab_energy, potts_energy  # noqa: PLC0415
   from aminx.families.potts_mpnn.refine import PottsRefine  # noqa: PLC0415
   from aminx.families.potts_mpnn.sample_host import (  # noqa: PLC0415
@@ -126,7 +126,7 @@ def _cells(
   mods = {"layers": model.mpnn.decoder.layers, "w_s_embed": model.mpnn.w_s_embed, "w_out": model.mpnn.w_out}
   decode = PottsARDecode(**mods)
   refiner = PottsRefine(**mods)
-  opt_temperature = floor_temperature(float(options.optimization_temperature))
+  opt_temperature = np.float32(options.optimization_temperature)  # raw option; floored in-graph
   rng = np.random.default_rng(seed)
 
   fns = {}
@@ -141,14 +141,16 @@ def _cells(
       return (potts_energy(table, e_idx, pad_valid, sequences),)
 
     def dec(*a):  # noqa: ANN002, ANN202
-      out = decode(*a, temperature=DECODE_TEMPERATURE, pssm_multi=float(options.pssm_multi),
+      *arrays, temperature = a
+      out = decode(*arrays, temperature=temperature, pssm_multi=float(options.pssm_multi),
                    pssm_bias_flag=bool(options.pssm_bias_flag), pssm_log_odds_flag=bool(options.pssm_log_odds_flag))
       return (out.sequence, out.rank_flat, out.decoding_order, out.h_v_stack)
 
     def ref(*a, _tables=tables):  # noqa: ANN002, ANN202
+      *arrays, temperature = a
       out = refiner(
-        "potts", *a, _tables,
-        temperature=opt_temperature, pssm_multi=float(options.pssm_multi),
+        "potts", *arrays, _tables,
+        temperature=floor_temperature_array(temperature, arrays[1].dtype), pssm_multi=float(options.pssm_multi),
         pssm_bias_flag=bool(options.pssm_bias_flag), pssm_log_odds_flag=bool(options.pssm_log_odds_flag),
         binding="none", tied=False, tied_epistasis=bool(options.tied_epistasis), max_iters=1,
       )
@@ -173,7 +175,7 @@ def _cells(
       uniforms = rng.uniform(size=bucket).astype(np.float32)
       dec_in = [h_v, h_e, e_idx, r.present, r.pad_valid, r.s_true, r.chain_mask, r.chain_m_pos,
                 r.tie_groups, r.tied_beta, randn, uniforms, r.omit, r.bias, r.bias_by_res,
-                r.pssm_coef, r.pssm_bias, r.pssm_log_odds_mask, r.omit_aa_mask]
+                r.pssm_coef, r.pssm_bias, r.pssm_log_odds_mask, r.omit_aa_mask, np.float32(DECODE_TEMPERATURE)]
       dec_out = [np.asarray(x) for x in jax.jit(dec)(*dec_in)]
       order = upstream_refine_order(dec_out[2], r.chain_mask, rng.standard_normal(bucket).astype(np.float32),
                                     num_samples=1, chain_suffix="", stored_orders_present=True)
@@ -181,7 +183,7 @@ def _cells(
                 r.pad_valid, r.present, r.chain_mask, r.chain_m_pos, np.asarray(order, np.int32),
                 rng.uniform(size=(8, bucket)).astype(np.float32), r.omit, r.bias, r.bias_by_res,
                 r.pssm_coef, r.pssm_bias, r.pssm_log_odds_mask, r.omit_aa_mask, r.tie_groups,
-                r.tied_beta, h_v, h_e]
+                r.tied_beta, h_v, h_e, opt_temperature]
       cell = {"bucket": bucket, "structure": st["name"], "l_total": real, "inputs": {}, "reference": {}}
       for graph, ins in (("encode", enc_in), ("energy", en_in), ("decode", dec_in), ("refine", ref_in)):
         ins = [np.ascontiguousarray(x) for x in ins]

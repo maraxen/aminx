@@ -41,7 +41,6 @@ from scripts.browser_validation.potts_export_gate import (  # noqa: E402
 
 logger = logging.getLogger("potts_loop_gate")
 
-X2_MANIFEST_SHA256 = "d35365c261467d8e23181e7348292a883553fe86a1de6a125c5f8c9f62d80084"
 SEEDS = (11, 12, 13)
 FLOAT_REL_BAR = 1.0e-4
 STRUCT_FROM_ENCODE = ("coords", "present", "residue_idx", "chain_index", "pad_valid")
@@ -58,11 +57,11 @@ def _write(arr: np.ndarray, path: Path) -> dict[str, Any]:
   return {"file": str(path), "dtype": tag, "dims": list(arr.shape)}
 
 
-def _verify_artifacts(models: Path) -> dict[str, Any]:
+def _verify_artifacts(models: Path, want_sha256: str) -> dict[str, Any]:
   manifest_path = models / "MANIFEST.json"
   got = _sha256(manifest_path)
-  if got != X2_MANIFEST_SHA256:
-    msg = f"MANIFEST sha256 {got} != pinned X2 manifest {X2_MANIFEST_SHA256}"
+  if got != want_sha256:
+    msg = f"MANIFEST sha256 {got} != expected X2 manifest {want_sha256}"
     raise RuntimeError(msg)
   manifest = json.loads(manifest_path.read_text())
   for bucket in manifest["buckets"]:
@@ -83,6 +82,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
   parser.add_argument("--out", type=Path, required=True)
   parser.add_argument("--work-dir", type=Path, required=True)
   parser.add_argument("--models", type=Path, required=True, help="X2 artifact dir (MANIFEST.json + .onnx)")
+  parser.add_argument("--manifest-sha256", required=True,
+                      help="sha256 of the X2 gate run's MANIFEST.json (its result field manifest_sha256)")
   parser.add_argument("--potts-root", type=Path,
                       default=Path(os.environ.get("AMINX_POTTS_ROOT", "~/repos/PottsMPNN")).expanduser())
   parser.add_argument("--node-bin", default=os.environ.get("NODE_BIN"))
@@ -95,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
   result: dict[str, Any] = {
     "jax_arm_ok": False, "artifacts_verified": False, "samples": [], "n_samples": 0, "n_pass": 0,
     "all_pass": False, "control_tokens_detected": False, "control_energy_detected": False,
-    "node_ok": False, "num_threads": 0, "error": "",
+    "node_ok": False, "num_threads": 0, "manifest_sha256": "", "error": "",
   }
   args.work_dir.mkdir(parents=True, exist_ok=True)
   t0 = time.perf_counter()
@@ -109,7 +110,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
     from aminx.families.potts_mpnn.driver import PottsMPNNDriver  # noqa: PLC0415
     from aminx.families.potts_mpnn.etab import model_to_etab, pad_etab_energy  # noqa: PLC0415
 
-    _verify_artifacts(args.models)
+    _verify_artifacts(args.models, args.manifest_sha256)
+    result["manifest_sha256"] = args.manifest_sha256
     result["artifacts_verified"] = True
     ckpt = args.potts_root / "vanilla_model_weights" / "pottsmpnn_20.pt"
     if _sha256(ckpt) != CHECKPOINT_SHA256:
@@ -175,6 +177,7 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
           "refineUniforms": _write(refine_uniforms, cell_dir / f"refine_uniforms_{seed}.bin"),
         }
         node_cells.append({"id": sid, "bucket": bucket, "out_dir": str(cell_dir / "out"), "refine": True,
+                           "temperature": float(dec_base[19]), "optimization_temperature": float(ref_base[20]),
                            "inputs": struct_specs, "noise": noise_specs})
     result["jax_arm_ok"] = True
     logger.info("JAX arm: %d samples in %.1fs", len(refs), time.perf_counter() - t0)
