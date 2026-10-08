@@ -161,6 +161,27 @@ comparison of anything the gate does.
    the bathos `outcome` plus `{rc, step2_passed}`; exit status says only that
    the harness did not crash.
 
+## What the gate measured, 261008 (run `e4bc0904` at `e56aa398`, GPUs 2,3) -- PASS
+
+    {'n_ids': 1048, 'n_mutant_runs': 0, 'rc': 0, 'step2_passed': True}
+
+Read from the cool-tier record: `status=completed`, **`outcome=pass`**, exit 0,
+`git_dirty=False` before and after, adversarial check present, 50.8 min,
+`sidecar_sha256` = the committed `run_gate.bth.toml`. **The first green gate.**
+
+`e56aa398` is main `dab58900` (PR #165 merged, which carried the `laser_score`
+tier-3 option the user chose on 261006) plus this ledger only, so no scoped path
+separates the eight rows from the gated tree. The post-merge re-wave (backlog
+#5780) re-ran all eight vehicles at `dab58900`: all `pass` by record, clean,
+`verify_wave.py` grading all eight on all 14 conditions, and every clean-arm
+number **bit-identical** to the 261004 rows -- merging #165 moved nothing on any
+vehicle. The ungraded positive control (`89b9572d`) read 4.218847493575595e-15,
+the instrument floor, as before.
+
+Any later commit to a scoped path (P7's generic-alphabet refactor, the Potts
+ONNX export fixes) invalidates every row again: land those together, then run
+one re-wave and one gate.
+
 ## What the gate measured, 261004 (run `fb898d24` at `feade020`, GPUs 2,3)
 
     {'n_ids': 728, 'n_mutant_runs': 0, 'rc': 1, 'step2_passed': True}
