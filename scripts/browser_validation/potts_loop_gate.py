@@ -177,7 +177,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: C901, PLR0915
           "refineUniforms": _write(refine_uniforms, cell_dir / f"refine_uniforms_{seed}.bin"),
         }
         node_cells.append({"id": sid, "bucket": bucket, "out_dir": str(cell_dir / "out"), "refine": True,
-                           "temperature": float(dec_base[19]), "optimization_temperature": float(ref_base[20]),
+                           "temperature": float(np.asarray(dec_base[19]).reshape(-1)[0]),
+                           "optimization_temperature": float(np.asarray(ref_base[20]).reshape(-1)[0]),
                            "inputs": struct_specs, "noise": noise_specs})
     result["jax_arm_ok"] = True
     logger.info("JAX arm: %d samples in %.1fs", len(refs), time.perf_counter() - t0)
