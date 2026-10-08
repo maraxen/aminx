@@ -154,7 +154,8 @@ def _cells(
         pssm_bias_flag=bool(options.pssm_bias_flag), pssm_log_odds_flag=bool(options.pssm_log_odds_flag),
         binding="none", tied=False, tied_epistasis=bool(options.tied_epistasis), max_iters=1,
       )
-      return (out.sequence,)
+      # ener_delta drives the JS potts_converge loop (refine.py while-loop condition).
+      return (out.sequence, out.ener_delta)
 
     fns[bucket] = {"encode": encode, "energy": energy, "decode": dec, "refine": ref}
     for st in structures:

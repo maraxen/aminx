@@ -91,12 +91,20 @@ export async function createPottsSampler(ort, manifest, bucket, models) {
    * (optimization_mode "potts" is aminx's default, so a faithful sampler refines).
    * `numSamples` reproduces upstream_refine_order's keying quirk (>1 -> N-to-C sweep).
    * `temperature` (decode) and `optimizationTemperature` (refine) are graph inputs; 0 is
-   * floored to 1e-6 inside the graphs, as upstream does.
+   * floored to 1e-6 inside the graphs, as upstream does. `optimizationMode` is "potts" (one
+   * sweep, aminx's default) or "potts_converge" (sweep until ener_delta == 0, at most one sweep
+   * per refineUniforms row; pass 1000 rows to match aminx's cap).
    */
   async function sample(
     inputs,
     noise,
-    { refine = true, numSamples = 1, temperature = 0.1, optimizationTemperature = 0.0 } = {},
+    {
+      refine = true,
+      numSamples = 1,
+      temperature = 0.1,
+      optimizationTemperature = 0.0,
+      optimizationMode = "potts",
+    } = {},
   ) {
     const B = bucket;
     const [hV, hE, eIdx, forward, table] = await run(ort, sessions.encode, entry.graphs.encode, inputs);
@@ -135,18 +143,47 @@ export async function createPottsSampler(ort, manifest, bucket, models) {
     // upstream_refine_order with stored_orders_present=true and no chain suffix:
     // one sample -> the AR order; more than one -> N-to-C (the _i / str(i) keying quirk).
     const order = numSamples === 1 ? Int32Array.from(decodingOrder.data) : Int32Array.from({ length: B }, (_, i) => i);
-    const [refined] = await run(ort, sessions.refine, entry.graphs.refine, {
-      ...inputs,
-      sequence: { data: result.sequence },
-      etab: padEtab(enc.forward),
-      e_idx: enc.e_idx,
-      order: { data: order },
-      uniforms: { data: noise.refineUniforms },
-      h_v: enc.h_v,
-      h_e: enc.h_e,
-      temperature: { data: Float32Array.of(optimizationTemperature) },
-    });
-    result.refined_sequence = Int32Array.from(refined.data);
+    const graph = entry.graphs.refine;
+    const uniformRows = graph.input_shapes[8][0];
+    const etab = padEtab(enc.forward);
+    // One call of the exported one-sweep graph == refine.py sweep(seq, iteration) when the sweep's
+    // uniforms row sits in row 0 (the graph's while-loop starts at iteration 0 and runs once).
+    async function sweep(seq, iteration) {
+      const rows = new Float32Array(uniformRows * B);
+      rows.set(noise.refineUniforms.subarray(iteration * B, (iteration + 1) * B), 0);
+      const [out, enerDelta] = await run(ort, sessions.refine, graph, {
+        ...inputs,
+        sequence: { data: seq },
+        etab,
+        e_idx: enc.e_idx,
+        order: { data: order },
+        uniforms: { data: rows },
+        h_v: enc.h_v,
+        h_e: enc.h_e,
+        temperature: { data: Float32Array.of(optimizationTemperature) },
+      });
+      return [Int32Array.from(out.data), enerDelta.data[0]];
+    }
+    if (optimizationMode === "potts") {
+      // Default mode: exactly one sweep with uniforms row 0 (the graph's own semantics).
+      const [refinedSeq] = await sweep(result.sequence, 0);
+      result.refined_sequence = refinedSeq;
+      return result;
+    }
+    if (optimizationMode !== "potts_converge") throw new Error(`unsupported optimizationMode ${optimizationMode}`);
+    // refine.py potts_converge: while (ener != 0 && iters < max_iters) { seq, ener = sweep(seq, iters) }
+    // with ener starting at 1. ``noise.refineUniforms`` holds max_iters rows.
+    const maxIters = noise.refineUniforms.length / B;
+    let seq = result.sequence;
+    let ener = 1;
+    let iters = 0;
+    while (ener !== 0 && iters < maxIters) {
+      [seq, ener] = await sweep(seq, iters);
+      iters += 1;
+    }
+    result.refined_sequence = seq;
+    result.n_iters = iters;
+    result.ener_delta = ener;
     return result;
   }
 

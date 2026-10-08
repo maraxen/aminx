@@ -1,0 +1,59 @@
+[metadata]
+title = "X4 converge gate: browser potts_converge (JS loop over the one-sweep refine graph) exact vs aminx's while_loop"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On the X2 artifacts passed in (manifest sha256 verified and recorded), whose refine graph returns (sequence, ener_delta) for one 'potts' sweep, the browser sampler's optimizationMode 'potts_converge' -- a JS loop that calls the one-sweep graph with uniforms row i placed in the graph's row 0 and stops when the graph's ener_delta is exactly 0 or after 1000 sweeps -- reproduces aminx's PottsRefine('potts_converge', max_iters=1000) (refine.py:316-331, lax.while_loop(ener != 0 and iters < 1000), sweep i reading uniforms row i, ener starting at 1) for 2 cells (3dkm L128, 4jox L128) x 2 seeds (31, 32), on the full browser path under Node wasm (1 thread): decoded tokens, refined tokens and the sweep count n_iters exact, final ener_delta within max|d|/|ref| <= 1e-4 or both exactly 0. Same noise and temperatures on both arms (decode 0.1; refine optimization_temperature 0.0, floored to 1e-6). Bars are X0/X2's."
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: agreement is graded per sample.
+# n_iters is recorded as data (n_iters_seen); no expectation about how many sweeps converge takes.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR node_ok = false"
+decision = "The JAX arm, artifact verification or the Node runner did not complete. Nothing was compared; cite nothing."
+reasoning = "No comparison exists without all three."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = false"
+decision = "A browser refined sequence compared against the aminx refined sequence of the OTHER seed in the same cell was not flagged for every sample. Passes from this run are not evidence."
+reasoning = "A comparator that cannot tell two converged refinements apart would also pass a loop that ignores its uniforms."
+is_residual = true
+
+[outcomes.fail]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = true AND all_exact = false"
+decision = "At least one sample's decoded or refined tokens, sweep count or final ener_delta disagree. The JS converge driver is not shippable; the per-sample record names which."
+reasoning = "The one-sweep graph is exact in isolation (X2), so a disagreement localizes to the JS loop: row placement, stop rule or iteration count."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = true AND all_exact = true"
+decision = "The browser potts_converge loop reproduces aminx's converge refinement exactly, sweep for sweep, without any while-loop in the graph."
+reasoning = "Exact refined tokens and identical sweep counts on every sample, with a firing control."
+is_residual = false
+
+[result_schema]
+jax_arm_ok = "bool"
+artifacts_verified = "bool"
+node_ok = "bool"
+manifest_sha256 = "str"
+samples = "list"
+n_samples = "int"
+n_pass = "int"
+all_exact = "bool"
+control_tokens_detected = "bool"
+n_iters_seen = "list"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
