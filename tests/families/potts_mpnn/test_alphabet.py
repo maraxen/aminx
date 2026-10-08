@@ -39,39 +39,39 @@ def test_pair_side_is_single_source_for_etab_and_head() -> None:
 def test_empty_name_rejected() -> None:
   """An empty alphabet name raises ValueError."""
   with pytest.raises(ValueError, match="name"):
-    PottsAlphabet(name="", symbols=("A", "X"), x_index=1, pair_side=1, etab_symbols=("A", "X"))
+    PottsAlphabet(name="", symbols=("A", "X"), x_index=1, pair_side=1, etab_symbols=("A", "X"), standard_symbols=("A",))
 
 
 def test_duplicate_symbol_rejected() -> None:
   """Repeated model symbols raise ValueError."""
   with pytest.raises(ValueError, match="unique"):
-    PottsAlphabet(name="dup", symbols=("A", "A", "X"), x_index=2, pair_side=2, etab_symbols=("A", "X"))
+    PottsAlphabet(name="dup", symbols=("A", "A", "X"), x_index=2, pair_side=2, etab_symbols=("A", "X"), standard_symbols=("A",))
 
 
 def test_x_index_out_of_range_rejected() -> None:
   """x_index outside [0, size) raises ValueError at both ends."""
   with pytest.raises(ValueError, match="x_index"):
-    PottsAlphabet(name="xhi", symbols=("A", "X"), x_index=2, pair_side=1, etab_symbols=("A", "X"))
+    PottsAlphabet(name="xhi", symbols=("A", "X"), x_index=2, pair_side=1, etab_symbols=("A", "X"), standard_symbols=("A",))
   with pytest.raises(ValueError, match="x_index"):
-    PottsAlphabet(name="xlo", symbols=("A", "X"), x_index=-1, pair_side=1, etab_symbols=("A", "X"))
+    PottsAlphabet(name="xlo", symbols=("A", "X"), x_index=-1, pair_side=1, etab_symbols=("A", "X"), standard_symbols=("A",))
 
 
 def test_pair_side_zero_rejected() -> None:
   """pair_side of zero raises ValueError."""
   with pytest.raises(ValueError, match="pair_side"):
-    PottsAlphabet(name="p0", symbols=("A", "X"), x_index=1, pair_side=0, etab_symbols=("A", "X"))
+    PottsAlphabet(name="p0", symbols=("A", "X"), x_index=1, pair_side=0, etab_symbols=("A", "X"), standard_symbols=("A",))
 
 
 def test_pair_side_above_size_rejected() -> None:
   """pair_side larger than size raises ValueError."""
   with pytest.raises(ValueError, match="pair_side"):
-    PottsAlphabet(name="pbig", symbols=("A", "X"), x_index=1, pair_side=3, etab_symbols=("A", "X"))
+    PottsAlphabet(name="pbig", symbols=("A", "X"), x_index=1, pair_side=3, etab_symbols=("A", "X"), standard_symbols=("A",))
 
 
 def test_duplicate_etab_symbol_rejected() -> None:
   """Repeated etab symbols raise ValueError."""
   with pytest.raises(ValueError, match="etab_symbols"):
-    PottsAlphabet(name="etabdup", symbols=("A", "X"), x_index=1, pair_side=1, etab_symbols=("A", "A"))
+    PottsAlphabet(name="etabdup", symbols=("A", "X"), x_index=1, pair_side=1, etab_symbols=("A", "A"), standard_symbols=("A",))
 
 
 def test_multi_character_tokens_construct() -> None:
@@ -82,6 +82,7 @@ def test_multi_character_tokens_construct() -> None:
     x_index=2,
     pair_side=3,
     etab_symbols=("A", "HIS-P", "X"),
+    standard_symbols=("A",),
   )
   assert alphabet.size == 3
   assert alphabet.pair_dim == 9

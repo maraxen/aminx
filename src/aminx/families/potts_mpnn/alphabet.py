@@ -30,6 +30,9 @@ class PottsAlphabet:
     pair_side: Side length of the pair table the head produces. The table is
       ``pair_side x pair_side``, which need not equal ``size``.
     etab_symbols: Symbols of the energy-table alphabet, in etab index order.
+    standard_symbols: The standard residues, which are the mutation targets for
+      DMS enumeration. Each must be in ``symbols``. Protonation variants are
+      tokens but not mutation targets, so this stays the 20 residues at any width.
   """
 
   name: str
@@ -37,6 +40,7 @@ class PottsAlphabet:
   x_index: int
   pair_side: int
   etab_symbols: tuple[str, ...]
+  standard_symbols: tuple[str, ...]
 
   def __post_init__(self) -> None:
     """Reject inconsistent alphabet descriptions at construction time."""
@@ -58,6 +62,13 @@ class PottsAlphabet:
     if len(set(self.etab_symbols)) != len(self.etab_symbols):
       msg = f"PottsAlphabet {self.name!r}: etab_symbols must be unique, got {self.etab_symbols!r}"
       raise ValueError(msg)
+    missing = [s for s in self.standard_symbols if s not in self.symbols]
+    if not self.standard_symbols or missing:
+      msg = (
+        f"PottsAlphabet {self.name!r}: standard_symbols must be a non-empty subset of "
+        f"symbols; missing {missing!r}"
+      )
+      raise ValueError(msg)
 
   @property
   def size(self) -> int:
@@ -77,4 +88,5 @@ POTTS_MPNN = PottsAlphabet(
   x_index=20,
   pair_side=20,
   etab_symbols=tuple("ACDEFGHIKLMNPQRSTVWY-X"),
+  standard_symbols=tuple("ACDEFGHIKLMNPQRSTVWY"),
 )

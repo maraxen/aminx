@@ -57,6 +57,7 @@ def test_custom_alphabet_threads_through_potts_head() -> None:
     x_index=2,
     pair_side=3,
     etab_symbols=("A", "C", "G"),
+    standard_symbols=("A", "C"),
   )
   head = PottsHead(8, key=jax.random.key(0), alphabet=toy)
   assert head.pair_side == 3

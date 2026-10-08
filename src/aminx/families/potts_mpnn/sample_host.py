@@ -22,6 +22,7 @@ import numpy as np
 from jaxtyping import Array, Bool, Float, Int
 from xtrax.tiling import AxisSpec, BatchPlanner
 
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
 from aminx.families.potts_mpnn.decode import PottsARDecode, floor_temperature
 from aminx.families.potts_mpnn.etab import (
   ETAB_ALPHABET,
@@ -40,7 +41,7 @@ from aminx.host.bucketing import bucket_ladder
 
 log = logging.getLogger(__name__)
 
-_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
+_ALPHABET = "".join(POTTS_MPNN.symbols)
 _ETAB_INDEX = {letter: index for index, letter in enumerate(ETAB_ALPHABET)}
 
 
@@ -410,7 +411,7 @@ def sample_schema(spec: Any) -> dict[str, SinkArraySpec]:  # noqa: ANN401
       schema["refined_sequence"] = sequence
   if options.emit_etab:
     schema["potts_etab"] = SinkArraySpec(
-      dims=("L_total", "K", "20", "20"),
+      dims=("L_total", "K", str(POTTS_MPNN.pair_side), str(POTTS_MPNN.pair_side)),
       dtype="float32",
       attrs={"etab_convention": "forward_denom2"},
     )
