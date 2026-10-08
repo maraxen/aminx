@@ -448,19 +448,29 @@ a. ~~**THE BIG ONE — does aminx label protonation states, or consume them pre-
    so it does not run anywhere else without a separately-built binary. An earlier revision of
    this spec declared this closed on the strength of `design_ph.py`'s import list; that was
    wrong, and it was the largest scope fork in the project.
-b. **OPEN — Design engine in V1?** This spec assumes yes (P9). The alternative is energy/scoring
-   only, stopping at P8's `ProtonPottsDriver` with `score:energy|ddg` and deferring the engine —
-   smaller, but then V1 does not validate the thing the repo exists for.
-c. **OPEN — Public alphabet.** 30 tokens end-to-end, or a 21-token public alphabet with
-   protonation as a side channel? Affects every sink and every `sequences_to_score` caller.
-   §1a measured V=30 off the checkpoint, so 30 is what the model speaks; the question is whether
-   that width reaches aminx's public surface or is projected down at the boundary (P3).
+b. ~~**Design engine in V1?**~~ **DECIDED 2026-10-07 by the user: YES.** P9 (`PottsMPNNPHEngine`
+   + selectivity-gap purposes, `protonpotts_ph_design` wave) is in V1 scope. Sequencing is
+   unchanged: P8's scoring driver lands first, so energy scoring ships independently of P9.
+c. ~~**Public alphabet.**~~ **DECIDED 2026-10-07 by the user: MULTIPLE ALPHABETS, SELECTED BY
+   INFERENCE PATH.** Neither "30 end-to-end" nor "21 + side channel" globally: each inference
+   path declares the alphabet it speaks, and sinks / `sequences_to_score` callers follow the
+   path's declaration. Consequences to carry into P3/P8:
+   - The alphabet is a property of the path, not a module constant — the same direction P7
+     already takes for `N_AA`/`PAIR_DIM` (§34.2), so P3 and P7 should share one alphabet object.
+   - v4 (32) and v6 (30) collide index-for-index on 21–29 (§25); a path must therefore name its
+     vocabulary explicitly, never infer it from width. This promotes §25.5 item 2 from
+     "pending §11c" to required.
+   - Multi-char protonation tokens (`HIS-P`, …) are outside alphex's model (§25); §25.5 item 3
+     (raise multi-char support against alphex) is now live rather than parked.
+   - Exactly which paths speak which alphabet is a P3 design item, not settled here.
 d. ~~**Second oracle environment on titanix.**~~ **ANSWERED 2026-10-07 by §17.4, not a choice.**
    `aminx-oracles/` pins `requires-python >=3.11,<3.12` and `rc-foundry` pins `>=3.12,<3.13`, so
    the two cannot share an interpreter — the second env was FORCED. Built, and it cost one
    `uv sync`, 2.0 GB and about a minute.
-e. **OPEN — Where §6's seam sits for `protonpotts_features`.** Exact on coordinates, or a floor
-   run? This spec proposes a floor run because the upstream path is f32 throughout.
+e. ~~**Where §6's seam sits for `protonpotts_features`.**~~ **DECIDED 2026-10-07 by the user:
+   MEASURED TOLERANCE.** Exact on ints/masks; coordinates graded against a band set by a
+   pre-registered floor run (shape of `scripts/analysis/laser_score_scale_relative_floor.py`),
+   because the upstream path is f32 throughout.
 
 *(An earlier revision closed the labeller/FLAML question here, claiming §4 showed it off the V1
 path. That claim is retracted — it is now decision (a) above, and it is the biggest one.)*
