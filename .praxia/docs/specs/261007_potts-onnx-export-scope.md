@@ -233,3 +233,34 @@ distribution (decision 3) is open.
 What remains for the decided first target: the browser-side loop (JS: encode -> decode -> energy ->
 refine, with JS-generated noise/uniforms/order) graded token-exact against JAX under Node and headless
 Chromium (X3/X5), the runtime-controls gate, and the benchmark. Layer b/c of every graph is done.
+
+## 10. X3: the shipping JS loop and input builder (261008)
+
+**Loop gate** `potts_loop_gate.py` — run 1 `b0e1e1b8` graded `instrument_unverified` by record: all
+15 samples agreed and the token control fired, but the cross-seed ENERGY control did not
+(low-temperature draws a few residues apart can sit within 1e-4 relative energy). The energy
+control was replaced by the X0/X2 planted difference (perturbed Potts head, same sequence) in
+`28ea7bea`, before the re-run; bars and per-sample criteria unchanged. Run 2 **`2917e367` graded
+`pass` by record** (clean, `28ea7bea`, sidecar `ea8c0ff5…`): the shipping
+`browser/potts-sampler/potts_sampler.mjs` under Node wasm (1 thread), on the X2 artifacts verified
+by sha256, reproduces the JAX sampler on 5 cells x 3 seeds = 15 samples — decoded tokens, decoding
+order and refined tokens exact; sample energy <= 2.8e-6 relative; both controls fired.
+
+**Input builder** `browser/potts-sampler/potts_inputs.mjs` (PDB text -> the graphs' input arrays)
+matches the Python driver path (`parse_pdb_upstream -> _featurize_one -> prepare_sample`)
+**bit-exactly** on 7 dumps: 3dkm L128/L256, 4jox L128/L256, 3gg7 L256, 2yc3 L512, 6w25 L512 (two
+chains) — `node --test` 6/6 with `POTTS_INPUTS_FIXTURE_DIR`. Negative control: one corrupted
+`residue_idx` entry in the 6w25 dump fails the test. (A deterministic equality test, not a
+measured finding, so no sidecar.)
+
+So the decided first target runs end to end in JS with no Python: PDB -> inputs -> encode ->
+decode -> energy -> one-sweep refine, exact against aminx.
+
+**Still open for shipping** (X5 #5815 and follow-ups):
+- `temperature` is baked into the decode graph (0.1); the user's P07 rule is that controls are
+  runtime inputs. Needs `PottsARDecode` to accept an array temperature (src change) and a re-export.
+- The energy graph has a fixed 8-row batch; the loop fills unused rows. Fine for sampling; DMS
+  scoring wants a row count chosen per bucket, or a loop over 8-row chunks in JS.
+- Headless Chromium run (layer c in a real browser, COOP/COEP, threads) and the benchmark.
+- `potts_converge` JS driver (X4 #5814); `nodes`/binding modes deferred.
+- Distribution (decision 3).
