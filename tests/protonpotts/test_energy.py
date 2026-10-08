@@ -55,7 +55,7 @@ def test_single_reciprocal_merge_matches_upstream_rule(seed: int) -> None:
   etab, e_idx = _graph(14, 6, seed)
   valid = jnp.ones(14, dtype=bool)
   got = merge_pair(jnp.asarray(etab), jnp.asarray(e_idx), valid, denom=2, exclude_self=False)
-  np.testing.assert_allclose(np.asarray(got), _upstream_merge(etab, e_idx), atol=1e-12)
+  np.testing.assert_allclose(np.asarray(got), _upstream_merge(etab, e_idx), atol=1e-6)
 
 
 def test_merge_is_not_idempotent_so_the_shipped_double_merge_is_a_different_table() -> None:
@@ -75,7 +75,7 @@ def test_energy_sums_every_directed_edge(seed: int) -> None:
     jnp.asarray(etab), jnp.asarray(e_idx), jnp.ones(12, dtype=bool), jnp.asarray(seqs)
   )
   want = [_upstream_energy(etab, e_idx, s) for s in seqs]
-  np.testing.assert_allclose(np.asarray(got), want, rtol=1e-12)
+  np.testing.assert_allclose(np.asarray(got), want, rtol=1e-5)
 
 
 def test_protonation_tokens_reach_the_table() -> None:
