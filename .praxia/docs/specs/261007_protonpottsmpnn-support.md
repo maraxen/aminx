@@ -2747,3 +2747,45 @@ a flipped protonation assignment, a mis-scaled selectivity weight, a permuted bl
 **Debt filed 261008** (praxia debt): #2615 ProteinSMC kernels for MPNN, PottsMPNN and ProtonPottsMPNN sampling (user request); #2616 deferred placement methods;
 #2617 the 30-token decoder and decoder-backed design/sampling; #2618 ProtonPottsDriver gaps (no `score:ddg` wave, f32 only, JSON labels only, PDB only, no variant
 names in results); #2619 host-featurizer open items (§40.5); #2620 two pre-existing order-dependent/missing-dependency test failures.
+
+## 45. P9 recon (261008): what the upstream pH engine does on the paths we port
+
+Read-only recon by a Haiku agent, full report `.praxia/subagent_outputs/toolu_01QRqDNmtbn1jNpyQLGA42bz.1.md` (main checkout). Per the spec-the-code-not-the-docstring rule the
+load-bearing claims were re-read by the orchestrator (marked **verified**); the rest are leads. Paths below are `inference_engines/potts_mpnn_ph.py` unless stated.
+
+### 45.1 Verified
+
+* **The engine consumes only `etab_out [1,L,K,V,V]`, `E_idx`, the native `S`, and masks.** `run_forward_compat` (line 2723) is a module-level function, so a dump can feed
+  the sealed P4e tables through it and never run the model (the decoder, which is not dtype-polymorphic, is then not involved either).
+* **Production is SAMPLED, not argmin.** `design_ph.py` uses `temperature=0.05`; `_block_descent` takes `argmin` at `T <= 0` (line 2373, no RNG) and
+  `torch.multinomial(softmax(-(J-min J)/T), 1)` otherwise (line 2376; `_greedy_energy_block` has the same at 2518-2519). The `rng` argument of `_block_descent` is never
+  read. The seam for injected uniforms is therefore exactly those two calls (inverse CDF on the normalised probabilities).
+* **The z-scale is pooled, not per block.** `sdH` = sqrt of the MEAN over designable positions of the population variance (`unbiased=False`) of that position's block
+  stability over its finite `V**B` assignments, floored at 1e-6 (lines 2107, 2121-2122); `sdSel` pools only blocks whose selectivity varies. The docstring at 2201 ("std of
+  single-mutation deltas") is wrong for the default `zscale_mode="block"`.
+* **Blocks** are `p` plus the next `block_size-1` positions of `E_idx[p, 1:]` that are designable and not already in the block (lines 2041-2052), so a block can be SHORTER than
+  `block_size`: a shape hazard for JAX (pad with a one-candidate dummy axis).
+* **Production configuration** (`design_ph.py:69-90`): `block_size=3`, `combined_lambda=0.3`, `temperature=0.05`, `samples_per_site=2`, `neighbour_k=16`, `max_mutations=20`,
+  `forbidden_tokens=["HIS-A","ASP-A","GLU-A","UNK"]`, repetitive-window penalty (`weight=1.0`, `radius=2`, parents ARG/LYS/HIS/ASP/GLU), `record_trajectory=True`. The engine's own
+  dataclass defaults differ (`block_size=2`, `combined_lambda=1.0`), so the example's values are the aminx defaults (decision 5), the repetitive-window term included.
+
+### 45.2 Consequences for earlier decisions
+
+* **Decision 6 (designable mask).** Mirroring upstream means protonation tokens ARE drawable at non-centre designable positions: with the production forbidden list `V_eff = 26`
+  (20 standard + HIS-P, HIS-S, ASP-P, ASP-D, GLU-P, GLU-D), so a design can end with more protonated sites than pinned centres. The engine's DEFAULT forbidden list names `HIS-D`,
+  which does not exist in v6 and is silently ignored, so the aminx default is the example's list. The greedy docstring ("keeps the design plain 20-AA") is false under it.
+* **Decision 4 (centres).** On the production path `topk_sites` is unused: each requested centre type takes the single best unused position by the placement score
+  `e_P - min_d e_D` on the native sequence (a non-stable `argsort`; line 2581), and there is NO residue-type restriction, so any free binder residue can become a HIS-P/ASP-P/GLU-P
+  centre. Mirrored; `explicit_centers` remains the way to pin by hand. `greedy_energy_block` needs `center_count=0` and `infill_scope="chain"`.
+* **Parity.** `torch.multinomial`'s stream cannot be reproduced in JAX, so parity is on INJECTED uniforms (inverse CDF on identical probabilities), plus the `T=0` path with no RNG.
+  Ties (`torch.argmin`, `argsort`, `topk`) are precision-sensitive: compare with a tie margin, not blindly.
+
+### 45.3 The upstream dump (P4g), pre-registered next
+
+`scripts/protonpotts/dump_protonpotts_ph.py` (oracle env). It runs the real `PottsMPNNPHEngine` serially with `run_forward_compat` returning the SEALED P4e tables (f32 and f64) for the
+four cells, wraps `enumerate_placement_plans`, `_block_zscales`, `_block_descent` and `_greedy_energy_block` to record their inputs and outputs, and replaces `torch.multinomial` with a
+seeded inverse-CDF shim that records every `(uniform, choice)`. Per cell: block descent at `T=0` and `T=0.05`; greedy at `T=0` and `T=0.05`.
+
+Not yet verified: engine arithmetic in float64 (the `.float()` calls at 2259-2261 and 2427-2429 are exact 0/1 masks, but are multiplied by `repetitive_window_weight`, so f64 exactness
+needs `weight=1.0`, which is the production value); that `prepare_potts_input(..., designed_chains=...)` yields the same residues and `E_idx` order as the sealed tables (the dump
+asserts it); `unknown_token_indices` contents.
