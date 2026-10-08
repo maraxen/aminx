@@ -125,9 +125,10 @@ no recommendation was made; X7 waits on it.
    one-sweep refine; `potts_converge` next; `nodes`/binding deferred.
 2. **ProtonPotts sequencing** — recommended: build the generic harness now, add ProtonPotts when
    #5781 seals its oracles (no throwaway V=21-only code).
-3. **Distribution** — same open question as ProteinMPNN: `.onnx` via LFS under `release/browser/`
-   (current) vs release assets; Pages deploy is manual and its allow-list omits the split files
-   (filed as a separate bug).
+3. **Distribution** — **decided 261008: same as ProteinMPNN** (T13, `7c05dd14`): LFS for
+   provenance, GitHub release for distribution. The validated bytes are pinned at
+   `release/browser/potts/` (§15). Pages deploy is manual and its allow-list omits the split files
+   (filed as a separate bug, #5817).
 
 ## 7. Backlog
 
@@ -308,7 +309,8 @@ distribution (decision 3).
 ## 13. Final artifact set and gate record (261008) — first target shippable
 
 Final artifacts: manifest sha256 **`cf960131…`** (refine graph returns `(sequence, ener_delta)`;
-temperature an input). Titanix: `~/bv/potts-export/final_cf960131…/`. Not committed (decision 3).
+temperature an input). Titanix: `~/bv/potts-export/final_cf960131…/`; committed at
+`release/browser/potts/` (§15).
 Every run below verified by its cool-tier record: `completed`, `pass`, exit 0, `git_dirty=false`.
 
 | gate | run | commit | result |
@@ -351,3 +353,19 @@ refactor does not change one byte of the exported graphs at V=21.
 
 Merge order: PR #204 (ledger, unscoped) first; then this batch, which touches scoped paths and so
 invalidates every ledger row -> one re-wave + one gate afterwards.
+
+## 15. Release pinning (261008) — decision 3, ProteinMPNN precedent
+
+The eight validated graphs and their manifest are committed at `release/browser/potts/`, which is a
+tracked path. `*.onnx` was already LFS-tracked by T13, and a subdirectory leaves the ProteinMPNN
+`release/browser/MANIFEST.json` untouched. The total is 16.1 MB raw, held in LFS. The files were
+copied from titanix `final_cf960131…/`, and these checks ran before commit:
+
+- `MANIFEST.json` sha256 = `cf960131…`, the directory name, and the manifest the six gates graded.
+- All 8 files match the manifest's sha256 and byte count. There are no unlisted files.
+- Each staged LFS pointer oid equals the manifest sha256 for its file. LFS and the manifest
+  therefore agree on the bytes independently.
+- `p07_split_export.py --verify-manifest release/browser/potts/MANIFEST.json` gives `drift: []`.
+  The Potts manifest has the same `buckets[].graphs` layout, so this is the consumer check.
+
+`release/` is not a scoped path. Publishing the GitHub release assets stays with #5818.

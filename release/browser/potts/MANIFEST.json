@@ -1,0 +1,667 @@
+{
+  "alphabet": "ACDEFGHIKLMNPQRSTVWYX",
+  "buckets": [
+    {
+      "bucket": 128,
+      "graphs": {
+        "decode": {
+          "bytes": 3459673,
+          "file": "pottsmpnn_decode_L128.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "bool",
+            "int32",
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "h_v",
+            "h_e",
+            "e_idx",
+            "present",
+            "pad_valid",
+            "s_true",
+            "chain_mask",
+            "chain_m_pos",
+            "tie_groups",
+            "tied_beta",
+            "randn",
+            "uniforms",
+            "omit",
+            "bias",
+            "bias_by_res",
+            "pssm_coef",
+            "pssm_bias",
+            "pssm_log_odds_mask",
+            "omit_aa_mask",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              48,
+              128
+            ],
+            [
+              128,
+              48
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128,
+              1
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              21
+            ],
+            [
+              21
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              128
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "1f436348ed7a64bee04b8d24f6814da738c77e933a338d96f321bed6d175f750"
+        },
+        "encode": {
+          "bytes": 4307824,
+          "file": "pottsmpnn_encode_L128.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "int32",
+            "bool"
+          ],
+          "input_names": [
+            "coords",
+            "present",
+            "residue_idx",
+            "chain_index",
+            "pad_valid"
+          ],
+          "input_shapes": [
+            [
+              128,
+              4,
+              3
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ]
+          ],
+          "sha256": "eceb363a138a9b0740d9c72577a2b219647f58fa4e8e740c5be054b72d25a49b"
+        },
+        "energy": {
+          "bytes": 18884,
+          "file": "pottsmpnn_energy_L128.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "bool",
+            "int32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "pad_valid",
+            "sequences"
+          ],
+          "input_shapes": [
+            [
+              128,
+              48,
+              22,
+              22
+            ],
+            [
+              128,
+              48
+            ],
+            [
+              128
+            ],
+            [
+              8,
+              128
+            ]
+          ],
+          "sha256": "2aaaff4eb25d6c0072d8344936121d9d377ee5e75d5963b9afe8ddf135cfbbc2"
+        },
+        "refine": {
+          "bytes": 182546,
+          "file": "pottsmpnn_refine_L128.onnx",
+          "input_dtypes": [
+            "int32",
+            "float32",
+            "int32",
+            "bool",
+            "float32",
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "sequence",
+            "etab",
+            "e_idx",
+            "pad_valid",
+            "present",
+            "chain_mask",
+            "chain_m_pos",
+            "order",
+            "uniforms",
+            "omit",
+            "bias",
+            "bias_by_res",
+            "pssm_coef",
+            "pssm_bias",
+            "pssm_log_odds_mask",
+            "omit_aa_mask",
+            "tie_groups",
+            "tied_beta",
+            "h_v",
+            "h_e",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              128
+            ],
+            [
+              128,
+              48,
+              22,
+              22
+            ],
+            [
+              128,
+              48
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              128
+            ],
+            [
+              8,
+              128
+            ],
+            [
+              21
+            ],
+            [
+              21
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              128
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              128,
+              21
+            ],
+            [
+              128,
+              1
+            ],
+            [
+              128
+            ],
+            [
+              128,
+              128
+            ],
+            [
+              128,
+              48,
+              128
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "1fbac25e4a96566b13f9953eb114d7ea8799a821bb8afe0a7a90118312efc9f7"
+        }
+      }
+    },
+    {
+      "bucket": 256,
+      "graphs": {
+        "decode": {
+          "bytes": 3591257,
+          "file": "pottsmpnn_decode_L256.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "bool",
+            "int32",
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "h_v",
+            "h_e",
+            "e_idx",
+            "present",
+            "pad_valid",
+            "s_true",
+            "chain_mask",
+            "chain_m_pos",
+            "tie_groups",
+            "tied_beta",
+            "randn",
+            "uniforms",
+            "omit",
+            "bias",
+            "bias_by_res",
+            "pssm_coef",
+            "pssm_bias",
+            "pssm_log_odds_mask",
+            "omit_aa_mask",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              256,
+              128
+            ],
+            [
+              256,
+              48,
+              128
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256,
+              1
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              21
+            ],
+            [
+              21
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              256
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "68f320f2e709574be27dd472a3f02596710cd752be8e56232ca8ca8509be3f3b"
+        },
+        "encode": {
+          "bytes": 4332400,
+          "file": "pottsmpnn_encode_L256.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "int32",
+            "bool"
+          ],
+          "input_names": [
+            "coords",
+            "present",
+            "residue_idx",
+            "chain_index",
+            "pad_valid"
+          ],
+          "input_shapes": [
+            [
+              256,
+              4,
+              3
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ]
+          ],
+          "sha256": "d6136282ec810660b84dc2d32c9f6585cd3e59dd3a67df3314d5661f3e97bf65"
+        },
+        "energy": {
+          "bytes": 18884,
+          "file": "pottsmpnn_energy_L256.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "bool",
+            "int32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "pad_valid",
+            "sequences"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              22,
+              22
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              8,
+              256
+            ]
+          ],
+          "sha256": "524c0e614ddad007db5eb489b18e911acaf2ed2fd1de53f3a9567daafefa045a"
+        },
+        "refine": {
+          "bytes": 183570,
+          "file": "pottsmpnn_refine_L256.onnx",
+          "input_dtypes": [
+            "int32",
+            "float32",
+            "int32",
+            "bool",
+            "float32",
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "sequence",
+            "etab",
+            "e_idx",
+            "pad_valid",
+            "present",
+            "chain_mask",
+            "chain_m_pos",
+            "order",
+            "uniforms",
+            "omit",
+            "bias",
+            "bias_by_res",
+            "pssm_coef",
+            "pssm_bias",
+            "pssm_log_odds_mask",
+            "omit_aa_mask",
+            "tie_groups",
+            "tied_beta",
+            "h_v",
+            "h_e",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              256
+            ],
+            [
+              256,
+              48,
+              22,
+              22
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              8,
+              256
+            ],
+            [
+              21
+            ],
+            [
+              21
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              256
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              256,
+              21
+            ],
+            [
+              256,
+              1
+            ],
+            [
+              256
+            ],
+            [
+              256,
+              128
+            ],
+            [
+              256,
+              48,
+              128
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "cf962a1ed031b1cd4116cf274b4afbcca831bb6e5595a184cea5fa7265e2f290"
+        }
+      }
+    }
+  ],
+  "checkpoint": "pottsmpnn_20.pt",
+  "checkpoint_sha256": "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c",
+  "decode_temperature_default": 0.1,
+  "etab_alphabet": "ACDEFGHIKLMNPQRSTVWY-X",
+  "family": "pottsmpnn",
+  "n_tokens": 21
+}

@@ -109,6 +109,11 @@ decoding order by default, parm7 trajectory loading, PR #160 — are not restate
   that were validated. Each LFS pointer oid equals the manifest sha256 for that file, so
   the two records cannot silently disagree.
 
+- **PottsMPNN browser graphs pinned at `release/browser/potts/`** under the same scheme. That is
+  encode, energy, decode and refine at L128 and L256, with manifest sha256 `cf960131…`, the set
+  the six Potts browser gates graded. `p07_split_export.py --verify-manifest
+  release/browser/potts/MANIFEST.json` checks them.
+
 ### Validated
 
 Each figure below comes from a bathos run graded against a sidecar committed **before** it
