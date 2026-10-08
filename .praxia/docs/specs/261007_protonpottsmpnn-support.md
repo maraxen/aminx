@@ -2558,3 +2558,49 @@ pipeline's whole signature for the parameter the rule would be named after.
 `protonpotts_features` is closed on the host side. The remaining P5 work is the **wave**: a pre-registered `tests/port`-tier sidecar
 (or the existing wave harness) that runs this featurizer against the dumps under bathos with a perturbation control, as §6 requires,
 and the encoder input contract for P6. Nothing here touches a ledger row.
+
+## 40. `protonpotts_features` GRADED `pass` by record; P4d, and the rule the first nine cells could not discriminate (261008)
+
+### 40.1 The wave
+
+Bathos run `479b640b-7c0b-4d75-86bd-79cce1909bbe`: `status completed`, `outcome pass`, `exit_code 0`, `git_dirty False`,
+`git_hash 74e63413` (the commit that pre-registers `scripts/protonpotts/protonpotts_features_parity.*`), in a clean checkout with its
+own synced environment, verified from the cool-tier record. It compares `featurize_pdb` with the sealed dumps on **ten** structures,
+every key exactly with `X` compared everywhere, requires the 1IFC refusal to match, and applies **eleven perturbations** (six that make a
+featurizer rule wrong, five that corrupt an output) that the same comparison must reject. All ten cells exact, refusal matched,
+**11 of 11 perturbations detected.**
+
+This is a `scripts/protonpotts/` vehicle, not a redsox ledger row: ProtonPotts has no ledger rows until P10.
+
+### 40.2 What the perturbation control found, and why it is the point of having one
+
+An exploratory smoke run (numbers not cited) of the wave over the nine cells then available showed **`backbone_without_o` undetected**:
+no cell could tell whether `O` counts as a backbone atom. At the 0.8 threshold every residue in 1CQW whose `O` fails also fails `N`, `CA`
+or `C`. Upstream's source includes `O` (`chain_type_to_atom_names={PROTEINS: ["N","CA","C","O"]}`), so the rule was right but **read, not
+measured** — exactly what §6's perturbation rule is meant to expose. The remedy the sidecar named was to add a cell, not to loosen the
+control. A scan of the 137 available structures at the 0.8 threshold found two with exactly one residue where only `O` fails: 1HGU and 1OLR.
+
+### 40.3 P4d: graded `fail` by its own criterion, and what it nonetheless established
+
+Bathos run `7ec1f6b9-a335-457b-8b7c-96f0e6027089`: `status completed`, **`outcome fail`**, `git_hash 9cd415e6`, clean tree. The pre-registered
+criterion required both cells to featurize (`n_featurized = 2`). **Upstream refused 1HGU** (`KeyError ... Encountered unknown atom token 7
+which is not in the encoding, but the UNKNOWN_ELEMENT_TOKEN (0) is also not in the encoding`), so the record says `fail`, and it is not
+re-graded here. The criterion should have allowed a refused cell as data, as P4c's did; that was my design error.
+
+What the run did establish, stated as values rather than as a pass: **1OLR featurized with 219 residues** (content sha256
+`837a72e1bd9d4dd19b7532e4b7756511e7904517fa4c7346ce5d8c4209098829`), reproducibly across processes, which is the length the sidecar predicted
+if upstream requires `O` (223 - 4); had `O` not counted it would be 220. So `O` is part of the backbone set by data. That single cell is what
+makes the wave's `backbone_without_o` perturbation detectable, and the wave's own record is the graded evidence of it.
+
+### 40.4 A known divergence: 1HGU
+
+Upstream refuses 1HGU and `featurize_pdb` accepts it. The file has no HETATM records and only C, N, O, S elements, so the cause of
+"unknown atom token 7" is **not understood**. It is excluded from the wave (recorded in the sidecar's `[data] not_included`). The
+featurizer is therefore looser than upstream on at least this input, and nothing validates its output there.
+
+### 40.5 State
+
+`protonpotts_features` is closed. Open and unchanged from §39.5: `MSE`, blank chain, non-standard `ATOM` residues, the same name/number
+with different insertion codes, multi-model and CIF input; plus 1HGU above. `protonpotts_protonation` (re-scoped in §37.1 to label
+consumption) is covered by `encode_sequence` and the labelled-cell conformance, but has no wave of its own yet. P6 (encoder reuse and
+weight conversion, 0 unmapped keys) is next and is independent of the host side.
