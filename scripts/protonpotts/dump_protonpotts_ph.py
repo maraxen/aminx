@@ -268,7 +268,7 @@ def _dump(args: argparse.Namespace, out: Path) -> dict[str, dict]:
   import mpnn.inference_engines.potts_mpnn_ph as ph
   import mpnn.pipelines.potts_mpnn as pipelines
   import mpnn.potts_inference as inference
-  from biotite.structure.io.pdb import PDBFile
+  from mpnn.utils.inference import MPNNInferenceInput
 
   pipelines.get_protonation_state_transforms = lambda **_: []
   inference._PIPELINE_CACHE.clear()  # noqa: SLF001 -- trap 1 of the P4 dumper (spec §23.4)
@@ -281,7 +281,10 @@ def _dump(args: argparse.Namespace, out: Path) -> dict[str, dict]:
   criteria = _criteria()
   report: dict[str, dict] = {}
   for cell, (pdb, chain) in args.cells.items():
-    atom_array = PDBFile.read(str(pdb)).get_structure(model=1)
+    # The SAME loader prepare_potts_input uses for a path (atomworks, occupancy and altlocs handled), so the
+    # engine featurises the residues the sealed tables describe. A first graded attempt that read the file with
+    # biotite directly gave the engine more residues than the sealed 6m0j table (IndexError in placement).
+    atom_array = MPNNInferenceInput.from_atom_array_and_dict(input_dict={"structure_path": str(pdb)}).atom_array
     sealed = _load(args.features_dir / FEATURES[cell] / f"{cell}.npz")
     entry: dict = {"binder_chain": chain, "precisions": {}}
     for name, dtype in PRECISIONS:
