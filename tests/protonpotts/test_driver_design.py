@@ -166,7 +166,8 @@ def test_sample_pins_the_centre_and_sorts_by_energy(
   positions = arrays["center_positions"][:, 0]
   assert (positions == positions[0]).all()  # one plan: every design pins the same centre
   assert 0 <= int(positions[0]) < len(RESIDUES)
-  assert int(positions[0]) in (1, 4)  # the pinned centre is a HIS of the toy structure
+  # Placement has no residue-type restriction (spec §45.2): the best-scoring free position becomes the centre,
+  # whatever residue it is, so only the protonated token at that position is guaranteed (checked below).
   for row, position in zip(arrays["sequence"], positions, strict=True):
     assert row[position] == HIS_P
   assert (arrays["center_types"] == HIS_P).all()
