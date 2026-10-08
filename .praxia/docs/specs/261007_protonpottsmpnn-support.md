@@ -2203,3 +2203,76 @@ semi-scoped paths, so neither lands during the freeze.
 What P4 is **not**: a parity result. Nothing has been compared against aminx, because there is
 no aminx-side ProtonPotts implementation — §11c is still open. This is the oracle only, and the
 sidecar says so.
+
+---
+
+## §34 — Decision-independent prep for P6/P7, and debt #2584 answered (Haiku fan-out, Opus-verified)
+
+Three read-only Haiku 5.5 recon agents ran in parallel at the user's request. Every claim below
+was spot-checked by Opus at the cited file:line; one headline claim was **wrong** and is
+corrected here rather than repeated. None of this is a measurement; nothing ran.
+
+### §34.1 P6: the checkpoint key map — key-complete, not number-complete
+
+Input was the **measured** state_dict, dumped on titanix:
+`.praxia/spikes/protonpotts_ckpt_keys.txt` (120 tensors: 66 encoder, 42 decoder, 5 featurizer,
+`W_e` 2, `W_out` 2, `W_s` 1, `etab_out` 2 — counts verified).
+
+- **0 keys without a consumer.** aminx's converter (`scripts/recapture/pottsmpnn_model_to_eqx.py:145-157`
+  → `scripts/convert_weights.py` `convert_full_model`) has a rule for every one.
+- **5 renames** for the featurizer: `graph_featurization_module.positional_embedding.embed_positional_features.*`
+  → `features.embeddings.linear.*`; `graph_featurization_module.edge_embedding.weight` →
+  `features.edge_embedding.weight`; `graph_featurization_module.edge_norm.*` → `features.norm_edges.*`
+  (targets verified at `convert_weights.py:297-437`). Shapes `(16,66)` and `(128,416)` match.
+- **5 width-dependent tensors**: `W_s.weight (30,128)`, `W_out.{weight,bias} (30,…)` against
+  aminx's 21; `etab_out.{weight,bias} (900,128)/(900,)` against `PAIR_DIM = 400`. The converter
+  has **no shape assertions**, so a mismatch would not be caught at conversion.
+- **The trap:** foundry's conversion-time permutations of the edge-embedding pair order and the
+  token order (§15) are **absent** from aminx's converter (no permutation code in
+  `convert_weights.py`). A key-complete conversion would therefore be **numerically wrong**.
+  P6's "0 unmapped keys" gate is necessary but not sufficient; `protonpotts_encoder` must be
+  the real gate, and the converter should gain shape assertions.
+
+### §34.2 P7: the alphabet-width census (the spec's top risk, §9.1)
+
+- **Two unlinked `N_AA = 20` definitions** — `families/potts_mpnn/etab.py:21` and
+  `potts_head.py:26` (verified). Parameterising one leaves the other at 20. They must become
+  one source.
+- `etab.py:27,29,57` assume the layout `range(N_AA)` + one `X` + padding to `N_ETAB`; this is
+  the etab re-indexing table and must be rebuilt for V=30, not just widened.
+- Other independent width literals reported (not individually re-verified): `model.py:31`
+  `_VOCAB=21`; `featurize.py:17,118-119,168,175,338`; `sample_host.py:43` (21-letter string) and
+  `:413` (sink dims "20","20"); `potts/model.py:42-50` and `designer.py` (q=21).
+- **NOT width:** `features.py:44` `L K 400` is 25 atom pairs × 16 RBF. Do not remap to `PAIR_DIM`.
+- No LASEr module imports `potts_head`, `etab` or `potts_energy`, so the LASEr port is outside
+  P7's blast radius.
+- **CORRECTION to the agent's report.** It flagged `decode.py:77` / `refine.py:115`
+  (`x_index = 20`, the refine `X` mask) as the highest risk, claiming index 20 becomes a
+  protonation token at V=30. **False.** v6 keeps the 21-token prefix — 0–19 standard, **20 =
+  UNK/`X`** — and puts protonation at 21–29 (§22; pinned by
+  `tests/protonpotts/test_vocab_index_tables.py`). The mask stays correct. It is still a literal
+  worth deriving from the alphabet, but it is not a silent bug.
+- Goldens P7 must keep green (§9.1 says capture them first): `tests/port/reference/{a0_featurize,
+  a1_potts,potts_head,potts_order,potts_merge_pair_d2,potts_merge_pair_d4,pottsmpnn_full,
+  declayer_f64}/`, sha-pinned in `a1_potts/oracles.sha256`, consumed by `tests/port/test_potts_*`,
+  `test_pottsmpnn_full.py`, `test_declayer_f64.py`, `tests/families/potts_mpnn/*`,
+  `tests/knob_semantics/test_potts_*_knobs.py`, `tests/parity/test_potts_*.py`.
+- Left unsure by the agent: `runner.py` generic score/inspect reachability, `driver.py`
+  `_CANONICAL` at V=30, `potts/cli.py:39`. P7's planner must read these.
+
+### §34.3 Debt #2584: answered, and reframed
+
+- `scripts/parity/dump_potts_oracles.py` and `dump_laser_oracles.py` pin **no** thread count
+  (in-script or in any wrapper); both seed torch.
+- Both **save** neighbour indices (Potts `E_idx` at `dump_potts_oracles.py:736-737`; LASEr
+  `pr_pr_idx`/`lig_pr_idx` at `dump_laser_oracles.py:510-511`). Manifests record neither thread
+  settings nor index hashes.
+- aminx **recomputes** neighbours (`potts_mpnn/features.py:92` `top_k`; `model/laser/graphs.py:221-235`)
+  and the tests compare them **exactly** (`tests/port/test_laser_encoder.py:257-259`
+  `np.array_equal`; `tests/families/potts_mpnn/test_a2_pottsmpnn_full.py:115` set equality).
+- **So:** the current seals have passed exact neighbour comparison by record, which is evidence
+  the tie flip did **not** bite them at the tested cells. The live exposure is the **re-wave**: a
+  fresh re-dump at default threads can flip a near-tie and produce a spurious hard failure that
+  has nothing to do with the port. Fix: `torch.set_num_threads(1)` in both dumpers plus the
+  thread count in the manifest, as the ProtonPotts dumper already does. Scoped
+  (`scripts/parity/`), so it rides the re-wave — the user's call.
