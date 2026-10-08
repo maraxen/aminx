@@ -2823,3 +2823,28 @@ Debt filed for what the port refuses: #2621 (unported upstream knobs, no traject
 ### 46.3 Next
 
 `ph_descent.py` (the JAX block-descent sweep, in progress), the greedy variant, the design/score glue and the `sample` / `score:selectivity` wiring, then the `protonpotts_ph_design` wave against P4g.
+
+## 47. `protonpotts_ph_block` GRADED `pass` by record; the sampler's token order (261008)
+
+Wave `protonpotts_ph_block` (criteria pre-registered at `09804a9c`, script `protonpotts_ph_block_parity.py`), run `72ed386b`, clean tree at `9991cfbd`, outcome `pass`: all 24
+(cell x precision x call) comparisons match upstream on the rederived **plan** (pins, designable set, block membership), the pooled **z-scales** (worst relative difference
+4.5e-15 in float64), the final **sequence token for token**, the **number of uniforms consumed**, and the final **Potts energy and summed selectivity gap** (worst relative
+difference 1.6e-16). **All 8 deliberate errors are rejected** (uniforms shifted by one draw, lambda 0.4, block size 2, forbidden tokens not applied, repetitive window off, a
+wrong contrast token, and nudges of a z-scale and an energy just outside their float64 bands). The wave takes only the sealed table and `E_idx`, the native sequence, the
+binder mask and the production configuration from the dump and REDERIVES everything else.
+
+### 47.1 What the exploratory smoke found, before the graded run (numbers not cited)
+
+A first exploratory run matched every plan, z-scale, draw count and ALL `T = 0` call, and all eight controls fired, but several `T = 0.05` calls differed in tokens. Teacher-forced
+replay of the upstream choices localised it, after a misleading first look (comparing flat indices across two token orders made the objectives look different; in matching token
+order they agree). The cause: **the same uniform selects a different entry when the inverse CDF is accumulated in a different token order**. Upstream accumulates over flat
+indices in ITS token order; the port's flat order is the aminx token order. Any order is a valid sampler, so this is a parity detail, not a modelling error: `ph_descent.select_joint`
+and `block_descent` take an optional `cdf_order` (the upstream-to-aminx index map), left unset in production, and the wave passes it. A unit test checks that the identity order
+equals the default and that a permuted order equals a numpy inverse CDF in that order. The sidecar's criteria were not touched; the wave script was changed after the criteria were
+committed, which is recorded here.
+
+### 47.2 Remaining for the V1 pH engine
+
+`ph_greedy.py` (the centre-free variant, in progress; its wave `protonpotts_ph_greedy` is pre-registered at the commit that adds this section), the design and scoring glue that
+turns an input structure into a plan, a call and result arrays, the `sample` and `score:selectivity` wiring in the driver, and the knob surface. Unported by decision, tracked as debt:
+#2616, #2617, #2621.
