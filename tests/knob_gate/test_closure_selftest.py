@@ -42,6 +42,8 @@ POTTS_SLUGS = (
   "potts_ar_refine_exact",
   "potts_ddg_megascale",
 )
+PROTON_SLUGS = ("protonpotts_parity",)
+ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS)
 
 
 def _make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
@@ -225,7 +227,7 @@ def _real(slug: str) -> Closure:
   return closure
 
 
-@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS])
+@pytest.mark.parametrize("slug", ALL_SLUGS)
 def test_every_ledger_row_has_a_sound_closure_containing_its_vehicle(slug: str) -> None:
   closure = _real(slug)
   assert closure.sound, closure.undeclared_dynamic
@@ -234,7 +236,7 @@ def test_every_ledger_row_has_a_sound_closure_containing_its_vehicle(slug: str) 
 
 def test_every_declared_row_exists_in_the_manifest() -> None:
   declared = set(load_edges())
-  assert declared == {*LASER_SLUGS, *POTTS_SLUGS}
+  assert declared == set(ALL_SLUGS)
 
 
 @pytest.mark.parametrize("slug", LASER_SLUGS)
@@ -252,14 +254,35 @@ def test_potts_rows_do_not_depend_on_laser_code(slug: str) -> None:
 
 
 def test_family_change_invalidates_only_its_own_rows() -> None:
+  # ProtonPottsMPNN is built on the Potts model, energy and merge code, so a Potts change reaches its row too;
+  # the reverse must not hold, and neither family reaches LASEr.
   potts_change = ["src/aminx/families/potts_mpnn/decode.py"]
   laser_change = ["src/aminx/families/laser_mpnn/driver.py"]
-  assert [s for s in (*LASER_SLUGS, *POTTS_SLUGS) if row_is_stale(potts_change, _real(s))] == list(
-    POTTS_SLUGS
-  )
-  assert [s for s in (*LASER_SLUGS, *POTTS_SLUGS) if row_is_stale(laser_change, _real(s))] == list(
-    LASER_SLUGS
-  )
+  proton_change = ["src/aminx/families/protonpotts_mpnn/ph_descent.py"]
+  assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS]
+  assert [s for s in ALL_SLUGS if row_is_stale(laser_change, _real(s))] == list(LASER_SLUGS)
+  assert [s for s in ALL_SLUGS if row_is_stale(proton_change, _real(s))] == list(PROTON_SLUGS)
+
+
+@pytest.mark.parametrize("slug", PROTON_SLUGS)
+def test_protonpotts_row_reaches_its_family_and_not_laser(slug: str) -> None:
+  closure = _real(slug)
+  assert any("/protonpotts_mpnn/" in f for f in closure.files)
+  assert not [f for f in closure.files if "/laser" in f], "a ProtonPotts row reaches LASEr code"
+  # The wave scripts are run as subprocesses and the converter is loaded by path: neither is an import, so each must
+  # be in the closure through a declared edge, or editing a wave could not stale the row.
+  for needed in (
+    "scripts/parity/protonpotts_ph_driver_parity.py",
+    "scripts/parity/protonpotts_features_parity.py",
+    "scripts/parity/convert_protonpotts_checkpoint.py",
+  ):
+    assert needed in closure.files, needed
+
+
+@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS])
+def test_other_families_do_not_depend_on_protonpotts_code(slug: str) -> None:
+  closure = _real(slug)
+  assert not [f for f in closure.files if "protonpotts" in f], "a Potts/LASEr row reaches ProtonPotts code"
 
 
 @pytest.mark.parametrize(
@@ -275,7 +298,7 @@ def test_family_change_invalidates_only_its_own_rows() -> None:
 )
 def test_negative_control_shared_change_still_invalidates_every_row(shared: str) -> None:
   """If this ever fails, the closure has stopped being a conservative narrowing."""
-  not_stale = [s for s in (*LASER_SLUGS, *POTTS_SLUGS) if not row_is_stale([shared], _real(s))]
+  not_stale = [s for s in ALL_SLUGS if not row_is_stale([shared], _real(s))]
   assert not not_stale, f"{shared} left {not_stale} fresh"
 
 

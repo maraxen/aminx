@@ -1,9 +1,9 @@
-# Model families: PottsMPNN and LASErMPNN
+# Model families: PottsMPNN, ProtonPottsMPNN and LASErMPNN
 
 Aminx dispatches most work through its stock ProteinMPNN/LigandMPNN path. Two
 families instead route through a `FamilyDriver`, which owns loading,
-featurization and the forward passes for that model: **PottsMPNN** and
-**LASErMPNN**.
+featurization and the forward passes for that model: **PottsMPNN**,
+**ProtonPottsMPNN** and **LASErMPNN**.
 
 Select one with `--model-family`. **It is a group-level option, so it goes
 before the verb, not after it** — it is declared on the `aminx run` and
@@ -24,7 +24,8 @@ parent group. If you are looking for it, run `aminx run --help`.
 
 You can usually leave it unset. `RunSpecification.__post_init__` derives the
 family from `checkpoint_id`: a name starting `pottsmpnn_` resolves to
-`pottsmpnn`, and `lasermpnn_` to `lasermpnn`. An explicit `--model-family` is
+`pottsmpnn`, `protonpottsmpnn_` to `protonpottsmpnn`, and `lasermpnn_` to
+`lasermpnn`. An explicit `--model-family` is
 always respected, even when it disagrees with `checkpoint_id`.
 
 ## Which purposes each family actually runs
@@ -69,7 +70,32 @@ Enforced at spec construction by `_validate_output_kind`
 | `ligandmpnn` | `nll` |
 | `membrane` | `nll` |
 | `pottsmpnn` | `nll`, `logits`, `energy`, `ddg` |
+| `protonpottsmpnn` | `energy`, `ddg`, `selectivity` |
 | `lasermpnn` | `nll`, `logits`, `proofread_unconditional`, `proofread_conditional` |
+
+## ProtonPottsMPNN (pH-aware Potts design and scoring)
+
+`--model-family protonpottsmpnn` runs the ProtonPottsMPNN v6 model: a Potts head over a **30-token** vocabulary
+(the 20 standard residues, `X`, and the protonation-state tokens `HIS-P`/`HIS-S`/`HIS-A`, `ASP-P`/`ASP-D`/`ASP-A`,
+`GLU-P`/`GLU-D`/`GLU-A`). Its token order differs from upstream's; result arrays carry a `vocabulary` attribute naming
+the symbol of each index, so read results through it, not through the 20-letter alphabet.
+
+| purpose | what runs |
+| :--- | :--- |
+| `score:energy` | Potts energy of the reference sequence and of each variant in `variants_json` |
+| `score:ddg` | variant energy minus reference energy (needs `variants_json`) |
+| `score:selectivity` | pH selectivity gap at the centres named in `explicit_centers` (protonated minus mean deprotonated contrast) |
+| `sample` | pH design: block descent or centre-free greedy, on the Potts energy only |
+
+There is **no fallback to stock MPNN**: any other purpose is refused. Options are `ProtonPottsOptions`
+(`--protonpotts-options-json`); residues are addressed `"<chain>:<number>"` (`"A:42"`). aminx **consumes**
+protonation labels (`protonation_labels_json`), it does not assign them. The checkpoint is a converted `.eqx`
+(`scripts/parity/convert_protonpotts_checkpoint.py`), not the upstream `.ckpt`.
+
+Known limits, each tracked as debt: MCMC/two-phase/Gibbs design (#2616), decoder-backed design and the 30-token
+decoder (#2617), upstream design knobs that are not exposed (#2621, the alias map names each one), and the gaps of
+the pH surface itself (#2622) — including that trajectories are not recorded (`record_trajectory` is accepted and
+changes nothing). ProteinSMC sampling kernels for the Potts-head families are #2615.
 
 ## Installation: LASErMPNN needs an extra
 
