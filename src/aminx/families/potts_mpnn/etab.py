@@ -15,10 +15,11 @@ from __future__ import annotations
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
 from aminx.families.potts_mpnn.featurize import MODEL_ALPHABET
 
 ETAB_ALPHABET = f"{MODEL_ALPHABET[:-1]}-X"
-N_AA = 20
+N_AA = POTTS_MPNN.pair_side
 N_ETAB = len(ETAB_ALPHABET)
 ETAB_GAP = ETAB_ALPHABET.index("-")
 ETAB_X = ETAB_ALPHABET.index("X")

@@ -23,8 +23,10 @@ import jax.numpy as jnp
 from jax import typing as jxtyping
 from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray
 
-N_AA = 20
-PAIR_DIM = N_AA * N_AA
+from aminx.families.potts_mpnn.alphabet import POTTS_MPNN
+
+N_AA = POTTS_MPNN.pair_side
+PAIR_DIM = POTTS_MPNN.pair_dim
 
 
 class PottsHead(eqx.Module):
