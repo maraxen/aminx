@@ -1,0 +1,68 @@
+[metadata]
+title = "protonpotts_driver wave: ProtonPottsDriver end to end from a PDB file vs upstream energies"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+`aminx.host.runner.score` with `model_family="protonpottsmpnn"`, `output_kind="energy"`, run on the structure
+FILE of each of four real cells (1BVC, 6m0j, 1OLR, 1EL1) with the converted v6 checkpoint, reproduces upstream's
+energies for the ten sealed P4f sequences per cell (native, eight uniform draws over all 30 tokens, one cyclic
+sweep) passed in as token-name lists:
+
+  - each float32 energy within 10x the MEASURED upstream f32-vs-f64 spread of that cell's energies, never below
+    1e-6 relative to max(1, max|E|) (decision 11e);
+  - the driver's reference row (candidate 0) holds exactly the sealed native S mapped to aminx order, and the
+    candidate token array has the shape (10, L): the driver featurised the same residues upstream did.
+
+The protonpotts_energy wave graded the merge and energy on sealed feature dumps; this grades the user path around
+them: the PDB reader, residue/variant handling, the model call, and the result arrays.
+
+The comparison is an INSTRUMENT only if deliberate errors in that path are rejected by it (spec §6): token names
+spelled in upstream's index order, candidate rows reversed, and a correct output nudged to 4x the band. All three
+must be rejected.
+
+PREDICTION, stated before the run so it can be wrong: all four cells pass and all three errors are rejected. The
+risk is not the arithmetic (already graded) but the path: residue addressing, dropped residues (1OLR, 6m0j) and
+chain order are exercised here for the first time against upstream rather than against a unit test.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_energy_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 3 AND n_failed = n_listed"
+decision = "protonpotts_driver is graded for score:energy: the user path reproduces upstream's energies and each error is rejected."
+reasoning = "All four cells are within the measured f32 band, the reference tokens equal the sealed native S, the weights came from the dumped checkpoint, and all three controls fail."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_energy_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 3 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_energy_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 3 AND n_failed = n_listed)"
+decision = "Do not treat the driver as graded. Read per_cell: a tokens miss names the PDB reader or residue handling; an energy miss with tokens matching names the model call or variant rows. An undetected error means the comparison cannot discriminate it."
+reasoning = "Either a cell is outside its band, the reference tokens differ from the sealed S, the checkpoint does not match the dump, or a control was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_energy_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 3 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+n_energy_ok = "int"
+n_tokens_ok = "int"
+checkpoint_matches = "bool"
+worst_over_band = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_cell = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle = "P4f energy dump (run f5aa4ff2): upstream calc_potts_eners over the sealed merged table"
+structures = "1BVC, 6m0j, 1OLR, 1EL1 from ~/repos/PottsMPNN/energy_benchmark_datasets"
+tolerances = "f32: 10x measured upstream f32-vs-f64 energy spread per cell, min 1e-6 relative to max(1, max|E|)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_driver_parity.py --state-npz <v6_state.npz> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts --cell NAME=PDB ... , in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."
