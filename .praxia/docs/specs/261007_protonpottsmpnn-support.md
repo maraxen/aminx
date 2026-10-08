@@ -2863,3 +2863,39 @@ tests are in. Three bugs were found in the agents' TESTS on first execution and 
 
 Pre-registered at the commit that adds this section: `protonpotts_ph_driver` (the `sample` purpose end to end from a PDB file through the converted model, at T = 0, against the dump's deterministic
 block and greedy calls). The driver wiring for `sample` and `score:selectivity` is being built.
+
+## 49. P9 closed for V1: `protonpotts_ph_driver` GRADED `pass`; the pH engine surface (261008)
+
+### 49.1 `protonpotts_ph_driver`: GRADED `pass` by record
+
+Run `f8273bc5`, clean tree at `866f642b`, outcome `pass`. The REAL `aminx.host.runner.sample` runs on the structure FILE of each cell (1BVC chain A, 6m0j binder chain E, 1OLR, 1EL1) with the converted v6
+checkpoint in float32, at temperature 0 (no random numbers), once for production block descent (three placed centres) and once for the centre-free greedy configuration of the P4g dump. All 8 calls match the
+dump's deterministic designs on **centres** (positions and types), the **final sequence token for token**, and the **final Potts energy and selectivity gap** (worst at 0.19 of the allowed band). **All 5
+deliberate errors are rejected** (lambda 0.6, block size 2, forbidden tokens reduced to UNK, repetitive window off, a wrong contrast token). The prediction's stated risk (float32 encoder noise flipping a
+near-tie argmin) did not materialise.
+
+**Amendment, disclosed.** The control was registered as lambda 0.4. An exploratory run showed that on 1BVC the T = 0 block design is identical for lambda 0.3 and 0.4 (the optimum is flat there) while lambda 0.0-0.2
+and 0.6-1.0 all change it, and on 6m0j 0.4 does fire, so on the control cell 0.4 could not discriminate. The control was strengthened to 0.6 BEFORE the first graded run, in a sidecar commit that precedes the script
+change and records the reason; no pass criterion, tolerance or count was touched.
+
+### 49.2 What P9 now consists of
+
+| piece | module | graded by |
+|---|---|---|
+| conditional / block energies | `ph_potentials.py` | identities against `potts_energy` (tests) |
+| placement, designable set, blocks | `ph_plan.py` | rederived inside `protonpotts_ph_block` / `_greedy` |
+| config and options | `ph_config.py`, `ProtonPottsOptions` | tests; production defaults from `design_ph.py` |
+| block descent | `ph_descent.py` | `protonpotts_ph_block` (run `72ed386b`, 24/24, 8/8 controls) |
+| centre-free greedy | `ph_greedy.py` | `protonpotts_ph_greedy` (run `992c4392`, 24/24, 6/6 controls) |
+| per-structure orchestration | `ph_design.py` | tests; exercised by the driver wave |
+| `sample` and `score:selectivity` | `driver.py`, `specs.py` | `protonpotts_ph_driver` (run `f8273bc5`, 8/8, 5/5) for `sample` at T = 0; `score:selectivity` by tests only |
+| the upstream oracle | `dump_protonpotts_ph.py` | P4g (run `cbb47878`) |
+
+Test status on the final commit (titanix): 555 passed, 16 skipped (environment-gated) across `tests/protonpotts`, `tests/run`, `tests/cli` and the driver-seam test; the one failure is the pre-existing
+missing-`prody` lasermpnn seam test (debt #2620).
+
+### 49.3 Left, and where it is tracked
+
+Debt: #2615 (ProteinSMC kernels), #2616 (deferred Potts-head methods, now including `gibbs`), #2617 (decoder-backed design and the 30-token decoder), #2618 (driver gaps), #2619 (featurizer open items), #2620
+(pre-existing test failures), #2621 (unported upstream knobs, no trajectory), #2622 (known gaps of the pH surface and its grading).
+Not yet done: P10 (knob surface, `_WEIGHT_PREFIXES` arm, ledger re-freeze, ADR, docs), then the final `launch_wave.sh --stale-only` re-wave.
