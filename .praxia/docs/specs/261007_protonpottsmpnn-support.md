@@ -2848,3 +2848,18 @@ committed, which is recorded here.
 `ph_greedy.py` (the centre-free variant, in progress; its wave `protonpotts_ph_greedy` is pre-registered at the commit that adds this section), the design and scoring glue that
 turns an input structure into a plan, a call and result arrays, the `sample` and `score:selectivity` wiring in the driver, and the knob surface. Unported by decision, tracked as debt:
 #2616, #2617, #2621.
+
+## 48. `protonpotts_ph_greedy` GRADED `pass` by record; glue and driver wiring in progress (261008)
+
+Wave `protonpotts_ph_greedy` (criteria pre-registered at `66b00f1c`; the script was not changed after its criteria were committed), run `992c4392`, clean tree at `80b96547`, outcome `pass`:
+all 24 (cell x precision x call) comparisons match the sealed P4g dump on the rederived centre-free plan, the final (best) sequence token for token, the number of uniforms consumed, and
+the final Potts energy (worst relative difference 2.1e-16 in float64). **All 6 deliberate errors are rejected** (uniforms shifted by one draw, block size 2, forbidden tokens not applied,
+repetitive window off, the sampler's CDF in aminx token order instead of upstream's, and an energy nudge). The dump records no greedy z-scale (upstream's greedy uses a single-mutation scale), so
+the scale is graded through the sequence it determines.
+
+`ph_greedy.py`, `ph_design.py` (placement, one optimiser run per sample, scoring, stable ordering that does NOT copy upstream's dedup by `design_id`, which silently drops swept designs) and their
+tests are in. Three bugs were found in the agents' TESTS on first execution and fixed (not in the modules): the replay test indexed uniforms by position in the energy-sorted list instead of by
+`design.sample`; the greedy z-scale test computed its expectation on the raw start where upstream canonicalises microstates first (lines 2440-2452); one test passed an invalid `zscale_mode`.
+
+Pre-registered at the commit that adds this section: `protonpotts_ph_driver` (the `sample` purpose end to end from a PDB file through the converted model, at T = 0, against the dump's deterministic
+block and greedy calls). The driver wiring for `sample` and `score:selectivity` is being built.

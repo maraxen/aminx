@@ -1,0 +1,83 @@
+[metadata]
+title = "protonpotts_ph_driver wave: the ProtonPottsDriver `sample` purpose end to end (PDB, converted model, pH design) vs the upstream engine at T=0"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+`aminx.host.runner.sample` with `model_family="protonpottsmpnn"` and the pH-design options, run on the structure FILE of each
+of four real cells (1BVC chain A, 6m0j binder chain E, 1OLR chain A, 1EL1 chain A) with the converted v6 checkpoint, in
+float32 (the driver's precision), reproduces the upstream PottsMPNNPHEngine's deterministic (temperature 0) designs recorded
+in the sealed P4g dump (run cbb47878): the block-descent call (production configuration: block size 3, lambda 0.3, three
+placed centres HIS-P / ASP-P / GLU-P, neighbour_k 16, max_mutations 20, repetitive window) and the centre-free greedy call
+(center_count 0, infill_scope chain, cv_patience 1, cv_max 2).
+
+Nothing in the chain is replayed from the dump except the comparison targets: the aminx side reads the PDB, featurises it,
+runs the converted encoder and head, merges, plans, and optimises. The earlier waves graded each link separately
+(protonpotts_encoder, protonpotts_energy, protonpotts_driver, protonpotts_ph_block, protonpotts_ph_greedy); this grades the
+links together, including the driver's residue addressing, binder-chain handling and result arrays. It is limited to
+temperature 0 because that path consumes no random numbers, so no uniforms need injecting through the public `sample`
+interface; the sampled path was graded with replayed uniforms in the block and greedy waves.
+
+Per (cell x call), eight comparisons in all, the driver's result must match:
+
+  1. the placed centres (block call): positions and protonation types, EXACTLY; the greedy call has none;
+  2. the final sequence token for token, EXACTLY (the dump measured identical final sequences in f32 and f64 for every call);
+  3. the final Potts energy: within 10x the MEASURED upstream f32-vs-f64 spread of that design's energy, never below 1e-6
+     relative to max(1, |value|) (decision 11e); the aminx float32 pipeline differs from an upstream table by float32 noise
+     only, which is what that band measures;
+  4. the summed selectivity gap of the block call within the same kind of band.
+
+The comparison is an INSTRUMENT only if deliberate errors in the user path are rejected by the same comparison (spec §6).
+Five must be: combined_lambda 0.4 for 0.3, block size 2 for 3, the forbidden-token list reduced to UNK alone, the
+repetitive-window penalty off, and a wrong deprotonated contrast token (HIS-A for HIS-S). A control is rejected when the
+comparison fails on at least one of the control cell's two calls.
+
+PREDICTION, stated before the run so it can be wrong: all eight comparisons pass and all five controls are rejected. The
+risk specific to this wave is float32 noise in the aminx encoder flipping an argmin near a tie, which would show as a token
+difference at T=0 while every replay wave passed; that would be reported as such and not absorbed by loosening the exact-token
+criterion.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND checkpoint_matches AND n_calls = 8 AND n_calls_ok = 8 AND n_centres_ok = 8 AND n_tokens_exact = 8 AND n_scores_ok = 8 AND n_listed = 5 AND n_failed = n_listed"
+decision = "protonpotts_ph_driver is graded: the sample purpose reproduces the upstream deterministic pH designs from a PDB file, and each error is rejected."
+reasoning = "All eight calls match on centres, tokens and scores, the weights came from the dumped checkpoint, and all five controls fail the same comparison."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND checkpoint_matches AND n_calls = 8 AND n_calls_ok = 8 AND n_centres_ok = 8 AND n_tokens_exact = 8 AND n_scores_ok = 8 AND n_listed = 5 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND checkpoint_matches AND n_calls = 8 AND n_calls_ok = 8 AND n_centres_ok = 8 AND n_tokens_exact = 8 AND n_scores_ok = 8 AND n_listed = 5 AND n_failed = n_listed)"
+decision = "Do not treat the driver's pH design as graded. Read per_call: centres off names the reader, binder-chain or residue addressing; centres right with tokens off at a near-tie names float32 noise in the encoder (report it, do not loosen); a control that was not rejected means the comparison cannot discriminate that error."
+reasoning = "Some call differs from upstream, the checkpoint does not match the dump, or a control was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND checkpoint_matches AND n_calls = 8 AND n_calls_ok = 8 AND n_centres_ok = 8 AND n_tokens_exact = 8 AND n_scores_ok = 8 AND n_listed = 5 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+n_calls = "int"
+n_calls_ok = "int"
+n_centres_ok = "int"
+n_tokens_exact = "int"
+n_scores_ok = "int"
+checkpoint_matches = "bool"
+worst_energy_over_band = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_call = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle = "P4g pH-design dump (run cbb47878), the T=0 block_descent and greedy_energy_block calls"
+structures = "1BVC, 6m0j, 1OLR, 1EL1 from ~/repos/PottsMPNN/energy_benchmark_datasets"
+tolerances = "centres and tokens exact; energies and selectivity within 10x measured upstream f32-vs-f64 spread (min 1e-6 relative)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_ph_driver_parity.py --state-npz <v6_state.npz> --ph-dir <P4g out dir> --cell NAME=PDB,CHAIN ..., in a venv where aminx is importable, from a clean checkout of the commit that adds the script. The sidecar is committed before the script and before any aminx result exists. Not a redsox ledger row (ProtonPotts has none until P10)."
