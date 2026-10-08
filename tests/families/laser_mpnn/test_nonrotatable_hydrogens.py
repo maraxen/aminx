@@ -21,6 +21,13 @@ _GOLDEN = Path(__file__).with_name("rotamer_heavy_golden.npz")
 # 0.86 A, aromatic C-H about 0.93 A, aliphatic C-H about 0.97 A.
 _BOND_MIN_A = 0.85
 _BOND_MAX_A = 1.10
+# The golden reproduces to 0 ULP on the machine that wrote it, but numpy/scipy pick
+# float kernels per CPU, so GitHub's runner differs in the last bits (aminx #165 CI) with
+# identical numpy 2.4.6 / scipy 1.17.1. Measured on this golden: the f32 build sits at most
+# 8.8e-6 A from the f64 build (p99 7.7e-6). The f32 band is >10x that scale; any real builder
+# change (a shifted slot, a wrong frame) moves atoms by >= ~0.1 A. Slot occupancy (the NaN
+# mask) is still compared exactly -- that is the pre-change invariant.
+_GOLDEN_ATOL_A = {np.dtype(np.float32): 1e-4, np.dtype(np.float64): 1e-9}
 
 
 def _load() -> np.lib.npyio.NpzFile:
@@ -48,8 +55,10 @@ def test_default_matches_prechange_heavy_atoms() -> None:
     expected = np.asarray(data[key])
     assert got.shape == (sequence.shape[0], MAX_ATOMS, 3)
     assert got.dtype == expected.dtype
-    assert np.array_equal(got, expected, equal_nan=True)
-    assert np.array_equal(explicit, expected, equal_nan=True)
+    atol = _GOLDEN_ATOL_A[expected.dtype]
+    for built in (got, explicit):
+      assert np.array_equal(np.isnan(built), np.isnan(expected))
+      np.testing.assert_allclose(built, expected, rtol=0, atol=atol, equal_nan=True)
 
 
 def test_hydrogens_keep_heavy_slots_and_bond_lengths() -> None:

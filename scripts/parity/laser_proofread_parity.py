@@ -36,7 +36,11 @@ from __future__ import annotations
 import os
 import pathlib
 
-os.environ.setdefault("JAX_ENABLE_X64", "1")
+# Only when run as a script. At module level it also fired when a test imported this module
+# for constants, leaking x64 into every subprocess that pytest worker spawned afterwards
+# (aminx #165 CI: a benchmark smoke test built an f64 skeleton for f32 weights).
+if __name__ == "__main__":
+  os.environ.setdefault("JAX_ENABLE_X64", "1")
 
 import argparse
 import hashlib

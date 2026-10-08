@@ -64,7 +64,6 @@ from aminx.run.specs import (
   ScoringSpecification,
 )
 
-
 # Families whose dispatch REQUIRES a registered FamilyDriver. The stock MPNN path
 # cannot serve these, so a missing driver is an error, never a silent fallback.
 # Keyed by family so adding a third family is a one-line table entry rather than
@@ -1279,7 +1278,7 @@ def _score_fused_multistate(  # not length-bucketed in S8 v1
   stacked_sequences = jnp.stack(padded_seqs, axis=0)  # (C, struct_len)
   n_candidates = stacked_sequences.shape[0]
   candidate_keys = jax.random.split(
-    # No `or 42`: main's #2528 fix makes random_seed=0 mean seed 0, not 42.
+    # No fallback to seed 42: main's #2528 fix makes random_seed=0 mean seed 0.
     jax.random.PRNGKey(spec.run_spec.sampling.random_seed),
     n_candidates,
   )

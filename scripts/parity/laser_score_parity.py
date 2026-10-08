@@ -16,8 +16,10 @@ import os
 import pathlib
 
 # x64 before any JAX import. Parent and children share this so the decoding
-# order drawn from random_seed is the same permutation on both sides.
-os.environ.setdefault("JAX_ENABLE_X64", "1")
+# order drawn from random_seed is the same permutation on both sides. Only when run as a
+# script, never at import: see laser_proofread_parity.py (aminx #165 CI).
+if __name__ == "__main__":
+  os.environ.setdefault("JAX_ENABLE_X64", "1")
 
 import argparse
 import hashlib
