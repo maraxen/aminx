@@ -27,6 +27,12 @@
       "sha256": "77e797fd30fb4da11151d0d6f0d55d13ea25c00c45048dcc4aa634dc3620aa5c",
       "family": "pottsmpnn",
       "upstream": "PottsMPNN"
+    },
+    {
+      "artifact_path": "ProtonPottsMPNN/checkpoints/potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt",
+      "sha256": "a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b",
+      "family": "protonpottsmpnn",
+      "upstream": "ProtonPottsMPNN"
     }
   ]
 }
