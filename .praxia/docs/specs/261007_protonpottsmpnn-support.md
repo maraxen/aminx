@@ -2364,3 +2364,33 @@ it instead of surfacing as a parity drift later.
   do not "fix" `merge_pair` inside P7.
 - At V=30, protonation tokens are drawable unless the designable mask says otherwise; that
   semantics is P9's to define, P7 only provides the field.
+
+## 36. Status 261008: spec on main, debts closed, P5 unblocked
+
+**Carried to main.** This spec, the P4 dumper (`scripts/protonpotts/`) and `tests/protonpotts/` previously existed
+only on `wt/260929-laser-confirm`; PR #205's description cites §35, which was therefore unreachable from main. None
+of these paths is a scoped prefix, so carrying them invalidates no ledger row.
+
+**P7 is merged** (PR #205, `5752c940`): generic-alphabet Potts refactor, with the exported PottsMPNN graphs
+byte-identical at V=21 (manifest `cf960131`). The §9 top risk (the refactor regressing the shipped Potts port) was
+checked by the 19/19 per-wave Potts oracles and the Potts family suite on the combined tree.
+
+**Debts.**
+- #2583 CLOSED. Fix is `scripts/protonpotts/dump_protonpotts_oracles.py:160` (`torch.set_num_threads(1)`); verified present
+  in the carried file. §32's measurement stands (0/12 vs 9/12 processes, one sha256 over four runs).
+- #2584 CLOSED with a partial answer. The Potts and LASEr dumpers already pin threads (`9b520400`) and record
+  `torch_num_threads`. Bathos run `b4bf4128` (pre-registered `scripts/parity/oracle_idx_stability.*`, commit `b2e4359a`)
+  graded **inconclusive**: 0 of 3338 neighbour-index arrays differ across independently produced dump sets, but the
+  tie-margin half was uninformative (registered threshold 1e-5 flags 180 of 300 cells by chance; recipe disagrees on 40
+  partial-mask cells) and was not retuned. Whether those sets ran at default threads is assumed, not recorded.
+- Neither debt gates P5: P5 anchors to the P4 ProtonPotts oracle, which is thread-pinned and reproducible.
+
+**What P5 must honour (from §19.3, §22.2; collected here so P5 does not re-derive them).**
+1. Pass `extended_vocab="v6"` at every featurizer construction; never rely on upstream's `"v4"` default (§22.2). The port's
+   featurizer takes the vocabulary as a parameter.
+2. A pre-labelled structure must carry the bond records (`hbond_records`) as well as per-residue labels; labels alone are
+   under-specified for v6 (§19.3).
+3. H is stripped first, deliberately; the H-bond cutoffs come from the vocabulary, not free knobs (§19.3).
+4. The labelled cell is the only one that can detect a wrong-vocabulary featurizer; the annotation-free cell cannot (§22.2),
+   so the P5 wave must include it (§21.3).
+5. Compare neighbour tensors with the same care as everywhere else: `E_idx` is an unsafe parity observable near ties (§32).
