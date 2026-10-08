@@ -190,3 +190,20 @@ arms behind `lax.cond`). For the wasm target the E/W/D/F split may be unnecessar
 the right shape for WebGPU (control flow forces device copies). Proposed: ship encoder+etab graph
 plus the single decode graph for wasm first, and keep the split as the WebGPU follow-up. Needs
 a benchmark at L128/L256 (X5) before it is final.
+
+### 8.1 Re-run after the fixes (run `241749b2`, graded `pass` by record, 261008)
+
+Commit `159f38ee` ("remove the two ONNX export blockers"): `in_range & pad_valid[safe]` instead of a
+BOOL `where` (`etab.py` merge_pair, `_batch_energy`), and explicit-dtype zeros instead of a weak `0`
+(`etab.py` positional_potts_energy, `refine.py` untied/tied energy accumulators). Same sidecar
+(sha256 `df731e18…`), clean tree. **All five probes pass on ORT-CPU and ORT-Web**: score 6.4e-7 /
+2.8e-6 rel, sched exact, decode and decode_tied 4.5e-7 with tokens exact, refine exact.
+
+Neutrality of the fix against the sealed upstream oracles, run per wave as `run_gate.py` does
+(`AMINX_PORT_WAVE=<wave>`): potts_head 4/4, merge_pair_d2 4/4, merge_pair_d4 4/4, potts_energy 4/4,
+potts_order 3/3; `tests/families/potts_mpnn/` green. (A combined run WITHOUT `AMINX_PORT_WAVE`
+fails 7 tier-1 tests identically at main `dab58900` — the oracle fixture falls back to
+`port_selftest`; that is invocation, not a defect.)
+
+So every Potts device path the decided first target needs (score, decode, one-sweep refine) is
+exportable as-is at random init. X2 onward measure the REAL checkpoint at L128/L256.
