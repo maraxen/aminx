@@ -1,0 +1,69 @@
+[metadata]
+title = "X5 runtime-controls gate: full browser path (PDB -> controls -> sample) token-exact vs JAX, and every control acts"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On the temperature-input X2 artifacts (manifest sha256 passed in and recorded), the full browser path run under Node with onnxruntime-web (wasm, 1 thread) -- PDB text -> potts_inputs.buildPottsInputs -> potts_controls.applyPottsControls -> potts_sampler.sample -- reproduces aminx (parse_pdb_upstream -> _featurize_one -> prepare_sample with the same spec controls -> the export-gate graph functions with the same noise and temperatures) for 9 cases (default; omit_aa ACDW; fixed_positions = rows 0-19 plus every 7th; global bias +3 on W; per-residue bias +3 on P at rows 0-29; temperature 1.0; optimization_temperature 0.5; refine off; combined omit C + fixed 0-9 + bias +2 W + temperature 0.3) x 2 cells (3gg7 L256, 3dkm L128) x 2 seeds = 36 samples: decoded tokens, decoding order and refined tokens exact (refine-off samples carry no refined output), sample energy max|d|/|ref| <= 1e-4. AND each control acts on the reference: omitted letters never appear at designable real rows (decoded and refined); fixed rows keep the native residue (decoded and refined); the W bias raises the total W count over default; the P bias raises the P count in rows 0-29 over default; temperature 1.0 changes every draw vs default; optimization_temperature 0.5 changes at least one refined sequence vs default; refine-off leaves the decoded sequence identical to default. Bars are X0/X2's."
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: agreement and knob effects are graded per sample.
+# Tied positions are out of scope: the sample path does not wire spec-level tied_positions (aminx
+# debt 2443), so there is nothing on the Python side to match.
+# The energy comparator's sensitivity was established with a planted perturbation in the loop
+# gate (run 7f760bde); this gate's instrument control is the token comparator (cross-seed).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail", "knob_inert"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR node_ok = false"
+decision = "The JAX arm, artifact verification or the Node runner did not complete. Nothing was compared; cite nothing."
+reasoning = "No comparison exists without all three."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = false"
+decision = "A browser sample compared against the JAX tokens of the OTHER seed in the same case and cell was not flagged for every sample. Passes from this run are not evidence."
+reasoning = "A comparator that cannot tell two draws apart would also pass a path that ignores its noise or its controls."
+is_residual = true
+
+[outcomes.fail]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = true AND all_exact = false"
+decision = "At least one controlled sample disagrees between the browser path and aminx (or did not run). The browser controls are not shippable; the per-sample record names the case."
+reasoning = "Graphs and the loop are already exact (X2, loop gate), so a disagreement here localizes to the PDB parser or the controls mapping."
+is_residual = true
+
+[outcomes.knob_inert]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = true AND all_exact = true AND knob_effects_ok = false"
+decision = "The browser path matches aminx exactly, but at least one control had no visible effect on aminx's own output. Investigate that control in aminx before claiming it works in the browser."
+reasoning = "Exact agreement on an inert control proves nothing about the control; the per-knob record names which one."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND artifacts_verified = true AND node_ok = true AND control_tokens_detected = true AND all_exact = true AND knob_effects_ok = true"
+decision = "Every design control the sample path supports reaches the browser graphs exactly as aminx applies it, and each control demonstrably acts. The browser sampler is controls-complete for the decided first target (excluding tied positions, debt 2443)."
+reasoning = "Exactness on all 36 samples plus a visible effect for every control."
+is_residual = false
+
+[result_schema]
+jax_arm_ok = "bool"
+artifacts_verified = "bool"
+node_ok = "bool"
+manifest_sha256 = "str"
+samples = "list"
+n_samples = "int"
+n_pass = "int"
+all_exact = "bool"
+knob_effects = "dict"
+knob_effects_ok = "bool"
+control_tokens_detected = "bool"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
