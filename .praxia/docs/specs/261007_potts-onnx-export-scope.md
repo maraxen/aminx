@@ -2,7 +2,7 @@
 title: PottsMPNN + ProtonPottsMPNN ONNX / browser export — scope
 description: Scope, phase plan and acceleration levers for shipping Potts-family ONNX exports, reusing the ProteinMPNN split-export process
 task_id: 261007_potts-onnx-export
-status: draft
+status: decided (1,2); 3 open
 ---
 
 # PottsMPNN + ProtonPottsMPNN ONNX / browser export — scope
@@ -115,6 +115,11 @@ is #5781's spec to answer; this scope reserves a manifest field for it.
    Opus verifies; parity gates run on titanix.
 
 ## 6. Decisions for the user
+
+**261007 — user DECIDED 1 and 2 as recommended.** 1: ship `score:energy`/`ddg` + `sample` with
+the default one-sweep refine first; `potts_converge` next; `nodes`/binding deferred. 2: build the
+generic harness now; add ProtonPotts once #5781 seals its oracles. 3 (distribution) stays open —
+no recommendation was made; X7 waits on it.
 
 1. **First shipping target** — recommended: `score:energy`/`ddg` + `sample` with the default
    one-sweep refine; `potts_converge` next; `nodes`/binding deferred.
