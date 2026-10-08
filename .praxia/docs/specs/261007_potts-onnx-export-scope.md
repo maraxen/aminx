@@ -207,3 +207,29 @@ fails 7 tier-1 tests identically at main `dab58900` — the oracle fixture falls
 
 So every Potts device path the decided first target needs (score, decode, one-sweep refine) is
 exportable as-is at random init. X2 onward measure the REAL checkpoint at L128/L256.
+
+## 9. X2 gate result (run `d6506199`, graded `pass` by record, 261008)
+
+Verified by record: `status=completed`, `outcome=pass`, `git_hash=000724c6`, `git_dirty=false`,
+`sidecar_sha256=c89ab50b…` = committed file. Real checkpoint `pottsmpnn_20.pt` (sha256 `77e797fd…`),
+sha-pinned example PDBs featurized by the driver path (3dkm L_total 72, 4jox 118, 3gg7 243; 4jox fits
+both buckets, so 5 cells). Both controls fired.
+
+**20/20 graph checks pass on ORT-CPU and on ORT-Web (wasm, 1 thread).** Worst relative float error
+2.7e-6 (bar 1e-4); decoded tokens, ranks, orders and neighbour indices exact; refine exact.
+
+| graph | L128 | L256 | ops of note |
+|---|---|---|---|
+| encode (encoder + head + merged/padded etab) | 4.31 MB | 4.33 MB | ScatterND 4, TopK 2 |
+| energy (score / ddG) | 19 KB | 19 KB | — |
+| decode (AR, in-graph Loop/If) | 3.46 MB | 3.59 MB | Loop 2, If 3, ScatterND 7, TopK 4 |
+| refine (one `potts` sweep) | 182 KB | 183 KB | Loop 2, ScatterND 2 |
+
+About 7.8 MB per bucket, comparable to the ProteinMPNN split (6.96 MB). Manifest
+`MANIFEST.json` sha256 `d35365c2…` (X1 format + `family`, `etab_alphabet`, checkpoint hash). The
+artifacts live in the titanix export checkout (`outputs/potts_export_gate/work/`) and are NOT committed:
+distribution (decision 3) is open.
+
+What remains for the decided first target: the browser-side loop (JS: encode -> decode -> energy ->
+refine, with JS-generated noise/uniforms/order) graded token-exact against JAX under Node and headless
+Chromium (X3/X5), the runtime-controls gate, and the benchmark. Layer b/c of every graph is done.
