@@ -2682,3 +2682,45 @@ held, including the one the sidecar flagged as possible: last-writer versus firs
 
 Done: merge and energy for ProtonPotts. Not done: the `ProtonPottsDriver` itself (family literal, options, input reading through `featurize_pdb`,
 `score:energy|ddg`, sinks), the generic-fallback refusal test for the new family, then P9 (pH engine). Open items from §40.5 unchanged.
+
+## 43. P8, second half: `ProtonPottsDriver`, and `protonpotts_driver` GRADED `pass` by record (261008)
+
+### 43.1 Decisions (user, 261008)
+
+1. **Family and options.** `model_family="protonpottsmpnn"` with its own `ProtonPottsOptions` (not `PottsMPNNOptions`, most of whose knobs do not apply).
+2. **How a sequence is given.** Read off upstream rather than invented: upstream has no text sequence format. A sequence is an integer token tensor `S`
+   read from the structure's pre-assigned labels (`compute_log_probs(seq=...)`, `calc_potts_eners` on `[N, L]` ints), and a design variant is a set of pinned
+   centres `{res_id, protonation_type}` (`explicit_centers`, `PlacementPin`). Its string output (`decode_sequences`) goes through three-letter-to-one-letter
+   and so collapses `HIS-P` to `H`; the aminx sinks do not copy that.
+3. **Scope.** `score:energy` and `score:ddg` from PDB input. `sample` is P9 (the pH engine), and refuses.
+
+### 43.2 What was built
+
+* `run/options.py` `ProtonPottsOptions(protonation_labels_json, variants_json)`; residues are `"<chain>:<number>[<insertion>]"`. The reference is the structure's
+  own `S` with the labels applied (none means all standard); a variant is pins on top of it, or a full per-residue token list; `sequences_to_score` letters
+  are accepted as full lists. `score:ddg` requires variants (no DMS: protonation states are not mutation targets, §35.1).
+* `families/protonpotts_mpnn/driver.py`: `ProtonPottsDriver`, registered on import of the package; `kept_residues()` added to `features.py` so a residue named by
+  chain and number finds its row in `S` after the backbone drop. A manifest next to the `.eqx` must name the v6 alphabet. Results carry token INDICES
+  (`candidate_tokens`/`mutant_tokens`) with the 30-name `vocabulary` as an attribute, and the sink root stamps the same vocabulary instead of the 21-letter one.
+* The four generic-MPNN fallback purposes (`jacobian`, `inspect`, `score:nll`, `score:logits`) refuse in `mpnn_core` (§35.1).
+* Family plumbing in the shared files: `run/specs.py` (literal, field, `protonpottsmpnn_` prefix, output kinds `energy|ddg`), `run/spec.py`, `run/spec_json.py`,
+  `host/runner.py`, `host/family_driver.py`, `host/prep.py` (sha256 required), `host/family_runner.py`, and `cli.py` (`--protonpotts-options-json`). These
+  are globally scoped, so they stale every ledger row; the final `--stale-only` re-wave is what covers that.
+
+### 43.3 Evidence
+
+`tests/protonpotts/test_driver.py` (14 tests) passes on titanix, as do the extended family-literal, prefix, portable-JSON and CLI tests: 440 passed across
+`tests/cli tests/run tests/protonpotts` and the driver-seam test. The failures seen in wider runs were reproduced at the pre-change commit `5eee993c` and are not
+caused by this work: `test_family_driver_for_lazy_imports_every_driver_backed_family[lasermpnn]` fails because `prody` is absent from the scratch venv, and
+`test_registration_and_handles` (Potts) fails only after the seam test reloads modules.
+
+`protonpotts_driver` (run `d91b8380`, clean tree at `3f5c9a4c`, pass): the real `score` path on the four structure FILES, with the ten sealed P4f sequences per cell
+as token-name lists. All four cells within their measured f32 band (worst **0.13 of the band**, the same figure as `protonpotts_energy`, as it must be: same
+arithmetic), the reference row equals the sealed native `S` in every cell, and **all 3 errors are rejected** (names spelled in upstream index order, rows reversed,
+a 4x-band nudge). The prediction held: dropped residues (1OLR, 6m0j) and chain order through the new reader matched upstream.
+
+### 43.4 State
+
+P8 is closed for `score:energy|ddg`. Not covered: `score:ddg` has no wave of its own (its value is `E(variant) - E(reference)` and is unit tested), the driver is
+f32 only, and labels come from a JSON file (the upstream labeller is out of scope, §11a). Next: P9 (pH design engine and the selectivity-gap purposes, which is where
+`sample` and the designable mask belong), P10 (knob surface, `_WEIGHT_PREFIXES`, ledger re-freeze, ADR), then the final `--stale-only` re-wave.
