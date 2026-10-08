@@ -10,6 +10,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { at, makeTensor, runSplitDecode, UNDRAWN_TOKEN } from "../split_loop.mjs";
+import { buildP07TypedInputs, MPNN_ALPHABET, OMIT_BIAS } from "../runspec_core.mjs";
+import { createSplitSampler, resolveFamily } from "../split_driver.mjs";
 
 const N_TOKENS = 21;
 
@@ -458,4 +460,235 @@ test("final per-position gather uses each group's first (wave, slot) occurrence,
   for (const pos of [0, 1, 3, 4]) {
     assertRowClose(logProbRow(result.logProbs, pos), uniform, 1e-5, `pos${pos} unscheduled logits`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Model-family plumbing (manifest-driven alphabet / token count / input names).
+// ---------------------------------------------------------------------------
+
+test("toy 5-token alphabet: one-hot, logits and log-probs are [L,5]; omitting nTokens (default 21) rejects the 5-wide condBias", async () => {
+  const L = 3;
+  const K = 5;
+  const G = 1;
+  const nWaves = L;
+  const seqOhShapes = [];
+  let waveCall = 0;
+
+  const runWave = async () => ({
+    group_ids: makeTensor([nWaves, G], [0, 0, 0]),
+    group_positions: makeTensor([nWaves, G, 1], [[[0]], [[1]], [[2]]]),
+    group_valid: makeTensor([nWaves, G], [[1], [1], [1]]),
+    position_valid: makeTensor([nWaves, G, 1], [[[1]], [[1]], [[1]]]),
+    ar_mask: makeTensor([L, L], new Array(L * L).fill(0)),
+    group_first_rank: makeTensor([L], [0, 1, 2]),
+    pos_first_rank: makeTensor([L], [0, 1, 2]),
+  });
+  const runDecoder = async (inputs) => {
+    seqOhShapes.push(inputs.sequence_oh.shape);
+    return { logits: makeTensor([L, K], new Array(L * K).fill(0)) };
+  };
+  const runFuse = async (inputs) => {
+    const wave = waveCall;
+    waveCall += 1;
+    assert.deepEqual(inputs.logits.shape, [1, L, K]);
+    assert.deepEqual(inputs.cond_bias.shape, [L, K]);
+    assert.deepEqual(inputs.gumbel_noise.shape, [L, K]);
+    const avg = [];
+    for (let k = 0; k < K; k += 1) avg.push(wave * 10 + k);
+    return { final_token: makeTensor([G], [wave + 1]), avg_stored: makeTensor([G, K], avg) };
+  };
+  const callbacks = { runEncoder: makeEncoderStub([]), runWave, runDecoder, runFuse };
+  const params = {
+    length: L,
+    nTokens: K,
+    encoderInputs: {},
+    waveInputs: {},
+    tieGroupMap: makeTensor([L], [0, 1, 2]),
+    mask: makeTensor([L], [1, 1, 1]),
+    condBias: makeTensor([L, K], new Array(L * K).fill(0)),
+    fixedMask: makeTensor([L], [0, 0, 0]),
+    fixedTokens: makeTensor([L], [0, 0, 0]),
+    temperature: makeTensor([], [1]),
+    gumbelNoise: makeTensor([L, K], new Array(L * K).fill(0)),
+  };
+
+  const result = await runSplitDecode(callbacks, params);
+  assert.deepEqual(seqOhShapes, [[L, K], [L, K], [L, K]], "sequence_oh is one-hot over the 5 tokens");
+  assert.deepEqual(Array.from(result.tokens.data), [1, 2, 3], "each wave's fused token lands at its position");
+  assert.deepEqual(result.logProbs.shape, [L, K]);
+  for (let pos = 0; pos < L; pos += 1) {
+    const row = Array.from({ length: K }, (_, k) => pos * 10 + k);
+    const actual = Array.from(result.logProbs.data.slice(pos * K, pos * K + K));
+    assertRowClose(actual, expectedLogSoftmax(row), 1e-5, `pos${pos} log-probs`);
+  }
+
+  await assert.rejects(
+    runSplitDecode(callbacks, { ...params, nTokens: undefined }),
+    /condBias has 5 tokens per position, nTokens is 21/,
+    "without nTokens the loop assumes ProteinMPNN's 21 and must refuse a 5-wide condBias",
+  );
+});
+
+test("buildP07TypedInputs with a toy alphabet: bias and gumbel are [L,nTokens] and omit/bias letters index that alphabet", () => {
+  const L = 3;
+  const structure = {
+    coords: Array.from({ length: L }, () => [[0, 0, 0], [1, 0, 0], [2, 0, 0], [3, 0, 0]]),
+    mask: [1, 1, 1],
+    residue_index: [0, 1, 2],
+    chain_index: [0, 0, 0],
+  };
+  const runspec = { decoding_order: [0, 1, 2], omit_AA: "A", bias_AA: { C: 0.5 } };
+  const built = buildP07TypedInputs(structure, runspec, { alphabet: "ABCDE" });
+  assert.deepEqual(built.bias.shape, [L, 5]);
+  assert.deepEqual(built.gumbel_noise.shape, [L, 5]);
+  for (let pos = 0; pos < L; pos += 1) {
+    assert.equal(built.bias.data[pos * 5 + 0], -1e8, `pos${pos} omits A (index 0), at OMIT_BIAS`);
+    assert.equal(built.bias.data[pos * 5 + 2], 0.5, `pos${pos} biases C (index 2)`);
+  }
+  assert.throws(
+    () => buildP07TypedInputs(structure, { decoding_order: [0, 1, 2], omit_AA: "Z" }, { alphabet: "ABCDE" }),
+    /letter Z is not in alphabet ABCDE/,
+  );
+
+  // Default options reproduce the ProteinMPNN shapes exactly.
+  const mpnn = buildP07TypedInputs(structure, { decoding_order: [0, 1, 2] });
+  assert.deepEqual(mpnn.bias.shape, [L, MPNN_ALPHABET.length]);
+  assert.equal(MPNN_ALPHABET.length, 21);
+  assert.equal(OMIT_BIAS, -1e8);
+});
+
+test("resolveFamily: manifest values win; absent values fall back to ProteinMPNN; n_tokens must equal the alphabet length", () => {
+  assert.deepEqual(resolveFamily(undefined), { alphabet: MPNN_ALPHABET, nTokens: 21, omitBias: -1e8 });
+  // The committed MANIFEST.json shape: alphabet only, no n_tokens / omit_bias / input_names.
+  assert.deepEqual(resolveFamily({ alphabet: MPNN_ALPHABET, buckets: [] }), {
+    alphabet: MPNN_ALPHABET,
+    nTokens: 21,
+    omitBias: -1e8,
+  });
+  assert.deepEqual(resolveFamily({ alphabet: "ABCDE", n_tokens: 5, omit_bias: -50 }), {
+    alphabet: "ABCDE",
+    nTokens: 5,
+    omitBias: -50,
+  });
+  assert.throws(() => resolveFamily({ alphabet: "ABCDE", n_tokens: 21 }), /n_tokens 21 != alphabet length 5/);
+});
+
+// Fake onnxruntime-web: sessions are keyed by the model source object, so a
+// test controls each graph's input count without any .onnx file.
+function fakeOrt(sessionsBySource) {
+  return {
+    env: { wasm: {} },
+    Tensor: class {
+      constructor(dtype, data, dims) {
+        this.dtype = dtype;
+        this.data = data;
+        this.dims = dims;
+      }
+    },
+    InferenceSession: {
+      create: async (source) => {
+        const spec = sessionsBySource.get(source);
+        if (!spec) throw new Error("fake ort: unknown model source");
+        return {
+          inputNames: spec.inputNames,
+          outputNames: [],
+          run: async () => ({}),
+          release: async () => {},
+        };
+      },
+    },
+  };
+}
+
+// ONNX-side input counts match the ProteinMPNN graphs (encoder 4, wave 2,
+// decoder 6, fuse 8). jax2onnx names the ONNX inputs in_0, in_1, ...
+function fakeSplitSessions(counts = { encoder: 4, wave: 2, decoder: 6, fuse: 8 }) {
+  const urls = {
+    encoderUrl: new Uint8Array([1]),
+    waveUrl: new Uint8Array([2]),
+    decoderUrl: new Uint8Array([3]),
+    fuseUrl: new Uint8Array([4]),
+  };
+  const map = new Map();
+  for (const [urlKey, graph] of [
+    ["encoderUrl", "encoder"],
+    ["waveUrl", "wave"],
+    ["decoderUrl", "decoder"],
+    ["fuseUrl", "fuse"],
+  ]) {
+    map.set(urls[urlKey], { inputNames: Array.from({ length: counts[graph] }, (_, i) => `in_${i}`) });
+  }
+  return { sources: urls, map };
+}
+
+function manifestFixture({ alphabet = MPNN_ALPHABET, encoderNames, graphOverrides = {} } = {}) {
+  const encoder = {
+    file: "p07_encoder_L128.onnx",
+    sha256: "0",
+    bytes: 1,
+    input_shapes: [],
+    input_dtypes: ["float32", "float32", "int32", "int32"],
+    ...graphOverrides,
+  };
+  if (encoderNames !== undefined) encoder.input_names = encoderNames;
+  return {
+    checkpoint_id: "toy",
+    git_hash: "0",
+    alphabet,
+    buckets: [{ bucket: 128, graphs: { encoder } }],
+  };
+}
+
+test("createSplitSampler: a manifest input_names list whose length differs from the encoder session throws", async () => {
+  const { sources, map } = fakeSplitSessions();
+  const manifest = manifestFixture({ encoderNames: ["coords", "mask", "residue_index"] });
+  await assert.rejects(
+    createSplitSampler(fakeOrt(map), sources, { manifest, manifestBucket: 128 }),
+    /encoder \(manifest input_names\) session has 4 inputs, expected 3 \(coords, mask, residue_index\)/,
+  );
+});
+
+test("createSplitSampler: duplicate manifest input_names throw before any session is trusted", async () => {
+  const { sources, map } = fakeSplitSessions();
+  const manifest = manifestFixture({ encoderNames: ["coords", "coords", "residue_index", "chain_index"] });
+  await assert.rejects(
+    createSplitSampler(fakeOrt(map), sources, { manifest, manifestBucket: 128 }),
+    /input_names contains duplicates/,
+  );
+});
+
+test("createSplitSampler: manifest input_names of the right count are accepted", async () => {
+  const { sources, map } = fakeSplitSessions();
+  const manifest = manifestFixture({
+    alphabet: "ABCDE",
+    encoderNames: ["coords", "mask", "residue_index", "chain_index"],
+  });
+  const sampler = await createSplitSampler(fakeOrt(map), sources, { manifest, manifestBucket: 128 });
+  assert.equal(typeof sampler.sample, "function");
+  await sampler.release();
+});
+
+test("createSplitSampler: a manifest without the new fields (committed MANIFEST shape) loads exactly as before", async () => {
+  const { sources, map } = fakeSplitSessions();
+  const committedShape = manifestFixture();
+  delete committedShape.buckets[0].graphs.encoder.input_names;
+  const sampler = await createSplitSampler(fakeOrt(map), sources, { manifest: committedShape, manifestBucket: 128 });
+  await sampler.release();
+
+  // No manifest at all: the pinned ProteinMPNN count still gates the load.
+  const bad = fakeSplitSessions({ encoder: 3, wave: 2, decoder: 6, fuse: 8 });
+  await assert.rejects(
+    createSplitSampler(fakeOrt(bad.map), bad.sources),
+    /encoder session has 3 inputs, expected 4/,
+  );
+});
+
+test("createSplitSampler: a manifest with buckets needs manifestBucket, and an unknown bucket throws", async () => {
+  const { sources, map } = fakeSplitSessions();
+  const manifest = manifestFixture();
+  await assert.rejects(createSplitSampler(fakeOrt(map), sources, { manifest }), /manifestBucket is required/);
+  await assert.rejects(
+    createSplitSampler(fakeOrt(map), sources, { manifest, manifestBucket: 256 }),
+    /manifest has no bucket 256/,
+  );
 });

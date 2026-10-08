@@ -20,7 +20,6 @@
 
 export const MPNN_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX";
 export const OMIT_BIAS = -1e8;
-const ALPHABET_INDEX = Object.fromEntries([...MPNN_ALPHABET].map((letter, index) => [letter, index]));
 
 const MASK64 = (1n << 64n) - 1n;
 const GOLDEN = 0x9E3779B97F4A7C15n;
@@ -155,12 +154,16 @@ export function biasedShuffle(length, prng) {
   return order;
 }
 
-function letterIndex(letter) {
-  const index = ALPHABET_INDEX[letter];
-  if (index === undefined) {
-    throw new Error(`letter ${letter} is not in MPNN_ALPHABET ${MPNN_ALPHABET}`);
-  }
-  return index;
+// Returns letter -> column index for `alphabet`, throwing on letters outside it.
+function makeLetterIndex(alphabet) {
+  const indexOf = Object.fromEntries([...alphabet].map((letter, index) => [letter, index]));
+  return (letter) => {
+    const index = indexOf[letter];
+    if (index === undefined) {
+      throw new Error(`letter ${letter} is not in alphabet ${alphabet}`);
+    }
+    return index;
+  };
 }
 
 export function tieGroupMap(length, groups) {
@@ -245,9 +248,14 @@ export function inferCoordsShape(coords) {
  *
  * @param {object} structure
  * @param {object} [runspec]
+ * @param {{alphabet?: string, omitBias?: number}} [options] model family knobs;
+ *   default to ProteinMPNN (MPNN_ALPHABET, OMIT_BIAS). The token count is alphabet.length.
  */
-export function buildP07TypedInputs(structure, runspec) {
+export function buildP07TypedInputs(structure, runspec, options = {}) {
   const spec = runspec || {};
+  const alphabet = options.alphabet ?? MPNN_ALPHABET;
+  const nTokens = alphabet.length;
+  const letterIndex = makeLetterIndex(alphabet);
   const coords = asFloat32(structure.coords, structure.coords_shape || inferCoordsShape(structure.coords));
   const length = structure.coords_shape ? structure.coords_shape[0] : structure.coords.length;
   const mask = asFloat32(structure.mask, [length]);
@@ -263,28 +271,28 @@ export function buildP07TypedInputs(structure, runspec) {
   }
 
   const temperature = toFloat32(spec.temperature === undefined ? 0.1 : spec.temperature);
-  const bias = new Float32Array(length * 21);
+  const bias = new Float32Array(length * nTokens);
   for (const [letter, value] of Object.entries(spec.bias_AA || {})) {
     const column = letterIndex(letter);
     const delta = toFloat32(value);
     for (let pos = 0; pos < length; pos += 1) {
-      bias[pos * 21 + column] = toFloat32(bias[pos * 21 + column] + delta);
+      bias[pos * nTokens + column] = toFloat32(bias[pos * nTokens + column] + delta);
     }
   }
   for (const [pos, letters] of positionEntries(spec.bias_AA_per_residue)) {
     for (const [letter, value] of Object.entries(letters)) {
       const column = letterIndex(letter);
-      bias[pos * 21 + column] = toFloat32(bias[pos * 21 + column] + toFloat32(value));
+      bias[pos * nTokens + column] = toFloat32(bias[pos * nTokens + column] + toFloat32(value));
     }
   }
-  const omitValue = toFloat32(OMIT_BIAS);
+  const omitValue = toFloat32(options.omitBias ?? OMIT_BIAS);
   for (const letter of spec.omit_AA || "") {
     const column = letterIndex(letter);
-    for (let pos = 0; pos < length; pos += 1) bias[pos * 21 + column] = omitValue;
+    for (let pos = 0; pos < length; pos += 1) bias[pos * nTokens + column] = omitValue;
   }
   for (const [pos, letters] of positionEntries(spec.omit_AA_per_residue)) {
     for (const letter of letters) {
-      bias[pos * 21 + letterIndex(letter)] = omitValue;
+      bias[pos * nTokens + letterIndex(letter)] = omitValue;
     }
   }
 
@@ -326,7 +334,7 @@ export function buildP07TypedInputs(structure, runspec) {
     }
   }
 
-  const gumbel = new Float32Array(length * 21);
+  const gumbel = new Float32Array(length * nTokens);
   for (let i = 0; i < gumbel.length; i += 1) {
     gumbel[i] = gumbelFromUniform(uniformFromU32(prng.nextU32()));
   }
@@ -336,9 +344,9 @@ export function buildP07TypedInputs(structure, runspec) {
     mask: typedTensor("float32", mask, [length]),
     residue_index: typedTensor("int32", residueIndex, [length]),
     chain_index: typedTensor("int32", chainIndex, [length]),
-    gumbel_noise: typedTensor("float32", gumbel, [length, 21]),
+    gumbel_noise: typedTensor("float32", gumbel, [length, nTokens]),
     decoding_order: typedTensor("int32", decodingOrder, [length]),
-    bias: typedTensor("float32", bias, [length, 21]),
+    bias: typedTensor("float32", bias, [length, nTokens]),
     fixed_mask: typedTensor("float32", fixedMask, [length]),
     fixed_tokens: typedTensor("int32", fixedTokens, [length]),
     temperature: typedTensor("float32", Float32Array.of(temperature), []),
@@ -355,9 +363,10 @@ export function buildP07TypedInputs(structure, runspec) {
  *
  * @param {object} structure
  * @param {object} [runspec]
+ * @param {{alphabet?: string, omitBias?: number}} [options] see buildP07TypedInputs
  */
-export function buildP07Inputs(structure, runspec) {
-  const typed = buildP07TypedInputs(structure, runspec);
+export function buildP07Inputs(structure, runspec, options = {}) {
+  const typed = buildP07TypedInputs(structure, runspec, options);
   const out = {};
   for (const [key, t] of Object.entries(typed)) {
     out[key] = { dtype: t.dtype, shape: t.shape, data: Array.from(t.data) };
