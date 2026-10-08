@@ -3141,3 +3141,388 @@ targets = ["emit_dense_hJ"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_potts_driver_knobs.py::test_knob_inert_emit_dense_hJ"]
 note = "aminx-only AND inert, which is why upstream and kind are separate markers rather than one enum. Declared at run/options.py:33 and read NOWHERE in src/; allowlisted not_plumbed, whose note says it 'is inert all the same'; spec line 638 says it converts host-side only. Covered by test_knob_inert_emit_dense_hJ, which uses emit_etab=True on the same harness as its control -- so 'adds no keys' cannot be confused with a test that cannot detect keys. Credit is tied to the allowlist row and dies with it (debt 2435)."
+
+# ProtonPottsMPNN (spec 261007 section 50). Reference surface: PHDesignCriteria (42 fields) and
+# PottsMPNNPHEngine.run_ph_redesign (6 parameters), extracted from the vendored engine at 09682abf.
+# ProtonPottsMPNN has no argparse CLI, so these two are its whole design-knob surface.
+# Every exclusion names a debt id that DEFERRED_IDS.txt lists (2616 MCMC/Gibbs, 2617 decoder-backed,
+# 2621 unported knobs) or a non-deferral reason.
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__adjacent_repeat_weight"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "adjacent_repeat_weight: ported in PHDesignConfig (default 0.0) but not exposed as an option (upstream potts_mpnn_ph.py:156)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__backend"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2617"
+parity_test_ids = []
+note = "backend: backend 'mpnn' is decoder-backed; only 'potts' is supported (upstream potts_mpnn_ph.py:97)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__block_max_rounds"
+targets = ["block_max_rounds"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_block_max_rounds"]
+note = "block_max_rounds: identical meaning and default (10) (upstream potts_mpnn_ph.py:174)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__block_size"
+targets = ["block_size"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_block_size"]
+note = "block_size: same meaning; upstream dataclass default is 2, aminx takes the production default 3 from inference/design_ph.py (upstream potts_mpnn_ph.py:144)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__candidate_pool"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "candidate_pool: placement-scan candidate pool; aminx scans with its fixed pool (upstream potts_mpnn_ph.py:220)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__center_count"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "center_count: derived in config_from_options (0 when centre-free, else set from center_types); not a free option (upstream potts_mpnn_ph.py:195)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__center_protonation_types"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "center_protonation_types: type alphabet for free placement combinations; aminx pins a composition through center_types (upstream potts_mpnn_ph.py:109)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__center_types"
+targets = ["center_types"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_center_types"]
+note = "center_types: same meaning (pinned centre composition); aminx default is the production HIS-P/ASP-P/GLU-P, upstream default is empty (upstream potts_mpnn_ph.py:203)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__combined_lambda"
+targets = ["combined_lambda"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_combined_lambda"]
+note = "combined_lambda: same meaning; upstream dataclass default 1.0, aminx takes the production default 0.3 (upstream potts_mpnn_ph.py:124)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__cv_max"
+targets = ["cv_max"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_cv_max"]
+note = "cv_max: identical meaning and default (50); greedy_energy_block only (upstream potts_mpnn_ph.py:130)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__cv_patience"
+targets = ["cv_patience"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_cv_patience"]
+note = "cv_patience: identical meaning and default (3); greedy_energy_block only (upstream potts_mpnn_ph.py:129)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__dep_map"
+targets = ["dep_map"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_dep_map"]
+note = "dep_map: same meaning; aminx's default contrast for HIS-P is HIS-S because v6 has no HID/HIE (upstream potts_mpnn_ph.py:110)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__explicit_centers"
+targets = ["explicit_centers"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_explicit_centers"]
+note = "explicit_centers: same meaning; aminx stores ((residue_index, type), ...) tuples, upstream a list of dicts (upstream potts_mpnn_ph.py:198)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__forbidden_tokens"
+targets = ["forbidden_tokens"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_forbidden_tokens"]
+note = "forbidden_tokens: identical meaning and default (HIS-A, ASP-A, GLU-A, UNK) (upstream potts_mpnn_ph.py:184)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__global_weight"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "global_weight: ported in PHDesignConfig (default 0.0) but not exposed as an option (upstream potts_mpnn_ph.py:145)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__infill_scope"
+targets = ["infill_scope"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_infill_scope"]
+note = "infill_scope: identical meaning and default ('neighbourhood') (upstream potts_mpnn_ph.py:223)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__max_mutations"
+targets = ["max_mutations"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_max_mutations"]
+note = "max_mutations: same meaning; upstream default 0 (uncapped), aminx takes the production default 20 (upstream potts_mpnn_ph.py:236)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__max_plans_per_seed"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "max_plans_per_seed: plan enumeration cap over seeds; aminx plans once from the native sequence (upstream potts_mpnn_ph.py:222)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__method"
+targets = ["design_method"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_design_method"]
+note = "method: subset: aminx accepts block_descent and greedy_energy_block only; the MCMC/Gibbs methods are refused naming debt 2616 and the decoder methods 2617 (upstream potts_mpnn_ph.py:122)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__n_plan_samples"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "n_plan_samples: plan sampling count for random placement; aminx places by Potts scan only (upstream potts_mpnn_ph.py:221)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__neighbour_k"
+targets = ["neighbour_k"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_neighbour_k"]
+note = "neighbour_k: same meaning; upstream default 0 (no limit), aminx takes the production default 16 (upstream potts_mpnn_ph.py:230)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__num_designs"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2616"
+parity_test_ids = []
+note = "num_designs: count for whole-chain methods (gibbs / mpnn_sample), which are deferred (upstream potts_mpnn_ph.py:185)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_by"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "placement_by: aminx places by Potts scan (scan_potts); random placement is not exposed (upstream potts_mpnn_ph.py:212)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_label"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "placement_label: free-text label carried into the output metadata (upstream potts_mpnn_ph.py:215)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_region"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "placement_region: region filter for placement sites; aminx scans the whole chain (upstream potts_mpnn_ph.py:207)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_seq_masked"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "placement_seq_masked: not exposed as an option (upstream potts_mpnn_ph.py:120)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__rank_normalize"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "rank_normalize: not exposed as an option (upstream potts_mpnn_ph.py:146)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__record_trajectory"
+targets = ["record_trajectory"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_record_trajectory"]
+note = "record_trajectory: same meaning; upstream default False, aminx default True (upstream potts_mpnn_ph.py:191)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_gate_types"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "repetitive_window_gate_types: not exposed as an option (upstream potts_mpnn_ph.py:165)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_parents"
+targets = ["repetitive_window_parents"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_repetitive_window_parents"]
+note = "repetitive_window_parents: same meaning; upstream default empty, aminx takes the production default ARG/LYS/HIS/ASP/GLU (upstream potts_mpnn_ph.py:164)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_radius"
+targets = ["repetitive_window_radius"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_repetitive_window_radius"]
+note = "repetitive_window_radius: identical meaning and default (2) (upstream potts_mpnn_ph.py:163)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_weight"
+targets = ["repetitive_window_weight"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_repetitive_window_weight"]
+note = "repetitive_window_weight: same meaning; upstream default 0.0, aminx takes the production default 1.0 (upstream potts_mpnn_ph.py:162)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__samples_per_site"
+targets = ["samples_per_site"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_samples_per_site"]
+note = "samples_per_site: same meaning; upstream default 4, aminx takes the production default 2 (upstream potts_mpnn_ph.py:128)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__seed_source"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "seed_source: 'inverse' needs externally supplied seed sequences; aminx seeds from the native sequence (upstream potts_mpnn_ph.py:182)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__selective"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "selective: the selective term is always on in aminx (upstream potts_mpnn_ph.py:123)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__selective_source"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2617"
+parity_test_ids = []
+note = "selective_source: 'decoder' selectivity is decoder-backed; only 'potts' is supported (upstream potts_mpnn_ph.py:107)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__self_weight"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "self_weight: ported in PHDesignConfig (default 1.0) but not exposed as an option (upstream potts_mpnn_ph.py:173)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__sweep_order"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "sweep_order: ported in PHDesignConfig (default 'position') but not exposed as an option (upstream potts_mpnn_ph.py:227)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__temperature"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_temperature"]
+note = "temperature: same meaning; upstream default 0.1, aminx takes the production default 0.05 (upstream potts_mpnn_ph.py:126)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__topk_sites"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "topk_sites: not exposed as an option (upstream potts_mpnn_ph.py:111)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__two_phase_frac"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2616"
+parity_test_ids = []
+note = "two_phase_frac: belongs to the two_phase sampler, which is deferred (upstream potts_mpnn_ph.py:125)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__zscale_mode"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "zscale_mode: ported in PHDesignConfig (default 'block') but not exposed as an option (upstream potts_mpnn_ph.py:152)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__atom_array"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "atom_array: the input structure; aminx reads it from the spec's inputs (upstream potts_mpnn_ph.py:1033)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__binder_chain"
+targets = ["binder_chain"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_binder_chain"]
+note = "binder_chain: identical meaning; None is refused with the chains present (upstream potts_mpnn_ph.py:1034)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__criteria_list"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "criteria_list: a sweep over several criteria in one call; aminx runs one configuration per spec (upstream potts_mpnn_ph.py:1035)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__initial_sequences"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "initial_sequences: externally supplied seed sequences for seed_source='inverse' (upstream potts_mpnn_ph.py:1037)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__n_jobs"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = "n_jobs: CPU fork-pool parallelism; results are identical to the serial path (upstream potts_mpnn_ph.py:1038)."
+
+[[row]]
+ref = "protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__seed"
+targets = ["random_seed"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_random_seed"]
+note = "seed: the RNG seed; aminx takes it from the spec's random_seed (upstream potts_mpnn_ph.py:1036)."
+
+[[row]]
+ref = "__aminx_only__protonation_labels_json"
+upstream = false
+targets = ["protonation_labels_json"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_protonation_labels_json"]
+note = "aminx-only: the JSON file of pre-assigned protonation labels (aminx consumes labels, it does not assign them; spec section 11a). Upstream takes labels from the structure's annotation, not from a knob."
+
+[[row]]
+ref = "__aminx_only__variants_json"
+upstream = false
+targets = ["variants_json"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_variants_json"]
+note = "aminx-only: the JSON file of variants for score:energy / score:ddg. Upstream scores through compute_g_bind on an atom array and has no variants-file knob."

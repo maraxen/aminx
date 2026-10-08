@@ -16,6 +16,9 @@ _REPO = Path(__file__).resolve().parents[2]
 _ALLOWLIST = Path(__file__).with_name("l_drv_allowlist.toml")
 
 _R1_ATTRS = frozenset({"vmap", "pmap", "filter_vmap", "shard_map"})
+# memory_bounded_map: a carry-free scan over independent items, kept as a loop because a vmap would hold every
+# item's intermediates at once (ProtonPotts block_zscales: N x V**B). R1 forbids vmap in drivers.
+_ALLOWED_REASONS = frozenset({"sequential_dependency", "memory_bounded_map"})
 _JIT_ATTRS = frozenset({"jit", "filter_jit", "scan", "while_loop", "fori_loop", "cond"})
 _LAX_LOOP_ATTRS = frozenset({"scan", "while_loop", "fori_loop"})
 _HOST_GET_ATTRS = frozenset({"item", "tolist"})
@@ -277,7 +280,7 @@ def _lint_tree(tree: ast.AST, rel: str, scope: str) -> tuple[list[_Hit], set[tup
         allowed = {
             (row.get("path"), row.get("qualname"))
             for row in _load_allowlist()
-            if row.get("reason") == "sequential_dependency"
+            if row.get("reason") in _ALLOWED_REASONS
         }
         for qual in sites:
             if (rel, qual) not in allowed:
@@ -404,8 +407,8 @@ def _stale_hits(live: set[tuple[str, str]]) -> list[_Hit]:
         reason = row.get("reason")
         path = row.get("path", "")
         qual = row.get("qualname", "")
-        if reason != "sequential_dependency":
-            hits.append(_Hit("R3", path, f"allowlist reason {reason!r} is not sequential_dependency"))
+        if reason not in _ALLOWED_REASONS:
+            hits.append(_Hit("R3", path, f"allowlist reason {reason!r} is not one of {sorted(_ALLOWED_REASONS)}"))
             continue
         if (path, qual) not in live:
             hits.append(_Hit("R3", path, f"stale allowlist entry {qual}"))

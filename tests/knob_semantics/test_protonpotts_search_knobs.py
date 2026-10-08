@@ -426,8 +426,15 @@ def test_knob_semantics_cv_patience(registered: ProtonPottsDriver, tmp_path: Pat
   no_patience = _designs(pdb, model_path, _greedy_options(cv_patience=0, repetitive_window_weight=20.0))
   assert np.array_equal(no_patience["sequence"][0], native)
 
-  impatient = _designs(pdb, model_path, _greedy_options(cv_patience=1, repetitive_window_weight=20.0))
-  assert not np.array_equal(impatient["sequence"][0], default["sequence"][0])
+  # At T=0 greedy descent reaches its best sequence at once, so patience cannot matter there. It matters when sampling
+  # can find a better sequence after a non-improving step: at a high temperature a short patience stops earlier than a
+  # long one for at least one seed.
+  def finals(patience: int) -> list[np.ndarray]:
+    options = _greedy_options(cv_patience=patience, temperature=1.0)
+    return [_designs(pdb, model_path, options, seed=seed)["sequence"][0] for seed in range(6)]
+
+  short, long_ = finals(1), finals(6)
+  assert any(not np.array_equal(a, b) for a, b in zip(short, long_, strict=True))
 
 
 # --- cv_max (greedy_energy_block only) ---------------------------------------------------------

@@ -227,11 +227,12 @@ def classify(field: str, rows: list[dict[str, Any]], not_plumbed: frozenset[str]
 
 def new_fields() -> set[str]:
   """``NEW_FIELDS`` exactly as ``test_knob_superset`` builds it."""
-  from aminx.run.options import LaserOptions, PottsMPNNOptions  # noqa: PLC0415
+  from aminx.run.options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions  # noqa: PLC0415
 
   return (
     {f.name for f in fields(PottsMPNNOptions)}
     | {f.name for f in fields(LaserOptions)}
+    | {f.name for f in fields(ProtonPottsOptions)}
     | {"omit_aa", "omit_aa_per_position", "output_kind"}
   )
 
