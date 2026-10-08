@@ -2647,3 +2647,38 @@ are the one-hot cast and the default dtype. After it, the same comparison agrees
 P6 is closed. Not covered: the decoder and sampling (P7/P8), and `etab_postmerge` is dumped but the aminx head is compared before the reciprocal
 merge, as the sidecar states. Open items from §40.5 are unchanged. Next: P7 status check (generic V), the P8 driver, the P9 pH engine, the P10 knob
 surface, the ledger re-freeze and the final `--stale-only` re-wave.
+
+## 42. P8, first half: the merge and energy, and `protonpotts_energy` GRADED `pass` by record (261008)
+
+**P7 status check.** P7 is merged (PR #205). `PottsAlphabet` (`families/potts_mpnn/alphabet.py`, not the `utils/` home §35.2 proposed) carries `size` and
+`pair_side` separately; `PROTONPOTTS_V6` is in `protonpotts_mpnn/vocab.py`; the Potts driver's fallback purposes refuse a non-shipped alphabet
+(`driver.py:269-276`). P6 already ran the converted head at V=30.
+
+### 42.1 What differs from the shipped Potts path, and what was reused
+
+Upstream (`pottsmpnn.py` `compute_potts_context`, `calc_potts_eners`) merges the head's table ONCE, `0.5 * (etab[i,k] + etab[j,rev].T)` where the
+reverse edge exists, and the energy sums every directed edge over the 30-token table directly. The shipped path merges twice (denominators 2 then 4, self
+slot excluded) and pads to a 22-symbol etab alphabet. `src/aminx/families/protonpotts_mpnn/energy.py` therefore composes the UNCHANGED `merge_pair`
+(`denom=2, exclude_self=False`) and `potts_energy` (§35.4 forbids editing them). `tests/protonpotts/test_energy.py` (8 tests, passing on titanix) checks them
+against a naive numpy statement of upstream's rules, including that the shipped double merge is a different table, and that a V=30 model yields a finite
+square table.
+
+### 42.2 P4f: the energy oracle (run `f5aa4ff2`, pass)
+
+`scripts/protonpotts/dump_protonpotts_energy.py` applies upstream's own `PottsMPNN.calc_potts_eners` to the sealed P4e merged table and `E_idx`, for ten
+fixed sequences per cell: the native `S`, eight uniform over all 30 tokens (so protonation tokens appear), and one cyclic sweep (every row and column of the
+table is indexed). All four claims held: the tables are the sealed ones, complete, f64 is float64 and differs from f32, and a fresh process reproduces
+every hash. Output: `~/projects/aminx-oracles-protonpotts/features_v6_p4f/` on titanix. The measured f32-vs-f64 spread of the energy is 2.8e-3 to 1.5e-2
+(sums of ~10^4 terms of magnitude ~1), which is the floor the f32 band is built from.
+
+### 42.3 `protonpotts_energy` (run `467de9ff`, pass)
+
+All four cells pass in both precisions: **f64 merged table within 5.0e-14 absolute, f64 energies within 1.6e-16 relative**; f32 at **0.13 of its allowed
+band**; E_idx exactly equal in all 8 comparisons; checkpoint hash matches. **All 7 perturbations are rejected** (the shipped double merge, no merge, a
+merge without the transpose, sequences left in upstream token order, an energy halved, and nudges at 2x the f64 band and 4x the f32 band). The prediction
+held, including the one the sidecar flagged as possible: last-writer versus first-match reverse slots do not differ on these cells.
+
+### 42.4 State
+
+Done: merge and energy for ProtonPotts. Not done: the `ProtonPottsDriver` itself (family literal, options, input reading through `featurize_pdb`,
+`score:energy|ddg`, sinks), the generic-fallback refusal test for the new family, then P9 (pH engine). Open items from §40.5 unchanged.
