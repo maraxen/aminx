@@ -4,7 +4,7 @@ Spec: `.praxia/docs/specs/261007_protonpottsmpnn-support.md` §6, §7, §39. Run
 aminx importable (the sprint venv on titanix)::
 
     bth run --project-slug aminx -- uv run --no-sync python \\
-        scripts/protonpotts/protonpotts_features_parity.py \\
+        scripts/parity/protonpotts_features_parity.py \\
         --features-dir ~/projects/aminx-oracles-protonpotts --potts-repo ~/repos/PottsMPNN
 
 WHAT IS COMPARED. Ten structures that upstream featurizes (P4b run 6a8ee503, P4c run 9a9b75bb, P4d run

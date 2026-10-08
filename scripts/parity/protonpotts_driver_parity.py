@@ -3,7 +3,7 @@
 Spec: `.praxia/docs/specs/261007_protonpottsmpnn-support.md` §43. Run where aminx is importable::
 
     bth run --project-slug aminx -- uv run --no-sync python \\
-        scripts/protonpotts/protonpotts_driver_parity.py \\
+        scripts/parity/protonpotts_driver_parity.py \\
         --state-npz <v6_state.npz> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts \\
         --cell pkad_unlabelled=<1BVC.pdb> --cell multichain=<6m0j.pdb> --cell only_o_1olr=<1OLR.pdb> --cell gap=<1EL1.pdb>
 

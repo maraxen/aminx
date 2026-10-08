@@ -4,10 +4,10 @@ Spec: `.praxia/docs/specs/261007_protonpottsmpnn-support.md` §41. Two steps, be
 environment has torch and only an aminx environment has JAX::
 
     # oracle env: read the torch checkpoint, write plain numpy
-    python scripts/protonpotts/convert_protonpotts_checkpoint.py \\
+    python scripts/parity/convert_protonpotts_checkpoint.py \\
         --checkpoint <epoch-0125.ckpt> --export-state-npz <state.npz>
     # aminx env: renames + permutations + shape checks + conversion
-    uv run --no-sync python scripts/protonpotts/convert_protonpotts_checkpoint.py \\
+    uv run --no-sync python scripts/parity/convert_protonpotts_checkpoint.py \\
         --state-npz <state.npz> --out <model.eqx>
 
 The permutations are in ``aminx.families.protonpotts_mpnn.convert`` and are unit tested there; whether

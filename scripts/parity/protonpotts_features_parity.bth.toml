@@ -58,4 +58,4 @@ oracle_runs = "P4b 6a8ee503, P4c 9a9b75bb, P4d 7ec1f6b9; content hashes in spec 
 not_included = "1HGU: upstream refuses it (an unexplained unknown-atom-token error); the featurizer accepts it. A known divergence, spec §40, not a graded cell."
 
 [provenance]
-note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_features_parity.py --features-dir ~/projects/aminx-oracles-protonpotts --potts-repo ~/repos/PottsMPNN, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first run. Not a redsox ledger row: ProtonPotts has no ledger rows until P10."
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_features_parity.py --features-dir ~/projects/aminx-oracles-protonpotts --potts-repo ~/repos/PottsMPNN, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first run. Not a redsox ledger row: ProtonPotts has no ledger rows until P10."

@@ -20,7 +20,7 @@ does NOT dedup. It returns every design, sorted by ``(final_potts_energy, origin
 Randomness: upstream seeds torch per design (``torch.manual_seed`` in ``_run_placement_one_seed``). This module
 draws the inverse-CDF uniforms from a JAX key (one stream per sample, ``fold_in(key, sample)``), so sampled
 designs do NOT reproduce upstream's RNG stream. Replay parity needs explicit ``uniforms`` (and ``cdf_order``), as
-in ``scripts/protonpotts/protonpotts_ph_block_parity.py``.
+in ``scripts/parity/protonpotts_ph_block_parity.py``.
 
 Repetitive-window residue numbers: binder positions carry their residue id. Every other position carries the
 sentinel ``-10**6 - 100 * position``, because upstream counts repetitive neighbours only among binder-chain

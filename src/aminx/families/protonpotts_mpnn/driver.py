@@ -287,7 +287,7 @@ class ProtonPottsDriver:
     if path.suffix.lower() != ".eqx":
       msg = (
         f"{path}: expected a converted .eqx artifact; convert the checkpoint with "
-        "scripts/protonpotts/convert_protonpotts_checkpoint.py"
+        "scripts/parity/convert_protonpotts_checkpoint.py"
       )
       raise ValueError(msg)
     manifest = path.with_suffix(".json")

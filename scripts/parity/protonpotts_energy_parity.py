@@ -3,7 +3,7 @@
 Spec: `.praxia/docs/specs/261007_protonpottsmpnn-support.md` §35.4, §42. Run where aminx is importable::
 
     bth run --project-slug aminx -- uv run --no-sync python \\
-        scripts/protonpotts/protonpotts_energy_parity.py \\
+        scripts/parity/protonpotts_energy_parity.py \\
         --state-npz <v6_state.npz> --encoder-dir <P4e out dir> --energy-dir <P4f out dir> \\
         --features-dir ~/projects/aminx-oracles-protonpotts
 

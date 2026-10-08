@@ -71,4 +71,4 @@ features = "sealed P4b / P4c / P4d feature dumps"
 tolerances = "table f64 1e-9 abs, f32 10x measured spread (min 1e-7); energy f64 1e-9 rel, f32 10x measured spread (min 1e-6 rel); E_idx exact"
 
 [provenance]
-note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_energy_parity.py --state-npz <v6_state.npz> --encoder-dir <P4e out dir> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_energy_parity.py --state-npz <v6_state.npz> --encoder-dir <P4e out dir> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."

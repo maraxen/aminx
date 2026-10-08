@@ -3,7 +3,7 @@
 Spec: `.praxia/docs/specs/261007_protonpottsmpnn-support.md` §45-§46. Run where aminx is importable::
 
     bth run --project-slug aminx -- uv run --no-sync python \\
-        scripts/protonpotts/protonpotts_ph_block_parity.py \\
+        scripts/parity/protonpotts_ph_block_parity.py \\
         --encoder-dir <P4e out dir> --ph-dir <P4g out dir> --features-dir ~/projects/aminx-oracles-protonpotts
 
 Criteria are pre-registered in ``protonpotts_ph_block_parity.bth.toml`` (committed before this script). Per

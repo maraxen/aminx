@@ -65,4 +65,4 @@ structures = "1BVC, 6m0j, 1OLR, 1EL1 from ~/repos/PottsMPNN/energy_benchmark_dat
 tolerances = "f32: 10x measured upstream f32-vs-f64 energy spread per cell, min 1e-6 relative to max(1, max|E|)"
 
 [provenance]
-note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_driver_parity.py --state-npz <v6_state.npz> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts --cell NAME=PDB ... , in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_driver_parity.py --state-npz <v6_state.npz> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts --cell NAME=PDB ... , in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."

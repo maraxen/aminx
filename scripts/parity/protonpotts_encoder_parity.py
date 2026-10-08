@@ -3,7 +3,7 @@
 Spec: `.praxia/docs/specs/261007_protonpottsmpnn-support.md` §7, §41. Run where aminx is importable::
 
     bth run --project-slug aminx -- uv run --no-sync python \\
-        scripts/protonpotts/protonpotts_encoder_parity.py \\
+        scripts/parity/protonpotts_encoder_parity.py \\
         --state-npz <v6_state.npz> --encoder-dir <dir holding protonpotts_v6_encoder/> \\
         --features-dir ~/projects/aminx-oracles-protonpotts
 

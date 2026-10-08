@@ -6,7 +6,7 @@ schema_version = "0.3"
 [experiment]
 hypothesis = """
 The aminx PottsMPNN over the 30-token v6 alphabet, loaded from the converted v6 checkpoint
-(`aminx.families.protonpotts_mpnn.convert` plus `scripts/protonpotts/convert_protonpotts_checkpoint.py`),
+(`aminx.families.protonpotts_mpnn.convert` plus `scripts/parity/convert_protonpotts_checkpoint.py`),
 reproduces upstream's encoder and Potts head on four cells (1BVC, 6m0j, 1OLR, 1EL1), against the sealed P4e
 dump:
 
@@ -71,4 +71,4 @@ features = "sealed P4b / P4c / P4d feature dumps"
 tolerances = "f64 1e-9 absolute; f32 10x the measured upstream f32-vs-f64 spread per array, minimum 1e-7; E_idx exact"
 
 [provenance]
-note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_encoder_parity.py --state-npz <v6_state.npz> --encoder-dir <P4e out dir> --features-dir ~/projects/aminx-oracles-protonpotts, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_encoder_parity.py --state-npz <v6_state.npz> --encoder-dir <P4e out dir> --features-dir ~/projects/aminx-oracles-protonpotts, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."

@@ -85,4 +85,4 @@ structures = "1BVC, 6m0j, 1OLR, 1EL1 from ~/repos/PottsMPNN/energy_benchmark_dat
 tolerances = "centres and tokens exact; energies and selectivity within 10x measured upstream f32-vs-f64 spread (min 1e-6 relative)"
 
 [provenance]
-note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/protonpotts_ph_driver_parity.py --state-npz <v6_state.npz> --ph-dir <P4g out dir> --cell NAME=PDB,CHAIN ..., in a venv where aminx is importable, from a clean checkout of the commit that adds the script. The sidecar is committed before the script and before any aminx result exists. Not a redsox ledger row (ProtonPotts has none until P10)."
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_ph_driver_parity.py --state-npz <v6_state.npz> --ph-dir <P4g out dir> --cell NAME=PDB,CHAIN ..., in a venv where aminx is importable, from a clean checkout of the commit that adds the script. The sidecar is committed before the script and before any aminx result exists. Not a redsox ledger row (ProtonPotts has none until P10)."
