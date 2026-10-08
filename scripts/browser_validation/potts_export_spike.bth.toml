@@ -1,0 +1,63 @@
+[metadata]
+title = "X0: PottsMPNN export spike -- each Potts device path converted AND run on ORT-CPU and ORT-Web"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Five real aminx PottsMPNN device functions -- the score graph (driver.absolute_energies: k-NN top_k, potts_head, merge_pair scatter-max, potts_energy), the decode schedule (decode.schedule_groups: three argsorts and a mode=drop scatter with out-of-range sentinels), the untied and tied AR decode (decode.PottsARDecode: lax.scan over groups with lax.cond and mode=drop scatters), and one default refine sweep (refine.PottsRefine mode=potts) -- traced as-is with a seeded random init at bucket 128 (120 real rows, 8 pad rows, 4 fixed rows), each convert through xtrax.export.convert_to_onnx (xtrax 0.4.0a11, jax2onnx 0.17.0, opset 23) and, run on ONNX Runtime CPU and on onnxruntime-web wasm under Node (1 thread), reproduce the JAX outputs computed first in the same process: integer outputs exactly, float outputs within max|d|/max|ref| <= 1e-4. EXPECTATION, not a criterion: score and sched pass; decode, decode_tied and refine are the likeliest to be blocked, by the drop-mode scatters (ONNX ScatterND has no drop mode) or the in-scan lax.cond. This is a de-risking spike: its job is the per-probe inventory that X2-X4 (#5812-#5814) consume, so finding blockers is an informative outcome, not a failed run. Only an instrument that cannot detect a planted difference, or a JAX arm that did not run, makes the run uninformative."
+stage_name = "exploration"
+novel = true
+# No [reproduction]: novel = true. No [differential]: no effect is sized.
+# Comparator bar 1e-4 relative: the shipped ProteinMPNN split used 1e-4 nats on O(10) logits
+# (2e-4 after the user-accepted change, debt #2056); 1e-4 relative is the same order and is
+# fixed here before any Potts number exists. Integers (tokens, ranks, orders, indices) exact.
+
+[controls]
+positive_outcome = ["pass", "blocked"]
+negative_outcome = ["error", "instrument_unverified"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false"
+decision = "The JAX reference arm (fixture, probe construction, reference evaluation or controls) did not complete; no probe comparison exists. Fix the harness and re-run; cite nothing from this run."
+reasoning = "Without the reference arm there is nothing to compare an ONNX output against, so every probe status would be meaningless."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND NOT (control_float_detected = true AND control_int_detected = true)"
+decision = "The comparator failed to flag a planted difference (perturbed potts_head weights on the score outputs, or reversed uniforms on the decoded tokens). Probe passes from this run are not evidence; fix the comparator first."
+reasoning = "A comparator that cannot see a 1e-2 weight perturbation or a different token draw would also pass a broken export."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND all_pass = true"
+decision = "Every Potts device path converts as-is and agrees with JAX on both ORT-CPU and ORT-Web. X2-X4 can export the existing functions directly; the masked-rewrite list is empty."
+reasoning = "Both controls fired, so agreement on all five probes on both backends is real agreement."
+is_residual = false
+
+[outcomes.blocked]
+condition = "jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND all_pass = false"
+decision = "At least one probe failed to convert, failed to load or run in a backend, or disagreed with JAX. The per-probe record (status, error text, watched ONNX op counts, int64 I/O) is the rewrite list for X2-X4; no export built on a failing probe may ship until its own gate passes."
+reasoning = "The instrument is verified by both controls, so each failing probe names a real blocker rather than a harness fault."
+is_residual = false
+
+[result_schema]
+versions = "dict"
+jax_arm_ok = "bool"
+jax_enable_x64 = "bool"
+probes = "dict"
+n_probes = "int"
+n_pass_cpu = "int"
+n_pass_web = "int"
+all_pass = "bool"
+control_float_detected = "bool"
+control_int_detected = "bool"
+ort_web_available = "bool"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
