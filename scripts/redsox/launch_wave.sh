@@ -2,12 +2,21 @@
 # task_id 260929_potts-laser-xtrax-compose
 #
 # THE LEDGER WAVE. Run ONLY after the last commit under a scoped path
-# (src/aminx/, scripts/parity/, scripts/recapture/, tests/port/,
-# aminx-oracles/, pyproject.toml, uv.lock). _touches_scoped is GLOBAL, not
-# per-slug, so any later scoped commit invalidates every ledger row at once.
+# (src/aminx/, scripts/parity/, scripts/recapture/, aminx-oracles/,
+# pyproject.toml, uv.lock). Staleness is PER ROW since 261008: a row is stale
+# only if a changed path is in its import closure (tests/knob_gate/_closure.py,
+# declared edges in tests/knob_gate/closure_edges.toml). Run
+# scripts/redsox/stale_rows.py to see which rows a wave must cover.
 # tests/knob_gate/ is NOT scoped, so ledger ids may be written afterwards.
 #
-# Usage:  launch_wave.sh 1 | 2 | 3 | positive
+# Usage:  launch_wave.sh [--stale-only] 1 | 2 | 3 | positive
+#
+# --stale-only (or AMINX_WAVE_ONLY_STALE=1) launches only the slugs of the
+# chosen group that stale_rows.py reports stale at HEAD, so a Potts-only change
+# does not re-run the LASEr vehicles. Without it every slug of the group runs,
+# which is the only safe choice when the ledger holds no usable run ids.
+# `positive` is the ungraded control for laser_proofread_parity and is skipped
+# under --stale-only unless that vehicle is stale.
 #
 # The --mutants string for each slug is CHECKED against that slug's rows in
 # tests/knob_gate/branch_manifest.toml before anything launches, because step
@@ -40,7 +49,9 @@ cd "$REPO"
 # false, and the rule that matters here is that ANY run of tests/port/ dirties
 # a tracked file. That is exactly what this script runs next to.
 git checkout -- . 2>/dev/null || true
-git fetch -q https://github.com/maraxen/aminx.git wt/260929-potts-laser-main
+# AMINX_WAVE_REF defaults to main. It used to be the long-merged sprint branch,
+# which a wave launched months later would silently have measured instead.
+git fetch -q https://github.com/maraxen/aminx.git "${AMINX_WAVE_REF:-main}"
 git checkout -q FETCH_HEAD
 H=$(git rev-parse --short=8 HEAD)
 DIRTY=$(git status --porcelain | wc -l)
@@ -51,8 +62,17 @@ if [ "$DIRTY" -ne 0 ]; then
   exit 1
 fi
 
+ONLY_STALE=${AMINX_WAVE_ONLY_STALE:-0}
+if [ "${1:-}" = "--stale-only" ]; then ONLY_STALE=1; shift; fi
 GROUP=${1:-}
-[ -n "$GROUP" ] || { echo "usage: $0 [1|2|3|positive]" >&2; exit 2; }
+[ -n "$GROUP" ] || { echo "usage: $0 [--stale-only] [1|2|3|positive]" >&2; exit 2; }
+
+STALE=""
+if [ "$ONLY_STALE" = "1" ]; then
+  STALE=$(uv run --no-sync python3 scripts/redsox/stale_rows.py --slugs) \
+    || { echo "REFUSING: stale_rows.py failed, so --stale-only cannot be trusted" >&2; exit 1; }
+  echo "stale rows: ${STALE:-(none)}" | tr '\n' ' '; echo
+fi
 
 # slug -> the exact mutant string for its graded run.
 declare -A MUT=(
@@ -106,7 +126,14 @@ export AMINX_POTTS_ROOT=$HOME/repos/PottsMPNN
 launch () {
   local v=$1 m=${MUT[$1]}
   mkdir -p "$HOME/.aminx/sidecars/$v/$H"
-  nohup setsid env JAX_PLATFORMS=cpu bth run --project-slug aminx \
+  # AMINX_CLOSURE_* switch on scripts/redsox/closure_hook, which records the repo
+  # files this process really loads so verify_wave.py can check them against the
+  # row's closure. It edits no vehicle (a vehicle is in its own closure).
+  nohup setsid env JAX_PLATFORMS=cpu \
+    AMINX_CLOSURE_OUT="$HOME/.aminx/sidecars/$v/$H/loaded_files.json" \
+    AMINX_CLOSURE_SCRIPT="$v.py" AMINX_CLOSURE_REPO="$REPO" \
+    PYTHONPATH="$REPO/scripts/redsox/closure_hook${PYTHONPATH:+:$PYTHONPATH}" \
+    bth run --project-slug aminx \
     --output-paths "$HOME/.aminx/sidecars/$v/$H/branch_controls.json" \
     -- uv run --no-sync python3 "scripts/parity/$v.py" \
        --mutants "$m" \
@@ -137,6 +164,10 @@ case "$GROUP" in
     # POTTS_ORACLE_PYTHON is unset. Through this script it just works.
     SLUGS=(potts_ddg_megascale) ;;
   positive)
+    if [ "$ONLY_STALE" = "1" ] && ! grep -qx laser_proofread_parity <<<"$STALE"; then
+      echo "laser_proofread_parity is fresh: its positive control is not needed"
+      exit 0
+    fi
     # THIS ARM COULD NEVER HAVE RUN. It called the parity script directly,
     # while every graded arm goes through `bth run` (launch(), :95) -- and
     # `$BTH_RESULTS_PATH` is set by bth, not by the script. Launched as it was,
@@ -211,6 +242,18 @@ check_coverage laser_proofread_parity laser_proofread_unconditional_parity \
                laser_decode_e2e \
                potts_ar_refine_exact potts_ar_decode potts_energy_parity \
                laser_score_parity potts_ddg_megascale
+
+if [ "$ONLY_STALE" = "1" ]; then
+  KEEP=()
+  for s in "${SLUGS[@]}"; do
+    if grep -qx "$s" <<<"$STALE"; then KEEP+=("$s"); fi
+  done
+  SLUGS=("${KEEP[@]}")
+  if [ "${#SLUGS[@]}" -eq 0 ]; then
+    echo "nothing stale in group $GROUP: no run to launch"
+    exit 0
+  fi
+fi
 
 ARGS=()
 for s in "${SLUGS[@]}"; do ARGS+=("$s=${MUT[$s]}"); done

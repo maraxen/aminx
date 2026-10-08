@@ -16,7 +16,12 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal, TypedDict, cast
 
-Verdict = Literal["pass", "fail", "instrument_invalid"]
+try:  # imported as knob_gate._coverage (pytest) or as bare _coverage (scripts/redsox)
+  from ._closure import Closure, compute_closure, row_is_stale
+except ImportError:
+  from _closure import Closure, compute_closure, row_is_stale  # type: ignore[no-redef]
+
+Verdict =Literal["pass", "fail", "instrument_invalid"]
 
 _SCOPED_PREFIXES = (
   "src/aminx/",
@@ -239,7 +244,21 @@ def _mutant_state(
   return "invalid"
 
 
+def default_closure_for(slug: str) -> Closure | None:
+  """The row's import closure, or ``None`` when it cannot be computed.
+
+  ``None`` means "fall back to the global prefix test", so any failure here (no
+  vehicle script, a malformed ``closure_edges.toml``, a file that does not parse)
+  can only make a row stale. It never makes one fresh.
+  """
+  try:
+    return compute_closure(repo_root(), slug)
+  except (FileNotFoundError, ValueError, SyntaxError, OSError):
+    return None
+
+
 def _touches_scoped(paths: Sequence[str]) -> bool:
+  """The GLOBAL prefix test. Rows use ``row_is_stale``; this is the fallback's shape."""
   for raw in paths:
     path = raw.replace("\\", "/").lstrip("./")
     if path in _SCOPED_FILES:
@@ -274,6 +293,7 @@ def _validate_sidecar(
   is_ancestor: Callable[[str], bool],
   registry_sha256: Callable[[str], str | None],
   sidecar_digest: Callable[[str], str],
+  closure_for: Callable[[str], Closure | None],
 ) -> bool:
   """Return True when every step-1c assertion holds for this slug."""
   sidecar = _object_dict(ledger.get("sidecar"))
@@ -297,7 +317,7 @@ def _validate_sidecar(
   git_hash = run["git_hash"]
   if not git_hash or not is_ancestor(git_hash):
     return False
-  if _touches_scoped(changed_paths(git_hash)):
+  if row_is_stale(changed_paths(git_hash), closure_for(slug)):
     return False
   try:
     expected_digest = sidecar_digest(slug)
@@ -368,6 +388,7 @@ def check_branch_coverage(
   is_ancestor: Callable[[str], bool] | None = None,
   registry_sha256: Callable[[str], str | None] | None = None,
   sidecar_digest: Callable[[str], str] | None = None,
+  closure_for: Callable[[str], Closure | None] | None = None,
 ) -> Verdict:
   """Grade a branch manifest against outcomes and the sidecar ledger.
 
@@ -381,6 +402,7 @@ def check_branch_coverage(
   ancestor = is_ancestor or default_is_ancestor
   registry = registry_sha256 or default_registry_sha256
   digest = sidecar_digest or default_sidecar_digest
+  closure = closure_for or default_closure_for
 
   manifest_file = Path(manifest_path)
   if not manifest_file.is_file():
@@ -444,6 +466,7 @@ def check_branch_coverage(
           is_ancestor=ancestor,
           registry_sha256=registry,
           sidecar_digest=digest,
+          closure_for=closure,
         )
         if not ok:
           invalid = True

@@ -1,0 +1,86 @@
+# Declared inputs that the static import closure cannot see, per ledger row.
+#
+# Read tests/knob_gate/_closure.py first. A row's closure is the static import
+# closure of scripts/parity/<slug>.py plus the entries below. Anything that is not
+# in the closure cannot invalidate the row; anything the closure cannot prove
+# (dynamic imports, package data) makes the row fall back to the old global rule
+# unless it is declared here. Every declaration is a REVIEWED CLAIM, so each one
+# carries its reason.
+#
+#   soft        modules loaded by string/table dispatch, not by an import statement
+#   dynamic_ok  closure files whose dynamic-load sites are covered by soft/data/the
+#               global prefixes, with the reason below
+#   data        path prefixes of non-.py inputs the vehicle reads
+#
+# THE THREE DYNAMIC SITES (found 261008 by scanning the closures, all rows):
+#
+#   src/aminx/host/runner.py          importlib.import_module(_DRIVER_BACKED_FAMILIES[family])
+#       Imports the family package named by the request's model_family. A LASEr
+#       vehicle requests only "lasermpnn" and a Potts vehicle only "pottsmpnn", so
+#       the row's own family package is declared as `soft` below and the OTHER
+#       family is intentionally absent. The closure scan proves the other family is
+#       not reachable by any import statement; this table is the only claim that it
+#       is not reached by the string table either.
+#   src/aminx/io/weights.py           importlib.resources.files("aminx.model_params")
+#       Packaged weight files. They are non-.py files under src/aminx/, so they stay
+#       GLOBAL (any change invalidates every row) because this table declares no
+#       `data` prefix for them, and the gate separately pins the weights bytes
+#       through checkpoint_registry.json.
+#   src/aminx/families/potts_mpnn/driver.py   spec_from_file_location(<converter>)
+#       Loads scripts/recapture/pottsmpnn_model_to_eqx.py, and scripts/recapture/ is
+#       a GLOBAL prefix, so a change there invalidates every row regardless. Only
+#       the Potts rows reach this site (the LASEr closures contain no potts file).
+#
+# WHAT VERIFIES THESE CLAIMS. test_closure_selftest.py pins the closure structure
+# (no cross-family file in either family's rows) and the fail-safe behaviour. The
+# graded vehicles are the only thing that can show the closure covers a real run:
+# see scripts/redsox/closure_hook/sitecustomize.py, which records every repo file a
+# run actually loaded, and the "loaded files inside closure" check in verify_wave.py.
+
+[slug.laser_proofread_parity]
+soft = ["aminx.families.laser_mpnn"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+
+[slug.laser_proofread_unconditional_parity]
+soft = ["aminx.families.laser_mpnn"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+
+[slug.laser_decode_e2e]
+soft = ["aminx.families.laser_mpnn"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+
+[slug.laser_score_parity]
+soft = ["aminx.families.laser_mpnn"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+
+[slug.potts_ar_decode]
+soft = ["aminx.families.potts_mpnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
+
+[slug.potts_energy_parity]
+soft = ["aminx.families.potts_mpnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
+
+[slug.potts_ar_refine_exact]
+soft = ["aminx.families.potts_mpnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
+
+[slug.potts_ddg_megascale]
+soft = ["aminx.families.potts_mpnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]

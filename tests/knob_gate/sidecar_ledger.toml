@@ -29,11 +29,16 @@
 #      line and bth listing prints does not resolve. verify_wave.py globs the
 #      prefix and prints the full id rather than blaming the catalog.
 #
-# AND ONE SCHEDULING CONSTRAINT that is not a per-run trap: _touches_scoped is
-# GLOBAL, not per-slug, so ONE commit under src/aminx/ (or scripts/parity/,
-# scripts/recapture/, tests/port/, aminx-oracles/, pyproject.toml, uv.lock)
-# invalidates EVERY row in this file at once. Ledger rows cannot be collected
-# incrementally: the whole vehicle wave runs after the last such commit.
+# AND ONE SCHEDULING CONSTRAINT that is not a per-run trap. Staleness is PER ROW
+# since 261008 (it used to be global, which is why a Potts-only commit threw away
+# the LASEr rows): a row is stale when a path changed since its run commit is in
+# THAT row's import closure (tests/knob_gate/_closure.py, declared edges in
+# closure_edges.toml). pyproject.toml, uv.lock, scripts/recapture/ and
+# aminx-oracles/ are still global, and so is any non-.py data under src/aminx/ or
+# scripts/parity/. Rows are therefore collected incrementally only across commits
+# that miss a row's closure; shared core code (src/aminx/__init__.py,
+# host/runner.py, ...) is in every closure and still invalidates every row.
+# `scripts/redsox/stale_rows.py` lists what a wave must cover.
 
 [sidecar]
 
