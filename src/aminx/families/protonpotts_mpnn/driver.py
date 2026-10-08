@@ -222,7 +222,10 @@ class ProtonPottsDriver:
       pending = []
     if pending:
       yield FamilyBatch(
-        input_indices=(), arrays={"prepared": ()}, skipped=tuple(pending), lengths=(),
+        input_indices=(),
+        arrays={"prepared": ()},
+        skipped=tuple(pending),
+        lengths=(),
       )
 
   def axes(self, spec: Any, purpose: str, batch: FamilyBatch) -> list[AxisSpec]:  # noqa: ANN401
@@ -301,7 +304,9 @@ def _read_json(path: str | None, what: str) -> dict[str, Any]:
 def _residue_lookup(
   residues: Sequence[tuple[str, int, str, str]],
 ) -> dict[tuple[str, int, str], int]:
-  return {(chain, number, icode): i for i, (chain, number, icode, _name) in enumerate(residues)}
+  return {
+    (chain, number, icode.strip()): i for i, (chain, number, icode, _name) in enumerate(residues)
+  }
 
 
 def _resolve_key(
