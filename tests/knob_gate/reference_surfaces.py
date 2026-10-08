@@ -1,4 +1,4 @@
-"""Generated reference surfaces for upstream PottsMPNN and LASErMPNN knobs.
+"""Generated reference surfaces for upstream PottsMPNN, LASErMPNN and ProtonPottsMPNN knobs.
 
 Produced by scripts/redsox/extract_upstream_knobs.py. Do not edit the
 generated dataclasses by hand. The manual block is the exception.
@@ -10,7 +10,8 @@ from dataclasses import dataclass
 
 POTTSMPNN_COMMIT = "0cb0a58874e373d664114f1735deab77614e4ab5"
 LASERMPNN_COMMIT = "e70f2c6d765416f7e29d51bfd6d4e08496438878"
-EXTRACTOR_SHA256 = "d6973914f6e5d3b4e4569eb52488957e7ba4945e201203b2e446cf3ec0d018ee"
+PROTONPOTTSMPNN_COMMIT = "09682abfa7d20e0abcdeea0490b7a4b1c190aee3"
+EXTRACTOR_SHA256 = "6bb1ae1c3e63dc465c565092f7dc92c7c8490553d83eb2f0eda20f0b895b9f7b"
 
 @dataclass(frozen=True)
 class LaserCheckpointParamsKnobs:
@@ -550,6 +551,64 @@ class PottsmpnnCfgKnobs:
   pottsmpnn_cfg__mutant_fasta: object | None = None  # type=yaml; help=example YAML key; inputs/example_config_energy_prediction.yaml:6
   pottsmpnn_cfg__out_dir: object | None = None  # type=yaml; help=example YAML key; inputs/example_config_energy_prediction.yaml:2; UNRESOLVED YAML defaults disagree: inputs/example_config_energy_prediction.yaml:2='outputs/example_energy_prediction'; inputs/example_config_sample_seqs.yaml:2='outputs/example_sequence_outputs'
   pottsmpnn_cfg__out_name: object | None = None  # type=yaml; help=example YAML key; inputs/example_config_energy_prediction.yaml:3; UNRESOLVED YAML defaults disagree: inputs/example_config_energy_prediction.yaml:3='example_energy_prediction'; inputs/example_config_sample_seqs.yaml:3='sample_run'
+
+@dataclass(frozen=True)
+class ProtonPottsPottsMpnnPhPHDesignCriteriaKnobs:
+  """foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:94:PHDesignCriteria."""
+
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__adjacent_repeat_weight: float = 0.0  # type=float; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:156
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__backend: str = 'potts'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:97
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__block_max_rounds: int = 10  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:174
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__block_size: int = 2  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:144
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__candidate_pool: int = 12  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:220
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__center_count: int = 1  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:195
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__center_protonation_types: tuple[object, ...] = ('HIS-P', 'ASP-P', 'GLU-P')  # type=List[str]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:109
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__center_types: tuple[object, ...] = ()  # type=List[str]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:203
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__combined_lambda: float = 1.0  # type=float; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:124
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__cv_max: int = 50  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:130
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__cv_patience: int = 3  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:129
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__dep_map: object | None = None  # type=Dict[str, List[str]]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:110; UNRESOLVED default is not a literal (dict(DEFAULT_DEP_MAP))
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__explicit_centers: tuple[object, ...] = ()  # type=List[Dict]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:198
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__forbidden_tokens: object | None = None  # type=List[str]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:184; UNRESOLVED default is not a literal (list(DEFAULT_FORBIDDEN_TOKENS))
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__global_weight: float = 0.0  # type=float; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:145
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__infill_scope: str = 'neighbourhood'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:223
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__max_mutations: int = 0  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:236
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__max_plans_per_seed: int = 8  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:222
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__method: str = 'converged_mcmc'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:122
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__n_plan_samples: int = 64  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:221
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__neighbour_k: int = 0  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:230
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__num_designs: int = 8  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:185
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_by: str = 'scan_potts'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:212
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_label: str = ''  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:215
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_region: tuple[object, ...] = ('all',)  # type=List[str]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:207
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_seq_masked: bool = False  # type=bool; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:120
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__rank_normalize: bool = False  # type=bool; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:146
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__record_trajectory: bool = False  # type=bool; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:191
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_gate_types: tuple[object, ...] = ()  # type=List[str]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:165
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_parents: tuple[object, ...] = ()  # type=List[str]; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:164
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_radius: int = 2  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:163
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__repetitive_window_weight: float = 0.0  # type=float; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:162
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__samples_per_site: int = 4  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:128
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__seed_source: str = 'inverse'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:182
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__selective: bool = True  # type=bool; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:123
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__selective_source: str = 'potts'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:107
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__self_weight: float = 1.0  # type=float; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:173
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__sweep_order: str = 'position'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:227
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__temperature: float = 0.1  # type=float; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:126
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__topk_sites: int = 2  # type=int; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:111
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__two_phase_frac: float = 0.5  # type=float; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:125
+  protonpotts_potts_mpnn_ph_PHDesignCriteria__zscale_mode: str = 'block'  # type=str; help=field of PHDesignCriteria; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:152
+
+@dataclass(frozen=True)
+class ProtonPottsPottsMpnnPhPottsMPNNPHEngineRunPhRedesignKnobs:
+  """foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:1030:run_ph_redesign."""
+
+  protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__atom_array: object | None = None  # type=AtomArray; help=parameter of run_ph_redesign; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:1033; UNRESOLVED required parameter; no upstream default
+  protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__binder_chain: str | None = None  # type=str; help=parameter of run_ph_redesign; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:1034; UNRESOLVED required parameter; no upstream default
+  protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__criteria_list: object | None = None  # type=Sequence[PHDesignCriteria]; help=parameter of run_ph_redesign; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:1035; UNRESOLVED required parameter; no upstream default
+  protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__initial_sequences: object | None = None  # type=Optional[Sequence[str]]; help=parameter of run_ph_redesign; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:1037
+  protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__n_jobs: int = 1  # type=int; help=parameter of run_ph_redesign; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:1038
+  protonpotts_potts_mpnn_ph_PottsMPNNPHEngine_run_ph_redesign__seed: int = 0  # type=int; help=parameter of run_ph_redesign; foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py:1036
 
 # MANUAL (not AST-derivable)
 # Input-list rows parsed by PottsMPNN sample_seqs.py:81-94.
