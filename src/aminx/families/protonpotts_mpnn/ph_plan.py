@@ -373,6 +373,24 @@ def plan_from_explicit_centers(
   )
 
 
+def pins_at_positions(
+  placements: Sequence[tuple[int, str]],
+  res_id: np.ndarray,
+  dep_map: Mapping[str, Sequence[str]],
+) -> tuple[Pin, ...]:
+  """Pins at given ``(position, protonation_type)`` pairs, with no designable region.
+
+  For selectivity scoring, where the centres are fixed and nothing is designed, so there is no
+  ``finalize_plan`` step. Pins are sorted by position, as ``finalize_plan`` sorts them. Two pins at
+  one position raise ``ValueError``.
+  """
+  positions = [int(pos) for pos, _ptype in placements]
+  if len(set(positions)) != len(positions):
+    raise ValueError(f"two centres share a position: {sorted(positions)}")
+  pins = [_make_pin(pos, ptype, dep_map, res_id) for pos, ptype in placements]
+  return tuple(sorted(pins, key=lambda p: p.position))
+
+
 def plan_centre_free(binder_mask: np.ndarray) -> Plan | None:
   """Plan with no pins and every free binder position designable.
 

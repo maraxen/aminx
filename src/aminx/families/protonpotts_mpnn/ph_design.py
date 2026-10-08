@@ -127,6 +127,42 @@ def _plan_for(
   )
 
 
+def force_pins(seq: np.ndarray, pins: Sequence[Pin]) -> np.ndarray:
+  """Copy of ``seq`` with every pinned centre at its protonated token.
+
+  Upstream ``_selective_energy_of`` scores a sequence that already carries all centres at their
+  protonated token, in the presence of the others. Designs already satisfy this (the optimiser pins
+  them); selectivity scoring of a given sequence must apply it first.
+  """
+  out = np.array(seq, dtype=np.int32, copy=True)
+  for pin in pins:
+    out[pin.position] = pin.prot_idx
+  return out
+
+
+def selectivity_gaps(
+  table: jnp.ndarray,
+  e_idx: jnp.ndarray,
+  seq: np.ndarray,
+  pins: Sequence[Pin],
+) -> tuple[float, tuple[float, ...]]:
+  """(summed, per-pin) selectivity gaps of ``seq``, which must already carry the centres forced.
+
+  Per pin ``c``: ``e_c(protonated) - mean_d e_c(d)``, with ``e_c`` the conditional energies at ``c``
+  from ``candidate_energies_at`` on the merged table. ``()`` and ``0.0`` when there are no pins.
+  """
+  if not pins:
+    return 0.0, ()
+  seq_j = jnp.asarray(seq, dtype=jnp.int32)
+  positions = jnp.asarray([p.position for p in pins], dtype=jnp.int32)
+  rows = np.asarray(candidate_energies_at(table, e_idx, seq_j, positions))
+  gaps = tuple(
+    float(rows[i, p.prot_idx] - np.mean([rows[i, d] for d in p.dep_idxs]))
+    for i, p in enumerate(pins)
+  )
+  return float(sum(gaps)), gaps
+
+
 def _score(
   table: jnp.ndarray,
   e_idx: jnp.ndarray,
@@ -137,14 +173,7 @@ def _score(
   seq_j = jnp.asarray(seq, dtype=jnp.int32)
   valid = jnp.ones(seq.shape[0], dtype=bool)
   final = float(potts_energy(table, e_idx, valid, seq_j))
-  if not pins:
-    return final, ()
-  positions = jnp.asarray([p.position for p in pins], dtype=jnp.int32)
-  rows = np.asarray(candidate_energies_at(table, e_idx, seq_j, positions))
-  gaps = tuple(
-    float(rows[i, p.prot_idx] - np.mean([rows[i, d] for d in p.dep_idxs]))
-    for i, p in enumerate(pins)
-  )
+  _total, gaps = selectivity_gaps(table, e_idx, seq, pins)
   return final, gaps
 
 

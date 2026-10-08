@@ -86,7 +86,8 @@ def test_registration_handles_and_refusals(registered: ProtonPottsDriver, model_
   assert driver is registered
   assert driver.handles(None, "score:energy")
   assert driver.handles(None, "score:ddg")
-  assert not driver.handles(None, "sample")
+  assert driver.handles(None, "sample")
+  assert driver.handles(None, "score:selectivity")
   assert not driver.handles(None, "score:nll")
   model = registered.load(_spec(Path("x"), model_path, "energy"))
   assert model.alphabet == PROTONPOTTS_V6
@@ -107,12 +108,18 @@ def test_spec_gating() -> None:
     _ = spec.run_spec
 
 
-def test_sample_is_refused(registered: ProtonPottsDriver, pdb: Path, model_path: Path) -> None:
+def test_sample_needs_one_call_per_structure(
+  registered: ProtonPottsDriver, pdb: Path, model_path: Path
+) -> None:
   del registered
   spec = SamplingSpecification(
-    inputs=str(pdb), model_family="protonpottsmpnn", model_local_path=model_path
+    inputs=str(pdb),
+    model_family="protonpottsmpnn",
+    model_local_path=model_path,
+    num_samples=2,
+    protonpotts=ProtonPottsOptions(binder_chain="A"),
   )
-  with pytest.raises(ValueError, match="does not support sample"):
+  with pytest.raises(ValueError, match="num_samples=1"):
     sample(spec)
 
 
@@ -206,5 +213,6 @@ def test_schema_stamps_the_vocabulary(registered: ProtonPottsDriver) -> None:
   vocabulary = schema["candidate_tokens"].attrs["vocabulary"]
   assert str(vocabulary).split(",") == list(PROTONPOTTS_V6.symbols)
   assert "HIS-P" in str(vocabulary).split(",")
+  assert "sequence" in registered.result_schema(None, "sample")
   with pytest.raises(ValueError, match="does not support"):
-    registered.result_schema(None, "sample")
+    registered.result_schema(None, "score:nll")

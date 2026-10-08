@@ -524,6 +524,7 @@ _ALL_OUTPUT_KINDS = frozenset(
     "logits",
     "energy",
     "ddg",
+    "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
   },
@@ -533,7 +534,7 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   "ligandmpnn": frozenset({"nll"}),
   "membrane": frozenset({"nll"}),
   "pottsmpnn": frozenset({"nll", "logits", "energy", "ddg"}),
-  "protonpottsmpnn": frozenset({"energy", "ddg"}),
+  "protonpottsmpnn": frozenset({"energy", "ddg", "selectivity"}),
   "lasermpnn": frozenset(
     {"nll", "logits", "proofread_unconditional", "proofread_conditional"},
   ),
@@ -584,6 +585,7 @@ class ScoringSpecification(RunSpecification):
     "logits",
     "energy",
     "ddg",
+    "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
   ] = "nll"
