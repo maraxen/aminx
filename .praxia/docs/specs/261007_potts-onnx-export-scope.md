@@ -282,3 +282,25 @@ family suite pass on titanix (88 passed, 1 expected skip); `potts_order` port wa
   temperature — fixed in `f2f50a7a`.)
 
 These `7e6db052…` artifacts supersede the `d35365c2…` set for everything downstream.
+
+## 12. X5 runtime controls (261008)
+
+`browser/potts-sampler/potts_controls.mjs` (`applyPottsControls`) maps the sample path's design
+controls onto the graph inputs exactly as `prepare_sample` does: `fixed_positions` (zero
+`chain_m_pos`, out-of-range ignored), `omit_aa` (`omit_letter_indices`), `bias` (global 21 /
+per-position L / per-residue Lx21, `_split_bias` branch order). Deliberate deviation: non-finite
+bias or fixed-position values throw in JS (Python would accept them). Fixture comparison against
+12 Python dumps (omit, fixed incl. an out-of-range row, global/per-position/per-residue bias,
+combined; 3gg7 L256 and 3dkm L128): **exact**, `node --test` 17/17.
+
+Runtime-controls gate **`65082719` pass by record** (cool tier; clean, `06103c26`, sidecar
+`a6d9a564…`): the FULL browser path under Node wasm — PDB text -> `buildPottsInputs` ->
+`applyPottsControls` -> `sample` — equals aminx on 9 cases x 2 cells x 2 seeds = **36/36 samples
+exact** (tokens, order, refined; energy <= 1e-4 rel), and every control acts: omitted letters absent,
+fixed rows native, W bias raises W, per-residue P bias raises P in rows 0-29, temperature 1.0 changes
+every draw, refine temperature 0.5 changes a refined sequence, refine-off leaves decode unchanged.
+Tied positions excluded (not wired on the Python sample path; debt 2443).
+
+Remaining for shipping: headless Chromium (real browser, COOP/COEP, threads) + benchmark; energy-graph
+row count for DMS scoring; `potts_converge` JS driver; ProtonPotts (#5816, blocked on #5781);
+distribution (decision 3).
