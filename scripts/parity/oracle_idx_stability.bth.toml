@@ -1,0 +1,61 @@
+[metadata]
+title = "Are the sealed Potts/LASEr oracle neighbour indices thread-dependent? (debt #2584)"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "None of the existing sealed Potts or LASEr oracle neighbour-index tensors was selected by a thread-partitioning accident: (A) every neighbour-index array present in two independently produced dump sets of the same dtype is identical, and (B) every Potts cell with stored coordinates has a smallest relative adjacent-neighbour gap of at least 1e-5, far above float32 reduction noise, so no thread count could have reordered it."
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_arrays_compared > 0 AND n_cells > 0 AND n_arrays_differing = 0 AND n_exposed = 0 AND n_recipe_bad = 0"
+decision = "Close debt #2584: the existing seals are not thread-exposed. The dumpers' thread pin (9b520400) is hygiene for future re-dumps, not a repair."
+reasoning = "Identical index arrays across independent processes plus a clear tie margin on every cell with coordinates, with all four instrument controls firing, means no stored neighbour list sits near a tie."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_arrays_compared > 0 AND n_cells > 0 AND n_arrays_differing = 0 AND n_exposed = 0 AND n_recipe_bad = 0)"
+
+[outcomes.inconclusive]
+condition = "clean = 'inconclusive'"
+decision = "Do not read the result either way. Fix the instrument (a control did not fire, the recomputed neighbours disagree with the dump where the margin is clear, or there was nothing to compare) and re-run under this sidecar."
+reasoning = "The comparison is only informative if the synthetic tie is flagged, the synthetic spread layout is not, a planted flip is detected, and the recipe reproduces the dumped E_idx where it should."
+is_residual = true
+adversarial_check = "clean <> 'inconclusive'"
+
+[outcomes.fail]
+condition = "clean = 'fail'"
+decision = "Exposure is real on the listed arrays or cells. Re-dump the affected waves single-threaded and compare sha256 against the seals before trusting those waves; the exposed set rides the next re-wave."
+reasoning = "A differing index array across independent processes is a flip that happened; a cell with a sub-1e-5 relative gap is one that can flip."
+is_residual = false
+adversarial_check = "clean <> 'fail'"
+
+[result_schema]
+clean = "str"
+control_spread_clear = "bool"
+control_tie_flagged = "bool"
+control_flip_detected = "bool"
+control_identical_clean = "bool"
+n_arrays_compared = "int"
+n_arrays_differing = "int"
+n_slots_differing = "int"
+n_potts_arrays_compared = "int"
+n_laser_arrays_compared = "int"
+n_cells = "int"
+n_exposed = "int"
+n_clear = "int"
+n_recipe_bad = "int"
+min_rel_gap = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+dumps_root = "~/projects/aminx-oracles/dumps on the host that sealed them (titanix); read-only"
+potts_sets = "a1_potts, a1_potts_v1 (independent dump sets of the same cells)"
+laser_sets = "b1_laser, b2_laser_prehook, b2_laser_rerun, b3_laser_owned"
+tie_threshold = "1e-5 relative gap, about 84 float32 ulp, chosen BEFORE the run and deliberately generous"
+tie_recipe = "ProteinMPNN: D = sqrt(sum dX^2 + 1e-6) on Calpha, masked pairs pushed by max(D), smallest K = min(48, L), float64"
+limits = "LASEr dumps carry no coordinates, so LASEr gets measurement A only. A same-dtype difference is a flip but is not proven to be thread-caused (a different weights or code revision could also move an index); equality is the informative direction."
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python3 scripts/parity/oracle_idx_stability.py --dumps-root ~/projects/aminx-oracles/dumps. Pass requires all four instrument controls (control_*) true, which grade() folds into clean. Written and committed before the first run."
