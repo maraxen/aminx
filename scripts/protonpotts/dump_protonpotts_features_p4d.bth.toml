@@ -1,0 +1,69 @@
+[metadata]
+title = "ProtonPottsMPNN v6 feature-dict dump, P4d: does O count as a backbone atom?"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4d of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§40). The `protonpotts_features` wave
+perturbs each aminx featurizer rule and requires the comparison to reject it. The perturbation "O is not a
+backbone atom" was not rejected by any of the nine sealed cells: at the 0.8 backbone threshold every
+residue whose O fails there also has a failing N, CA or C. Upstream's source includes O, but no data
+discriminates it.
+
+A scan of the 137 available structures at the 0.8 threshold found two structures with exactly one residue
+whose N, CA and C are all above 0.8 and whose O is not (O absent or at or below 0.8):
+
+  only_o_1hgu   1HGU, 187 residues
+  only_o_1olr   1OLR, 223 residues
+
+PREDICTION, stated before the run so it can be wrong. Each file has 4 residues with an unresolved
+backbone at the 0.8 threshold, one of which is the O-only residue. If upstream requires O, it drops all 4:
+1HGU gives 183 residues (187 - 4) and 1OLR gives 219 (223 - 4). If upstream did NOT require O it would keep
+the O-only residue and give 184 and 220. Neither file has duplicate residue numbers. The aminx featurizer
+with O required should reproduce both cells exactly.
+
+Claims about THIS dump, falsifiable by this run:
+
+1. COMPLETE. Both cells featurize and carry the six keys X, X_m, S, R_idx, chain_labels, residue_mask.
+2. REPRODUCIBLE. A second run in a fresh process gives identical per-cell content hashes, threads pinned
+   to 1.
+
+The prediction is graded by the aminx-side comparison, not here: the wave's `backbone_without_o`
+perturbation must be REJECTED once these cells are part of it.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "keys_complete AND reproducible AND n_cells = 2 AND n_featurized = 2"
+decision = "Seal the dumps and add both cells to the protonpotts_features wave."
+reasoning = "Both cells featurize with all six keys and the result is reproducible across processes."
+is_residual = false
+adversarial_check = "NOT (keys_complete AND reproducible AND n_cells = 2 AND n_featurized = 2)"
+
+[outcomes.fail]
+condition = "NOT (keys_complete AND reproducible AND n_cells = 2 AND n_featurized = 2)"
+decision = "Do not seal. Read which flag is false; if a cell was refused by upstream, the error text is in the manifest and is itself a finding about upstream."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "keys_complete AND reproducible AND n_cells = 2 AND n_featurized = 2"
+
+[result_schema]
+keys_complete = "bool"
+reproducible = "bool"
+n_cells = "int"
+n_featurized = "int"
+n_raised = "int"
+raised_cells = "list"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, extended_vocab v6, no checkpoint, no forward pass"
+cells = "1HGU, 1OLR (PottsMPNN/energy_benchmark_datasets/fireprot_pdbs)"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/dump_protonpotts_features_p4d.py --out <dir> --cell only_o_1hgu=<1HGU.pdb> --cell only_o_1olr=<1OLR.pdb> in the aminx-oracles-protonpotts env from a clean checkout of the commit that adds this file. Same dumper logic as P4c. Written and committed before the first run."
