@@ -148,3 +148,45 @@ Filed 261007 under task `261007_potts-onnx-export`:
 
 X0 and X1 are independent and can run in parallel. Debt #2056 (the ORT-Web log-prob gap behind
 the 2e-4 bar) is P3 investigation; the user accepted the bar change 261007.
+
+
+## 8. X0 result (run `1340fe84`, graded `blocked` by record, 261008)
+
+Verified by record: `status=completed`, `outcome=blocked`, `git_hash=50a70781`, `git_dirty=false`,
+`sidecar_sha256` = committed file. jax 0.10.2, xtrax 0.4.0a11, onnxruntime 1.30.0 (CPU) and
+onnxruntime-web 1.30.0 (wasm, Node, ORT-reported 1 thread). Bucket 128, seeded random init.
+Both controls fired (perturbed-weight score, reversed-uniform decode).
+
+| probe | ORT-CPU | ORT-Web | max rel (float) | ONNX size | watched ops |
+|---|---|---|---|---|---|
+| sched (`schedule_groups`) | pass | pass | 0 (ints exact) | 22 KB | ScatterND 2, TopK 3 |
+| decode untied (`PottsARDecode`) | pass | pass | 4.5e-7; tokens exact | 3.46 MB | Loop 2, If 3, ScatterND 7, TopK 4 |
+| decode tied | pass | pass | 4.5e-7; tokens exact | 3.46 MB | same |
+| score (`absolute_energies`) | **not runnable** | **not runnable** | — | 4.35 MB | ScatterND 4, TopK 2 |
+| refine (`PottsRefine` `potts`) | **not loadable** | **not loadable** | — | 178 KB | Loop 2, ScatterND 2 |
+
+What this settles (scope §3 risk list):
+
+- **`mode="drop"` scatters are NOT a blocker**: decode and sched carry 7 and 2 ScatterND with
+  out-of-range sentinels and match exactly on both backends.
+- **In-scan `lax.cond` and `lax.scan` convert and run** (ONNX `Loop`/`If`), tokens exact on ORT-Web.
+- **No int64 graph I/O** on any probe.
+
+Blockers (each a concrete rewrite for its item):
+
+1. **score (X2, #5812)** — ORT has no `Where` kernel for BOOL (`node_Where_1116`: BOOL condition
+   `And(ge, lt)` over a BOOL `Gather` of input `pad_valid`). It is a bounds-masked bool gather;
+   candidates `etab.py:101`, `etab.py:204` (`jnp.where(in_range, pad_valid[...], missing)`) and the
+   fill-mode gather `potts_head.py:103`. Plain bool gathers are fine (`decode.py:121` passed).
+   Fix: do that masking in int32 and compare (`> 0`), semantics unchanged.
+2. **refine (X4, #5814)** — ONNX type inference rejects a `Where` whose branches are `float` and
+   `int32` (`node_Where_154`, inside the nested `Loop`). JAX had already unified the types, so this
+   is a jax2onnx lowering defect on a weak-typed operand; the aminx-side workaround is an explicit
+   dtype on the offending `jnp.where` operand once located.
+
+**Recommendation for X3 (#5813), not yet decided:** the whole AR decode is one 3.46 MB graph that
+already runs token-exact on ORT-Web wasm, unlike the ProteinMPNN monolith (19–31 MB, two decoder
+arms behind `lax.cond`). For the wasm target the E/W/D/F split may be unnecessary; it remains
+the right shape for WebGPU (control flow forces device copies). Proposed: ship encoder+etab graph
+plus the single decode graph for wasm first, and keep the split as the WebGPU follow-up. Needs
+a benchmark at L128/L256 (X5) before it is final.
