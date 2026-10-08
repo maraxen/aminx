@@ -51,6 +51,10 @@ F64_REL = 1e-9
 F32_FACTOR = 10.0
 F32_MIN_REL = 1e-6
 SENTINEL = 10**6
+# Upstream accumulates its sampling CDF in ITS token order, so the same uniform selects a different entry than a
+# CDF in aminx order would. Entry j is the aminx index of upstream token j. A parity detail, not a modelling choice:
+# any order is a valid sampler (found by the first smoke, which matched every T=0 call but not the sampled ones).
+UPSTREAM_CDF_ORDER = np.asarray([upstream_to_aminx_index(j) for j in range(30)], dtype=np.int32)
 
 
 def _load(path: Path) -> dict[str, np.ndarray]:
@@ -124,7 +128,7 @@ def run_call(cell: Cell, call: dict, config: PHDesignConfig, *, shift_uniforms: 
     jnp.asarray(pin_dep), jnp.asarray(pin_dep_valid),
     jnp.asarray(valid_token_mask(config.forbidden_tokens) if valid is None else valid),
     jnp.asarray(rep_class_mask(config.repetitive_window_parents)), jnp.asarray(residue_number, dtype=jnp.int32),
-    config=config, uniforms=jnp.asarray(uniforms),
+    config=config, uniforms=jnp.asarray(uniforms), cdf_order=jnp.asarray(UPSTREAM_CDF_ORDER),
   )  # fmt: skip
   return plan, blocks, result
 

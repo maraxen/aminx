@@ -416,21 +416,49 @@ def block_zscales(
   return jnp.stack([sd_h, sd_s, jnp.asarray(1.0, dtype=dtype)])
 
 
-def select_joint(flat: Float[Array, " S"], uniform: Float[Array, ""], temperature: float) -> Array:
+def select_joint(
+  flat: Float[Array, " S"],
+  uniform: Float[Array, ""],
+  temperature: float,
+  *,
+  n_block: int | None = None,
+  cdf_order: Array | None = None,
+) -> Array:
   """Index of the chosen joint assignment in the flat objective ``flat`` (lower is better).
 
   ``temperature <= 0`` gives the first minimum (``jnp.argmin``, matching ``torch.argmin``). Otherwise the index
   is drawn by inverse CDF of ``softmax(-(flat - min) / T)``: the first index whose cumulative probability exceeds
   ``uniform * total``, clipped to the last index. ``uniform == 0`` therefore selects the first finite index.
+
+  The order in which entries enter the CDF decides which entry a given uniform selects. By default that is the
+  flat (aminx token) order. ``cdf_order`` (``(V,)``, entry ``j`` = the aminx index of the token that comes ``j``-th)
+  accumulates the CDF in another token order instead, along every block axis, and maps the draw back. Any order is a
+  valid sampler; upstream accumulates in ITS token order, so parity with an upstream dump that recorded
+  ``(uniform, choice)`` pairs needs ``cdf_order`` set to the upstream-to-aminx map. ``n_block`` is required with it.
   """
   if temperature <= 0:
     return jnp.argmin(flat).astype(jnp.int32)
   shifted = flat - jnp.min(flat)
   probs = jnp.exp(-shifted / temperature)
-  cdf = jnp.cumsum(probs)
+  if cdf_order is None:
+    cdf = jnp.cumsum(probs)
+    target = uniform * cdf[-1]
+    index = jnp.sum(cdf <= target).astype(jnp.int32)
+    return jnp.minimum(index, flat.shape[0] - 1)
+  if n_block is None:
+    msg = "select_joint: n_block is required with cdf_order"
+    raise ValueError(msg)
+  order = jnp.asarray(cdf_order, dtype=jnp.int32)
+  vocab = order.shape[0]
+  grid = probs.reshape((vocab,) * n_block)
+  for axis in range(n_block):
+    grid = jnp.take(grid, order, axis=axis)
+  cdf = jnp.cumsum(grid.reshape(-1))
   target = uniform * cdf[-1]
-  index = jnp.sum(cdf <= target).astype(jnp.int32)
-  return jnp.minimum(index, flat.shape[0] - 1)
+  position = jnp.minimum(jnp.sum(cdf <= target).astype(jnp.int32), cdf.shape[0] - 1)
+  digits = order[_digits(position, n_block, vocab)]
+  powers = vocab ** jnp.arange(n_block - 1, -1, -1)
+  return jnp.sum(digits * powers).astype(jnp.int32)
 
 
 def _digits(choice: Array, n_block: int, vocab: int) -> Array:
@@ -457,6 +485,7 @@ def block_descent(
   *,
   config: PHDesignConfig,
   uniforms: Float[Array, " M"],
+  cdf_order: Array | None = None,
 ) -> DescentResult:
   """Gauss-Seidel block descent over the designable positions, as upstream ``_block_descent`` 2193-2387.
 
@@ -464,6 +493,9 @@ def block_descent(
   the designable rows in order; each visit commits the exact argmin (or an inverse-CDF sample) of its block
   objective, and later visits see the updated sequence. Sweeps repeat while the previous one changed something,
   up to ``config.block_max_rounds``.
+
+  ``cdf_order`` (default None) sets the token order of the inverse-CDF sampler; see ``select_joint``. It exists
+  for parity with an upstream dump and is left unset in production.
 
   ``plan_designable`` only fixes the row count and order (row ``n`` visits ``plan_designable[n]``, which is
   ``blocks[n, 0]``). Unsupported upstream knobs raise ``NotImplementedError`` before any work is done.
@@ -538,6 +570,7 @@ def block_descent(
     config=config,
     wh=wh,
     wsel=wsel,
+    cdf_order=cdf_order,
   )
   return DescentResult(
     seq=seq_final,
@@ -565,6 +598,7 @@ def _sweep_to_convergence(
   config: PHDesignConfig,
   wh: Float[Array, ""],
   wsel: Float[Array, ""],
+  cdf_order: Array | None = None,
 ) -> tuple[Array, Array, Array]:
   """Repeat full sweeps until one changes nothing or ``block_max_rounds`` is reached.
 
@@ -603,7 +637,7 @@ def _sweep_to_convergence(
     )
     if temperature > 0:
       uniform = uniforms[jnp.minimum(draws, n_uniform - 1)]
-      choice = select_joint(flat, uniform, temperature)
+      choice = select_joint(flat, uniform, temperature, n_block=n_block, cdf_order=cdf_order)
       draws = draws + 1
     else:
       choice = jnp.argmin(flat).astype(jnp.int32)

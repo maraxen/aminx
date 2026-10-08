@@ -436,3 +436,23 @@ def test_jit_compiles_once_for_two_uniform_streams():
   assert calls["n"] == 1
   assert int(r1.n_draws) == int(r1.rounds) * n_rows
   assert int(r2.n_draws) == int(r2.rounds) * n_rows
+
+
+def test_select_joint_cdf_order_identity_and_permutation() -> None:
+  """``cdf_order`` changes which entry a uniform selects, exactly as a numpy inverse CDF in that order does."""
+  vocab, n_block = 5, 2
+  rng = np.random.default_rng(0)
+  flat = jnp.asarray(rng.normal(size=vocab**n_block))
+  temperature = 0.7
+  identity = jnp.arange(vocab)
+  perm = np.asarray([3, 0, 4, 1, 2])
+  probs = np.exp(-(np.asarray(flat) - float(flat.min())) / temperature)
+  for uniform in (0.0, 0.13, 0.5, 0.77, 0.999):
+    default = int(select_joint(flat, jnp.asarray(uniform), temperature))
+    assert int(select_joint(flat, jnp.asarray(uniform), temperature, n_block=n_block, cdf_order=identity)) == default
+    grid = probs.reshape(vocab, vocab)[perm][:, perm]
+    cdf = np.cumsum(grid.reshape(-1))
+    position = min(int(np.sum(cdf <= uniform * cdf[-1])), cdf.size - 1)
+    want = int(perm[position // vocab] * vocab + perm[position % vocab])
+    got = int(select_joint(flat, jnp.asarray(uniform), temperature, n_block=n_block, cdf_order=jnp.asarray(perm)))
+    assert got == want
