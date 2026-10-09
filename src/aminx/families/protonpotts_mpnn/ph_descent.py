@@ -386,6 +386,61 @@ def _block_activation_bytes(vocab: int, n_block: int, dtype: np.dtype) -> float:
   return float((joints + pairs + 4 * n_block * vocab) * np.dtype(dtype).itemsize)
 
 
+def block_zstats(
+  table: Float[Array, "L K V V"],
+  e_idx: Int[Array, "L K"],
+  seq: Int[Array, " L"],
+  block: Int[Array, " B"],
+  valid: Bool[Array, " B"],
+  pin_positions: Int[Array, " P"],
+  pin_prot: Int[Array, " P"],
+  pin_dep: Int[Array, "P D"],
+  pin_dep_valid: Bool[Array, "P D"],
+  valid_tokens: Bool[Array, " V"],
+) -> tuple[Array, Array, Array, Array]:
+  """z-scale statistics of ONE block: ``(var_h, has_h, var_s, has_s)``. ``seq`` must already carry the pins.
+
+  The per-block part of :func:`block_zscales`, lifted out so the browser can export it as its own graph and pool
+  the blocks itself.
+  """
+  vocab = table.shape[-1]
+  dtype = table.dtype
+  n_block = block.shape[0]
+  block_safe = jnp.where(valid, block, 0)
+  member = valid[:, None]
+  allowed = _allowed_tokens(member, valid_tokens, vocab)
+
+  unary, pair = block_stability_potentials(table, e_idx, seq, block_safe, valid)
+  var_h, count_h = _finite_var(_joint(unary, pair, allowed, n_block, vocab))
+
+  sel_abs = _selective_unary(
+    table,
+    e_idx,
+    pin_positions,
+    pin_prot,
+    pin_dep,
+    pin_dep_valid,
+    block,
+    valid,
+  )
+  cur = seq[block_safe]
+  sel_rel = sel_abs - jnp.take_along_axis(sel_abs, cur[:, None], axis=1)
+  sel_rel = jnp.where(member & valid_tokens[None, :], sel_rel, 0.0)
+  varies = jnp.sum(jnp.abs(sel_rel)) > 0
+  joint_s = _joint(
+    sel_rel,
+    jnp.zeros((n_block, n_block, vocab, vocab), dtype=dtype),
+    allowed,
+    n_block,
+    vocab,
+  )
+  var_s, count_s = _finite_var(joint_s)
+
+  has_h = count_h > 1
+  has_s = varies & (count_s > 1)
+  return var_h, has_h, var_s, has_s
+
+
 def block_zscales(
   table: Float[Array, "L K V V"],
   e_idx: Int[Array, "L K"],
@@ -410,39 +465,9 @@ def block_zscales(
 
   def per_block(xs: tuple[Array, Array]) -> tuple[Array, Array, Array, Array]:
     block, valid = xs
-    block_safe = jnp.where(valid, block, 0)
-    member = valid[:, None]
-    allowed = _allowed_tokens(member, valid_tokens, vocab)
-
-    unary, pair = block_stability_potentials(table, e_idx, seq, block_safe, valid)
-    var_h, count_h = _finite_var(_joint(unary, pair, allowed, n_block, vocab))
-
-    sel_abs = _selective_unary(
-      table,
-      e_idx,
-      pin_positions,
-      pin_prot,
-      pin_dep,
-      pin_dep_valid,
-      block,
-      valid,
+    return block_zstats(
+      table, e_idx, seq, block, valid, pin_positions, pin_prot, pin_dep, pin_dep_valid, valid_tokens,
     )
-    cur = seq[block_safe]
-    sel_rel = sel_abs - jnp.take_along_axis(sel_abs, cur[:, None], axis=1)
-    sel_rel = jnp.where(member & valid_tokens[None, :], sel_rel, 0.0)
-    varies = jnp.sum(jnp.abs(sel_rel)) > 0
-    joint_s = _joint(
-      sel_rel,
-      jnp.zeros((n_block, n_block, vocab, vocab), dtype=dtype),
-      allowed,
-      n_block,
-      vocab,
-    )
-    var_s, count_s = _finite_var(joint_s)
-
-    has_h = count_h > 1
-    has_s = varies & (count_s > 1)
-    return var_h, has_h, var_s, has_s
 
   # The blocks are independent, so this is a map, not a scan. Which map (one vmap, or tiles of it) is xtrax's call:
   # each block holds a V**B joint, and the planner demotes Vmap to SafeMap when all N of them would not fit.
