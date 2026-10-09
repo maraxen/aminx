@@ -91,10 +91,3 @@ reason = "sequential_dependency"
 path = "src/aminx/families/protonpotts_mpnn/ph_greedy.py"
 qualname = "greedy_energy_block"
 reason = "sequential_dependency"
-
-# ProtonPotts block_zscales: one pass over the independent blocks with no carry. Not a sequential dependency; it
-# is a lax.scan only so that one block's V**B joint is live at a time (a vmap would hold all N, and R1 bans vmap).
-[[entries]]
-path = "src/aminx/families/protonpotts_mpnn/ph_descent.py"
-qualname = "block_zscales"
-reason = "memory_bounded_map"

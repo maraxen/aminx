@@ -61,9 +61,13 @@ import jax.numpy as jnp
 import numpy as np
 from jax import lax
 from jaxtyping import Array, Bool, Float, Int
+from xtrax.tiling import AxisSpec
 
 from aminx.families.protonpotts_mpnn.ph_potentials import block_stability_potentials
 from aminx.families.protonpotts_mpnn.vocab import PROTONPOTTS_V6, THREE_TO_ONE, canonical_letter
+from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
+from aminx.tiling.planner import plan_axis_strategy
+from aminx.tiling.strategy import SafeMap
 
 if TYPE_CHECKING:
   from aminx.families.protonpotts_mpnn.ph_config import PHDesignConfig
@@ -352,6 +356,25 @@ def _pool(var: Array, has: Array, dtype: np.dtype) -> Array:
   return jnp.where(count > 0, jnp.maximum(jnp.sqrt(mean), 1e-6), 1.0).astype(dtype)
 
 
+# The independent blocks of one design. Declared here and not in ``aminx.tiling.axes``: that registry is imported by
+# the host runner, so an edit there would stale every ledger row for one constant. Move it there with the next
+# wave that touches shared files. ``default_batch_size=0`` lets the planner choose the tile.
+_PH_BLOCKS = AxisSpec(
+  name="n_ph_blocks",
+  cardinality=64,
+  default_batch_size=0,
+  tile_granularity=1,
+  heterogeneous=False,
+)
+
+
+def _block_activation_bytes(vocab: int, n_block: int, dtype: np.dtype) -> float:
+  """Live bytes one block holds while its z-scales are computed (a few ``V**B`` joints plus the pair tensors)."""
+  joints = 4 * vocab**n_block
+  pairs = 2 * n_block * n_block * vocab * vocab
+  return float((joints + pairs + 4 * n_block * vocab) * np.dtype(dtype).itemsize)
+
+
 def block_zscales(
   table: Float[Array, "L K V V"],
   e_idx: Int[Array, "L K"],
@@ -374,7 +397,7 @@ def block_zscales(
   n_block = blocks.shape[1]
   block_safe_all = jnp.where(block_valid, blocks, 0)
 
-  def per_block(_: None, xs: tuple[Array, Array]) -> tuple[None, tuple[Array, Array, Array, Array]]:
+  def per_block(xs: tuple[Array, Array]) -> tuple[Array, Array, Array, Array]:
     block, valid = xs
     block_safe = jnp.where(valid, block, 0)
     member = valid[:, None]
@@ -408,9 +431,26 @@ def block_zscales(
 
     has_h = count_h > 1
     has_s = varies & (count_s > 1)
-    return None, (var_h, has_h, var_s, has_s)
+    return var_h, has_h, var_s, has_s
 
-  _, (var_h, has_h, var_s, has_s) = lax.scan(per_block, None, (block_safe_all, block_valid))
+  # The blocks are independent, so this is a map, not a scan. Which map (one vmap, or tiles of it) is xtrax's call:
+  # each block holds a V**B joint, and the planner demotes Vmap to SafeMap when all N of them would not fit.
+  n_blocks = int(blocks.shape[0])
+  strategy = plan_axis_strategy(
+    _PH_BLOCKS,
+    n_blocks,
+    None,
+    activation_bytes_per_element=_block_activation_bytes(vocab, n_block, dtype),
+  )
+  blocks_in, valid_in = block_safe_all, block_valid
+  if isinstance(strategy, SafeMap) and n_blocks % strategy.tile:
+    # xtrax's SafeMap needs the axis to be an exact multiple of the tile (aminx backlog #4159), so pad with
+    # copies of block 0 and drop the extras below. They never reach _pool.
+    pad = strategy.tile - (n_blocks % strategy.tile)
+    blocks_in = jnp.concatenate([blocks_in, jnp.broadcast_to(blocks_in[:1], (pad, *blocks_in.shape[1:]))])
+    valid_in = jnp.concatenate([valid_in, jnp.broadcast_to(valid_in[:1], (pad, *valid_in.shape[1:]))])
+  iterator = make_axis_dispatch_via_xtrax(strategy, axis=_PH_BLOCKS.name)
+  var_h, has_h, var_s, has_s = (out[:n_blocks] for out in iterator(per_block, (blocks_in, valid_in)))
   sd_h = _pool(var_h, has_h, dtype)
   sd_s = _pool(var_s, has_s, dtype)
   return jnp.stack([sd_h, sd_s, jnp.asarray(1.0, dtype=dtype)])

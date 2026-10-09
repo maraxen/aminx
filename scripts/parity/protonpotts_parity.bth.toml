@@ -31,7 +31,10 @@ PREDICTION, stated before the run so it can be wrong: all seven waves pass and a
 this re-grading are (a) a wave that last ran before the P9 shared-file edits regresses on a path P9 touched (the features,
 encoder and energy waves last ran before P9), (b) the moved converter or a moved wave resolves a sibling path differently
 from where it lived before, and (c) the new block_zscales / driver edits since the last graded ph_block run
-(9991cfbd) changed a z-scale. Any of these would show as a named wave failing, not as a loosened criterion.
+(9991cfbd) changed a z-scale. block_zscales is now an xtrax-planned map (a vmap, or tiles of one with padding) over the
+blocks instead of a lax.scan; that changes the order in which XLA reduces, so a z-scale may move by an ulp, and the
+ph_block 'zscale_nudged_outside_f64' control sits just outside its band by design. If ph_block fails on a z-scale, the
+map is the first suspect, and the answer is to report it, not to widen a band. Any of these would show as a named wave failing, not as a loosened criterion.
 """
 stage_name = "confirmation"
 novel = false

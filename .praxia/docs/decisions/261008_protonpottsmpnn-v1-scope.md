@@ -42,9 +42,13 @@ sections 42-49):
 9. **Known gap, not closed:** `scripts/convert_weights.py` (loaded by the converter) is outside every scoped prefix, so
    editing it cannot stale the row. The converted weights are still pinned by the checkpoint sha and graded against
    upstream whenever the row runs.
-10. **L-DRV gets a second allowlist reason, `memory_bounded_map`,** for the one carry-free `lax.scan` in
-    `block_zscales` that cannot be a `vmap` (rule R1 bans it in drivers, and a `vmap` would hold every block's V^B joint
-    at once). The three genuinely sequential loops use the existing `sequential_dependency`.
+10. **`block_zscales` maps its blocks through xtrax, and L-DRV gets no new allowlist reason.** An earlier P10 draft added a
+    `memory_bounded_map` reason for the one carry-free `lax.scan` in `block_zscales`. The user asked for it to be composed in
+    xtrax instead (261009): the block axis is an `AxisSpec`, `plan_axis_strategy` chooses a vmap or tiles of it from the
+    memory budget (each block holds a V^B joint), and `make_axis_dispatch_via_xtrax` builds the map, padding a ragged last
+    tile and slicing the padding off before the pool. The three genuinely sequential loops keep `sequential_dependency`.
+    The axis is declared in `ph_descent.py`, not `aminx/tiling/axes.py`, because the host runner imports that registry
+    and an edit there would stale every row; move it there with the next wave that touches shared files.
 
 ## Consequences
 

@@ -16,9 +16,7 @@ _REPO = Path(__file__).resolve().parents[2]
 _ALLOWLIST = Path(__file__).with_name("l_drv_allowlist.toml")
 
 _R1_ATTRS = frozenset({"vmap", "pmap", "filter_vmap", "shard_map"})
-# memory_bounded_map: a carry-free scan over independent items, kept as a loop because a vmap would hold every
-# item's intermediates at once (ProtonPotts block_zscales: N x V**B). R1 forbids vmap in drivers.
-_ALLOWED_REASONS = frozenset({"sequential_dependency", "memory_bounded_map"})
+_ALLOWED_REASONS = frozenset({"sequential_dependency"})
 _JIT_ATTRS = frozenset({"jit", "filter_jit", "scan", "while_loop", "fori_loop", "cond"})
 _LAX_LOOP_ATTRS = frozenset({"scan", "while_loop", "fori_loop"})
 _HOST_GET_ATTRS = frozenset({"item", "tolist"})

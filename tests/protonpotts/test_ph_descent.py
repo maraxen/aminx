@@ -277,6 +277,46 @@ def test_block_zscales_matches_enumeration():
   assert got[2] == pytest.approx(1.0)
 
 
+def test_block_zscales_is_the_same_under_every_xtrax_strategy(monkeypatch):
+  """The block axis goes through xtrax, so the planner may pick one vmap or tiles of it, with padding for a ragged tail."""
+  from aminx.families.protonpotts_mpnn import ph_descent  # noqa: PLC0415
+  from aminx.tiling.strategy import SafeMap, Vmap  # noqa: PLC0415
+
+  p = _problem(3, block_size=2)
+  n_blocks = p.blocks.shape[0]
+  assert n_blocks >= 3
+  tokens = np.array([token_index(t) for t in ("K", "A", "HIS-P", "ASP-D", "G")])
+  sub_valid = np.zeros(V, dtype=bool)
+  sub_valid[tokens] = True
+  args = (
+    jnp.asarray(p.table),
+    jnp.asarray(p.e_idx),
+    jnp.asarray(p.seq0),
+    jnp.asarray(p.blocks),
+    jnp.asarray(p.block_valid),
+    jnp.asarray(p.pin_pos),
+    jnp.asarray(p.pin_prot),
+    jnp.asarray(p.pin_dep),
+    jnp.asarray(p.pin_dep_valid),
+    jnp.asarray(sub_valid),
+  )
+  ragged_tile = n_blocks - 1  # n % (n - 1) == 1 for n > 2, so the last tile is short and gets padded
+  assert n_blocks % ragged_tile != 0
+
+  def zscales_under(strategy):
+    monkeypatch.setattr(ph_descent, "plan_axis_strategy", lambda *_a, **_k: strategy)
+    return np.asarray(block_zscales(*args))
+
+  planned = np.asarray(block_zscales(*args))  # whatever the planner chooses on this host
+  vmapped = zscales_under(Vmap())
+  ragged = zscales_under(SafeMap(tile=ragged_tile))
+  exact = zscales_under(SafeMap(tile=n_blocks))
+  assert not np.allclose(vmapped[:2], 1.0), "degenerate fixture: the z-scales would not discriminate"
+  np.testing.assert_allclose(ragged, vmapped, rtol=1e-5, atol=0.0)
+  np.testing.assert_allclose(exact, vmapped, rtol=1e-5, atol=0.0)
+  np.testing.assert_allclose(planned, vmapped, rtol=1e-5, atol=0.0)
+
+
 @pytest.mark.parametrize("seed", [4, 5])
 def test_zero_temperature_descent_invariants(seed):
   p = _problem(seed, temperature=0.0)
