@@ -1,0 +1,112 @@
+[metadata]
+title = "X7a gate: the per-block pH design graphs (visit, zblock, pool, field_at) on real structures, ORT-CPU and ORT-Web, deterministic across runs"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+ADR decision 11 (261009): pH design in the browser is a per-block graph driven by a JS loop. The loop-free functions of
+`aminx.families.protonpotts_mpnn.ph_export` -- `visit` (one block's objective and its minimiser or inverse-CDF draw), `zblock` (one
+block's z-scale statistics), `pool` (the statistics to (sdH, sdSel, sdGlob) and the weights wh, wsel) and `field_at` (conditional
+energies at a chunk of positions) -- export through xtrax.export.convert_to_onnx (opset 23), and each graph, run in isolation on its
+own JAX-computed inputs, reproduces JAX on ONNX Runtime CPU and on onnxruntime-web wasm under Node (1 thread).
+
+Inputs are real: the converted v6 checkpoint and the four sha256-pinned structures of the scoring gate (1EL1, 1BVC, 1OLR at bucket 256;
+6m0j at bucket 1024), padded to the bucket by the same recipe, their merged pair table from the graded `table` graph's JAX function, and
+the production design defaults (block size 3, neighbourhood infill, neighbour_k 16, max_mutations 20, combined_lambda 0.3,
+repetitive-window weight 1.0 / radius 2 / parents ARG LYS HIS ASP GLU, forbidden HIS-A ASP-A GLU-A UNK). The plan is built by the Python
+planner on the native sequence's candidate energies, with 1, 2 and 3 centres (center_types (HIS-P), (ASP-P, GLU-P), (HIS-P, ASP-P,
+GLU-P)): pin counts P = 1, 2, 3 are separate graphs, as are the buckets, so 3 + 3 + 1 + 1 graphs per bucket.
+
+Checks, per cell and pin count, each against JAX on the same inputs:
+  - zblock on EVERY block of the plan: (var_h, var_s) within max|d|/max|ref| <= 1e-4, the flags exact;
+  - pool on the per-block statistics (padded to the bucket with has = 0): zscales, wh, wsel within 1e-4;
+  - visit on up to six blocks (first, last, four evenly spaced), at temperature 0 AND at temperature 0.05 with a fixed uniform:
+    the digits EXACT;
+  - field_at on the first chunk of 64 positions: within 1e-4.
+The bars are the PottsMPNN / scoring export's (floats 1e-4 relative, integers exact), unchanged.
+
+DETERMINISM. Every visit and zblock case is run five times on ORT-CPU at its DEFAULT thread count (all cores), and the five outputs
+must be bit-identical and equal to the first. Reason: a spike (not cited) found that the first version of these graphs summed with
+repeated-index scatter-adds, which ONNX Runtime does not make thread-safe -- 4-thread output was wrong by up to 4 and varied between runs
+while 1-thread output matched JAX to 2e-6. A single-thread comparison would have passed that defect; this check cannot.
+
+Controls (each must make the SAME comparator fail): FLOAT -- the Potts head perturbed (1e-2 noise on every float leaf), compared on a
+zblock statistic; INT -- the digits of a visit compared with the digits of a DIFFERENT block's visit; RACE -- the pre-fix scatter-add
+objective (reimplemented in the gate with `.at[].add`) exported and run five times on ORT-CPU at the default thread count: its outputs
+must NOT all be bit-identical across runs, or the determinism check could not have seen the defect it exists for.
+
+PREDICTION, stated before the run so it can be wrong: all graphs export; all checks pass on both backends; the five-run determinism holds;
+all three controls fire. Risks: (a) a digit differs between JAX and ORT at a numerically near-tied joint (objectives that differ in the
+sixth digit): the digits would then disagree without any defect, and the record would name the case; (b) the large bucket's field_at
+chunk (64 x 49152 hit matrix) exceeds the wasm heap in ORT-Web; (c) the RACE control does not fire on this machine because the scatter-add
+race is data- and timing-dependent, in which case the outcome is instrument_unverified and says so.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: agreement is graded per check.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false"
+decision = "The JAX arm did not complete (checkpoint or PDB hash mismatch, featurization, planning, reference evaluation). Nothing was compared; cite nothing."
+reasoning = "Without the reference outputs every per-graph status is meaningless."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND NOT (control_float_detected = true AND control_int_detected = true AND control_race_detected = true)"
+decision = "A planted difference was not flagged (perturbed head, a different block's digits, or the racy objective not varying across runs). Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these planted differences would also pass a broken export or a racy graph."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND control_race_detected = true AND all_exported = true AND all_pass = true AND deterministic = true"
+decision = "Every per-block pH graph exports, agrees with JAX on ORT-CPU and ORT-Web on real structures at both buckets and at pin counts 1-3, and is bit-identical across five multi-threaded runs. The JS loop can be built on these exact bytes."
+reasoning = "All three controls fired, so agreement and determinism on every graph, bucket and cell are real, and would have shown the thread race."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND control_race_detected = true AND all_exported = true AND all_pass = true AND deterministic = true)"
+decision = "At least one graph failed to export, load, run, agree or repeat. No artifact from this run may be shipped; the per-check record names what to fix."
+reasoning = "The instrument is verified, so a failing check is a real defect."
+is_residual = true
+
+[result_schema]
+versions = "dict"
+jax_arm_ok = "bool"
+jax_enable_x64 = "bool"
+checkpoint_sha256 = "str"
+cells = "list"
+graphs = "dict"
+n_cases = "int"
+n_pass_cpu = "int"
+n_pass_web = "int"
+all_exported = "bool"
+all_pass = "bool"
+deterministic = "bool"
+n_nondeterministic = "int"
+control_float_detected = "bool"
+control_int_detected = "bool"
+control_race_detected = "bool"
+ort_web_available = "bool"
+manifest_sha256 = "str"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN v6 epoch-0125, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b, converted state ~/scratch/v6_state.npz"
+structures = "1EL1, 1BVC, 1OLR, 6m0j as in protonpotts_export_gate.py (sha256-pinned there)"
+tolerances = "floats max|d|/max|ref| <= 1e-4; digits and flags exact; five-run bitwise determinism at the default ORT thread count"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before protonpotts_ph_export_gate.py exists and before any per-block graph number exists. Builds on spec section 54 (the spike that found the scatter-add race and the BOOL Where) and on protonpotts_export_gate (X6a)."
