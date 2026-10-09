@@ -253,3 +253,15 @@ def test_sample_rows_needs_exactly_one_of_noise_and_order(model: PottsMPNN) -> N
     sample_rows(_decoder(model), *shared, uniforms)
   with pytest.raises(ValueError, match="exactly one"):
     sample_rows(_decoder(model), *shared, uniforms, noise=noise, decoding_order=jnp.zeros((2, L), dtype=jnp.int32))
+
+
+def test_sample_rows_forced_tokens_replay_each_row_on_its_own_prefix(model: PottsMPNN) -> None:
+  shared, uniforms, noise = _rows(model, 3)
+  free = sample_rows(_decoder(model), *shared, uniforms, noise=noise)
+  replay = sample_rows(_decoder(model), *shared, uniforms, decoding_order=free.decoding_order, forced_tokens=free.sequence)
+  np.testing.assert_array_equal(np.asarray(replay.sequence), np.asarray(free.sequence))
+  np.testing.assert_allclose(np.asarray(replay.log_probs), np.asarray(free.log_probs), atol=1e-5)
+  # control: a prefix taken from ANOTHER row changes the conditionals, so the check is not vacuous
+  other = sample_rows(_decoder(model), *shared, uniforms, decoding_order=free.decoding_order,
+                      forced_tokens=jnp.roll(free.sequence, 1, axis=0))
+  assert float(jnp.abs(other.log_probs - free.log_probs).max()) > 1e-4

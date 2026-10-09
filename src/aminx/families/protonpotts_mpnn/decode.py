@@ -204,6 +204,7 @@ def sample_rows(
   *,
   noise: Float[Array, "N L"] | None = None,
   decoding_order: Int[Array, "N L"] | None = None,
+  forced_tokens: Int[Array, "N L"] | None = None,
   cdf_order: Int[Array, " V"] | None = None,
 ) -> DecodeResult:
   """``N`` independent decodes of ONE structure sharing its encoder states: the engine's ``mpnn_sample`` (debt #2617).
@@ -212,20 +213,22 @@ def sample_rows(
   row draw its own decoding-order noise and its own tokens. Here row ``r`` is one ``ProtonPottsARDecode`` call with
   ``uniforms[r]`` and ``noise[r]`` (or ``decoding_order[r]`` for replay); every other argument is shared. Every field of the
   result gains a leading axis of length ``N``. Row ``r`` equals the single-row call exactly; there is no coupling between rows.
+  ``forced_tokens`` (``(N, L)``, ``-1`` = none) is the per-row oracle-replay prefix of ``ProtonPottsARDecode.__call__``.
   """
   if (noise is None) == (decoding_order is None):
     msg = "give exactly one of noise or decoding_order, each of shape (N, L)"
     raise ValueError(msg)
 
-  def one(u: Array, per_row: Array) -> DecodeResult:
+  def one(u: Array, per_row: Array, forced: Array | None) -> DecodeResult:
     return decoder(
       h_v, h_e, e_idx, present, pad_valid, s_true, designed, temperature, bias, u,
       noise=per_row if noise is not None else None,
       decoding_order=per_row if decoding_order is not None else None,
+      forced_tokens=forced,
       cdf_order=cdf_order,
     )
 
-  return jax.vmap(one)(uniforms, noise if noise is not None else decoding_order)
+  return jax.vmap(one)(uniforms, noise if noise is not None else decoding_order, forced_tokens)
 
 
 def teacher_forcing_mask(
