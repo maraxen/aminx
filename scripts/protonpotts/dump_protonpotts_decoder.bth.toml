@@ -13,12 +13,17 @@ decoder number exists yet in either precision.
 For four cells (1BVC, the two-chain 6m0j, 1OLR with dropped residues, 1EL1 with a numbering gap) and each of float32 and
 float64, this dumps:
 
-  AUTOREGRESSIVE SAMPLING, three configurations, with `torch.multinomial` replaced by inverse-CDF on INJECTED uniforms
+  AUTOREGRESSIVE SAMPLING, four configurations, with `torch.multinomial` replaced by inverse-CDF on INJECTED uniforms
   (draw k of the forward = decoding step k; the convention of aminx `decode.py`: index = #(cdf <= u * cdf[-1]), clamped to the last
   nonzero-probability token):
     ar_default     temperature 0.1 for every residue, no bias, every residue designed;
     ar_bias_temp   a per-residue temperature drawn in [0.3, 1.0] and a [L, 30] bias, both seeded;
-    ar_fixed       every 7th residue (offset 3) NOT designed (decode_last_mask false), the others designed.
+    ar_fixed       every 7th residue (offset 3) NOT designed (decode_last_mask false), the others designed;
+    ar_x_bias      temperature 1 and a bias of +8 on the unknown token X (upstream's UNK, index 20) at every position, so that an
+                   X left in the sampling distribution would carry almost all the mass. Upstream's `logits_to_sample` zeroes X and
+                   renormalises; this configuration exists to make that visible, because in the other three X's probability is
+                   negligible and a decoder that forgot to zero it would still agree to 1e-9 (the first graded wave run, a54ce791,
+                   showed exactly that).
   Per configuration: decoding order, the uniforms, S_sampled, S_argmax, log_probs, the renormalised probs_sample the shim saw at
   each step, the raw W_out logits per position, each decoder layer's output per position, and the smallest distance of any draw to a
   CDF boundary (so a wave can tell a numerically fragile draw from a defect).
@@ -45,7 +50,9 @@ Claims, falsifiable by this run:
     dtype, gives exactly the recorded S_sampled in decoding order, for every cell, precision and AR configuration.
  6. FIXED POSITIONS HOLD: in ar_fixed, S_sampled equals the native sequence at every position that is not designed.
  7. THE CONFIGURATIONS ARE NOT INERT: ar_bias_temp's log_probs differ from ar_default's, and ar_fixed's decoding order differs
-    from ar_default's, in every cell (otherwise the later controls "bias ignored" and "fixed ignored" would test nothing).
+    from ar_default's, in every cell (otherwise the later controls "bias ignored" and "fixed ignored" would test nothing); and in
+    ar_x_bias, X is the argmax of log_probs at more than 90% of positions while probs_sample[:, X] is exactly 0 everywhere and X
+    is never drawn (otherwise the control "X not zeroed" would test nothing).
  8. REPRODUCIBLE: a second run in a fresh process gives identical content hashes for every cell, precision and configuration, with
     torch threads pinned to 1.
 
@@ -91,4 +98,4 @@ cells = "1BVC, 6m0j, 1OLR, 1EL1"
 threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
 
 [provenance]
-note = "Pre-registered at the commit that adds this file, before dump_protonpotts_decoder.py exists and before any decoder dump exists. A throwaway spike (uncited) on 1EL1 established only that upstream's autoregressive and teacher-forced forwards run, that multinomial can be replaced, and which source literals leak float32 under .double()."
+note = "REVISED 261009 after the first graded decoder-wave run (a54ce791, outcome fail by the pre-registered rule: every aminx-vs-dump comparison passed, f64 to 3.5e-14, but the control x_not_zeroed was not rejected because X's probability is negligible in the dumped configurations). This revision adds the configuration ar_x_bias and its non-inertness check; the first three configurations, their seeds and uniforms are unchanged, so their dumps reproduce. The graded dump run 6f5a621f stays on record as the dump the first wave run used. Pre-registered at the commit that adds this file, before dump_protonpotts_decoder.py exists and before any decoder dump exists. A throwaway spike (uncited) on 1EL1 established only that upstream's autoregressive and teacher-forced forwards run, that multinomial can be replaced, and which source literals leak float32 under .double()."
