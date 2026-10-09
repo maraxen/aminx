@@ -57,3 +57,18 @@ sections 42-49):
 - `record_trajectory` is accepted and changes nothing (trajectories are not recorded); its knob test says so.
 - Three families now sit in `tests/knob_gate`: 50 alias rows and 23 knob-semantics tests cover ProtonPottsMPNN, and the
   closure self-test pins that a Potts change reaches the ProtonPotts row, never the reverse, and that no family reaches LASEr.
+
+## Decided 261009 (user): browser shape and the decoder
+
+11. **pH design in the browser is a per-block graph driven by a JS loop**, not one sweep graph. Block descent is a host-side
+    sweep over placement blocks on the Potts energy; each block's conditional energy is one loop-free graph call and JS owns
+    the sweep, the convergence test and the injected uniforms. This follows the Potts export lesson (no in-graph `Loop`/`Scan`:
+    control flow forces device copies on WebGPU, and the monolith was abandoned for the split in the ProteinMPNN export). Graded
+    by the same ladder as scoring: export gate (ORT-CPU/ORT-Web), Node loop gate against the real driver, headless Chromium gate.
+12. **The 30-token decoder is implemented now (debt #2617)**, ahead of the remaining browser work. It is the shared blocker for
+    plain ProtonPotts `sample`, the decoder-backed pH methods (`autoregressive`, `mpnn_sample`, `selective_source='decoder'`, the
+    whole-chain `gibbs` baseline, `backend='mpnn'`) and a browser sampler. Order: upstream oracle dump (draw-shimmed AR step, as the
+    Potts and LASEr oracles did) -> port and grade the V=30 decoder -> driver `sample` path -> decoder-backed pH methods ->
+    browser export. Each step is a pre-registered wave with negative controls; no tolerance is widened.
+13. **Browser work is sequenced behind its blockers**, not built speculatively: per-block pH graph first (needs nothing new),
+    decoder graphs after the decoder is graded.
