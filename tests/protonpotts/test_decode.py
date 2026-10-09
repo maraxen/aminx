@@ -19,6 +19,7 @@ from aminx.families.protonpotts_mpnn.decode import (
   TEACHER_FORCING_PATTERNS,
   ProtonPottsARDecode,
   decoding_order_from_noise,
+  sample_rows,
   teacher_forced,
 )
 from aminx.families.protonpotts_mpnn.vocab import PROTONPOTTS_V6
@@ -204,3 +205,51 @@ def test_cdf_order_identity_is_the_default_and_other_orders_draw_differently(mod
   # a different accumulation order is a valid sampler, but the same uniform selects different tokens
   assert not np.array_equal(np.asarray(default.drawn_token), np.asarray(reverse.drawn_token))
   assert np.all(np.asarray(reverse.drawn_token) != X)
+
+
+def _rows(model: PottsMPNN, n_rows: int, designed: np.ndarray | None = None):  # noqa: ANN202
+  h_v, h_e, e_idx, present, pad_valid = _encode(model, L, L)
+  s_true, des, temp, bias, _u, _n = _args(L, L, designed=designed)
+  rng = np.random.default_rng(11)
+  uniforms = jnp.asarray(rng.uniform(size=(n_rows, L)).astype(np.float32))
+  noise = jnp.asarray(rng.standard_normal((n_rows, L)).astype(np.float32))
+  shared = (h_v, h_e, e_idx, present, pad_valid, s_true, des, temp, bias)
+  return shared, uniforms, noise
+
+
+def test_sample_rows_row_r_equals_the_single_row_call(model: PottsMPNN) -> None:
+  designed = np.ones(L, dtype=bool)
+  designed[: L // 2] = False  # a "binder" is the designed half, as in the engine's mpnn_sample
+  shared, uniforms, noise = _rows(model, 3, designed)
+  many = sample_rows(_decoder(model), *shared, uniforms, noise=noise)
+  assert many.sequence.shape == (3, L)
+  for r in range(3):
+    one = _decoder(model)(*shared, uniforms[r], noise=noise[r])
+    np.testing.assert_array_equal(np.asarray(many.sequence[r]), np.asarray(one.sequence))
+    np.testing.assert_array_equal(np.asarray(many.decoding_order[r]), np.asarray(one.decoding_order))
+    np.testing.assert_allclose(np.asarray(many.log_probs[r]), np.asarray(one.log_probs), atol=1e-5)
+
+
+def test_sample_rows_are_independent_draws_and_the_control_breaks_it(model: PottsMPNN) -> None:
+  shared, uniforms, noise = _rows(model, 3)
+  many = sample_rows(_decoder(model), *shared, uniforms, noise=noise)
+  orders = np.asarray(many.decoding_order)
+  assert all(not np.array_equal(orders[i], orders[j]) for i in range(3) for j in range(i + 1, 3))
+  # control: rows given the SAME noise decode in the same order, so the assertion above is not vacuous
+  same = sample_rows(_decoder(model), *shared, uniforms, noise=jnp.broadcast_to(noise[:1], noise.shape))
+  assert np.array_equal(np.asarray(same.decoding_order[0]), np.asarray(same.decoding_order[2]))
+
+
+def test_sample_rows_replay_with_a_given_order_matches_the_noise_run(model: PottsMPNN) -> None:
+  shared, uniforms, noise = _rows(model, 2)
+  drawn = sample_rows(_decoder(model), *shared, uniforms, noise=noise)
+  replay = sample_rows(_decoder(model), *shared, uniforms, decoding_order=drawn.decoding_order)
+  np.testing.assert_array_equal(np.asarray(replay.sequence), np.asarray(drawn.sequence))
+
+
+def test_sample_rows_needs_exactly_one_of_noise_and_order(model: PottsMPNN) -> None:
+  shared, uniforms, noise = _rows(model, 2)
+  with pytest.raises(ValueError, match="exactly one"):
+    sample_rows(_decoder(model), *shared, uniforms)
+  with pytest.raises(ValueError, match="exactly one"):
+    sample_rows(_decoder(model), *shared, uniforms, noise=noise, decoding_order=jnp.zeros((2, L), dtype=jnp.int32))

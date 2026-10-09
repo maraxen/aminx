@@ -19,6 +19,8 @@ What this module is, and is not:
   designed mask: fixed residues are decoded first, in noise order. Pad rows are decoded last (aminx's convention);
   foundry has no padding, so this is not graded against it and is covered by an internal padding-invariance test.
 
+``sample_rows`` is N such decodes over shared encoder states (the engine's ``mpnn_sample``).
+
 Token sampling is the inverse CDF on an injected uniform (``categorical_draw``); the oracle replaces
 ``torch.multinomial`` with the same convention. The draw for decoding step ``k`` is ``uniforms[k]``.
 """
@@ -185,6 +187,45 @@ class ProtonPottsARDecode(eqx.Module):
       drawn_token=drawn_all,
       h_v_stack=h_v_stack,
     )
+
+
+def sample_rows(
+  decoder: ProtonPottsARDecode,
+  h_v: Float[Array, "L H"],
+  h_e: Float[Array, "L K H"],
+  e_idx: Int[Array, "L K"],
+  present: Float[Array, " L"],
+  pad_valid: Bool[Array, " L"],
+  s_true: Int[Array, " L"],
+  designed: Bool[Array, " L"],
+  temperature: Float[Array, " L"],
+  bias: Float[Array, "L V"],
+  uniforms: Float[Array, "N L"],
+  *,
+  noise: Float[Array, "N L"] | None = None,
+  decoding_order: Int[Array, "N L"] | None = None,
+  cdf_order: Int[Array, " V"] | None = None,
+) -> DecodeResult:
+  """``N`` independent decodes of ONE structure sharing its encoder states: the engine's ``mpnn_sample`` (debt #2617).
+
+  Upstream runs the encoder once (``B = 1``), repeats the sample along the batch dimension (``repeat_sample_num = N``) and lets each
+  row draw its own decoding-order noise and its own tokens. Here row ``r`` is one ``ProtonPottsARDecode`` call with
+  ``uniforms[r]`` and ``noise[r]`` (or ``decoding_order[r]`` for replay); every other argument is shared. Every field of the
+  result gains a leading axis of length ``N``. Row ``r`` equals the single-row call exactly; there is no coupling between rows.
+  """
+  if (noise is None) == (decoding_order is None):
+    msg = "give exactly one of noise or decoding_order, each of shape (N, L)"
+    raise ValueError(msg)
+
+  def one(u: Array, per_row: Array) -> DecodeResult:
+    return decoder(
+      h_v, h_e, e_idx, present, pad_valid, s_true, designed, temperature, bias, u,
+      noise=per_row if noise is not None else None,
+      decoding_order=per_row if decoding_order is not None else None,
+      cdf_order=cdf_order,
+    )
+
+  return jax.vmap(one)(uniforms, noise if noise is not None else decoding_order)
 
 
 def teacher_forcing_mask(
