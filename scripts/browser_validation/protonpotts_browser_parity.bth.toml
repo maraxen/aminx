@@ -1,0 +1,102 @@
+[metadata]
+title = "X6c browser parity: the shipping ProtonPotts scoring page in headless Chromium vs the real aminx driver, at 1 and 4 threads"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+On the X6a artifacts (manifest sha256 7b2087dc..., passed in and verified), the shipping page
+browser/protonpotts-scorer/protonpotts_index.html + protonpotts_page.mjs, served over HTTP with COOP/COEP and driven in headless
+Chromium through browser/layer_c/run_p07.mjs unchanged, runs the full browser path per cell (PDB text -> buildProtonPottsInputs ->
+table graph -> chunked energy graph) and reproduces the REAL aminx driver (aminx.host.runner.score, converted v6 checkpoint,
+ProtonPottsOptions with protonation_labels_json and variants_json): reference-row tokens exact, and every one of the 20 energy rows
+within max|d| / max|ref| <= 1e-4, on the four cells 1EL1 (130, labelled), 1BVC (153, labelled), 1OLR (219, unlabelled) and 6m0j
+(789, labelled), at numThreads 1 AND at numThreads 4. The cell set, labels rule, variant generator and seed are those of the Node
+gate protonpotts_score_gate (graded run 1a2355c5, pass), so the Node and browser records grade the same inputs.
+
+WHY SEPARATE FROM THE NODE GATE: Node is not a browser (no cross-origin isolation, no browser APIs, a different module loader,
+and threaded wasm is not expected to initialise from a file:// path). A page is the environment this code ships into. The page
+grades nothing; it reports its outputs, and every comparison and threshold lives in this tracked script. crossOriginIsolated and
+the EFFECTIVE thread count, as ORT reports it after init, are recorded per run.
+
+Controls, per thread setting (each must make the SAME comparator fail): VOCABULARY (variant rows shifted one token, run in the
+page), LABELS (labelled cells run in the page with no labels), ORDER (the page's energies reversed).
+
+PREDICTION, stated before the run so it can be wrong: all four cells pass at both thread settings, with errors of the order the
+Node run showed (about 1e-6). The risks specific to a browser are (a) the 6m0j cell: a 177 MB table output tensor plus its
+same-size merge intermediate may exceed what Chromium's wasm heap allows (it ran under Node, whose limit differs), which would
+show as that page cell not ok; (b) 4-thread wasm may change reduction order enough to move the 789-residue energies, but not
+beyond 1e-4; (c) fetch/typed-array plumbing in the page that Node's readFileSync path does not exercise.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: exactness, the comparator controls and isolation are graded per run.
+# Timings are NOT graded here.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "not_isolated", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR browser_complete = false"
+decision = "The driver arm, the artifact verification, or the browser run at one of the two thread settings did not complete at full size (every page cell ran at both settings). Nothing was compared against a complete browser run; cite nothing from this run."
+reasoning = "A partial browser run must not borrow the authority of a complete one; a Chromium launch failure, a page that throws, or a cell that runs out of memory produces no measurement."
+is_residual = true
+
+[outcomes.not_isolated]
+condition = "browser_complete = true AND isolated_at_4 = false"
+decision = "The page ran at 4 requested threads without crossOriginIsolated. Multithreaded results from this run are not a threading result and must not be cited as one."
+reasoning = "SharedArrayBuffer-backed multithreaded wasm needs COOP/COEP. Without isolation ORT silently falls back, so the threaded arm would be the single-threaded arm under another name."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "browser_complete = true AND isolated_at_4 = true AND NOT (control_vocab_detected = true AND control_labels_detected = true AND control_order_detected = true)"
+decision = "At one of the thread settings the comparator failed to flag a planted difference (shifted vocabulary, dropped labels, reversed order). Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these differences would also pass a page that ignores its labels or mis-encodes tokens. The controls must be live at both settings."
+is_residual = true
+
+[outcomes.fail]
+condition = "browser_complete = true AND isolated_at_4 = true AND control_vocab_detected = true AND control_labels_detected = true AND control_order_detected = true AND all_exact = false"
+decision = "At least one cell at one thread setting disagrees with the aminx driver: reference tokens, or an energy beyond 1e-4 relative. The per-cell record names the cell and thread setting. The page is not validated at that setting."
+reasoning = "Under Node the same chain agrees. A disagreement here localises to the browser environment or the page's own plumbing, not the arithmetic."
+is_residual = true
+
+[outcomes.pass]
+condition = "browser_complete = true AND isolated_at_4 = true AND control_vocab_detected = true AND control_labels_detected = true AND control_order_detected = true AND all_exact = true"
+decision = "The shipping page reproduces the aminx driver on all four cells at 1 thread and at 4 threads, tokens exact and energies within 1e-4, with the comparator demonstrably live at both settings and crossOriginIsolated true at 4 threads. The ProtonPotts scoring path is validated in headless Chromium for these cells."
+reasoning = "Agreement from a real page at both thread settings, with sensitive controls and a recorded isolation state, licenses 'validated' rather than 'expected to work'. It licenses nothing about WebGPU, other browsers, other structures, pH design, or speed."
+is_residual = false
+
+[result_schema]
+manifest_sha256 = "str"
+artifacts_verified = "bool"
+jax_arm_ok = "bool"
+jax_version = "str"
+onnxruntime_web_version = "str"
+playwright_version = "str"
+node_version = "str"
+git_hash = "str"
+git_clean = "bool"
+n_expected_per_thread = "int"
+threads_requested = "list"
+runs = "list"
+browser_complete = "bool"
+isolated_at_4 = "bool"
+control_vocab_detected = "bool"
+control_labels_detected = "bool"
+control_order_detected = "bool"
+all_exact = "bool"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN v6 epoch-0125, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b"
+artifacts = "X6a run 40b4318e work dir, manifest sha256 7b2087dcc7df8d72948a2391377b958b10aa0d7256da82623f580043c6229243"
+tolerances = "tokens exact; energies max|d|/max|ref| <= 1e-4"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, together with the page and HTML it serves (protonpotts_page.mjs, protonpotts_index.html), before protonpotts_browser_parity.py exists and before any browser number exists. Mirrors potts_browser_parity (X5b)."
