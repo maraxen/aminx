@@ -193,8 +193,8 @@ def _dump(args: argparse.Namespace, out: Path, manifests: dict[str, dict]) -> di
     chains = np.asarray(atom_array[get_token_starts(atom_array)].chain_id)
     designed = arrays_in["designed_residue_mask"][0].astype(bool)
     only_mask = (
-      set(arrays_in) == set(default_arrays)
-      and all(np.array_equal(arrays_in[k], default_arrays[k]) for k in arrays_in if k != "designed_residue_mask")
+      set(default_arrays) <= set(arrays_in) and set(arrays_in) - set(default_arrays) <= {"designed_residue_mask"}
+      and all(np.array_equal(arrays_in[k], default_arrays[k]) for k in default_arrays)
       and bool(np.array_equal(designed, chains == binder)) and bool(designed.any())
       and (len(set(chains.tolist())) == 1 or not bool(designed.all()))  # single chain: the binder is everything
     )
