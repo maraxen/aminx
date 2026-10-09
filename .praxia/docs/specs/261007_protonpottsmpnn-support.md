@@ -2938,3 +2938,19 @@ Done on PR #211 (commits `5dedc401` S1; `20d7e003`, `a8a2cbeb`, S2/S3; `e7dcd509
 - **S5** ADR `261008_protonpottsmpnn-v1-scope.md`; `docs/MODEL_FAMILIES.md`; `scripts/redsox/README.md` group 4.
 
 Not done: **S6**, the re-wave. `launch_wave.sh` checks out `main` (or `AMINX_WAVE_REF`), so PR #211 must be merged or the ref set to the branch. Order: `launch_wave.sh --stale-only 1`, `2`, `3`, `4`; `verify_wave.py` per row; ledger ids; `run_gate.py` on GPUs 2,3. `redsox` must be importable in the gate venv (`test_superset` needs it; installed `--no-deps` into the scratch venv for these runs).
+
+## 52. P10 closed (2026-10-09), and the browser scoring path (X6, #5816) verified
+
+**P10 / S6 is done.** All nine re-wave runs pass by record, `verify_wave.py` grades all nine, the ledger is rewritten (`432f4e48`), and the final gate `6048a8e9` passed (1071 ids) with CI green. `block_zscales` is an xtrax-planned map (`272a9dac`); the ragged-tile pad/slice branch is covered by a unit test only, not by a graded run.
+
+**ONNX / browser: scoring (`score:energy`, `score:ddg`) is verified end to end in headless Chromium.** Scope: the Potts-head path only. V1 has no decoder (debt #2617), so there is nothing to sample in the browser, and pH design (block descent) is not exported (see "Not done"). Every run below is verified by its cool-tier record: `completed`, `pass`, exit 0, `git_dirty` false; each gate's sidecar was committed before its script, and the exploratory smokes that preceded each graded run are not cited.
+
+| gate | run | commit | result |
+|---|---|---|---|
+| X6a export: `table` (encoder + head + one reciprocal merge) and `energy` graphs at buckets 256 and 1024, ORT-CPU and ORT-Web | `40b4318e` | `a034244a` | 8/8 checks; padding invariant; 3 controls fired; manifest `7b2087dc…` |
+| X6b shipping JS scorer under Node/ORT-Web vs the real driver (`aminx.host.runner.score`), 4 cells x 20 rows, protonation tokens included | `1a2355c5` | `e34bf55c` | 4/4, tokens exact, worst rel 2.4e-6; 3 controls fired |
+| X6c shipping page in headless Chromium 153, COOP/COEP, 1 and 4 threads, same cells | `82a8a856` | `76e7e6f0` | 4/4 at both settings, worst rel 2.4e-6; isolated; 3 controls fired |
+
+The JS input builder (`browser/protonpotts-scorer/protonpotts_inputs.mjs`: featurizer, label encoder, padding) is bit-exact against five Python dumps incl. labelled 6m0j (a deterministic equality test, `node --test` 14/14, with two negative controls; not a measured finding). The 6m0j cell (789 residues, bucket 1024, 177 MB table) ran in Chromium, so the large bucket the sidecar registered as the main risk did not fire. The validated bytes are pinned at `release/browser/protonpotts/` (LFS; `--verify-manifest` gives `drift: []`).
+
+**Not done, tracked.** (1) pH design in the browser: block descent is a sweep over placement blocks with host-side logic; it needs a design decision on graph shape (per-block graph driven from JS vs one sweep graph), then the same X6a/b/c ladder. (2) A browser benchmark (the page already takes `reps`/`warmup`/`planted_ms`). (3) The release/Pages publishing step (the Potts precedent, #5818). (4) Any `sample` path, blocked on #2617.

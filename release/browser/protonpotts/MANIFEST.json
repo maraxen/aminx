@@ -1,0 +1,207 @@
+{
+  "alphabet": "protonpottsmpnn_v6_30",
+  "buckets": [
+    {
+      "bucket": 256,
+      "graphs": {
+        "energy": {
+          "bytes": 18884,
+          "file": "protonpottsmpnn_energy_L256.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "bool",
+            "int32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "pad_valid",
+            "sequences"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              8,
+              256
+            ]
+          ],
+          "sha256": "06116d01957ed171044ead1d80145bbaa981715ee7752c94d3a32c0cc5f14b9d"
+        },
+        "table": {
+          "bytes": 4549818,
+          "file": "protonpottsmpnn_table_L256.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "int32",
+            "bool"
+          ],
+          "input_names": [
+            "coords",
+            "present",
+            "residue_idx",
+            "chain_index",
+            "pad_valid"
+          ],
+          "input_shapes": [
+            [
+              256,
+              4,
+              3
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ]
+          ],
+          "sha256": "714a18a4a26e46f1a9172f2562a363b8e67796204e3b30072146455cef1085ca"
+        }
+      }
+    },
+    {
+      "bucket": 1024,
+      "graphs": {
+        "energy": {
+          "bytes": 18884,
+          "file": "protonpottsmpnn_energy_L1024.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "bool",
+            "int32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "pad_valid",
+            "sequences"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              8,
+              1024
+            ]
+          ],
+          "sha256": "ceb9a20925de2201eda379cc3e7999325af69b68f1eccef9d72434cc59240285"
+        },
+        "table": {
+          "bytes": 4697344,
+          "file": "protonpottsmpnn_table_L1024.onnx",
+          "input_dtypes": [
+            "float32",
+            "float32",
+            "int32",
+            "int32",
+            "bool"
+          ],
+          "input_names": [
+            "coords",
+            "present",
+            "residue_idx",
+            "chain_index",
+            "pad_valid"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              4,
+              3
+            ],
+            [
+              1024
+            ],
+            [
+              1024
+            ],
+            [
+              1024
+            ],
+            [
+              1024
+            ]
+          ],
+          "sha256": "0ee055812b7bdbe5803e34b99716e274bfe43017d1d8babd0a4c3cadf37afecd"
+        }
+      }
+    }
+  ],
+  "checkpoint": "potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt",
+  "checkpoint_sha256": "a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b",
+  "family": "protonpottsmpnn",
+  "n_sequences_per_energy_call": 8,
+  "n_tokens": 30,
+  "pad": {
+    "chain_index": 0,
+    "coords": 0.0,
+    "present": 0.0,
+    "residue_idx": -100,
+    "sequences": 0
+  },
+  "vocabulary": [
+    "A",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G",
+    "H",
+    "I",
+    "K",
+    "L",
+    "M",
+    "N",
+    "P",
+    "Q",
+    "R",
+    "S",
+    "T",
+    "V",
+    "W",
+    "Y",
+    "X",
+    "HIS-P",
+    "HIS-S",
+    "HIS-A",
+    "ASP-P",
+    "ASP-D",
+    "ASP-A",
+    "GLU-P",
+    "GLU-D",
+    "GLU-A"
+  ]
+}
