@@ -52,7 +52,9 @@ P4C = "features_v6_p4c/protonpotts_v6_features_p4c"
 P4D = "features_v6_p4d/protonpotts_v6_features_p4c"
 CELLS = {"pkad_unlabelled": P4B, "multichain": P4B, "gap": P4C, "only_o_1olr": P4D}
 CONTROL_CELL = "pkad_unlabelled"
-AR_CONFIGS = ("ar_default", "ar_bias_temp", "ar_fixed")
+AR_CONFIGS = ("ar_default", "ar_bias_temp", "ar_fixed", "ar_x_bias")
+X_TOKEN = 20  # the unknown token's index in both orders
+X_BIAS = 8.0  # the dumper's constant for ar_x_bias
 F64_TOL = 1e-9
 F32_FACTOR = 10.0
 F32_MIN_BAND = 1e-6
@@ -103,6 +105,10 @@ def regenerate_inputs(config: str, n: int, seed: int, fixed_every: int, fixed_of
     bias = (0.5 * rng.standard_normal(size=(1, n, V))[0])[..., TAKE]  # the dumper built it in upstream order
   elif config == "ar_fixed":
     designed[fixed_offset::fixed_every] = False
+  elif config == "ar_x_bias":
+    temperature = np.ones(n)
+    bias = np.zeros((n, V))
+    bias[:, X_TOKEN] = X_BIAS  # the same column in upstream's order and in aminx's
   return temperature, bias, designed
 
 
@@ -293,7 +299,7 @@ def main() -> int:  # noqa: C901, PLR0915
   mutants["scalar_temperature"] = verdict(grade_ar(cell, "ar_bias_temp", regen["ar_bias_temp"], None,
                                                    override={"temperature": np.full(n, temp_bias.mean())})["ok"])
   with _x_not_zeroed():
-    mutants["x_not_zeroed"] = verdict(grade_ar(cell, "ar_default", regen["ar_default"], None)["ok"])
+    mutants["x_not_zeroed"] = verdict(grade_ar(cell, "ar_x_bias", regen["ar_x_bias"], None)["ok"])
   mutants["fixed_treated_as_designed"] = verdict(grade_ar(cell, "ar_fixed", regen["ar_fixed"], None,
                                                           override={"designed": np.ones(n, dtype=bool)})["ok"])
   upstream_order = TAKE[cell.native].astype(np.int32)  # the native sequence spelled in upstream's index order

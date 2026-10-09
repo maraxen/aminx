@@ -51,7 +51,9 @@ from dump_protonpotts_features import _content_hash  # noqa: E402
 logger = logging.getLogger("dump_protonpotts_decoder")
 
 SEED = 0
-AR_CONFIGS = ("ar_default", "ar_bias_temp", "ar_fixed")
+AR_CONFIGS = ("ar_default", "ar_bias_temp", "ar_fixed", "ar_x_bias")
+X_TOKEN = 20  # UNK in upstream's order and X in aminx's: the same index
+X_BIAS = 8.0
 TF_PATTERNS = ("auto_regressive", "conditional", "conditional_minus_self")
 DECODER_LAYERS = 3
 FIXED_EVERY, FIXED_OFFSET = 7, 3
@@ -201,6 +203,13 @@ def _edits(config: str, features: dict, dtype: torch.dtype) -> dict[str, torch.T
       "temperature": torch.tensor(rng.uniform(0.3, 1.0, size=(1, n)), dtype=dtype),
       "bias": torch.tensor(0.5 * rng.standard_normal(size=(1, n, v)), dtype=dtype),
     }
+  if config == "ar_x_bias":
+    # Temperature 1 and +X_BIAS on the unknown token: left unzeroed, X would carry almost all the mass, so only a
+    # decoder that zeroes it (as upstream's logits_to_sample does) can match. In the other configurations X's
+    # probability is negligible and the zeroing is invisible.
+    x_bias = torch.zeros((1, n, v), dtype=dtype)
+    x_bias[:, :, X_TOKEN] = X_BIAS
+    return {"temperature": torch.ones((1, n), dtype=dtype), "bias": x_bias}
   if config == "ar_fixed":
     # None means every residue is designed (the prepared default); start from all-true either way.
     given = features.get("designed_residue_mask")
@@ -361,6 +370,11 @@ def main() -> int:  # noqa: C901, PLR0915
     precisions_differ &= float(np.abs(a64["ar_default__log_probs"] - a32["ar_default__log_probs"].astype(np.float64)).max()) > 0.0
     not_inert &= float(np.abs(a32["ar_bias_temp__log_probs"] - a32["ar_default__log_probs"]).max()) > 0.0
     not_inert &= not np.array_equal(a32["ar_fixed__decoding_order"], a32["ar_default__decoding_order"])
+    # ar_x_bias: an unzeroed X would be the argmax at (nearly) every position, yet upstream draws it never.
+    x_log = a32["ar_x_bias__log_probs"]
+    not_inert &= bool((x_log.argmax(axis=-1) == X_TOKEN).mean() > 0.9)
+    not_inert &= bool(np.all(a32["ar_x_bias__probs_sample"][:, X_TOKEN] == 0))
+    not_inert &= not np.any(a32["ar_x_bias__S_sampled"] == X_TOKEN)
 
   flags = {
     "features_match_sealed": all(e["features_match_sealed"] for e in report.values()),
