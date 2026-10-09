@@ -1,13 +1,14 @@
 [metadata]
-title = "protonpotts_parity: the ProtonPottsMPNN ledger vehicle -- all seven graded waves and their 47 negative controls behind the redsox row contract"
+title = "protonpotts_parity: the ProtonPottsMPNN ledger vehicle -- all nine graded waves and their 61 negative controls behind the redsox row contract"
 created = "261008"
 schema_version = "0.3"
 
 [experiment]
 hypothesis = """
-At the commit under test, each of the seven ProtonPottsMPNN waves that was graded on its own (features, encoder, energy,
-driver, ph_block, ph_greedy, ph_driver; records 479b640b, 0c0c8475, 467de9ff, d91b8380, 72ed386b, 992c4392, f8273bc5)
-still passes when re-run unchanged, and every one of the 47 deliberate errors those waves list is still rejected by the same
+At the commit under test, each of the nine ProtonPottsMPNN waves that was graded on its own (features, encoder, energy,
+driver, ph_block, ph_greedy, ph_driver, decoder, ddg; records 479b640b, 0c0c8475, 467de9ff, d91b8380, 72ed386b, 992c4392, f8273bc5,
+a769e1b2, a8414c87)
+still passes when re-run unchanged, and every one of the 61 deliberate errors those waves list is still rejected by the same
 comparison it was rejected by before.
 
 This is a re-grading, not a new measurement. What is new is the commit: P8 and P9 edited the shared host files
@@ -19,16 +20,24 @@ require, at one commit and by record, that the whole ProtonPottsMPNN path agrees
 The vehicle runs each wave as a subprocess with the arguments the wave was graded with, reads the wave's own results file,
 and reports its controls as <wave>.<control>. The row passes when ALL of:
 
-  1. every wave exits 0 and reports clean = 'pass' (7 of 7);
-  2. the set of controls the waves report equals the --mutants string exactly (47 ids), which is what step 1c compares to
+  1. every wave exits 0 and reports clean = 'pass' (9 of 9);
+  2. the set of controls the waves report equals the --mutants string exactly (61 ids), which is what step 1c compares to
      the manifest rows;
-  3. every one of the 47 controls is 'failed' (the comparison rejected the deliberate error);
+  3. every one of the 61 controls is 'failed' (the comparison rejected the deliberate error);
   4. the converted checkpoint state (~/scratch/v6_state.json) records the sha256 of the checkpoint file named in the
      weights map, so the weights the waves ran on are the weights the registry pins;
   5. no wave was reused from an earlier stamp (n_reused_waves = 0): a graded run computes everything.
 
-PREDICTION, stated before the run so it can be wrong: all seven waves pass and all 47 controls fail. The risks specific to
-this re-grading are (a) a wave that last ran before the P9 shared-file edits regresses on a path P9 touched (the features,
+REVISION 261009 (before the re-run; this is a new pre-registration of the same row). Two waves graded on their own since the seven-wave run
+94f395f8 are folded in: `decoder` (protonpotts_decoder_parity, graded pass a769e1b2: the 30-token autoregressive decoder against the sealed P4h
+dump features_v6_p4h2; 9 controls) and `ddg` (protonpotts_ddg_parity, graded pass a8414c87: score:ddg against the sealed P4f energies; 5
+controls), 14 new controls named decoder.<control> and ddg.<control>, 61 in all. protonpotts_ddg_parity.py and its sidecar moved from
+scripts/protonpotts/ to scripts/parity/ (path strings only), because the vehicle resolves wave scripts there. The family package was also
+edited since 94f395f8 (ph_potentials one-hot matmuls, ph_descent boolean algebra and block_zstats, ph_export, decode, decode_export), so
+this re-run is also the neutrality check for those edits on the seven earlier waves. Nothing in [outcomes] changed except the two counts.
+
+PREDICTION, stated before the run so it can be wrong: all nine waves pass and all 61 controls fail. The risks specific to
+this re-grading are (0) a ph_potentials/ph_descent edit changed a ph_block, ph_greedy or ph_driver result (the ph_export gates showed the loop reproduces block_descent, but the sealed waves are the authority), (a) a wave that last ran before the P9 shared-file edits regresses on a path P9 touched (the features,
 encoder and energy waves last ran before P9), (b) the moved converter or a moved wave resolves a sibling path differently
 from where it lived before, and (c) the new block_zscales / driver edits since the last graded ph_block run
 (9991cfbd) changed a z-scale. block_zscales is now an xtrax-planned map (a vmap, or tiles of one with padding) over the
@@ -40,18 +49,18 @@ stage_name = "confirmation"
 novel = false
 
 [outcomes.pass]
-condition = "clean = 'pass' AND n_waves = 7 AND n_waves_ok = 7 AND state_matches_checkpoint AND listed_matches AND n_listed = 47 AND n_failed = n_listed AND n_reused_waves = 0"
-decision = "protonpotts_parity is graded at this commit: all seven waves agree with the sealed upstream dumps and all 47 controls are rejected."
+condition = "clean = 'pass' AND n_waves = 9 AND n_waves_ok = 9 AND state_matches_checkpoint AND listed_matches AND n_listed = 61 AND n_failed = n_listed AND n_reused_waves = 0"
+decision = "protonpotts_parity is graded at this commit: all nine waves agree with the sealed upstream dumps and all 61 controls are rejected."
 reasoning = "Every wave is clean, the reported controls equal the listed set, each control failed, the weights are the pinned checkpoint, and nothing was reused."
 is_residual = false
-adversarial_check = "NOT (clean = 'pass' AND n_waves = 7 AND n_waves_ok = 7 AND state_matches_checkpoint AND listed_matches AND n_listed = 47 AND n_failed = n_listed AND n_reused_waves = 0)"
+adversarial_check = "NOT (clean = 'pass' AND n_waves = 9 AND n_waves_ok = 9 AND state_matches_checkpoint AND listed_matches AND n_listed = 61 AND n_failed = n_listed AND n_reused_waves = 0)"
 
 [outcomes.fail]
-condition = "NOT (clean = 'pass' AND n_waves = 7 AND n_waves_ok = 7 AND state_matches_checkpoint AND listed_matches AND n_listed = 47 AND n_failed = n_listed AND n_reused_waves = 0)"
+condition = "NOT (clean = 'pass' AND n_waves = 9 AND n_waves_ok = 9 AND state_matches_checkpoint AND listed_matches AND n_listed = 61 AND n_failed = n_listed AND n_reused_waves = 0)"
 decision = "Do not write this row. Read per_wave: a wave with clean = fail names the broken link (its own log is under the work dir); listed_matches false means the --mutants string and the waves disagree; an entry in undetected is a control the comparison can no longer see."
 reasoning = "Some wave failed or timed out, the control set differs from the listed set, a control survived, the weights do not match the pinned checkpoint, or a wave was reused."
 is_residual = true
-adversarial_check = "clean = 'pass' AND n_waves = 7 AND n_waves_ok = 7 AND state_matches_checkpoint AND listed_matches AND n_listed = 47 AND n_failed = n_listed AND n_reused_waves = 0"
+adversarial_check = "clean = 'pass' AND n_waves = 9 AND n_waves_ok = 9 AND state_matches_checkpoint AND listed_matches AND n_listed = 61 AND n_failed = n_listed AND n_reused_waves = 0"
 
 [result_schema]
 clean = "str"
@@ -77,4 +86,4 @@ structures = "1BVC, 6m0j, 1OLR, 1EL1 from ~/repos/PottsMPNN/energy_benchmark_dat
 tolerances = "each wave's own, unchanged: see its sidecar; this vehicle adds none"
 
 [provenance]
-note = "Graded invocation: scripts/redsox/launch_wave.sh (bth run --project-slug aminx --output-paths <dir>/branch_controls.json -- uv run --no-sync python3 scripts/parity/protonpotts_parity.py --mutants <47 ids> --work-dir <dir> --controls-out <dir>/branch_controls.json), from a clean checkout of the commit that adds the script. The sidecar is committed before the script and before any result of this vehicle exists. Waves' earlier records stay valid under their old paths: the moved scripts keep their own sidecars in scripts/parity/."
+note = "Graded invocation: scripts/redsox/launch_wave.sh (bth run --project-slug aminx --output-paths <dir>/branch_controls.json -- uv run --no-sync python3 scripts/parity/protonpotts_parity.py --mutants <61 ids> --work-dir <dir> --controls-out <dir>/branch_controls.json), from a clean checkout of the commit that adds the script. The sidecar is committed before the script and before any result of this vehicle exists. Waves' earlier records stay valid under their old paths: the moved scripts keep their own sidecars in scripts/parity/."

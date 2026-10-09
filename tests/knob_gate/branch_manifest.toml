@@ -230,7 +230,7 @@ slug = "potts_ddg_megascale"
 #                        (see #2370) -- it can mean the control is inert OR
 #                        that one defect swamps both. Resolve #2417 first.
 
-# P10 protonpotts_parity (spec 261007 section 50). 47 rows: every negative control of the seven ProtonPottsMPNN waves, named
+# P10 protonpotts_parity (spec 261007 section 50). 61 rows: every negative control of the nine ProtonPottsMPNN waves, named
 # <wave>.<control>. Each must report 'failed'. The ids are the --mutants string launch_wave.sh passes, by exact equality.
 
 [[branch]]
@@ -652,6 +652,132 @@ id = "ph_driver.wrong_contrast_token"
 stage = "P10"
 fixture = "protonpotts_dumps"
 mutant = "ph_driver.wrong_contrast_token"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.bias_ignored"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.bias_ignored"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.scalar_temperature"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.scalar_temperature"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.x_not_zeroed"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.x_not_zeroed"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.fixed_treated_as_designed"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.fixed_treated_as_designed"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.token_order_upstream"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.token_order_upstream"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.cms_uses_conditional_mask"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.cms_uses_conditional_mask"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.uniforms_shifted_one_step"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.uniforms_shifted_one_step"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.cdf_in_aminx_order"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.cdf_in_aminx_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "decoder.nudged_4x_band"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "decoder.nudged_4x_band"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ddg.ddg_sign_flipped"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ddg.ddg_sign_flipped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ddg.token_names_in_upstream_order"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ddg.token_names_in_upstream_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ddg.mutant_rows_reversed"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ddg.mutant_rows_reversed"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ddg.energies_without_reference_subtracted"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ddg.energies_without_reference_subtracted"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ddg.ddg_nudged_4x_band"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ddg.ddg_nudged_4x_band"
 [branch.vehicle]
 kind = "sidecar"
 slug = "protonpotts_parity"

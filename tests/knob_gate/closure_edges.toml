@@ -85,7 +85,7 @@ dynamic_ok = [
   "src/aminx/families/potts_mpnn/driver.py",
 ]
 
-# protonpotts_parity (spec 261007 section 50). The vehicle runs the seven wave scripts as SUBPROCESSES, which no import
+# protonpotts_parity (spec 261007 section 50). The vehicle runs the nine wave scripts as SUBPROCESSES, which no import
 # statement shows, so every one of them is declared `soft`, together with the checkpoint converter they load by path.
 # The ProtonPotts family package is reached only through the string table in host/runner.py, hence `soft` too.
 # KNOWN GAP: scripts/convert_weights.py is loaded by the converter via spec_from_file_location. It sits outside every
@@ -103,6 +103,8 @@ soft = [
   "protonpotts_ph_block_parity",
   "protonpotts_ph_greedy_parity",
   "protonpotts_ph_driver_parity",
+  "protonpotts_decoder_parity",
+  "protonpotts_ddg_parity",
 ]
 # The four scripts/parity sites load the converter (declared soft) or scripts/convert_weights.py (the known gap above).
 # runner.py / weights.py / the Potts driver are the same three sites the Potts rows declare: the family string table
