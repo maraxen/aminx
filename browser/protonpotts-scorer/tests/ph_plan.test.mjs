@@ -47,8 +47,9 @@ test("blockTable pads with -1 and marks validity", () => {
   const slots = 3;
   const eIdx = Int32Array.from([0, 1, 2, 1, 0, 2, 2, 0, 1]);
   const { blocks, valid } = blockTable(eIdx, slots, [0, 1], 3);
-  assert.deepEqual(Array.from(blocks), [0, 1, 2, 1, 0, 2]);
-  assert.deepEqual(Array.from(valid), [1, 1, 1, 1, 1, 1]);
+  // position 2 is not designable, so each block holds only its own position and the one designable partner
+  assert.deepEqual(Array.from(blocks), [0, 1, -1, 1, 0, -1]);
+  assert.deepEqual(Array.from(valid), [1, 1, 0, 1, 1, 0]);
   const small = blockTable(eIdx, slots, [0], 3);
   assert.deepEqual(Array.from(small.blocks), [0, -1, -1]);
 });
