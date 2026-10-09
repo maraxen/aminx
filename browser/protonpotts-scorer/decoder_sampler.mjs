@@ -4,10 +4,10 @@
 // the graphs deliberately take as inputs: the decoding-order noise and the draw uniforms (injected for replay, otherwise a seeded
 // generator), the per-residue temperature / bias / designed mask, the padding to the bucket, and the trimming of the outputs.
 //
-// STREAM ALIGNMENT. The padded graph decodes padding first (not designed, noise 0 sorts them ahead of everything), so a real residue's
-// k-th decode step is padded step `pad + k` where pad = bucket - L. Uniforms are indexed by decode step, so the caller's length-L stream
-// `u` (u[k] = the k-th step of the UNPADDED decode, the contract of the aminx driver) is placed at U[pad + k]. Noise is indexed by
-// position and is not shifted.
+// STREAM ALIGNMENT. The decoder orders padding LAST (decoding_order_from_noise takes pad_valid), so the real residues keep decode steps
+// 0..L-1 whatever the padding, and the caller's length-L uniform stream (u[k] = the k-th decode step, as in the unpadded decode) goes at
+// U[0..L-1]; noise is indexed by position. (An earlier version shifted the stream by the pad count on the belief that padding decodes
+// first; the X8b exploratory smoke showed every case wrong and a padded-vs-unpadded JAX spike showed the unshifted stream is exact.)
 
 import { ProtonPottsInputError, N_TOKENS, VOCABULARY, buildProtonPottsInputs } from "./protonpotts_inputs.mjs";
 import { run } from "./protonpotts_scorer.mjs";
@@ -66,7 +66,6 @@ export class ProtonPottsSampler {
     const B = this.bucket;
     const built = buildProtonPottsInputs(pdbText, B, labels);
     const L = built.lTotal;
-    const pad = B - L;
     const V = N_TOKENS;
     const { designed = null, temperature = DEFAULT_TEMPERATURE, bias = null, seed = 0 } = options;
     let { uniforms = null, noise = null } = options;
@@ -87,7 +86,7 @@ export class ProtonPottsSampler {
     const sTrue = new Int32Array(B);
     sTrue.set(built.tokens);
     const uniformsPad = new Float32Array(B);
-    uniformsPad.set(uniforms, pad);
+    uniformsPad.set(uniforms);
     const noisePad = new Float32Array(B);
     noisePad.set(noise);
 

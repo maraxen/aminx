@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>aminx ProtonPottsMPNN sampler — browser harness</title>
+  </head>
+  <body>
+    <!-- Headless harness page. No UI: scripts/browser_validation/protonpotts_sampler_browser_parity.py drives it through
+         browser/layer_c/run_p07.mjs, which reads window.__PARITY_RESULT__ / __PARITY_DONE__ / __PARITY_ERROR__. -->
+    <p>Running the ProtonPottsMPNN browser sampler. Results land on <code>window.__PARITY_RESULT__</code>.</p>
+    <script type="module" src="./sampler_page.mjs"></script>
+  </body>
+</html>

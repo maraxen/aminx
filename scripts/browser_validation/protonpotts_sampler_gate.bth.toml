@@ -26,9 +26,15 @@ structures). The seeded outputs are not compared with the reference (the generat
 Controls (each must make the SAME comparator fail): TOKENS -- the JS run with uniforms rolled by one position against the reference;
 FLOAT -- the reference rerun with the decoder weights perturbed (1e-2 on every float leaf), compared on log-probabilities.
 
+REVISION (261009, before the graded run; the criteria and outcomes are unchanged). The text above says the uniform stream is aligned
+"so the caller's step k lands on padded step pad+k". That mechanism was WRONG: an exploratory smoke of the first sampler (every case
+disagreed in sequence and log-probabilities; decoding orders agreed) and a padded-vs-unpadded JAX spike showed the decoder orders
+padding last, so real residues keep steps 0..L-1 and the stream is placed unshifted. The sampler was corrected; nothing in [outcomes] or
+the tolerances changed. The smoke numbers are exploratory and not cited.
+
 PREDICTION, stated before the run so it can be wrong: all 12 injected-stream cases agree (fragile cases exempt on sequence), the seeded
 checks hold, both controls fire. Risks: (a) a stream-alignment off-by-one between padded and unpadded steps for the `fixed` configuration
-(non-designed residues interleave with padding in the order); (b) pad noise 0 not sorting padding strictly first under some noise draw.
+(non-designed residues interleave with padding in the order); (b) padding not sorting strictly last under some noise draw.
 """
 stage_name = "validation"
 novel = true
