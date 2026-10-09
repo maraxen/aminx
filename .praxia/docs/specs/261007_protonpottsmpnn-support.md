@@ -3020,3 +3020,11 @@ Run **`d5918c26`**: completed, `pass`, exit 0, clean tree at `48564599`, sidecar
 The determinism check is the new part and the reason this gate exists in this form: the first version of these graphs passed every single-thread comparison and was wrong by up to 4 at 4 threads (spec 54). The graphs are pinned for downstream use at `~/bv/protonpotts-export/x7a_d5918c26/` (the racy control artifact is not shipped).
 
 Chunked `field_at` replaces the full-chain `candidate_energies` in the browser, for the same thread-safety reason; the JS loop (`ph_design.mjs`) is graded next (X7b), then headless Chromium at 1 and 4 threads (X7c).
+
+### 54.3 B1, step 2 graded (2026-10-09): the JS pH design loop equals design_structure (X7b)
+
+Run **`f0523ef9`**: completed, `pass`, exit 0, clean tree at `880c9871`, sidecar committed first (`bd28175a`). `browser/protonpotts-scorer/ph_design.mjs` (`PhDesigner.design`), run under Node with onnxruntime-web (wasm, 1 thread) from PDB text on the X6a scoring and X7a per-block artifacts (both verified by sha256), reproduces `design_structure` on all **12 of 12** cases (4 structures x {centres HIS-P/ASP-P/GLU-P at temperature 0, the same at 0.05 with injected uniforms, HIS-P alone at 0.05}, two samples each): placement (pins), designable sets, sequences and draw counts exactly equal, final and selective energies within 2.6e-5 (bar 1e-4). Both controls fired (uniforms rolled by one position: the sequences differ; a perturbed Potts head: the energies differ). The reference is aminx's own `design_structure` on the unpadded structure through the driver's `protonpotts_table`, so agreement also covers the browser's padding to a bucket.
+
+The planner (`ph_plan.mjs`) was checked separately against the real Python functions on 97 random cases (a deterministic equality test): all equal, with a negative control.
+
+Next: the same twelve cases in headless Chromium at 1 and 4 threads (X7c); then pinning the per-block graphs under `release/browser/protonpotts/` and folding the new waves into the redsox ledger at the next re-wave.
