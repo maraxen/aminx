@@ -27,8 +27,9 @@ Claims, falsifiable by this run:
  1. THE PIPELINE IS THE SEALED ONE: preparing the cell with no designed_chains gives features whose content hash equals the sealed P4b /
     P4c / P4d manifest.
  2. ONLY THE DESIGNED MASK DIFFERS: preparing it with designed_chains=[binder] gives features bit-identical to the default preparation
-    in every array except designed_residue_mask, which equals (chain == binder), contains both True and False in every cell, and is
-    what the call used.
+    in every array except designed_residue_mask, which equals (chain == binder) and is what the call used; in a MULTI-CHAIN structure
+    it contains both True and False (REVISED 261009, see the provenance note: three of the four structures are single-chain, so there
+    the binder is the whole structure and the mask is all True by construction).
  3. COMPLETE: every cell, precision and the arrays named above, with the expected shapes ([N, L] and [N, L, 30]).
  4. THE f64 RUN IS REALLY DOUBLE (every floating array float64) AND THE TWO PRECISIONS DIFFER.
  5. SAME ORDER ACROSS PRECISIONS: each row's f64 decoding order equals the f32 one, and each is a permutation of 0..L-1.
@@ -83,4 +84,4 @@ cells = "1BVC (A), 6m0j (E), 1OLR (A), 1EL1 (A)"
 threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
 
 [provenance]
-note = "Pre-registered at the commit that adds this file, before dump_protonpotts_sample.py exists and before any N-row number exists. Not yet run."
+note = "Pre-registered at the commit that adds this file, before dump_protonpotts_sample.py exists and before any N-row number exists. REVISED 261009 AFTER AN EXPLORATORY SMOKE (ungraded, numbers not cited) and BEFORE the graded run: claim 2 originally required the designed mask to contain both True and False in every cell. The smoke flagged only_designed_mask_differs false, and a probe showed why: in all four cells only designed_residue_mask differs and it equals (chain == binder), but 1BVC, 1OLR and 1EL1 have a single chain A, so the binder is the whole structure and the mask is all True. The clause was a mistake in this file, not a fault of the oracle. It now applies only to multi-chain structures (6m0j). CONSEQUENCE, stated plainly: the binder-only path (non-designed positions held at native) is exercised by ONE structure, 6m0j chain E; in the other three cells every residue is designed. The benchmark set holds no other multi-chain structure. Nothing in [outcomes] changed."

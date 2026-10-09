@@ -37,6 +37,10 @@ CONTROLS -- eight deliberate errors, on the 6m0j cell (the largest binder) in fl
 A control that is not rejected means the comparison cannot discriminate that error; the wave then FAILS by rule and the instrument is
 improved (not the criterion relaxed), as was done for x_not_zeroed in the decoder wave.
 
+COVERAGE LIMIT, stated before the run: 1BVC, 1OLR and 1EL1 are single-chain, so in those cells the binder is the whole structure and every
+residue is designed; the binder-only path (non-designed positions held at native, the all_residues_designed control) is exercised by one
+structure, 6m0j chain E. The benchmark set holds no other multi-chain structure.
+
 PREDICTION, stated before the run so it can be wrong: all four cells agree in both precisions and all eight controls are rejected.
 The specific risk is discrimination at temperature 0.1: the distributions are sharp, so a rolled-uniforms control may flip few draws
 on a small binder (hence the 6m0j control cell). Another risk is that vmap changes reduction order enough to move f32 results beyond
