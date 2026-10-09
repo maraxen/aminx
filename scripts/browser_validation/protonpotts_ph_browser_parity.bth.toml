@@ -1,0 +1,98 @@
+[metadata]
+title = "X7c browser parity: the shipping ProtonPotts pH design page in headless Chromium vs design_structure, at 1 and 4 threads"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+On the X6a scoring artifacts and the X7a per-block artifacts (manifest sha256 values passed in and verified), the shipping page
+browser/protonpotts-scorer/ph_index.html + ph_page.mjs -- which runs `PhDesigner.design` from PDB text (placement from chunked field_at
+calls, the JS planner, z-scales pooled once, block sweeps, scoring) -- served over HTTP with COOP/COEP and driven in headless Chromium through
+browser/layer_c/run_p07.mjs unchanged, reproduces aminx's `design_structure` on the twelve cases of the Node loop gate (protonpotts_ph_loop_gate:
+4 structures x centre types (HIS-P, ASP-P, GLU-P) at temperature 0, the same at 0.05 with injected uniforms, and (HIS-P) alone at 0.05):
+sequences, designable sets, pins, label and draw counts exactly; final and selective energies within max|d| / max(1, |ref|) <= 1e-4; at
+numThreads 1 AND at numThreads 4. The cases, seeds, uniforms and comparator are the Node gate's, so the Node and browser records grade the same inputs.
+
+WHY SEPARATE FROM THE NODE GATE: Node is not a browser. The 4-thread run is also where a thread race in a graph would appear; the graphs were
+made deterministic (X7a) and this is the end-to-end check that a multi-threaded browser run still reproduces the reference exactly.
+crossOriginIsolated and the effective thread count, as ORT reports it after init, are recorded per run.
+
+Controls, per thread setting (each must make the SAME comparator fail): TOKENS (the page's designs at temperature 0.05 against the reference
+run with the uniforms rolled by one), ENERGY (the page's final energies against the same sequences scored under a perturbed Potts head).
+
+PREDICTION, stated before the run so it can be wrong: all twelve cases pass at both thread settings. Risks: (a) the 6m0j cases at 4 threads: a
+177 MB pair table is copied into wasm for every visit call (hundreds of calls), so the page may exceed the harness timeout or the wasm heap; that
+would show as a not-complete run, not a disagreement; (b) a near-tied block objective resolved differently by 4-thread reduction order, which
+would show as a named sequence mismatch.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: agreement, controls and isolation are graded per run. Timings are not graded here.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "not_isolated", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR browser_complete = false"
+decision = "The reference arm, the artifact check, or the browser run at one of the two thread settings did not complete at full size (every case ran at both). Nothing was compared against a complete browser run; cite nothing."
+reasoning = "A partial browser run must not borrow the authority of a complete one; a page that throws, runs out of memory or times out yields no measurement."
+is_residual = true
+
+[outcomes.not_isolated]
+condition = "browser_complete = true AND isolated_at_4 = false"
+decision = "The page ran at 4 requested threads without crossOriginIsolated. Results from this run are not a threading result."
+reasoning = "SharedArrayBuffer-backed multithreaded wasm needs COOP/COEP; otherwise ORT silently falls back to one thread."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "browser_complete = true AND isolated_at_4 = true AND NOT (control_tokens_detected = true AND control_energy_detected = true)"
+decision = "At one thread setting a planted difference (rolled uniforms, perturbed head) was not flagged. Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these differences would also pass a broken page."
+is_residual = true
+
+[outcomes.fail]
+condition = "browser_complete = true AND isolated_at_4 = true AND control_tokens_detected = true AND control_energy_detected = true AND all_exact = false"
+decision = "At least one case at one thread setting disagrees with design_structure. The per-case record names the case, the thread setting and what differs. The page is not validated at that setting."
+reasoning = "The Node loop gate agrees; a disagreement here localises to the browser environment (isolation, threading, loader) or the page's own plumbing."
+is_residual = true
+
+[outcomes.pass]
+condition = "browser_complete = true AND isolated_at_4 = true AND control_tokens_detected = true AND control_energy_detected = true AND all_exact = true"
+decision = "The shipping page reproduces design_structure on all twelve cases at 1 thread and at 4 threads, with live controls and crossOriginIsolated at 4 threads. pH design is validated in headless Chromium for these cases."
+reasoning = "Agreement from a real page at both thread settings, with sensitive controls and a recorded isolation state, licenses 'validated'. It licenses nothing about WebGPU, other browsers, other structures, methods other than block descent, or speed."
+is_residual = false
+
+[result_schema]
+scoring_manifest_sha256 = "str"
+ph_manifest_sha256 = "str"
+artifacts_verified = "bool"
+jax_arm_ok = "bool"
+jax_version = "str"
+onnxruntime_web_version = "str"
+playwright_version = "str"
+node_version = "str"
+git_hash = "str"
+git_clean = "bool"
+n_expected_per_thread = "int"
+threads_requested = "list"
+runs = "list"
+browser_complete = "bool"
+isolated_at_4 = "bool"
+control_tokens_detected = "bool"
+control_energy_detected = "bool"
+all_exact = "bool"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN v6 epoch-0125, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b"
+artifacts = "X6a run 40b4318e (scoring) and X7a run d5918c26 (per-block pH graphs)"
+tolerances = "tokens, designable, pins, draws exact; energies max|d|/max(1,|ref|) <= 1e-4"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, together with the page and HTML it serves (ph_page.mjs, ph_index.html), before protonpotts_ph_browser_parity.py exists and before any browser pH-design number exists. Mirrors protonpotts_browser_parity (X6c)."
