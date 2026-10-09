@@ -130,6 +130,17 @@ def _axis_shape(n_block: int, vocab: int, axes: tuple[int, ...]) -> tuple[int, .
   return tuple(shape)
 
 
+def _allowed_tokens(member: Bool[Array, "B 1"], valid_tokens: Bool[Array, " V"], vocab: int) -> Bool[Array, "B V"]:
+  """``allowed[b, a]``: a real member may take any valid token; a padded member only token 0.
+
+  Boolean algebra rather than ``jnp.where`` on booleans: the same values, but it lowers to ``And``/``Or``/``Not``,
+  which ONNX Runtime implements, where it has no ``Where`` kernel for a BOOL operand (the browser export of the
+  per-block graphs; Potts spec 261007_potts-onnx-export-scope.md section 8 met the same).
+  """
+  first_only = (jnp.arange(vocab) == 0)[None, :]
+  return (member & valid_tokens[None, :]) | (~member & first_only)
+
+
 def _joint(
   unary: Float[Array, "B V"],
   pair: Float[Array, "B B V V"],
@@ -334,7 +345,7 @@ def block_objective(
   member = block_valid[:, None]
   unary_tot = jnp.where(member, wh * unary + wsel * sel_rel + rep_unary, 0.0)
   pair_tot = wh * pair + rep_pair
-  allowed = jnp.where(member, valid_tokens[None, :], (jnp.arange(vocab) == 0)[None, :])
+  allowed = _allowed_tokens(member, valid_tokens, vocab)
   return _joint(unary_tot, pair_tot, allowed, n_block, vocab).reshape(-1)
 
 
@@ -401,7 +412,7 @@ def block_zscales(
     block, valid = xs
     block_safe = jnp.where(valid, block, 0)
     member = valid[:, None]
-    allowed = jnp.where(member, valid_tokens[None, :], (jnp.arange(vocab) == 0)[None, :])
+    allowed = _allowed_tokens(member, valid_tokens, vocab)
 
     unary, pair = block_stability_potentials(table, e_idx, seq, block_safe, valid)
     var_h, count_h = _finite_var(_joint(unary, pair, allowed, n_block, vocab))

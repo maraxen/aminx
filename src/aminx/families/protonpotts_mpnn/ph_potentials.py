@@ -16,6 +16,7 @@ depends on ``s_i``; they are counted on the diagonal ``table[i, k, a, a]``.
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
 
@@ -164,15 +165,23 @@ def block_stability_potentials(
   hi = jnp.where(pair_mask, jnp.maximum(b_idx, t_idx), 0).reshape(-1)
   oriented = jnp.where((b_idx < t_idx)[..., None, None], t_rows, jnp.swapaxes(t_rows, -1, -2))
   oriented = jnp.where(pair_mask[..., None, None], oriented, 0).reshape(-1, vocab, vocab)
-  pair = (
-    jnp.zeros((n_block, n_block, vocab, vocab), dtype=dtype).at[lo, hi].add(oriented.astype(dtype))
-  )
+  # Sum the edges into their (lo, hi) cell with a one-hot matmul rather than ``.at[lo, hi].add``: masked edges all
+  # land on cell (0, 0), and ONNX Runtime's scatter-add is not thread-safe over repeated indices (a 4-thread browser
+  # run returned a wrong, run-to-run varying objective). The sums are the same.
+  cell = jax.nn.one_hot(lo * n_block + hi, n_block * n_block, dtype=dtype)  # (B*K, B*B)
+  pair = jnp.matmul(
+    cell.T,
+    oriented.reshape(-1, vocab * vocab).astype(dtype),
+    precision=jax.lax.Precision.HIGHEST,
+  ).reshape(n_block, n_block, vocab, vocab)
 
   # Incoming edges from fixed sources into a valid member.
   src, slot, tgt, valid = incoming_edges(e_idx)
   tgt_in = pos_to_b[tgt]
   in_ok = valid & (pos_to_b[src] < 0) & (tgt_in >= 0)
   in_vals = jnp.where(in_ok[:, None], _incoming_terms(table, seq, src, slot), 0)
-  unary = unary.at[jnp.maximum(tgt_in, 0)].add(in_vals.astype(dtype))
+  # One-hot matmul for the same reason as ``pair``; ``tgt_in == -1`` (not a member) gives an all-zero row.
+  member_of = jax.nn.one_hot(tgt_in, n_block, dtype=dtype)  # (E, B)
+  unary = unary + jnp.matmul(member_of.T, in_vals.astype(dtype), precision=jax.lax.Precision.HIGHEST)
 
   return unary, pair
