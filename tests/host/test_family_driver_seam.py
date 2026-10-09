@@ -288,6 +288,40 @@ def test_fallback_purpose_loads_mpnn_core(monkeypatch: pytest.MonkeyPatch) -> No
         _unregister()
 
 
+_FAMILY_PACKAGES = "aminx.families"
+_DRIVER_KEYS = ("pottsmpnn", "lasermpnn", "protonpottsmpnn")
+
+
+@pytest.fixture(autouse=True)
+def _restore_family_state() -> Iterator[None]:
+    """Undo what ``_purge_family`` does, so no other test sees a re-imported package (debt #2620).
+
+    ``_purge_family`` deletes ``aminx.families.*`` from ``sys.modules`` so the lazy import must run
+    again. Nothing put the original modules back, so a later test file that had already bound
+    ``PottsMPNNDriver`` held a class from a module that was no longer the importable one, and
+    ``potts_mpnn.PottsMPNNDriver is PottsMPNNDriver`` failed depending on test order.
+    """
+    saved_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if name == _FAMILY_PACKAGES or name.startswith(f"{_FAMILY_PACKAGES}.")
+    }
+    saved_drivers = {key: FAMILY_DRIVERS.get(key) for key in _DRIVER_KEYS}
+    yield
+    for name in [n for n in sys.modules if n.startswith(f"{_FAMILY_PACKAGES}.")]:
+        if name not in saved_modules:
+            del sys.modules[name]
+    sys.modules.update(saved_modules)
+    for name, module in saved_modules.items():
+        parent, _, leaf = name.rpartition(".")
+        if parent in sys.modules:
+            setattr(sys.modules[parent], leaf, module)
+    for key, driver in saved_drivers.items():
+        FAMILY_DRIVERS.discard(key)
+        if driver is not None:
+            FAMILY_DRIVERS.register(key)(driver)
+
+
 def _purge_family(key: str, module: str) -> None:
     """Drop a registered driver and its package so the lazy import must run again."""
     FAMILY_DRIVERS.discard(key)
@@ -320,6 +354,10 @@ def test_family_driver_for_lazy_imports_every_driver_backed_family(
     """
     from aminx.host.runner import _family_driver_for  # noqa: PLC0415
 
+    if family == "lasermpnn":
+        # The LASEr package imports prody eagerly; without it the lazy import cannot succeed for a
+        # reason unrelated to #2403 (debt #2620).
+        pytest.importorskip("prody")
     _purge_family(family, module)
     assert FAMILY_DRIVERS.get(family) is None, "precondition: driver must start unregistered"
 
