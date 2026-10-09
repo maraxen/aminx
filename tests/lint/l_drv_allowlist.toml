@@ -91,3 +91,9 @@ reason = "sequential_dependency"
 path = "src/aminx/families/protonpotts_mpnn/ph_greedy.py"
 qualname = "greedy_energy_block"
 reason = "sequential_dependency"
+
+# ProtonPotts 30-token decoder: step k reads the tokens and hidden states steps 0..k-1 wrote.
+[[entries]]
+path = "src/aminx/families/protonpotts_mpnn/decode.py"
+qualname = "ProtonPottsARDecode.__call__"
+reason = "sequential_dependency"
