@@ -230,7 +230,7 @@ slug = "potts_ddg_megascale"
 #                        (see #2370) -- it can mean the control is inert OR
 #                        that one defect swamps both. Resolve #2417 first.
 
-# P10 protonpotts_parity (spec 261007 section 50). 61 rows: every negative control of the nine ProtonPottsMPNN waves, named
+# P10 protonpotts_parity (spec 261007 section 50). 69 rows: every negative control of the ten ProtonPottsMPNN waves, named
 # <wave>.<control>. Each must report 'failed'. The ids are the --mutants string launch_wave.sh passes, by exact equality.
 
 [[branch]]
@@ -778,6 +778,78 @@ id = "ddg.ddg_nudged_4x_band"
 stage = "P10"
 fixture = "protonpotts_dumps"
 mutant = "ddg.ddg_nudged_4x_band"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.shared_order_across_rows"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.shared_order_across_rows"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.uniforms_rows_swapped"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.uniforms_rows_swapped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.all_residues_designed"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.all_residues_designed"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.cdf_in_aminx_order"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.cdf_in_aminx_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.uniforms_shifted_one_step"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.uniforms_shifted_one_step"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.single_row_repeated"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.single_row_repeated"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.temperature_one"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.temperature_one"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "sample.nudged_4x_band"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "sample.nudged_4x_band"
 [branch.vehicle]
 kind = "sidecar"
 slug = "protonpotts_parity"

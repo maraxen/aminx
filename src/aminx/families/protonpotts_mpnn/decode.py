@@ -33,6 +33,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
+from xtrax.tiling import AxisSpec
 
 from aminx.families.potts_mpnn.decode import (
   categorical_draw,
@@ -43,6 +44,9 @@ from aminx.families.potts_mpnn.decode import (
   update_row,
 )
 from aminx.families.protonpotts_mpnn.vocab import PROTONPOTTS_V6
+from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
+from aminx.tiling.planner import plan_axis_strategy
+from aminx.tiling.strategy import SafeMap
 
 if TYPE_CHECKING:
   from aminx.model.decoder import Decoder, DecoderLayer
@@ -189,6 +193,29 @@ class ProtonPottsARDecode(eqx.Module):
     )
 
 
+# The rows of ``sample_rows`` are independent decodes, so this is a map, not a scan. Which map (one vmap, or tiles of it) is
+# xtrax's call: each row holds a full layer stack and several (L, V) arrays, and the planner demotes Vmap to SafeMap when all N
+# rows would not fit. ``default_batch_size=0`` lets the planner choose the tile (the same idiom as ``ph_descent._PH_BLOCKS``).
+_SAMPLE_ROWS = AxisSpec(
+  name="n_sample_rows",
+  cardinality=8,
+  default_batch_size=0,
+  tile_granularity=1,
+  heterogeneous=False,
+)
+
+
+def _row_activation_bytes(h_v: Array, vocab: int, n_layers: int) -> float:
+  """Live bytes one row holds: the layer stack, a hidden state and four (L, V) arrays."""
+  length, hidden = h_v.shape
+  elements = (n_layers + 2) * length * hidden + 4 * length * vocab
+  return float(elements * jnp.dtype(h_v.dtype).itemsize)
+
+
+def _pad_rows(array: Array, pad: int) -> Array:
+  return jnp.concatenate([array, jnp.broadcast_to(array[:1], (pad, *array.shape[1:]))])
+
+
 def sample_rows(
   decoder: ProtonPottsARDecode,
   h_v: Float[Array, "L H"],
@@ -214,21 +241,40 @@ def sample_rows(
   ``uniforms[r]`` and ``noise[r]`` (or ``decoding_order[r]`` for replay); every other argument is shared. Every field of the
   result gains a leading axis of length ``N``. Row ``r`` equals the single-row call exactly; there is no coupling between rows.
   ``forced_tokens`` (``(N, L)``, ``-1`` = none) is the per-row oracle-replay prefix of ``ProtonPottsARDecode.__call__``.
+  The map over rows is planned by xtrax (:data:`_SAMPLE_ROWS`), not hand-rolled.
   """
   if (noise is None) == (decoding_order is None):
     msg = "give exactly one of noise or decoding_order, each of shape (N, L)"
     raise ValueError(msg)
+  n_rows = int(uniforms.shape[0])
+  per_row = noise if noise is not None else decoding_order
+  assert per_row is not None  # noqa: S101 -- narrowed by the check above
 
-  def one(u: Array, per_row: Array, forced: Array | None) -> DecodeResult:
+  def call(u: Array, row: Array, forced: Array | None) -> DecodeResult:
     return decoder(
       h_v, h_e, e_idx, present, pad_valid, s_true, designed, temperature, bias, u,
-      noise=per_row if noise is not None else None,
-      decoding_order=per_row if decoding_order is not None else None,
+      noise=row if noise is not None else None,
+      decoding_order=row if decoding_order is not None else None,
       forced_tokens=forced,
       cdf_order=cdf_order,
     )
 
-  return jax.vmap(one)(uniforms, noise if noise is not None else decoding_order, forced_tokens)
+  strategy = plan_axis_strategy(
+    _SAMPLE_ROWS, n_rows, None,
+    activation_bytes_per_element=_row_activation_bytes(h_v, bias.shape[-1], len(decoder.layers)),
+  )
+  args = [uniforms, per_row] if forced_tokens is None else [uniforms, per_row, forced_tokens]
+  if isinstance(strategy, SafeMap) and n_rows % strategy.tile:
+    # xtrax's SafeMap needs the axis to be an exact multiple of the tile (aminx backlog #4159): pad with copies of row 0
+    # and drop the extras below. They never reach the caller.
+    pad = strategy.tile - (n_rows % strategy.tile)
+    args = [_pad_rows(a, pad) for a in args]
+  iterator = make_axis_dispatch_via_xtrax(strategy, axis=_SAMPLE_ROWS.name)
+  if forced_tokens is None:
+    out = iterator(lambda u, row: call(u, row, None), tuple(args))
+  else:
+    out = iterator(call, tuple(args))
+  return DecodeResult(*(field[:n_rows] for field in out))
 
 
 def teacher_forcing_mask(

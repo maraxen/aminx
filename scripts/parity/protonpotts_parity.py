@@ -6,7 +6,7 @@ Spec: `.praxia/docs/specs/261007_protonpottsmpnn-support.md` §50-§51. Launched
         uv run --no-sync python3 scripts/parity/protonpotts_parity.py \\
         --mutants <wave>.<control>,... --work-dir <dir> --controls-out <dir>/branch_controls.json
 
-Each of the nine waves (features, encoder, energy, driver, ph_block, ph_greedy, ph_driver, decoder, ddg) is a script that was graded on
+Each of the ten waves (features, encoder, energy, driver, ph_block, ph_greedy, ph_driver, decoder, ddg, sample) is a script that was graded on
 its own before this vehicle existed. This vehicle runs them as subprocesses, unchanged, and reports the union of their
 negative controls as ``<wave>.<control>``. The row passes only when every wave is clean, the set of controls the waves
 reported equals the ``--mutants`` string exactly (step 1c compares that string to the manifest), and every control failed.
@@ -69,6 +69,10 @@ class Roots:
   def p4h(self) -> Path:
     return self.oracles / "features_v6_p4h2"
 
+  @property
+  def p4i(self) -> Path:
+    return self.oracles / "features_v6_p4i2"
+
 
 def _cells(roots: Roots, *, chains: bool) -> list[str]:
   out: list[str] = []
@@ -97,11 +101,13 @@ def wave_argv(wave: str, roots: Roots) -> list[str]:
     return [*state, "--decoder-dir", str(roots.p4h), *features]
   if wave == "ddg":
     return [*state, "--energy-dir", str(roots.p4f), *features, *_cells(roots, chains=False)]
+  if wave == "sample":
+    return [*state, "--sample-dir", str(roots.p4i), *features]
   msg = f"unknown wave {wave!r}"
   raise ValueError(msg)
 
 
-WAVES = ("features", "encoder", "energy", "driver", "ph_block", "ph_greedy", "ph_driver", "decoder", "ddg")
+WAVES = ("features", "encoder", "energy", "driver", "ph_block", "ph_greedy", "ph_driver", "decoder", "ddg", "sample")
 
 
 def _script(wave: str) -> Path:
