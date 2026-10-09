@@ -82,7 +82,7 @@ function normalisePlan(plan) {
 
 function run(c) {
   const i = c.inputs;
-  const eIdx = Int32Array.from(i.e_idx);
+  const eIdx = Int32Array.from(i.e_idx ?? []);
   const binder = Uint8Array.from(i.binder ?? []);
   switch (c.kind) {
     case "center_types":
