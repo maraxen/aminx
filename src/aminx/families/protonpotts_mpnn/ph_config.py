@@ -5,13 +5,13 @@ dataclass is ``PHDesignCriteria`` (lines ~93-330); the ``__post_init__`` checks 
 lines ~238-283. Production defaults come from the example ``ProtonPottsMPNN/inference/design_ph.py``
 lines 66-95, NOT from the dataclass defaults (e.g. upstream ``block_size=2``, ``temperature=0.1``).
 
-Scope: ``block_descent`` and ``greedy_energy_block`` on the Potts energy backend only. Anything else is
-refused at construction, naming the debt item that tracks it:
+Scope: ``block_descent``, ``greedy_energy_block`` and ``mpnn_sample`` (whole-chain decoder samples; ``ph_sample``) on the Potts
+energy backend only. Anything else is refused at construction, naming the debt item that tracks it:
 
 - debt #2616: MCMC / two-phase / combined samplers and Gibbs (``converged_mcmc``, ``two_phase``,
   ``converged_mcmc_combined``, ``gibbs``).
-- debt #2617: decoder-backed paths (``autoregressive``, ``mpnn_sample``, ``backend="mpnn"``,
-  ``selective_source="decoder"``, ``placement_by="scan_mpnn"``).
+- debt #2617: the remaining decoder-backed paths (``autoregressive``, ``backend="mpnn"``,
+  ``selective_source="decoder"``, ``placement_by="scan_mpnn"``). ``mpnn_sample`` was lifted once graded (wave ``protonpotts_sample``).
 
 Representation: every collection is a tuple so the config is hashable. ``dep_map`` is a tuple of
 ``(centre_type, (deprotonated_type, ...))`` pairs; use ``PHDesignConfig.dep_map_dict()`` for a dict view.
@@ -29,14 +29,14 @@ if TYPE_CHECKING:
 MCMC_DEBT = 2616
 DECODER_DEBT = 2617
 
-IN_SCOPE_METHODS: tuple[str, ...] = ("block_descent", "greedy_energy_block")
+IN_SCOPE_METHODS: tuple[str, ...] = ("block_descent", "greedy_energy_block", "mpnn_sample")
 _DEFERRED_MCMC_METHODS: tuple[str, ...] = (
   "converged_mcmc",
   "two_phase",
   "converged_mcmc_combined",
   "gibbs",
 )
-_DEFERRED_DECODER_METHODS: tuple[str, ...] = ("autoregressive", "mpnn_sample")
+_DEFERRED_DECODER_METHODS: tuple[str, ...] = ("autoregressive",)
 
 # Upstream DEFAULT_DEP_MAP maps HIS-P to (HID, HIE); v6 has no HID/HIE, so the production example uses HIS-S.
 DEFAULT_DEP_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -48,8 +48,8 @@ DEFAULT_DEP_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 def _deferred(what: str, debt: int) -> ValueError:
   return ValueError(
-    f"{what} is deferred (debt #{debt}). Only method 'block_descent' or 'greedy_energy_block' "
-    "on backend 'potts' is supported.",
+    f"{what} is deferred (debt #{debt}). Supported methods: {', '.join(IN_SCOPE_METHODS)}, "
+    "on backend 'potts'.",
   )
 
 

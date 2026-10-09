@@ -97,7 +97,6 @@ def test_explicit_centers_match_count_is_accepted() -> None:
     ({"method": "two_phase"}, "#2616"),
     ({"method": "converged_mcmc_combined"}, "#2616"),
     ({"method": "autoregressive"}, "#2617"),
-    ({"method": "mpnn_sample"}, "#2617"),
     ({"backend": "mpnn"}, "#2617"),
     ({"selective_source": "decoder"}, "#2617"),
     ({"placement_by": "scan_mpnn"}, "#2617"),
@@ -175,3 +174,13 @@ def test_centre_free_options_map_to_center_count_zero() -> None:
     ProtonPottsOptions(binder_chain="A", design_method="greedy_energy_block", infill_scope="chain")
   )
   assert named.center_count == len(named.center_types)
+
+
+def test_mpnn_sample_is_supported_and_still_needs_the_potts_backend() -> None:
+  cfg = PHDesignConfig(method="mpnn_sample")
+  assert cfg.method == "mpnn_sample"
+  # the other decoder-backed knobs stay deferred even for this method
+  with pytest.raises(ValueError, match="#2617"):
+    PHDesignConfig(method="mpnn_sample", backend="mpnn")
+  with pytest.raises(ValueError, match="#2617"):
+    PHDesignConfig(method="mpnn_sample", selective_source="decoder")

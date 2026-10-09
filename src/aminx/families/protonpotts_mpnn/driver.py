@@ -386,7 +386,15 @@ class ProtonPottsDriver:
     table, e_idx = _JIT_TABLE(model, *_graph_args(prepared.graph))
     native = np.asarray(prepared.graph.sequences[0], dtype=np.int32)
     key = jax.random.fold_in(jax.random.PRNGKey(int(spec.random_seed)), index)
-    designs = design_structure(table, e_idx, native, binder_mask, res_id, config, key=key)
+    if config.method == "mpnn_sample":
+      # Lazy: only this method needs the decoder (debt #2617; graded by the protonpotts_sample wave).
+      from aminx.families.protonpotts_mpnn.ph_sample import mpnn_sample_designs  # noqa: PLC0415
+
+      designs = mpnn_sample_designs(
+        model, _graph_args(prepared.graph), table, e_idx, native, binder_mask, config, key=key,
+      )
+    else:
+      designs = design_structure(table, e_idx, native, binder_mask, res_id, config, key=key)
     if not designs:
       return (
         f"no pH design plan for {path.name}: no placement plan with designable binder positions "

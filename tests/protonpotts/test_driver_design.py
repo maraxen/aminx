@@ -336,3 +336,35 @@ def test_selectivity_is_gated_to_protonpottsmpnn() -> None:
   ScoringSpecification(inputs="x.pdb", model_family="protonpottsmpnn", output_kind="selectivity")  # type: ignore[arg-type]
   with pytest.raises(ValueError, match="not supported for model_family"):
     ScoringSpecification(inputs="x.pdb", model_family="pottsmpnn", output_kind="selectivity")  # type: ignore[arg-type]
+
+
+# --- mpnn_sample (decoder-backed whole-chain samples; graded by the protonpotts_sample wave) ---------------------
+
+
+@pytest.fixture
+def two_long_chains_pdb(tmp_path: Path) -> Path:
+  return _write_pdb(tmp_path / "two_long.pdb", [("A", RESIDUES, 0.0), ("B", RESIDUES, 50.0)])
+
+
+def test_mpnn_sample_designs_only_the_binder_chain_and_is_deterministic(
+  registered: ProtonPottsDriver, two_long_chains_pdb: Path, model_path: Path
+) -> None:
+  del registered
+  options = _design_options(design_method="mpnn_sample", binder_chain="A", center_types=(), samples_per_site=3, temperature=0.1)
+  first = _designs(two_long_chains_pdb, model_path, options, seed=1)
+  again = _designs(two_long_chains_pdb, model_path, options, seed=1)
+  other = _designs(two_long_chains_pdb, model_path, options, seed=2)
+  seq = first["sequence"]
+  assert seq.shape == (3, 2 * len(RESIDUES))
+  np.testing.assert_array_equal(seq, again["sequence"])  # same seed, same designs
+  binder = np.arange(2 * len(RESIDUES)) < len(RESIDUES)
+  # outside the binder chain every row keeps its native token, whatever the seed
+  assert np.all(seq[:, ~binder] == seq[0, ~binder])
+  np.testing.assert_array_equal(seq[:, ~binder], other["sequence"][:, ~binder])
+  # control: the binder chain does move with the seed and between rows, so the assertions above are not vacuous
+  assert not np.array_equal(seq[:, binder], other["sequence"][:, binder])
+  assert len({tuple(row) for row in seq[:, binder].tolist()}) > 1
+  assert not np.any(seq == PROTONPOTTS_V6.x_index)  # X is never sampled
+  assert first["final_potts_energy"].shape == (3,)
+  assert np.all(np.isfinite(first["final_potts_energy"]))
+  assert np.all(first["selective_energy"] == 0.0)  # no centres in a whole-chain design
