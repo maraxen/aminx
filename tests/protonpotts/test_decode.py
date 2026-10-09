@@ -186,3 +186,21 @@ def test_decode_needs_an_order_or_noise(model: PottsMPNN) -> None:
   s_true, designed, temp, bias, uniforms, _noise = _args(L, L)
   with pytest.raises(ValueError, match="decoding_order or noise"):
     _decoder(model)(h_v, h_e, e_idx, present, pad_valid, s_true, designed, temp, bias, uniforms)
+
+
+def test_cdf_order_identity_is_the_default_and_other_orders_draw_differently(model: PottsMPNN) -> None:
+  h_v, h_e, e_idx, present, pad_valid = _encode(model, L, L)
+  s_true, designed, temp, bias, uniforms, noise = _args(L, L)
+  decoder = _decoder(model)
+
+  def run(order: np.ndarray | None):  # noqa: ANN202
+    return decoder(h_v, h_e, e_idx, present, pad_valid, s_true, designed, temp, bias, uniforms, noise=noise,
+                   cdf_order=None if order is None else jnp.asarray(order, dtype=jnp.int32))
+
+  default = run(None)
+  identity = run(np.arange(V))
+  np.testing.assert_array_equal(np.asarray(default.sequence), np.asarray(identity.sequence))
+  reverse = run(np.arange(V)[::-1])
+  # a different accumulation order is a valid sampler, but the same uniform selects different tokens
+  assert not np.array_equal(np.asarray(default.drawn_token), np.asarray(reverse.drawn_token))
+  assert np.all(np.asarray(reverse.drawn_token) != X)

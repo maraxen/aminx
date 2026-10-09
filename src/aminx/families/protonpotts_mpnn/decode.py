@@ -98,12 +98,18 @@ class ProtonPottsARDecode(eqx.Module):
     decoding_order: Int[Array, " L"] | None = None,
     noise: Float[Array, " L"] | None = None,
     forced_tokens: Int[Array, " L"] | None = None,
+    cdf_order: Int[Array, " V"] | None = None,
   ) -> DecodeResult:
     """Decode. Give ``decoding_order`` (replay) or ``noise`` (the order is drawn from it). ``uniforms[k]`` is step ``k``.
 
     ``forced_tokens`` (``-1`` = none) replaces the token a position CONTRIBUTES to later steps with a given one, while
     ``drawn_token`` still records this decode's own draw. It exists for the oracle wave: it checks every step's draw and
     distribution on the oracle's own prefix, so one numerically fragile draw cannot cascade into the rest of the sequence.
+
+    ``cdf_order`` (default None: aminx token order) is the token order in which the inverse CDF accumulates; entry ``j`` is
+    the aminx index of the ``j``-th token. Any order is a valid sampler, but a given uniform selects a different token in each,
+    so parity with an upstream dump that recorded the draws needs upstream's order (``convert.token_permutation()``). Same
+    contract as ``ph_descent.select_joint``.
     """
     dtype = h_v.dtype
     length = h_v.shape[0]
@@ -139,7 +145,11 @@ class ProtonPottsARDecode(eqx.Module):
       probs = jax.nn.softmax(modified)
       kept = probs * (1.0 - unknown)
       probs_sample = kept / jnp.sum(kept)
-      drawn = categorical_draw(probs_sample, uniforms[k])
+      if cdf_order is None:
+        drawn = categorical_draw(probs_sample, uniforms[k])
+      else:
+        # Accumulate the CDF in another token order (upstream's), then map the draw back to an aminx token.
+        drawn = cdf_order[categorical_draw(probs_sample[cdf_order], uniforms[k])]
       token = jnp.where(designed[pos], drawn, s_true[pos]).astype(jnp.int32)
       if forced_tokens is not None:
         token = jnp.where(forced_tokens[pos] >= 0, forced_tokens[pos], token).astype(jnp.int32)

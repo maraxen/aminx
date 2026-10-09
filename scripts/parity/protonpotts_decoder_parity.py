@@ -12,7 +12,7 @@ WHAT IS COMPARED, per cell (4), precision (f64, f32) and autoregressive configur
 log_probs, the renormalised probs_sample and each decoder layer's output at every position, in a FORCED-TOKEN replay (the dump's
 tokens as the prefix, so one fragile draw cannot cascade); every step's own draw in that replay; and the free-running sequence. Per
 teacher-forced pattern (auto_regressive, conditional, conditional_minus_self): logits and log_probs. Tolerances, the fragile-draw
-rule and the eight controls are fixed in the sidecar.
+rule and the nine controls are fixed in the sidecar.
 """
 
 from __future__ import annotations
@@ -61,6 +61,20 @@ DEFAULT_TEMPERATURE = 0.1  # prepare_potts_input's settings["temperature"]
 V = 30
 AR_ARRAYS = ("logits", "log_probs", "probs_sample", "decoder_layers")
 TF_ARRAYS = ("logits", "log_probs")
+TAKE = convert.token_permutation()  # TAKE[k] = the upstream index of the token at aminx index k
+INV = np.argsort(TAKE)  # INV[u] = the aminx index of upstream token u (also upstream_to_aminx_index)
+TOKEN_FLOATS = ("logits", "log_probs", "probs_sample")
+TOKEN_INTS = ("S_sampled", "S_argmax", "drawn_token")
+
+
+def to_aminx(key: str, array: np.ndarray) -> np.ndarray:
+  """A dump array in aminx's token order: floats along the token axis, token indices through the inverse map."""
+  name = key.rsplit("__", 1)[-1]
+  if name in TOKEN_FLOATS:
+    return array[..., TAKE]
+  if name in TOKEN_INTS:
+    return INV[array]
+  return array
 
 
 def _load_converter() -> Callable:
@@ -86,7 +100,7 @@ def regenerate_inputs(config: str, n: int, seed: int, fixed_every: int, fixed_of
   if config == "ar_bias_temp":
     rng = np.random.default_rng(seed + 17)
     temperature = rng.uniform(0.3, 1.0, size=(1, n))[0]
-    bias = 0.5 * rng.standard_normal(size=(1, n, V))[0]
+    bias = (0.5 * rng.standard_normal(size=(1, n, V))[0])[..., TAKE]  # the dumper built it in upstream order
   elif config == "ar_fixed":
     designed[fixed_offset::fixed_every] = False
   return temperature, bias, designed
@@ -114,18 +128,19 @@ class Cell:
     )
 
   def ar(self, config: str, regen: tuple, *, forced: bool, bias=None, temperature=None, designed=None,  # noqa: ANN001
-         uniforms_shift: int = 0) -> decode_mod.DecodeResult:
+         uniforms_shift: int = 0, upstream_cdf: bool = True) -> decode_mod.DecodeResult:
     temp, b, des = regen
     temp = temp if temperature is None else temperature
     b = b if bias is None else bias
     des = des if designed is None else designed
     uniforms = np.roll(self.up[f"{config}__uniforms"], uniforms_shift)
-    forced_tokens = self.up[f"{config}__S_sampled"].astype(np.int32) if forced else None
+    forced_tokens = to_aminx(f"{config}__S_sampled", self.up[f"{config}__S_sampled"]).astype(np.int32) if forced else None
     return self.decoder(
       self.h_v, self.h_e, self.e_idx, self.present, jnp.ones(self.n, dtype=bool), jnp.asarray(self.native),
       jnp.asarray(des), jnp.asarray(temp, dtype=self.dtype), jnp.asarray(b, dtype=self.dtype),
       jnp.asarray(uniforms, dtype=self.dtype), decoding_order=jnp.asarray(self.up[f"{config}__decoding_order"]),
       forced_tokens=None if forced_tokens is None else jnp.asarray(forced_tokens),
+      cdf_order=jnp.asarray(INV) if upstream_cdf else None,
     )
 
   def tf(self, pattern: str, regen: tuple, *, seq: np.ndarray | None = None, mask_pattern: str | None = None):  # noqa: ANN201
@@ -163,13 +178,17 @@ def grade_ar(cell: Cell, config: str, regen: tuple, floors: dict[str, float] | N
     if nudge and key == "log_probs":
       got[key] = got[key].copy()
       got[key].flat[0] += nudge
-    d = float(np.abs(got[key].astype(np.float64) - up[f"{config}__{key}"].astype(np.float64)).max())
+    want = to_aminx(f"{config}__{key}", up[f"{config}__{key}"])
+    d = float(np.abs(got[key].astype(np.float64) - want.astype(np.float64)).max())
     diffs[key] = d
     in_band &= d <= band(None if floors is None else floors[f"{config}__{key}"])
-  draws_exact = bool(np.array_equal(np.asarray(replay.drawn_token)[~fragile], up[f"{config}__drawn_token"][~fragile]))
+  want_draws = to_aminx(f"{config}__drawn_token", up[f"{config}__drawn_token"])
+  draws_exact = bool(np.array_equal(np.asarray(replay.drawn_token)[~fragile], want_draws[~fragile]))
   free = cell.ar(config, regen, forced=False, **override)
   exempt = bool(fragile.any())
-  seq_exact = exempt or bool(np.array_equal(np.asarray(free.sequence), up[f"{config}__S_sampled"]))
+  seq_exact = exempt or bool(
+    np.array_equal(np.asarray(free.sequence), to_aminx(f"{config}__S_sampled", up[f"{config}__S_sampled"])),
+  )
   return {"diffs": diffs, "in_band": in_band, "draws_exact": draws_exact, "sequence_exact": seq_exact,
           "n_fragile": int(fragile.sum()), "exempt_free_run": exempt,
           "ok": in_band and draws_exact and seq_exact}
@@ -180,7 +199,8 @@ def grade_tf(cell: Cell, pattern: str, regen: tuple, floors: dict[str, float] | 
   logits, log_probs = cell.tf(pattern, regen, seq=seq, mask_pattern=mask_pattern)
   diffs, in_band = {}, True
   for key, value in (("logits", logits), ("log_probs", log_probs)):
-    d = float(np.abs(np.asarray(value, dtype=np.float64) - cell.up[f"tf_{pattern}__{key}"].astype(np.float64)).max())
+    want = to_aminx(f"tf_{pattern}__{key}", cell.up[f"tf_{pattern}__{key}"])
+    d = float(np.abs(np.asarray(value, dtype=np.float64) - want.astype(np.float64)).max())
     diffs[key] = d
     in_band &= d <= band(None if floors is None else floors[f"tf_{pattern}__{key}"])
   return {"diffs": diffs, "in_band": in_band, "ok": in_band}
@@ -258,7 +278,7 @@ def main() -> int:  # noqa: C901, PLR0915
                   {c: r["ok"] for c, r in result["ar"].items()}, {p: r["ok"] for p, r in result["tf"].items()})
     per_cell[cell_name] = entry
 
-  # ---- the eight deliberate errors, on the control cell in float64 -----------------------------------
+  # ---- the nine deliberate errors, on the control cell in float64 -----------------------------------
   cell = cells_by_precision[(CONTROL_CELL, "f64")]
   n = cell.n
   regen = {c: regenerate_inputs(c, n, seed, fixed_every, fixed_offset, DEFAULT_TEMPERATURE) for c in AR_CONFIGS}
@@ -276,13 +296,15 @@ def main() -> int:  # noqa: C901, PLR0915
     mutants["x_not_zeroed"] = verdict(grade_ar(cell, "ar_default", regen["ar_default"], None)["ok"])
   mutants["fixed_treated_as_designed"] = verdict(grade_ar(cell, "ar_fixed", regen["ar_fixed"], None,
                                                           override={"designed": np.ones(n, dtype=bool)})["ok"])
-  upstream_order = np.argsort(convert.token_permutation())[cell.native].astype(np.int32)
+  upstream_order = TAKE[cell.native].astype(np.int32)  # the native sequence spelled in upstream's index order
   mutants["token_order_upstream"] = verdict(grade_tf(cell, "conditional_minus_self", regen["ar_default"], None,
                                                      seq=upstream_order)["ok"])
   mutants["cms_uses_conditional_mask"] = verdict(grade_tf(cell, "conditional_minus_self", regen["ar_default"], None,
                                                           mask_pattern="conditional")["ok"])
   mutants["uniforms_shifted_one_step"] = verdict(grade_ar(cell, "ar_default", regen["ar_default"], None,
                                                           override={"uniforms_shift": 1})["ok"])
+  mutants["cdf_in_aminx_order"] = verdict(grade_ar(cell, "ar_default", regen["ar_default"], None,
+                                                   override={"upstream_cdf": False})["ok"])
   mutants["nudged_4x_band"] = verdict(grade_ar(cell, "ar_default", regen["ar_default"], None, nudge=4.0 * F64_TOL)["ok"])
   for name, v in mutants.items():
     logger.info("mutant %-30s %s", name, "DETECTED" if v == "failed" else "NOT DETECTED")
