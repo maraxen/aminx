@@ -1,0 +1,104 @@
+[metadata]
+title = "X8a gate: the 30-token decoder graphs (encode, decode) with the real converted checkpoint on ORT-CPU and ORT-Web, deterministic across runs"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+ADR decisions 11-12 (261009) and spec §53-54. The two graphs of `aminx.families.protonpotts_mpnn.decode_export` -- ENCODE (coordinates and
+geometry -> the encoder's final (h_V, h_E, E_idx)) and DECODE (the autoregressive sampler `ProtonPottsARDecode` over those states, with the
+decoding-order noise, the uniforms, a per-residue temperature, a [L, 30] bias and the designed mask as INPUTS, upstream's token order baked in
+as the inverse-CDF accumulation order; returns (sequence, decoding_order, log_probs)) -- with the converted v6 checkpoint (sha256
+a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b) baked in, export through xtrax.export.convert_to_onnx (opset 23), once per
+bucket (256, 1024), and each graph, run in isolation on its own JAX-computed inputs, reproduces JAX on ONNX Runtime CPU and on
+onnxruntime-web wasm under Node (1 thread): integers (the sampled tokens, the decoding order, E_idx) exactly, floats max|d|/max|ref| <= 1e-4.
+
+Structures: the four sha256-pinned structures of the scoring gate (1EL1, 1BVC, 1OLR at 256; 6m0j at 1024), padded to the bucket by the same
+recipe, featurized unlabelled. Three decode configurations per structure (inputs seeded; the JAX reference runs the same graph function):
+default (temperature 0.1 everywhere, no bias, every residue designed), bias_temp (per-residue temperature in [0.3, 1.0] and a seeded
+[L, 30] bias), fixed (every 7th residue from offset 3 not designed).
+
+A token comparison between two f32 implementations is exact unless a draw lies within float32 noise of a CDF boundary. For every decode case
+the JAX reference records the smallest distance of any of its draws to a boundary (relative to the mass); a case whose smallest distance is
+below 1e-5 is FRAGILE: its sequence comparison is exempt (log_probs and the decoding order still compared), and the number of fragile
+cases is reported, never silent.
+
+DETERMINISM. Every decode case on its first structure per bucket and the encode case are run five times on ORT-CPU at the DEFAULT thread
+count and must be bit-identical (the per-block pH graphs were found thread-unsafe by exactly this kind of check, spec §54).
+
+Controls (each must make the SAME comparator fail): FLOAT -- the decoder weights perturbed (1e-2 noise on every float leaf), compared on
+log_probs; INT -- a decode with different noise compared with the reference tokens.
+
+PREDICTION, stated before the run so it can be wrong: all graphs export; all checks pass on both backends; determinism holds; both controls
+fire; at most a few fragile cases. Risks: (a) the 1024-step Loop is slow or exceeds the wasm heap in ORT-Web; (b) ORT's Loop/If lowering of
+the dynamic `.at[pos].set` updates differs from the Potts decode's; (c) a token flip that is not a fragile draw, which would be a real
+defect named by its case.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: agreement is graded per check. Layer a (JAX vs upstream) is the sealed protonpotts_decoder wave (a769e1b2).
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false"
+decision = "The JAX arm did not complete (checkpoint or PDB hash mismatch, featurization, reference evaluation, controls). Nothing was compared; cite nothing."
+reasoning = "Without the reference outputs every per-graph status is meaningless."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND NOT (control_float_detected = true AND control_int_detected = true)"
+decision = "A planted difference was not flagged (perturbed decoder weights, a different noise). Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these differences would also pass a broken export."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND all_exported = true AND all_pass = true AND deterministic = true"
+decision = "The encode and decode graphs export at both buckets, agree with JAX on ORT-CPU and ORT-Web on the real structures and are bit-identical across multi-threaded runs. The JS sampler can be built on these exact bytes."
+reasoning = "Both controls fired, so agreement and determinism on every graph, bucket and structure are real."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND all_exported = true AND all_pass = true AND deterministic = true)"
+decision = "At least one graph failed to export, load, run, agree or repeat. No artifact from this run may be shipped; the per-check record names what to fix."
+reasoning = "The instrument is verified, so a failing check is a real defect."
+is_residual = true
+
+[result_schema]
+versions = "dict"
+jax_arm_ok = "bool"
+jax_enable_x64 = "bool"
+checkpoint_sha256 = "str"
+cells = "list"
+graphs = "dict"
+n_cases = "int"
+n_pass_cpu = "int"
+n_pass_web = "int"
+n_fragile_cases = "int"
+all_exported = "bool"
+all_pass = "bool"
+deterministic = "bool"
+n_nondeterministic = "int"
+control_float_detected = "bool"
+control_int_detected = "bool"
+ort_web_available = "bool"
+manifest_sha256 = "str"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN v6 epoch-0125, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b, converted state ~/scratch/v6_state.npz"
+structures = "1EL1, 1BVC, 1OLR, 6m0j as in protonpotts_export_gate.py"
+tolerances = "tokens, decoding order, E_idx exact (fragile cases exempt on tokens, reported); floats max|d|/max|ref| <= 1e-4; five-run bitwise determinism"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before protonpotts_decode_export_gate.py exists and before any decoder-graph number exists. Layer a (JAX vs upstream) is the protonpotts_decoder wave, run a769e1b2, graded pass."
