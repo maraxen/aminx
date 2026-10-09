@@ -202,7 +202,9 @@ def _edits(config: str, features: dict, dtype: torch.dtype) -> dict[str, torch.T
       "bias": torch.tensor(0.5 * rng.standard_normal(size=(1, n, v)), dtype=dtype),
     }
   if config == "ar_fixed":
-    designed = features["designed_residue_mask"].clone()
+    # None means every residue is designed (the prepared default); start from all-true either way.
+    given = features.get("designed_residue_mask")
+    designed = torch.ones(features["S"].shape, dtype=torch.bool) if given is None else given.clone()
     designed[:, FIXED_OFFSET::FIXED_EVERY] = False
     return {"designed_residue_mask": designed}
   return {}
