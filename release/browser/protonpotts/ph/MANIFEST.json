@@ -1,0 +1,1179 @@
+{
+  "block_size": 3,
+  "buckets": [
+    {
+      "bucket": 256,
+      "graphs": {
+        "field_L256": {
+          "bytes": 26089,
+          "file": "protonpotts_ph_field_L256.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "positions"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              64
+            ]
+          ],
+          "sha256": "e3d09097e6976d0a33a2907ec9fc69dd0cee5c0fda65594cddbb3407fb30ae16"
+        },
+        "pool_L256": {
+          "bytes": 4386,
+          "file": "protonpotts_ph_pool_L256.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "float32",
+            "int32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "var_h",
+            "has_h",
+            "var_s",
+            "has_s",
+            "w_h",
+            "w_s"
+          ],
+          "input_shapes": [
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              256
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "770f869ba182000b84479ca7275ccc1db18013d721952f0acd48630fb9a5e4a8"
+        },
+        "visit_L256_P1": {
+          "bytes": 130891,
+          "file": "protonpotts_ph_visit_L256_P1.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens",
+            "rep_mask",
+            "residue_number",
+            "wh",
+            "wsel",
+            "uniform",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              30
+            ],
+            [
+              30
+            ],
+            [
+              256
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "95dadcf290ffd5c80127dea97301ec0e6631570a5efe90561fae2ba16d532d0e"
+        },
+        "visit_L256_P2": {
+          "bytes": 130891,
+          "file": "protonpotts_ph_visit_L256_P2.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens",
+            "rep_mask",
+            "residue_number",
+            "wh",
+            "wsel",
+            "uniform",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              30
+            ],
+            [
+              30
+            ],
+            [
+              256
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "90ff9ec5903dcb5a1bdfc41b4fc655f706c05d4acc93585e698788a1f38c310a"
+        },
+        "visit_L256_P3": {
+          "bytes": 130891,
+          "file": "protonpotts_ph_visit_L256_P3.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens",
+            "rep_mask",
+            "residue_number",
+            "wh",
+            "wsel",
+            "uniform",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              30
+            ],
+            [
+              30
+            ],
+            [
+              256
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "a2b733bcc4f1bc6a75250b1e45eabe4845f9fe39a2fa23e9220d5dd0d1f4c3c8"
+        },
+        "zblock_L256_P1": {
+          "bytes": 105681,
+          "file": "protonpotts_ph_zblock_L256_P1.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              30
+            ]
+          ],
+          "sha256": "9b2d846c9b39cd88dd5400e4e27a725606a69d9c8490652fd1a24a06f33cfa92"
+        },
+        "zblock_L256_P2": {
+          "bytes": 105681,
+          "file": "protonpotts_ph_zblock_L256_P2.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              30
+            ]
+          ],
+          "sha256": "071eb9b8454741be5fe52f4bf715b2ffc9318d66faf58c39564fdfc257a2b0e4"
+        },
+        "zblock_L256_P3": {
+          "bytes": 105681,
+          "file": "protonpotts_ph_zblock_L256_P3.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens"
+          ],
+          "input_shapes": [
+            [
+              256,
+              48,
+              30,
+              30
+            ],
+            [
+              256,
+              48
+            ],
+            [
+              256
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              30
+            ]
+          ],
+          "sha256": "0bbb3ef1f5c44b30e40fb60483980538b62f8b336d68fd68cf7501ae19dd7baf"
+        }
+      }
+    },
+    {
+      "bucket": 1024,
+      "graphs": {
+        "field_L1024": {
+          "bytes": 26125,
+          "file": "protonpotts_ph_field_L1024.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "positions"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              64
+            ]
+          ],
+          "sha256": "86ee0022e12f2cccaa0f19c182d8f7d0a33a0a80646868d0356ce2d74343b27a"
+        },
+        "pool_L1024": {
+          "bytes": 4386,
+          "file": "protonpotts_ph_pool_L1024.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "float32",
+            "int32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "var_h",
+            "has_h",
+            "var_s",
+            "has_s",
+            "w_h",
+            "w_s"
+          ],
+          "input_shapes": [
+            [
+              1024
+            ],
+            [
+              1024
+            ],
+            [
+              1024
+            ],
+            [
+              1024
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "a5c66a658a69295f299906ce530e53d3fc410c815cfb4ac00e760a01168e0502"
+        },
+        "visit_L1024_P1": {
+          "bytes": 130943,
+          "file": "protonpotts_ph_visit_L1024_P1.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens",
+            "rep_mask",
+            "residue_number",
+            "wh",
+            "wsel",
+            "uniform",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              30
+            ],
+            [
+              30
+            ],
+            [
+              1024
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "62d2ad579f80a0ec2c47ebd1025ebb751e35221691e2ec8f7464307e537c4ee7"
+        },
+        "visit_L1024_P2": {
+          "bytes": 130943,
+          "file": "protonpotts_ph_visit_L1024_P2.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens",
+            "rep_mask",
+            "residue_number",
+            "wh",
+            "wsel",
+            "uniform",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              30
+            ],
+            [
+              30
+            ],
+            [
+              1024
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "c6c2f909fcefc17e3151f4e0acbe13d399234f99e1ce6f32638fa05b3e13bb96"
+        },
+        "visit_L1024_P3": {
+          "bytes": 130943,
+          "file": "protonpotts_ph_visit_L1024_P3.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool",
+            "float32",
+            "int32",
+            "float32",
+            "float32",
+            "float32",
+            "float32"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens",
+            "rep_mask",
+            "residue_number",
+            "wh",
+            "wsel",
+            "uniform",
+            "temperature"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              30
+            ],
+            [
+              30
+            ],
+            [
+              1024
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ]
+          ],
+          "sha256": "d5f4bd565fbaa0cfbf8a7bc199a0354bbbe0a9b82c8621de607ef287b8c83359"
+        },
+        "zblock_L1024_P1": {
+          "bytes": 105733,
+          "file": "protonpotts_ph_zblock_L1024_P1.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              1
+            ],
+            [
+              1
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              1,
+              2
+            ],
+            [
+              30
+            ]
+          ],
+          "sha256": "25354e0ba3e21457998d8ac59a54d9f2c749a5a56f94fc90ae10375cfe92f651"
+        },
+        "zblock_L1024_P2": {
+          "bytes": 105733,
+          "file": "protonpotts_ph_zblock_L1024_P2.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              2
+            ],
+            [
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              2,
+              2
+            ],
+            [
+              30
+            ]
+          ],
+          "sha256": "131e690d98ccfde53569a30392f81f7bb8432bb89b170d2cf7f443922d5bd4a8"
+        },
+        "zblock_L1024_P3": {
+          "bytes": 105733,
+          "file": "protonpotts_ph_zblock_L1024_P3.onnx",
+          "input_dtypes": [
+            "float32",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "int32",
+            "int32",
+            "int32",
+            "bool",
+            "bool"
+          ],
+          "input_names": [
+            "table",
+            "e_idx",
+            "seq",
+            "block",
+            "block_valid",
+            "pin_positions",
+            "pin_prot",
+            "pin_dep",
+            "pin_dep_valid",
+            "valid_tokens"
+          ],
+          "input_shapes": [
+            [
+              1024,
+              48,
+              30,
+              30
+            ],
+            [
+              1024,
+              48
+            ],
+            [
+              1024
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              3,
+              2
+            ],
+            [
+              30
+            ]
+          ],
+          "sha256": "ef8ddc4f805ae7e7ffc0e6b74c310a287725269b7db6492f81049fef78433b90"
+        }
+      }
+    }
+  ],
+  "checkpoint_sha256": "a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b",
+  "chunk": 64,
+  "combined_lambda": 0.3,
+  "depth": 2,
+  "family": "protonpottsmpnn_ph",
+  "forbidden_tokens": [
+    "HIS-A",
+    "ASP-A",
+    "GLU-A",
+    "UNK"
+  ],
+  "pin_counts": [
+    1,
+    2,
+    3
+  ],
+  "repetitive_window": {
+    "parents": [
+      "ARG",
+      "LYS",
+      "HIS",
+      "ASP",
+      "GLU"
+    ],
+    "radius": 2,
+    "weight": 1.0
+  },
+  "temperature_checked": 0.05
+}
