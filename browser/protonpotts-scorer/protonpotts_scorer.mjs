@@ -21,7 +21,7 @@ function bucketEntry(manifest, bucket) {
   return entry;
 }
 
-async function run(ort, session, graph, named) {
+export async function run(ort, session, graph, named) {
   // Positional binding: jax2onnx names graph inputs in_0..in_N; the manifest gives the logical order.
   const names = graph.input_names;
   if (session.inputNames.length !== names.length) {
