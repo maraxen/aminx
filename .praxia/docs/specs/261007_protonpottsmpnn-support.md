@@ -3040,3 +3040,20 @@ Open for B1: pin the per-block graphs under `release/browser/protonpotts/`. Next
 Run **`cd5fe181`**: completed, `pass`, exit 0, clean tree at `c26bb2cc`, sidecar committed first (`3aac2621`). The `encode` and `decode` graphs of `decode_export` (weights baked, noise, uniforms, temperature, bias and designed mask as inputs; upstream's token order as the CDF accumulation order) export at both buckets and, on 1EL1/1BVC/1OLR (256) and 6m0j (1024), reproduce JAX on ORT-CPU and onnxruntime-web: **16/16 on each**, tokens, decoding order and E_idx exact, floats within 1.4e-6. Five multi-threaded CPU runs were bit-identical (the scatter-add hazard of §54 did not recur: the decoder uses one-hot updates). Both controls fired. One of 12 decode cases (6m0j `bias_temp`) is FRAGILE (a draw within 1e-5 of a CDF boundary), so its token comparison was exempt by pre-registered rule and its decoding order and log-probs were compared. Manifest sha256 `bacf2245867601c91ffb4a3e6bcec1b1c48d30b20b016e493414e9561d208c6b`.
 
 Next for B2: the JS sampler (generates uniforms and noise, calls encode then decode), its Node gate against the driver, then headless Chromium at 1 and 4 threads.
+
+### 54.6 B2 closed in a browser (2026-10-09): the JS sampler equals the unpadded eager decoder, Node (X8b) and Chromium at 1 and 4 threads (X8c)
+
+`browser/protonpotts-scorer/decoder_sampler.mjs` (`ProtonPottsSampler.sample`: PDB text, JS featurization and padding, the encode and decode graphs of the §54.5 manifest, injected or seeded noise and uniforms, trimming) was graded against `make_encode`/`make_decode` run on the UNPADDED structure, 4 structures x {default, bias_temp, fixed}:
+
+| Gate | Run | Result |
+|---|---|---|
+| X8b, Node (wasm, 1 thread) | **`a05397f8`**, clean tree at `03f7e0a5` | 12/12; log-probs within 4.0e-6; seeded path repeatable and seed-sensitive on all 4 structures; both controls fired |
+| X8c, headless Chromium 153 | **`0ada643e`**, clean tree at `a5d63462` | 12/12 at 1 thread and at 4 threads (worst 4.1e-6); cross-origin isolated, 4 effective threads; seeded checks and both controls hold at both settings |
+
+Sequences and decoding orders are exact; 2 of 12 cases (1BVC and 6m0j `bias_temp`) are FRAGILE by the pre-registered margin (a draw within 1e-5 of a CDF boundary) and exempt on sequence only; their orders and log-probs were still compared, and their sequences agreed in the smoke runs.
+
+**A wrong mechanism, found and disclosed.** The first sampler shifted the uniform stream by the pad count on the belief that padding decodes first. The exploratory X8b smoke disagreed on all 12 cases (orders exact, sequences and log-probs not), and a padded-vs-unpadded JAX spike showed the decoder orders padding LAST (`decoding_order_from_noise` takes `pad_valid`), so real residues keep steps 0..L-1 and the stream goes unshifted. The sampler was fixed and the sidecar's hypothesis text carries a dated REVISION; no outcome criterion or tolerance changed. Failed numbers from the smoke are not cited.
+
+Scope: sequence sampling from the 30-token decoder with caller-supplied designed mask, temperature, bias and streams; buckets 256/1024; the seeded generator is a JS mulberry32 whose statistics are not graded. Not covered: WebGPU, other browsers, speed, the pH design methods that use the decoder (D3), a UI.
+
+Pinned artifacts: `release/browser/protonpotts/ph/` (manifest `131a65cb…`) and `release/browser/protonpotts/decoder/` (manifest `bacf2245…`), every graph hash re-checked against its manifest.
