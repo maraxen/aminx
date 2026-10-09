@@ -3012,3 +3012,11 @@ Two graded wave runs, both kept on record:
 Harness defects found by exploratory runs (none cited), each disclosed in the sidecar before the graded run: the dump is in upstream token order; the inverse CDF accumulates in upstream's order (`cdf_order`); the default per-residue temperature is upstream's float32 0.1 cast up (a 1e-6 error in f64 log-probs that vanished to 4e-13 with the right constant).
 
 The wave is not yet in the redsox ledger: folding it into the `protonpotts_parity` vehicle is part of the next re-wave.
+
+### 54.2 B1, step 1 graded (2026-10-09): the per-block pH graphs (X7a)
+
+Run **`d5918c26`**: completed, `pass`, exit 0, clean tree at `48564599`, sidecar committed first (`568688a4`). Sixteen graphs (`visit` and `zblock` for pin counts 1-3 and `pool` and `field_at`, at buckets 256 and 1024; 4 KB-130 KB each, because the pair table is an input and no weights are baked in), manifest sha256 `131a65cb…`. On the four real structures (1EL1, 1BVC, 1OLR, 6m0j) at production defaults: **354 of 354 cases agree with JAX on ORT-CPU** and **96 of 96 on ORT-Web** (worst relative error 5.6e-6 and 5.8e-6; the digits of every `visit` are exactly equal at temperature 0 and at 0.05), and **every repeated case is bit-identical across five multi-threaded ORT-CPU runs**. All three controls fired, including the race control: the pre-fix scatter-add objective, exported and run eight times at the default thread count, did NOT repeat bitwise, so the determinism check demonstrably sees the defect it exists for.
+
+The determinism check is the new part and the reason this gate exists in this form: the first version of these graphs passed every single-thread comparison and was wrong by up to 4 at 4 threads (spec 54). The graphs are pinned for downstream use at `~/bv/protonpotts-export/x7a_d5918c26/` (the racy control artifact is not shipped).
+
+Chunked `field_at` replaces the full-chain `candidate_energies` in the browser, for the same thread-safety reason; the JS loop (`ph_design.mjs`) is graded next (X7b), then headless Chromium at 1 and 4 threads (X7c).
