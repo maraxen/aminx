@@ -195,7 +195,8 @@ def _dump(args: argparse.Namespace, out: Path, manifests: dict[str, dict]) -> di
     only_mask = (
       set(arrays_in) == set(default_arrays)
       and all(np.array_equal(arrays_in[k], default_arrays[k]) for k in arrays_in if k != "designed_residue_mask")
-      and bool(np.array_equal(designed, chains == binder)) and bool(designed.any()) and not bool(designed.all())
+      and bool(np.array_equal(designed, chains == binder)) and bool(designed.any())
+      and (len(set(chains.tolist())) == 1 or not bool(designed.all()))  # single chain: the binder is everything
     )
     n = int(arrays_in["S"].shape[-1])
     uniforms = np.random.default_rng(SEED + 200).uniform(size=(N_ROWS, n))
