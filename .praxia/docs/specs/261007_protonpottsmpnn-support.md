@@ -2956,3 +2956,32 @@ The JS input builder (`browser/protonpotts-scorer/protonpotts_inputs.mjs`: featu
 **Not done, tracked.** (1) pH design in the browser: block descent is a sweep over placement blocks with host-side logic; it needs a design decision on graph shape (per-block graph driven from JS vs one sweep graph), then the same X6a/b/c ladder. (2) A browser benchmark (the page already takes `reps`/`warmup`/`planted_ms`). (3) The release/Pages publishing step (the Potts precedent, #5818). (4) Any `sample` path, blocked on #2617.
 
 **Debt closed or advanced the same day (261009).** #2620 resolved (`f51dcbe7`: the seam tests purged `aminx.families.*` from `sys.modules` without restoring it; an autouse fixture now restores modules, parent attributes and driver registrations; reproduced before and fixed after on titanix, seam + `tests/protonpotts` 224 passed). #2618 item 1 done: the `score:ddg` wave `protonpotts_ddg` (`scripts/protonpotts/`, outside the ledger) graded `pass` by record, run `a8414c87`, clean at `041e994f`, 4/4 cells and 5/5 controls rejected; items 2-5 stay open. The browser follow-ups are filed as debt #2625.
+
+## 53. The 30-token decoder (#2617) and the browser, plan of 2026-10-09 (user decisions 11-13 in the ADR)
+
+**Decided (user, 261009):** implement the 30-token decoder now; pH design in the browser is a per-block graph driven by a JS loop; browser work is sequenced behind the blockers it needs.
+
+**Facts, each tagged.** *Verified* = read at the line named by me this session; *recon* = a Haiku agent's report, not yet re-read.
+
+| fact | tag |
+|---|---|
+| Upstream's decoder is foundry's general `ProteinMPNN.decode_auto_regressive` (`mpnn/model/mpnn.py:1228-1810`), inherited by `PottsMPNN`. It decodes in `decoding_order`, samples with `torch.multinomial` on `probs_sample` (unknown-token columns zeroed, renormalised; `logits_to_sample`, `:855-958`), adds per-residue `bias` and `pair_bias`, divides by per-residue `temperature`, keeps fixed positions via `decode_last_mask`, and ties positions through `symmetry_equivalence_group`. | verified |
+| The pH engine reaches it through `self.model(ni)["decoder_features"]["S_sampled" or "log_probs"]` (`potts_mpnn_ph.py:1165, 1230`) for `autoregressive`, `mpnn_sample`, `selective_source='decoder'` and the whole-chain `gibbs` baseline; `backend='mpnn'` is required for the first two. | verified (grep) |
+| aminx `PottsARDecode` is shape-generic: vocab comes from `omit.shape[0]` (`decode.py:427`); the only fixed value is `mask_refine_x`'s default `x_index=20` (`:81`). The 21-sized pieces are in the caller (`sample_host.py:44, 297-299`: `omit` is built from the 21-symbol alphabet) and fail loudly at the broadcast. | verified (decode.py), recon (sample_host) |
+| `PottsMPNN(alphabet=PROTONPOTTS_V6)` has `w_s_embed` 30x128, `w_out` 128->30 and 3 decoder layers; the converter populates `decoder_layers.*`, `W_s`, `W_out` with 30-row permutations. Whether the converter was exercised end to end on the decoder keys is **not** verified. | recon |
+| No test instantiates `PottsARDecode` with `PROTONPOTTS_V6`. | recon |
+| The driver's `sample` is energy-based pH design and does not need the decoder. The refusals naming #2617 are in `ph_config.py` (methods `autoregressive`, `mpnn_sample`); #2616 covers `converged_mcmc`, `two_phase`, `converged_mcmc_combined`, `gibbs`. | recon |
+| Open from §14, still unresolved: upstream applies `mask_E` to the decoder MESSAGE after the MLP, aminx masks the edge features before it; equivalent only when no padding. | verified (spec text) |
+| Upstream is not dtype-polymorphic in the decoder (`index_put` dtype mismatch under `.double()`, §41.2); the f64 oracle there needed a workaround. | verified (spec text) |
+
+**Consequence for the design.** The port is a parametrisation of an existing, graded decode plus a faithful oracle, not a new decoder; the risk sits in the details foundry changed (per-residue temperature, `decode_last_mask`, symmetry weighting, `probs_sample` renormalisation, the decoder mask placement) and in the sampler's token order (§47). None of that can be settled by reading; it needs the oracle.
+
+**Steps, each a pre-registered wave with negative controls, none widening a tolerance:**
+
+| step | work | graded by |
+|---|---|---|
+| D1 | `dump_protonpotts_decoder.py` (P4h) in the oracle env: upstream `forward` in autoregressive mode on the four sealed cells with `torch.multinomial` shimmed to inverse-CDF on injected uniforms and a fixed `decoding_order`; per-step logits, probs, `S_sampled`, final `h_V`; f32, and f64 if the dtype workaround holds; hash-sealed | the dump's own controls (reproducible across a fresh process, precisions differ) |
+| D2 | aminx V=30 decode (reuse `PottsARDecode`, add the foundry-specific inputs it lacks), wave `protonpotts_decoder` | logits per step, tokens, order, vs P4h; controls: wrong token order, wrong decoder-mask placement, uniforms shifted, bias ignored, nudge |
+| D3 | driver wiring (`sample` with a decoder backend), then `autoregressive`, `mpnn_sample`, decoder-selective, `gibbs`, `backend='mpnn'` in `ph_config`, each with its own replay wave against the engine | per-method waves; refusals shrink only as each is graded |
+| B1 | per-block pH graph + JS descent loop (no decoder dependency) | export gate, Node gate vs the real driver, Chromium gate |
+| B2 | V=30 decoder graphs + JS sampler | after D2 |
