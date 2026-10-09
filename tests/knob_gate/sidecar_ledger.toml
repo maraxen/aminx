@@ -129,10 +129,11 @@ bth_run_id = "0eb5d421-6482-480c-a0fb-6a2d6ef17729"
 bth_run_id = "6848dc88-44f5-488a-8e52-db28a910626d"
 
 [sidecar.protonpotts_parity]
-# ADDED 261009 at 272a9dac (P10, PR #211). Combined vehicle: 7 waves, 47 controls.
-# Cool-tier record: completed, outcome pass, tree clean; all 47 controls 'failed'; weights sha a3987225... matches the registry pin.
-# Ran AFTER block_zscales became an xtrax-planned map (272a9dac), so the ph_block z-scale risk named in its pre-registration was exercised and did not fire.
-bth_run_id = "94f395f8-fbb7-4e4d-b6f5-66007f612315"
+# UPDATED 261009 at 97779d72 (P10 + D3, PR #211). Combined vehicle: 10 waves, 69 controls (was 7 waves, 47 controls, run 94f395f8
+# at 272a9dac). Folded in since: decoder (a769e1b2), ddg (a8414c87), sample (981fa479). Spec 55.1-55.2.
+# Cool-tier record: completed, outcome pass, tree clean; all 69 controls 'failed'; weights sha a3987225... matches the registry pin.
+# This run also regraded the N-row sampler on its final xtrax-planned code (sample_rows was rewritten after 981fa479).
+bth_run_id = "1045798b-b7d2-41b7-87fc-0bd5d7ac1acc"
 
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
