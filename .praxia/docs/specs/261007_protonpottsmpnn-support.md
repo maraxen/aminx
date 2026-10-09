@@ -3028,3 +3028,9 @@ Run **`f0523ef9`**: completed, `pass`, exit 0, clean tree at `880c9871`, sidecar
 The planner (`ph_plan.mjs`) was checked separately against the real Python functions on 97 random cases (a deterministic equality test): all equal, with a negative control.
 
 Next: the same twelve cases in headless Chromium at 1 and 4 threads (X7c); then pinning the per-block graphs under `release/browser/protonpotts/` and folding the new waves into the redsox ledger at the next re-wave.
+
+### 54.4 B1 closed in a browser (2026-10-09): the shipping pH design page equals design_structure at 1 and 4 threads (X7c)
+
+Run **`6be6e82f`**: completed, `pass`, exit 0, clean tree at `c24fc4cd`, sidecar committed first (`ee7b8007`). `ph_index.html` + `ph_page.mjs` (PhDesigner from PDB text), served with COOP/COEP and driven in headless Chromium 153 through `browser/layer_c/run_p07.mjs` unchanged, reproduce `design_structure` on all 12 cases at **1 thread and at 4 threads** (24/24 case-runs): sequences, designable sets, pins and draw counts exactly, energies within 2.6e-5 (bar 1e-4). `crossOriginIsolated` was true and ORT reported 4 effective threads at 4. Both controls fired at both settings. The 6m0j cases (177 MB table) completed, so the predicted heap/timeout risk did not occur. Scope: block descent, P in {1,2,3}, block size 3, buckets 256/1024; WebGPU, other browsers and speed are not covered.
+
+Open for B1: pin the per-block graphs under `release/browser/protonpotts/`. Next: B2, the V=30 decoder graphs (X8a gate, `protonpotts_decode_export_gate`).
