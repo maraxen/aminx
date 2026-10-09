@@ -118,7 +118,7 @@ def test_fixed_residues_decode_first_and_keep_their_token(model: PottsMPNN) -> N
 
 def test_x_is_never_drawn_and_the_distribution_is_renormalised(model: PottsMPNN) -> None:
   bias = np.zeros((L, V), dtype=np.float32)
-  bias[:, X] = 50.0  # without the zeroing every draw would be X
+  bias[:, X] = 8.0  # large enough that without the zeroing X dominates, small enough that the rest does not underflow
   out, _ = _decode(model, bias=bias)
   assert not np.any(np.asarray(out.sequence) == X)
   np.testing.assert_array_equal(np.asarray(out.probs_sample)[:, X], 0.0)
