@@ -106,7 +106,7 @@ soft = [
   "protonpotts_decoder_parity",
   "protonpotts_ddg_parity",
 ]
-# The four scripts/parity sites load the converter (declared soft) or scripts/convert_weights.py (the known gap above).
+# The scripts/parity sites (the decoder and ddg waves too) load the converter or the driver wave (both declared soft) (declared soft) or scripts/convert_weights.py (the known gap above).
 # runner.py / weights.py / the Potts driver are the same three sites the Potts rows declare: the family string table
 # (protonpotts_mpnn is declared soft above), packaged weights (non-.py under src/aminx/, global), and the Potts
 # recapture converter (scripts/recapture/ is a global prefix).
@@ -115,6 +115,8 @@ dynamic_ok = [
   "scripts/parity/protonpotts_driver_parity.py",
   "scripts/parity/protonpotts_encoder_parity.py",
   "scripts/parity/protonpotts_energy_parity.py",
+  "scripts/parity/protonpotts_decoder_parity.py",
+  "scripts/parity/protonpotts_ddg_parity.py",
   "src/aminx/host/runner.py",
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",

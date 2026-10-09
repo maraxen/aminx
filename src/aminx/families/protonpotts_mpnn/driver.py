@@ -192,7 +192,7 @@ class _SelectivityStages:
       gaps = [selectivity_gaps(table, e_idx, row, pins) for row in forced]
       totals.append(np.asarray([total for total, _ in gaps], dtype=np.float32))
       per_centre.append(
-        np.asarray([per for _, per in gaps], dtype=np.float32).reshape(len(gaps), -1)
+        np.asarray([per for _, per in gaps], dtype=np.float32).reshape(len(gaps), -1),
       )
       ids.append(np.arange(forced.shape[0], dtype=np.int32))
       tokens.append(forced)

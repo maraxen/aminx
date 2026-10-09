@@ -80,7 +80,7 @@ def permute_edge_embedding(weight: np.ndarray) -> np.ndarray:
   positional = weight[:, :N_POSITIONAL]
   rbf = weight[:, N_POSITIONAL:].reshape(weight.shape[0], N_ATOM_PAIRS, N_RBF)
   return np.concatenate(
-    [positional, rbf[:, pair_permutation(), :].reshape(weight.shape[0], -1)], axis=1
+    [positional, rbf[:, pair_permutation(), :].reshape(weight.shape[0], -1)], axis=1,
   )
 
 
@@ -117,7 +117,7 @@ def to_aminx_layout(state: Mapping[str, np.ndarray]) -> dict[str, np.ndarray]:
 
   out = {RENAMES.get(key, key): np.asarray(value) for key, value in state.items()}
   out["features.edge_embedding.weight"] = permute_edge_embedding(
-    out["features.edge_embedding.weight"]
+    out["features.edge_embedding.weight"],
   )
   out["W_s.weight"] = permute_token_rows(out["W_s.weight"])
   out["W_out.weight"] = permute_token_rows(out["W_out.weight"])
