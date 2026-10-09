@@ -250,7 +250,8 @@ def sample_rows(
   per_row = noise if noise is not None else decoding_order
   assert per_row is not None  # noqa: S101 -- narrowed by the check above
 
-  def call(u: Array, row: Array, forced: Array | None) -> DecodeResult:
+  def call(xs: tuple[Array, ...]) -> DecodeResult:
+    u, row, forced = (*xs, None) if forced_tokens is None else xs
     return decoder(
       h_v, h_e, e_idx, present, pad_valid, s_true, designed, temperature, bias, u,
       noise=row if noise is not None else None,
@@ -270,10 +271,7 @@ def sample_rows(
     pad = strategy.tile - (n_rows % strategy.tile)
     args = [_pad_rows(a, pad) for a in args]
   iterator = make_axis_dispatch_via_xtrax(strategy, axis=_SAMPLE_ROWS.name)
-  if forced_tokens is None:
-    out = iterator(lambda u, row: call(u, row, None), tuple(args))
-  else:
-    out = iterator(call, tuple(args))
+  out = iterator(call, tuple(args))
   return DecodeResult(*(field[:n_rows] for field in out))
 
 
