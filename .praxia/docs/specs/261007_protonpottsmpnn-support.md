@@ -3057,3 +3057,20 @@ Sequences and decoding orders are exact; 2 of 12 cases (1BVC and 6m0j `bias_temp
 Scope: sequence sampling from the 30-token decoder with caller-supplied designed mask, temperature, bias and streams; buckets 256/1024; the seeded generator is a JS mulberry32 whose statistics are not graded. Not covered: WebGPU, other browsers, speed, the pH design methods that use the decoder (D3), a UI.
 
 Pinned artifacts: `release/browser/protonpotts/ph/` (manifest `131a65cb…`) and `release/browser/protonpotts/decoder/` (manifest `bacf2245…`), every graph hash re-checked against its manifest.
+
+## 55. D3 re-scoped from the upstream source (2026-10-09)
+
+Recon by a Haiku agent, then every load-bearing claim re-read by the lead in `foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py` (`UP:` line numbers below). **This corrects §53 and the original D3 list: `gibbs` does not use the decoder.**
+
+| Method | What upstream does | Decoder? | aminx today |
+|---|---|---|---|
+| `block_descent`, `greedy` | Potts-energy placement redesign | no | ported, graded (ph_block, ph_greedy, ph_driver) |
+| `gibbs` | `_run_whole_chain` calls `PottsMPNN.potts_gibbs_optimize(etab_out, E_idx, seq_init, free_mask, temperature, max_iters=1000, convergence_mode=True, valid_aa_mask)` (UP:1217-1225) | **no, Potts only** | refused; needs a Potts-Gibbs port, which is not a decoder item |
+| `mpnn_sample` | `_run_whole_chain` runs the model with `repeat_sample_num=N` and reads `decoder_features["S_sampled"]` (UP:1226-1231), then scores each design; temperature comes from the model settings (recon: potts_inference.py:156, not re-read), not from the criteria | yes: the autoregressive decoder, N rows | refused (#2617) |
+| `autoregressive` | `_masked_infill` (UP:1908-1938): lock every centre, set the union of neighbourhoods to UNK, then visit positions in `order` and SAMPLE each from `softmax(-J/T)` where `J = (1-λ)·z(-log p_MPNN) + λ·z(Σ centres (e_P − e_D))` (selective_source `potts`), using `ctx.field_mpnn(S)[i]`, a per-position decoder conditional | yes: teacher-forced `conditional_minus_self` conditionals, no free-running AR | refused (#2617) |
+| `autoregressive` + `selective_source='decoder'` | the same loop with `J = −[p(a|centres=target) − λ·p(a|centres=off)]` (UP:1931, `_selective_reward_decoder`) | yes | refused (#2617) |
+| `backend='mpnn'`, `placement_by='scan_mpnn'` | decoder-driven placement | yes | refused (#2617) |
+
+Unchecked by the lead (carried as unverified): the upstream commit hash; how the temperature enters `input_features`; the symmetry-group value; `placement_by='random'` and `placement_region` appear validated but never read in upstream (recon), which would be an upstream no-op to mirror, not fix.
+
+**Consequences for the plan.** (1) The decoder pieces aminx already has (`ProtonPottsARDecode`, `teacher_forced`) cover `mpnn_sample` and the `field_mpnn` conditional. (2) Each remaining method needs an UPSTREAM ORACLE dump first (a new dumper beside `dump_protonpotts_ph.py`, with the draws shimmed the way P4h shimmed the single-row decoder, here for N rows), sealed, then a pre-registered parity wave, then the driver surface and the lifted refusal, then the vehicle fold. (3) Order by cost and value: `mpnn_sample` (N independent AR draws, scored), then `autoregressive` with the Potts selective source (needs `_sampler_zscales`, `_selective_row`, `_pick`), then the decoder-selective variant, then `backend='mpnn'`/`scan_mpnn`. (4) `gibbs` moves to its own debt. The unified refusal text in `ph_config.py` that names #2617 for `gibbs` (if any) is wrong and gets corrected when a method is lifted.
