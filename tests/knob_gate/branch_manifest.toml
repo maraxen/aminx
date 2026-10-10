@@ -230,7 +230,7 @@ slug = "potts_ddg_megascale"
 #                        (see #2370) -- it can mean the control is inert OR
 #                        that one defect swamps both. Resolve #2417 first.
 
-# P10 protonpotts_parity (spec 261007 section 50). 69 rows: every negative control of the ten ProtonPottsMPNN waves, named
+# P10 protonpotts_parity (spec 261007 section 50). 89 rows: every negative control of the eleven ProtonPottsMPNN waves, named
 # <wave>.<control>. Each must report 'failed'. The ids are the --mutants string launch_wave.sh passes, by exact equality.
 
 [[branch]]
@@ -850,6 +850,186 @@ id = "sample.nudged_4x_band"
 stage = "P10"
 fixture = "protonpotts_dumps"
 mutant = "sample.nudged_4x_band"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.cdf_in_aminx_order"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.cdf_in_aminx_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.uniforms_shifted_one"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.uniforms_shifted_one"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.randints_shifted_one"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.randints_shifted_one"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.permutations_reversed"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.permutations_reversed"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.field_untempered"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.field_untempered"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.zscales_sample_std"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.zscales_sample_std"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.temperature_doubled"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.temperature_doubled"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.combined_lambda_wrong"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.combined_lambda_wrong"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.two_phase_frac_wrong"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.two_phase_frac_wrong"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.selective_flipped"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.selective_flipped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.backend_swapped"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.backend_swapped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.selective_source_swapped"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.selective_source_swapped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.valid_mask_all_true"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.valid_mask_all_true"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.pin_contrast_wrong"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.pin_contrast_wrong"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.centre_among_designable"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.centre_among_designable"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.scan_unmasked"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.scan_unmasked"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.scan_selective_formula"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.scan_selective_formula"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.gibbs_outgoing_only"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.gibbs_outgoing_only"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.cv_cap_wrong"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.cv_cap_wrong"
+[branch.vehicle]
+kind = "sidecar"
+slug = "protonpotts_parity"
+
+[[branch]]
+id = "ph_methods.nudged_4x_band"
+stage = "P10"
+fixture = "protonpotts_dumps"
+mutant = "ph_methods.nudged_4x_band"
 [branch.vehicle]
 kind = "sidecar"
 slug = "protonpotts_parity"
