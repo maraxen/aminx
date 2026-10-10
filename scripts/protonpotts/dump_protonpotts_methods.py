@@ -390,20 +390,24 @@ def _run_one_unit(args: argparse.Namespace, cell: str, precision: str, out: Path
   inference._PIPELINE_CACHE.clear()  # noqa: SLF001 -- trap 1 of the P4 dumper (spec §23.4)
   torch.set_num_threads(1)
   out.mkdir(parents=True, exist_ok=True)
-  engine = ph.PottsMPNNPHEngine(
-    checkpoint_path=str(args.checkpoint), extended_vocab="v6", out_directory=None, write_fasta=False, write_structures=False,
-  )  # fmt: skip
   pdb, chain = args.cells[cell]
   atom_array = MPNNInferenceInput.from_atom_array_and_dict(input_dict={"structure_path": str(pdb)}).atom_array
+  # The default dtype must be the run's BEFORE the engine is built: upstream creates its RBF centres with torch.linspace at the default
+  # dtype, and a float64 run built at float32 carries ~3e-6 of rounding in the edge features (P4e, dump_protonpotts_encoder.py:96-106).
   previous_default = torch.get_default_dtype()
-  guard = contextlib.nullcontext()
-  if dtype == torch.float64:
-    torch.set_default_dtype(torch.float64)
-    engine.model = engine.model.double()
-    guard = _f64_changes(mm, engine.model.graph_featurization_module.positional_embedding.embed_positional_features)
+  torch.set_default_dtype(dtype)
   try:
+    engine = ph.PottsMPNNPHEngine(
+      checkpoint_path=str(args.checkpoint), extended_vocab="v6", out_directory=None, write_fasta=False, write_structures=False,
+    )  # fmt: skip
+    built_in = str(torch.get_default_dtype())
+    guard = contextlib.nullcontext()
+    if dtype == torch.float64:
+      engine.model = engine.model.double()
+      guard = _f64_changes(mm, engine.model.graph_featurization_module.positional_embedding.embed_positional_features)
     with guard:
       arrays, meta = _run_ph(engine, ph, atom_array, chain, dtype)
+    meta["default_dtype_at_build"] = built_in
   finally:
     torch.set_default_dtype(previous_default)
   npz, js = out / f"{cell}_{precision}.npz", out / f"{cell}_{precision}.json"
@@ -549,7 +553,7 @@ def main() -> int:  # noqa: C901, PLR0915
   directory = args.out / "protonpotts_v6_methods"
   stamps, reuse = _dump(args, directory)
   reproducible = _reproduce(args, stamps)
-  engine_matches_sealed = complete = f64_ok = shim_ok = cover_ok = precisions_differ = True
+  engine_matches_sealed = complete = f64_ok = shim_ok = cover_ok = precisions_differ = built_ok = True
   agreement: dict[str, float] = {}
   margins: dict[str, float] = {}
   for cell in args.cells:
@@ -564,6 +568,7 @@ def main() -> int:  # noqa: C901, PLR0915
         arrs["ctx_S_native"].shape == sealed["S"][0].shape and np.array_equal(arrs["ctx_S_native"], sealed["S"][0])
         and np.array_equal(arrs["ctx_eidx"], tables["E_idx"])
       )
+      built_ok &= meta.get("default_dtype_at_build") == ("torch.float64" if precision == "f64" else "torch.float32")
       flags = _grade_unit(arrs, meta, precision)
       complete &= flags["complete"]
       f64_ok &= flags["double"]
@@ -577,7 +582,7 @@ def main() -> int:  # noqa: C901, PLR0915
     same = [bool(np.array_equal(units["f32"][0][f"c{i}_S_out"], units["f64"][0][f"c{i}_S_out"])) for i in range(n_calls)]
     agreement[cell] = float(np.mean(same)) if same else float("nan")
   flags = {
-    "engine_matches_sealed": bool(engine_matches_sealed), "complete": bool(complete), "f64_is_float64": bool(f64_ok),
+    "engine_matches_sealed": bool(engine_matches_sealed), "complete": bool(complete), "f64_is_float64": bool(f64_ok), "engine_built_in_dtype": bool(built_ok),
     "precisions_differ": bool(precisions_differ), "shim_is_the_draw": bool(shim_ok), "draws_cover_methods": bool(cover_ok),
     "reproducible": bool(reproducible), "n_cells": len(args.cells), "n_units": len(stamps),
   }  # fmt: skip
