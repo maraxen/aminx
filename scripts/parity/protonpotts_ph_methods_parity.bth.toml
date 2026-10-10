@@ -1,0 +1,133 @@
+[metadata]
+title = "protonpotts_ph_methods wave: aminx autoregressive, converged_mcmc(+combined), two_phase, gibbs, backend mpnn and scan_mpnn placement against the real engine, per step"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+`aminx.families.protonpotts_mpnn.ph_methods` -- the host loops `masked_infill`, `converge`, `two_phase` and `gibbs`, the decoder field
+`DecoderField` (`decode.teacher_forced`, `conditional_minus_self`) and the placement `placement_field` + `ph_plan.plan_from_center_types`
+-- built from the converted v6 checkpoint and fed the sealed feature dumps, reproduces the real upstream engine as dumped by P4j
+(`dump_protonpotts_methods.py`: `PottsMPNNPHEngine.run_ph_redesign` with the real model, eleven criteria per unit, `torch.multinomial` /
+`randint` / `randperm` replaced by recorded draws) for two cells (6m0j chain E, 1BVC chain A) in float64 and float32. Spec §56; debts
+#2616, #2617. The eleven labels: ar_potts, ar_decoder, mcmc_potts, mcmc_potts_T0, mcmc_potts_nonsel, mcmc_mpnn, combined_potts,
+two_phase_potts, two_phase_mpnn, place_mpnn, gibbs.
+
+For every call of the dump (an outermost optimiser call: 11 per unit, 44 in all) the wave checks, in this order:
+ 1. PLACEMENT (every label but gibbs). aminx's plan equals the dump's: the same pins (position, type) and the same designable set; and the
+    placement score of every binder position, computed from aminx's own field (`placement_field` -> `placement_scores`), is within the band
+    of the dump's ranked list, with the same set of positions. This grades scan_potts, scan_mpnn (the binder-masked decoder field) and the
+    non-selective formula (`field[prot] - field[native token]`, which does not cancel).
+ 2. FORCED REPLAY. The dump's CHOICES (and its recorded randint values, permutations and visiting order) are fed to aminx in place of
+    its draws, so one near-tie cannot cascade: every multinomial event's probability vector, in aminx's token order, within the band of the
+    dump's at the state both reached; the final sequence EXACT; the number of multinomial events, randint draws and permutations consumed
+    EXACTLY the number recorded; the pooled z-scales (ar_potts) within a relative band.
+ 3. FREE REPLAY. The dump's UNIFORMS (not choices) are fed to aminx: every event's choice equals the recorded choice except at FRAGILE
+    events (the uniform within 1e-5 of a CDF boundary, relative to the mass; counted and reported), and the final sequence equals the
+    dump's, except that a call with a fragile event is exempt from this one comparison (counted and reported; gibbs always is: its
+    ~70,000 draws per call make a fragile one near certain, so gibbs is graded by the forced replay alone).
+ 4. ENERGIES. The final Potts energy of every design (`potts_energy` on aminx's table) and its selective energy (the centre-gap sum), within a
+    relative band of the dump's `PHDesignOutput`.
+ 5. NON-DESIGNED POSITIONS HOLD: outside the designable set and the pins (placement methods), or outside the binder chain (gibbs), the final
+    sequence equals the input.
+
+INPUTS: the dump's native sequence, masks, E_idx (graded by the encoder wave), the Potts table and encoder states built by aminx from the
+sealed feature dump's coordinates, the prepared per-residue temperature (float32 0.1 cast to the run's dtype, as in the P4h/P4i waves), and the
+inverse CDF accumulated in upstream's token order (`cdf_order`).
+
+TOLERANCES, fixed before any run. float64: probabilities and placement scores max|aminx - upstream| <= 1e-9 absolute; energies and z-scales
+<= 1e-9 relative. float32: ten times the measured f32-vs-f64 spread, minimum 1e-6 (absolute for probabilities and placement scores, relative
+for energies and z-scales). DEVIATION from the earlier waves, stated here: upstream's float32 and float64 runs take INDEPENDENT trajectories
+(their draws and states diverge), so the spread cannot be taken between the two upstream dumps on a shared state. It is taken between AMINX in
+float32 and AMINX in float64, both force-fed the SAME choices (the float32 dump's), for the same array in the same cell and label: that
+measures the float32 noise of the instrument on identical states, and ten times it must cover aminx-float32 against upstream-float32.
+Tokens, positions, draw counts and sets: exact.
+
+CONTROLS -- twenty deliberate errors, on the 1BVC cell in float64, each of which must make the comparison for ITS scope fail (scope in
+brackets; a scope names the labels graded under the error):
+  cdf_in_aminx_order        the inverse CDF accumulates in aminx's token order            [ar_potts, mcmc_potts, two_phase_potts]
+  uniforms_shifted_one      every call's uniforms rolled by one draw                       [ar_potts, mcmc_potts]
+  randints_shifted_one      the randint stream rolled by one                               [mcmc_potts, two_phase_potts]
+  permutations_reversed     every Gibbs sweep visits in reverse order                      [gibbs]
+  field_untempered          the decoder field at temperature 1.0 instead of 0.1            [ar_potts, mcmc_mpnn]
+  zscales_sample_std        ddof=1 in the z-score std                                      [ar_potts]
+  temperature_doubled       the config temperature times two                               [ar_potts, mcmc_potts]
+  combined_lambda_wrong     lambda 0.6 instead of 0.3                                      [combined_potts]
+  two_phase_frac_wrong      0.9 instead of 0.5                                             [two_phase_potts]
+  selective_flipped         the selective flag inverted                                    [mcmc_potts, mcmc_potts_nonsel]
+  backend_swapped           potts <-> mpnn on the MCMC field                               [mcmc_potts, mcmc_mpnn]
+  selective_source_swapped  potts <-> decoder on autoregressive                            [ar_potts, ar_decoder]
+  valid_mask_all_true       forbidden tokens and X allowed                                 [ar_potts, mcmc_potts]
+  pin_contrast_wrong        the deprotonated contrast token set to HIS-P itself            [ar_potts, mcmc_potts]
+  centre_among_designable   the centre added to the designable set                        [mcmc_potts]
+  scan_unmasked             scan_mpnn over the UNMASKED native sequence                    [place_mpnn]
+  scan_selective_formula    the non-selective placement scored with the selective formula  [mcmc_potts_nonsel]
+  gibbs_outgoing_only       the Gibbs conditional without the incoming edges               [gibbs]
+  cv_cap_wrong              cv_max 2 -> 1                                                  [mcmc_potts]
+  nudged_4x_band            one forced probability shifted by 4 x the float64 band        [mcmc_potts]
+A control that is not rejected means the comparison cannot discriminate that error; the wave then FAILS by rule and the instrument is
+improved (not the criterion relaxed), as was done for x_not_zeroed in the decoder wave.
+
+COVERAGE LIMITS, stated before the run: two cells (the engine's decoder-backed MCMC costs about 16 s per step in float64 at one thread);
+the binder-only path is exercised by one structure, 6m0j chain E; one centre type (HIS-P) and one centre per plan; placement_by random,
+multi-centre enumeration, seed_source inverse, record_trajectory and the sequence_decoded_prob_score / sequence_entropy outputs are not graded
+because they are not ported. The oracle's own reproducibility was checked on one unit (the dump's claim 6).
+
+PREDICTION, stated before the run so it can be wrong: all 44 calls agree and all twenty controls are rejected. The named risks: (a) assumption
+A5 of §56, that `candidate_energies_at` equals upstream's hand-written Gibbs conditional including incoming edges, may be false at self-edges
+(the gibbs_outgoing_only control tests that the incoming part matters, the clean grade that it is right); (b) float32 Gibbs accumulates over
+~70,000 draws, so its band is set by the measured spread, not by 1e-6; (c) `ar_potts` and `two_phase_mpnn` call the decoder field many times,
+and a jit retrace on a changed dtype could slow the wave without changing a number.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_cells = 2 AND n_calls = 44 AND f64_in_band AND f32_in_band AND placement_exact AND forced_sequences_exact AND draw_counts_exact AND choices_exact AND sequences_exact AND nondesigned_hold AND energies_in_band AND zscales_in_band AND checkpoint_matches AND n_listed = 20 AND n_failed = n_listed"
+decision = "protonpotts_ph_methods is graded: the aminx host-loop methods, decoder field and scan placement reproduce the real engine per step in both precisions and every error is rejected."
+reasoning = "Plans, probabilities, final sequences, draw counts, energies and z-scales are within their bands in forced replay, every non-fragile choice and sequence is exact in free replay, non-designed positions hold, the weights came from the dumped checkpoint, and all twenty controls fail."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_cells = 2 AND n_calls = 44 AND f64_in_band AND f32_in_band AND placement_exact AND forced_sequences_exact AND draw_counts_exact AND choices_exact AND sequences_exact AND nondesigned_hold AND energies_in_band AND zscales_in_band AND checkpoint_matches AND n_listed = 20 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_cells = 2 AND n_calls = 44 AND f64_in_band AND f32_in_band AND placement_exact AND forced_sequences_exact AND draw_counts_exact AND choices_exact AND sequences_exact AND nondesigned_hold AND energies_in_band AND zscales_in_band AND checkpoint_matches AND n_listed = 20 AND n_failed = n_listed)"
+decision = "Do not treat the host-loop methods as graded. Read per_call: a placement miss names the scan or the formula; a probability outside its band names the field or the score; a forced-sequence or draw-count miss with the probabilities in band names the algorithm's control flow; a free-replay miss with the forced replay clean names the inverse-CDF convention; an undetected error means the comparison cannot discriminate it."
+reasoning = "Either a plan, a probability, a sequence, a draw count, an energy or a z-scale is off, a non-fragile choice differs, non-designed positions moved, the checkpoint does not match the dump, or a control was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_cells = 2 AND n_calls = 44 AND f64_in_band AND f32_in_band AND placement_exact AND forced_sequences_exact AND draw_counts_exact AND choices_exact AND sequences_exact AND nondesigned_hold AND energies_in_band AND zscales_in_band AND checkpoint_matches AND n_listed = 20 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+n_calls = "int"
+f64_in_band = "bool"
+f32_in_band = "bool"
+placement_exact = "bool"
+forced_sequences_exact = "bool"
+draw_counts_exact = "bool"
+choices_exact = "bool"
+sequences_exact = "bool"
+nondesigned_hold = "bool"
+energies_in_band = "bool"
+zscales_in_band = "bool"
+checkpoint_matches = "bool"
+n_fragile_events = "int"
+n_calls_exempt_from_free_run = "int"
+worst_over_band = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_call = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle = "P4j dump (dump_protonpotts_methods.py), upstream ProtonPottsMPNN @ 09682abf; the dump's own graded run is recorded in the spec"
+features = "sealed P4b feature dumps (6m0j, 1BVC)"
+checkpoint = "potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt via the converted state"
+tolerances = "f64 1e-9 (abs for probabilities and placement scores, relative for energies and z-scales); f32 10x the measured aminx f32-vs-f64 spread on identical forced states, min 1e-6; tokens, positions, sets and draw counts exact except fragile events (margin < 1e-5), reported"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before protonpotts_ph_methods_parity.py exists and before the P4j dump has been graded. Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_ph_methods_parity.py --state-npz <v6_state.npz> --methods-dir <dir holding protonpotts_v6_methods/ and methods_manifest.json> --features-dir ~/projects/aminx-oracles-protonpotts"
