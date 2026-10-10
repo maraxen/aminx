@@ -43,7 +43,9 @@ Claims, falsifiable by this run:
     events (at least one); two_phase has at least one multinomial event per designable position; gibbs has at least one randperm and one
     multinomial event; and every `_pick` result equals the multinomial choice recorded with it (temperature > 0) or the argmin of its score
     (temperature <= 0).
- 6. REPRODUCIBLE: a second run of the float32 unit of 1BVC in a fresh process gives identical content hashes. (One unit, not all four:
+ 6. THE ENGINE WAS BUILT IN THE RUN'S DTYPE (added 261009, see the provenance note): the torch default dtype recorded at engine construction is
+    float64 in every float64 unit and float32 in every float32 unit.
+ 7. REPRODUCIBLE: a second run of the float32 unit of 1BVC in a fresh process gives identical content hashes. (One unit, not all four:
     a second full run doubles the cost, and the claim is about the process, not the cell. Disclosed limit.)
 
 Recorded, not required: the f32-vs-f64 floor per array, the minimum draw margin per label, how often f32 and f64 end on the same
@@ -53,23 +55,24 @@ stage_name = "confirmation"
 novel = false
 
 [outcomes.pass]
-condition = "engine_matches_sealed AND complete AND f64_is_float64 AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4"
+condition = "engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4"
 decision = "Seal the dumps and grade the aminx methods against them (protonpotts_ph_methods wave)."
 reasoning = "The engine ran on the sealed inputs, every label ran in every unit, the float64 arrays are double, the draw replacement is the draw, every method's draw count is what its algorithm consumes, and the process is reproducible."
 is_residual = false
-adversarial_check = "NOT (engine_matches_sealed AND complete AND f64_is_float64 AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4)"
+adversarial_check = "NOT (engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4)"
 
 [outcomes.fail]
-condition = "NOT (engine_matches_sealed AND complete AND f64_is_float64 AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4)"
+condition = "NOT (engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4)"
 decision = "Do not seal. Read which flag is false: engine_matches_sealed false means these are not the sealed inputs; complete false means a label did not run; f64_is_float64 false means the double run is not double (assumption A6 of §56); shim_is_the_draw or draws_cover_methods false means the replacement or the counting is wrong."
 reasoning = "At least one claim is false."
 is_residual = true
-adversarial_check = "engine_matches_sealed AND complete AND f64_is_float64 AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4"
+adversarial_check = "engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4"
 
 [result_schema]
 engine_matches_sealed = "bool"
 complete = "bool"
 f64_is_float64 = "bool"
+engine_built_in_dtype = "bool"
 precisions_differ = "bool"
 shim_is_the_draw = "bool"
 draws_cover_methods = "bool"
@@ -88,3 +91,13 @@ threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_thr
 
 [provenance]
 note = "Pre-registered at the commit that adds this file, before dump_protonpotts_methods.py exists and before any number from it exists. An EXPLORATORY SPIKE preceded it (ungraded, no numbers cited): the real engine ran autoregressive, converged_mcmc (potts and mpnn backends), two_phase and gibbs on 6m0j chain E in float32, and autoregressive (both selective sources) and converged_mcmc/mpnn in float64, each in 4-265 s; autoregressive with backend potts raises ValueError. The spike did not inspect tensor dtypes, so claim 3 is open until this run."
+
+REVISION 261009 (after the first graded run, 10861085, which passed by this file's original criteria and is kept on record, SUPERSEDED). The wave
+that grades aminx against this dump (protonpotts_ph_methods_parity, an exploratory smoke, no numbers cited from it) found that every float64 call
+sat about 1e-6 from aminx, where its pre-registered band is 1e-9, while the float32 calls were in band and the final sequences and draw counts
+agreed exactly. Cause, read in the P4e encoder dump (dump_protonpotts_encoder.py:96-106): upstream builds its RBF centres with `torch.linspace`
+at the DEFAULT dtype, so a float64 run needs the default dtype set to float64 BEFORE the model is built, or ~3e-6 of float32 rounding enters the
+edge features. This script built the engine first and switched the default afterwards. Claim 3 (recorded arrays are float64) could not see it:
+the arrays were float64, the arithmetic that produced them was not all. Fix: the default dtype is set before the engine is constructed, and claim 6
+records it. The outcomes gain `engine_built_in_dtype`; nothing else in [outcomes] changed. All four units are re-run (the script hash is part of
+every unit's stamp). The defect is in the oracle, not in aminx or in a band, and the band is not touched.
