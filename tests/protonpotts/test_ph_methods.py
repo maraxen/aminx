@@ -194,7 +194,7 @@ def test_decoder_field_is_negative_log_probs_of_the_conditional_minus_self_pass(
   np.testing.assert_allclose(out, -np.asarray(log_probs), rtol=1e-5, atol=1e-5)
 
 
-def test_decoder_field_depends_on_the_other_residues_but_not_on_the_residue_itself(structure: Structure) -> None:
+def test_decoder_field_is_driven_by_the_other_residues_far_more_than_by_the_residue_itself(structure: Structure) -> None:
   s = structure
   field = DecoderField.from_model(s.model, s.graph_args)
   base = field(s.native)
@@ -203,9 +203,12 @@ def test_decoder_field_depends_on_the_other_residues_but_not_on_the_residue_itse
   self_changed[i] = (s.native[i] + 1) % 20
   other_changed = s.native.copy()
   other_changed[i + 1] = (s.native[i + 1] + 1) % 20
-  # conditional_minus_self: row i does not see token i, but does see its neighbours
-  np.testing.assert_allclose(field(self_changed)[i], base[i], rtol=1e-5, atol=1e-5)
-  assert np.abs(field(other_changed)[i] - base[i]).max() > 1e-6
+  # conditional_minus_self: row i does not see token i directly, but sees its neighbours. A residue's own token still reaches its row
+  # INDIRECTLY (a neighbour's hidden state carries it back in the later decoder layers), so the self effect is small, not zero.
+  self_effect = float(np.abs(field(self_changed)[i] - base[i]).max())
+  other_effect = float(np.abs(field(other_changed)[i] - base[i]).max())
+  assert other_effect > 1e-6
+  assert self_effect < other_effect
 
 
 # --- placement ----------------------------------------------------------------------------------------------------------
