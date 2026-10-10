@@ -194,7 +194,7 @@ class DecoderField:
   ``__call__(seq)`` returns the full ``(L, V)`` field of ``seq`` (aminx tokens). Tokens may include ``X``.
   """
 
-  def __init__(  # noqa: ANN001
+  def __init__(
     self, scored_mpnn, h_v, h_e, e_idx, present, temperature: float = UPSTREAM_SAMPLE_TEMPERATURE,
   ) -> None:
     dtype = h_v.dtype
@@ -227,7 +227,7 @@ class DecoderField:
 
 
 @eqx.filter_jit
-def _field(decoder, w_s_embed, w_out, h_v, h_e, e_idx, present, seq, temperature, bias, order):  # noqa: ANN001, ANN202
+def _field(decoder, w_s_embed, w_out, h_v, h_e, e_idx, present, seq, temperature, bias, order):
   _logits, log_probs = teacher_forced(
     decoder, w_s_embed, w_out, h_v, h_e, e_idx, present, seq, temperature, bias,
     pattern="conditional_minus_self", decoding_order=order,
