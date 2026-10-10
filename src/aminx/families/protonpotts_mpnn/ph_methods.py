@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import dataclasses
 import random
-from typing import TYPE_CHECKING, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import equinox as eqx
 import jax
@@ -68,7 +68,7 @@ _CANDIDATES_AT = jax.jit(candidate_energies_at)
 _CANDIDATES = jax.jit(candidate_energies)
 
 
-class ReplayStop(Exception):
+class ReplayStop(Exception):  # noqa: N818
   """Raised by :class:`Draws` once ``stop_after`` draws were made: a replay that only needs a prefix of its draws."""
 
 
@@ -113,7 +113,7 @@ class Draws:
     self.randint_log: list[int] = []
     self.perm_log: list[np.ndarray] = []
 
-  def _next(self, kind: str, source: list | None, fresh: Callable[[], object]):
+  def _next(self, kind: str, source: list | None, fresh: Callable[[], object]) -> Any:  # noqa: ANN401
     if source is None:
       if self.rng is None:
         msg = f"no recorded {kind} and no seed"
@@ -195,7 +195,7 @@ class DecoderField:
   """
 
   def __init__(
-    self, scored_mpnn, h_v, h_e, e_idx, present, temperature: float = UPSTREAM_SAMPLE_TEMPERATURE,
+    self, scored_mpnn: Any, h_v: jax.Array, h_e: jax.Array, e_idx: jax.Array, present: jax.Array, temperature: float = UPSTREAM_SAMPLE_TEMPERATURE,  # noqa: ANN401
   ) -> None:
     dtype = h_v.dtype
     self.dtype = np.dtype(dtype)
@@ -227,7 +227,10 @@ class DecoderField:
 
 
 @eqx.filter_jit
-def _field(decoder, w_s_embed, w_out, h_v, h_e, e_idx, present, seq, temperature, bias, order):
+def _field(
+  decoder: Any, w_s_embed: Any, w_out: Any, h_v: jax.Array, h_e: jax.Array, e_idx: jax.Array, present: jax.Array,  # noqa: ANN401
+  seq: jax.Array, temperature: jax.Array, bias: jax.Array, order: jax.Array,
+) -> jax.Array:
   _logits, log_probs = teacher_forced(
     decoder, w_s_embed, w_out, h_v, h_e, e_idx, present, seq, temperature, bias,
     pattern="conditional_minus_self", decoding_order=order,
@@ -322,7 +325,7 @@ def sampler_zscales(
 
 
 def selective_row(
-  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], dtype,
+  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], dtype: Any,  # noqa: ANN401
 ) -> np.ndarray:
   """``(V,)`` centre-gap energy of each candidate at ``j`` (UP:1869); invalid tokens stay ``+inf``. ``seq[j]`` is restored."""
   out = np.full(PROTONPOTTS_V6.size, np.inf, dtype=dtype)
@@ -335,7 +338,7 @@ def selective_row(
 
 
 def selective_reward_decoder(
-  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], lam: float, dtype,
+  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], lam: float, dtype: Any,  # noqa: ANN401
 ) -> np.ndarray:  # fmt: skip
   """Pure-decoder reward ``p(a | centres target) - lam p(a | centres off)`` at ``j`` (UP:1883-1905), higher is better; invalid ``-inf``."""
   field = ctx.need_decoder()
@@ -535,7 +538,7 @@ def plan_for_methods(
   )  # fmt: skip
 
 
-def design_methods(
+def design_methods(  # noqa: PLR0915
   model: PottsMPNN | None,
   graph_args: Sequence[jax.Array] | None,
   table: jax.Array,
@@ -629,7 +632,7 @@ def design_methods(
         if replay is not None:
           order = list(replay[sample]["order"])
         else:
-          order = random.Random(int(jax.random.randint(jax.random.fold_in(key, 10_007 + sample), (), 0, 2**31 - 1))).sample(
+          order = random.Random(int(jax.random.randint(jax.random.fold_in(key, 10_007 + sample), (), 0, 2**31 - 1))).sample(  # noqa: S311
             list(plan.designable), len(plan.designable))  # fmt: skip
         result = masked_infill(ctx, config, plan.pins, order, native_np, draws)
       elif config.method == "two_phase":
