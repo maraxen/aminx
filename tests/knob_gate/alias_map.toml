@@ -3158,11 +3158,10 @@ note = "adjacent_repeat_weight: ported in PHDesignConfig (default 0.0) but not e
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__backend"
-targets = []
-equivalence = "exclusion"
-reason = "deferred:2617"
-parity_test_ids = []
-note = "backend: backend 'mpnn' is decoder-backed; only 'potts' is supported (upstream potts_mpnn_ph.py:97)."
+targets = ["design_backend"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_design_backend"]
+note = "backend: same meaning, exposed as design_backend. 'potts' reads the merged Potts conditional energies, 'mpnn' the teacher-forced decoder field (spec 56). autoregressive and mpnn_sample require 'mpnn', gibbs requires 'potts' (upstream potts_mpnn_ph.py:97 and 241-246); the Potts-driven block_descent and greedy_energy_block are graded on 'potts' only and refuse 'mpnn'."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__block_max_rounds"
@@ -3286,7 +3285,7 @@ ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__method"
 targets = ["design_method"]
 equivalence = "divergence"
 parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_design_method"]
-note = "method: subset: aminx accepts block_descent and greedy_energy_block only; the MCMC/Gibbs methods are refused naming debt 2616 and the decoder methods 2617 (upstream potts_mpnn_ph.py:122)."
+note = "method: all eight upstream methods are accepted (block_descent, greedy_energy_block, mpnn_sample, autoregressive, converged_mcmc, converged_mcmc_combined, two_phase, gibbs; upstream potts_mpnn_ph.py:122). The divergence is in what each method returns, not in which exist: sequence_decoded_prob_score and sequence_entropy of the scored design are not ported, and record_trajectory is accepted and ignored (spec 55, 56)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__n_plan_samples"
@@ -3313,11 +3312,10 @@ note = "num_designs: count for whole-chain methods (gibbs / mpnn_sample), which 
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_by"
-targets = []
-equivalence = "exclusion"
-reason = "deferred:2621"
-parity_test_ids = []
-note = "placement_by: aminx places by Potts scan (scan_potts); random placement is not exposed (upstream potts_mpnn_ph.py:212)."
+targets = ["placement_by"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_placement_by"]
+note = "placement_by: subset: scan_potts and scan_mpnn (the decoder field of the native sequence with the binder masked) are ported; 'random' is refused naming debt 2616. scan_mpnn is graded with the host-loop methods only (upstream potts_mpnn_ph.py:212)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_label"
@@ -3339,9 +3337,9 @@ note = "placement_region: region filter for placement sites; aminx scans the who
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_seq_masked"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:2621"
+reason = "no_op"
 parity_test_ids = []
-note = "placement_seq_masked: not exposed as an option (upstream potts_mpnn_ph.py:120)."
+note = "placement_seq_masked: no effect on any design upstream. It is read only by scheme_label (a design-id tag, potts_mpnn_ph.py:321) and by _placement_sites (line 1402), which nothing calls; the scan finders fix their own masking (_place_scan_mpnn masks, _place_scan_potts does not). The P4j dump sets it on one configuration and its designs match an unset one by construction (spec 56)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__rank_normalize"
@@ -3404,19 +3402,17 @@ note = "seed_source: 'inverse' needs externally supplied seed sequences; aminx s
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__selective"
-targets = []
-equivalence = "exclusion"
-reason = "deferred:2621"
-parity_test_ids = []
-note = "selective: the selective term is always on in aminx (upstream potts_mpnn_ph.py:123)."
+targets = ["selective"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_selective"]
+note = "selective: identical meaning and default (True) for converged_mcmc and two_phase's placement and moves (upstream potts_mpnn_ph.py:123, _score_at 1795 and _ranked_candidates 2563). autoregressive and the block optimisers never read it upstream. The Potts-driven block_descent and greedy_energy_block are graded with True only and refuse False."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__selective_source"
-targets = []
-equivalence = "exclusion"
-reason = "deferred:2617"
-parity_test_ids = []
-note = "selective_source: 'decoder' selectivity is decoder-backed; only 'potts' is supported (upstream potts_mpnn_ph.py:107)."
+targets = ["selective_source"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_selective_source"]
+note = "selective_source: identical meaning and default ('potts'); 'decoder' is valid for autoregressive only, as upstream (potts_mpnn_ph.py:107 and 251-256)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__self_weight"
@@ -3451,11 +3447,10 @@ note = "topk_sites: not exposed as an option (upstream potts_mpnn_ph.py:111)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__two_phase_frac"
-targets = []
-equivalence = "exclusion"
-reason = "deferred:2616"
-parity_test_ids = []
-note = "two_phase_frac: belongs to the two_phase sampler, which is deferred (upstream potts_mpnn_ph.py:125)."
+targets = ["two_phase_frac"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_two_phase_frac"]
+note = "two_phase_frac: identical meaning and default (0.5): the fraction of neighbours whose selective pick is committed in phase 1 (upstream potts_mpnn_ph.py:125, _two_phase 1960)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__zscale_mode"

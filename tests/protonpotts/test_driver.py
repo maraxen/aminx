@@ -178,6 +178,26 @@ def test_ddg_is_variant_minus_reference(pdb: Path, model_path: Path, registered:
   assert np.isnan(ddg["ddg_expt"]).all()
 
 
+def test_variant_names_are_carried_with_the_ids(
+  registered: ProtonPottsDriver, pdb: Path, model_path: Path, tmp_path: Path
+) -> None:
+  # id k is variant_names[k]: energy and selectivity rows start with the reference, ddg rows do not (debt #2618, item 5).
+  variants = _json(tmp_path, "v.json", {"a": {"A:2": "HIS-P"}, "b": {"A:3": "ASP-P"}})
+  energy_spec = _spec(pdb, model_path, "energy", variants_json=variants)
+  ddg_spec = _spec(pdb, model_path, "ddg", variants_json=variants)
+  energy_names = json.loads(registered.result_schema(energy_spec, "score:energy")["candidate_ids"].attrs["variant_names"])
+  ddg_names = json.loads(registered.result_schema(ddg_spec, "score:ddg")["mutant_ids"].attrs["variant_names"])
+  assert energy_names == ["reference", "a", "b"]
+  assert ddg_names == ["a", "b"]
+  arrays = score(energy_spec)["structures"]["0"]["arrays"]
+  assert len(energy_names) == arrays["candidate_ids"].shape[0]  # one name per scored row
+  assert len(ddg_names) == score(ddg_spec)["structures"]["0"]["arrays"]["mutant_ids"].shape[0]
+  # no spec (or no variants) leaves the ids unannotated or reference-only
+  assert registered.result_schema(None, "score:energy")["candidate_ids"].attrs == {}
+  bare = registered.result_schema(_spec(pdb, model_path, "energy"), "score:energy")["candidate_ids"].attrs
+  assert json.loads(bare["variant_names"]) == ["reference"]
+
+
 def test_labels_set_the_reference(registered: ProtonPottsDriver, pdb: Path, model_path: Path, tmp_path: Path) -> None:
   del registered
   labels = _json(tmp_path, "labels.json", {"A:2": "HIS-P", "A:3": "ASP-D"})

@@ -5,13 +5,16 @@ dataclass is ``PHDesignCriteria`` (lines ~93-330); the ``__post_init__`` checks 
 lines ~238-283. Production defaults come from the example ``ProtonPottsMPNN/inference/design_ph.py``
 lines 66-95, NOT from the dataclass defaults (e.g. upstream ``block_size=2``, ``temperature=0.1``).
 
-Scope: ``block_descent``, ``greedy_energy_block`` and ``mpnn_sample`` (whole-chain decoder samples; ``ph_sample``) on the Potts
-energy backend only. Anything else is refused at construction, naming the debt item that tracks it:
+Scope: ``block_descent``, ``greedy_energy_block`` (Potts energy backend), ``mpnn_sample`` (whole-chain decoder samples; ``ph_sample``), and the
+methods of ``ph_methods``: ``autoregressive``, ``converged_mcmc``, ``converged_mcmc_combined``, ``two_phase`` and ``gibbs`` (specs §55, §56). Rules
+mirror upstream ``__post_init__``: ``autoregressive`` and ``mpnn_sample`` require ``backend='mpnn'``, ``gibbs`` requires ``'potts'``, and
+``selective_source='decoder'`` is for ``autoregressive`` only. What is not ported is refused at construction, naming the debt item that tracks it:
 
-- debt #2616: MCMC / two-phase / combined samplers and Gibbs (``converged_mcmc``, ``two_phase``,
-  ``converged_mcmc_combined``, ``gibbs``).
-- debt #2617: the remaining decoder-backed paths (``autoregressive``, ``backend="mpnn"``,
-  ``selective_source="decoder"``, ``placement_by="scan_mpnn"``). ``mpnn_sample`` was lifted once graded (wave ``protonpotts_sample``).
+- debt #2621: the unported block-descent knobs (``global_weight``, ``adjacent_repeat_weight``, ``self_weight != 1``, ``zscale_mode='single_mutation'``,
+  ``sweep_order`` knn/energy). ``record_trajectory`` (default on) is accepted and ignored by every method: the per-step energy trajectory was never ported.
+- debt #2616: ``placement_by='random'``, multi-centre enumeration and ``seed_source='inverse'``.
+- ``backend='mpnn'``, ``placement_by='scan_mpnn'`` and ``selective=False`` are graded only with the new methods; ``block_descent`` and
+  ``greedy_energy_block`` refuse them.
 
 Representation: every collection is a tuple so the config is hashable. ``dep_map`` is a tuple of
 ``(centre_type, (deprotonated_type, ...))`` pairs; use ``PHDesignConfig.dep_map_dict()`` for a dict view.
@@ -28,15 +31,13 @@ if TYPE_CHECKING:
 
 MCMC_DEBT = 2616
 DECODER_DEBT = 2617
+KNOB_DEBT = 2621
 
-IN_SCOPE_METHODS: tuple[str, ...] = ("block_descent", "greedy_energy_block", "mpnn_sample")
-_DEFERRED_MCMC_METHODS: tuple[str, ...] = (
-  "converged_mcmc",
-  "two_phase",
-  "converged_mcmc_combined",
-  "gibbs",
-)
-_DEFERRED_DECODER_METHODS: tuple[str, ...] = ("autoregressive",)
+POTTS_METHODS: tuple[str, ...] = ("block_descent", "greedy_energy_block")
+DECODER_METHODS: tuple[str, ...] = ("mpnn_sample", "autoregressive", "converged_mcmc", "converged_mcmc_combined", "two_phase", "gibbs")
+IN_SCOPE_METHODS: tuple[str, ...] = (*POTTS_METHODS, *DECODER_METHODS)
+# The methods that run on ph_methods (host loops over the graded primitives), as opposed to ph_design's jitted optimisers.
+HOST_METHODS: tuple[str, ...] = ("autoregressive", "converged_mcmc", "converged_mcmc_combined", "two_phase", "gibbs")
 
 # Upstream DEFAULT_DEP_MAP maps HIS-P to (HID, HIE); v6 has no HID/HIE, so the production example uses HIS-S.
 DEFAULT_DEP_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -47,10 +48,7 @@ DEFAULT_DEP_MAP: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 def _deferred(what: str, debt: int) -> ValueError:
-  return ValueError(
-    f"{what} is deferred (debt #{debt}). Supported methods: {', '.join(IN_SCOPE_METHODS)}, "
-    "on backend 'potts'.",
-  )
+  return ValueError(f"{what} is not ported (debt #{debt}). Supported methods: {', '.join(IN_SCOPE_METHODS)}.")
 
 
 @dataclass(frozen=True)
@@ -65,6 +63,8 @@ class PHDesignConfig:
   binder_chain: str | None = None
   backend: str = "potts"
   selective_source: str = "potts"
+  selective: bool = True
+  two_phase_frac: float = 0.5
   seed_source: str = "native"
   center_types: tuple[str, ...] = ("HIS-P", "ASP-P", "GLU-P")
   explicit_centers: tuple[tuple[int, str], ...] = ()
@@ -106,25 +106,39 @@ class PHDesignConfig:
     self._check_upstream()
 
   def _check_scope(self) -> None:
-    if self.method in _DEFERRED_MCMC_METHODS:
-      raise _deferred(f"method={self.method!r}", MCMC_DEBT)
-    if self.method in _DEFERRED_DECODER_METHODS:
-      raise _deferred(f"method={self.method!r}", DECODER_DEBT)
     if self.method not in IN_SCOPE_METHODS:
       raise ValueError(f"Unknown method {self.method!r}. Supported: {IN_SCOPE_METHODS}.")
-    if self.backend != "potts":
-      raise _deferred(f"backend={self.backend!r}", DECODER_DEBT)
-    if self.selective_source != "potts":
-      raise _deferred(f"selective_source={self.selective_source!r}", DECODER_DEBT)
-    if self.placement_by == "scan_mpnn":
-      raise _deferred("placement_by='scan_mpnn'", DECODER_DEBT)
+    if self.backend not in ("potts", "mpnn"):
+      raise ValueError(f"Unknown backend {self.backend!r}. Use 'potts' or 'mpnn'.")
+    if self.selective_source not in ("potts", "decoder"):
+      raise ValueError(f"Unknown selective_source {self.selective_source!r}. Use 'potts' or 'decoder'.")
+    if self.placement_by == "random":
+      raise _deferred("placement_by='random'", MCMC_DEBT)
+    if self.method == "gibbs" and self.backend != "potts":
+      raise ValueError("method='gibbs' requires backend='potts'.")
+    if self.method in ("mpnn_sample", "autoregressive") and self.backend != "mpnn":
+      raise ValueError(f"method={self.method!r} requires backend='mpnn'.")
+    if self.selective_source == "decoder" and self.method != "autoregressive":
+      raise ValueError(
+        f"selective_source='decoder' is only valid for method='autoregressive' (got method={self.method!r}).",
+      )
+    if self.method in POTTS_METHODS:
+      # The Potts-driven optimisers are graded on backend 'potts', scan_potts placement and the selective ranking only.
+      if self.backend != "potts":
+        raise ValueError(f"method={self.method!r} is graded on backend 'potts' only; use a decoder-backed method for 'mpnn'.")
+      if self.placement_by != "scan_potts":
+        raise ValueError(f"method={self.method!r} is graded with placement_by='scan_potts' only (got {self.placement_by!r}).")
+      if not self.selective:
+        raise ValueError(f"method={self.method!r} is graded with selective=True only.")
+    if not 0.0 < self.two_phase_frac <= 1.0:
+      raise ValueError(f"two_phase_frac must be in (0, 1] (got {self.two_phase_frac}).")
 
   def _check_upstream(self) -> None:
     # Mirrors upstream PHDesignCriteria.__post_init__ for the in-scope fields.
     if self.seed_source not in ("inverse", "native"):
       raise ValueError(f"Unknown seed_source {self.seed_source!r}. Use 'inverse' or 'native'.")
-    if self.placement_by not in ("random", "scan_potts"):
-      raise ValueError(f"Unknown placement_by {self.placement_by!r}. Use 'random' or 'scan_potts'.")
+    if self.placement_by not in ("random", "scan_potts", "scan_mpnn"):
+      raise ValueError(f"Unknown placement_by {self.placement_by!r}. Use random/scan_potts/scan_mpnn.")
     # Centre-free design (center_count == 0) is allowed only for greedy_energy_block on the whole chain
     # with no pinned centres, exactly as upstream.
     centre_free = (
@@ -200,6 +214,11 @@ def config_from_options(options: ProtonPottsOptions) -> PHDesignConfig:
   return PHDesignConfig(
     center_count=0 if centre_free else 1,  # 1 is the dataclass default; center_types then sets it
     method=options.design_method,
+    backend=options.design_backend,
+    selective_source=options.selective_source,
+    selective=options.selective,
+    placement_by=options.placement_by,
+    two_phase_frac=options.two_phase_frac,
     binder_chain=options.binder_chain,
     center_types=tuple(options.center_types),
     explicit_centers=tuple(options.explicit_centers),

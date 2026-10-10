@@ -49,7 +49,7 @@ from aminx.families.protonpotts_mpnn.features import (
   kept_residues,
   loaded_residues,
 )
-from aminx.families.protonpotts_mpnn.ph_config import DEFAULT_DEP_MAP, config_from_options
+from aminx.families.protonpotts_mpnn.ph_config import DEFAULT_DEP_MAP, HOST_METHODS, config_from_options
 from aminx.families.protonpotts_mpnn.ph_design import (
   PHDesign,
   design_structure,
@@ -393,6 +393,13 @@ class ProtonPottsDriver:
       designs = mpnn_sample_designs(
         model, _graph_args(prepared.graph), table, e_idx, native, binder_mask, config, key=key,
       )
+    elif config.method in HOST_METHODS:
+      # Lazy: the host-loop methods (specs §56; graded by the protonpotts_ph_methods wave).
+      from aminx.families.protonpotts_mpnn.ph_methods import design_methods  # noqa: PLC0415
+
+      designs = design_methods(
+        model, _graph_args(prepared.graph), table, e_idx, native, binder_mask, res_id, config, key=key,
+      )
     else:
       designs = design_structure(table, e_idx, native, binder_mask, res_id, config, key=key)
     if not designs:
@@ -435,19 +442,23 @@ class ProtonPottsDriver:
     return _ScoreStages(cast("PottsMPNN", model))
 
   def result_schema(self, spec: Any, purpose: str) -> Mapping[str, SinkArraySpec]:  # noqa: ANN401
-    """Arrays one chunk returns. ``*_tokens`` and ``center_types`` are indices into ``vocabulary``."""
-    del spec
+    """Arrays one chunk returns. ``*_tokens`` and ``center_types`` are indices into ``vocabulary``.
+
+    The scoring id arrays carry ``variant_names`` (a JSON list indexed by id) when the spec names its variants: id ``k`` is
+    ``variant_names[k]``. Energy and selectivity rows start with the reference, ddg rows do not (debt #2618, item 5).
+    """
     vocab = {"vocabulary": _VOCABULARY}
+    names = _id_attrs(spec, purpose)
     if purpose == "score:energy":
       return {
         "energy": SinkArraySpec(dims=("N_cand",), dtype="float32", attrs={}),
-        "candidate_ids": SinkArraySpec(dims=("N_cand",), dtype="int32", attrs={}),
+        "candidate_ids": SinkArraySpec(dims=("N_cand",), dtype="int32", attrs=names),
         "candidate_tokens": SinkArraySpec(dims=("N_cand", "L_total"), dtype="int32", attrs=vocab),
       }
     if purpose == "score:ddg":
       return {
         "ddg": SinkArraySpec(dims=("N_mut",), dtype="float32", attrs={}),
-        "mutant_ids": SinkArraySpec(dims=("N_mut",), dtype="int32", attrs={}),
+        "mutant_ids": SinkArraySpec(dims=("N_mut",), dtype="int32", attrs=names),
         "ddg_expt": SinkArraySpec(dims=("N_mut",), dtype="float32", attrs={}),
         "mutant_tokens": SinkArraySpec(dims=("N_mut", "L_total"), dtype="int32", attrs=vocab),
       }
@@ -459,7 +470,7 @@ class ProtonPottsDriver:
           dtype="float32",
           attrs={},
         ),
-        "candidate_ids": SinkArraySpec(dims=("N_cand",), dtype="int32", attrs={}),
+        "candidate_ids": SinkArraySpec(dims=("N_cand",), dtype="int32", attrs=names),
         "candidate_tokens": SinkArraySpec(dims=("N_cand", "L_total"), dtype="int32", attrs=vocab),
       }
     if purpose == "sample":
@@ -563,6 +574,20 @@ def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
 
 def _spec_sequences(spec: Any) -> tuple[str, ...]:  # noqa: ANN401
   return tuple(str(seq) for seq in (getattr(spec, "sequences_to_score", ()) or ()))
+
+
+def _id_attrs(spec: Any, purpose: str) -> dict[str, str]:  # noqa: ANN401
+  """``{"variant_names": <JSON list>}`` for a scoring spec that names variants, else no attrs.
+
+  Ids count the rows in the order ``_variant_rows`` builds them: the variants_json entries in file order, then each
+  ``sequences_to_score`` entry as ``sequences_to_score[i]``. Energy and selectivity prepend ``reference`` (id 0).
+  """
+  if spec is None or purpose not in {"score:energy", "score:ddg", "score:selectivity"}:
+    return {}
+  names = [*_read_json(_options(spec).variants_json, "variants_json"), *(f"sequences_to_score[{i}]" for i, _ in enumerate(_spec_sequences(spec)))]
+  if purpose in _REFERENCE_PURPOSES:
+    names = ["reference", *names]
+  return {"variant_names": json.dumps(names)} if names else {}
 
 
 def _read_json(path: str | None, what: str) -> dict[str, Any]:

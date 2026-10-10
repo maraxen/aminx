@@ -177,14 +177,20 @@ def placement_scores(
   prot_idx: int,
   dep_idxs: Sequence[int],
   binder_free_mask: np.ndarray,
+  *,
+  selective: bool = True,
+  base_sequence: np.ndarray | None = None,
 ) -> np.ndarray:
-  """Selective placement score per position, lower is better. Shape ``(L,)``.
+  """Placement score per position, lower is better. Shape ``(L,)``.
 
-  Port of upstream ``_ranked_candidates`` (``potts_mpnn_ph.py`` 2563-2582) with
-  ``selective=True``. Upstream computes ``(ef[prot] - base) - min_d (ef[d] - base)``, where
-  ``base`` is the native residue's energy at that position. ``base`` cancels, so this computes
-  ``field[j, prot] - min_d field[j, d]``. ``field`` is the ``(L, V)`` conditional-energy table
-  of the NATIVE sequence, supplied by the caller. It is not computed here.
+  Port of upstream ``_ranked_candidates`` (``potts_mpnn_ph.py`` 2563-2582). ``field`` is the ``(L, V)`` energy table the caller scanned: the
+  conditional Potts energies of the NATIVE sequence (``scan_potts``) or the decoder field ``-log p`` of the binder-masked native sequence
+  (``scan_mpnn``). Neither is computed here.
+
+  ``selective=True`` (the default): upstream computes ``(ef[prot] - base) - min_d (ef[d] - base)``, where ``base`` is the scanned
+  sequence's own token energy at that position. ``base`` cancels, so this computes ``field[j, prot] - min_d field[j, d]``.
+  ``selective=False``: ``field[j, prot] - base`` with ``base = field[j, base_sequence[j]]``, which does NOT cancel, so ``base_sequence`` (the
+  sequence the field was computed on) is required.
 
   Positions outside ``binder_free_mask`` get ``+inf``.
 
@@ -194,7 +200,13 @@ def placement_scores(
   deps = list(dep_idxs)
   if not deps:
     raise ValueError("placement_scores needs at least one deprotonated contrast token")
-  score = field[:, prot_idx] - field[:, deps].min(axis=1)
+  if selective:
+    score = field[:, prot_idx] - field[:, deps].min(axis=1)
+  else:
+    if base_sequence is None:
+      raise ValueError("placement_scores(selective=False) needs base_sequence")
+    base = field[np.arange(field.shape[0]), np.asarray(base_sequence, dtype=np.int64)]
+    score = field[:, prot_idx] - base
   return np.where(np.asarray(binder_free_mask, dtype=bool), score, np.inf)
 
 
@@ -303,6 +315,8 @@ def plan_from_center_types(
   infill_scope: str,
   neighbour_k: int,
   max_mutations: int,
+  selective: bool = True,
+  base_sequence: np.ndarray | None = None,
 ) -> Plan | None:
   """One plan with one distinct, best-ranked centre per requested type.
 
@@ -319,7 +333,7 @@ def plan_from_center_types(
   pins: list[Pin] = []
   for ptype in center_types:
     prot_idx, dep_idxs = _pin_indices(ptype, dep_map)
-    scores = placement_scores(field, prot_idx, dep_idxs, binder_mask)
+    scores = placement_scores(field, prot_idx, dep_idxs, binder_mask, selective=selective, base_sequence=base_sequence)
     pos = next((p for p in _ranked_positions(scores) if p not in used), None)
     if pos is None:
       return None

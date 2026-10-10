@@ -91,20 +91,45 @@ def test_explicit_centers_match_count_is_accepted() -> None:
 
 
 @pytest.mark.parametrize(
-  ("kwargs", "debt"),
+  ("kwargs", "message"),
   [
-    ({"method": "converged_mcmc"}, "#2616"),
-    ({"method": "two_phase"}, "#2616"),
-    ({"method": "converged_mcmc_combined"}, "#2616"),
-    ({"method": "autoregressive"}, "#2617"),
-    ({"backend": "mpnn"}, "#2617"),
-    ({"selective_source": "decoder"}, "#2617"),
-    ({"placement_by": "scan_mpnn"}, "#2617"),
+    ({"placement_by": "random"}, "#2616"),
+    ({"method": "bogus"}, "Unknown method"),
+    ({"backend": "bogus"}, "Unknown backend"),
+    ({"selective_source": "bogus"}, "Unknown selective_source"),
+    ({"method": "autoregressive"}, "requires backend='mpnn'"),
+    ({"method": "mpnn_sample"}, "requires backend='mpnn'"),
+    ({"method": "gibbs", "backend": "mpnn"}, "requires backend='potts'"),
+    ({"method": "converged_mcmc", "selective_source": "decoder"}, "only valid for method='autoregressive'"),
+    ({"backend": "mpnn"}, "graded on backend 'potts' only"),
+    ({"method": "greedy_energy_block", "backend": "mpnn"}, "graded on backend 'potts' only"),
+    ({"placement_by": "scan_mpnn"}, "scan_potts' only"),
+    ({"selective": False}, "selective=True only"),
+    ({"method": "two_phase", "two_phase_frac": 0.0}, "two_phase_frac"),
+    ({"method": "two_phase", "two_phase_frac": 1.5}, "two_phase_frac"),
   ],
 )
-def test_deferred_methods_and_backends_refuse_with_debt_number(kwargs: dict, debt: str) -> None:
-  with pytest.raises(ValueError, match=debt):
+def test_unsupported_combinations_refuse_with_a_reason(kwargs: dict, message: str) -> None:
+  with pytest.raises(ValueError, match=message):
     PHDesignConfig(**kwargs)
+
+
+@pytest.mark.parametrize(
+  "kwargs",
+  [
+    {"method": "autoregressive", "backend": "mpnn"},
+    {"method": "autoregressive", "backend": "mpnn", "selective_source": "decoder"},
+    {"method": "converged_mcmc", "backend": "potts"},
+    {"method": "converged_mcmc", "backend": "mpnn", "selective": False},
+    {"method": "converged_mcmc_combined", "backend": "mpnn"},
+    {"method": "two_phase", "two_phase_frac": 1.0},
+    {"method": "gibbs", "backend": "potts"},
+    {"method": "mpnn_sample", "backend": "mpnn"},
+    {"method": "converged_mcmc", "placement_by": "scan_mpnn"},
+  ],
+)
+def test_the_host_loop_and_decoder_methods_are_supported(kwargs: dict) -> None:
+  assert PHDesignConfig(**kwargs).method == kwargs["method"]
 
 
 def test_validate_for_design_requires_binder_chain() -> None:
@@ -176,11 +201,19 @@ def test_centre_free_options_map_to_center_count_zero() -> None:
   assert named.center_count == len(named.center_types)
 
 
-def test_mpnn_sample_is_supported_and_still_needs_the_potts_backend() -> None:
-  cfg = PHDesignConfig(method="mpnn_sample")
-  assert cfg.method == "mpnn_sample"
-  # the other decoder-backed knobs stay deferred even for this method
-  with pytest.raises(ValueError, match="#2617"):
-    PHDesignConfig(method="mpnn_sample", backend="mpnn")
-  with pytest.raises(ValueError, match="#2617"):
-    PHDesignConfig(method="mpnn_sample", selective_source="decoder")
+def test_mpnn_sample_needs_the_mpnn_backend_as_upstream_does_and_not_selective_source_decoder() -> None:
+  assert PHDesignConfig(method="mpnn_sample", backend="mpnn").method == "mpnn_sample"
+  with pytest.raises(ValueError, match="requires backend='mpnn'"):
+    PHDesignConfig(method="mpnn_sample")
+  with pytest.raises(ValueError, match="only valid for method='autoregressive'"):
+    PHDesignConfig(method="mpnn_sample", backend="mpnn", selective_source="decoder")
+
+
+def test_new_options_reach_the_config() -> None:
+  options = ProtonPottsOptions(
+    binder_chain="A", design_method="autoregressive", design_backend="mpnn", selective_source="decoder", selective=False,
+    placement_by="scan_mpnn", two_phase_frac=0.25,
+  )  # fmt: skip
+  config = config_from_options(options)
+  assert (config.method, config.backend, config.selective_source) == ("autoregressive", "mpnn", "decoder")
+  assert (config.selective, config.placement_by, config.two_phase_frac) == (False, "scan_mpnn", 0.25)
