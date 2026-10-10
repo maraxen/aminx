@@ -405,9 +405,29 @@ def _run_one_unit(args: argparse.Namespace, cell: str, precision: str, out: Path
     if dtype == torch.float64:
       engine.model = engine.model.double()
       guard = _f64_changes(mm, engine.model.graph_featurization_module.positional_embedding.embed_positional_features)
-    with guard:
-      arrays, meta = _run_ph(engine, ph, atom_array, chain, dtype)
+    # The engine prepares its own float32 input features. The P4e dump cast every floating feature to double for its float64 run
+    # (dump_protonpotts_encoder.py:118-121); without the same cast, distances and RBF features are computed from float32 inputs.
+    cast_keys: set[str] = set()
+    original_prepare = ph.prepare_potts_input
+
+    def prepare_in_dtype(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+      batch = original_prepare(*args, **kwargs)
+      features = batch["network_input"]["input_features"]
+      for key, value in list(features.items()):
+        if isinstance(value, torch.Tensor) and value.is_floating_point():
+          features[key] = value.to(dtype)
+          cast_keys.add(key)
+      return batch
+
+    if dtype == torch.float64:
+      ph.prepare_potts_input = prepare_in_dtype
+    try:
+      with guard:
+        arrays, meta = _run_ph(engine, ph, atom_array, chain, dtype)
+    finally:
+      ph.prepare_potts_input = original_prepare
     meta["default_dtype_at_build"] = built_in
+    meta["features_cast_to_double"] = sorted(cast_keys)
   finally:
     torch.set_default_dtype(previous_default)
   npz, js = out / f"{cell}_{precision}.npz", out / f"{cell}_{precision}.json"
@@ -569,6 +589,7 @@ def main() -> int:  # noqa: C901, PLR0915
         and np.array_equal(arrs["ctx_eidx"], tables["E_idx"])
       )
       built_ok &= meta.get("default_dtype_at_build") == ("torch.float64" if precision == "f64" else "torch.float32")
+      built_ok &= bool(meta.get("features_cast_to_double")) == (precision == "f64")
       flags = _grade_unit(arrs, meta, precision)
       complete &= flags["complete"]
       f64_ok &= flags["double"]
