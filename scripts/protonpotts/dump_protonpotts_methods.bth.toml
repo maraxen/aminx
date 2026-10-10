@@ -90,9 +90,7 @@ cells = "6m0j (E), 1BVC (A)"
 threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
 
 [provenance]
-note = "Pre-registered at the commit that adds this file, before dump_protonpotts_methods.py exists and before any number from it exists. An EXPLORATORY SPIKE preceded it (ungraded, no numbers cited): the real engine ran autoregressive, converged_mcmc (potts and mpnn backends), two_phase and gibbs on 6m0j chain E in float32, and autoregressive (both selective sources) and converged_mcmc/mpnn in float64, each in 4-265 s; autoregressive with backend potts raises ValueError. The spike did not inspect tensor dtypes, so claim 3 is open until this run."
-
-REVISION 261009 (after the first graded run, 10861085, which passed by this file's original criteria and is kept on record, SUPERSEDED). The wave
+note = "Pre-registered at the commit that adds this file, before dump_protonpotts_methods.py exists and before any number from it exists. An EXPLORATORY SPIKE preceded it (ungraded, no numbers cited): the real engine ran autoregressive, converged_mcmc (potts and mpnn backends), two_phase and gibbs on 6m0j chain E in float32, and autoregressive (both selective sources) and converged_mcmc/mpnn in float64, each in 4-265 s; autoregressive with backend potts raises ValueError. The spike did not inspect tensor dtypes, so claim 3 is open until this run. REVISION 261009 (after the first graded run, 10861085, which passed by this file's original criteria and is kept on record, SUPERSEDED). The wave
 that grades aminx against this dump (protonpotts_ph_methods_parity, an exploratory smoke, no numbers cited from it) found that every float64 call
 sat about 1e-6 from aminx, where its pre-registered band is 1e-9, while the float32 calls were in band and the final sequences and draw counts
 agreed exactly. Cause, read in the P4e encoder dump (dump_protonpotts_encoder.py:96-106): upstream builds its RBF centres with `torch.linspace`
@@ -100,4 +98,4 @@ at the DEFAULT dtype, so a float64 run needs the default dtype set to float64 BE
 edge features. This script built the engine first and switched the default afterwards. Claim 3 (recorded arrays are float64) could not see it:
 the arrays were float64, the arithmetic that produced them was not all. Fix: the default dtype is set before the engine is constructed, and claim 6
 records it. The outcomes gain `engine_built_in_dtype`; nothing else in [outcomes] changed. All four units are re-run (the script hash is part of
-every unit's stamp). The defect is in the oracle, not in aminx or in a band, and the band is not touched.
+every unit's stamp). The defect is in the oracle, not in aminx or in a band, and the band is not touched."
