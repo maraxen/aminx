@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import dataclasses
 import random
+from functools import partial
 from typing import TYPE_CHECKING, Any, NamedTuple
 
 import equinox as eqx
@@ -125,6 +126,40 @@ class Draws:
       raise IndexError(msg)
     self._used[kind] = index + 1
     return source[index]
+
+  @property
+  def forced(self) -> bool:
+    return self._choices is not None
+
+  def take_uniforms(self, n: int) -> np.ndarray:
+    """The next ``n`` uniforms: replayed, drawn fresh, or NaN when a forced run was given choices only."""
+    if self._uniforms is not None:
+      start, stop = self._used["uniform"], self._used["uniform"] + n
+      if stop > len(self._uniforms):
+        msg = f"replay ran out of uniform draws after {start}"
+        raise IndexError(msg)
+      self._used["uniform"] = stop
+      return np.asarray(self._uniforms[start:stop], dtype=np.float64)
+    if self._choices is not None:
+      return np.full(n, np.nan)
+    return self.rng.random(n)
+
+  def take_choices(self, n: int) -> np.ndarray:
+    """The next ``n`` forced choices (aminx tokens), or zeros when the run is not forced."""
+    if self._choices is None:
+      return np.zeros(n, dtype=np.int64)
+    start, stop = self._used["choice"], self._used["choice"] + n
+    if stop > len(self._choices):
+      msg = f"replay ran out of choice draws after {start}"
+      raise IndexError(msg)
+    self._used["choice"] = stop
+    return np.asarray(self._choices[start:stop], dtype=np.int64)
+
+  def record_batch(self, probs: np.ndarray, uniforms: np.ndarray, choices: np.ndarray) -> None:
+    """Append one :class:`PickEvent` per row of a batch drawn on device; stops the replay at ``stop_after`` like ``pick_probs``."""
+    for k in range(probs.shape[0]):
+      self.events.append(PickEvent(np.array(probs[k], copy=True), float(uniforms[k]), int(choices[k])))
+      self._check_stop()
 
   def _check_stop(self) -> None:
     if self.stop_after is not None and len(self.events) >= self.stop_after:
@@ -471,27 +506,68 @@ def two_phase(
   )  # fmt: skip
 
 
+_GIBBS_ROWS = candidate_energies_at  # the conditional-energy rows of a Gibbs sweep; a module attribute so a control can swap it
+
+
+@partial(jax.jit, static_argnames=("use_forced", "rows_fn"))
+def _gibbs_sweep(table, e_idx, seq, positions, valid, temperature, uniforms, forced, cdf_order, use_forced, rows_fn):  # noqa: ANN001, ANN202
+  """One sweep over ``positions`` in order, each resampled from ``softmax(-E/T)`` and written before the next is read.
+
+  The inverse CDF accumulates the probabilities in ``cdf_order`` (float64 when x64 is on, as the oracle's shim does) and takes the first
+  entry whose cumulative mass reaches ``u * total``; ``use_forced`` replaces the draw by ``forced``. Returns the new sequence and, per step, the
+  probabilities, the token chosen and whether it changed the sequence.
+  """
+  cum_dtype = jnp.float64 if jax.config.jax_enable_x64 else jnp.float32
+
+  def step(carry, xs):  # noqa: ANN001, ANN202
+    position, u, forced_token = xs
+    row = rows_fn(table, e_idx, carry, position[None])[0]
+    row = jnp.where(valid, row, jnp.inf)
+    z = -row / temperature
+    z = z - jnp.max(z)
+    probs = jnp.exp(z)
+    probs = probs / jnp.sum(probs)
+    cumulative = jnp.cumsum(probs[cdf_order].astype(cum_dtype))
+    target = u.astype(cum_dtype) * cumulative[-1]
+    index = jnp.minimum(jnp.sum(cumulative < target), probs.shape[0] - 1)
+    token = forced_token if use_forced else cdf_order[index]
+    token = token.astype(carry.dtype)
+    changed = token != carry[position]
+    return carry.at[position].set(token), (probs, token, changed)
+
+  out, (all_probs, tokens, changed) = jax.lax.scan(step, seq, (positions, uniforms, forced))
+  return out, all_probs, tokens, changed
+
+
 def gibbs(
   ctx: MethodContext, config: PHDesignConfig, seq_init: np.ndarray, free_mask: np.ndarray, draws: Draws,
 ) -> list[np.ndarray]:  # fmt: skip
   """Upstream ``potts_gibbs_optimize`` (convergence mode): sweeps over the free positions in a random order, each position resampled from its
-  conditional Potts energy at ``T = max(temperature, 1e-3)``, until a sweep changes nothing or ``MAX_GIBBS_SWEEPS``. One sequence per row."""
+  conditional Potts energy at ``T = max(temperature, 1e-3)``, until a sweep changes nothing or ``MAX_GIBBS_SWEEPS``. One sequence per row.
+
+  A sweep is one jitted ``lax.scan`` (:func:`_gibbs_sweep`): each draw sees the previous update, so it is a sequential dependency, and one
+  dispatch per sweep replaces one host round trip per position. The permutation and the uniforms (or forced choices) are drawn on the host.
+  """
   free = np.flatnonzero(np.asarray(free_mask, dtype=bool))
   temperature = max(float(config.temperature), MIN_TEMPERATURE)
+  valid = jnp.asarray(ctx.valid)
+  cdf_order = jnp.asarray(ctx.cdf_order, dtype=jnp.int32)
+  forced_mode = draws.forced
   out: list[np.ndarray] = []
   for row in np.atleast_2d(seq_init):
-    seq = np.array(row, dtype=np.int32, copy=True)
+    seq = jnp.asarray(row, dtype=jnp.int32)
     for _sweep in range(MAX_GIBBS_SWEEPS):
-      mutations = 0
-      for position in free[draws.permutation(len(free))]:
-        energies = ctx.rows(seq, [int(position)])[0]
-        energies = np.where(ctx.valid, energies, energies.dtype.type(np.inf))
-        new = draws.pick_probs(softmax_probs(energies, temperature))
-        mutations += int(new != int(seq[position]))
-        seq[position] = new
-      if mutations == 0:
+      positions = free[draws.permutation(len(free))]
+      uniforms = draws.take_uniforms(len(positions))
+      forced = draws.take_choices(len(positions))
+      seq, probs, tokens, changed = _gibbs_sweep(
+        ctx.table, ctx.e_idx, seq, jnp.asarray(positions, dtype=jnp.int32), valid, temperature, jnp.asarray(uniforms),
+        jnp.asarray(forced, dtype=jnp.int32), cdf_order, forced_mode, _GIBBS_ROWS,
+      )  # fmt: skip
+      draws.record_batch(np.asarray(probs), uniforms, np.asarray(tokens))
+      if not bool(np.asarray(changed).any()):
         break
-    out.append(seq)
+    out.append(np.asarray(seq, dtype=np.int32))
   return out
 
 

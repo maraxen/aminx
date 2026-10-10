@@ -399,7 +399,7 @@ def controls() -> dict[str, tuple[tuple[str, ...], Override, Callable[[ExitStack
     stack.enter_context(mock.patch.object(ph_methods, "placement_field", scan))
 
   def outgoing(stack: ExitStack) -> None:
-    stack.enter_context(mock.patch.object(ph_methods, "_CANDIDATES_AT", jax.jit(_outgoing_only)))
+    stack.enter_context(mock.patch.object(ph_methods, "_GIBBS_ROWS", _outgoing_only))
 
   return {
     "cdf_in_aminx_order": (("ar_potts", "mcmc_potts", "two_phase_potts"), Override(cdf_none=True), None),

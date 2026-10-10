@@ -97,3 +97,8 @@ reason = "sequential_dependency"
 path = "src/aminx/families/protonpotts_mpnn/decode.py"
 qualname = "ProtonPottsARDecode.__call__"
 reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/protonpotts_mpnn/ph_methods.py"
+qualname = "_gibbs_sweep"
+reason = "sequential_dependency"
