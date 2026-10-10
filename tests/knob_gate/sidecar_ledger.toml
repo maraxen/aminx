@@ -129,11 +129,12 @@ bth_run_id = "0eb5d421-6482-480c-a0fb-6a2d6ef17729"
 bth_run_id = "6848dc88-44f5-488a-8e52-db28a910626d"
 
 [sidecar.protonpotts_parity]
-# UPDATED 261010 at 9801f815 (PR #211). Combined vehicle: 11 waves, 89 controls (was 10 waves, 69 controls, run 1045798b at 97779d72).
-# Folded in since: ph_methods (6d086bf5 standalone, against the P4j dump 89c1982f; spec 56-56.1).
+# UPDATED 261010 at 53420421 (PR #211). Combined vehicle: 11 waves, 89 controls (was 10 waves, 69 controls, run 1045798b at 97779d72).
+# Folded in since: ph_methods (6d086bf5 standalone, against the P4j dump 89c1982f; spec 56-56.2).
 # Cool-tier record: completed, outcome pass, tree clean; all 89 controls 'failed'; 11 waves clean, none reused.
-# Previous entry (kept for the record): 261009 at 97779d72, 10 waves / 69 controls, run 1045798b.
-bth_run_id = "33360f39-4253-45cd-9662-7cdea86f2b68"
+# Superseded (kept for the record): 33360f39 at 9801f815 passed too, but that tree had added fields to run/options.py, which staled eight
+# other ledger rows (spec 56.2); options.py is back to its graded content and this run is the one after the revert.
+bth_run_id = "97ecf392-21a6-4126-8277-41eab9980f9a"
 
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
