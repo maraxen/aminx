@@ -68,6 +68,10 @@ _CANDIDATES_AT = jax.jit(candidate_energies_at)
 _CANDIDATES = jax.jit(candidate_energies)
 
 
+class ReplayStop(Exception):
+  """Raised by :class:`Draws` once ``stop_after`` draws were made: a replay that only needs a prefix of its draws."""
+
+
 class PickEvent(NamedTuple):
   """One inverse-CDF draw: the probabilities it saw (aminx token order), the uniform used and the token chosen."""
 
@@ -92,6 +96,7 @@ class Draws:
     perms: Sequence[Sequence[int]] | None = None,
     choices: Sequence[int] | None = None,
     cdf_order: np.ndarray | None = None,
+    stop_after: int | None = None,
   ) -> None:
     if all(x is None for x in (seed, uniforms, choices, randints, perms)):
       msg = "Draws needs a seed (fresh) or recorded draws (uniforms, randints, perms or choices)"
@@ -103,11 +108,12 @@ class Draws:
     self._choices = None if choices is None else [int(c) for c in choices]
     self._used = {"uniform": 0, "randint": 0, "perm": 0, "choice": 0}
     self.cdf_order = cdf_order
+    self.stop_after = stop_after
     self.events: list[PickEvent] = []
     self.randint_log: list[int] = []
     self.perm_log: list[np.ndarray] = []
 
-  def _next(self, kind: str, source: list | None, fresh: Callable[[], object]):  # noqa: ANN202
+  def _next(self, kind: str, source: list | None, fresh: Callable[[], object]):
     if source is None:
       if self.rng is None:
         msg = f"no recorded {kind} and no seed"
@@ -119,6 +125,10 @@ class Draws:
       raise IndexError(msg)
     self._used[kind] = index + 1
     return source[index]
+
+  def _check_stop(self) -> None:
+    if self.stop_after is not None and len(self.events) >= self.stop_after:
+      raise ReplayStop
 
   def randint(self, high: int) -> int:
     """Index into a list of ``high`` neighbours (upstream ``torch.randint(len(neigh), (1,))``)."""
@@ -148,15 +158,17 @@ class Draws:
         else float("nan")
       )
       self.events.append(PickEvent(np.array(probs, copy=True), float(u), int(choice)))
+      self._check_stop()
       return int(choice)
     u = float(self._next("uniform", self._uniforms, lambda: float(self.rng.random())))
     order = np.arange(probs.shape[0]) if self.cdf_order is None else np.asarray(self.cdf_order)
     cumulative = np.cumsum(np.asarray(probs)[order].astype(np.float64))
     position = min(
-      int(np.searchsorted(cumulative, u * cumulative[-1], side="left")), len(cumulative) - 1
+      int(np.searchsorted(cumulative, u * cumulative[-1], side="left")), len(cumulative) - 1,
     )
     choice = int(order[position])
     self.events.append(PickEvent(np.array(probs, copy=True), u, choice))
+    self._check_stop()
     return choice
 
 
@@ -182,9 +194,9 @@ class DecoderField:
   ``__call__(seq)`` returns the full ``(L, V)`` field of ``seq`` (aminx tokens). Tokens may include ``X``.
   """
 
-  def __init__(
-    self, scored_mpnn, h_v, h_e, e_idx, present, temperature: float = UPSTREAM_SAMPLE_TEMPERATURE
-  ) -> None:  # noqa: ANN001
+  def __init__(  # noqa: ANN001
+    self, scored_mpnn, h_v, h_e, e_idx, present, temperature: float = UPSTREAM_SAMPLE_TEMPERATURE,
+  ) -> None:
     dtype = h_v.dtype
     self.dtype = np.dtype(dtype)
     length = h_v.shape[0]
@@ -209,7 +221,7 @@ class DecoderField:
   def __call__(self, seq: np.ndarray) -> np.ndarray:
     self.n_calls += 1
     out = _field(
-      *self._args, jnp.asarray(seq, dtype=jnp.int32), self._temperature, self._bias, self._order
+      *self._args, jnp.asarray(seq, dtype=jnp.int32), self._temperature, self._bias, self._order,
     )
     return np.asarray(out)
 
@@ -310,8 +322,8 @@ def sampler_zscales(
 
 
 def selective_row(
-  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], dtype
-) -> np.ndarray:  # noqa: ANN001
+  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], dtype,
+) -> np.ndarray:
   """``(V,)`` centre-gap energy of each candidate at ``j`` (UP:1869); invalid tokens stay ``+inf``. ``seq[j]`` is restored."""
   out = np.full(PROTONPOTTS_V6.size, np.inf, dtype=dtype)
   cur = int(seq[j])
@@ -323,7 +335,7 @@ def selective_row(
 
 
 def selective_reward_decoder(
-  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], lam: float, dtype,  # noqa: ANN001
+  ctx: MethodContext, valid_idx: Sequence[int], seq: np.ndarray, j: int, pins: Sequence[Pin], lam: float, dtype,
 ) -> np.ndarray:  # fmt: skip
   """Pure-decoder reward ``p(a | centres target) - lam p(a | centres off)`` at ``j`` (UP:1883-1905), higher is better; invalid ``-inf``."""
   field = ctx.need_decoder()
@@ -484,7 +496,7 @@ def gibbs(
 
 
 def placement_field(
-  ctx: MethodContext, native: np.ndarray, binder_mask: np.ndarray, placement_by: str
+  ctx: MethodContext, native: np.ndarray, binder_mask: np.ndarray, placement_by: str,
 ) -> tuple[np.ndarray, np.ndarray]:
   """``(field, scanned_sequence)`` the placement ranks by (UP:2563-2600 ``_ranked_candidates``).
 
@@ -514,7 +526,7 @@ def plan_for_methods(
   }
   if config.explicit_centers:
     return plan_from_explicit_centers(
-      e_idx_np, binder_mask, res_id, config.explicit_centers, dep_map, **common
+      e_idx_np, binder_mask, res_id, config.explicit_centers, dep_map, **common,
     )
   field, base_seq = placement_field(ctx, native, binder_mask, config.placement_by)
   return plan_from_center_types(
@@ -523,7 +535,7 @@ def plan_for_methods(
   )  # fmt: skip
 
 
-def design_methods(  # noqa: PLR0915
+def design_methods(
   model: PottsMPNN | None,
   graph_args: Sequence[jax.Array] | None,
   table: jax.Array,
@@ -563,7 +575,7 @@ def design_methods(  # noqa: PLR0915
       raise ValueError(msg)
     field = DecoderField.from_model(model, graph_args)
   ctx = MethodContext(
-    table, e_idx, valid_token_mask(config.forbidden_tokens), np.asarray(_cdf_order()), field
+    table, e_idx, valid_token_mask(config.forbidden_tokens), np.asarray(_cdf_order()), field,
   )
   length = native_np.shape[0]
   n = int(config.samples_per_site)
@@ -617,7 +629,7 @@ def design_methods(  # noqa: PLR0915
         if replay is not None:
           order = list(replay[sample]["order"])
         else:
-          order = random.Random(int(jax.random.randint(jax.random.fold_in(key, 10_007 + sample), (), 0, 2**31 - 1))).sample(  # noqa: S311
+          order = random.Random(int(jax.random.randint(jax.random.fold_in(key, 10_007 + sample), (), 0, 2**31 - 1))).sample(
             list(plan.designable), len(plan.designable))  # fmt: skip
         result = masked_infill(ctx, config, plan.pins, order, native_np, draws)
       elif config.method == "two_phase":

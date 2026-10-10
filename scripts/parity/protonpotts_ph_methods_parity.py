@@ -49,6 +49,7 @@ from aminx.families.protonpotts_mpnn.ph_methods import (  # noqa: E402
   DecoderField,
   Draws,
   MethodContext,
+  ReplayStop,
   converge,
   gibbs,
   masked_infill,
@@ -166,7 +167,7 @@ class Unit:
     return MethodContext(self.table, self.e_idx, valid, INV, field)
 
 
-def _draws(unit_up: dict, i: int, *, forced: bool, ov: Override) -> Draws:
+def _draws(unit_up: dict, i: int, *, forced: bool, ov: Override, stop_after: int | None = None) -> Draws:
   u = unit_up.get(f"c{i}_mult_u", np.zeros(0))
   choices = INV[unit_up.get(f"c{i}_mult_choice", np.zeros(0, dtype=np.int64))]
   randints = unit_up.get(f"c{i}_randint_val", np.zeros(0, dtype=np.int64))
@@ -182,6 +183,7 @@ def _draws(unit_up: dict, i: int, *, forced: bool, ov: Override) -> Draws:
     perms = [p[::-1].copy() for p in perms]
   return Draws(
     uniforms=u, randints=randints, perms=perms, choices=choices if forced else None, cdf_order=None if ov.cdf_none else INV,
+    stop_after=stop_after,
   )  # fmt: skip
 
 
@@ -195,7 +197,7 @@ def _pins(call: dict, ov: Override) -> list[Pin]:
   return pins
 
 
-def run_method(unit: Unit, call: dict, up: dict, *, forced: bool, ov: Override) -> dict:
+def run_method(unit: Unit, call: dict, up: dict, *, forced: bool, ov: Override, stop_after: int | None = None) -> dict:
   """One optimiser call on aminx: its sequences, events, counts and z-scales. ``error`` names a replay that ran out of draws."""
   i = call["index"]
   config = dataclasses.replace(label_config(call["label"]), **ov.config)
@@ -203,7 +205,7 @@ def run_method(unit: Unit, call: dict, up: dict, *, forced: bool, ov: Override) 
   pins = _pins(call, ov)
   s_in = INV[up[f"c{i}_S_in"]].astype(np.int32)
   neigh = list(call["neigh"]) + ([p.position for p in pins] if ov.centre_in_designable else [])
-  draws = _draws(up, i, forced=forced, ov=ov)
+  draws = _draws(up, i, forced=forced, ov=ov, stop_after=stop_after)
   zscales = None
   try:
     if call["method"] == "infill":
@@ -215,6 +217,8 @@ def run_method(unit: Unit, call: dict, up: dict, *, forced: bool, ov: Override) 
       seqs = [two_phase(ctx, config, pins, neigh, s_in, draws).sequence]
     else:
       seqs = gibbs(ctx, config, s_in, up[f"c{i}_free_mask"].astype(bool), draws)
+  except ReplayStop:
+    return {"error": None, "stopped": True, "seqs": None, "zscales": None, "choices": [e.choice for e in draws.events]}
   except (IndexError, ValueError) as exc:
     return {"error": str(exc), "events": [e.probs for e in draws.events], "choices": [e.choice for e in draws.events]}
   return {
@@ -251,7 +255,7 @@ def placement(unit: Unit, call: dict, ov: Override) -> dict:
   }  # fmt: skip
 
 
-def measure(unit: Unit, call: dict, up: dict, ov: Override) -> dict:
+def measure(unit: Unit, call: dict, up: dict, ov: Override, *, free: bool = True) -> dict:
   """Everything graded for one call except the bands: the raw differences from the dump, and aminx's own outputs (for the f32 floors)."""
   i = call["index"]
   out: dict = {"label": call["label"], "index": i}
@@ -276,9 +280,12 @@ def measure(unit: Unit, call: dict, up: dict, ov: Override) -> dict:
   seqs = forced["seqs"]
   out["forced_seq_ok"] = bool(np.array_equal(np.asarray(seqs), want_seq if want_seq.ndim == 2 else want_seq[None]))
   out["zscales"] = forced["zscales"]
-  out["zscales_diff"] = (
-    max(rel(float(a), float(b)) for a, b in zip(forced["zscales"], call["zscales"], strict=True)) if call["zscales"] else 0.0
-  )
+  if (forced["zscales"] is None) != (call["zscales"] is None):
+    out["zscales_diff"] = float("inf")  # one side computed z-scales and the other did not
+  elif call["zscales"] is None:
+    out["zscales_diff"] = 0.0
+  else:
+    out["zscales_diff"] = max(rel(float(a), float(b)) for a, b in zip(forced["zscales"], call["zscales"], strict=True))
   ctx, pins = forced["ctx"], forced["pins"]
   valid = jnp.ones(unit.native.shape[0], dtype=bool)
   designs = [d for d in unit.meta["designs"] if d["call_index"] == i]
@@ -301,13 +308,19 @@ def measure(unit: Unit, call: dict, up: dict, ov: Override) -> dict:
     outside[[p.position for p in pins]] = False
   starts = np.atleast_2d(s_in)
   out["hold_ok"] = all(bool(np.array_equal(seq[outside], starts[min(r, len(starts) - 1)][outside])) for r, seq in enumerate(seqs))
-  # FREE replay: the dump's uniforms.
-  free = run_method(unit, call, up, forced=False, ov=ov)
+  # FREE replay: the dump's uniforms. Only the prefix before the first fragile event is compared, so the replay stops there.
   margins = up.get(f"c{i}_mult_margin", np.zeros(0))
   fragile = margins < FRAGILE_MARGIN
   out["n_fragile"] = int(fragile.sum())
   out["exempt"] = bool(fragile.any())
   want_choices = INV[up.get(f"c{i}_mult_choice", np.zeros(0, dtype=np.int64))]
+  if not free:
+    return out
+  stop = int(np.argmax(fragile)) if fragile.any() else None
+  if stop == 0:
+    out.update(choices_ok=True, free_seq_ok=True)
+    return out
+  free = run_method(unit, call, up, forced=False, ov=ov, stop_after=stop)
   if free["error"] is not None:
     out["choices_ok"] = bool(fragile.any())
     out["free_seq_ok"] = bool(fragile.any())
@@ -470,7 +483,7 @@ def main() -> int:  # noqa: C901, PLR0915
       m64 = measure(u64, u64.calls[label], u64.up, Override())
       v64 = verdict(m64, None)
       m32 = measure(u32, u32.calls[label], u32.up, Override())
-      m64_on_32 = measure(u64, u32.calls[label], u32.up, Override())
+      m64_on_32 = measure(u64, u32.calls[label], u32.up, Override(), free=False)
       floors = f32_floors(m32, m64_on_32)
       v32 = verdict(m32, floors)
       for precision, v in (("f64", v64), ("f32", v32)):
