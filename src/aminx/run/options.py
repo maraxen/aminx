@@ -52,11 +52,7 @@ class ProtonPottsOptions:
       ``score:energy`` scores the reference plus each variant.
 
   The ``design_*`` / pH-design fields configure ``ph_config.PHDesignConfig`` (``design_method``
-  accepts ``block_descent``, ``greedy_energy_block``, ``mpnn_sample``, ``autoregressive``,
-  ``converged_mcmc``, ``converged_mcmc_combined``, ``two_phase`` and ``gibbs``; anything else is refused there).
-  ``design_backend`` is the energy field the MCMC methods use (``potts`` or ``mpnn``, the teacher-forced
-  decoder); ``selective_source`` (``autoregressive`` only) is ``potts`` or ``decoder``; ``placement_by`` is
-  ``scan_potts`` or ``scan_mpnn``.
+  accepts ``block_descent`` or ``greedy_energy_block`` only; everything else is refused there).
   ``binder_chain=None`` means no design chain was given, which design runs reject. ``dep_map=()``
   means the family default map. ``explicit_centers`` requires ``center_types=()``.
 
@@ -70,11 +66,6 @@ class ProtonPottsOptions:
   variants_json: str | None = None
   binder_chain: str | None = None
   design_method: str = "block_descent"
-  design_backend: str = "potts"
-  selective_source: str = "potts"
-  selective: bool = True
-  placement_by: str = "scan_potts"
-  two_phase_frac: float = 0.5
   block_size: int = 3
   combined_lambda: float = 0.3
   temperature: float = 0.05

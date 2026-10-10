@@ -209,11 +209,16 @@ def test_mpnn_sample_needs_the_mpnn_backend_as_upstream_does_and_not_selective_s
     PHDesignConfig(method="mpnn_sample", backend="mpnn", selective_source="decoder")
 
 
-def test_new_options_reach_the_config() -> None:
-  options = ProtonPottsOptions(
-    binder_chain="A", design_method="autoregressive", design_backend="mpnn", selective_source="decoder", selective=False,
-    placement_by="scan_mpnn", two_phase_frac=0.25,
-  )  # fmt: skip
-  config = config_from_options(options)
-  assert (config.method, config.backend, config.selective_source) == ("autoregressive", "mpnn", "decoder")
-  assert (config.selective, config.placement_by, config.two_phase_frac) == (False, "scan_mpnn", 0.25)
+@pytest.mark.parametrize(
+  ("method", "backend"),
+  [
+    ("block_descent", "potts"), ("greedy_energy_block", "potts"), ("converged_mcmc", "potts"), ("converged_mcmc_combined", "potts"),
+    ("two_phase", "potts"), ("gibbs", "potts"), ("autoregressive", "mpnn"), ("mpnn_sample", "mpnn"),
+  ],
+)  # fmt: skip
+def test_options_derive_the_backend_from_the_method(method: str, backend: str) -> None:
+  # The decoder-backed knobs are PHDesignConfig fields, not ProtonPottsOptions fields (debt #2621); through the options the backend
+  # follows the method exactly as upstream's validation requires it, and every other new knob keeps its default.
+  config = config_from_options(ProtonPottsOptions(binder_chain="A", design_method=method, center_types=("HIS-P",)))
+  assert config.backend == backend
+  assert (config.selective_source, config.selective, config.placement_by, config.two_phase_frac) == ("potts", True, "scan_potts", 0.5)

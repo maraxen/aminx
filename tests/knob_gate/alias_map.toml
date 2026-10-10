@@ -3158,10 +3158,11 @@ note = "adjacent_repeat_weight: ported in PHDesignConfig (default 0.0) but not e
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__backend"
-targets = ["design_backend"]
-equivalence = "semantic"
-parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_design_backend"]
-note = "backend: same meaning, exposed as design_backend. 'potts' reads the merged Potts conditional energies, 'mpnn' the teacher-forced decoder field (spec 56). autoregressive and mpnn_sample require 'mpnn', gibbs requires 'potts' (upstream potts_mpnn_ph.py:97 and 241-246); the Potts-driven block_descent and greedy_energy_block are graded on 'potts' only and refuse 'mpnn'."
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "backend: supported and graded on PHDesignConfig / ph_methods.design_methods (spec 56.1), but NOT a ProtonPottsOptions field: adding options fields would stale run/options.py in the closure of eight Potts and LASEr ledger rows (debt 2621). 'potts' and 'mpnn' both work; autoregressive and mpnn_sample require 'mpnn', gibbs 'potts' (upstream potts_mpnn_ph.py:97, 241-246). Through the options the backend follows the method."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__block_max_rounds"
@@ -3312,10 +3313,11 @@ note = "num_designs: count for whole-chain methods (gibbs / mpnn_sample), which 
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_by"
-targets = ["placement_by"]
-equivalence = "divergence"
-parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_placement_by"]
-note = "placement_by: subset: scan_potts and scan_mpnn (the decoder field of the native sequence with the binder masked) are ported; 'random' is refused naming debt 2616. scan_mpnn is graded with the host-loop methods only (upstream potts_mpnn_ph.py:212)."
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "placement_by: supported and graded on PHDesignConfig / ph_methods.design_methods (spec 56.1), but NOT a ProtonPottsOptions field: adding options fields would stale run/options.py in the closure of eight Potts and LASEr ledger rows (debt 2621). scan_potts and scan_mpnn are ported; 'random' is refused naming debt 2616 (upstream potts_mpnn_ph.py:212)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__placement_label"
@@ -3402,17 +3404,19 @@ note = "seed_source: 'inverse' needs externally supplied seed sequences; aminx s
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__selective"
-targets = ["selective"]
-equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_selective"]
-note = "selective: identical meaning and default (True) for converged_mcmc and two_phase's placement and moves (upstream potts_mpnn_ph.py:123, _score_at 1795 and _ranked_candidates 2563). autoregressive and the block optimisers never read it upstream. The Potts-driven block_descent and greedy_energy_block are graded with True only and refuse False."
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "selective: supported and graded on PHDesignConfig / ph_methods.design_methods (spec 56.1), but NOT a ProtonPottsOptions field: adding options fields would stale run/options.py in the closure of eight Potts and LASEr ledger rows (debt 2621). Default True; False is graded for converged_mcmc (placement and moves), upstream potts_mpnn_ph.py:123."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__selective_source"
-targets = ["selective_source"]
-equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_selective_source"]
-note = "selective_source: identical meaning and default ('potts'); 'decoder' is valid for autoregressive only, as upstream (potts_mpnn_ph.py:107 and 251-256)."
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "selective_source: supported and graded on PHDesignConfig / ph_methods.design_methods (spec 56.1), but NOT a ProtonPottsOptions field: adding options fields would stale run/options.py in the closure of eight Potts and LASEr ledger rows (debt 2621). 'decoder' is valid for autoregressive only, as upstream (potts_mpnn_ph.py:107, 251-256)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__self_weight"
@@ -3447,10 +3451,11 @@ note = "topk_sites: not exposed as an option (upstream potts_mpnn_ph.py:111)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__two_phase_frac"
-targets = ["two_phase_frac"]
-equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_protonpotts_search_knobs.py::test_knob_semantics_two_phase_frac"]
-note = "two_phase_frac: identical meaning and default (0.5): the fraction of neighbours whose selective pick is committed in phase 1 (upstream potts_mpnn_ph.py:125, _two_phase 1960)."
+targets = []
+equivalence = "exclusion"
+reason = "deferred:2621"
+parity_test_ids = []
+note = "two_phase_frac: supported and graded on PHDesignConfig / ph_methods.design_methods (spec 56.1), but NOT a ProtonPottsOptions field: adding options fields would stale run/options.py in the closure of eight Potts and LASEr ledger rows (debt 2621). Default 0.5 (upstream potts_mpnn_ph.py:125, _two_phase 1960)."
 
 [[row]]
 ref = "protonpotts_potts_mpnn_ph_PHDesignCriteria__zscale_mode"

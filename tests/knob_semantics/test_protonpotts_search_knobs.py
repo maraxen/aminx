@@ -26,9 +26,12 @@ import pytest
 from aminx.families.potts_mpnn.model import PottsMPNN
 from aminx.families.protonpotts_mpnn import ProtonPottsDriver
 from aminx.families.protonpotts_mpnn.energy import protonpotts_table
+from aminx.families.protonpotts_mpnn.ph_config import PHDesignConfig
 from aminx.families.protonpotts_mpnn.ph_descent import rep_class_mask
+from aminx.families.protonpotts_mpnn.ph_methods import UNK_INDEX, DecoderField, design_methods
+from aminx.families.protonpotts_mpnn.ph_potentials import candidate_energies
 from aminx.families.protonpotts_mpnn.ph_plan import neighbour_mask
-from aminx.families.protonpotts_mpnn.vocab import PROTONPOTTS_V6
+from aminx.families.protonpotts_mpnn.vocab import PROTONPOTTS_V6, token_index
 from aminx.host.family_driver import FAMILY_DRIVERS
 from aminx.host.runner import sample
 from aminx.run.options import ProtonPottsOptions
@@ -453,96 +456,94 @@ def test_knob_semantics_cv_max(registered: ProtonPottsDriver, tmp_path: Path, mo
   assert not np.array_equal(default["sequence"][0], capped["sequence"][0])
 
 
-# --- the host-loop methods (spec 56): design_backend, selective, selective_source, placement_by, two_phase_frac ----------------
+# --- the host-loop methods (spec 56): PHDesignConfig knobs, driven through ph_methods.design_methods -------------------------------
+# These knobs (backend, selective, selective_source, placement_by, two_phase_frac) are PHDesignConfig fields, not ProtonPottsOptions
+# fields: adding options fields would stale the closure of eight ledger rows (debt #2621). So they are tested at the config level, with
+# the same counterfactual shape as the options knobs above: the default repeats itself, the changed value moves an observable.
 
 
-def _mcmc_options(**overrides: Any) -> ProtonPottsOptions:  # noqa: ANN401
-  """``converged_mcmc`` at T=0 on the toy chain: deterministic given the seed, one HIS-P centre, every other binder residue designable."""
+def _structure(registered: ProtonPottsDriver, pdb: Path, model_path: Path) -> tuple:
+  spec = _sample_spec(str(pdb), model_path, _design_options())
+  prepared = next(registered.batches(spec)).arrays["prepared"][0]
+  graph = prepared.graph
+  model = registered.load(spec)
+  args = tuple(jnp.asarray(a) for a in (graph.coords, graph.present, graph.residue_idx, graph.chain_index, graph.pad_valid))
+  table, e_idx = protonpotts_table(model, *args)
+  native = np.asarray(graph.sequences[0], dtype=np.int32)
+  binder = np.asarray([chain == "A" for chain, *_rest in prepared.kept], dtype=bool)
+  res_id = np.asarray([number for _chain, number, *_rest in prepared.kept], dtype=np.int32)
+  return model, args, table, e_idx, native, binder, res_id
+
+
+def _mcmc_config(**overrides: Any) -> PHDesignConfig:  # noqa: ANN401
+  """``converged_mcmc`` at T=0: deterministic given the key, one HIS-P centre, every other binder residue designable."""
   values: dict[str, Any] = {
-    "design_method": "converged_mcmc",
-    "temperature": 0.0,
-    "samples_per_site": 1,
-    "cv_patience": 2,
-    "cv_max": 6,
-    "neighbour_k": 0,
-    "max_mutations": 0,
-  }
+    "method": "converged_mcmc", "backend": "potts", "binder_chain": "A", "center_types": ("HIS-P",), "temperature": 0.0,
+    "samples_per_site": 1, "cv_patience": 2, "cv_max": 6, "neighbour_k": 0, "max_mutations": 0,
+  }  # fmt: skip
   values.update(overrides)
-  return _design_options(**values)
+  return PHDesignConfig(**values)
 
 
-def test_knob_semantics_design_backend(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
-  del registered
+def _methods(structure: tuple, config: PHDesignConfig, seed: int = 42) -> list:
+  model, args, table, e_idx, native, binder, res_id = structure
+  return design_methods(model, args, table, e_idx, native, binder, res_id, config, key=jax.random.PRNGKey(seed))
+
+
+def test_methods_backend(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
   # The backend is the energy field the MCMC steps read: the Potts conditional energies, or the teacher-forced decoder's -log p.
   # Same seed, same centre (placement is a separate knob), different field, so different moves.
-  pdb = _chain_pdb(tmp_path, 24)
-  potts = _designs(pdb, model_path, _mcmc_options(design_backend="potts"))
-  again = _designs(pdb, model_path, _mcmc_options(design_backend="potts"))
-  mpnn = _designs(pdb, model_path, _mcmc_options(design_backend="mpnn"))
-  mpnn_again = _designs(pdb, model_path, _mcmc_options(design_backend="mpnn"))
-  assert np.array_equal(potts["sequence"], again["sequence"])
-  assert np.array_equal(mpnn["sequence"], mpnn_again["sequence"])
-  assert np.array_equal(potts["center_positions"], mpnn["center_positions"])  # the backend does not move the centre
-  assert not np.array_equal(potts["sequence"], mpnn["sequence"])  # the field does move the design
+  structure = _structure(registered, _chain_pdb(tmp_path, 24), model_path)
+  potts = _methods(structure, _mcmc_config(backend="potts"))[0]
+  again = _methods(structure, _mcmc_config(backend="potts"))[0]
+  mpnn = _methods(structure, _mcmc_config(backend="mpnn"))[0]
+  assert np.array_equal(potts.sequence, again.sequence)
+  assert potts.pins == mpnn.pins  # the backend does not move the centre
+  assert not np.array_equal(potts.sequence, mpnn.sequence)  # the field does move the design
   # the backend is tied to the method exactly as upstream ties it
   with pytest.raises(ValueError, match="requires backend='mpnn'"):
-    _designs(pdb, model_path, _mcmc_options(design_method="autoregressive", design_backend="potts"))
+    _mcmc_config(method="autoregressive", backend="potts")
   with pytest.raises(ValueError, match="requires backend='potts'"):
-    _designs(pdb, model_path, _mcmc_options(design_method="gibbs", design_backend="mpnn"))
+    _mcmc_config(method="gibbs", backend="mpnn")
 
 
-def test_knob_semantics_selective(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
-  del registered
+def test_methods_selective(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
   # Selective scores each move by (stability - mean deprotonated-centre energy): the neighbour's share of the centre's
   # protonated-minus-deprotonated gap. Switching it off optimises stability alone, so the centre gap ends higher.
-  pdb = _chain_pdb(tmp_path, 24)
+  structure = _structure(registered, _chain_pdb(tmp_path, 24), model_path)
   gaps: dict[bool, list[float]] = {True: [], False: []}
   for selective in (True, False):
     for seed in range(4):
-      out = _designs(pdb, model_path, _mcmc_options(selective=selective), seed=seed)
-      gaps[selective].append(float(out["selective_energy"][0]))
-  again = _designs(pdb, model_path, _mcmc_options(selective=True), seed=0)
-  assert float(again["selective_energy"][0]) == gaps[True][0]
+      gaps[selective].append(float(_methods(structure, _mcmc_config(selective=selective), seed)[0].selective_energy))
+  assert gaps[True][0] == float(_methods(structure, _mcmc_config(selective=True), 0)[0].selective_energy)
   assert np.mean(gaps[True]) < np.mean(gaps[False])
-  # the knob is tied to the Potts-driven optimisers as graded: they refuse it
-  with pytest.raises(ValueError, match="selective=True only"):
-    _designs(pdb, model_path, _design_options(selective=False))
+  with pytest.raises(ValueError, match="selective=True only"):  # the Potts-driven optimisers are graded with True only
+    PHDesignConfig(method="block_descent", selective=False)
 
 
-def test_knob_semantics_selective_source(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
-  del registered
+def test_methods_selective_source(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
   # autoregressive only: the selectivity term is the Potts centre gap (z-scaled against the decoder's naturalness) or a pure
-  # decoder two-state probability contrast. Same order and uniforms, different scores, so a different decode.
-  pdb = _chain_pdb(tmp_path, 24)
-  options = {"design_method": "autoregressive", "design_backend": "mpnn", "temperature": 0.1, "samples_per_site": 1}
-  potts = _designs(pdb, model_path, _design_options(**options, selective_source="potts"))
-  again = _designs(pdb, model_path, _design_options(**options, selective_source="potts"))
-  decoder = _designs(pdb, model_path, _design_options(**options, selective_source="decoder"))
-  assert np.array_equal(potts["sequence"], again["sequence"])
-  assert np.array_equal(potts["center_positions"], decoder["center_positions"])
-  assert not np.array_equal(potts["sequence"], decoder["sequence"])
+  # decoder two-state probability contrast. Same order and key, different scores, so a different decode.
+  structure = _structure(registered, _chain_pdb(tmp_path, 24), model_path)
+  base = {"method": "autoregressive", "backend": "mpnn", "temperature": 0.1}
+  potts = _methods(structure, _mcmc_config(**base, selective_source="potts"))[0]
+  again = _methods(structure, _mcmc_config(**base, selective_source="potts"))[0]
+  decoder = _methods(structure, _mcmc_config(**base, selective_source="decoder"))[0]
+  assert np.array_equal(potts.sequence, again.sequence)
+  assert potts.pins == decoder.pins
+  assert not np.array_equal(potts.sequence, decoder.sequence)
   with pytest.raises(ValueError, match="only valid for method='autoregressive'"):
-    _designs(pdb, model_path, _mcmc_options(selective_source="decoder"))
+    _mcmc_config(selective_source="decoder")
 
 
-def test_knob_semantics_placement_by(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
+def test_methods_placement_by(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
   # Where the centre goes: the Potts conditional energies of the native sequence (scan_potts), or the decoder field of the native
   # sequence with the binder masked (scan_mpnn). Both rank by the protonated-minus-deprotonated gap; each centre is the argmin of
   # the field's own gap, computed here independently of the placement code.
-  from aminx.families.protonpotts_mpnn.ph_methods import UNK_INDEX, DecoderField  # noqa: PLC0415
-  from aminx.families.protonpotts_mpnn.ph_potentials import candidate_energies  # noqa: PLC0415
-  from aminx.families.protonpotts_mpnn.vocab import token_index  # noqa: PLC0415
-
-  pdb = _chain_pdb(tmp_path, 32)
-  options = _mcmc_options(design_backend="potts")
-  native, binder, _e_idx = _binder_context(registered, pdb, model_path, options)
-  spec = _sample_spec(str(pdb), model_path, options)
-  graph = next(registered.batches(spec)).arrays["prepared"][0].graph
-  model = registered.load(spec)
-  args = tuple(jnp.asarray(a) for a in (graph.coords, graph.present, graph.residue_idx, graph.chain_index, graph.pad_valid))
-  table, e_idx_j = protonpotts_table(model, *args)
+  structure = _structure(registered, _chain_pdb(tmp_path, 32), model_path)
+  model, args, table, e_idx, native, binder, _res_id = structure
   his_p, his_s = token_index("HIS-P"), token_index("HIS-S")
-  potts_field = np.asarray(candidate_energies(table, e_idx_j, jnp.asarray(native)), dtype=np.float64)
+  potts_field = np.asarray(candidate_energies(table, e_idx, jnp.asarray(native)), dtype=np.float64)
   masked = native.copy()
   masked[binder] = UNK_INDEX
   decoder_field = DecoderField.from_model(model, args)(masked).astype(np.float64)
@@ -550,30 +551,26 @@ def test_knob_semantics_placement_by(registered: ProtonPottsDriver, tmp_path: Pa
   def centre(field: np.ndarray) -> int:
     return int(np.argmin(np.where(binder, field[:, his_p] - field[:, his_s], np.inf)))
 
-  by_potts = _designs(pdb, model_path, _mcmc_options(placement_by="scan_potts"))
-  by_mpnn = _designs(pdb, model_path, _mcmc_options(placement_by="scan_mpnn"))
-  assert int(by_potts["center_positions"][0, 0]) == centre(potts_field)
-  assert int(by_mpnn["center_positions"][0, 0]) == centre(decoder_field)
+  by_potts = _methods(structure, _mcmc_config(placement_by="scan_potts"))[0]
+  by_mpnn = _methods(structure, _mcmc_config(placement_by="scan_mpnn"))[0]
+  assert by_potts.pins[0].position == centre(potts_field)
+  assert by_mpnn.pins[0].position == centre(decoder_field)
   assert centre(potts_field) != centre(decoder_field)  # counterfactual: the two fields rank differently on this chain
-  # the Potts-driven optimisers are graded with scan_potts only
-  with pytest.raises(ValueError, match="scan_potts' only"):
-    _designs(pdb, model_path, _design_options(placement_by="scan_mpnn"))
+  with pytest.raises(ValueError, match="scan_potts' only"):  # the Potts-driven optimisers are graded with scan_potts only
+    PHDesignConfig(method="block_descent", placement_by="scan_mpnn")
+  with pytest.raises(ValueError, match="#2616"):  # random placement is not ported
+    PHDesignConfig(method="converged_mcmc", placement_by="random")
 
 
-def test_knob_semantics_two_phase_frac(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
-  del registered
+def test_methods_two_phase_frac(registered: ProtonPottsDriver, tmp_path: Path, model_path: Path) -> None:
   # two_phase commits the round(frac * N) least-disruptive selective picks, then converges the rest without selectivity.
   # A small fraction commits one pick and leaves the stability cleanup most of the neighbourhood; a fraction of 1 commits
   # N - 1 picks. The two end in different designs.
-  pdb = _chain_pdb(tmp_path, 24)
-  options = {
-    "design_method": "two_phase", "temperature": 0.0, "samples_per_site": 1, "cv_patience": 2, "cv_max": 6,
-    "neighbour_k": 0, "max_mutations": 0,
-  }  # fmt: skip
-  small = _designs(pdb, model_path, _design_options(**options, two_phase_frac=0.1))
-  again = _designs(pdb, model_path, _design_options(**options, two_phase_frac=0.1))
-  full = _designs(pdb, model_path, _design_options(**options, two_phase_frac=1.0))
-  assert np.array_equal(small["sequence"], again["sequence"])
-  assert not np.array_equal(small["sequence"], full["sequence"])
+  structure = _structure(registered, _chain_pdb(tmp_path, 24), model_path)
+  small = _methods(structure, _mcmc_config(method="two_phase", two_phase_frac=0.1))[0]
+  again = _methods(structure, _mcmc_config(method="two_phase", two_phase_frac=0.1))[0]
+  full = _methods(structure, _mcmc_config(method="two_phase", two_phase_frac=1.0))[0]
+  assert np.array_equal(small.sequence, again.sequence)
+  assert not np.array_equal(small.sequence, full.sequence)
   with pytest.raises(ValueError, match="two_phase_frac"):
-    _designs(pdb, model_path, _design_options(**options, two_phase_frac=0.0))
+    _mcmc_config(method="two_phase", two_phase_frac=0.0)

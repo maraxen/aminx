@@ -202,6 +202,11 @@ def config_from_options(options: ProtonPottsOptions) -> PHDesignConfig:
 
   ``None`` (binder_chain) and an empty ``dep_map`` mean the config default. Fields absent from
   ``ProtonPottsOptions`` (e.g. ``seed_source``, ``placement_by``) keep their production defaults.
+
+  The decoder-backed knobs (``backend``, ``selective_source``, ``selective``, ``placement_by``, ``two_phase_frac``) are NOT options fields: adding
+  fields to ``run/options.py`` would stale the closure of every ledger row that loads it (eight Potts and LASEr rows, debt #2621). They are set
+  on :class:`PHDesignConfig` directly (Python API, ``ph_methods.design_methods``). Through the options the backend follows the method as upstream
+  requires it: ``mpnn_sample`` and ``autoregressive`` use the decoder (``'mpnn'``), everything else the Potts energies.
   """
   default = PHDesignConfig()
   # Centre-free design (greedy, whole chain, no centres named) is upstream's center_count == 0 (lines 257-262).
@@ -214,11 +219,7 @@ def config_from_options(options: ProtonPottsOptions) -> PHDesignConfig:
   return PHDesignConfig(
     center_count=0 if centre_free else 1,  # 1 is the dataclass default; center_types then sets it
     method=options.design_method,
-    backend=options.design_backend,
-    selective_source=options.selective_source,
-    selective=options.selective,
-    placement_by=options.placement_by,
-    two_phase_frac=options.two_phase_frac,
+    backend="mpnn" if options.design_method in ("mpnn_sample", "autoregressive") else "potts",
     binder_chain=options.binder_chain,
     center_types=tuple(options.center_types),
     explicit_centers=tuple(options.explicit_centers),

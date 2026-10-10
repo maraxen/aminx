@@ -245,16 +245,14 @@ def test_knob_semantics_design_method(
   assert np.array_equal(block["sequence"], again["sequence"])
   assert not np.array_equal(greedy["center_positions"], block["center_positions"])
 
-  # the host-loop methods pin a centre like block descent and design the same neighbourhood
+  # the host-loop methods pin a centre like block descent and design the same neighbourhood; the options pick their backend
   mcmc = _designs(toy_pdb, toy_model_path, _design_options(design_method="converged_mcmc", cv_patience=1, cv_max=2))
   assert (mcmc["center_positions"] >= 0).all()
   assert mcmc["sequence"].shape == block["sequence"].shape
   assert not np.array_equal(mcmc["sequence"], block["sequence"])  # a different optimiser reaches different designs
-
-  with pytest.raises(ValueError, match="requires backend='mpnn'"):  # upstream's rule for autoregressive and mpnn_sample
-    _designs(toy_pdb, toy_model_path, _design_options(design_method="autoregressive"))
-  with pytest.raises(ValueError, match="2616"):  # random placement is not ported (debt #2616)
-    _designs(toy_pdb, toy_model_path, _design_options(placement_by="random"))
+  decoder = _designs(toy_pdb, toy_model_path, _design_options(design_method="autoregressive"))  # backend 'mpnn' derived
+  assert (decoder["center_positions"] >= 0).all()
+  assert decoder["sequence"].shape == block["sequence"].shape
 
 
 def test_knob_semantics_center_types(

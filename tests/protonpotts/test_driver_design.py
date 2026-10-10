@@ -350,9 +350,7 @@ def test_mpnn_sample_designs_only_the_binder_chain_and_is_deterministic(
   registered: ProtonPottsDriver, two_long_chains_pdb: Path, model_path: Path
 ) -> None:
   del registered
-  options = _design_options(
-    design_method="mpnn_sample", design_backend="mpnn", binder_chain="A", center_types=(), samples_per_site=3, temperature=0.1
-  )
+  options = _design_options(design_method="mpnn_sample", binder_chain="A", center_types=(), samples_per_site=3, temperature=0.1)
   first = _designs(two_long_chains_pdb, model_path, options, seed=1)
   again = _designs(two_long_chains_pdb, model_path, options, seed=1)
   other = _designs(two_long_chains_pdb, model_path, options, seed=2)
