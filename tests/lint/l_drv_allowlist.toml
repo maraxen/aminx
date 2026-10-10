@@ -73,3 +73,32 @@ reason = "sequential_dependency"
 path = "src/aminx/model/laser/tied.py"
 qualname = "_scan_tied"
 reason = "sequential_dependency"
+
+# ProtonPotts block descent: each block's joint move is conditioned on the sequence the previous block wrote
+# (Gauss-Seidel over blocks), and the outer loop repeats sweeps until a sweep changes nothing.
+[[entries]]
+path = "src/aminx/families/protonpotts_mpnn/ph_descent.py"
+qualname = "_sweep_to_convergence"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/protonpotts_mpnn/ph_descent.py"
+qualname = "_sweep_to_convergence.sweep"
+reason = "sequential_dependency"
+
+# ProtonPotts greedy: each accepted mutation changes the sequence the next step's energies are computed on.
+[[entries]]
+path = "src/aminx/families/protonpotts_mpnn/ph_greedy.py"
+qualname = "greedy_energy_block"
+reason = "sequential_dependency"
+
+# ProtonPotts 30-token decoder: step k reads the tokens and hidden states steps 0..k-1 wrote.
+[[entries]]
+path = "src/aminx/families/protonpotts_mpnn/decode.py"
+qualname = "ProtonPottsARDecode.__call__"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/protonpotts_mpnn/ph_methods.py"
+qualname = "_gibbs_sweep"
+reason = "sequential_dependency"

@@ -1,0 +1,104 @@
+[metadata]
+title = "X8b gate: the JS ProtonPotts sampler (decoder_sampler.mjs) from PDB text vs the unpadded eager decoder, under Node"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+ADR decision 12 and spec §53-54.5. `browser/protonpotts-scorer/decoder_sampler.mjs` (`ProtonPottsSampler.sample`) -- PDB text -> the
+bucket-padded encode graph -> the decode graph, with the designed mask, temperature, bias, decoding-order noise and draw uniforms built
+and PADDED in JS (the uniform stream aligned so the caller's step k lands on padded step pad+k, noise unshifted) and the outputs trimmed
+back -- run under Node with onnxruntime-web (wasm, 1 thread) on the pinned graphs of the X8a manifest (sha256 bacf2245...8c6b, verified),
+reproduces aminx's eager `ProtonPottsARDecode` run UNPADDED on the same structure through `make_encode`, given the same injected noise and
+uniforms: sampled sequences and decoding orders exactly, log-probabilities max|d|/max|ref| <= 1e-4.
+
+This is the plumbing check X8a could not make: X8a graded the graphs on pre-padded inputs; here the padding, the stream alignment, the
+featurization and the trimming are JS and are graded against a reference that never padded.
+
+Cases: the four pinned structures x three configurations, as X8a: default (T = float32 0.1, no bias, all designed), bias_temp (per-residue
+T in [0.3, 1.0] and a seeded [L, 30] bias), fixed (every 7th residue from offset 3 not designed). FRAGILE cases (a draw within 1e-5 of a
+CDF boundary, measured on the reference) are exempt on sequence and reported, never silent.
+
+Seeded path (no injected streams), default configuration, per structure: seed 11 run twice gives identical sequence, order and
+log-probabilities (seeded_repeatable, all four structures); seeds 11 and 12 give different sequences (seeded_distinct, all four
+structures). The seeded outputs are not compared with the reference (the generator is the JS one).
+
+Controls (each must make the SAME comparator fail): TOKENS -- the JS run with uniforms rolled by one position against the reference;
+FLOAT -- the reference rerun with the decoder weights perturbed (1e-2 on every float leaf), compared on log-probabilities.
+
+REVISION (261009, before the graded run; the criteria and outcomes are unchanged). The text above says the uniform stream is aligned
+"so the caller's step k lands on padded step pad+k". That mechanism was WRONG: an exploratory smoke of the first sampler (every case
+disagreed in sequence and log-probabilities; decoding orders agreed) and a padded-vs-unpadded JAX spike showed the decoder orders
+padding last, so real residues keep steps 0..L-1 and the stream is placed unshifted. The sampler was corrected; nothing in [outcomes] or
+the tolerances changed. The smoke numbers are exploratory and not cited.
+
+PREDICTION, stated before the run so it can be wrong: all 12 injected-stream cases agree (fragile cases exempt on sequence), the seeded
+checks hold, both controls fire. Risks: (a) a stream-alignment off-by-one between padded and unpadded steps for the `fixed` configuration
+(non-designed residues interleave with padding in the order); (b) padding not sorting strictly last under some noise draw.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. Layer a (JAX vs upstream): protonpotts_decoder wave a769e1b2. Graphs: X8a cd5fe181.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR node_ok = false"
+decision = "The reference arm, the artifact check or the Node run did not complete. Nothing was compared; cite nothing."
+reasoning = "A partial run must not borrow the authority of a complete one."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "NOT (control_tokens_detected = true AND control_float_detected = true)"
+decision = "A planted difference (rolled uniforms, perturbed decoder weights) was not flagged. Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these differences would also pass a broken sampler."
+is_residual = true
+
+[outcomes.pass]
+condition = "all_exact = true AND seeded_repeatable = true AND seeded_distinct = true"
+decision = "The JS sampler reproduces the unpadded eager decoder on all injected-stream cases and its seeded path is repeatable. The padding, stream alignment and trimming are validated under Node; the Chromium gate may be run."
+reasoning = "Both controls fired, so agreement on sequence, order and log-probabilities is real."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (all_exact = true AND seeded_repeatable = true AND seeded_distinct = true)"
+decision = "At least one case disagrees or the seeded path is not repeatable. The per-case record names the structure, configuration and field."
+reasoning = "The instrument is verified, so a disagreement is a real defect in the sampler plumbing."
+is_residual = true
+
+[result_schema]
+jax_arm_ok = "bool"
+artifacts_verified = "bool"
+node_ok = "bool"
+num_threads = "int"
+jax_version = "str"
+onnxruntime_web_version = "str"
+node_version = "str"
+git_hash = "str"
+git_clean = "bool"
+manifest_sha256 = "str"
+cases = "list"
+n_cases = "int"
+n_pass = "int"
+n_fragile_cases = "int"
+all_exact = "bool"
+seeded_repeatable = "bool"
+seeded_distinct = "bool"
+control_tokens_detected = "bool"
+control_float_detected = "bool"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN v6 epoch-0125, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b"
+artifacts = "X8a run cd5fe181 (decoder manifest bacf2245867601c91ffb4a3e6bcec1b1c48d30b20b016e493414e9561d208c6b)"
+tolerances = "sequence and decoding order exact (fragile cases exempt on sequence, reported); log-probs max|d|/max|ref| <= 1e-4"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, together with the sampler module it grades, before protonpotts_sampler_gate.py exists and before any JS-sampler number exists."

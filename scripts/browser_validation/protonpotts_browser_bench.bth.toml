@@ -1,0 +1,83 @@
+[metadata]
+title = "X9 browser bench: per-call wall time of the three ProtonPotts pages (scoring, pH design, 30-token sampling) in headless Chromium, with a browser timer control"
+created = "261010"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+With the page's own clock (performance.now) first shown to detect a deliberately planted delay, the median per-call wall time of each shipping ProtonPotts
+browser path can be measured in headless Chromium at 1 and 4 ORT threads, with session-creation cost recorded per bucket: (a) scoring (PDB text ->
+buildProtonPottsInputs -> table graph -> chunked energy graph), (b) pH design (PhDesigner.design: featurize, plan, block descent), (c) 30-token sampling
+(ProtonPottsSampler.sample: encode + decode loop). Cells are the four graded structures (1BVC, 6m0j, 1OLR, 1EL1), a subset per arm fixed in the script header
+before any run. Each cell runs one warm-up and `reps` measured repetitions.
+
+NO performance DIRECTION is pre-registered (no 'faster than', no speedup target); the graded pass/fail is measurement validity, and the timings are result
+fields. This is the benchmark gate that debt #2625 asks for: the ProtonPotts pages graded exact against the Python reference (X7c, X8c) but had no
+recorded timing, and an untimed page cannot be quoted as usable in a browser. The pages gained optional reps/warmup/planted_ms (defaults 1, 0, 0, which is
+exactly the behaviour the parity gates graded) in the same change; X7c and X8c are re-run on the changed pages and must still pass for these timings
+to be quoted.
+
+The planted delay runs through the same timed() wrapper and the same await machinery as the real calls, once per page load. A page whose clock does not
+show it within [0.9 x planted_ms, planted_ms + 2000] makes the whole run timer_blind and NOTHING from it may be cited. Browsers coarsen performance.now under
+cross-origin-isolation settings, which this harness enables, so soundness under Node says nothing about this clock.
+
+Site assembly, the harness runner and the reference-free cell construction are imported from the sibling parity gates, so the bench serves byte-identical
+sites to them. The bench grades no output correctness (the parity gates do that); it does record, per cell, that every repetition returned and that the
+returned designs/sequences/energies are present and of the expected length, so a page that fast-fails with an empty result cannot post a flattering time.
+"""
+stage_name = "validation"
+claim_discriminates = ["H_browser_timer_sound", "H_browser_timer_blind"]
+claim_isolates = ["C_browser_protonpotts_bench_instrument"]
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["incomplete", "timer_blind"]
+
+# First matching branch wins: incomplete, timer_blind, pass.
+
+[outcomes.incomplete]
+condition = "bench_ok = false OR arms_total < 3 OR cells_total < 6 OR reps < 3 OR git_clean = false OR failure <> ''"
+decision = "The benchmark did not run to size: a page failed at one of the thread settings, a cell did not return all its repetitions with a non-empty result, an arm is missing, the tree was dirty in a code path, or an exception was raised. No timing may be quoted."
+reasoning = "Three repetitions is the floor for a median; three arms are the floor for the figure to describe the whole browser product rather than one page; six cells is two structures per arm at least. A partial run invites quoting whichever subset finished."
+is_residual = true
+
+[outcomes.timer_blind]
+condition = "ctrl_in_window = false"
+decision = "On at least one page, at one thread setting, the clock did not show the planted delay within [0.9 x planted_ms, planted_ms + 2000]. NO TIMING FROM THIS RUN MAY BE REPORTED OR CITED."
+reasoning = "This is the gate's reason for existing: browsers coarsen performance.now under the isolation settings this harness enables, so assuming the clock is sound because it is sound under Node would assume away the specific risk."
+is_residual = true
+
+[outcomes.pass]
+condition = "bench_ok = true AND ctrl_in_window = true"
+decision = "The browser clock is demonstrably sensitive on all three pages at both thread settings and every cell returned a complete result for all its repetitions. The recorded medians and session-creation costs may be reported AS MEASUREMENTS OF THIS CONFIGURATION: headless Chromium, the recorded thread count and isolation state, this machine."
+reasoning = "A sound clock plus complete coverage licenses quoting a browser timing at all. It licenses nothing about other browsers, other hardware, WebGPU, the unmeasured structures, or the Node timings."
+is_residual = false
+
+[result_schema]
+reps = "int"
+warmup = "int"
+planted_ms = "float"
+ctrl_measured_ms = "float"
+ctrl_in_window = "bool"
+arms_total = "int"
+cells_total = "int"
+bench_ok = "bool"
+threads_requested = "list"
+arms = "list"
+onnxruntime_web_version = "str"
+playwright_version = "str"
+node_version = "str"
+outcome = "str"
+failure = "str"
+git_hash = "str"
+git_clean = "bool"
+elapsed_s = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+onnxruntime_web_version = { type = "string", required = true }
+playwright_version = { type = "string", required = true }
+
+[provenance]
+note = "Pre-registered before protonpotts_browser_bench.py existed. Precedent: potts_browser_bench (X5b) and p07_split_browser_bench (G4b), whose outcome structure this copies; the arms and cell sets are new."

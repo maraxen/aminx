@@ -1,0 +1,87 @@
+[metadata]
+title = "ProtonPottsMPNN v6 N-row decoder dump for the engine's mpnn_sample: binder chain designed, three batched rows with injected uniforms, f32 and f64 (P4i)"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4i of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§53, §55; debt #2617). The engine's `mpnn_sample` method
+(`potts_mpnn_ph.py` _run_whole_chain, lines 1226-1231) prepares the network input with `designed_chains=[binder_chain]`, sets
+`repeat_sample_num = N`, runs the model once and reads `decoder_features["S_sampled"]` ([N, L]); the encoder runs once on B = 1 and the
+samples are repeated along the batch dimension, each row drawing its own decoding-order noise. The P4h dump (`dump_protonpotts_decoder.py`)
+shimmed ONE row; its shim refuses probs.shape[0] != 1. So no oracle exists for the batched, binder-only call. This dump is that oracle.
+
+For four cells (1BVC chain A, the two-chain 6m0j chain E, 1OLR chain A with dropped residues, 1EL1 chain A with a numbering gap; the
+binder chains of the ledger vehicle's CELLS) and each of float32 and float64, with N = 3 rows, this dumps the call exactly as the engine
+makes it (prepare_potts_input(..., designed_chains=[binder], extended_vocab="v6"), default temperature, no bias,
+decode_type auto_regressive), with `torch.multinomial` replaced by inverse-CDF on INJECTED uniforms: row r, decoding step k uses
+uniforms[r, k] (index = #(cdf <= u * cdf[-1]), clamped to the last nonzero-probability token; the P4h convention, now per row).
+Per cell and precision: the designed mask, the native sequence, each row's decoding order (captured from setup_causality_masks, [N, L]),
+the uniforms [N, L], S_sampled [N, L], log_probs [N, L, 30], the renormalised probs_sample the shim saw (by position, [N, L, 30]),
+the raw W_out logits (by position), the drawn token and the smallest distance of any draw to a CDF boundary (per row and position).
+
+THE f64 RUN makes exactly the three changes P4h made (positional one-hot cast; the float32 literals of the three decode-path methods
+widened by source rewrite; the decoding-order noise drawn in float32 and cast so both precisions see the same order). Nothing else.
+
+Claims, falsifiable by this run:
+ 1. THE PIPELINE IS THE SEALED ONE: preparing the cell with no designed_chains gives features whose content hash equals the sealed P4b /
+    P4c / P4d manifest.
+ 2. ONLY THE DESIGNED MASK DIFFERS: preparing it with designed_chains=[binder] gives features bit-identical to the default preparation
+    in every array except designed_residue_mask, which equals (chain == binder) and is what the call used; in a MULTI-CHAIN structure
+    it contains both True and False (REVISED 261009, see the provenance note: three of the four structures are single-chain, so there
+    the binder is the whole structure and the mask is all True by construction).
+ 3. COMPLETE: every cell, precision and the arrays named above, with the expected shapes ([N, L] and [N, L, 30]).
+ 4. THE f64 RUN IS REALLY DOUBLE (every floating array float64) AND THE TWO PRECISIONS DIFFER.
+ 5. SAME ORDER ACROSS PRECISIONS: each row's f64 decoding order equals the f32 one, and each is a permutation of 0..L-1.
+ 6. THE ROWS ARE INDEPENDENT DRAWS: the N decoding orders are pairwise different in every cell (otherwise the batched call would be
+    N copies of one row and a replay that reused one order would still pass).
+ 7. THE SHIM IS THE DRAW: recomputing every row's every step from the recorded probs_sample and uniform gives exactly the recorded
+    S_sampled in decoding order, for every cell, precision and row, at designed positions.
+ 8. NON-DESIGNED POSITIONS HOLD: in every row, S_sampled equals the native sequence wherever designed_residue_mask is False.
+ 9. REPRODUCIBLE: a second run in a fresh process gives identical content hashes for every cell and precision, with torch threads
+    pinned to 1.
+
+Recorded, not required: the f32-vs-f64 floor per array, the minimum draw margin per cell and row, and whether the N rows agree
+(the number of positions at which they differ), which says how much the sampled sequences exercise the draws.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "pipeline_is_sealed AND only_designed_mask_differs AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND rows_independent AND shim_is_the_draw AND nondesigned_hold AND reproducible AND n_cells = 4"
+decision = "Seal the dumps and grade the aminx N-row sampler against them (protonpotts_sample wave)."
+reasoning = "The inputs are the sealed pipeline with only the designed mask changed, the dumps are complete and genuinely double where claimed, the rows are independent, the draws are exactly the inverse-CDF of the recorded probabilities, and the result is reproducible."
+is_residual = false
+adversarial_check = "NOT (pipeline_is_sealed AND only_designed_mask_differs AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND rows_independent AND shim_is_the_draw AND nondesigned_hold AND reproducible AND n_cells = 4)"
+
+[outcomes.fail]
+condition = "NOT (pipeline_is_sealed AND only_designed_mask_differs AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND rows_independent AND shim_is_the_draw AND nondesigned_hold AND reproducible AND n_cells = 4)"
+decision = "Do not seal. Read which flag is false: pipeline_is_sealed or only_designed_mask_differs false means these are not the engine's inputs; rows_independent false means the batch is not N independent draws; shim_is_the_draw false means the sampler replacement is not the draw."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "pipeline_is_sealed AND only_designed_mask_differs AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND rows_independent AND shim_is_the_draw AND nondesigned_hold AND reproducible AND n_cells = 4"
+
+[result_schema]
+pipeline_is_sealed = "bool"
+only_designed_mask_differs = "bool"
+complete = "bool"
+f64_is_float64 = "bool"
+precisions_differ = "bool"
+order_same_across_precisions = "bool"
+rows_independent = "bool"
+shim_is_the_draw = "bool"
+nondesigned_hold = "bool"
+reproducible = "bool"
+n_cells = "int"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, extended_vocab v6"
+checkpoint = "potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt"
+cells = "1BVC (A), 6m0j (E), 1OLR (A), 1EL1 (A)"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before dump_protonpotts_sample.py exists and before any N-row number exists. REVISED 261009 AFTER AN EXPLORATORY SMOKE (ungraded, numbers not cited) and BEFORE the graded run: claim 2 originally required the designed mask to contain both True and False in every cell. The smoke flagged only_designed_mask_differs false, and a probe showed why: in all four cells only designed_residue_mask differs and it equals (chain == binder), but 1BVC, 1OLR and 1EL1 have a single chain A, so the binder is the whole structure and the mask is all True. The clause was a mistake in this file, not a fault of the oracle. It now applies only to multi-chain structures (6m0j). CONSEQUENCE, stated plainly: the binder-only path (non-designed positions held at native) is exercised by ONE structure, 6m0j chain E; in the other three cells every residue is designed. The benchmark set holds no other multi-chain structure. Nothing in [outcomes] changed. A SECOND defect in the same check was found by the first GRADED run (2be88891, outcome fail by this file's rule, kept on record): the check demanded identical KEY SETS, but the default preparation carries no designed_residue_mask array at all (None, meaning every residue designed), so it failed in all four cells although a probe had shown every other array bit-identical. The claim text above was right (identical in every array except designed_residue_mask); the code was stricter than the claim. It now requires the default's arrays to be a subset of the binder preparation's, differing only by that key, and equal. All other flags were true in that run and nothing in [outcomes] changed."

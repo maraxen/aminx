@@ -27,6 +27,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONDONTWRITEBYTECODE: 1
+      # requires-python is ">=3.13" with no upper bound, so uv otherwise resolves CPython 3.15, which torch has no wheel for.
+      UV_PYTHON: "3.13"
     steps:
       - uses: actions/checkout@v4
         with:

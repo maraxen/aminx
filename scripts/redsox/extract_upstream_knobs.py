@@ -13,6 +13,7 @@ import difflib
 import hashlib
 import keyword
 import re
+import subprocess
 import sys
 import tomllib
 import warnings
@@ -87,6 +88,8 @@ def _pascal(stem: str) -> str:
 def _repo_prefix(repo: str) -> str:
   if repo == "laser":
     return "Laser"
+  if repo == "protonpotts":
+    return "ProtonPotts"
   return "Potts"
 
 
@@ -122,6 +125,22 @@ def _read_commit(root: Path) -> str:
   if isinstance(commit, str) and commit:
     return commit
   return "MISSING"
+
+
+def _protonpotts_commit(root: Path, override: str | None) -> str:
+  """The recorded ProtonPottsMPNN commit: the override, else the checkout's git HEAD (no VENDOR_PIN.toml there)."""
+  if override:
+    return override
+  head = root / ".git"
+  if not head.exists():
+    return "MISSING"
+  completed = subprocess.run(  # noqa: S603
+    ["git", "-C", str(root), "rev-parse", "HEAD"],  # noqa: S607
+    check=False,
+    capture_output=True,
+    text=True,
+  )
+  return completed.stdout.strip() if completed.returncode == 0 and completed.stdout.strip() else "MISSING"
 
 
 def _extractor_sha256() -> str:
@@ -514,7 +533,13 @@ def _param_knob(
   )
 
 
-def _function_entries(repo: str, root: Path, path: Path, unresolved: list[str]) -> list[Entry]:
+def _function_entries(
+  repo: str,
+  root: Path,
+  path: Path,
+  unresolved: list[str],
+  names: frozenset[str] = _SAMPLING_FUNCS,
+) -> list[Entry]:
   try:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
   except (SyntaxError, OSError) as exc:
@@ -527,7 +552,7 @@ def _function_entries(repo: str, root: Path, path: Path, unresolved: list[str]) 
   for node in ast.walk(tree):
     if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
       continue
-    if node.name not in _SAMPLING_FUNCS:
+    if node.name not in names:
       continue
     owner = _enclosing_class(tree, node.lineno)
     slug = _ident(f"{repo}_{stem}_{node.name}")
@@ -561,6 +586,103 @@ def _function_entries(repo: str, root: Path, path: Path, unresolved: list[str]) 
     entry.knobs.sort(key=lambda knob: (knob.dest, knob.line))
     found.append(entry)
   return found
+
+
+# ProtonPottsMPNN has no argparse CLI on its design path. Its knobs are the fields of one dataclass plus the
+# arguments of one engine method, both in the vendored foundry package (spec §50).
+_PROTONPOTTS_ENGINE = Path("foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py")
+_PROTONPOTTS_DATACLASSES = frozenset({"PHDesignCriteria"})
+_PROTONPOTTS_FUNCS = frozenset({"run_ph_redesign"})
+
+
+def _field_default(value: ast.AST | None) -> tuple[ast.AST | None, str]:
+  """The default expression of a dataclass field, looking through ``field(default=/default_factory=)``.
+
+  Returns ``(expression, "")``, or ``(None, reason)`` when the field has no static default.
+  """
+  if value is None:
+    return None, "required field; no upstream default"
+  if not (isinstance(value, ast.Call) and _call_name(value) == "field"):
+    return value, ""
+  keywords = _kw_map(value)
+  if "default" in keywords:
+    return keywords["default"], ""
+  factory = keywords.get("default_factory")
+  if isinstance(factory, ast.Lambda):
+    return factory.body, ""
+  if isinstance(factory, ast.Name) and factory.id == "list":
+    return ast.List(elts=[], ctx=ast.Load()), ""
+  if factory is not None:
+    return None, "default_factory is not a lambda (" + _one_line(ast.unparse(factory), 120) + ")"
+  return None, "field() has neither default nor default_factory"
+
+
+def _call_name(call: ast.Call) -> str:
+  if isinstance(call.func, ast.Name):
+    return call.func.id
+  if isinstance(call.func, ast.Attribute):
+    return call.func.attr
+  return ""
+
+
+def _protonpotts_dataclass_entries(root: Path, path: Path, unresolved: list[str]) -> list[Entry]:
+  """One Entry per named dataclass in ``path``; each annotated field is one knob."""
+  rel = _rel(root, path)
+  tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+  found: list[Entry] = []
+  for node in ast.walk(tree):
+    if not (isinstance(node, ast.ClassDef) and node.name in _PROTONPOTTS_DATACLASSES):
+      continue
+    slug = _ident(f"protonpotts_{path.stem}_{node.name}")
+    class_name = f"ProtonPotts{_pascal(path.stem)}{_pascal(node.name)}Knobs"
+    entry = Entry(repo="protonpotts", slug=slug, class_name=class_name, origin=f"{rel}:{node.lineno}:{node.name}")
+    for stmt in node.body:
+      if not (isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)):
+        continue
+      dest = _ident(stmt.target.id)
+      declared = _declared_type(stmt.annotation)
+      expression, reason = _field_default(stmt.value)
+      resolved = False
+      value: object = None
+      if expression is not None:
+        resolved, value = _literal(expression)
+        if not resolved:
+          reason = "default is not a literal (" + _one_line(ast.unparse(expression), 160) + ")"
+      if not resolved:
+        unresolved.append(f"{rel}:{stmt.lineno}: {node.name}.{dest}: {reason}")
+      frozen = _freeze(value) if resolved else None
+      entry.knobs.append(
+        Knob(
+          repo="protonpotts",
+          slug=slug,
+          class_name=class_name,
+          dest=dest,
+          default_repr=repr(frozen) if resolved else "None",
+          annotation=_annotation_for(frozen, declared, resolved),
+          type_comment=_type_comment(stmt.annotation),
+          help_text=f"field of {node.name}",
+          source=rel,
+          line=stmt.lineno,
+          resolved=resolved,
+          unresolved_reason="" if resolved else reason,
+        ),
+      )
+    entry.knobs.sort(key=lambda knob: (knob.dest, knob.line))
+    found.append(entry)
+  return found
+
+
+def _extract_protonpotts(root: Path, unresolved: list[str]) -> list[Entry]:
+  engine = root / _PROTONPOTTS_ENGINE
+  if not engine.is_file():
+    unresolved.append(f"{_rel(root, engine)}:0: ProtonPottsMPNN engine file is absent")
+    return []
+  entries = _protonpotts_dataclass_entries(root, engine, unresolved)
+  entries.extend(_function_entries("protonpotts", root, engine, unresolved, names=_PROTONPOTTS_FUNCS))
+  found = {entry.origin.rsplit(":", 1)[-1] for entry in entries}
+  for name in sorted((_PROTONPOTTS_DATACLASSES | _PROTONPOTTS_FUNCS) - found):
+    unresolved.append(f"{_rel(root, engine)}:0: expected {name} was not found")
+  return entries
 
 
 def _cfg_chain(node: ast.AST) -> tuple[str, str] | None:
@@ -932,8 +1054,11 @@ def _extract_checkpoint_params(root: Path, unresolved: list[str]) -> Entry | Non
   return entry
 
 
-def extract(potts_root: Path, laser_root: Path) -> Extract:
-  """Walk both pinned trees and return sorted entry points."""
+def extract(potts_root: Path, laser_root: Path, protonpotts_root: Path | None = None) -> Extract:
+  """Walk the pinned trees and return sorted entry points.
+
+  ``protonpotts_root`` is optional: without it the output is exactly what the two-root extractor produced.
+  """
   unresolved: list[str] = []
   entries: list[Entry] = []
   for repo, root in (("potts", potts_root), ("laser", laser_root)):
@@ -956,6 +1081,11 @@ def extract(potts_root: Path, laser_root: Path) -> Extract:
   if potts_root.is_dir():
     for path in _py_files(potts_root):
       entries.extend(_function_entries("potts", potts_root, path, unresolved))
+  if protonpotts_root is not None:
+    if protonpotts_root.is_dir():
+      entries.extend(_extract_protonpotts(protonpotts_root, unresolved))
+    else:
+      unresolved.append(f"{protonpotts_root}:0: upstream root is absent")
   deduped: dict[str, Entry] = {}
   for entry in entries:
     if not entry.knobs:
@@ -1011,10 +1141,17 @@ def _knob_line(knob: Knob) -> str:
   return f"  {knob.ref}: {knob.annotation} = {default}  # {_one_line(comment, 500)}"
 
 
-def render_surfaces(extracted: Extract, potts_commit: str, laser_commit: str, sha256: str) -> str:
+def render_surfaces(
+  extracted: Extract,
+  potts_commit: str,
+  laser_commit: str,
+  sha256: str,
+  protonpotts_commit: str | None = None,
+) -> str:
   """Render ``reference_surfaces.py`` including the manual block."""
+  names = "PottsMPNN and LASErMPNN" if protonpotts_commit is None else "PottsMPNN, LASErMPNN and ProtonPottsMPNN"
   lines: list[str] = [
-    '"""Generated reference surfaces for upstream PottsMPNN and LASErMPNN knobs.',
+    f'"""Generated reference surfaces for upstream {names} knobs.',
     "",
     "Produced by scripts/redsox/extract_upstream_knobs.py. Do not edit the",
     "generated dataclasses by hand. The manual block is the exception.",
@@ -1026,6 +1163,7 @@ def render_surfaces(extracted: Extract, potts_commit: str, laser_commit: str, sh
     "",
     f'POTTSMPNN_COMMIT = "{potts_commit}"',
     f'LASERMPNN_COMMIT = "{laser_commit}"',
+    *([] if protonpotts_commit is None else [f'PROTONPOTTSMPNN_COMMIT = "{protonpotts_commit}"']),
     f'EXTRACTOR_SHA256 = "{sha256}"',
     "",
   ]
@@ -1373,6 +1511,17 @@ def main(argv: Sequence[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--potts-root", type=Path, required=True)
   parser.add_argument("--laser-root", type=Path, required=True)
+  parser.add_argument(
+    "--protonpotts-root",
+    type=Path,
+    default=None,
+    help="Optional ProtonPottsMPNN checkout; adds its PHDesignCriteria and run_ph_redesign surfaces.",
+  )
+  parser.add_argument(
+    "--protonpotts-commit",
+    default=None,
+    help="Commit to record for --protonpotts-root (it ships no VENDOR_PIN.toml); default is its git HEAD.",
+  )
   parser.add_argument("--out", type=Path, required=True)
   parser.add_argument(
     "--alias-out",
@@ -1389,21 +1538,30 @@ def main(argv: Sequence[str] | None = None) -> int:
   warnings.filterwarnings("ignore", category=SyntaxWarning)
   potts_root = args.potts_root.expanduser().resolve()
   laser_root = args.laser_root.expanduser().resolve()
-  extracted = extract(potts_root, laser_root)
+  protonpotts_root = args.protonpotts_root.expanduser().resolve() if args.protonpotts_root else None
+  extracted = extract(potts_root, laser_root, protonpotts_root)
   sha = _extractor_sha256()
   text = render_surfaces(
     extracted,
     _read_commit(potts_root),
     _read_commit(laser_root),
     sha,
+    None if protonpotts_root is None else _protonpotts_commit(protonpotts_root, args.protonpotts_commit),
   )
   if args.check:
     return _check(args.out, text)
-  args.out.parent.mkdir(parents=True, exist_ok=True)
-  args.out.write_text(text, encoding="utf-8")
   alias_path = args.alias_out
   if alias_path is None:
     alias_path = args.out.parent / "alias_map.toml"
+    if alias_path.exists():
+      # The skeleton below is TODO rows. Writing it over the curated map once discarded every hand-set mapping.
+      print(
+        f"REFUSING: {alias_path} exists and is curated; pass --alias-out <scratch path> to write a skeleton",
+        file=sys.stderr,
+      )
+      return 2
+  args.out.parent.mkdir(parents=True, exist_ok=True)
+  args.out.write_text(text, encoding="utf-8")
   alias_path.write_text(render_alias(alias_rows(extracted)), encoding="utf-8")
   print(f"wrote {args.out}")
   print(f"wrote {alias_path}")

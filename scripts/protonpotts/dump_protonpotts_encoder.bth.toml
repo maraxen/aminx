@@ -1,0 +1,73 @@
+[metadata]
+title = "ProtonPottsMPNN v6 encoder + head dump, f32 and f64 (P4e)"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4e of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§41). The aminx encoder and Potts head, loaded
+from the converted v6 checkpoint, are to be compared with upstream layer by layer, in float64 (to separate
+an aminx defect from float32 noise) and in float32. The P4 oracle cannot serve: it holds only the post-merge
+`etab_out`, in f32.
+
+This dumps, for four cells (1BVC, the two-chain 6m0j, 1OLR with dropped residues, 1EL1 with a numbering gap)
+and for each of float32 and float64: the layer-0 input and every encoder layer's output, the final h_V and
+h_E, E_idx, and the head table before the reciprocal merge (what aminx's PottsHead computes) and after it
+(upstream's etab_out).
+
+Claims, falsifiable by this run:
+
+1. FEATURES ARE THE SEALED ONES. Each cell's feature content hash equals the hash sealed in the P4b / P4c /
+   P4d manifest, so the aminx side may feed the sealed feature dumps to its own model.
+2. COMPLETE. Every cell and precision carries h_V, h_E, E_idx and both head tables, with h_E shaped
+   (L, K, 128).
+3. THE f64 RUN IS REALLY DOUBLE. Every floating array in an f64 dump is float64, AND the two precisions
+   differ (max |h_E_f64 - h_E_f32| > 0). A silent float32 run labelled f64 would make every later "exact"
+   claim vacuous. Upstream builds the layer-0 node features as float32 zeros even in a double model; the
+   dumper verifies they are all zeros and casts them, and the only other change to upstream's computation
+   in the f64 run is casting an exactly-0/1 one-hot to the weight dtype (positional_encoding.py:89).
+4. REPRODUCIBLE. A second run in a fresh process gives identical content hashes for every cell and
+   precision, with torch threads pinned to 1.
+
+Recorded, not required: whether E_idx is the same in f32 and f64 for each cell (a difference would mean a
+near-tie, spec §32), and the per-array f32-vs-f64 floor, which is the measured noise the aminx f32 band is
+set from (decision 11e). The decoder is not run: it is not needed and upstream's autoregressive sampler is
+not dtype-polymorphic.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4"
+decision = "Seal the dumps and grade the aminx encoder and head against them (protonpotts_encoder wave)."
+reasoning = "The inputs are the sealed features, the dumps are complete and genuinely double where claimed, and the result is reproducible."
+is_residual = false
+adversarial_check = "NOT (features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4)"
+
+[outcomes.fail]
+condition = "NOT (features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4)"
+decision = "Do not seal. Read which flag is false; a features mismatch means these are not the sealed inputs, and a false f64_is_float64 or precisions_differ means the f64 run cannot be trusted as f64."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4"
+
+[result_schema]
+features_match_sealed = "bool"
+complete = "bool"
+f64_is_float64 = "bool"
+precisions_differ = "bool"
+reproducible = "bool"
+e_idx_precision_stable = "bool"
+n_cells = "int"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, extended_vocab v6"
+checkpoint = "potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt"
+cells = "1BVC, 6m0j, 1OLR, 1EL1"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/dump_protonpotts_encoder.py --checkpoint <ckpt> --out <dir> --cell NAME=PATH ... --sealed p4b=... --sealed p4c=... --sealed p4d=... in the aminx-oracles-protonpotts env from a clean checkout of the commit that adds this file. Written and committed before the first graded run. A smoke run preceded it (numbers not cited) and found upstream is not dtype-polymorphic, which the dumper now handles as described in claim 3."

@@ -1,0 +1,67 @@
+[metadata]
+title = "protonpotts_ddg wave: ProtonPottsDriver score:ddg end to end from a PDB file vs upstream energy differences (debt #2618 item 1)"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+`aminx.host.runner.score` with `model_family="protonpottsmpnn"`, `output_kind="ddg"`, run on the structure FILE of each of four
+real cells (1BVC, 6m0j, 1OLR, 1EL1) with the converted v6 checkpoint and the nine sealed P4f variant sequences per cell passed in
+as token-name lists (variants_json), reproduces upstream's energy differences E(variant) - E(reference):
+
+  - each float32 ddg within 10x the MEASURED upstream f32-vs-f64 spread of that cell's ddg values, never below 1e-6 relative to
+    max(1, max|ddg|) (the rule of the protonpotts_driver wave, applied to the difference);
+  - the driver's mutant_tokens rows equal the sealed variant sequences mapped to aminx order, and the mutant count is 9.
+
+protonpotts_driver graded score:energy; ddg is that energy minus the reference row's, computed in the driver, and until now had unit
+tests only (debt #2618 item 1). This grades the subtraction, the row bookkeeping (reference excluded from the output, variants in
+order) and the result arrays against the sealed upstream energies.
+
+The comparison is an INSTRUMENT only if deliberate errors in that path are rejected by it (spec §6). Five errors, all of which must
+be rejected: the sign of the ddg flipped; token names spelled in upstream's index order (a vocabulary mix-up); mutant rows
+reversed; the variants' ENERGIES compared as if they were ddg (reference not subtracted); a correct output nudged to 4x the band.
+
+PREDICTION, stated before the run so it can be wrong: all four cells pass and all five errors are rejected. The subtraction is one
+line; the risk is the row bookkeeping on cells where residues are dropped (1OLR, 6m0j) and any off-by-one between the reference
+row and the variants.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_ddg_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 5 AND n_failed = n_listed"
+decision = "protonpotts_driver is graded for score:ddg: the driver's energy differences reproduce upstream's and each error is rejected."
+reasoning = "All four cells are within the measured f32 band, the mutant tokens equal the sealed variants, the weights came from the dumped checkpoint, and all five controls fail."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_ddg_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 5 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_ddg_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 5 AND n_failed = n_listed)"
+decision = "Do not treat score:ddg as graded. Read per_cell: a tokens miss names the variant rows or residue handling; a ddg miss with tokens matching names the subtraction or the reference row. An undetected error means the comparison cannot discriminate it."
+reasoning = "Either a cell is outside its band, the mutant tokens differ from the sealed variants, the checkpoint does not match the dump, or a control was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_ddg_ok = 4 AND n_tokens_ok = 4 AND checkpoint_matches AND n_listed = 5 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+n_ddg_ok = "int"
+n_tokens_ok = "int"
+checkpoint_matches = "bool"
+worst_over_band = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_cell = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle = "P4f energy dump (run f5aa4ff2): upstream calc_potts_eners over the sealed merged table; ddg = E(row i) - E(row 0)"
+structures = "1BVC, 6m0j, 1OLR, 1EL1 from ~/repos/PottsMPNN/energy_benchmark_datasets"
+tolerances = "f32: 10x measured upstream f32-vs-f64 ddg spread per cell, min 1e-6 relative to max(1, max|ddg|)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_ddg_parity.py --state-npz <v6_state.npz> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts --cell NAME=PDB ..., from a clean checkout of the commit that adds the script. Sidecar committed before the script. Not a redsox ledger row: it lives under scripts/protonpotts/, which is outside the scoped paths, so it stales no row; folding it into the protonpotts_parity vehicle would be a re-wave and is left as a decision."

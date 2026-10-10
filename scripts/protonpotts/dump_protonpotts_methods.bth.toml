@@ -1,0 +1,94 @@
+[metadata]
+title = "ProtonPottsMPNN v6 pH-engine dump for autoregressive, converged_mcmc(+combined), two_phase, gibbs, backend=mpnn and scan_mpnn placement: real engine, injected draws, f32 and f64 (P4j)"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4j of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§56; debts #2616, #2617). The methods still refused by the aminx pH
+engine are `autoregressive` (selective_source potts and decoder), `converged_mcmc`, `converged_mcmc_combined`, `two_phase`, `gibbs`, the
+decoder as the placement/MCMC field (`backend='mpnn'`) and `placement_by='scan_mpnn'` with `placement_seq_masked`. No upstream oracle exists
+for any of them (the P4g dump covers block_descent and greedy only and feeds SEALED Potts tables instead of running the model; these
+methods need the model, because their field is a decoder pass).
+
+This dump runs the REAL `PottsMPNNPHEngine.run_ph_redesign` (serial, real checkpoint, real featurisation, real model forward) on two
+cells (6m0j chain E, the binder-only path; 1BVC chain A, single chain) in float32 and float64 (the P4h widening context and
+`engine.model.double()`), with ELEVEN criteria in one call per cell and precision:
+ ar_potts, ar_decoder (autoregressive, backend mpnn, selective_source potts / decoder), mcmc_potts, mcmc_potts_T0 (temperature 0, argmin
+ picks), mcmc_potts_nonsel (selective False), mcmc_mpnn (backend mpnn), combined_potts, two_phase_potts, two_phase_mpnn, place_mpnn
+ (converged_mcmc with placement_by scan_mpnn and placement_seq_masked), and gibbs (two designs).
+Production values from `inference/design_ph.py` otherwise (dep_map HIS-P -> HIS-S, the forbidden list, repetitive window), one HIS-P centre,
+neighbour_k 8, max_mutations 8, temperature 0.1, combined_lambda 0.3, cv_patience 1, cv_max 2 (1 for the decoder-backed MCMC).
+
+THE RANDOMNESS SEAM. `torch.multinomial` is replaced by inverse-CDF on a seeded numpy stream (choice = first index with cumsum(p) >= u *
+sum(p), the cumsum taken in float64 over the probabilities as the ph dump did); `torch.randint(n, (1,))` and `torch.randperm(n)` by the same
+stream. Each draw is recorded in order with the probabilities it saw and the distance of the uniform to the nearest CDF boundary. The
+shims refuse any call signature other than the ones the engine makes, and delegate to the real functions outside an optimiser call.
+The visiting order of `autoregressive` comes from Python's `random.Random`, which is deterministic and is recorded.
+
+RECORDED. Per optimiser call: input and output sequence, pins, designable set, order (autoregressive), every `_pick` (score row, temperature,
+result), every multinomial / randint / randperm event, the pooled z-scales (autoregressive, selective_source potts), and the ranked
+placement list. Per design: final Potts energy and selective energy. Per cell: native sequence, masks, E_idx, residue ids.
+
+Claims, falsifiable by this run:
+ 1. THE ENGINE RUNS THE SEALED INPUTS: in every unit the engine's native sequence equals the sealed P4b `S` and its `E_idx` equals the P4e
+    encoder dump's, for both precisions.
+ 2. COMPLETE: every unit (2 cells x 2 precisions) has all eleven labels, each with at least one optimiser call and one scored design, and
+    the recorded arrays have the expected shapes.
+ 3. THE f64 RUN IS REALLY DOUBLE: every recorded floating array of a float64 unit (pick scores, multinomial probabilities, energies) is
+    float64 and every one of a float32 unit is float32 (the uniforms and margins, drawn in numpy, are exempt); and the precisions differ.
+ 4. THE SHIM IS THE DRAW: recomputing every multinomial event from its recorded probabilities and uniform gives its recorded choice.
+ 5. THE DRAWS COVER THE METHODS: autoregressive calls have as many picks and multinomial events as visited positions; a temperature-0 call
+    has no multinomial events but at least one randint; every converged call at temperature > 0 has equally many randint and multinomial
+    events (at least one); two_phase has at least one multinomial event per designable position; gibbs has at least one randperm and one
+    multinomial event; and every `_pick` result equals the multinomial choice recorded with it (temperature > 0) or the argmin of its score
+    (temperature <= 0).
+ 6. THE ENGINE WAS BUILT AND FED IN THE RUN'S DTYPE (added 261009, see the provenance note): the torch default dtype recorded at engine construction is
+    float64 in every float64 unit and float32 in every float32 unit, and in every float64 unit every floating input feature the engine prepared
+    was cast to float64 before the forward (the keys are recorded).
+ 7. REPRODUCIBLE: a second run of the float32 unit of 1BVC in a fresh process gives identical content hashes. (One unit, not all four:
+    a second full run doubles the cost, and the claim is about the process, not the cell. Disclosed limit.)
+
+Recorded, not required: the f32-vs-f64 floor per array, the minimum draw margin per label, how often f32 and f64 end on the same
+sequence, and each label's call count and draw counts.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4"
+decision = "Seal the dumps and grade the aminx methods against them (protonpotts_ph_methods wave)."
+reasoning = "The engine ran on the sealed inputs, every label ran in every unit, the float64 arrays are double, the draw replacement is the draw, every method's draw count is what its algorithm consumes, and the process is reproducible."
+is_residual = false
+adversarial_check = "NOT (engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4)"
+
+[outcomes.fail]
+condition = "NOT (engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4)"
+decision = "Do not seal. Read which flag is false: engine_matches_sealed false means these are not the sealed inputs; complete false means a label did not run; f64_is_float64 false means the double run is not double (assumption A6 of §56); shim_is_the_draw or draws_cover_methods false means the replacement or the counting is wrong."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "engine_matches_sealed AND complete AND f64_is_float64 AND engine_built_in_dtype AND precisions_differ AND shim_is_the_draw AND draws_cover_methods AND reproducible AND n_cells = 2 AND n_units = 4"
+
+[result_schema]
+engine_matches_sealed = "bool"
+complete = "bool"
+f64_is_float64 = "bool"
+engine_built_in_dtype = "bool"
+precisions_differ = "bool"
+shim_is_the_draw = "bool"
+draws_cover_methods = "bool"
+reproducible = "bool"
+n_cells = "int"
+n_units = "int"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, extended_vocab v6"
+checkpoint = "potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt"
+cells = "6m0j (E), 1BVC (A)"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before dump_protonpotts_methods.py exists and before any number from it exists. An EXPLORATORY SPIKE preceded it (ungraded, no numbers cited): the real engine ran autoregressive, converged_mcmc (potts and mpnn backends), two_phase and gibbs on 6m0j chain E in float32, and autoregressive (both selective sources) and converged_mcmc/mpnn in float64, each in 4-265 s; autoregressive with backend potts raises ValueError. The spike did not inspect tensor dtypes, so claim 3 is open until this run. REVISION 261009 (after the first graded run, 10861085, which passed by this file's original criteria and is kept on record, SUPERSEDED). The wave that grades aminx against this dump (protonpotts_ph_methods_parity, an exploratory smoke, no numbers cited from it) found that every float64 call sat about 1e-6 from aminx, where its pre-registered band is 1e-9, while the float32 calls were in band and the final sequences and draw counts agreed exactly. Cause, read in the P4e encoder dump (dump_protonpotts_encoder.py:96-106): upstream builds its RBF centres with `torch.linspace` at the DEFAULT dtype, so a float64 run needs the default dtype set to float64 BEFORE the model is built, or ~3e-6 of float32 rounding enters the edge features. This script built the engine first and switched the default afterwards. Claim 3 (recorded arrays are float64) could not see it: the arrays were float64, the arithmetic that produced them was not all. Fix: the default dtype is set before the engine is constructed, and claim 6 records it. The outcomes gain `engine_built_in_dtype`; nothing else in [outcomes] changed. All four units are re-run (the script hash is part of every unit's stamp). The defect is in the oracle, not in aminx or in a band, and the band is not touched. SECOND REVISION 261009 (before the second graded run): building the engine in float64 changed no value (the aminx wave's float64 differences were identical to the last digit before and after). The cause is the INPUT features: the engine prepares them itself (prepare_potts_input, float32) and the P4e dump had cast every floating feature to double (dump_protonpotts_encoder.py:118-121), so distances and RBF features in the engine's float64 run were computed from float32 inputs, ~1e-6 of noise that the dtype checks of claim 3 could not see. Fix: in float64 units prepare_potts_input is wrapped to cast every floating input feature to float64, and the cast keys are recorded; claim 6 and the flag engine_built_in_dtype cover it. Superseded dumps: 10861085 (first), 7080808f (second, defect: float32 inputs). Nothing else in [outcomes] changed."

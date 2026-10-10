@@ -1,0 +1,93 @@
+[metadata]
+title = "X7b gate: the shipping JS pH design loop (placement, z-scales, block sweeps, scoring) under Node/ORT-Web vs aminx's design_structure"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+ADR decision 11: pH design in the browser is a per-block graph driven by a JS loop. `browser/protonpotts-scorer/ph_design.mjs`
+(`PhDesigner.design`), run under Node with onnxruntime-web (wasm, 1 thread) on the X6a scoring artifacts and the X7a per-block artifacts
+(both verified by sha256 against their gates' manifests, not re-exported), reproduces `aminx.families.protonpotts_mpnn.ph_design.design_structure`
+-- the core of the real `sample` purpose -- on the same structure, from PDB text: placement (the field from chunked `field_at` calls, the
+JS planner), the block table, z-scales pooled once, sweeps of `visit` calls until a sweep changes nothing, one uniform consumed per visit
+when sampling, and the final score (whole-sequence Potts energy and the selective gaps).
+
+Cells: 1EL1, 1BVC, 1OLR (bucket 256), 6m0j (bucket 1024; the binder is chain E), unlabelled, binder chain the last chain of the file.
+Cases per cell: (a) centre types (HIS-P, ASP-P, GLU-P), temperature 0, two samples; (b) the same at temperature 0.05 with injected
+uniforms (one array per sample, seeded); (c) centre type (HIS-P) only, temperature 0.05, injected uniforms. Production defaults otherwise (block
+size 3, neighbourhood infill, neighbour_k 16, max_mutations 20, combined_lambda 0.3, block_max_rounds 10, repetitive window ARG LYS HIS ASP GLU
+radius 2 weight 1, forbidden HIS-A ASP-A GLU-A UNK).
+
+A case passes when, for every design in order (designs are sorted by final energy, ties by plan-then-sample order): the sequence tokens are
+exactly equal; the designable positions, pins (position, protonated token, residue number), label and number of draws are equal; the
+final Potts energy and the selective energy agree within max|d| / max(1, |ref|) <= 1e-4 (the scoring bar). The reference is computed from
+the UNPADDED structure through the driver's own `protonpotts_table`; the browser pads to the bucket, so agreement also covers padding.
+
+Controls (each must make the SAME comparator fail): TOKENS -- the JS designs at temperature 0.05 against the reference run with the uniforms
+rolled by one position; ENERGY -- the JS final energies against the reference's energy of the same sequence under a Potts head perturbed by
+1e-2 noise on every float leaf.
+
+PREDICTION, stated before the run so it can be wrong: all cases pass. The risks are (a) a near-tied block objective that JAX f32 and ORT f32
+resolve differently, which would flip a digit and show as a sequence mismatch on a named case rather than as a loosened bar; (b) the 1024
+bucket's per-visit 177 MB table copy making the 6m0j cases slow (not wrong); (c) the planner's scan field being computed from padded
+rows differently from the unpadded reference, which would show as different pins.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: agreement is graded per case.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR node_ok = false"
+decision = "The reference arm, the artifact check or the Node run did not complete. Nothing was compared; cite nothing."
+reasoning = "Without both arms and verified artifacts, no per-case status is meaningful."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "NOT (control_tokens_detected = true AND control_energy_detected = true)"
+decision = "A planted difference was not flagged (rolled uniforms, perturbed head). Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these differences would also pass a broken loop."
+is_residual = true
+
+[outcomes.pass]
+condition = "n_cases > 0 AND n_pass = n_cases"
+decision = "The shipping JS design loop reproduces design_structure on every case: pins, designable sets, sequences, draw counts and scores. The pH design path is verified under Node/ORT-Web; headless Chromium at 1 and 4 threads is the next gate."
+reasoning = "Both controls fired, so agreement on every case is real agreement with aminx's own design core."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (n_cases > 0 AND n_pass = n_cases)"
+decision = "At least one case disagrees. The per-case record names what (pins, designable, tokens, draws, energy). Do not ship the loop."
+reasoning = "The instrument is verified, so a disagreement is a real defect in the JS path or the artifacts."
+is_residual = true
+
+[result_schema]
+jax_arm_ok = "bool"
+artifacts_verified = "bool"
+node_ok = "bool"
+num_threads = "int"
+cases = "list"
+n_cases = "int"
+n_pass = "int"
+control_tokens_detected = "bool"
+control_energy_detected = "bool"
+scoring_manifest_sha256 = "str"
+ph_manifest_sha256 = "str"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN v6 epoch-0125, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b, converted state ~/scratch/v6_state.npz"
+artifacts = "X6a run 40b4318e (scoring) and X7a (per-block pH graphs), manifests passed in and verified"
+structures = "1EL1, 1BVC, 1OLR, 6m0j as in protonpotts_export_gate.py"
+tolerances = "tokens, designable, pins, draws exact; energies max|d|/max(1,|ref|) <= 1e-4"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before protonpotts_ph_loop_gate.py exists and before any JS design-loop number exists. The module under test (ph_design.mjs) and its Node runner are committed with the script."

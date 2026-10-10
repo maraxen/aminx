@@ -23,7 +23,7 @@ from aminx.io.proxide_fetch import (
   fetch_md_cath,
   fetch_pdb,
 )
-from aminx.run.options import LaserOptions, PottsMPNNOptions
+from aminx.run.options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
 from aminx.run.run_spec_portable_json import (
   run_spec_portable_from_dict,
   run_spec_portable_to_dict,
@@ -474,6 +474,7 @@ class _RunBase:
   input_type: str
   input_cache_dir: Path | None
   potts_options_json: str | None = None
+  protonpotts_options_json: str | None = None
   laser_options_json: str | None = None
 
 
@@ -486,7 +487,7 @@ def _run_base(
   model_family: Annotated[
     str | None,
     _OPT(
-      help="Model family: proteinmpnn, ligandmpnn, pottsmpnn or lasermpnn. The last two "
+      help="Model family: proteinmpnn, ligandmpnn, pottsmpnn, protonpottsmpnn or lasermpnn. The last three "
       "dispatch through a FamilyDriver rather than the stock MPNN path. Leave unset to "
       "auto-derive from checkpoint_id (RunSpecification.__post_init__); an explicit value "
       "here is always respected even if it disagrees with checkpoint_id.",
@@ -581,6 +582,10 @@ def _run_base(
     str | None,
     _OPT("--potts-options-json", help="JSON object of PottsMPNNOptions fields"),
   ] = None,
+  protonpotts_options_json: Annotated[
+    str | None,
+    _OPT("--protonpotts-options-json", help="JSON object of ProtonPottsOptions fields"),
+  ] = None,
   laser_options_json: Annotated[
     str | None,
     _OPT("--laser-options-json", help="JSON object of LaserOptions fields"),
@@ -635,6 +640,7 @@ def _run_base(
     input_type=input_type,
     input_cache_dir=input_cache_dir,
     potts_options_json=potts_options_json,
+    protonpotts_options_json=protonpotts_options_json,
     laser_options_json=laser_options_json,
   )
 
@@ -687,6 +693,10 @@ def _base_spec_kwargs(b: _RunBase) -> dict[str, Any]:
     "potts_mpnn": options_from_json_value(
       PottsMPNNOptions,
       _parse_options_json(b.potts_options_json),
+    ),
+    "protonpotts": options_from_json_value(
+      ProtonPottsOptions,
+      _parse_options_json(b.protonpotts_options_json),
     ),
     "laser": options_from_json_value(LaserOptions, _parse_options_json(b.laser_options_json)),
   }
@@ -1107,7 +1117,7 @@ def _spec_base(
   model_family: Annotated[
     str | None,
     _OPT(
-      help="Model family: proteinmpnn, ligandmpnn, pottsmpnn or lasermpnn. The last two "
+      help="Model family: proteinmpnn, ligandmpnn, pottsmpnn, protonpottsmpnn or lasermpnn. The last three "
       "dispatch through a FamilyDriver rather than the stock MPNN path. Leave unset to "
       "auto-derive from checkpoint_id (RunSpecification.__post_init__); an explicit value "
       "here is always respected even if it disagrees with checkpoint_id.",
@@ -1187,6 +1197,10 @@ def _spec_base(
     str | None,
     _OPT("--potts-options-json", help="JSON object of PottsMPNNOptions fields"),
   ] = None,
+  protonpotts_options_json: Annotated[
+    str | None,
+    _OPT("--protonpotts-options-json", help="JSON object of ProtonPottsOptions fields"),
+  ] = None,
   laser_options_json: Annotated[
     str | None,
     _OPT("--laser-options-json", help="JSON object of LaserOptions fields"),
@@ -1241,6 +1255,7 @@ def _spec_base(
     input_type=input_type,
     input_cache_dir=input_cache_dir,
     potts_options_json=potts_options_json,
+    protonpotts_options_json=protonpotts_options_json,
     laser_options_json=laser_options_json,
   )
 

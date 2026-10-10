@@ -81,68 +81,60 @@
 # previously looked like a missing record.
 
 [sidecar.laser_proofread_parity]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 4.41 h. clean pass at max_abs_mean 4.218847493575595e-15 / max_abs_std 9.499345754448996e-15; 4 of 4 controls failed (reduction_swap, ddof_0, scalar_off, vector_on).
-# BIT-IDENTICAL to the superseded 182ab6d4 (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "a890a56a-a9da-43cb-aa62-ba6bb556f4b0"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "576ac721-642b-4c3d-a75d-cba07a35e8fc"
 
 [sidecar.laser_proofread_unconditional_parity]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 0.17 h. clean pass at max_abs_mean 2.976243740349105e-08; 3 of 3 controls failed (incl. unc_no_dropout, the pre-#2424 path).
-# BIT-IDENTICAL to the superseded 30ca082e (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "4a93eb9b-c301-40ca-8794-05dd3a2d6fef"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "0264178b-1d9d-4ec1-ab8f-0eb8e2e6eb84"
 
 [sidecar.laser_decode_e2e]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 3.08 h. clean pass at sequence_agreement 1.0, chi_bin_agreement 1.0, max_circular_delta 5.684341886080802e-14; 5 of 5 controls failed.
-# BIT-IDENTICAL to the superseded 5b2c16ee (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "adb20247-e67d-4a3c-a6d2-4ac71711d456"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "55898494-534e-4f51-970c-0f528b401a7b"
 
 [sidecar.potts_ar_decode]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 0.06 h. clean pass at exact token match 1.0 over 18 units (0 reused); ar_mask_present_chain_m_pos failed.
-# BIT-IDENTICAL to the superseded 7dfb9a68 (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "e968ce0b-284d-40fc-a2fd-c2ec7f87ba07"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "18dda600-79b6-4bf5-9d1f-62d0013806aa"
 
 [sidecar.potts_energy_parity]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 0.03 h. clean pass at max_abs_delta 0.000732421875, analytic_abs_err 0.0 over 21 units (0 reused); permute_etab_out_rows failed.
-# BIT-IDENTICAL to the superseded 06f329d4 (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "1a86160a-584f-4bd9-a42a-961d4865df93"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "1bd6be68-07b6-432c-b3c9-fe7058bb5b2f"
 
 [sidecar.laser_score_parity]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 0.09 h. clean pass at max_abs_delta 2.3499874934884701e-07; permute_decoder_layer failed. The laser_score PORT tier-3 design question (decision doc 261003) is unaffected.
-# BIT-IDENTICAL to the superseded d29f813c (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "94ae3110-7cb8-45a5-a0d7-ed200522c8bc"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "9b4cfcda-d510-4a14-b24c-1365b4a81e1f"
 
 [sidecar.potts_ar_refine_exact]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 1.01 h. clean pass at match 1.0 over 1500 units (0 reused); 3 of 3 controls failed.
-# BIT-IDENTICAL to the superseded 1a98f24f (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "f54e0dbd-36e1-4c12-b369-43257a9ace73"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "0eb5d421-6482-480c-a0fb-6a2d6ef17729"
 
 [sidecar.potts_ddg_megascale]
-# REWRITTEN 261008 at dab58900 (main after PR #165; the post-merge re-wave, backlog #5780).
-# Cool-tier record: completed, outcome pass, tree clean, adversarial check present.
-# 0.24 h, 696 units computed, 0 reused. clean max_abs_delta 0.0001220703125 (band <= 5e-4); skip_transpose_merge_pair 11.645767211914062 (fail threshold 5e-3).
-# BIT-IDENTICAL to the superseded b035f912 (see this file's history). verify_wave.py with all
-# eight full ids: would grade ALL EIGHT, all 14 conditions PASS, would NOT grade (none).
-bth_run_id = "e567cfd0-cb2d-4776-be77-841cd8793e67"
+# REWRITTEN 261009 at ae17b34e (P10 re-wave of the ProtonPottsMPNN branch, PR #211; P8's shared-file edits staled every row).
+# Cool-tier record: completed, outcome pass, tree clean. verify_wave.py with all nine full ids at HEAD 272a9dac:
+# would grade ALL NINE, every condition PASS, would NOT grade (none).
+bth_run_id = "6848dc88-44f5-488a-8e52-db28a910626d"
+
+[sidecar.protonpotts_parity]
+# UPDATED 261010 at 53420421 (PR #211). Combined vehicle: 11 waves, 89 controls (was 10 waves, 69 controls, run 1045798b at 97779d72).
+# Folded in since: ph_methods (6d086bf5 standalone, against the P4j dump 89c1982f; spec 56-56.2).
+# Cool-tier record: completed, outcome pass, tree clean; all 89 controls 'failed'; 11 waves clean, none reused.
+# Superseded (kept for the record): 33360f39 at 9801f815 passed too, but that tree had added fields to run/options.py, which staled eight
+# other ledger rows (spec 56.2); options.py is back to its graded content and this run is the one after the revert.
+bth_run_id = "97ecf392-21a6-4126-8277-41eab9980f9a"
 
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.

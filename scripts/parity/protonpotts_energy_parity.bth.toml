@@ -1,0 +1,74 @@
+[metadata]
+title = "protonpotts_energy wave: aminx's reciprocal merge and Potts energy vs upstream"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+aminx's ProtonPotts pair table (`protonpotts_mpnn.energy.protonpotts_table`: encoder, head, ONE reciprocal
+merge with denom 2 via the unchanged `merge_pair`) and Potts energy (`potts_energy`, unchanged) reproduce
+upstream's merged table (`etab_postmerge`, sealed P4e) and upstream's `calc_potts_eners` (sealed P4f) on four
+cells (1BVC, 6m0j, 1OLR, 1EL1), against ten fixed sequences per cell that cover all 30 tokens:
+
+  - float64: the merged table within 1e-9 absolute, each energy within 1e-9 relative to max(1, max|E|);
+  - float32: the table within 10x the MEASURED upstream f32-vs-f64 spread (never below 1e-7), the energies
+    within 10x their measured spread (never below 1e-6 relative to max(1, max|E|)), decision 11e;
+  - E_idx exactly equal, both precisions.
+
+The shipped Potts path merges twice (denominators 2 then 4) and reads an etab-alphabet table; spec §35.4 says
+ProtonPotts differs and must not be implemented by editing `merge_pair`. This wave grades the consumer.
+
+The comparison is an INSTRUMENT only if deliberate errors are rejected by it (spec §6): the shipped double
+merge, no merge, a merge without the transpose, sequences left in upstream token order, an energy off by a
+factor of two, and two nudges of a correct output (2x the f64 band; 4x the f32 band). All seven must be
+rejected.
+
+PREDICTION, stated before the run so it can be wrong: all four cells pass in both precisions and all seven
+errors are rejected. The merge rule differs in one respect that the data may expose: aminx's `merge_pair` keeps
+the LAST writer per slot where upstream takes the FIRST matching reverse slot; they coincide unless a row of
+E_idx repeats an index, which a k-NN graph without padding does not produce. The cells include dropped
+residues (1OLR) and a numbering gap (1EL1), where repeats could arise.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 8 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed"
+decision = "protonpotts_energy is graded: the merge and energy reproduce upstream in both precisions and each error is rejected."
+reasoning = "All four cells are within the f64 tolerance and the measured f32 band, E_idx is exact, the weights came from the dumped checkpoint, and all seven controls fail."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 8 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 8 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed)"
+decision = "Do not treat the merge or energy as graded. Read per_cell: a table miss with the encoder wave green names the merge rule; an energy miss with the table green names the token mapping or the energy sum. An undetected error means the comparison cannot discriminate it."
+reasoning = "Either a cell is outside its band, E_idx differs, the checkpoint does not match the dump, or a control was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_f64_ok = 4 AND n_f32_ok = 4 AND n_e_idx_exact = 8 AND checkpoint_matches AND n_listed = 7 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+n_f64_ok = "int"
+n_f32_ok = "int"
+n_e_idx_exact = "int"
+checkpoint_matches = "bool"
+worst_f64_table_abs = "float"
+worst_f64_energy_rel = "float"
+worst_f32_over_band = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_cell = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+dumps = "P4e encoder dump (run 60351d47) and P4f energy dump (scripts/protonpotts/dump_protonpotts_energy.py); content hashes in spec §42"
+features = "sealed P4b / P4c / P4d feature dumps"
+tolerances = "table f64 1e-9 abs, f32 10x measured spread (min 1e-7); energy f64 1e-9 rel, f32 10x measured spread (min 1e-6 rel); E_idx exact"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_energy_parity.py --state-npz <v6_state.npz> --encoder-dir <P4e out dir> --energy-dir <P4f out dir> --features-dir ~/projects/aminx-oracles-protonpotts, in a venv where aminx is importable, from a clean checkout of the commit that adds this file. Written and committed before the first graded run. Not a redsox ledger row (ProtonPotts has none until P10)."

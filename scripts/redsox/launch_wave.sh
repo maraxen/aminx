@@ -9,7 +9,7 @@
 # scripts/redsox/stale_rows.py to see which rows a wave must cover.
 # tests/knob_gate/ is NOT scoped, so ledger ids may be written afterwards.
 #
-# Usage:  launch_wave.sh [--stale-only] 1 | 2 | 3 | positive
+# Usage:  launch_wave.sh [--stale-only] 1 | 2 | 3 | 4 | positive
 #
 # --stale-only (or AMINX_WAVE_ONLY_STALE=1) launches only the slugs of the
 # chosen group that stale_rows.py reports stale at HEAD, so a Potts-only change
@@ -65,7 +65,7 @@ fi
 ONLY_STALE=${AMINX_WAVE_ONLY_STALE:-0}
 if [ "${1:-}" = "--stale-only" ]; then ONLY_STALE=1; shift; fi
 GROUP=${1:-}
-[ -n "$GROUP" ] || { echo "usage: $0 [--stale-only] [1|2|3|positive]" >&2; exit 2; }
+[ -n "$GROUP" ] || { echo "usage: $0 [--stale-only] [1|2|3|4|positive]" >&2; exit 2; }
 
 STALE=""
 if [ "$ONLY_STALE" = "1" ]; then
@@ -84,6 +84,7 @@ declare -A MUT=(
   [potts_energy_parity]="permute_etab_out_rows"
   [laser_score_parity]="permute_decoder_layer"
   [potts_ddg_megascale]="skip_transpose_merge_pair"
+  [protonpotts_parity]="features.backbone_threshold_0_5,features.atom_threshold_just_below_half,features.backbone_without_o,features.no_arginine_fix,features.no_keep_last_by_number,features.atom_threshold_0_8,features.r_idx_last_plus_one,features.s_first_token_changed,features.chain_labels_inverted,features.x_m_first_atom_flipped,features.x_nudged_by_1e-4,encoder.pair_order_not_permuted,encoder.pair_order_inverse_permutation,encoder.token_order_not_permuted,encoder.etab_not_permuted,encoder.etab_first_axis_only,encoder.output_nudged_1e-6_f64,encoder.output_nudged_4x_band_f32,energy.double_merge,energy.no_merge,energy.merge_without_transpose,energy.upstream_token_order,energy.energy_halved,energy.energy_nudged_just_outside_f64,energy.energy_nudged_4x_band_f32,driver.token_names_in_upstream_order,driver.candidate_rows_reversed,driver.energy_nudged_4x_band,ph_block.uniforms_shifted_by_one,ph_block.combined_lambda_0p4,ph_block.block_size_2,ph_block.forbidden_tokens_not_applied,ph_block.repetitive_window_off,ph_block.wrong_contrast_token,ph_block.zscale_nudged_outside_f64,ph_block.energy_nudged_outside_f64,ph_greedy.uniforms_shifted_by_one,ph_greedy.block_size_2,ph_greedy.forbidden_tokens_not_applied,ph_greedy.repetitive_window_off,ph_greedy.cdf_in_aminx_token_order,ph_greedy.energy_nudged_outside_f64,ph_driver.combined_lambda_0p6,ph_driver.block_size_2,ph_driver.forbidden_tokens_reduced_to_unk,ph_driver.repetitive_window_off,ph_driver.wrong_contrast_token,decoder.bias_ignored,decoder.scalar_temperature,decoder.x_not_zeroed,decoder.fixed_treated_as_designed,decoder.token_order_upstream,decoder.cms_uses_conditional_mask,decoder.uniforms_shifted_one_step,decoder.cdf_in_aminx_order,decoder.nudged_4x_band,ddg.ddg_sign_flipped,ddg.token_names_in_upstream_order,ddg.mutant_rows_reversed,ddg.energies_without_reference_subtracted,ddg.ddg_nudged_4x_band,sample.shared_order_across_rows,sample.uniforms_rows_swapped,sample.all_residues_designed,sample.cdf_in_aminx_order,sample.uniforms_shifted_one_step,sample.single_row_repeated,sample.temperature_one,sample.nudged_4x_band,ph_methods.cdf_in_aminx_order,ph_methods.uniforms_shifted_one,ph_methods.randints_shifted_one,ph_methods.permutations_reversed,ph_methods.field_untempered,ph_methods.zscales_sample_std,ph_methods.temperature_doubled,ph_methods.combined_lambda_wrong,ph_methods.two_phase_frac_wrong,ph_methods.selective_flipped,ph_methods.backend_swapped,ph_methods.selective_source_swapped,ph_methods.valid_mask_all_true,ph_methods.pin_contrast_wrong,ph_methods.centre_among_designable,ph_methods.scan_unmasked,ph_methods.scan_selective_formula,ph_methods.gibbs_outgoing_only,ph_methods.cv_cap_wrong,ph_methods.nudged_4x_band"
 )
 
 # Fail before burning hours, not after. Compares every string above to the
@@ -122,6 +123,8 @@ PY
 export POTTS_ORACLE_PYTHON=$HOME/projects/aminx-oracles/.venv/bin/python3
 export LASER_ORACLE_PYTHON=$HOME/projects/aminx-oracles/.venv/bin/python3
 export AMINX_POTTS_ROOT=$HOME/repos/PottsMPNN
+export AMINX_PROTONPOTTS_ORACLES=$HOME/projects/aminx-oracles-protonpotts
+export AMINX_PROTONPOTTS_STATE=$HOME/scratch/v6_state.npz
 
 launch () {
   local v=$1 m=${MUT[$1]}
@@ -163,6 +166,10 @@ case "$GROUP" in
     # venv has none -- _oracle_python falls back to sys.executable when
     # POTTS_ORACLE_PYTHON is unset. Through this script it just works.
     SLUGS=(potts_ddg_megascale) ;;
+  4)
+    # Alone for the same reason as group 3: seven waves back to back, CPU and memory heavy (the sealed P4 dumps are
+    # loaded per wave). ProtonPottsMPNN is the third family; its oracle dumps live under AMINX_PROTONPOTTS_ORACLES.
+    SLUGS=(protonpotts_parity) ;;
   positive)
     if [ "$ONLY_STALE" = "1" ] && ! grep -qx laser_proofread_parity <<<"$STALE"; then
       echo "laser_proofread_parity is fresh: its positive control is not needed"
@@ -197,7 +204,7 @@ case "$GROUP" in
     echo "expect the bathos outcome to read 'fail' -- see the comment above"
     exit 0 ;;
   *)
-    echo "usage: $0 [1|2|3|positive]" >&2; exit 2 ;;
+    echo "usage: $0 [1|2|3|4|positive]" >&2; exit 2 ;;
 esac
 
 # check_mutants only inspects the slugs handed to it, so it could not see a slug
@@ -241,7 +248,7 @@ PY
 check_coverage laser_proofread_parity laser_proofread_unconditional_parity \
                laser_decode_e2e \
                potts_ar_refine_exact potts_ar_decode potts_energy_parity \
-               laser_score_parity potts_ddg_megascale
+               laser_score_parity potts_ddg_megascale protonpotts_parity
 
 if [ "$ONLY_STALE" = "1" ]; then
   KEEP=()

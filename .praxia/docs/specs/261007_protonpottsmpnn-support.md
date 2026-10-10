@@ -2558,3 +2558,589 @@ pipeline's whole signature for the parameter the rule would be named after.
 `protonpotts_features` is closed on the host side. The remaining P5 work is the **wave**: a pre-registered `tests/port`-tier sidecar
 (or the existing wave harness) that runs this featurizer against the dumps under bathos with a perturbation control, as §6 requires,
 and the encoder input contract for P6. Nothing here touches a ledger row.
+
+## 40. `protonpotts_features` GRADED `pass` by record; P4d, and the rule the first nine cells could not discriminate (261008)
+
+### 40.1 The wave
+
+Bathos run `479b640b-7c0b-4d75-86bd-79cce1909bbe`: `status completed`, `outcome pass`, `exit_code 0`, `git_dirty False`,
+`git_hash 74e63413` (the commit that pre-registers `scripts/protonpotts/protonpotts_features_parity.*`), in a clean checkout with its
+own synced environment, verified from the cool-tier record. It compares `featurize_pdb` with the sealed dumps on **ten** structures,
+every key exactly with `X` compared everywhere, requires the 1IFC refusal to match, and applies **eleven perturbations** (six that make a
+featurizer rule wrong, five that corrupt an output) that the same comparison must reject. All ten cells exact, refusal matched,
+**11 of 11 perturbations detected.**
+
+This is a `scripts/protonpotts/` vehicle, not a redsox ledger row: ProtonPotts has no ledger rows until P10.
+
+### 40.2 What the perturbation control found, and why it is the point of having one
+
+An exploratory smoke run (numbers not cited) of the wave over the nine cells then available showed **`backbone_without_o` undetected**:
+no cell could tell whether `O` counts as a backbone atom. At the 0.8 threshold every residue in 1CQW whose `O` fails also fails `N`, `CA`
+or `C`. Upstream's source includes `O` (`chain_type_to_atom_names={PROTEINS: ["N","CA","C","O"]}`), so the rule was right but **read, not
+measured** — exactly what §6's perturbation rule is meant to expose. The remedy the sidecar named was to add a cell, not to loosen the
+control. A scan of the 137 available structures at the 0.8 threshold found two with exactly one residue where only `O` fails: 1HGU and 1OLR.
+
+### 40.3 P4d: graded `fail` by its own criterion, and what it nonetheless established
+
+Bathos run `7ec1f6b9-a335-457b-8b7c-96f0e6027089`: `status completed`, **`outcome fail`**, `git_hash 9cd415e6`, clean tree. The pre-registered
+criterion required both cells to featurize (`n_featurized = 2`). **Upstream refused 1HGU** (`KeyError ... Encountered unknown atom token 7
+which is not in the encoding, but the UNKNOWN_ELEMENT_TOKEN (0) is also not in the encoding`), so the record says `fail`, and it is not
+re-graded here. The criterion should have allowed a refused cell as data, as P4c's did; that was my design error.
+
+What the run did establish, stated as values rather than as a pass: **1OLR featurized with 219 residues** (content sha256
+`837a72e1bd9d4dd19b7532e4b7756511e7904517fa4c7346ce5d8c4209098829`), reproducibly across processes, which is the length the sidecar predicted
+if upstream requires `O` (223 - 4); had `O` not counted it would be 220. So `O` is part of the backbone set by data. That single cell is what
+makes the wave's `backbone_without_o` perturbation detectable, and the wave's own record is the graded evidence of it.
+
+### 40.4 A known divergence: 1HGU
+
+Upstream refuses 1HGU and `featurize_pdb` accepts it. The file has no HETATM records and only C, N, O, S elements, so the cause of
+"unknown atom token 7" is **not understood**. It is excluded from the wave (recorded in the sidecar's `[data] not_included`). The
+featurizer is therefore looser than upstream on at least this input, and nothing validates its output there.
+
+### 40.5 State
+
+`protonpotts_features` is closed. Open and unchanged from §39.5: `MSE`, blank chain, non-standard `ATOM` residues, the same name/number
+with different insertion codes, multi-model and CIF input; plus 1HGU above. `protonpotts_protonation` (re-scoped in §37.1 to label
+consumption) is covered by `encode_sequence` and the labelled-cell conformance, but has no wave of its own yet. P6 (encoder reuse and
+weight conversion, 0 unmapped keys) is next and is independent of the host side.
+
+## 41. P6: weight conversion, the P4e dump, and `protonpotts_encoder` GRADED `pass` by record (261008)
+
+### 41.1 The conversion
+
+`aminx.families.protonpotts_mpnn.convert` plus `scripts/protonpotts/convert_protonpotts_checkpoint.py` (unscoped on purpose: `scripts/recapture/` is a
+global scoped prefix, so extending the Potts converter there would have invalidated every ledger row). All **120 tensors** of the v6 checkpoint
+(`epoch-0125.ckpt`, sha256 `a3987225...fe7b`, upstream `09682abf`) are renamed and converted, with a shape check on every one. Three orderings
+differ between foundry and aminx and **none raises a shape error**, so each is a permutation that only a numerical comparison can validate:
+the 25 atom-pair RBF blocks of `edge_embedding.weight` (aminx slot holding pair (i,j) takes foundry block `5i+j`), the token rows of `W_s` and
+`W_out`, and both token axes of `etab_out` (900 = 30 x 30). 19 unit tests cover the permutation arithmetic; they cannot say the permutations are the
+*right* ones, which is what 41.3 is for.
+
+### 41.2 P4e dump: graded `pass`
+
+Bathos run `60351d47-c5fa-46a2-afb3-71aec5264c37`: `status completed`, `outcome pass`, `exit_code 0`, run from a clean checkout of `444abb9d` (the commit that
+pre-registers it). All flags true: features equal the sealed P4b/P4c/P4d hashes, complete, the f64 arrays are float64, the precisions differ, reproducible
+across a fresh process, E_idx stable across precisions, 4 cells (1BVC, 6m0j, 1OLR, 1EL1). Dump: `~/projects/aminx-oracles-protonpotts/features_v6_p4e`.
+
+Upstream is **not dtype-polymorphic**: a positional-encoding one-hot and the layer-0 zero node features are float32 in a double model, and the decoder
+fails on an index_put dtype mismatch. The dumper casts the exactly-0/1 one-hot and verifies the layer-0 features are all zero before casting; it
+stops after the head (the decoder is not needed).
+
+### 41.3 `protonpotts_encoder`: graded `pass`
+
+Bathos run `0c0c8475-ec3a-4e65-9520-c26bb9b9e051`: `status completed`, `outcome pass`, `exit_code 0`, same clean checkout `444abb9d`. All four cells match in
+float64 (**worst 9.2e-14** absolute, tolerance 1e-9) and in float32 (within the band set from the measured upstream f32-vs-f64 spread; **worst 1.38 x
+that floor** against an allowed 10 x), E_idx is exactly equal in both, and the checkpoint hash matches the dump. **All 7 perturbations are rejected**
+(pair order not permuted, pair order by the inverse permutation, token order not permuted, etab not permuted, etab first axis only, and the two output
+nudges). The comparison therefore discriminates each of the three layout errors; none could have been seen by a shape check.
+
+### 41.4 What the smoke runs found (numbers there are not cited)
+
+The first f64 comparison failed on every cell at about 4e-5, already visible at the layer-0 edge input (2.8e-6), i.e. before any encoder weight. The
+cause was in the *oracle*, not aminx: `torch.linspace` RBF centres are created at the default dtype, so an f64 upstream run still used float32
+centres. The dumper now sets the default dtype around the run. This is why the f64 claim in the sidecar says the only changes to upstream's computation
+are the one-hot cast and the default dtype. After it, the same comparison agrees to 1e-13, which is the evidence that the earlier gap was the oracle's.
+
+### 41.5 State
+
+P6 is closed. Not covered: the decoder and sampling (P7/P8), and `etab_postmerge` is dumped but the aminx head is compared before the reciprocal
+merge, as the sidecar states. Open items from §40.5 are unchanged. Next: P7 status check (generic V), the P8 driver, the P9 pH engine, the P10 knob
+surface, the ledger re-freeze and the final `--stale-only` re-wave.
+
+## 42. P8, first half: the merge and energy, and `protonpotts_energy` GRADED `pass` by record (261008)
+
+**P7 status check.** P7 is merged (PR #205). `PottsAlphabet` (`families/potts_mpnn/alphabet.py`, not the `utils/` home §35.2 proposed) carries `size` and
+`pair_side` separately; `PROTONPOTTS_V6` is in `protonpotts_mpnn/vocab.py`; the Potts driver's fallback purposes refuse a non-shipped alphabet
+(`driver.py:269-276`). P6 already ran the converted head at V=30.
+
+### 42.1 What differs from the shipped Potts path, and what was reused
+
+Upstream (`pottsmpnn.py` `compute_potts_context`, `calc_potts_eners`) merges the head's table ONCE, `0.5 * (etab[i,k] + etab[j,rev].T)` where the
+reverse edge exists, and the energy sums every directed edge over the 30-token table directly. The shipped path merges twice (denominators 2 then 4, self
+slot excluded) and pads to a 22-symbol etab alphabet. `src/aminx/families/protonpotts_mpnn/energy.py` therefore composes the UNCHANGED `merge_pair`
+(`denom=2, exclude_self=False`) and `potts_energy` (§35.4 forbids editing them). `tests/protonpotts/test_energy.py` (8 tests, passing on titanix) checks them
+against a naive numpy statement of upstream's rules, including that the shipped double merge is a different table, and that a V=30 model yields a finite
+square table.
+
+### 42.2 P4f: the energy oracle (run `f5aa4ff2`, pass)
+
+`scripts/protonpotts/dump_protonpotts_energy.py` applies upstream's own `PottsMPNN.calc_potts_eners` to the sealed P4e merged table and `E_idx`, for ten
+fixed sequences per cell: the native `S`, eight uniform over all 30 tokens (so protonation tokens appear), and one cyclic sweep (every row and column of the
+table is indexed). All four claims held: the tables are the sealed ones, complete, f64 is float64 and differs from f32, and a fresh process reproduces
+every hash. Output: `~/projects/aminx-oracles-protonpotts/features_v6_p4f/` on titanix. The measured f32-vs-f64 spread of the energy is 2.8e-3 to 1.5e-2
+(sums of ~10^4 terms of magnitude ~1), which is the floor the f32 band is built from.
+
+### 42.3 `protonpotts_energy` (run `467de9ff`, pass)
+
+All four cells pass in both precisions: **f64 merged table within 5.0e-14 absolute, f64 energies within 1.6e-16 relative**; f32 at **0.13 of its allowed
+band**; E_idx exactly equal in all 8 comparisons; checkpoint hash matches. **All 7 perturbations are rejected** (the shipped double merge, no merge, a
+merge without the transpose, sequences left in upstream token order, an energy halved, and nudges at 2x the f64 band and 4x the f32 band). The prediction
+held, including the one the sidecar flagged as possible: last-writer versus first-match reverse slots do not differ on these cells.
+
+### 42.4 State
+
+Done: merge and energy for ProtonPotts. Not done: the `ProtonPottsDriver` itself (family literal, options, input reading through `featurize_pdb`,
+`score:energy|ddg`, sinks), the generic-fallback refusal test for the new family, then P9 (pH engine). Open items from §40.5 unchanged.
+
+## 43. P8, second half: `ProtonPottsDriver`, and `protonpotts_driver` GRADED `pass` by record (261008)
+
+### 43.1 Decisions (user, 261008)
+
+1. **Family and options.** `model_family="protonpottsmpnn"` with its own `ProtonPottsOptions` (not `PottsMPNNOptions`, most of whose knobs do not apply).
+2. **How a sequence is given.** Read off upstream rather than invented: upstream has no text sequence format. A sequence is an integer token tensor `S`
+   read from the structure's pre-assigned labels (`compute_log_probs(seq=...)`, `calc_potts_eners` on `[N, L]` ints), and a design variant is a set of pinned
+   centres `{res_id, protonation_type}` (`explicit_centers`, `PlacementPin`). Its string output (`decode_sequences`) goes through three-letter-to-one-letter
+   and so collapses `HIS-P` to `H`; the aminx sinks do not copy that.
+3. **Scope.** `score:energy` and `score:ddg` from PDB input. `sample` is P9 (the pH engine), and refuses.
+
+### 43.2 What was built
+
+* `run/options.py` `ProtonPottsOptions(protonation_labels_json, variants_json)`; residues are `"<chain>:<number>[<insertion>]"`. The reference is the structure's
+  own `S` with the labels applied (none means all standard); a variant is pins on top of it, or a full per-residue token list; `sequences_to_score` letters
+  are accepted as full lists. `score:ddg` requires variants (no DMS: protonation states are not mutation targets, §35.1).
+* `families/protonpotts_mpnn/driver.py`: `ProtonPottsDriver`, registered on import of the package; `kept_residues()` added to `features.py` so a residue named by
+  chain and number finds its row in `S` after the backbone drop. A manifest next to the `.eqx` must name the v6 alphabet. Results carry token INDICES
+  (`candidate_tokens`/`mutant_tokens`) with the 30-name `vocabulary` as an attribute, and the sink root stamps the same vocabulary instead of the 21-letter one.
+* The four generic-MPNN fallback purposes (`jacobian`, `inspect`, `score:nll`, `score:logits`) refuse in `mpnn_core` (§35.1).
+* Family plumbing in the shared files: `run/specs.py` (literal, field, `protonpottsmpnn_` prefix, output kinds `energy|ddg`), `run/spec.py`, `run/spec_json.py`,
+  `host/runner.py`, `host/family_driver.py`, `host/prep.py` (sha256 required), `host/family_runner.py`, and `cli.py` (`--protonpotts-options-json`). These
+  are globally scoped, so they stale every ledger row; the final `--stale-only` re-wave is what covers that.
+
+### 43.3 Evidence
+
+`tests/protonpotts/test_driver.py` (14 tests) passes on titanix, as do the extended family-literal, prefix, portable-JSON and CLI tests: 440 passed across
+`tests/cli tests/run tests/protonpotts` and the driver-seam test. The failures seen in wider runs were reproduced at the pre-change commit `5eee993c` and are not
+caused by this work: `test_family_driver_for_lazy_imports_every_driver_backed_family[lasermpnn]` fails because `prody` is absent from the scratch venv, and
+`test_registration_and_handles` (Potts) fails only after the seam test reloads modules.
+
+`protonpotts_driver` (run `d91b8380`, clean tree at `3f5c9a4c`, pass): the real `score` path on the four structure FILES, with the ten sealed P4f sequences per cell
+as token-name lists. All four cells within their measured f32 band (worst **0.13 of the band**, the same figure as `protonpotts_energy`, as it must be: same
+arithmetic), the reference row equals the sealed native `S` in every cell, and **all 3 errors are rejected** (names spelled in upstream index order, rows reversed,
+a 4x-band nudge). The prediction held: dropped residues (1OLR, 6m0j) and chain order through the new reader matched upstream.
+
+### 43.4 State
+
+P8 is closed for `score:energy|ddg`. Not covered: `score:ddg` has no wave of its own (its value is `E(variant) - E(reference)` and is unit tested), the driver is
+f32 only, and labels come from a JSON file (the upstream labeller is out of scope, §11a). Next: P9 (pH design engine and the selectivity-gap purposes, which is where
+`sample` and the designable mask belong), P10 (knob surface, `_WEIGHT_PREFIXES`, ledger re-freeze, ADR), then the final `--stale-only` re-wave.
+
+## 44. P9 decisions (user, 261008) and the debt they create
+
+Upstream's `PottsMPNNPHEngine` (`inference_engines/potts_mpnn_ph.py`, 2,731 lines) has eight design methods and two backends (the Potts head, the decoder field).
+Its production example (`inference/design_ph.py`) uses `block_descent`, block size 3, λ = 0.3 (manuscript Eq. 6, `O = (1-λ)·z(H_stab) + λ·z(Σ sel)`), and the v6
+contrast map `HIS-P→HIS-S`, `ASP-P→ASP-D`, `GLU-P→GLU-D`. The engine's own default map is the v3/v4 one (`HID/HIE`), which upstream refuses against a v6 checkpoint.
+
+| # | Decision |
+|---|---|
+| 1 | **Methods in V1:** `block_descent` and `greedy_energy_block` (centre-free). Deferred, and tracked as debt: `converged_mcmc`, `two_phase`, `converged_mcmc_combined` (legacy). |
+| 2 | **Backend:** the Potts head only. The decoder-backed methods (`autoregressive`, `mpnn_sample`, `selective_source="decoder"`, `gibbs`, `backend="mpnn"`) are out of V1 because the 30-token decoder is not ported or graded. Tracked as debt. |
+| 3 | **Surface:** design through the `sample` purpose with design options; a read-only `score:selectivity` for the gap `E_P - E_D` of given centres. |
+| 4 | **Centres:** both engine-ranked placement (`topk_sites`, `samples_per_site`) and explicit `{res_id, type}` pins; a required `binder_chain` option, the rest of the structure fixed. |
+| 5 | **Defaults:** the example's production settings (v6 contrast map, λ = 0.3, block size 3); upstream's forbidden-token list (`HIS-A`, `ASP-A`, `GLU-A`, `HIS-D`) kept as an option. |
+| 6 | **Designable mask:** mirror upstream exactly, through the forbidden-token option; confirm what upstream permits from the block-descent path before the port. |
+
+**Parity mechanism (mine to settle, recorded for the pre-registration).** A draw shim injects uniforms into the upstream engine (as the Potts dumps did), so both sides
+see identical random numbers: exact tokens in f64, a match rate in f32 whose threshold is pre-registered from the measured upstream f32-vs-f64 flip rate. Controls (spec §6):
+a flipped protonation assignment, a mis-scaled selectivity weight, a permuted block order.
+
+**Debt filed 261008** (praxia debt): #2615 ProteinSMC kernels for MPNN, PottsMPNN and ProtonPottsMPNN sampling (user request); #2616 deferred placement methods;
+#2617 the 30-token decoder and decoder-backed design/sampling; #2618 ProtonPottsDriver gaps (no `score:ddg` wave, f32 only, JSON labels only, PDB only, no variant
+names in results); #2619 host-featurizer open items (§40.5); #2620 two pre-existing order-dependent/missing-dependency test failures.
+
+## 45. P9 recon (261008): what the upstream pH engine does on the paths we port
+
+Read-only recon by a Haiku agent, full report `.praxia/subagent_outputs/toolu_01QRqDNmtbn1jNpyQLGA42bz.1.md` (main checkout). Per the spec-the-code-not-the-docstring rule the
+load-bearing claims were re-read by the orchestrator (marked **verified**); the rest are leads. Paths below are `inference_engines/potts_mpnn_ph.py` unless stated.
+
+### 45.1 Verified
+
+* **The engine consumes only `etab_out [1,L,K,V,V]`, `E_idx`, the native `S`, and masks.** `run_forward_compat` (line 2723) is a module-level function, so a dump can feed
+  the sealed P4e tables through it and never run the model (the decoder, which is not dtype-polymorphic, is then not involved either).
+* **Production is SAMPLED, not argmin.** `design_ph.py` uses `temperature=0.05`; `_block_descent` takes `argmin` at `T <= 0` (line 2373, no RNG) and
+  `torch.multinomial(softmax(-(J-min J)/T), 1)` otherwise (line 2376; `_greedy_energy_block` has the same at 2518-2519). The `rng` argument of `_block_descent` is never
+  read. The seam for injected uniforms is therefore exactly those two calls (inverse CDF on the normalised probabilities).
+* **The z-scale is pooled, not per block.** `sdH` = sqrt of the MEAN over designable positions of the population variance (`unbiased=False`) of that position's block
+  stability over its finite `V**B` assignments, floored at 1e-6 (lines 2107, 2121-2122); `sdSel` pools only blocks whose selectivity varies. The docstring at 2201 ("std of
+  single-mutation deltas") is wrong for the default `zscale_mode="block"`.
+* **Blocks** are `p` plus the next `block_size-1` positions of `E_idx[p, 1:]` that are designable and not already in the block (lines 2041-2052), so a block can be SHORTER than
+  `block_size`: a shape hazard for JAX (pad with a one-candidate dummy axis).
+* **Production configuration** (`design_ph.py:69-90`): `block_size=3`, `combined_lambda=0.3`, `temperature=0.05`, `samples_per_site=2`, `neighbour_k=16`, `max_mutations=20`,
+  `forbidden_tokens=["HIS-A","ASP-A","GLU-A","UNK"]`, repetitive-window penalty (`weight=1.0`, `radius=2`, parents ARG/LYS/HIS/ASP/GLU), `record_trajectory=True`. The engine's own
+  dataclass defaults differ (`block_size=2`, `combined_lambda=1.0`), so the example's values are the aminx defaults (decision 5), the repetitive-window term included.
+
+### 45.2 Consequences for earlier decisions
+
+* **Decision 6 (designable mask).** Mirroring upstream means protonation tokens ARE drawable at non-centre designable positions: with the production forbidden list `V_eff = 26`
+  (20 standard + HIS-P, HIS-S, ASP-P, ASP-D, GLU-P, GLU-D), so a design can end with more protonated sites than pinned centres. The engine's DEFAULT forbidden list names `HIS-D`,
+  which does not exist in v6 and is silently ignored, so the aminx default is the example's list. The greedy docstring ("keeps the design plain 20-AA") is false under it.
+* **Decision 4 (centres).** On the production path `topk_sites` is unused: each requested centre type takes the single best unused position by the placement score
+  `e_P - min_d e_D` on the native sequence (a non-stable `argsort`; line 2581), and there is NO residue-type restriction, so any free binder residue can become a HIS-P/ASP-P/GLU-P
+  centre. Mirrored; `explicit_centers` remains the way to pin by hand. `greedy_energy_block` needs `center_count=0` and `infill_scope="chain"`.
+* **Parity.** `torch.multinomial`'s stream cannot be reproduced in JAX, so parity is on INJECTED uniforms (inverse CDF on identical probabilities), plus the `T=0` path with no RNG.
+  Ties (`torch.argmin`, `argsort`, `topk`) are precision-sensitive: compare with a tie margin, not blindly.
+
+### 45.3 The upstream dump (P4g), pre-registered next
+
+`scripts/protonpotts/dump_protonpotts_ph.py` (oracle env). It runs the real `PottsMPNNPHEngine` serially with `run_forward_compat` returning the SEALED P4e tables (f32 and f64) for the
+four cells, wraps `enumerate_placement_plans`, `_block_zscales`, `_block_descent` and `_greedy_energy_block` to record their inputs and outputs, and replaces `torch.multinomial` with a
+seeded inverse-CDF shim that records every `(uniform, choice)`. Per cell: block descent at `T=0` and `T=0.05`; greedy at `T=0` and `T=0.05`.
+
+Not yet verified: engine arithmetic in float64 (the `.float()` calls at 2259-2261 and 2427-2429 are exact 0/1 masks, but are multiplied by `repetitive_window_weight`, so f64 exactness
+needs `weight=1.0`, which is the production value); that `prepare_potts_input(..., designed_chains=...)` yields the same residues and `E_idx` order as the sealed tables (the dump
+asserts it); `unknown_token_indices` contents.
+
+## 46. P9 build: the upstream dump (P4g) and the first modules (261008)
+
+### 46.1 `dump_protonpotts_ph.py` (P4g): GRADED `pass` by record, after one failed graded attempt
+
+The first graded run (`3f5fa779`, commit `c2886885`) FAILED on the second cell: `IndexError: index 789 is out of bounds` in upstream's `_ranked_candidates`. The cause was in
+the dump script, not upstream: it read the structure with biotite (`PDBFile.get_structure`) while the sealed tables came through `prepare_potts_input(<path>)`, whose atomworks loader
+treats occupancy and alternate locations differently, so for 6m0j the engine featurised more residues than the 789 in the sealed table. The script now builds the atom array
+with `MPNNInferenceInput.from_atom_array_and_dict(input_dict={"structure_path": ...})`, the loader `prepare_potts_input` itself uses for a path. An exploratory single-cell run of the fix
+preceded the second graded run; its numbers are not cited. The sidecar's criteria were not touched. (The sidecar says "from a clean checkout of the commit that adds this file"; the
+graded run was at `e529ac3b`, which fixes the script.)
+
+Run `cbb47878`, clean tree at `e529ac3b`, outcome `pass`, all six flags true across 4 cells: the engine saw the sealed inputs (native `S` and `E_idx` equal in every cell and precision),
+every configuration is complete, the shim is the only randomness (T = 0 draws nothing, T > 0 draws), f64 is genuinely double and differs from f32, and a fresh process reproduces every hash.
+Output: `~/projects/aminx-oracles-protonpotts/features_v6_p4g/` on titanix.
+
+**Measured, not required:** the final sequences are IDENTICAL in f32 and f64 for every call in every cell (fraction 1.0), with the same uniforms. So on this set the f32 flip rate is zero and the aminx
+f32 criterion can be exact tokens as well, with the caveat that a draw landing within float noise of a CDF boundary could still flip (none did).
+
+### 46.2 Modules built by Haiku agents (tests run by the orchestrator on titanix)
+
+| module | what | tests |
+|---|---|---|
+| `ph_potentials.py` | `candidate_energies`, `candidate_energies_at`, `block_stability_potentials` (JAX; incoming and outgoing edges) | 11 pass: finite-difference and joint-assignment identities against the existing `potts_energy`, on graphs with one-way edges |
+| `ph_plan.py` | valid-token mask, neighbour mask, designable set, block partners/table, placement scores, centre-type/explicit/centre-free plans (numpy) | pass (hand-derived literals) |
+| `ph_config.py` + `ProtonPottsOptions` design fields | validated `PHDesignConfig` with the production defaults; refuses the deferred methods naming #2616/#2617 | pass |
+
+The 74 tests of these three plus `test_driver.py` and `test_ph_potentials.py` passed on first execution in a separate worktree (`aminx-tests`) on titanix. Deviation recorded: `ph_potentials` counts a
+`k >= 1` self-edge on the diagonal where upstream skips it; kNN graphs have none, and the identity with `potts_energy` stays exact.
+Debt filed for what the port refuses: #2621 (unported upstream knobs, no trajectory).
+
+### 46.3 Next
+
+`ph_descent.py` (the JAX block-descent sweep, in progress), the greedy variant, the design/score glue and the `sample` / `score:selectivity` wiring, then the `protonpotts_ph_design` wave against P4g.
+
+## 47. `protonpotts_ph_block` GRADED `pass` by record; the sampler's token order (261008)
+
+Wave `protonpotts_ph_block` (criteria pre-registered at `09804a9c`, script `protonpotts_ph_block_parity.py`), run `72ed386b`, clean tree at `9991cfbd`, outcome `pass`: all 24
+(cell x precision x call) comparisons match upstream on the rederived **plan** (pins, designable set, block membership), the pooled **z-scales** (worst relative difference
+4.5e-15 in float64), the final **sequence token for token**, the **number of uniforms consumed**, and the final **Potts energy and summed selectivity gap** (worst relative
+difference 1.6e-16). **All 8 deliberate errors are rejected** (uniforms shifted by one draw, lambda 0.4, block size 2, forbidden tokens not applied, repetitive window off, a
+wrong contrast token, and nudges of a z-scale and an energy just outside their float64 bands). The wave takes only the sealed table and `E_idx`, the native sequence, the
+binder mask and the production configuration from the dump and REDERIVES everything else.
+
+### 47.1 What the exploratory smoke found, before the graded run (numbers not cited)
+
+A first exploratory run matched every plan, z-scale, draw count and ALL `T = 0` call, and all eight controls fired, but several `T = 0.05` calls differed in tokens. Teacher-forced
+replay of the upstream choices localised it, after a misleading first look (comparing flat indices across two token orders made the objectives look different; in matching token
+order they agree). The cause: **the same uniform selects a different entry when the inverse CDF is accumulated in a different token order**. Upstream accumulates over flat
+indices in ITS token order; the port's flat order is the aminx token order. Any order is a valid sampler, so this is a parity detail, not a modelling error: `ph_descent.select_joint`
+and `block_descent` take an optional `cdf_order` (the upstream-to-aminx index map), left unset in production, and the wave passes it. A unit test checks that the identity order
+equals the default and that a permuted order equals a numpy inverse CDF in that order. The sidecar's criteria were not touched; the wave script was changed after the criteria were
+committed, which is recorded here.
+
+### 47.2 Remaining for the V1 pH engine
+
+`ph_greedy.py` (the centre-free variant, in progress; its wave `protonpotts_ph_greedy` is pre-registered at the commit that adds this section), the design and scoring glue that
+turns an input structure into a plan, a call and result arrays, the `sample` and `score:selectivity` wiring in the driver, and the knob surface. Unported by decision, tracked as debt:
+#2616, #2617, #2621.
+
+## 48. `protonpotts_ph_greedy` GRADED `pass` by record; glue and driver wiring in progress (261008)
+
+Wave `protonpotts_ph_greedy` (criteria pre-registered at `66b00f1c`; the script was not changed after its criteria were committed), run `992c4392`, clean tree at `80b96547`, outcome `pass`:
+all 24 (cell x precision x call) comparisons match the sealed P4g dump on the rederived centre-free plan, the final (best) sequence token for token, the number of uniforms consumed, and
+the final Potts energy (worst relative difference 2.1e-16 in float64). **All 6 deliberate errors are rejected** (uniforms shifted by one draw, block size 2, forbidden tokens not applied,
+repetitive window off, the sampler's CDF in aminx token order instead of upstream's, and an energy nudge). The dump records no greedy z-scale (upstream's greedy uses a single-mutation scale), so
+the scale is graded through the sequence it determines.
+
+`ph_greedy.py`, `ph_design.py` (placement, one optimiser run per sample, scoring, stable ordering that does NOT copy upstream's dedup by `design_id`, which silently drops swept designs) and their
+tests are in. Three bugs were found in the agents' TESTS on first execution and fixed (not in the modules): the replay test indexed uniforms by position in the energy-sorted list instead of by
+`design.sample`; the greedy z-scale test computed its expectation on the raw start where upstream canonicalises microstates first (lines 2440-2452); one test passed an invalid `zscale_mode`.
+
+Pre-registered at the commit that adds this section: `protonpotts_ph_driver` (the `sample` purpose end to end from a PDB file through the converted model, at T = 0, against the dump's deterministic
+block and greedy calls). The driver wiring for `sample` and `score:selectivity` is being built.
+
+## 49. P9 closed for V1: `protonpotts_ph_driver` GRADED `pass`; the pH engine surface (261008)
+
+### 49.1 `protonpotts_ph_driver`: GRADED `pass` by record
+
+Run `f8273bc5`, clean tree at `866f642b`, outcome `pass`. The REAL `aminx.host.runner.sample` runs on the structure FILE of each cell (1BVC chain A, 6m0j binder chain E, 1OLR, 1EL1) with the converted v6
+checkpoint in float32, at temperature 0 (no random numbers), once for production block descent (three placed centres) and once for the centre-free greedy configuration of the P4g dump. All 8 calls match the
+dump's deterministic designs on **centres** (positions and types), the **final sequence token for token**, and the **final Potts energy and selectivity gap** (worst at 0.19 of the allowed band). **All 5
+deliberate errors are rejected** (lambda 0.6, block size 2, forbidden tokens reduced to UNK, repetitive window off, a wrong contrast token). The prediction's stated risk (float32 encoder noise flipping a
+near-tie argmin) did not materialise.
+
+**Amendment, disclosed.** The control was registered as lambda 0.4. An exploratory run showed that on 1BVC the T = 0 block design is identical for lambda 0.3 and 0.4 (the optimum is flat there) while lambda 0.0-0.2
+and 0.6-1.0 all change it, and on 6m0j 0.4 does fire, so on the control cell 0.4 could not discriminate. The control was strengthened to 0.6 BEFORE the first graded run, in a sidecar commit that precedes the script
+change and records the reason; no pass criterion, tolerance or count was touched.
+
+### 49.2 What P9 now consists of
+
+| piece | module | graded by |
+|---|---|---|
+| conditional / block energies | `ph_potentials.py` | identities against `potts_energy` (tests) |
+| placement, designable set, blocks | `ph_plan.py` | rederived inside `protonpotts_ph_block` / `_greedy` |
+| config and options | `ph_config.py`, `ProtonPottsOptions` | tests; production defaults from `design_ph.py` |
+| block descent | `ph_descent.py` | `protonpotts_ph_block` (run `72ed386b`, 24/24, 8/8 controls) |
+| centre-free greedy | `ph_greedy.py` | `protonpotts_ph_greedy` (run `992c4392`, 24/24, 6/6 controls) |
+| per-structure orchestration | `ph_design.py` | tests; exercised by the driver wave |
+| `sample` and `score:selectivity` | `driver.py`, `specs.py` | `protonpotts_ph_driver` (run `f8273bc5`, 8/8, 5/5) for `sample` at T = 0; `score:selectivity` by tests only |
+| the upstream oracle | `dump_protonpotts_ph.py` | P4g (run `cbb47878`) |
+
+Test status on the final commit (titanix): 555 passed, 16 skipped (environment-gated) across `tests/protonpotts`, `tests/run`, `tests/cli` and the driver-seam test; the one failure is the pre-existing
+missing-`prody` lasermpnn seam test (debt #2620).
+
+### 49.3 Left, and where it is tracked
+
+Debt: #2615 (ProteinSMC kernels), #2616 (deferred Potts-head methods, now including `gibbs`), #2617 (decoder-backed design and the 30-token decoder), #2618 (driver gaps), #2619 (featurizer open items), #2620
+(pre-existing test failures), #2621 (unported upstream knobs, no trajectory), #2622 (known gaps of the pH surface and its grading).
+Not yet done: P10 (knob surface, `_WEIGHT_PREFIXES` arm, ledger re-freeze, ADR, docs), then the final `launch_wave.sh --stale-only` re-wave.
+
+## 50. P10 plan (written 2026-10-08, before any P10 edit)
+
+Facts read from the code, not from summaries (each tagged *verified* at the file named):
+
+- The gate's scoped paths are `src/aminx/`, `scripts/parity/`, `scripts/recapture/`, `aminx-oracles/`, `pyproject.toml`, `uv.lock` (`tests/knob_gate/_coverage.py`). Staleness is per row (`_closure.py`); `host/runner.py` and `run/` are in every closure, and P8 edited them, so **all eight existing rows are stale** (*verified:* P8's shared-file plumbing, §43). `scripts/protonpotts/` is **not** scoped and no ledger row reads it.
+- A ledger vehicle must be `scripts/parity/<slug>.py`, accept `--mutants --work-dir --controls-out`, and write `branch_controls.json` with `clean == "pass"` and a `mutants` map in which every listed control is `"failed"`; `launch_wave.sh` checks the `--mutants` string against `branch_manifest.toml` rows by exact equality (*verified:* `_coverage.py` `_validate_sidecar`, `launch_wave.sh`).
+- `_closure.py` scans imports only under `src/` and `scripts/parity/`; a vehicle that imports wave logic from `scripts/protonpotts/` would have that logic outside its closure (*verified:* `_ROOTS`). Closure `data` prefixes exist for non-`.py` inputs.
+- The knob gate is a bijection between reference-surface fields and `alias_map.toml` rows (`test_rows_bijective`), and the surfaces are generated by `scripts/redsox/extract_upstream_knobs.py`, which is wired to exactly two roots (`--potts-root`, `--laser-root`) and reads `VENDOR_PIN.toml` for the commit (*verified:* `extract()`).
+- ProtonPottsMPNN has **no argparse CLI** in the inference or scoring scripts (`add_argument` count 0 in `design_ph.py`, `design_placement_scan.py`, `score_example.py`; *verified*). Its design knobs are the fields of `PHDesignCriteria` (`potts_mpnn_ph.py:93-340`, 42 fields) plus the `run_ph_redesign` arguments (`atom_array, binder_chain, criteria_list, seed, initial_sequences, n_jobs`; `:1030`). The vendored checkout has no `VENDOR_PIN.toml` (the pin is `09682abf`, §P1).
+- `_WEIGHT_PREFIXES` is inert today: no vehicle slug matches `pottsmpnn_` or `lasermpnn_` (`verify_wave.py` comment, README "The weights requirement is inert"). Adding a `protonpottsmpnn_` arm follows the spec (§10) and is equally inert; it is **not** a tightening and the vehicle slug will not be named with that prefix. This is recorded rather than hidden.
+
+Steps, in order. Each commit is pushed to PR #211; nothing here opens a PR.
+
+| step | work | graded / checked by |
+|---|---|---|
+| S1 | `_WEIGHT_PREFIXES` arm; `checkpoint_registry.json` entry for the v6 checkpoint (sha from the P4 manifest, family `protonpottsmpnn`, upstream `ProtonPottsMPNN`) | `test_coverage_selftest` extended; registry sha equals the dumps' `checkpoint_sha256` |
+| S2 | Knob surface. Extractor learns a third, optional root (`--protonpotts-root`) and a dataclass-field entry kind; emits `protonpottsmpnn_phdesigncriteria` and `protonpottsmpnn_run_ph_redesign` classes into `reference_surfaces.py`; `VENDOR_PIN.toml` stays absent, so the commit is passed explicitly and recorded. `ProtonPottsOptions` joins `TGT`/`NEW_FIELDS`. One alias row per reference field: mapped (`identical`/`semantic`/`divergence`) to a `ProtonPottsOptions` field, or `exclusion` with a reason, deferred reasons naming debt ids in `DEFERRED_IDS.txt` | `test_rows_bijective`, `test_superset`, `test_exclusions`, `test_reference_surfaces_drift` (third root) |
+| S3 | Knob semantics tests for every mapped, non-inert field (`tests/knob_semantics/test_protonpotts_knobs.py`), each observing a behavioural change in the real driver; inert fields get `test_knob_inert_` with the plumbing allowlist | `tests/knob_gate`, run on titanix |
+| S4 | Ledger vehicle. **One combined vehicle** `scripts/parity/protonpotts_parity.py` (slug `protonpotts_parity`) rather than seven, because the waves share dumps and a per-wave row would multiply manifest rows without adding independence. The wave logic moves with `git mv` into `scripts/parity/` (so it is inside the closure and the loaded-files check), the `scripts/protonpotts/` dump scripts stay; the old wave sidecars move with their scripts and the earlier graded runs stay on record under their original paths. Controls are namespaced `<wave>.<control>` and each becomes a manifest row; `launch_wave.sh` gets the slug in `MUT`, group 2, and `check_coverage`; `closure_edges.toml` gets the slug with `soft = ["aminx.families.protonpotts_mpnn"]` and the `dynamic_ok` set | `test_manifest_can_pass`, `test_closure_selftest`, a local `launch_wave.sh` dry check of the `--mutants` string |
+| S5 | ADR (`.praxia/docs/decisions/`), `docs/MODEL_FAMILIES.md`, the using-aminx family docs, `scripts/redsox/README.md` | docs check |
+| S6 | Re-wave: `launch_wave.sh --stale-only` at the merged head (it checks out `main`, so PR #211 must be merged first, or `AMINX_WAVE_REF` set to the branch), `verify_wave.py` per row, ledger ids, then `run_gate.py` on GPUs 2,3 | by record, per the README sequence |
+
+Decided here, flagged for reversal: (1) one combined vehicle, not seven rows; (2) moving the wave scripts into `scripts/parity/` rather than declaring `scripts/protonpotts/` as closure `data` (a `data` prefix would stale the row on any edit there but would leave the logic outside the loaded-files check); (3) the new weights arm is inert by construction. The first two change nothing already graded: the earlier runs are records of the old paths.
+
+Agents: Haiku, local, no pytest (tests run on titanix by the orchestrator). S2's extractor change and S4's vehicle are the two places an agent can silently weaken a control, so both are reviewed line by line before they are trusted.
+
+## 51. P10 progress (2026-10-08): S1-S5 built, re-wave pending
+
+Done on PR #211 (commits `5dedc401` S1; `20d7e003`, `a8a2cbeb`, S2/S3; `e7dcd509`, `cdf40549` S4; this commit S5):
+
+- **S1** `_WEIGHT_PREFIXES` gains `protonpottsmpnn_` (inert, as the other two, §50); `artifact_key._UPSTREAM_ROOTS` gains `ProtonPottsMPNN` (without it the v6 checkpoint keyed by its bare file name); the registry pins the v6 checkpoint (`a3987225...`). Test: `tests/knob_gate/test_weights_identity.py`.
+- **S2** The extractor reads a third, optional root and emits `PHDesignCriteria` (42 fields) and `run_ph_redesign` (6 parameters) at `09682abf`; it refuses to overwrite a curated `alias_map.toml` (it would have, before: `--alias-out` was optional). 50 alias rows: 21 mapped to `ProtonPottsOptions`/`random_seed`, 27 excluded with `deferred:2616|2617|2621` or `internal`/`io_only`/`device`, 2 aminx-only (`protonation_labels_json`, `variants_json`). `test_reference_surfaces_drift` checks the third root and looks on titanix under `~/projects/aminx-oracles-protonpotts/ProtonPottsMPNN`.
+- **S3** 23 `test_knob_semantics_*` tests (Haiku, two agents; run on titanix by the orchestrator): 22 passed on first run, `cv_patience` failed because patience cannot matter at T=0 (greedy converges at once), and was corrected to a T=1 multi-seed comparison. `record_trajectory` is a weak test by construction (trajectory recording is not ported; the test pins "accepted, changes nothing"). The plumbing lint, the host observation table and the coverage audit now enumerate `ProtonPottsOptions`; the host table had no entry for the `protonpotts` spec field since P8 and `test_every_spec_field_has_a_declared_observation` was red until now.
+- **L-DRV** P9's loops were never allowlisted (`test_l_drv` red since P9). Three are sequential (`_sweep_to_convergence`, its `sweep`, `greedy_energy_block`); `block_zscales` is a carry-free map over independent blocks. It first went in as a scan under a new reason `memory_bounded_map`; on 261009 the user asked for it to be composed in xtrax, so it now goes through `plan_axis_strategy` + `make_axis_dispatch_via_xtrax` (a vmap, or memory-bounded tiles of one, padding a ragged tail) and the reason was removed. `test_block_zscales_is_the_same_under_every_xtrax_strategy` pins Vmap == ragged SafeMap == exact SafeMap. The z-scales change reduction order, so the graded `protonpotts_parity` run is the check that they still agree with the upstream dumps (named as a risk in its pre-registration).
+- **S4** `scripts/parity/protonpotts_parity.py` (+ sidecar committed first, `e7dcd509`) runs the seven waves unchanged and reports 47 controls. The waves and the checkpoint converter moved to `scripts/parity/`; `launch_wave.sh` gets group 4; `closure_edges.toml` declares the waves and converter `soft` (closure sound, 152 files); `test_closure_selftest` now pins that a Potts change reaches the ProtonPotts row and never the reverse. A negative control inside that test found that a `data = ["scripts/convert_weights.py"]` declaration was vacuous (`row_is_stale` ignores everything outside `src/aminx/` and `scripts/parity/`); it was removed and the gap is recorded in `closure_edges.toml` and the ADR.
+- **S5** ADR `261008_protonpottsmpnn-v1-scope.md`; `docs/MODEL_FAMILIES.md`; `scripts/redsox/README.md` group 4.
+
+Not done: **S6**, the re-wave. `launch_wave.sh` checks out `main` (or `AMINX_WAVE_REF`), so PR #211 must be merged or the ref set to the branch. Order: `launch_wave.sh --stale-only 1`, `2`, `3`, `4`; `verify_wave.py` per row; ledger ids; `run_gate.py` on GPUs 2,3. `redsox` must be importable in the gate venv (`test_superset` needs it; installed `--no-deps` into the scratch venv for these runs).
+
+## 52. P10 closed (2026-10-09), and the browser scoring path (X6, #5816) verified
+
+**P10 / S6 is done.** All nine re-wave runs pass by record, `verify_wave.py` grades all nine, the ledger is rewritten (`432f4e48`), and the final gate `6048a8e9` passed (1071 ids) with CI green. `block_zscales` is an xtrax-planned map (`272a9dac`); the ragged-tile pad/slice branch is covered by a unit test only, not by a graded run.
+
+**ONNX / browser: scoring (`score:energy`, `score:ddg`) is verified end to end in headless Chromium.** Scope: the Potts-head path only. V1 has no decoder (debt #2617), so there is nothing to sample in the browser, and pH design (block descent) is not exported (see "Not done"). Every run below is verified by its cool-tier record: `completed`, `pass`, exit 0, `git_dirty` false; each gate's sidecar was committed before its script, and the exploratory smokes that preceded each graded run are not cited.
+
+| gate | run | commit | result |
+|---|---|---|---|
+| X6a export: `table` (encoder + head + one reciprocal merge) and `energy` graphs at buckets 256 and 1024, ORT-CPU and ORT-Web | `40b4318e` | `a034244a` | 8/8 checks; padding invariant; 3 controls fired; manifest `7b2087dc…` |
+| X6b shipping JS scorer under Node/ORT-Web vs the real driver (`aminx.host.runner.score`), 4 cells x 20 rows, protonation tokens included | `1a2355c5` | `e34bf55c` | 4/4, tokens exact, worst rel 2.4e-6; 3 controls fired |
+| X6c shipping page in headless Chromium 153, COOP/COEP, 1 and 4 threads, same cells | `82a8a856` | `76e7e6f0` | 4/4 at both settings, worst rel 2.4e-6; isolated; 3 controls fired |
+
+The JS input builder (`browser/protonpotts-scorer/protonpotts_inputs.mjs`: featurizer, label encoder, padding) is bit-exact against five Python dumps incl. labelled 6m0j (a deterministic equality test, `node --test` 14/14, with two negative controls; not a measured finding). The 6m0j cell (789 residues, bucket 1024, 177 MB table) ran in Chromium, so the large bucket the sidecar registered as the main risk did not fire. The validated bytes are pinned at `release/browser/protonpotts/` (LFS; `--verify-manifest` gives `drift: []`).
+
+**Not done, tracked.** (1) pH design in the browser: block descent is a sweep over placement blocks with host-side logic; it needs a design decision on graph shape (per-block graph driven from JS vs one sweep graph), then the same X6a/b/c ladder. (2) A browser benchmark (the page already takes `reps`/`warmup`/`planted_ms`). (3) The release/Pages publishing step (the Potts precedent, #5818). (4) Any `sample` path, blocked on #2617.
+
+**Debt closed or advanced the same day (261009).** #2620 resolved (`f51dcbe7`: the seam tests purged `aminx.families.*` from `sys.modules` without restoring it; an autouse fixture now restores modules, parent attributes and driver registrations; reproduced before and fixed after on titanix, seam + `tests/protonpotts` 224 passed). #2618 item 1 done: the `score:ddg` wave `protonpotts_ddg` (`scripts/protonpotts/`, outside the ledger) graded `pass` by record, run `a8414c87`, clean at `041e994f`, 4/4 cells and 5/5 controls rejected; items 2-5 stay open. The browser follow-ups are filed as debt #2625.
+
+## 53. The 30-token decoder (#2617) and the browser, plan of 2026-10-09 (user decisions 11-13 in the ADR)
+
+**Decided (user, 261009):** implement the 30-token decoder now; pH design in the browser is a per-block graph driven by a JS loop; browser work is sequenced behind the blockers it needs.
+
+**Facts, each tagged.** *Verified* = read at the line named by me this session; *recon* = a Haiku agent's report, not yet re-read.
+
+| fact | tag |
+|---|---|
+| Upstream's decoder is foundry's general `ProteinMPNN.decode_auto_regressive` (`mpnn/model/mpnn.py:1228-1810`), inherited by `PottsMPNN`. It decodes in `decoding_order`, samples with `torch.multinomial` on `probs_sample` (unknown-token columns zeroed, renormalised; `logits_to_sample`, `:855-958`), adds per-residue `bias` and `pair_bias`, divides by per-residue `temperature`, keeps fixed positions via `decode_last_mask`, and ties positions through `symmetry_equivalence_group`. | verified |
+| The pH engine reaches it through `self.model(ni)["decoder_features"]["S_sampled" or "log_probs"]` (`potts_mpnn_ph.py:1165, 1230`) for `autoregressive`, `mpnn_sample`, `selective_source='decoder'` and the whole-chain `gibbs` baseline; `backend='mpnn'` is required for the first two. | verified (grep) |
+| aminx `PottsARDecode` is shape-generic: vocab comes from `omit.shape[0]` (`decode.py:427`); the only fixed value is `mask_refine_x`'s default `x_index=20` (`:81`). The 21-sized pieces are in the caller (`sample_host.py:44, 297-299`: `omit` is built from the 21-symbol alphabet) and fail loudly at the broadcast. | verified (decode.py), recon (sample_host) |
+| `PottsMPNN(alphabet=PROTONPOTTS_V6)` has `w_s_embed` 30x128, `w_out` 128->30 and 3 decoder layers; the converter populates `decoder_layers.*`, `W_s`, `W_out` with 30-row permutations. Whether the converter was exercised end to end on the decoder keys is **not** verified. | recon |
+| No test instantiates `PottsARDecode` with `PROTONPOTTS_V6`. | recon |
+| The driver's `sample` is energy-based pH design and does not need the decoder. The refusals naming #2617 are in `ph_config.py` (methods `autoregressive`, `mpnn_sample`); #2616 covers `converged_mcmc`, `two_phase`, `converged_mcmc_combined`, `gibbs`. | recon |
+| Open from §14, still unresolved: upstream applies `mask_E` to the decoder MESSAGE after the MLP, aminx masks the edge features before it; equivalent only when no padding. | verified (spec text) |
+| Upstream is not dtype-polymorphic in the decoder (`index_put` dtype mismatch under `.double()`, §41.2); the f64 oracle there needed a workaround. | verified (spec text) |
+
+**Consequence for the design.** The port is a parametrisation of an existing, graded decode plus a faithful oracle, not a new decoder; the risk sits in the details foundry changed (per-residue temperature, `decode_last_mask`, symmetry weighting, `probs_sample` renormalisation, the decoder mask placement) and in the sampler's token order (§47). None of that can be settled by reading; it needs the oracle.
+
+**Steps, each a pre-registered wave with negative controls, none widening a tolerance:**
+
+| step | work | graded by |
+|---|---|---|
+| D1 | `dump_protonpotts_decoder.py` (P4h) in the oracle env: upstream `forward` in autoregressive mode on the four sealed cells with `torch.multinomial` shimmed to inverse-CDF on injected uniforms and a fixed `decoding_order`; per-step logits, probs, `S_sampled`, final `h_V`; f32, and f64 if the dtype workaround holds; hash-sealed | the dump's own controls (reproducible across a fresh process, precisions differ) |
+| D2 | aminx V=30 decode (reuse `PottsARDecode`, add the foundry-specific inputs it lacks), wave `protonpotts_decoder` | logits per step, tokens, order, vs P4h; controls: wrong token order, wrong decoder-mask placement, uniforms shifted, bias ignored, nudge |
+| D3 | driver wiring (`sample` with a decoder backend), then `autoregressive`, `mpnn_sample`, decoder-selective, `gibbs`, `backend='mpnn'` in `ph_config`, each with its own replay wave against the engine | per-method waves; refusals shrink only as each is graded |
+| B1 | per-block pH graph + JS descent loop (no decoder dependency) | export gate, Node gate vs the real driver, Chromium gate |
+| B2 | V=30 decoder graphs + JS sampler | after D2 |
+
+## 54. Decoder and per-block browser graph: state at 2026-10-09 (work in progress; updated as runs land)
+
+**D1 done.** The P4h decoder dump is graded: run `6f5a621f` (completed, `pass`, exit 0, clean tree at `115eb62f`, sidecar sha `7dbde5a6…` = the committed file). Oracle dir `~/projects/aminx-oracles-protonpotts/features_v6_p4h`, `decoder_manifest.json` sha256 `9dce4793…`. All nine flags true on the first complete run: features match the sealed hashes, f64 is float64, the precisions differ, f32 and f64 share the decoding order, the shim is the draw, fixed positions hold, the configurations are not inert, the run is reproducible. Upstream's decoder needed only three documented changes to run in double (the one-hot cast, `torch.float32` / `.float()` widened in `setup_causality_masks`, `decode_auto_regressive`, `decode_teacher_forcing`, and the order noise drawn in float32); a spike found those, and only those, to be the dtype leaks.
+
+**D2 in progress.** `aminx.families.protonpotts_mpnn.decode` (`ProtonPottsARDecode`, `teacher_forced`) reuses the graded Potts helpers by import, so no PottsMPNN row is staled; 9 internal-property tests pass (AR equals teacher-forced AR on its own sequence, fixed residues first and native, X never drawn, bias and per-residue temperature act, padding invariance, pad rows last, three causality patterns differ, `cdf_order`). The wave `protonpotts_decoder` was pre-registered (`4b19b8b1`) and amended twice before any graded run, each time disclosed in its sidecar after an exploratory run (uncited) exposed a harness defect:
+1. the dump is in UPSTREAM token order and the harness compared it unpermuted (found by localisation: decoder layers matched to 1e-15 at the first decoded position while logits did not, and `W_out` applied to upstream's own last layer did not reproduce upstream's logits);
+2. the default per-residue temperature is upstream's float32 `0.1` cast to double, not the exact double (a 1e-6 error in f64 log-probs that vanished to 4e-13 with the right constant).
+After those two, float32 passed in every cell, configuration and teacher-forced pattern, every non-fragile draw and sequence was exact, all nine deliberate errors were rejected, and f64 agreed with upstream's f64 to 3.5e-14 on logits. Two draws are numerically fragile (distance to a CDF boundary below 1e-5 of the mass); they are reported, not hidden. The graded run is the record; nothing from the exploratory runs is cited.
+
+**B1 groundwork.** A spike on the per-block visit (objective plus argmin or inverse-CDF selection) found two real defects that would have broken the browser, both in `ph_potentials.py` / `ph_descent.py`:
+- ORT-CPU has no `Where` kernel for a BOOL operand (the same class as Potts X0): the `allowed` mask now uses boolean algebra.
+- **A data race.** `block_stability_potentials` summed repeated-index scatter-adds (`.at[lo, hi].add`, `.at[tgt_in].add`) in which every masked edge lands on index 0. ONNX Runtime's scatter-add is not thread-safe over repeated indices: at 4 threads the objective was wrong by up to 4 on a scale of 10 and varied run to run, while at 1 thread it matched JAX to 1.9e-6. This matters because the browser runs ORT-Web at 4 threads, and it would have passed any single-thread test. Both are now one-hot matmuls (`Precision.HIGHEST`); with them ORT matches JAX at 1 and at 4 threads (2.4e-6 and 2.9e-6, identical across 5 runs). The same hazard exists in `candidate_energies` (`out.at[tgt].add`), which is therefore NOT exported: the browser computes the placement field with chunked calls to `candidate_energies_at`, a masked matmul. These source edits touch the ProtonPotts row's closure only, and are verified for neutrality by the existing ph waves in the next re-wave.
+
+Next: commit and verify the two edits against `tests/protonpotts`, grade the decoder wave, then build B1 in order: export module (`visit`, `zblock`, `pool`, `field_at`), export gate, JS planner/descent and Node gate against `design_structure`, Chromium gate.
+
+### 54.1 D2 graded (2026-10-09): the 30-token decoder matches upstream per step
+
+Two graded wave runs, both kept on record:
+
+- **`a54ce791` (fail by the pre-registered rule).** Every aminx-vs-dump comparison passed (f64 within 3.5e-14, f32 within 0.17 of its band, all non-fragile draws and sequences exact, 8 of 9 deliberate errors rejected), but `x_not_zeroed` was not rejected: upstream's probability of X is negligible in the three dumped configurations, so zeroing it moves nothing a 1e-9 comparison can see. The criterion was not relaxed. The instrument was improved.
+- **Revised oracle.** The dump gained `ar_x_bias` (temperature 1, +8 on X, so an unzeroed X carries almost all the mass; its non-inertness is a registered dump claim). Dump run **`e10c21b2`**: completed, `pass`, clean at `8a64ca8c`, sidecar sha `8373b807…`, oracle `~/projects/aminx-oracles-protonpotts/features_v6_p4h2` (manifest sha256 `0ba7f19e…`). The first three configurations reproduce the earlier dump (same seeds and uniforms).
+- **`a769e1b2` (pass).** `protonpotts_decoder` against the revised dump: completed, `pass`, clean at `8a64ca8c`, sidecar sha `d2e0fa52…`. 4 cells x float64 and float32 x 4 autoregressive configurations x 3 teacher-forced patterns: float64 within 1e-13, float32 within 0.17 of its measured band (worst), all 9 deliberate errors rejected (including `x_not_zeroed` on `ar_x_bias`). Two numerically fragile draws (distance to a CDF boundary below 1e-5 of the mass) are reported, and the 2 configurations containing them are exempt from the free-running sequence check only (their per-step draws elsewhere are still exact).
+
+Harness defects found by exploratory runs (none cited), each disclosed in the sidecar before the graded run: the dump is in upstream token order; the inverse CDF accumulates in upstream's order (`cdf_order`); the default per-residue temperature is upstream's float32 0.1 cast up (a 1e-6 error in f64 log-probs that vanished to 4e-13 with the right constant).
+
+The wave is not yet in the redsox ledger: folding it into the `protonpotts_parity` vehicle is part of the next re-wave.
+
+### 54.2 B1, step 1 graded (2026-10-09): the per-block pH graphs (X7a)
+
+Run **`d5918c26`**: completed, `pass`, exit 0, clean tree at `48564599`, sidecar committed first (`568688a4`). Sixteen graphs (`visit` and `zblock` for pin counts 1-3 and `pool` and `field_at`, at buckets 256 and 1024; 4 KB-130 KB each, because the pair table is an input and no weights are baked in), manifest sha256 `131a65cb…`. On the four real structures (1EL1, 1BVC, 1OLR, 6m0j) at production defaults: **354 of 354 cases agree with JAX on ORT-CPU** and **96 of 96 on ORT-Web** (worst relative error 5.6e-6 and 5.8e-6; the digits of every `visit` are exactly equal at temperature 0 and at 0.05), and **every repeated case is bit-identical across five multi-threaded ORT-CPU runs**. All three controls fired, including the race control: the pre-fix scatter-add objective, exported and run eight times at the default thread count, did NOT repeat bitwise, so the determinism check demonstrably sees the defect it exists for.
+
+The determinism check is the new part and the reason this gate exists in this form: the first version of these graphs passed every single-thread comparison and was wrong by up to 4 at 4 threads (spec 54). The graphs are pinned for downstream use at `~/bv/protonpotts-export/x7a_d5918c26/` (the racy control artifact is not shipped).
+
+Chunked `field_at` replaces the full-chain `candidate_energies` in the browser, for the same thread-safety reason; the JS loop (`ph_design.mjs`) is graded next (X7b), then headless Chromium at 1 and 4 threads (X7c).
+
+### 54.3 B1, step 2 graded (2026-10-09): the JS pH design loop equals design_structure (X7b)
+
+Run **`f0523ef9`**: completed, `pass`, exit 0, clean tree at `880c9871`, sidecar committed first (`bd28175a`). `browser/protonpotts-scorer/ph_design.mjs` (`PhDesigner.design`), run under Node with onnxruntime-web (wasm, 1 thread) from PDB text on the X6a scoring and X7a per-block artifacts (both verified by sha256), reproduces `design_structure` on all **12 of 12** cases (4 structures x {centres HIS-P/ASP-P/GLU-P at temperature 0, the same at 0.05 with injected uniforms, HIS-P alone at 0.05}, two samples each): placement (pins), designable sets, sequences and draw counts exactly equal, final and selective energies within 2.6e-5 (bar 1e-4). Both controls fired (uniforms rolled by one position: the sequences differ; a perturbed Potts head: the energies differ). The reference is aminx's own `design_structure` on the unpadded structure through the driver's `protonpotts_table`, so agreement also covers the browser's padding to a bucket.
+
+The planner (`ph_plan.mjs`) was checked separately against the real Python functions on 97 random cases (a deterministic equality test): all equal, with a negative control.
+
+Next: the same twelve cases in headless Chromium at 1 and 4 threads (X7c); then pinning the per-block graphs under `release/browser/protonpotts/` and folding the new waves into the redsox ledger at the next re-wave.
+
+### 54.4 B1 closed in a browser (2026-10-09): the shipping pH design page equals design_structure at 1 and 4 threads (X7c)
+
+Run **`6be6e82f`**: completed, `pass`, exit 0, clean tree at `c24fc4cd`, sidecar committed first (`ee7b8007`). `ph_index.html` + `ph_page.mjs` (PhDesigner from PDB text), served with COOP/COEP and driven in headless Chromium 153 through `browser/layer_c/run_p07.mjs` unchanged, reproduce `design_structure` on all 12 cases at **1 thread and at 4 threads** (24/24 case-runs): sequences, designable sets, pins and draw counts exactly, energies within 2.6e-5 (bar 1e-4). `crossOriginIsolated` was true and ORT reported 4 effective threads at 4. Both controls fired at both settings. The 6m0j cases (177 MB table) completed, so the predicted heap/timeout risk did not occur. Scope: block descent, P in {1,2,3}, block size 3, buckets 256/1024; WebGPU, other browsers and speed are not covered.
+
+Open for B1: pin the per-block graphs under `release/browser/protonpotts/`. Next: B2, the V=30 decoder graphs (X8a gate, `protonpotts_decode_export_gate`).
+
+### 54.5 B2, step 1 graded (2026-10-09): the V=30 decoder graphs export and agree (X8a)
+
+Run **`cd5fe181`**: completed, `pass`, exit 0, clean tree at `c26bb2cc`, sidecar committed first (`3aac2621`). The `encode` and `decode` graphs of `decode_export` (weights baked, noise, uniforms, temperature, bias and designed mask as inputs; upstream's token order as the CDF accumulation order) export at both buckets and, on 1EL1/1BVC/1OLR (256) and 6m0j (1024), reproduce JAX on ORT-CPU and onnxruntime-web: **16/16 on each**, tokens, decoding order and E_idx exact, floats within 1.4e-6. Five multi-threaded CPU runs were bit-identical (the scatter-add hazard of §54 did not recur: the decoder uses one-hot updates). Both controls fired. One of 12 decode cases (6m0j `bias_temp`) is FRAGILE (a draw within 1e-5 of a CDF boundary), so its token comparison was exempt by pre-registered rule and its decoding order and log-probs were compared. Manifest sha256 `bacf2245867601c91ffb4a3e6bcec1b1c48d30b20b016e493414e9561d208c6b`.
+
+Next for B2: the JS sampler (generates uniforms and noise, calls encode then decode), its Node gate against the driver, then headless Chromium at 1 and 4 threads.
+
+### 54.6 B2 closed in a browser (2026-10-09): the JS sampler equals the unpadded eager decoder, Node (X8b) and Chromium at 1 and 4 threads (X8c)
+
+`browser/protonpotts-scorer/decoder_sampler.mjs` (`ProtonPottsSampler.sample`: PDB text, JS featurization and padding, the encode and decode graphs of the §54.5 manifest, injected or seeded noise and uniforms, trimming) was graded against `make_encode`/`make_decode` run on the UNPADDED structure, 4 structures x {default, bias_temp, fixed}:
+
+| Gate | Run | Result |
+|---|---|---|
+| X8b, Node (wasm, 1 thread) | **`a05397f8`**, clean tree at `03f7e0a5` | 12/12; log-probs within 4.0e-6; seeded path repeatable and seed-sensitive on all 4 structures; both controls fired |
+| X8c, headless Chromium 153 | **`0ada643e`**, clean tree at `a5d63462` | 12/12 at 1 thread and at 4 threads (worst 4.1e-6); cross-origin isolated, 4 effective threads; seeded checks and both controls hold at both settings |
+
+Sequences and decoding orders are exact; 2 of 12 cases (1BVC and 6m0j `bias_temp`) are FRAGILE by the pre-registered margin (a draw within 1e-5 of a CDF boundary) and exempt on sequence only; their orders and log-probs were still compared, and their sequences agreed in the smoke runs.
+
+**A wrong mechanism, found and disclosed.** The first sampler shifted the uniform stream by the pad count on the belief that padding decodes first. The exploratory X8b smoke disagreed on all 12 cases (orders exact, sequences and log-probs not), and a padded-vs-unpadded JAX spike showed the decoder orders padding LAST (`decoding_order_from_noise` takes `pad_valid`), so real residues keep steps 0..L-1 and the stream goes unshifted. The sampler was fixed and the sidecar's hypothesis text carries a dated REVISION; no outcome criterion or tolerance changed. Failed numbers from the smoke are not cited.
+
+Scope: sequence sampling from the 30-token decoder with caller-supplied designed mask, temperature, bias and streams; buckets 256/1024; the seeded generator is a JS mulberry32 whose statistics are not graded. Not covered: WebGPU, other browsers, speed, the pH design methods that use the decoder (D3), a UI.
+
+Pinned artifacts: `release/browser/protonpotts/ph/` (manifest `131a65cb…`) and `release/browser/protonpotts/decoder/` (manifest `bacf2245…`), every graph hash re-checked against its manifest.
+
+## 55. D3 re-scoped from the upstream source (2026-10-09)
+
+Recon by a Haiku agent, then every load-bearing claim re-read by the lead in `foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py` (`UP:` line numbers below). **This corrects §53 and the original D3 list: `gibbs` does not use the decoder.**
+
+| Method | What upstream does | Decoder? | aminx today |
+|---|---|---|---|
+| `block_descent`, `greedy` | Potts-energy placement redesign | no | ported, graded (ph_block, ph_greedy, ph_driver) |
+| `gibbs` | `_run_whole_chain` calls `PottsMPNN.potts_gibbs_optimize(etab_out, E_idx, seq_init, free_mask, temperature, max_iters=1000, convergence_mode=True, valid_aa_mask)` (UP:1217-1225) | **no, Potts only** | refused; needs a Potts-Gibbs port, which is not a decoder item |
+| `mpnn_sample` | `_run_whole_chain` runs the model with `repeat_sample_num=N` and reads `decoder_features["S_sampled"]` (UP:1226-1231), then scores each design; temperature comes from the model settings (recon: potts_inference.py:156, not re-read), not from the criteria | yes: the autoregressive decoder, N rows | refused (#2617) |
+| `autoregressive` | `_masked_infill` (UP:1908-1938): lock every centre, set the union of neighbourhoods to UNK, then visit positions in `order` and SAMPLE each from `softmax(-J/T)` where `J = (1-λ)·z(-log p_MPNN) + λ·z(Σ centres (e_P − e_D))` (selective_source `potts`), using `ctx.field_mpnn(S)[i]`, a per-position decoder conditional | yes: teacher-forced `conditional_minus_self` conditionals, no free-running AR | refused (#2617) |
+| `autoregressive` + `selective_source='decoder'` | the same loop with `J = −[p(a|centres=target) − λ·p(a|centres=off)]` (UP:1931, `_selective_reward_decoder`) | yes | refused (#2617) |
+| `backend='mpnn'`, `placement_by='scan_mpnn'` | decoder-driven placement | yes | refused (#2617) |
+
+Unchecked by the lead (carried as unverified): the upstream commit hash; how the temperature enters `input_features`; the symmetry-group value; `placement_by='random'` and `placement_region` appear validated but never read in upstream (recon), which would be an upstream no-op to mirror, not fix.
+
+**Consequences for the plan.** (1) The decoder pieces aminx already has (`ProtonPottsARDecode`, `teacher_forced`) cover `mpnn_sample` and the `field_mpnn` conditional. (2) Each remaining method needs an UPSTREAM ORACLE dump first (a new dumper beside `dump_protonpotts_ph.py`, with the draws shimmed the way P4h shimmed the single-row decoder, here for N rows), sealed, then a pre-registered parity wave, then the driver surface and the lifted refusal, then the vehicle fold. (3) Order by cost and value: `mpnn_sample` (N independent AR draws, scored), then `autoregressive` with the Potts selective source (needs `_sampler_zscales`, `_selective_row`, `_pick`), then the decoder-selective variant, then `backend='mpnn'`/`scan_mpnn`. (4) `gibbs` moves to its own debt. The unified refusal text in `ph_config.py` that names #2617 for `gibbs` (if any) is wrong and gets corrected when a method is lifted.
+
+### 55.1 The vehicle folded to nine waves and 61 controls, graded (2026-10-09)
+
+Run **`592ecf08`**: completed, `pass`, exit 0, clean tree at `4615e181`, launched through `scripts/redsox/launch_wave.sh 4` with `AMINX_WAVE_REF` set to this branch (the launcher checked the 61 `--mutants` ids against the manifest rows first). All nine waves are clean (features 11 controls, encoder 7, energy 7, driver 3, ph_block 8, ph_greedy 6, ph_driver 5, decoder 9, ddg 5) and **all 61 controls were rejected**. Only `protonpotts_parity` was stale at that commit (`stale_rows.py`: 1 of 9; the other eight rows fresh). This is also the neutrality check for the `ph_potentials`/`ph_descent`/`ph_export` edits on the seven earlier waves: none regressed.
+
+Two things the fold's pre-commit checks caught, both fixed in `4615e181` and both worth keeping: (1) the closure registry did not declare the dynamic loads of the two new wave scripts, so the row's closure was unsound and `tests/knob_gate/test_closure_selftest.py` failed twice (the second failure was the symptom: an unsound closure falls back to the global rule, so a LASEr change staled the ProtonPotts row); (2) three trailing commas. Not yet in the ledger: `tests/knob_gate/sidecar_ledger.toml` still names the seven-wave run `94f395f8`; it is updated at the final re-wave, because the D3 edits to the family package (§55) stale this row again.
+
+### 55.2 mpnn_sample: the N-row sampler graded against upstream (2026-10-09)
+
+**Oracle (P4i).** `scripts/protonpotts/dump_protonpotts_sample.py` runs the engine's call (`prepare_potts_input(designed_chains=[binder])`, `repeat_sample_num = 3`, `torch.multinomial` replaced by per-row inverse-CDF on injected uniforms) on the four cells in f32 and f64. The first graded run **`2be88891`** recorded outcome **fail** by its own rule: `only_designed_mask_differs` was false in all four cells because my check demanded identical key sets, while the default preparation carries no `designed_residue_mask` array at all (it means "all designed"). An earlier exploratory smoke had shown the same flag false for a different reason (my claim required True and False in every cell, but three of the four structures are single-chain, so the binder is the whole structure). Both were defects in the check, not in the oracle; both are disclosed in the sidecar's provenance note and the failed run stays on record. Rerun **`012c4b24`** (output `features_v6_p4i2`): completed, `pass`, clean tree at `38ce8fc9`, every flag true; the smallest draw margin is 2.7e-5, so no draw is fragile at the oracle's own precision.
+
+**Wave.** `protonpotts_sample` (`scripts/parity/protonpotts_sample_parity.py`, pre-registered with 8 controls) against that dump: run **`981fa479`**, completed, `pass`, exit 0, clean tree at `38ce8fc9`. All four cells agree in both precisions: float64 within 4.7e-13, float32 at 12% of its band (worst over band 0.121), every non-fragile draw and every free-running sequence exact, non-designed positions held at native, and **all 8 controls rejected** (shared order across rows, rows' uniforms swapped, all residues designed, CDF in aminx order, uniforms shifted a step, one row repeated, temperature 1.0, 4x-band nudge). Two draws are fragile by the 1e-5 rule at the wave's precision and two rows are exempt from the free-run sequence comparison (their arrays and the other rows are compared).
+
+**Coverage limit, stated plainly.** 1BVC, 1OLR and 1EL1 are single-chain, so there every residue is designed; the binder-only path (non-binder positions kept native) is exercised by one structure, 6m0j chain E. The benchmark set holds no other multi-chain structure.
+
+**Lifted.** `ph_config` now supports `mpnn_sample` (still on backend `potts`; `autoregressive`, `backend='mpnn'`, `selective_source='decoder'`, `placement_by='scan_mpnn'` stay deferred under #2617). `ph_sample.mpnn_sample_designs` and the driver's `sample` branch implement the method on the graded sampler. Mirrored from upstream on purpose, and documented in the module: the sampling temperature is the prepared input's float32 0.1 and NOT `config.temperature` (a warning is logged when they differ); no bias and no forbidden-token mask when sampling (upstream applies `forbidden_tokens` only when scoring); N is `samples_per_site`; designs come back in sample order; the draws come from a JAX key (no upstream anchor) or are injected for replay. Not ported from upstream's `_score_design`: `sequence_decoded_prob_score` and `sequence_entropy`.
+
+### 55.3 Final re-wave: ten waves, 69 controls (2026-10-09)
+
+Run **`1045798b`**: completed, `pass`, exit 0, clean tree at `97779d72`, via `launch_wave.sh 4` (the 69 `--mutants` ids matched the manifest rows first). All ten waves clean (features 11, encoder 7, energy 7, driver 3, ph_block 8, ph_greedy 6, ph_driver 5, decoder 9, ddg 5, sample 8 controls) and **all 69 controls rejected**. Only this row was stale (`stale_rows.py`: 1 of 9). `scripts/redsox/verify_wave.py` at `4c54a971` reports every one of the 14 conditions PASS for it and "would grade" all nine ledger rows, "would NOT grade: (none)". `tests/knob_gate/sidecar_ledger.toml` now names this run.
+
+One thing the re-wave settled that the earlier graded run could not: `sample_rows` was rewritten from a raw `jax.vmap` to the xtrax-planned map after `protonpotts_sample` was graded (`981fa479`), because the L-DRV lint (R1) forbids raw vmap. The rewrite first broke five tests (the xtrax iterator passes the mapped function ONE tuple argument; fixed in `97779d72`), and the final vehicle run regrades the sampler on that code: still exact, all 8 sample controls rejected.
+
+**Where D3 stands.** Done and graded: `mpnn_sample` (decoder oracle P4i, wave, driver surface, config lift, tests). Open under #2617: `autoregressive` (needs `ctx.field_mpnn`-style conditionals, `_sampler_zscales`, `_selective_row`, `_pick`, and its own oracle dump), `selective_source='decoder'`, `backend='mpnn'`, `placement_by='scan_mpnn'`. Moved out of #2617: `gibbs` is Potts-only (debt #2616 family). Known limits recorded: the binder-only path is graded on one structure (6m0j chain E); `sequence_decoded_prob_score` and `sequence_entropy` are not ported; the sampling temperature mirrors upstream's ignore-the-criteria behaviour (a warning is logged).
+
+## 56. The remaining pH-engine methods: one oracle, one wave (2026-10-09, pre-registration)
+
+**Scope.** Everything still refused under #2616 and #2617 that needs only the pieces aminx already has: `autoregressive` (both `selective_source='potts'` and `'decoder'`), `converged_mcmc`, `converged_mcmc_combined`, `two_phase`, `gibbs`, `backend='mpnn'` (the decoder as the placement and MCMC field), and `placement_by='scan_mpnn'` with `placement_seq_masked`. They share one context (`_PHContext`), one randomness seam (`torch.multinomial`, `torch.randint`, `torch.randperm`) and one new primitive, `field_mpnn` (a teacher-forced `conditional_minus_self` decoder pass whose negated log-probs are the field). So they get ONE oracle dump (P4j), ONE wave (`protonpotts_ph_methods`) and ONE vehicle fold, so that `protonpotts_parity` is re-waved once.
+
+**Assumptions, tagged** (verified = read at `UP:` line or probed on titanix 2026-10-09; unverified = the dump or wave is what checks it):
+
+| # | Assumption | Tag |
+|---|---|---|
+| A1 | The real upstream engine runs all of these methods unmodified, with the real checkpoint, on 6m0j chain E, in float32 and in float64 (P4h's widening context plus `engine.model.double()`). A spike ran them; `autoregressive` raises `ValueError: method='autoregressive' requires backend='mpnn'` for backend `potts`. | verified (spike) |
+| A2 | `field_mpnn(S)` is `-log_probs` of one model call on the prepared input with `decode_type='teacher_forcing'`, `causality_pattern='conditional_minus_self'`, `initialize_sequence_embedding_with_ground_truth=True`, `S` replaced (UP:1157-1165). It carries the prepared input's temperature (float32 0.1) and zero bias, so it is the TEMPERED log-probability. aminx's `decode.teacher_forced` already implements and grades that pattern (wave `protonpotts_decoder`). | verified (read) |
+| A3 | `_masked_infill` clamps its temperature to at least 1e-3, never reads `crit.selective`, visits `order` (a `random.Random.sample` of the designable set, seeded `seed*100003 + seq_i*7919`), and draws one `torch.multinomial` per visited position (UP:1908-1938). `_converge` draws one `torch.randint(len(neigh))` then one pick per step and stops after `cv_patience*N` unchanged steps or `cv_max*N` steps (UP:1941-1957). `_two_phase` picks once per neighbour, commits the `round(two_phase_frac*N)` least disruptive, then converges on the rest (UP:1960-1982). | verified (read) |
+| A4 | `gibbs` is `PottsMPNN.potts_gibbs_optimize` (pottsmpnn.py): per sweep one `torch.randperm(F)` over the free positions, then per position the conditional energy row, `softmax(-E/T)` with `T = max(T, 1e-3)` and one `torch.multinomial`; stops after a sweep with no mutation or after 1000 sweeps. Its conditional uses the INCOMING adjacency (the kNN graph is asymmetric). | verified (read) |
+| A5 | aminx's `candidate_energies_at` equals gibbs' hand-written conditional row, incoming edges included. | **unverified**; the wave grades it through the recorded gibbs probabilities |
+| A6 | In the float64 engine run every tensor the optimisers touch is float64 (the spike did not inspect dtypes). | **unverified**; dump claim 3 checks recorded dtypes |
+| A7 | `torch.randint` and `torch.randperm` are called only as shown, with the shown signatures; any other call signature makes the shim raise rather than guess. | **unverified**; the shim refuses unexpected signatures |
+| A8 | The engine's `_decoded_prob_score`/`sequence_entropy` outputs are not needed to grade the optimisers. They stay un-ported (as for `mpnn_sample`). | decision |
+
+**What the oracle records, per call of an optimiser** (a "call" is one outermost `_masked_infill`, `_converge`, `_two_phase` or `potts_gibbs_optimize`): the input and output sequences, the pins, the designable set, the visiting `order` (autoregressive), every `_pick` score row with its temperature and result, every `torch.multinomial` event as (probabilities, uniform, choice, distance of the uniform to the nearest CDF boundary), every `randint` and `randperm` draw, the pooled z-scales of `_sampler_zscales`, and, for scan placement, the ranked `(position, score)` list. Per design: the final Potts and selective energies. Per cell: the native sequence, masks, `E_idx`, residue ids.
+
+**Replay contract (aminx side).** All randomness is injected: the wave feeds the recorded uniforms, `randint` values and permutations in order; a `FORCED` mode feeds the recorded CHOICES instead, so one near-tie cannot cascade and every step's probabilities are compared at the recorded state. The fragile-draw rule is the earlier one (a draw within 1e-5 of a CDF boundary is exempt on the token, reported). Bands: float64 1e-9; float32 ten times the measured f32-vs-f64 spread, at least 1e-6.
+
+**Decisions.** (1) Two cells, not four: 6m0j chain E (the binder-only path) and 1BVC chain A (single chain). The decoder-backed configurations cost about 16 s per MCMC step in float64 at one thread, so four cells would exceed any sensible budget; the other two single-chain cells add no path. Disclosed as a coverage limit. (2) Eleven configurations in ONE `run_ph_redesign` call per cell and precision, which shares one featurisation. (3) The oracle runs per UNIT (cell x precision), each in its own process with its own timeout, persisting a completion stamp, and a re-run skips units whose inputs and artifact hashes match, as the standing rule for long runs requires. (4) `placement_by='random'`, multi-centre enumeration (`center_count > 1` by `center_protonation_types`), `seed_source='inverse'`, the unported knobs of #2621 and `record_trajectory` stay refused; each is named in the config error.
+
+### 56.1 Results: the oracle was wrong twice, the wave found both (2026-10-10)
+
+**Wave `protonpotts_ph_methods`: run `6d086bf5`, completed, `pass`, exit 0, clean tree at `737b604b`, 2,703 s.** Its recorded outcome is the pre-registered condition (§56 and `protonpotts_ph_methods_parity.bth.toml`): all 44 calls (2 cells x 2 precisions x 11 labels) with placement, forced-replay probabilities (float64 within 1e-9), final sequences and draw counts exact, free-replay choices and sequences exact except at fragile draws, energies and z-scales in band, non-designed positions held, and all twenty deliberate errors rejected. **Oracle: P4j dump run `89c1982f`**, clean at `42ea7cbc`, all flags true, in `features_v6_p4j3`.
+
+**Three dump runs, two superseded; read this before trusting any P4j number.**
+1. `10861085` (clean, `2ea187fb`) passed its own criteria and is **superseded**: the engine was built at the float32 default dtype and fed float32 input features, so its "float64" arrays were float64 in dtype and float32-noisy in value.
+2. `7080808f` (clean, `47df6f8e`, `features_v6_p4j2`) built the engine in float64 and is **superseded**: building in float64 changed no value. Found by diffing aminx against it; the aminx wave's float64 differences were identical to the last digit before and after the change.
+3. `89c1982f` (`42ea7cbc`, `features_v6_p4j3`) also casts every floating input feature the engine prepares to float64, as the P4e dump did (`dump_protonpotts_encoder.py:118-121`), and records the keys. aminx and upstream then agree to 2.5e-13 on probabilities, 4.5e-13 on placement scores and 5e-15 relative on energies (a one-unit spike, ungraded; the graded wave is the authority).
+
+`f19ee91b` is **my aborted launch**: killed seconds in, stuck at `running`, dirty at `4c54a971`. The launcher continued past a failed checkout because I had left an untracked copy of the script on titanix. It produced no artifact. Both sidecar revisions were committed before the script change that answered them (`a4ce289f`, `b3704d05`). Both defects were found by the wave's band, not by the dump's own dtype checks, which is the reason to grade an oracle against the port.
+
+**Instrument defects found on the way, none in a band:** a constructor guard on `Draws` stricter than the use; a crash instead of a miss when aminx returned no z-scales where upstream had them; and a cost problem. The first `gibbs` made one host round trip per position (about 72,000 per call), so the first exploratory smoke took 146 minutes. It is now one jitted `lax.scan` per sweep (`_gibbs_sweep`, allowlisted as a sequential dependency); the free replay stops at its first fragile event and the float32 floor measurement skips the free replay. The graded wave takes 45 minutes.
+
+**What this lifts.** `autoregressive` (both selectivity sources), `converged_mcmc`, `converged_mcmc_combined`, `two_phase`, `gibbs`, `backend='mpnn'`, `placement_by='scan_mpnn'` and non-selective placement are supported and graded on 6m0j chain E and 1BVC chain A. `mpnn_sample` now requires `backend='mpnn'`, as upstream does. Still refused: `placement_by='random'`, multi-centre enumeration, `seed_source='inverse'`, `record_trajectory` for the new methods, and the #2621 block-descent knobs. `placement_seq_masked` is a documented no-op upstream (label only). Variant names ride the scoring id arrays' attrs (#2618 item 5).
+
+**Limits, stated plainly.** Two cells, one centre type (HIS-P), one centre per plan; the binder-only path is one structure; `sequence_decoded_prob_score` and `sequence_entropy` are not ported; the float32 band is measured from aminx's own float32-vs-float64 spread on identical forced states (a deviation from the earlier waves, pre-registered); the two calls with a fragile draw are graded by forced replay alone after it.
+
+### 56.2 The new knobs are not options fields, and why (2026-10-10)
+
+The first fold (vehicle run `33360f39`, `9801f815`) added `design_backend`, `selective_source`, `selective`, `placement_by` and `two_phase_frac` to `ProtonPottsOptions` (`src/aminx/run/options.py`). `scripts/redsox/verify_wave.py` then reported **eight other ledger rows as "would NOT grade"** (`potts_energy_parity`, `potts_ar_decode`, `potts_ar_refine_exact`, `potts_ddg_megascale` and the four LASEr rows), each with the same cause: `options.py` is in their loaded-file closure and had changed since their graded run. Re-waving them (one is 11.6 h, the LASEr ones run on the cluster) to publish five knobs is the wrong trade, so `options.py` was restored to its graded content (zero diff against `97779d72`, which `verify_wave` accepts) and the knobs live on `PHDesignConfig`.
+
+Consequences. (1) Through the options, `design_method` accepts every supported method and the backend follows it (`mpnn_sample`, `autoregressive` -> `'mpnn'`; the rest `'potts'`); the other knobs keep their defaults. (2) The five knobs are set on `PHDesignConfig` and reached by `ph_methods.design_methods` (the Python API); the knob-gate alias rows stay documented exclusions under `deferred:2621`, and the knob tests are config-level (`test_methods_*` in `test_protonpotts_search_knobs.py`). (3) `protonpotts_parity` needs one more vehicle run, because `ph_config.py` changed after `33360f39`; the ledger entry is updated only after it. (4) Debt: expose the five knobs on `ProtonPottsOptions` (with their alias rows and knob tests) in the next change that re-waves the shared options anyway (#2621).

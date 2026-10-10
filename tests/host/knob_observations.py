@@ -142,6 +142,7 @@ OBSERVATIONS: dict[str, Verdict] = {
   # --- driver-family options: campaign refuses pottsmpnn/lasermpnn (T0.5 consumer branch) --
   "potts_mpnn": NotApplicable(reason="PottsMPNNOptions require model_family pottsmpnn (build_run_spec ValueError otherwise), and campaign mode refuses driver families (T0.5)"),
   "laser": NotApplicable(reason="LaserOptions require model_family lasermpnn (build_run_spec ValueError otherwise), and campaign mode refuses driver families (T0.5)"),
+  "protonpotts": NotApplicable(reason="ProtonPottsOptions require model_family protonpottsmpnn (build_run_spec ValueError otherwise), and campaign mode refuses driver families (T0.5)"),
   "tie_group_map": Bundle(param="tie_group_map", reason="threaded to the bundle at kernel_dispatch.py:228"),
   "state_weights": Bundle(param="state_weights", reason="threaded to the bundle at kernel_dispatch.py:229"),
   "state_position_map": Bundle(param="state_position_map", reason="broadcast + threaded at kernel_dispatch.py:230-232"),

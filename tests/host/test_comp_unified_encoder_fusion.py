@@ -90,6 +90,7 @@ def _mock_sampling_spec() -> MagicMock:
     # auto-creation makes omit_aa_is_active() fire and selects a family driver.
     spec.potts_mpnn = None
     spec.laser = None
+    spec.protonpotts = None
     spec.omit_aa = ()
     spec.omit_aa_per_position = None
     return spec

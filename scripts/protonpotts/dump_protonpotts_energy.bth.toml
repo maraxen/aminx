@@ -1,0 +1,62 @@
+[metadata]
+title = "ProtonPottsMPNN v6 Potts energies of fixed sequences, f32 and f64 (P4f)"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4f of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§42). The sealed P4e dump holds upstream's
+merged pair table per cell and precision but no energy, and the energy is what score:energy and score:ddg
+report. This applies upstream's own PottsMPNN.calc_potts_eners to the sealed merged table and E_idx for a
+fixed set of sequences per cell: the native S, eight uniform draws over all 30 tokens, and one sweep that
+cycles every token through the chain.
+
+Claims, falsifiable by this run:
+
+1. THE TABLES ARE THE SEALED ONES. The content hash of every P4e array set read here equals the hash the
+   P4e manifest recorded, so the energies are of exactly the tables the encoder wave graded.
+2. COMPLETE. Every cell and precision carries one finite energy per sequence.
+3. THE f64 ENERGIES ARE REALLY DOUBLE. Every f64 energy array is float64 AND the two precisions differ
+   (max |E_f64 - E_f32| > 0 on every cell). A float32 energy labelled f64 would make the later "exact" claims
+   vacuous.
+4. REPRODUCIBLE. A second run in a fresh process gives identical content hashes for every cell and precision,
+   threads pinned to 1.
+
+Recorded, not required: the per-cell f32-vs-f64 spread of the energy, which is the measured floor the aminx
+f32 band is set from (decision 11e).
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "tables_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4"
+decision = "Seal the energy dump and grade the aminx merge and energy against it (protonpotts_energy wave)."
+reasoning = "The tables are the sealed ones, the energies are complete and genuinely double where claimed, and the result is reproducible."
+is_residual = false
+adversarial_check = "NOT (tables_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4)"
+
+[outcomes.fail]
+condition = "NOT (tables_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4)"
+decision = "Do not seal. Read which flag is false; a tables mismatch means these are not the graded tables."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "tables_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4"
+
+[result_schema]
+tables_match_sealed = "bool"
+complete = "bool"
+f64_is_float64 = "bool"
+precisions_differ = "bool"
+reproducible = "bool"
+n_cells = "int"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, PottsMPNN.calc_potts_eners (static)"
+inputs = "sealed P4e dump (run 60351d47) and the sealed P4b/P4c/P4d feature dumps (native S)"
+sequences = "per cell: native S; 8 uniform over 0..29 (numpy default_rng, seed 0 + cell index); one cyclic sweep i % 30"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/dump_protonpotts_energy.py --encoder-dir <P4e out dir> --features-dir ~/projects/aminx-oracles-protonpotts --out <dir> in the aminx-oracles-protonpotts env from a clean checkout of the commit that adds this file. Written and committed before the first graded run."

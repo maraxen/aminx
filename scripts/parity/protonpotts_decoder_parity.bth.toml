@@ -1,0 +1,95 @@
+[metadata]
+title = "protonpotts_decoder wave: the aminx 30-token decoder (autoregressive with injected draws, three teacher-forced patterns) against upstream, per step"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+The aminx ProtonPotts decoder (`aminx.families.protonpotts_mpnn.decode`: `ProtonPottsARDecode` and `teacher_forced`), built from the
+converted v6 checkpoint and fed the sealed feature dumps, reproduces upstream's decoder as dumped by P4h
+(`dump_protonpotts_decoder.py`; foundry `ProteinMPNN.decode_auto_regressive` / `decode_teacher_forcing`, inherited by `PottsMPNN`), for
+four cells (1BVC, the two-chain 6m0j, 1OLR with dropped residues, 1EL1 with a numbering gap), in float64 and float32.
+
+AUTOREGRESSIVE, configurations ar_default, ar_bias_temp (per-residue temperature and a [L, 30] bias), ar_fixed (every 7th residue,
+offset 3, not designed) and ar_x_bias (temperature 1, a bias of +8 on X at every position: regenerated, like the others, from the dump's
+recorded constants; it is the configuration in which an X left in the sampling distribution would dominate). The decoding order and the uniforms are the dump's; the per-residue temperature, bias and designed mask are
+regenerated from the dump's recorded seed and constants (`decoder_manifest.json`: seed, fixed_every, fixed_offset; numpy
+`default_rng(seed + 17)`, temperature drawn first, then bias) exactly as the dumper built them. Compared at every position:
+  - raw `logits`, `log_probs`, the renormalised `probs_sample` and each decoder layer's output (so a mismatch is localised to a layer);
+  - in a FORCED-TOKEN replay (the dump's drawn tokens fixed as the prefix), every step's own draw equals the dump's draw;
+  - in the FREE-RUNNING decode (aminx draws its own tokens), the whole sequence equals S_sampled.
+TEACHER FORCING, on the native sequence with the embedding initialised from it, patterns auto_regressive (dump order), conditional and
+conditional_minus_self: `logits` and `log_probs`.
+
+TOLERANCES, fixed before any aminx-vs-dump number exists:
+  float64   every array within 1e-9 absolute (the protonpotts_encoder wave's bar);
+  float32   every array within 10x the MEASURED upstream f32-vs-f64 spread of that array in this dump (decision 11e), never below 1e-6;
+  draws     a step is numerically FRAGILE when the dump's recorded distance of its draw to a CDF boundary is below 1e-5 (relative to the
+            total mass). Fragile steps are exempt from the per-step draw check, and a configuration with any fragile step is exempt from
+            the free-running sequence check; both exemptions are REPORTED (counts per cell and configuration), never silent. All other
+            draws and sequences must be exactly equal.
+
+TOKEN ORDER. The dump's token-indexed arrays (logits, log_probs, probs_sample, the drawn and sampled tokens) are in UPSTREAM's index
+order, aminx's in its own. Both sides are compared in aminx order: float arrays are taken along the token axis with the converter's
+`token_permutation()` (as the protonpotts_encoder wave does for the pair table), integer tokens are mapped with
+`upstream_to_aminx_index`, and the dumper's random bias is permuted the same way before it is fed to aminx. The inverse CDF accumulates in
+UPSTREAM's token order (`cdf_order`, the contract of ph_descent.select_joint), because a given uniform selects a different token in each
+order; the production default is aminx's own order.
+
+WHAT MAKES A PASS MEAN SOMETHING (spec §6): nine deliberate errors must each be REJECTED by the same comparison, on 1BVC in float64:
+  bias_ignored, scalar_temperature (the mean of the per-residue temperatures), x_not_zeroed (the unknown token left in the sampling
+  distribution; run on ar_x_bias, the only configuration in which it is visible), fixed_treated_as_designed, token_order_upstream (the native sequence fed to teacher forcing in upstream's index order),
+  cms_uses_conditional_mask, uniforms_shifted_one_step, cdf_in_aminx_order (the draw accumulated in aminx's token order), and a correct
+output nudged to 4x the band.
+
+PREDICTION, stated before the run so it can be wrong: all four cells pass in both precisions and all nine errors are rejected. The risks
+are (a) the open question of spec §14, the decoder mask placement (upstream masks the decoder MESSAGE after the MLP, aminx the edge
+features before it): with no padding in these cells it should not bite, and a mismatch here would be its first evidence; (b) the 1OLR and
+6m0j cells, whose dropped residues and chain breaks the decoder meets for the first time; (c) float32 at temperature 0.1, where logits are
+amplified tenfold.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_cells = 4 AND f64_in_band AND f32_in_band AND draws_exact AND sequences_exact AND checkpoint_matches AND n_listed = 9 AND n_failed = n_listed"
+decision = "protonpotts_decoder is graded: the aminx 30-token decoder reproduces upstream per step in both precisions and every error is rejected."
+reasoning = "All arrays are within their bands, every non-fragile draw and sequence is exact, the weights came from the dumped checkpoint, and all nine controls fail."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_cells = 4 AND f64_in_band AND f32_in_band AND draws_exact AND sequences_exact AND checkpoint_matches AND n_listed = 9 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_cells = 4 AND f64_in_band AND f32_in_band AND draws_exact AND sequences_exact AND checkpoint_matches AND n_listed = 9 AND n_failed = n_listed)"
+decision = "Do not treat the decoder as graded. Read per_cell: the first failing array in layer order names the stage (layer outputs, then logits, then probs_sample); a draw or sequence miss with the arrays in band names the sampling convention. An undetected error means the comparison cannot discriminate it."
+reasoning = "Either an array is outside its band, a non-fragile draw or sequence differs, the checkpoint does not match the dump, or a control was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_cells = 4 AND f64_in_band AND f32_in_band AND draws_exact AND sequences_exact AND checkpoint_matches AND n_listed = 9 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+f64_in_band = "bool"
+f32_in_band = "bool"
+draws_exact = "bool"
+sequences_exact = "bool"
+checkpoint_matches = "bool"
+n_fragile_steps = "int"
+n_configs_exempt_from_free_run = "int"
+worst_over_band = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_cell = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle = "P4h decoder dump (dump_protonpotts_decoder.py), upstream ProtonPottsMPNN @ 09682abf; the dump's own graded run is recorded in the spec"
+features = "sealed P4b/P4c/P4d feature dumps"
+checkpoint = "potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt via the converted state"
+tolerances = "f64 1e-9 abs; f32 10x measured f32-vs-f64 spread per array, min 1e-6; draws exact except fragile (margin < 1e-5), reported"
+
+[provenance]
+note = "REVISED 261009 AFTER A GRADED RUN. The first graded run (a54ce791) recorded outcome fail by this file's own rule: every aminx-vs-dump comparison passed (f64 within 3.5e-14, f32 within 0.17 of its band, draws and sequences exact) but the control x_not_zeroed was not rejected, because upstream's probability of X is negligible in the three dumped configurations, so zeroing it moves nothing a 1e-9 comparison can see. The criteria were not relaxed. The instrument was improved: the dump gains ar_x_bias (see dump_protonpotts_decoder.bth.toml), this file lists it, and x_not_zeroed is run on it. The failed run stays on record. AMENDED 261009 before any graded run, after an exploratory run (not cited) failed on a harness defect found by localisation: the dump is in upstream token order and the first version of the script compared it with aminx order, uncorrected. A second exploratory run found one more harness constant: the default per-residue temperature is upstream's float32 0.1 cast to double (0.10000000149...), not the exact double 0.1, so the float64 arm differed by 1e-6 on log_probs until the harness used float32(0.1). The amendment adds the TOKEN ORDER paragraph, the float32-stored default temperature and the ninth control; no tolerance, count or pass criterion other than n_listed was touched. Pre-registered at the commit that adds this file, before protonpotts_decoder_parity.py exists and before any aminx-vs-dump decoder number exists. Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_decoder_parity.py --state-npz <v6_state.npz> --decoder-dir <dir holding protonpotts_v6_decoder/ and decoder_manifest.json> --features-dir ~/projects/aminx-oracles-protonpotts, from a clean checkout of the commit that adds the script. Not a redsox ledger row until it is folded into the protonpotts_parity vehicle."

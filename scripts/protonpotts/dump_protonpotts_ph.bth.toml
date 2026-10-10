@@ -1,0 +1,71 @@
+[metadata]
+title = "ProtonPottsMPNN pH-design dump: upstream block descent and greedy on the sealed tables, f32 and f64 (P4g)"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4g of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§45-§46). The upstream PottsMPNNPHEngine's optimiser
+consumes only the merged Potts table, E_idx, the native S and masks (§45.1). This runs the REAL engine serially on the
+SEALED P4e tables (the model forward is replaced, so the dump grades the optimiser and nothing upstream of it), for
+four cells (1BVC chain A, 6m0j binder chain E, 1OLR chain A, 1EL1 chain A) and each of float32 and float64, in four
+configurations taken from the production example inference/design_ph.py: block descent at T=0 and at T=0.05, and the
+centre-free greedy optimiser at T=0 and at T=0.05.
+
+torch.multinomial is replaced by a seeded inverse-CDF shim and every (uniform, choice) is recorded per design, so the
+aminx port can replay the same uniforms. Recorded per design call: initial and final sequence, pins, designable
+positions, block membership, the pooled z-scales, the uniforms and choices, the trajectory and the scored design.
+
+Claims, falsifiable by this run:
+
+1. THE ENGINE SEES THE SEALED INPUTS. In every cell and precision the engine's native S equals the sealed feature S and its
+   E_idx equals the sealed P4e E_idx, so the sealed tables really belong to the residues the engine designs.
+2. COMPLETE. Every cell and precision carries all four configurations, and every block-descent call has its z-scales.
+3. THE SHIM IS THE ONLY RANDOMNESS. Every T=0 call consumes zero uniforms and every T>0 call consumes at least one.
+4. THE f64 RUN IS REALLY DOUBLE. The f64 design energies are float64 AND differ from the f32 ones in every cell.
+5. REPRODUCIBLE. A second run in a fresh process gives identical content and metadata hashes for every cell and
+   precision, threads pinned to 1.
+
+Recorded, not required: the fraction of calls whose final sequence is identical in f32 and f64 for each cell, which is
+the measured flip rate the aminx f32 match-rate criterion is built from.
+
+An exploratory smoke run on one cell (1BVC) preceded this registration; its numbers are not cited.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "engine_matches_sealed AND complete AND shim_consistent AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4"
+decision = "Seal the dump and grade the aminx pH-design port against it (protonpotts_ph_design wave)."
+reasoning = "The engine saw the sealed inputs, all configurations are recorded with their draws, the randomness is exactly the injected stream, f64 is genuinely double, and the result reproduces."
+is_residual = false
+adversarial_check = "NOT (engine_matches_sealed AND complete AND shim_consistent AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4)"
+
+[outcomes.fail]
+condition = "NOT (engine_matches_sealed AND complete AND shim_consistent AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4)"
+decision = "Do not seal. Read which flag is false; engine_matches_sealed false means the engine featurised a different residue set than the sealed tables describe."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "engine_matches_sealed AND complete AND shim_consistent AND f64_is_float64 AND precisions_differ AND reproducible AND n_cells = 4"
+
+[result_schema]
+engine_matches_sealed = "bool"
+complete = "bool"
+shim_consistent = "bool"
+f64_is_float64 = "bool"
+precisions_differ = "bool"
+reproducible = "bool"
+n_cells = "int"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, PottsMPNNPHEngine (inference_engines/potts_mpnn_ph.py)"
+inputs = "sealed P4e dump (run 60351d47) merged tables and E_idx; sealed P4b/P4c/P4d feature dumps (native S)"
+cells = "pkad_unlabelled=1BVC chain A; multichain=6m0j binder chain E; only_o_1olr=1OLR chain A; gap=1EL1 chain A"
+configurations = "production values of inference/design_ph.py: block_size 3, combined_lambda 0.3, neighbour_k 16, max_mutations 20, repetitive window weight 1.0 radius 2, forbidden HIS-A ASP-A GLU-A UNK, v6 dep_map; greedy: center_count 0, infill_scope chain, cv_patience 1, cv_max 2"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/protonpotts/dump_protonpotts_ph.py --checkpoint <ckpt> --encoder-dir <P4e out dir> --features-dir ~/projects/aminx-oracles-protonpotts --out <dir> --cell NAME=PDB,CHAIN ... in the aminx-oracles-protonpotts env from a clean checkout of the commit that adds this file. Written and committed before the first graded run."

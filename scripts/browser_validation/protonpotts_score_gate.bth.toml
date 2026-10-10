@@ -1,0 +1,94 @@
+[metadata]
+title = "X6b gate: the shipping ProtonPotts JS scorer (PDB text + labels -> energies) under Node/ORT-Web vs the real aminx driver"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+The shipping browser/protonpotts-scorer/protonpotts_scorer.mjs, run under Node with onnxruntime-web (wasm, 1 thread) on the
+X6a artifacts (verified by sha256 against the X6a manifest, graded run 40b4318e, manifest sha256 7b2087dc...; not re-exported),
+reproduces the energies the REAL aminx path gives: aminx.host.runner.score on the structure FILE with the converted v6
+checkpoint, ProtonPottsOptions(protonation_labels_json, variants_json), score:energy.
+
+Four cells, the sha256-pinned structures of the export gate: 1EL1 (130 residues, labelled), 1BVC (153, labelled), 1OLR (219,
+unlabelled), 6m0j (789, labelled). Labels come from a deterministic rule that uses the protonation tokens (HIS alternates
+HIS-P/HIS-A, ASP alternates ASP-D/ASP-A, GLU is GLU-P). Each cell scores the native row plus 19 variants (random 1-3 position
+mutants over ALL 30 tokens), so the 20 rows go through the energy graph in three calls (8, 8, 4 with a padded last call) and the
+JS chunking is exercised.
+
+The cell passes when ALL of: (1) the JS native-row tokens equal the driver's reference row tokens exactly (this grades the JS
+featurizer + label encoder end to end on top of the bit-exact input-builder test); (2) every energy row agrees with the driver's:
+max|d| / max|ref| <= 1e-4 (the PottsMPNN export bar, unchanged). The gate passes when every cell passes and the three controls fire.
+
+Controls (each must make the SAME comparator fail, per cell where it applies): (a) VOCABULARY: the JS variant rows are shifted by
+one token (mod 30), a wrong token order; (b) LABELS: the labelled cells are run with no labels, so the native row carries different
+tokens; (c) ORDER: the JS energies reversed. A comparator that cannot see these would also pass a broken scorer.
+
+PREDICTION, stated before the run so it can be wrong: all four cells pass, worst relative error around 1e-6 (the X6a graph checks
+were 1e-7 to 2e-6). The risks are (a) a featurizer difference the 14 input-builder fixtures did not discriminate that moves a
+token (tokens_exact false) -- 6m0j's 9 arginine swaps are in the fixtures but the labelled variant of 6m0j is new here; (b) the
+driver's CPU float32 path and ORT-Web differ by more than 1e-4 on the 789-residue cell, where the pair-table sums are longest;
+(c) a variant that puts a protonation token on a residue of a different parent is scored by the driver without complaint (the list
+form does no parent check) and by the JS likewise -- both must agree on it, which is the point.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: no effect is sized; agreement is graded per cell.
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false OR artifacts_verified = false OR node_ok = false"
+decision = "The driver arm, the artifact check or the Node run did not complete. Nothing was compared; cite nothing."
+reasoning = "Without both arms and verified artifacts, no per-cell status is meaningful."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "NOT (control_vocab_detected = true AND control_labels_detected = true AND control_order_detected = true)"
+decision = "The comparator failed to flag a planted difference (shifted vocabulary, dropped labels, reversed order). Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these planted differences would also pass a broken scorer."
+is_residual = true
+
+[outcomes.pass]
+condition = "n_cells = 4 AND n_pass = n_cells AND tokens_exact = true AND worst_rel <= 0.0001"
+decision = "The shipping JS scorer reproduces the aminx driver on all four cells, tokens exact and energies within the bar. The browser scoring path is verified under Node/ORT-Web; headless Chromium is the next gate."
+reasoning = "All three controls fired, so agreement on every cell is real agreement with the real driver."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (n_cells = 4 AND n_pass = n_cells AND tokens_exact = true AND worst_rel <= 0.0001)"
+decision = "At least one cell disagrees with the driver. The per-cell record names tokens versus energies; do not ship the scorer."
+reasoning = "The instrument is verified, so a disagreement is a real defect in the JS path or the artifacts."
+is_residual = true
+
+[result_schema]
+jax_arm_ok = "bool"
+artifacts_verified = "bool"
+node_ok = "bool"
+num_threads = "int"
+cells = "list"
+n_cells = "int"
+n_pass = "int"
+tokens_exact = "bool"
+worst_rel = "float"
+control_vocab_detected = "bool"
+control_labels_detected = "bool"
+control_order_detected = "bool"
+manifest_sha256 = "str"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN v6 epoch-0125, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b, converted state ~/scratch/v6_state.npz"
+artifacts = "X6a export gate run 40b4318e work dir (outputs/protonpotts_export_gate/work), manifest sha256 7b2087dcc7df8d72948a2391377b958b10aa0d7256da82623f580043c6229243"
+structures = "1EL1, 1BVC, 1OLR (fireprot_pdbs), 6m0j (covid_pdbs) under ~/repos/PottsMPNN/energy_benchmark_datasets, sha256-pinned in protonpotts_export_gate.py"
+tolerances = "tokens exact; energies max|d|/max|ref| <= 1e-4"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before protonpotts_score_gate.py exists and before any JS-scorer number exists. The scorer and Node runner are committed with it. Input builder bit-exactness (14/14 node tests, 5 Python-dump fixtures) is a deterministic equality test and not part of this record."

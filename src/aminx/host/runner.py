@@ -71,6 +71,7 @@ from aminx.run.specs import (
 # shape this replaced, one `if family == ...` per family.
 _DRIVER_BACKED_FAMILIES: dict[str, str] = {
   "pottsmpnn": "aminx.families.potts_mpnn",
+  "protonpottsmpnn": "aminx.families.protonpotts_mpnn",
   "lasermpnn": "aminx.families.laser_mpnn",
 }
 

@@ -1,0 +1,85 @@
+[metadata]
+title = "protonpotts_ph_block wave: the aminx JAX block-descent pH design vs the upstream engine, on replayed uniforms"
+created = "261008"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+The aminx port of upstream's `_block_descent` (src/aminx/families/protonpotts_mpnn/ph_plan.py, ph_potentials.py,
+ph_config.py, ph_descent.py) reproduces the upstream PottsMPNNPHEngine on the sealed P4e merged tables, against the
+sealed P4g dump (run cbb47878), for four cells (1BVC, 6m0j binder chain E, 1OLR, 1EL1), both precisions, and the three
+block-descent calls per cell (T=0; T=0.05 twice) taken from the production example's configuration.
+
+Per call the aminx side is given only what upstream was given: the sealed table and E_idx, the native sequence, the
+binder mask, the forbidden-token list and the production configuration. It must REDERIVE the placement plan, run the
+sweep replaying the dump's recorded uniforms, and match:
+
+  1. the plan: pin positions and types, the designable set, and the block membership of every designable position, all
+     EXACTLY;
+  2. the pooled z-scales (sdH, sdSel, sdGlob): float64 within 1e-9 relative; float32 within 10x the MEASURED upstream
+     f32-vs-f64 spread of that value, never below 1e-6 relative (decision 11e);
+  3. the final sequence token for token, EXACTLY, in float64 and in float32 (the dump measured identical final
+     sequences in f32 and f64 for every call, so no f32 slack is registered);
+  4. the number of uniforms consumed, EXACTLY;
+  5. the final Potts energy and the summed selectivity gap of the designed sequence: float64 within 1e-9 relative to
+     max(1, |value|); float32 within 10x the measured upstream f32-vs-f64 spread, never below 1e-6 relative.
+
+The comparison is an INSTRUMENT only if deliberate errors are rejected by the same comparison (spec §6). Eight must be:
+uniforms shifted by one draw; combined_lambda 0.4 for 0.3; block size 2 for 3; the forbidden-token list not applied;
+the repetitive-window penalty off; a wrong deprotonated contrast token (HIS-A for HIS-S); and nudges of a correct
+z-scale and a correct energy just outside their float64 bands. A control is rejected when the comparison fails on at
+least one of the control cell's three calls.
+
+PREDICTION, stated before the run so it can be wrong: all 24 (cell x precision x call) comparisons pass exactly and all
+eight controls are rejected. The risks are the ones the recon named: block membership when a block is shorter than the
+block size, tie behaviour in the placement ranking (upstream's unstable argsort versus a stable sort), the pooled
+z-scale (not per block), and the selective unary. A control that does not fire on the control cell is a finding that the
+instrument cannot discriminate that error, and fails the wave rather than being retuned.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "clean = 'pass' AND n_calls = 24 AND n_calls_ok = 24 AND n_plans_ok = 24 AND n_tokens_exact = 24 AND n_draws_ok = 24 AND dump_flags_pass AND n_listed = 8 AND n_failed = n_listed"
+decision = "protonpotts_ph_block is graded: the aminx block-descent pH design reproduces upstream's plan, z-scales, sequences, draws and scores, in both precisions, and each error is rejected."
+reasoning = "Every call matches on plan, z-scales, tokens, draw count and scores; the dump itself passed; and all eight controls fail the same comparison."
+is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND n_calls = 24 AND n_calls_ok = 24 AND n_plans_ok = 24 AND n_tokens_exact = 24 AND n_draws_ok = 24 AND dump_flags_pass AND n_listed = 8 AND n_failed = n_listed)"
+
+[outcomes.fail]
+condition = "NOT (clean = 'pass' AND n_calls = 24 AND n_calls_ok = 24 AND n_plans_ok = 24 AND n_tokens_exact = 24 AND n_draws_ok = 24 AND dump_flags_pass AND n_listed = 8 AND n_failed = n_listed)"
+decision = "Do not treat the port as graded. Read per_call: a plan miss names ph_plan (placement or designable set); a plan match with z-scales off names the pooled variance or the selective unary; z-scales matching with tokens off names the block objective or the sampling; an undetected control means the comparison cannot discriminate that error."
+reasoning = "Some call differs from upstream, the dump did not pass, or a control was not rejected."
+is_residual = true
+adversarial_check = "clean = 'pass' AND n_calls = 24 AND n_calls_ok = 24 AND n_plans_ok = 24 AND n_tokens_exact = 24 AND n_draws_ok = 24 AND dump_flags_pass AND n_listed = 8 AND n_failed = n_listed"
+
+[result_schema]
+clean = "str"
+n_cells = "int"
+n_calls = "int"
+n_calls_ok = "int"
+n_plans_ok = "int"
+n_zscales_ok = "int"
+n_tokens_exact = "int"
+n_draws_ok = "int"
+n_scores_ok = "int"
+dump_flags_pass = "bool"
+worst_zscale_rel_f64 = "float"
+worst_energy_rel_f64 = "float"
+n_listed = "int"
+n_failed = "int"
+mutants = "dict"
+undetected = "list"
+per_call = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle = "P4g pH-design dump (run cbb47878): upstream PottsMPNNPHEngine on the sealed P4e tables with an injected-uniform inverse-CDF shim"
+inputs = "sealed P4e merged tables and E_idx; sealed P4b/P4c/P4d feature dumps (native S); the dump's per-cell context arrays"
+configuration = "production values of inference/design_ph.py (block size 3, lambda 0.3, T 0 and 0.05, neighbour_k 16, max_mutations 20, forbidden HIS-A ASP-A GLU-A UNK, repetitive window weight 1.0 radius 2, v6 contrast map)"
+tolerances = "plan, tokens and draw count exact; z-scales and scores f64 1e-9 relative, f32 10x measured upstream f32-vs-f64 spread (min 1e-6 relative)"
+
+[provenance]
+note = "Graded invocation: bth run --project-slug aminx -- uv run --no-sync python scripts/parity/protonpotts_ph_block_parity.py --encoder-dir <P4e out dir> --ph-dir <P4g out dir> --features-dir ~/projects/aminx-oracles-protonpotts, in a venv where aminx is importable, from a clean checkout of the commit that adds the script. The sidecar is committed before the script and before any aminx result exists. Not a redsox ledger row (ProtonPotts has none until P10)."

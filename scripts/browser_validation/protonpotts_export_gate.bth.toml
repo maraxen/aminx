@@ -1,0 +1,110 @@
+[metadata]
+title = "X6a gate: shipped ProtonPottsMPNN scoring graphs (table, energy) at V=30 with the real converted v6 checkpoint on ORT-CPU and ORT-Web"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+With the converted ProtonPottsMPNN v6 checkpoint (checkpoint sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b,
+converted by scripts/parity/convert_protonpotts_checkpoint.py from the pinned state) and four sha256-pinned structures
+(1BVC 153 residues, 1EL1 130, 1OLR 219, 6m0j 789; all featurized unlabelled by featurize_pdb, the path the driver takes), the two
+graphs a browser ProtonPotts scorer ships -- TABLE (encoder + Potts head + the single reciprocal merge: coords, present, residue_idx,
+chain_index, pad_valid -> merged pair table [L,48,30,30] and e_idx) and ENERGY (table, e_idx, pad_valid, sequences[8,L] ->
+energies[8], native plus seven random single-token mutants drawn over ALL 30 tokens so the protonation tokens are exercised) --
+export through xtrax.export.convert_to_onnx (opset 23) once per bucket, and each graph, run in isolation on its own JAX-computed
+inputs, reproduces JAX on ONNX Runtime CPU and on onnxruntime-web wasm under Node (1 thread): integers exact (e_idx), floats
+max|d|/max|ref| <= 1e-4 (the PottsMPNN export bar, X0/X2, unchanged).
+
+Buckets: 256 (cells 1EL1, 1BVC, 1OLR) and 1024 (cell 6m0j). The 1024 bucket's table is 177 MB of float32 per structure; whether
+ORT-Web wasm can hold that output is genuinely unknown, so the outcome ladder separates it (see [outcomes.partial]).
+
+Padding is part of what ships (the browser pads to a bucket), so each cell also checks that JAX energies on the PADDED inputs equal
+JAX energies on the UNPADDED structure within the same 1e-4 relative bar (pad recipe = potts_mpnn.featurize.pad: coords 0,
+present 0, chain 0, residue_idx -100, pad_valid false).
+
+Layer a (JAX vs upstream PyTorch) is NOT re-measured: it is the sealed ProtonPotts parity record (protonpotts_encoder, _energy,
+_driver waves; ledger row protonpotts_parity). This gate adds JAX <-> ORT-CPU <-> ORT-Web only.
+
+PREDICTION, stated before the run so it can be wrong: bucket 256 passes everywhere (the Potts head exported cleanly at V=21 and V
+only enlarges tensors). The risks are (a) the 30x30 pair table raises the ONNX ScatterND/TopK memory footprint beyond what ORT-Web
+wasm holds at bucket 1024 (177 MB output plus a same-size merge intermediate), which would show as web 'not_runnable' on the 6m0j
+cells only; (b) jax2onnx lowers some op in the V=30 path that the V=21 path did not use; (c) padding invariance fails at 1e-4 because
+a pad row with residue_idx -100 enters a top-k neighbour list at bucket 1024 where 235 pad rows exist. Any of these shows as a named
+check failing, not as a loosened bar.
+"""
+stage_name = "validation"
+novel = true
+# No [reproduction]: novel. No [differential]: no effect is sized; agreement is graded per check.
+
+[controls]
+positive_outcome = ["pass", "partial"]
+negative_outcome = ["error", "instrument_unverified", "fail"]
+
+# Declaration ORDER is load-bearing: bathos takes the FIRST matching branch.
+
+[outcomes.error]
+condition = "jax_arm_ok = false"
+decision = "The JAX arm did not complete (checkpoint or PDB hash mismatch, featurization, reference evaluation or controls). Nothing was compared; cite nothing."
+reasoning = "Without the reference outputs every per-graph status is meaningless, and a hash mismatch means the run measured different weights or structures than registered."
+is_residual = true
+
+[outcomes.instrument_unverified]
+condition = "jax_arm_ok = true AND NOT (control_float_detected = true AND control_int_detected = true AND control_energy_detected = true)"
+decision = "The comparator failed to flag a planted difference (perturbed Potts-head weights on the table, perturbed coordinates on e_idx, reversed sequence rows on the energies). Passes from this run are not evidence."
+reasoning = "A comparator that cannot see these planted differences would also pass a broken export."
+is_residual = true
+
+[outcomes.pass]
+condition = "jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND control_energy_detected = true AND all_exported = true AND all_pass = true AND padding_invariant = true"
+decision = "Both graphs export at both buckets, every per-cell check agrees with JAX on ORT-CPU and ORT-Web, and padding does not change the energies. The browser scoring graphs are layer-b/c clean on these exact bytes."
+reasoning = "All three controls fired, so agreement on every graph, bucket and structure on both backends is real agreement with the real model."
+is_residual = false
+
+[outcomes.partial]
+condition = "jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND control_energy_detected = true AND all_exported = true AND small_all_pass = true AND padding_invariant_small = true AND NOT (all_pass = true AND padding_invariant = true)"
+decision = "Bucket 256 is clean on both backends but the 1024 bucket is not (export, load, run, agreement or padding). Ship 256 only; the 1024 failure is a finding to read from the per-check record, and the largest browser-scoreable structure is bounded by it."
+reasoning = "This is the registered fallback for risk (a): the small bucket carries the shipping claim, and the large bucket's failure is reported rather than hidden."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (jax_arm_ok = true AND control_float_detected = true AND control_int_detected = true AND control_energy_detected = true AND all_exported = true AND small_all_pass = true AND padding_invariant_small = true)"
+decision = "Something failed in bucket 256 (export, load, run, agreement or padding). No artifact from this run may be shipped; the per-check record names what to fix."
+reasoning = "The instrument is verified, so a failing small-bucket check is a real export defect with the real weights, not a harness fault."
+is_residual = true
+
+[result_schema]
+versions = "dict"
+jax_arm_ok = "bool"
+jax_enable_x64 = "bool"
+checkpoint_sha256 = "str"
+cells = "list"
+graphs = "dict"
+n_cells = "int"
+n_graph_checks = "int"
+n_pass_cpu = "int"
+n_pass_web = "int"
+all_exported = "bool"
+all_pass = "bool"
+small_all_pass = "bool"
+padding_invariant = "bool"
+padding_invariant_small = "bool"
+control_float_detected = "bool"
+control_int_detected = "bool"
+control_energy_detected = "bool"
+ort_web_available = "bool"
+manifest_sha256 = "str"
+error = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+jax2onnx_version = { type = "string", required = true }
+onnxruntime_version = { type = "string", required = true }
+
+[data]
+checkpoint = "ProtonPottsMPNN potts_v6_afdb_edge_his0.3_acid0.06 epoch-0125.ckpt, sha256 a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b; converted state ~/scratch/v6_state.npz (+ .json recording that sha)"
+structures = "~/repos/PottsMPNN/energy_benchmark_datasets: fireprot_pdbs/1BVC.pdb 0fbc6cef..., fireprot_pdbs/1EL1.pdb 9777be2e..., fireprot_pdbs/1OLR.pdb 4b5d40e2..., covid_pdbs/6m0j.pdb bb80f228... (full hashes in the script)"
+tolerances = "integers exact; floats max|d|/max|ref| <= 1e-4 on both backends; padding invariance <= 1e-4 relative"
+
+[provenance]
+note = "Pre-registered at the commit that adds this file, before protonpotts_export_gate.py exists and before any ProtonPotts ONNX number exists. Builds on the PottsMPNN export gate (potts_export_gate, runs d6506199, 3cb2974b, 7764fbaf) and its scope spec 261007_potts-onnx-export-scope.md section 4 / X6 (#5816). Sequence lengths and hashes were read with featurize_pdb on titanix (an inspection, not a finding)."

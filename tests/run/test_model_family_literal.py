@@ -28,7 +28,13 @@ def _literal_members() -> set[str]:
 
 
 def test_model_family_literal_includes_driver_families() -> None:
-    assert _literal_members() == {"proteinmpnn", "ligandmpnn", "pottsmpnn", "lasermpnn"}
+    assert _literal_members() == {
+        "proteinmpnn",
+        "ligandmpnn",
+        "pottsmpnn",
+        "protonpottsmpnn",
+        "lasermpnn",
+    }
 
 
 def test_prefix_derivation_precedes_model_type() -> None:
@@ -37,7 +43,9 @@ def test_prefix_derivation_precedes_model_type() -> None:
         inputs="x.pdb",
         checkpoint_id="lasermpnn_0p1A_nothing_heldout",
     )
+    proton = SamplingSpecification(inputs="x.pdb", checkpoint_id="protonpottsmpnn_v6_30")
     assert potts.model_family == "pottsmpnn"
+    assert proton.model_family == "protonpottsmpnn"
     assert laser.model_family == "lasermpnn"
 
 
@@ -76,6 +84,7 @@ def test_portable_json_v2_refuses_driver_families() -> None:
 
     for family, checkpoint in (
         ("pottsmpnn", "pottsmpnn_vanilla_20"),
+        ("protonpottsmpnn", "protonpottsmpnn_v6_30"),
         ("lasermpnn", "lasermpnn_0p1A_nothing_heldout"),
         ("ligandmpnn", "ligandmpnn_v_32_020"),
     ):

@@ -84,3 +84,44 @@ dynamic_ok = [
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]
+
+# protonpotts_parity (spec 261007 section 50). The vehicle runs the eleven wave scripts as SUBPROCESSES, which no import
+# statement shows, so every one of them is declared `soft`, together with the checkpoint converter they load by path.
+# The ProtonPotts family package is reached only through the string table in host/runner.py, hence `soft` too.
+# KNOWN GAP: scripts/convert_weights.py is loaded by the converter via spec_from_file_location. It sits outside every
+# scoped prefix (row_is_stale only looks at src/aminx/ and scripts/parity/), so no `data` declaration can make an edit
+# to it stale this row; declaring one would be vacuous and was removed. The converted weights are still pinned by the
+# checkpoint sha and graded against upstream on every run of the row. Tracked in spec section 51.
+[slug.protonpotts_parity]
+soft = [
+  "aminx.families.protonpotts_mpnn",
+  "convert_protonpotts_checkpoint",
+  "protonpotts_features_parity",
+  "protonpotts_encoder_parity",
+  "protonpotts_energy_parity",
+  "protonpotts_driver_parity",
+  "protonpotts_ph_block_parity",
+  "protonpotts_ph_greedy_parity",
+  "protonpotts_ph_driver_parity",
+  "protonpotts_decoder_parity",
+  "protonpotts_ddg_parity",
+  "protonpotts_sample_parity",
+  "protonpotts_ph_methods_parity",
+]
+# The scripts/parity sites (the decoder and ddg waves too) load the converter or the driver wave (both declared soft) (declared soft) or scripts/convert_weights.py (the known gap above).
+# runner.py / weights.py / the Potts driver are the same three sites the Potts rows declare: the family string table
+# (protonpotts_mpnn is declared soft above), packaged weights (non-.py under src/aminx/, global), and the Potts
+# recapture converter (scripts/recapture/ is a global prefix).
+dynamic_ok = [
+  "scripts/parity/convert_protonpotts_checkpoint.py",
+  "scripts/parity/protonpotts_driver_parity.py",
+  "scripts/parity/protonpotts_encoder_parity.py",
+  "scripts/parity/protonpotts_energy_parity.py",
+  "scripts/parity/protonpotts_decoder_parity.py",
+  "scripts/parity/protonpotts_ddg_parity.py",
+  "scripts/parity/protonpotts_sample_parity.py",
+  "scripts/parity/protonpotts_ph_methods_parity.py",
+  "src/aminx/host/runner.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]

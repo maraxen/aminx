@@ -40,7 +40,7 @@ _RUN_FIELDS = (
   "argv",
   "output_paths",
 )
-_WEIGHT_PREFIXES = ("pottsmpnn_", "lasermpnn_")
+_WEIGHT_PREFIXES = ("pottsmpnn_", "lasermpnn_", "protonpottsmpnn_")
 
 
 class OutcomeRecord(TypedDict):

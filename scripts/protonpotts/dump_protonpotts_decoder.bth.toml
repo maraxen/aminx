@@ -1,0 +1,101 @@
+[metadata]
+title = "ProtonPottsMPNN v6 decoder dump: autoregressive sampling with injected uniforms and three teacher-forced modes, f32 and f64 (P4h)"
+created = "261009"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """
+P4h of `.praxia/docs/specs/261007_protonpottsmpnn-support.md` (§53, debt #2617, ADR decision 12). The 30-token decoder of
+aminx is to be graded against upstream's `ProteinMPNN.decode_auto_regressive` / `decode_teacher_forcing` as inherited by
+`PottsMPNN`. The earlier oracles stop at the Potts head and say so (§41.2): upstream's decoder is not dtype-polymorphic, so no
+decoder number exists yet in either precision.
+
+For four cells (1BVC, the two-chain 6m0j, 1OLR with dropped residues, 1EL1 with a numbering gap) and each of float32 and
+float64, this dumps:
+
+  AUTOREGRESSIVE SAMPLING, four configurations, with `torch.multinomial` replaced by inverse-CDF on INJECTED uniforms
+  (draw k of the forward = decoding step k; the convention of aminx `decode.py`: index = #(cdf <= u * cdf[-1]), clamped to the last
+  nonzero-probability token):
+    ar_default     temperature 0.1 for every residue, no bias, every residue designed;
+    ar_bias_temp   a per-residue temperature drawn in [0.3, 1.0] and a [L, 30] bias, both seeded;
+    ar_fixed       every 7th residue (offset 3) NOT designed (decode_last_mask false), the others designed;
+    ar_x_bias      temperature 1 and a bias of +8 on the unknown token X (upstream's UNK, index 20) at every position, so that an
+                   X left in the sampling distribution would carry almost all the mass. Upstream's `logits_to_sample` zeroes X and
+                   renormalises; this configuration exists to make that visible, because in the other three X's probability is
+                   negligible and a decoder that forgot to zero it would still agree to 1e-9 (the first graded wave run, a54ce791,
+                   showed exactly that).
+  Per configuration: decoding order, the uniforms, S_sampled, S_argmax, log_probs, the renormalised probs_sample the shim saw at
+  each step, the raw W_out logits per position, each decoder layer's output per position, and the smallest distance of any draw to a
+  CDF boundary (so a wave can tell a numerically fragile draw from a defect).
+
+  TEACHER FORCING with initialize_sequence_embedding_with_ground_truth, on the native sequence, three causality patterns:
+    auto_regressive, conditional, conditional_minus_self (the last is what the pH engine's decoder field uses,
+    `potts_mpnn_ph.py` field_mpnn); per pattern: log_probs, W_out logits, and the decoding order where the pattern has one.
+
+THE f64 RUN. Upstream is not dtype-polymorphic. The only changes made to its computation in the f64 run are: (1) the exactly-0/1
+positional one-hot is cast to the weight dtype (as in P4e); (2) the `torch.float32` buffer literals and `.float()` calls in
+`setup_causality_masks`, `decode_auto_regressive` and `decode_teacher_forcing` are widened to float64 by rewriting their source
+(a spike on 1EL1 found these, and only these, to be the dtype leaks: 4 + 4 + 1 occurrences); (3) the decoding-order noise
+(`torch.randn((B, L))`) is drawn in float32 and cast, so f32 and f64 see the SAME order for the same seed. Nothing else is changed;
+the weights are the checkpoint's, cast with `.double()`.
+
+Claims, falsifiable by this run:
+ 1. FEATURES ARE THE SEALED ONES (content hash equals the P4b / P4c / P4d manifest) for the unmodified configurations; the
+    ar_fixed configuration edits designed_residue_mask AFTER the hash check and records which positions.
+ 2. COMPLETE: every cell, precision and configuration carries every array named above, with the expected shapes.
+ 3. THE f64 RUN IS REALLY DOUBLE: every floating array in an f64 dump is float64 AND the two precisions differ.
+ 4. SAME ORDER ACROSS PRECISIONS: for every cell and configuration the f64 decoding order equals the f32 one, and it is a
+    permutation of 0..L-1.
+ 5. THE SHIM IS THE DRAW: recomputing each step's token from the recorded probs_sample and uniform, in numpy and in the run's own
+    dtype, gives exactly the recorded S_sampled in decoding order, for every cell, precision and AR configuration.
+ 6. FIXED POSITIONS HOLD: in ar_fixed, S_sampled equals the native sequence at every position that is not designed.
+ 7. THE CONFIGURATIONS ARE NOT INERT: ar_bias_temp's log_probs differ from ar_default's, and ar_fixed's decoding order differs
+    from ar_default's, in every cell (otherwise the later controls "bias ignored" and "fixed ignored" would test nothing); and in
+    ar_x_bias, X is the argmax of log_probs at more than 90% of positions while probs_sample[:, X] is exactly 0 everywhere and X
+    is never drawn (otherwise the control "X not zeroed" would test nothing).
+ 8. REPRODUCIBLE: a second run in a fresh process gives identical content hashes for every cell, precision and configuration, with
+    torch threads pinned to 1.
+
+Recorded, not required: the per-array f32-vs-f64 floor (the measured noise the aminx f32 band is set from, decision 11e) and the
+minimum draw margin per cell.
+"""
+stage_name = "confirmation"
+novel = false
+
+[outcomes.pass]
+condition = "features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND shim_is_the_draw AND fixed_positions_hold AND configs_not_inert AND reproducible AND n_cells = 4"
+decision = "Seal the dumps and grade the aminx 30-token decoder against them (protonpotts_decoder wave)."
+reasoning = "The inputs are the sealed features, the dumps are complete and genuinely double where claimed, the order is shared, the draws are exactly the inverse-CDF of the recorded probabilities, the configurations act, and the result is reproducible."
+is_residual = false
+adversarial_check = "NOT (features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND shim_is_the_draw AND fixed_positions_hold AND configs_not_inert AND reproducible AND n_cells = 4)"
+
+[outcomes.fail]
+condition = "NOT (features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND shim_is_the_draw AND fixed_positions_hold AND configs_not_inert AND reproducible AND n_cells = 4)"
+decision = "Do not seal. Read which flag is false: a features mismatch means these are not the sealed inputs; a false f64_is_float64 or precisions_differ means the f64 run cannot be trusted as f64; a false shim_is_the_draw means the sampler replacement is not the convention aminx implements."
+reasoning = "At least one claim is false."
+is_residual = true
+adversarial_check = "features_match_sealed AND complete AND f64_is_float64 AND precisions_differ AND order_same_across_precisions AND shim_is_the_draw AND fixed_positions_hold AND configs_not_inert AND reproducible AND n_cells = 4"
+
+[result_schema]
+features_match_sealed = "bool"
+complete = "bool"
+f64_is_float64 = "bool"
+precisions_differ = "bool"
+order_same_across_precisions = "bool"
+shim_is_the_draw = "bool"
+fixed_positions_hold = "bool"
+configs_not_inert = "bool"
+reproducible = "bool"
+n_cells = "int"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+upstream = "ProtonPottsMPNN @ 09682abf, extended_vocab v6"
+checkpoint = "potts_v6_afdb_edge_his0.3_acid0.06/epoch-0125.ckpt"
+cells = "1BVC, 6m0j, 1OLR, 1EL1"
+threads = "OMP/MKL/OPENBLAS_NUM_THREADS=1 before torch import, torch.set_num_threads(1)"
+
+[provenance]
+note = "REVISED 261009 after the first graded decoder-wave run (a54ce791, outcome fail by the pre-registered rule: every aminx-vs-dump comparison passed, f64 to 3.5e-14, but the control x_not_zeroed was not rejected because X's probability is negligible in the dumped configurations). This revision adds the configuration ar_x_bias and its non-inertness check; the first three configurations, their seeds and uniforms are unchanged, so their dumps reproduce. The graded dump run 6f5a621f stays on record as the dump the first wave run used. Pre-registered at the commit that adds this file, before dump_protonpotts_decoder.py exists and before any decoder dump exists. A throwaway spike (uncited) on 1EL1 established only that upstream's autoregressive and teacher-forced forwards run, that multinomial can be replaced, and which source literals leak float32 under .double()."
