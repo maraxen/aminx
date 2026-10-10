@@ -93,8 +93,8 @@ class Draws:
     choices: Sequence[int] | None = None,
     cdf_order: np.ndarray | None = None,
   ) -> None:
-    if seed is None and uniforms is None and choices is None:
-      msg = "Draws needs a seed (fresh), uniforms (replay) or choices (forced)"
+    if all(x is None for x in (seed, uniforms, choices, randints, perms)):
+      msg = "Draws needs a seed (fresh) or recorded draws (uniforms, randints, perms or choices)"
       raise ValueError(msg)
     self.rng = np.random.default_rng(seed) if seed is not None else None
     self._uniforms = None if uniforms is None else [float(u) for u in uniforms]

@@ -552,8 +552,8 @@ def test_knob_semantics_placement_by(registered: ProtonPottsDriver, tmp_path: Pa
 
   by_potts = _designs(pdb, model_path, _mcmc_options(placement_by="scan_potts"))
   by_mpnn = _designs(pdb, model_path, _mcmc_options(placement_by="scan_mpnn"))
-  assert int(by_potts["center_positions"][0]) == centre(potts_field)
-  assert int(by_mpnn["center_positions"][0]) == centre(decoder_field)
+  assert int(by_potts["center_positions"][0, 0]) == centre(potts_field)
+  assert int(by_mpnn["center_positions"][0, 0]) == centre(decoder_field)
   assert centre(potts_field) != centre(decoder_field)  # counterfactual: the two fields rank differently on this chain
   # the Potts-driven optimisers are graded with scan_potts only
   with pytest.raises(ValueError, match="scan_potts' only"):
