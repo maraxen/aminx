@@ -1,8 +1,8 @@
 ---
 name: aminx-potts
 description: Emit and run an aminx Potts specification from a GeometryBundle. Covers aminx potts emit and run, k_neighbors, and the JSON result fields.
+when_to_use: 'Triggers: potts, coupling, TRW.'
 ---
-
 # aminx-potts
 
 Potts inference is a separate command group from ProteinMPNN sampling. Sequence design, scoring, and campaign manifests are `aminx-sampling`, `aminx-scoring`, and `aminx-campaigns`. There is no Potts MCP tool. `aminx-mcp:spec_emit` does not take `kind` `potts`. `aminx-mcp:spec_validate` will still decode a Potts document (`aminx-run-specs`).

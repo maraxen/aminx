@@ -44,7 +44,7 @@ documentation = "https://aminx.readthedocs.io"
 
 [project.optional-dependencies]
 agent = [
-    "cisternal>=0.1.1a15,<0.2",
+    "cisternal>=0.1.3,<0.2",
 ]
 # LASErMPNN host featurizer (families/laser_mpnn/featurize.py) parses with ProDy, as upstream does.
 laser = [

@@ -84,7 +84,7 @@ def test_agent_extra_pins_cisternal_and_base_deps_do_not() -> None:
   assert isinstance(agent, list)
   cisternal = [req for req in agent if _dist_name(str(req)) == "cisternal"]
   assert len(cisternal) == 1
-  assert ">=0.1.1a15" in str(cisternal[0]).replace(" ", "")
+  assert ">=0.1.3" in str(cisternal[0]).replace(" ", "")
   base = project["dependencies"]
   assert isinstance(base, list)
   names = {_dist_name(str(req)) for req in base}

@@ -1,8 +1,8 @@
 ---
 name: aminx-scoring
 description: Score sequences, inspect conditional and unconditional logits, and compute a sequence Jacobian. Covers result shapes, npz side-file keys, and residue trimming.
+when_to_use: 'Triggers: score sequence, logits, pseudo-perplexity, jacobian, conditional probabilities.'
 ---
-
 # aminx-scoring
 
 `score`, `inspect`, and `jacobian` read a structure (and, for score, sequences) without designing a new library. Sampling controls are in `aminx-sampling`. JSON specs for the same runs are in `aminx-run-specs`. Checkpoints are in `using-aminx`.

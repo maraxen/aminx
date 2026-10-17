@@ -1,8 +1,8 @@
 ---
 name: aminx-campaigns
 description: Plan and run an aminx design campaign from a manifest. Covers plan, worker, run, gates, ramp-plan, ramp-evaluate, cluster use, and git provenance fields.
+when_to_use: 'Triggers: campaign, design campaign, sweep, ramp.'
 ---
-
 # aminx-campaigns
 
 A campaign is a JSON manifest of sampling rows, then one or more processes that execute those rows. Single-structure sampling options are in `aminx-sampling`. There is no MCP campaign tool. The verbs are `aminx campaign`.

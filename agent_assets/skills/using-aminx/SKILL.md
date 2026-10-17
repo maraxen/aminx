@@ -1,8 +1,8 @@
 ---
 name: using-aminx
 description: Router for aminx, the JAX and Equinox ProteinMPNN and LigandMPNN inverse-folding library. Use it to choose an install, pick MCP tools versus the CLI versus the Python API, select a checkpoint, and decide which task skill to load next.
+when_to_use: 'Triggers: aminx, proteinmpnn, ligandmpnn, inverse folding, sequence design.'
 ---
-
 # using-aminx
 
 aminx designs, scores, and inspects protein sequences from structure files. It is a JAX and Equinox implementation of ProteinMPNN and LigandMPNN: inverse folding from a backbone (and, for ligand checkpoints, from ligand context) to amino-acid sequences. The same run is available to an agent, a shell, or Python.

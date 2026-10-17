@@ -1,8 +1,8 @@
 ---
 name: aminx-run-specs
 description: Build and check aminx run specs as JSON. Covers MCP spec_emit and spec_validate, the aminx spec verbs, and fields that cannot be serialized.
+when_to_use: 'Triggers: run spec, spec json, reproducible run, emit spec.'
 ---
-
 # aminx-run-specs
 
 A run spec is JSON. It is not TOML. The document has `_spec_class` set to `SamplingSpecification`, `ScoringSpecification`, `InspectionSpecification`, or `JacobianSpecification`. A Potts document is separate: see `aminx-potts` and the `emit-potts` verb below. What the runs do is in `aminx-sampling` and `aminx-scoring`.

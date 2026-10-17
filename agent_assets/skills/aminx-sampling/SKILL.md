@@ -1,8 +1,8 @@
 ---
 name: aminx-sampling
 description: Design sequences with aminx sample. Covers temperature, fixed and tied positions, bias, multi-state design, ligand context, and where outputs and side files go.
+when_to_use: 'Triggers: design sequences, sample sequences, fixed positions, tied positions.'
 ---
-
 # aminx-sampling
 
 `sample` draws amino-acid sequences for backbone structures. Checkpoints and the choice of MCP, CLI, or Python are in `using-aminx`. Reading scores, logits, and Jacobians is `aminx-scoring`. Campaign grids are `aminx-campaigns`.
