@@ -327,10 +327,21 @@ class PoeModel(eqx.Module):
       in_axes=(0, 0, 0, 0),
     )
 
-    params_list = vmapped_infer(stacked_backbone, keys, edge_knn_stack, nei_stack)
+    params_batched = vmapped_infer(stacked_backbone, keys, edge_knn_stack, nei_stack)
 
-    # Convert params_list (which may be batched PyTree from vmap) to list format
-    return list(params_list)
+    # ``vmapped_infer`` returns ONE PottsParams whose leaves carry a leading backbone axis, i.e.
+    # marginals (B, n, q), h (B, n, q), J (B, n, n, q, q), rho (B, n, n), W (B, n, n).
+    #
+    # The previous ``list(params_batched)`` did NOT do what its comment claimed. PottsParams is a
+    # NamedTuple, so iterating it yields its five FIELDS, and the function returned
+    # ``[marginals, h, J, rho, W]`` -- five stacked arrays -- rather than B PottsParams. A caller
+    # following the documented contract (``for p in ...: p.h``) raised AttributeError, and
+    # duck-typed code could use the marginals array as though it were a parameter set. Unstack along
+    # the backbone axis so the return matches the annotation and the docstring.
+    return [
+      jax.tree.map(lambda leaf, i=b: leaf[i], params_batched)
+      for b in range(self.n_backbones)
+    ]
 
   def joint_log_prob(
     self,

@@ -33,7 +33,8 @@ from jaxtyping import Array, PRNGKeyArray
 
 from aminx.model import ProteinFeatures
 from aminx.potts.calibration import load_calibration
-from aminx.potts.model import PottsModel
+from aminx.potts.model import PottsModel, PottsParams
+from aminx.potts.poe import PoeModel
 from aminx.potts.sampling import gibbs_sweep, parallel_tempering
 from aminx.potts.spec import PottsRunSpec  # noqa: TC001
 from aminx.types.bundles import GeometryBundle  # noqa: TC001
@@ -134,7 +135,7 @@ def run_potts(
   3. Extracts (coords, mask, residue_index, chain_index) from GeometryBundle
   4. Runs model.infer_params to compute Potts parameters
   5. Applies calibration to marginals
-  6. Refuses multi-state input: single-backbone inference only (see Raises)
+  6. For more than one backbone state, aggregates via PoeModel (product of experts)
   7. Returns PottsResult with marginals, h, J, rho, calibrated_marginals
 
   Args:
@@ -148,10 +149,8 @@ def run_potts(
 
   Raises:
       FileNotFoundError: If weights_path or caliby_path (if not None) does not exist.
-      ValueError: If geometry extraction or model inference fails.
-      NotImplementedError: If more than one backbone state is supplied, via a leading geometry axis
-          of size > 1 or via ``spec.n_backbones != 1``. Single-backbone inference only. Raised
-          before any weights are loaded.
+      ValueError: If geometry extraction or model inference fails, or if ``spec.n_backbones``
+          disagrees with the number of states actually supplied in ``geometry``.
   """
   if config is None:
     config = {}
@@ -192,13 +191,27 @@ def run_potts(
   residue_index = geometry.residue_index  # (S, L) or (L)
   chain_index = geometry.chain_index  # (S, L) or (L)
 
-  # Squeeze the single-state leading axis if present. S > 1 was already refused in step 0, so this
-  # never discards a state the caller supplied.
-  if coords.ndim == 4:  # (1, L, 4, 3)
-    coords = coords[0]  # (L, 4, 3)
-    mask = mask[0]  # (L,)
-    residue_index = residue_index[0]  # (L,)
-    chain_index = chain_index[0]  # (L,)
+  # Handle batched geometry. A leading axis of size S means S backbone STATES.
+  #
+  # Earlier versions reduced this to ``coords[0]`` while still returning ``n_backbones=spec.n_backbones``,
+  # so a caller asking for an ensemble received single-backbone parameters inside a result that claimed
+  # otherwise, with nothing in the result to reveal it. All S states are now used (step 6).
+  n_states = 1
+  if coords.ndim == 4:  # (S, L, 4, 3)
+    n_states = int(coords.shape[0])
+    if n_states == 1:
+      coords = coords[0]  # (L, 4, 3)
+      mask = mask[0]  # (L,)
+      residue_index = residue_index[0]  # (L,)
+      chain_index = chain_index[0]  # (L,)
+
+  # ``spec.n_backbones`` is copied verbatim into the result, so it must describe what is actually computed.
+  if spec.n_backbones != n_states:
+    msg = (
+      f"spec.n_backbones={spec.n_backbones} but geometry supplies {n_states} backbone state(s); the "
+      f"returned PottsResult would report an ensemble size it did not compute. Make them agree."
+    )
+    raise ValueError(msg)
 
   # Ensure correct dtypes
   coords = jnp.asarray(coords, dtype=jnp.float32)
@@ -208,14 +221,15 @@ def run_potts(
 
   # Handle 37-atom format (if input is 4, pad to 37)
   if coords.shape[-2] == 4:
-    # Pad from 4 atoms (N, CA, C, O) to 37 (standard pdb_atom37 format)
-    n, _ = coords.shape[:2]
-    coords_37 = jnp.zeros((n, 37, 3), dtype=jnp.float32)
-    coords_37 = coords_37.at[:, :4, :].set(coords)
-    coords = coords_37
+    # Pad from 4 atoms (N, CA, C, O) to 37 (standard pdb_atom37 format). Written over the TRAILING
+    # two axes so it holds for a single state (L, 4, 3) and for a multi-state stack (S, L, 4, 3)
+    # alike; the earlier form indexed coords.shape[:2] and silently assumed the single-state rank.
+    coords_37 = jnp.zeros((*coords.shape[:-2], 37, 3), dtype=jnp.float32)
+    coords = coords_37.at[..., :4, :].set(coords)
 
-  # Step 3.5: Compute k-NN graph features via ProteinFeatures
-  # This integration layer responsibility: compute graph and pass to pure potts model
+  # Step 3.5: Compute k-NN graph features via ProteinFeatures.
+  # Each STATE gets its own graph: the k-nearest-neighbour set moves with the backbone, so the
+  # neighbour indices cannot be computed once and reused across states.
   features = ProteinFeatures(
     node_features=128,
     edge_features=128,
@@ -223,32 +237,79 @@ def run_potts(
     key=key,
   )
 
-  edge_knn, nei, _, _ = features(
-    key,
-    coords,
-    mask,
-    residue_index,
-    chain_index,
-    backbone_noise=None,
-  )
+  def _graph_of(coords_s: Array, mask_s: Array, res_s: Array, chain_s: Array) -> tuple[Array, Array]:
+    edge_knn_s, nei_s, _, _ = features(
+      key,
+      coords_s,
+      mask_s,
+      res_s,
+      chain_s,
+      backbone_noise=None,
+    )
+    return jnp.asarray(edge_knn_s, dtype=jnp.float32), jnp.asarray(nei_s, dtype=jnp.int32)
 
-  # Cast to JAX arrays to ensure proper types for infer_params
-  edge_knn = jnp.asarray(edge_knn, dtype=jnp.float32)
-  nei = jnp.asarray(nei, dtype=jnp.int32)
+  if n_states == 1:
+    edge_knn, nei = _graph_of(coords, mask, residue_index, chain_index)
 
-  # Step 4: Infer Potts parameters via model.infer_params
-  params = model.infer_params(
-    key=key,
-    edge_knn=edge_knn,
-    nei=nei,
-    mask=mask,
-  )
+    # Step 4: Infer Potts parameters via model.infer_params
+    params = model.infer_params(
+      key=key,
+      edge_knn=edge_knn,
+      nei=nei,
+      mask=mask,
+    )
+    poe_marginals = params.marginals
+  else:
+    # Step 4 (multi-state): one graph per state, then PoeModel over S copies of this model.
+    mask_0 = mask[0]
+    graphs = [
+      _graph_of(coords[s], mask[s], residue_index[s], chain_index[s]) for s in range(n_states)
+    ]
+    edge_knn_stack = jnp.stack([g[0] for g in graphs], axis=0)
+    nei_stack = jnp.stack([g[1] for g in graphs], axis=0)
+
+    poe = PoeModel(tuple(model for _ in range(n_states)))
+    params_list = poe.infer_all_params(
+      key=key,
+      edge_knn_stack=edge_knn_stack,
+      nei_stack=nei_stack,
+      mask=mask_0,
+    )
+    # Product of experts over the marginals, derived from the parameters just inferred rather than
+    # from a second forward pass: PoeModel.__call__ would re-run every backbone to recompute exactly
+    # these marginals. Identical arithmetic to PoeOutput.marginals, one inference instead of two.
+    log_poe = sum(jnp.log(p.marginals + 1e-10) for p in params_list)
+    poe_marginals = jax.nn.softmax(log_poe, axis=-1)
+
+    # Step 5 (multi-state): aggregate the Potts parameters so that the returned (h, J, W) reproduce
+    # the EXACT product-of-experts energy under sampling.log_energy, whose pairwise term is
+    #     0.5 * sum_ik w[i,k] * J[i,k,a,b]
+    # and is therefore linear in the product w (*) J. Summing w and J independently would be WRONG,
+    # because each state has its own contact graph. Writing E_poe = sum_s E_s:
+    #     h_poe = sum_s h_s
+    #     W_poe = sum_s W_s                      (retains interpretable contact structure)
+    #     J_poe = (sum_s W_s (*) J_s) / W_poe    (zero where no state has that edge)
+    # so that W_poe (*) J_poe == sum_s (W_s (*) J_s) identically.
+    h_poe = sum(p.h for p in params_list)
+    w_sum = sum(p.W for p in params_list)
+    wj_sum = sum(p.W[:, :, None, None] * p.J for p in params_list)
+    safe_w = jnp.where(w_sum > 0, w_sum, 1.0)
+    j_poe = jnp.where(w_sum[:, :, None, None] > 0, wj_sum / safe_w[:, :, None, None], 0.0)
+    rho_poe = sum(p.rho for p in params_list) / float(n_states)  # descriptive mean; TRW parameter
+
+    params = PottsParams(
+      marginals=poe_marginals,
+      h=h_poe,
+      J=j_poe,
+      rho=rho_poe,
+      W=w_sum,
+    )
+    mask = mask_0
 
   # Step 5: Apply calibration to marginals
-  calibrated_marginals = calibration(params.marginals)
+  calibrated_marginals = calibration(poe_marginals)
 
-  # Step 6: single backbone only. Multi-state input is refused in step 0 rather than silently
-  # truncated, so these parameters always correspond to the one state that was actually given.
+  # Step 6: multi-state aggregation is done above; the parameters below are the PoE ensemble's.
 
   # Step 7: Sampling (if n_samples > 0)
   samples: Array | None = None
