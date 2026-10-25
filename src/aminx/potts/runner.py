@@ -155,6 +155,29 @@ def run_potts(
   if config is None:
     config = {}
 
+  # Step 0: refuse multi-state input BEFORE loading anything.
+  #
+  # This function infers Potts parameters from ONE backbone. Previously a leading geometry axis of
+  # size S > 1 was silently reduced to state 0 while the returned PottsResult still carried
+  # ``n_backbones=spec.n_backbones``, so a caller asking for an ensemble got single-backbone
+  # parameters in an object that claimed otherwise, with nothing in the result to reveal it.
+  # Multi-state fusion (PoeModel) is not implemented here; infer per state and fuse explicitly.
+  _coords = geometry.coords
+  if getattr(_coords, "ndim", 0) == 4 and int(_coords.shape[0]) != 1:
+    msg = (
+      f"run_potts received {int(_coords.shape[0])} backbone states, but multi-state Potts inference "
+      f"is not implemented here. Earlier versions silently used state 0 and still reported "
+      f"n_backbones={int(_coords.shape[0])}, so the result misrepresented what was computed. Pass a "
+      f"single state, or call run_potts per state and fuse the returned parameters explicitly."
+    )
+    raise NotImplementedError(msg)
+  if spec.n_backbones != 1:
+    msg = (
+      f"spec.n_backbones={spec.n_backbones}, but run_potts performs single-backbone inference and "
+      f"would return a PottsResult reporting an ensemble size it never computed. Set n_backbones=1."
+    )
+    raise NotImplementedError(msg)
+
   # Step 1: Load PottsModel
   model = _load_potts_model(spec.weights_path, spec, key)
 
