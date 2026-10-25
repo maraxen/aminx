@@ -53,6 +53,7 @@ scan_grad_compile_s = "float"
 intent_grad_compile_s = "float"
 scan_grad_step_s = "float"
 intent_grad_step_s = "float"
+max_load_1m = "float"
 backend = "str"
 length = "int"
 grad_length = "int"
@@ -64,6 +65,7 @@ xtrax_rev = "126bf5c (xtrax main 7329b1e + PR #229), pinned in pyproject [tool.u
 resume = "Each (form, kind) cell runs in its own process with --cell-timeout-s (default 7200 s) and writes <out>_cells/<form>_<kind>.json atomically, stamped with the config sha256 (length, grad_length, repeats, seed) and the git hash; a rerun reuses a cell only when both match, and logs which cells it reused."
 wall_estimate = "Dominated by the scan primal compile at L=512 (prior note in aminx #6105: >20 min on an L40S for the 512-step decode) and the two grad compiles at L=128; estimate 0.5-2 h total, 5 cells, each under the 2 h per-cell timeout. Not profiled at production shape beforehand: the compile time is itself the measured quantity."
 task_id = "261023_equinox-decouple-pallas (xtrax); aminx backlog #6105"
+contention = "titanix is shared: at registration (261025 ~17:00) GPUs 0-2 ran tev_design campaigns at 100% and GPU 3 held an idle 17 GB server; load average 15-30 on 20 cores. The run uses CUDA_VISIBLE_DEVICES=3 with on-demand allocation. Each cell records load_1m (start, end) and nvidia-smi utilization/memory of its GPU; max_load_1m is reported and NOT gated. A fail on a timing ratio is read against these records before it is attributed to xtrax.intent."
 notes = "Smoke at L=24 on CPU (untracked, 261025) ran all 5 cells and aggregated; its numbers are not findings. The smoke surfaced a real xtrax bug first (jit(grad) through a loop in a traced cond with a closed-over int tracer), fixed in xtrax PR #229 before this run."
 
 [dependencies]

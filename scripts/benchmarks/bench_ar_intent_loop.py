@@ -68,7 +68,28 @@ class _CompileCounter(logging.Handler):
       self.count += 1
 
 
+def _gpu_others() -> str | None:
+  """Utilization and memory of the visible GPU, from nvidia-smi (contention record), or None."""
+  visible = os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(",")[0]
+  try:
+    out = subprocess.run(
+      ["nvidia-smi", "-i", visible, "--query-gpu=utilization.gpu,memory.used", "--format=csv,noheader"],
+      capture_output=True,
+      text=True,
+      timeout=30,
+      check=True,
+    )
+  except (OSError, subprocess.SubprocessError):
+    return None
+  return out.stdout.strip()
+
+
 def _run_cell(form: str, kind: str, args: argparse.Namespace, cell_dir: Path) -> None:
+  # Allocate on demand: a shared GPU may not have the default 75% preallocation free, and
+  # peak_bytes_in_use is the allocator's in-use peak either way.
+  os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+  load_start = os.getloadavg()[0]
+
   import equinox as eqx
   import jax
   import jax.numpy as jnp
@@ -153,6 +174,8 @@ def _run_cell(form: str, kind: str, args: argparse.Namespace, cell_dir: Path) ->
   record["steady_recompiles"] = counter.count - compiles_before
   stats = jax.devices()[0].memory_stats() or {}
   record["peak_bytes"] = stats.get("peak_bytes_in_use")
+  record["load_1m"] = [load_start, os.getloadavg()[0]]
+  record["gpu_others"] = _gpu_others()
 
   arrays_path = cell_dir / f"{form}_{kind}.npz"
   if kind == "primal":
@@ -224,6 +247,7 @@ def _aggregate(cell_dir: Path, recs: dict[tuple[str, str], dict[str, Any]]) -> d
     "intent_vs_while_step": r("intent", "primal", "step_s") / r("while", "primal", "step_s"),
     "intent_vs_scan_grad_peak": (intent_peak / scan_peak) if scan_peak and intent_peak else -1.0,
     "intent_steady_recompiles": r("intent", "primal", "steady_recompiles") + r("intent", "grad", "steady_recompiles"),
+    "max_load_1m": max(max(rec.get("load_1m") or [0.0]) for rec in recs.values()),
     "backend": r("intent", "primal", "backend"),
   }
 
