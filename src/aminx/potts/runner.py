@@ -134,7 +134,7 @@ def run_potts(
   3. Extracts (coords, mask, residue_index, chain_index) from GeometryBundle
   4. Runs model.infer_params to compute Potts parameters
   5. Applies calibration to marginals
-  6. For n_backbones > 1, uses PoeModel for joint energy
+  6. Refuses multi-state input: single-backbone inference only (see Raises)
   7. Returns PottsResult with marginals, h, J, rho, calibrated_marginals
 
   Args:
@@ -149,9 +149,35 @@ def run_potts(
   Raises:
       FileNotFoundError: If weights_path or caliby_path (if not None) does not exist.
       ValueError: If geometry extraction or model inference fails.
+      NotImplementedError: If more than one backbone state is supplied, via a leading geometry axis
+          of size > 1 or via ``spec.n_backbones != 1``. Single-backbone inference only. Raised
+          before any weights are loaded.
   """
   if config is None:
     config = {}
+
+  # Step 0: refuse multi-state input BEFORE loading anything.
+  #
+  # This function infers Potts parameters from ONE backbone. Previously a leading geometry axis of
+  # size S > 1 was silently reduced to state 0 while the returned PottsResult still carried
+  # ``n_backbones=spec.n_backbones``, so a caller asking for an ensemble got single-backbone
+  # parameters in an object that claimed otherwise, with nothing in the result to reveal it.
+  # Multi-state fusion (PoeModel) is not implemented here; infer per state and fuse explicitly.
+  _coords = geometry.coords
+  if getattr(_coords, "ndim", 0) == 4 and int(_coords.shape[0]) != 1:
+    msg = (
+      f"run_potts received {int(_coords.shape[0])} backbone states, but multi-state Potts inference "
+      f"is not implemented here. Earlier versions silently used state 0 and still reported "
+      f"n_backbones={int(_coords.shape[0])}, so the result misrepresented what was computed. Pass a "
+      f"single state, or call run_potts per state and fuse the returned parameters explicitly."
+    )
+    raise NotImplementedError(msg)
+  if spec.n_backbones != 1:
+    msg = (
+      f"spec.n_backbones={spec.n_backbones}, but run_potts performs single-backbone inference and "
+      f"would return a PottsResult reporting an ensemble size it never computed. Set n_backbones=1."
+    )
+    raise NotImplementedError(msg)
 
   # Step 1: Load PottsModel
   model = _load_potts_model(spec.weights_path, spec, key)
@@ -166,11 +192,9 @@ def run_potts(
   residue_index = geometry.residue_index  # (S, L) or (L)
   chain_index = geometry.chain_index  # (S, L) or (L)
 
-  # Handle potentially batched geometry (S > 1 means multiple states)
-  # For single state, squeeze out the state dimension if present
-  if coords.ndim == 4:  # (S, L, 4, 3)
-    # Multi-state case: extract first state for now
-    # Future: use PoeModel for all states
+  # Squeeze the single-state leading axis if present. S > 1 was already refused in step 0, so this
+  # never discards a state the caller supplied.
+  if coords.ndim == 4:  # (1, L, 4, 3)
     coords = coords[0]  # (L, 4, 3)
     mask = mask[0]  # (L,)
     residue_index = residue_index[0]  # (L,)
@@ -223,9 +247,8 @@ def run_potts(
   # Step 5: Apply calibration to marginals
   calibrated_marginals = calibration(params.marginals)
 
-  # Step 6: Handle n_backbones > 1 (multi-state ensemble via PoeModel)
-  # For now, single backbone: just use the inferred parameters directly
-  # Future: construct PoeModel if spec.n_backbones > 1 and coords are multi-state
+  # Step 6: single backbone only. Multi-state input is refused in step 0 rather than silently
+  # truncated, so these parameters always correspond to the one state that was actually given.
 
   # Step 7: Sampling (if n_samples > 0)
   samples: Array | None = None
