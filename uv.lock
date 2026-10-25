@@ -246,8 +246,8 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'" },
     { name = "ty", marker = "extra == 'tests'" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["io", "export"], specifier = "==0.4.1b3" },
-    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b3" },
+    { name = "xtrax", extras = ["io", "export"], git = "https://github.com/maraxen/xtrax?rev=126bf5c32854086b8773db2bf8bc20adba9366ee" },
+    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", git = "https://github.com/maraxen/xtrax?rev=126bf5c32854086b8773db2bf8bc20adba9366ee" },
     { name = "zstandard", specifier = ">=0.21.0" },
 ]
 provides-extras = ["agent", "laser", "benchmark", "docs", "tests", "onnx", "dev", "foldcomp", "cpu", "cuda12"]
@@ -4907,7 +4907,7 @@ wheels = [
 [[package]]
 name = "xtrax"
 version = "0.4.1b3"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/maraxen/xtrax?rev=126bf5c32854086b8773db2bf8bc20adba9366ee#126bf5c32854086b8773db2bf8bc20adba9366ee" }
 dependencies = [
     { name = "equinox", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "jax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -4915,10 +4915,6 @@ dependencies = [
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "optax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "orbax-checkpoint", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/76/b507b87492915a50bc9bdf483744537f04005a26318f4fc60f6f3fbde16d/xtrax-0.4.1b3.tar.gz", hash = "sha256:75d9651cb03ebf42027d6a81a91e330febf781d4c74321ac36bd76b391f94403", size = 3292939, upload-time = "2026-10-23T16:23:24.822Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/84/c7/9ef75a635ce4f83315da1082d123d62f701de578fc5afc2bfa945755e76a/xtrax-0.4.1b3-py3-none-any.whl", hash = "sha256:47a91eba4cd1d56ea8c8be038e2f5f27c7b84a0bb233792f57d578d55be566d9", size = 677387, upload-time = "2026-10-23T16:23:23.179Z" },
 ]
 
 [package.optional-dependencies]
