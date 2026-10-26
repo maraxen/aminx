@@ -1,0 +1,74 @@
+[metadata]
+title = "AR decode on xtrax.intent.loop: while_loop compile and step cost undifferentiated, scan gradients and memory under grad"
+created = "261025"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On a GPU at production shapes (128-dim, 3+3 layers, k=48, L=512, incremental='auto'), the AR decode with intent_loop=True compiles and steps like today's hand-set while_loop form (compile <= 1.25x, median step <= 1.10x), produces the same tokens and logits (<= 1e-4) as both hand-picked forms, and under grad (L=128) gives the lax.scan reference's gradients (per-leaf relative L2 <= 1e-4) at no more than 1.10x its peak device memory, with zero steady-state recompiles. This is xtrax.intent MVP criterion 8 (spec .praxia/docs/superpowers/specs/261023_intent-resolution-design.md in xtrax, section 5)."
+stage_name = "validation"
+novel = true
+
+[controls]
+# Instrument sensitivity, checked first: the hand-picked scan form must compile at least 2x
+# slower than the hand-picked while form at this shape. If it does not, there is no compile
+# advantage for the resolved form to recover and the compile criterion tests nothing.
+positive_outcome = ["pass"]
+negative_outcome = ["no_contrast", "fail"]
+
+[outcomes.no_contrast]
+condition = "compile_contrast < 2.0"
+decision = "Do not interpret the compile criterion: at this shape lax.scan does not compile meaningfully slower than while_loop. Re-run at a shape where it does (longer L) before citing criterion 8."
+reasoning = "Pairs the positive result with a control that must show the effect being recovered."
+is_residual = false
+
+[outcomes.pass]
+condition = "compile_contrast >= 2.0 AND tokens_equal_all = true AND logits_max_abs_diff <= 1e-4 AND grad_nonzero = true AND grad_rel_l2_max <= 1e-4 AND intent_vs_while_compile <= 1.25 AND intent_vs_while_step <= 1.10 AND intent_vs_scan_grad_peak > 0 AND intent_vs_scan_grad_peak <= 1.10 AND intent_steady_recompiles = 0"
+decision = "Criterion 8 passes: xtrax.intent may leave experimental (skill decision trees go intent-first, backlog #6091), and aminx may default the AR wave loop to intent_loop=True and retire the inference_only flag."
+reasoning = "One flag-free loop that is as fast as the hand-set inference form, exact against both hand-picked forms, and differentiable at the scan form's memory cost is what the intent layer promises."
+is_residual = false
+
+[outcomes.fail]
+condition = "compile_contrast >= 2.0 AND NOT (tokens_equal_all = true AND logits_max_abs_diff <= 1e-4 AND grad_nonzero = true AND grad_rel_l2_max <= 1e-4 AND intent_vs_while_compile <= 1.25 AND intent_vs_while_step <= 1.10 AND intent_vs_scan_grad_peak > 0 AND intent_vs_scan_grad_peak <= 1.10 AND intent_steady_recompiles = 0)"
+decision = "Criterion 8 fails: xtrax.intent stays experimental; investigate the failing criterion (non-equivalence, a compile or step regression, a memory regression under grad, a recompile, or missing peak-memory stats) before any skill or default change."
+reasoning = "Residual catch-all."
+is_residual = true
+
+[result_schema]
+tokens_equal_all = "bool"
+logits_max_abs_diff = "float"
+grad_rel_l2_max = "float"
+grad_nonzero = "bool"
+compile_contrast = "float"
+intent_vs_while_compile = "float"
+intent_vs_while_step = "float"
+intent_vs_scan_grad_peak = "float"
+intent_steady_recompiles = "int"
+scan_primal_compile_s = "float"
+while_primal_compile_s = "float"
+intent_primal_compile_s = "float"
+scan_primal_step_s = "float"
+while_primal_step_s = "float"
+intent_primal_step_s = "float"
+scan_grad_compile_s = "float"
+intent_grad_compile_s = "float"
+scan_grad_step_s = "float"
+intent_grad_step_s = "float"
+max_load_1m = "float"
+backend = "str"
+length = "int"
+grad_length = "int"
+git_hash = "str"
+
+[result_schema.provenance]
+hardware_targets = ["Engaging pi_so3 node4007/node4008 (NVIDIA RTX PRO 6000 Blackwell, SM120, 96 GB), XLA_FLAGS=--xla_gpu_shard_autotuning=false"]
+hardware_history = "First attempt, titanix GPU 3 (TITAN RTX, Turing, 24 GB shared, ~7 GB free), bathos run 0400e7a1 at f668d112: outcome=error. The three L=512 primal cells completed (compile scan 4.2 s, while 4.0 s, intent 3.9 s; contrast ~1.05, i.e. no_contrast territory on Turing), then the scan reference's grad cell at L=128 failed RESOURCE_EXHAUSTED allocating 15.23 GiB. aminx's own record of the scan-vs-while compile gap is on SM120 (Blackwell): .praxia/docs/audits/260716_proteinebm-parity-report.md:551 (~300-400x for a while_loop under an outer scan), jobs 18182309/18192077. The sidecar's no_contrast decision ('re-run where lax.scan compiles meaningfully slower') therefore moves the run to the hardware where the gap was measured, which also has the memory for the grad cells. Outcome conditions are unchanged from the f668d112 registration."
+xtrax_rev = "126bf5c (xtrax main 7329b1e + PR #229), pinned in pyproject [tool.uv.sources]"
+resume = "Each (form, kind) cell runs in its own process with --cell-timeout-s (default 7200 s) and writes <out>_cells/<form>_<kind>.json atomically, stamped with the config sha256 (length, grad_length, repeats, seed) and the git hash; a rerun reuses a cell only when both match, and logs which cells it reused."
+wall_estimate = "Dominated by the scan primal compile at L=512 (prior note in aminx #6105: >20 min on an L40S for the 512-step decode) and the two grad compiles at L=128; estimate 0.5-2 h total, 5 cells, each under the 2 h per-cell timeout. Not profiled at production shape beforehand: the compile time is itself the measured quantity."
+task_id = "261023_equinox-decouple-pallas (xtrax); aminx backlog #6105"
+contention = "Every cell records load_1m (start, end) and nvidia-smi utilization/memory of its GPU; on Engaging the node is shared with other jobs on the second GPU. First attempt: titanix is shared: at registration (261025 ~17:00) GPUs 0-2 ran tev_design campaigns at 100% and GPU 3 held an idle 17 GB server; load average 15-30 on 20 cores. The run uses CUDA_VISIBLE_DEVICES=3 with on-demand allocation. Each cell records load_1m (start, end) and nvidia-smi utilization/memory of its GPU; max_load_1m is reported and NOT gated. A fail on a timing ratio is read against these records before it is attributed to xtrax.intent."
+notes = "Smoke at L=24 on CPU (untracked, 261025) ran all 5 cells and aggregated; its numbers are not findings. The smoke surfaced a real xtrax bug first (jit(grad) through a loop in a traced cond with a closed-over int tracer), fixed in xtrax PR #229 before this run."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }

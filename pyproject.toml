@@ -369,3 +369,8 @@ proxide = { index = "pypi" }
 # alphex: PyPI (https://pypi.org/project/alphex/) -- no source override needed.
 # PyPI serves the CUDA-enabled wheel on Linux and CPU wheel on macOS — correct for both envs.
 torch = { index = "pypi" }
+# EXPERIMENT PIN (xtrax criterion 8, task 261023_equinox-decouple-pallas): xtrax.intent is on
+# xtrax main (merge 7329b1e, still versioned 0.4.1b3) but in no published release yet; this rev
+# adds xtrax PR #229 (jit(grad) through a loop in a traced cond). Drop this line once a release
+# carries xtrax.intent.
+xtrax = { git = "https://github.com/maraxen/xtrax", rev = "126bf5c32854086b8773db2bf8bc20adba9366ee" }

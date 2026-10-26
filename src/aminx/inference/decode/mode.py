@@ -73,12 +73,18 @@ class AutoregressiveConfig:
       ``G * P`` from the wave schedule's shape. A tie group can cover more positions than
       the schedule lists (``WaveScheduleBundle.empty()`` with ties); raise this to the
       largest tie-group size there, otherwise ``"auto"`` falls back to ``"off"``.
+  intent_loop : bool, default False
+      When True, the wave axis is ``xtrax.intent.loop``, which runs one ``while_loop``
+      unless JAX differentiates it and then runs ``lax.scan``; ``inference_only`` is
+      ignored. Experimental: needs xtrax with ``xtrax.intent`` (raises ImportError
+      otherwise).
 
   """
 
   inference_only: bool = False
   incremental: Literal["auto", "off", "force"] = "auto"
   max_positions_per_wave: int | None = None
+  intent_loop: bool = False
 
 
 @dataclass(frozen=True)

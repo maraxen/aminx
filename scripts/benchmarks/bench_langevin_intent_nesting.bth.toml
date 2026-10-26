@@ -1,0 +1,92 @@
+[metadata]
+title = "Langevin trajectories under an outer map on SM120: does xtrax.intent avoid the while-under-scan compile hazard, refuse quickly when it cannot, and differentiate exactly"
+created = "261025"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On Blackwell (SM120) at production EBM shapes (token_s 256, token_z 128, depth 16, heads 8; L=128, 64 trajectories, 20 Langevin steps, chunk 16), jax.lax.map around run_langevin_equilibration's while_loop compiles at least 10x slower than jax.vmap around it (or does not finish within 2400 s). xtrax.intent.compile of intent.map around intent.loop resolves the outer map to Vmap, emits no while inside a scan, matches the vmap form's outputs (max abs <= 1e-5) at <= 1.5x its compile time including planning and <= 1.10x its median step, with zero steady-state recompiles. Planned under a memory budget of half the vmap estimate, it refuses (UnsatisfiableContextError) within 600 s instead of compiling the hazard. Under grad (L=64, 4 trajectories, 4 steps) it matches a hand-written vmap/lax.scan reference (global relative L2 <= 1e-4) with no while in the gradient program, at <= 1.10x the reference's peak device memory. This is xtrax.intent MVP criterion 8, second workload (spec .praxia/docs/superpowers/specs/261023_intent-resolution-design.md in xtrax, section 5), registered after the AR-decode workload (bench_ar_intent_loop, bathos run 3b93937a) returned no_contrast."
+stage_name = "validation"
+novel = true
+
+[controls]
+# Instrument validity, checked first: the hazard arm must actually place a while inside a scan
+# (read from its jaxpr before compiling) and must compile at least 10x slower than the vmap arm,
+# or time out. Without that, there is no hazard for the resolved form to avoid.
+positive_outcome = ["pass"]
+negative_outcome = ["no_contrast", "resolved_ok_planner_hazard", "fail"]
+
+[outcomes.no_contrast]
+condition = "NOT (hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0))"
+decision = "Do not interpret the intent criteria: on this hardware and JAX version, lax.map around the while_loop does not compile meaningfully slower than vmap around it (or the hazard arm did not nest). The scan_around_while rule is then unmeasured; criterion 8 stays open and xtrax.intent stays experimental."
+reasoning = "Pairs the positive result with a control that must show the effect being avoided. Prior record: SLURM 18182309 (lax.map form) did not finish compiling in 1 h; 18192077 (Python-chunked vmap) finished the whole cell in 104 s."
+is_residual = false
+
+[outcomes.pass]
+condition = "hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0) AND intent_scan_encloses_while = false AND intent_outer_strategy = 'Vmap' AND intent_vs_vmap_max_abs <= 1e-5 AND intent_vs_vmap_compile <= 1.5 AND intent_vs_vmap_step <= 1.10 AND intent_steady_recompiles = 0 AND grad_nonzero = true AND grad_rel_l2_global <= 1e-4 AND intent_grad_has_while = false AND intent_vs_ref_grad_peak > 0 AND intent_vs_ref_grad_peak <= 1.10 AND tight_timed_out = false AND tight_plan_s <= 600 AND starts_with(tight_result, 'unsat:')"
+decision = "Criterion 8 passes on the hazard workload: xtrax.intent may leave experimental (skill decision trees go intent-first, backlog #6091), with the skills stating that the AR-decode workload showed no compile contrast to recover."
+reasoning = "The intent layer's promise for nested loops on GPU: never emit the hazard, run as fast as the hand fix, refuse loudly instead of hanging, and differentiate exactly."
+is_residual = false
+
+[outcomes.resolved_ok_planner_hazard]
+condition = "hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0) AND intent_scan_encloses_while = false AND intent_outer_strategy = 'Vmap' AND intent_vs_vmap_max_abs <= 1e-5 AND intent_vs_vmap_compile <= 1.5 AND intent_vs_vmap_step <= 1.10 AND intent_steady_recompiles = 0 AND grad_nonzero = true AND grad_rel_l2_global <= 1e-4 AND intent_grad_has_while = false AND intent_vs_ref_grad_peak > 0 AND intent_vs_ref_grad_peak <= 1.10 AND NOT (tight_timed_out = false AND tight_plan_s <= 600 AND starts_with(tight_result, 'unsat:'))"
+decision = "The resolved programs avoid the hazard, but planning under a memory budget does not: default_estimator compiles chunked_map around the while to price ChunkedMap, which is the hazard itself. Fix the estimator (do not compile a ChunkedMap estimate around a StaticWhile on a scan_around_while backend) and re-run the intent_tight cell alone (resume reuses the other cells only if the git hash is unchanged, so this is a new registration) before criterion 8 is cited. Stage 2 (#6091) waits for that re-run."
+reasoning = "Predicted from reading xtrax resolve.py/estimators.py at registration: lowered_memory_estimate does a real AOT compile of each candidate strategy."
+is_residual = false
+
+[outcomes.fail]
+condition = "hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0) AND NOT (intent_scan_encloses_while = false AND intent_outer_strategy = 'Vmap' AND intent_vs_vmap_max_abs <= 1e-5 AND intent_vs_vmap_compile <= 1.5 AND intent_vs_vmap_step <= 1.10 AND intent_steady_recompiles = 0 AND grad_nonzero = true AND grad_rel_l2_global <= 1e-4 AND intent_grad_has_while = false AND intent_vs_ref_grad_peak > 0 AND intent_vs_ref_grad_peak <= 1.10)"
+decision = "Criterion 8 fails on the hazard workload: xtrax.intent stays experimental; investigate the failing criterion (a resolved nesting, non-equivalence, a compile or step regression, a recompile, a gradient or memory regression, or missing peak-memory stats) before any skill or default change."
+reasoning = "Residual catch-all."
+is_residual = true
+
+[result_schema]
+compile_contrast = "float"
+hazard_timed_out = "bool"
+hazard_scan_encloses_while = "bool"
+intent_scan_encloses_while = "bool"
+intent_outer_strategy = "str"
+intent_vs_vmap_compile = "float"
+intent_first_call_vs_vmap_compile = "float"
+intent_vs_vmap_step = "float"
+intent_vs_vmap_max_abs = "float"
+safemap_vs_vmap_max_abs = "float"
+grad_rel_l2_global = "float"
+grad_rel_l2_leaf_max = "float"
+grad_nonzero = "bool"
+intent_grad_has_while = "bool"
+scan_ref_grad_has_while = "bool"
+intent_vs_ref_grad_peak = "float"
+intent_steady_recompiles = "int"
+tight_timed_out = "bool"
+tight_plan_s = "float"
+tight_result = "str"
+vmap_primal_compile_s = "float"
+safemap_primal_compile_s = "float"
+intent_primal_compile_s = "float"
+intent_plan_s = "float"
+vmap_primal_step_s = "float"
+intent_primal_step_s = "float"
+scan_ref_grad_compile_s = "float"
+intent_grad_compile_s = "float"
+scan_ref_grad_step_s = "float"
+intent_grad_step_s = "float"
+max_load_1m = "float"
+backend = "str"
+model = "str"
+git_hash = "str"
+
+[result_schema.provenance]
+hardware_targets = ["Engaging pi_so3 node4007/node4008 (NVIDIA RTX PRO 6000 Blackwell, SM120, 96 GB), XLA_FLAGS=--xla_gpu_shard_autotuning=false"]
+hazard_source = "aminx .praxia/docs/audits/260716_proteinebm-parity-report.md:545-557 and scripts/ebm/benchmarks/langevin_benchmark.py:_chunked_vmap: SafeMap (jax.lax.map) around run_langevin_equilibration's while_loop hung >1 h compiling the L=128/batch=400 cell on node4008 (SLURM 18182309); the Python-chunked vmap fix (commit 0faa1d0) ran the full cell in 104 s (18192077). This run uses batch 64 (the largest batch vmap is confirmed safe at for L=128, SAFE_TRAJECTORY_BATCH_BY_LENGTH) so that the vmap arm and intent's Vmap resolution both fit."
+intent_rule = "xtrax src/xtrax/intent/resolve.py: HAZARDS scan_around_while (severity error) on backends {cuda, gpu}, 'accepted for both until measured otherwise'; _with_hazards moves a ChunkedMap outer map back to Vmap when Vmap fits the budget, else raises UnsatisfiableContextError. compile.py _posthoc rejects any executed scan that encloses a while on those backends. With no memory budget, intent.map plans Vmap without consulting the rule; the intent_tight cell exercises the budgeted path."
+metric_notes = "grad_rel_l2_global = ||g_ref - g_intent|| / ||g_ref|| over all parameter and coordinate leaves together. The per-leaf maximum is reported, not gated: in the CPU smoke a LayerNorm bias the loss is invariant to had true gradient ~2e-10 of the global norm, and per-leaf relative L2 compared rounding noise to rounding noise (0.48 with a 1e-30 floor, 4e-4 with a 1e-6-of-global floor) while every other leaf was bit-exact. intent_vs_vmap_compile includes intent.compile's planning pass (primal and diff traces, once per signature); intent_first_call_vs_vmap_compile excludes it and is reported only. The 1.5x bound (vs 1.25x for the AR workload's plain intent sites) allows for that pass."
+xtrax_rev = "126bf5c (xtrax main 7329b1e + PR #229), pinned in pyproject [tool.uv.sources]"
+resume = "Each (form, kind) cell runs in its own process (--cell-timeout-s 3600; the safemap_while and intent_tight cells --hazard-timeout-s 2400, recorded as censored on timeout rather than failing the run) and writes <out>_cells/<form>_<kind>.json atomically, stamped with the config sha256 (shapes, chunk, repeats, seed, model) and the git hash; a rerun reuses a cell only when both match, censored cells included, and logs which cells it reused. Each primal and plan cell writes <cell>.pre.json (jaxpr nesting flags, budget) before compiling, so a censored cell keeps them."
+wall_estimate = "Bounded by the two hazard cells (2 x 2400 s worst case) plus four cells of a few minutes each (model init and vmap/scan compiles of a depth-16 trunk; not profiled at production shape beforehand, since compile time is the measured quantity): 0.5-1.7 h. Submitted with a 4 h walltime."
+task_id = "261023_equinox-decouple-pallas (xtrax); aminx backlog #6105"
+contention = "Every cell records load_1m (start, end) and nvidia-smi utilization/memory of its GPU; max_load_1m is reported and NOT gated. On Engaging the node is shared with other jobs on its other GPU. A fail on a timing ratio is read against these records before it is attributed to xtrax.intent."
+notes = "CPU smoke with --model tiny at L=16/batch 8 (untracked, 261025) ran all 6 cells, resumed with all 6 reused, and aggregated; its numbers are not findings. It confirmed the hazard arm's jaxpr nests a while inside a scan, intent's does not and resolves the outer map to Vmap, and the tight-budget cell refuses (on CPU via the budget, before the hazard rule). It also produced the per-leaf gradient artifact described in metric_notes, bisected before registration: plain intent.map/intent.loop, vmap(intent.loop) and intent.map(lax.scan) gradients are bit-exact against the reference; under intent.compile only the invariant LayerNorm bias leaf differs, at ~1e-10 absolute."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }

@@ -130,6 +130,7 @@ def make_decode_fn(
         use_while_loop=ar_config.inference_only,
         incremental=ar_config.incremental,
         max_positions_per_wave=ar_config.max_positions_per_wave,
+        intent_loop=ar_config.intent_loop,
       )
 
     if isinstance(mode, STEMode):

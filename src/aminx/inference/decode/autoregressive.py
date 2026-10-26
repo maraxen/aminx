@@ -39,6 +39,11 @@ from aminx.types.configs import InferenceConfig
 from aminx.types.stages import StageSet
 from aminx.utils.sampling_support import exclude_x_logits
 
+try:  # xtrax.intent is experimental and absent from xtrax <= 0.4.1b3.
+  from xtrax.intent import loop as _intent_loop
+except ImportError:
+  _intent_loop = None
+
 #: Sentinel token for a position that has not been drawn yet.
 #:
 #: Deliberately NOT 0. ``MPNN_ALPHABET`` is ``"ACDEFGHIKLMNPQRSTVWYX"``, so index 0 is
@@ -316,6 +321,11 @@ class AutoregressiveDecode(eqx.Module):
       (see ``aminx.inference.decode.factory.make_decode_fn`` and
       ``aminx.inference.decode.mode.AutoregressiveConfig``); never set True in
       training code paths.
+  intent_loop : bool = eqx.field(static=True)
+      When True, the wave axis is ``xtrax.intent.loop``: a single ``while_loop``
+      undifferentiated and ``lax.scan`` under differentiation, so it is safe on
+      gradient paths. Overrides ``use_while_loop``. Experimental; requires xtrax with
+      ``xtrax.intent``.
 
   Notes
   -----
@@ -342,6 +352,23 @@ class AutoregressiveDecode(eqx.Module):
   use_while_loop: bool = eqx.field(static=True, default=False)
   incremental: str = eqx.field(static=True, default="auto")
   max_positions_per_wave: int | None = eqx.field(static=True, default=None)
+  intent_loop: bool = eqx.field(static=True, default=False)
+
+  def __check_init__(self) -> None:
+    """Refuse ``intent_loop=True`` when the installed xtrax has no ``xtrax.intent``.
+
+    Raises
+    ------
+    ImportError
+        ``intent_loop`` is True and ``xtrax.intent`` could not be imported.
+
+    """
+    if self.intent_loop and _intent_loop is None:
+      msg = (
+        "intent_loop=True needs xtrax.intent (xtrax after 0.4.1b3); the installed xtrax "
+        "does not provide it."
+      )
+      raise ImportError(msg)
 
   def __call__(
     self,
@@ -600,6 +627,10 @@ class AutoregressiveDecode(eqx.Module):
       step: Callable[[CarryT, jnp.ndarray], tuple[CarryT, jnp.ndarray]],
       init_carry: CarryT,
     ) -> tuple[CarryT, jnp.ndarray]:
+      if self.intent_loop:
+        # xtrax.intent.loop: one while_loop when undifferentiated, lax.scan when JAX
+        # differentiates it, so use_while_loop is not consulted on this path.
+        return _intent_loop(step, init_carry, xs=jnp.arange(n_waves), name="ar_wave")
       if self.use_while_loop:
         # lax.while_loop: not reverse-mode differentiable.
         # Lowers to a single XLA WhileOp — significantly faster to compile
