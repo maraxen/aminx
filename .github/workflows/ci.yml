@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check decode-path commits reference an epic ID (backlog #2954)
-        run: python3 scripts/check_epic_attribution.py "origin/${{ github.base_ref }}..HEAD"
+        run: python3 scripts/check_epic_attribution.py "origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}"
 
   unit-tests:
     runs-on: ubuntu-latest
@@ -53,7 +53,17 @@ jobs:
           key: uv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}
           restore-keys: |
             uv-${{ runner.os }}-py3.13-
-      - name: Cache XLA compilation artifacts
+      - name: Restore XLA compilation cache (pull request)
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/jax_compilation_cache
+          key: xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-
+            xla-${{ runner.os }}-py3.13-
+      - name: Cache XLA compilation artifacts (main)
+        if: github.event_name != 'pull_request'
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/jax_compilation_cache
@@ -61,10 +71,9 @@ jobs:
           restore-keys: |
             xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-
             xla-${{ runner.os }}-py3.13-
-      - name: Install ast-grep
-        run: npm install -g @ast-grep/cli
       - name: Install dependencies and run tests
         run: |
+          # --extra dev brings ast-grep-cli (`sg` binary for lint gates; pyproject.toml:113).
           # --extra laser brings ProDy, which families/laser_mpnn/featurize.py imports. Without it
           # every tests/port/test_laser_*.py and tests/knob_semantics/test_laser_*.py module fails at
           # COLLECTION, so the LASEr waves were never actually executed here (aminx #165 CI).
@@ -85,8 +94,9 @@ jobs:
             MARKER="not slow and not parity_heavy and not parity_audit and not redsox_gate"
             # No coverage on PRs: four #165 runs were killed by "The runner has received a shutdown
             # signal" at ~91% of the suite, and coverage is the likeliest extra load on a 4-vCPU
-            # runner. Codecov uploads only on main anyway. Fallback if this is not enough: -n 2;
-            # long-term fix: shard the job (aminx debt #2585, #2582).
+            # runner. Codecov uploads only on main anyway. Use --dist loadscope so each module's
+            # JAX compilations stay on one worker, and cap workers at -n 2 on tiny (<=25) or
+            # broad (>150 / full-suite) runs to prevent 4-worker OOM kills (aminx debt #2585, #2582).
             COV_ARGS=""
             uv run python scripts/ci/select_affected_tests.py \
               --base "origin/${{ github.base_ref }}" \
@@ -94,12 +104,21 @@ jobs:
               --explain \
               --write-pytest-args .pytest-targets.txt
             mapfile -t PYTEST_TARGETS < .pytest-targets.txt
-            uv run pytest -n auto $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
+            if [ "${#PYTEST_TARGETS[@]}" -eq 1 ] && [ "${PYTEST_TARGETS[0]}" == "." ]; then
+              WORKERS="2"
+            elif [ "${#PYTEST_TARGETS[@]}" -le 25 ] || [ "${#PYTEST_TARGETS[@]}" -gt 150 ]; then
+              WORKERS="2"
+            else
+              WORKERS="auto"
+            fi
+            uv run pytest -n "$WORKERS" --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
           else
             echo "Push to main: running full suite excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
             MARKER="not parity_heavy and not parity_audit and not redsox_gate"
             COV_ARGS="--cov=src --cov-report=xml --cov-report=term"
-            uv run pytest -n auto $COV_ARGS -m "$MARKER"
+            # Cap at -n 2 --dist loadscope on full-suite + coverage + slow runs to stay under the
+            # 16 GB runner memory ceiling (aminx debt #2585, #2582).
+            uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER"
           fi
       - name: Upload coverage to Codecov
         if: github.ref == 'refs/heads/main'

@@ -57,11 +57,30 @@ _DYNAMIC_CALLS = frozenset(
         "files",  # importlib.resources.files
     }
 )
-# Root `aminx` and `aminx.run` re-export cross-cutting host/sampling/scoring symbols;
-# their `__init__.py` files are recorded in `closure.files` on every import through
-# them, and expanded in BFS only when imported directly (`import aminx`, `from aminx import ...`,
-# `from aminx.run import ...`). All other subpackage `__init__.py` files are expanded in BFS.
-_NON_EXPANDED_ANCESTOR_PKGS = frozenset({"aminx", "aminx.run"})
+# Root `aminx`, `aminx.run`, `aminx.model`, and `aminx.types` re-export cross-cutting
+# symbols; their `__init__.py` files are recorded in `closure.files` on every import
+# through them, and expanded in BFS only when imported directly (`import aminx`,
+# `from aminx import ...`, `from aminx.run import ...`, `from aminx.model import ...`).
+# All other subpackage `__init__.py` files are expanded in BFS.
+_NON_EXPANDED_ANCESTOR_PKGS = frozenset(
+    {"aminx", "aminx.run", "aminx.model", "aminx.types"}
+)
+_NON_EXPANDED_ANCESTOR_FILES = frozenset(
+    {
+        "src/aminx/__init__.py",
+        "src/aminx/run/__init__.py",
+        "src/aminx/model/__init__.py",
+        "src/aminx/types/__init__.py",
+    }
+)
+_PR_EXCLUDED_MARKERS = frozenset(
+    {"slow", "parity_heavy", "parity_audit", "redsox_gate"}
+)
+_FAMILY_STRING_TO_MODULE: Mapping[str, str] = {
+    "pottsmpnn": "aminx.families.potts_mpnn",
+    "protonpottsmpnn": "aminx.families.protonpotts_mpnn",
+    "lasermpnn": "aminx.families.laser_mpnn",
+}
 _BROAD_DIRS = frozenset(
     {
         "",
@@ -69,6 +88,10 @@ _BROAD_DIRS = frozenset(
         "src",
         "src/aminx",
         "tests",
+        "tests/port",
+        "tests/port/targets",
+        "tests/port/manifests",
+        "tests/port/reference",
         "scripts",
         "tools",
         ".praxia",
@@ -81,6 +104,7 @@ _INLINE_AMINX_IMPORT_RE = re.compile(
     r"\b(?:from|import)\s+(aminx(?:\.[A-Za-z_][A-Za-z0-9_]*)+)"
 )
 _RESOLVE_CACHE: dict[tuple[Path, str, Path | None], str | None] = {}
+_PR_EXCLUDED_TEST_CACHE: dict[tuple[Path, str], bool] = {}
 
 
 @dataclass(frozen=True)
@@ -127,6 +151,7 @@ class _FileScan:
 
     target_modules: frozenset[str]
     ancestor_modules: frozenset[str]
+    ancestor_files: frozenset[str]
     path_files: frozenset[str]
     data_prefixes: frozenset[str]
     dynamic_lines: tuple[int, ...]
@@ -215,13 +240,15 @@ def resolve_module_file(
         return _RESOLVE_CACHE[cache_key]
 
     parts = [p for p in module.split(".") if p]
-    if not parts:
+    if not parts or parts[0] in sys.stdlib_module_names:
         _RESOLVE_CACHE[cache_key] = None
         return None
 
-    search_bases: list[Path] = [repo / root for root in _ROOTS]
-    search_bases.append(repo)
-    if importer_dir is not None:
+    if importer_dir is None:
+        search_bases: list[Path] = [repo / "src", repo]
+    else:
+        search_bases = [repo / root for root in _ROOTS]
+        search_bases.append(repo)
         search_bases.append(importer_dir)
 
     result: str | None = None
@@ -405,25 +432,54 @@ def _register_candidate_repo_path(
 def _resolve_port_wave(
     repo: Path,
     wave_name: str,
+    target_modules: set[str],
+    ancestor_modules: set[str],
     path_files: set[str],
     data_prefixes: set[str],
 ) -> None:
-    """Resolve `@pytest.mark.port_wave('<wave>')` to target TOML, manifest, and oracle."""
+    """Resolve `@pytest.mark.port_wave('<wave>')` to target TOML, manifest, mutants, symbol, and oracle."""
     target_rel = f"tests/port/targets/{wave_name}.toml"
     target_path = repo / target_rel
     if not target_path.is_file():
         return
     path_files.add(target_rel)
+
+    mutant_rel = f"tests/port/mutants/{wave_name}.py"
+    if (repo / mutant_rel).is_file():
+        path_files.add(mutant_rel)
+
     try:
         target_doc = tomllib.loads(target_path.read_text(encoding="utf-8"))
     except Exception:
         return
 
-    wave_id = target_doc.get("wave_id")
+    port_tbl = target_doc.get("port", target_doc)
+    if not isinstance(port_tbl, dict):
+        port_tbl = target_doc
+
+    wave_id = port_tbl.get("wave_id") or target_doc.get("wave_id")
     if isinstance(wave_id, str) and wave_id:
         manifest_rel = f"tests/port/manifests/{wave_id}.toml"
         if (repo / manifest_rel).is_file():
             path_files.add(manifest_rel)
+
+    ref_sub = port_tbl.get("reference_subtree")
+    if isinstance(ref_sub, str) and ref_sub:
+        ref_dir = repo / "tests" / "port" / ref_sub.strip("/")
+        if ref_dir.is_dir():
+            data_prefixes.add(ref_dir.relative_to(repo).as_posix().rstrip("/") + "/")
+            for py_f in ref_dir.rglob("*.py"):
+                path_files.add(py_f.relative_to(repo).as_posix())
+
+    symbol_qualname = port_tbl.get("symbol_qualname")
+    if isinstance(symbol_qualname, str) and symbol_qualname.startswith("aminx."):
+        mod_target, mod_ancs = _resolve_longest_aminx_module(repo, symbol_qualname)
+        for anc in mod_ancs:
+            ancestor_modules.add(anc)
+            if anc not in _NON_EXPANDED_ANCESTOR_PKGS:
+                target_modules.add(anc)
+        if mod_target is not None and mod_target != "aminx":
+            target_modules.add(mod_target)
 
     oracle = target_doc.get("oracle", {})
     if isinstance(oracle, dict):
@@ -438,12 +494,40 @@ def _resolve_port_wave(
                 data_prefixes.add(ref_dir.relative_to(repo).as_posix().rstrip("/") + "/")
 
 
+def _is_type_checking_guard(test: ast.AST) -> bool:
+    """Return True if `test` is `TYPE_CHECKING` or `typing.TYPE_CHECKING`."""
+    if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+        return True
+    if isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING":
+        return True
+    return False
+
+
+def _iter_runtime_ast(root: ast.AST) -> Iterable[ast.AST]:
+    """Walk `root` skipping the dead `body` of `if TYPE_CHECKING:` blocks."""
+    stack: list[ast.AST] = [root]
+    while stack:
+        cur = stack.pop()
+        yield cur
+        if isinstance(cur, ast.If) and _is_type_checking_guard(cur.test):
+            for child in reversed(cur.orelse):
+                stack.append(child)
+            continue
+        for child in reversed(list(ast.iter_child_nodes(cur))):
+            stack.append(child)
+
+
 def _iter_scope_nodes(body: Sequence[ast.stmt]) -> Iterable[ast.AST]:
-    """Yield AST nodes within `body` without descending into nested function/class definitions."""
+    """Yield runtime AST nodes within `body` without descending into nested function/class definitions."""
     stack: list[ast.AST] = list(reversed(body))
     while stack:
         cur = stack.pop()
         yield cur
+        if isinstance(cur, ast.If) and _is_type_checking_guard(cur.test):
+            for child in reversed(cur.orelse):
+                if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    stack.append(child)
+            continue
         for child in reversed(list(ast.iter_child_nodes(cur))):
             if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 stack.append(child)
@@ -505,7 +589,7 @@ def _build_scope_path_envs(
     for node in _iter_scope_nodes(tree.body):
         node_env[node] = module_env
 
-    for node in ast.walk(tree):
+    for node in _iter_runtime_ast(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             func_env = dict(module_env)
             func_tainted: set[str] = set()
@@ -563,6 +647,7 @@ def _resolve_relative_import(
     *,
     file_resolved: Path,
     repo_resolved: Path,
+    ancestor_files: set[str],
     path_files: set[str],
 ) -> None:
     """Resolve `from . import x` / `from ..sub import y` directly on the filesystem."""
@@ -576,16 +661,19 @@ def _resolve_relative_import(
         return
 
     # Record intermediate package `__init__.py` files climbed by relative import
+    # in `ancestor_files` so hub `__init__.py` files (`src/aminx/__init__.py`,
+    # `src/aminx/run/__init__.py`, etc.) are tracked in `closure.files` without
+    # unconditionally expanding them in BFS.
     for idx in range(0, up + 1):
         pkg_init = parents[idx] / "__init__.py"
         if pkg_init.is_file() and pkg_init.is_relative_to(repo_resolved):
-            path_files.add(pkg_init.relative_to(repo_resolved).as_posix())
+            ancestor_files.add(pkg_init.relative_to(repo_resolved).as_posix())
 
     mod_parts = [p for p in (node.module or "").split(".") if p]
     for end in range(1, len(mod_parts) + 1):
         sub_init = rel_base.joinpath(*mod_parts[:end], "__init__.py")
         if sub_init.is_file() and sub_init.is_relative_to(repo_resolved):
-            path_files.add(sub_init.relative_to(repo_resolved).as_posix())
+            ancestor_files.add(sub_init.relative_to(repo_resolved).as_posix())
 
     target_dir = rel_base.joinpath(*mod_parts) if mod_parts else rel_base
     if mod_parts:
@@ -593,15 +681,25 @@ def _resolve_relative_import(
         if mod_file.is_file() and mod_file.is_relative_to(repo_resolved):
             path_files.add(mod_file.relative_to(repo_resolved).as_posix())
 
+    target_init = target_dir / "__init__.py"
     for alias in node.names:
         if alias.name == "*":
+            if target_init.is_file() and target_init.is_relative_to(repo_resolved):
+                path_files.add(target_init.relative_to(repo_resolved).as_posix())
             continue
         cand_file = target_dir.joinpath(alias.name).with_suffix(".py")
+        cand_pkg = target_dir.joinpath(alias.name, "__init__.py")
+        matched_sub = False
         if cand_file.is_file() and cand_file.is_relative_to(repo_resolved):
             path_files.add(cand_file.relative_to(repo_resolved).as_posix())
-        cand_pkg = target_dir.joinpath(alias.name, "__init__.py")
+            matched_sub = True
         if cand_pkg.is_file() and cand_pkg.is_relative_to(repo_resolved):
             path_files.add(cand_pkg.relative_to(repo_resolved).as_posix())
+            matched_sub = True
+        if not matched_sub and target_init.is_file() and target_init.is_relative_to(repo_resolved):
+            t_rel = target_init.relative_to(repo_resolved).as_posix()
+            if not mod_parts or t_rel not in _NON_EXPANDED_ANCESTOR_FILES:
+                path_files.add(t_rel)
 
 
 def _scan_python_file(
@@ -623,6 +721,7 @@ def _scan_python_file(
         return _FileScan(
             target_modules=frozenset(),
             ancestor_modules=frozenset(),
+            ancestor_files=frozenset(),
             path_files=frozenset(),
             data_prefixes=frozenset(),
             dynamic_lines=(1,),
@@ -634,12 +733,13 @@ def _scan_python_file(
 
     target_modules: set[str] = set()
     ancestor_modules: set[str] = set()
+    ancestor_files: set[str] = set()
     path_files: set[str] = set()
     data_prefixes: set[str] = set()
     dynamic_lines: list[int] = []
 
     parent_map: dict[ast.AST, ast.AST] = {}
-    for parent in ast.walk(tree):
+    for parent in _iter_runtime_ast(tree):
         for child in ast.iter_child_nodes(parent):
             parent_map[child] = parent
 
@@ -665,7 +765,7 @@ def _scan_python_file(
         if resolve_module_file(repo, mod_name, importer_dir=importer_dir) is not None:
             target_modules.add(mod_name)
 
-    for node in ast.walk(tree):
+    for node in _iter_runtime_ast(tree):
         scope_env = node_envs.get(node, {})
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -676,6 +776,7 @@ def _scan_python_file(
                     node,
                     file_resolved=file_resolved,
                     repo_resolved=repo_resolved,
+                    ancestor_files=ancestor_files,
                     path_files=path_files,
                 )
             else:
@@ -686,11 +787,13 @@ def _scan_python_file(
                             ancestor_modules.add(anc)
                             if anc not in _NON_EXPANDED_ANCESTOR_PKGS:
                                 target_modules.add(anc)
-                    # If `base` is not root `aminx`, importing `from base import X`
-                    # executes `base` (including `base/__init__.py` when `base` is a
-                    # subpackage like `aminx.sampling` or `aminx.run` that may define
-                    # or re-export `X` alongside a submodule of the same name).
-                    if base != "aminx" and resolve_module_file(repo, base, importer_dir=importer_dir) is not None:
+                    # If `base` is not in `_NON_EXPANDED_ANCESTOR_PKGS`, importing
+                    # `from base import X` also expands `base/__init__.py` in case `base`
+                    # defines or re-exports `X` alongside a submodule of the same name.
+                    if (
+                        base not in _NON_EXPANDED_ANCESTOR_PKGS
+                        and resolve_module_file(repo, base, importer_dir=importer_dir) is not None
+                    ):
                         target_modules.add(base)
                     for alias in node.names:
                         cand = f"{base}.{alias.name}"
@@ -723,7 +826,14 @@ def _scan_python_file(
             if name == "port_wave" and node.args:
                 arg0 = node.args[0]
                 if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
-                    _resolve_port_wave(repo, arg0.value, path_files, data_prefixes)
+                    _resolve_port_wave(
+                        repo,
+                        arg0.value,
+                        target_modules,
+                        ancestor_modules,
+                        path_files,
+                        data_prefixes,
+                    )
             elif name in _DYNAMIC_CALLS:
                 literal_str = (
                     str(node.args[0].value)
@@ -757,6 +867,7 @@ def _scan_python_file(
                     dynamic_lines.append(node.lineno)
         elif scan_string_literals and isinstance(node, ast.Constant) and isinstance(node.value, str):
             val = node.value
+            val_stripped = val.strip()
             if (
                 "\n" not in val
                 and " " not in val
@@ -793,10 +904,18 @@ def _scan_python_file(
                             target_modules.add(anc)
                     if mod_target is not None and mod_target != "aminx":
                         target_modules.add(mod_target)
+            elif val_stripped in _FAMILY_STRING_TO_MODULE:
+                add_target_module(_FAMILY_STRING_TO_MODULE[val_stripped])
+            else:
+                for fam_key, fam_mod in _FAMILY_STRING_TO_MODULE.items():
+                    if val_stripped.startswith(f"{fam_key}_"):
+                        add_target_module(fam_mod)
+                        break
 
     return _FileScan(
         target_modules=frozenset(target_modules),
         ancestor_modules=frozenset(ancestor_modules),
+        ancestor_files=frozenset(ancestor_files),
         path_files=frozenset(path_files),
         data_prefixes=frozenset(data_prefixes),
         dynamic_lines=tuple(sorted(set(dynamic_lines))),
@@ -828,6 +947,53 @@ def _expected_dynamic_count(mod_decl: Mapping[str, object], context: str) -> int
     return 0
 
 
+def is_pr_excluded_test_file(repo: Path, test_file: str) -> bool:
+    """Return True if 100% of test items in `test_file` carry PR-excluded markers (`slow`, `parity_heavy`, `parity_audit`, `redsox_gate`)."""
+    cache_key = (repo, test_file)
+    if cache_key in _PR_EXCLUDED_TEST_CACHE:
+        return _PR_EXCLUDED_TEST_CACHE[cache_key]
+
+    full_path = repo / test_file
+    try:
+        tree = ast.parse(full_path.read_text(encoding="utf-8"), filename=test_file)
+    except Exception:
+        _PR_EXCLUDED_TEST_CACHE[cache_key] = False
+        return False
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id == "pytestmark":
+                    text = ast.unparse(node.value)
+                    if any(f"mark.{m}" in text for m in _PR_EXCLUDED_MARKERS):
+                        _PR_EXCLUDED_TEST_CACHE[cache_key] = True
+                        return True
+
+    test_fns: list[tuple[ast.FunctionDef | ast.AsyncFunctionDef, tuple[ast.expr, ...]]] = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_"):
+            test_fns.append((node, tuple(node.decorator_list)))
+        elif isinstance(node, ast.ClassDef):
+            cls_decs = tuple(node.decorator_list)
+            for sub in node.body:
+                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub.name.startswith("test_"):
+                    test_fns.append((sub, (*cls_decs, *sub.decorator_list)))
+
+    if not test_fns:
+        _PR_EXCLUDED_TEST_CACHE[cache_key] = False
+        return False
+
+    all_excluded = True
+    for _fn, decs in test_fns:
+        dec_texts = [ast.unparse(d) for d in decs]
+        if not any(f"mark.{m}" in dt for dt in dec_texts for m in _PR_EXCLUDED_MARKERS):
+            all_excluded = False
+            break
+
+    _PR_EXCLUDED_TEST_CACHE[cache_key] = all_excluded
+    return all_excluded
+
+
 def compute_all_test_closures(
     repo: Path = _REPO_ROOT,
     config: EdgeConfig | None = None,
@@ -835,6 +1001,7 @@ def compute_all_test_closures(
     """Compute the static dependency closure for every test file in `repo`."""
     if repo != _REPO_ROOT:
         _RESOLVE_CACHE.clear()
+        _PR_EXCLUDED_TEST_CACHE.clear()
     config = load_edge_config(repo / "scripts/ci/test_closure_edges.toml") if config is None else config
     always_run_set = set(config.always_run)
     scan_cache: dict[str, _FileScan] = {}
@@ -909,6 +1076,16 @@ def compute_all_test_closures(
                 anc_file = resolve_module_file(repo, anc_mod, importer_dir=importer_dir)
                 if anc_file is not None:
                     files.add(anc_file)
+
+            for anc_file in scan.ancestor_files:
+                files.add(anc_file)
+                if (
+                    anc_file.endswith(".py")
+                    and anc_file not in _NON_EXPANDED_ANCESTOR_FILES
+                    and (repo / anc_file).is_file()
+                    and anc_file not in visited_py
+                ):
+                    queue.append(anc_file)
 
             for tgt_mod in scan.target_modules:
                 tgt_file = resolve_module_file(repo, tgt_mod, importer_dir=importer_dir)
@@ -990,8 +1167,8 @@ def select_tests(
                 per_path_hits=per_path_hits,
             )
 
-        # Deleted or renamed-away file under src/, tests/, or scripts/ -> full suite
-        if path.startswith(("src/", "tests/", "scripts/")) and not (repo / path).exists():
+        # Deleted or renamed-away file under src/, tests/, scripts/, or tools/ -> full suite
+        if path.startswith(("src/", "tests/", "scripts/", "tools/")) and not (repo / path).exists():
             return SelectionResult(
                 mode="full",
                 reason=f"deleted or renamed code/test file: {path}",
@@ -1041,15 +1218,19 @@ def select_tests(
         hits = sorted(set(hits))
         per_path_hits[path] = tuple(hits)
 
-        # Fail-open check for `src/**/*.py`: must match at least one non-guard
-        # test closure (an always-run AST/lint guard alone is not unit-test
-        # coverage of a `src/` module).
+        # Fail-open check for `src/**/*.py`: must match at least one PR-runnable
+        # non-guard test closure (an always-run AST/lint guard or a 100%
+        # marker-excluded test file alone will not execute unit tests on PRs).
         if path.startswith("src/") and path.endswith(".py"):
-            non_guard_hits = [h for h in hits if h not in guard_set]
-            if not non_guard_hits:
+            pr_runnable_hits = [
+                h
+                for h in hits
+                if h not in guard_set and not is_pr_excluded_test_file(repo, h)
+            ]
+            if not pr_runnable_hits:
                 return SelectionResult(
                     mode="full",
-                    reason=f"fail-open: {path} is not covered by any non-guard test closure",
+                    reason=f"fail-open: {path} is not covered by any PR-runnable non-guard test closure",
                     changed_paths=normed_paths,
                     selected_tests=all_tests,
                     implicated_tests=all_tests,
@@ -1063,9 +1244,7 @@ def select_tests(
 
         # Fail-open check: any file under `src/` or non-doc file under `tests/`
         # that matched zero test closures must trigger the full suite.
-        if path.startswith("src/") or (
-            path.startswith("tests/") and not path.endswith(".md")
-        ):
+        if path.startswith("src/") or (path.startswith("tests/") and not path.endswith(".md")):
             return SelectionResult(
                 mode="full",
                 reason=f"fail-open: {path} is not covered by any static test closure",
@@ -1113,7 +1292,7 @@ def git_changed_paths(
 ) -> list[str] | None:
     """Return changed file paths in `base...head`, or `None` if git fails."""
     proc = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...{head}"],
+        ["git", "diff", "--name-only", "--no-renames", f"{base}...{head}"],
         cwd=repo,
         capture_output=True,
         text=True,

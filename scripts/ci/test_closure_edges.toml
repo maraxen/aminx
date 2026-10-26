@@ -39,7 +39,10 @@ files = [
   "pyproject.toml",
   "uv.lock",
   ".github/workflows/ci.yml",
+  "tests/__init__.py",
   "tests/conftest.py",
+  "tests/port_guards.py",
+  "tests/port/mutant_registry.py",
   "scripts/ci/select_affected_tests.py",
   "scripts/ci/test_closure_edges.toml",
 ]
@@ -80,17 +83,20 @@ always_run = [
 ]
 
 [unreferenced_src]
-# Legacy shim or unused modules under src/aminx/ that are not imported by any
-# current non-guard test. If a diff touches any file in this list (or any other
-# src/aminx/ file with zero non-guard test closures), the selector fails open to
-# `full`. Adding a new src/aminx/*.py module without test coverage will fail
-# `tests/ci/test_select_affected_tests.py` unless a test imports it or it is
+# Legacy shim, unused modules, or modules covered only by @pytest.mark.slow tests
+# under src/aminx/ that have zero PR-runnable non-guard test closures. If a diff
+# touches any file in this list (or any other src/aminx/ file with zero
+# PR-runnable non-guard test closures), the selector fails open to `full`.
+# Adding a new src/aminx/*.py module without PR-runnable test coverage will fail
+# `tests/ci/test_select_affected_tests.py` unless a fast test imports it or it is
 # explicitly reviewed here.
 allowlist = [
   "src/aminx/host/bundle_builder.py",
   "src/aminx/model/mpnn_core.py",
+  "src/aminx/potts/designer.py",
   "src/aminx/training/dataloading/__init__.py",
   "src/aminx/training/dataloading/preprocess.py",
+  "src/aminx/types/host_protocols.py",
   "src/aminx/utils/atom_ordering.py",
   "src/aminx/utils/typing.py",
 ]
@@ -236,9 +242,12 @@ files = [
 files = [
   "tests/knob_gate/closure_edges.toml",
   "tests/knob_gate/checkpoint_registry.json",
+  "tests/port/mutant_registry.py",
+  "tests/port/mutants/port_selftest.py",
 ]
 data_prefixes = [
   "tests/knob_gate/",
+  "tests/port/selftest_coverage/",
 ]
 
 [module."tests/parity/reference_utils.py"]
@@ -253,23 +262,14 @@ dynamic_count = 1
 [module."tests/port/conftest.py"]
 # 1 call site (line 190): loads port wave reference `algo.py` via
 # spec_from_file_location and reads tests/port/targets/*.toml and
-# tests/port/manifests/*.toml. Per-test wave dependencies are also resolved
-# statically from @pytest.mark.port_wave("<wave>").
-data_prefixes = [
-  "tests/port/targets/",
-  "tests/port/manifests/",
-  "tests/port/reference/",
-]
+# tests/port/manifests/*.toml. Per-test wave dependencies (target TOML, manifest
+# TOML, reference subtree + algo.py, symbol_qualname, and mutants/<wave>.py) are
+# resolved statically per wave from @pytest.mark.port_wave("<wave>").
 dynamic_count = 1
 
 [module."tests/port/mutant_registry.py"]
-# 1 call site (line 15): loads port wave reference `algo.py` via
+# 1 call site (line 15): loads port wave mutant module via
 # spec_from_file_location for mutant kill verification.
-data_prefixes = [
-  "tests/port/targets/",
-  "tests/port/manifests/",
-  "tests/port/reference/",
-]
 dynamic_count = 1
 
 [module."tests/parity/test_potts_graded_instruments.py"]

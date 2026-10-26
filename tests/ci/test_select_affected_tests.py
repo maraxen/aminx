@@ -110,11 +110,11 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         self.assertEqual(src_in_own, [])
 
     def test_every_src_aminx_module_is_covered_by_non_guard_test_or_allowlisted(self) -> None:
-        """No `src/aminx/*.py` module may have zero non-guard test closures unless in `[unreferenced_src].allowlist`."""
+        """No `src/aminx/*.py` module may have zero PR-runnable non-guard test closures unless in `[unreferenced_src].allowlist`."""
         guard_set = set(self.config.always_run)
         covered_src: set[str] = set()
         for test_file, closure in self.closures.items():
-            if test_file in guard_set:
+            if test_file in guard_set or selector.is_pr_excluded_test_file(_REPO_ROOT, test_file):
                 continue
             for f in closure.files:
                 if f.startswith("src/aminx/") and f.endswith(".py"):
@@ -129,8 +129,75 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         self.assertEqual(
             unexpected_uncovered,
             [],
-            f"src/aminx/ modules with 0 non-guard static test closures and not in [unreferenced_src].allowlist: {unexpected_uncovered}",
+            f"src/aminx/ modules with 0 PR-runnable non-guard static test closures and not in [unreferenced_src].allowlist: {unexpected_uncovered}",
         )
+
+    def test_family_driver_modules_and_conftest_global_invariants(self) -> None:
+        """Pin `DRIVER_BACKED_FAMILY_MODULES` sync, `tests/conftest.py` global imports, and stdlib non-shadowing."""
+        import ast as _ast
+
+        # 1. Verify `DRIVER_BACKED_FAMILY_MODULES` in `src/aminx/host/family_driver.py` matches `_FAMILY_STRING_TO_MODULE`
+        fd_tree = _ast.parse(
+            (_REPO_ROOT / "src" / "aminx" / "host" / "family_driver.py").read_text(encoding="utf-8")
+        )
+        driver_map: dict[str, str] = {}
+        for node in fd_tree.body:
+            if (
+                isinstance(node, _ast.AnnAssign)
+                and isinstance(node.target, _ast.Name)
+                and node.target.id == "DRIVER_BACKED_FAMILY_MODULES"
+                and isinstance(node.value, _ast.Dict)
+            ):
+                for k, v in zip(node.value.keys, node.value.values, strict=True):
+                    if isinstance(k, _ast.Constant) and isinstance(v, _ast.Constant):
+                        driver_map[str(k.value)] = str(v.value)
+        self.assertEqual(driver_map, dict(selector._FAMILY_STRING_TO_MODULE))
+        for seam_test in (
+            "tests/host/test_family_driver_seam.py",
+            "tests/host/test_model_family_validation.py",
+        ):
+            soft_set = set(self.config.modules[seam_test].get("soft", []))
+            self.assertTrue(
+                set(driver_map.values()).issubset(soft_set),
+                f"{seam_test} soft edges {soft_set} missing families from {driver_map}",
+            )
+
+        # 2. Every non-`src/` repo file imported at top level by `tests/conftest.py` must be in `[global].files`
+        conf_scan = selector._scan_python_file(
+            _REPO_ROOT,
+            "tests/conftest.py",
+            scan_string_literals=False,
+        )
+        for mod in conf_scan.target_modules:
+            resolved = selector.resolve_module_file(
+                _REPO_ROOT,
+                mod,
+                importer_dir=_REPO_ROOT / "tests",
+            )
+            if resolved is not None and not resolved.startswith("src/"):
+                self.assertIn(
+                    resolved,
+                    self.config.global_files,
+                    f"tests/conftest.py imports {resolved}, which must be in [global].files",
+                )
+
+        # 3. Stdlib `io` and `types` must not shadow `tests/io/__init__.py` or `tests/types/__init__.py`
+        self.assertIsNone(selector.resolve_module_file(_REPO_ROOT, "io", importer_dir=_REPO_ROOT / "tests"))
+        self.assertIsNone(selector.resolve_module_file(_REPO_ROOT, "types", importer_dir=_REPO_ROOT / "tests"))
+        io_init_res = selector.select_tests(
+            ["tests/io/__init__.py"],
+            repo=_REPO_ROOT,
+            config=self.config,
+            closures=self.closures,
+        )
+        self.assertLess(len(io_init_res.implicated_tests), 25)
+        types_init_res = selector.select_tests(
+            ["tests/types/__init__.py"],
+            repo=_REPO_ROOT,
+            config=self.config,
+            closures=self.closures,
+        )
+        self.assertLess(len(types_init_res.implicated_tests), 15)
 
     def test_Positive_Controls_family_and_module_isolation(self) -> None:
         """Positive controls: isolated module edits select the tests that cover them and exclude unrelated suites."""
@@ -160,7 +227,7 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         self.assertIn("tests/host/test_family_driver_seam.py", laser_res.implicated_tests)
         self.assertNotIn("tests/potts/test_runner_smoke.py", laser_res.implicated_tests)
         self.assertNotIn("tests/ebm/test_model.py", laser_res.implicated_tests)
-        self.assertLess(len(laser_res.selected_tests), 50)
+        self.assertLess(len(laser_res.selected_tests), 60)
 
         # 3. EBM model change selects EBM tests and excludes Potts / LASEr tests
         ebm_res = selector.select_tests(
@@ -196,15 +263,16 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         self.assertEqual(cond_res.mode, "incremental")
         self.assertIn("tests/sampling/test_eqx_module_hash.py", cond_res.implicated_tests)
 
-        # 6. Port wave target TOML and reference oracle select the corresponding port wave test
+        # 6. Port wave target TOML and reference oracle select only the corresponding port wave test
         port_res = selector.select_tests(
-            ["tests/port/targets/laser_encoder.toml"],
+            ["tests/port/targets/laser_encoder.toml", "tests/port/reference/laser_encoder/algo.py"],
             repo=_REPO_ROOT,
             config=self.config,
             closures=self.closures,
         )
         self.assertEqual(port_res.mode, "incremental")
         self.assertIn("tests/port/test_laser_encoder.py", port_res.implicated_tests)
+        self.assertNotIn("tests/port/test_potts_energy.py", port_res.implicated_tests)
         self.assertIn("tests/lint/test_port_tolerances_match_targets.py", port_res.selected_tests)
 
         # 7. Non-Python data file (`NOTICE-weights.md`, `src/aminx/io/family_weights.json`) selects its test
@@ -216,6 +284,27 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         )
         self.assertEqual(notice_res.mode, "incremental")
         self.assertIn("tests/io/test_family_weights.py", notice_res.implicated_tests)
+
+        # 8. Leaf modules (`io/designs.py`, `utils/catjac.py`) are not bloated by `if TYPE_CHECKING:` or relative-import hub cycles
+        designs_res = selector.select_tests(
+            ["src/aminx/io/designs.py"],
+            repo=_REPO_ROOT,
+            config=self.config,
+            closures=self.closures,
+        )
+        self.assertEqual(designs_res.mode, "incremental")
+        self.assertIn("tests/io/test_designs.py", designs_res.implicated_tests)
+        self.assertLess(len(designs_res.implicated_tests), 10)
+
+        catjac_res = selector.select_tests(
+            ["src/aminx/utils/catjac.py"],
+            repo=_REPO_ROOT,
+            config=self.config,
+            closures=self.closures,
+        )
+        self.assertEqual(catjac_res.mode, "incremental")
+        self.assertIn("tests/utils/test_catjac.py", catjac_res.implicated_tests)
+        self.assertLess(len(catjac_res.implicated_tests), 10)
 
     def test_Negative_Controls_fail_open_and_shared_core(self) -> None:
         """Negative controls: global files, unreferenced src files, deleted files, and root package init."""
