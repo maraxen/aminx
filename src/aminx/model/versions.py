@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from typing import Literal
 
-MODEL_WEIGHTS = Literal["original", "soluble", "ligand", "sc", "membrane"]
+MODEL_WEIGHTS = Literal[
+  "original",
+  "soluble",
+  "ligand",
+  "sc",
+  "membrane",
+  "abmpnn",
+  "hypermpnn",
+  "cyclicmpnn",
+  "ca",
+]
 MODEL_VERSION = Literal[
   "v_48_002",
   "v_48_010",
