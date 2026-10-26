@@ -9,7 +9,7 @@ on:
       - main
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -42,23 +42,25 @@ jobs:
         with:
           lfs: true
           fetch-depth: 0
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - name: Cache uv and XLA compilation artifacts
+      - name: Cache uv packages
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cache/uv
-            ${{ runner.temp }}/jax_compilation_cache
-          key: uv-xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}
           restore-keys: |
-            uv-xla-${{ runner.os }}-py3.13-
+            uv-${{ runner.os }}-py3.13-
+      - name: Cache XLA compilation artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jax_compilation_cache
+          key: xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-
+            xla-${{ runner.os }}-py3.13-
       - name: Install ast-grep
         run: npm install -g @ast-grep/cli
       - name: Install dependencies and run tests

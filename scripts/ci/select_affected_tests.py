@@ -11,22 +11,23 @@ Design & Soundness Model (`.praxia/docs/specs/261026_incremental-ci-test-selecti
 - Uses target-aware import expansion: importing `from aminx.potts.runner import X`
   records `src/aminx/__init__.py` and `src/aminx/potts/__init__.py` as file
   dependencies of the test (so editing an `__init__.py` invalidates all tests
-  importing through that package), while expanding transitive imports only through
-  the target module (`src/aminx/potts/runner.py`).
-- Evaluates `Path(__file__)`-derived expressions passed to `spec_from_file_location`
-  and `run_path`, literal `import_module` / `importlib.resources.files("<pkg>")`
-  calls, `@pytest.mark.port_wave("<wave>")` markers, and dotted `"aminx.<pkg>..."`
-  strings in test modules.
+  importing through that package), expands subpackage `__init__.py` files in BFS,
+  and avoids expanding root `src/aminx/__init__.py` or `src/aminx/run/__init__.py`
+  unless imported directly.
+- Evaluates lexically scoped `Path(__file__)`-derived expressions passed to
+  `spec_from_file_location` and `run_path`, literal `import_module` calls,
+  `@pytest.mark.port_wave("<wave>")` markers, and dotted `"aminx.<pkg>..."` or
+  inline `import aminx...` strings in non-guard test modules.
 - Fails open (`mode = "full"`, running the entire pytest suite) whenever:
   1. `git diff` fails or refs are unavailable;
-  2. Any closure in the repository has an undeclared dynamic call site
-     (`not closure.sound`);
+  2. Any closure in the repository has an unreviewed dynamic call site or syntax
+     error (`not closure.sound`);
   3. Any changed file matches `[global].files` or `[global].prefixes` in
      `scripts/ci/test_closure_edges.toml`;
   4. Any changed file under `src/`, `tests/`, or `scripts/` was deleted or renamed
      away;
-  5. Any changed file under `src/` or code/fixture file under `tests/` matches
-     zero test closures.
+  5. Any changed file under `src/` matches zero non-guard test closures, or any
+     code/fixture file under `tests/` matches zero test closures.
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ import tomllib
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _EDGES_FILE = Path(__file__).with_name("test_closure_edges.toml")
-_ROOTS = ("src", "tests", "scripts")
+_ROOTS = ("src", "tests", "scripts", "tools")
 _DYNAMIC_CALLS = frozenset(
     {
         "import_module",
@@ -56,6 +57,11 @@ _DYNAMIC_CALLS = frozenset(
         "files",  # importlib.resources.files
     }
 )
+# Root `aminx` and `aminx.run` re-export cross-cutting host/sampling/scoring symbols;
+# their `__init__.py` files are recorded in `closure.files` on every import through
+# them, and expanded in BFS only when imported directly (`import aminx`, `from aminx import ...`,
+# `from aminx.run import ...`). All other subpackage `__init__.py` files are expanded in BFS.
+_NON_EXPANDED_ANCESTOR_PKGS = frozenset({"aminx", "aminx.run"})
 _BROAD_DIRS = frozenset(
     {
         "",
@@ -64,12 +70,16 @@ _BROAD_DIRS = frozenset(
         "src/aminx",
         "tests",
         "scripts",
+        "tools",
         ".praxia",
         ".praxia/docs",
         "agent_assets",
     }
 )
 _DOTTED_AMINX_RE = re.compile(r"^aminx(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
+_INLINE_AMINX_IMPORT_RE = re.compile(
+    r"\b(?:from|import)\s+(aminx(?:\.[A-Za-z_][A-Za-z0-9_]*)+)"
+)
 _RESOLVE_CACHE: dict[tuple[Path, str, Path | None], str | None] = {}
 
 
@@ -247,20 +257,6 @@ def _resolve_longest_aminx_module(repo: Path, dotted: str) -> tuple[str | None, 
     return None, []
 
 
-def _module_name_for_path(path: str) -> tuple[str, bool]:
-    """Return `(dotted_name, is_package_init)` for a repo-relative `.py` path."""
-    for root in _ROOTS:
-        prefix = root + "/"
-        if path.startswith(prefix):
-            rel = path[len(prefix) :].removesuffix(".py")
-            parts = rel.split("/")
-            is_pkg = parts[-1] == "__init__"
-            if is_pkg:
-                parts = parts[:-1]
-            return ".".join(parts), is_pkg
-    return "", False
-
-
 def _ancestors(module: str) -> list[str]:
     parts = [p for p in module.split(".") if p]
     return [".".join(parts[:end]) for end in range(1, len(parts) + 1)]
@@ -282,7 +278,7 @@ def _eval_path_expr(
     file_resolved: Path,
     env: Mapping[str, Path],
 ) -> Path | None:
-    """Statically evaluate `Path(__file__)` and constant path expressions within a file."""
+    """Statically evaluate `Path(__file__)` and constant path expressions within a lexical scope."""
     if node is None:
         return None
     if isinstance(node, ast.Name):
@@ -304,7 +300,10 @@ def _eval_path_expr(
             and isinstance(node.right.value, str)
             and len(node.right.value) < 200
         ):
-            return (left / node.right.value).resolve()
+            cand = (left / node.right.value).resolve()
+            if cand.is_relative_to(repo_resolved):
+                return cand
+        return None
     if isinstance(node, ast.Attribute):
         base = _eval_path_expr(node.value, repo_resolved=repo_resolved, file_resolved=file_resolved, env=env)
         if base is not None and node.attr == "parent":
@@ -346,7 +345,9 @@ def _eval_path_expr(
                     and isinstance(node.args[0].value, str)
                     and len(node.args[0].value) < 200
                 ):
-                    return base.with_name(node.args[0].value).resolve()
+                    cand = base.with_name(node.args[0].value).resolve()
+                    if cand.is_relative_to(repo_resolved):
+                        return cand
                 if (
                     node.func.attr == "joinpath"
                     and node.args
@@ -355,7 +356,9 @@ def _eval_path_expr(
                         for a in node.args
                     )
                 ):
-                    return base.joinpath(*(str(a.value) for a in node.args)).resolve()
+                    cand = base.joinpath(*(str(a.value) for a in node.args)).resolve()
+                    if cand.is_relative_to(repo_resolved):
+                        return cand
     return None
 
 
@@ -435,24 +438,199 @@ def _resolve_port_wave(
                 data_prefixes.add(ref_dir.relative_to(repo).as_posix().rstrip("/") + "/")
 
 
+def _iter_scope_nodes(body: Sequence[ast.stmt]) -> Iterable[ast.AST]:
+    """Yield AST nodes within `body` without descending into nested function/class definitions."""
+    stack: list[ast.AST] = list(reversed(body))
+    while stack:
+        cur = stack.pop()
+        yield cur
+        for child in reversed(list(ast.iter_child_nodes(cur))):
+            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                stack.append(child)
+
+
+def _extract_assign_name_and_value(node: ast.AST) -> tuple[str, ast.AST | None] | None:
+    if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        return node.targets[0].id, node.value
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
+        return node.target.id, node.value
+    return None
+
+
+def _build_scope_path_envs(
+    tree: ast.Module,
+    *,
+    repo: Path,
+    repo_resolved: Path,
+    file_resolved: Path,
+    register_paths: bool,
+    path_files: set[str],
+    data_prefixes: set[str],
+) -> dict[ast.AST, Mapping[str, Path]]:
+    """Build lexically scoped `Path` constant environments per module/function without cross-function shadowing."""
+    module_env: dict[str, Path] = {}
+    module_tainted: set[str] = set()
+
+    for node in _iter_scope_nodes(tree.body):
+        assign = _extract_assign_name_and_value(node)
+        if assign is None:
+            continue
+        var_name, val_node = assign
+        if var_name in module_tainted:
+            continue
+        if var_name in module_env:
+            # Reassigned at module level -> taint so we do not guess which value reaches a call
+            del module_env[var_name]
+            module_tainted.add(var_name)
+            continue
+        val_path = _eval_path_expr(
+            val_node,
+            repo_resolved=repo_resolved,
+            file_resolved=file_resolved,
+            env=module_env,
+        )
+        if val_path is not None and val_path.is_relative_to(repo_resolved):
+            module_env[var_name] = val_path
+            if register_paths and val_path.exists():
+                _register_candidate_repo_path(
+                    repo,
+                    val_path.relative_to(repo_resolved).as_posix(),
+                    path_files,
+                    data_prefixes,
+                )
+        else:
+            module_tainted.add(var_name)
+
+    node_env: dict[ast.AST, Mapping[str, Path]] = {}
+    for node in _iter_scope_nodes(tree.body):
+        node_env[node] = module_env
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            func_env = dict(module_env)
+            func_tainted: set[str] = set()
+            # Function parameters shadow module bindings and are dynamic
+            for arg in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs):
+                func_env.pop(arg.arg, None)
+                func_tainted.add(arg.arg)
+            if node.args.vararg is not None:
+                func_env.pop(node.args.vararg.arg, None)
+                func_tainted.add(node.args.vararg.arg)
+            if node.args.kwarg is not None:
+                func_env.pop(node.args.kwarg.arg, None)
+                func_tainted.add(node.args.kwarg.arg)
+
+            local_assigned: set[str] = set()
+            for sub in _iter_scope_nodes(node.body):
+                assign = _extract_assign_name_and_value(sub)
+                if assign is None:
+                    continue
+                var_name, val_node = assign
+                if var_name in func_tainted:
+                    continue
+                if var_name in local_assigned:
+                    func_env.pop(var_name, None)
+                    func_tainted.add(var_name)
+                    continue
+                local_assigned.add(var_name)
+                val_path = _eval_path_expr(
+                    val_node,
+                    repo_resolved=repo_resolved,
+                    file_resolved=file_resolved,
+                    env=func_env,
+                )
+                if val_path is not None and val_path.is_relative_to(repo_resolved):
+                    func_env[var_name] = val_path
+                    if register_paths and val_path.exists():
+                        _register_candidate_repo_path(
+                            repo,
+                            val_path.relative_to(repo_resolved).as_posix(),
+                            path_files,
+                            data_prefixes,
+                        )
+                else:
+                    func_env.pop(var_name, None)
+                    func_tainted.add(var_name)
+
+            for sub in _iter_scope_nodes(node.body):
+                node_env[sub] = func_env
+
+    return node_env
+
+
+def _resolve_relative_import(
+    node: ast.ImportFrom,
+    *,
+    file_resolved: Path,
+    repo_resolved: Path,
+    path_files: set[str],
+) -> None:
+    """Resolve `from . import x` / `from ..sub import y` directly on the filesystem."""
+    # level == 1 -> file_resolved.parent; level == 2 -> file_resolved.parent.parent
+    up = node.level - 1
+    parents = file_resolved.parents
+    if up < 0 or up >= len(parents):
+        return
+    rel_base = parents[up]
+    if not rel_base.is_relative_to(repo_resolved):
+        return
+
+    # Record intermediate package `__init__.py` files climbed by relative import
+    for idx in range(0, up + 1):
+        pkg_init = parents[idx] / "__init__.py"
+        if pkg_init.is_file() and pkg_init.is_relative_to(repo_resolved):
+            path_files.add(pkg_init.relative_to(repo_resolved).as_posix())
+
+    mod_parts = [p for p in (node.module or "").split(".") if p]
+    for end in range(1, len(mod_parts) + 1):
+        sub_init = rel_base.joinpath(*mod_parts[:end], "__init__.py")
+        if sub_init.is_file() and sub_init.is_relative_to(repo_resolved):
+            path_files.add(sub_init.relative_to(repo_resolved).as_posix())
+
+    target_dir = rel_base.joinpath(*mod_parts) if mod_parts else rel_base
+    if mod_parts:
+        mod_file = target_dir.with_suffix(".py")
+        if mod_file.is_file() and mod_file.is_relative_to(repo_resolved):
+            path_files.add(mod_file.relative_to(repo_resolved).as_posix())
+
+    for alias in node.names:
+        if alias.name == "*":
+            continue
+        cand_file = target_dir.joinpath(alias.name).with_suffix(".py")
+        if cand_file.is_file() and cand_file.is_relative_to(repo_resolved):
+            path_files.add(cand_file.relative_to(repo_resolved).as_posix())
+        cand_pkg = target_dir.joinpath(alias.name, "__init__.py")
+        if cand_pkg.is_file() and cand_pkg.is_relative_to(repo_resolved):
+            path_files.add(cand_pkg.relative_to(repo_resolved).as_posix())
+
+
 def _scan_python_file(
     repo: Path,
     path: str,
     *,
-    scan_dotted_strings: bool,
+    scan_string_literals: bool,
 ) -> _FileScan:
     """Parse `path` and extract target imports, ancestor packages, paths, and dynamic calls."""
     full_path = repo / path
     repo_resolved = repo.resolve()
     file_resolved = full_path.resolve()
-    source = full_path.read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=path)
+    try:
+        source = full_path.read_text(encoding="utf-8")
+        tree = ast.parse(source, filename=path)
+    except (SyntaxError, UnicodeDecodeError, OSError):
+        # Unparseable Python file: mark line 1 as an unreviewed dynamic site so
+        # any closure reaching it becomes unsound and fails open to `mode = "full"`.
+        return _FileScan(
+            target_modules=frozenset(),
+            ancestor_modules=frozenset(),
+            path_files=frozenset(),
+            data_prefixes=frozenset(),
+            dynamic_lines=(1,),
+        )
+
     # Python 3 has no implicit relative imports inside packages (`src/aminx/`);
     # only `tests/` and `scripts/` put their own directory on sys.path.
     importer_dir = None if path.startswith("src/") else full_path.parent
-
-    own, is_pkg = _module_name_for_path(path)
-    package = own if is_pkg else own.rpartition(".")[0]
 
     target_modules: set[str] = set()
     ancestor_modules: set[str] = set()
@@ -461,42 +639,19 @@ def _scan_python_file(
     dynamic_lines: list[int] = []
 
     parent_map: dict[ast.AST, ast.AST] = {}
-    path_env: dict[str, Path] = {}
     for parent in ast.walk(tree):
         for child in ast.iter_child_nodes(parent):
             parent_map[child] = parent
-        if isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name):
-            val_path = _eval_path_expr(
-                parent.value,
-                repo_resolved=repo_resolved,
-                file_resolved=file_resolved,
-                env=path_env,
-            )
-            if val_path is not None:
-                path_env[parent.targets[0].id] = val_path
-                if val_path.exists() and val_path.is_relative_to(repo_resolved):
-                    _register_candidate_repo_path(
-                        repo,
-                        val_path.relative_to(repo_resolved).as_posix(),
-                        path_files,
-                        data_prefixes,
-                    )
-        elif isinstance(parent, ast.AnnAssign) and isinstance(parent.target, ast.Name) and parent.value is not None:
-            val_path = _eval_path_expr(
-                parent.value,
-                repo_resolved=repo_resolved,
-                file_resolved=file_resolved,
-                env=path_env,
-            )
-            if val_path is not None:
-                path_env[parent.target.id] = val_path
-                if val_path.exists() and val_path.is_relative_to(repo_resolved):
-                    _register_candidate_repo_path(
-                        repo,
-                        val_path.relative_to(repo_resolved).as_posix(),
-                        path_files,
-                        data_prefixes,
-                    )
+
+    node_envs = _build_scope_path_envs(
+        tree,
+        repo=repo,
+        repo_resolved=repo_resolved,
+        file_resolved=file_resolved,
+        register_paths=scan_string_literals,
+        path_files=path_files,
+        data_prefixes=data_prefixes,
+    )
 
     def add_target_module(mod_name: str) -> None:
         if not mod_name:
@@ -505,45 +660,52 @@ def _scan_python_file(
         for anc in ancs[:-1]:
             if resolve_module_file(repo, anc, importer_dir=importer_dir) is not None:
                 ancestor_modules.add(anc)
+                if anc not in _NON_EXPANDED_ANCESTOR_PKGS:
+                    target_modules.add(anc)
         if resolve_module_file(repo, mod_name, importer_dir=importer_dir) is not None:
             target_modules.add(mod_name)
 
     for node in ast.walk(tree):
+        scope_env = node_envs.get(node, {})
         if isinstance(node, ast.Import):
             for alias in node.names:
                 add_target_module(alias.name)
         elif isinstance(node, ast.ImportFrom):
             if node.level:
-                pkg_parts = package.split(".") if package else []
-                keep = len(pkg_parts) - (node.level - 1)
-                base = ".".join(pkg_parts[: max(keep, 0)])
-                base = f"{base}.{node.module}" if node.module else base
+                _resolve_relative_import(
+                    node,
+                    file_resolved=file_resolved,
+                    repo_resolved=repo_resolved,
+                    path_files=path_files,
+                )
             else:
                 base = node.module or ""
-
-            if base:
-                for anc in _ancestors(base):
-                    if resolve_module_file(repo, anc, importer_dir=importer_dir) is not None:
-                        ancestor_modules.add(anc)
-                for alias in node.names:
-                    cand = f"{base}.{alias.name}"
-                    if resolve_module_file(repo, cand, importer_dir=importer_dir) is not None:
-                        target_modules.add(cand)
-                    elif resolve_module_file(repo, base, importer_dir=importer_dir) is not None:
+                if base:
+                    for anc in _ancestors(base):
+                        if resolve_module_file(repo, anc, importer_dir=importer_dir) is not None:
+                            ancestor_modules.add(anc)
+                            if anc not in _NON_EXPANDED_ANCESTOR_PKGS:
+                                target_modules.add(anc)
+                    # If `base` is not root `aminx`, importing `from base import X`
+                    # executes `base` (including `base/__init__.py` when `base` is a
+                    # subpackage like `aminx.sampling` or `aminx.run` that may define
+                    # or re-export `X` alongside a submodule of the same name).
+                    if base != "aminx" and resolve_module_file(repo, base, importer_dir=importer_dir) is not None:
                         target_modules.add(base)
-            elif node.level:
-                for alias in node.names:
-                    sibling = importer_dir / f"{alias.name}.py"
-                    if sibling.is_file():
-                        path_files.add(sibling.relative_to(repo).as_posix())
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                    for alias in node.names:
+                        cand = f"{base}.{alias.name}"
+                        if resolve_module_file(repo, cand, importer_dir=importer_dir) is not None:
+                            target_modules.add(cand)
+                        elif resolve_module_file(repo, base, importer_dir=importer_dir) is not None:
+                            target_modules.add(base)
+        elif scan_string_literals and isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             parent = parent_map.get(node)
             if not (isinstance(parent, ast.BinOp) and isinstance(parent.op, ast.Div)):
                 eval_p = _eval_path_expr(
                     node,
                     repo_resolved=repo_resolved,
                     file_resolved=file_resolved,
-                    env=path_env,
+                    env=scope_env,
                 )
                 if eval_p is not None and eval_p.exists() and eval_p.is_relative_to(repo_resolved):
                     _register_candidate_repo_path(
@@ -581,7 +743,7 @@ def _scan_python_file(
                         arg_node,
                         repo_resolved=repo_resolved,
                         file_resolved=file_resolved,
-                        env=path_env,
+                        env=scope_env,
                     )
                     if (
                         resolved_p is not None
@@ -593,7 +755,7 @@ def _scan_python_file(
                         dynamic_lines.append(node.lineno)
                 else:
                     dynamic_lines.append(node.lineno)
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+        elif scan_string_literals and isinstance(node, ast.Constant) and isinstance(node.value, str):
             val = node.value
             if (
                 "\n" not in val
@@ -614,12 +776,23 @@ def _scan_python_file(
                 )
             ):
                 _register_candidate_repo_path(repo, val, path_files, data_prefixes)
-            elif scan_dotted_strings and _DOTTED_AMINX_RE.match(val):
+            elif _DOTTED_AMINX_RE.match(val):
                 mod_target, mod_ancs = _resolve_longest_aminx_module(repo, val)
                 for anc in mod_ancs:
                     ancestor_modules.add(anc)
+                    if anc not in _NON_EXPANDED_ANCESTOR_PKGS:
+                        target_modules.add(anc)
                 if mod_target is not None and mod_target != "aminx":
                     target_modules.add(mod_target)
+            elif ("import " in val or "from " in val) and "aminx" in val:
+                for match in _INLINE_AMINX_IMPORT_RE.finditer(val):
+                    mod_target, mod_ancs = _resolve_longest_aminx_module(repo, match.group(1))
+                    for anc in mod_ancs:
+                        ancestor_modules.add(anc)
+                        if anc not in _NON_EXPANDED_ANCESTOR_PKGS:
+                            target_modules.add(anc)
+                    if mod_target is not None and mod_target != "aminx":
+                        target_modules.add(mod_target)
 
     return _FileScan(
         target_modules=frozenset(target_modules),
@@ -642,22 +815,40 @@ def _scoped_conftests_for(repo: Path, test_file: str) -> list[str]:
     return scoped
 
 
+def _expected_dynamic_count(mod_decl: Mapping[str, object], context: str) -> int | None:
+    """Return expected dynamic site count (`int`), or `None` for legacy boolean `dynamic_ok = true`."""
+    if "dynamic_count" in mod_decl:
+        val = mod_decl["dynamic_count"]
+        if isinstance(val, bool) or not isinstance(val, int) or val < 0:
+            msg = f"{context}: 'dynamic_count' must be a non-negative integer, got {val!r}"
+            raise ValueError(msg)
+        return val
+    if mod_decl.get("dynamic_ok") is True:
+        return None
+    return 0
+
+
 def compute_all_test_closures(
     repo: Path = _REPO_ROOT,
     config: EdgeConfig | None = None,
 ) -> dict[str, TestClosure]:
     """Compute the static dependency closure for every test file in `repo`."""
+    if repo != _REPO_ROOT:
+        _RESOLVE_CACHE.clear()
     config = load_edge_config(repo / "scripts/ci/test_closure_edges.toml") if config is None else config
     always_run_set = set(config.always_run)
     scan_cache: dict[str, _FileScan] = {}
 
     def get_scan(rel_path: str) -> _FileScan:
         if rel_path not in scan_cache:
-            scan_dotted = rel_path.startswith("tests/") and rel_path not in always_run_set
+            # Extract string-literal repo paths and dotted `aminx.*` strings only
+            # from non-guard test modules under `tests/` (never from `always_run`
+            # guards or `src/`/`scripts/` docstrings).
+            scan_literals = rel_path.startswith("tests/") and rel_path not in always_run_set
             scan_cache[rel_path] = _scan_python_file(
                 repo,
                 rel_path,
-                scan_dotted_strings=scan_dotted,
+                scan_string_literals=scan_literals,
             )
         return scan_cache[rel_path]
 
@@ -681,12 +872,14 @@ def compute_all_test_closures(
             importer_dir = None if cur.startswith("src/") else (repo / cur).parent
 
             mod_decl = config.modules.get(cur, {})
-            dynamic_ok = bool(mod_decl.get("dynamic_ok", False))
+            expected_dyn = _expected_dynamic_count(mod_decl, f"[module.{cur!r}]")
             for soft_mod in _string_list(mod_decl, "soft", f"[module.{cur!r}]"):
                 for anc in _ancestors(soft_mod)[:-1]:
                     anc_file = resolve_module_file(repo, anc, importer_dir=importer_dir)
                     if anc_file is not None:
                         files.add(anc_file)
+                        if anc not in _NON_EXPANDED_ANCESTOR_PKGS and anc_file not in visited_py:
+                            queue.append(anc_file)
                 soft_file = resolve_module_file(repo, soft_mod, importer_dir=importer_dir)
                 if soft_file is None:
                     msg = f"test_closure_edges.toml: soft edge {soft_mod!r} on {cur!r} resolves to no file"
@@ -706,8 +899,11 @@ def compute_all_test_closures(
                 continue
 
             scan = get_scan(cur)
-            if scan.dynamic_lines and not dynamic_ok:
-                undeclared.extend(f"{cur}:{line}" for line in scan.dynamic_lines)
+            if expected_dyn is not None and len(scan.dynamic_lines) != expected_dyn:
+                if scan.dynamic_lines:
+                    undeclared.extend(f"{cur}:{line}" for line in scan.dynamic_lines)
+                else:
+                    undeclared.append(f"{cur}:stale_dynamic_count({expected_dyn})")
 
             for anc_mod in scan.ancestor_modules:
                 anc_file = resolve_module_file(repo, anc_mod, importer_dir=importer_dir)
@@ -750,6 +946,7 @@ def select_tests(
 
     all_tests = tuple(sorted(closures))
     guard_tests = tuple(sorted(t for t in config.always_run if (repo / t).is_file()))
+    guard_set = frozenset(guard_tests)
     normed_paths = tuple(dict.fromkeys(norm_path(p) for p in changed_paths if norm_path(p)))
 
     # 1. Fail open if any test closure in the repository is unsound.
@@ -824,10 +1021,10 @@ def select_tests(
             continue
 
         # Match against all test closures.
-        # Note: `.py` modules under `src/` must match `closure.files` directly
-        # (not a directory `data_prefix` from an AST lint test), so an unreferenced
-        # `src/aminx/*.py` module cannot be masked by a directory prefix.
-        is_src_py = path.startswith("src/") and path.endswith(".py")
+        # `.py` modules under `src/` or `tests/` must match `closure.files`
+        # directly (not a directory `data_prefix`), so an unreferenced `.py`
+        # module under `src/` or `tests/` cannot be masked by a directory prefix.
+        is_src_or_test_py = path.startswith(("src/", "tests/")) and path.endswith(".py")
         hits: list[str] = []
         if is_test_file(path) and path in closures:
             hits.append(path)
@@ -835,7 +1032,7 @@ def select_tests(
             if test_file == path:
                 continue
             if path in closure.files or (
-                not is_src_py
+                not is_src_or_test_py
                 and closure.data_prefixes
                 and path.startswith(closure.data_prefixes)
             ):
@@ -843,6 +1040,22 @@ def select_tests(
 
         hits = sorted(set(hits))
         per_path_hits[path] = tuple(hits)
+
+        # Fail-open check for `src/**/*.py`: must match at least one non-guard
+        # test closure (an always-run AST/lint guard alone is not unit-test
+        # coverage of a `src/` module).
+        if path.startswith("src/") and path.endswith(".py"):
+            non_guard_hits = [h for h in hits if h not in guard_set]
+            if not non_guard_hits:
+                return SelectionResult(
+                    mode="full",
+                    reason=f"fail-open: {path} is not covered by any non-guard test closure",
+                    changed_paths=normed_paths,
+                    selected_tests=all_tests,
+                    implicated_tests=all_tests,
+                    guard_tests=guard_tests,
+                    per_path_hits=per_path_hits,
+                )
 
         if hits:
             implicated.update(hits)
@@ -965,31 +1178,44 @@ def run_historical_replay(
     selected_counts: list[int] = []
     incremental_counts: list[int] = []
     cochange_commits = 0
-    cochange_recalled = 0
+    cochange_any_recalled = 0
+    cochange_all_recalled = 0
+    cochange_total_test_files = 0
+    cochange_recalled_test_files = 0
     samples: list[dict[str, object]] = []
 
     for sha, subj in commits:
-        diff_proc = subprocess.run(
-            ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "-m", "--first-parent", sha],
+        show_proc = subprocess.run(
+            ["git", "show", "--first-parent", "--name-only", "--format=", sha],
             cwd=repo,
             capture_output=True,
             text=True,
             check=True,
         )
-        paths = [norm_path(p) for p in diff_proc.stdout.splitlines() if p.strip()]
+        paths = list(dict.fromkeys(norm_path(p) for p in show_proc.stdout.splitlines() if p.strip()))
         res = select_tests(paths, repo=repo, config=config, closures=closures)
         mode_counts[res.mode] += 1
         selected_counts.append(len(res.selected_tests))
         if res.mode == "incremental":
             incremental_counts.append(len(res.selected_tests))
 
-        src_paths = [p for p in paths if p.startswith("src/") and (repo / p).exists()]
+        # Co-change recall check: when a commit modifies both non-test files and
+        # existing test files, do the non-test files alone select the co-changed
+        # test files?
+        non_test_paths = [p for p in paths if not is_test_file(p) and (repo / p).exists()]
         existing_test_paths = [p for p in paths if is_test_file(p) and (repo / p).exists()]
-        if src_paths and existing_test_paths:
+        if non_test_paths and existing_test_paths:
             cochange_commits += 1
-            src_only_res = select_tests(src_paths, repo=repo, config=config, closures=closures)
-            if set(src_only_res.selected_tests) & set(existing_test_paths):
-                cochange_recalled += 1
+            non_test_res = select_tests(non_test_paths, repo=repo, config=config, closures=closures)
+            selected_set = set(non_test_res.selected_tests)
+            test_set = set(existing_test_paths)
+            hits = selected_set & test_set
+            cochange_total_test_files += len(test_set)
+            cochange_recalled_test_files += len(hits)
+            if hits:
+                cochange_any_recalled += 1
+            if test_set <= selected_set:
+                cochange_all_recalled += 1
 
         if len(samples) < 25:
             samples.append(
@@ -1021,8 +1247,14 @@ def run_historical_replay(
         "mean_selected_tests_incremental": round(sum(inc_sorted) / max(n_inc, 1), 1) if n_inc else 0,
         "median_selected_tests_incremental": inc_sorted[n_inc // 2] if n_inc else 0,
         "cochange_commits": cochange_commits,
-        "cochange_recalled": cochange_recalled,
-        "cochange_recall_rate": round(100.0 * cochange_recalled / max(cochange_commits, 1), 1),
+        "cochange_any_recalled": cochange_any_recalled,
+        "cochange_all_recalled": cochange_all_recalled,
+        "cochange_all_recall_rate": round(100.0 * cochange_all_recalled / max(cochange_commits, 1), 1),
+        "cochange_total_test_files": cochange_total_test_files,
+        "cochange_recalled_test_files": cochange_recalled_test_files,
+        "cochange_file_recall_rate": round(
+            100.0 * cochange_recalled_test_files / max(cochange_total_test_files, 1), 1
+        ),
         "recent_samples": samples,
     }
 
