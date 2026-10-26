@@ -1,0 +1,407 @@
+{
+ "features.embeddings.linear.weight": [
+  16,
+  66
+ ],
+ "features.embeddings.linear.bias": [
+  16
+ ],
+ "features.edge_embedding.weight": [
+  128,
+  416
+ ],
+ "features.norm_edges.weight": [
+  128
+ ],
+ "features.norm_edges.bias": [
+  128
+ ],
+ "W_e.weight": [
+  128,
+  128
+ ],
+ "W_e.bias": [
+  128
+ ],
+ "W_s.weight": [
+  21,
+  128
+ ],
+ "encoder_layers.0.norm1.weight": [
+  128
+ ],
+ "encoder_layers.0.norm1.bias": [
+  128
+ ],
+ "encoder_layers.0.norm2.weight": [
+  128
+ ],
+ "encoder_layers.0.norm2.bias": [
+  128
+ ],
+ "encoder_layers.0.norm3.weight": [
+  128
+ ],
+ "encoder_layers.0.norm3.bias": [
+  128
+ ],
+ "encoder_layers.0.W1.weight": [
+  128,
+  384
+ ],
+ "encoder_layers.0.W1.bias": [
+  128
+ ],
+ "encoder_layers.0.W2.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.0.W2.bias": [
+  128
+ ],
+ "encoder_layers.0.W3.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.0.W3.bias": [
+  128
+ ],
+ "encoder_layers.0.W11.weight": [
+  128,
+  384
+ ],
+ "encoder_layers.0.W11.bias": [
+  128
+ ],
+ "encoder_layers.0.W12.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.0.W12.bias": [
+  128
+ ],
+ "encoder_layers.0.W13.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.0.W13.bias": [
+  128
+ ],
+ "encoder_layers.0.dense.W_in.weight": [
+  512,
+  128
+ ],
+ "encoder_layers.0.dense.W_in.bias": [
+  512
+ ],
+ "encoder_layers.0.dense.W_out.weight": [
+  128,
+  512
+ ],
+ "encoder_layers.0.dense.W_out.bias": [
+  128
+ ],
+ "encoder_layers.1.norm1.weight": [
+  128
+ ],
+ "encoder_layers.1.norm1.bias": [
+  128
+ ],
+ "encoder_layers.1.norm2.weight": [
+  128
+ ],
+ "encoder_layers.1.norm2.bias": [
+  128
+ ],
+ "encoder_layers.1.norm3.weight": [
+  128
+ ],
+ "encoder_layers.1.norm3.bias": [
+  128
+ ],
+ "encoder_layers.1.W1.weight": [
+  128,
+  384
+ ],
+ "encoder_layers.1.W1.bias": [
+  128
+ ],
+ "encoder_layers.1.W2.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.1.W2.bias": [
+  128
+ ],
+ "encoder_layers.1.W3.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.1.W3.bias": [
+  128
+ ],
+ "encoder_layers.1.W11.weight": [
+  128,
+  384
+ ],
+ "encoder_layers.1.W11.bias": [
+  128
+ ],
+ "encoder_layers.1.W12.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.1.W12.bias": [
+  128
+ ],
+ "encoder_layers.1.W13.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.1.W13.bias": [
+  128
+ ],
+ "encoder_layers.1.dense.W_in.weight": [
+  512,
+  128
+ ],
+ "encoder_layers.1.dense.W_in.bias": [
+  512
+ ],
+ "encoder_layers.1.dense.W_out.weight": [
+  128,
+  512
+ ],
+ "encoder_layers.1.dense.W_out.bias": [
+  128
+ ],
+ "encoder_layers.2.norm1.weight": [
+  128
+ ],
+ "encoder_layers.2.norm1.bias": [
+  128
+ ],
+ "encoder_layers.2.norm2.weight": [
+  128
+ ],
+ "encoder_layers.2.norm2.bias": [
+  128
+ ],
+ "encoder_layers.2.norm3.weight": [
+  128
+ ],
+ "encoder_layers.2.norm3.bias": [
+  128
+ ],
+ "encoder_layers.2.W1.weight": [
+  128,
+  384
+ ],
+ "encoder_layers.2.W1.bias": [
+  128
+ ],
+ "encoder_layers.2.W2.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.2.W2.bias": [
+  128
+ ],
+ "encoder_layers.2.W3.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.2.W3.bias": [
+  128
+ ],
+ "encoder_layers.2.W11.weight": [
+  128,
+  384
+ ],
+ "encoder_layers.2.W11.bias": [
+  128
+ ],
+ "encoder_layers.2.W12.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.2.W12.bias": [
+  128
+ ],
+ "encoder_layers.2.W13.weight": [
+  128,
+  128
+ ],
+ "encoder_layers.2.W13.bias": [
+  128
+ ],
+ "encoder_layers.2.dense.W_in.weight": [
+  512,
+  128
+ ],
+ "encoder_layers.2.dense.W_in.bias": [
+  512
+ ],
+ "encoder_layers.2.dense.W_out.weight": [
+  128,
+  512
+ ],
+ "encoder_layers.2.dense.W_out.bias": [
+  128
+ ],
+ "decoder_layers.0.norm1.weight": [
+  128
+ ],
+ "decoder_layers.0.norm1.bias": [
+  128
+ ],
+ "decoder_layers.0.norm2.weight": [
+  128
+ ],
+ "decoder_layers.0.norm2.bias": [
+  128
+ ],
+ "decoder_layers.0.W1.weight": [
+  128,
+  512
+ ],
+ "decoder_layers.0.W1.bias": [
+  128
+ ],
+ "decoder_layers.0.W2.weight": [
+  128,
+  128
+ ],
+ "decoder_layers.0.W2.bias": [
+  128
+ ],
+ "decoder_layers.0.W3.weight": [
+  128,
+  128
+ ],
+ "decoder_layers.0.W3.bias": [
+  128
+ ],
+ "decoder_layers.0.dense.W_in.weight": [
+  512,
+  128
+ ],
+ "decoder_layers.0.dense.W_in.bias": [
+  512
+ ],
+ "decoder_layers.0.dense.W_out.weight": [
+  128,
+  512
+ ],
+ "decoder_layers.0.dense.W_out.bias": [
+  128
+ ],
+ "decoder_layers.1.norm1.weight": [
+  128
+ ],
+ "decoder_layers.1.norm1.bias": [
+  128
+ ],
+ "decoder_layers.1.norm2.weight": [
+  128
+ ],
+ "decoder_layers.1.norm2.bias": [
+  128
+ ],
+ "decoder_layers.1.W1.weight": [
+  128,
+  512
+ ],
+ "decoder_layers.1.W1.bias": [
+  128
+ ],
+ "decoder_layers.1.W2.weight": [
+  128,
+  128
+ ],
+ "decoder_layers.1.W2.bias": [
+  128
+ ],
+ "decoder_layers.1.W3.weight": [
+  128,
+  128
+ ],
+ "decoder_layers.1.W3.bias": [
+  128
+ ],
+ "decoder_layers.1.dense.W_in.weight": [
+  512,
+  128
+ ],
+ "decoder_layers.1.dense.W_in.bias": [
+  512
+ ],
+ "decoder_layers.1.dense.W_out.weight": [
+  128,
+  512
+ ],
+ "decoder_layers.1.dense.W_out.bias": [
+  128
+ ],
+ "decoder_layers.2.norm1.weight": [
+  128
+ ],
+ "decoder_layers.2.norm1.bias": [
+  128
+ ],
+ "decoder_layers.2.norm2.weight": [
+  128
+ ],
+ "decoder_layers.2.norm2.bias": [
+  128
+ ],
+ "decoder_layers.2.W1.weight": [
+  128,
+  512
+ ],
+ "decoder_layers.2.W1.bias": [
+  128
+ ],
+ "decoder_layers.2.W2.weight": [
+  128,
+  128
+ ],
+ "decoder_layers.2.W2.bias": [
+  128
+ ],
+ "decoder_layers.2.W3.weight": [
+  128,
+  128
+ ],
+ "decoder_layers.2.W3.bias": [
+  128
+ ],
+ "decoder_layers.2.dense.W_in.weight": [
+  512,
+  128
+ ],
+ "decoder_layers.2.dense.W_in.bias": [
+  512
+ ],
+ "decoder_layers.2.dense.W_out.weight": [
+  128,
+  512
+ ],
+ "decoder_layers.2.dense.W_out.bias": [
+  128
+ ],
+ "W_out.weight": [
+  21,
+  128
+ ],
+ "W_out.bias": [
+  21
+ ],
+ "etab_out.weight": [
+  400,
+  128
+ ],
+ "etab_out.bias": [
+  400
+ ]
+}
