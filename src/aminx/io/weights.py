@@ -593,6 +593,35 @@ def family_checkpoints() -> dict[str, FamilyCheckpoint]:
   }
 
 
+def verify_pinned_file(path: str | Path, expected_sha256: str, *, what: str = "checkpoint") -> Path:
+  """Return ``path`` only if its sha256 equals ``expected_sha256``; refuse otherwise.
+
+  Used for checkpoints that are loaded directly from a file (for example a torch
+  ``.pt`` that a converter reads) rather than resolved through the family registry.
+  The digest is computed over the whole file, so a truncated or edited copy fails.
+
+  Args:
+    path: File to verify.
+    expected_sha256: Hex digest the file must have.
+    what: Noun used in the refusal message.
+
+  Returns:
+    ``path`` as a ``Path``, unchanged, when the digest matches.
+
+  Raises:
+    ValueError: If the file's sha256 differs from ``expected_sha256``.
+  """
+  file_path = Path(path)
+  digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
+  if digest != expected_sha256:
+    msg = (
+      f"{what} {file_path} has sha256 {digest}, but the pin is {expected_sha256}. "
+      "Refusing to load it: the file was changed, truncated or is a different revision."
+    )
+    raise ValueError(msg)
+  return file_path
+
+
 def _verified_family_file(filename: str, expected_sha256: str, what: str) -> tuple[str, Path]:
   source, path = _resolve_weight_path(filename, normalise=False)
   digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
