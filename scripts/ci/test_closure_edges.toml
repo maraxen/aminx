@@ -1,0 +1,276 @@
+# Declared non-import edges, global fallback triggers, and always-run guards
+# for incremental CI test selection (scripts/ci/select_affected_tests.py).
+#
+# Read scripts/ci/select_affected_tests.py and
+# .praxia/docs/specs/261026_incremental-ci-test-selection.md first.
+#
+# Every test file's closure is the target-aware static import closure over
+# ("src", "tests", "scripts"), plus:
+#   - Every ancestor package's __init__.py on each import path (recorded as a
+#     file dependency so editing an __init__.py invalidates all tests importing
+#     through that package, without naively expanding sibling re-exports).
+#   - Applicable conftest.py files (subdirectory conftest.py files are scoped to
+#     their subtree; root tests/conftest.py is a global fallback trigger).
+#   - Repo-relative paths constructed via Path(__file__) / Path(...) / "a" / "b"
+#     AST expressions, string literals, or `importlib.resources.files("<pkg>")`.
+#   - Dotted "aminx.<pkg>.<mod>..." string literals in test files (covering
+#     monkeypatch.setattr, unittest.mock.patch, sys.modules checks, and
+#     `python -m aminx...` subprocess calls).
+#   - @pytest.mark.port_wave("<wave>") target TOML, manifest TOML, and reference
+#     oracle subtree dependencies.
+#   - The reviewed `soft`, `files`, and `data_prefixes` declarations below.
+#
+# SOUNDNESS INVARIANT (fail-open):
+# Any file in a test's closure that contains an unresolved dynamic load call
+# (`import_module(<non-literal>)`, `__import__(<non-literal>)`,
+# `spec_from_file_location(<non-resolvable>)`, `run_path(<non-resolvable>)`,
+# `entry_points`, `iter_modules`, `importlib.resources.files(<non-literal>)`)
+# renders that closure UNSOUND unless that file is declared with
+# `dynamic_ok = true` below alongside the `soft`, `files`, or `data_prefixes`
+# entries covering what the dynamic site loads. An unsound closure causes the
+# selector to fail open to the full suite, and fails
+# `tests/ci/test_select_affected_tests.py`.
+
+[global]
+# Changes to any of these exact files invalidate all test closures -> full suite.
+files = [
+  "pyproject.toml",
+  "uv.lock",
+  ".github/workflows/ci.yml",
+  "tests/conftest.py",
+  "scripts/ci/select_affected_tests.py",
+  "scripts/ci/test_closure_edges.toml",
+]
+
+# Changes under any of these prefixes invalidate all test closures -> full suite.
+# - src/aminx/model_params/: packaged model weights loaded by importlib.resources.files
+prefixes = [
+  "src/aminx/model_params/",
+]
+
+[guards]
+# Fast repo-wide AST, lint, boundary, and collection-time guard tests that scan
+# the repository tree via Path.rglob / ast.parse / ast-grep or check global
+# invariants without importing every module they inspect. These run on EVERY PR
+# (both in `incremental` mode and in `guards_only` mode when only docs/meta
+# files change).
+always_run = [
+  "tests/ci/test_select_affected_tests.py",
+  "tests/lint/test_l_drv.py",
+  "tests/lint/test_options_plumbing.py",
+  "tests/lint/test_port_tolerances_match_targets.py",
+  "tests/lint/test_potts_import_boundary.py",
+  "tests/lint/test_rs6b_flat_field_gate.py",
+  "tests/lint/test_sidecar_conditions.py",
+  "tests/lint/test_xtrax_public_imports.py",
+  "tests/test_alphabet_conformance.py",
+  "tests/test_import_isolation.py",
+  "tests/test_port_guards_controls.py",
+  "tests/test_xtrax_boundary_lint.py",
+  "tests/audit/test_F001_version_invariant.py",
+  "tests/host/test_schema_versions_consolidation.py",
+  "tests/inference/decode/test_library_surface.py",
+  "tests/parity/test_browser_validation_inventory.py",
+  "tests/parity/test_litparity_schema.py",
+  "tests/potts/test_import_boundaries.py",
+  "tests/sampling/test_x_draw_registry.py",
+  "tests/training/test_trainer_alphabet.py",
+]
+
+[unreferenced_src]
+# Legacy shim or unused modules under src/aminx/ that are not imported by any
+# current test. If a diff touches any file in this list (or any other
+# src/aminx/ file with zero test closures), the selector fails open to `full`.
+# Adding a new src/aminx/*.py module without test coverage will fail
+# `tests/ci/test_select_affected_tests.py` unless a test imports it or it is
+# explicitly reviewed here.
+allowlist = [
+  "src/aminx/host/bundle_builder.py",
+  "src/aminx/model/mpnn_core.py",
+  "src/aminx/training/dataloading/__init__.py",
+  "src/aminx/training/dataloading/preprocess.py",
+  "src/aminx/utils/atom_ordering.py",
+  "src/aminx/utils/typing.py",
+]
+
+# ---------------------------------------------------------------------------
+# Dynamic sites in src/aminx/
+# ---------------------------------------------------------------------------
+
+[module."src/aminx/host/runner.py"]
+# importlib.import_module(_DRIVER_BACKED_FAMILIES[family]) dispatches to
+# aminx.families.potts_mpnn, aminx.families.laser_mpnn, or
+# aminx.families.protonpotts_mpnn based on `model_family`. Family tests import
+# their respective family package directly, and tests/host/test_family_driver_seam.py
+# and tests/host/test_model_family_validation.py declare soft edges to all three
+# driver-backed families below.
+dynamic_ok = true
+
+[module."src/aminx/io/weights.py"]
+# importlib.resources.files("aminx.model_params") (covered by global prefix
+# `src/aminx/model_params/`) and importlib.resources.files("aminx.io") /
+# "family_weights.json" (declared in `files` below).
+files = ["src/aminx/io/family_weights.json"]
+dynamic_ok = true
+
+[module."src/aminx/families/potts_mpnn/driver.py"]
+# spec_from_file_location("pottsmpnn_model_to_eqx", ...) loads the recapture
+# converter script.
+files = ["scripts/recapture/pottsmpnn_model_to_eqx.py"]
+dynamic_ok = true
+
+[module."src/aminx/agent/tools.py"]
+# importlib.resources.files("aminx.io").joinpath("family_weights.json") reads
+# the packaged family weight registry JSON.
+files = ["src/aminx/io/family_weights.json"]
+dynamic_ok = true
+
+# ---------------------------------------------------------------------------
+# Dynamic sites and non-Python data dependencies in tests/ and scripts/
+# ---------------------------------------------------------------------------
+
+[module."tests/host/test_family_driver_seam.py"]
+# Deliberately tests lazy family driver loading via load_family_driver(...)
+# without top-level imports of the three driver-backed family packages.
+soft = [
+  "aminx.families.potts_mpnn",
+  "aminx.families.laser_mpnn",
+  "aminx.families.protonpotts_mpnn",
+]
+
+[module."tests/host/test_model_family_validation.py"]
+# Calls _runner._family_driver_for(SimpleNamespace(model_family="lasermpnn")).
+soft = [
+  "aminx.families.potts_mpnn",
+  "aminx.families.laser_mpnn",
+  "aminx.families.protonpotts_mpnn",
+]
+
+[module."tests/io/test_family_weights.py"]
+# Reads src/aminx/io/family_weights.json, NOTICE-weights.md, and the redistribution
+# ADR under .praxia/docs/decisions/.
+files = [
+  "src/aminx/io/family_weights.json",
+  "NOTICE-weights.md",
+  ".praxia/docs/decisions/261014_redistribution-of-pottsmpnn-lasermpnn-and-protonpottsmpnn-weights-on-hugging-face.md",
+]
+data_prefixes = [
+  ".praxia/docs/decisions/",
+]
+dynamic_ok = true
+
+[module."tests/io/test_pinned_revision_coverage.py"]
+files = [
+  "src/aminx/io/family_weights.json",
+]
+dynamic_ok = true
+
+[module."tests/agent/test_agent_plugin_snapshot.py"]
+# Compares src/aminx/agent_plugin.json against .praxia/manifest.toml and
+# agent_assets/skills/.
+files = [
+  ".praxia/manifest.toml",
+  "src/aminx/agent_plugin.json",
+]
+data_prefixes = [
+  "agent_assets/skills/",
+]
+
+[module."tests/agent/test_skills.py"]
+# Audits SKILL.md files under agent_assets/skills/ against .praxia/manifest.toml.
+files = [
+  ".praxia/manifest.toml",
+  "src/aminx/agent_plugin.json",
+]
+data_prefixes = [
+  "agent_assets/skills/",
+]
+
+[module."tests/agent/test_packaging.py"]
+files = [
+  ".praxia/manifest.toml",
+  "src/aminx/agent_plugin.json",
+]
+
+[module."tests/parity/test_browser_validation_inventory.py"]
+files = [
+  "tests/parity/browser_validation_paths.json",
+  "tests/parity/browser_validation_internal_baseline.txt",
+]
+
+[module."tests/knob_gate/test_weights_identity.py"]
+files = [
+  "scripts/parity/artifact_key.py",
+  "tests/knob_gate/checkpoint_registry.json",
+]
+dynamic_ok = true
+
+[module."tests/knob_gate/test_coverage_selftest.py"]
+files = [
+  "tests/knob_gate/closure_edges.toml",
+  "tests/knob_gate/checkpoint_registry.json",
+]
+data_prefixes = [
+  "tests/knob_gate/",
+]
+dynamic_ok = true
+
+[module."tests/parity/reference_utils.py"]
+# Shared parity helper using spec_from_file_location to load upstream reference
+# modules or scripts/recapture converters.
+data_prefixes = [
+  "scripts/recapture/",
+  "scripts/parity/",
+]
+dynamic_ok = true
+
+[module."tests/port/conftest.py"]
+# Loads port wave reference `algo.py` via spec_from_file_location and reads
+# tests/port/targets/*.toml and tests/port/manifests/*.toml. Per-test wave
+# dependencies are also resolved statically from @pytest.mark.port_wave("<wave>").
+data_prefixes = [
+  "tests/port/targets/",
+  "tests/port/manifests/",
+  "tests/port/reference/",
+]
+dynamic_ok = true
+
+[module."tests/port/mutant_registry.py"]
+# Loads port wave reference `algo.py` via spec_from_file_location for mutant
+# kill verification.
+data_prefixes = [
+  "tests/port/targets/",
+  "tests/port/manifests/",
+  "tests/port/reference/",
+]
+dynamic_ok = true
+
+[module."tests/parity/test_potts_graded_instruments.py"]
+data_prefixes = [
+  "scripts/parity/",
+]
+dynamic_ok = true
+
+[module."tests/tools/test_build_site.py"]
+files = [
+  "tools/build_site.py",
+]
+dynamic_ok = true
+
+[module."scripts/browser_validation/layer_a_exact.py"]
+# Loads external upstream LigandMPNN / ProteinMPNN reference files outside the repo.
+dynamic_ok = true
+
+[module."scripts/browser_validation/parse_parity.py"]
+# Loads external upstream LigandMPNN data_utils.py outside the repo.
+dynamic_ok = true
+
+[module."scripts/collect_parity_evidence.py"]
+files = [
+  "scripts/convert_weights.py",
+]
+dynamic_ok = true
+
+[module."scripts/parity/e2e_run_api_parity.py"]
+# Runs external upstream LigandMPNN `run.py` checkout via runpy.run_path.
+dynamic_ok = true
