@@ -12,8 +12,8 @@ this port does not.
 Tied groups keep the upstream quirks: a group with any fixed or missing member
 is overwritten with that member's current residue; ``tied_epistasis`` reads
 energy, bias, PSSM, and omit at the last listed member; tied binding does not
-subtract the current-identity reference; tied ``nodes`` skips only ``present==0``
-members and copies the current token, not ``S_true``.
+subtract the current-identity reference; tied ``nodes`` skips members where
+``present==0`` or ``chain_mask==0`` and copies the current token, not ``S_true``.
 """
 
 from __future__ import annotations

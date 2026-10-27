@@ -1,7 +1,7 @@
 """declayer_f64 wave: DecoderLayer against the sealed f64 fixture (rtol=1e-12).
 
 Skipped until A2 lands ``aminx.families.potts_mpnn.model.PottsMPNN``. The f32
-tier skips because the dump is f64 only.
+tier evaluates against the f64 oracle with relaxed tolerances (rtol=1e-4, atol=1e-5).
 """
 
 from __future__ import annotations

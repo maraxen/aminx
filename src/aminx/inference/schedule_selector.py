@@ -119,7 +119,7 @@ def schedule_consumes_key(mode: DecodingSchedule) -> bool:
     mode: One of the five schedule arms.
 
   Returns:
-    True for every arm except ``fixed_n_to_c``.
+    False for both ``fixed_n_to_c`` and ``chromatic``, True for all other arms.
 
   Raises:
     ValueError: If ``mode`` is not a known schedule arm.
@@ -337,7 +337,7 @@ def color_positions(
 
 
 def select_decoding_order(
-  key: PRNGKeyArray,
+  key: PRNGKeyArray | None,
   seq_len: int,
   mode: Literal["random_ar", "fixed_n_to_c", "frozen_random_sigma"],
 ) -> Int[Array, " L"]:
@@ -351,6 +351,9 @@ def select_decoding_order(
   """
   if mode == "fixed_n_to_c":
     return jnp.arange(seq_len, dtype=jnp.int32)
+  if key is None:
+    msg = f"schedule mode {mode!r} requires a PRNG `key`."
+    raise ValueError(msg)
   return jax.random.permutation(key, seq_len).astype(jnp.int32)
 
 
@@ -375,7 +378,7 @@ def build_wave_schedule(
   """
   seq_len = tie_group_map.shape[-1]
   if mode in _ORDER_SCHEDULES:
-    if key is None:
+    if schedule_consumes_key(mode) and key is None:
       msg = f"schedule mode {mode!r} requires a PRNG `key`."
       raise ValueError(msg)
     decoding_order = select_decoding_order(key, seq_len, mode)
