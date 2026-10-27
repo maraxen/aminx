@@ -25,11 +25,11 @@ from aminx.tiling.axes import N_SAMPLES
 from aminx.utils.autoregression import decoding_order_from_wave
 
 if TYPE_CHECKING:
+  from aminx.types import StageSet
   from aminx.types.bundles import InferenceBundle
   from aminx.types.configs import InferenceConfig
   from aminx.types.encodings import EncoderOutput
   from aminx.types.protocols import ModelProtocol
-  from aminx.types import StageSet
   from aminx.utils.decoding_order import DecodingOrderFn
 
 _Shared = tuple["InferenceBundle", "InferenceConfig", "StageSet", "EncoderOutput"]

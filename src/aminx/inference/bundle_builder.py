@@ -414,7 +414,7 @@ def with_decoding_order(
   tie = cond.tie_group_map[0]
   seq_len = tie.shape[0]
   if decoding_order_fn is None:
-    fixed = cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask  # noqa: PLR2004
+    fixed = cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask
     order = random_design_order(key, tie, fixed)
   else:
     order, _ = decoding_order_fn(key, seq_len, tie if num_groups is not None else None, num_groups)

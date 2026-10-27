@@ -217,3 +217,66 @@ def test_protonpotts_files_are_on_the_allow_list() -> None:
 def test_real_tree_check_passes() -> None:
     """Only passes once site/protonpotts/ and browser/protonpotts-scorer/ exist as the allow-list describes."""
     assert bs.check() == 0
+
+
+# --- potts weights: positive control --------------------------------------------------------------------------
+
+
+def test_potts_matching_manifest_plans_and_copies_named_files(tmp_path: Path) -> None:
+    directory = _write_weights_dir(tmp_path, {"a.onnx": b"alpha-bytes", "b.onnx": b"beta-bytes"})
+
+    plan, problems = bs.plan_potts_models(directory)
+
+    assert problems == []
+    assert sorted(name for name, _ in plan) == ["a.onnx", "b.onnx"]
+    out_dir = tmp_path / "dist"
+    bs.copy_potts_models(out_dir, directory, plan)
+    dest = out_dir / "potts" / "models"
+    assert (dest / "a.onnx").read_bytes() == b"alpha-bytes"
+    assert (dest / "b.onnx").read_bytes() == b"beta-bytes"
+    assert (dest / "MANIFEST.json").is_file()
+
+
+# --- potts weights: negative controls -------------------------------------------------------------------------
+
+
+def test_potts_wrong_sha256_is_refused(tmp_path: Path) -> None:
+    directory = _write_weights_dir(
+        tmp_path, {"a.onnx": b"alpha-bytes"}, manifest_sha={"a.onnx": _sha(b"something else")},
+    )
+
+    plan, problems = bs.plan_potts_models(directory)
+
+    assert plan == []
+    assert any("differs from the manifest" in problem for problem in problems)
+
+
+def test_potts_missing_named_file_is_refused(tmp_path: Path) -> None:
+    directory = _write_weights_dir(tmp_path, {"a.onnx": b"alpha-bytes"})
+    (directory / "a.onnx").unlink()
+
+    plan, problems = bs.plan_potts_models(directory)
+
+    assert plan == []
+    assert any("is missing" in problem for problem in problems)
+
+
+def test_potts_missing_manifest_is_refused(tmp_path: Path) -> None:
+    plan, problems = bs.plan_potts_models(tmp_path)
+
+    assert plan == []
+    assert any("MANIFEST.json" in problem for problem in problems)
+
+
+@pytest.mark.parametrize("bad_name", ["../x.onnx", "sub/x.onnx", "sub\\x.onnx", "a..b.onnx"])
+def test_potts_unsafe_manifest_name_is_refused(tmp_path: Path, bad_name: str) -> None:
+    directory = tmp_path / "exported"
+    directory.mkdir()
+    manifest = {"buckets": [{"bucket": 128, "graphs": {"g": {"file": bad_name, "sha256": "0" * 64}}}]}
+    (directory / "MANIFEST.json").write_text(json.dumps(manifest), encoding="utf-8")
+
+    plan, problems = bs.plan_potts_models(directory)
+
+    assert plan == []
+    assert any("not a bare filename" in problem for problem in problems)
+

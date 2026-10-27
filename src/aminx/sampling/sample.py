@@ -71,8 +71,6 @@ def make_sample_sequences(
   model: ModelProtocol,
   decoding_order_fn: DecodingOrderFn = _DEFAULT_DECODING_ORDER_FN,
   sampling_strategy: Literal["temperature", "straight_through"] = "temperature",
-  _num_encoder_layers: int = 3,
-  _num_decoder_layers: int = 3,
   use_concrete: bool = False,
   tau_start: float = 1.0,
   tau_end: float = 0.1,
@@ -91,8 +89,6 @@ def make_sample_sequences(
     A function that samples sequences from structures.
 
   """
-  del _num_encoder_layers, _num_decoder_layers
-
   if sampling_strategy == "straight_through":
     # Construct a default stage_set with arithmetic_mean strategy (default for STE).
     # Callers can pass state_weights at sample time to override the logit_transform.

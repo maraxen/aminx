@@ -182,7 +182,7 @@ class CalibrationModule(Protocol):
 
 
 class ConformationalStates(Protocol):
-  """Protocol for conformational state containers (see ensemble_tools.dbscan)."""
+  """Protocol for conformational state containers."""
 
   n_states: ArrayLike
 

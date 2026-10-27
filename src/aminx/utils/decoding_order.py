@@ -144,7 +144,7 @@ def random_design_order(
   if fixed_mask is None:
     group_fixed = jnp.zeros((seq_len,), dtype=jnp.int32)
   else:
-    fixed = (jnp.asarray(fixed_mask) > 0.5).astype(jnp.int32)  # noqa: PLR2004
+    fixed = (jnp.asarray(fixed_mask) > 0.5).astype(jnp.int32)
     group_fixed = jnp.zeros((seq_len,), dtype=jnp.int32).at[tie].max(fixed)
   designable = 1 - group_fixed[tie]
   positions = jnp.arange(seq_len, dtype=jnp.int32)

@@ -691,6 +691,13 @@ def test_knob_semantics_gly_budget() -> None:
   assert LaserOptions(gly_budget=2).gly_budget == 2
 
 
+def test_knob_semantics_ala_budget() -> None:
+  """Options-level default and override for ala_budget."""
+  assert LaserOptions().ala_budget == 4
+  assert LaserOptions(ala_budget=1).ala_budget == 1
+  assert LaserOptions(ala_budget=0).ala_budget == 0
+
+
 def test_knob_semantics_repack_only() -> None:
   chi = np.full((2, 4), np.nan, dtype=np.float32)
   chain = np.asarray([True, True])
@@ -698,7 +705,26 @@ def test_knob_semantics_repack_only() -> None:
   replaced = _tied(chain_mask=chain, chi1=chi, chi2=chi, chi_temperature=None, repack_all=True)
   assert kept.chi_degrees_1[0, 0] == pytest.approx(0.0)
   assert np.isfinite(replaced.chi_degrees_1[0, 0])
+  assert LaserOptions().repack_only is False
   assert LaserOptions(repack_only=True).repack_only is True
+
+
+def test_knob_semantics_fs_sequence_temp() -> None:
+  """Options-level default and override for fs_sequence_temp."""
+  assert LaserOptions().fs_sequence_temp is None
+  assert LaserOptions(fs_sequence_temp=0.5).fs_sequence_temp == pytest.approx(0.5)
+
+
+def test_knob_semantics_disable_charged_fs() -> None:
+  """Options-level default and override for disable_charged_fs."""
+  assert LaserOptions().disable_charged_fs is False
+  assert LaserOptions(disable_charged_fs=True).disable_charged_fs is True
+
+
+def test_knob_semantics_ignore_chain_mask_zeros() -> None:
+  """Options-level default and override for ignore_chain_mask_zeros."""
+  assert LaserOptions().ignore_chain_mask_zeros is False
+  assert LaserOptions(ignore_chain_mask_zeros=True).ignore_chain_mask_zeros is True
 
 
 def _assert_bit_identical(left: TiedDecodeResult, right: TiedDecodeResult) -> None:

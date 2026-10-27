@@ -150,7 +150,7 @@ class RunSpecification:
   Attributes:
       inputs: A sequence of input file paths or text streams, or a single input.
       model_weights: The model weights to use (default is "original").
-      model_version: The model version to use (default is "v_48_020.pkl").
+      model_version: The model version to use (default is "v_48_020").
       batch_size: The batch size to use (default is 32).
       backbone_noise: The backbone noise levels to use (default is (0.0,)).
                       Can be a single float or a sequence of floats.
@@ -160,7 +160,7 @@ class RunSpecification:
       model: An optional model ID to use (default is None).
       altloc: The alternate location to use (default is "first").
       decoding_order_fn: An optional function to generate the decoding order (default is None).
-      conformational_states: ConformationalStates (from ensemble_tools.dbscan) to use for coarse graining the inference.
+      conformational_states: Optional conformational states representation to use for coarse graining the inference.
       max_length: Maximum sequence length for padding/truncation (default is 512).
                   Set to None to disable padding. Controls memory usage - smaller values
                   reduce memory but may cause recompilation for different sequence lengths.

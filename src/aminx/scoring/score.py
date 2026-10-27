@@ -89,8 +89,6 @@ def _nll_from_logits(
 def make_score_fn(
   model: ModelProtocol,
   decoding_order_fn: DecodingOrderFn = _DEFAULT_DECODING_ORDER_FN,
-  _num_encoder_layers: int = 3,
-  _num_decoder_layers: int = 3,
   inference: bool = True,  # noqa: FBT001, FBT002
 ) -> ScoreFn:
   """Create a function to score a sequence on a structure using Aminx.
@@ -104,8 +102,6 @@ def make_score_fn(
     JIT scoring function.
 
   """
-  del _num_encoder_layers, _num_decoder_layers
-
   if inference and isinstance(model, eqx.Module):
     model = eqx.nn.inference_mode(model, value=True)
 

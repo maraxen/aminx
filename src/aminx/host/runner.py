@@ -273,10 +273,10 @@ def sample(
   spec: SamplingSpecification | None = None,
   **kwargs: Any,  # noqa: ANN401
 ) -> dict[str, Any]:
-  """Sample new sequences for given input structures using high-performance Grain pipeline.
+  """Sample new sequences for given input structures.
 
   Routes to streaming or in-memory sampling based on output configuration and averaging mode.
-  Loads structures via Grain iterator, prepares model, processes in batches, and aggregates
+  Loads structures, prepares model, processes in batches, and aggregates
   results with optional logits and pseudo-perplexity calculations.
 
   Parameters
@@ -322,10 +322,8 @@ def sample(
             Number of structures per batch.
         return_logits : bool, optional
             Whether to return logits for each position.
-        output_h5_path : str, optional
-            Path to streaming H5 output file.
-        grid_mode : bool, optional
-            Whether in grid sampling mode (affects metadata lineage).
+        output_h5_path : str or Path, optional
+            Path to Zarr store output file.
 
   Returns
   -------
@@ -350,8 +348,7 @@ def sample(
   Notes
   -----
   Streaming vs. in-memory: If output_h5_path is set, uses streaming I/O.
-  Otherwise, concatenates per-batch results in memory. See _sample_streaming
-  in streaming.py for streaming mode details.
+  Otherwise, concatenates per-batch results in memory.
 
   References
   ----------
@@ -895,7 +892,7 @@ def score(  # noqa: PLR0915
 ) -> dict[str, Any]:
   """Score sequences against input structures.
 
-  Loads structures via Grain iterator, prepares model, and computes negative
+  Loads structures, prepares model, and computes negative
   log-likelihood (NLL) scores for provided sequences. Optionally returns logits
   and decoding orders.
 

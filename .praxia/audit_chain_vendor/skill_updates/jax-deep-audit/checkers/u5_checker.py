@@ -29,9 +29,10 @@ Portable: no target-project or vendor-project names appear in this file.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from dataclasses import fields, is_dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 
 def extract_argparse_flags(source_path: Path) -> list[dict[str, Any]]:
