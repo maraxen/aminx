@@ -278,8 +278,9 @@ def build_lane_batch(fixture: dict[str, Any], lane: str, data_utils_module: Any)
     reference_bias = _reference_omit_aa_bias(length)
   elif lane_base == "P09-s":
     groups = lae._qualifying_groups(fixture)  # noqa: SLF001 (reuse, not reimplement)
+    lae._guard_stale_manifest(fixture, base, groups)  # noqa: SLF001
     if groups:
-      lae._reverify_knn_disjoint(base, groups)  # noqa: SLF001 -- exit 2 on any violation (R2-C3)
+      lae._reverify_knn_disjoint(base, groups, fixture)  # noqa: SLF001 -- exit 2 on any violation (R2-C3)
       from tests.parity.test_full_model_parity import _build_tie_group_map
 
       tie_group_map = _build_tie_group_map(length, groups).astype(np.int64)
