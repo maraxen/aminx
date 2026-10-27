@@ -13,21 +13,21 @@ negative_outcome = ["fail", "marginal"]
 reason = "CPU parity verification vehicle against upstream PyTorch checkpoints"
 
 [outcomes.pass]
-condition = "v1_f64_max_abs_diff < 1e-7 AND v2_f64_max_abs_diff < 1e-7 AND double_f64_max_abs_diff < 1e-7 AND v1_f32_max_abs_diff < 1e-4 AND v2_f32_max_abs_diff < 1e-4 AND double_f32_max_abs_diff < 1e-4 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2"
+condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-7 AND v2_f64_max_abs_diff < 1e-7 AND double_f64_max_abs_diff < 1e-7 AND v1_f32_max_abs_diff < 1e-4 AND v2_f32_max_abs_diff < 1e-4 AND double_f32_max_abs_diff < 1e-4 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2"
 decision = "Promote ThermoMPNN and ThermoMPNNDouble JAX ports and converted .eqx.zst weights."
-reasoning = "All single-mutant (v1/v2) and double-mutant (v2) stages match upstream PyTorch within 1e-7 in float64 and 1e-4 in float32, algebraic invariants hold exactly, and all negative controls trip."
+reasoning = "All single-mutant (v1/v2) and double-mutant (v2) stages match upstream PyTorch checkpoints within 1e-7 in float64 and 1e-4 in float32, algebraic invariants hold exactly, and all negative controls trip."
 is_residual = false
 
 [outcomes.marginal]
-condition = "v1_f64_max_abs_diff < 1e-5 AND v2_f64_max_abs_diff < 1e-5 AND double_f64_max_abs_diff < 1e-5 AND v1_f32_max_abs_diff < 1e-3 AND v2_f32_max_abs_diff < 1e-3 AND double_f32_max_abs_diff < 1e-3 AND neg_ctrl_min_max_abs_diff > 1e-2"
+condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-5 AND v2_f64_max_abs_diff < 1e-5 AND double_f64_max_abs_diff < 1e-5 AND v1_f32_max_abs_diff < 1e-3 AND v2_f32_max_abs_diff < 1e-3 AND double_f32_max_abs_diff < 1e-3 AND (v1_f64_max_abs_diff >= 1e-7 OR v2_f64_max_abs_diff >= 1e-7 OR double_f64_max_abs_diff >= 1e-7 OR v1_f32_max_abs_diff >= 1e-4 OR v2_f32_max_abs_diff >= 1e-4 OR double_f32_max_abs_diff >= 1e-4) AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2"
 decision = "Investigate numerical drift between PyTorch and JAX stages before promoting."
-reasoning = "Forward outputs are close to upstream PyTorch and negative controls trip, but float64 or float32 tolerances exceed the strict 1e-7 / 1e-4 parity bar."
+reasoning = "Forward outputs on upstream checkpoints are close to PyTorch, exact invariants hold, and negative controls trip, but float64 or float32 tolerances exceed the strict 1e-7 / 1e-4 parity bar."
 is_residual = false
 
 [outcomes.fail]
-condition = "v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2"
-decision = "Block promotion and debug trunk, LightAttention1D, or Siamese head mismatch."
-reasoning = "Parity error exceeds tolerance, an algebraic invariant is violated, or a negative control failed to trip."
+condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2"
+decision = "Block promotion and debug trunk, LightAttention1D, or Siamese head mismatch (or re-run against upstream checkpoints)."
+reasoning = "Run used synthetic weights, parity error exceeds tolerance, an algebraic invariant is violated, or a negative control failed to trip."
 is_residual = true
 
 [result_schema]
@@ -35,6 +35,15 @@ pdb_id = "str"
 num_residues = "int"
 n_neighbor_pairs = "int"
 n_distant_pairs = "int"
+weight_source = "str"
+v1_checkpoint_path = "str"
+v1_checkpoint_sha256 = "str"
+v1_mpnn_fallback_path = "str"
+v1_mpnn_fallback_sha256 = "str"
+v2_single_checkpoint_path = "str"
+v2_single_checkpoint_sha256 = "str"
+v2_double_checkpoint_path = "str"
+v2_double_checkpoint_sha256 = "str"
 v1_f64_max_abs_diff = "float"
 v2_f64_max_abs_diff = "float"
 double_f64_max_abs_diff = "float"

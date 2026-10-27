@@ -23,6 +23,9 @@ Verifies:
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import pickle
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -35,7 +38,11 @@ import pytest
 import torch
 from torch import nn
 
-from aminx.families.thermo_mpnn import (
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+  sys.path.insert(0, str(_REPO_ROOT))
+
+from aminx.families.thermo_mpnn import (  # noqa: E402
   THERMO_ALPHABET,
   ThermoMPNN,
   ThermoMPNNDouble,
@@ -48,17 +55,22 @@ from aminx.families.thermo_mpnn import (
   load_thermo_mpnn_pt,
   thermo_mpnn_trunk,
 )
-from aminx.families.thermo_mpnn.convert import _load_raw_checkpoint
-from aminx.families.thermo_mpnn.model import _layer_norm, _linear, _siamese_mlp
-
-_SCRATCH_REPOS = Path(
-  "/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos",
+from aminx.families.thermo_mpnn.convert import (  # noqa: E402
+  _load_raw_checkpoint,
+  _SafeUnpickler,
 )
-_V1_CKPT = _SCRATCH_REPOS / "ThermoMPNN" / "models" / "thermoMPNN_default.pt"
-_V1_VANILLA_MPNN = _SCRATCH_REPOS / "ThermoMPNN" / "vanilla_model_weights" / "v_48_020.pt"
-_V2_SINGLE_CKPT = _SCRATCH_REPOS / "ThermoMPNN-D" / "model_weights" / "ThermoMPNN-ens1.ckpt"
-_V2_DOUBLE_CKPT = _SCRATCH_REPOS / "ThermoMPNN-D" / "model_weights" / "ThermoMPNN-D-ens1.ckpt"
-_V2_VANILLA_MPNN = _SCRATCH_REPOS / "ThermoMPNN-D" / "vanilla_model_weights" / "v_48_020.pt"
+from aminx.families.thermo_mpnn.model import _layer_norm, _linear, _siamese_mlp  # noqa: E402
+from tests.parity.reference_utils import (  # noqa: E402
+  PARITY_REPOS_ENV,
+  find_parity_repo_file,
+  parity_repo_roots,
+)
+
+_V1_REL_CKPT = "ThermoMPNN/models/thermoMPNN_default.pt"
+_V1_REL_VANILLA_MPNN = "ThermoMPNN/vanilla_model_weights/v_48_020.pt"
+_V2_SINGLE_REL_CKPT = "ThermoMPNN-D/model_weights/ThermoMPNN-ens1.ckpt"
+_V2_DOUBLE_REL_CKPT = "ThermoMPNN-D/model_weights/ThermoMPNN-D-ens1.ckpt"
+_V2_REL_VANILLA_MPNN = "ThermoMPNN-D/vanilla_model_weights/v_48_020.pt"
 _UBQ_PDB = Path(__file__).resolve().parent.parent / "data" / "1ubq.pdb"
 
 _AA3_TO_1 = {
@@ -715,14 +727,11 @@ def _build_synthetic_mpnn_state_dict(rng: np.random.Generator) -> dict[str, np.n
   return sd
 
 
-def _build_v1_state_dict() -> dict[str, np.ndarray]:
-  if _V1_CKPT.is_file():
-    sd = _load_raw_checkpoint(_V1_CKPT)
-    if "prot_mpnn.W_s.weight" not in sd and _V1_VANILLA_MPNN.is_file():
-      mpnn_sd = _load_raw_checkpoint(_V1_VANILLA_MPNN)
-      for k, v in mpnn_sd.items():
-        sd[f"prot_mpnn.{k}"] = v
-    return sd
+def _sha256_file(path: Path) -> str:
+  return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _build_synthetic_v1_state_dict() -> dict[str, np.ndarray]:
   rng = np.random.default_rng(101)
   sd = _build_synthetic_mpnn_state_dict(rng)
   sd["light_attention.feature_convolution.weight"] = rng.standard_normal((384, 384, 9)).astype(np.float32) * 0.05
@@ -740,14 +749,7 @@ def _build_v1_state_dict() -> dict[str, np.ndarray]:
   return sd
 
 
-def _build_v2_single_state_dict() -> dict[str, np.ndarray]:
-  if _V2_SINGLE_CKPT.is_file():
-    sd = _load_raw_checkpoint(_V2_SINGLE_CKPT)
-    if "prot_mpnn.W_s.weight" not in sd and _V2_VANILLA_MPNN.is_file():
-      mpnn_sd = _load_raw_checkpoint(_V2_VANILLA_MPNN)
-      for k, v in mpnn_sd.items():
-        sd[f"prot_mpnn.{k}"] = v
-    return sd
+def _build_synthetic_v2_single_state_dict() -> dict[str, np.ndarray]:
   rng = np.random.default_rng(202)
   sd = _build_synthetic_mpnn_state_dict(rng)
   sd["light_attention.feature_convolution.weight"] = rng.standard_normal((384, 384, 1)).astype(np.float32) * 0.05
@@ -763,14 +765,7 @@ def _build_v2_single_state_dict() -> dict[str, np.ndarray]:
   return sd
 
 
-def _build_v2_double_state_dict() -> dict[str, np.ndarray]:
-  if _V2_DOUBLE_CKPT.is_file():
-    sd = _load_raw_checkpoint(_V2_DOUBLE_CKPT)
-    if "prot_mpnn.W_s.weight" not in sd and _V2_VANILLA_MPNN.is_file():
-      mpnn_sd = _load_raw_checkpoint(_V2_VANILLA_MPNN)
-      for k, v in mpnn_sd.items():
-        sd[f"prot_mpnn.{k}"] = v
-    return sd
+def _build_synthetic_v2_double_state_dict() -> dict[str, np.ndarray]:
   rng = np.random.default_rng(303)
   sd = _build_synthetic_mpnn_state_dict(rng)
   sd["light_attention.0.weight"] = np.ones((512,), dtype=np.float32) + rng.standard_normal((512,)).astype(np.float32) * 0.05
@@ -784,6 +779,160 @@ def _build_v2_double_state_dict() -> dict[str, np.ndarray]:
   sd["ddg_out.6.weight"] = rng.standard_normal((1, 128)).astype(np.float32) * 0.08
   sd["ddg_out.6.bias"] = rng.standard_normal((1,)).astype(np.float32) * 0.08
   return sd
+
+
+def resolve_thermo_mpnn_parity_inputs(
+  *,
+  synthetic: bool = False,
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, np.ndarray], dict[str, str]]:
+  """Resolve ThermoMPNN v1, v2-single, and v2-double state dicts and provenance metadata.
+
+  When ``synthetic=False`` (the default for the bathos parity driver), requires all
+  upstream checkpoints to be present under ``$AMINX_PARITY_REPOS`` or ``~/repos`` and
+  raises :class:`FileNotFoundError` with a clear message if any checkpoint is missing.
+  """
+  if synthetic:
+    return (
+      _build_synthetic_v1_state_dict(),
+      _build_synthetic_v2_single_state_dict(),
+      _build_synthetic_v2_double_state_dict(),
+      {
+        "weight_source": "synthetic",
+        "v1_checkpoint_path": "",
+        "v1_checkpoint_sha256": "",
+        "v1_mpnn_fallback_path": "",
+        "v1_mpnn_fallback_sha256": "",
+        "v2_single_checkpoint_path": "",
+        "v2_single_checkpoint_sha256": "",
+        "v2_double_checkpoint_path": "",
+        "v2_double_checkpoint_sha256": "",
+      },
+    )
+
+  v1_ckpt = find_parity_repo_file(_V1_REL_CKPT)
+  v1_vanilla = find_parity_repo_file(_V1_REL_VANILLA_MPNN)
+  v2_single_ckpt = find_parity_repo_file(_V2_SINGLE_REL_CKPT)
+  v2_double_ckpt = find_parity_repo_file(_V2_DOUBLE_REL_CKPT)
+  v2_vanilla = find_parity_repo_file(_V2_REL_VANILLA_MPNN)
+
+  missing: list[str] = []
+  if v1_ckpt is None:
+    missing.append(_V1_REL_CKPT)
+  if v2_single_ckpt is None:
+    missing.append(_V2_SINGLE_REL_CKPT)
+  if v2_double_ckpt is None:
+    missing.append(_V2_DOUBLE_REL_CKPT)
+
+  if missing:
+    searched = [str(r) for r in parity_repo_roots()]
+    msg = (
+      f"Missing upstream ThermoMPNN checkpoint(s): {missing}. "
+      f"Searched roots: {searched} (configure via ${PARITY_REPOS_ENV} or place under ~/repos). "
+      "Pass --synthetic to run with deterministic synthetic weights instead."
+    )
+    raise FileNotFoundError(msg)
+
+  assert v1_ckpt is not None
+  assert v2_single_ckpt is not None
+  assert v2_double_ckpt is not None
+
+  v1_sd = _load_raw_checkpoint(v1_ckpt)
+  v1_fallback_path = ""
+  v1_fallback_sha = ""
+  if "prot_mpnn.W_s.weight" not in v1_sd:
+    fallback = v1_vanilla or v2_vanilla
+    if fallback is None:
+      searched = [str(r) for r in parity_repo_roots()]
+      msg = (
+        f"ThermoMPNN v1 checkpoint {v1_ckpt} does not embed 'prot_mpnn.*' trunk weights, "
+        f"and fallback '{_V1_REL_VANILLA_MPNN}' was not found in {searched} "
+        f"(set ${PARITY_REPOS_ENV} or pass --synthetic)."
+      )
+      raise FileNotFoundError(msg)
+    mpnn_sd = _load_raw_checkpoint(fallback)
+    for k, v in mpnn_sd.items():
+      v1_sd[f"prot_mpnn.{k}"] = v
+    v1_fallback_path = str(fallback)
+    v1_fallback_sha = _sha256_file(fallback)
+
+  v2_single_sd = _load_raw_checkpoint(v2_single_ckpt)
+  if "prot_mpnn.W_s.weight" not in v2_single_sd:
+    fallback = v2_vanilla or v1_vanilla
+    if fallback is None:
+      msg = f"Missing fallback vanilla MPNN weights for {v2_single_ckpt}"
+      raise FileNotFoundError(msg)
+    mpnn_sd = _load_raw_checkpoint(fallback)
+    for k, v in mpnn_sd.items():
+      v2_single_sd[f"prot_mpnn.{k}"] = v
+
+  v2_double_sd = _load_raw_checkpoint(v2_double_ckpt)
+  if "prot_mpnn.W_s.weight" not in v2_double_sd:
+    fallback = v2_vanilla or v1_vanilla
+    if fallback is None:
+      msg = f"Missing fallback vanilla MPNN weights for {v2_double_ckpt}"
+      raise FileNotFoundError(msg)
+    mpnn_sd = _load_raw_checkpoint(fallback)
+    for k, v in mpnn_sd.items():
+      v2_double_sd[f"prot_mpnn.{k}"] = v
+
+  return (
+    v1_sd,
+    v2_single_sd,
+    v2_double_sd,
+    {
+      "weight_source": "upstream_checkpoint",
+      "v1_checkpoint_path": str(v1_ckpt),
+      "v1_checkpoint_sha256": _sha256_file(v1_ckpt),
+      "v1_mpnn_fallback_path": v1_fallback_path,
+      "v1_mpnn_fallback_sha256": v1_fallback_sha,
+      "v2_single_checkpoint_path": str(v2_single_ckpt),
+      "v2_single_checkpoint_sha256": _sha256_file(v2_single_ckpt),
+      "v2_double_checkpoint_path": str(v2_double_ckpt),
+      "v2_double_checkpoint_sha256": _sha256_file(v2_double_ckpt),
+    },
+  )
+
+
+def _build_v1_state_dict() -> dict[str, np.ndarray]:
+  v1_ckpt = find_parity_repo_file(_V1_REL_CKPT)
+  v1_vanilla = find_parity_repo_file(_V1_REL_VANILLA_MPNN)
+  if v1_ckpt is not None:
+    sd = _load_raw_checkpoint(v1_ckpt)
+    if "prot_mpnn.W_s.weight" not in sd and v1_vanilla is not None:
+      mpnn_sd = _load_raw_checkpoint(v1_vanilla)
+      for k, v in mpnn_sd.items():
+        sd[f"prot_mpnn.{k}"] = v
+    if "prot_mpnn.W_s.weight" in sd:
+      return sd
+  return _build_synthetic_v1_state_dict()
+
+
+def _build_v2_single_state_dict() -> dict[str, np.ndarray]:
+  v2_single_ckpt = find_parity_repo_file(_V2_SINGLE_REL_CKPT)
+  v2_vanilla = find_parity_repo_file(_V2_REL_VANILLA_MPNN)
+  if v2_single_ckpt is not None:
+    sd = _load_raw_checkpoint(v2_single_ckpt)
+    if "prot_mpnn.W_s.weight" not in sd and v2_vanilla is not None:
+      mpnn_sd = _load_raw_checkpoint(v2_vanilla)
+      for k, v in mpnn_sd.items():
+        sd[f"prot_mpnn.{k}"] = v
+    if "prot_mpnn.W_s.weight" in sd:
+      return sd
+  return _build_synthetic_v2_single_state_dict()
+
+
+def _build_v2_double_state_dict() -> dict[str, np.ndarray]:
+  v2_double_ckpt = find_parity_repo_file(_V2_DOUBLE_REL_CKPT)
+  v2_vanilla = find_parity_repo_file(_V2_REL_VANILLA_MPNN)
+  if v2_double_ckpt is not None:
+    sd = _load_raw_checkpoint(v2_double_ckpt)
+    if "prot_mpnn.W_s.weight" not in sd and v2_vanilla is not None:
+      mpnn_sd = _load_raw_checkpoint(v2_vanilla)
+      for k, v in mpnn_sd.items():
+        sd[f"prot_mpnn.{k}"] = v
+    if "prot_mpnn.W_s.weight" in sd:
+      return sd
+  return _build_synthetic_v2_double_state_dict()
 
 
 # ---------------------------------------------------------------------------
@@ -1274,22 +1423,29 @@ def test_converter_rejects_unconsumed_and_missing_keys() -> None:
     convert_thermo_mpnn_state_dict(missing_sd)
 
 
-@pytest.mark.skipif(not _V1_CKPT.is_file(), reason="Upstream ThermoMPNN v1 checkpoint not present")
 def test_load_thermo_mpnn_pt_real_checkpoints() -> None:
   """``load_thermo_mpnn_pt`` and ``load_thermo_mpnn_double_pt`` load upstream files."""
-  m_v1 = load_thermo_mpnn_pt(_V1_CKPT)
+  v1_ckpt = find_parity_repo_file(_V1_REL_CKPT)
+  if v1_ckpt is None:
+    pytest.skip(
+      f"Upstream ThermoMPNN v1 checkpoint ({_V1_REL_CKPT}) not found; "
+      f"set {PARITY_REPOS_ENV} or place under ~/repos",
+    )
+  m_v1 = load_thermo_mpnn_pt(v1_ckpt)
   assert isinstance(m_v1, ThermoMPNN)
   assert m_v1.ddg_out is not None
   assert m_v1.light_attention.kernel_size == 9
 
-  if _V2_SINGLE_CKPT.is_file():
-    m_v2 = load_thermo_mpnn_pt(_V2_SINGLE_CKPT)
+  v2_single_ckpt = find_parity_repo_file(_V2_SINGLE_REL_CKPT)
+  if v2_single_ckpt is not None:
+    m_v2 = load_thermo_mpnn_pt(v2_single_ckpt)
     assert isinstance(m_v2, ThermoMPNN)
     assert m_v2.ddg_out is None
     assert m_v2.light_attention.kernel_size == 1
 
-  if _V2_DOUBLE_CKPT.is_file():
-    m_d = load_thermo_mpnn_double_pt(_V2_DOUBLE_CKPT)
+  v2_double_ckpt = find_parity_repo_file(_V2_DOUBLE_REL_CKPT)
+  if v2_double_ckpt is not None:
+    m_d = load_thermo_mpnn_double_pt(v2_double_ckpt)
     assert isinstance(m_d, ThermoMPNNDouble)
 
 
@@ -1405,3 +1561,83 @@ def test_bucket_padding_invariance_and_eqx_checkpoint_roundtrip(tmp_path: Path) 
     )
     assert np.max(np.abs(pred_v2_orig - pred_v2_reloaded)) == 0.0
     assert isinstance(reloaded_d, ThermoMPNNDouble)
+
+
+def test_has_ddg_out_scale_does_not_change_kernel_size_or_chain_mask_order(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Verify ``has_ddg_out_scale`` toggles only ``ddg_out`` without changing ``is_v1`` defaults."""
+  import aminx.families.thermo_mpnn.convert as convert_mod
+
+  def _stub_load_weights(
+    checkpoint_id: str | None = None,
+    skeleton: eqx.Module | None = None,
+    key: jax.Array | None = None,
+    local_path: str | None = None,
+  ) -> eqx.Module:
+    del checkpoint_id, key, local_path
+    assert skeleton is not None
+    return skeleton
+
+  monkeypatch.setattr(convert_mod, "load_weights", _stub_load_weights)
+
+  # v1 checkpoint with has_ddg_out_scale=False keeps kernel_size=9 and apply_chain_mask_to_order=False
+  v1_no_scale = load_thermo_mpnn_checkpoint(
+    "thermo_mpnn_v1_default",
+    local_path="dummy.eqx",
+    has_ddg_out_scale=False,
+  )
+  assert v1_no_scale.ddg_out is None
+  assert v1_no_scale.light_attention.kernel_size == 9
+  assert v1_no_scale.apply_chain_mask_to_order is False
+
+  # v2 checkpoint with has_ddg_out_scale=True keeps kernel_size=1 and apply_chain_mask_to_order=True
+  v2_with_scale = load_thermo_mpnn_checkpoint(
+    "thermo_mpnn_v2_ens1",
+    local_path="dummy.eqx",
+    has_ddg_out_scale=True,
+  )
+  assert v2_with_scale.ddg_out is not None
+  assert v2_with_scale.light_attention.kernel_size == 1
+  assert v2_with_scale.apply_chain_mask_to_order is True
+
+
+def test_embedded_trunk_preference_and_npz_normalization(tmp_path: Path) -> None:
+  """Verify embedded trunk preference, conflict detection, fallback unconsumed check, and .npz normalization."""
+  v2_sd = _build_synthetic_v2_single_state_dict()
+  fallback_mpnn = _build_synthetic_mpnn_state_dict(np.random.default_rng(999))
+
+  # Passing mpnn_state_dict when state_dict already embeds prot_mpnn.* raises unless override_embedded_mpnn=True
+  with pytest.raises(ValueError, match="already embeds"):
+    convert_thermo_mpnn_state_dict(v2_sd, mpnn_state_dict=fallback_mpnn)
+
+  overridden = convert_thermo_mpnn_state_dict(
+    v2_sd,
+    mpnn_state_dict=fallback_mpnn,
+    override_embedded_mpnn=True,
+  )
+  assert np.allclose(np.asarray(overridden.mpnn.w_s_embed.weight), fallback_mpnn["prot_mpnn.W_s.weight"])
+
+  # Unconsumed keys in fallback mpnn_state_dict raise ValueError
+  head_only_sd = {k: v for k, v in v2_sd.items() if not k.startswith("prot_mpnn.")}
+  bad_fallback = dict(fallback_mpnn)
+  bad_fallback["unexpected_mpnn_key"] = np.zeros((4,), dtype=np.float32)
+  with pytest.raises(ValueError, match="unconsumed keys in fallback mpnn_state_dict"):
+    convert_thermo_mpnn_state_dict(head_only_sd, mpnn_state_dict=bad_fallback)
+
+  # .npz with 'model.' prefix normalizes keys before checking for embedded trunk
+  prefixed_npz = tmp_path / "model_prefixed.npz"
+  np.savez(prefixed_npz, **{f"model.{k}": v for k, v in v2_sd.items()})
+  loaded_npz_model = load_thermo_mpnn_pt(prefixed_npz)
+  assert np.allclose(np.asarray(loaded_npz_model.mpnn.w_s_embed.weight), v2_sd["prot_mpnn.W_s.weight"])
+
+
+def test_safe_unpickler_allowlist_refuses_disallowed_globals() -> None:
+  """Verify ``_SafeUnpickler`` refuses arbitrary globals outside the checkpoint allowlist."""
+  import io
+
+  unpickler = _SafeUnpickler(io.BytesIO(b""))
+  with pytest.raises(pickle.UnpicklingError, match="disallowed global"):
+    unpickler.find_class("os", "system")
+  with pytest.raises(pickle.UnpicklingError, match="disallowed global"):
+    unpickler.find_class("subprocess", "Popen")

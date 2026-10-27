@@ -79,7 +79,8 @@ def test_pinned_revision_serves_every_family_checkpoint() -> None:
   wanted = {
     name
     for row in table["checkpoints"]
-    for name in (row["filename"], row["manifest_filename"])
+    for name in (row["filename"], row.get("manifest_filename"))
+    if name is not None
   }
   try:
     at_pin = set(list_repo_files(HF_REPO_ID, revision=HF_REVISION))
