@@ -1233,6 +1233,8 @@ def score(  # noqa: PLR0915
       score_chain_index = trim_residue_axis(score_chain_index, rung, 1)
       score_sequences = trim_residue_axis(score_sequences, rung, 1)
       score_ligand = tuple(trim_residue_axis(part, rung, 1) for part in score_ligand)
+      if batch_ar_mask is not None:
+        batch_ar_mask = batch_ar_mask[:rung, :rung]
 
     if split_fns is not None:
       # The noise-level axis is vmapped, so its activations coexist: scale by D.

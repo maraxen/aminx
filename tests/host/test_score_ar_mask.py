@@ -190,3 +190,30 @@ def test_score_is_the_mean_negative_log_prob_of_the_scored_tokens_under_the_mask
 def test_candidate_length_must_match_the_mask() -> None:
   with pytest.raises(ValueError, match="exactly"):
     score(_spec([_UBIQUITIN, _UBIQUITIN[:60]], ar_mask=np.asarray(full_context_ar_mask(_L))))
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+def test_score_ar_mask_with_length_bucketing_rung_slice() -> None:
+  """Under length bucketing, batch_ar_mask must be sliced to rung when max_length > rung."""
+  mask = np.asarray(full_context_ar_mask(_L))
+  spec_bucketed_256 = ScoringSpecification(
+    inputs=[_STRUCTURE],
+    checkpoint_id=_CHECKPOINT,
+    sequences_to_score=[_UBIQUITIN],
+    max_length=256,
+    ar_mask=mask,
+    return_logits=True,
+  )
+  spec_bucketed_128 = _spec([_UBIQUITIN], ar_mask=mask)
+
+  res_256 = score(spec_bucketed_256)
+  res_128 = score(spec_bucketed_128)
+
+  nll_256 = np.asarray(res_256["scores"])[0]
+  nll_128 = np.asarray(res_128["scores"])[0]
+  logits_256 = np.asarray(res_256["logits"])[0][:, :_L, :]
+  logits_128 = np.asarray(res_128["logits"])[0][:, :_L, :]
+
+  np.testing.assert_allclose(nll_256, nll_128, rtol=0, atol=_FP_ATOL)
+  np.testing.assert_allclose(logits_256, logits_128, rtol=0, atol=_FP_ATOL)
