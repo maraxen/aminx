@@ -16,7 +16,7 @@ from aminx.model.encoder import (
   Encoder,
   PhysicsEncoder,
 )
-from aminx.model.features import ProteinFeatures
+from aminx.model.features import ProteinFeatures, ProteinFeaturesCA
 
 if TYPE_CHECKING:
   from aminx.types.arrays import PRNGKeyArray
@@ -27,7 +27,7 @@ else:
 class Aminx(eqx.Module):
   """The complete end-to-end ProteinMPNN model."""
 
-  features: ProteinFeatures
+  features: ProteinFeatures | ProteinFeaturesCA
   encoder: Encoder | PhysicsEncoder
   decoder: Decoder
 
@@ -53,6 +53,7 @@ class Aminx(eqx.Module):
     vocab_size: int = 21,
     dropout_rate: float = 0.1,
     *,
+    ca_only: bool = False,
     key: PRNGKeyArray,
   ) -> None:
     self.node_features_dim = node_features
@@ -61,7 +62,8 @@ class Aminx(eqx.Module):
 
     keys = jax.random.split(key, 5)
 
-    self.features = ProteinFeatures(
+    features_cls = ProteinFeaturesCA if ca_only else ProteinFeatures
+    self.features = features_cls(
       node_features,
       edge_features,
       k_neighbors,

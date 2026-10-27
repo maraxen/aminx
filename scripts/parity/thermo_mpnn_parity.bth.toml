@@ -1,0 +1,50 @@
+[experiment]
+hypothesis = "JAX ThermoMPNN (v1/v2 single-mutant) and ThermoMPNNDouble (v2 epistatic Siamese) match the upstream PyTorch reference within 1e-7 in float64 and 1e-4 in float32 on 1ubq.pdb, preserve exact 0.0 wild-type self-mutation and mutation-slot order invariance, and fail decisively (> 1e-2) under all four structural/algebraic negative controls."
+stage_name = "validation"
+
+[reproduction]
+reproduces_paper = "doi:10.1073/pnas.2314853121"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail", "marginal"]
+
+[requires.waiver]
+reason = "CPU parity verification vehicle against upstream PyTorch checkpoints"
+
+[outcomes.pass]
+condition = "v1_f64_max_abs_diff < 1e-7 AND v2_f64_max_abs_diff < 1e-7 AND double_f64_max_abs_diff < 1e-7 AND v1_f32_max_abs_diff < 1e-4 AND v2_f32_max_abs_diff < 1e-4 AND double_f32_max_abs_diff < 1e-4 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2"
+decision = "Promote ThermoMPNN and ThermoMPNNDouble JAX ports and converted .eqx.zst weights."
+reasoning = "All single-mutant (v1/v2) and double-mutant (v2) stages match upstream PyTorch within 1e-7 in float64 and 1e-4 in float32, algebraic invariants hold exactly, and all negative controls trip."
+is_residual = false
+
+[outcomes.marginal]
+condition = "v1_f64_max_abs_diff < 1e-5 AND v2_f64_max_abs_diff < 1e-5 AND double_f64_max_abs_diff < 1e-5 AND v1_f32_max_abs_diff < 1e-3 AND v2_f32_max_abs_diff < 1e-3 AND double_f32_max_abs_diff < 1e-3 AND neg_ctrl_min_max_abs_diff > 1e-2"
+decision = "Investigate numerical drift between PyTorch and JAX stages before promoting."
+reasoning = "Forward outputs are close to upstream PyTorch and negative controls trip, but float64 or float32 tolerances exceed the strict 1e-7 / 1e-4 parity bar."
+is_residual = false
+
+[outcomes.fail]
+condition = "v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2"
+decision = "Block promotion and debug trunk, LightAttention1D, or Siamese head mismatch."
+reasoning = "Parity error exceeds tolerance, an algebraic invariant is violated, or a negative control failed to trip."
+is_residual = true
+
+[result_schema]
+pdb_id = "str"
+num_residues = "int"
+n_neighbor_pairs = "int"
+n_distant_pairs = "int"
+v1_f64_max_abs_diff = "float"
+v2_f64_max_abs_diff = "float"
+double_f64_max_abs_diff = "float"
+v1_f32_max_abs_diff = "float"
+v2_f32_max_abs_diff = "float"
+double_f32_max_abs_diff = "float"
+wt_self_max_abs_diff = "float"
+order_invariance_max_abs_diff = "float"
+neg_ctrl_reversed_hidden_diff = "float"
+neg_ctrl_omit_seq_sub_diff = "float"
+neg_ctrl_zero_edges_diff = "float"
+neg_ctrl_permuted_out_diff = "float"
+neg_ctrl_min_max_abs_diff = "float"

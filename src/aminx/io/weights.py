@@ -38,7 +38,12 @@ HF_REPO_ID = "maraxen/aminx"
 # model-card section and a ``.gitattributes`` rule. Verified against the Hub: all 15 weight files
 # present at aa80d0fd are byte-identical here, so this pin loads the same MPNN weights as before
 # and code on the aa80d0fd layout stays compatible with it.
-HF_REVISION = "d9a84e797cc63042108a399b0ebe7feeb775f8ab"
+#
+# c47a40c4 (2026-10-26) only ADDED files: the 16 Tier 1/2/3 MPNN variant checkpoints
+# (abmpnn_v_48_020, hypermpnn_v_48_{002,010,020,030}, cyclicmpnn_v_48_010, ca_v_48_{002,010,020},
+# thermo_mpnn_v1_default, thermo_mpnn_v2_ens{1,2,3}, thermo_mpnn_d_ens{1,2,3}) plus updated
+# NOTICE-weights.md and README.md. All prior MPNN and family weights remain byte-identical.
+HF_REVISION = "c47a40c4cb8c5684a2d2460ef442d7c20124e24c"
 
 #: Env var naming a directory that is AUTHORITATIVE for weights when set. A missing file there
 #: raises instead of silently falling through to the Hub -- the silent fallback is the defect
@@ -70,6 +75,23 @@ LEGACY_ALIAS_MAP = {
   ("soluble", "v_48_010"): "solublempnn_v_48_010.eqx.zst",
   ("soluble", "v_48_020"): "solublempnn_v_48_020.eqx.zst",
   ("soluble", "v_48_030"): "solublempnn_v_48_030.eqx.zst",
+  ("abmpnn", "v_48_020"): "abmpnn_v_48_020.eqx.zst",
+  ("hypermpnn", "v_48_002"): "hypermpnn_v_48_002.eqx.zst",
+  ("hypermpnn", "v_48_010"): "hypermpnn_v_48_010.eqx.zst",
+  ("hypermpnn", "v_48_020"): "hypermpnn_v_48_020.eqx.zst",
+  ("hypermpnn", "v_48_030"): "hypermpnn_v_48_030.eqx.zst",
+  ("cyclicmpnn", "v_48_010"): "cyclicmpnn_v_48_010.eqx.zst",
+  ("ca", "v_48_002"): "ca_v_48_002.eqx.zst",
+  ("ca", "v_48_010"): "ca_v_48_010.eqx.zst",
+  ("ca", "v_48_020"): "ca_v_48_020.eqx.zst",
+}
+
+_BARE_VARIANT_DEFAULTS = {
+  "abmpnn": "abmpnn_v_48_020.eqx.zst",
+  "hypermpnn": "hypermpnn_v_48_020.eqx.zst",
+  "cyclicmpnn": "cyclicmpnn_v_48_010.eqx.zst",
+  "ca": "ca_v_48_020.eqx.zst",
+  "campnn": "ca_v_48_020.eqx.zst",
 }
 
 
@@ -101,17 +123,24 @@ def get_topology_for_checkpoint(checkpoint_id: str) -> dict[str, int | bool | st
   elif "ligandmpnn" in name:
     topology["model_type"] = "ligand"
     topology["num_positional_embeddings"] = 32
+  elif (
+    name.startswith(("ca_", "campnn_"))
+    or "_ca_" in name
+    or name.removesuffix(".zst").removesuffix(".eqx") in ("ca", "campnn")
+  ):
+    topology["model_type"] = "ca"
   elif "membrane" in name:
     topology["physics_feature_dim"] = 3
 
-  parts = name.split("_")
-  if len(parts) >= 2:
-    try:
-      last_part = parts[-1].replace(".eqx", "").replace(".zst", "")
-      if last_part.isdigit() and int(last_part) not in [32, 48, 30]:
-        topology["atom_context_num"] = int(last_part)
-    except ValueError:
-      pass
+  if topology["model_type"] in ("ligand", "packer"):
+    parts = name.split("_")
+    if len(parts) >= 2:
+      try:
+        last_part = parts[-1].replace(".eqx", "").replace(".zst", "")
+        if last_part.isdigit() and int(last_part) not in [32, 48, 30]:
+          topology["atom_context_num"] = int(last_part)
+      except ValueError:
+        pass
 
   return topology
 
@@ -396,8 +425,17 @@ def load_model(
   if key is None:
     key = jax.random.PRNGKey(0)
 
+  if checkpoint_id:
+    bare = checkpoint_id.lower().removesuffix(".zst").removesuffix(".eqx")
+    if bare in _BARE_VARIANT_DEFAULTS:
+      checkpoint_id = _BARE_VARIANT_DEFAULTS[bare]
+
   # Support legacy API usage where checkpoint_id was named model_version
-  if checkpoint_id and ("_v_" in checkpoint_id or "mpnn" in checkpoint_id):
+  if checkpoint_id and (
+    "_v_" in checkpoint_id
+    or "mpnn" in checkpoint_id
+    or checkpoint_id.startswith(("ca_", "campnn_"))
+  ):
     # Valid checkpoint id
     pass
   elif checkpoint_id and not model_version:
@@ -412,6 +450,14 @@ def load_model(
         checkpoint_id = filename
       else:
         checkpoint_id = f"{model_weights}_{model_version}.eqx.zst"
+    elif model_weights == "abmpnn":
+      checkpoint_id = "abmpnn_v_48_020.eqx.zst"
+    elif model_weights == "hypermpnn":
+      checkpoint_id = "hypermpnn_v_48_020.eqx.zst"
+    elif model_weights == "cyclicmpnn":
+      checkpoint_id = "cyclicmpnn_v_48_010.eqx.zst"
+    elif model_weights == "ca":
+      checkpoint_id = "ca_v_48_020.eqx.zst"
     else:
       checkpoint_id = "proteinmpnn_v_48_020.eqx.zst"
 
@@ -469,6 +515,7 @@ def load_model(
       k_neighbors=topo["k_neighbors"],
       num_positional_embeddings=topo["num_positional_embeddings"],
       dropout_rate=dropout_rate,
+      ca_only=(model_type == "ca"),
       key=key,
     )
 

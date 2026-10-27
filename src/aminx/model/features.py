@@ -465,3 +465,372 @@ class ProteinFeatures(eqx.Module):
       neighbor_indices=neighbor_indices,
     )
     return stages.final, stages.neighbor_indices, stages.node_features_out, stages.prng_key
+
+
+def _normalize(v: jax.Array, eps: float = 1e-12) -> jax.Array:
+  """Normalize vectors along the last axis, matching ``torch.nn.functional.normalize``."""
+  norm = jnp.linalg.norm(v, axis=-1, keepdims=True)
+  return v / jnp.maximum(norm, jnp.asarray(eps, dtype=v.dtype))
+
+
+def _quaternions(r_mat: jax.Array) -> jax.Array:
+  """Convert a batch of 3D rotation matrices ``(..., 3, 3)`` to quaternions ``(..., 4)``."""
+  diag = jnp.diagonal(r_mat, axis1=-2, axis2=-1)
+  rxx, ryy, rzz = diag[..., 0], diag[..., 1], diag[..., 2]
+  magnitudes = 0.5 * jnp.sqrt(
+    jnp.abs(
+      1.0
+      + jnp.stack(
+        [
+          rxx - ryy - rzz,
+          -rxx + ryy - rzz,
+          -rxx - ryy + rzz,
+        ],
+        axis=-1,
+      ),
+    ),
+  )
+  signs = jnp.sign(
+    jnp.stack(
+      [
+        r_mat[..., 2, 1] - r_mat[..., 1, 2],
+        r_mat[..., 0, 2] - r_mat[..., 2, 0],
+        r_mat[..., 1, 0] - r_mat[..., 0, 1],
+      ],
+      axis=-1,
+    ),
+  )
+  xyz = signs * magnitudes
+  w = jnp.sqrt(jax.nn.relu(1.0 + jnp.sum(diag, axis=-1, keepdims=True))) / 2.0
+  q = jnp.concatenate([xyz, w], axis=-1)
+  return _normalize(q)
+
+
+def _orientations_coarse(
+  ca: jax.Array,
+  neighbor_indices: jax.Array,
+  eps: float = 1e-6,
+) -> tuple[jax.Array, jax.Array]:
+  """Compute coarse CA-only orientation features matching ``CA_ProteinFeatures._orientations_coarse``."""
+  dx = ca[1:, :] - ca[:-1, :]
+  dx_norm = jnp.linalg.norm(dx, axis=-1)
+  dx_mask = (dx_norm > 3.6) & (dx_norm < 4.0)
+  dx = dx * dx_mask[:, None]
+  u = _normalize(dx)
+  u_2 = u[:-2, :]
+  u_1 = u[1:-1, :]
+  u_0 = u[2:, :]
+  n_2 = _normalize(jnp.cross(u_2, u_1))
+  n_1 = _normalize(jnp.cross(u_1, u_0))
+
+  cos_a = jnp.clip(-jnp.sum(u_1 * u_0, axis=-1), -1.0 + eps, 1.0 - eps)
+  angle_a = jnp.arccos(cos_a)
+  cos_d = jnp.clip(jnp.sum(n_2 * n_1, axis=-1), -1.0 + eps, 1.0 - eps)
+  angle_d = jnp.sign(jnp.sum(u_2 * n_1, axis=-1)) * jnp.arccos(cos_d)
+  ad_features = jnp.stack(
+    [jnp.cos(angle_a), jnp.sin(angle_a) * jnp.cos(angle_d), jnp.sin(angle_a) * jnp.sin(angle_d)],
+    axis=-1,
+  )
+  ad_features = jnp.pad(ad_features, ((1, 2), (0, 0)), mode="constant", constant_values=0.0)
+
+  o_1 = _normalize(u_2 - u_1)
+  o_mat = jnp.stack([o_1, n_2, jnp.cross(o_1, n_2)], axis=1)
+  o_mat = jnp.pad(o_mat, ((1, 2), (0, 0), (0, 0)), mode="constant", constant_values=0.0)
+  o_neighbors = o_mat[neighbor_indices]
+  ca_neighbors = ca[neighbor_indices]
+
+  dx_pair = ca_neighbors - ca[:, None, :]
+  du = jnp.matmul(o_mat[:, None, :, :], dx_pair[..., None])[..., 0]
+  du = _normalize(du)
+  r_mat = jnp.matmul(jnp.swapaxes(o_mat[:, None, :, :], -1, -2), o_neighbors)
+  q = _quaternions(r_mat)
+  o_features = jnp.concatenate([du, q], axis=-1)
+  return ad_features, o_features
+
+
+def _ca_rbf(d_neighbors: jax.Array, num_rbf: int = 16) -> jax.Array:
+  """Compute radial basis functions on neighbor distances ``(L, K)``."""
+  d_min, d_max = 2.0, 22.0
+  d_mu = jnp.linspace(d_min, d_max, num_rbf, dtype=d_neighbors.dtype)[None, None, :]
+  d_sigma = jnp.asarray((d_max - d_min) / num_rbf, dtype=d_neighbors.dtype)
+  return jnp.exp(-jnp.square((d_neighbors[..., None] - d_mu) / d_sigma))
+
+
+def _ca_pair_rbf(
+  coord_a: jax.Array,
+  coord_b: jax.Array,
+  neighbor_indices: jax.Array,
+  num_rbf: int = 16,
+) -> jax.Array:
+  """Compute gathered radial basis functions between ``coord_a`` and ``coord_b``."""
+  diff = coord_a[:, None, :] - coord_b[neighbor_indices]
+  d_ab_neighbors = jnp.sqrt(jnp.sum(diff * diff, axis=-1) + jnp.asarray(1e-6, dtype=coord_a.dtype))
+  return _ca_rbf(d_ab_neighbors, num_rbf)
+
+
+class ProteinFeaturesCA(eqx.Module):
+  """Extracts and projects CA-only features matching upstream ``CA_ProteinFeatures``."""
+
+  w_pos: eqx.nn.Linear
+  w_e: eqx.nn.Linear
+  norm_edges: LayerNorm
+  w_e_proj: eqx.nn.Linear
+  k_neighbors: int = eqx.field(static=True)
+  rbf_dim: int = eqx.field(static=True)
+  pos_embed_dim: int = eqx.field(static=True)
+  num_positional_embeddings: int = eqx.field(static=True)
+
+  def __init__(
+    self,
+    node_features: int,
+    edge_features: int,
+    k_neighbors: int,
+    num_positional_embeddings: int = 16,
+    *,
+    key: PRNGKeyArray,
+  ) -> None:
+    """Initialize CA-only feature extraction layers.
+
+    Parameters
+    ----------
+    node_features : int
+      Node feature dimension (unused in CA-only feature projection).
+    edge_features : int
+      Edge feature output dimension.
+    k_neighbors : int
+      Number of nearest neighbors per residue.
+    num_positional_embeddings : int
+      Maximum relative sequence offset ``max_relative_feature``.
+    key : PRNGKeyArray
+      PRNG key for parameter initialization.
+
+    Returns
+    -------
+    None
+      Initializes module attributes in place.
+    """
+    del node_features
+
+    keys = jax.random.split(key, 3)
+
+    self.k_neighbors = k_neighbors
+    self.rbf_dim = 16
+    self.pos_embed_dim = 16
+    self.num_positional_embeddings = num_positional_embeddings
+
+    pos_one_hot_dim = 2 * num_positional_embeddings + 2
+    edge_embed_in_dim = 16 + 16 * 9 + 7  # 167
+
+    self.w_pos = eqx.nn.Linear(pos_one_hot_dim, 16, use_bias=True, key=keys[0])
+    self.w_e = eqx.nn.Linear(edge_embed_in_dim, edge_features, use_bias=False, key=keys[1])
+    self.norm_edges = LayerNorm(edge_features)
+    self.w_e_proj = eqx.nn.Linear(edge_features, edge_features, key=keys[2])
+
+  def forward_edge_stages(
+    self,
+    prng_key: PRNGKeyArray,
+    structure_coordinates: StructureAtomicCoordinates,
+    mask: AlphaCarbonMask,
+    residue_index: ResidueIndex,
+    chain_index: ChainIndex,
+    backbone_noise: BackboneNoise | None,
+    backbone_noise_mode: str = "direct",
+    structure_mapping: jnp.ndarray | None = None,
+    initial_node_features: jnp.ndarray | None = None,
+    rbf_features: jnp.ndarray | None = None,
+    neighbor_indices: jnp.ndarray | None = None,
+  ) -> ProteinEdgeStageTensors:
+    """Run the CA-only edge pipeline and return intermediates.
+
+    Parameters
+    ----------
+    prng_key : PRNGKeyArray
+      PRNG key for coordinate noise.
+    structure_coordinates : StructureAtomicCoordinates
+      Atomic coordinates ``(N, 4, 3)`` or CA-only ``(N, 3)``.
+    mask : AlphaCarbonMask
+      Alpha carbon presence mask.
+    residue_index : ResidueIndex
+      Residue sequence indices.
+    chain_index : ChainIndex
+      Chain integer indices.
+    backbone_noise : BackboneNoise | None
+      Standard deviation of Gaussian coordinate noise.
+    backbone_noise_mode : str
+      Mode for backbone noise (``"direct"`` or ``"thermal"``).
+    structure_mapping : jnp.ndarray | None
+      Optional structure ID mapping to isolate multi-state neighbors.
+    initial_node_features : jnp.ndarray | None
+      Optional initial node features.
+    rbf_features : jnp.ndarray | None
+      Unused placeholder for API compatibility with ``ProteinFeatures``.
+    neighbor_indices : jnp.ndarray | None
+      Optional precomputed ``(N, K)`` neighbor indices.
+
+    Returns
+    -------
+    ProteinEdgeStageTensors
+      Named tuple of intermediate and final projected edge tensors.
+    """
+    del rbf_features
+    node_features = None if initial_node_features is None else initial_node_features
+
+    if backbone_noise is None:
+      backbone_noise = jnp.array(0.0, dtype=structure_coordinates.dtype)
+
+    if structure_coordinates.ndim == 2:
+      ca = structure_coordinates
+    elif structure_coordinates.shape[1] == 1:
+      ca = structure_coordinates[:, 0, :]
+    else:
+      ca = structure_coordinates[:, 1, :]
+
+    if backbone_noise_mode == "thermal":
+      thermal_energy = jnp.maximum(0.5 * BOLTZMANN_KCAL * backbone_noise, 0.0)
+      final_sigma = jnp.sqrt(thermal_energy)
+    else:
+      final_sigma = backbone_noise
+
+    ca, prng_key = apply_noise_to_coordinates(
+      prng_key,
+      ca,
+      backbone_noise=final_sigma,
+    )
+
+    mask_2d = (mask[:, None] * mask[None, :]).astype(ca.dtype)
+    dx = ca[:, None, :] - ca[None, :, :]
+    d_ca = mask_2d * jnp.sqrt(jnp.sum(dx * dx, axis=-1) + jnp.asarray(1e-6, dtype=ca.dtype))
+    d_max = jnp.max(d_ca, axis=-1, keepdims=True)
+    d_adjust = d_ca + (1.0 - mask_2d) * d_max
+
+    if neighbor_indices is None:
+      d_for_topk = d_adjust
+      if structure_mapping is not None:
+        same_structure = structure_mapping[:, None] == structure_mapping[None, :]
+        d_for_topk = jnp.where(same_structure, d_for_topk, jnp.inf)
+      k_clamped = min(self.k_neighbors, ca.shape[0])
+      _, neighbor_indices = top_k(-d_for_topk, k_clamped)
+
+    neighbor_indices = jnp.asarray(neighbor_indices, dtype=jnp.int32)
+    d_neighbors = jnp.take_along_axis(d_adjust, neighbor_indices, axis=1)
+
+    ca_0 = jnp.zeros_like(ca).at[1:, :].set(ca[:-1, :])
+    ca_1 = ca
+    ca_2 = jnp.zeros_like(ca).at[:-1, :].set(ca[1:, :])
+
+    _, o_features = _orientations_coarse(ca, neighbor_indices)
+
+    rbf_all = jnp.concatenate(
+      [
+        _ca_rbf(d_neighbors, self.rbf_dim),
+        _ca_pair_rbf(ca_0, ca_0, neighbor_indices, self.rbf_dim),
+        _ca_pair_rbf(ca_2, ca_2, neighbor_indices, self.rbf_dim),
+        _ca_pair_rbf(ca_0, ca_1, neighbor_indices, self.rbf_dim),
+        _ca_pair_rbf(ca_0, ca_2, neighbor_indices, self.rbf_dim),
+        _ca_pair_rbf(ca_1, ca_0, neighbor_indices, self.rbf_dim),
+        _ca_pair_rbf(ca_1, ca_2, neighbor_indices, self.rbf_dim),
+        _ca_pair_rbf(ca_2, ca_0, neighbor_indices, self.rbf_dim),
+        _ca_pair_rbf(ca_2, ca_1, neighbor_indices, self.rbf_dim),
+      ],
+      axis=-1,
+    )
+
+    neighbor_offsets = compute_neighbor_offsets(residue_index, neighbor_indices)
+    edge_chains = (chain_index[:, None] == chain_index[None, :]).astype(jnp.int32)
+    edge_chains_neighbors = jnp.take_along_axis(
+      edge_chains,
+      neighbor_indices,
+      axis=1,
+    )
+
+    MAX_REL = (self.w_pos.weight.shape[1] - 2) // 2
+    neighbor_offset_factor = jnp.minimum(
+      jnp.maximum(neighbor_offsets + MAX_REL, 0),
+      2 * MAX_REL,
+    )
+    edge_chain_factor = (1 - edge_chains_neighbors) * (2 * MAX_REL + 1)
+    encoded_offset = neighbor_offset_factor * edge_chains_neighbors + edge_chain_factor
+    encoded_offset_one_hot = jax.nn.one_hot(
+      encoded_offset,
+      2 * MAX_REL + 2,
+      dtype=ca.dtype,
+    )
+
+    encoded_positions = jax.vmap(jax.vmap(self.w_pos))(encoded_offset_one_hot)
+    edges_concat = jnp.concatenate([encoded_positions, rbf_all, o_features], axis=-1)
+    after_w_e = jax.vmap(jax.vmap(self.w_e))(edges_concat)
+    after_norm = jax.vmap(jax.vmap(self.norm_edges))(after_w_e)
+    final = jax.vmap(jax.vmap(self.w_e_proj))(after_norm)
+
+    return ProteinEdgeStageTensors(
+      neighbor_indices=neighbor_indices,
+      rbf=rbf_all,
+      encoded_positions=encoded_positions,
+      edges_concat=edges_concat,
+      after_w_e=after_w_e,
+      after_norm=after_norm,
+      final=final,
+      node_features_out=node_features,
+      prng_key=prng_key,
+    )
+
+  def __call__(
+    self,
+    prng_key: PRNGKeyArray,
+    structure_coordinates: StructureAtomicCoordinates,
+    mask: AlphaCarbonMask,
+    residue_index: ResidueIndex,
+    chain_index: ChainIndex,
+    backbone_noise: BackboneNoise | None,
+    backbone_noise_mode: str = "direct",
+    structure_mapping: jnp.ndarray | None = None,
+    initial_node_features: jnp.ndarray | None = None,
+    rbf_features: jnp.ndarray | None = None,
+    neighbor_indices: jnp.ndarray | None = None,
+  ) -> tuple[EdgeFeatures, NeighborIndices, NodeFeatures | None, PRNGKeyArray]:
+    """Extract and project CA-only features from protein structure.
+
+    Parameters
+    ----------
+    prng_key : PRNGKeyArray
+      PRNG key for coordinate noise.
+    structure_coordinates : StructureAtomicCoordinates
+      Atomic coordinates ``(N, 4, 3)`` or CA-only ``(N, 3)``.
+    mask : AlphaCarbonMask
+      Alpha carbon presence mask.
+    residue_index : ResidueIndex
+      Residue sequence indices.
+    chain_index : ChainIndex
+      Chain integer indices.
+    backbone_noise : BackboneNoise | None
+      Standard deviation of Gaussian coordinate noise.
+    backbone_noise_mode : str
+      Mode for backbone noise (``"direct"`` or ``"thermal"``).
+    structure_mapping : jnp.ndarray | None
+      Optional structure ID mapping to isolate multi-state neighbors.
+    initial_node_features : jnp.ndarray | None
+      Optional initial node features.
+    rbf_features : jnp.ndarray | None
+      Unused placeholder for API compatibility with ``ProteinFeatures``.
+    neighbor_indices : jnp.ndarray | None
+      Optional precomputed ``(N, K)`` neighbor indices.
+
+    Returns
+    -------
+    tuple[EdgeFeatures, NeighborIndices, NodeFeatures | None, PRNGKeyArray]
+      Tuple of ``(edge_features, neighbor_indices, node_features_out, prng_key)``.
+    """
+    stages = self.forward_edge_stages(
+      prng_key,
+      structure_coordinates,
+      mask,
+      residue_index,
+      chain_index,
+      backbone_noise,
+      backbone_noise_mode=backbone_noise_mode,
+      structure_mapping=structure_mapping,
+      initial_node_features=initial_node_features,
+      rbf_features=rbf_features,
+      neighbor_indices=neighbor_indices,
+    )
+    return stages.final, stages.neighbor_indices, stages.node_features_out, stages.prng_key
