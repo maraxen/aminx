@@ -171,11 +171,11 @@ class RunSpecification:
       max_workers: Optional maximum number of data loading workers.
 
   Note:
-      Use ``output_h5_path`` on task-specific subclasses for streaming output (Zarr store
-      for sampling/jacobian; not yet implemented for score/inspect).
+      Use ``output_path`` (or ``output_zarr_path``; ``output_h5_path`` is kept as a deprecated alias)
+      on task-specific subclasses for streaming output (Zarr store for sampling/jacobian;
+      not yet implemented for score/inspect).
       ``output_dir`` (when set) overrides inferred output roots from ``cache_path`` / streaming
       output parents in :func:`~aminx.run.spec.build_run_spec`.
-      A saved document may still carry legacy ``output_path``; spec JSON migration drops it.
 
   """
 
@@ -222,7 +222,9 @@ class RunSpecification:
   conformational_states: ConformationalStates | None = None
   cache_path: str | Path | None = None
   output_dir: str | Path | None = None
-  """Explicit host output root; preferred over ``cache_path`` / ``output_h5_path`` inference."""
+  """Explicit host output root; preferred over ``cache_path`` / ``output_path`` inference."""
+  run_id: str | None = None
+  """Optional explicit run ID for provenance; if unset, derived deterministically."""
   max_buffer_size: int | None = None
   """Optional dataset buffer cap (bytes); forwarded to proxide-style loaders when set."""
   overwrite_cache: bool = False
@@ -633,6 +635,8 @@ class ScoringSpecification(RunSpecification):
   return_logits: bool = False
   return_decoding_orders: bool = False
   return_all_scores: bool = False
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   average_node_features: bool = False
   noise_batch_size: int = 4
@@ -655,8 +659,14 @@ class ScoringSpecification(RunSpecification):
         "`sequences_to_score` must be a non-empty list of strings."
       )
       raise ValueError(msg)
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    raw_output = self.output_path
+    if raw_output is None:
+      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
+    if raw_output is not None:
+      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
+      object.__setattr__(self, "output_path", resolved_out)
+      object.__setattr__(self, "output_zarr_path", resolved_out)
+      object.__setattr__(self, "output_h5_path", resolved_out)
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
     if self.ar_mask is not None:
@@ -681,6 +691,8 @@ class SamplingSpecification(RunSpecification):
   use_concrete: bool = False
   concrete_tau_start: float = 1.0
   concrete_tau_end: float = 0.1
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   return_logits: bool = True
   return_decoding_orders: bool = False
@@ -808,8 +820,14 @@ class SamplingSpecification(RunSpecification):
         msg = "sample_count must be positive when grid_mode=True."
         raise ValueError(msg)
       object.__setattr__(self, "sample_count", sample_count)
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    raw_output = self.output_path
+    if raw_output is None:
+      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
+    if raw_output is not None:
+      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
+      object.__setattr__(self, "output_path", resolved_out)
+      object.__setattr__(self, "output_zarr_path", resolved_out)
+      object.__setattr__(self, "output_h5_path", resolved_out)
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
     self._sync_run_spec()
@@ -828,6 +846,8 @@ class JacobianSpecification(RunSpecification):
   combine_weights: ArrayLike | None = None
   combine_fn: CombineCatJacPairFn | None = None
   combine_fn_kwargs: dict[str, Any] | None = None
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   compute_apc: bool = True
   apc_batch_size: int = 8
@@ -838,8 +858,14 @@ class JacobianSpecification(RunSpecification):
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    raw_output = self.output_path
+    if raw_output is None:
+      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
+    if raw_output is not None:
+      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
+      object.__setattr__(self, "output_path", resolved_out)
+      object.__setattr__(self, "output_zarr_path", resolved_out)
+      object.__setattr__(self, "output_h5_path", resolved_out)
     self._sync_run_spec()
 
 
@@ -851,6 +877,8 @@ MIN_PAIR = 2
 class InspectionSpecification(RunSpecification):
   """Configuration for inspecting model encodings and features."""
 
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   inspection_features: Sequence[
     Literal[
@@ -883,8 +911,14 @@ class InspectionSpecification(RunSpecification):
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    raw_output = self.output_path
+    if raw_output is None:
+      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
+    if raw_output is not None:
+      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
+      object.__setattr__(self, "output_path", resolved_out)
+      object.__setattr__(self, "output_zarr_path", resolved_out)
+      object.__setattr__(self, "output_h5_path", resolved_out)
     if self.cross_input_similarity and len(_loader_inputs(self.inputs)) < MIN_PAIR:
       msg = f"Cross-input similarity requires at least {MIN_PAIR} input structures."
       raise ValueError(msg)

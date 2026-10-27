@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal, Self, TypedDict
+from typing import Any, Literal, NotRequired, Self, TypedDict
 
 import jax
 import jax.numpy as jnp
@@ -42,22 +42,19 @@ class DesignPayload(TypedDict):
   """Serialized design payload."""
 
   sequence: Any  # jnp.ndarray (uint8), shape (n_canonical,)
-  logits: Any  # jnp.ndarray (float32 input, cast to float16 for storage), shape (n_canonical, 21)
+  logits: Any  # jnp.ndarray (float32 centered log-probs), shape (n_canonical, 21)
   scores: Any  # jnp.ndarray (float32)
   state_weights: Any  # jnp.ndarray (float32)
   metadata: DesignMetadata
+  wave_index: NotRequired[object]  # Optional wave index (array or scalar)
+  decoding_order: NotRequired[object]  # Optional decoding order array
 
 
 class DesignZarrWriter:
   """Writer for storing designs in a chunked Zarr store, one nested group per design.
 
   Note on logit precision:
-    Logits are stored as float16 to halve storage and bandwidth. float16 preserves
-    amino acid rank-ordering and softmax probabilities to <1% relative error for
-    logit values in [-20, 20]. When reading, upcast to float32 before computing
-    softmax or logsumexp to avoid float16 accumulation error:
-        logits = group["logits"][...].astype(np.float32)
-        probs = scipy.special.softmax(logits, axis=-1)
+    Logits are stored as centered float32 log-probs.
   """
 
   def __init__(
@@ -149,10 +146,12 @@ class DesignZarrWriter:
 
   def write(
     self,
-    key: tuple[int, ...],
+    key: tuple[int, ...] | tuple[str, ...],
     payload: DesignPayload,
     *,
     logits_bias_semantics: dict[str, Any] | None = None,
+    wave_index: object | None = None,
+    decoding_order: object | None = None,
   ) -> None:
     """Stage a design payload under ``key`` for drain into the Zarr store.
 
@@ -171,6 +170,9 @@ class DesignZarrWriter:
         fabricating a value here would misdescribe that path's actual provenance.
 
         Must NOT claim ``bias_persisted: True`` -- see Raises.
+      wave_index: OPTIONAL wave index (scalar or array) describing the chromatic / wave
+        decomposition under which the design was generated.
+      decoding_order: OPTIONAL decoding order array describing the autoregressive order.
 
     Raises:
       ValueError: If ``logits_bias_semantics["bias_persisted"]`` is true. This writer
@@ -186,10 +188,8 @@ class DesignZarrWriter:
     assert logits_f32.shape == (self.n_canonical, 21), (
       f"logits shape {logits_f32.shape} != {(self.n_canonical, 21)}"
     )
-    assert np.isfinite(logits_f32).all() and np.abs(logits_f32).max() < 1e4, (
-      f"Logit values out of float16-safe range: max={np.abs(logits_f32).max():.1f}"
-    )
-    logits = logits_f32.astype(np.float16)
+    assert np.isfinite(logits_f32).all(), "Logit values must be finite"
+    logits = logits_f32.astype(np.float32)
 
     scores = _to_numpy_float32(payload["scores"]).flatten()
     assert scores.shape == (1,), f"scores shape {scores.shape} != (1,)"
@@ -227,13 +227,34 @@ class DesignZarrWriter:
     if logits_bias_semantics is not None:
       attrs["logits_bias_semantics"] = logits_bias_semantics
 
+    stage_arrays: dict[str, Any] = {
+      "sequence": seq,
+      "logits": logits,
+      "scores": scores,
+      "state_weights": weights,
+    }
+
+    raw_wave = wave_index if wave_index is not None else payload.get("wave_index")
+    raw_order = decoding_order if decoding_order is not None else payload.get("decoding_order")
+
+    if raw_wave is not None:
+      if isinstance(raw_wave, (np.ndarray, jax.Array, list, tuple)):
+        wave_np = np.asarray(jax.device_get(raw_wave) if isinstance(raw_wave, jax.Array) else raw_wave)
+        stage_arrays["wave_index"] = wave_np
+        attrs["wave_index"] = wave_np.tolist()
+      else:
+        attrs["wave_index"] = raw_wave
+        stage_arrays["wave_index"] = np.asarray([raw_wave])
+
+    if raw_order is not None:
+      order_np = np.asarray(jax.device_get(raw_order) if isinstance(raw_order, jax.Array) else raw_order)
+      stage_arrays["decoding_order"] = order_np
+      attrs["decoding_order"] = order_np.tolist()
+
     self._sink.stage(
       key,
-      sequence=seq,
-      logits=logits,
-      scores=scores,
-      state_weights=weights,
       attrs=attrs,
+      **stage_arrays,
     )
 
   def close(self) -> None:

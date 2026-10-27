@@ -33,8 +33,38 @@ class IOConfig(eqx.Module):
   output_dir: Path | None = eqx.field(static=True)
   sink_kind: str = eqx.field(static=True)
   manifest_path: Path | None = eqx.field(static=True)
-  output_h5_path: Path | None = eqx.field(static=True)
+  output_path: Path | None = eqx.field(static=True)
   cache_path: Path | None = eqx.field(static=True)
+
+  def __init__(
+    self,
+    output_dir: Path | None = None,
+    sink_kind: str = "none",
+    manifest_path: Path | None = None,
+    output_path: Path | None = None,
+    cache_path: Path | None = None,
+    *,
+    output_h5_path: Path | None = None,
+    output_zarr_path: Path | None = None,
+  ) -> None:
+    resolved_output = output_path
+    if resolved_output is None:
+      resolved_output = output_zarr_path if output_zarr_path is not None else output_h5_path
+    self.output_dir = output_dir
+    self.sink_kind = sink_kind
+    self.manifest_path = manifest_path
+    self.output_path = resolved_output
+    self.cache_path = cache_path
+
+  @property
+  def output_h5_path(self) -> Path | None:
+    """Deprecated alias for output_path (actual storage is Zarr)."""
+    return self.output_path
+
+  @property
+  def output_zarr_path(self) -> Path | None:
+    """Canonical alias for output_path (Zarr store)."""
+    return self.output_path
 
 
 class ResourceConfig(eqx.Module):
@@ -305,18 +335,27 @@ def _optional_path(value: object | None) -> Path | None:
   return Path(fspath(cast("PathLike[str]", value)))
 
 
-def _output_h5_path(spec: object) -> Path | None:
-  raw = getattr(spec, "output_h5_path", None)
+def _output_path(spec: object) -> Path | None:
+  raw = getattr(spec, "output_path", None)
+  if raw is None:
+    raw = getattr(spec, "output_zarr_path", None)
+  if raw is None:
+    raw = getattr(spec, "output_h5_path", None)
   return _optional_path(raw)
+
+
+def _output_h5_path(spec: object) -> Path | None:
+  """Deprecated alias for _output_path."""
+  return _output_path(spec)
 
 
 def _infer_output_dir(spec: object) -> Path | None:
   explicit = getattr(spec, "output_dir", None)
   if explicit is not None:
     return _optional_path(explicit)
-  h5 = _output_h5_path(spec)
-  if h5 is not None:
-    return h5.parent
+  out = _output_path(spec)
+  if out is not None:
+    return out.parent
   cache = getattr(spec, "cache_path", None)
   if cache is not None:
     p = _optional_path(cache)
@@ -346,11 +385,50 @@ def _coerce_max_buffer_size(spec: object) -> int | None:
 
 
 def _infer_sink_kind(spec: object) -> str:
-  if _output_h5_path(spec) is not None:
+  if _output_path(spec) is not None:
     return "zarr"
   # IOConfig.sink_kind uses "zarr" | "none"; host tensor sinks register under OUTPUT_SINKS
   # (e.g. "noop", "streaming_tensor_staging" — see aminx.run.output_sinks).
   return "none"
+
+
+def _compute_deterministic_run_id(spec: object) -> str:
+  """Compute deterministic run_id from spec or its relevant fields (backlog-5560)."""
+  explicit = getattr(spec, "run_id", None)
+  if explicit:
+    return str(explicit)
+  hasher = hashlib.sha256()
+  hasher.update(spec.__class__.__name__.encode("utf-8"))
+  fields_to_hash = (
+    "model_name",
+    "model_version",
+    "model_weights",
+    "model_family",
+    "checkpoint_id",
+    "inputs",
+    "random_seed",
+    "seed",
+    "num_samples",
+    "temperature",
+    "sampling_strategy",
+    "output_path",
+    "output_zarr_path",
+    "output_h5_path",
+    "spec_hash",
+  )
+  for field_name in fields_to_hash:
+    val = getattr(spec, field_name, None)
+    if val is not None:
+      hasher.update(f"{field_name}:{val!r}".encode())
+  if hasattr(spec, "__dict__"):
+    for k in sorted(spec.__dict__.keys()):
+      if k.startswith("_") or k in fields_to_hash:
+        continue
+      v = spec.__dict__[k]
+      if isinstance(v, (int, float, str, bool, bytes, Path, list, tuple)):
+        hasher.update(f"{k}:{v!r}".encode())
+  digest = hasher.hexdigest()
+  return f"run-{digest[:16]}"
 
 
 def _coerce_n_states(spec: object) -> int:
@@ -430,7 +508,7 @@ def build_run_spec(spec: object) -> RunSpec:
     output_dir=_infer_output_dir(spec),
     sink_kind=_infer_sink_kind(spec),
     manifest_path=_optional_path(pre_idx),
-    output_h5_path=_output_h5_path(spec),
+    output_path=_output_path(spec),
     cache_path=_optional_path(getattr(spec, "cache_path", None)),
   )
 
@@ -530,6 +608,7 @@ def build_run_spec(spec: object) -> RunSpec:
     axes=getattr(spec, "axes", []),
     carry_specs=getattr(spec, "carry_specs", []),
     boundaries=getattr(spec, "boundaries", None),
+    run_id=_compute_deterministic_run_id(spec),
     io=io,
     resource=resource,
     multistate=multistate,

@@ -147,10 +147,6 @@ class RemovedSpecKey:
 # that is already ignored, so the document's meaning stays the same, and emits one
 # DeprecationWarning naming the key.
 _REMOVED_SPEC_KEYS: Mapping[str, RemovedSpecKey] = {
-  "output_path": RemovedSpecKey(
-    policy="drop",
-    note="removed; streaming output uses output_h5_path",
-  ),
   "score_batch_size": RemovedSpecKey(
     policy="drop",
     note="removed; already ignored",
