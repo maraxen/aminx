@@ -75,9 +75,15 @@ def test_axis_boundary_accepts_tap_and_sink():
     assert b.sink is not None
 
 
-def test_axis_boundary_is_eqx_module():
+def test_axis_boundary_is_an_xtrax_struct_that_equinox_filters_accept():
+    """Since xtrax 0.4.1b5 AxisBoundary is an xtrax.Struct, not an eqx.Module; it is
+    still a pytree, so equinox's filters partition and recombine it."""
+    import xtrax
+
     b = AxisBoundary()
-    assert isinstance(b, eqx.Module)
+    assert isinstance(b, xtrax.Struct)
+    arrays, static = eqx.partition(b, eqx.is_array)
+    assert eqx.combine(arrays, static) == b
 
 
 def test_axis_boundary_has_no_traced_leaves():
