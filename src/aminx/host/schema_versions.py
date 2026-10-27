@@ -40,10 +40,24 @@ INSPECTION_SCHEMA_VERSION: Final[str] = "inspection_v1"
 # Jacobian (gradient computation) schema version.
 JACOBIAN_SCHEMA_VERSION: Final[str] = "jacobian_v1"
 
+# Unified multi-backend campaign sink schema version.
+CAMPAIGN_SINK_SCHEMA_VERSION: Final[str] = "1.0.0"
+
+SCHEMA_VERSIONS: Final[dict[str, str]] = {
+  "grid_v1": GRID_SCHEMA_VERSION,
+  "sampling_v1": SAMPLING_SCHEMA_VERSION,
+  "scoring_v2": SCORING_SCHEMA_VERSION,
+  "inspection_v1": INSPECTION_SCHEMA_VERSION,
+  "jacobian_v1": JACOBIAN_SCHEMA_VERSION,
+  "campaign_sink_v1": CAMPAIGN_SINK_SCHEMA_VERSION,
+}
+
 __all__ = [
+  "CAMPAIGN_SINK_SCHEMA_VERSION",
   "GRID_SCHEMA_VERSION",
   "INSPECTION_SCHEMA_VERSION",
   "JACOBIAN_SCHEMA_VERSION",
   "SAMPLING_SCHEMA_VERSION",
+  "SCHEMA_VERSIONS",
   "SCORING_SCHEMA_VERSION",
 ]

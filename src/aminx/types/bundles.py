@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import equinox as eqx
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Bool, Float, Int
 
 
@@ -309,48 +310,81 @@ class WaveScheduleBundle(eqx.Module):
         Schedule with groups packed by color into waves (G may be > 1).
 
     """
-    present_groups = sorted({int(g) for g in tie_group_map.tolist()})
-    if len(present_groups) != len(group_colors):
+    gc = np.asarray(group_colors, dtype=np.int32)
+    tg = np.asarray(tie_group_map, dtype=np.int32).reshape(-1)
+    n_res = len(tg)
+
+    unique_groups = np.unique(tg)
+    num_unique = len(unique_groups)
+    if num_unique != len(gc):
       msg = (
-        f"group_colors has {len(group_colors)} entries but tie_group_map has "
-        f"{len(present_groups)} unique groups."
+        f"group_colors has {len(gc)} entries but tie_group_map has "
+        f"{num_unique} unique groups."
       )
       raise ValueError(msg)
-    group_colors_list = [int(c) for c in group_colors.tolist()]
 
-    num_waves = max(group_colors_list) + 1
-    groups_per_wave: list[list[int]] = [[] for _ in range(num_waves)]
-    for group_id, color in zip(present_groups, group_colors_list, strict=True):
-      groups_per_wave[color].append(group_id)
+    num_waves = int(np.max(gc)) + 1 if len(gc) > 0 else 0
+    if num_waves == 0:
+      return WaveScheduleBundle(
+        group_ids=jnp.zeros((0, 0), dtype=jnp.int32),
+        group_positions=jnp.zeros((0, 0, 0), dtype=jnp.int32),
+        group_valid=jnp.zeros((0, 0), dtype=jnp.bool_),
+        position_valid=jnp.zeros((0, 0, 0), dtype=jnp.bool_),
+      )
 
-    max_groups_per_wave = max(len(g) for g in groups_per_wave)
-    counts = jnp.bincount(tie_group_map.reshape(-1))
-    max_positions = int(jnp.max(counts))
+    # 1. Map each group to its slot within its wave
+    sort_g_idx = np.argsort(gc, kind="stable")
+    sorted_colors = gc[sort_g_idx]
+    sorted_groups = unique_groups[sort_g_idx]
 
-    group_ids_list = [[-1] * max_groups_per_wave for _ in range(num_waves)]
-    group_positions_list = [
-      [[0] * max_positions for _ in range(max_groups_per_wave)] for _ in range(num_waves)
-    ]
-    group_valid_list = [[False] * max_groups_per_wave for _ in range(num_waves)]
-    position_valid_list = [
-      [[False] * max_positions for _ in range(max_groups_per_wave)] for _ in range(num_waves)
-    ]
+    diff_c = np.diff(sorted_colors, prepend=sorted_colors[0] - 1)
+    new_wave = diff_c != 0
+    group_slots = np.cumsum(~new_wave) - np.maximum.accumulate(
+      np.where(new_wave, np.cumsum(~new_wave), 0),
+    )
+    max_groups_per_wave = int(np.max(group_slots)) + 1 if len(group_slots) > 0 else 0
 
-    for w, groups in enumerate(groups_per_wave):
-      for slot, g in enumerate(groups):
-        indices = jnp.where(tie_group_map == g)[0]
-        n = int(indices.shape[0])
-        group_ids_list[w][slot] = g
-        group_valid_list[w][slot] = True
-        for p in range(n):
-          group_positions_list[w][slot][p] = int(indices[p])
-          position_valid_list[w][slot][p] = True
+    # 2. Map positions to slots within each group
+    sort_pos_idx = np.argsort(tg, kind="stable")
+    sorted_pos = np.arange(n_res, dtype=np.int32)[sort_pos_idx]
+    sorted_tg = tg[sort_pos_idx]
+
+    diff_tg = np.diff(sorted_tg, prepend=sorted_tg[0] - 1)
+    new_tg = diff_tg != 0
+    pos_in_group = np.cumsum(~new_tg) - np.maximum.accumulate(
+      np.where(new_tg, np.cumsum(~new_tg), 0),
+    )
+    max_positions = int(np.max(pos_in_group)) + 1 if len(pos_in_group) > 0 else 0
+
+    # 3. Fast lookup mapping unique_groups -> (color, slot)
+    u_idx = np.searchsorted(unique_groups, sorted_groups)
+    group_to_color = np.zeros(num_unique, dtype=np.int32)
+    group_to_slot = np.zeros(num_unique, dtype=np.int32)
+    group_to_color[u_idx] = sorted_colors
+    group_to_slot[u_idx] = group_slots
+
+    # 4. Fill group arrays
+    group_ids_arr = np.full((num_waves, max_groups_per_wave), -1, dtype=np.int32)
+    group_valid_arr = np.zeros((num_waves, max_groups_per_wave), dtype=bool)
+    group_ids_arr[sorted_colors, group_slots] = sorted_groups
+    group_valid_arr[sorted_colors, group_slots] = True
+
+    # 5. Fill position arrays
+    group_pos_arr = np.zeros((num_waves, max_groups_per_wave, max_positions), dtype=np.int32)
+    pos_valid_arr = np.zeros((num_waves, max_groups_per_wave, max_positions), dtype=bool)
+
+    pos_u_idx = np.searchsorted(unique_groups, sorted_tg)
+    pos_colors = group_to_color[pos_u_idx]
+    pos_slots = group_to_slot[pos_u_idx]
+
+    group_pos_arr[pos_colors, pos_slots, pos_in_group] = sorted_pos
+    pos_valid_arr[pos_colors, pos_slots, pos_in_group] = True
 
     return WaveScheduleBundle(
-      group_ids=jnp.array(group_ids_list, dtype=jnp.int32),
-      group_positions=jnp.array(group_positions_list, dtype=jnp.int32),
-      group_valid=jnp.array(group_valid_list, dtype=jnp.bool_),
-      position_valid=jnp.array(position_valid_list, dtype=jnp.bool_),
+      group_ids=jnp.array(group_ids_arr, dtype=jnp.int32),
+      group_positions=jnp.array(group_pos_arr, dtype=jnp.int32),
+      group_valid=jnp.array(group_valid_arr, dtype=jnp.bool_),
+      position_valid=jnp.array(pos_valid_arr, dtype=jnp.bool_),
     )
 
   @staticmethod

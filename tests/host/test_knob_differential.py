@@ -40,12 +40,17 @@ from tests.host.knob_observations import (
   KNOWN_BROKEN_TIER_B,
   OBSERVATIONS,
   Bundle,
+  DeprecatedOption,
+  HostPolicyOnly,
+  IncompatibleArchitecture,
   Internal,
   LoadModel,
   NonSerializable,
   NotApplicable,
   Overridden,
+  PlannerDerived,
   SpecOnly,
+  UnsupportedSamplingMode,
 )
 
 pytestmark = pytest.mark.knob_differential
@@ -174,16 +179,6 @@ class TestDeclarationCompleteness:
     stale = declared - actual
     assert not stale, f"Declared field(s) that no longer exist on the spec: {sorted(stale)}"
 
-  @pytest.mark.xfail(
-    strict=True,
-    reason=(
-      "~30 verdicts (mostly host/IO knobs: cache_path, split, max_workers, ...) still cite "
-      "nothing -- they assert 'host-side cache location' rather than pointing at a line. The "
-      "PREDICATE is correct and deliberately not weakened to make this pass; weakening it is "
-      "what let the carry_specs fabrication through in the first place. The TABLE is what owes "
-      "work. Cite them and this XPASSes -> red -> delete this marker. Tracked in sprint S5."
-    ),
-  )
   def test_every_reason_cites_resolvable_evidence(self) -> None:
     """A verdict whose reason asserts a conclusion without evidence is not a verdict.
 
