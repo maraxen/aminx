@@ -5,20 +5,18 @@ from __future__ import annotations
 import copy
 import json
 import os
+import sys
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import pytest
 
 import aminx.io.parsing as aminx_parsing
-import scripts.browser_validation.fixtures as fixtures
-import scripts.browser_validation.layer_a_exact as lae
 import scripts.browser_validation.layer_a_sampling as las
-import scripts.browser_validation.parse_parity as parse_parity
 
-if TYPE_CHECKING:
-  from pathlib import Path
+fixtures = sys.modules["fixtures"]
 
 
 def _synthetic_manifest() -> dict[str, Any]:
@@ -81,7 +79,8 @@ def _synthetic_manifest() -> dict[str, Any]:
 
 
 def test_parse_fixture_uses_canonical_copy_and_pins_original_sha256(
-  tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   """_parse_fixture parses parse_parity._canonical_copy output while computing sha256 on raw file."""
   raw_path = tmp_path / "3HTN.pdb"
@@ -104,11 +103,11 @@ def test_parse_fixture_uses_canonical_copy_and_pins_original_sha256(
     molecule_type=np.array([0, 0, 1, 1, 1], dtype=np.int32),
   )
 
-  def fake_parse_structure(path_str: str) -> Any:
+  def fake_parse_structure(path_str: str) -> SimpleNamespace:
     parsed_paths.append(path_str)
     return fake_protein
 
-  monkeypatch.setattr(parse_parity, "_canonical_copy", fake_canonical_copy)
+  monkeypatch.setattr(sys.modules["parse_parity"], "_canonical_copy", fake_canonical_copy)
   monkeypatch.setattr(aminx_parsing, "parse_structure", fake_parse_structure)
 
   out = fixtures._parse_fixture(raw_path)  # noqa: SLF001
@@ -129,7 +128,8 @@ def test_parse_fixture_uses_canonical_copy_and_pins_original_sha256(
 
 
 def test_refresh_mode_rewrites_only_named_entries_atomically(
-  tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   """--refresh updates only named entries, preserves untouched entries and top-level keys, and writes via os.replace."""
   manifest_path = tmp_path / "manifest.json"
@@ -166,7 +166,7 @@ def test_refresh_mode_rewrites_only_named_entries_atomically(
     replace_calls.append((Path(src), Path(dst)))
     real_replace(src, dst)
 
-  monkeypatch.setattr(fixtures, "_fixture_record", fake_fixture_record)
+  monkeypatch.setattr(sys.modules["fixtures"], "_fixture_record", fake_fixture_record)
   monkeypatch.setattr(os, "replace", spy_replace)
 
   rc = fixtures.main(["--refresh", "3HTN", "--manifest", str(manifest_path)])
@@ -195,10 +195,10 @@ def test_refresh_mode_rewrites_only_named_entries_atomically(
   assert refreshed_3htn["ligand_heavy_atoms"] == 9  # noqa: S101
   assert refreshed_3htn["near_tie_residues"] == {"32": [14], "48": [14, 99]}  # noqa: S101
   assert refreshed_3htn["tie_groups_knn_disjoint"] == [  # noqa: S101
-    {"designable_members": [0, 282], "members": [0, 282]}
+    {"designable_members": [0, 282], "members": [0, 282]},
   ]
   assert refreshed_3htn["tie_groups_rejected"] == [  # noqa: S101
-    {"members": [10, 153], "offending_pairs": [{"k": 48, "pair": [10, 153]}]}
+    {"members": [10, 153], "offending_pairs": [{"k": 48, "pair": [10, 153]}]},
   ]
 
   expected_manifest = copy.deepcopy(initial)
@@ -208,7 +208,8 @@ def test_refresh_mode_rewrites_only_named_entries_atomically(
 
 
 def test_stale_manifest_guard_fires_on_length_mismatch_before_knn(
-  capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+  capsys: pytest.CaptureFixture[str],
+  monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   """Stale guard exits 2 with fixture name, both lengths, and refresh command before _reverify_knn_disjoint."""
   fixture: dict[str, Any] = {
@@ -220,26 +221,33 @@ def test_stale_manifest_guard_fires_on_length_mismatch_before_knn(
   }
   batch = SimpleNamespace(fixture_name="3HTN", length=425, manifest_length=416)
 
-  def forbidden_knn(*_args: Any, **_kwargs: Any) -> Any:
+  reverify_calls: list[tuple[object, ...]] = []
+
+  def spy_reverify_knn_disjoint(*args: object, **_kwargs: object) -> None:
+    reverify_calls.append(args)
     msg = "_reverify_knn_disjoint must not run when manifest L mismatches parsed length"
     raise AssertionError(msg)
 
-  monkeypatch.setattr(lae, "_reverify_knn_disjoint", forbidden_knn)
+  monkeypatch.setattr(las.lae, "_reverify_knn_disjoint", spy_reverify_knn_disjoint)
 
   with pytest.raises(SystemExit) as exc_info:
-    lae.row_p09(fixture, batch, (None, None, None, None), "eqx")  # type: ignore[arg-type]
+    las.lae.row_p09(fixture, batch, (None, None, None, None), "eqx")  # type: ignore[arg-type]
   assert exc_info.value.code == 2  # noqa: S101
+  assert reverify_calls == []  # noqa: S101
   err = capsys.readouterr().err
+  assert "stale manifest" in err  # noqa: S101
   assert "3HTN" in err  # noqa: S101
   assert "425" in err  # noqa: S101
   assert "416" in err  # noqa: S101
   assert "fixtures.py --refresh 3HTN" in err  # noqa: S101
 
-  monkeypatch.setattr(lae, "build_exact_batch", lambda _f, _du: batch)
+  monkeypatch.setattr(las.lae, "build_exact_batch", lambda _f, _du: batch)
   with pytest.raises(SystemExit) as exc_sampling:
     las.build_lane_batch(fixture, "P09-s@1.0", None)
   assert exc_sampling.value.code == 2  # noqa: S101
+  assert reverify_calls == []  # noqa: S101
   err_sampling = capsys.readouterr().err
+  assert "stale manifest" in err_sampling  # noqa: S101
   assert "3HTN" in err_sampling  # noqa: S101
   assert "425" in err_sampling  # noqa: S101
   assert "416" in err_sampling  # noqa: S101
@@ -247,7 +255,8 @@ def test_stale_manifest_guard_fires_on_length_mismatch_before_knn(
 
 
 def test_stale_manifest_guard_fires_on_out_of_range_member_before_knn(
-  capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+  capsys: pytest.CaptureFixture[str],
+  monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   """Stale guard exits 2 when any tie-group member >= parsed length before k-NN check runs."""
   fixture: dict[str, Any] = {
@@ -259,27 +268,43 @@ def test_stale_manifest_guard_fires_on_out_of_range_member_before_knn(
   }
   batch = SimpleNamespace(fixture_name="2GFB", length=3416, manifest_length=3416)
 
-  def forbidden_neighbors(*_args: Any, **_kwargs: Any) -> Any:
+  neighbor_calls: list[tuple[object, ...]] = []
+
+  def spy_neighbor_indices(*args: object, **_kwargs: object) -> None:
+    neighbor_calls.append(args)
     msg = "_neighbor_indices must not run when a tie-group member is >= length"
     raise AssertionError(msg)
 
-  monkeypatch.setattr(fixtures, "_neighbor_indices", forbidden_neighbors)
+  monkeypatch.setattr(sys.modules["fixtures"], "_neighbor_indices", spy_neighbor_indices)
 
   with pytest.raises(SystemExit) as exc_info:
-    lae._reverify_knn_disjoint(batch, [[0, 3463]], fixture)  # type: ignore[arg-type]  # noqa: SLF001
+    las.lae._reverify_knn_disjoint(batch, [[0, 3463]], fixture)  # type: ignore[arg-type]  # noqa: SLF001
   assert exc_info.value.code == 2  # noqa: S101
+  assert neighbor_calls == []  # noqa: S101
   err = capsys.readouterr().err
+  assert "stale manifest" in err  # noqa: S101
   assert "2GFB" in err  # noqa: S101
   assert "3416" in err  # noqa: S101
   assert "3463" in err  # noqa: S101
   assert "fixtures.py --refresh 2GFB" in err  # noqa: S101
 
-  monkeypatch.setattr(lae, "_reverify_knn_disjoint", forbidden_neighbors)
-  monkeypatch.setattr(lae, "build_exact_batch", lambda _f, _du: batch)
+  reverify_calls: list[tuple[object, ...]] = []
+
+  def spy_reverify_knn_disjoint(*args: object, **_kwargs: object) -> None:
+    reverify_calls.append(args)
+    msg = "_reverify_knn_disjoint must not run when a tie-group member is >= length"
+    raise AssertionError(msg)
+
+  monkeypatch.setattr(las.lae, "_reverify_knn_disjoint", spy_reverify_knn_disjoint)
+  monkeypatch.setattr(las.lae, "build_exact_batch", lambda _f, _du: batch)
   with pytest.raises(SystemExit) as exc_sampling:
     las.build_lane_batch(fixture, "P09-s@1.0", None)
   assert exc_sampling.value.code == 2  # noqa: S101
+  assert reverify_calls == []  # noqa: S101
+  assert neighbor_calls == []  # noqa: S101
   err_sampling = capsys.readouterr().err
+  assert "stale manifest" in err_sampling  # noqa: S101
   assert "2GFB" in err_sampling  # noqa: S101
   assert "3416" in err_sampling  # noqa: S101
+  assert "3463" in err_sampling  # noqa: S101
   assert "fixtures.py --refresh 2GFB" in err_sampling  # noqa: S101
