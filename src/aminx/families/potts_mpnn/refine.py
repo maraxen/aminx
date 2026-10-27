@@ -600,7 +600,8 @@ def _untied_energy_sweep(
       uniform=uniforms[iteration, cursor],
     )
     seq_c = seq_c.at[position].set(jnp.where(active, token, seq_c[position]))
-    ener = ener + jnp.where(active, chosen, jnp.zeros_like(chosen))
+    accum = chosen if binding == "none" else jnp.where(tables.inter_mask[position], chosen, jnp.zeros_like(chosen))
+    ener = ener + jnp.where(active, accum, jnp.zeros_like(chosen))
     cursor = cursor + jnp.where(active, jnp.int32(1), jnp.int32(0))
     return (seq_c, ener, cursor), None
 
@@ -822,8 +823,9 @@ def _visit_tied_group(
     take = included
     valid = members >= 0
     positions = jnp.where(valid, members, jnp.int32(length))
+    accum = chosen if binding == "none" else jnp.where(any_interface, chosen, jnp.asarray(0, dtype=ener_c.dtype))
     seq_c = jnp.where(take, seq_c.at[positions].set(written, mode="drop"), seq_c)
-    ener_c = ener_c + jnp.where(take, chosen, jnp.asarray(0, dtype=ener_c.dtype))
+    ener_c = ener_c + jnp.where(take, accum, jnp.asarray(0, dtype=ener_c.dtype))
     cursor_c = cursor_c + jnp.where(take, jnp.int32(1), jnp.int32(0))
     return seq_c, ener_c, cursor_c
 
@@ -1098,7 +1100,7 @@ def _tied_nodes_group(
     position = members[slot]
     valid = position >= 0
     safe = jnp.clip(position, 0, length - 1)
-    masked = valid & (present[safe] == 0)
+    masked = valid & ((present[safe] == 0) | (chain_mask[safe] == 0))
     start = masked & ~stopped
     stopped_now = stopped | masked
     copied = jnp.where(start, sequence[safe], copied)
@@ -1151,7 +1153,8 @@ def _tied_nodes_group(
       apply_omit_aa=apply_omit_aa,
     )
     drawn = categorical_draw(probs, uniforms[cursor])
-    token = jnp.where(chain_mask[last_safe] == 0, sequence[last_safe], drawn).astype(jnp.int32)
+    is_group_fixed = jnp.any((members >= 0) & (chain_mask[jnp.clip(members, 0, length - 1)] == 0))
+    token = jnp.where(is_group_fixed, sequence[last_safe], drawn).astype(jnp.int32)
     return token, cursor + jnp.int32(1)
 
   token, cursor = jax.lax.cond(stopped, from_mask, from_draw, logits)

@@ -206,6 +206,8 @@ def _refine(
     binding: str = "none",
     tables: BindingTables | None = None,
     uniforms: jax.Array | None = None,
+    tie_groups: np.ndarray | None = None,
+    tied: bool = False,
 ) -> object:
     length = etab.shape[0]
     module = _decoder()
@@ -234,7 +236,9 @@ def _refine(
         jnp.zeros((length, _V), dtype=jnp.float32),
         jnp.zeros((length, _V), dtype=jnp.float32),
         jnp.zeros((length, _V), dtype=jnp.float32),
-        jnp.arange(length, dtype=jnp.int32)[:, None],
+        jnp.arange(length, dtype=jnp.int32)[:, None]
+        if tie_groups is None
+        else jnp.asarray(tie_groups, dtype=jnp.int32),
         jnp.ones((length,), dtype=jnp.float32),
         jnp.zeros((length, _H), dtype=jnp.float32),
         jnp.zeros((length, 1, _H), dtype=jnp.float32),
@@ -244,7 +248,7 @@ def _refine(
         pssm_bias_flag=False,
         pssm_log_odds_flag=False,
         binding=binding,
-        tied=False,
+        tied=tied,
         tied_epistasis=False,
         max_iters=max_iters,
     )
@@ -369,3 +373,24 @@ def test_optimize_fasta_and_num_samples_knobs(tmp_path: Path, caplog: pytest.Log
     )
     assert "sequence" in sample_schema(designing)
     assert "sample_rank" in sample_schema(designing)
+
+
+def test_tied_group_any_member_fixed_preserves_token() -> None:
+    """Tied group where any member is fixed (chain_mask=0) keeps the fixed token across the group (debt-2417)."""
+    length = 2
+    flat = jnp.zeros((length, 1, _A, _A))
+    # Residue 0 is fixed (chain_mask=0), residue 1 is designable (chain_mask=1)
+    # Tied group [0, 1]
+    res = _refine(
+        "nodes",
+        flat,
+        bias_index=3,
+        sequence=np.asarray([7, 2], dtype=np.int32),
+        chain_mask=np.asarray([0.0, 1.0], dtype=np.float32),
+        tie_groups=np.asarray([[0, 1]], dtype=np.int32),
+        tied=True,
+    )
+    # Both positions must retain the fixed token (7), not design into bias_index (3)
+    assert np.array_equal(np.asarray(res.sequence), np.asarray([7, 7])), (
+        f"Expected fixed token 7 across tied group, got {res.sequence}"
+    )

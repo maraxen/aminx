@@ -18,7 +18,7 @@ from aminx.inference.logits import make_stage_set
 from aminx.registry import SAMPLERS
 from aminx.types.bundles import WaveScheduleBundle
 from aminx.types.protocols import ModelProtocol, SamplerFn
-from aminx.utils.autoregression import decoding_order_from_wave
+from aminx.utils.autoregression import decoding_order_from_wave, generate_wave_ar_mask
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
 
 _AMINO_ACID_VOCAB = 21
@@ -163,7 +163,13 @@ def make_sample_sequences(
         inference=True,
       )
       if wave_schedule is not None:
-        bundle = eqx.tree_at(lambda b: b.wave, bundle, wave_schedule)
+        wave_mask = generate_wave_ar_mask(wave_schedule, bundle.conditioning.tie_group_map[0])
+        wave_mask = jnp.broadcast_to(wave_mask[None, ...], (S, L, L))
+        bundle = eqx.tree_at(
+          lambda b: (b.wave, b.conditioning.ar_mask),
+          bundle,
+          (wave_schedule, wave_mask),
+        )
 
       final_seq, final_logits, _ = optimize_fn(
         prng_key,
