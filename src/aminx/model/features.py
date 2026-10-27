@@ -188,6 +188,7 @@ def select_neighbors(
   structure_mapping: ArrayLike | None = None,
   *,
   row_chunk: int | None = None,
+  mask_invalid_with_inf: bool = True,
 ) -> Int[Array, "L k"]:
   """Select the ``k`` nearest neighbors per residue from a masked distance matrix.
 
@@ -202,7 +203,7 @@ def select_neighbors(
     distances: ``(L, L)`` pairwise distance matrix (e.g. from
       ``aminx.utils.coordinates.compute_backbone_distance``).
     mask: ``(L,)`` residue validity mask. Invalid pairs are pushed to ``+inf`` before
-      selection so they never win a neighbor slot.
+      selection when ``mask_invalid_with_inf`` is ``True`` so they never win a neighbor slot.
     k: Requested neighbor count. Clamped to ``L`` (``distances.shape[0]``) so a structure
       shorter than ``k`` still returns a full ``(L, L)`` selection instead of erroring.
     structure_mapping: Optional ``(L,)`` array mapping each residue to a structure id.
@@ -213,18 +214,24 @@ def select_neighbors(
       (``aminx.export.wrappers``) pass a fixed chunk size to keep the compiled
       ``lax.sort``'s stack footprint bounded at the L=512/1024 export buckets; see
       ``top_k``'s docstring for why.
+    mask_invalid_with_inf: When ``True`` (default), invalid ``mask_i * mask_j == 0`` pairs
+      are replaced with ``+inf``. Set ``False`` when ``distances`` already encodes masked-pair
+      distances (e.g. ``ProteinFeaturesCA``'s ``D_adjust``).
 
   Returns:
     ``(L, k_clamped)`` int32 neighbor indices, nearest first (``aminx.model.features.top_k``'s
     tie-break order).
   """
-  distances_masked = jnp.array(
-    jnp.where(
-      (mask[:, None] * mask[None, :]).astype(jnp.bool_),
-      distances,
-      jnp.inf,
-    ),
-  )
+  if mask_invalid_with_inf:
+    distances_masked = jnp.array(
+      jnp.where(
+        (mask[:, None] * mask[None, :]).astype(jnp.bool_),
+        distances,
+        jnp.inf,
+      ),
+    )
+  else:
+    distances_masked = jnp.asarray(distances)
 
   if structure_mapping is not None:
     same_structure = structure_mapping[:, jnp.newaxis] == structure_mapping[jnp.newaxis, :]
@@ -239,6 +246,47 @@ def select_neighbors(
   k_clamped = min(k, distances.shape[0])
   _, neighbor_indices = top_k(-distances_masked, k_clamped, row_chunk=row_chunk)
   return jnp.array(neighbor_indices, dtype=jnp.int32)
+
+
+def _encode_and_project_edges(
+  w_pos: eqx.nn.Linear,
+  w_e: eqx.nn.Linear,
+  norm_edges: LayerNorm,
+  w_e_proj: eqx.nn.Linear,
+  residue_index: ResidueIndex,
+  chain_index: ChainIndex,
+  neighbor_indices: jax.Array,
+  *edge_tensors: jax.Array,
+  one_hot_dtype: jnp.dtype | None = None,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
+  """Compute positional offset embeddings and project concatenated edge features."""
+  neighbor_offsets = compute_neighbor_offsets(residue_index, neighbor_indices)
+  edge_chains = (chain_index[:, None] == chain_index[None, :]).astype(jnp.int32)
+  edge_chains_neighbors = jnp.take_along_axis(
+    edge_chains,
+    neighbor_indices,
+    axis=1,
+  )
+
+  max_rel = (w_pos.weight.shape[1] - 2) // 2
+  neighbor_offset_factor = jnp.minimum(
+    jnp.maximum(neighbor_offsets + max_rel, 0),
+    2 * max_rel,
+  )
+  edge_chain_factor = (1 - edge_chains_neighbors) * (2 * max_rel + 1)
+  encoded_offset = neighbor_offset_factor * edge_chains_neighbors + edge_chain_factor
+  encoded_offset_one_hot = (
+    jax.nn.one_hot(encoded_offset, 2 * max_rel + 2)
+    if one_hot_dtype is None
+    else jax.nn.one_hot(encoded_offset, 2 * max_rel + 2, dtype=one_hot_dtype)
+  )
+
+  encoded_positions = jax.vmap(jax.vmap(w_pos))(encoded_offset_one_hot)
+  edges_concat = jnp.concatenate([encoded_positions, *edge_tensors], axis=-1)
+  after_w_e = jax.vmap(jax.vmap(w_e))(edges_concat)
+  after_norm = jax.vmap(jax.vmap(norm_edges))(after_w_e)
+  final = jax.vmap(jax.vmap(w_e_proj))(after_norm)
+  return encoded_positions, edges_concat, after_w_e, after_norm, final
 
 
 class ProteinEdgeStageTensors(NamedTuple):
@@ -368,39 +416,17 @@ class ProteinFeatures(eqx.Module):
       rbf = rbf_features
     else:
       rbf = compute_radial_basis(backbone_atom_coordinates, neighbor_indices)
-    neighbor_offsets = compute_neighbor_offsets(residue_index, neighbor_indices)
 
-    edge_chains = (chain_index[:, None] == chain_index[None, :]).astype(jnp.int32)
-    if edge_chains is None:
-      # This should be impossible if chain_index is not None
-      pass
-    edge_chains_neighbors = jnp.take_along_axis(
-      edge_chains,
+    encoded_positions, edges_concat, after_w_e, after_norm, final = _encode_and_project_edges(
+      self.w_pos,
+      self.w_e,
+      self.norm_edges,
+      self.w_e_proj,
+      residue_index,
+      chain_index,
       neighbor_indices,
-      axis=1,
+      rbf,
     )
-
-    MAX_REL = (self.w_pos.weight.shape[1] - 2) // 2
-    neighbor_offset_factor = jnp.minimum(
-      jnp.maximum(neighbor_offsets + MAX_REL, 0),
-      2 * MAX_REL,
-    )
-    edge_chain_factor = (1 - edge_chains_neighbors) * (2 * MAX_REL + 1)
-    encoded_offset = neighbor_offset_factor * edge_chains_neighbors + edge_chain_factor
-    encoded_offset_one_hot = jax.nn.one_hot(
-      encoded_offset,
-      2 * MAX_REL + 2,
-    )
-
-    encoded_positions = jax.vmap(jax.vmap(self.w_pos))(encoded_offset_one_hot)
-
-    edges_concat = jnp.concatenate([encoded_positions, rbf], axis=-1)
-
-    after_w_e = jax.vmap(jax.vmap(self.w_e))(edges_concat)
-
-    after_norm = jax.vmap(jax.vmap(self.norm_edges))(after_w_e)
-
-    final = jax.vmap(jax.vmap(self.w_e_proj))(after_norm)
 
     return ProteinEdgeStageTensors(
       neighbor_indices=neighbor_indices,
@@ -639,6 +665,8 @@ class ProteinFeaturesCA(eqx.Module):
     initial_node_features: jnp.ndarray | None = None,
     rbf_features: jnp.ndarray | None = None,
     neighbor_indices: jnp.ndarray | None = None,
+    *,
+    row_chunk: int | None = None,
   ) -> ProteinEdgeStageTensors:
     """Run the CA-only edge pipeline and return intermediates.
 
@@ -666,6 +694,8 @@ class ProteinFeaturesCA(eqx.Module):
       Unused placeholder for API compatibility with ``ProteinFeatures``.
     neighbor_indices : jnp.ndarray | None
       Optional precomputed ``(N, K)`` neighbor indices.
+    row_chunk : int | None
+      Optional chunk size forwarded to :func:`select_neighbors`.
 
     Returns
     -------
@@ -704,12 +734,14 @@ class ProteinFeaturesCA(eqx.Module):
     d_adjust = d_ca + (1.0 - mask_2d) * d_max
 
     if neighbor_indices is None:
-      d_for_topk = d_adjust
-      if structure_mapping is not None:
-        same_structure = structure_mapping[:, None] == structure_mapping[None, :]
-        d_for_topk = jnp.where(same_structure, d_for_topk, jnp.inf)
-      k_clamped = min(self.k_neighbors, ca.shape[0])
-      _, neighbor_indices = top_k(-d_for_topk, k_clamped)
+      neighbor_indices = select_neighbors(
+        d_adjust,
+        mask,
+        self.k_neighbors,
+        structure_mapping,
+        row_chunk=row_chunk,
+        mask_invalid_with_inf=False,
+      )
 
     neighbor_indices = jnp.asarray(neighbor_indices, dtype=jnp.int32)
     d_neighbors = jnp.take_along_axis(d_adjust, neighbor_indices, axis=1)
@@ -735,32 +767,18 @@ class ProteinFeaturesCA(eqx.Module):
       axis=-1,
     )
 
-    neighbor_offsets = compute_neighbor_offsets(residue_index, neighbor_indices)
-    edge_chains = (chain_index[:, None] == chain_index[None, :]).astype(jnp.int32)
-    edge_chains_neighbors = jnp.take_along_axis(
-      edge_chains,
+    encoded_positions, edges_concat, after_w_e, after_norm, final = _encode_and_project_edges(
+      self.w_pos,
+      self.w_e,
+      self.norm_edges,
+      self.w_e_proj,
+      residue_index,
+      chain_index,
       neighbor_indices,
-      axis=1,
+      rbf_all,
+      o_features,
+      one_hot_dtype=ca.dtype,
     )
-
-    MAX_REL = (self.w_pos.weight.shape[1] - 2) // 2
-    neighbor_offset_factor = jnp.minimum(
-      jnp.maximum(neighbor_offsets + MAX_REL, 0),
-      2 * MAX_REL,
-    )
-    edge_chain_factor = (1 - edge_chains_neighbors) * (2 * MAX_REL + 1)
-    encoded_offset = neighbor_offset_factor * edge_chains_neighbors + edge_chain_factor
-    encoded_offset_one_hot = jax.nn.one_hot(
-      encoded_offset,
-      2 * MAX_REL + 2,
-      dtype=ca.dtype,
-    )
-
-    encoded_positions = jax.vmap(jax.vmap(self.w_pos))(encoded_offset_one_hot)
-    edges_concat = jnp.concatenate([encoded_positions, rbf_all, o_features], axis=-1)
-    after_w_e = jax.vmap(jax.vmap(self.w_e))(edges_concat)
-    after_norm = jax.vmap(jax.vmap(self.norm_edges))(after_w_e)
-    final = jax.vmap(jax.vmap(self.w_e_proj))(after_norm)
 
     return ProteinEdgeStageTensors(
       neighbor_indices=neighbor_indices,

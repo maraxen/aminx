@@ -26,6 +26,8 @@ import numpy as np
 import torch
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+  sys.path.insert(0, str(_REPO_ROOT))
 if str(_REPO_ROOT / "src") not in sys.path:
   sys.path.insert(0, str(_REPO_ROOT / "src"))
 if str(_REPO_ROOT / "tests" / "families") not in sys.path:
@@ -33,9 +35,6 @@ if str(_REPO_ROOT / "tests" / "families") not in sys.path:
 
 from test_thermo_mpnn_parity import (  # noqa: E402
   _UBQ_PDB,
-  _build_v1_state_dict,
-  _build_v2_double_state_dict,
-  _build_v2_single_state_dict,
   _corrupt_double_omit_seq_subtraction,
   _corrupt_double_zero_edges,
   _corrupt_single_unreversed_hidden,
@@ -44,6 +43,7 @@ from test_thermo_mpnn_parity import (  # noqa: E402
   _run_torch_single_reference,
   _select_neighbor_and_distant_mutations,
   _x64_mode,
+  resolve_thermo_mpnn_parity_inputs,
 )
 
 from aminx.families.thermo_mpnn import (  # noqa: E402
@@ -52,12 +52,12 @@ from aminx.families.thermo_mpnn import (  # noqa: E402
 )
 
 
-def run_parity_suite() -> dict[str, float | int | str]:
+def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]:
   """Run the ThermoMPNN / ThermoMPNN-D parity and negative-control suite."""
   coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
-  v1_sd = _build_v1_state_dict()
-  v2_single_sd = _build_v2_single_state_dict()
-  v2_double_sd = _build_v2_double_state_dict()
+  v1_sd, v2_single_sd, v2_double_sd, weight_meta = resolve_thermo_mpnn_parity_inputs(
+    synthetic=synthetic,
+  )
 
   with _x64_mode(True):
     v1_model_f64 = convert_thermo_mpnn_state_dict(v1_sd)
@@ -259,6 +259,7 @@ def run_parity_suite() -> dict[str, float | int | str]:
     "num_residues": int(sequence.shape[0]),
     "n_neighbor_pairs": int(n_neighbor_pairs),
     "n_distant_pairs": int(n_distant_pairs),
+    **weight_meta,
     "v1_f64_max_abs_diff": v1_f64_max_abs_diff,
     "v2_f64_max_abs_diff": v2_f64_max_abs_diff,
     "double_f64_max_abs_diff": double_f64_max_abs_diff,
@@ -283,9 +284,23 @@ def main() -> None:
     default=Path("outputs/parity/thermo_mpnn_parity.json"),
     help="Output JSON path (default: outputs/parity/thermo_mpnn_parity.json).",
   )
+  parser.add_argument(
+    "--synthetic",
+    action="store_true",
+    default=False,
+    help=(
+      "Run with deterministic synthetic weights instead of upstream checkpoints "
+      "(records weight_source='synthetic' and cannot grade as 'pass' for promotion)."
+    ),
+  )
   args = parser.parse_args()
 
-  result = run_parity_suite()
+  try:
+    result = run_parity_suite(synthetic=args.synthetic)
+  except FileNotFoundError as exc:
+    print(f"ERROR: {exc}", file=sys.stderr)
+    raise SystemExit(1) from exc
+
   args.out.parent.mkdir(parents=True, exist_ok=True)
   args.out.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 

@@ -73,6 +73,48 @@
       "sha256": "09a1dc415428b11e5990aa6f0192c8db28e97ebce2f55338a67b1877f765530e",
       "manifest_filename": "protonpottsmpnn_v6_30.json",
       "manifest_sha256": "617f9ba2d56c959e71286a38defe75d1318326523ffe35a02b3c7617779926e1"
+    },
+    {
+      "checkpoint_id": "thermo_mpnn_v1_default",
+      "family": "thermompnn",
+      "filename": "thermo_mpnn_v1_default.eqx.zst",
+      "sha256": "ecf0c5ae3d4bd7b2a96964858251f96e3f39ad5b7f3e9ecda0d16725610b0eb8"
+    },
+    {
+      "checkpoint_id": "thermo_mpnn_v2_ens1",
+      "family": "thermompnn",
+      "filename": "thermo_mpnn_v2_ens1.eqx.zst",
+      "sha256": "2783011c8d18b41fc8650398c730cfc083b4fddb51ff33aa2256b518205042db"
+    },
+    {
+      "checkpoint_id": "thermo_mpnn_v2_ens2",
+      "family": "thermompnn",
+      "filename": "thermo_mpnn_v2_ens2.eqx.zst",
+      "sha256": "3a716c938dd96f855a82f89416f17e683e6cd13e1317821d09b5c44aa029ea84"
+    },
+    {
+      "checkpoint_id": "thermo_mpnn_v2_ens3",
+      "family": "thermompnn",
+      "filename": "thermo_mpnn_v2_ens3.eqx.zst",
+      "sha256": "44ce47cc515c28e0f944a70609f18a0f6f50c2c50e3d4f703225bc6052a48289"
+    },
+    {
+      "checkpoint_id": "thermo_mpnn_d_ens1",
+      "family": "thermompnn",
+      "filename": "thermo_mpnn_d_ens1.eqx.zst",
+      "sha256": "fbdbcc47c8099313df88f5091b5e021e356aca4ba9ff605a9719807c9ddc91cf"
+    },
+    {
+      "checkpoint_id": "thermo_mpnn_d_ens2",
+      "family": "thermompnn",
+      "filename": "thermo_mpnn_d_ens2.eqx.zst",
+      "sha256": "eb85924107de955cd8e97f8d5561cb54747635a90de5e7200cf41782aa393e40"
+    },
+    {
+      "checkpoint_id": "thermo_mpnn_d_ens3",
+      "family": "thermompnn",
+      "filename": "thermo_mpnn_d_ens3.eqx.zst",
+      "sha256": "d17bd706033fe7c65270d46b8ff408d3e6e1273694d82d7c8c17929461eeb7c6"
     }
   ]
 }

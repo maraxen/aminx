@@ -42,15 +42,14 @@ from aminx.model.mpnn import Aminx
 from aminx.utils.autoregression import ar_mask_from_decoding_order
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(_REPO_ROOT) not in sys.path:
+  sys.path.insert(0, str(_REPO_ROOT))
 if str(_REPO_ROOT / "scripts") not in sys.path:
   sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 from convert_weights import convert_mpnn_checkpoint, convert_state_dict_to_aminx  # noqa: E402
+from tests.parity.reference_utils import PARITY_REPOS_ENV, find_parity_repo_file  # noqa: E402
 
-_SCRATCH_REPOS = Path(
-  "/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos",
-)
-_HOME_REPOS = Path.home() / "repos"
 _UBQ_PDB = Path(__file__).resolve().parent.parent / "data" / "1ubq.pdb"
 
 _AA3_TO_IDX = {
@@ -75,14 +74,6 @@ _AA3_TO_IDX = {
   "TRP": 18,
   "TYR": 19,
 }
-
-
-def _find_repo_file(rel_path: str) -> Path | None:
-  for root in (_SCRATCH_REPOS, _HOME_REPOS):
-    candidate = root / rel_path
-    if candidate.is_file():
-      return candidate
-  return None
 
 
 @contextlib.contextmanager
@@ -157,9 +148,11 @@ def _parse_pdb_backbone(
 
 
 def _load_upstream_protein_mpnn_module() -> Any:
-  pmpnn_dir = _find_repo_file("ProteinMPNN/protein_mpnn_utils.py")
+  pmpnn_dir = find_parity_repo_file("ProteinMPNN/protein_mpnn_utils.py")
   if pmpnn_dir is None:
-    pytest.skip("ProteinMPNN reference repo not found in scratch/repos or ~/repos")
+    pytest.skip(
+      f"ProteinMPNN reference repo not found; set {PARITY_REPOS_ENV} or place under ~/repos",
+    )
   parent = str(pmpnn_dir.parent)
   if parent not in sys.path:
     sys.path.insert(0, parent)
@@ -393,6 +386,77 @@ def test_topology_and_legacy_alias_resolution() -> None:
   assert ("ca", "v_48_030") not in LEGACY_ALIAS_MAP
 
 
+def test_variant_model_weights_default_and_explicit_version_resolution(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Verify ``load_model(model_weights=v, model_version='v_48_020')`` and explicit version errors."""
+  import aminx.io.weights as weights_mod
+
+  recorded_ids: list[str] = []
+
+  def _stub_load_weights(
+    checkpoint_id: str | None = None,
+    skeleton: eqx.Module | None = None,
+    key: jax.Array | None = None,
+    local_path: str | None = None,
+  ) -> eqx.Module:
+    del key, local_path
+    assert checkpoint_id is not None
+    assert skeleton is not None
+    recorded_ids.append(checkpoint_id)
+    return skeleton
+
+  monkeypatch.setattr(weights_mod, "load_weights", _stub_load_weights)
+  uploaded_filenames = set(LEGACY_ALIAS_MAP.values())
+
+  for variant, expected_filename, expected_ca_only in (
+    ("abmpnn", "abmpnn_v_48_020.eqx.zst", False),
+    ("hypermpnn", "hypermpnn_v_48_020.eqx.zst", False),
+    ("cyclicmpnn", "cyclicmpnn_v_48_010.eqx.zst", False),
+    ("ca", "ca_v_48_020.eqx.zst", True),
+  ):
+    recorded_ids.clear()
+    model = load_model(model_weights=variant, model_version="v_48_020")
+    assert recorded_ids == [expected_filename], variant
+    assert expected_filename in uploaded_filenames, variant
+    assert isinstance(model, Aminx)
+    assert isinstance(model.features, ProteinFeaturesCA) is expected_ca_only
+
+    recorded_ids.clear()
+    model_no_ver = load_model(model_weights=variant)
+    assert recorded_ids == [expected_filename], variant
+    assert isinstance(model_no_ver, Aminx)
+
+  # Valid explicit non-default versions resolve to their exact uploaded checkpoint
+  recorded_ids.clear()
+  load_model(model_weights="hypermpnn", model_version="v_48_002")
+  assert recorded_ids == ["hypermpnn_v_48_002.eqx.zst"]
+
+  recorded_ids.clear()
+  load_model(model_weights="ca", model_version="v_48_010")
+  assert recorded_ids == ["ca_v_48_010.eqx.zst"]
+
+  recorded_ids.clear()
+  load_model(model_weights="cyclicmpnn", model_version="v_48_010")
+  assert recorded_ids == ["cyclicmpnn_v_48_010.eqx.zst"]
+
+  # Explicitly requested non-uploaded versions raise ValueError naming available versions
+  with pytest.raises(ValueError, match="v_48_010"):
+    load_model(model_weights="cyclicmpnn", model_version="v_48_030")
+
+  with pytest.raises(ValueError, match="v_48_020"):
+    load_model(model_weights="abmpnn", model_version="v_48_010")
+
+  with pytest.raises(ValueError, match="v_48_002"):
+    load_model(model_weights="ca", model_version="v_48_030")
+
+  with pytest.raises(ValueError, match="v_48_002"):
+    load_model(model_weights="hypermpnn", model_version="v_32_020")
+
+  with pytest.raises(ValueError, match="v_48_010"):
+    load_model("v_48_020", model_weights="cyclicmpnn")
+
+
 @pytest.mark.parametrize(
   ("variant_name", "rel_ckpt"),
   [
@@ -406,9 +470,9 @@ def test_topology_and_legacy_alias_resolution() -> None:
 )
 def test_tier1_drop_in_variants_graded_parity(variant_name: str, rel_ckpt: str) -> None:
   """Verify float64 (< 1e-7) and float32 (< 1e-4) parity for AbMPNN, HyperMPNN, and CyclicMPNN."""
-  pt_path = _find_repo_file(rel_ckpt)
+  pt_path = find_parity_repo_file(rel_ckpt)
   if pt_path is None:
-    pytest.skip(f"Checkpoint {rel_ckpt} not available locally")
+    pytest.skip(f"Checkpoint {rel_ckpt} not found; set {PARITY_REPOS_ENV} or place under ~/repos")
 
   coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB, max_residues=40)
   rng = np.random.default_rng(42)
@@ -481,9 +545,9 @@ def test_tier1_drop_in_variants_graded_parity(variant_name: str, rel_ckpt: str) 
 )
 def test_tier2_ca_only_mpnn_graded_parity(ca_version: str, rel_ckpt: str, tmp_path: Path) -> None:
   """Verify float64 (< 1e-7) and float32 (< 1e-4) parity for CA-Only ProteinMPNN."""
-  pt_path = _find_repo_file(rel_ckpt)
+  pt_path = find_parity_repo_file(rel_ckpt)
   if pt_path is None:
-    pytest.skip(f"Checkpoint {rel_ckpt} not available locally")
+    pytest.skip(f"Checkpoint {rel_ckpt} not found; set {PARITY_REPOS_ENV} or place under ~/repos")
 
   # Use L=60 > k=48 so D_max (where masked residue 28 ties with the farthest valid residue)
   # sits at rank 58-59 outside the top-48 neighbor list of all valid residues.
@@ -592,9 +656,9 @@ def test_tier2_ca_only_mpnn_graded_parity(ca_version: str, rel_ckpt: str, tmp_pa
 
 def test_negative_controls_ca_features_and_weights() -> None:
   """Verify that corrupting weights or permuting CA feature channels breaks parity decisively."""
-  pt_path = _find_repo_file("ProteinMPNN/ca_model_weights/v_48_020.pt")
+  pt_path = find_parity_repo_file("ProteinMPNN/ca_model_weights/v_48_020.pt")
   if pt_path is None:
-    pytest.skip("CA checkpoint not available locally")
+    pytest.skip(f"CA checkpoint not found; set {PARITY_REPOS_ENV} or place under ~/repos")
 
   coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB, max_residues=32)
   decoding_order = np.arange(coords.shape[0], dtype=np.int32)
