@@ -22,13 +22,13 @@ reasoning = "Pairs the positive result with a control that must show the effect 
 is_residual = false
 
 [outcomes.pass]
-condition = "hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0) AND intent_scan_encloses_while = false AND intent_outer_strategy = 'Vmap' AND intent_vs_vmap_max_abs <= 1e-5 AND intent_vs_vmap_compile <= 1.5 AND intent_vs_vmap_step <= 1.10 AND intent_steady_recompiles = 0 AND grad_nonzero = true AND grad_rel_l2_global <= 1e-4 AND intent_grad_has_while = false AND intent_vs_ref_grad_peak > 0 AND intent_vs_ref_grad_peak <= 1.10 AND tight_timed_out = false AND tight_plan_s <= 600 AND starts_with(tight_result, 'unsat:')"
+condition = "hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0) AND intent_scan_encloses_while = false AND intent_outer_strategy = 'Vmap' AND intent_vs_vmap_max_abs <= 1e-5 AND intent_vs_vmap_compile <= 1.5 AND intent_vs_vmap_step <= 1.10 AND intent_steady_recompiles = 0 AND grad_nonzero = true AND grad_rel_l2_global <= 1e-4 AND intent_grad_has_while = false AND intent_vs_ref_grad_peak > 0 AND intent_vs_ref_grad_peak <= 1.10 AND tight_timed_out = false AND tight_plan_s <= 600 AND tight_result_unsat = true"
 decision = "Criterion 8 passes on the hazard workload: xtrax.intent may leave experimental (skill decision trees go intent-first, backlog #6091), with the skills stating that the AR-decode workload showed no compile contrast to recover."
 reasoning = "The intent layer's promise for nested loops on GPU: never emit the hazard, run as fast as the hand fix, refuse loudly instead of hanging, and differentiate exactly."
 is_residual = false
 
 [outcomes.resolved_ok_planner_hazard]
-condition = "hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0) AND intent_scan_encloses_while = false AND intent_outer_strategy = 'Vmap' AND intent_vs_vmap_max_abs <= 1e-5 AND intent_vs_vmap_compile <= 1.5 AND intent_vs_vmap_step <= 1.10 AND intent_steady_recompiles = 0 AND grad_nonzero = true AND grad_rel_l2_global <= 1e-4 AND intent_grad_has_while = false AND intent_vs_ref_grad_peak > 0 AND intent_vs_ref_grad_peak <= 1.10 AND NOT (tight_timed_out = false AND tight_plan_s <= 600 AND starts_with(tight_result, 'unsat:'))"
+condition = "hazard_scan_encloses_while = true AND (hazard_timed_out = true OR compile_contrast >= 10.0) AND intent_scan_encloses_while = false AND intent_outer_strategy = 'Vmap' AND intent_vs_vmap_max_abs <= 1e-5 AND intent_vs_vmap_compile <= 1.5 AND intent_vs_vmap_step <= 1.10 AND intent_steady_recompiles = 0 AND grad_nonzero = true AND grad_rel_l2_global <= 1e-4 AND intent_grad_has_while = false AND intent_vs_ref_grad_peak > 0 AND intent_vs_ref_grad_peak <= 1.10 AND NOT (tight_timed_out = false AND tight_plan_s <= 600 AND tight_result_unsat = true)"
 decision = "The resolved programs avoid the hazard, but planning under a memory budget does not: default_estimator compiles chunked_map around the while to price ChunkedMap, which is the hazard itself. Fix the estimator (do not compile a ChunkedMap estimate around a StaticWhile on a scan_around_while backend) and re-run the intent_tight cell alone (resume reuses the other cells only if the git hash is unchanged, so this is a new registration) before criterion 8 is cited. Stage 2 (#6091) waits for that re-run."
 reasoning = "Predicted from reading xtrax resolve.py/estimators.py at registration: lowered_memory_estimate does a real AOT compile of each candidate strategy."
 is_residual = false
@@ -60,6 +60,7 @@ intent_steady_recompiles = "int"
 tight_timed_out = "bool"
 tight_plan_s = "float"
 tight_result = "str"
+tight_result_unsat = "bool"  # true iff tight_result starts with 'unsat:' (UnsatisfiableContextError under the tight memory budget)
 vmap_primal_compile_s = "float"
 safemap_primal_compile_s = "float"
 intent_primal_compile_s = "float"
