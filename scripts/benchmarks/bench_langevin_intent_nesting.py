@@ -349,6 +349,7 @@ def _aggregate(cell_dir: Path, recs: dict[tuple[str, str], dict[str, Any]], haza
 
   tight = recs[("intent_tight", "plan")]
   tight_timed_out = bool(tight.get("timed_out", False))
+  tight_result = "timeout" if tight_timed_out else str(tight["tight_result"])
   ref_peak = r("scan_ref", "grad", "peak_bytes")
   intent_peak = r("intent", "grad", "peak_bytes")
   intent_plan = r("intent", "primal", "plan") or []
@@ -373,7 +374,8 @@ def _aggregate(cell_dir: Path, recs: dict[tuple[str, str], dict[str, Any]], haza
     "intent_steady_recompiles": r("intent", "primal", "steady_recompiles") + r("intent", "grad", "steady_recompiles"),
     "tight_timed_out": tight_timed_out,
     "tight_plan_s": float(hazard_timeout_s) if tight_timed_out else tight["plan_s"],
-    "tight_result": "timeout" if tight_timed_out else tight["tight_result"],
+    "tight_result": tight_result,
+    "tight_result_unsat": tight_result.startswith("unsat:"),
     "vmap_primal_compile_s": vmap_compile,
     "safemap_primal_compile_s": hazard_compile,
     "intent_primal_compile_s": r("intent", "primal", "compile_s"),

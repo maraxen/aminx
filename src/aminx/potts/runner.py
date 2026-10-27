@@ -121,7 +121,7 @@ def _load_potts_model(weights_path: str, spec: PottsRunSpec, key: PRNGKeyArray) 
   return loaded
 
 
-def run_potts(
+def run_potts(  # noqa: PLR0915
   spec: PottsRunSpec,
   geometry: GeometryBundle,
   key: PRNGKeyArray,
@@ -155,28 +155,16 @@ def run_potts(
   if config is None:
     config = {}
 
-  # Step 0: refuse multi-state input BEFORE loading anything.
-  #
-  # This function infers Potts parameters from ONE backbone. Previously a leading geometry axis of
-  # size S > 1 was silently reduced to state 0 while the returned PottsResult still carried
-  # ``n_backbones=spec.n_backbones``, so a caller asking for an ensemble got single-backbone
-  # parameters in an object that claimed otherwise, with nothing in the result to reveal it.
-  # Multi-state fusion (PoeModel) is not implemented here; infer per state and fuse explicitly.
-  _coords = geometry.coords
-  if getattr(_coords, "ndim", 0) == 4 and int(_coords.shape[0]) != 1:
+  # Step 0: Validate that spec.n_backbones agrees with the supplied geometry states BEFORE loading weights.
+  # ``spec.n_backbones`` is copied verbatim into the result, so it must describe what is actually computed.
+  coords = geometry.coords  # (S, L, 4, 3) if S > 1, else (L, 4, 3) depending on implementation
+  n_states = int(coords.shape[0]) if getattr(coords, "ndim", 0) == 4 else 1
+  if spec.n_backbones != n_states:
     msg = (
-      f"run_potts received {int(_coords.shape[0])} backbone states, but multi-state Potts inference "
-      f"is not implemented here. Earlier versions silently used state 0 and still reported "
-      f"n_backbones={int(_coords.shape[0])}, so the result misrepresented what was computed. Pass a "
-      f"single state, or call run_potts per state and fuse the returned parameters explicitly."
+      f"spec.n_backbones={spec.n_backbones} but geometry supplies {n_states} backbone state(s); the "
+      f"returned PottsResult would report an ensemble size it did not compute. Make them agree."
     )
-    raise NotImplementedError(msg)
-  if spec.n_backbones != 1:
-    msg = (
-      f"spec.n_backbones={spec.n_backbones}, but run_potts performs single-backbone inference and "
-      f"would return a PottsResult reporting an ensemble size it never computed. Set n_backbones=1."
-    )
-    raise NotImplementedError(msg)
+    raise ValueError(msg)
 
   # Step 1: Load PottsModel
   model = _load_potts_model(spec.weights_path, spec, key)
@@ -186,7 +174,6 @@ def run_potts(
 
   # Step 3: Extract geometry arrays using GeometryBundle accessors
   # GeometryBundle has fields: coords, mask, residue_index, chain_index
-  coords = geometry.coords  # (S, L, 4, 3) if S > 1, else (L, 4, 3) depending on implementation
   mask = geometry.mask  # (S, L) or (L)
   residue_index = geometry.residue_index  # (S, L) or (L)
   chain_index = geometry.chain_index  # (S, L) or (L)
@@ -196,22 +183,11 @@ def run_potts(
   # Earlier versions reduced this to ``coords[0]`` while still returning ``n_backbones=spec.n_backbones``,
   # so a caller asking for an ensemble received single-backbone parameters inside a result that claimed
   # otherwise, with nothing in the result to reveal it. All S states are now used (step 6).
-  n_states = 1
-  if coords.ndim == 4:  # (S, L, 4, 3)
-    n_states = int(coords.shape[0])
-    if n_states == 1:
-      coords = coords[0]  # (L, 4, 3)
-      mask = mask[0]  # (L,)
-      residue_index = residue_index[0]  # (L,)
-      chain_index = chain_index[0]  # (L,)
-
-  # ``spec.n_backbones`` is copied verbatim into the result, so it must describe what is actually computed.
-  if spec.n_backbones != n_states:
-    msg = (
-      f"spec.n_backbones={spec.n_backbones} but geometry supplies {n_states} backbone state(s); the "
-      f"returned PottsResult would report an ensemble size it did not compute. Make them agree."
-    )
-    raise ValueError(msg)
+  if coords.ndim == 4 and n_states == 1:  # (1, L, 4, 3)
+    coords = coords[0]  # (L, 4, 3)
+    mask = mask[0]  # (L,)
+    residue_index = residue_index[0]  # (L,)
+    chain_index = chain_index[0]  # (L,)
 
   # Ensure correct dtypes
   coords = jnp.asarray(coords, dtype=jnp.float32)
