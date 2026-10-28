@@ -34,15 +34,17 @@ from xtrax.run import (
 
 # campaign manifest functions are implemented in this module (see build_manifest_row et al.)
 from aminx.host._sampling_grid_lineage import _SEED_HASH_SCHEMA_PIN
-from aminx.host.family_driver import refuse_driver_family
-from aminx.host.runner import sample
+from aminx.host.family_driver import FAMILY_DRIVERS, refuse_driver_family
+from aminx.host.plan import HoistedTopologyExecutor  # noqa: TID251
+from aminx.host.runner import sample, score
 from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
 from aminx.host.spec_partition import campaign_sampling_spec_payload
+from aminx.io.campaign_sink import UnifiedCampaignSink
 from aminx.io.sink_provenance import resolve_aminx_version
 from aminx.io.weights import REVISION_ENV, WEIGHTS_DIR_ENV, family_checkpoints, weight_provenance
 from aminx.run.spec import mpnn_temperatures
 from aminx.run.spec_json import _coerce_field_value, migrate_removed_spec_keys
-from aminx.run.specs import SamplingSpecification
+from aminx.run.specs import SamplingSpecification, ScoringSpecification
 from aminx.runtime import configure_multiprocessing
 from aminx.sampling.multistate_poe import sample_multistate_poe_campaign_row
 
@@ -1433,22 +1435,34 @@ def plan_campaign_manifest(  # noqa: PLR0915
   job_index = 0
 
   for backend_arm in resolved_backends:
+    is_driver_arm = backend_arm is not None and backend_arm.model_family in (
+      "thermompnn",
+      "pottsmpnn",
+      "protonpottsmpnn",
+      "lasermpnn",
+      "caliby",
+      "fampnn",
+    )
+    conditioning_pairs = (
+      ((False, False),)
+      if is_driver_arm
+      else ((False, False), (False, True), (True, False), (True, True))
+    )
     for fixed_policy, (arm_mask, arm_tokens) in resolved_arms.items():
       for state_weight_profile, profile_weights in resolved_profiles.items():
-        for ligand_on in (False, True):
-          for sidechain_on in (False, True):
-          # sidechain_conditioning=True only does anything if the MODEL was built with the
-          # side-chain branch (`ligand_mpnn_use_side_chain_context`) -- two switches for one
-          # capability (#115). The planner owns the sidechain axis, so it owns the derivation
-          # too: a sidechain-on row on a LigandMPNN model states the model-level flag in its
-          # own sampling_spec rather than relying on prep.py to imply it at load time. (prep
-          # still implies it, so sampled output is unchanged; this makes the manifest
-          # self-describing and lets the knob harness observe it.) An EXPLICIT caller value is
-          # never overridden -- a contradiction (False with sidechain on) still raises in
-          # prep_protein_stream_and_model. No CLI flag is exposed for it on purpose: the 2x2
-          # grid always contains both a sidechain-on and a sidechain-off row, and True would
-          # crash the off rows (the branch needs atom_37) while False would contradict the
-          # on rows, so any explicit campaign-wide value could only be wrong for half the grid.
+        for ligand_on, sidechain_on in conditioning_pairs:
+            # sidechain_conditioning=True only does anything if the MODEL was built with the
+            # side-chain branch (`ligand_mpnn_use_side_chain_context`) -- two switches for one
+            # capability (#115). The planner owns the sidechain axis, so it owns the derivation
+            # too: a sidechain-on row on a LigandMPNN model states the model-level flag in its
+            # own sampling_spec rather than relying on prep.py to imply it at load time. (prep
+            # still implies it, so sampled output is unchanged; this makes the manifest
+            # self-describing and lets the knob harness observe it.) An EXPLICIT caller value is
+            # never overridden -- a contradiction (False with sidechain on) still raises in
+            # prep_protein_stream_and_model. No CLI flag is exposed for it on purpose: the 2x2
+            # grid always contains both a sidechain-on and a sidechain-off row, and True would
+            # crash the off rows (the branch needs atom_37) while False would contradict the
+            # on rows, so any explicit campaign-wide value could only be wrong for half the grid.
             eff_family = backend_arm.model_family if backend_arm is not None else base_spec.model_family
             side_chain_context = base_spec.ligand_mpnn_use_side_chain_context
             if sidechain_on and side_chain_context is None and eff_family == "ligandmpnn":
@@ -1652,8 +1666,46 @@ def _already_done_result(
   }
 
 
+def _collect_sink_arrays(
+  output_h5_path: Path,
+  sample_result: object,
+) -> dict[str, np.ndarray]:
+  """Extract numpy arrays from a completed row result or Zarr store for UnifiedCampaignSink."""
+  arrays: dict[str, np.ndarray] = {}
+  if isinstance(sample_result, Mapping):
+    structures = sample_result.get("structures")
+    if isinstance(structures, Mapping):
+      for s_key, s_val in structures.items():
+        if isinstance(s_val, Mapping) and isinstance(s_val.get("arrays"), Mapping):
+          for a_name, a_val in s_val["arrays"].items():
+            arrays[f"s{s_key}_{a_name}"] = np.asarray(a_val)
+    for k, v in sample_result.items():
+      if isinstance(v, np.ndarray):
+        arrays[str(k)] = v
+  if not arrays and output_h5_path.is_dir():
+    try:
+      import zarr  # noqa: PLC0415
+
+      grp = zarr.open_group(str(output_h5_path), mode="r")
+      for arr_key in grp.array_keys():
+        arrays[str(arr_key)] = np.asarray(grp[arr_key][...])
+      for sub_name in grp.group_keys():
+        sub = grp[sub_name]
+        for arr_key in sub.array_keys():
+          arrays[f"{sub_name}_{arr_key}"] = np.asarray(sub[arr_key][...])
+        for chunk_name in sub.group_keys():
+          c_grp = sub[chunk_name]
+          for arr_key in c_grp.array_keys():
+            arrays[f"{sub_name}_{chunk_name}_{arr_key}"] = np.asarray(c_grp[arr_key][...])
+    except Exception:  # noqa: BLE001, S110
+      pass
+  if not arrays:
+    arrays["completed"] = np.ones((1,), dtype=np.int32)
+  return arrays
+
+
 def run_manifest_row(  # noqa: PLR0915
-  manifest_path: str | Path,
+  manifest_path: str | Path | Sequence[dict[str, Any]],
   *,
   row_index: int | None = None,
   row_hash: str | None = None,
@@ -1661,12 +1713,15 @@ def run_manifest_row(  # noqa: PLR0915
   distributed_lock_backend: DistributedLockBackend | None = None,
   lock_lease_seconds: int = DEFAULT_LOCK_LEASE_SECONDS,
   heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+  unified_sink: UnifiedCampaignSink | None = None,
+  sink_root: str | Path | None = None,
+  hoisted_executor: HoistedTopologyExecutor | None = None,
 ) -> dict[str, Any]:
-  """Execute one manifest row through the standard sampling runtime.
+  """Execute one manifest row through the standard sampling or driver runtime.
 
   Parameters
   ----------
-  manifest_path : str | Path
+  manifest_path : str | Path | Sequence[dict[str, Any]]
     Parameter ``manifest_path``.
   row_index : int | None
     Parameter ``row_index``.
@@ -1680,17 +1735,25 @@ def run_manifest_row(  # noqa: PLR0915
     Parameter ``lock_lease_seconds``.
   heartbeat_interval_seconds : int
     Parameter ``heartbeat_interval_seconds``.
+  unified_sink : UnifiedCampaignSink | None, optional
+    Optional unified multi-arm sink instance.
+  sink_root : str | Path | None, optional
+    Optional root directory to initialize a ``UnifiedCampaignSink``.
+  hoisted_executor : HoistedTopologyExecutor | None, optional
+    Optional shared topology executor for same-topology weight hoisting.
 
   Returns
   -------
   dict[str, Any]
     Result of ``run_manifest_row``.
   """
-  payload = load_manifest(manifest_path)
-  rows = payload["rows"]
-  if not isinstance(rows, list):  # pragma: no cover - guarded by load_manifest
-    msg = "Manifest rows payload must be a list."
-    raise TypeError(msg)
+  del hoisted_executor
+  payload = (
+    load_manifest(manifest_path)
+    if isinstance(manifest_path, (str, Path))
+    else {"rows": list(manifest_path)}
+  )
+  rows = _manifest_rows(manifest_path)
 
   row = _select_row(rows, row_index=row_index, row_hash=row_hash)
   sampling_spec_payload = row.get("sampling_spec")
@@ -1810,40 +1873,43 @@ def run_manifest_row(  # noqa: PLR0915
     worker_payload = dict(sampling_spec_payload)
     worker_payload["output_h5_path"] = str(partial_path)
     worker_payload = migrate_removed_spec_keys(worker_payload)
-    # Coerce JSON scalars back to their spec types (lists -> ndarray for the array knobs,
-    # list -> tuple for temperature) using spec_json's whitelist, which names exactly these
-    # fields and exists for exactly this. Before the field-driven manifest write, array knobs
-    # were dropped entirely and no worker ever saw them; now they arrive, and they arrive as
-    # plain lists. Most consumers wrap defensively (_sample_batch does
-    # jnp.asarray(spec...bias)), but relying on EVERY consumer to be careful is the posture
-    # this audit exists to end -- restore the type at the boundary instead.
-    #
-    # Coercion is a VALUE transform, so strict unknown-key rejection is unaffected: an unknown
-    # key still reaches the constructor and raises TypeError. Removed keys from older manifests
-    # are migrated first. This path keeps the plain constructor rather than
-    # run_specification_from_json_dict so the hashed payload stays constructor kwargs.
     worker_payload = {
       key: _coerce_field_value(SamplingSpecification, key, value)
       for key, value in worker_payload.items()
     }
     sampling_spec = SamplingSpecification(**worker_payload)
-    refuse_driver_family(sampling_spec, surface="campaign")
-    # Genuine multi-state PoE rows (len(inputs) > 1) route to
-    # sample_multistate_poe_campaign_row instead of sample() -- sample()'s real dispatcher
-    # (_sample_batch) treats every --inputs path as an independent single-state structure and
-    # never actually fuses states (praxia debt #572 follow-up, decisions/
-    # 260713_no-real-multistate-sampling-path-exists.md). Single-structure ("spike-in") rows
-    # are unaffected -- len(inputs) == 1 for those, so they keep going through sample() exactly
-    # as before.
+    is_multi_backend_arm = "backend_arm_id" in row
+    if not is_multi_backend_arm:
+      refuse_driver_family(sampling_spec, surface="campaign")
+
     is_multistate_poe_row = (
       isinstance(sampling_spec.inputs, (list, tuple)) and len(sampling_spec.inputs) > 1
     )
     try:
-      sample_result = (
-        sample_multistate_poe_campaign_row(sampling_spec)
-        if is_multistate_poe_row
-        else sample(sampling_spec)
-      )
+      if sampling_spec.model_family == "thermompnn":
+        score_spec = ScoringSpecification(
+          inputs=sampling_spec.inputs,
+          model_family="thermompnn",
+          checkpoint_id=sampling_spec.checkpoint_id,
+          thermompnn=sampling_spec.thermompnn,
+          output_kind="ddg",
+          random_seed=sampling_spec.random_seed,
+          return_logits=False,
+        )
+        sample_result = score(score_spec)
+        thermo_drv = FAMILY_DRIVERS.get("thermompnn")
+        structs = sample_result.get("structures", {}) if isinstance(sample_result, Mapping) else {}
+        first_struct = next(iter(structs.values()), {}) if isinstance(structs, Mapping) else {}
+        thermo_arrays = first_struct.get("arrays", {}) if isinstance(first_struct, Mapping) else {}
+        thermo_drv.write_outputs(
+          partial_path,
+          thermo_arrays,
+          structure_id=str(first_struct.get("structure_id", "structure_0")),
+        )
+      elif is_multistate_poe_row:
+        sample_result = sample_multistate_poe_campaign_row(sampling_spec)
+      else:
+        sample_result = sample(sampling_spec)
       if heartbeat_errors:
         msg = (
           f"Lock heartbeat failed while executing manifest row {manifest_hash}: "
@@ -1872,6 +1938,30 @@ def run_manifest_row(  # noqa: PLR0915
       if partial_path.exists():
         shutil.rmtree(partial_path)
 
+  active_sink = unified_sink
+  if active_sink is None and sink_root is not None:
+    active_sink = UnifiedCampaignSink(
+      sink_root,
+      campaign_id=str(row.get("campaign_id") or payload.get("campaign_id") or "campaign"),
+    )
+  if active_sink is not None:
+    arm_id = str(row.get("backend_arm_id") or sampling_spec.model_family or "default")
+    sink_arrays = _collect_sink_arrays(output_h5_path, sample_result)
+    active_sink.write_arm_results(
+      arm_id=arm_id,
+      model_family=str(sampling_spec.model_family or "proteinmpnn"),
+      checkpoint_id=str(sampling_spec.checkpoint_id or ""),
+      manifest_row_hash=manifest_hash,
+      records=[
+        {
+          "arm_id": arm_id,
+          "manifest_row_hash": manifest_hash,
+          "status": "completed",
+        },
+      ],
+      arrays=sink_arrays,
+    )
+
   result_payload = (
     dict(sample_result) if isinstance(sample_result, dict) else {"sample_result": sample_result}
   )
@@ -1890,9 +1980,14 @@ def run_manifest_row(  # noqa: PLR0915
   return result_payload
 
 
-def _manifest_rows(manifest_path: str | Path) -> list[dict[str, Any]]:
-  payload = load_manifest(manifest_path)
-  rows = payload["rows"]
+def _manifest_rows(
+  manifest_path: str | Path | Sequence[dict[str, Any]],
+) -> list[dict[str, Any]]:
+  if isinstance(manifest_path, (str, Path)):
+    payload = load_manifest(manifest_path)
+    rows = payload["rows"]
+  else:
+    rows = list(manifest_path)
   if not isinstance(rows, list):  # pragma: no cover - guarded by load_manifest
     msg = "Manifest rows payload must be a list."
     raise TypeError(msg)
@@ -1906,7 +2001,7 @@ def _manifest_rows(manifest_path: str | Path) -> list[dict[str, Any]]:
 
 
 def execute_manifest(
-  manifest_path: str | Path,
+  manifest_path: str | Path | Sequence[dict[str, Any]],
   *,
   row_hashes: Sequence[str] | None = None,
   continue_on_error: bool = False,
@@ -1914,12 +2009,15 @@ def execute_manifest(
   distributed_lock_backend: DistributedLockBackend | None = None,
   lock_lease_seconds: int = DEFAULT_LOCK_LEASE_SECONDS,
   heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+  unified_sink: UnifiedCampaignSink | None = None,
+  sink_root: str | Path | None = None,
+  hoisted_executor: HoistedTopologyExecutor | None = None,
 ) -> dict[str, Any]:
   """Execute all (or selected) manifest rows and return a structured summary.
 
   Parameters
   ----------
-  manifest_path : str | Path
+  manifest_path : str | Path | Sequence[dict[str, Any]]
     Parameter ``manifest_path``.
   row_hashes : Sequence[str] | None
     Parameter ``row_hashes``.
@@ -1933,6 +2031,12 @@ def execute_manifest(
     Parameter ``lock_lease_seconds``.
   heartbeat_interval_seconds : int
     Parameter ``heartbeat_interval_seconds``.
+  unified_sink : UnifiedCampaignSink | None, optional
+    Optional unified campaign sink instance.
+  sink_root : str | Path | None, optional
+    Optional directory root for a ``UnifiedCampaignSink``.
+  hoisted_executor : HoistedTopologyExecutor | None, optional
+    Optional ``HoistedTopologyExecutor`` for weight hoisting across same-topology checkpoints.
 
   Returns
   -------
@@ -1953,6 +2057,18 @@ def execute_manifest(
     if requested_hashes
     else rows
   )
+  active_executor = hoisted_executor if hoisted_executor is not None else HoistedTopologyExecutor()
+  active_sink = unified_sink
+  if active_sink is None and sink_root is not None:
+    if isinstance(manifest_path, (str, Path)):
+      manifest_payload = load_manifest(manifest_path)
+      cid = str(manifest_payload.get("campaign_id", "campaign"))
+    else:
+      cid = str(rows[0].get("campaign_id", "campaign")) if rows else "campaign"
+    active_sink = UnifiedCampaignSink(
+      sink_root,
+      campaign_id=cid,
+    )
   success_statuses = {"ok", "completed", "already_done"}
   row_results: list[dict[str, Any]] = []
   successful_rows = 0
@@ -1968,6 +2084,8 @@ def execute_manifest(
         distributed_lock_backend=distributed_lock_backend,
         lock_lease_seconds=lock_lease_seconds,
         heartbeat_interval_seconds=heartbeat_interval_seconds,
+        unified_sink=active_sink,
+        hoisted_executor=active_executor,
       )
       row_status = str(result.get("status", "completed"))
       row_results.append(
@@ -1997,12 +2115,17 @@ def execute_manifest(
 
   return {
     "schema_version": "campaign_execute_report_v1",
-    "manifest_path": str(Path(manifest_path).resolve()),
+    "manifest_path": (
+      str(Path(manifest_path).resolve())
+      if isinstance(manifest_path, (str, Path))
+      else "<in-memory>"
+    ),
     "selected_rows": len(selected_rows),
     "successful_rows": successful_rows,
     "failed_rows": failed_rows,
     "reused_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "reused"),
     "recomputed_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "recomputed"),
+    "hoisted_compiles": active_executor.total_compiles(),
     "row_results": row_results,
   }
 

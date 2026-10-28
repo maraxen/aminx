@@ -8,6 +8,7 @@ for cross-backend consensus and integrity verification.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import math
@@ -18,6 +19,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 from aminx.host.schema_versions import CAMPAIGN_SINK_SCHEMA_VERSION, SCHEMA_VERSIONS
 
@@ -187,7 +190,7 @@ class UnifiedCampaignSink:
         return json.loads(raw[len(b"JSON_PARQUET_V1\n") :].decode("utf-8"))
       return []
 
-  def write_arm_results(
+  def write_arm_results(  # noqa: PLR0915
     self,
     *,
     arm_id: str,
@@ -222,98 +225,140 @@ class UnifiedCampaignSink:
     arm_dir = self.root_path / "arms" / arm_id
     arm_dir.mkdir(parents=True, exist_ok=True)
     final_zarr = arm_dir / "samples.zarr"
-    staging_zarr = arm_dir / f".staging_{uuid.uuid4().hex}"
+    staging_row = arm_dir / f".staging_{uuid.uuid4().hex}"
 
     try:
-      if final_zarr.exists():
-        shutil.copytree(final_zarr, staging_zarr)
-      else:
-        staging_zarr.mkdir(parents=True, exist_ok=True)
-        zgroup = staging_zarr / ".zgroup"
-        zgroup.write_text(json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8")
-
-      row_group = staging_zarr / manifest_row_hash
-      row_group.mkdir(parents=True, exist_ok=True)
-      (row_group / ".zgroup").write_text(
-        json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8",
-      )
+      staging_row.mkdir(parents=True, exist_ok=True)
       attrs = {
         "arm_id": arm_id,
         "model_family": model_family,
         "checkpoint_id": checkpoint_id,
         "manifest_row_hash": manifest_row_hash,
       }
-      (row_group / ".zattrs").write_text(
-        json.dumps(attrs, indent=2, sort_keys=True) + "\n", encoding="utf-8",
-      )
+      wrote_zarr = False
+      try:
+        import zarr  # noqa: PLC0415
 
-      if arrays:
+        try:
+          grp = zarr.open_group(str(staging_row), mode="w", zarr_format=2)
+        except TypeError:
+          grp = zarr.open_group(str(staging_row), mode="w")
+        for k, v in attrs.items():
+          grp.attrs[k] = v
+        if arrays:
+          for name, val in arrays.items():
+            np_arr = np.asarray(val)
+            if hasattr(grp, "create_dataset"):
+              try:
+                grp.create_dataset(name, data=np_arr, overwrite=True)
+              except TypeError:
+                grp[name] = np_arr
+            else:
+              grp[name] = np_arr
+        wrote_zarr = True
+      except Exception:  # noqa: BLE001
+        wrote_zarr = False
+
+      if not (staging_row / ".zgroup").exists():
+        (staging_row / ".zgroup").write_text(
+          json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8",
+        )
+      if not (staging_row / ".zattrs").exists():
+        (staging_row / ".zattrs").write_text(
+          json.dumps(attrs, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+        )
+      if arrays and not wrote_zarr:
         for name, val in arrays.items():
-          arr_meta_path = row_group / f"{name}.json"
-          if hasattr(val, "tolist"):
-            serializable = val.tolist()
-          elif isinstance(val, (list, tuple, dict, int, float, str)):
-            serializable = val
-          else:
-            serializable = list(val)
-          arr_meta_path.write_text(
-            json.dumps({"name": name, "data": serializable}, sort_keys=True) + "\n",
+          np_arr = np.asarray(val)
+          arr_dir = staging_row / name
+          arr_dir.mkdir(parents=True, exist_ok=True)
+          zarray_meta = {
+            "chunks": list(np_arr.shape) if np_arr.ndim > 0 else [1],
+            "compressor": None,
+            "dtype": np_arr.dtype.str,
+            "fill_value": 0,
+            "filters": None,
+            "order": "C",
+            "shape": list(np_arr.shape),
+            "zarr_format": 2,
+          }
+          (arr_dir / ".zarray").write_text(
+            json.dumps(zarray_meta, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
           )
+          chunk_key = ".".join("0" for _ in range(max(np_arr.ndim, 1)))
+          (arr_dir / chunk_key).write_bytes(np_arr.tobytes(order="C"))
 
-      # Atomic replace of final_zarr
-      backup_zarr = arm_dir / f".backup_{uuid.uuid4().hex}"
-      if final_zarr.exists():
-        final_zarr.replace(backup_zarr)
-      staging_zarr.replace(final_zarr)
-      if backup_zarr.exists():
-        shutil.rmtree(backup_zarr)
+      lock_file = self.root_path / ".sink.lock"
+      with lock_file.open("a+b") as lock_fd:
+        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_EX)
+        try:
+          final_zarr.mkdir(parents=True, exist_ok=True)
+          if not (final_zarr / ".zgroup").exists():
+            (final_zarr / ".zgroup").write_text(
+              json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8",
+            )
+          target_row = final_zarr / manifest_row_hash
+          backup_row = arm_dir / f".backup_{uuid.uuid4().hex}"
+          if target_row.exists():
+            target_row.replace(backup_row)
+          staging_row.replace(target_row)
+          if backup_row.exists():
+            shutil.rmtree(backup_row)
+
+          meta_path = self.root_path / "campaign_sink_metadata.json"
+          if meta_path.exists():
+            meta_on_disk = json.loads(meta_path.read_text(encoding="utf-8"))
+            self._arm_digests = dict(meta_on_disk.get("arms", {}))
+            self._records = self._read_existing_records()
+
+          zarr_rel = f"arms/{arm_id}/samples.zarr/{manifest_row_hash}"
+          for rec in records:
+            seq_str = str(rec.get("sequence", ""))
+            nll_val = rec.get("score_nll")
+            nll_float = float(nll_val) if nll_val is not None else None
+            ppl_val = rec.get("perplexity")
+            if ppl_val is None and nll_float is not None:
+              ppl_val = math.exp(min(nll_float, 50.0))
+            normalized_row: dict[str, Any] = {
+              "campaign_id": self.campaign_id,
+              "structure_id": str(rec.get("structure_id", "structure_0")),
+              "state_group_id": str(rec.get("state_group_id", "default")),
+              "backend_arm_id": arm_id,
+              "model_family": model_family,
+              "checkpoint_id": checkpoint_id,
+              "sample_idx": int(rec.get("sample_idx", 0)),
+              "temperature": float(rec.get("temperature", 0.1)),
+              "backbone_noise": float(rec.get("backbone_noise", 0.0)),
+              "sequence": seq_str,
+              "sequence_length": int(rec.get("sequence_length", len(seq_str))),
+              "score_nll": nll_float,
+              "sequence_recovery": (
+                float(rec["sequence_recovery"])
+                if rec.get("sequence_recovery") is not None
+                else None
+              ),
+              "perplexity": float(ppl_val) if ppl_val is not None else None,
+              "sc_rmsd": float(rec["sc_rmsd"]) if rec.get("sc_rmsd") is not None else None,
+              "sc_plddt": float(rec["sc_plddt"]) if rec.get("sc_plddt") is not None else None,
+              "ddg_pred": float(rec["ddg_pred"]) if rec.get("ddg_pred") is not None else None,
+              "manifest_row_hash": manifest_row_hash,
+              "zarr_group_path": str(rec.get("zarr_group_path", zarr_rel)),
+            }
+            self._records.append(normalized_row)
+
+          self._arm_digests[arm_id] = {
+            "model_family": model_family,
+            "checkpoint_id": checkpoint_id,
+            "zarr_path": f"arms/{arm_id}/samples.zarr",
+            "zarr_sha256": _tree_digest(final_zarr),
+          }
+          self._flush_summary_and_metadata()
+        finally:
+          fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
     finally:
-      if staging_zarr.exists():
-        shutil.rmtree(staging_zarr)
-
-    zarr_rel = f"arms/{arm_id}/samples.zarr/{manifest_row_hash}"
-    for rec in records:
-      seq_str = str(rec.get("sequence", ""))
-      nll_val = rec.get("score_nll")
-      nll_float = float(nll_val) if nll_val is not None else None
-      ppl_val = rec.get("perplexity")
-      if ppl_val is None and nll_float is not None:
-        ppl_val = math.exp(min(nll_float, 50.0))
-      normalized_row: dict[str, Any] = {
-        "campaign_id": self.campaign_id,
-        "structure_id": str(rec.get("structure_id", "structure_0")),
-        "state_group_id": str(rec.get("state_group_id", "default")),
-        "backend_arm_id": arm_id,
-        "model_family": model_family,
-        "checkpoint_id": checkpoint_id,
-        "sample_idx": int(rec.get("sample_idx", 0)),
-        "temperature": float(rec.get("temperature", 0.1)),
-        "backbone_noise": float(rec.get("backbone_noise", 0.0)),
-        "sequence": seq_str,
-        "sequence_length": int(rec.get("sequence_length", len(seq_str))),
-        "score_nll": nll_float,
-        "sequence_recovery": (
-          float(rec["sequence_recovery"])
-          if rec.get("sequence_recovery") is not None
-          else None
-        ),
-        "perplexity": float(ppl_val) if ppl_val is not None else None,
-        "sc_rmsd": float(rec["sc_rmsd"]) if rec.get("sc_rmsd") is not None else None,
-        "sc_plddt": float(rec["sc_plddt"]) if rec.get("sc_plddt") is not None else None,
-        "ddg_pred": float(rec["ddg_pred"]) if rec.get("ddg_pred") is not None else None,
-        "manifest_row_hash": manifest_row_hash,
-        "zarr_group_path": str(rec.get("zarr_group_path", zarr_rel)),
-      }
-      self._records.append(normalized_row)
-
-    self._arm_digests[arm_id] = {
-      "model_family": model_family,
-      "checkpoint_id": checkpoint_id,
-      "zarr_path": f"arms/{arm_id}/samples.zarr",
-      "zarr_sha256": _tree_digest(final_zarr),
-    }
-    self._flush_summary_and_metadata()
+      if staging_row.exists():
+        shutil.rmtree(staging_row)
     return final_zarr
 
   def _flush_summary_and_metadata(self) -> None:
@@ -331,7 +376,30 @@ class UnifiedCampaignSink:
       for r in self._records:
         for c in CAMPAIGN_METRICS_COLUMNS:
           cols[c].append(r.get(c))
-      table = pa.table(cols)
+      schema = pa.schema(
+        [
+          ("campaign_id", pa.string()),
+          ("structure_id", pa.string()),
+          ("state_group_id", pa.string()),
+          ("backend_arm_id", pa.string()),
+          ("model_family", pa.string()),
+          ("checkpoint_id", pa.string()),
+          ("sample_idx", pa.int64()),
+          ("temperature", pa.float64()),
+          ("backbone_noise", pa.float64()),
+          ("sequence", pa.string()),
+          ("sequence_length", pa.int64()),
+          ("score_nll", pa.float64()),
+          ("sequence_recovery", pa.float64()),
+          ("perplexity", pa.float64()),
+          ("sc_rmsd", pa.float64()),
+          ("sc_plddt", pa.float64()),
+          ("ddg_pred", pa.float64()),
+          ("manifest_row_hash", pa.string()),
+          ("zarr_group_path", pa.string()),
+        ],
+      )
+      table = pa.table(cols, schema=schema)
       pq.write_table(table, tmp_pq)
       wrote_pyarrow = True
     except Exception:  # noqa: BLE001
@@ -452,8 +520,13 @@ class CampaignSinkInspector:
     CampaignSinkSummary
       Summary counts and registered arms.
     """
-    del include_empty_arms
-    arms = tuple(sorted(self._meta.get("arms", {}).keys()))
+    registered_arms = set(self._meta.get("arms", {}).keys())
+    non_empty_arms = {str(r["backend_arm_id"]) for r in self._records}
+    arms = (
+      tuple(sorted(registered_arms | non_empty_arms))
+      if include_empty_arms
+      else tuple(sorted(non_empty_arms))
+    )
     structures = {r["structure_id"] for r in self._records}
     row_hashes = {r["manifest_row_hash"] for r in self._records}
     return CampaignSinkSummary(
@@ -617,7 +690,6 @@ class CampaignSinkInspector:
       Mapping of component name (``"summary_parquet"`` and ``"arm:<arm_id>"``) to
       boolean integrity verification status, plus ``"all_valid"``.
     """
-    del check_arms
     results: dict[str, bool] = {}
     pq_path = self.sink_path / str(
       self._meta.get("summary_parquet_path", "summary/campaign_metrics.parquet"),
@@ -627,12 +699,13 @@ class CampaignSinkInspector:
       pq_path.exists() and _sha256_bytes(pq_path.read_bytes()) == expected_pq_sha
     )
 
-    for arm_id, arm_info in self._meta.get("arms", {}).items():
-      zarr_dir = self.sink_path / str(arm_info.get("zarr_path", f"arms/{arm_id}/samples.zarr"))
-      expected_zarr_sha = arm_info.get("zarr_sha256")
-      results[f"arm:{arm_id}"] = (
-        zarr_dir.exists() and _tree_digest(zarr_dir) == expected_zarr_sha
-      )
+    if check_arms:
+      for arm_id, arm_info in self._meta.get("arms", {}).items():
+        zarr_dir = self.sink_path / str(arm_info.get("zarr_path", f"arms/{arm_id}/samples.zarr"))
+        expected_zarr_sha = arm_info.get("zarr_sha256")
+        results[f"arm:{arm_id}"] = (
+          zarr_dir.exists() and _tree_digest(zarr_dir) == expected_zarr_sha
+        )
 
     results["all_valid"] = all(results.values())
     return results

@@ -27,13 +27,25 @@ ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
 # place and unknown in another.
 # The declared family type. RunSpecification annotates model_family with this alias, so the
 # type checker, the runtime guard and the stock list below all read the same Literal.
-ModelFamily = Literal["proteinmpnn", "ligandmpnn", "membrane", "pottsmpnn", "protonpottsmpnn", "lasermpnn", "thermompnn"]
+ModelFamily = Literal[
+  "proteinmpnn",
+  "ligandmpnn",
+  "membrane",
+  "pottsmpnn",
+  "protonpottsmpnn",
+  "lasermpnn",
+  "caliby",
+  "fampnn",
+  "thermompnn",
+]
 # Driver-backed families need a registered FamilyDriver, imported on first use from the
 # module named here. A missing driver is an error, never a fallback to the stock path.
 DRIVER_BACKED_FAMILY_MODULES: dict[str, str] = {
   "pottsmpnn": "aminx.families.potts_mpnn",
   "protonpottsmpnn": "aminx.families.protonpotts_mpnn",
   "lasermpnn": "aminx.families.laser_mpnn",
+  "caliby": "aminx.families.caliby",
+  "fampnn": "aminx.families.fampnn",
   "thermompnn": "aminx.families.thermo_mpnn",
 }
 # Every declared family that is not driver-backed runs on the stock MPNN path.

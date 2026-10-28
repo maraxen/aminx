@@ -24,8 +24,8 @@ from aminx.model import Aminx
 from aminx.run.specs import SamplingSpecification
 
 
-def test_thermompnn_driver_registration_and_capabilities() -> None:
-  """Verify ThermoMPNNDriver is registered and rejects unsupported fallback purposes."""
+def test_thermompnn_driver_dispatch(tmp_path: Path) -> None:
+  """Verify ThermoMPNNDriver implements full FamilyDriver interface and scores single/ensemble/double ΔΔG."""
   assert "thermompnn" in DRIVER_BACKED_FAMILY_MODULES
   drv = FAMILY_DRIVERS.get("thermompnn")
   assert isinstance(drv, ThermoMPNNDriver)
@@ -34,6 +34,46 @@ def test_thermompnn_driver_registration_and_capabilities() -> None:
   assert not drv.handles(spec, "sample")
   with pytest.raises(NotImplementedError):
     drv.sample(None, None)
+
+  ubq_pdb = Path(__file__).resolve().parents[1] / "data" / "1ubq.pdb"
+  prep = drv.prepare_structure(ubq_pdb)
+  assert prep["coords"].shape == (76, 4, 3)
+  assert prep["length"] == 76
+
+  batch = drv.collate_batch([prep])
+  assert batch.lengths == (76,)
+  axes = drv.axes(spec, "score:ddg", batch)
+  assert len(axes) == 2
+  schema = drv.result_schema(spec, "score:ddg")
+  assert "ddg" in schema
+
+  from aminx.families.thermo_mpnn.model import ThermoMPNN, ThermoMPNNDouble
+
+  key = jax.random.PRNGKey(0)
+  m_single = ThermoMPNN(key=key)
+  assert drv.mpnn_core(m_single) is m_single.mpnn
+  stage_fn = drv.stages(spec, "score:ddg", m_single)
+  out_single = stage_fn(
+    batch, chunk_start=0, chunk_count=1, scalar_dropout=False, dropout_key=key,
+  )
+  assert out_single["ddg"].shape == (76, 21)
+
+  out_dir = drv.write_outputs(tmp_path / "thermo_out.zarr", out_single, structure_id="1ubq")
+  assert out_dir.exists()
+
+  m_double = ThermoMPNNDouble(key=key)
+  out_double = drv.score(
+    m_double,
+    jnp.asarray(prep["coords"][:8]),
+    jnp.asarray(prep["mask"][:8]),
+    jnp.asarray(prep["residue_index"][:8]),
+    jnp.asarray(prep["chain_index"][:8]),
+    jnp.asarray(prep["sequence"][:8]),
+    double_mutant=True,
+  )
+  assert out_double["ddg"].shape == (8, 21)
+  assert out_double["ddg_double"].shape == (7, 21, 21)
+  assert out_double["pair_indices"].shape == (7, 2)
 
 
 def test_normalize_backend_arm_aliases_and_drivers() -> None:
@@ -96,12 +136,13 @@ def test_single_backend_backward_compatible_row_hash(tmp_path: Path) -> None:
   assert "backend_arm_id" not in rows[0]
 
 
-def test_multi_backend_campaign_planning_and_checkpoint_identity(
+def test_multi_backend_manifest(
   tmp_path: Path,
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   """Verify backends=[...] expands rows across arms with distinct hashes and resolves family checkpoints."""
-  spec = SamplingSpecification(inputs=["dummy.pdb"], checkpoint_id="proteinmpnn_v_48_020")
+  ubq_pdb = Path(__file__).resolve().parents[1] / "data" / "1ubq.pdb"
+  spec = SamplingSpecification(inputs=[str(ubq_pdb)], checkpoint_id="proteinmpnn_v_48_020")
   rows = plan_campaign_manifest(
     base_spec=spec,
     campaign_id="camp_multi",
@@ -111,11 +152,37 @@ def test_multi_backend_campaign_planning_and_checkpoint_identity(
     backends=["original", "soluble", "antibmpnn", "thermompnn"],
     git_sha="deadbeef",
   )
-  assert len(rows) == 4 * 4  # 4 arms x 4 grid variants
+  # 3 vanilla MPNN arms x 4 grid variants + 1 driver-backed thermompnn arm x 1 variant = 13 rows
+  assert len(rows) == 3 * 4 + 1
+  thermo_rows = [r for r in rows if r["backend_arm_id"] == "thermompnn"]
+  assert len(thermo_rows) == 1
+  assert thermo_rows[0]["sampling_spec"]["ligand_conditioning"] is False
+  assert thermo_rows[0]["sampling_spec"]["sidechain_conditioning"] is False
   hashes = {r["manifest_row_hash"] for r in rows}
   assert len(hashes) == len(rows)
   arm_ids = {r["backend_arm_id"] for r in rows}
   assert arm_ids == {"original", "soluble", "antibmpnn", "thermompnn"}
+
+  # Verify execute_manifest dispatches thermompnn row via score() and writes to UnifiedCampaignSink
+  import aminx.families.thermo_mpnn.convert as thermo_convert_mod
+  from aminx.host.campaign import execute_manifest
+  from aminx.io.campaign_sink import CampaignSinkInspector
+
+  monkeypatch.setattr(
+    thermo_convert_mod,
+    "load_weights",
+    lambda checkpoint_id="thermo_mpnn_v1_default", local_path=None, skeleton=None: skeleton,
+  )
+  sink_dir = tmp_path / "campaign_sink.zarr"
+  executor = HoistedTopologyExecutor()
+  exec_results = execute_manifest(
+    thermo_rows,
+    sink_root=sink_dir,
+    hoisted_executor=executor,
+  )
+  assert exec_results["successful_rows"] == 1
+  insp = CampaignSinkInspector(sink_dir)
+  assert "thermompnn" in insp.summary().arms
 
   # Verify _checkpoint_identity resolves both packaged and family_weights.json checkpoints
   dummy_wt = tmp_path / "proteinmpnn_v_48_020.eqx.zst"
@@ -139,7 +206,7 @@ def test_multi_backend_campaign_planning_and_checkpoint_identity(
     )
 
 
-def test_six_vanilla_mpnn_families_compile_once_via_hoisted_executor(
+def test_topology_key_weight_hoisting(
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   """Prove eqx.partition/eqx.combine hoisting compiles once across all 6 vanilla MPNN weight families."""
@@ -176,6 +243,24 @@ def test_six_vanilla_mpnn_families_compile_once_via_hoisted_executor(
   keys = [extract_topology_key(m) for m in models]
   assert len(set(keys)) == 1
   shared_key: TopologyKey = keys[0]
+  ckpt_topo = get_topology_for_checkpoint("proteinmpnn_v_48_020")
+  assert shared_key.k_neighbors == ckpt_topo["k_neighbors"]
+  assert shared_key.num_positional_embeddings == ckpt_topo["num_positional_embeddings"]
+  assert shared_key.physics_feature_dim == ckpt_topo["physics_feature_dim"]
+  assert ckpt_topo["model_type"] == "protein"
+
+  # Verify distinct static fields produce distinct TopologyKeys
+  m_phys = Aminx(
+    node_features=128,
+    edge_features=128,
+    hidden_features=128,
+    num_encoder_layers=3,
+    num_decoder_layers=3,
+    k_neighbors=48,
+    physics_feature_dim=5,
+    key=jax.random.PRNGKey(9),
+  )
+  assert extract_topology_key(m_phys) != shared_key
 
   executor = HoistedTopologyExecutor()
   x_dummy = jnp.ones((8, 128), dtype=jnp.float32)

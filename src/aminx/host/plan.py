@@ -1148,6 +1148,14 @@ class TopologyKey(NamedTuple):
     Number of MPNN decoder layers.
   k_neighbors : int
     Number of k-NN graph neighbors.
+  num_positional_embeddings : int
+    Number of relative positional embedding bins.
+  physics_feature_dim : int
+    Physics conditioning feature dimension (0 when disabled, 3 for membrane).
+  atom_context_num : int
+    Ligand/sidechain atom context slot count (0 for backbone-only MPNN).
+  use_side_chain_context : bool
+    Whether LigandMPNN side-chain atom context is enabled.
   augment_eps : float
     Backbone coordinate noise epsilon in feature extraction.
   ca_only : bool
@@ -1159,12 +1167,19 @@ class TopologyKey(NamedTuple):
   """
 
   model_family: str = "mpnn"
+  model_type: str = "protein"
   node_features: int = 128
   edge_features: int = 128
   hidden_features: int = 128
   num_encoder_layers: int = 3
   num_decoder_layers: int = 3
   k_neighbors: int = 48
+  num_positional_embeddings: int = 32
+  physics_feature_dim: int = 0
+  atom_context_num: int = 0
+  use_side_chain_context: bool = False
+  use_cyclic_offset: bool = False
+  edge_update_dec: bool = False
   augment_eps: float = 0.0
   ca_only: bool = False
   decode_mode: str = "autoregressive"
@@ -1197,30 +1212,81 @@ def extract_topology_key(
   dec = getattr(model, "decoder", None)
   feats = getattr(model, "features", None)
 
-  enc_layers = len(getattr(enc, "layers", ())) if enc is not None else 3
-  dec_layers = len(getattr(dec, "layers", ())) if dec is not None else 3
-  w_e = getattr(enc, "w_e", None) if enc is not None else None
-  hidden_dim = int(w_e.weight.shape[0]) if w_e is not None and hasattr(w_e, "weight") else 128
-  node_dim = int(getattr(feats, "node_features", hidden_dim))
-  edge_dim = int(getattr(feats, "edge_features", hidden_dim))
-  top_k = int(getattr(feats, "top_k", 48))
+  enc_seq = (
+    getattr(enc, "encoder_layers", getattr(enc, "layers", None))
+    if enc is not None
+    else getattr(model, "encoder_layers", None)
+  )
+  dec_seq = (
+    getattr(dec, "decoder_layers", getattr(dec, "layers", None))
+    if dec is not None
+    else getattr(model, "decoder_layers", None)
+  )
+  enc_layers = len(enc_seq) if enc_seq is not None else int(getattr(model, "num_encoder_layers", 3))
+  dec_layers = len(dec_seq) if dec_seq is not None else int(getattr(model, "num_decoder_layers", 3))
+  edge_update_dec = bool(
+    dec_seq
+    and (
+      getattr(dec_seq[0], "W11", None) is not None
+      or getattr(dec_seq[0], "edge_update_mlp", None) is not None
+    ),
+  )
+  w_e = getattr(enc, "w_e", None) if enc is not None else getattr(feats, "w_e_proj", None)
+  hidden_dim = int(w_e.weight.shape[0]) if w_e is not None and hasattr(w_e, "weight") else int(
+    getattr(model, "node_features_dim", 128),
+  )
+  node_dim = int(getattr(model, "node_features_dim", getattr(feats, "node_features", hidden_dim)))
+  edge_dim = int(getattr(model, "edge_features_dim", getattr(feats, "edge_features", hidden_dim)))
+  top_k = int(getattr(feats, "k_neighbors", getattr(feats, "top_k", 48)))
+  num_pos = int(getattr(feats, "num_positional_embeddings", 32))
+  phys_proj = getattr(enc, "physics_projection", None) if enc is not None else None
+  phys_dim = (
+    int(phys_proj.weight.shape[1])
+    if phys_proj is not None and hasattr(phys_proj, "weight")
+    else int(getattr(enc, "physics_feature_dim", 0))
+  )
+  atom_ctx = int(getattr(feats, "atom_context_num", 0))
+  use_sc = bool(getattr(model, "ligand_mpnn_use_side_chain_context", False))
+  use_cyclic = bool(getattr(feats, "use_cyclic_offset", getattr(model, "use_cyclic_offset", False)))
   aug_eps = float(getattr(feats, "augment_eps", 0.0))
   ca_only = type(feats).__name__ == "ProteinFeaturesCA" if feats is not None else False
+  model_type = str(
+    getattr(
+      model,
+      "model_type",
+      "ligand" if (atom_ctx > 0 or use_sc) else ("ca_only" if ca_only else "protein"),
+    ),
+  )
 
   decode_mode = "autoregressive"
   ms_strategy = "arithmetic_mean"
   if spec is not None:
     ms_strategy = str(getattr(spec, "multi_state_strategy", None) or "arithmetic_mean")
-    decode_mode = str(getattr(spec, "sampling_strategy", None) or "autoregressive")
+    decode_mode = str(
+      getattr(spec, "decode_mode", None)
+      or getattr(spec, "sampling_strategy", None)
+      or "autoregressive",
+    )
+    if getattr(spec, "ligand_mpnn_use_side_chain_context", None) is not None:
+      use_sc = bool(spec.ligand_mpnn_use_side_chain_context)
+    if getattr(spec, "cyclic", None) is not None:
+      use_cyclic = bool(spec.cyclic)
 
   return TopologyKey(
     model_family=model_family,
+    model_type=model_type,
     node_features=node_dim,
     edge_features=edge_dim,
     hidden_features=hidden_dim,
     num_encoder_layers=enc_layers,
     num_decoder_layers=dec_layers,
     k_neighbors=top_k,
+    num_positional_embeddings=num_pos,
+    physics_feature_dim=phys_dim,
+    atom_context_num=atom_ctx,
+    use_side_chain_context=use_sc,
+    use_cyclic_offset=use_cyclic,
+    edge_update_dec=edge_update_dec,
     augment_eps=aug_eps,
     ca_only=ca_only,
     decode_mode=decode_mode,

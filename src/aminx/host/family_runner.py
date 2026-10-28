@@ -137,13 +137,7 @@ def _slice_l_total(array: np.ndarray, dims: tuple[str, ...], length: int) -> np.
 
 
 def _refuse_driver_modes(spec: Any) -> None:  # noqa: ANN401
-  """Grid, campaign, and multistate fusion are not driver semantics in v1."""
-  if getattr(spec, "grid_mode", False):
-    msg = "family drivers do not support grid_mode in v1"
-    raise ValueError(msg)
-  if getattr(spec, "campaign_mode", False):
-    msg = "family drivers do not support campaign_mode in v1"
-    raise ValueError(msg)
+  """Multistate position-map fusion is not supported by family drivers in v1."""
   if getattr(spec, "state_position_map", None) is not None:
     msg = "family drivers do not support state_position_map in v1"
     raise ValueError(msg)
@@ -301,13 +295,19 @@ def _consume_batch(
   n_structures = len(batch.input_indices)
   energy_parts: dict[int, list[np.ndarray]] = {}
   for chunk_start, chunk_count in windows:
-    produced = stages(
-      batch,
-      chunk_start=chunk_start,
-      chunk_count=chunk_count,
-      scalar_dropout=scalar_dropout,
-      dropout_key=_dropout_key(base_key, purpose, chunk_start),
+    produced = dict(
+      stages(
+        batch,
+        chunk_start=chunk_start,
+        chunk_count=chunk_count,
+        scalar_dropout=scalar_dropout,
+        dropout_key=_dropout_key(base_key, purpose, chunk_start),
+      ),
     )
+    if n_structures == 1:
+      for name, array_spec in schema.items():
+        if name in produced and np.asarray(produced[name]).ndim == len(array_spec.dims):
+          produced[name] = np.asarray(produced[name])[None, ...]
     _check_chunk(produced, schema, n_structures=n_structures)
     for local, index in enumerate(batch.input_indices):
       length = batch.lengths[local]
