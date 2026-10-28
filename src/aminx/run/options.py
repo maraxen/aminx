@@ -153,16 +153,20 @@ class CalibyOptions:
   ----------
   checkpoint_id : str
     Caliby checkpoint identifier (e.g. ``"caliby"``, ``"soluble_caliby"``,
-    ``"caliby_distill"``, ``"caliby_packer_010"``).
-  num_ensemble_conformers : int
-    Number of Gaussian noise conformers for ensemble Potts parameter averaging.
-  sigma_ensemble : float
-    Standard deviation of Gaussian coordinate perturbations for ensemble generation.
+    ``"caliby_distill"``, ``"caliby_packer_010"``). A packer identifier
+    (``caliby_packer_000`` / ``010`` / ``030``) selects the sidechain packer.
+  ensemble_conformers : int
+    Number of Gaussian noise conformers whose Potts parameters are averaged
+    (read by the driver; ``1`` disables the ensemble).
+  ensemble_noise_std : float
+    Standard deviation in angstroms of the coordinate perturbation used to generate
+    each ensemble conformer (read by the driver; ``0.0`` disables the ensemble).
+  packer_step_scale : float
+    Heun step scale of the sidechain packer sampler, matching upstream
+    ``edm_sidechain_sample`` (``1.5``).
   """
 
   checkpoint_id: str = "caliby"
-  num_ensemble_conformers: int = 1
-  sigma_ensemble: float = 0.0
   ensemble_conformers: int = 1
   ensemble_noise_std: float = 0.0
   omit_gap_penalty: float = 1e6
@@ -171,9 +175,7 @@ class CalibyOptions:
   packer_sigma_max: float = 80.0
   packer_rho: float = 7.0
   packer_s_churn: float = 0.0
-  packer_step_scale: float = 1.0
-  pack_sidechains: bool = False
-  packer_checkpoint: str = "caliby_packer_010"
+  packer_step_scale: float = 1.5
 
 
 @dataclass(frozen=True)

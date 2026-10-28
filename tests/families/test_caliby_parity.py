@@ -1151,6 +1151,23 @@ def test_caliby_torch_unpickler_refuses_arbitrary_globals() -> None:
   assert _RestrictedCalibyUnpickler(io.BytesIO(ok)).load() == collections.OrderedDict(weight=1)
 
 
+def test_caliby_options_drop_dead_fields_and_match_upstream_step_scale() -> None:
+  """Dead CalibyOptions fields are removed and packer_step_scale matches upstream's 1.5."""
+  import dataclasses  # noqa: PLC0415
+  import inspect  # noqa: PLC0415
+
+  from aminx.families.caliby.sidechain_diffusion import edm_sidechain_sample  # noqa: PLC0415
+
+  names = {f.name for f in dataclasses.fields(CalibyOptions)}
+  for dead in ("num_ensemble_conformers", "sigma_ensemble", "pack_sidechains", "packer_checkpoint"):
+    assert dead not in names, dead
+  assert CalibyOptions().packer_step_scale == 1.5
+  upstream_default = inspect.signature(edm_sidechain_sample).parameters["step_scale"].default
+  assert CalibyOptions().packer_step_scale == upstream_default
+  assert "ensemble_conformers" in (CalibyOptions.__doc__ or "")
+  assert "ensemble_noise_std" in (CalibyOptions.__doc__ or "")
+
+
 def _factor_potts_raw_sd(key: jax.Array) -> dict[str, np.ndarray]:
   """Build a complete upstream-keyed factor Potts state dict (v1, with background heads).
 
