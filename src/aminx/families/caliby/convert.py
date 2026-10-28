@@ -485,7 +485,7 @@ def convert_caliby_checkpoint(
       "use_sequence": potts_m.mpnn.W_s is not None,  # type: ignore[attr-defined]
       "update_decoder_edges": potts_m.mpnn.decoder_layers[0].update_edges,  # type: ignore[attr-defined]
       "has_w_out": potts_m.mpnn.W_out is not None,  # type: ignore[attr-defined]
-      "has_bg": bool(potts_m.potts_decoder.has_bg),  # type: ignore[attr-defined]
+      "has_bg": potts_m.potts_decoder.has_bg,  # type: ignore[attr-defined]
       "bg_dim": int(potts_m.potts_decoder.bg_dim),  # type: ignore[attr-defined]
     }
   out_p = Path(output_path)

@@ -154,6 +154,9 @@ class CalibyGraphPotts(eqx.Module):
     Whether to symmetrize couplings across reciprocal edges (``True``).
   bg_dim : int
     Output dimension of optional background projections (default ``1``).
+  has_bg : bool
+    Whether ``W_h_bg`` / ``W_J_bg`` are allocated. Set in ``__init__`` from the
+    allocated projections, so it cannot drift from the weights.
   """
 
   node_Wait_i: eqx.nn.Linear  # noqa: N815
@@ -175,6 +178,7 @@ class CalibyGraphPotts(eqx.Module):
   parameterization: str = eqx.field(static=True, default="factorized")
   symmetric_J: bool = eqx.field(static=True, default=True)  # noqa: N815
   bg_dim: int = eqx.field(static=True, default=1)
+  has_bg: bool = eqx.field(static=True, default=False)
 
   def __init__(
     self,
@@ -255,6 +259,7 @@ class CalibyGraphPotts(eqx.Module):
     self.parameterization = parameterization
     self.symmetric_J = symmetric_J
     self.bg_dim = bg_dim
+    self.has_bg = self.W_h_bg is not None or self.W_J_bg is not None
 
   def __call__(
     self,

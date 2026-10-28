@@ -1059,3 +1059,34 @@ def test_caliby_packer_sample_schema_and_handles() -> None:
   assert drv.handles(potts, "sample")
   potts_schema = drv.result_schema(potts, "sample")
   assert set(potts_schema) == {"sequences", "energy"}
+
+
+def test_caliby_checkpoint_manifest_records_has_bg(tmp_path: Path) -> None:
+  """convert_caliby_checkpoint writes a manifest for a has_bg Potts checkpoint.
+
+  Parameters
+  ----------
+  tmp_path : Path
+    Pytest temporary directory for the serialized ``.eqx`` file.
+
+  Returns
+  -------
+  None
+    Asserts the manifest records ``has_bg`` and ``bg_dim``.
+  """
+  from aminx.families.caliby.convert import convert_caliby_checkpoint  # noqa: PLC0415
+
+  ref = CalibyModel(
+    k_neighbors=6,
+    model_version=1,
+    parameterization="factor",
+    has_bg=True,
+    bg_dim=32,
+    key=jax.random.PRNGKey(45),
+  )
+  assert ref.potts_decoder.has_bg is True
+  raw_sd = _extract_raw_caliby_potts_sd(ref)
+  _, manifest = convert_caliby_checkpoint(raw_sd, tmp_path / "caliby_bg.eqx", checkpoint_id="caliby")
+  assert manifest["has_bg"] is True
+  assert manifest["bg_dim"] == 32
+  assert (tmp_path / "caliby_bg.eqx").is_file()
