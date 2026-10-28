@@ -41,7 +41,42 @@ class ArithmeticMeanLogits(eqx.Module):
 
   """
 
-  weights: Float[Array, "S"]
+  weights: Float[Array, " S"]
+  transforms: tuple[object, ...] = ()
+
+  def __init__(
+    self,
+    weights: Float[Array, " S"],
+    transforms: object | None = None,
+    *,
+    cdr_transform: object | None = None,
+  ) -> None:
+    """Initialize weighted arithmetic-mean logit strategy with optional transforms.
+
+    Parameters
+    ----------
+    weights : Float[Array, " S"]
+        Per-state weights.
+    transforms : object | None, optional
+        Optional post-fusion logit transform or sequence of transforms.
+    cdr_transform : object | None, optional
+        Optional CDR frequency logit transform.
+
+    Returns
+    -------
+    None
+        Initializes instance attributes.
+    """
+    self.weights = weights
+    items: list[object] = []
+    if transforms is not None:
+      if isinstance(transforms, (tuple, list)):
+        items.extend(transforms)
+      else:
+        items.append(transforms)
+    if cdr_transform is not None:
+      items.append(cdr_transform)
+    self.transforms = tuple(items)
 
   def __call__(
     self,
@@ -102,6 +137,10 @@ class ArithmeticMeanLogits(eqx.Module):
 
     if bias is not None:
       result = result + bias
+
+    for tfm in self.transforms:
+      if callable(tfm):
+        result = tfm(result)
 
     return result
 

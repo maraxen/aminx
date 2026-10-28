@@ -11,11 +11,13 @@ MODEL_WEIGHTS = Literal[
   "sc",
   "membrane",
   "abmpnn",
+  "antibmpnn",
   "hypermpnn",
   "cyclicmpnn",
   "ca",
 ]
 MODEL_VERSION = Literal[
+  "v_48_000",
   "v_48_002",
   "v_48_010",
   "v_48_020",

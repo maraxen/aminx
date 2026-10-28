@@ -83,3 +83,10 @@ the converted-file sha256s and the bathos run ids.
 ## Decision
 
 `redistribution = allowed` for the nine checkpoints above, with notices shipped. Confirmed by the reviewer 2026-10-14.
+
+## Follow-Up Family Additions (2026-10-27: Caliby, FAMPNN, ThermoMPNN / ThermoMPNN-D)
+
+All published checkpoints below are licensed under MIT (see `NOTICE-weights.md`) and verified against upstream PyTorch checkpoints:
+- **Caliby** (`ProteinDesignLab/caliby`, MIT): `caliby`, `soluble_caliby`, `soluble_caliby_v1`, `caliby_distill`, `soluble_caliby_distill`, `caliby_packer_000`, `caliby_packer_010`, `caliby_packer_030`
+- **FAMPNN** (`richardshuai/fampnn`, MIT): `fampnn_0_0`, `fampnn_0_3`, `fampnn_0_3_cath`
+- **ThermoMPNN & ThermoMPNN-D** (`Kuhlman-Lab/ThermoMPNN`, `Kuhlman-Lab/ThermoMPNN-D`, MIT): `thermo_mpnn_v1_default`, `thermo_mpnn_v2_ens1`, `thermo_mpnn_v2_ens2`, `thermo_mpnn_v2_ens3`, `thermo_mpnn_d_ens1`, `thermo_mpnn_d_ens2`, `thermo_mpnn_d_ens3`

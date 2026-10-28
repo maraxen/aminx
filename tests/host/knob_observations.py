@@ -274,6 +274,15 @@ OBSERVATIONS: dict[str, Verdict] = {
   "protonpotts": IncompatibleArchitecture(
     reason="ProtonPottsOptions require model_family protonpottsmpnn (run/specs.py:460), refused in campaign mode at host/campaign.py:612",
   ),
+  "caliby": IncompatibleArchitecture(
+    reason="CalibyOptions require model_family caliby, refused in campaign mode by refuse_driver_family (host/campaign.py:110)",
+  ),
+  "fampnn": IncompatibleArchitecture(
+    reason="FAMPNNOptions require model_family fampnn, refused in campaign mode by refuse_driver_family (host/campaign.py:110)",
+  ),
+  "thermompnn": IncompatibleArchitecture(
+    reason="ThermoMPNNOptions require model_family thermompnn, refused in campaign mode by refuse_driver_family (host/campaign.py:110)",
+  ),
 
   # --- PlannerDerived: planner-derived per-row variables --------------------------------
   "random_seed": PlannerDerived(

@@ -143,3 +143,100 @@ class LaserOptions:
   strict_load: bool = True
   output_fasta: bool = False
   output_fasta_only: bool = False
+
+
+@dataclass(frozen=True)
+class CalibyOptions:
+  """Options for Caliby Potts and sidechain diffusion family execution.
+
+  Attributes
+  ----------
+  checkpoint_id : str
+    Caliby checkpoint identifier (e.g. ``"caliby"``, ``"soluble_caliby"``,
+    ``"caliby_distill"``, ``"caliby_packer_010"``).
+  num_ensemble_conformers : int
+    Number of Gaussian noise conformers for ensemble Potts parameter averaging.
+  sigma_ensemble : float
+    Standard deviation of Gaussian coordinate perturbations for ensemble generation.
+  """
+
+  checkpoint_id: str = "caliby"
+  num_ensemble_conformers: int = 1
+  sigma_ensemble: float = 0.0
+  ensemble_conformers: int = 1
+  ensemble_noise_std: float = 0.0
+  omit_gap_penalty: float = 1e6
+  packer_num_steps: int = 25
+  packer_sigma_min: float = 0.002
+  packer_sigma_max: float = 80.0
+  packer_rho: float = 7.0
+  packer_s_churn: float = 0.0
+  packer_step_scale: float = 1.0
+  pack_sidechains: bool = False
+  packer_checkpoint: str = "caliby_packer_010"
+
+
+@dataclass(frozen=True)
+class FAMPNNOptions:
+  """Options for Full-Atom MPNN (FAMPNN) family execution.
+
+  Attributes
+  ----------
+  checkpoint_id : str
+      FAMPNN checkpoint identifier.
+  num_seq_steps : int
+      Number of masked autoregressive (MAR) sequence refinement steps.
+  num_scn_steps : int
+      Number of EDM sidechain coordinate diffusion steps per MAR step.
+  sigma_min : float
+      Minimum noise level for Karras EDM schedule.
+  sigma_max : float
+      Maximum noise level for Karras EDM schedule.
+  rho : float
+      Schedule curvature exponent for Karras EDM schedule.
+  s_churn : float
+      Stochastic churn parameter for Karras EDM schedule.
+  step_scale : float
+      Velocity step scaling factor during EDM sampling.
+  pack_each_step : bool
+      Whether to diffuse sidechain coordinates at every MAR sequence step.
+  """
+
+  checkpoint_id: str = "fampnn_0_3"
+  num_seq_steps: int = 8
+  num_scn_steps: int = 18
+  sigma_min: float = 0.002
+  sigma_max: float = 80.0
+  rho: float = 7.0
+  s_churn: float = 0.0
+  step_scale: float = 1.5
+  pack_each_step: bool = True
+
+
+@dataclass(frozen=True)
+class ThermoMPNNOptions:
+  """Options for ThermoMPNN and ThermoMPNN-D stability prediction.
+
+  Attributes
+  ----------
+  checkpoint_id : str
+      Checkpoint or ensemble identifier (e.g. ``"thermo_mpnn_v1_default"``,
+      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``).
+  mode : Literal["single", "double"]
+      Single-mutant SSM (``"single"``) or double-mutant epistatic (``"double"``) mode.
+  distance_threshold : float
+      C-alpha distance cutoff (Angstroms) for epistatic residue pairs in double mode.
+  batch_size : int
+      Pair batch chunk size for ThermoMPNN-D double-mutant scoring.
+  dtype : Literal["float32", "float16"]
+      Floating-point precision for trunk and head evaluation.
+  ensemble : bool
+      Whether to average across all 3 v2 ensemble members when using v2/D.
+  """
+
+  checkpoint_id: str = "thermo_mpnn_v1_default"
+  mode: Literal["single", "double"] = "single"
+  distance_threshold: float = 5.0
+  batch_size: int = 10000
+  dtype: Literal["float32", "float16"] = "float16"
+  ensemble: bool = True
