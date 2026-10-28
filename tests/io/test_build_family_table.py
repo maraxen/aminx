@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -19,11 +20,21 @@ GENERATOR_PATH = REPO / "scripts/weights/build_family_weights.py"
 
 
 def _load_generator() -> ModuleType:
-  spec = importlib.util.spec_from_file_location("build_family_weights_under_test", GENERATOR_PATH)
+  """Import the generator by path. It must be in ``sys.modules`` while it executes.
+
+  ``@dataclass`` looks up ``sys.modules[cls.__module__]`` at class creation, so an unregistered
+  module fails with ``AttributeError`` before any test assertion runs.
+  """
+  name = "build_family_weights_under_test"
+  spec = importlib.util.spec_from_file_location(name, GENERATOR_PATH)
   assert spec is not None
   assert spec.loader is not None
   module = importlib.util.module_from_spec(spec)
-  spec.loader.exec_module(module)
+  sys.modules[name] = module
+  try:
+    spec.loader.exec_module(module)
+  finally:
+    sys.modules.pop(name, None)
   return module
 
 
