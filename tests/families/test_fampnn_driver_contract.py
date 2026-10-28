@@ -120,6 +120,24 @@ def test_empty_constraint_fields_are_accepted(resolved: dict[str, Any]) -> None:
   assert resolved["loaded_id"] == "fampnn_0_3"
 
 
+@pytest.mark.parametrize("purpose", ["score:nll", "score:logits"])
+def test_score_purposes_refuse_sequences_to_score(purpose: str) -> None:
+  """Scoring returns the wild-type sequence only, so candidates would be silently dropped.
+
+  Parameters
+  ----------
+  purpose : str
+    Scoring purpose that must refuse ``sequences_to_score``.
+
+  Returns
+  -------
+  None
+    Asserts the refusal.
+  """
+  with pytest.raises(ValueError, match="does not apply sequences_to_score"):
+    FAMPNNDriver().stages(_spec(sequences_to_score=("ACDE",)), purpose, model=None)  # type: ignore[arg-type]
+
+
 class _FakeOut(NamedTuple):
   logits_fampnn: jax.Array
   logits_aminx: jax.Array

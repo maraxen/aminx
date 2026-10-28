@@ -771,7 +771,20 @@ class FAMPNNDriver:
     -------
     FamilyStages
       Stage callable.
+
+    Raises
+    ------
+    ValueError
+      If ``purpose`` is ``score:nll`` or ``score:logits`` and ``sequences_to_score`` is set. Those
+      purposes score the wild-type sequence only.
     """
+    candidates = tuple(getattr(spec, "sequences_to_score", ()) or ())
+    if purpose in ("score:nll", "score:logits") and candidates:
+      msg = (
+        f"fampnn {purpose} scores the wild-type sequence only and does not apply "
+        "sequences_to_score; unset sequences_to_score for fampnn"
+      )
+      raise ValueError(msg)
     return _FAMPNNStages(cast("FAMPNNModel", model), spec, purpose)
 
   def result_schema(self, spec: Any, purpose: str) -> Mapping[str, SinkArraySpec]:  # noqa: ANN401

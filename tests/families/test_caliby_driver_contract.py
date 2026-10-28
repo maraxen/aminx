@@ -91,6 +91,21 @@ def test_conflicting_spec_and_options_checkpoint_ids_raise(resolved: dict[str, A
   assert "loaded_id" not in resolved
 
 
+@pytest.mark.parametrize("purpose", ["score:nll", "score:logits"])
+def test_wild_type_score_purposes_refuse_sequences_to_score(purpose: str) -> None:
+  """Scoring returns the wild-type sequence only; candidates belong to score:energy."""
+  spec = _spec(caliby=CalibyOptions(), sequences_to_score=("ACDE",))
+
+  with pytest.raises(ValueError, match="does not apply sequences_to_score"):
+    CalibyDriver().stages(spec, purpose, model=None)  # type: ignore[arg-type]
+
+
+def test_score_energy_accepts_sequences_to_score() -> None:
+  spec = _spec(caliby=CalibyOptions(), sequences_to_score=("ACDE",))
+
+  assert CalibyDriver().stages(spec, "score:energy", model=None) is not None  # type: ignore[arg-type]
+
+
 def test_packer_selection_follows_the_resolved_id() -> None:
   assert _is_packer_checkpoint(_spec(caliby=CalibyOptions(checkpoint_id="caliby_packer_010")))
   assert _is_packer_checkpoint(_spec(checkpoint_id="caliby_packer_030", caliby=CalibyOptions()))
