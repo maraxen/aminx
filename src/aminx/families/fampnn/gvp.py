@@ -320,18 +320,27 @@ class GVP(eqx.Module):
 class GVPGraphEmbedding(eqx.Module):
   """FAMPNN GVP graph embedding constructing initial node/edge scalar and vector features.
 
-  Matches ``fampnn/model/gvp/features.py::GVPGraphEmbedding``:
+  Matches ``fampnn/model/gvp/gvp_modules.py::GVPGraphEmbedding``. Upstream
+  ``embed_node`` and ``embed_edge`` are ``Sequential(GVP, LayerNorm)``: there is
+  no pre-GVP LayerNorm. Checkpoint keys ``embed_node.0`` / ``embed_edge.0`` are
+  the GVPs (``W_v_gvp`` / ``W_e_gvp``); ``embed_node.1`` / ``embed_edge.1`` are
+  the following LayerNorms (``W_v_norm1`` / ``W_e_norm1``).
+
   - Node scalar input: ``6 (dihedrals) + 21 (aatype) + 14 (atom14_mask) = 41``
-  - Node vector input: ``3 (forward/backward CA unit vectors + virtual CB unit vector) + 14 (atom14 - CA displacements) = 17``
+  - Node vector input: ``3 (forward/backward CA unit vectors + virtual CB unit vector) + 14 (CA - atom14 displacements) = 17``
   - Edge scalar input: ``16 (CA-CA RBFs) + 16 (sinusoidal positional encodings) = 32``
-  - Edge vector input: ``14 (source j atom14 - CA_i displacements)``
+  - Edge vector input: ``14 (CA_i - source j atom14 displacements)``
 
   Attributes
   ----------
-  W_v : tuple[GVPLayerNorm, GVP, GVPLayerNorm]
-    Node embedding pipeline ``(41, 17) -> (128, 16)``.
-  W_e : tuple[GVPLayerNorm, GVP, GVPLayerNorm]
-    Edge embedding pipeline ``(32, 14) -> (32, 1)``.
+  W_v_gvp : GVP
+    Node GVP ``(41, 17) -> (128, 16)`` with no activations.
+  W_v_norm1 : GVPLayerNorm
+    LayerNorm applied to the node GVP output.
+  W_e_gvp : GVP
+    Edge GVP ``(32, 14) -> (32, 1)`` with no activations.
+  W_e_norm1 : GVPLayerNorm
+    LayerNorm applied to the edge GVP output.
   top_k : int
     Number of kNN neighbors (default ``30``).
   num_rbf : int
@@ -340,10 +349,8 @@ class GVPGraphEmbedding(eqx.Module):
     Sinusoidal positional embedding dimension (default ``16``).
   """
 
-  W_v_norm0: GVPLayerNorm
   W_v_gvp: GVP
   W_v_norm1: GVPLayerNorm
-  W_e_norm0: GVPLayerNorm
   W_e_gvp: GVP
   W_e_norm1: GVPLayerNorm
   embed_mpnn_node: eqx.nn.Linear | None = None
@@ -402,7 +409,6 @@ class GVPGraphEmbedding(eqx.Module):
     if key is None:
       key = jax.random.PRNGKey(0)
     k1, k2, k3, k4 = jax.random.split(key, 4)
-    self.W_v_norm0 = GVPLayerNorm(node_in_dim)
     self.W_v_gvp = GVP(
       node_in_dim,
       node_h_dim,
@@ -412,7 +418,6 @@ class GVPGraphEmbedding(eqx.Module):
     )
     self.W_v_norm1 = GVPLayerNorm(node_h_dim)
 
-    self.W_e_norm0 = GVPLayerNorm(edge_in_dim)
     self.W_e_gvp = GVP(
       edge_in_dim,
       edge_h_dim,

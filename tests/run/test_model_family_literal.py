@@ -29,7 +29,16 @@ def _literal_members() -> set[str]:
 
 
 def test_model_family_literal_includes_driver_families() -> None:
-    assert _literal_members() == {"proteinmpnn", "ligandmpnn", "membrane", "pottsmpnn", "protonpottsmpnn", "lasermpnn"}
+    assert _literal_members() == {
+        "proteinmpnn",
+        "ligandmpnn",
+        "membrane",
+        "pottsmpnn",
+        "protonpottsmpnn",
+        "lasermpnn",
+        "fampnn",
+        "thermompnn",
+    }
 
 
 def test_prefix_derivation_precedes_model_type() -> None:

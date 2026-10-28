@@ -213,17 +213,13 @@ def _load_gvp_encoder(
   prefix: str,
 ) -> GVPEncoder:
   eg: GVPGraphEmbedding = enc.embed_graph
-  eg = eqx.tree_at(
-    lambda m: m.W_v_norm0, eg, _load_gvp_norm(eg.W_v_norm0, sd, f"{prefix}.embed_graph.W_v.0"),
-  )
+  # Upstream embed_node/embed_edge are Sequential(GVP, LayerNorm), renamed to
+  # W_v.1 / W_v.2 and W_e.1 / W_e.2. There is no W_*.0 pre-norm in the checkpoint.
   eg = eqx.tree_at(
     lambda m: m.W_v_gvp, eg, _load_gvp(eg.W_v_gvp, sd, f"{prefix}.embed_graph.W_v.1"),
   )
   eg = eqx.tree_at(
     lambda m: m.W_v_norm1, eg, _load_gvp_norm(eg.W_v_norm1, sd, f"{prefix}.embed_graph.W_v.2"),
-  )
-  eg = eqx.tree_at(
-    lambda m: m.W_e_norm0, eg, _load_gvp_norm(eg.W_e_norm0, sd, f"{prefix}.embed_graph.W_e.0"),
   )
   eg = eqx.tree_at(
     lambda m: m.W_e_gvp, eg, _load_gvp(eg.W_e_gvp, sd, f"{prefix}.embed_graph.W_e.1"),

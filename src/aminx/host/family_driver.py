@@ -34,7 +34,6 @@ ModelFamily = Literal[
   "pottsmpnn",
   "protonpottsmpnn",
   "lasermpnn",
-  "caliby",
   "fampnn",
   "thermompnn",
 ]
@@ -44,7 +43,6 @@ DRIVER_BACKED_FAMILY_MODULES: dict[str, str] = {
   "pottsmpnn": "aminx.families.potts_mpnn",
   "protonpottsmpnn": "aminx.families.protonpotts_mpnn",
   "lasermpnn": "aminx.families.laser_mpnn",
-  "caliby": "aminx.families.caliby",
   "fampnn": "aminx.families.fampnn",
   "thermompnn": "aminx.families.thermo_mpnn",
 }

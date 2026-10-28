@@ -94,6 +94,29 @@ def test_atom37_atom14_roundtrip() -> None:
   np.testing.assert_allclose(mask14, mask14_rt, atol=1e-6)
 
 
+def test_atom37_indices_and_reference_match_upstream_order() -> None:
+  """Present Atom14 slots use AlphaFold atom37 indices, and sidechains are not at the origin."""
+  from aminx.families.fampnn.constants import (
+    RESTYPE_ATOM14_TO_ATOM37,
+    RESTYPE_ATOM37_MASK,
+    RESTYPE_REF_POS_ATOM37,
+  )
+
+  # HIS ND1/CD2 and ARG NE/CZ follow atom_order, not the previous swapped columns.
+  his = np.asarray(RESTYPE_ATOM14_TO_ATOM37[8])
+  arg = np.asarray(RESTYPE_ATOM14_TO_ATOM37[1])
+  assert his[6:10].tolist() == [14, 13, 20, 25]
+  assert arg[7:11].tolist() == [23, 32, 29, 30]
+  # Empty slots are CA. GLY has no CB.
+  assert int(RESTYPE_ATOM14_TO_ATOM37[7, 4]) == 1
+  ref = np.asarray(RESTYPE_REF_POS_ATOM37)
+  mask = np.asarray(RESTYPE_ATOM37_MASK)
+  # ARG sidechain atoms past CB are present and not the CA origin.
+  arg_side = ref[1, 5:][mask[1, 5:] > 0]
+  assert arg_side.shape[0] > 0
+  assert float(np.max(np.abs(arg_side))) > 0.5
+
+
 def test_rotation_frames_so3_orthogonality() -> None:
   """Verify get_rotation_frames produces orthogonal SO(3) matrices with det == +1."""
   key = jax.random.PRNGKey(1)
@@ -300,10 +323,8 @@ def _extract_raw_fampnn_sd(model: FAMPNNModel) -> dict[str, np.ndarray]:
 
   def put_gvp_enc(enc: object, prefix: str) -> None:
     eg = enc.embed_graph
-    put_gvp_norm(eg.W_v_norm0, f"{prefix}.embed_graph.W_v.0")
     put_gvp(eg.W_v_gvp, f"{prefix}.embed_graph.embed_node.0")
     put_gvp_norm(eg.W_v_norm1, f"{prefix}.embed_graph.embed_node.1")
-    put_gvp_norm(eg.W_e_norm0, f"{prefix}.embed_graph.W_e.0")
     put_gvp(eg.W_e_gvp, f"{prefix}.embed_graph.embed_edge.0")
     put_gvp_norm(eg.W_e_norm1, f"{prefix}.embed_graph.embed_edge.1")
     if eg.embed_mpnn_node is not None:
