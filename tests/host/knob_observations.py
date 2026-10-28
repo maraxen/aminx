@@ -281,7 +281,7 @@ OBSERVATIONS: dict[str, Verdict] = {
     reason="FAMPNNOptions require model_family fampnn, refused in campaign mode by refuse_driver_family (host/campaign.py:110)",
   ),
   "thermompnn": IncompatibleArchitecture(
-    reason="ThermoMPNNOptions require model_family thermompnn, refused in campaign mode by refuse_driver_family (host/campaign.py:110)",
+    reason="ThermoMPNNOptions are inert: model_family thermompnn is refused at spec validation (no FamilyDriver yet), so no run reads them",
   ),
 
   # --- PlannerDerived: planner-derived per-row variables --------------------------------

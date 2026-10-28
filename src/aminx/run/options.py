@@ -184,8 +184,9 @@ class FAMPNNOptions:
 
   Attributes
   ----------
-  checkpoint_id : str
-      FAMPNN checkpoint identifier.
+  checkpoint_id : str | None
+      FAMPNN checkpoint identifier. ``None`` defers to ``RunSpecification.checkpoint_id``, then to
+      ``fampnn_0_3``; when both are set they must agree.
   num_seq_steps : int
       Number of masked autoregressive (MAR) sequence refinement steps.
   num_scn_steps : int
@@ -204,7 +205,7 @@ class FAMPNNOptions:
       Whether to diffuse sidechain coordinates at every MAR sequence step.
   """
 
-  checkpoint_id: str = "fampnn_0_3"
+  checkpoint_id: str | None = None
   num_seq_steps: int = 8
   num_scn_steps: int = 18
   sigma_min: float = 0.002

@@ -142,7 +142,8 @@ def mar_sample(
   Returns
   -------
   tuple[Int[Array, " L"], Float[Array, "L 21"], Float[Array, "L 37 3"], Float[Array, "L 37"]]
-    Tuple ``(seq_aminx, logits_aminx, packed_atom37_xyz, psce_atom37)``.
+    Tuple ``(seq_aminx, logits_aminx, packed_atom37_xyz, psce_atom37)``. ``logits_aminx`` are the
+    logits of a forward pass on the returned sequence, so their argmax agrees with ``seq_aminx``.
   """
   if key is None:
     key = jax.random.PRNGKey(0)
@@ -245,20 +246,24 @@ def mar_sample(
     )
     final_atom_mask = RESTYPE_ATOM37_MASK[jnp.clip(final_aa, 0, 20)].astype(dtype)
 
+  # The loop's last forward pass ran before the final step unmasked its positions, so its logits
+  # describe a sequence that was never returned. One forward on the final state fixes that, and
+  # the confidence head reads the same pass.
+  fwd_last = model(
+    final_xyz, final_atom_mask, final_aa, final_seq_mask, mask, residue_idx, chain_idx,
+  )
+  final_logits_aminx = fwd_last.logits_aminx
   if model.scn_confidence is not None:
-    fwd_conf = model(
-      final_xyz, final_atom_mask, final_aa, final_seq_mask, mask, residue_idx, chain_idx,
-    )
     psce_37 = model.scn_confidence(
       final_xyz,
       final_atom_mask,
-      fwd_conf.h_v,
+      fwd_last.h_v,
       final_aa,
       mask,
       residue_idx,
       chain_idx,
-      h_esv=fwd_conf.h_e,
-      e_idx=fwd_conf.e_idx,
+      h_esv=fwd_last.h_e,
+      e_idx=fwd_last.e_idx,
     )
   else:
     psce_37 = jnp.full((num_l, 37), jnp.nan, dtype=dtype)
@@ -272,6 +277,63 @@ def _options(spec: Any) -> FAMPNNOptions:  # noqa: ANN401
   if opt is None:
     return FAMPNNOptions()
   return cast("FAMPNNOptions", opt)
+
+
+_DEFAULT_CHECKPOINT_ID = "fampnn_0_3"
+
+# Spec fields that constrain decoding but that the FAMPNN stages never read. Setting one would
+# otherwise produce unconstrained output with no error, so ``load`` refuses the run instead.
+_UNSUPPORTED_CONSTRAINT_FIELDS: tuple[str, ...] = (
+  "fixed_positions",
+  "fixed_tokens",
+  "fixed_mask",
+  "bias",
+  "omit_aa",
+  "omit_aa_per_position",
+)
+
+
+def _reject_unsupported_constraints(spec: Any) -> None:  # noqa: ANN401
+  """Raise ``ValueError`` if ``spec`` sets a constraint field the FAMPNN driver would drop.
+
+  Raises
+  ------
+  ValueError
+    If any field in ``_UNSUPPORTED_CONSTRAINT_FIELDS`` is set to a non-empty value.
+  """
+  present = [name for name in _UNSUPPORTED_CONSTRAINT_FIELDS if _is_set(getattr(spec, name, None))]
+  if present:
+    msg = (
+      f"fampnn does not apply {', '.join(present)}; the run would ignore them and return "
+      "unconstrained sequences. Unset these fields for fampnn."
+    )
+    raise ValueError(msg)
+
+
+def _is_set(value: Any) -> bool:  # noqa: ANN401
+  return value is not None and not (isinstance(value, (tuple, list, Mapping)) and len(value) == 0)
+
+
+def _checkpoint_id(spec: Any) -> str:  # noqa: ANN401
+  """Effective FAMPNN checkpoint id: ``spec.checkpoint_id``, else ``spec.fampnn.checkpoint_id``.
+
+  The two fields name the same thing, so a run that sets both must set them equal. A run that sets
+  neither gets ``fampnn_0_3``.
+
+  Raises
+  ------
+  ValueError
+    If both are set and differ.
+  """
+  spec_id = getattr(spec, "checkpoint_id", None)
+  options_id = _options(spec).checkpoint_id
+  if spec_id is not None and options_id is not None and spec_id != options_id:
+    msg = (
+      f"conflicting FAMPNN checkpoint ids: spec.checkpoint_id={spec_id!r} but "
+      f"spec.fampnn.checkpoint_id={options_id!r}; set one of them, or make them equal"
+    )
+    raise ValueError(msg)
+  return str(spec_id or options_id or _DEFAULT_CHECKPOINT_ID)
 
 
 def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
@@ -591,15 +653,15 @@ class FAMPNNDriver:
     FAMPNNModel
       Loaded ``FAMPNNModel``.
     """
-    options = _options(spec)
-    ckpt_id = str(getattr(spec, "checkpoint_id", None) or options.checkpoint_id or "fampnn_0_3")
+    _reject_unsupported_constraints(spec)
+    ckpt_id = _checkpoint_id(spec)
     local = getattr(spec, "model_local_path", None)
     if local is not None:
       path = Path(str(local))
       if path.suffix.lower() in (".pt", ".ckpt", ".pth"):
         return _load_fampnn_torch(path)
       return _load_fampnn_eqx(path, ckpt_id)
-    artifact = _resolve_driver_checkpoint(spec, "fampnn")
+    artifact = _resolve_driver_checkpoint(spec, "fampnn", checkpoint_id=ckpt_id)
     if artifact is None:
       msg = (
         "FAMPNNDriver requires model_local_path, a checkpoint registry entry with sha256, "
