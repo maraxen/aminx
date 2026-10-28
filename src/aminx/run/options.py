@@ -151,10 +151,11 @@ class CalibyOptions:
 
   Attributes
   ----------
-  checkpoint_id : str
+  checkpoint_id : str | None
     Caliby checkpoint identifier (e.g. ``"caliby"``, ``"soluble_caliby"``,
-    ``"caliby_distill"``, ``"caliby_packer_010"``). A packer identifier
-    (``caliby_packer_000`` / ``010`` / ``030``) selects the sidechain packer.
+    ``"caliby_distill"``, ``"caliby_packer_010"``). ``None`` defers to
+    ``RunSpecification.checkpoint_id``, then to ``caliby``; when both are set they must agree.
+    A packer identifier (``caliby_packer_000`` / ``010`` / ``030``) selects the sidechain packer.
   ensemble_conformers : int
     Number of Gaussian noise conformers whose Potts parameters are averaged
     (read by the driver; ``1`` disables the ensemble).
@@ -166,7 +167,7 @@ class CalibyOptions:
     ``edm_sidechain_sample`` (``1.5``).
   """
 
-  checkpoint_id: str = "caliby"
+  checkpoint_id: str | None = None
   ensemble_conformers: int = 1
   ensemble_noise_std: float = 0.0
   omit_gap_penalty: float = 1e6

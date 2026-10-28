@@ -103,15 +103,38 @@ def _options(spec: Any) -> CalibyOptions:  # noqa: ANN401
   return cast("CalibyOptions", opt)
 
 
+_DEFAULT_CHECKPOINT_ID = "caliby"
+
+
+def _checkpoint_id(spec: Any) -> str:  # noqa: ANN401
+  """Effective Caliby checkpoint id: ``spec.checkpoint_id``, else ``spec.caliby.checkpoint_id``.
+
+  A run that sets neither gets ``caliby``, the Potts default. A run that sets both must set
+  them equal.
+
+  Raises
+  ------
+  ValueError
+    If both are set and differ.
+  """
+  spec_id = getattr(spec, "checkpoint_id", None)
+  options_id = _options(spec).checkpoint_id
+  if spec_id is not None and options_id is not None and spec_id != options_id:
+    msg = (
+      f"conflicting Caliby checkpoint ids: spec.checkpoint_id={spec_id!r} but "
+      f"spec.caliby.checkpoint_id={options_id!r}; set one of them, or make them equal"
+    )
+    raise ValueError(msg)
+  return str(spec_id or options_id or _DEFAULT_CHECKPOINT_ID)
+
+
 def _is_packer_checkpoint(spec: Any) -> bool:  # noqa: ANN401
   """Return whether ``spec`` selects a Caliby sidechain packer checkpoint.
 
-  Checkpoint id resolution matches ``CalibyDriver.load``: ``spec.checkpoint_id``
-  when set, otherwise ``CalibyOptions.checkpoint_id``. A path whose name contains
-  ``packer`` is also a packer. The default options id ``caliby`` stays Potts.
+  Checkpoint id resolution matches ``CalibyDriver.load`` through :func:`_checkpoint_id`.
+  A path whose name contains ``packer`` is also a packer. The default id ``caliby`` stays Potts.
   """
-  options = _options(spec)
-  ckpt_id = str(getattr(spec, "checkpoint_id", None) or options.checkpoint_id or "caliby_distill")
+  ckpt_id = _checkpoint_id(spec)
   local = getattr(spec, "model_local_path", None)
   path_name = Path(str(local)).name if local is not None else ""
   return ckpt_id in CALIBY_PACKER_CHECKPOINTS or "packer" in path_name
@@ -657,15 +680,14 @@ class CalibyDriver:
     eqx.Module
       Loaded ``CalibyModel`` or ``CalibySidechainMLP``.
     """
-    options = _options(spec)
-    ckpt_id = str(getattr(spec, "checkpoint_id", None) or options.checkpoint_id or "caliby_distill")
+    ckpt_id = _checkpoint_id(spec)
     local = getattr(spec, "model_local_path", None)
     if local is not None:
       path = Path(str(local))
       if path.suffix.lower() in (".ckpt", ".pt", ".pth"):
         return _load_caliby_torch(path)
       return _load_caliby_eqx(path, ckpt_id)
-    artifact = _resolve_driver_checkpoint(spec, "caliby")
+    artifact = _resolve_driver_checkpoint(spec, "caliby", checkpoint_id=ckpt_id)
     if artifact is None:
       msg = (
         "CalibyDriver requires model_local_path, a checkpoint registry entry with sha256, "
