@@ -10,15 +10,17 @@ planner/sampler. Use `topology_hash()` to derive cache keys from PlannerTopology
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import field, fields
+from dataclasses import field, fields, is_dataclass
 from os import PathLike, fspath
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 import equinox as eqx
 import jax
+import numpy as np
 from xtrax.run import RunSpec as _XtraxRunSpec
 
 from aminx.types.stages import DecodingFusionFn, EncodingFusionFn
@@ -47,14 +49,37 @@ class IOConfig(eqx.Module):
     output_h5_path: Path | None = None,
     output_zarr_path: Path | None = None,
   ) -> None:
-    resolved_output = output_path
+    """Initialize host I/O configuration.
+
+    Parameters
+    ----------
+    output_dir : Path | None, optional
+      Directory for output artifacts.
+    sink_kind : str, default="none"
+      Output sink kind identifier.
+    manifest_path : Path | None, optional
+      Preprocessed index or manifest path.
+    output_path : Path | None, optional
+      Canonical output store path.
+    cache_path : Path | None, optional
+      Optional structure cache path.
+    output_h5_path : Path | None, optional
+      Deprecated alias for ``output_path``.
+    output_zarr_path : Path | None, optional
+      Alias for ``output_path``.
+    """
+    resolved_output = _optional_path(output_path)
     if resolved_output is None:
-      resolved_output = output_zarr_path if output_zarr_path is not None else output_h5_path
-    self.output_dir = output_dir
+      resolved_output = (
+        _optional_path(output_zarr_path)
+        if output_zarr_path is not None
+        else _optional_path(output_h5_path)
+      )
+    self.output_dir = _optional_path(output_dir)
     self.sink_kind = sink_kind
-    self.manifest_path = manifest_path
+    self.manifest_path = _optional_path(manifest_path)
     self.output_path = resolved_output
-    self.cache_path = cache_path
+    self.cache_path = _optional_path(cache_path)
 
   @property
   def output_h5_path(self) -> Path | None:
@@ -169,6 +194,7 @@ class SamplingConfig(eqx.Module):
   state_position_map: Any = None
   state_weights: Any = None
   structure_mapping: Any = None
+  wave: Any = None
 
 
 class RunSpec(_XtraxRunSpec):
@@ -392,14 +418,69 @@ def _infer_sink_kind(spec: object) -> str:
   return "none"
 
 
+def _serialize_for_run_id(val: object) -> str | None:
+  """Deterministically serialize a spec field value for run_id hashing."""
+  if val is None:
+    return "None"
+  if val is UNSET:
+    return "UNSET"
+  if isinstance(val, bool):
+    return f"bool:{val}"
+  if isinstance(val, (int, np.integer)):
+    return f"int:{int(val)}"
+  if isinstance(val, (float, np.floating)):
+    return f"float:{float(val)!r}"
+  if isinstance(val, (str, Path, PathLike)):
+    return f"str:{fspath(val) if isinstance(val, (Path, PathLike)) else val}"
+  if isinstance(val, bytes):
+    return f"bytes:{val.hex()}"
+  if isinstance(val, io.StringIO):
+    return f"StringIO:{val.getvalue()}"
+  if isinstance(val, io.BytesIO):
+    return f"BytesIO:{val.getvalue().hex()}"
+  if isinstance(val, (np.ndarray, jax.Array)):
+    arr = np.ascontiguousarray(np.asarray(val))
+    arr_digest = hashlib.sha256(arr.tobytes()).hexdigest()
+    return f"array:{arr.dtype.str}:{arr.shape}:{arr_digest}"
+  if isinstance(val, Mapping):
+    items = [
+      f"{_serialize_for_run_id(k)}:{_serialize_for_run_id(v)}"
+      for k, v in sorted(val.items(), key=lambda kv: str(kv[0]))
+    ]
+    return "dict:{" + ",".join(items) + "}"
+  if isinstance(val, (list, tuple)):
+    return "seq:[" + ",".join(str(_serialize_for_run_id(x)) for x in val) + "]"
+  if is_dataclass(val):
+    dc_items = [
+      f"{f.name}:{_serialize_for_run_id(getattr(val, f.name))}"
+      for f in fields(val)
+      if not f.name.startswith("_")
+    ]
+    return f"dc:{val.__class__.__name__}{{" + ",".join(dc_items) + "}"
+  return None
+
+
+_RUN_ID_EXCLUDED_FIELDS: frozenset[str] = frozenset(
+  {
+    "run_id",
+    "output_path",
+    "output_zarr_path",
+    "output_h5_path",
+    "output_dir",
+    "run_spec",
+    "_run_spec_synced",
+  },
+)
+
+
 def _compute_deterministic_run_id(spec: object) -> str:
   """Compute deterministic run_id from spec or its relevant fields (backlog-5560)."""
   explicit = getattr(spec, "run_id", None)
   if explicit:
     return str(explicit)
   hasher = hashlib.sha256()
-  hasher.update(spec.__class__.__name__.encode("utf-8"))
-  fields_to_hash = (
+  hasher.update(spec.__class__.__name__.encode("utf-8") + b"\x00")
+  priority_fields = (
     "model_name",
     "model_version",
     "model_weights",
@@ -411,22 +492,30 @@ def _compute_deterministic_run_id(spec: object) -> str:
     "num_samples",
     "temperature",
     "sampling_strategy",
-    "output_path",
-    "output_zarr_path",
-    "output_h5_path",
     "spec_hash",
   )
-  for field_name in fields_to_hash:
+  seen: set[str] = set()
+  for field_name in priority_fields:
+    seen.add(field_name)
     val = getattr(spec, field_name, None)
     if val is not None:
-      hasher.update(f"{field_name}:{val!r}".encode())
+      serialized = _serialize_for_run_id(val)
+      if serialized is not None:
+        hasher.update(f"{field_name}={serialized}\x00".encode("utf-8"))
+  all_keys: set[str] = set()
+  if is_dataclass(spec):
+    all_keys.update(f.name for f in fields(spec))
   if hasattr(spec, "__dict__"):
-    for k in sorted(spec.__dict__.keys()):
-      if k.startswith("_") or k in fields_to_hash:
-        continue
-      v = spec.__dict__[k]
-      if isinstance(v, (int, float, str, bool, bytes, Path, list, tuple)):
-        hasher.update(f"{k}:{v!r}".encode())
+    all_keys.update(spec.__dict__.keys())
+  for k in sorted(all_keys):
+    if k.startswith("_") or k in seen or k in _RUN_ID_EXCLUDED_FIELDS:
+      continue
+    v = getattr(spec, k, None)
+    if v is None:
+      continue
+    serialized = _serialize_for_run_id(v)
+    if serialized is not None:
+      hasher.update(f"{k}={serialized}\x00".encode("utf-8"))
   digest = hasher.hexdigest()
   return f"run-{digest[:16]}"
 
@@ -601,6 +690,7 @@ def build_run_spec(spec: object) -> RunSpec:
     state_position_map=getattr(spec, "state_position_map", None),
     state_weights=getattr(spec, "state_weights", None),
     structure_mapping=getattr(spec, "structure_mapping", None),
+    wave=getattr(spec, "wave", None),
   )
 
   return RunSpec(

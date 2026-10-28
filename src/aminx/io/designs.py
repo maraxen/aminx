@@ -189,6 +189,7 @@ class DesignZarrWriter:
       f"logits shape {logits_f32.shape} != {(self.n_canonical, 21)}"
     )
     assert np.isfinite(logits_f32).all(), "Logit values must be finite"
+    logits_f32 = logits_f32 - np.mean(logits_f32, axis=-1, keepdims=True)
     logits = logits_f32.astype(np.float32)
 
     scores = _to_numpy_float32(payload["scores"]).flatten()
@@ -234,20 +235,31 @@ class DesignZarrWriter:
       "state_weights": weights,
     }
 
+    for k_attr, v_attr in list(attrs.items()):
+      if isinstance(v_attr, np.generic):
+        attrs[k_attr] = v_attr.item()
+
     raw_wave = wave_index if wave_index is not None else payload.get("wave_index")
     raw_order = decoding_order if decoding_order is not None else payload.get("decoding_order")
 
     if raw_wave is not None:
-      if isinstance(raw_wave, (np.ndarray, jax.Array, list, tuple)):
+      if isinstance(raw_wave, (np.ndarray, jax.Array, list, tuple)) and np.ndim(raw_wave) > 0:
         wave_np = np.asarray(jax.device_get(raw_wave) if isinstance(raw_wave, jax.Array) else raw_wave)
+        assert wave_np.shape == (self.n_canonical,), (
+          f"wave_index shape {wave_np.shape} != {(self.n_canonical,)}"
+        )
         stage_arrays["wave_index"] = wave_np
         attrs["wave_index"] = wave_np.tolist()
       else:
-        attrs["wave_index"] = raw_wave
-        stage_arrays["wave_index"] = np.asarray([raw_wave])
+        scalar_val = raw_wave.item() if hasattr(raw_wave, "item") else raw_wave
+        attrs["wave_index"] = scalar_val
+        stage_arrays["wave_index"] = np.asarray([scalar_val])
 
     if raw_order is not None:
       order_np = np.asarray(jax.device_get(raw_order) if isinstance(raw_order, jax.Array) else raw_order)
+      assert order_np.shape == (self.n_canonical,), (
+        f"decoding_order shape {order_np.shape} != {(self.n_canonical,)}"
+      )
       stage_arrays["decoding_order"] = order_np
       attrs["decoding_order"] = order_np.tolist()
 

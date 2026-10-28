@@ -198,3 +198,32 @@ def test_unvetted_custom_calls_flagged() -> None:
   smells = check_hlo_smells(synthetic_hlo, disallow_unvetted_custom_calls=True)
   assert len(smells) == 1
   assert "Unvetted custom call target: 'unknown_foreign_kernel'" in smells[0]
+
+
+def test_tuple_return_ops_and_non_f32_dynamic_shapes() -> None:
+  """Verify tuple-typed HLO instructions, non-f32 bounded dynamic shapes, and static kwargs in export_hlo."""
+  synthetic_hlo = """
+  HloModule tuple_and_bf16_module
+  ENTRY main {
+    %arg0 = bf16[<=8, 4] parameter(0)
+    %arg1 = f64[<=4] parameter(1)
+    ROOT %tup = (bf16[<=8, 4], f64[<=4]) all-reduce(%arg0, %arg1), replica_groups={}
+  }
+  """
+  hist = parse_hlo_op_histogram(synthetic_hlo)
+  assert hist.get("all-reduce") == 1
+
+  smells = check_hlo_smells(synthetic_hlo, disallow_collectives=True, disallow_dynamic_shapes=True)
+  assert any("all-reduce" in s for s in smells)
+  bounded = [s for s in smells if "Bounded dynamic shape" in s]
+  assert len(bounded) == 3
+
+  # Verify export_hlo handles static boolean kwargs via functools.partial
+  n_nodes, n_states = 4, 3
+  node_m = jnp.ones((n_nodes, n_states), dtype=jnp.float32) / float(n_states)
+  edge_m = jnp.ones((n_nodes - 1, n_states, n_states), dtype=jnp.float32) / float(n_states**2)
+  edges = jnp.array([[0, 1], [1, 2], [2, 3]], dtype=jnp.int32)
+  hlo_raw = export_hlo(
+    tree_marginals_to_potts, node_m, edge_m, edges, zero_sum_gauge=False, dense_output=False
+  )
+  assert_no_hlo_smells(hlo_raw, disallow_unvetted_custom_calls=True)

@@ -600,16 +600,24 @@ def verify_pinned_file(path: str | Path, expected_sha256: str, *, what: str = "c
   ``.pt`` that a converter reads) rather than resolved through the family registry.
   The digest is computed over the whole file, so a truncated or edited copy fails.
 
-  Args:
-    path: File to verify.
-    expected_sha256: Hex digest the file must have.
-    what: Noun used in the refusal message.
+  Parameters
+  ----------
+  path : str | Path
+    File to verify.
+  expected_sha256 : str
+    Hex digest the file must have.
+  what : str, default="checkpoint"
+    Noun used in the refusal message.
 
-  Returns:
+  Returns
+  -------
+  Path
     ``path`` as a ``Path``, unchanged, when the digest matches.
 
-  Raises:
-    ValueError: If the file's sha256 differs from ``expected_sha256``.
+  Raises
+  ------
+  ValueError
+    If the file's sha256 differs from ``expected_sha256``.
   """
   file_path = Path(path)
   digest = hashlib.sha256(file_path.read_bytes()).hexdigest()

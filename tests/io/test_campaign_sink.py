@@ -118,3 +118,103 @@ def test_unified_campaign_sink_write_and_inspector_roundtrip(tmp_path: Path) -> 
   integrity_after = inspector.verify_integrity()
   assert integrity_after["arm:fampnn"] is False
   assert integrity_after["all_valid"] is False
+
+
+def test_campaign_sink_validation_dedup_and_flags(tmp_path: Path) -> None:
+  """Verify path traversal rejection, campaign_id mismatch, row deduplication, include_empty_arms, and check_arms."""
+  sink_root = tmp_path / "campaign_guard"
+  sink = UnifiedCampaignSink(sink_root, campaign_id="camp_guard")
+
+  with pytest.raises(ValueError, match="unsafe path"):
+    sink.write_arm_results(
+      arm_id="../escape",
+      model_family="mpnn",
+      checkpoint_id="ckpt",
+      manifest_row_hash="row1",
+      records=[],
+    )
+  with pytest.raises(ValueError, match="unsafe path"):
+    sink.write_arm_results(
+      arm_id="arm_a",
+      model_family="mpnn",
+      checkpoint_id="ckpt",
+      manifest_row_hash="row/escape",
+      records=[],
+    )
+
+  # Write initial row and then overwrite the same (arm_id, manifest_row_hash)
+  sink.write_arm_results(
+    arm_id="arm_a",
+    model_family="mpnn",
+    checkpoint_id="ckpt",
+    manifest_row_hash="row1",
+    records=[{"structure_id": "1abc", "sample_idx": 0, "sequence": "AAAA", "score_nll": 2.0}],
+  )
+  sink.write_arm_results(
+    arm_id="arm_a",
+    model_family="mpnn",
+    checkpoint_id="ckpt",
+    manifest_row_hash="row1",
+    records=[{"structure_id": "1abc", "sample_idx": 0, "sequence": "CCCC", "score_nll": 1.0}],
+  )
+  # Register an empty arm
+  sink.write_arm_results(
+    arm_id="arm_empty",
+    model_family="mpnn",
+    checkpoint_id="ckpt",
+    manifest_row_hash="row_empty",
+    records=[],
+  )
+
+  # Reopening with wrong campaign_id must raise ValueError
+  with pytest.raises(ValueError, match="mismatched campaign_id"):
+    UnifiedCampaignSink(sink_root, campaign_id="wrong_id")
+
+  inspector = inspect_campaign_sink(sink_root)
+  sum_all = inspector.summary(include_empty_arms=True)
+  sum_non_empty = inspector.summary(include_empty_arms=False)
+  assert sum_all.arms == ("arm_a", "arm_empty")
+  assert sum_non_empty.arms == ("arm_a",)
+  assert sum_all.total_samples == 1
+  df_guard = inspector.to_dataframe()
+  seq_val = df_guard.iloc[0]["sequence"] if hasattr(df_guard, "iloc") else df_guard[0]["sequence"]
+  assert seq_val == "CCCC"
+
+  # Corrupt arm zarr and verify check_arms=False still passes summary check
+  zarr_p = inspector.open_arm_zarr("arm_a")
+  (zarr_p / "row1" / ".zattrs").write_text('{"corrupt": 1}\n', encoding="utf-8")
+  res_no_arms = inspector.verify_integrity(check_arms=False)
+  assert res_no_arms["summary_parquet"] is True
+  assert res_no_arms["all_valid"] is True
+  assert "arm:arm_a" not in res_no_arms
+
+
+def test_cross_backend_consensus_equal_arm_weighting(tmp_path: Path) -> None:
+  """Verify cross_backend_consensus weights each arm equally regardless of sample count."""
+  sink_root = tmp_path / "campaign_weights"
+  sink = UnifiedCampaignSink(sink_root, campaign_id="camp_w")
+  # Arm A has 1 sample with 'AAAA', Arm B has 3 samples with 'CCCC'
+  sink.write_arm_results(
+    arm_id="arm_a",
+    model_family="mpnn",
+    checkpoint_id="ckpt",
+    manifest_row_hash="r1",
+    records=[{"structure_id": "s1", "sample_idx": 0, "sequence": "AAAA", "score_nll": 1.0}],
+  )
+  sink.write_arm_results(
+    arm_id="arm_b",
+    model_family="mpnn",
+    checkpoint_id="ckpt",
+    manifest_row_hash="r2",
+    records=[
+      {"structure_id": "s1", "sample_idx": 0, "sequence": "CCCC", "score_nll": 1.0},
+      {"structure_id": "s1", "sample_idx": 1, "sequence": "CCCC", "score_nll": 1.1},
+      {"structure_id": "s1", "sample_idx": 2, "sequence": "CCCC", "score_nll": 1.2},
+    ],
+  )
+  inspector = inspect_campaign_sink(sink_root)
+  consensus = inspector.cross_backend_consensus("s1")
+  # Equal arm weighting -> 50% A, 50% C -> entropy == ln(2) and tie broken alphabetically ('A')
+  import math
+  assert consensus["per_position_entropy"][0] == pytest.approx(math.log(2.0))
+  assert consensus["consensus_sequence"] == "AAAA"

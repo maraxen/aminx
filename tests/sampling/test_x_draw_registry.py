@@ -148,6 +148,10 @@ REGISTRY: dict[str, tuple[str, str]] = {
     "exempt",
     "searchsorted over sorted string keys; a lookup, not a draw",
   ),
+  "types/bundles.py::from_colors": (
+    "exempt",
+    "maps tie-group IDs to contiguous group indices (0..G-1), not amino-acid token draws",
+  ),
   "host/averaging.py::_make_encoding_sampling_split_fn_legacy.sample_fn.sample_group_step": (
     "x_excluded",
     "generic host sampler, grouped positions",

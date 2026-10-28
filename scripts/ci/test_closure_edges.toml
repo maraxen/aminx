@@ -114,6 +114,15 @@ allowlist = [
 # driver-backed families below.
 dynamic_count = 2
 
+[module."src/aminx/io/__init__.py"]
+# 1 call site (line 31): importlib.import_module(mod_name) lazily loads
+# aminx.io.campaign_sink or aminx.io.designs on attribute access.
+soft = [
+  "aminx.io.campaign_sink",
+  "aminx.io.designs",
+]
+dynamic_count = 1
+
 [module."src/aminx/io/weights.py"]
 # 2 call sites (lines 226, 510): importlib.resources.files("aminx.model_params")
 # (covered by global prefix `src/aminx/model_params/`) and

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Sequence
-from functools import wraps
+from functools import partial, wraps
 from typing import Any
 
 import jax
@@ -120,7 +120,15 @@ def export_hlo(func: Callable, *args: Any, **kwargs: Any) -> str:
   str
     Textual XLA HLO module string.
   """
-  lowered = jax.jit(func).lower(*args, **kwargs)
+  trace_kwargs: dict[str, Any] = {}
+  static_kwargs: dict[str, Any] = {}
+  for k, v in kwargs.items():
+    if isinstance(v, (bool, str, int, float, tuple)) or v is None or callable(v):
+      static_kwargs[k] = v
+    else:
+      trace_kwargs[k] = v
+  target_fn = partial(func, **static_kwargs) if static_kwargs else func
+  lowered = jax.jit(target_fn).lower(*args, **trace_kwargs)
   if lowered is None:
     raise ValueError("Failed to lower function to HLO.")
   compiler_ir = lowered.compiler_ir("hlo")
@@ -146,7 +154,15 @@ def analyze_memory(func: Callable, *args: Any, **kwargs: Any) -> str:
   str
     Formatted static memory analysis string from compiler.
   """
-  lowered = jax.jit(func).lower(*args, **kwargs)
+  trace_kwargs: dict[str, Any] = {}
+  static_kwargs: dict[str, Any] = {}
+  for k, v in kwargs.items():
+    if isinstance(v, (bool, str, int, float, tuple)) or v is None or callable(v):
+      static_kwargs[k] = v
+    else:
+      trace_kwargs[k] = v
+  target_fn = partial(func, **static_kwargs) if static_kwargs else func
+  lowered = jax.jit(target_fn).lower(*args, **trace_kwargs)
   compiled = lowered.compile()
   analysis = compiled.memory_analysis()
   return str(analysis)
@@ -186,7 +202,10 @@ def assert_zero_copy_overhead(
     )
 
 
-_HLO_INSTR_RE = re.compile(r"^\s*(?:ROOT\s+)?%?[\w.\-]+\s*=\s*\S+\s+([a-zA-Z][\w.\-]*)\(")
+_HLO_INSTR_RE = re.compile(
+  r"^\s*(?:ROOT\s+)?%?[\w.\-]+\s*=\s*(?:\([^()]*\)|\S+)\s+([a-zA-Z][\w.\-]*)\("
+)
+_BOUNDED_DYN_SHAPE_RE = re.compile(r"\b(?:pred|[fsu]\d+|bf16|c\d+)\[[^\]]*<=\d+")
 _CUSTOM_CALL_TARGET_RE = re.compile(r'custom_call_target="([^"]+)"')
 _COLLECTIVE_OPS: frozenset[str] = frozenset({
   "all-reduce",
@@ -285,9 +304,8 @@ def check_hlo_smells(
 
   if disallow_dynamic_shapes and "<=" in hlo_text:
     for line in hlo_text.splitlines():
-      if "<=" in line and ("f32[" in line or "s32[" in line or "u32[" in line):
+      if _BOUNDED_DYN_SHAPE_RE.search(line):
         smells.append(f"Bounded dynamic shape detected: {line.strip()[:100]}")
-        break
 
   return smells
 

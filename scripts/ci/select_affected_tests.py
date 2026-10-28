@@ -63,11 +63,12 @@ _DYNAMIC_CALLS = frozenset(
 # `from aminx import ...`, `from aminx.run import ...`, `from aminx.model import ...`).
 # All other subpackage `__init__.py` files are expanded in BFS.
 _NON_EXPANDED_ANCESTOR_PKGS = frozenset(
-    {"aminx", "aminx.run", "aminx.model", "aminx.types"}
+    {"aminx", "aminx.io", "aminx.run", "aminx.model", "aminx.types"}
 )
 _NON_EXPANDED_ANCESTOR_FILES = frozenset(
     {
         "src/aminx/__init__.py",
+        "src/aminx/io/__init__.py",
         "src/aminx/run/__init__.py",
         "src/aminx/model/__init__.py",
         "src/aminx/types/__init__.py",
@@ -96,6 +97,7 @@ _BROAD_DIRS = frozenset(
         "tools",
         ".praxia",
         ".praxia/docs",
+        ".praxia/docs/specs",
         "agent_assets",
     }
 )

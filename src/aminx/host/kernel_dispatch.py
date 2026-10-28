@@ -87,6 +87,11 @@ def _spec_sample_rung(
     The rung, or ``None`` to keep the padded length.
 
   """
+  if (
+    getattr(spec, "wave", None) is not None
+    or getattr(getattr(getattr(spec, "run_spec", None), "sampling", None), "wave", None) is not None
+  ):
+    return None
   # getattr: test doubles and older plans may omit either sink field (or set it to None).
   stage_set = getattr(plan, "stage_set", None)
   has_sinks = bool(
@@ -384,7 +389,15 @@ def _sample_batch(  # noqa: PLR0915
       else None
     )
 
+  custom_wave = (
+    getattr(spec, "wave", None)
+    if getattr(spec, "wave", None) is not None
+    else getattr(spec.run_spec.sampling, "wave", None)
+  )
+
   def _with_sample_order(bundle: Any, sample_key: Any) -> Any:  # noqa: ANN401
+    if custom_wave is not None:
+      return bundle
     return with_decoding_order(
       bundle,
       decoding_order_key(sample_key),

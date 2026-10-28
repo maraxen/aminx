@@ -421,11 +421,11 @@ OBSERVATIONS: dict[str, Verdict] = {
   "split": HostPolicyOnly(
     reason="dataset split selection in host/prep.py:130; not in manifest literal in host/campaign.py",
   ),
-  "output_path": HostPolicyOnly(
-    reason="host sink path in run/specs.py:694 and io/designs.py:50",
+  "output_path": PlannerDerived(
+    reason="set per-row by planner in host/campaign.py:680 and synced with output_h5_path in run/specs.py:720",
   ),
-  "output_zarr_path": HostPolicyOnly(
-    reason="host Zarr sink path in run/specs.py:695 and io/designs.py:60",
+  "output_zarr_path": PlannerDerived(
+    reason="set per-row by planner in host/campaign.py:681 and synced with output_h5_path in run/specs.py:720",
   ),
 
   # --- DeprecatedOption: deprecated compatibility flags ---------------------------------
@@ -477,6 +477,10 @@ OBSERVATIONS: dict[str, Verdict] = {
       "are optional callables and _to_json_value has no nested-dataclass branch -> "
       "SpecJSONEncodeError in run/spec_json.py. Feeds host/plan.py:80."
     ),
+  ),
+
+  "wave": NonSerializable(
+    reason="WaveScheduleBundle (eqx.Module) excluded from manifest JSON in host/spec_partition.py:130 and forwarded in host/kernel_dispatch.py:255",
   ),
 
   # --- Internal: init=False plumbing ----------------------------------------------------

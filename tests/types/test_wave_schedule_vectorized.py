@@ -104,3 +104,31 @@ def test_wave_bundle_wiring_through_structure_bundle_kwargs():
 
     bundle, _ = build_inference_bundle(**kwargs)
     assert bundle.wave is custom_wave
+
+
+def test_from_colors_non_contiguous_colors_and_validation():
+    """from_colors compacts non-contiguous color IDs and rejects negative IDs or empty tie_group_map with non-empty colors."""
+    tie_group_map = jnp.array([0, 1, 2, 0, 1, 2], dtype=jnp.int32)
+    # Colors [0, 5, 0] should compact to 2 waves without empty intermediate waves
+    bundle = WaveScheduleBundle.from_colors(jnp.array([0, 5, 0], dtype=jnp.int32), tie_group_map)
+    assert bundle.group_ids.shape == (2, 2)
+    assert bool(bundle.group_valid[0, 0]) and bool(bundle.group_valid[0, 1])
+    assert bool(bundle.group_valid[1, 0])
+
+    with pytest.raises(ValueError, match="negative"):
+        WaveScheduleBundle.from_colors(jnp.array([-1, 0], dtype=jnp.int32), jnp.array([0, 1], dtype=jnp.int32))
+    with pytest.raises(ValueError, match="negative"):
+        WaveScheduleBundle.from_colors(jnp.array([0], dtype=jnp.int32), jnp.array([-1, 0], dtype=jnp.int32))
+    with pytest.raises(ValueError, match="empty"):
+        WaveScheduleBundle.from_colors(jnp.array([0], dtype=jnp.int32), jnp.array([], dtype=jnp.int32))
+
+
+def test_sampling_specification_wave_round_trip_to_run_spec():
+    """SamplingSpecification(wave=...) threads custom WaveScheduleBundle into run_spec.sampling.wave."""
+    from aminx.run.specs import SamplingSpecification
+
+    tie_group_map = jnp.array([0, 1, 0, 1], dtype=jnp.int32)
+    custom_wave = WaveScheduleBundle.from_colors(jnp.array([1, 0], dtype=jnp.int32), tie_group_map)
+    spec = SamplingSpecification(inputs=["dummy.pdb"], wave=custom_wave)
+    assert spec.wave is custom_wave
+    assert spec.run_spec.sampling.wave is custom_wave

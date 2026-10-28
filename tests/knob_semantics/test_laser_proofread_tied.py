@@ -692,9 +692,35 @@ def test_knob_semantics_gly_budget() -> None:
 
 
 def test_knob_semantics_ala_budget() -> None:
-  """Options-level default and override for ala_budget."""
+  """ala_budget caps Alanine (index 0) draws on budgeted positions in tied_decode."""
+  letters = "ARNDCEQGHILKMFPSTWYVX"
+  only_a_and_v = tuple(letter for letter in letters if letter not in ("A", "V"))
+  # Bias strongly toward Alanine (index 0 in LASEr alphabet) at both positions
+  bias = np.zeros((2, 21), dtype=np.float32)
+  bias[:, 0] = 50.0
+  encoder, decoder, joint = _models()
+  backbone, ligand, atomic, sub = _coords(2)
+  period = np.zeros((118,), dtype=np.int32)
+  with jax.disable_jit():
+    capped = tied_decode(
+      encoder, decoder, joint,
+      backbone, backbone, ligand, ligand, atomic, atomic, sub, sub,
+      period, period, _structure(),
+      np.full((2,), _VAL, dtype=np.int32),
+      np.zeros((2, 4), dtype=np.float32),
+      np.zeros((2, 4), dtype=np.float32),
+      np.zeros((2,), dtype=bool),
+      np.arange(2, dtype=np.int32),
+      np.zeros((2,)),
+      np.zeros((2, 4, 2)),
+      disabled_residues=only_a_and_v,
+      ala_budget=0,
+      budget_mask=np.asarray([True, True]),
+      bias=bias,
+    )
+  # With ala_budget=0 on budget_mask=[True, True], neither residue can draw Alanine (0)
+  assert list(capped.sequence) == [_VAL, _VAL]
   assert LaserOptions().ala_budget == 4
-  assert LaserOptions(ala_budget=1).ala_budget == 1
   assert LaserOptions(ala_budget=0).ala_budget == 0
 
 
@@ -710,19 +736,54 @@ def test_knob_semantics_repack_only() -> None:
 
 
 def test_knob_semantics_fs_sequence_temp() -> None:
-  """Options-level default and override for fs_sequence_temp."""
+  """fs_sequence_temp scales first-shell residue logits in decode_order and is refused in tied_decode."""
+  from aminx.model.laser.tied import _refuse_tied_knobs
+
+  with pytest.raises(ValueError, match="fs_sequence_temp"):
+    _refuse_tied_knobs(
+      seq_min_p=0.0,
+      chi_min_p=0.0,
+      fs_sequence_temp=0.5,
+      disable_charged_fs=False,
+      ignore_chain_mask_zeros=False,
+    )
   assert LaserOptions().fs_sequence_temp is None
   assert LaserOptions(fs_sequence_temp=0.5).fs_sequence_temp == pytest.approx(0.5)
 
 
 def test_knob_semantics_disable_charged_fs() -> None:
-  """Options-level default and override for disable_charged_fs."""
-  assert LaserOptions().disable_charged_fs is False
-  assert LaserOptions(disable_charged_fs=True).disable_charged_fs is True
+  """disable_charged_fs activates the first-shell contact mask in sample_host._charged and is refused in tied_decode."""
+  from aminx.families.laser_mpnn.sample_host import _charged
+  from aminx.model.laser.tied import _refuse_tied_knobs
+
+  fake_feat = SimpleNamespace(
+    sequence_indices=np.zeros((3,), dtype=np.int32),
+    first_shell_ligand_contact_mask=np.asarray([True, False, True]),
+  )
+  assert list(_charged(fake_feat, LaserOptions(disable_charged_fs=False))) == [False, False, False]
+  assert list(_charged(fake_feat, LaserOptions(disable_charged_fs=True))) == [True, False, True]
+  with pytest.raises(ValueError, match="disable_charged_fs"):
+    _refuse_tied_knobs(
+      seq_min_p=0.0,
+      chi_min_p=0.0,
+      fs_sequence_temp=None,
+      disable_charged_fs=True,
+      ignore_chain_mask_zeros=False,
+    )
 
 
 def test_knob_semantics_ignore_chain_mask_zeros() -> None:
-  """Options-level default and override for ignore_chain_mask_zeros."""
+  """ignore_chain_mask_zeros is refused by tied_decode and propagated through LaserOptions."""
+  from aminx.model.laser.tied import _refuse_tied_knobs
+
+  with pytest.raises(ValueError, match="ignore_chain_mask_zeros"):
+    _refuse_tied_knobs(
+      seq_min_p=0.0,
+      chi_min_p=0.0,
+      fs_sequence_temp=None,
+      disable_charged_fs=False,
+      ignore_chain_mask_zeros=True,
+    )
   assert LaserOptions().ignore_chain_mask_zeros is False
   assert LaserOptions(ignore_chain_mask_zeros=True).ignore_chain_mask_zeros is True
 

@@ -95,9 +95,9 @@ def _inputs(
 
 
 def _predict(data: np.lib.npyio.NpzFile, precision: str = "f64") -> tuple[np.ndarray, np.ndarray]:
-  layer = _decoder(data, precision)
-  nodes, edges, mask, scale, ref = _inputs(data, precision)
   with x64_context(precision), jax.default_matmul_precision("highest"):
+    layer = _decoder(data, precision)
+    nodes, edges, mask, scale, ref = _inputs(data, precision)
     pred = np.asarray(layer(nodes, edges, mask, scale=scale, inference=True))
   return pred, ref
 

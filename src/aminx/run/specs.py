@@ -519,7 +519,8 @@ class RunSpecification:
       )
 
     self._resolve_family_defaults()
-    self._sync_run_spec()
+    if type(self).__post_init__ is RunSpecification.__post_init__:
+      self._sync_run_spec()
 
 
 _SEQUENCE_OUTPUT_KINDS = frozenset({"nll", "logits"})
@@ -585,6 +586,39 @@ def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
     )
     raise ValueError(msg)
   return mask
+
+
+
+def _resolve_output_paths(spec: RunSpecification) -> None:
+  """Normalize and synchronize output_path, output_zarr_path, and output_h5_path."""
+  def _norm(val: Any) -> Any:
+    return Path(val) if isinstance(val, (str, Path)) else val
+
+  p_out = _norm(getattr(spec, "output_path", None))
+  p_zarr = _norm(getattr(spec, "output_zarr_path", None))
+  p_h5 = _norm(getattr(spec, "output_h5_path", None))
+  present = [p for p in (p_out, p_zarr, p_h5) if p is not None]
+  if not present:
+    return
+  unique = set(present)
+  if len(unique) == 1:
+    resolved_out = present[0]
+  elif len(present) == 3 and len(unique) == 2:
+    # dataclasses.replace(spec, output_*_path=new_path) on an already-synced spec:
+    # two fields still hold the old synced path; the singleton holds the replacement.
+    counts = {p: present.count(p) for p in unique}
+    resolved_out = next(p for p, c in counts.items() if c == 1)
+  else:
+    msg = (
+      "Conflicting output paths specified: "
+      f"output_path={getattr(spec, 'output_path', None)!r}, "
+      f"output_zarr_path={getattr(spec, 'output_zarr_path', None)!r}, "
+      f"output_h5_path={getattr(spec, 'output_h5_path', None)!r}"
+    )
+    raise ValueError(msg)
+  object.__setattr__(spec, "output_path", resolved_out)
+  object.__setattr__(spec, "output_zarr_path", resolved_out)
+  object.__setattr__(spec, "output_h5_path", resolved_out)
 
 
 @register_spec
@@ -659,14 +693,7 @@ class ScoringSpecification(RunSpecification):
         "`sequences_to_score` must be a non-empty list of strings."
       )
       raise ValueError(msg)
-    raw_output = self.output_path
-    if raw_output is None:
-      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
-    if raw_output is not None:
-      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
-      object.__setattr__(self, "output_path", resolved_out)
-      object.__setattr__(self, "output_zarr_path", resolved_out)
-      object.__setattr__(self, "output_h5_path", resolved_out)
+    _resolve_output_paths(self)
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
     if self.ar_mask is not None:
@@ -746,6 +773,7 @@ class SamplingSpecification(RunSpecification):
   omit_aa_per_position: Mapping[int, str] | None = None
   carry_specs: list[CarrySpec] | None = None
   dedup_specs: list[DedupSpec] | None = None
+  wave: Any | None = None
 
   def _resolve_family_defaults(self) -> None:
     object.__setattr__(
@@ -820,14 +848,7 @@ class SamplingSpecification(RunSpecification):
         msg = "sample_count must be positive when grid_mode=True."
         raise ValueError(msg)
       object.__setattr__(self, "sample_count", sample_count)
-    raw_output = self.output_path
-    if raw_output is None:
-      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
-    if raw_output is not None:
-      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
-      object.__setattr__(self, "output_path", resolved_out)
-      object.__setattr__(self, "output_zarr_path", resolved_out)
-      object.__setattr__(self, "output_h5_path", resolved_out)
+    _resolve_output_paths(self)
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
     self._sync_run_spec()
@@ -858,14 +879,7 @@ class JacobianSpecification(RunSpecification):
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    raw_output = self.output_path
-    if raw_output is None:
-      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
-    if raw_output is not None:
-      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
-      object.__setattr__(self, "output_path", resolved_out)
-      object.__setattr__(self, "output_zarr_path", resolved_out)
-      object.__setattr__(self, "output_h5_path", resolved_out)
+    _resolve_output_paths(self)
     self._sync_run_spec()
 
 
@@ -911,14 +925,7 @@ class InspectionSpecification(RunSpecification):
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    raw_output = self.output_path
-    if raw_output is None:
-      raw_output = self.output_zarr_path if self.output_zarr_path is not None else self.output_h5_path
-    if raw_output is not None:
-      resolved_out = Path(raw_output) if isinstance(raw_output, (str, Path)) else raw_output
-      object.__setattr__(self, "output_path", resolved_out)
-      object.__setattr__(self, "output_zarr_path", resolved_out)
-      object.__setattr__(self, "output_h5_path", resolved_out)
+    _resolve_output_paths(self)
     if self.cross_input_similarity and len(_loader_inputs(self.inputs)) < MIN_PAIR:
       msg = f"Cross-input similarity requires at least {MIN_PAIR} input structures."
       raise ValueError(msg)

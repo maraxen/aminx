@@ -176,7 +176,12 @@ def make_sample_sequences(
         temperature,
         use_rolling_state=use_rolling_state,
       )
-      return final_seq, final_logits, jnp.arange(L)
+      order_out = (
+        decoding_order_from_wave(bundle.wave, bundle.conditioning.tie_group_map[0])
+        if wave_schedule is not None
+        else jnp.arange(L)
+      )
+      return final_seq, final_logits, order_out
 
     return cast("SamplerFn", sample_sequences)
 

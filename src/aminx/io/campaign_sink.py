@@ -44,6 +44,17 @@ CAMPAIGN_METRICS_COLUMNS: tuple[str, ...] = (
 )
 
 
+def _validate_safe_segment(value: str, field_name: str) -> str:
+  """Validate that ``value`` is a safe single path segment without traversal."""
+  if not isinstance(value, str) or not value or not value.strip():
+    msg = f"{field_name} must be a non-empty string, got {value!r}"
+    raise ValueError(msg)
+  if "/" in value or "\\" in value or ".." in value or value in {".", ".."}:
+    msg = f"{field_name} contains unsafe path characters: {value!r}"
+    raise ValueError(msg)
+  return value
+
+
 def _sha256_bytes(data: bytes) -> str:
   """Compute SHA-256 hex digest of ``data``.
 
@@ -156,6 +167,9 @@ class UnifiedCampaignSink:
     None
       Initializes directory structure and loads any existing records.
     """
+    if not isinstance(campaign_id, str) or not campaign_id.strip():
+      msg = f"campaign_id must be a non-empty string, got {campaign_id!r}"
+      raise ValueError(msg)
     self.root_path = Path(root_path).resolve()
     self.campaign_id = campaign_id
     self.git_sha = git_sha
@@ -168,6 +182,13 @@ class UnifiedCampaignSink:
     meta_path = self.root_path / "campaign_sink_metadata.json"
     if meta_path.exists():
       meta = json.loads(meta_path.read_text(encoding="utf-8"))
+      existing_campaign_id = meta.get("campaign_id")
+      if existing_campaign_id is not None and existing_campaign_id != campaign_id:
+        msg = (
+          f"Cannot reopen campaign sink for campaign_id={existing_campaign_id!r} "
+          f"with mismatched campaign_id={campaign_id!r}"
+        )
+        raise ValueError(msg)
       self._arm_digests = dict(meta.get("arms", {}))
       self._records = self._read_existing_records()
 
@@ -219,22 +240,23 @@ class UnifiedCampaignSink:
     Path
       Committed path to ``arms/<arm_id>/samples.zarr``.
     """
+    _validate_safe_segment(arm_id, "arm_id")
+    _validate_safe_segment(manifest_row_hash, "manifest_row_hash")
+
     arm_dir = self.root_path / "arms" / arm_id
     arm_dir.mkdir(parents=True, exist_ok=True)
     final_zarr = arm_dir / "samples.zarr"
-    staging_zarr = arm_dir / f".staging_{uuid.uuid4().hex}"
+    final_zarr.mkdir(parents=True, exist_ok=True)
+    zgroup = final_zarr / ".zgroup"
+    if not zgroup.exists():
+      zgroup.write_text(json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8")
+
+    staging_row = arm_dir / f".staging_{manifest_row_hash}_{uuid.uuid4().hex}"
+    target_row = final_zarr / manifest_row_hash
 
     try:
-      if final_zarr.exists():
-        shutil.copytree(final_zarr, staging_zarr)
-      else:
-        staging_zarr.mkdir(parents=True, exist_ok=True)
-        zgroup = staging_zarr / ".zgroup"
-        zgroup.write_text(json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8")
-
-      row_group = staging_zarr / manifest_row_hash
-      row_group.mkdir(parents=True, exist_ok=True)
-      (row_group / ".zgroup").write_text(
+      staging_row.mkdir(parents=True, exist_ok=True)
+      (staging_row / ".zgroup").write_text(
         json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8",
       )
       attrs = {
@@ -243,13 +265,14 @@ class UnifiedCampaignSink:
         "checkpoint_id": checkpoint_id,
         "manifest_row_hash": manifest_row_hash,
       }
-      (row_group / ".zattrs").write_text(
+      (staging_row / ".zattrs").write_text(
         json.dumps(attrs, indent=2, sort_keys=True) + "\n", encoding="utf-8",
       )
 
       if arrays:
         for name, val in arrays.items():
-          arr_meta_path = row_group / f"{name}.json"
+          _validate_safe_segment(str(name), "array_name")
+          arr_meta_path = staging_row / f"{name}.json"
           if hasattr(val, "tolist"):
             serializable = val.tolist()
           elif isinstance(val, (list, tuple, dict, int, float, str)):
@@ -261,16 +284,25 @@ class UnifiedCampaignSink:
             encoding="utf-8",
           )
 
-      # Atomic replace of final_zarr
-      backup_zarr = arm_dir / f".backup_{uuid.uuid4().hex}"
-      if final_zarr.exists():
-        final_zarr.replace(backup_zarr)
-      staging_zarr.replace(final_zarr)
-      if backup_zarr.exists():
-        shutil.rmtree(backup_zarr)
+      # Atomic replace of only the target_row subgroup
+      backup_row = arm_dir / f".backup_{manifest_row_hash}_{uuid.uuid4().hex}"
+      if target_row.exists():
+        target_row.replace(backup_row)
+      staging_row.replace(target_row)
+      if backup_row.exists():
+        shutil.rmtree(backup_row)
     finally:
-      if staging_zarr.exists():
-        shutil.rmtree(staging_zarr)
+      if staging_row.exists():
+        shutil.rmtree(staging_row)
+
+    # Deduplicate existing summary rows for (arm_id, manifest_row_hash) on re-write / resume
+    self._records = [
+      r
+      for r in self._records
+      if not (
+        r.get("backend_arm_id") == arm_id and r.get("manifest_row_hash") == manifest_row_hash
+      )
+    ]
 
     zarr_rel = f"arms/{arm_id}/samples.zarr/{manifest_row_hash}"
     for rec in records:
@@ -452,8 +484,12 @@ class CampaignSinkInspector:
     CampaignSinkSummary
       Summary counts and registered arms.
     """
-    del include_empty_arms
-    arms = tuple(sorted(self._meta.get("arms", {}).keys()))
+    registered_arms = set(self._meta.get("arms", {}).keys())
+    non_empty_arms = {r["backend_arm_id"] for r in self._records if r.get("backend_arm_id")}
+    if include_empty_arms:
+      arms = tuple(sorted(registered_arms | non_empty_arms))
+    else:
+      arms = tuple(sorted(registered_arms & non_empty_arms))
     structures = {r["structure_id"] for r in self._records}
     row_hashes = {r["manifest_row_hash"] for r in self._records}
     return CampaignSinkSummary(
@@ -520,6 +556,9 @@ class CampaignSinkInspector:
   def cross_backend_consensus(self, structure_id: str) -> dict[str, Any]:
     """Compute cross-backend sequence identity, marginal entropy, and consensus sequence.
 
+    Each backend arm is weighted equally when computing marginal per-position
+    amino-acid frequencies so arms with larger sample counts do not dominate.
+
     Parameters
     ----------
     structure_id : str
@@ -538,6 +577,7 @@ class CampaignSinkInspector:
 
     arms = sorted({r["backend_arm_id"] for r in rows})
     rep_seq_by_arm: dict[str, str] = {}
+    seqs_by_arm: dict[str, list[str]] = {}
     for arm in arms:
       arm_rows = [r for r in rows if r["backend_arm_id"] == arm]
       arm_rows.sort(
@@ -547,6 +587,7 @@ class CampaignSinkInspector:
         ),
       )
       rep_seq_by_arm[arm] = str(arm_rows[0]["sequence"])
+      seqs_by_arm[arm] = [str(r["sequence"]) for r in arm_rows if r.get("sequence")]
 
     n_arms = len(arms)
     pairwise_id: list[list[float]] = [[0.0] * n_arms for _ in range(n_arms)]
@@ -566,14 +607,22 @@ class CampaignSinkInspector:
     entropies: list[float] = []
     consensus_chars: list[str] = []
     for pos in range(seq_len):
-      counts: dict[str, int] = {}
-      for s in all_seqs:
-        ch = s[pos]
-        counts[ch] = counts.get(ch, 0) + 1
-      total = float(len(all_seqs))
-      ent = -sum((c / total) * math.log(c / total) for c in counts.values() if c > 0)
+      weights_by_char: dict[str, float] = {}
+      for arm in arms:
+        arm_seqs = seqs_by_arm[arm]
+        if not arm_seqs:
+          continue
+        w = 1.0 / (float(n_arms) * float(len(arm_seqs)))
+        for s in arm_seqs:
+          ch = s[pos]
+          weights_by_char[ch] = weights_by_char.get(ch, 0.0) + w
+      total = sum(weights_by_char.values())
+      if total > 0:
+        ent = -sum((p / total) * math.log(p / total) for p in weights_by_char.values() if p > 0)
+      else:
+        ent = 0.0
       entropies.append(ent)
-      best_char = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+      best_char = sorted(weights_by_char.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
       consensus_chars.append(best_char)
 
     return {
@@ -597,6 +646,7 @@ class CampaignSinkInspector:
     Path
       Path to ``arms/<arm_id>/samples.zarr``.
     """
+    _validate_safe_segment(arm_id, "arm_id")
     zarr_path = self.sink_path / "arms" / arm_id / "samples.zarr"
     if not zarr_path.exists():
       msg = f"Zarr store not found for arm {arm_id!r} at {zarr_path}"
@@ -617,7 +667,6 @@ class CampaignSinkInspector:
       Mapping of component name (``"summary_parquet"`` and ``"arm:<arm_id>"``) to
       boolean integrity verification status, plus ``"all_valid"``.
     """
-    del check_arms
     results: dict[str, bool] = {}
     pq_path = self.sink_path / str(
       self._meta.get("summary_parquet_path", "summary/campaign_metrics.parquet"),
@@ -627,12 +676,13 @@ class CampaignSinkInspector:
       pq_path.exists() and _sha256_bytes(pq_path.read_bytes()) == expected_pq_sha
     )
 
-    for arm_id, arm_info in self._meta.get("arms", {}).items():
-      zarr_dir = self.sink_path / str(arm_info.get("zarr_path", f"arms/{arm_id}/samples.zarr"))
-      expected_zarr_sha = arm_info.get("zarr_sha256")
-      results[f"arm:{arm_id}"] = (
-        zarr_dir.exists() and _tree_digest(zarr_dir) == expected_zarr_sha
-      )
+    if check_arms:
+      for arm_id, arm_info in self._meta.get("arms", {}).items():
+        zarr_dir = self.sink_path / str(arm_info.get("zarr_path", f"arms/{arm_id}/samples.zarr"))
+        expected_zarr_sha = arm_info.get("zarr_sha256")
+        results[f"arm:{arm_id}"] = (
+          zarr_dir.exists() and _tree_digest(zarr_dir) == expected_zarr_sha
+        )
 
     results["all_valid"] = all(results.values())
     return results

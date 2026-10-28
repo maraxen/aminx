@@ -15,7 +15,9 @@ References
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Float, Int
 
 from aminx.potts._trw import (
@@ -69,25 +71,31 @@ def project_to_zero_sum_gauge(
     if W is None:
         mask = jnp.ones((n, n), dtype=h.dtype)
     else:
-        mask = (W > 0).astype(h.dtype)
+        mask = ((W > 0) | (W.T > 0)).astype(h.dtype)
 
     # Zero out diagonal
     mask = mask * (1.0 - jnp.eye(n, dtype=h.dtype))
 
-    # Masked J
+    # Masked J; symmetrize undirected couplings if only one direction is populated
     J_masked = J * mask[..., None, None]  # noqa: N806
+    J_T = jnp.transpose(J_masked, (1, 0, 3, 2))  # noqa: N806
+    has_fwd = jnp.any(jnp.abs(J_masked) > 0, axis=(-1, -2), keepdims=True)
+    has_rev = jnp.any(jnp.abs(J_T) > 0, axis=(-1, -2), keepdims=True)
+    J_sym = jnp.where(  # noqa: N806
+        has_fwd & has_rev,
+        0.5 * (J_masked + J_T),
+        jnp.where(has_fwd, J_masked, J_T),
+    ) * mask[..., None, None]
 
     # Row, col, and grand averages of J_ij
-    j_row_mean = jnp.mean(J_masked, axis=-1, keepdims=True)  # (n, n, q, 1)
-    j_col_mean = jnp.mean(J_masked, axis=-2, keepdims=True)  # (n, n, 1, q)
-    j_grand_mean = jnp.mean(J_masked, axis=(-1, -2), keepdims=True)  # (n, n, 1, 1)
+    j_row_mean = jnp.mean(J_sym, axis=-1, keepdims=True)  # (n, n, q, 1)
+    j_col_mean = jnp.mean(J_sym, axis=-2, keepdims=True)  # (n, n, 1, q)
+    j_grand_mean = jnp.mean(J_sym, axis=(-1, -2), keepdims=True)  # (n, n, 1, 1)
 
     # Zero-sum J on active edges
-    J_zero = (J_masked - j_row_mean - j_col_mean + j_grand_mean) * mask[..., None, None]  # noqa: N806
+    J_zero = (J_sym - j_row_mean - j_col_mean + j_grand_mean) * mask[..., None, None]  # noqa: N806
 
-    # Absorb row/col averages into h
-    # For undirected graphs, J_ij(a, b) and J_ji(b, a) both represent the edge.
-    # If directed edge list / symmetric J:
+    # Absorb row averages into h (since J_sym is symmetric, j_col_mean[j, i] == j_row_mean[i, j])
     delta_h = jnp.sum(j_row_mean.squeeze(-1) * mask[..., None], axis=1)
     h_absorbed = h + delta_h
 
@@ -95,6 +103,29 @@ def project_to_zero_sum_gauge(
     h_zero = h_absorbed - jnp.mean(h_absorbed, axis=-1, keepdims=True)
 
     return h_zero, J_zero
+
+
+def _validate_edges(edges: Array, n: int, expected_e: int | None = None) -> None:
+    if edges.ndim != 2 or edges.shape[1] != 2:
+        raise ValueError(f"edges must have shape (E, 2), got {edges.shape}")
+    if expected_e is not None and edges.shape[0] != expected_e:
+        raise ValueError(
+            f"edges count ({edges.shape[0]}) must match edge_marginals first dimension ({expected_e})"
+        )
+    if isinstance(edges, jax.core.Tracer):
+        return
+    edges_np = np.asarray(edges)
+    if edges_np.size > 0:
+        if np.any(edges_np < 0) or np.any(edges_np >= n):
+            raise ValueError(f"edge node indices must be in [0, {n}), got {edges_np.tolist()}")
+        if np.any(edges_np[:, 0] == edges_np[:, 1]):
+            raise ValueError("self-loops (u == v) are not allowed in tree edges")
+        seen: set[tuple[int, int]] = set()
+        for u_idx, v_idx in edges_np.tolist():
+            canon = (min(int(u_idx), int(v_idx)), max(int(u_idx), int(v_idx)))
+            if canon in seen:
+                raise ValueError(f"duplicate edge {canon} in edges")
+            seen.add(canon)
 
 
 def tree_marginals_to_potts(
@@ -106,22 +137,7 @@ def tree_marginals_to_potts(
     dense_output: bool = True,
     eps: float = 1e-12,
 ) -> tuple[Float[Array, "n q"], Array]:
-    r"""Invert tree marginals to Potts parameters (h, J) in closed form.
-
-    For a tree-structured MRF, the joint probability factorizes as:
-    .. math::
-        p(x) = \prod_{i \in V} p_i(x_i)^{1 - d_i} \prod_{(i, j) \in E} p_{ij}(x_i, x_j)
-             = \prod_{i \in V} p_i(x_i) \prod_{(i, j) \in E} \frac{p_{ij}(x_i, x_j)}{p_i(x_i) p_j(x_j)}
-
-    The corresponding raw potentials are:
-    .. math::
-        J_{ij}^{\mathrm{raw}}(a, b) = \ln \frac{p_{ij}(a, b)}{p_i(a) p_j(b)}
-        h_i^{\mathrm{raw}}(a) = \ln p_i(a)
-
-    When projected to zero-sum gauge:
-    .. math::
-        J_{ij}(a, b) = J_{ij}^{\mathrm{raw}}(a, b) - \bar{J}_{ij}(a, \cdot) - \bar{J}_{ij}(\cdot, b) + \bar{J}_{ij}(\cdot, \cdot)
-        h_i(a) = \left( h_i^{\mathrm{raw}}(a) + \sum_{j \in N(i)} \bar{J}_{ij}(a, \cdot) \right) - \mathrm{mean}_a(\dots)
+    """Invert tree marginals to Potts parameters (h, J) in closed form.
 
     Parameters
     ----------
@@ -143,25 +159,32 @@ def tree_marginals_to_potts(
     tuple[Float[Array, "n q"], Array]
         Tuple of (h, J) single-site and pairwise Potts potentials.
     """
+    if node_marginals.ndim != 2:
+        raise ValueError(f"node_marginals must be 2D (n, q), got shape {node_marginals.shape}")
     n, q = node_marginals.shape
+    pair_eps = min(eps * eps, 1e-30)
     p_i = jnp.clip(node_marginals, eps, 1.0)
     p_i = p_i / jnp.sum(p_i, axis=-1, keepdims=True)
+    log_p_i = jnp.log(p_i)
 
     if edge_marginals.ndim == 3:
         # Edge list format (E, q, q)
         if edges is None:
             raise ValueError("edges of shape (E, 2) must be provided when edge_marginals is 3D (E, q, q)")
-        e_edges = edges.shape[0]
-        p_uv = jnp.clip(edge_marginals, eps, 1.0)
+        if edge_marginals.shape[1:] != (q, q):
+            raise ValueError(
+                f"edge_marginals state dimensions {edge_marginals.shape[1:]} must match (q, q)=({q}, {q})"
+            )
+        _validate_edges(edges, n, expected_e=edge_marginals.shape[0])
+        p_uv = jnp.clip(edge_marginals, pair_eps, 1.0)
         p_uv = p_uv / jnp.sum(p_uv, axis=(-1, -2), keepdims=True)
 
         u = edges[:, 0]
         v = edges[:, 1]
 
-        p_u = p_i[u]  # (E, q)
-        p_v = p_i[v]  # (E, q)
-        denom = p_u[:, :, None] * p_v[:, None, :] + eps
-        j_raw = jnp.log(jnp.clip(p_uv / denom, eps, None))
+        log_p_u = log_p_i[u]  # (E, q)
+        log_p_v = log_p_i[v]  # (E, q)
+        j_raw = jnp.log(p_uv) - log_p_u[:, :, None] - log_p_v[:, None, :]
 
         if zero_sum_gauge:
             j_row_mean = jnp.mean(j_raw, axis=-1, keepdims=True)  # (E, q, 1)
@@ -169,7 +192,7 @@ def tree_marginals_to_potts(
             j_grand_mean = jnp.mean(j_raw, axis=(-1, -2), keepdims=True)  # (E, 1, 1)
             j_zero = j_raw - j_row_mean - j_col_mean + j_grand_mean
 
-            h_raw = jnp.log(p_i)
+            h_raw = log_p_i
             # Accumulate absorbed row means to u and col means to v
             h_acc = h_raw.at[u].add(j_row_mean.squeeze(-1))
             h_acc = h_acc.at[v].add(j_col_mean.squeeze(-2))
@@ -181,11 +204,8 @@ def tree_marginals_to_potts(
                 J_dense = J_dense.at[v, u].set(jnp.swapaxes(j_zero, -1, -2))
                 return h_out, J_dense
             return h_out, j_zero
-        # Without gauge projection: raw factorization
-        d = jnp.zeros((n,), dtype=node_marginals.dtype)
-        d = d.at[u].add(1.0)
-        d = d.at[v].add(1.0)
-        h_out = (1.0 - d[:, None]) * jnp.log(p_i)
+        # Without gauge projection: raw factorization log p(x) = sum_i log p_i(x_i) + sum_{(u,v)} log(p_uv / (p_u p_v))
+        h_out = log_p_i
         if dense_output:
             J_dense = jnp.zeros((n, n, q, q), dtype=node_marginals.dtype)  # noqa: N806
             J_dense = J_dense.at[u, v].set(j_raw)
@@ -195,8 +215,25 @@ def tree_marginals_to_potts(
 
     if edge_marginals.ndim == 4:
         # Dense format (n, n, q, q)
-        p_uv = jnp.clip(edge_marginals, eps, 1.0)
-        p_uv = p_uv / jnp.maximum(jnp.sum(p_uv, axis=(-1, -2), keepdims=True), eps)
+        if edge_marginals.shape != (n, n, q, q):
+            raise ValueError(
+                f"4D edge_marginals must have shape ({n}, {n}, {q}, {q}), got {edge_marginals.shape}"
+            )
+        if edges is not None:
+            _validate_edges(edges, n, expected_e=None)
+
+        # Symmetrize if only one direction of an undirected edge was populated
+        em_t = jnp.transpose(edge_marginals, (1, 0, 3, 2))
+        mass_fwd = jnp.sum(edge_marginals, axis=(-1, -2), keepdims=True) > 0.5
+        mass_rev = jnp.sum(em_t, axis=(-1, -2), keepdims=True) > 0.5
+        em_sym = jnp.where(
+            mass_fwd & mass_rev,
+            0.5 * (edge_marginals + em_t),
+            jnp.where(mass_fwd, edge_marginals, em_t),
+        )
+
+        p_uv = jnp.clip(em_sym, pair_eps, 1.0)
+        p_uv = p_uv / jnp.maximum(jnp.sum(p_uv, axis=(-1, -2), keepdims=True), pair_eps)
 
         if edges is not None:
             mask = jnp.zeros((n, n), dtype=node_marginals.dtype)
@@ -204,12 +241,11 @@ def tree_marginals_to_potts(
             mask = mask.at[edges[:, 1], edges[:, 0]].set(1.0)
         else:
             # Mask edges where marginal sum is substantial
-            marginal_mass = jnp.sum(edge_marginals, axis=(-1, -2))
+            marginal_mass = jnp.sum(em_sym, axis=(-1, -2))
             mask = (marginal_mass > 0.5).astype(node_marginals.dtype)
             mask = mask * (1.0 - jnp.eye(n, dtype=node_marginals.dtype))
 
-        denom = p_i[:, None, :, None] * p_i[None, :, None, :] + eps
-        j_raw = jnp.log(jnp.clip(p_uv / denom, eps, None)) * mask[..., None, None]
+        j_raw = (jnp.log(p_uv) - log_p_i[:, None, :, None] - log_p_i[None, :, None, :]) * mask[..., None, None]
 
         if zero_sum_gauge:
             j_row_mean = jnp.mean(j_raw, axis=-1, keepdims=True)  # (n, n, q, 1)
@@ -220,7 +256,7 @@ def tree_marginals_to_potts(
             # Enforce symmetry if undirected
             j_zero = 0.5 * (j_zero + jnp.transpose(j_zero, (1, 0, 3, 2)))
 
-            h_raw = jnp.log(p_i)
+            h_raw = log_p_i
             delta_h = jnp.sum(j_row_mean.squeeze(-1) * mask[..., None], axis=1)
             h_acc = h_raw + delta_h
             h_out = h_acc - jnp.mean(h_acc, axis=-1, keepdims=True)
@@ -228,8 +264,7 @@ def tree_marginals_to_potts(
             if not dense_output and edges is not None:
                 return h_out, j_zero[edges[:, 0], edges[:, 1]]
             return h_out, j_zero
-        d = jnp.sum(mask, axis=1)
-        h_out = (1.0 - d[:, None]) * jnp.log(p_i)
+        h_out = log_p_i
         if not dense_output and edges is not None:
             return h_out, j_raw[edges[:, 0], edges[:, 1]]
         return h_out, j_raw

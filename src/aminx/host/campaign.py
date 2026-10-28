@@ -712,7 +712,11 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
   Returns ``(input_hash, components)``; ``components`` are the inputs to the hash, stored in the stamp so a mismatch
   can be explained.
   """
-  spec_without_output = {k: v for k, v in sampling_spec_payload.items() if k != "output_h5_path"}
+  spec_without_output = {
+    k: v
+    for k, v in sampling_spec_payload.items()
+    if k not in ("output_h5_path", "output_path", "output_zarr_path")
+  }
   components: dict[str, Any] = {
     "spec_sha256": hashlib.sha256(canonical_json_bytes(spec_without_output)).hexdigest(),
     "inputs": [_hash_input_entry(entry) for entry in _normalize_inputs(sampling_spec_payload.get("inputs", []))]
@@ -1320,6 +1324,8 @@ def plan_campaign_manifest(
                 "chunk_id": row["chunk_id"],
                 "sample_start": row["sample_start"],
                 "sample_count": row["sample_count"],
+                "output_path": row["output_h5_path"],
+                "output_zarr_path": row["output_h5_path"],
                 "output_h5_path": row["output_h5_path"],
               },
             )
@@ -1556,6 +1562,8 @@ def run_manifest_row(  # noqa: PLR0915
       raise RuntimeError(msg)
 
     worker_payload = dict(sampling_spec_payload)
+    worker_payload["output_path"] = str(partial_path)
+    worker_payload["output_zarr_path"] = str(partial_path)
     worker_payload["output_h5_path"] = str(partial_path)
     worker_payload = migrate_removed_spec_keys(worker_payload)
     # Coerce JSON scalars back to their spec types (lists -> ndarray for the array knobs,

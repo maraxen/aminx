@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Post-v0.3.0 triage and debt remediation (PR #240):** Unified Zarr + Parquet campaign sink (`UnifiedCampaignSink`, `CampaignSinkInspector`), closed-form tree-marginal Potts inverse (`tree_marginals_to_potts`, `project_to_zero_sum_gauge`), HLO smell checker (`check_hlo_smells`, `assert_no_hlo_smells`), custom `WaveScheduleBundle` threading through `SamplingSpecification`, synchronized `output_path`/`output_zarr_path`/`output_h5_path` aliases, and content-addressed deterministic `run_id` hashing.
+
 - **`ScoringSpecification.ar_mask`: score under a caller-chosen visibility pattern.**
   `runner.score` scores every position under full context minus self, `p(s_i | s_{-i}, X)`,
   a pseudo-likelihood whose conditionals do not multiply into a normalised joint. `ar_mask`

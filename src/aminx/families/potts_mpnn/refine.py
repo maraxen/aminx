@@ -12,8 +12,8 @@ this port does not.
 Tied groups keep the upstream quirks: a group with any fixed or missing member
 is overwritten with that member's current residue; ``tied_epistasis`` reads
 energy, bias, PSSM, and omit at the last listed member; tied binding does not
-subtract the current-identity reference; tied ``nodes`` skips members where
-``present==0`` or ``chain_mask==0`` and copies the current token, not ``S_true``.
+subtract the current-identity reference; tied ``nodes`` skips only ``present==0``
+members and copies the current token, not ``S_true``.
 """
 
 from __future__ import annotations
@@ -1100,7 +1100,7 @@ def _tied_nodes_group(
     position = members[slot]
     valid = position >= 0
     safe = jnp.clip(position, 0, length - 1)
-    masked = valid & ((present[safe] == 0) | (chain_mask[safe] == 0))
+    masked = valid & (present[safe] == 0)
     start = masked & ~stopped
     stopped_now = stopped | masked
     copied = jnp.where(start, sequence[safe], copied)
@@ -1153,8 +1153,7 @@ def _tied_nodes_group(
       apply_omit_aa=apply_omit_aa,
     )
     drawn = categorical_draw(probs, uniforms[cursor])
-    is_group_fixed = jnp.any((members >= 0) & (chain_mask[jnp.clip(members, 0, length - 1)] == 0))
-    token = jnp.where(is_group_fixed, sequence[last_safe], drawn).astype(jnp.int32)
+    token = jnp.where(chain_mask[last_safe] == 0, sequence[last_safe], drawn).astype(jnp.int32)
     return token, cursor + jnp.int32(1)
 
   token, cursor = jax.lax.cond(stopped, from_mask, from_draw, logits)

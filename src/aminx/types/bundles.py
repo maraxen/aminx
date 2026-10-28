@@ -310,9 +310,25 @@ class WaveScheduleBundle(eqx.Module):
         Schedule with groups packed by color into waves (G may be > 1).
 
     """
-    gc = np.asarray(group_colors, dtype=np.int32)
+    gc = np.asarray(group_colors, dtype=np.int32).reshape(-1)
     tg = np.asarray(tie_group_map, dtype=np.int32).reshape(-1)
     n_res = len(tg)
+    if n_res == 0:
+      if len(gc) > 0:
+        msg = "tie_group_map must be non-empty when group_colors is non-empty."
+        raise ValueError(msg)
+      return WaveScheduleBundle(
+        group_ids=jnp.zeros((0, 0), dtype=jnp.int32),
+        group_valid=jnp.zeros((0, 0), dtype=jnp.bool_),
+        group_positions=jnp.zeros((0, 0, 0), dtype=jnp.int32),
+        position_valid=jnp.zeros((0, 0, 0), dtype=jnp.bool_),
+      )
+    if np.any(tg < 0):
+      msg = "tie_group_map must not contain negative tie group IDs."
+      raise ValueError(msg)
+    if np.any(gc < 0):
+      msg = "group_colors must not contain negative colors."
+      raise ValueError(msg)
 
     unique_groups = np.unique(tg)
     num_unique = len(unique_groups)
@@ -323,14 +339,10 @@ class WaveScheduleBundle(eqx.Module):
       )
       raise ValueError(msg)
 
-    num_waves = int(np.max(gc)) + 1 if len(gc) > 0 else 0
-    if num_waves == 0:
-      return WaveScheduleBundle(
-        group_ids=jnp.zeros((0, 0), dtype=jnp.int32),
-        group_positions=jnp.zeros((0, 0, 0), dtype=jnp.int32),
-        group_valid=jnp.zeros((0, 0), dtype=jnp.bool_),
-        position_valid=jnp.zeros((0, 0, 0), dtype=jnp.bool_),
-      )
+    # Compact non-contiguous colors to 0..num_waves-1 preserving order
+    _, gc_compact = np.unique(gc, return_inverse=True)
+    gc = gc_compact.astype(np.int32)
+    num_waves = int(np.max(gc)) + 1
 
     # 1. Map each group to its slot within its wave
     sort_g_idx = np.argsort(gc, kind="stable")

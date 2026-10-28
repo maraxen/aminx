@@ -38,6 +38,7 @@ _WORK = "potts_refine"
 
 def _parse(argv: list[str]) -> Any:
   parser = common.build_parser(__doc__)
+  parser.add_argument("--double", action="store_true", help="Run oracle and aminx arm in float64.")
   parser.set_defaults(mutants=MUTANT_ID)
   return parser.parse_args(argv)
 
@@ -91,8 +92,8 @@ def _torch_order(chain_mask: Any, randn: Any) -> Any:
   return torch.argsort((mask + 1.0e-4) * noise.abs()).cpu().numpy()
 
 
-def _load_oracle(root: Path, checkpoint: Path) -> dict[str, Any]:
-  return common.load_potts_oracle(root, checkpoint, double=False)
+def _load_oracle(root: Path, checkpoint: Path, *, double: bool = False) -> dict[str, Any]:
+  return common.load_potts_oracle(root, checkpoint, double=double)
 
 
 def _bank(root: Path, job: dict[str, Any], work: Path) -> dict[str, common.OracleFeat]:
@@ -195,7 +196,7 @@ def _oracle_worker(args: Any) -> None:
   units = _units(job, graded_resume.ORACLE_ARM, checkpoint)
   cache = graded_resume.cache_dir(work)
   _reused, remaining = graded_resume.count_units(cache, units, resume=bool(args.resume))
-  prepared = _load_oracle(Path(args.potts_root), checkpoint) if remaining > 0 else None
+  prepared = _load_oracle(Path(args.potts_root), checkpoint, double=bool(getattr(args, "double", False))) if remaining > 0 else None
 
   def compute(unit: graded_resume.Unit) -> list[int]:
     if prepared is None:
@@ -285,9 +286,16 @@ def _encoded(model: Any, ready: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_arm(args: Any) -> dict[str, Any]:
+  import jax
+  import jax.numpy as jnp
+
   from aminx.families.potts_mpnn.driver import PottsMPNNDriver
+  from aminx.families.potts_mpnn.model import cast_floating
   from aminx.families.potts_mpnn.refine import PottsRefine
 
+  use_double = bool(getattr(args, "double", False))
+  if use_double:
+    jax.config.update("jax_enable_x64", True)
   _install_mutant(args.arm)
   job = json.loads(Path(args.job).read_text(encoding="utf-8"))
   upstream = json.loads(Path(args.upstream).read_text(encoding="utf-8"))
@@ -299,9 +307,13 @@ def _run_arm(args: Any) -> dict[str, Any]:
   _reused, remaining = graded_resume.count_units(cache, units, resume=bool(args.resume))
   encoded: dict[str, dict[str, Any]] = {}
   if remaining > 0:
-    model = PottsMPNNDriver().load(SimpleNamespace(model_local_path=checkpoint))
+    loaded = PottsMPNNDriver().load(SimpleNamespace(model_local_path=checkpoint))
+    model = cast_floating(loaded, jnp.float64) if use_double else loaded
     for name, payload in job["structures"].items():
-      encoded[str(name)] = _encoded(model, common.prepare_aminx(Path(payload["pdb"])))
+      ready = common.prepare_aminx(Path(payload["pdb"]))
+      if use_double:
+        ready = {k: (v.astype("float64") if hasattr(v, "dtype") and v.dtype.kind == "f" else v) for k, v in ready.items()}
+      encoded[str(name)] = _encoded(model, ready)
   else:
     model = None
 

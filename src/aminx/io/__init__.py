@@ -1,4 +1,4 @@
-"""Initialization for the io module, providing functions to parse and load protein structures."""
+"""Consolidated I/O package for aminx."""
 
 from __future__ import annotations
 
@@ -13,7 +13,11 @@ if TYPE_CHECKING:
     UnifiedCampaignSink,
     inspect_campaign_sink,
   )
-  from aminx.io.designs import DesignMetadata, DesignPayload, DesignZarrWriter
+  from aminx.io.designs import (
+    DesignMetadata,
+    DesignPayload,
+    DesignZarrWriter,
+  )
 
 __all__ = [
   "CAMPAIGN_METRICS_COLUMNS",
@@ -26,29 +30,52 @@ __all__ = [
   "inspect_campaign_sink",
 ]
 
+_LAZY_SUBMODULES: dict[str, str] = {
+  "CAMPAIGN_METRICS_COLUMNS": "aminx.io.campaign_sink",
+  "CampaignSinkInspector": "aminx.io.campaign_sink",
+  "CampaignSinkSummary": "aminx.io.campaign_sink",
+  "UnifiedCampaignSink": "aminx.io.campaign_sink",
+  "inspect_campaign_sink": "aminx.io.campaign_sink",
+  "DesignMetadata": "aminx.io.designs",
+  "DesignPayload": "aminx.io.designs",
+  "DesignZarrWriter": "aminx.io.designs",
+}
 
-def _lazy_import(mod_name: str) -> Any:  # noqa: ANN401
-  return getattr(importlib, "import_module")(mod_name)  # noqa: B009
 
+def __getattr__(name: str) -> Any:
+  """Lazily resolve public symbols from ``aminx.io`` submodules.
 
-def __getattr__(name: str) -> Any:  # noqa: ANN401
-  if name in (
-    "CAMPAIGN_METRICS_COLUMNS",
-    "CampaignSinkInspector",
-    "CampaignSinkSummary",
-    "UnifiedCampaignSink",
-    "inspect_campaign_sink",
-  ):
-    return getattr(_lazy_import("aminx.io.campaign_sink"), name)
-  if name in (
-    "DesignMetadata",
-    "DesignPayload",
-    "DesignZarrWriter",
-  ):
-    return getattr(_lazy_import("aminx.io.designs"), name)
+  Parameters
+  ----------
+  name : str
+      Attribute name to resolve.
+
+  Returns
+  -------
+  Any
+      Resolved module attribute.
+  """
+  mod_name = _LAZY_SUBMODULES.get(name)
+  if mod_name is not None:
+    module = importlib.import_module(mod_name)
+    val = getattr(module, name)
+    globals()[name] = val
+    return val
   msg = f"module {__name__!r} has no attribute {name!r}"
   raise AttributeError(msg)
 
 
 def __dir__() -> list[str]:
-  return __all__
+  """Return available module attributes including lazily exported symbols.
+
+  Parameters
+  ----------
+  self : None
+      Module scope.
+
+  Returns
+  -------
+  list[str]
+      Sorted attribute names.
+  """
+  return sorted({*globals().keys(), *__all__})
