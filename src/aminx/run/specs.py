@@ -31,7 +31,14 @@ if TYPE_CHECKING:
   from aminx.utils.decoding_order import DecodingOrderFn
 
   from .batch_mapping import MappedBy
-  from .options import CalibyOptions, LaserOptions, PottsMPNNOptions, ProtonPottsOptions
+  from .options import (
+    CalibyOptions,
+    FAMPNNOptions,
+    LaserOptions,
+    PottsMPNNOptions,
+    ProtonPottsOptions,
+    ThermoMPNNOptions,
+  )
 
 
 # Type aliases for convenience
@@ -291,6 +298,10 @@ class RunSpecification:
   """LASErMPNN knobs. ``None`` means the family defaults; set only for ``lasermpnn``."""
   caliby: CalibyOptions | None = None
   """Caliby knobs. ``None`` means the family defaults; set only for ``caliby``."""
+  fampnn: FAMPNNOptions | None = None
+  """FAMPNN knobs. ``None`` means the family defaults; set only for ``fampnn``."""
+  thermompnn: ThermoMPNNOptions | None = None
+  """ThermoMPNN knobs. ``None`` means the family defaults; set only for ``thermompnn``."""
 
   run_spec: RunSpec = field(init=False, repr=False)
   _run_spec_synced: bool = field(init=False, default=False)
@@ -543,6 +554,9 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   "lasermpnn": frozenset(
     {"nll", "logits", "proofread_unconditional", "proofread_conditional"},
   ),
+  "caliby": frozenset({"nll", "logits", "energy"}),
+  "fampnn": frozenset({"nll", "logits"}),
+  "thermompnn": frozenset({"ddg"}),
 }
 
 

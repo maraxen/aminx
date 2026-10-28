@@ -80,6 +80,11 @@ LEGACY_ALIAS_MAP = {
   ("soluble", "v_48_020"): "solublempnn_v_48_020.eqx.zst",
   ("soluble", "v_48_030"): "solublempnn_v_48_030.eqx.zst",
   ("abmpnn", "v_48_020"): "abmpnn_v_48_020.eqx.zst",
+  ("antibmpnn", "v_48_000"): "antibmpnn_v_48_000.eqx.zst",
+  ("antibmpnn", "v_48_002"): "antibmpnn_v_48_000.eqx.zst",
+  ("antibmpnn", "v_48_010"): "antibmpnn_v_48_010.eqx.zst",
+  ("antibmpnn", "v_48_020"): "antibmpnn_v_48_020.eqx.zst",
+  ("antibmpnn", "v_48_030"): "antibmpnn_v_48_030.eqx.zst",
   ("hypermpnn", "v_48_002"): "hypermpnn_v_48_002.eqx.zst",
   ("hypermpnn", "v_48_010"): "hypermpnn_v_48_010.eqx.zst",
   ("hypermpnn", "v_48_020"): "hypermpnn_v_48_020.eqx.zst",
@@ -92,6 +97,7 @@ LEGACY_ALIAS_MAP = {
 
 _BARE_VARIANT_DEFAULTS = {
   "abmpnn": "abmpnn_v_48_020.eqx.zst",
+  "antibmpnn": "antibmpnn_v_48_000.eqx.zst",
   "hypermpnn": "hypermpnn_v_48_020.eqx.zst",
   "cyclicmpnn": "cyclicmpnn_v_48_010.eqx.zst",
   "ca": "ca_v_48_020.eqx.zst",
@@ -453,6 +459,8 @@ def load_model(
       checkpoint_id = filename or f"{model_weights}_{model_version}.eqx.zst"
     elif model_weights == "abmpnn":
       checkpoint_id = "abmpnn_v_48_020.eqx.zst"
+    elif model_weights == "antibmpnn":
+      checkpoint_id = "antibmpnn_v_48_000.eqx.zst"
     elif model_weights == "hypermpnn":
       checkpoint_id = "hypermpnn_v_48_020.eqx.zst"
     elif model_weights == "cyclicmpnn":

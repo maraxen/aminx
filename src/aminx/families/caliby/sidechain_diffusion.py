@@ -538,12 +538,12 @@ class CalibySidechainMLP(eqx.Module):
 
     mask_f = scn_mask.astype(dtype)
     x_scaled = (c_in[:, None, None] * x_noisy.astype(dtype)) * mask_f[..., None]
-    x_flat = x_scaled.reshape(num_l, 99)
-    cond_flat = (
-      jnp.zeros((num_l, 99), dtype=dtype)
+    cond_scaled = (
+      jnp.zeros_like(x_scaled)
       if x_cond is None
-      else (x_cond.astype(dtype) * mask_f[..., None]).reshape(num_l, 99)
+      else (x_cond.astype(dtype) / self.sigma_data) * mask_f[..., None]
     )
+    x_scn = jnp.concatenate([x_scaled, cond_scaled], axis=-1).reshape(num_l, 33 * 6)
     seq_tokens = (
       jnp.zeros((num_l,), dtype=jnp.int32)
       if aatype is None
@@ -551,7 +551,7 @@ class CalibySidechainMLP(eqx.Module):
     )
     seq_oh = jax.nn.one_hot(seq_tokens, 32, dtype=dtype)
 
-    in_feat = jnp.concatenate([x_flat, cond_flat, seq_oh], axis=-1)
+    in_feat = jnp.concatenate([x_scn, seq_oh], axis=-1)
     h_v_emb = _linear(self.c_embedder, h_v.astype(dtype))
     h = _linear(self.x_embedder, in_feat) + h_v_emb
     c = self.t_embedder(c_noise) + h_v_emb
@@ -669,13 +669,13 @@ def edm_sidechain_sample(
     is_ligand=is_ligand,
   )
 
-  # Karras sigma schedule t_0 > t_1 > ... > t_{N-1} > t_N = 0
+  # Karras sigma schedule t_0 > t_1 > ... > t_{N-1} > t_N = 0 scaled by sigma_data
   step_indices = jnp.arange(num_steps, dtype=dtype)
   inv_rho = 1.0 / rho
   s_max_rho = sigma_max**inv_rho
   s_min_rho = sigma_min**inv_rho
   denom = float(max(num_steps - 1, 1))
-  t_steps = (s_max_rho + step_indices / denom * (s_min_rho - s_max_rho)) ** rho
+  t_steps = ((s_max_rho + step_indices / denom * (s_min_rho - s_max_rho)) ** rho) * packer.sigma_data
   t_steps_padded = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=dtype)], axis=0)
 
   if key is None:
@@ -686,13 +686,15 @@ def edm_sidechain_sample(
     * t_steps_padded[0]
     * scn_mask[..., None]
   )
+  x_cond_init = jnp.zeros_like(x_init)
   step_keys = jax.random.split(k_loop, num_steps)
   gamma_val = min(s_churn / max(num_steps, 1), math.sqrt(2.0) - 1.0) if s_churn > 0.0 else 0.0
 
   def _scan_step(
-    x_cur: Float[Array, "L 33 3"],
+    carry: tuple[Float[Array, "L 33 3"], Float[Array, "L 33 3"]],
     inputs: tuple[Float[Array, ""], Float[Array, ""], jax.Array],
-  ) -> tuple[Float[Array, "L 33 3"], None]:
+  ) -> tuple[tuple[Float[Array, "L 33 3"], Float[Array, "L 33 3"]], None]:
+    x_cur, x_cond_cur = carry
     t_cur, t_next, step_key = inputs
     in_churn_range = (t_cur >= s_min) & (t_cur <= s_max)
     gamma = jnp.where(in_churn_range, gamma_val, 0.0)
@@ -702,22 +704,28 @@ def edm_sidechain_sample(
     x_hat = x_cur + noise_std * eps
 
     sigma_vec = jnp.broadcast_to(t_hat, (num_l,))
-    denoised = packer.denoise_from_trunk(x_hat, sigma_vec, h_v, scn_mask, aatype=aatype)
+    denoised = packer.denoise_from_trunk(
+      x_hat, sigma_vec, h_v, scn_mask, x_cond=x_cond_cur, aatype=aatype,
+    )
     d_cur = (x_hat - denoised) / jnp.maximum(t_hat, 1e-8)
     x_next = x_hat + step_scale * (t_next - t_hat) * d_cur
+    x_cond_next = denoised
 
     if use_heun:
       sigma_next_vec = jnp.broadcast_to(t_next, (num_l,))
-      denoised_next = packer.denoise_from_trunk(x_next, sigma_next_vec, h_v, scn_mask, aatype=aatype)
+      denoised_next = packer.denoise_from_trunk(
+        x_next, sigma_next_vec, h_v, scn_mask, x_cond=denoised, aatype=aatype,
+      )
       d_prime = (x_next - denoised_next) / jnp.maximum(t_next, 1e-8)
       x_heun = x_hat + step_scale * (t_next - t_hat) * (0.5 * d_cur + 0.5 * d_prime)
       x_next = jnp.where(t_next > 0.0, x_heun, x_next)
+      x_cond_next = jnp.where(t_next > 0.0, denoised_next, denoised)
 
-    return x_next * scn_mask[..., None], None
+    return (x_next * scn_mask[..., None], x_cond_next * scn_mask[..., None]), None
 
-  x_final, _ = jax.lax.scan(
+  (x_final, _), _ = jax.lax.scan(
     _scan_step,
-    x_init,
+    (x_init, x_cond_init),
     (t_steps_padded[:-1], t_steps_padded[1:], step_keys),
   )
   return local_to_global_scn(x_final, atom23_xyz, atom23_mask)

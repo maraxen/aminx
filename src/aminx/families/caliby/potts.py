@@ -171,7 +171,7 @@ class CalibyGraphPotts(eqx.Module):
   W_J_bg: eqx.nn.Linear | None = None
   num_states: int = eqx.field(static=True, default=32)
   num_factors: int = eqx.field(static=True, default=64)
-  k_neighbors_potts: int = eqx.field(static=True, default=30)
+  k_neighbors_potts: int = eqx.field(static=True, default=48)
   parameterization: str = eqx.field(static=True, default="factorized")
   symmetric_J: bool = eqx.field(static=True, default=True)  # noqa: N815
   bg_dim: int = eqx.field(static=True, default=1)
@@ -183,7 +183,7 @@ class CalibyGraphPotts(eqx.Module):
     num_states: int = 32,
     num_factors: int = 64,
     *,
-    k_neighbors_potts: int = 30,
+    k_neighbors_potts: int = 48,
     parameterization: str = "factorized",
     symmetric_J: bool = True,  # noqa: N803
     has_bg: bool = False,
@@ -308,18 +308,21 @@ class CalibyGraphPotts(eqx.Module):
       h = scale * mask_v * _linear(self.W_h, h_v)
 
       num_factors_eff = self.W_J_left.weight.shape[0] // self.num_states
-      j_left = _linear(self.W_J_left, h_e_trunc).reshape(
-        num_tokens, k_eff, self.num_states, num_factors_eff,
-      )
-      j_right = _linear(self.W_J_right, h_e_trunc).reshape(
-        num_tokens, k_eff, self.num_states, num_factors_eff,
-      )
-      # Apply scale linearly ONCE to J and contract factor axis via j_left @ j_right^T
-      j_knn = (
+      j_left = (
         scale
-        * valid_edge[..., None, None]
-        * jnp.matmul(j_left, jnp.swapaxes(j_right, -1, -2))
+        * valid_edge[..., None]
+        * _linear(self.W_J_left, h_e_trunc)
+      ).reshape(
+        num_tokens, k_eff, self.num_states, num_factors_eff,
       )
+      j_right = (
+        scale
+        * valid_edge[..., None]
+        * _linear(self.W_J_right, h_e_trunc)
+      ).reshape(
+        num_tokens, k_eff, num_factors_eff, self.num_states,
+      )
+      j_knn = jnp.matmul(j_left, j_right)
       # Zero-sum gauge
       h = (h - jnp.mean(h, axis=-1, keepdims=True)) * mask_v
       j_knn = (
@@ -438,23 +441,71 @@ def generate_gaussian_ensemble(
 
 def aggregate_ensemble_potts_params(
   h_stack: Float[Array, "C L S"],
-  j_stack: Float[Array, "C L L S S"],
+  j_stack: Float[Array, "C L K S S"],
+  *,
+  e_idx: Int[Array, "C L K"] | Int[Array, "L K"] | None = None,
+  valid_edge: Float[Array, "C L K"] | Float[Array, "L K"] | None = None,
+  symmetric: bool = True,
 ) -> tuple[Float[Array, "L S"], Float[Array, "L L S S"]]:
   """Aggregate per-conformer Potts parameters across a conformational ensemble by mean.
+
+  Supports both already-densified ``(C, L, L, S, S)`` coupling stacks and sparse
+  per-conformer kNN coupling stacks ``(C, L, K, S, S)`` with distinct neighbor
+  tables ``e_idx`` of shape ``(C, L, K)`` (scattering each conformer onto the
+  common ``(L, L, S, S)`` residue grid before averaging).
 
   Parameters
   ----------
   h_stack : Float[Array, "C L S"]
     Per-conformer site fields of shape ``(C, L, S)``.
-  j_stack : Float[Array, "C L L S S"]
-    Per-conformer pairwise couplings of shape ``(C, L, L, S, S)``.
+  j_stack : Float[Array, "C L K S S"]
+    Per-conformer pairwise couplings of shape ``(C, L, L, S, S)`` or sparse
+    ``(C, L, K, S, S)``.
+  e_idx : Int[Array, "C L K"] | Int[Array, "L K"] | None, optional
+    Optional per-conformer or shared kNN neighbor index array when ``j_stack``
+    is in sparse kNN layout ``(C, L, K, S, S)``.
+  valid_edge : Float[Array, "C L K"] | Float[Array, "L K"] | None, optional
+    Optional edge validity mask when ``e_idx`` is provided.
+  symmetric : bool, default=True
+    Whether to symmetrize each conformer when scattering from ``e_idx``.
 
   Returns
   -------
   tuple[Float[Array, "L S"], Float[Array, "L L S S"]]
     Ensemble-averaged ``(h_mean, J_mean)``.
   """
-  return jnp.mean(h_stack, axis=0), jnp.mean(j_stack, axis=0)
+  h_mean = jnp.mean(h_stack, axis=0)
+  if e_idx is None:
+    return h_mean, jnp.mean(j_stack, axis=0)
+
+  num_c, num_l, num_k, num_s, _ = j_stack.shape
+  e_idx_3d = (
+    jnp.broadcast_to(e_idx[None, ...], (num_c, num_l, num_k))
+    if e_idx.ndim == 2
+    else e_idx
+  )
+  c_idx = jnp.arange(num_c, dtype=jnp.int32)[:, None, None]
+  row_idx = jnp.arange(num_l, dtype=jnp.int32)[None, :, None]
+  if valid_edge is None:
+    valid_3d = (e_idx_3d != row_idx).astype(j_stack.dtype)
+  else:
+    valid_3d = (
+      jnp.broadcast_to(valid_edge[None, ...], (num_c, num_l, num_k)).astype(j_stack.dtype)
+      if valid_edge.ndim == 2
+      else valid_edge.astype(j_stack.dtype)
+    )
+
+  j_masked = j_stack * valid_3d[..., None, None]
+  j_dense_stack = (
+    jnp.zeros((num_c, num_l, num_l, num_s, num_s), dtype=j_stack.dtype)
+    .at[c_idx, row_idx, e_idx_3d]
+    .add(j_masked)
+  )
+  diag = jnp.arange(num_l, dtype=jnp.int32)
+  j_dense_stack = j_dense_stack.at[:, diag, diag, :, :].set(0.0)
+  if symmetric:
+    j_dense_stack = 0.5 * (j_dense_stack + jnp.transpose(j_dense_stack, (0, 2, 1, 4, 3)))
+  return h_mean, jnp.mean(j_dense_stack, axis=0)
 
 
 def compute_caliby_potts_energy(

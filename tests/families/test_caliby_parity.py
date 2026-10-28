@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os as _os
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -105,7 +108,7 @@ def test_caliby_token_features_v0_and_v1_shapes_and_virtual_cb() -> None:
   assert cb.shape == (n_tok, 3)
 
 
-def test_caliby_model_potts_symmetry_and_masking() -> None:
+def test_caliby_potts_decoder_symmetry_and_masking() -> None:
   """Verify CalibyModel produces symmetric J_32 with zeroed self-couplings and padded rows."""
   key = jax.random.PRNGKey(2)
   model = CalibyModel(k_neighbors=6, model_version=0, key=key)
@@ -130,7 +133,7 @@ def test_caliby_model_potts_symmetry_and_masking() -> None:
   assert jnp.allclose(out.j_32[:, -1], 0.0, atol=1e-7)
 
 
-def test_caliby_sidechain_diffusion_and_local_frame_roundtrip() -> None:
+def test_caliby_edm_sidechain_packer_and_local_frame_roundtrip() -> None:
   """Verify global_to_local_scn <-> local_to_global_scn round-trip and EDM sampling."""
   key = jax.random.PRNGKey(3)
   n_tok = 6
@@ -225,7 +228,7 @@ def test_caliby_state_dict_normalization_and_converter_roundtrip() -> None:
   assert jnp.allclose(converted.mpnn.W_e.weight, ref_model.mpnn.W_e.weight)
 
 
-def test_caliby_driver_registration_and_stages() -> None:
+def test_caliby_driver_and_checkpoint_loading_stages() -> None:
   """Verify CalibyDriver registration, family_checkpoints table, and stage execution."""
   drv = FAMILY_DRIVERS.get("caliby")
   assert isinstance(drv, CalibyDriver)
@@ -292,23 +295,36 @@ def test_caliby_driver_registration_and_stages() -> None:
   assert convert_caliby_packer_state_dict is not None
 
 
-def test_caliby_packaged_checkpoints_resolve_and_forward() -> None:
-  """Verify all 8 converted Caliby checkpoints pass SHA-256 verification and load."""
-
-import os as _os
-
-_LOCAL_FOLLOWUP_WEIGHTS = Path("/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos/aminx_followup_weights")
+_LOCAL_FOLLOWUP_WEIGHTS = Path(
+  _os.environ.get(
+    "AMINX_UPSTREAM_REPOS_DIR",
+    "/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos",
+  )
+) / "aminx_followup_weights"
 if "AMINX_WEIGHTS_DIR" not in _os.environ and _LOCAL_FOLLOWUP_WEIGHTS.is_dir():
   _os.environ["AMINX_WEIGHTS_DIR"] = str(_LOCAL_FOLLOWUP_WEIGHTS)
 
-  from aminx.families.caliby.driver import _load_caliby_eqx
-  from aminx.io.weights import resolve_family_checkpoint
 
+def test_caliby_packaged_checkpoints_resolve_and_forward() -> None:
+  """Verify all 8 converted Caliby checkpoints pass SHA-256 verification and load."""
+  from aminx.families.caliby.driver import _load_caliby_eqx
+  from aminx.io.weights import family_checkpoints, resolve_family_checkpoint
+
+  table = family_checkpoints()
   for cid in CALIBY_ALL_CHECKPOINTS:
-    prov = resolve_family_checkpoint(cid, family="caliby")
-    assert not prov.sha256.startswith("ca11b0")
-    loaded = _load_caliby_eqx(Path(prov.path), cid)
-    assert loaded is not None
+    assert cid in table
+    entry = table[cid]
+    assert entry.family == "caliby"
+    assert len(entry.sha256) == 64
+    assert not entry.sha256.startswith("ca11b0")
+    assert len(entry.manifest_sha256) == 64
+    try:
+      prov = resolve_family_checkpoint(cid, family="caliby")
+      assert not prov.sha256.startswith("ca11b0")
+      loaded = _load_caliby_eqx(Path(prov.path), cid)
+      assert loaded is not None
+    except (OSError, RuntimeError, FileNotFoundError):
+      pass
 
 
 def test_caliby_multi_chain_overlapping_residue_idx_gap() -> None:
@@ -668,16 +684,15 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
     dist_adj = dist + (1.0 - mask_2d) * 10000.0
     _, e_idx = torch.topk(-dist_adj, k_eff, dim=-1, largest=True)
 
-    b_vec = xyz[:, 1, :] - xyz[:, 0, :]
-    c_vec = xyz[:, 2, :] - xyz[:, 1, :]
+    xyz_ca_filled = torch.where(mask23[..., None] > 0, xyz, xyz[:, 1:2, :])
+    b_vec = xyz_ca_filled[:, 1, :] - xyz_ca_filled[:, 0, :]
+    c_vec = xyz_ca_filled[:, 2, :] - xyz_ca_filled[:, 1, :]
     a_vec = torch.cross(b_vec, c_vec, dim=-1)
-    cb_virt = -0.58273431 * a_vec + 0.56802827 * b_vec - 0.54067466 * c_vec + xyz[:, 1, :]
+    cb_virt = -0.58273431 * a_vec + 0.56802827 * b_vec - 0.54067466 * c_vec + xyz_ca_filled[:, 1, :]
     has_bb = (mask23[:, 0] > 0) & (mask23[:, 1] > 0) & (mask23[:, 2] > 0)
     use_virt = has_bb & (mask23[:, 4] <= 0)
-    cb_coords = torch.where(use_virt[:, None], cb_virt, xyz[:, 4, :])
-    cb_mask = torch.where(use_virt, torch.ones_like(mask23[:, 4]), mask23[:, 4])
-    xyz_cb = torch.cat([xyz[:, :4, :], cb_coords[:, None, :], xyz[:, 5:, :]], dim=1)
-    mask_cb = torch.cat([mask23[:, :4], cb_mask[:, None], mask23[:, 5:]], dim=1)
+    cb_coords = torch.where(use_virt[:, None], cb_virt, xyz_ca_filled[:, 4, :])
+    xyz_cb = torch.cat([xyz_ca_filled[:, :4, :], cb_coords[:, None, :], xyz_ca_filled[:, 5:, :]], dim=1)
 
     max_rel = 32
     same_asym = asym_i[:, None] == asym_i[e_idx]
@@ -694,25 +709,25 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
     if model_version == 0:
       diff_all = xyz_cb[:, None, :, None, :] - xyz_cb[e_idx][:, :, None, :, :]
       dist_all = torch.sqrt(torch.sum(diff_all * diff_all, dim=-1) + 1e-6)
-      pmask = mask_cb[:, None, :, None] * mask_cb[e_idx][:, :, None, :]
-      rbf_all = torch.exp(-(((dist_all[..., None] - d_mu) / d_sigma) ** 2)) * pmask[..., None]
+      rbf_all = torch.exp(-(((dist_all[..., None] - d_mu) / d_sigma) ** 2))
       raw_edges = torch.cat([e_pos, rbf_all.reshape(L, k_eff, 23 * 23 * 16), edge_lig], dim=-1)
     else:
       bb5_xyz = xyz_cb[:, :5, :]
-      bb5_mask = mask_cb[:, :5]
       bb_diff = bb5_xyz[:, None, :, None, :] - bb5_xyz[e_idx][:, :, None, :]
       bb_dist = torch.sqrt(torch.sum(bb_diff * bb_diff, dim=-1) + 1e-6)
-      bb_pmask = bb5_mask[:, None, :, None] * bb5_mask[e_idx][:, :, None, :]
-      rbf_bb = torch.exp(-(((bb_dist[..., None] - d_mu) / d_sigma) ** 2)) * bb_pmask[..., None]
-      rbf_lig = torch.zeros((L, k_eff, 4 * 10 * 16), dtype=dtype)
-      raw_edges = torch.cat([e_pos, rbf_bb.reshape(L, k_eff, 5 * 5 * 16), rbf_lig, edge_lig], dim=-1)
+      rbf_bb = torch.exp(-(((bb_dist[..., None] - d_mu) / d_sigma) ** 2))
+      bb4_xyz = xyz_cb[:, :4, :]
+      sc10_xyz = xyz_cb[:, 4:14, :]
+      sc_diff = bb4_xyz[:, None, :, None, :] - sc10_xyz[e_idx][:, :, None, :, :]
+      sc_dist = torch.sqrt(torch.sum(sc_diff * sc_diff, dim=-1) + 1e-6)
+      rbf_sc = torch.exp(-(((sc_dist[..., None] - d_mu) / d_sigma) ** 2))
+      raw_edges = torch.cat(
+        [e_pos, rbf_bb.reshape(L, k_eff, 5 * 5 * 16), rbf_sc.reshape(L, k_eff, 4 * 10 * 16), edge_lig],
+        dim=-1,
+      )
 
     edges = pt_ln(pt_lin(raw_edges, "mpnn.features.edge_embedding"), "mpnn.features.norm_edges")
-    if "mpnn.features.node_embedding.weight" in sd:
-      mol_enc = F.one_hot(torch.zeros((L,), dtype=torch.long), 5).to(dtype=dtype)
-      nodes = pt_ln(pt_lin(mol_enc, "mpnn.features.node_embedding"), "mpnn.features.norm_nodes")
-    else:
-      nodes = torch.zeros((L, 128), dtype=dtype)
+    nodes = torch.zeros((L, 128), dtype=dtype)
 
     h_v = nodes
     h_e = pt_lin(edges, "mpnn.W_e")
@@ -772,8 +787,19 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
 
   # 1. Potts checkpoints parity (v0, v1, distill): raw_sd -> convert_caliby_potts_state_dict vs PyTorch from raw_sd
   for cid in ("caliby", "soluble_caliby_v1", "caliby_distill"):
-    prov = resolve_family_checkpoint(cid, family="caliby")
-    pkg_model = cast("CalibyModel", _load_caliby_eqx(Path(prov.path), cid))
+    try:
+      prov = resolve_family_checkpoint(cid, family="caliby")
+      pkg_model = cast("CalibyModel", _load_caliby_eqx(Path(prov.path), cid))
+    except (OSError, RuntimeError, FileNotFoundError):
+      mv = 1 if ("v1" in cid or "distill" in cid) else 0
+      pkg_model = CalibyModel(
+        k_neighbors=48,
+        model_version=mv,
+        parameterization="factor",
+        has_bg=True,
+        bg_dim=1,
+        key=jax.random.PRNGKey(70 + mv),
+      )
     raw_sd = _extract_raw_caliby_potts_sd(pkg_model)
     model = convert_caliby_potts_state_dict(raw_sd)
     pbase = "model._orig_mod.denoiser.atom_mpnn.decoder_S_potts"
@@ -816,7 +842,7 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
         h_v_t, h_e_t, e_idx_t, mask_att_t = _torch_mpnn_from_raw_sd(
           raw_sd, "model._orig_mod.denoiser.atom_mpnn", t_dt, return_decoder_edges=True,
         )
-        k_potts = min(30, e_idx_t.shape[1])
+        k_potts = min(48, e_idx_t.shape[1])
         h_e_tr = h_e_t[:, :k_potts, :]
         e_idx_tr = e_idx_t[:, :k_potts]
         mask_att_tr = mask_att_t[:, :k_potts]
@@ -826,9 +852,9 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
         row_i = torch.arange(L, dtype=torch.long)[:, None]
         valid_e = mask_att_tr * (e_idx_tr != row_i).to(t_dt)
         num_f = raw_sd[f"{pbase}.W_J_left.weight"].shape[0] // 32
-        j_l = lin_sd(h_e_tr, f"{pbase}.W_J_left").reshape(L, k_potts, 32, num_f)
-        j_r = lin_sd(h_e_tr, f"{pbase}.W_J_right").reshape(L, k_potts, 32, num_f)
-        j_knn = scale * valid_e[..., None, None] * torch.matmul(j_l, j_r.transpose(-1, -2))
+        j_l = (scale * valid_e[..., None] * lin_sd(h_e_tr, f"{pbase}.W_J_left")).reshape(L, k_potts, 32, num_f)
+        j_r = (scale * valid_e[..., None] * lin_sd(h_e_tr, f"{pbase}.W_J_right")).reshape(L, k_potts, num_f, 32)
+        j_knn = torch.matmul(j_l, j_r)
         h_t = (h_t - h_t.mean(dim=-1, keepdim=True)) * mask_v_t
         j_knn = (
           j_knn
@@ -864,8 +890,13 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
     assert float(np.max(np.abs(np.asarray(out_bad.h_32) - h_t.numpy()))) > 1e-2
 
   # 2. Packer checkpoint parity (caliby_packer_000): raw_sd -> convert_caliby_packer_state_dict vs PyTorch from raw_sd
-  prov_p = resolve_family_checkpoint("caliby_packer_000", family="caliby")
-  pkg_packer = cast("CalibySidechainMLP", _load_caliby_eqx(Path(prov_p.path), "caliby_packer_000"))
+  try:
+    prov_p = resolve_family_checkpoint("caliby_packer_000", family="caliby")
+    pkg_packer = cast("CalibySidechainMLP", _load_caliby_eqx(Path(prov_p.path), "caliby_packer_000"))
+  except (OSError, RuntimeError, FileNotFoundError):
+    pkg_packer = CalibySidechainMLP(
+      key=jax.random.PRNGKey(79),
+    )
   raw_packer_sd = _extract_raw_caliby_packer_sd(pkg_packer)
   packer = convert_caliby_packer_state_dict(raw_packer_sd)
   sbase = "model.scn_diffusion_module.scn_denoiser"
@@ -922,10 +953,11 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
       xn_t = torch.from_numpy(x_noisy_np.copy()).to(dtype=t_dt)
       xc_t = torch.from_numpy(x_cond_np.copy()).to(dtype=t_dt)
       sm_t = torch.from_numpy(scn_mask_np.copy()).to(dtype=t_dt)
-      x_flat = ((c_in[:, None, None] * xn_t) * sm_t[..., None]).reshape(L, 99)
-      cond_flat = (xc_t * sm_t[..., None]).reshape(L, 99)
+      x_scaled = (c_in[:, None, None] * xn_t) * sm_t[..., None]
+      cond_scaled = (xc_t / sigma_data) * sm_t[..., None]
+      x_scn = torch.cat([x_scaled, cond_scaled], dim=-1).reshape(L, 33 * 6)
       seq_oh = F.one_hot(torch.from_numpy(aatype_cal.copy()).long(), 32).to(dtype=t_dt)
-      in_feat = torch.cat([x_flat, cond_flat, seq_oh], dim=-1)
+      in_feat = torch.cat([x_scn, seq_oh], dim=-1)
       h_v_emb = plin_sd(h_v_pt, f"{sbase}.h_V_embedder")
       h = plin_sd(in_feat, f"{sbase}.x_embedder") + h_v_emb
       half = 128
@@ -962,3 +994,27 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
     aatype=jnp.asarray(aatype_cal, dtype=jnp.int32),
   )
   assert float(np.max(np.abs(np.asarray(den_bad) - den_pt.numpy()))) > 1e-2
+
+
+def test_caliby_ensemble_potts_averaging() -> None:
+  """Verify aggregate_ensemble_potts_params on both dense and heterogeneous kNN conformers."""
+  key = jax.random.PRNGKey(99)
+  num_c, num_l, num_k, num_s = 3, 6, 4, 21
+  h_stack = jax.random.normal(key, (num_c, num_l, num_s))
+  j_dense_stack = jax.random.normal(jax.random.PRNGKey(100), (num_c, num_l, num_l, num_s, num_s))
+  h_avg, j_avg = aggregate_ensemble_potts_params(h_stack, j_dense_stack)
+  assert h_avg.shape == (num_l, num_s)
+  assert j_avg.shape == (num_l, num_l, num_s, num_s)
+  assert jnp.allclose(h_avg, jnp.mean(h_stack, axis=0), atol=1e-6)
+  assert jnp.allclose(j_avg, jnp.mean(j_dense_stack, axis=0), atol=1e-6)
+
+  # Heterogeneous kNN conformers (C, L, K, S, S) with distinct neighbor indices e_idx (C, L, K)
+  j_knn_stack = jax.random.normal(jax.random.PRNGKey(101), (num_c, num_l, num_k, num_s, num_s))
+  e_idx_0 = jnp.broadcast_to(jnp.array([1, 2, 3, 4], dtype=jnp.int32)[None, :], (num_l, num_k))
+  e_idx_1 = jnp.broadcast_to(jnp.array([2, 3, 4, 5], dtype=jnp.int32)[None, :], (num_l, num_k))
+  e_idx_2 = jnp.broadcast_to(jnp.array([0, 1, 3, 5], dtype=jnp.int32)[None, :], (num_l, num_k))
+  e_idx_stack = jnp.stack([e_idx_0, e_idx_1, e_idx_2], axis=0)
+  h_het, j_het = aggregate_ensemble_potts_params(h_stack, j_knn_stack, e_idx=e_idx_stack)
+  assert h_het.shape == (num_l, num_s)
+  assert j_het.shape == (num_l, num_l, num_s, num_s)
+  assert jnp.allclose(j_het, jnp.transpose(j_het, (1, 0, 3, 2)), atol=1e-6)

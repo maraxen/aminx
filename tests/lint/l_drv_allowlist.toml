@@ -102,9 +102,3 @@ reason = "sequential_dependency"
 path = "src/aminx/families/protonpotts_mpnn/ph_methods.py"
 qualname = "_gibbs_sweep"
 reason = "sequential_dependency"
-
-# Caliby Karras EDM ODE/SDE sidechain denoising step N+1 depends on denoised coordinates x_N at step N.
-[[entries]]
-path = "src/aminx/families/caliby/sidechain_diffusion.py"
-qualname = "edm_sidechain_sample"
-reason = "sequential_dependency"

@@ -389,15 +389,16 @@ class CalibyTokenFeatures(eqx.Module):
     _, e_idx = compute_caliby_knn(ca_xyz, ca_mask, self.top_k)
     num_k = e_idx.shape[1]
 
+    # Replace masked/missing atoms with CA before virtual CB & RBF computation (atom_mpnn.py:424)
+    xyz_ca_filled = jnp.where(mask23[..., None] > 0, xyz, xyz[:, 1:2, :])
+
     # Populate virtual CB at index 4 where CB is missing (e.g., Glycine or backbone-only)
-    cb_virtual = make_virtual_cb(xyz[:, 0, :], xyz[:, 1, :], xyz[:, 2, :])
+    cb_virtual = make_virtual_cb(xyz_ca_filled[:, 0, :], xyz_ca_filled[:, 1, :], xyz_ca_filled[:, 2, :])
     has_bb = (mask23[:, 0] > 0) & (mask23[:, 1] > 0) & (mask23[:, 2] > 0) & (~lig_bool)
     use_virtual_cb = has_bb & (mask23[:, 4] <= 0)
-    cb_coords = jnp.where(use_virtual_cb[:, None], cb_virtual, xyz[:, 4, :])
-    cb_mask = jnp.where(use_virtual_cb, jnp.ones_like(mask23[:, 4]), mask23[:, 4])
+    cb_coords = jnp.where(use_virtual_cb[:, None], cb_virtual, xyz_ca_filled[:, 4, :])
 
-    xyz_with_cb = jnp.concatenate([xyz[:, :4, :], cb_coords[:, None, :], xyz[:, 5:, :]], axis=1)
-    mask_with_cb = jnp.concatenate([mask23[:, :4], cb_mask[:, None], mask23[:, 5:]], axis=1)
+    xyz_with_cb = jnp.concatenate([xyz_ca_filled[:, :4, :], cb_coords[:, None, :], xyz_ca_filled[:, 5:, :]], axis=1)
 
     e_positional = self.embeddings(
       residue_idx=residue_idx,
@@ -417,32 +418,33 @@ class CalibyTokenFeatures(eqx.Module):
       xyz_j = xyz_with_cb[e_idx][:, :, None, :, :]
       diff_all = xyz_i - xyz_j
       dist_all = jnp.sqrt(jnp.sum(diff_all * diff_all, axis=-1) + 1e-6)
-      pair_mask = mask_with_cb[:, None, :, None] * mask_with_cb[e_idx][:, :, None, :]
-      rbf_all = compute_rbf_grid(dist_all, d_count=self.num_rbf) * pair_mask[..., None]
+      rbf_all = compute_rbf_grid(dist_all, d_count=self.num_rbf)
       rbf_flat = rbf_all.reshape(num_tokens, num_k, 23 * 23 * self.num_rbf)
       raw_edges = jnp.concatenate([e_positional, rbf_flat, edge_lig], axis=-1)
     else:
       # model_version == 1:
       # 1. 5x5 backbone-to-backbone RBFs (N, CA, C, O, CB) -> 25 * 16 = 400 channels
       bb5_xyz = xyz_with_cb[:, _BB5_IDXS, :]
-      bb5_mask = mask_with_cb[:, _BB5_IDXS]
       bb_diff = bb5_xyz[:, None, :, None, :] - bb5_xyz[e_idx][:, :, None, :, :]
       bb_dist = jnp.sqrt(jnp.sum(bb_diff * bb_diff, axis=-1) + 1e-6)
-      bb_pair_mask = bb5_mask[:, None, :, None] * bb5_mask[e_idx][:, :, None, :]
-      rbf_bb = compute_rbf_grid(bb_dist, d_count=self.num_rbf) * bb_pair_mask[..., None]
+      rbf_bb = compute_rbf_grid(bb_dist, d_count=self.num_rbf)
       rbf_bb_flat = rbf_bb.reshape(num_tokens, num_k, 5 * 5 * self.num_rbf)
 
-      # 2. 4x10 protein-backbone (N, CA, C, O) to ligand-atom RBFs -> 40 * 16 = 640 channels
-      # For protein-only inputs (is_ligand all False), ligand atom slots are masked to 0.
-      rbf_lig_flat = jnp.zeros((num_tokens, num_k, 4 * 10 * self.num_rbf), dtype=dtype)
-      raw_edges = jnp.concatenate([e_positional, rbf_bb_flat, rbf_lig_flat, edge_lig], axis=-1)
+      # 2. 4x10 protein-backbone (N, CA, C, O) to sidechain/ligand slots 4..13 RBFs -> 40 * 16 = 640 channels
+      bb4_xyz = xyz_with_cb[:, :4, :]
+      sc10_xyz = xyz_with_cb[:, 4:14, :]
+      sc_diff = bb4_xyz[:, None, :, None, :] - sc10_xyz[e_idx][:, :, None, :, :]
+      sc_dist = jnp.sqrt(jnp.sum(sc_diff * sc_diff, axis=-1) + 1e-6)
+      rbf_sc = compute_rbf_grid(sc_dist, d_count=self.num_rbf)
+      rbf_sc_flat = rbf_sc.reshape(num_tokens, num_k, 4 * 10 * self.num_rbf)
+      raw_edges = jnp.concatenate([e_positional, rbf_bb_flat, rbf_sc_flat, edge_lig], axis=-1)
 
     edges = _layer_norm(self.norm_edges, _linear(self.edge_embedding, raw_edges))
 
     if molecule_type_encoding is None:
-      mol_enc = jax.nn.one_hot(jnp.zeros((num_tokens,), dtype=jnp.int32), 5, dtype=dtype)
+      nodes = jnp.zeros((num_tokens, self.node_embedding.weight.shape[0]), dtype=dtype)
     else:
       mol_enc = molecule_type_encoding.astype(dtype)
-    nodes = _layer_norm(self.norm_nodes, _linear(self.node_embedding, mol_enc))
+      nodes = _layer_norm(self.norm_nodes, _linear(self.node_embedding, mol_enc))
 
     return cast("Float[Array, 'L H']", nodes), cast("Float[Array, 'L K E']", edges), e_idx
