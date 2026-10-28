@@ -18,6 +18,13 @@ The dataset should contain native sequences and corresponding TRW marginals
 from a reference (e.g., mistypotts training data). Correction is computed
 as the systematic gap between native log-likelihood and model predictions.
 
+NOTE (Debt #3072 — Historical Misattribution Correction):
+  This script trains the internal Potts marginal calibration sidecar (`aminx.potts.calibration`)
+  and is UNRELATED to the upstream `ProteinDesignLab/caliby` model family
+  (Shuai et al., 2025/2026; Zenodo DOI 10.5281/zenodo.18644985), which is ported in
+  `aminx.families.caliby`. To prevent collisions with upstream Caliby checkpoints,
+  default output filenames should use `potts_calibration_<id>.eqx.zst`.
+
 References:
   - ADR 260605_potts-parallel-not-stageset.md: Potts as parallel model family
   - Task 260605_multistate-potts Track J (#1298)
@@ -31,8 +38,19 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def main():
-  """Main entry point for caliby recapture."""
+def main(argv: list[str] | None = None) -> int:
+  """Main entry point for caliby recapture.
+
+  Parameters
+  ----------
+  argv : list[str] | None, optional
+    Command-line arguments passed to ``parser.parse_args``.
+
+  Returns
+  -------
+  int
+    Process exit code (``0`` on success, ``1`` on validation failure).
+  """
   parser = argparse.ArgumentParser(
       description="Recapture caliby corrections from calibration dataset.",
       formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -55,7 +73,7 @@ def main():
       "--out",
       type=str,
       required=True,
-      help="Output path for caliby_<id>.eqx.zst checkpoint.",
+      help="Output path for potts_calibration_<id>.eqx.zst checkpoint (legacy caliby_<id>.eqx.zst also accepted).",
   )
   parser.add_argument(
       "--dry-run",
@@ -70,7 +88,7 @@ def main():
       help="Logging verbosity.",
   )
 
-  args = parser.parse_args()
+  args = parser.parse_args(argv)
 
   # Configure logging
   logging.basicConfig(
