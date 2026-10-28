@@ -3,11 +3,17 @@ title: Caliby nature and dataset investigation
 research_id: 260605_caliby-nature-and-dataset
 task_id: 260605_multistate-potts
 date: 260605
-status: in-progress
+status: superseded_by_261027_caliby-family-port-spec
 backlog_item: 1298
 ---
 
 # Caliby Nature and Dataset Investigation
+
+> [!WARNING] **HISTORICAL MISATTRIBUTION CORRECTION (Debt #3072)**
+> This 2026-06-05 document misidentified **"Caliby"** as an internal shorthand ("calibration y") for a post-hoc TRW marginal calibration sidecar.
+> **Upstream Caliby** (`ProteinDesignLab/caliby`, Shuai, Widatalla, Huang et al., *bioRxiv* `10.1101/2025.09.30.679633` / Zenodo `10.5281/zenodo.18644985`) is a **3D-coordinate Potts model + flow-matching / EDM sidechain diffusion packer** created by the Protein Design Lab (Po-Ssu Huang Lab, Stanford).
+> The internal Potts marginal calibration utility remains in `src/aminx/potts/calibration.py`, whereas the true upstream Caliby model family is implemented in `src/aminx/families/caliby/` per `.praxia/docs/specs/261027_caliby-family-port-spec.md`.
+
 
 ## Summary
 

@@ -73,6 +73,70 @@
       "sha256": "09a1dc415428b11e5990aa6f0192c8db28e97ebce2f55338a67b1877f765530e",
       "manifest_filename": "protonpottsmpnn_v6_30.json",
       "manifest_sha256": "617f9ba2d56c959e71286a38defe75d1318326523ffe35a02b3c7617779926e1"
+    },
+    {
+      "checkpoint_id": "caliby",
+      "family": "caliby",
+      "filename": "caliby.eqx.zst",
+      "sha256": "03c28a024ff6e2218f39ef8be251d03180bbaec35f0e63c8e25cc7555c6b7c1d",
+      "manifest_filename": "caliby.manifest.json",
+      "manifest_sha256": "4a03ba60fc71395104170560921d69ffafdbfbec37261f6ccf1270852ed3a488"
+    },
+    {
+      "checkpoint_id": "soluble_caliby",
+      "family": "caliby",
+      "filename": "soluble_caliby.eqx.zst",
+      "sha256": "d481c1dd210c49eeae452b8339c57b78ebca88dd7db5220ad1f3cb1b650d35c5",
+      "manifest_filename": "soluble_caliby.manifest.json",
+      "manifest_sha256": "17202c36e46bf16b5f9115df07ffb18a107cf8b804cad047d84e30de59214ce2"
+    },
+    {
+      "checkpoint_id": "soluble_caliby_v1",
+      "family": "caliby",
+      "filename": "soluble_caliby_v1.eqx.zst",
+      "sha256": "e805548530564fc1e632f7b3b81d889339041a123d973fd2a3e95921042c5564",
+      "manifest_filename": "soluble_caliby_v1.manifest.json",
+      "manifest_sha256": "a86960a83b297e640b624486d7befe95b8f7c17fb932f645c48fd11b32366bd7"
+    },
+    {
+      "checkpoint_id": "caliby_distill",
+      "family": "caliby",
+      "filename": "caliby_distill.eqx.zst",
+      "sha256": "f1027cc823653470a2977dc9c3d29286ed05b5f685eb39a236a0d27415f541af",
+      "manifest_filename": "caliby_distill.manifest.json",
+      "manifest_sha256": "54d5201536435523f35bb6944baf6f4349ac4be5a956e8cdf7e2566a4dc32099"
+    },
+    {
+      "checkpoint_id": "soluble_caliby_distill",
+      "family": "caliby",
+      "filename": "soluble_caliby_distill.eqx.zst",
+      "sha256": "169a571b08da547847f0551040f64e1371a8f2f12ac9c7f718d01f16288b982f",
+      "manifest_filename": "soluble_caliby_distill.manifest.json",
+      "manifest_sha256": "ea576bcc2e41ff290b1031191a649958fb1963c595f7521d7d0edaeb96030ccb"
+    },
+    {
+      "checkpoint_id": "caliby_packer_000",
+      "family": "caliby",
+      "filename": "caliby_packer_000.eqx.zst",
+      "sha256": "67d64f033de2fb7a186c44302614f1d3e5da18f209c317473aed5ded03a2d11e",
+      "manifest_filename": "caliby_packer_000.manifest.json",
+      "manifest_sha256": "4a8c0c45feee8ee88984c8aedc4a3856edfe5e67bbf22b2b5b1891da413625d2"
+    },
+    {
+      "checkpoint_id": "caliby_packer_010",
+      "family": "caliby",
+      "filename": "caliby_packer_010.eqx.zst",
+      "sha256": "b0315eddad2312839775b3575bea17830b9daf2a838f14abf5f8693aec88b052",
+      "manifest_filename": "caliby_packer_010.manifest.json",
+      "manifest_sha256": "66a622ed14607cd57072bb07b0090df746711fc2404f7b90ec13d206450f693d"
+    },
+    {
+      "checkpoint_id": "caliby_packer_030",
+      "family": "caliby",
+      "filename": "caliby_packer_030.eqx.zst",
+      "sha256": "4442355e6fb4beec11fe0054c8f0fe34e5a056306e2aa4cd79b94ec4fd3eb33f",
+      "manifest_filename": "caliby_packer_030.manifest.json",
+      "manifest_sha256": "0b690e04380ad883a7438e21d816c8c99fe53a00210a4dab1d298388ffab2ce4"
     }
   ]
 }
