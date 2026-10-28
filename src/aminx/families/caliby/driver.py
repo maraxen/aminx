@@ -29,7 +29,6 @@ from aminx.families.caliby.model import CalibyModel
 from aminx.families.caliby.potts import (
   AMINX21_ALPHABET,
   AMINX21_TO_CALIBY21_IDXS,
-  CALIBY21_TO_AMINX21_IDXS,
   aggregate_ensemble_potts_params,
   compute_caliby_potts_energy,
   generate_gaussian_ensemble,
@@ -51,7 +50,6 @@ _HANDLED: frozenset[str] = frozenset({
 })
 
 _AMINX_TO_CALIBY_NP = np.asarray(AMINX21_TO_CALIBY21_IDXS, dtype=np.int32)
-_CALIBY_TO_AMINX_JAX = jnp.asarray(CALIBY21_TO_AMINX21_IDXS, dtype=jnp.int32)
 
 
 class CalibyPrepared(NamedTuple):
@@ -448,6 +446,8 @@ class _CalibyStages:
         off_diag = (1.0 - jnp.eye(num_l, dtype=jnp.float32))[:, :, None, None]
         cond_field = h_21 + jnp.einsum("ijab,jb->ia", j_21 * off_diag, wt_oh)
         pseudo_logits = -cond_field
+        # Normalised over all 21 states including GAP, unmasked: this matches upstream Caliby
+        # scoring (caliby potts.py:348), so NLL parity is kept at the cost of GAP taking mass.
         log_probs = jax.nn.log_softmax(pseudo_logits, axis=-1)
         picked = jnp.take_along_axis(
           log_probs,
