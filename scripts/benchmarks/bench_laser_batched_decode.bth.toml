@@ -1,0 +1,78 @@
+[experiment]
+hypothesis = """
+Task 261028_aminx-laser-batched-decode-6273 (backlog #6273). LASErMPNN production sampling of
+tests/fixtures/laser/103m_1.pdb (myoglobin, L=154, seed 0, temperature 0.1,
+lasermpnn_nothing_heldout at the pinned HF_REVISION) costs at least 5x less per sample with
+the batched untied decode (one encode, jax.vmap over the scan per chunk window; n=256 at
+samples_chunk_size 8, 32 and 128) than with the per-sample reference path
+(SampleStages._decode, one encode and one scan per sample) on the same GPU. It also returns
+exactly the per-sample sequences for the same keys, with no steady-state recompile.
+
+Baseline before #6273 (aminx#245, bathos run 92a7ec40, RTX PRO 6000 Blackwell): 0.235 s per
+sample, flat across chunk sizes. Here the looped baseline is re-measured in the same job over
+n_loop=64 samples, so the speedup does not cross devices or builds.
+
+Units: one subprocess each with a 1800 s timeout. The units are 'loop' plus one per chunk
+size. Each is stamped on completion with a config digest (unit, n, seed, temperature,
+structure sha256, checkpoint id, weights revision, git HEAD, device kind, jax/jaxlib versions)
+and with its sequences' sha256. --resume reuses a unit only when both match, and the result
+lists the reused units. Every unit makes a warm call, then a timed call; first_s is recorded
+but not judged.
+
+Controls:
+- compile_counter_live: the warm call logs at least one compile in every unit, so a steady
+  count of 0 is evidence.
+- knob_live: peak device bytes grow from chunk 8 to chunk 128, so the chunk size reaches the
+  device call. aminx#245 failed this silently, with byte-identical peaks.
+- seq_match_frac: the first 64 batched sequences, from every chunk size, are compared exactly
+  with the looped ones.
+- same_device: every unit ran on the same device kind.
+
+Wall-time estimate: loop about 2 x 64 x 0.235 s, about 30 s plus load and compile. Batched
+units are bounded by 3 x 1800 s, and each is expected to take minutes.
+"""
+
+[outcomes.parity_drift]
+condition = "all_valid AND seq_match_frac < 1.0"
+decision = "The batched path does not reproduce the per-sample sequences on GPU. Do not merge on speed; find which rows differ (float reduction order under vmap flipping a near-tie draw, or a real semantic difference) and decide with the user whether bitwise per-key reproducibility is required."
+reasoning = "Equivalence to the per-sample path is the correctness contract of #6273; CPU tests pass, so a GPU-only drift is a new finding, not a pass."
+is_residual = false
+
+[outcomes.recompiles]
+condition = "all_valid AND seq_match_frac = 1.0 AND max_steady_compiles > 0"
+decision = "The timed batched call recompiles, so per-sample time is confounded by compile. Find what is rebuilt per call and fix it before reading the speedup."
+reasoning = "A speed comparison is meaningful only on a warm compile cache."
+is_residual = false
+
+[outcomes.pass]
+condition = "all_valid AND compile_counter_live AND same_device AND knob_live AND seq_match_frac = 1.0 AND max_steady_compiles = 0 AND speedup_best >= 5.0"
+decision = "Merge #6273 after review. Recommend best_chunk as the GPU samples_chunk_size for long LASEr runs, recording its peak_bytes, and update the confirm script's chunk of 8 in a follow-up."
+reasoning = "Identical output with at least 5x cheaper sampling is the change #6273 promised."
+is_residual = false
+
+[outcomes.marginal]
+condition = "all_valid AND compile_counter_live AND same_device AND knob_live AND seq_match_frac = 1.0 AND max_steady_compiles = 0 AND speedup_best >= 1.5 AND speedup_best < 5.0"
+decision = "Merge for correctness and the modest gain, then profile the batched step (host-side order and uniform building, unstacking, coords) for the remaining cost."
+reasoning = "Under 5x, something other than the per-sample encode and dispatch still dominates."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT all_valid OR NOT compile_counter_live OR NOT same_device OR NOT knob_live OR seq_match_frac IS NULL OR speedup_best IS NULL OR (seq_match_frac = 1.0 AND max_steady_compiles = 0 AND speedup_best < 1.5)"
+decision = "Either a unit failed (failed_units says which), a control is dead (no compile seen, chunk size did not reach the device, mixed devices), or batching does not speed up sampling; do not merge on speed grounds."
+reasoning = "Residual: no usable or no positive signal."
+is_residual = true
+
+[breakdown]
+waive = "units holds each unit's timing, compile counts, peak memory, validity and sequence hash; the outcome is judged on the aggregate fields only."
+
+[result_schema]
+backend = "str"
+device_kind = "str"
+all_valid = "bool"
+compile_counter_live = "bool"
+same_device = "bool"
+knob_live = "bool"
+seq_match_frac = "float"
+max_steady_compiles = "int"
+speedup_best = "float"
+best_chunk = "int"
