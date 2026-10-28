@@ -169,6 +169,31 @@ def test_cdr_transform_refuses_logits_without_matching_residue_axis() -> None:
   assert jnp.all(out[cdr_mask, 19] > 0.0)
 
 
+def test_cdr_transform_direct_mask_is_keyword_only_and_positional_is_bias() -> None:
+  """Verify cdr_mask= is read as a mask, a positional array as a bias, and unbound bias calls work."""
+  target = jnp.full((20,), 0.02, dtype=jnp.float32).at[19].set(0.62)
+  mask_bound = jnp.zeros((21,), dtype=jnp.float32).at[:5].set(1.0)
+  mask_other = jnp.zeros((21,), dtype=jnp.float32).at[10:15].set(1.0)
+  logits = jnp.zeros((21, 21), dtype=jnp.float32)
+
+  bound = make_cdr_frequency_logit_transform(mask_bound, target_frequencies=target, weight=1.5)
+  plain = bound(logits)
+
+  # Keyword cdr_mask= is the mask, even for a float length-21 array on a bound transform.
+  other_ref = make_cdr_frequency_logit_transform(mask_other, target_frequencies=target, weight=1.5)
+  assert jnp.allclose(bound(logits, cdr_mask=mask_other), other_ref(logits), atol=1e-6)
+  assert jnp.allclose(bound(logits, cdr_mask=mask_bound), plain, atol=1e-6)
+
+  # The same array passed positionally is a per-token bias, never a mask.
+  assert jnp.allclose(bound(logits, mask_other), plain + mask_other[None, :], atol=1e-6)
+
+  # Unbound transform: the standard (per_state, bias) call adds the bias and the global log-odds.
+  unbound = make_cdr_frequency_logit_transform(None, target_frequencies=target, weight=1.5)
+  bias = jnp.arange(21.0, dtype=jnp.float32)
+  out = unbound(jnp.zeros((4, 21), dtype=jnp.float32), bias)
+  assert jnp.allclose(out, bias[None, :] + unbound.cdr_bias[None, :], atol=1e-6)
+
+
 def test_region_weights_semantics_unspecified_unit_overlap_and_ignored_raise() -> None:
   """Verify unweighted CDR loops keep scale 1.0 and ambiguous or ignored weights raise."""
   residue_idx = jnp.arange(1, 13, dtype=jnp.int32)
