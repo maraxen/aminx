@@ -50,6 +50,11 @@ import numpy as np
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+_SCRIPT_DIR = Path(__file__).resolve().parent
+if str(_SCRIPT_DIR) not in sys.path:
+  sys.path.insert(0, str(_SCRIPT_DIR))
+sys.modules.setdefault("fixtures", sys.modules[__name__])
+
 # Pre-registered v1 k-NN sizes (spec "fixture corpus" section).
 K_VALUES: tuple[int, ...] = (48, 32)
 NEAR_TIE_GAP = 1e-4
@@ -194,9 +199,13 @@ def _backbone_indices() -> tuple[int, int, int, int]:
 
 
 def _parse_fixture(path: Path) -> dict[str, Any]:
-  from aminx.io.parsing import parse_structure
+  import parse_parity  # noqa: PLC0415
 
-  protein = parse_structure(str(path))
+  from aminx.io.parsing import parse_structure  # noqa: PLC0415
+
+  canonical_dir = _worktree_root() / "outputs" / "browser_validation" / "tmp" / "canonical"
+  canonical_path = parse_parity._canonical_copy(path, canonical_dir)  # noqa: SLF001
+  protein = parse_structure(str(canonical_path))
   aatype = np.asarray(protein.aatype)
   mask = np.asarray(protein.mask, dtype=np.float64)
   chain_index = np.asarray(protein.chain_index)
@@ -546,18 +555,110 @@ def build_corpus(out_dir: Path) -> dict[str, Any]:
   }
 
 
+DEFAULT_MANIFEST_PATH = (
+  Path(__file__).resolve().parents[2]
+  / "outputs"
+  / "browser_validation"
+  / "fixtures"
+  / "manifest.json"
+)
+
+_REFRESH_RECORD_KEYS: tuple[str, ...] = (
+  "L",
+  "n_chains",
+  "ligand_heavy_atoms",
+  "near_tie_residues",
+  "tie_groups_knn_disjoint",
+  "tie_groups_rejected",
+)
+
+
+def _source_path_for_refresh(entry: dict[str, Any]) -> Path:
+  token_path = str(entry["path"])
+  for token in ROOT_TOKENS:
+    if token_path.startswith(f"{token}/"):
+      return _resolve_root_token_path(token_path)
+  path = Path(token_path)
+  return path if path.is_absolute() else (_worktree_root() / path)
+
+
+def _write_manifest_atomic(manifest_path: Path, manifest: dict[str, Any]) -> None:
+  target = Path(manifest_path)
+  target.parent.mkdir(parents=True, exist_ok=True)
+  tmp_path = target.with_name(f".{target.name}.{os.getpid()}.tmp")
+  try:
+    with tmp_path.open("w", encoding="utf-8") as fh:
+      json.dump(manifest, fh, indent=2, sort_keys=True)
+      fh.write("\n")
+    os.replace(tmp_path, target)
+  except BaseException:
+    tmp_path.unlink(missing_ok=True)
+    raise
+
+
+def refresh_manifest(manifest_path: Path, names: list[str] | tuple[str, ...]) -> dict[str, Any]:
+  """Recompute only the named fixtures' records in ``manifest_path`` and write atomically."""
+  target = Path(manifest_path)
+  with target.open(encoding="utf-8") as fh:
+    manifest: dict[str, Any] = json.load(fh)
+
+  fixtures_list: list[dict[str, Any]] = manifest["fixtures"]
+  by_name = {entry["name"]: entry for entry in fixtures_list}
+  missing = [name for name in names if name not in by_name]
+  if missing:
+    msg = f"unknown fixture(s) for --refresh in {target}: {missing}"
+    raise SystemExit(_shortfall(msg))
+
+  refresh_set = set(names)
+  updated_fixtures: list[dict[str, Any]] = []
+  for entry in fixtures_list:
+    if entry["name"] not in refresh_set:
+      updated_fixtures.append(entry)
+      continue
+    recomputed = _fixture_record(_source_path_for_refresh(entry))
+    updated_entry = dict(entry)
+    for key in _REFRESH_RECORD_KEYS:
+      updated_entry[key] = recomputed[key]
+    updated_fixtures.append(updated_entry)
+
+  manifest["fixtures"] = updated_fixtures
+  _write_manifest_atomic(target, manifest)
+  return manifest
+
+
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("--out", required=True, type=Path, help="Output directory for manifest.json")
+  parser.add_argument("--out", type=Path, help="Output directory for manifest.json")
+  parser.add_argument(
+    "--manifest",
+    type=Path,
+    default=DEFAULT_MANIFEST_PATH,
+    help="Existing manifest.json path for --refresh",
+  )
+  parser.add_argument(
+    "--refresh",
+    nargs="+",
+    metavar="NAME",
+    help="Recompute only the named fixture(s) in --manifest",
+  )
   args = parser.parse_args(argv)
 
-  manifest = build_corpus(args.out)
+  if args.refresh:
+    manifest = refresh_manifest(args.manifest, args.refresh)
+    logger.info(
+      "refreshed %s in %s (%d fixtures total)",
+      args.refresh,
+      args.manifest,
+      len(manifest["fixtures"]),
+    )
+    return 0
 
-  args.out.mkdir(parents=True, exist_ok=True)
+  if args.out is None:
+    parser.error("one of --out or --refresh is required")
+
+  manifest = build_corpus(args.out)
   manifest_path = args.out / "manifest.json"
-  with manifest_path.open("w") as fh:
-    json.dump(manifest, fh, indent=2, sort_keys=True)
-    fh.write("\n")
+  _write_manifest_atomic(manifest_path, manifest)
 
   n_a = sum(1 for f in manifest["fixtures"] if f["set"] == "A")
   n_b = sum(1 for f in manifest["fixtures"] if f["set"] == "B")

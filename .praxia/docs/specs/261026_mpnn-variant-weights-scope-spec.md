@@ -216,6 +216,19 @@ ThermoMPNN (*Dieckhaus et al., PNAS 2024*) and ThermoMPNN-D (*Dieckhaus et al., 
 
 ---
 
+## Published Tier 3 Checkpoints
+
+The `thermompnn` rows of `src/aminx/io/family_weights.json`. Each is an `.eqx.zst` artifact converted
+from the upstream checkpoint below; licences and attribution are in `NOTICE-weights.md`.
+
+| `checkpoint_id` | Upstream (licence) | Upstream checkpoint |
+| :--- | :--- | :--- |
+| `thermo_mpnn_v1_default` | `Kuhlman-Lab/ThermoMPNN` (MIT) | `models/thermoMPNN_default.pt` |
+| `thermo_mpnn_v2_ens1`, `thermo_mpnn_v2_ens2`, `thermo_mpnn_v2_ens3` | `Kuhlman-Lab/ThermoMPNN-D` (MIT) | `model_weights/ThermoMPNN-ens{1,2,3}.ckpt` |
+| `thermo_mpnn_d_ens1`, `thermo_mpnn_d_ens2`, `thermo_mpnn_d_ens3` | `Kuhlman-Lab/ThermoMPNN-D` (MIT) | `model_weights/ThermoMPNN-D-ens{1,2,3}.ckpt` |
+
+---
+
 ## Filed Technical Debt Registry (Praxia)
 
 | Debt ID | Priority | Category | Title & Scope |

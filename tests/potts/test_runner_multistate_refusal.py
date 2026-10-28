@@ -1,8 +1,8 @@
-"""run_potts must refuse multi-state input instead of silently inferring from state 0.
+"""run_potts must refuse spec/geometry state-count mismatches instead of misreporting n_backbones.
 
-These tests need no weights: the guards run before any model is loaded, which is the point of placing
-them in step 0. A regression would otherwise be invisible -- the old behaviour returned a well-formed
-PottsResult whose ``n_backbones`` described an ensemble it had not computed.
+These tests need no weights: the state-count guard runs in step 0 before any model is loaded. When
+``spec.n_backbones`` agrees with the number of states supplied in ``geometry`` (single-state or
+multi-state PoE), execution proceeds past the guard to weight loading.
 """
 
 from __future__ import annotations
@@ -41,27 +41,28 @@ def _spec(n_backbones: int = 1) -> PottsRunSpec:
 
 @pytest.mark.potts
 class TestRunPottsRefusesMultistate:
-  """run_potts is single-backbone; multi-state input must fail loudly, not quietly."""
+  """run_potts requires spec.n_backbones to match the supplied geometry state count."""
 
   def test_multi_state_geometry_is_refused(self) -> None:
-    """A leading geometry axis of size > 1 raises instead of being reduced to state 0."""
-    with pytest.raises(NotImplementedError, match="backbone states"):
+    """Multi-state geometry with default single-backbone spec raises ValueError instead of using state 0."""
+    with pytest.raises(ValueError, match="backbone state"):
       run_potts(_spec(), _geometry(n_states=3), jax.random.key(0))
 
   def test_n_backbones_above_one_is_refused(self) -> None:
-    """spec.n_backbones is copied verbatim into the result, so a value never computed is refused."""
-    with pytest.raises(NotImplementedError, match="n_backbones"):
+    """spec.n_backbones is copied verbatim into the result, so a mismatch with geometry is refused."""
+    with pytest.raises(ValueError, match="n_backbones"):
       run_potts(_spec(n_backbones=4), _geometry(n_states=1), jax.random.key(0))
 
   def test_refusal_precedes_weight_loading(self) -> None:
     """The guard fires before weights are touched: the spec names a path that does not exist, and the
-    error is the refusal rather than a file error."""
-    with pytest.raises(NotImplementedError):
+    error is the ValueError refusal rather than a file error."""
+    with pytest.raises(ValueError, match="n_backbones"):
       run_potts(_spec(), _geometry(n_states=2), jax.random.key(0))
 
   def test_single_state_is_not_refused(self) -> None:
-    """One state is NOT refused: it proceeds past the guard and fails on the missing weights file
-    instead, which is how we know the guard does not over-trigger."""
-    with pytest.raises(Exception) as excinfo:  # noqa: PT011 -- asserting it is NOT the refusal
-      run_potts(_spec(), _geometry(n_states=1), jax.random.key(0))
-    assert not isinstance(excinfo.value, NotImplementedError)
+    """Matching spec.n_backbones and geometry n_states is NOT refused: it proceeds past the guard and
+    fails on the missing weights file instead."""
+    with pytest.raises(FileNotFoundError):
+      run_potts(_spec(n_backbones=1), _geometry(n_states=1), jax.random.key(0))
+    with pytest.raises(FileNotFoundError):
+      run_potts(_spec(n_backbones=2), _geometry(n_states=2), jax.random.key(0))
