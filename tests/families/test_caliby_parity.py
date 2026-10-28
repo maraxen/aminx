@@ -1090,3 +1090,62 @@ def test_caliby_checkpoint_manifest_records_has_bg(tmp_path: Path) -> None:
   assert manifest["has_bg"] is True
   assert manifest["bg_dim"] == 32
   assert (tmp_path / "caliby_bg.eqx").is_file()
+
+
+_SENTINEL_CALLS: list[str] = []
+
+
+def _sentinel_side_effect() -> str:
+  """Record that a pickled callable ran; stands in for an arbitrary-code payload."""
+  _SENTINEL_CALLS.append("called")
+  return "called"
+
+
+class _SentinelPayload:
+  """Pickles to a reduce call of ``_sentinel_side_effect``."""
+
+  def __reduce__(self) -> tuple[object, ...]:
+    """Return the sentinel call as the reduce recipe.
+
+    Parameters
+    ----------
+    None
+      Takes no arguments beyond ``self``.
+
+    Returns
+    -------
+    tuple[object, ...]
+      ``(callable, args)`` pair that pickle replays on load.
+    """
+    return (_sentinel_side_effect, ())
+
+
+def test_caliby_torch_unpickler_refuses_arbitrary_globals() -> None:
+  """Refuse out-of-allow-list globals in a Caliby ``.ckpt`` pickle and run no payload.
+
+  Parameters
+  ----------
+  None
+    Uses the module-level sentinel payload.
+
+  Returns
+  -------
+  None
+    Asserts the sentinel never runs and allow-listed data still loads.
+  """
+  import collections  # noqa: PLC0415
+  import io  # noqa: PLC0415
+  import pickle  # noqa: PLC0415
+
+  import pytest  # noqa: PLC0415
+
+  from aminx.families.caliby.driver import _RestrictedCalibyUnpickler  # noqa: PLC0415
+
+  _SENTINEL_CALLS.clear()
+  payload = pickle.dumps(_SentinelPayload())
+  with pytest.raises(pickle.UnpicklingError, match="Refusing to unpickle"):
+    _RestrictedCalibyUnpickler(io.BytesIO(payload)).load()
+  assert _SENTINEL_CALLS == []
+
+  ok = pickle.dumps(collections.OrderedDict(weight=1))
+  assert _RestrictedCalibyUnpickler(io.BytesIO(ok)).load() == collections.OrderedDict(weight=1)
