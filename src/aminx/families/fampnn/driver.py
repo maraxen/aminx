@@ -142,7 +142,8 @@ def mar_sample(
   Returns
   -------
   tuple[Int[Array, " L"], Float[Array, "L 21"], Float[Array, "L 37 3"], Float[Array, "L 37"]]
-    Tuple ``(seq_aminx, logits_aminx, packed_atom37_xyz, psce_atom37)``.
+    Tuple ``(seq_aminx, logits_aminx, packed_atom37_xyz, psce_atom37)``. ``logits_aminx`` are the
+    logits of a forward pass on the returned sequence, so their argmax agrees with ``seq_aminx``.
   """
   if key is None:
     key = jax.random.PRNGKey(0)
@@ -245,20 +246,24 @@ def mar_sample(
     )
     final_atom_mask = RESTYPE_ATOM37_MASK[jnp.clip(final_aa, 0, 20)].astype(dtype)
 
+  # The loop's last forward pass ran before the final step unmasked its positions, so its logits
+  # describe a sequence that was never returned. One forward on the final state fixes that, and
+  # the confidence head reads the same pass.
+  fwd_last = model(
+    final_xyz, final_atom_mask, final_aa, final_seq_mask, mask, residue_idx, chain_idx,
+  )
+  final_logits_aminx = fwd_last.logits_aminx
   if model.scn_confidence is not None:
-    fwd_conf = model(
-      final_xyz, final_atom_mask, final_aa, final_seq_mask, mask, residue_idx, chain_idx,
-    )
     psce_37 = model.scn_confidence(
       final_xyz,
       final_atom_mask,
-      fwd_conf.h_v,
+      fwd_last.h_v,
       final_aa,
       mask,
       residue_idx,
       chain_idx,
-      h_esv=fwd_conf.h_e,
-      e_idx=fwd_conf.e_idx,
+      h_esv=fwd_last.h_e,
+      e_idx=fwd_last.e_idx,
     )
   else:
     psce_37 = jnp.full((num_l, 37), jnp.nan, dtype=dtype)

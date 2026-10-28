@@ -7,12 +7,16 @@ refuses rather than dropping, and that the logits it returns belong to the seque
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, NamedTuple
 
+import jax
+import jax.numpy as jnp
+import numpy as np
 import pytest
 
 import aminx.families.fampnn.driver as driver_mod
-from aminx.families.fampnn.driver import FAMPNNDriver
+from aminx.families.fampnn.constants import FAMPNN_TO_AMINX_ARR
+from aminx.families.fampnn.driver import FAMPNNDriver, mar_sample
 from aminx.run.options import FAMPNNOptions
 
 
@@ -114,3 +118,70 @@ def test_empty_constraint_fields_are_accepted(resolved: dict[str, Any]) -> None:
   FAMPNNDriver().load(_spec(omit_aa=(), omit_aa_per_position=None, fixed_positions=None))
 
   assert resolved["loaded_id"] == "fampnn_0_3"
+
+
+class _FakeOut(NamedTuple):
+  logits_fampnn: jax.Array
+  logits_aminx: jax.Array
+  h_v: jax.Array
+  h_e: jax.Array
+  e_idx: jax.Array
+
+
+class _FakeFAMPNN:
+  """Deterministic stand-in for the network: logits peak on the residue each position holds.
+
+  A masked position holds the unknown token (index 20), so its logits carry no residue identity.
+  """
+
+  scn_diffusion = None
+  scn_confidence = None
+
+  def __call__(
+    self,
+    xyz: jax.Array,
+    atom_mask: jax.Array,
+    aatype: jax.Array,
+    seq_mask: jax.Array,
+    mask: jax.Array,
+    residue_idx: jax.Array,
+    chain_idx: jax.Array,
+  ) -> _FakeOut:
+    del xyz, atom_mask, mask, residue_idx, chain_idx
+    held = jnp.where(seq_mask > 0, jnp.clip(aatype, 0, 20), 20)
+    fampnn_logits = 50.0 * jax.nn.one_hot(held, 21, dtype=jnp.float32)
+    aminx_logits = 50.0 * jax.nn.one_hot(jnp.asarray(FAMPNN_TO_AMINX_ARR)[held], 21, dtype=jnp.float32)
+    zeros = jnp.zeros((held.shape[0], 1), dtype=jnp.float32)
+    return _FakeOut(
+      logits_fampnn=fampnn_logits,
+      logits_aminx=aminx_logits,
+      h_v=zeros,
+      h_e=zeros,
+      e_idx=zeros,
+    )
+
+
+def test_mar_sample_returns_logits_for_the_returned_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
+  """The returned logits must describe the returned sequence, not the state before the last step.
+
+  With two steps the cosine schedule unmasks every designable position on the last step, so the
+  loop's own last forward pass saw a fully masked tail. Its argmax would not match the output.
+  """
+  monkeypatch.setattr(driver_mod, "edm_sample", lambda model, xyz, *args, **kwargs: xyz)  # noqa: ARG005
+  length = 6
+  seq_aminx, logits_aminx, _, _ = mar_sample(
+    _FakeFAMPNN(),
+    jnp.zeros((length, 37, 3), dtype=jnp.float32),
+    jnp.zeros((length, 37), dtype=jnp.float32),
+    jnp.zeros((length,), dtype=jnp.int32),
+    jnp.zeros((length,), dtype=jnp.float32),
+    jnp.ones((length,), dtype=jnp.float32),
+    jnp.arange(1, length + 1, dtype=jnp.int32),
+    jnp.zeros((length,), dtype=jnp.int32),
+    num_seq_steps=2,
+    temperature=1.0,
+    pack_each_step=False,
+    key=jax.random.PRNGKey(0),
+  )
+
+  np.testing.assert_array_equal(np.asarray(jnp.argmax(logits_aminx, axis=-1)), np.asarray(seq_aminx))
