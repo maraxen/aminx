@@ -102,3 +102,13 @@ reason = "sequential_dependency"
 path = "src/aminx/families/protonpotts_mpnn/ph_methods.py"
 qualname = "_gibbs_sweep"
 reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/fampnn/sidechain_diffusion.py"
+qualname = "edm_sample"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/fampnn/driver.py"
+qualname = "mar_sample"
+reason = "sequential_dependency"
