@@ -460,7 +460,7 @@ def load_model(
     elif model_weights == "abmpnn":
       checkpoint_id = "abmpnn_v_48_020.eqx.zst"
     elif model_weights == "antibmpnn":
-      checkpoint_id = "antibmpnn_v_48_020.eqx.zst"
+      checkpoint_id = "antibmpnn_v_48_000.eqx.zst"
     elif model_weights == "hypermpnn":
       checkpoint_id = "hypermpnn_v_48_020.eqx.zst"
     elif model_weights == "cyclicmpnn":

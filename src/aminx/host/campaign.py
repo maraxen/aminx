@@ -1456,7 +1456,7 @@ def plan_campaign_manifest(  # noqa: PLR0915
             backend_overrides: dict[str, Any] = {}
             if backend_arm is not None:
               backend_overrides["checkpoint_id"] = backend_arm.checkpoint_id
-              if backend_arm.model_family in ("proteinmpnn", "ligandmpnn", "membrane", "pottsmpnn", "protonpottsmpnn", "lasermpnn", "thermompnn"):
+              if backend_arm.model_family in ("proteinmpnn", "ligandmpnn", "membrane", "pottsmpnn", "protonpottsmpnn", "lasermpnn", "thermompnn", "caliby", "fampnn"):
                 backend_overrides["model_family"] = backend_arm.model_family
               if backend_arm.model_weights is not None:
                 backend_overrides["model_weights"] = backend_arm.model_weights
