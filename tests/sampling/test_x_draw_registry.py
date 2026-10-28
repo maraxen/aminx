@@ -263,7 +263,10 @@ REGISTRY: dict[str, tuple[str, str]] = {
   "families/fampnn/driver.py::mar_sample._mar_step": (
     "family_excluded",
     "FAMPNN MAR unmasking: categorical over the first 20 logits only, which drops X at index 20 "
-    "of FAMPNN_ALPHABET ARNDCQEGHILKMFPSTWYVX. Runs inside a fori_loop (allowlisted).",
+    "of FAMPNN_ALPHABET ARNDCQEGHILKMFPSTWYVX. Runs inside a fori_loop (allowlisted). Caller-side "
+    "defects, not fixed here: the per-sample key comes from fold_in(seed + idx*100 + t_idx) "
+    "(driver.py:528), which collides at 100+ temperatures (same as caliby, debt #3121/#3122), and "
+    "the samples and temperatures are a Python loop calling mar_sample (driver.py:526-535).",
   ),
 }
 
