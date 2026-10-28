@@ -2,7 +2,8 @@
 
 Implements the inference-time CDR region masking, target amino-acid frequency
 log-odds logit biasing, and Barley/Lehninger physicochemical descriptor calculation
-described in AntiBMPNN (Goudy et al., 2024; Zenodo DOI ``10.5281/zenodo.13387792``).
+described in AntiBMPNN (Zeyu Sun et al., 2024; <https://github.com/zeysun/AntiBMPNN>;
+Zenodo DOI ``10.5281/zenodo.13387792``).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import jax
 import jax.numpy as jnp
 
 if TYPE_CHECKING:
-  from collections.abc import Callable
+  from collections.abc import Callable, Mapping
 
   from aminx.types.arrays import ChainIndex, Logits, ProteinMask, ResidueIndex, Sequence
 
@@ -157,6 +158,7 @@ def build_cdr_region_mask(
   light_chain_id: int | None = 1,
   scheme: str = "chothia",
   mask: ProteinMask | None = None,
+  cdr_ranges: Mapping[str, tuple[int, int]] | None = None,
 ) -> CDRRegionMasks:
   """Construct boolean masks for CDR loops under Chothia or IMGT numbering.
 
@@ -175,6 +177,9 @@ def build_cdr_region_mask(
   mask : ProteinMask | None, optional
     Optional valid-residue mask of shape ``(N,)``. Invalid positions (``mask <= 0``)
     are excluded from all CDR masks.
+  cdr_ranges : Mapping[str, tuple[int, int]] | None, optional
+    Optional custom inclusive ``(start, end)`` residue-number bounds keyed by loop
+    name (``"h1".."l3"``, case-insensitive).
 
   Returns
   -------
@@ -192,7 +197,10 @@ def build_cdr_region_mask(
     msg = f"Unknown CDR numbering scheme {scheme!r}; expected one of {sorted(_CDR_BOUNDS)}."
     raise ValueError(msg)
 
-  bounds = _CDR_BOUNDS[scheme_key]
+  bounds = dict(_CDR_BOUNDS[scheme_key])
+  if cdr_ranges is not None:
+    for k, v in cdr_ranges.items():
+      bounds[k.lower()] = v
   valid = jnp.ones_like(residue_index, dtype=jnp.bool_) if mask is None else (mask > 0)
 
   if heavy_chain_id is not None:
@@ -237,72 +245,206 @@ def build_cdr_region_mask(
   )
 
 
-class CDRFrequencyLogitTransform(eqx.Module):
-  """Composable ``BatchLogitFn`` applying CDR log-odds amino-acid frequency bias.
+def _compute_region_scale(
+  cdr_mask: CDRRegionMasks | jax.Array,
+  region_masks: CDRRegionMasks | None = None,
+  region_weights: Mapping[str, float] | None = None,
+) -> jax.Array:
+  """Compute per-position float32 scaling factor from CDR mask and optional loop weights."""
+  if isinstance(cdr_mask, CDRRegionMasks):
+    base_mask = cdr_mask.any_cdr.astype(jnp.float32)
+    eff_regions = cdr_mask if region_masks is None else region_masks
+  else:
+    base_mask = jnp.asarray(cdr_mask, dtype=jnp.float32)
+    eff_regions = region_masks
 
-  Conforms to :class:`aminx.model._inference.logits.BatchLogitFn` so it can be
-  passed directly to ``make_sampling_fn(..., logit_transform=...)`` or composed
-  around an existing ``BatchLogitFn``.
+  if eff_regions is not None and region_weights:
+    norm_weights = {k.lower(): float(v) for k, v in region_weights.items()}
+    scale = jnp.zeros_like(base_mask, dtype=jnp.float32)
+    for loop_name in ("h1", "h2", "h3", "l1", "l2", "l3", "heavy_cdr", "light_cdr", "any_cdr"):
+      if loop_name in norm_weights:
+        loop_m = getattr(eff_regions, loop_name).astype(jnp.float32)
+        scale = scale + loop_m * norm_weights[loop_name]
+    return base_mask * scale
+  return base_mask
+
+
+class CDRFrequencyLogitTransform(eqx.Module):
+  """Composable logit transform applying CDR log-odds amino-acid frequency bias.
+
+  Supports both:
+  1. Standard ``BatchLogitFn`` / ``LogitTransform`` calls ``(per_state, bias=None)``
+     or ``(logits, step, mask)`` where ``cdr_mask`` was pre-bound at construction
+     time and ``logits`` has shape ``(S, L, V)``, ``(L, V)``, ``(S, V)`` (single-step
+     AR at ``step``), or ``(V,)`` (single-step AR at ``step``).
+  2. Direct calls ``(logits, cdr_mask, *, region_masks=None, region_weights=None)``
+     where ``cdr_mask`` (a boolean/float mask of length ``L`` or ``CDRRegionMasks``)
+     is passed as the second argument.
 
   Attributes
   ----------
   cdr_bias : jax.Array
-    Precomputed per-position, per-token log-odds bias of shape ``(N, 21)``.
+    Precomputed per-position ``(N, 21)`` or per-token ``(21,)`` log-odds bias.
+  log_odds_21 : jax.Array
+    Unmasked log-odds vector of shape ``(21,)`` or ``(N, 21)`` with token 20 = 0.0.
   base_transform : BatchLogitFn | None
     Optional inner logit transform applied prior to adding ``cdr_bias``.
+  has_bound_mask : bool
+    Whether a per-residue ``cdr_mask`` was bound at construction time.
   """
 
   cdr_bias: jax.Array
+  log_odds_21: jax.Array = eqx.field(default_factory=lambda: jnp.zeros((21,), dtype=jnp.float32))
   base_transform: BatchLogitFn | None = None
+  has_bound_mask: bool = eqx.field(static=True, default=True)
 
-  def __call__(
+  def __init__(
+    self,
+    cdr_bias: jax.Array,
+    base_transform: BatchLogitFn | None = None,
+    *,
+    log_odds_21: jax.Array | None = None,
+    has_bound_mask: bool = True,
+  ) -> None:
+    """Initialize CDR frequency log-odds logit transform.
+
+    Parameters
+    ----------
+    cdr_bias : jax.Array
+        Precomputed per-position ``(N, 21)`` or per-token ``(21,)`` log-odds bias.
+    base_transform : BatchLogitFn | None, optional
+        Optional inner logit transform applied prior to adding ``cdr_bias``.
+    log_odds_21 : jax.Array | None, optional
+        Unmasked log-odds vector of shape ``(21,)`` or ``(N, 21)``.
+    has_bound_mask : bool, default=True
+        Whether a per-residue ``cdr_mask`` was bound at construction time.
+
+    Returns
+    -------
+    None
+        Initializes instance attributes.
+    """
+    self.cdr_bias = cdr_bias
+    self.log_odds_21 = cdr_bias if log_odds_21 is None else log_odds_21
+    self.base_transform = base_transform
+    self.has_bound_mask = has_bound_mask
+
+  def __call__(  # noqa: PLR0911
     self,
     per_state: Logits,
-    bias: Logits | None = None,
+    bias_or_step_or_mask: jax.Array | CDRRegionMasks | int | None = None,
+    mask: jax.Array | None = None,
+    *,
+    region_masks: CDRRegionMasks | None = None,
+    region_weights: Mapping[str, float] | None = None,
   ) -> Logits:
     """Apply inner logit transform (if any) followed by the CDR log-odds bias.
 
     Parameters
     ----------
     per_state : Logits
-      Per-state logits of shape ``(K, N, 21)`` or ``(N, 21)``.
-    bias : Logits | None, optional
-      Optional explicit additive bias of shape ``(N, 21)``.
+      Input logits array.
+    bias_or_step_or_mask : jax.Array | CDRRegionMasks | int | None, optional
+      Optional bias tensor, decoding step index, or CDR region mask.
+    mask : jax.Array | None, optional
+      Optional valid-residue mask for the 3-arg ``LogitTransform`` protocol.
+    region_masks : CDRRegionMasks | None, optional
+      Optional per-loop CDR boolean masks for loop-specific weighting.
+    region_weights : Mapping[str, float] | None, optional
+      Optional per-loop scaling factors keyed by loop name.
 
     Returns
     -------
     Logits
-      Transformed logits with CDR frequency log-odds bias applied.
+      Biased logits with the same shape as ``per_state``.
     """
+    # Case 1: 3-arg LogitTransform protocol signature (logits, step, mask)
+    if mask is not None or (
+      bias_or_step_or_mask is not None
+      and not isinstance(bias_or_step_or_mask, CDRRegionMasks)
+      and jnp.asarray(bias_or_step_or_mask).ndim == 0
+      and jnp.issubdtype(jnp.asarray(bias_or_step_or_mask).dtype, jnp.integer)
+    ):
+      step_idx = jnp.asarray(bias_or_step_or_mask, dtype=jnp.int32)
+      out = self.base_transform(per_state, None) if self.base_transform is not None else per_state
+      if self.cdr_bias.ndim == 2:
+        if out.ndim >= 2 and out.shape[-2] == self.cdr_bias.shape[0]:
+          return out + self.cdr_bias
+        step_bias = self.cdr_bias[step_idx]
+        return out + step_bias
+      return out + self.cdr_bias
+
+    # Case 2: Direct call (logits, cdr_mask, *, region_masks=..., region_weights=...)
+    if isinstance(bias_or_step_or_mask, CDRRegionMasks) or (
+      bias_or_step_or_mask is not None
+      and (
+        jnp.issubdtype(jnp.asarray(bias_or_step_or_mask).dtype, jnp.bool_)
+        or jnp.asarray(bias_or_step_or_mask).shape[-1] != 21
+        or not self.has_bound_mask
+      )
+    ):
+      scale = _compute_region_scale(
+        bias_or_step_or_mask,
+        region_masks=region_masks,
+        region_weights=region_weights,
+      )
+      out = self.base_transform(per_state, None) if self.base_transform is not None else per_state
+      return out + scale[..., None] * self.log_odds_21
+
+    # Case 3: Standard BatchLogitFn signature (per_state, bias=None)
+    bias = bias_or_step_or_mask
     if self.base_transform is not None:
       out = self.base_transform(per_state, bias)
     else:
-      out = per_state.mean(axis=0) if per_state.ndim == 3 else per_state
+      if (
+        per_state.ndim == 3
+        and self.cdr_bias.ndim == 2
+        and per_state.shape[1] == self.cdr_bias.shape[0]
+      ):
+        out = per_state.mean(axis=0)
+      else:
+        out = per_state
       if bias is not None:
         out = out + bias
+
+    if region_masks is not None and region_weights:
+      scale = _compute_region_scale(
+        region_masks,
+        region_masks=region_masks,
+        region_weights=region_weights,
+      )
+      return out + scale[..., None] * self.log_odds_21
+
+    if self.cdr_bias.ndim == 2 and out.ndim == 1:
+      return out + self.cdr_bias[0]
+    if self.cdr_bias.ndim == 2 and out.ndim == 2 and out.shape[0] != self.cdr_bias.shape[0]:
+      return out + self.cdr_bias[0]
     return out + self.cdr_bias
 
 
 def make_cdr_frequency_logit_transform(
-  cdr_mask: jax.Array,
+  cdr_mask: CDRRegionMasks | jax.Array | None = None,
   *,
   target_frequencies: jax.Array | None = None,
   background_frequencies: jax.Array | None = None,
   weight: float = 1.0,
-  eps: float = 1e-6,
+  eps: float = 1e-8,
   base_transform: BatchLogitFn | None = None,
+  region_masks: CDRRegionMasks | None = None,
+  region_weights: Mapping[str, float] | None = None,
 ) -> CDRFrequencyLogitTransform:
   """Create a :class:`CDRFrequencyLogitTransform` for CDR amino-acid log-odds biasing.
 
   Computes the additive logit bias:
-  ``delta_bias[i, a] = weight * cdr_mask[i] * log((p_target[a] + eps) / (p_bg[a] + eps))``
+  ``delta_bias[i, a] = weight * cdr_mask[i] * log(clip(p_target[a], eps, 1.0) / clip(p_bg[a], eps, 1.0))``
   for standard amino acids ``a in 0..19``, while leaving unknown token ``a == 20 ('X')``
   and non-CDR positions (``cdr_mask[i] == 0``) strictly unmodified (``0.0``).
 
   Parameters
   ----------
-  cdr_mask : jax.Array
-    Boolean or float mask of shape ``(N,)`` indicating CDR positions to bias.
+  cdr_mask : CDRRegionMasks | jax.Array | None, optional
+    Boolean or float mask of shape ``(N,)`` (or :class:`CDRRegionMasks`) indicating
+    CDR positions to bias. If ``None``, the mask can be supplied at call time.
   target_frequencies : jax.Array | None, optional
     Target amino-acid frequencies of shape ``(20,)``, ``(21,)``, ``(N, 20)``, or
     ``(N, 21)``. Defaults to uniform ``1 / 20`` across the 20 standard amino acids.
@@ -311,16 +453,20 @@ def make_cdr_frequency_logit_transform(
     ``(N, 21)``. Defaults to uniform ``1 / 20`` across the 20 standard amino acids.
   weight : float, default=1.0
     Scalar multiplier on the log-odds bias term.
-  eps : float, default=1e-6
+  eps : float, default=1e-8
     Small positive constant preventing ``log(0)``.
   base_transform : BatchLogitFn | None, optional
     Optional inner ``BatchLogitFn`` (e.g. from ``make_logit_transform``) to run
     before adding the CDR log-odds bias.
+  region_masks : CDRRegionMasks | None, optional
+    Optional loop masks for per-loop weighting when ``region_weights`` is supplied.
+  region_weights : Mapping[str, float] | None, optional
+    Optional per-loop weight multipliers keyed by loop name (``"h1".."l3"``).
 
   Returns
   -------
   CDRFrequencyLogitTransform
-    Composable ``BatchLogitFn`` module holding the precomputed ``(N, 21)`` bias.
+    Composable ``BatchLogitFn`` module holding the precomputed bias.
 
   Raises
   ------
@@ -328,9 +474,6 @@ def make_cdr_frequency_logit_transform(
     If ``target_frequencies`` or ``background_frequencies`` do not have last dimension
     ``20`` or ``21``.
   """
-  mask_f = cdr_mask.astype(jnp.float32)
-  n_res = mask_f.shape[0]
-
   def _extract_aa20(freq: jax.Array | None, name: str) -> jax.Array:
     if freq is None:
       return jnp.full((20,), 1.0 / 20.0, dtype=jnp.float32)
@@ -346,22 +489,54 @@ def make_cdr_frequency_logit_transform(
   p_target = _extract_aa20(target_frequencies, "target_frequencies")
   p_bg = _extract_aa20(background_frequencies, "background_frequencies")
 
-  log_odds_20 = jnp.asarray(weight, dtype=jnp.float32) * (
-    jnp.log(p_target + eps) - jnp.log(p_bg + eps)
+  log_odds_20 = jnp.asarray(weight, dtype=jnp.float32) * jnp.log(
+    jnp.clip(p_target, eps, 1.0) / jnp.clip(p_bg, eps, 1.0),
   )
+  zero_x_shape = (*log_odds_20.shape[:-1], 1)
+  log_odds_21 = jnp.concatenate(
+    [log_odds_20, jnp.zeros(zero_x_shape, dtype=jnp.float32)],
+    axis=-1,
+  )
+
+  if cdr_mask is None and region_masks is None:
+    return CDRFrequencyLogitTransform(
+      cdr_bias=log_odds_21,
+      base_transform=base_transform,
+      log_odds_21=log_odds_21,
+      has_bound_mask=False,
+    )
+
+  eff_mask_source = cdr_mask if cdr_mask is not None else region_masks
+  if eff_mask_source is None:
+    msg = "cdr_mask or region_masks must be provided"
+    raise ValueError(msg)
+  mask_f = _compute_region_scale(
+    eff_mask_source,
+    region_masks=region_masks,
+    region_weights=region_weights,
+  )
+  n_res = mask_f.shape[0]
+
   if log_odds_20.ndim == 1:
-    log_odds_20 = jnp.broadcast_to(log_odds_20[None, :], (n_res, 20))
+    log_odds_20_b = jnp.broadcast_to(log_odds_20[None, :], (n_res, 20))
   elif log_odds_20.shape[0] != n_res:
     msg = (
       f"Per-position frequency array length {log_odds_20.shape[0]} does not match "
       f"cdr_mask length {n_res}."
     )
     raise ValueError(msg)
+  else:
+    log_odds_20_b = log_odds_20
 
-  biased_20 = mask_f[:, None] * log_odds_20
+  biased_20 = mask_f[:, None] * log_odds_20_b
   zero_x = jnp.zeros((n_res, 1), dtype=jnp.float32)
   cdr_bias = jnp.concatenate([biased_20, zero_x], axis=-1)
-  return CDRFrequencyLogitTransform(cdr_bias=cdr_bias, base_transform=base_transform)
+  return CDRFrequencyLogitTransform(
+    cdr_bias=cdr_bias,
+    base_transform=base_transform,
+    log_odds_21=log_odds_21,
+    has_bound_mask=True,
+  )
 
 
 class CDRPhysicochemicalDescriptors(NamedTuple):
@@ -384,7 +559,7 @@ class CDRPhysicochemicalDescriptors(NamedTuple):
 
 def compute_cdr_physicochemical_descriptors(
   sequences: Sequence,
-  cdr_mask: jax.Array | None = None,
+  cdr_mask: CDRRegionMasks | jax.Array | None = None,
   *,
   ph: float = 7.4,
   include_termini: bool = True,
@@ -400,10 +575,11 @@ def compute_cdr_physicochemical_descriptors(
   sequences : Sequence
     Integer token array of shape ``(N,)`` or ``(B, N)`` in Aminx 21-token encoding
     (``0..19`` standard amino acids, ``20`` unknown ``'X'``).
-  cdr_mask : jax.Array | None, optional
-    Optional boolean or float mask of shape ``(N,)`` or ``(B, N)`` selecting the
-    residues over which to compute the descriptors. When ``None``, all standard
-    amino-acid positions (``sequences < 20``) are included.
+  cdr_mask : CDRRegionMasks | jax.Array | None, optional
+    Optional boolean or float mask of shape ``(N,)`` or ``(B, N)``, or a
+    :class:`CDRRegionMasks` instance (automatically converted to ``cdr_mask.any_cdr``),
+    selecting the residues over which to compute the descriptors. When ``None``, all
+    standard amino-acid positions (``sequences < 20``) are included.
   ph : float, default=7.4
     Solution pH for the Henderson-Hasselbalch charge calculation.
   include_termini : bool, default=True
@@ -416,12 +592,15 @@ def compute_cdr_physicochemical_descriptors(
     NamedTuple ``(pd1_volume, pd2_hydro, pd3_charge)`` of scalar arrays (when input
     is 1D ``(N,)``) or shape ``(B,)`` arrays (when input is 2D ``(B, N)``).
   """
+  if isinstance(cdr_mask, CDRRegionMasks):
+    cdr_mask = cdr_mask.any_cdr
+
   seq_clamped = jnp.clip(sequences, 0, 20)
   is_standard_aa = (sequences >= 0) & (sequences < 20)
   if cdr_mask is None:
     active = is_standard_aa.astype(jnp.float32)
   else:
-    active = (cdr_mask > 0).astype(jnp.float32) * is_standard_aa.astype(jnp.float32)
+    active = (jnp.asarray(cdr_mask) > 0).astype(jnp.float32) * is_standard_aa.astype(jnp.float32)
 
   count = jnp.sum(active, axis=-1)
   safe_count = jnp.maximum(count, 1.0)
@@ -486,3 +665,4 @@ __all__ = [
   "compute_cdr_physicochemical_descriptors",
   "make_cdr_frequency_logit_transform",
 ]
+

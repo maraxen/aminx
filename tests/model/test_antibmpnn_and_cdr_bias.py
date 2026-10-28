@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from pathlib import Path
 from typing import get_args
 
@@ -35,7 +37,7 @@ def _encode_sequence(seq_str: str) -> jax.Array:
   )
 
 
-def test_antibmpnn_weight_registration_and_topology() -> None:
+def test_antibmpnn_weights_registration_and_topology() -> None:
   """Verify antibmpnn and v_48_000 registration in versions.py and weights.py."""
   assert "antibmpnn" in get_args(MODEL_WEIGHTS)
   assert "v_48_000" in get_args(MODEL_VERSION)
@@ -51,7 +53,7 @@ def test_antibmpnn_weight_registration_and_topology() -> None:
     assert topo["num_positional_embeddings"] == 32
 
 
-def test_build_cdr_region_mask_chothia_and_imgt() -> None:
+def test_build_cdr_region_mask_and_test_cdr_region_mask_chothia_and_imgt() -> None:
   """Verify Chothia and IMGT CDR bounds on heavy and light chains."""
   res_idx = jnp.array([25, 26, 32, 52, 95, 103, 24, 34, 50, 88, 89, 97], dtype=jnp.int32)
   chain_idx = jnp.array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1], dtype=jnp.int32)
@@ -134,7 +136,7 @@ def test_cdr_frequency_logit_transform_invariants() -> None:
   assert jnp.all(diff[cdr_mask, 0] < 0.0)
 
 
-def test_barley_and_lehninger_descriptors_match_antibmpnn_readme() -> None:
+def test_cdr_physicochemical_descriptors_barley_and_lehninger() -> None:
   """Verify Barley PC1/PC2 and Lehninger charge match AntiBMPNN README examples to 1e-4."""
   seq1 = _encode_sequence("ARSKSTYLSRDSSGYDY")
   seq2 = _encode_sequence("ARSKSTYLSYNSSGYDY")
@@ -167,7 +169,7 @@ def test_barley_and_lehninger_descriptors_match_antibmpnn_readme() -> None:
   assert float(empty_desc.pd3_charge) == 0.0
 
 
-def test_variant_docs_and_notice() -> None:
+def test_variant_docs_and_notice_and_test_tier5_docs() -> None:
   """Verify Tier 1-5 documentation and NOTICE-weights.md include required entries."""
   repo_root = Path(__file__).resolve().parents[2]
   doc_text = (repo_root / "docs" / "models" / "mpnn_variants.md").read_text(encoding="utf-8")
@@ -318,10 +320,16 @@ def test_antibmpnn_pytorch_vs_jax_graded_parity_and_negative_control(
   from convert_weights import convert_mpnn_checkpoint
 
   pt_path: Path | None = None
-  for root in (
-    Path.home() / "repos",
-    Path("/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos"),
-  ):
+  env_upstream = os.environ.get("AMINX_UPSTREAM_REPOS_DIR")
+  search_roots = (
+    (Path(env_upstream),)
+    if env_upstream
+    else (
+      Path.home() / "repos",
+      Path("/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos"),
+    )
+  )
+  for root in search_roots:
     cand_pt = root / "AntiBMPNN" / "antibmpnn_model_weights" / pt_filename
     if cand_pt.is_file():
       pt_path = cand_pt
@@ -681,3 +689,40 @@ def test_antibmpnn_pytorch_vs_jax_graded_parity_and_negative_control(
     _, _, corrupt_lp = _jax_forward(corrupt_model, jnp.float32)
     assert np.max(np.abs(corrupt_lp - pt_lp_f32)) > 1e-1, cid
 
+
+
+def test_cdr_logit_transform_three_arg_and_masks_dataclass() -> None:
+  """Verify 3-arg LogitTransform protocol, ArithmeticMeanLogits composition, and CDRRegionMasks descriptor support."""
+  residue_idx = jnp.arange(1, 13, dtype=jnp.int32)
+  chain_idx = jnp.zeros(12, dtype=jnp.int32)
+  masks = build_cdr_region_mask(
+    residue_idx,
+    chain_idx,
+    cdr_ranges={"H1": (1, 3), "H2": (5, 7), "H3": (9, 11)},
+  )
+  target = jnp.full((20,), 0.02, dtype=jnp.float32).at[19].set(0.62)
+  transform = make_cdr_frequency_logit_transform(
+    cdr_mask=masks,
+    target_frequencies=target,
+    weight=1.5,
+    region_weights={"H1": 0.5, "H2": 1.0, "H3": 2.0},
+  )
+  assert isinstance(transform, CDRFrequencyLogitTransform)
+  logits_1d = jnp.zeros((21,), dtype=jnp.float32)
+  out_step_h3 = transform(logits_1d, jnp.int32(9), jnp.ones((12,), dtype=jnp.float32))
+  out_step_fw = transform(logits_1d, jnp.int32(3), jnp.ones((12,), dtype=jnp.float32))
+  assert not jnp.allclose(out_step_h3, logits_1d)
+  assert jnp.allclose(out_step_fw, logits_1d, atol=1e-7)
+
+  fused_fn = ArithmeticMeanLogits(jnp.ones(1, dtype=jnp.float32), transforms=transform)
+  per_state = jnp.zeros((2, 12, 21), dtype=jnp.float32)
+  fused_out = fused_fn(per_state, None)
+  assert not jnp.allclose(fused_out[9], logits_1d)
+  assert jnp.allclose(fused_out[3], logits_1d, atol=1e-7)
+
+  seq_1d = jnp.array([19, 19, 19, 0, 2, 2, 2, 0, 14, 14, 14, 0], dtype=jnp.int32)
+  desc_from_dataclass = compute_cdr_physicochemical_descriptors(seq_1d, masks)
+  desc_from_array = compute_cdr_physicochemical_descriptors(seq_1d, masks.any_cdr)
+  assert jnp.allclose(desc_from_dataclass.pd1_volume, desc_from_array.pd1_volume, atol=1e-6)
+  assert jnp.allclose(desc_from_dataclass.pd2_hydro, desc_from_array.pd2_hydro, atol=1e-6)
+  assert jnp.allclose(desc_from_dataclass.pd3_charge, desc_from_array.pd3_charge, atol=1e-6)

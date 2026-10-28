@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 import jax
 import jax.numpy as jnp
 
@@ -69,7 +71,7 @@ def test_compute_neighbor_offsets_cyclic_multichain_and_padding() -> None:
   assert int(offsets_mixed[11, 8]) == 3
 
 
-def test_protein_features_and_aminx_cyclic_threading() -> None:
+def test_aminx_cyclic_features_and_protein_features_threading() -> None:
   """Verify ProteinFeatures, ProteinFeaturesCA, and Aminx thread cyclic flag cleanly."""
   key = jax.random.PRNGKey(0)
   n_res = 12
@@ -118,3 +120,24 @@ def test_protein_features_and_aminx_cyclic_threading() -> None:
   assert v_lin.shape == (n_res, 32)
   assert not jnp.allclose(v_lin, v_cyc)
   assert not jnp.allclose(e_m_lin, e_m_cyc)
+
+
+@pytest.mark.parametrize("length", [8, 10])
+def test_cyclic_neighbor_offsets_even_length_antipodal(length: int):
+  """Verify even-length cyclic chains (L=8, 10) wrap cleanly including antipodal L//2."""
+  res_idx = jnp.arange(length, dtype=jnp.int32)
+  chain_idx = jnp.zeros((length,), dtype=jnp.int32)
+  e_idx = jnp.broadcast_to(res_idx[None, :], (length, length))
+  cyclic_mask = jnp.ones((length,), dtype=jnp.int32)
+
+  offsets = compute_neighbor_offsets(
+    res_idx,
+    e_idx,
+    chain_index=chain_idx,
+    cyclic=cyclic_mask,
+  )
+  assert offsets.shape == (length, length)
+  assert int(offsets[0, length - 1]) == 1
+  assert int(offsets[length - 1, 0]) == -1
+  half = length // 2
+  assert abs(int(offsets[0, half])) == half
