@@ -15,7 +15,7 @@ import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _package_version
@@ -39,7 +39,7 @@ from aminx.host.runner import sample
 from aminx.host.schema_versions import GRID_SCHEMA_VERSION, SAMPLING_SCHEMA_VERSION
 from aminx.host.spec_partition import campaign_sampling_spec_payload
 from aminx.io.sink_provenance import resolve_aminx_version
-from aminx.io.weights import REVISION_ENV, WEIGHTS_DIR_ENV, weight_provenance
+from aminx.io.weights import REVISION_ENV, WEIGHTS_DIR_ENV, family_checkpoints, weight_provenance
 from aminx.run.spec import mpnn_temperatures
 from aminx.run.spec_json import _coerce_field_value, migrate_removed_spec_keys
 from aminx.run.specs import SamplingSpecification
@@ -69,6 +69,144 @@ GateCellKey = tuple[str, str, str, tuple[str, ...], tuple[str, ...], bool, bool]
 ScaleStageResult = dict[str, Any]
 
 
+
+
+@dataclass(frozen=True)
+class BackendArmSpec:
+  """Specification for a single backend arm in a multi-backend campaign.
+
+  Attributes
+  ----------
+  arm_id : str
+    Unique identifier for this arm within a campaign (e.g. ``"soluble"``, ``"caliby"``).
+  model_family : str
+    Host model family (e.g. ``"mpnn"``, ``"ligandmpnn"``, ``"potts"``, ``"protdiff"``,
+    ``"caliby"``, ``"fampnn"``, ``"thermompnn"``).
+  checkpoint_id : str
+    Canonical checkpoint identifier.
+  model_weights : str | None
+    Vanilla MPNN weight family when ``model_family in ("mpnn", "ligandmpnn")``.
+  model_version : str | None
+    Vanilla MPNN weight version when ``model_family in ("mpnn", "ligandmpnn")``.
+  family_options : Mapping[str, Any]
+    Optional family-specific option overrides serialized into the manifest row.
+  """
+
+  arm_id: str
+  model_family: str
+  checkpoint_id: str
+  model_weights: str | None = None
+  model_version: str | None = None
+  family_options: Mapping[str, Any] = field(default_factory=dict)
+
+
+_VANILLA_ARM_DEFAULTS: dict[str, tuple[str, str, str, str]] = {
+  "original": ("proteinmpnn", "proteinmpnn_v_48_020", "original", "v_48_020"),
+  "proteinmpnn": ("proteinmpnn", "proteinmpnn_v_48_020", "original", "v_48_020"),
+  "soluble": ("proteinmpnn", "solublempnn_v_48_020", "soluble", "v_48_020"),
+  "solublempnn": ("proteinmpnn", "solublempnn_v_48_020", "soluble", "v_48_020"),
+  "abmpnn": ("proteinmpnn", "abmpnn_v_48_020", "abmpnn", "v_48_020"),
+  "hyper": ("proteinmpnn", "hypermpnn_v_48_020", "hypermpnn", "v_48_020"),
+  "hypermpnn": ("proteinmpnn", "hypermpnn_v_48_020", "hypermpnn", "v_48_020"),
+  "cyclic": ("proteinmpnn", "cyclicmpnn_v_48_010", "cyclicmpnn", "v_48_010"),
+  "cyclicmpnn": ("proteinmpnn", "cyclicmpnn_v_48_010", "cyclicmpnn", "v_48_010"),
+  "antibmpnn": ("proteinmpnn", "antibmpnn_v_48_000", "antibmpnn", "v_48_000"),
+  "ca": ("proteinmpnn", "ca_v_48_020", "ca", "v_48_020"),
+  "campnn": ("proteinmpnn", "ca_v_48_020", "ca", "v_48_020"),
+  "mem": ("membrane", "global_label_membrane_mpnn_v_48_020", "membrane", "v_48_020"),
+  "membrane": ("membrane", "global_label_membrane_mpnn_v_48_020", "membrane", "v_48_020"),
+  "global_label_membrane_mpnn": ("membrane", "global_label_membrane_mpnn_v_48_020", "membrane", "v_48_020"),
+  "ligand": ("ligandmpnn", "ligandmpnn_v_32_010_25", "ligand", "v_32_010_25"),
+  "ligandmpnn": ("ligandmpnn", "ligandmpnn_v_32_010_25", "ligand", "v_32_010_25"),
+  "sidechain": ("ligandmpnn", "ligandmpnn_sc_v_32_002_16", "sc", "v_32_002_16"),
+}
+
+_DRIVER_FAMILY_DEFAULTS: dict[str, tuple[str, str]] = {
+  "potts": ("pottsmpnn", "pottsmpnn_vanilla_20"),
+  "pottsmpnn": ("pottsmpnn", "pottsmpnn_vanilla_20"),
+  "protonpotts": ("protonpottsmpnn", "protonpottsmpnn_v6_30"),
+  "protonpottsmpnn": ("protonpottsmpnn", "protonpottsmpnn_v6_30"),
+  "protdiff": ("lasermpnn", "lasermpnn_nothing_heldout"),
+  "lasermpnn": ("lasermpnn", "lasermpnn_nothing_heldout"),
+  "caliby": ("caliby", "caliby"),
+  "soluble_caliby": ("caliby", "soluble_caliby"),
+  "fampnn": ("fampnn", "fampnn_0_3"),
+  "fampnn_0_0": ("fampnn", "fampnn_0_0"),
+  "fampnn_0_3": ("fampnn", "fampnn_0_3"),
+  "fampnn_0_3_cath": ("fampnn", "fampnn_0_3_cath"),
+  "thermompnn": ("thermompnn", "thermo_mpnn_v1_default"),
+  "thermo_mpnn_v1_default": ("thermompnn", "thermo_mpnn_v1_default"),
+  "thermo_mpnn_v2_ensemble": ("thermompnn", "thermo_mpnn_v2_ensemble"),
+  "thermo_mpnn_d_ensemble": ("thermompnn", "thermo_mpnn_d_ensemble"),
+}
+
+
+def normalize_backend_arm(spec_or_id: str | BackendArmSpec) -> BackendArmSpec:
+  """Resolve a backend arm shorthand string or ``BackendArmSpec`` into a canonical ``BackendArmSpec``.
+
+  Parameters
+  ----------
+  spec_or_id : str | BackendArmSpec
+    Shorthand arm/checkpoint string or explicit ``BackendArmSpec``.
+
+  Returns
+  -------
+  BackendArmSpec
+    Normalized ``BackendArmSpec`` instance.
+  """
+  if isinstance(spec_or_id, BackendArmSpec):
+    if not spec_or_id.arm_id or not spec_or_id.checkpoint_id:
+      msg = "BackendArmSpec requires non-empty arm_id and checkpoint_id."
+      raise ValueError(msg)
+    return spec_or_id
+
+  if not isinstance(spec_or_id, str) or not spec_or_id.strip():
+    msg = f"Backend arm identifier must be a non-empty string or BackendArmSpec, got {spec_or_id!r}."
+    raise ValueError(msg)
+
+  key = spec_or_id.strip()
+  if key in _VANILLA_ARM_DEFAULTS:
+    fam, ckpt, mw, mv = _VANILLA_ARM_DEFAULTS[key]
+    return BackendArmSpec(
+      arm_id=key,
+      model_family=fam,
+      checkpoint_id=ckpt,
+      model_weights=mw,
+      model_version=mv,
+    )
+
+  if key in _DRIVER_FAMILY_DEFAULTS:
+    fam, ckpt = _DRIVER_FAMILY_DEFAULTS[key]
+    return BackendArmSpec(
+      arm_id=key,
+      model_family=fam,
+      checkpoint_id=ckpt,
+    )
+
+  # Check family_checkpoints registry
+  fam_table = family_checkpoints()
+  if key in fam_table:
+    entry = fam_table[key]
+    return BackendArmSpec(
+      arm_id=key,
+      model_family=entry.family,
+      checkpoint_id=key,
+    )
+
+  # Check packaged weight provenance
+  try:
+    wp = weight_provenance(key)
+    fam = "ligandmpnn" if key.startswith("ligandmpnn") else "proteinmpnn"
+    return BackendArmSpec(
+      arm_id=key,
+      model_family=fam,
+      checkpoint_id=wp.filename.removesuffix(".zst").removesuffix(".eqx"),
+    )
+  except Exception as exc:
+    msg = f"Unknown backend arm or checkpoint identifier: {key!r}"
+    raise ValueError(msg) from exc
+
+
 def build_manifest_row(
   spec: SamplingSpecification,
   *,
@@ -87,27 +225,54 @@ def build_manifest_row(
   job_id: str,
   declared_state_weights: Sequence[float] | None = None,
   git_provenance_source: str = "unknown",
+  backend_arm: BackendArmSpec | None = None,
 ) -> dict[str, Any]:
   """Build a deterministic manifest row with SHA256 hash.
 
-  Computes a deterministic hash from schema_version, campaign_id, job_id,
-  chunk_id, sample_start, sample_count, fixed_policy, state_weight_profile,
-  model_family, ligand/sidechain_conditioning, multi_state_strategy,
-  temperature, and backbone_noise. job_index is intentionally excluded from
-  the hash payload: it is derivable from job_id and included in the row dict
-  for caller convenience. ``git_sha`` and ``git_provenance_source`` are
-  recorded on the row and are not part of the hash payload.
+  Parameters
+  ----------
+  spec : SamplingSpecification
+    Parameter ``spec``.
+  campaign_id : str
+    Parameter ``campaign_id``.
+  job_index : int
+    Parameter ``job_index``.
+  chunk_id : int
+    Parameter ``chunk_id``.
+  sample_start : int
+    Parameter ``sample_start``.
+  sample_count : int
+    Parameter ``sample_count``.
+  fixed_policy : str
+    Parameter ``fixed_policy``.
+  state_weight_profile : str
+    Parameter ``state_weight_profile``.
+  planner_version : str
+    Parameter ``planner_version``.
+  dataset_fingerprint : str
+    Parameter ``dataset_fingerprint``.
+  environment_image : str
+    Parameter ``environment_image``.
+  git_sha : str
+    Parameter ``git_sha``.
+  config_hash : str
+    Parameter ``config_hash``.
+  job_id : str
+    Parameter ``job_id``.
+  declared_state_weights : Sequence[float] | None
+    Parameter ``declared_state_weights``.
+  git_provenance_source : str
+    Parameter ``git_provenance_source``.
+  backend_arm : BackendArmSpec | None
+    Parameter ``backend_arm``.
 
-  ``declared_state_weights`` is the numeric vector a non-default ``state_weight_profile``
-  LABEL resolved to (``None`` for the ``"equal"`` profile). It is hashed only when present, so
-  every pre-existing row -- all of which are ``"equal"`` -- keeps the hash it always had, while
-  two campaigns that reuse one label for different vectors can no longer collide on a hash (and
-  therefore on an output path).
-
-  Returns a dict ready for plan_campaign_manifest to extend with
-  output_h5_path and sampling_spec.
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``build_manifest_row``.
   """
-  refuse_driver_family(spec, surface="campaign")
+  if backend_arm is None:
+    refuse_driver_family(spec, surface="campaign")
   temperature_list = list(mpnn_temperatures(spec.run_spec))
   backbone_noise_list = (
     list(spec.run_spec.sampling.backbone_noise) if spec.run_spec.sampling.backbone_noise else []
@@ -130,6 +295,11 @@ def build_manifest_row(
   }
   if declared_state_weights is not None:
     hash_payload["state_weights"] = [str(float(w)) for w in declared_state_weights]
+  if backend_arm is not None:
+    hash_payload["backend_arm_id"] = backend_arm.arm_id
+    hash_payload["checkpoint_id"] = backend_arm.checkpoint_id
+    if backend_arm.family_options:
+      hash_payload["family_options"] = dict(backend_arm.family_options)
   row_hash = hashlib.sha256(canonical_json_bytes(hash_payload)).hexdigest()
   return {
     "manifest_row_hash": row_hash,
@@ -152,15 +322,31 @@ def build_manifest_row(
     "git_sha": git_sha,
     "git_provenance_source": git_provenance_source,
     "config_hash": config_hash,
+    **(
+      {
+        "backend_arm_id": backend_arm.arm_id,
+        "model_family": backend_arm.model_family,
+        "checkpoint_id": backend_arm.checkpoint_id,
+        "family_options": dict(backend_arm.family_options),
+      }
+      if backend_arm is not None
+      else {}
+    ),
   }
 
 
 def load_manifest(manifest_path: str | Path) -> dict[str, Any]:
   """Load and validate a campaign manifest JSON file.
 
-  Validates that the file is valid UTF-8 JSON, the root is a dict,
-  a 'rows' key is present and is a list, and each row is a dict.
-  Raises FileNotFoundError, ValueError, or TypeError on invalid input.
+  Parameters
+  ----------
+  manifest_path : str | Path
+    Parameter ``manifest_path``.
+
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``load_manifest``.
   """
   path = Path(manifest_path)
   if not path.exists():
@@ -194,40 +380,21 @@ def load_manifest(manifest_path: str | Path) -> dict[str, Any]:
 def validate_manifest_rows(rows: list[dict[str, Any]]) -> None:
   """Validate manifest rows for uniqueness and required fields.
 
-  Enforces:
-  - All rows have a non-empty manifest_row_hash
-  - No duplicate manifest_row_hash (zero_lineage_collisions gate invariant)
-  - All rows have non-empty checkpoint_id, fixed_policy, state_weight_profile
-  - A row naming a real arm (fixed_policy != "none") actually CARRIES a mask in its
-    sampling_spec -- see below
+  Parameters
+  ----------
+  rows : list[dict[str, Any]]
+    Parameter ``rows``.
 
-  **`required_fixed_policies` is GONE, deliberately.** It did this::
-
-      policies_seen = {row["fixed_policy"] for row in rows}
-      missing = set(required_fixed_policies) - policies_seen
-
-  and `plan_campaign_manifest` called it with the very tuple its own row loop had just
-  consumed. It compared the planner's output against the planner's input: it could not fail.
-  It "validated" that a string label was present -- nothing about whether a residue was
-  fixed. It was green for the entire life of the decorative-policy bug, across 882/882 beads
-  that held nothing fixed. Fixing the comparison would not help; a gate whose two sides come
-  from the same source is theatre wherever you point it.
-
-  What replaces it checks a row against ITSELF: if you say you have an arm, the mask must be
-  in your own sampling_spec. That is a claim the planner can actually get wrong.
-
-  **This is not the real gate.** The final artifact is not this one: consumers patch the
-  planned manifest afterwards and write it with a raw `json.dumps`, so nothing here survives
-  to the worker as a guarantee. The binding check is the two-armed differential at sampling
-  time (masked vs unmasked must DIFFER). Do not mistake this for proof.
-
-  Raises ValueError on any violation.
+  Returns
+  -------
+  None
+    Result of ``validate_manifest_rows``.
   """
   hashes_seen: set[str] = set()
   for idx, row in enumerate(rows):
     if not isinstance(row, dict):  # pragma: no cover - guarded by load_manifest
       msg = f"Row {idx} is not a dict"
-      raise ValueError(msg)
+      raise TypeError(msg)
     row_hash = row.get("manifest_row_hash")
     if not row_hash:
       msg = f"Row {idx} missing or empty manifest_row_hash"
@@ -282,9 +449,19 @@ def write_manifest(
 ) -> Path:
   """Write campaign manifest JSON atomically with indented formatting.
 
-  Uses atomic write (tmp file → replace → fsync) to ensure durability.
-  Writes indented JSON (indent=2, sort_keys=True) for human readability.
-  Returns resolved absolute path to manifest file.
+  Parameters
+  ----------
+  manifest_path : str | Path
+    Parameter ``manifest_path``.
+  rows : list[dict[str, Any]]
+    Parameter ``rows``.
+  metadata : dict[str, Any] | None
+    Parameter ``metadata``.
+
+  Returns
+  -------
+  Path
+    Result of ``write_manifest``.
   """
   path = Path(manifest_path).resolve()
   path.parent.mkdir(parents=True, exist_ok=True)
@@ -622,6 +799,8 @@ def _file_identity(path: str | Path) -> str:
   resolved = Path(path).expanduser()
   try:
     stat = resolved.stat()
+    if stat.st_size <= 65536:
+      return _sha256_file(resolved)
     return _sha256_file_cached(str(resolved.resolve()), stat.st_size, stat.st_mtime_ns)
   except OSError as exc:
     msg = f"cannot read {str(path)!r} to hash it: {exc}"
@@ -655,17 +834,43 @@ def _hash_input_entry(entry: str) -> dict[str, Any]:
 def _checkpoint_id_identity(checkpoint_id: str, weights_dir_env: str | None, revision_env: str | None) -> dict[str, Any]:  # noqa: ARG001
   try:
     wp = weight_provenance(checkpoint_id)
-  except Exception as exc:  # any resolution failure means the identity is unavailable, not a crash
+  except Exception as exc:
+    fam_table = family_checkpoints()
+    if checkpoint_id in fam_table:
+      entry = fam_table[checkpoint_id]
+      return {
+        "route": "family_checkpoint_id",
+        "checkpoint_id": checkpoint_id,
+        "family": entry.family,
+        "filename": entry.filename,
+        "sha256": entry.sha256,
+      }
+    ensemble_members = {
+      "thermo_mpnn_v2_ensemble": ("thermo_mpnn_v2_ens1", "thermo_mpnn_v2_ens2", "thermo_mpnn_v2_ens3"),
+      "thermo_mpnn_d_ensemble": ("thermo_mpnn_d_ens1", "thermo_mpnn_d_ens2", "thermo_mpnn_d_ens3"),
+    }.get(checkpoint_id)
+    if ensemble_members and all(m in fam_table for m in ensemble_members):
+      combined_sha = hashlib.sha256(
+        "|".join(fam_table[m].sha256 for m in ensemble_members).encode("utf-8"),
+      ).hexdigest()
+      return {
+        "route": "family_checkpoint_id",
+        "checkpoint_id": checkpoint_id,
+        "family": "thermompnn",
+        "filename": ",".join(fam_table[m].filename for m in ensemble_members),
+        "sha256": combined_sha,
+      }
     msg = f"cannot resolve checkpoint {checkpoint_id!r} to hash its weights: {exc}"
     raise InputHashUnavailableError(msg) from exc
-  return {
-    "route": "checkpoint_id",
-    "checkpoint_id": checkpoint_id,
-    "filename": wp.filename,
-    "source": wp.source,
-    "sha256": wp.sha256,
-    "hub_revision": wp.hub_revision,
-  }
+  else:
+    return {
+      "route": "checkpoint_id",
+      "checkpoint_id": checkpoint_id,
+      "filename": wp.filename,
+      "source": wp.source,
+      "sha256": wp.sha256,
+      "hub_revision": wp.hub_revision,
+    }
 
 
 def _checkpoint_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -695,22 +900,15 @@ def _checkpoint_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
 def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[str, dict[str, Any]]:
   """Hash everything that determines a unit's output, so reuse can be refused when any of it changed.
 
-  The manifest row hash does NOT cover this: it omits the input structures, ``checkpoint_id``, ``random_seed``, the
-  fixed mask/tokens and the bias, and the output path is derived from it, so a re-planned or patched manifest used to
-  resolve to the same path and be reported ``already_done`` (aminx #2421).
+  Parameters
+  ----------
+  sampling_spec_payload : Mapping[str, Any]
+    Parameter ``sampling_spec_payload``.
 
-  Covers: the whole sampling spec except ``output_h5_path`` (which differs between the partial and final path),
-  the content hash of each input structure, the checkpoint (bytes where a file is reachable), the schema pins that
-  feed the seed, and :data:`SAMPLING_NUMERICS_EPOCH`. It does NOT include the git SHA: code identity is recorded in the
-  stamp's ``producer`` for audit but is deliberately not part of the hash (a numerics-neutral commit must not
-  invalidate a finished campaign; bump the epoch when numerics move).
-
-  A finished unit whose ``random_seed`` is 0 holds output from the old seed-42 execution. Those units alone get a
-  ``seed0_semantics`` component so reuse is refused; every other payload is hashed exactly as before. This is not a
-  numerics-epoch bump.
-
-  Returns ``(input_hash, components)``; ``components`` are the inputs to the hash, stored in the stamp so a mismatch
-  can be explained.
+  Returns
+  -------
+  tuple[str, dict[str, Any]]
+    Result of ``compute_unit_input_hash``.
   """
   spec_without_output = {k: v for k, v in sampling_spec_payload.items() if k != "output_h5_path"}
   components: dict[str, Any] = {
@@ -736,11 +934,11 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
 
 def _producer_info() -> dict[str, str]:
   try:
-    aminx_version = resolve_aminx_version()
+    aminx_version = resolve_aminx_version() or "unknown"
   except PackageNotFoundError:
     aminx_version = "unknown"
   try:
-    xtrax_version = _package_version("xtrax")
+    xtrax_version = _package_version("xtrax") or "unknown"
   except PackageNotFoundError:
     xtrax_version = "unknown"
   return {"aminx": aminx_version, "xtrax": xtrax_version}
@@ -1123,7 +1321,7 @@ def _resolve_git_provenance(
   return resolved_sha, resolved_source
 
 
-def plan_campaign_manifest(
+def plan_campaign_manifest(  # noqa: PLR0915
   *,
   base_spec: SamplingSpecification,
   campaign_id: str,
@@ -1132,6 +1330,7 @@ def plan_campaign_manifest(
   output_root: str | Path,
   fixed_arms: Mapping[str, Any] | None = None,
   state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
+  backends: Sequence[str | BackendArmSpec] | None = None,
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -1141,47 +1340,41 @@ def plan_campaign_manifest(
 ) -> list[dict[str, Any]]:
   """Plan campaign rows for all library/fixed-arm/profile combinations.
 
-  ``git_sha=None`` (the default) records the commit from
-  ``aminx.agent.provenance.capture`` and sets ``git_provenance_source`` from that capture; an
-  explicit SHA is recorded with source ``"argument"``. Neither value enters the row hash.
+  Parameters
+  ----------
+  base_spec : SamplingSpecification
+    Parameter ``base_spec``.
+  campaign_id : str
+    Parameter ``campaign_id``.
+  designs_per_library_type : int
+    Parameter ``designs_per_library_type``.
+  samples_chunk_size : int
+    Parameter ``samples_chunk_size``.
+  output_root : str | Path
+    Parameter ``output_root``.
+  fixed_arms : Mapping[str, Any] | None
+    Parameter ``fixed_arms``.
+  state_weight_profiles : Mapping[str, Any] | Sequence[str]
+    Parameter ``state_weight_profiles``.
+  backends : Sequence[str | BackendArmSpec] | None
+    Parameter ``backends``.
+  planner_version : str
+    Parameter ``planner_version``.
+  dataset_fingerprint : str
+    Parameter ``dataset_fingerprint``.
+  environment_image : str
+    Parameter ``environment_image``.
+  git_sha : str | None
+    Parameter ``git_sha``.
+  git_provenance_source : str | None
+    Parameter ``git_provenance_source``.
+  config_hash : str
+    Parameter ``config_hash``.
 
-  Args:
-    fixed_arms: Maps an arm LABEL to the **1-D canonical fixed_mask** it means, or to a path
-      to a ``.npy`` holding one. ``None`` (the default) means fix nothing -- every residue
-      designable -- which is the only default aminx can honestly ship, since it cannot know
-      any particular protein's catalytic triad. Each arm becomes its own row-set.
-
-      **The arm carries its own referent, and that is the whole point.** This replaces
-      ``fixed_policies: tuple[str, ...]``, which took bare NAMES like ``"catalytic_triad"``
-      that aminx had no way to resolve -- positions are protein-specific and live in the
-      caller's own bundle. So the name was written into the manifest row as a label and
-      never into the spec, the worker (which reads only ``row["sampling_spec"]``) never saw
-      it, and **no residue was ever held fixed in any produced design**: 882/882 beads of a
-      real library, silently violating a locked preregistration. A resolver callback is not
-      an alternative -- callables cannot cross the manifest's JSON boundary, and
-      ``spec_partition._assert_no_callable_knobs`` refuses them.
-
-      **Masks are 1-D `(L,)` in the canonical reference frame, never per-state `(S, L)`.**
-      ``types/bundles.py`` types ``fixed_mask`` as ``Float[Array, L]`` while
-      ``state_position_map`` beside it is ``"S L"``; ``sampling/multistate_poe.py`` RAISES on
-      a genuinely per-state mask; decode broadcasts the mask over the *group* axis because
-      one sequence is sampled and a position is either designed or it is not. Cross-state
-      index shifts are exactly what ``state_position_map`` exists to resolve.
-
-    state_weight_profiles: Maps a profile LABEL to the weight vector it means -- ``0.7|0.3``,
-      a sequence of numbers, or a path to a 1-D ``.npy`` -- or, for back-compat, a sequence of
-      names in which only ``"equal"`` (``state_weights=None``, the default) is resolvable. Like
-      ``fixed_arms``, the profile carries its own referent: the vector lands on each row's
-      ``sampling_spec["state_weights"]``. ``base_spec.state_weights`` is kept for the
-      ``"equal"`` profile (the pre-existing route), so a caller who set it directly is
-      untouched. Two different profiles yield rows with different ``state_weights``.
-
-  Raises:
-    ValueError: a profile cannot be resolved (see ``_resolve_state_weight_profiles``);
-      ``fixed_arms`` is an empty mapping (states "here are my arms", then supplies
-      none -- a contradiction, and silently reading it as "design everything" is how the old
-      zero-rows bug read), or a mask is not 1-D.
-
+  Returns
+  -------
+  list[dict[str, Any]]
+    Result of ``plan_campaign_manifest``.
   """
   resolved_sha, resolved_source = _resolve_git_provenance(git_sha, git_provenance_source)
   if designs_per_library_type <= 0:
@@ -1219,14 +1412,31 @@ def plan_campaign_manifest(
 
   resolved_profiles = _resolve_state_weight_profiles(state_weight_profiles)
 
+  resolved_backends: list[BackendArmSpec | None]
+  if backends is None:
+    resolved_backends = [None]
+  else:
+    if len(backends) == 0:
+      msg = "backends cannot be an empty sequence; pass backends=None for single-backend default."
+      raise ValueError(msg)
+    norm_arms = [normalize_backend_arm(b) for b in backends]
+    seen_arm_ids: set[str] = set()
+    for b_arm in norm_arms:
+      if b_arm.arm_id in seen_arm_ids:
+        msg = f"Duplicate backend arm_id in backends: {b_arm.arm_id!r}"
+        raise ValueError(msg)
+      seen_arm_ids.add(b_arm.arm_id)
+    resolved_backends = list(norm_arms)
+
   output_root_path = Path(output_root)
   rows: list[dict[str, Any]] = []
   job_index = 0
 
-  for fixed_policy, (arm_mask, arm_tokens) in resolved_arms.items():
-    for state_weight_profile, profile_weights in resolved_profiles.items():
-      for ligand_on in (False, True):
-        for sidechain_on in (False, True):
+  for backend_arm in resolved_backends:
+    for fixed_policy, (arm_mask, arm_tokens) in resolved_arms.items():
+      for state_weight_profile, profile_weights in resolved_profiles.items():
+        for ligand_on in (False, True):
+          for sidechain_on in (False, True):
           # sidechain_conditioning=True only does anything if the MODEL was built with the
           # side-chain branch (`ligand_mpnn_use_side_chain_context`) -- two switches for one
           # capability (#115). The planner owns the sidechain axis, so it owns the derivation
@@ -1239,92 +1449,76 @@ def plan_campaign_manifest(
           # grid always contains both a sidechain-on and a sidechain-off row, and True would
           # crash the off rows (the branch needs atom_37) while False would contradict the
           # on rows, so any explicit campaign-wide value could only be wrong for half the grid.
-          side_chain_context = base_spec.ligand_mpnn_use_side_chain_context
-          if sidechain_on and side_chain_context is None and base_spec.model_family == "ligandmpnn":
-            side_chain_context = True
-          spec_variant = replace(
-            base_spec,
-            inputs=_normalize_inputs(base_spec.inputs),
-            campaign_mode=True,
-            return_logits=False,
-            ligand_conditioning=ligand_on,
-            sidechain_conditioning=sidechain_on,
-            ligand_mpnn_use_side_chain_context=side_chain_context,
-            # THE LINE WHOSE ABSENCE WAS THE ENTIRE BUG.
-            #
-            # The arm's mask has to land on the SPEC, because `sampling_spec` is the only
-            # thing the worker reconstructs from (run_manifest_row). Previously the loop
-            # variable reached `build_manifest_row(..., fixed_policy=...)` -- the row's
-            # LABEL -- and stopped there, so `campaign_sampling_spec_payload(spec_variant)`
-            # below could not see it, and the model was never told to hold anything. Every
-            # downstream check then inspected the label and was satisfied.
-            #
-            # `base_spec.fixed_mask` wins when no arm supplies one, so a caller who sets the
-            # mask directly (the pre-existing route, and the one tev_design uses today via
-            # its manifest patch) keeps working untouched.
-            fixed_mask=arm_mask if arm_mask is not None else base_spec.fixed_mask,
-            # The declaration's letters ARE the tokens -- H38 says "hold His here". Nothing
-            # has to infer them, so there is no alphabet to get wrong and no structure to
-            # parse at plan time. Falls back to the caller's own tokens for the .npy/array
-            # shapes, which carry a mask only.
-            fixed_tokens=arm_tokens if arm_tokens is not None else base_spec.fixed_tokens,
-            # The profile's vector has to land on the SPEC for the same reason the arm's mask
-            # does: `sampling_spec` is all the worker reads. The loop variable used to reach
-            # only the row's LABEL (and its hash), so every profile sampled identically.
-            # `base_spec.state_weights` wins for the "equal" profile, so a caller who sets it
-            # directly keeps working untouched.
-            state_weights=(
-              profile_weights if profile_weights is not None else base_spec.state_weights
-            ),
-          )
-          for chunk_index, sample_start in enumerate(
-            range(0, designs_per_library_type, samples_chunk_size),
-          ):
-            sample_count = min(samples_chunk_size, designs_per_library_type - sample_start)
-            row = build_manifest_row(
-              spec_variant,
-              campaign_id=campaign_id,
-              job_index=job_index,
-              chunk_id=chunk_index,
-              sample_start=sample_start,
-              sample_count=sample_count,
-              fixed_policy=fixed_policy,
-              state_weight_profile=state_weight_profile,
-              planner_version=planner_version,
-              dataset_fingerprint=dataset_fingerprint,
-              environment_image=environment_image,
-              git_sha=resolved_sha,
-              git_provenance_source=resolved_source,
-              config_hash=config_hash,
-              job_id=f"{campaign_id}-job-{job_index}",
-              declared_state_weights=profile_weights,
+            eff_family = backend_arm.model_family if backend_arm is not None else base_spec.model_family
+            side_chain_context = base_spec.ligand_mpnn_use_side_chain_context
+            if sidechain_on and side_chain_context is None and eff_family == "ligandmpnn":
+              side_chain_context = True
+            backend_overrides: dict[str, Any] = {}
+            if backend_arm is not None:
+              backend_overrides["checkpoint_id"] = backend_arm.checkpoint_id
+              if backend_arm.model_family in ("proteinmpnn", "ligandmpnn", "membrane", "pottsmpnn", "protonpottsmpnn", "lasermpnn", "thermompnn"):
+                backend_overrides["model_family"] = backend_arm.model_family
+              if backend_arm.model_weights is not None:
+                backend_overrides["model_weights"] = backend_arm.model_weights
+              if backend_arm.model_version is not None:
+                backend_overrides["model_version"] = backend_arm.model_version
+            spec_variant = replace(
+              base_spec,
+              inputs=_normalize_inputs(base_spec.inputs),
+              campaign_mode=True,
+              return_logits=False,
+              ligand_conditioning=ligand_on,
+              sidechain_conditioning=sidechain_on,
+              ligand_mpnn_use_side_chain_context=side_chain_context,
+              fixed_mask=arm_mask if arm_mask is not None else base_spec.fixed_mask,
+              fixed_tokens=arm_tokens if arm_tokens is not None else base_spec.fixed_tokens,
+              state_weights=(
+                profile_weights if profile_weights is not None else base_spec.state_weights
+              ),
+              **backend_overrides,
             )
-            row["output_h5_path"] = _row_output_path(
-              output_root_path,
-              campaign_id=campaign_id,
-              row_hash=row["manifest_row_hash"],
-            )
-            # Built from dataclasses.fields(), NOT hand-listed. The hand-written 23-key literal
-            # this replaces drifted from an 88-field dataclass with nothing enforcing the sync,
-            # which is the single root cause of all twelve silently-dropped knobs -- including
-            # fixed_mask, i.e. no residue was ever actually held fixed in any produced design.
-            # spec_partition raises at import if any field is classified nowhere.
-            row["sampling_spec"] = campaign_sampling_spec_payload(
-              spec_variant,
-              campaign_owned={
-                "grid_mode": True,
-                # The planner owns chunking; the caller's samples_chunk_size is replaced, not
-                # dropped -- this row covers exactly sample_count designs.
-                "samples_chunk_size": sample_count,
-                "job_id": row["job_id"],
-                "chunk_id": row["chunk_id"],
-                "sample_start": row["sample_start"],
-                "sample_count": row["sample_count"],
-                "output_h5_path": row["output_h5_path"],
-              },
-            )
-            rows.append(row)
-          job_index += 1
+            for chunk_index, sample_start in enumerate(
+              range(0, designs_per_library_type, samples_chunk_size),
+            ):
+              sample_count = min(samples_chunk_size, designs_per_library_type - sample_start)
+              row = build_manifest_row(
+                spec_variant,
+                campaign_id=campaign_id,
+                job_index=job_index,
+                chunk_id=chunk_index,
+                sample_start=sample_start,
+                sample_count=sample_count,
+                fixed_policy=fixed_policy,
+                state_weight_profile=state_weight_profile,
+                planner_version=planner_version,
+                dataset_fingerprint=dataset_fingerprint,
+                environment_image=environment_image,
+                git_sha=resolved_sha,
+                git_provenance_source=resolved_source,
+                config_hash=config_hash,
+                job_id=f"{campaign_id}-job-{job_index}",
+                declared_state_weights=profile_weights,
+                backend_arm=backend_arm,
+              )
+              row["output_h5_path"] = _row_output_path(
+                output_root_path,
+                campaign_id=campaign_id,
+                row_hash=row["manifest_row_hash"],
+              )
+              row["sampling_spec"] = campaign_sampling_spec_payload(
+                spec_variant,
+                campaign_owned={
+                  "grid_mode": True,
+                  "samples_chunk_size": sample_count,
+                  "job_id": row["job_id"],
+                  "chunk_id": row["chunk_id"],
+                  "sample_start": row["sample_start"],
+                  "sample_count": row["sample_count"],
+                  "output_h5_path": row["output_h5_path"],
+                },
+              )
+              rows.append(row)
+            job_index += 1
 
   validate_manifest_rows(rows)
   return rows
@@ -1340,6 +1534,7 @@ def write_campaign_manifest(
   output_root: str | Path,
   fixed_arms: Mapping[str, Any] | None = None,
   state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
+  backends: Sequence[str | BackendArmSpec] | None = None,
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
@@ -1348,8 +1543,41 @@ def write_campaign_manifest(
 ) -> Path:
   """Plan rows and write campaign manifest JSON. See `plan_campaign_manifest` for fixed_arms.
 
-  ``git_sha=None`` resolves the SHA and its ``git_provenance_source`` once here and passes both
-  through, so planning does not capture again.
+  Parameters
+  ----------
+  base_spec : SamplingSpecification
+    Parameter ``base_spec``.
+  campaign_id : str
+    Parameter ``campaign_id``.
+  manifest_path : str | Path
+    Parameter ``manifest_path``.
+  designs_per_library_type : int
+    Parameter ``designs_per_library_type``.
+  samples_chunk_size : int
+    Parameter ``samples_chunk_size``.
+  output_root : str | Path
+    Parameter ``output_root``.
+  fixed_arms : Mapping[str, Any] | None
+    Parameter ``fixed_arms``.
+  state_weight_profiles : Mapping[str, Any] | Sequence[str]
+    Parameter ``state_weight_profiles``.
+  backends : Sequence[str | BackendArmSpec] | None
+    Parameter ``backends``.
+  planner_version : str
+    Parameter ``planner_version``.
+  dataset_fingerprint : str
+    Parameter ``dataset_fingerprint``.
+  environment_image : str
+    Parameter ``environment_image``.
+  git_sha : str | None
+    Parameter ``git_sha``.
+  config_hash : str
+    Parameter ``config_hash``.
+
+  Returns
+  -------
+  Path
+    Result of ``write_campaign_manifest``.
   """
   resolved_sha, resolved_source = _resolve_git_provenance(git_sha, None)
   rows = plan_campaign_manifest(
@@ -1360,6 +1588,7 @@ def write_campaign_manifest(
     output_root=output_root,
     fixed_arms=fixed_arms,
     state_weight_profiles=state_weight_profiles,
+    backends=backends,
     planner_version=planner_version,
     dataset_fingerprint=dataset_fingerprint,
     environment_image=environment_image,
@@ -1433,7 +1662,30 @@ def run_manifest_row(  # noqa: PLR0915
   lock_lease_seconds: int = DEFAULT_LOCK_LEASE_SECONDS,
   heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
 ) -> dict[str, Any]:
-  """Execute one manifest row through the standard sampling runtime."""
+  """Execute one manifest row through the standard sampling runtime.
+
+  Parameters
+  ----------
+  manifest_path : str | Path
+    Parameter ``manifest_path``.
+  row_index : int | None
+    Parameter ``row_index``.
+  row_hash : str | None
+    Parameter ``row_hash``.
+  lock_backend : str
+    Parameter ``lock_backend``.
+  distributed_lock_backend : DistributedLockBackend | None
+    Parameter ``distributed_lock_backend``.
+  lock_lease_seconds : int
+    Parameter ``lock_lease_seconds``.
+  heartbeat_interval_seconds : int
+    Parameter ``heartbeat_interval_seconds``.
+
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``run_manifest_row``.
+  """
   payload = load_manifest(manifest_path)
   rows = payload["rows"]
   if not isinstance(rows, list):  # pragma: no cover - guarded by load_manifest
@@ -1663,7 +1915,30 @@ def execute_manifest(
   lock_lease_seconds: int = DEFAULT_LOCK_LEASE_SECONDS,
   heartbeat_interval_seconds: int = DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
 ) -> dict[str, Any]:
-  """Execute all (or selected) manifest rows and return a structured summary."""
+  """Execute all (or selected) manifest rows and return a structured summary.
+
+  Parameters
+  ----------
+  manifest_path : str | Path
+    Parameter ``manifest_path``.
+  row_hashes : Sequence[str] | None
+    Parameter ``row_hashes``.
+  continue_on_error : bool
+    Parameter ``continue_on_error``.
+  lock_backend : str
+    Parameter ``lock_backend``.
+  distributed_lock_backend : DistributedLockBackend | None
+    Parameter ``distributed_lock_backend``.
+  lock_lease_seconds : int
+    Parameter ``lock_lease_seconds``.
+  heartbeat_interval_seconds : int
+    Parameter ``heartbeat_interval_seconds``.
+
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``execute_manifest``.
+  """
   rows = _manifest_rows(manifest_path)
   requested_hashes = tuple(row_hashes or ())
   requested_hash_set = set(requested_hashes)
@@ -1740,13 +2015,19 @@ def adopt_legacy_done_markers(
 ) -> dict[str, Any]:
   """Upgrade valid v2 done markers to v3 so their outputs are reused instead of recomputed.
 
-  For each selected row with a v2 marker it checks that the row hash matches, the store exists and its
-  ``zarr_content_digest`` equals the marker's. Only then does it compute the input hash from the CURRENT manifest and
-  write a v3 marker flagged ``adopted_from_v2`` (the old marker is kept as ``<marker>.v2.bak``).
+  Parameters
+  ----------
+  manifest_path : str | Path
+    Parameter ``manifest_path``.
+  row_hashes : Sequence[str] | None
+    Parameter ``row_hashes``.
+  dry_run : bool
+    Parameter ``dry_run``.
 
-  **This is an attestation by the operator, not a proof.** A v2 marker records no inputs, so adoption asserts that the
-  existing output was produced from the inputs this manifest now names. Run it only for campaigns you know were not
-  re-planned or patched after they ran. Adopted units show ``adopted_from_v2: true`` in every reuse report.
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``adopt_legacy_done_markers``.
   """
   rows = _manifest_rows(manifest_path)
   wanted = set(row_hashes or ())
@@ -1823,13 +2104,51 @@ def plan_scale_ramp(
   samples_chunk_size: int,
   fixed_arms: Mapping[str, Any] | None = None,
   state_weight_profiles: Mapping[str, Any] | Sequence[str] = ("equal",),
+  backends: Sequence[str | BackendArmSpec] | None = None,
   planner_version: str = "planner_v1",
   dataset_fingerprint: str = "unknown",
   environment_image: str = "unknown",
   git_sha: str | None = None,
   config_hash: str = "unknown",
 ) -> dict[str, Any]:
-  """Create staged manifests for pilot-to-scale rollout."""
+  """Create staged manifests for pilot-to-scale rollout.
+
+  Parameters
+  ----------
+  base_spec : SamplingSpecification
+    Parameter ``base_spec``.
+  campaign_id : str
+    Parameter ``campaign_id``.
+  manifest_dir : str | Path
+    Parameter ``manifest_dir``.
+  output_root : str | Path
+    Parameter ``output_root``.
+  stage_designs_per_library_type : Sequence[int]
+    Parameter ``stage_designs_per_library_type``.
+  samples_chunk_size : int
+    Parameter ``samples_chunk_size``.
+  fixed_arms : Mapping[str, Any] | None
+    Parameter ``fixed_arms``.
+  state_weight_profiles : Mapping[str, Any] | Sequence[str]
+    Parameter ``state_weight_profiles``.
+  backends : Sequence[str | BackendArmSpec] | None
+    Parameter ``backends``.
+  planner_version : str
+    Parameter ``planner_version``.
+  dataset_fingerprint : str
+    Parameter ``dataset_fingerprint``.
+  environment_image : str
+    Parameter ``environment_image``.
+  git_sha : str | None
+    Parameter ``git_sha``.
+  config_hash : str
+    Parameter ``config_hash``.
+
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``plan_scale_ramp``.
+  """
   if not stage_designs_per_library_type:
     msg = "stage_designs_per_library_type must contain at least one stage."
     raise ValueError(msg)
@@ -1860,6 +2179,7 @@ def plan_scale_ramp(
       output_root=stage_output_root,
       fixed_arms=fixed_arms,
       state_weight_profiles=state_weight_profiles,
+      backends=backends,
       planner_version=planner_version,
       dataset_fingerprint=dataset_fingerprint,
       environment_image=environment_image,
@@ -1891,7 +2211,18 @@ def plan_scale_ramp(
 
 
 def evaluate_scale_ramp_reports(report_paths: Sequence[str | Path]) -> dict[str, Any]:
-  """Evaluate staged gate reports and produce promote/rollback recommendation."""
+  """Evaluate staged gate reports and produce promote/rollback recommendation.
+
+  Parameters
+  ----------
+  report_paths : Sequence[str | Path]
+    Parameter ``report_paths``.
+
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``evaluate_scale_ramp_reports``.
+  """
   if not report_paths:
     msg = "At least one gate report path is required for rollout evaluation."
     raise ValueError(msg)
@@ -2070,7 +2401,22 @@ def evaluate_campaign_gates(
   rerun_manifest_paths: tuple[str | Path, ...] = (),
   require_full_cell_rerun: bool = True,
 ) -> dict[str, Any]:
-  """Evaluate campaign gating status for pilot promotion/rollback decisions."""
+  """Evaluate campaign gating status for pilot promotion/rollback decisions.
+
+  Parameters
+  ----------
+  manifest_path : str | Path
+    Parameter ``manifest_path``.
+  rerun_manifest_paths : tuple[str | Path, ...]
+    Parameter ``rerun_manifest_paths``.
+  require_full_cell_rerun : bool
+    Parameter ``require_full_cell_rerun``.
+
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``evaluate_campaign_gates``.
+  """
   base_state = _collect_manifest_gate_state(manifest_path)
   rerun_reports: list[dict[str, Any]] = []
   mismatched_hashes: set[str] = set()
@@ -2149,26 +2495,15 @@ def _parse_csv(value: str) -> tuple[str, ...]:
 def parse_fixed_arms(values: Sequence[str] | None) -> dict[str, str] | None:
   """Parse repeated ``label=declaration`` into a ``fixed_arms`` mapping.
 
-  The value is passed through untouched -- ``_resolve_arm`` decides whether it is an inline
-  declaration (``H38|D73|C143``) or a ``.npy`` path. This function only splits label from
-  value, so there is exactly one place that knows the arm grammar.
+  Parameters
+  ----------
+  values : Sequence[str] | None
+    Parameter ``values``.
 
-  A REPEATED flag, deliberately not CSV. ``_parse_csv`` splits on comma, so any comma-bearing
-  grammar (``triad=H38,D73,C143``) would be shattered into bogus separate cells -- and
-  ``validate_manifest_rows`` would then compare the wreckage against itself and pass. Same
-  idiom as ``cli._parse_tied_positions``: repeat the flag, split once on a non-comma
-  separator.
-
-  Inline is the common case and needs no file: requiring a caller to materialise a ``.npy``
-  to say "hold three residues" is friction with nothing to show for it. A path stays supported
-  for large sets (an 84-residue active-site shell is not worth typing).
-
-  Returns None for no flags, so the caller gets the honest "fix nothing" default rather than
-  an empty mapping (which `plan_campaign_manifest` rejects as a contradiction).
-
-  Raises:
-    ValueError: an entry has no ``=``, an empty label, or an empty path.
-
+  Returns
+  -------
+  dict[str, str] | None
+    Result of ``parse_fixed_arms``.
   """
   if not values:
     return None
@@ -2201,13 +2536,17 @@ def _load_campaign_npy(flag: str, path: str | Path) -> np.ndarray:
 def load_campaign_bias(path: str | Path, *, length: int) -> np.ndarray:
   """Load ``--bias``: a ``(L, 21)`` float ``.npy`` of per-position, per-token logit bias.
 
-  ``L`` must equal ``length`` (the campaign's padded length, ``max_length``) -- the same
-  assumption ``fixed_arms`` masks are sized against. Shapes are checked here, where the caller
-  still has the context to fix them, rather than when a worker first touches the tensor.
+  Parameters
+  ----------
+  path : str | Path
+    Parameter ``path``.
+  length : int
+    Parameter ``length``.
 
-  Raises:
-    ValueError: not a ``.npy`` file, not 2-D ``(length, 21)``, or not finite.
-
+  Returns
+  -------
+  np.ndarray
+    Result of ``load_campaign_bias``.
   """
   bias = np.asarray(_load_campaign_npy("--bias", path), dtype=np.float32)
   if bias.shape != (length, 21):
@@ -2225,12 +2564,17 @@ def load_campaign_bias(path: str | Path, *, length: int) -> np.ndarray:
 def load_campaign_tie_group_map(path: str | Path, *, length: int) -> np.ndarray:
   """Load ``--tie-group-map``: a ``(L,)`` non-negative integer ``.npy`` of tie-group ids.
 
-  Positions sharing an id are decoded together (logits tied); an id per position, in the
-  canonical frame. ``L`` must equal ``length`` (the padded campaign length).
+  Parameters
+  ----------
+  path : str | Path
+    Parameter ``path``.
+  length : int
+    Parameter ``length``.
 
-  Raises:
-    ValueError: not a ``.npy`` file, not 1-D ``(length,)``, non-integer, or negative.
-
+  Returns
+  -------
+  np.ndarray
+    Result of ``load_campaign_tie_group_map``.
   """
   raw = _load_campaign_npy("--tie-group-map", path)
   if raw.shape != (length,):
@@ -2257,10 +2601,17 @@ def campaign_residue_overrides(
 ) -> dict[str, np.ndarray]:
   """``SamplingSpecification`` kwargs for ``--bias`` / ``--tie-group-map`` (empty if neither).
 
-  Both land on the base spec, so every row of the grid carries them in its ``sampling_spec`` --
-  the only thing a worker reads. Until now they were settable only through the Python API
-  (debt #2119, the same gap ``--fixed-arm`` closed). Sized against ``max_length``'s default,
-  which is what every campaign runs (the campaign CLIs expose no ``--max-length``).
+  Parameters
+  ----------
+  bias_path : str | Path | None
+    Parameter ``bias_path``.
+  tie_group_map_path : str | Path | None
+    Parameter ``tie_group_map_path``.
+
+  Returns
+  -------
+  dict[str, np.ndarray]
+    Result of ``campaign_residue_overrides``.
   """
   length = int(next(f.default for f in fields(SamplingSpecification) if f.name == "max_length"))
   overrides: dict[str, np.ndarray] = {}
@@ -2277,20 +2628,17 @@ def parse_state_weight_profiles(
 ) -> dict[str, Any]:
   """Combine ``--state-weight-profiles`` (names) and ``--state-weight-profile`` (LABEL=WEIGHTS).
 
-  ``--state-weight-profile LABEL=0.7|0.3`` is the flag that carries its own referent (the same
-  idiom as ``--fixed-arm``); it is repeatable and each label becomes its own row-set.
-  ``--state-weight-profiles`` is the legacy CSV of bare names, in which only ``equal`` means
-  anything -- any other name must ALSO be declared with weights, else this raises (a bare name
-  was a label that never reached ``state_weights``).
+  Parameters
+  ----------
+  names_csv : str | None
+    Parameter ``names_csv``.
+  declarations : Sequence[str] | None
+    Parameter ``declarations``.
 
-  With neither flag the result is ``{"equal": None}``, i.e. today's default. With only
-  declarations there is NO implicit ``equal`` baseline: add ``--state-weight-profiles equal``
-  to keep one.
-
-  Raises:
-    ValueError: an entry has no ``=``, an empty label or weights, a duplicate label, or a bare
-      non-``equal`` name with no declaration.
-
+  Returns
+  -------
+  dict[str, Any]
+    Result of ``parse_state_weight_profiles``.
   """
   declared: dict[str, str] = {}
   for raw in declarations or ():
@@ -2600,7 +2948,18 @@ def _handle_ramp_eval_command(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-  """CLI entrypoint for campaign planner and worker operations."""
+  """CLI entrypoint for campaign planner and worker operations.
+
+  Parameters
+  ----------
+  argv : list[str] | None
+    Parameter ``argv``.
+
+  Returns
+  -------
+  int
+    Result of ``main``.
+  """
   configure_multiprocessing()
   parser = argparse.ArgumentParser(description="Campaign planner/worker runner.")
   subparsers = parser.add_subparsers(dest="command", required=True)

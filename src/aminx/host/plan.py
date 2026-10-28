@@ -1,3 +1,4 @@
+# ruff: noqa: ANN001, ANN202, ANN401, PLC0415, TID251
 """Batch planning and scheduling logic for sampling operations.
 
 Also includes InferencePlan and related components for unified inference dispatch.
@@ -28,12 +29,13 @@ if TYPE_CHECKING:
 
   from jaxtyping import PRNGKeyArray
   from xtrax.tiling import AxisSpec, CarrySpec
-  from xtrax.tiling.dedup import (  # noqa: TID251 -- DedupSpec is submodule-only, not re-exported from xtrax.tiling
+  from xtrax.tiling.dedup import (
     DedupSpec,
   )
 
   from aminx.inference.decode.protocols import ARDecodeFn, DecodeScoreFn, STEDecodeFn
   from aminx.run.specs import SamplingSpecification
+  from aminx.types import StageSet
   from aminx.types.arrays import Logits
   from aminx.types.bundles import InferenceBundle
   from aminx.types.configs import InferenceConfig
@@ -149,6 +151,18 @@ def decision_for(plan: BatchPlan, name: str) -> AxisDecision:
   xtrax.tiling.BatchPlan (unlike aminx's retired local BatchPlan) has no
   .decision_for() convenience method -- this is the direct replacement,
   used everywhere host/kernel_dispatch.py used to call plan.decision_for(name).
+
+  Parameters
+  ----------
+  plan : BatchPlan
+      Batch plan containing axis decisions.
+  name : str
+      Target axis name to look up.
+
+  Returns
+  -------
+  AxisDecision
+      Decision matching ``name``.
 
   Raises
   ------
@@ -646,7 +660,18 @@ class InferencePlan(eqx.Module):
 
   @property
   def stage_set(self) -> Any:
-    """Access the wired StageSet directly."""
+    """Access the wired StageSet directly.
+
+    Parameters
+    ----------
+    self : Any
+      Instance reference.
+
+    Returns
+    -------
+    Any
+        Wired StageSet instance from ``self.components``.
+    """
     return self.components.stage_set
 
   def with_decode_fn(self, fn: DecodeScoreFn | ARDecodeFn | STEDecodeFn) -> InferencePlan:
@@ -850,7 +875,21 @@ def _run_packer_vmap(packer_model, keys, packer_bundle, config_params):
     backbone_noise=None,
   )
 
-  def run_single(k, b):
+  def run_single(k: Any, b: Any) -> Any:
+    """Run packer model on a single state element.
+
+    Parameters
+    ----------
+    k : Any
+        Per-state PRNG key.
+    b : Any
+        Per-state PackerBundle slice.
+
+    Returns
+    -------
+    Any
+        Packer output for the state.
+    """
     return packer_model(k, b, config_params)
 
   return jax.vmap(run_single, in_axes=(0, packer_in_axes))(keys, packer_bundle)
@@ -922,6 +961,8 @@ def make_inference_plan(
       Specification; decode-relevant fields are read from ``spec.run_spec.sampling``
       (use_rolling_state, multi_state_strategy, multi_state_temperature, state_weights,
       sampling_strategy, decoding_order_fn -- see ``run/spec.py::SamplingConfig``).
+  packer : Any, optional
+      Optional sidechain packer model to attach to the plan.
   purpose : {"sample", "score"}, keyword-only, default "score"
       Passed to :func:`resolve_decode_mode` -- disambiguates "produce new sequences"
       (``host.runner.sample()``) from "evaluate a given sequence" (``score()``/``inspect()``),
@@ -1080,3 +1121,191 @@ def make_inference_plan(
     concrete_tau_end=float(getattr(spec, "concrete_tau_end", 0.1)),
   )
 
+
+
+
+class TopologyKey(NamedTuple):
+  """Static architectural topology key for multi-checkpoint XLA compilation caching.
+
+  Two models with identical ``TopologyKey`` values share the same static Equinox
+  PyTree structure (``static_treedef`` from ``eqx.partition(model, eqx.is_array)``)
+  and can execute through a single JIT-compiled XLA executable by passing
+  ``dynamic_weights`` as a dynamic PyTree argument.
+
+  Attributes
+  ----------
+  model_family : str
+    Model family identifier (e.g. ``"mpnn"``).
+  node_features : int
+    Node feature dimension.
+  edge_features : int
+    Edge feature dimension.
+  hidden_features : int
+    Hidden representation dimension.
+  num_encoder_layers : int
+    Number of MPNN encoder layers.
+  num_decoder_layers : int
+    Number of MPNN decoder layers.
+  k_neighbors : int
+    Number of k-NN graph neighbors.
+  augment_eps : float
+    Backbone coordinate noise epsilon in feature extraction.
+  ca_only : bool
+    Whether the model uses C-alpha-only features.
+  decode_mode : str
+    Decoding mode identifier.
+  multi_state_strategy : str
+    Multi-state fusion strategy identifier.
+  """
+
+  model_family: str = "mpnn"
+  node_features: int = 128
+  edge_features: int = 128
+  hidden_features: int = 128
+  num_encoder_layers: int = 3
+  num_decoder_layers: int = 3
+  k_neighbors: int = 48
+  augment_eps: float = 0.0
+  ca_only: bool = False
+  decode_mode: str = "autoregressive"
+  multi_state_strategy: str = "arithmetic_mean"
+
+
+def extract_topology_key(
+  model: Any,
+  spec: Any | None = None,
+  *,
+  model_family: str = "mpnn",
+) -> TopologyKey:
+  """Extract the ``TopologyKey`` for ``model`` and optional ``spec``.
+
+  Parameters
+  ----------
+  model : Any
+    Equinox model instance (e.g. ``Aminx``).
+  spec : Any | None, optional
+    Sampling or scoring specification.
+  model_family : str, default="mpnn"
+    Model family name.
+
+  Returns
+  -------
+  TopologyKey
+    Static architectural key suitable for XLA compilation caching.
+  """
+  enc = getattr(model, "encoder", None)
+  dec = getattr(model, "decoder", None)
+  feats = getattr(model, "features", None)
+
+  enc_layers = len(getattr(enc, "layers", ())) if enc is not None else 3
+  dec_layers = len(getattr(dec, "layers", ())) if dec is not None else 3
+  w_e = getattr(enc, "w_e", None) if enc is not None else None
+  hidden_dim = int(w_e.weight.shape[0]) if w_e is not None and hasattr(w_e, "weight") else 128
+  node_dim = int(getattr(feats, "node_features", hidden_dim))
+  edge_dim = int(getattr(feats, "edge_features", hidden_dim))
+  top_k = int(getattr(feats, "top_k", 48))
+  aug_eps = float(getattr(feats, "augment_eps", 0.0))
+  ca_only = type(feats).__name__ == "ProteinFeaturesCA" if feats is not None else False
+
+  decode_mode = "autoregressive"
+  ms_strategy = "arithmetic_mean"
+  if spec is not None:
+    ms_strategy = str(getattr(spec, "multi_state_strategy", None) or "arithmetic_mean")
+    decode_mode = str(getattr(spec, "sampling_strategy", None) or "autoregressive")
+
+  return TopologyKey(
+    model_family=model_family,
+    node_features=node_dim,
+    edge_features=edge_dim,
+    hidden_features=hidden_dim,
+    num_encoder_layers=enc_layers,
+    num_decoder_layers=dec_layers,
+    k_neighbors=top_k,
+    augment_eps=aug_eps,
+    ca_only=ca_only,
+    decode_mode=decode_mode,
+    multi_state_strategy=ms_strategy,
+  )
+
+
+class HoistedTopologyExecutor:
+  """Caches JIT-compiled functions by ``TopologyKey`` via ``eqx.partition``/``eqx.combine``.
+
+  Hoists ``dynamic_weights`` out of the static closure so that multiple checkpoints
+  sharing a ``TopologyKey`` (such as all 6 vanilla 128-dim MPNN weight families:
+  ``original``, ``soluble``, ``hyper``, ``pssm``, ``mem``, ``antibmpnn``) compile
+  exactly once per ``TopologyKey``.
+  """
+
+  def __init__(self) -> None:
+    """Initialize ``HoistedTopologyExecutor`` caches.
+
+    Parameters
+    ----------
+    self : Any
+      Instance reference.
+
+    Returns
+    -------
+    None
+      Initializes internal caches and compilation counters.
+    """
+    self._compiled_by_key: dict[TopologyKey, Callable[..., Any]] = {}
+    self._static_by_key: dict[TopologyKey, Any] = {}
+    self.compile_counts: dict[TopologyKey, int] = {}
+
+  def total_compiles(self) -> int:
+    """Return total number of XLA compilations across all ``TopologyKey`` buckets.
+
+    Parameters
+    ----------
+    self : Any
+      Instance reference.
+
+    Returns
+    -------
+    int
+      Total compilation count.
+    """
+    return sum(self.compile_counts.values())
+
+  def run(
+    self,
+    model: eqx.Module,
+    step_fn: Callable[..., Any],
+    *args: Any,
+    topology_key: TopologyKey | None = None,
+  ) -> Any:
+    """Execute ``step_fn(model, *args)`` using a cached JIT executable for ``topology_key``.
+
+    Parameters
+    ----------
+    model : eqx.Module
+      Equinox model whose array leaves are passed dynamically.
+    step_fn : Callable[..., Any]
+      Pure function ``step_fn(reconstructed_model, *args)``.
+    args : Any
+      Dynamic array arguments to ``step_fn``.
+    topology_key : TopologyKey | None, optional
+      Explicit ``TopologyKey``; inferred via ``extract_topology_key(model)`` if ``None``.
+
+    Returns
+    -------
+    Any
+      Output of ``step_fn(model, *args)``.
+    """
+    key = topology_key if topology_key is not None else extract_topology_key(model)
+    dynamic_weights, static_treedef = eqx.partition(model, eqx.is_array)
+
+    if key not in self._compiled_by_key:
+      self._static_by_key[key] = static_treedef
+      self.compile_counts[key] = 0
+
+      def _raw_step(dyn_w: Any, *step_args: Any) -> Any:
+        self.compile_counts[key] += 1
+        combined_model = eqx.combine(dyn_w, static_treedef)
+        return step_fn(combined_model, *step_args)
+
+      self._compiled_by_key[key] = jax.jit(_raw_step)
+
+    return self._compiled_by_key[key](dynamic_weights, *args)

@@ -143,3 +143,32 @@ class LaserOptions:
   strict_load: bool = True
   output_fasta: bool = False
   output_fasta_only: bool = False
+
+
+@dataclass(frozen=True)
+class ThermoMPNNOptions:
+  """Options for ThermoMPNN and ThermoMPNN-D stability prediction.
+
+  Attributes
+  ----------
+  checkpoint_id : str
+      Checkpoint or ensemble identifier (e.g. ``"thermo_mpnn_v1_default"``,
+      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``).
+  mode : Literal["single", "double"]
+      Single-mutant SSM (``"single"``) or double-mutant epistatic (``"double"``) mode.
+  distance_threshold : float
+      C-alpha distance cutoff (Angstroms) for epistatic residue pairs in double mode.
+  batch_size : int
+      Pair batch chunk size for ThermoMPNN-D double-mutant scoring.
+  dtype : Literal["float32", "float16"]
+      Floating-point precision for trunk and head evaluation.
+  ensemble : bool
+      Whether to average across all 3 v2 ensemble members when using v2/D.
+  """
+
+  checkpoint_id: str = "thermo_mpnn_v1_default"
+  mode: Literal["single", "double"] = "single"
+  distance_threshold: float = 5.0
+  batch_size: int = 10000
+  dtype: Literal["float32", "float16"] = "float16"
+  ensemble: bool = True
