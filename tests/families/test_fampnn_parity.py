@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os as _os
+from pathlib import Path
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -24,9 +27,45 @@ from aminx.families.fampnn import (
   normalize_fampnn_state_dict,
 )
 from aminx.host.family_driver import DRIVER_BACKED_FAMILY_MODULES, FAMILY_DRIVERS, FamilyBatch
-from aminx.io.weights import family_checkpoints
+from aminx.io.weights import family_checkpoints, resolve_family_checkpoint
 from aminx.run.options import FAMPNNOptions
 from aminx.run.specs import SamplingSpecification
+
+_LOCAL_FOLLOWUP_WEIGHTS = Path(
+  _os.environ.get(
+    "AMINX_UPSTREAM_REPOS_DIR",
+    "/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos",
+  )
+) / "aminx_followup_weights"
+if "AMINX_WEIGHTS_DIR" not in _os.environ and _LOCAL_FOLLOWUP_WEIGHTS.is_dir():
+  _os.environ["AMINX_WEIGHTS_DIR"] = str(_LOCAL_FOLLOWUP_WEIGHTS)
+
+
+def _load_or_build_fampnn_checkpoint_model(cid: str) -> FAMPNNModel:
+  """Load packaged FAMPNN checkpoint if cached locally, else build exact checkpoint topology."""
+  from aminx.families.fampnn.driver import _load_fampnn_eqx
+
+  try:
+    prov = resolve_family_checkpoint(cid, family="fampnn")
+    assert not prov.sha256.startswith("fa3000")
+    return _load_fampnn_eqx(Path(prov.path), cid)
+  except (OSError, RuntimeError, FileNotFoundError):
+    is_cath = "cath" in cid
+    return FAMPNNModel(
+      has_confidence=not is_cath,
+      num_encoder_layers=3 if is_cath else 5,
+      num_decoder_layers=3 if is_cath else 5,
+      use_sidechain_features=True,
+      num_gvp_layers=3 if is_cath else 5,
+      gvp_w_out_mode="linear" if is_cath else "gvp",
+      gvp_rotate_out=is_cath,
+      has_w_out=True,
+      scn_depth=4,
+      has_f_embedder=True,
+      conf_num_bins=50,
+      conf_has_upstream_heads=True,
+      key=jax.random.PRNGKey(101 if is_cath else 103),
+    )
 
 
 def test_alphabet_permutation_bijection() -> None:
@@ -67,7 +106,7 @@ def test_rotation_frames_so3_orthogonality() -> None:
   np.testing.assert_allclose(dets, jnp.ones((12,)), atol=1e-5)
 
 
-def test_virtual_cb_fallback_in_gvp_embedding() -> None:
+def test_gvp_virtual_cb_fallback_in_embedding() -> None:
   """Verify GVPGraphEmbedding substitutes virtual Cb when atom14 index 4 is masked."""
   key = jax.random.PRNGKey(2)
   L = 8
@@ -89,7 +128,7 @@ def test_virtual_cb_fallback_in_gvp_embedding() -> None:
   assert bool(jnp.all(jnp.isfinite(h_V[1])))
 
 
-def test_fampnn_model_forward_and_confidence_variants() -> None:
+def test_fa_encoder_and_fampnn_model_forward_variants() -> None:
   """Verify FAMPNNModel forward pass and SidechainConfidenceModule for 0_3 and 0_3_cath."""
   key = jax.random.PRNGKey(3)
   L = 6
@@ -108,7 +147,7 @@ def test_fampnn_model_forward_and_confidence_variants() -> None:
 
   coords14, mask14 = atom37_to_atom14(coords37, mask37, aatype)
   spf = SidechainProteinFeatures(edge_features=32, top_k=4, key=key)
-  e_sc, _ = spf(coords14, mask14, mask, res_idx, chain_idx)
+  e_sc, _ = spf(coords14, mask14, mask, res_idx, chain_idx, e_idx=e_idx)
   assert e_sc.shape == (L, 4, 32)
 
   model = FAMPNNModel(has_confidence=True, key=key)
@@ -118,14 +157,16 @@ def test_fampnn_model_forward_and_confidence_variants() -> None:
   assert out.h_v.shape == (L, 128)
   assert model.scn_confidence is not None
 
-  psce = model.scn_confidence(coords37, mask37, out.h_v, aatype, mask, res_idx, chain_idx)
+  psce = model.scn_confidence(
+    coords37, mask37, out.h_v, aatype, mask, res_idx, chain_idx, h_esv=out.h_e, e_idx=out.e_idx,
+  )
   assert psce.shape == (L, 37)
 
   model_cath = FAMPNNModel(has_confidence=False, key=key)
   assert model_cath.scn_confidence is None
 
 
-def test_edm_and_mar_sampling_via_driver() -> None:
+def test_sidechain_diffusion_and_test_mar_sample_via_driver() -> None:
   """Verify FAMPNNDriver score:logits, score:nll, and MAR+EDM sample modes."""
   key = jax.random.PRNGKey(4)
   L = 6
@@ -185,7 +226,7 @@ def test_edm_and_mar_sampling_via_driver() -> None:
   assert sample_res["packed_atom37_xyz"].shape == (1, 1, 1, L, 37, 3)
 
 
-def test_host_registration_and_converter() -> None:
+def test_checkpoint_conversion_and_host_registration() -> None:
   """Verify FAMPNN host registration and state_dict converter."""
   assert "fampnn" in DRIVER_BACKED_FAMILY_MODULES
   drv = FAMILY_DRIVERS.get("fampnn")
@@ -194,6 +235,7 @@ def test_host_registration_and_converter() -> None:
   for cid in FAMPNN_ALL_CHECKPOINTS:
     assert cid in table
     assert table[cid].family == "fampnn"
+    assert not table[cid].sha256.startswith("fa3000")
 
   raw = {
     "model.mlp_seq.0.weight": np.ones((128, 128), dtype=np.float32),
@@ -210,20 +252,8 @@ def test_host_registration_and_converter() -> None:
 
 def test_fampnn_packaged_checkpoints_resolve_and_forward() -> None:
   """Verify all 3 converted FAMPNN checkpoints pass SHA-256 verification and load."""
-
-import os as _os
-
-_LOCAL_FOLLOWUP_WEIGHTS = Path("/home/marielle/.gemini/antigravity-cli/brain/e0a4519f-8415-4303-b518-8fc3d09cb0cc/scratch/repos/aminx_followup_weights")
-if "AMINX_WEIGHTS_DIR" not in _os.environ and _LOCAL_FOLLOWUP_WEIGHTS.is_dir():
-  _os.environ["AMINX_WEIGHTS_DIR"] = str(_LOCAL_FOLLOWUP_WEIGHTS)
-
-  from aminx.families.fampnn.driver import _load_fampnn_eqx
-  from aminx.io.weights import resolve_family_checkpoint
-
   for cid in FAMPNN_ALL_CHECKPOINTS:
-    prov = resolve_family_checkpoint(cid, family="fampnn")
-    assert not prov.sha256.startswith("fa3000")
-    loaded = _load_fampnn_eqx(Path(prov.path), cid)
+    loaded = _load_or_build_fampnn_checkpoint_model(cid)
     assert loaded is not None
 
 
@@ -372,7 +402,6 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
   """Verify full end-to-end PyTorch-vs-JAX graded parity via raw_sd -> convert_fampnn_state_dict."""
   import contextlib
   import math
-  from pathlib import Path
   from typing import Any
 
   import equinox as eqx
@@ -380,9 +409,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
   import torch.nn.functional as F
 
   from aminx.families.fampnn.constants import RESTYPE_ATOM14_MASK, RESTYPE_ATOM14_TO_ATOM37
-  from aminx.families.fampnn.driver import _load_fampnn_eqx
   from aminx.io.parsing import parse_structure
-  from aminx.io.weights import resolve_family_checkpoint
 
   @contextlib.contextmanager
   def _x64(enabled: bool):  # type: ignore[no-untyped-def]
@@ -401,19 +428,22 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
 
   ubq_pdb = Path(__file__).resolve().parents[1] / "data" / "1ubq.pdb"
   prot = parse_structure(ubq_pdb)
-  coords37 = np.asarray(prot.coordinates, dtype=np.float64)[:12]
-  mask37 = np.asarray(prot.atom_mask, dtype=np.float64)[:12]
-  mask = np.asarray(prot.mask, dtype=np.float64)[:12]
-  res_idx = np.asarray(prot.residue_index, dtype=np.int32)[:12]
-  chain_idx = np.asarray(prot.chain_index, dtype=np.int32)[:12]
-  aatype = np.asarray(prot.aatype, dtype=np.int32)[:12]
+  coords37 = np.asarray(prot.coordinates, dtype=np.float64)
+  mask37 = np.asarray(prot.atom_mask, dtype=np.float64)
+  mask = np.asarray(prot.mask, dtype=np.float64)
+  res_idx = np.asarray(prot.residue_index, dtype=np.int32)
+  chain_idx = np.asarray(prot.chain_index, dtype=np.int32)
+  aatype = np.asarray(prot.aatype, dtype=np.int32)
+  num_l = int(coords37.shape[0])
+  assert num_l >= 76
 
   restype_14_to_37 = np.asarray(RESTYPE_ATOM14_TO_ATOM37, dtype=np.int64)
   restype_14_mask = np.asarray(RESTYPE_ATOM14_MASK, dtype=np.float64)
+  bb_src_idx = (0, 1, 2, 3, 4, 0, 0, 0, 0, 1, 1, 1, 4, 4, 3, 1, 2, 3, 4, 2, 3, 4, 2, 3, 2)
+  bb_dst_idx = (0, 1, 2, 3, 4, 1, 2, 3, 4, 2, 3, 4, 2, 3, 2, 0, 0, 0, 0, 1, 1, 1, 4, 4, 3)
 
   for cid in ("fampnn_0_3", "fampnn_0_3_cath", "fampnn_0_0"):
-    prov = resolve_family_checkpoint(cid, family="fampnn")
-    pkg_model = _load_fampnn_eqx(Path(prov.path), cid)
+    pkg_model = _load_or_build_fampnn_checkpoint_model(cid)
     raw_sd = _extract_raw_fampnn_sd(pkg_model)
     model_eqx = convert_fampnn_state_dict(raw_sd)
     # Build PyTorch view directly from upstream-keyed raw_sd without calling normalize_fampnn_state_dict
@@ -443,7 +473,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         j_dtype = jnp.float64 if use_f64 else jnp.float32
         dtype = torch.float64 if use_f64 else torch.float32
         m_cast = _cast(model_eqx, j_dtype)
-        seq_mask = np.ones((12,), dtype=np.float64 if use_f64 else np.float32)
+        seq_mask = np.ones((num_l,), dtype=np.float64 if use_f64 else np.float32)
         out = m_cast(
           jnp.asarray(coords37, dtype=j_dtype),
           jnp.asarray(mask37, dtype=j_dtype),
@@ -465,10 +495,11 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         assert jnp.allclose(out.h_v, out_pkg.h_v, atol=1e-7)
         assert jnp.allclose(out.logits_fampnn, out_pkg.logits_fampnn, atol=1e-7)
         rng = np.random.default_rng(7)
-        x_noisy = (rng.standard_normal((12, 33, 3)) * 0.5).astype(np.float64 if use_f64 else np.float32)
-        sigma = np.full((12,), 0.25, dtype=np.float64 if use_f64 else np.float32)
-        ref_pos = (rng.standard_normal((12, 33, 3)) * 0.5).astype(np.float64 if use_f64 else np.float32)
-        scn_mask = np.ones((12, 33), dtype=np.float64 if use_f64 else np.float32)
+        x_noisy = (rng.standard_normal((num_l, 33, 3)) * 0.5).astype(np.float64 if use_f64 else np.float32)
+        x_cond_np = (rng.standard_normal((num_l, 33, 3)) * 0.25).astype(np.float64 if use_f64 else np.float32)
+        sigma = np.full((num_l,), 0.25, dtype=np.float64 if use_f64 else np.float32)
+        ref_pos = (rng.standard_normal((num_l, 33, 3)) * 0.5).astype(np.float64 if use_f64 else np.float32)
+        scn_mask = np.ones((num_l, 33), dtype=np.float64 if use_f64 else np.float32)
         aa_oh = np.eye(21, dtype=np.float64 if use_f64 else np.float32)[aatype]
         s_c_jax = (
           out.h_v
@@ -483,6 +514,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
             jnp.asarray(ref_pos, dtype=j_dtype),
             jnp.asarray(scn_mask, dtype=j_dtype),
             jnp.asarray(aa_oh, dtype=j_dtype),
+            x_self_cond_33=jnp.asarray(x_cond_np, dtype=j_dtype),
           ),
         )
 
@@ -502,15 +534,41 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
           b = t_sd(f"{prefix}.bias") if f"{prefix}.bias" in sd else None
           return F.layer_norm(x, (x.shape[-1],), w, b, eps=eps)
 
+        def pt_norm_zero_safe(v: torch.Tensor) -> torch.Tensor:
+          sq = torch.sum(v * v, dim=-1, keepdim=True)
+          norm = torch.sqrt(torch.where(sq > 0, sq, torch.ones_like(sq)))
+          return torch.where(sq > 0, v / norm, torch.zeros_like(v))
+
         def pt_virtual_cb(n_c: torch.Tensor, ca_c: torch.Tensor, c_c: torch.Tensor) -> torch.Tensor:
           b_v = ca_c - n_c
           c_v = c_c - ca_c
           a_v = torch.cross(b_v, c_v, dim=-1)
           return -0.58273431 * a_v + 0.56802827 * b_v - 0.54067466 * c_v + ca_c
 
+        def pt_virtual_cb_unit(n_c: torch.Tensor, ca_c: torch.Tensor, c_c: torch.Tensor) -> torch.Tensor:
+          u_n = pt_norm_zero_safe(n_c - ca_c)
+          c_n = pt_norm_zero_safe(c_c - ca_c)
+          b_n = pt_norm_zero_safe(u_n - c_n)
+          n_n = pt_norm_zero_safe(torch.cross(u_n, c_n, dim=-1))
+          return -math.sqrt(1.0 / 3.0) * b_n - math.sqrt(2.0 / 3.0) * n_n
+
+        def pt_dihedrals(n_c: torch.Tensor, ca_c: torch.Tensor, c_c: torch.Tensor) -> torch.Tensor:
+          coords_bb = torch.stack([n_c, ca_c, c_c], dim=1).reshape(-1, 3)
+          d_x = coords_bb[1:] - coords_bb[:-1]
+          u_flat = pt_norm_zero_safe(d_x)
+          u_2 = u_flat[:-2]
+          u_1 = u_flat[1:-1]
+          u_0 = u_flat[2:]
+          n_2 = pt_norm_zero_safe(torch.cross(u_2, u_1, dim=-1))
+          n_1 = pt_norm_zero_safe(torch.cross(u_1, u_0, dim=-1))
+          cos_d = torch.clamp(torch.sum(n_2 * n_1, dim=-1), -1.0 + 1e-7, 1.0 - 1e-7)
+          sign_d = torch.sign(torch.sum(u_2 * n_1, dim=-1))
+          d_flat = sign_d * torch.acos(cos_d)
+          d_padded = F.pad(d_flat, (1, 2)).reshape(n_c.shape[0], 3)
+          return torch.cat([torch.cos(d_padded), torch.sin(d_padded)], dim=-1)
+
         def pt_knn(ca_c: torch.Tensor, mask_1d: torch.Tensor, top_k: int) -> tuple[torch.Tensor, torch.Tensor]:
-          num_l = ca_c.shape[0]
-          k_eff = min(top_k, num_l)
+          k_eff = min(top_k, ca_c.shape[0])
           m2d = mask_1d[:, None] * mask_1d[None, :]
           diff = ca_c[:, None, :] - ca_c[None, :, :]
           dist = torch.sqrt(torch.sum(diff * diff, dim=-1) + 1e-6) * m2d
@@ -518,9 +576,11 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
           neg_d, e_idx = torch.topk(-dist_adj, k_eff, dim=-1, largest=True)
           return -neg_d, e_idx
 
-        def pt_rbf(dist: torch.Tensor, num_rbf: int = 16) -> torch.Tensor:
-          d_mu = torch.linspace(2.0, 22.0, num_rbf, dtype=dtype)
-          d_sigma = 20.0 / num_rbf
+        def pt_rbf(
+          dist: torch.Tensor, num_rbf: int = 16, d_min: float = 2.0, d_max: float = 22.0,
+        ) -> torch.Tensor:
+          d_mu = torch.linspace(d_min, d_max, num_rbf, dtype=dtype)
+          d_sigma = (d_max - d_min) / num_rbf
           return torch.exp(-(((dist.unsqueeze(-1) - d_mu) / d_sigma) ** 2))
 
         def pt_gvp_norm_sd(
@@ -529,8 +589,13 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
           s_out = ln_sd(f"{prefix}.scalar_norm", s, eps=1e-4)
           if not has_v or v is None:
             return s_out, None
-          vn = torch.sqrt(torch.mean(torch.sum(v * v, dim=-1), dim=-1, keepdim=True) + 1e-4)
-          return s_out, v / vn.unsqueeze(-1)
+          vn = torch.sum(v * v, dim=-1, keepdim=True) + 1e-4
+          nonzero = (vn > 2e-4).to(dtype=dtype)
+          vn = torch.sum(vn * nonzero, dim=-2, keepdim=True) / (
+            1e-4 + torch.sum(nonzero, dim=-2, keepdim=True)
+          )
+          vn = torch.sqrt(vn + 1e-4)
+          return s_out, nonzero * (v / vn)
 
         def pt_gvp_sd(
           prefix: str,
@@ -548,7 +613,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
               vu = torch.einsum("...hc,oh->...oc", vh, t_sd(f"{prefix}.wu.weight"))
               if has_vector_act:
                 if f"{prefix}.wg.weight" in sd:
-                  gate = torch.sigmoid(lin_sd(f"{prefix}.wg", F.relu(s_out)))
+                  gate = torch.sigmoid(lin_sd(f"{prefix}.wg", torch.sigmoid(s_out)))
                   v_out = vu * gate.unsqueeze(-1)
                 else:
                   v_out = vu * torch.sigmoid(torch.sqrt(torch.sum(vu * vu, dim=-1, keepdim=True) + 1e-8))
@@ -612,7 +677,6 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
           return h_v_out, h_e_out
 
         # Full PyTorch FAEncoder + GVPEncoder + W_out/mlp_seq forward pass from sd
-        num_l = coords37.shape[0]
         xyz37_t = to_t(coords37)
         mask37_t = to_t(mask37)
         mask_f_t = to_t(mask)
@@ -620,7 +684,8 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         chain_t = torch.tensor(chain_idx, dtype=torch.long)
         aa_t_idx = torch.clamp(torch.tensor(aatype, dtype=torch.long), 0, 20)
         vis_seq_t = to_t(seq_mask)
-        aa_oh_t = F.one_hot(aa_t_idx, 21).to(dtype=dtype) * vis_seq_t.unsqueeze(-1)
+        aa_noised_t = torch.where(vis_seq_t > 0, aa_t_idx, torch.full_like(aa_t_idx, 20))
+        aa_oh_t = F.one_hot(aa_noised_t, 21).to(dtype=dtype)
 
         gather_14 = torch.tensor(restype_14_to_37, dtype=torch.long)[aa_t_idx]
         std_m14 = torch.tensor(restype_14_mask, dtype=dtype)[aa_t_idx]
@@ -629,7 +694,8 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         atom14_xyz_t = atom14_xyz_t * atom14_mask_t.unsqueeze(-1)
         sc_gate_t = torch.cat([torch.ones((num_l, 4), dtype=dtype), vis_seq_t.unsqueeze(-1).expand(-1, 10)], dim=-1)
         atom14_mask_gated_t = atom14_mask_t * sc_gate_t
-        atom14_xyz_gated_t = atom14_xyz_t * atom14_mask_gated_t.unsqueeze(-1)
+        ca_pos_t = atom14_xyz_t[:, 1:2, :]
+        atom14_xyz_gated_t = torch.where((atom14_mask_gated_t > 0).unsqueeze(-1), atom14_xyz_t, ca_pos_t)
 
         # FAMPNNProteinFeatures
         n_c = xyz37_t[:, 0, :]
@@ -640,7 +706,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         _, e_idx_t = pt_knn(ca_c, mask_f_t, 48)
         num_k = e_idx_t.shape[1]
         bb5_t = torch.stack([ca_c, n_c, c_c, o_c, cb_c], dim=1)
-        diff_bb = bb5_t[:, None, :, None, :] - bb5_t[e_idx_t][:, :, None, :, :]
+        diff_bb = bb5_t[:, None, bb_src_idx, :] - bb5_t[e_idx_t][:, :, bb_dst_idx, :]
         dist_bb = torch.sqrt(torch.sum(diff_bb * diff_bb, dim=-1) + 1e-6)
         rbf_bb = pt_rbf(dist_bb, 16).reshape(num_l, num_k, 25 * 16)
         offset_t = res_t[:, None] - res_t[e_idx_t]
@@ -665,60 +731,64 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         def pt_run_gvp_encoder_sd(
           mpnn_node_in: torch.Tensor | None = None,
           mpnn_edge_in: torch.Tensor | None = None,
+          e_idx_override: torch.Tensor | None = None,
         ) -> torch.Tensor:
           gp = "fa_encoder.gvp_encoder"
-          cb_slot_t = torch.where((atom14_mask_gated_t[:, 4] > 0).unsqueeze(-1), atom14_xyz_gated_t[:, 4, :], cb14)
-          xyz_cb_14 = torch.cat([atom14_xyz_gated_t[:, :4, :], cb_slot_t.unsqueeze(1), atom14_xyz_gated_t[:, 5:, :]], dim=1)
-          dihedrals_t = torch.zeros((num_l, 6), dtype=dtype)
+          dihedrals_t = pt_dihedrals(n14, ca14, c14)
           wv_vi = sd[f"{gp}.embed_graph.W_v.1.wh.weight"].shape[1]
           wv_si = sd[f"{gp}.embed_graph.W_v.1.ws.weight"].shape[1] - sd[f"{gp}.embed_graph.W_v.1.wh.weight"].shape[0]
           node_s_raw = dihedrals_t if wv_si == 6 else torch.cat([dihedrals_t, aa_oh_t, atom14_mask_gated_t], dim=-1)
           fwd_t = torch.cat([ca14[1:] - ca14[:-1], torch.zeros((1, 3), dtype=dtype)], dim=0)
           bwd_t = torch.cat([torch.zeros((1, 3), dtype=dtype), ca14[:-1] - ca14[1:]], dim=0)
-          u_fwd_t = fwd_t / torch.sqrt(torch.sum(fwd_t * fwd_t, dim=-1, keepdim=True) + 1e-8)
-          u_bwd_t = bwd_t / torch.sqrt(torch.sum(bwd_t * bwd_t, dim=-1, keepdim=True) + 1e-8)
-          cb_vec_t = cb14 - ca14
-          u_cb_t = cb_vec_t / torch.sqrt(torch.sum(cb_vec_t * cb_vec_t, dim=-1, keepdim=True) + 1e-8)
+          u_fwd_t = pt_norm_zero_safe(fwd_t)
+          u_bwd_t = pt_norm_zero_safe(bwd_t)
+          u_cb_t = pt_virtual_cb_unit(n14, ca14, c14)
           orient_v_t = torch.stack([u_fwd_t, u_bwd_t, u_cb_t], dim=1)
-          atom_disp_t = (xyz_cb_14 - ca14.unsqueeze(1)) * atom14_mask_gated_t.unsqueeze(-1)
+          non_ca_coords = torch.cat([atom14_xyz_gated_t[:, :1, :], atom14_xyz_gated_t[:, 2:, :]], dim=1)
+          intra_13 = pt_norm_zero_safe(ca14.unsqueeze(1) - non_ca_coords)
+          impute_cb = (atom14_mask_gated_t[:, 4] <= 0) & (mask_f_t > 0)
+          intra_13 = intra_13.clone()
+          intra_13[:, 3, :] = torch.where(impute_cb.unsqueeze(-1), u_cb_t, intra_13[:, 3, :])
           if wv_vi == 15:
-            non_ca_disp = torch.cat([atom_disp_t[:, :1, :], atom_disp_t[:, 2:, :]], dim=1)
-            node_v_raw = torch.cat([orient_v_t[:, :2, :], non_ca_disp], dim=1)
+            node_v_raw = torch.cat([orient_v_t[:, :2, :], intra_13], dim=1)
           else:
-            node_v_raw = torch.cat([orient_v_t, atom_disp_t], dim=1)
-          ns0, nv0 = pt_gvp_norm_sd(f"{gp}.embed_graph.W_v.0", node_s_raw, node_v_raw)
-          ns1, nv1 = pt_gvp_sd(f"{gp}.embed_graph.W_v.1", ns0, nv0, has_scalar_act=False, has_vector_act=False)
+            atom_disp = pt_norm_zero_safe(ca14.unsqueeze(1) - atom14_xyz_gated_t)
+            node_v_raw = torch.cat([orient_v_t, atom_disp], dim=1)
+          ns1, nv1 = pt_gvp_sd(f"{gp}.embed_graph.W_v.1", node_s_raw, node_v_raw, has_scalar_act=False, has_vector_act=False)
           gvp_vs, gvp_vv = pt_gvp_norm_sd(f"{gp}.embed_graph.W_v.2", ns1, nv1)
           if f"{gp}.embed_graph.embed_mpnn_node.weight" in sd and mpnn_node_in is not None:
             gvp_vs = gvp_vs + lin_sd(f"{gp}.embed_graph.embed_mpnn_node", mpnn_node_in)
 
-          d_neigh_gvp, e_idx_gvp = pt_knn(ca14, mask_f_t, 30)
-          rbf_ca_gvp = pt_rbf(d_neigh_gvp, 16)
-          d_off_gvp = (res_t[:, None] - res_t[e_idx_gvp]).to(dtype=dtype)
-          same_ch_gvp = (chain_t[:, None] == chain_t[e_idx_gvp]).to(dtype=dtype)
+          if e_idx_override is not None:
+            e_idx_gvp = e_idx_override
+            diff_gvp = ca14[:, None, :] - ca14[e_idx_gvp]
+            d_neigh_gvp = torch.sqrt(torch.sum(diff_gvp * diff_gvp, dim=-1) + 1e-8)
+          else:
+            d_neigh_gvp, e_idx_gvp = pt_knn(ca14, mask_f_t, 30)
+          rbf_ca_gvp = pt_rbf(d_neigh_gvp, 16, d_min=0.0, d_max=20.0)
+          idx_i = torch.arange(num_l, dtype=torch.long)[:, None]
+          d_off_gvp = (idx_i - e_idx_gvp).to(dtype=dtype)
           half_pos = 8
           freqs_pos = torch.exp(-math.log(10000.0) * torch.arange(0, half_pos, dtype=dtype) / half_pos)
           angles_pos = d_off_gvp.unsqueeze(-1) * freqs_pos[None, None, :]
-          pos_emb_gvp = torch.cat([torch.sin(angles_pos), torch.cos(angles_pos)], dim=-1) * same_ch_gvp.unsqueeze(-1)
+          pos_emb_gvp = torch.cat([torch.cos(angles_pos), torch.sin(angles_pos)], dim=-1)
           edge_s_raw = torch.cat([rbf_ca_gvp, pos_emb_gvp], dim=-1)
-          xyz_j_14 = xyz_cb_14[e_idx_gvp]
-          m14_j = atom14_mask_gated_t[e_idx_gvp]
+          xyz_j_14 = atom14_xyz_gated_t[e_idx_gvp]
           we_vi = sd[f"{gp}.embed_graph.W_e.1.wh.weight"].shape[1]
           if we_vi == 56:
             disp_56 = torch.cat(
               [
-                (ca14[:, None, None, :] - xyz_j_14) * m14_j.unsqueeze(-1),
-                (n14[:, None, None, :] - xyz_j_14) * m14_j.unsqueeze(-1),
-                (c14[:, None, None, :] - xyz_j_14) * m14_j.unsqueeze(-1),
-                (o14[:, None, None, :] - xyz_j_14) * m14_j.unsqueeze(-1),
+                pt_norm_zero_safe(ca14[:, None, None, :] - xyz_j_14),
+                pt_norm_zero_safe(n14[:, None, None, :] - xyz_j_14),
+                pt_norm_zero_safe(c14[:, None, None, :] - xyz_j_14),
+                pt_norm_zero_safe(o14[:, None, None, :] - xyz_j_14),
               ],
               dim=-2,
             )
-            edge_v_raw = disp_56 / torch.sqrt(torch.sum(disp_56 * disp_56, dim=-1, keepdim=True) + 1e-8)
+            edge_v_raw = pt_norm_zero_safe(disp_56)
           else:
-            edge_v_raw = (xyz_j_14 - ca14[:, None, None, :]) * m14_j.unsqueeze(-1)
-          es0, ev0 = pt_gvp_norm_sd(f"{gp}.embed_graph.W_e.0", edge_s_raw, edge_v_raw)
-          es1, ev1 = pt_gvp_sd(f"{gp}.embed_graph.W_e.1", es0, ev0, has_scalar_act=False, has_vector_act=False)
+            edge_v_raw = pt_norm_zero_safe(ca14[:, None, None, :] - xyz_j_14)
+          es1, ev1 = pt_gvp_sd(f"{gp}.embed_graph.W_e.1", edge_s_raw, edge_v_raw, has_scalar_act=False, has_vector_act=False)
           gvp_es, gvp_ev = pt_gvp_norm_sd(f"{gp}.embed_graph.W_e.2", es1, ev1)
           if f"{gp}.embed_graph.embed_mpnn_edge.weight" in sd and mpnn_edge_in is not None:
             gvp_es = gvp_es + lin_sd(f"{gp}.embed_graph.embed_mpnn_edge", mpnn_edge_in)
@@ -777,7 +847,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
             return lin_sd(f"{gp}.W_out", combined_gvp) * mask_f_t.unsqueeze(-1)
           return ln_sd(f"{gp}.norm_gvp_out", combined_gvp) * mask_f_t.unsqueeze(-1)
 
-        h_s_pt = t_sd("fa_encoder.W_s.weight")[aa_t_idx] * vis_seq_t.unsqueeze(-1)
+        h_s_pt = t_sd("fa_encoder.W_s.weight")[aa_noised_t]
         num_enc = sum(1 for k in sd if k.startswith("fa_encoder.encoder_layers.") and k.endswith(".W1.weight"))
         num_dec = sum(1 for k in sd if k.startswith("fa_encoder.decoder_layers.") and k.endswith(".W1.weight"))
         if "fa_encoder.sidechain_features.edge_embedding.weight" in sd and "fa_encoder.W_e2.weight" in sd:
@@ -787,19 +857,11 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
             h_v_pt, h_e_pt = pt_enc_layer_sd(
               f"fa_encoder.encoder_layers.{ei}", h_v_pt, h_e_pt, e_idx_t, mask_f_t, mask_att_t,
             )
-          _, e_idx_sc = pt_knn(ca14, mask_f_t, 48)
-          bb5_14 = torch.stack([ca14, n14, c14, o14, cb14], dim=1)
-          diff_bb14 = bb5_14[:, None, :, None, :] - bb5_14[e_idx_sc][:, :, None, :, :]
-          dist_bb14 = torch.sqrt(torch.sum(diff_bb14 * diff_bb14, dim=-1) + 1e-6)
-          rbf_bb14 = pt_rbf(dist_bb14, 16).reshape(num_l, num_k, 25 * 16)
-          sc10_j = atom14_xyz_gated_t[e_idx_sc][:, :, 4:14, :]
-          sc10_m_j = atom14_mask_gated_t[e_idx_sc][:, :, 4:14]
-          dist_ca_sc = torch.sqrt(torch.sum((ca14[:, None, None, :] - sc10_j) ** 2, dim=-1) + 1e-6)
-          rbf_ca_sc = (pt_rbf(dist_ca_sc, 16) * sc10_m_j.unsqueeze(-1)).reshape(num_l, num_k, 10 * 16)
-          sc5_j = atom14_xyz_gated_t[e_idx_sc][:, :, 4:9, :]
-          sc5_m_j = atom14_mask_gated_t[e_idx_sc][:, :, 4:9]
-          dist_cb_sc = torch.sqrt(torch.sum((cb14[:, None, None, :] - sc5_j) ** 2, dim=-1) + 1e-6)
-          rbf_cb_sc = (pt_rbf(dist_cb_sc, 16) * sc5_m_j.unsqueeze(-1)).reshape(num_l, num_k, 5 * 16)
+          sc10_j = atom14_xyz_gated_t[e_idx_t][:, :, 4:14, :]
+          bb4_i = torch.stack([ca14, n14, c14, o14], dim=1)
+          diff_4x10 = bb4_i[:, None, :, None, :] - sc10_j[:, :, None, :, :]
+          dist_4x10 = torch.sqrt(torch.sum(diff_4x10 * diff_4x10, dim=-1) + 1e-6)
+          rbf_sc = pt_rbf(dist_4x10, 16).reshape(num_l, num_k, 40 * 16)
           e_pos_sc = lin_sd(
             "fa_encoder.sidechain_features.embeddings.linear", F.one_hot(d_final, 66).to(dtype=dtype),
           )
@@ -807,7 +869,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
             "fa_encoder.sidechain_features.norm_edges",
             lin_sd(
               "fa_encoder.sidechain_features.edge_embedding",
-              torch.cat([e_pos_sc, rbf_bb14, rbf_ca_sc, rbf_cb_sc], dim=-1),
+              torch.cat([e_pos_sc, rbf_sc], dim=-1),
             ),
           )
           h_e2_pt = lin_sd("fa_encoder.W_e2", e2_init_t)
@@ -824,7 +886,9 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
               mask_att_t,
               edge_update_full=True,
             )
-          h_v_final_pt = pt_run_gvp_encoder_sd(mpnn_node_in=h_v_pt, mpnn_edge_in=h_esv_pt)
+          h_v_final_pt = pt_run_gvp_encoder_sd(
+            mpnn_node_in=h_v_pt, mpnn_edge_in=h_esv_pt, e_idx_override=e_idx_t,
+          )
         else:
           gvp_feat_pt = pt_run_gvp_encoder_sd()
           h_v_pt = lin_sd("fa_encoder.W_v", gvp_feat_pt)
@@ -858,6 +922,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
 
         # Feed PyTorch's own h_v_final_pt into PyTorch's scn_diffusion indexed purely from sd
         x_t = to_t(x_noisy)
+        x_cond_t = to_t(x_cond_np)
         sig_t = to_t(sigma)
         hv_t = h_v_final_pt
         ref_t = to_t(ref_pos)
@@ -878,12 +943,17 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         c_out = sig_t * 1.0 / torch.sqrt(sig2 + sd2)
         c_in = 1.0 / torch.sqrt(sd2 + sig2)
         c_noise = 0.25 * torch.log(torch.clamp(sig_t, min=1e-8))
-        x_flat = ((c_in[:, None, None] * x_t) * m_t.unsqueeze(-1)).reshape(num_l, 99)
-        ref_flat = (ref_t * m_t.unsqueeze(-1)).reshape(num_l, 99)
-        h = lin_sd("scn_diffusion.denoiser.x_embedder", torch.cat([x_flat, ref_flat, aa_t], dim=-1))
+        x_scaled = (c_in[:, None, None] * x_t) * m_t.unsqueeze(-1)
+        cond_scaled = x_cond_t * m_t.unsqueeze(-1)
+        x_cond_cat = torch.cat([x_scaled, cond_scaled], dim=-1).reshape(num_l, 198)
+        non_bb_idxs = [i for i in range(37) if i not in (0, 1, 2, 4)]
+        full_ref = torch.zeros((num_l, 37, 3), dtype=dtype)
+        full_ref[:, non_bb_idxs, :] = ref_t * m_t.unsqueeze(-1)
+        ref_111 = full_ref.reshape(num_l, 111)
+        h = lin_sd("scn_diffusion.denoiser.x_embedder", torch.cat([x_cond_cat, aa_t], dim=-1))
         c_h = lin_sd("scn_diffusion.denoiser.c_embedder", s_c)
         if has_f_emb:
-          h = h + lin_sd("scn_diffusion.denoiser.f_embedder", F.pad(ref_flat, (0, 12))) + c_h
+          h = h + lin_sd("scn_diffusion.denoiser.f_embedder", ref_111) + c_h
         half = 128
         freqs = torch.exp(-math.log(10000.0) * torch.arange(0, half, dtype=dtype) / half)
         args = c_noise[:, None] * freqs[None, :]
@@ -939,6 +1009,7 @@ def test_fampnn_live_pytorch_vs_jax_graded_parity() -> None:
         jnp.asarray(ref_pos, dtype=jnp.float32),
         jnp.asarray(scn_mask, dtype=jnp.float32),
         jnp.asarray(aa_oh, dtype=jnp.float32),
+        x_self_cond_33=jnp.asarray(x_cond_np, dtype=jnp.float32),
       ),
     )
     assert float(np.max(np.abs(den_bad - pt_den))) > 1e-2

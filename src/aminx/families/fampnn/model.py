@@ -548,9 +548,10 @@ class FAEncoder(eqx.Module):
     dtype = self.W_v.weight.dtype
     aa_clamped = jnp.clip(aatype, 0, 20)
     vis_seq = seq_mask.astype(dtype)
-    aatype_oh = jax.nn.one_hot(aa_clamped, 21, dtype=dtype) * vis_seq[:, None]
+    aa_noised = jnp.where(seq_mask > 0, aa_clamped, 20)
+    aatype_oh = jax.nn.one_hot(aa_noised, 21, dtype=dtype)
 
-    atom14_xyz, atom14_mask = atom37_to_atom14(atom37_xyz, atom37_mask, aa_clamped)
+    atom14_xyz, atom14_mask = atom37_to_atom14(atom37_xyz, atom37_mask, aa_noised)
     sc_gate = jnp.concatenate(
       [
         jnp.ones((atom14_mask.shape[0], 4), dtype=dtype),
@@ -559,7 +560,8 @@ class FAEncoder(eqx.Module):
       axis=-1,
     )
     atom14_mask_gated = atom14_mask.astype(dtype) * sc_gate
-    atom14_xyz_gated = atom14_xyz.astype(dtype) * atom14_mask_gated[..., None]
+    ca_xyz = atom14_xyz[:, 1:2, :].astype(dtype)
+    atom14_xyz_gated = jnp.where(atom14_mask_gated[..., None] > 0, atom14_xyz.astype(dtype), ca_xyz)
 
     e_init, e_idx = self.features(atom37_xyz, mask, residue_idx, chain_idx)
     mask_f = mask.astype(dtype)
@@ -571,8 +573,10 @@ class FAEncoder(eqx.Module):
       h_e = _linear(self.W_e, e_init)
       for enc_layer in self.encoder_layers:
         h_v, h_e = enc_layer(h_v, h_e, e_idx, mask_f, mask_attend)
-      h_s = self.W_s.weight[aa_clamped] * vis_seq[:, None]
-      e2_init, _ = self.sidechain_features(atom14_xyz_gated, atom14_mask_gated, mask, residue_idx, chain_idx)
+      h_s = self.W_s.weight[aa_noised]
+      e2_init, _ = self.sidechain_features(
+        atom14_xyz_gated, atom14_mask_gated, mask, residue_idx, chain_idx, e_idx=e_idx,
+      )
       h_e2 = _linear(self.W_e2, e2_init)
       h_es = jnp.concatenate([_cat_neighbors_nodes(h_s, h_e, e_idx), h_e2], axis=-1)
       h_esv = _cat_neighbors_nodes(h_v, h_es, e_idx)
@@ -585,6 +589,7 @@ class FAEncoder(eqx.Module):
         mask,
         residue_idx,
         chain_idx,
+        e_idx=e_idx,
         mpnn_node=h_v,
         mpnn_edge=h_esv,
       )
@@ -597,6 +602,7 @@ class FAEncoder(eqx.Module):
       mask,
       residue_idx,
       chain_idx,
+      e_idx=e_idx,
     )
 
     h_v = _linear(self.W_v, gvp_feat)
@@ -605,7 +611,7 @@ class FAEncoder(eqx.Module):
     for enc_layer in self.encoder_layers:
       h_v, h_e = enc_layer(h_v, h_e, e_idx, mask_f, mask_attend)
 
-    h_s = self.W_s.weight[aa_clamped] * vis_seq[:, None]
+    h_s = self.W_s.weight[aa_noised]
     for dec_layer in self.decoder_layers:
       h_v, h_e = dec_layer(h_v, h_e, h_s, e_idx, mask_f, mask_attend)
 

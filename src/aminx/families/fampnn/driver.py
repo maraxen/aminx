@@ -257,6 +257,8 @@ def mar_sample(
       mask,
       residue_idx,
       chain_idx,
+      h_esv=fwd_conf.h_e,
+      e_idx=fwd_conf.e_idx,
     )
   else:
     psce_37 = jnp.full((num_l, 37), jnp.nan, dtype=dtype)

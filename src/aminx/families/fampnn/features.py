@@ -24,6 +24,16 @@ from aminx.families.fampnn.constants import (
 # 5 backbone atom indices in Atom37: N=0, CA=1, C=2, CB=3, O=4
 _ATOM37_BB5_IDXS: jax.Array = jnp.array([0, 1, 2, 3, 4], dtype=jnp.int32)
 
+# Upstream FAMPNN 25 backbone pair order on [CA=0, N=1, C=2, O=3, CB=4] (fampnn.py:220-244)
+_FAMPNN_BB25_SRC_IDXS: jax.Array = jnp.array(
+  [0, 1, 2, 3, 4, 0, 0, 0, 0, 1, 1, 1, 4, 4, 3, 1, 2, 3, 4, 2, 3, 4, 2, 3, 2],
+  dtype=jnp.int32,
+)
+_FAMPNN_BB25_DST_IDXS: jax.Array = jnp.array(
+  [0, 1, 2, 3, 4, 1, 2, 3, 4, 2, 3, 4, 2, 3, 2, 0, 0, 0, 0, 1, 1, 1, 4, 4, 3],
+  dtype=jnp.int32,
+)
+
 
 def _linear(layer: eqx.nn.Linear, x: Float[Array, "... I"]) -> Float[Array, "... O"]:
   """Apply ``eqx.nn.Linear`` over the trailing axis of ``x`` without ``vmap``."""
@@ -482,15 +492,17 @@ class FAMPNNProteinFeatures(eqx.Module):
     n_xyz = xyz[:, 0, :]
     ca_xyz = xyz[:, 1, :]
     c_xyz = xyz[:, 2, :]
-    o_xyz = xyz[:, 4, :]
+    o_xyz = xyz[:, 3, :] if xyz.shape[1] == 14 else xyz[:, 4, :]
     cb_xyz = make_virtual_cb_fampnn(n_xyz, ca_xyz, c_xyz)
 
     _, e_idx = compute_fampnn_knn(ca_xyz, mask.astype(dtype), top_k=self.top_k)
     num_l, num_k = e_idx.shape
 
-    # 5 backbone atoms in upstream order: (CA, N, C, O, CB)
+    # 5 backbone atoms in upstream order: (CA=0, N=1, C=2, O=3, CB=4)
     bb5 = jnp.stack([ca_xyz, n_xyz, c_xyz, o_xyz, cb_xyz], axis=1)
-    diff = bb5[:, None, :, None, :] - bb5[e_idx][:, :, None, :, :]
+    src_25 = bb5[:, _FAMPNN_BB25_SRC_IDXS, :][:, None, :, :]
+    dst_25 = bb5[e_idx][:, :, _FAMPNN_BB25_DST_IDXS, :]
+    diff = src_25 - dst_25
     dist = jnp.sqrt(jnp.sum(diff * diff, axis=-1) + 1e-6)
     rbf = compute_fampnn_rbf(dist, num_rbf=self.num_rbf).reshape(num_l, num_k, 25 * self.num_rbf)
 
@@ -574,8 +586,16 @@ class SidechainProteinFeatures(eqx.Module):
     mask: Float[Array, " L"],
     residue_idx: Int[Array, " L"],
     chain_idx: Int[Array, " L"],
+    *,
+    e_idx: Int[Array, "L K"] | None = None,
   ) -> tuple[Float[Array, "L K E"], Int[Array, "L K"]]:
     """Compute sidechain-aware edge features ``E`` and neighbor indices ``E_idx``.
+
+    Matches upstream ``SidechainProteinFeatures.forward`` (``fampnn.py:303-333``):
+    replaces missing/masked Atom14 slots with ``CA`` and computes the ``4 x 10 = 40``
+    16-bin RBFs between backbone atoms ``[CA, N, C, O]`` at residue ``i`` and the 10
+    non-backbone Atom14 slots ``4..13`` at neighbor ``j`` (640 channels + 16 positional
+    channels = 656 channels).
 
     Parameters
     ----------
@@ -589,6 +609,8 @@ class SidechainProteinFeatures(eqx.Module):
       Residue sequence numbers ``(L,)``.
     chain_idx : Int[Array, " L"]
       Chain IDs ``(L,)``.
+    e_idx : Int[Array, "L K"] | None, optional
+      Precomputed kNN neighbor indices ``(L, K)`` from ``FAMPNNProteinFeatures``.
 
     Returns
     -------
@@ -596,49 +618,30 @@ class SidechainProteinFeatures(eqx.Module):
       Tuple ``(E, E_idx)``.
     """
     dtype = self.edge_embedding.weight.dtype
-    xyz = jnp.nan_to_num(atom14_xyz.astype(dtype), nan=0.0)
+    xyz_raw = jnp.nan_to_num(atom14_xyz.astype(dtype), nan=0.0)
     m14 = atom14_mask.astype(dtype)
+    xyz = jnp.where(m14[..., None] > 0, xyz_raw, xyz_raw[:, 1:2, :])
 
     n_xyz = xyz[:, 0, :]
     ca_xyz = xyz[:, 1, :]
     c_xyz = xyz[:, 2, :]
     o_xyz = xyz[:, 3, :]
-    cb_xyz = make_virtual_cb_fampnn(n_xyz, ca_xyz, c_xyz)
 
-    _, e_idx = compute_fampnn_knn(ca_xyz, mask.astype(dtype), top_k=self.top_k)
+    if e_idx is None:
+      _, e_idx = compute_fampnn_knn(ca_xyz, mask.astype(dtype), top_k=self.top_k)
     num_l, num_k = e_idx.shape
 
-    # 1. 5x5 backbone RBFs -> 400 channels
-    bb5 = jnp.stack([ca_xyz, n_xyz, c_xyz, o_xyz, cb_xyz], axis=1)
-    diff_bb = bb5[:, None, :, None, :] - bb5[e_idx][:, :, None, :, :]
-    dist_bb = jnp.sqrt(jnp.sum(diff_bb * diff_bb, axis=-1) + 1e-6)
-    rbf_bb = compute_fampnn_rbf(dist_bb, num_rbf=self.num_rbf).reshape(num_l, num_k, 25 * self.num_rbf)
-
-    # 2. 15 sidechain summary distance RBFs (CA_i to 10 sidechain atoms of j + 5 CB_i to sidechain summary) -> 240 channels
+    # 4 backbone atoms [CA, N, C, O] at residue i vs 10 non-backbone atoms 4..13 at neighbor j -> 40 * 16 = 640 channels
+    bb4_i = jnp.stack([ca_xyz, n_xyz, c_xyz, o_xyz], axis=1)
     sc10_j = xyz[e_idx][:, :, 4:14, :]
-    sc10_mask_j = m14[e_idx][:, :, 4:14]
-    diff_ca_sc = ca_xyz[:, None, None, :] - sc10_j
-    dist_ca_sc = jnp.sqrt(jnp.sum(diff_ca_sc * diff_ca_sc, axis=-1) + 1e-6)
-    rbf_ca_sc = compute_fampnn_rbf(dist_ca_sc, num_rbf=self.num_rbf) * sc10_mask_j[..., None]
-
-    sc5_j = xyz[e_idx][:, :, 4:9, :]
-    sc5_mask_j = m14[e_idx][:, :, 4:9]
-    diff_cb_sc = cb_xyz[:, None, None, :] - sc5_j
-    dist_cb_sc = jnp.sqrt(jnp.sum(diff_cb_sc * diff_cb_sc, axis=-1) + 1e-6)
-    rbf_cb_sc = compute_fampnn_rbf(dist_cb_sc, num_rbf=self.num_rbf) * sc5_mask_j[..., None]
-
-    rbf_sc = jnp.concatenate(
-      [
-        rbf_ca_sc.reshape(num_l, num_k, 10 * self.num_rbf),
-        rbf_cb_sc.reshape(num_l, num_k, 5 * self.num_rbf),
-      ],
-      axis=-1,
-    )
+    diff_40 = bb4_i[:, None, :, None, :] - sc10_j[:, :, None, :, :]
+    dist_40 = jnp.sqrt(jnp.sum(diff_40 * diff_40, axis=-1) + 1e-6)
+    rbf_40 = compute_fampnn_rbf(dist_40, num_rbf=self.num_rbf).reshape(num_l, num_k, 40 * self.num_rbf)
 
     offset = residue_idx[:, None] - residue_idx[e_idx]
     same_chain = (chain_idx[:, None] == chain_idx[e_idx]).astype(jnp.int32)
     e_pos = self.embeddings(offset, same_chain)
 
-    raw_e = jnp.concatenate([e_pos, rbf_bb, rbf_sc], axis=-1)
+    raw_e = jnp.concatenate([e_pos, rbf_40], axis=-1)
     edges = _layer_norm(self.norm_edges, _linear(self.edge_embedding, raw_e))
     return cast("Float[Array, 'L K E']", edges), e_idx

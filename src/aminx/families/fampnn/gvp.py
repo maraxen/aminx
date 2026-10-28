@@ -19,7 +19,6 @@ from aminx.families.fampnn.features import (
   compute_fampnn_knn,
   compute_fampnn_rbf,
   get_rotation_frames,
-  make_virtual_cb_fampnn,
 )
 
 
@@ -32,6 +31,57 @@ def _safe_norm(
 ) -> Float[Array, "..."]:
   """Compute Euclidean vector norm ``sqrt(sum(v^2) + eps)`` avoiding NaN gradients at zero."""
   return jnp.sqrt(jnp.sum(v * v, axis=axis, keepdims=keepdims) + eps)
+
+
+def _normalize_zero_safe(
+  v: Float[Array, "... 3"],
+  *,
+  axis: int = -1,
+) -> Float[Array, "... 3"]:
+  """Normalize 3D vectors to unit length, mapping exact zero vectors to zero."""
+  sq = jnp.sum(v * v, axis=axis, keepdims=True)
+  norm = jnp.sqrt(jnp.where(sq > 0, sq, 1.0))
+  return jnp.where(sq > 0, v / norm, jnp.zeros_like(v))
+
+
+def _compute_backbone_dihedrals(
+  n_xyz: Float[Array, "L 3"],
+  ca_xyz: Float[Array, "L 3"],
+  c_xyz: Float[Array, "L 3"],
+  *,
+  eps: float = 1e-7,
+) -> Float[Array, "L 6"]:
+  """Compute 6-channel ``[cos(phi, psi, omega), sin(phi, psi, omega)]`` backbone dihedrals."""
+  num_l = n_xyz.shape[0]
+  dtype = n_xyz.dtype
+  if num_l < 2:
+    return jnp.concatenate([jnp.ones((num_l, 3), dtype=dtype), jnp.zeros((num_l, 3), dtype=dtype)], axis=-1)
+  bb3 = jnp.stack([n_xyz, ca_xyz, c_xyz], axis=1).reshape(3 * num_l, 3)
+  dx = bb3[1:] - bb3[:-1]
+  u = _normalize_zero_safe(dx, axis=-1)
+  u_2 = u[:-2]
+  u_1 = u[1:-1]
+  u_0 = u[2:]
+  n_2 = _normalize_zero_safe(jnp.cross(u_2, u_1), axis=-1)
+  n_1 = _normalize_zero_safe(jnp.cross(u_1, u_0), axis=-1)
+  cos_d = jnp.clip(jnp.sum(n_2 * n_1, axis=-1), -1.0 + eps, 1.0 - eps)
+  sign_d = jnp.sign(jnp.sum(u_2 * n_1, axis=-1))
+  rad = sign_d * jnp.arccos(cos_d)
+  rad_padded = jnp.pad(rad, (1, 2)).reshape(num_l, 3)
+  return jnp.concatenate([jnp.cos(rad_padded), jnp.sin(rad_padded)], axis=-1)
+
+
+def _compute_virtual_cb_unit(
+  n_xyz: Float[Array, "L 3"],
+  ca_xyz: Float[Array, "L 3"],
+  c_xyz: Float[Array, "L 3"],
+) -> Float[Array, "L 3"]:
+  """Compute upstream FAMPNN tetrahedral unit vector ``-bisector*sqrt(1/3) - perp*sqrt(2/3)``."""
+  u = _normalize_zero_safe(n_xyz - ca_xyz, axis=-1)
+  c = _normalize_zero_safe(c_xyz - ca_xyz, axis=-1)
+  b = _normalize_zero_safe(u - c, axis=-1)
+  n = _normalize_zero_safe(jnp.cross(u, c), axis=-1)
+  return -b * math.sqrt(1.0 / 3.0) - n * math.sqrt(2.0 / 3.0)
 
 
 class GVPLayerNorm(eqx.Module):
@@ -95,8 +145,13 @@ class GVPLayerNorm(eqx.Module):
     s_out = _layer_norm(self.scalar_norm, s)
     if self.v_dim == 0 or v is None:
       return s_out, None
-    vec_norm = jnp.sqrt(jnp.mean(jnp.sum(v * v, axis=-1), axis=-1, keepdims=True) + 1e-4)
-    v_out = v / vec_norm[..., None]
+    vn = jnp.sum(v * v, axis=-1, keepdims=True) + 1e-4
+    nonzero_mask = (vn > 2e-4).astype(v.dtype)
+    vn = jnp.sum(vn * nonzero_mask, axis=-2, keepdims=True) / (
+      1e-4 + jnp.sum(nonzero_mask, axis=-2, keepdims=True)
+    )
+    vn = jnp.sqrt(vn + 1e-4)
+    v_out = nonzero_mask * (v / vn)
     return s_out, v_out
 
 
@@ -241,7 +296,7 @@ class GVP(eqx.Module):
         vu = jnp.einsum("...hc,oh->...oc", vh, self.wu.weight)
         if self.has_vector_act:
           if self.vector_gate and self.wg is not None:
-            gate = jax.nn.sigmoid(_linear(self.wg, jax.nn.relu(s_out)))
+            gate = jax.nn.sigmoid(_linear(self.wg, jax.nn.sigmoid(s_out)))
             v_out = vu * gate[..., None]
           else:
             v_out = vu * jax.nn.sigmoid(_safe_norm(vu, axis=-1, keepdims=True))
@@ -385,6 +440,7 @@ class GVPGraphEmbedding(eqx.Module):
     residue_idx: Int[Array, " L"],
     chain_idx: Int[Array, " L"],
     *,
+    e_idx: Int[Array, "L K"] | None = None,
     mpnn_node: Float[Array, "L H"] | None = None,
     mpnn_edge: Float[Array, "L K E"] | None = None,
   ) -> tuple[
@@ -408,6 +464,8 @@ class GVPGraphEmbedding(eqx.Module):
       Parameter ``residue_idx``.
     chain_idx : Int[Array, ' L']
       Parameter ``chain_idx``.
+    e_idx : Int[Array, 'L K'] | None, optional
+      Optional precomputed kNN neighbor indices ``(L, K)``.
     mpnn_node : Float[Array, 'L H'] | None
       Parameter ``mpnn_node``.
     mpnn_edge : Float[Array, 'L K E'] | None
@@ -418,21 +476,19 @@ class GVPGraphEmbedding(eqx.Module):
     tuple[tuple[Float[Array, 'L Sv'], Float[Array, 'L Vv 3']], tuple[Float[Array, 'L K Se'], Float[Array, 'L K Ve 3']], Int[Array, 'L K']]
       Result of ``__call__``.
     """
+    del residue_idx, chain_idx
     dtype = self.W_v_gvp.ws.weight.dtype
     num_l = atom14_xyz.shape[0]
-    xyz = jnp.nan_to_num(atom14_xyz.astype(dtype), nan=0.0)
+    xyz_raw = jnp.nan_to_num(atom14_xyz.astype(dtype), nan=0.0)
     m14 = atom14_mask.astype(dtype)
+    xyz = jnp.where(m14[..., None] > 0, xyz_raw, xyz_raw[:, 1:2, :])
 
     n_xyz = xyz[:, 0, :]
     ca_xyz = xyz[:, 1, :]
     c_xyz = xyz[:, 2, :]
-    cb_virtual = make_virtual_cb_fampnn(n_xyz, ca_xyz, c_xyz)
+    o_xyz = xyz[:, 3, :]
 
-    # Substitute virtual CB into slot 4 when atom14_mask[:, 4] == 0
-    cb_slot = jnp.where((m14[:, 4] > 0)[:, None], xyz[:, 4, :], cb_virtual)
-    xyz_cb = jnp.concatenate([xyz[:, :4, :], cb_slot[:, None, :], xyz[:, 5:, :]], axis=1)
-
-    dihedrals = jnp.zeros((num_l, 6), dtype=dtype)
+    dihedrals = _compute_backbone_dihedrals(n_xyz, ca_xyz, c_xyz)
     if self.W_v_gvp.si == 6:
       node_s_raw = dihedrals
     else:
@@ -440,65 +496,64 @@ class GVPGraphEmbedding(eqx.Module):
 
     fwd = jnp.concatenate([ca_xyz[1:] - ca_xyz[:-1], jnp.zeros((1, 3), dtype=dtype)], axis=0)
     bwd = jnp.concatenate([jnp.zeros((1, 3), dtype=dtype), ca_xyz[:-1] - ca_xyz[1:]], axis=0)
-    u_fwd = fwd / _safe_norm(fwd, axis=-1, keepdims=True)
-    u_bwd = bwd / _safe_norm(bwd, axis=-1, keepdims=True)
-    cb_vec = cb_virtual - ca_xyz
-    u_cb = cb_vec / _safe_norm(cb_vec, axis=-1, keepdims=True)
+    u_fwd = _normalize_zero_safe(fwd, axis=-1)
+    u_bwd = _normalize_zero_safe(bwd, axis=-1)
+    u_cb = _compute_virtual_cb_unit(n_xyz, ca_xyz, c_xyz)
     orient_v = jnp.stack([u_fwd, u_bwd, u_cb], axis=1)
 
-    atom_disp = (xyz_cb - ca_xyz[:, None, :]) * m14[..., None]
+    non_ca_xyz = jnp.concatenate([xyz[:, :1, :], xyz[:, 2:, :]], axis=1)
+    intra_13 = _normalize_zero_safe(ca_xyz[:, None, :] - non_ca_xyz, axis=-1)
+    impute_cb = (m14[:, 4] <= 0) & (mask.astype(dtype) > 0)
+    cb_slot_3 = jnp.where(impute_cb[:, None], u_cb, intra_13[:, 3, :])
+    intra_13 = intra_13.at[:, 3, :].set(cb_slot_3)
+
     if self.W_v_gvp.vi == 15:
-      # 2 CA orientations + 13 non-CA atom displacements
-      non_ca_disp = jnp.concatenate([atom_disp[:, :1, :], atom_disp[:, 2:, :]], axis=1)
-      node_v_raw = jnp.concatenate([orient_v[:, :2, :], non_ca_disp], axis=1)
+      node_v_raw = jnp.concatenate([orient_v[:, :2, :], intra_13], axis=1)
     else:
+      atom_disp = _normalize_zero_safe(ca_xyz[:, None, :] - xyz, axis=-1)
       node_v_raw = jnp.concatenate([orient_v, atom_disp], axis=1)
 
-    ns0, nv0 = self.W_v_norm0(node_s_raw, node_v_raw)
-    ns1, nv1 = self.W_v_gvp(ns0, nv0)
+    ns1, nv1 = self.W_v_gvp(node_s_raw, node_v_raw)
     h_v_s, h_v_v = self.W_v_norm1(ns1, nv1)
     if h_v_v is None:
-      h_v_v = nv0
+      h_v_v = node_v_raw
     if self.embed_mpnn_node is not None and mpnn_node is not None:
       h_v_s = h_v_s + _linear(self.embed_mpnn_node, mpnn_node.astype(dtype))
 
-    # kNN graph with top_k=30
-    d_neighbors, e_idx = compute_fampnn_knn(ca_xyz, mask.astype(dtype), top_k=self.top_k)
-    rbf_ca = compute_fampnn_rbf(d_neighbors, num_rbf=self.num_rbf)
+    if e_idx is None:
+      _, e_idx = compute_fampnn_knn(ca_xyz, mask.astype(dtype), top_k=self.top_k)
+    e_dist = jnp.sqrt(jnp.sum((ca_xyz[:, None, :] - ca_xyz[e_idx]) ** 2, axis=-1) + 1e-8)
+    rbf_ca = compute_fampnn_rbf(e_dist, d_min=0.0, d_max=20.0, num_rbf=self.num_rbf)
 
-    # Sinusoidal relative positional encoding (16 channels)
-    d_offset = (residue_idx[:, None] - residue_idx[e_idx]).astype(dtype)
-    same_chain = (chain_idx[:, None] == chain_idx[e_idx]).astype(dtype)
-    half_pos = self.num_positional_embeddings // 2
+    # Sinusoidal relative positional encoding (data.py:427-442: i - j index offset, [cos, sin])
+    d_offset = jnp.arange(num_l, dtype=dtype)[:, None] - e_idx.astype(dtype)
     freqs = jnp.exp(
-      -math.log(10000.0) * jnp.arange(0, half_pos, dtype=dtype) / half_pos,
+      jnp.arange(0, self.num_positional_embeddings, 2, dtype=dtype)
+      * -(math.log(10000.0) / self.num_positional_embeddings),
     )
     angles = d_offset[..., None] * freqs[None, None, :]
-    pos_emb = jnp.concatenate([jnp.sin(angles), jnp.cos(angles)], axis=-1) * same_chain[..., None]
+    pos_emb = jnp.concatenate([jnp.cos(angles), jnp.sin(angles)], axis=-1)
     edge_s_raw = jnp.concatenate([rbf_ca, pos_emb], axis=-1)
 
-    xyz_j = xyz_cb[e_idx]
-    m14_j = m14[e_idx]
+    xyz_j = xyz[e_idx]
     if self.W_e_gvp.vi == 56:
-      # 4 backbone atoms (CA, N, C, O) x 14 neighbor atoms = 56 vectors
       disp_56 = jnp.concatenate(
         [
-          (ca_xyz[:, None, None, :] - xyz_j) * m14_j[..., None],
-          (n_xyz[:, None, None, :] - xyz_j) * m14_j[..., None],
-          (c_xyz[:, None, None, :] - xyz_j) * m14_j[..., None],
-          (xyz[:, 3, :][:, None, None, :] - xyz_j) * m14_j[..., None],
+          _normalize_zero_safe(ca_xyz[:, None, None, :] - xyz_j, axis=-1),
+          _normalize_zero_safe(n_xyz[:, None, None, :] - xyz_j, axis=-1),
+          _normalize_zero_safe(c_xyz[:, None, None, :] - xyz_j, axis=-1),
+          _normalize_zero_safe(o_xyz[:, None, None, :] - xyz_j, axis=-1),
         ],
         axis=-2,
       )
-      edge_v_raw = disp_56 / _safe_norm(disp_56, axis=-1, keepdims=True)
+      edge_v_raw = _normalize_zero_safe(disp_56, axis=-1)
     else:
-      edge_v_raw = (xyz_j - ca_xyz[:, None, None, :]) * m14_j[..., None]
+      edge_v_raw = _normalize_zero_safe(ca_xyz[:, None, None, :] - xyz_j, axis=-1)
 
-    es0, ev0 = self.W_e_norm0(edge_s_raw, edge_v_raw)
-    es1, ev1 = self.W_e_gvp(es0, ev0)
+    es1, ev1 = self.W_e_gvp(edge_s_raw, edge_v_raw)
     h_e_s, h_e_v = self.W_e_norm1(es1, ev1)
     if h_e_v is None:
-      h_e_v = ev0
+      h_e_v = edge_v_raw
     if self.embed_mpnn_edge is not None and mpnn_edge is not None:
       h_e_s = h_e_s + _linear(self.embed_mpnn_edge, mpnn_edge.astype(dtype))
 
@@ -736,6 +791,7 @@ class GVPEncoder(eqx.Module):
     residue_idx: Int[Array, " L"],
     chain_idx: Int[Array, " L"],
     *,
+    e_idx: Int[Array, "L K"] | None = None,
     mpnn_node: Float[Array, "L H"] | None = None,
     mpnn_edge: Float[Array, "L K E"] | None = None,
   ) -> Float[Array, "L Out"]:
@@ -755,6 +811,8 @@ class GVPEncoder(eqx.Module):
       Parameter ``residue_idx``.
     chain_idx : Int[Array, ' L']
       Parameter ``chain_idx``.
+    e_idx : Int[Array, 'L K'] | None
+      Parameter ``e_idx``.
     mpnn_node : Float[Array, 'L H'] | None
       Parameter ``mpnn_node``.
     mpnn_edge : Float[Array, 'L K E'] | None
@@ -772,6 +830,7 @@ class GVPEncoder(eqx.Module):
       mask=mask,
       residue_idx=residue_idx,
       chain_idx=chain_idx,
+      e_idx=e_idx,
       mpnn_node=mpnn_node,
       mpnn_edge=mpnn_edge,
     )

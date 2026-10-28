@@ -391,6 +391,9 @@ class SidechainDiffusionModule(eqx.Module):
     ref_pos_33: Float[Array, "L 33 3"],
     scn_mask_33: Float[Array, "L 33"],
     aatype_onehot: Float[Array, "L 21"],
+    *,
+    x_self_cond_33: Float[Array, "L 33 3"] | None = None,
+    ref_pos_37: Float[Array, "L 37 3"] | None = None,
   ) -> Float[Array, "L 33 3"]:
     """Evaluate EDM-preconditioned denoiser ``D_theta(x_noisy_33, sigma)``.
 
@@ -408,6 +411,10 @@ class SidechainDiffusionModule(eqx.Module):
       Parameter ``scn_mask_33``.
     aatype_onehot : Float[Array, 'L 21']
       Parameter ``aatype_onehot``.
+    x_self_cond_33 : Float[Array, 'L 33 3'] | None, optional
+      Optional self-conditioning sidechain coordinate estimate ``(L, 33, 3)``.
+    ref_pos_37 : Float[Array, 'L 37 3'] | None, optional
+      Optional full Atom37 reference conformer coordinates ``(L, 37, 3)``.
 
     Returns
     -------
@@ -426,15 +433,22 @@ class SidechainDiffusionModule(eqx.Module):
     c_noise = 0.25 * jnp.log(jnp.maximum(sigma_f, 1e-8))
 
     mask_f = scn_mask_33.astype(dtype)
-    x_in = (c_in[:, None, None] * x_noisy_33.astype(dtype)) * mask_f[..., None]
-    x_flat = x_in.reshape(num_l, 99)
-    ref_flat = (ref_pos_33.astype(dtype) * mask_f[..., None]).reshape(num_l, 99)
+    x_scaled = (c_in[:, None, None] * x_noisy_33.astype(dtype)) * mask_f[..., None]
+    cond_source = ref_pos_33 if x_self_cond_33 is None else x_self_cond_33
+    cond_scaled = (cond_source.astype(dtype) / self.sigma_data) * mask_f[..., None]
+    x_scn = jnp.concatenate([x_scaled, cond_scaled], axis=-1).reshape(num_l, 33 * 6)
 
-    in_219 = jnp.concatenate([x_flat, ref_flat, aatype_onehot.astype(dtype)], axis=-1)
+    in_219 = jnp.concatenate([x_scn, aatype_onehot.astype(dtype)], axis=-1)
     h = _linear(self.x_embedder, in_219)
     c_h = _linear(self.c_embedder, s_c.astype(dtype))
     if self.f_embedder is not None:
-      ref_111 = jnp.pad(ref_flat, ((0, 0), (0, 12)))
+      if ref_pos_37 is not None:
+        ref_111 = ref_pos_37.astype(dtype).reshape(num_l, 37 * 3)
+      else:
+        full_ref = jnp.zeros((num_l, 37, 3), dtype=dtype).at[:, NON_BB_IDXS_ARR, :].set(
+          ref_pos_33.astype(dtype) * mask_f[..., None],
+        )
+        ref_111 = full_ref.reshape(num_l, 37 * 3)
       h = h + _linear(self.f_embedder, ref_111) + c_h
     c = self.t_embedder(c_noise) + c_h
     for blk in self.blocks:
@@ -525,7 +539,7 @@ def edm_sample(
   s_max_rho = sigma_max**inv_rho
   s_min_rho = sigma_min**inv_rho
   denom = max(num_steps - 1, 1)
-  t_steps = (s_max_rho + step_indices / denom * (s_min_rho - s_max_rho)) ** rho
+  t_steps = ((s_max_rho + step_indices / denom * (s_min_rho - s_max_rho)) ** rho) * diffusion.sigma_data
   t_steps_padded = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=dtype)], axis=0)
 
   k_init, k_loop = jax.random.split(key, 2)
@@ -534,9 +548,14 @@ def edm_sample(
     * t_steps_padded[0]
     * scn_mask_33[..., None]
   )
+  x_cond_init = jnp.zeros_like(x_init)
   gamma_val = min(s_churn / max(num_steps, 1), math.sqrt(2.0) - 1.0) if s_churn > 0.0 else 0.0
 
-  def _body_fn(step_i: int, x_cur: Float[Array, "L 33 3"]) -> Float[Array, "L 33 3"]:
+  def _body_fn(
+    step_i: int,
+    carry: tuple[Float[Array, "L 33 3"], Float[Array, "L 33 3"]],
+  ) -> tuple[Float[Array, "L 33 3"], Float[Array, "L 33 3"]]:
+    x_cur, x_cond_cur = carry
     t_cur = t_steps_padded[step_i]
     t_next = t_steps_padded[step_i + 1]
     step_key = jax.random.fold_in(k_loop, step_i)
@@ -550,13 +569,20 @@ def edm_sample(
 
     sigma_vec = jnp.broadcast_to(t_hat, (num_l,))
     denoised = diffusion.denoise_step(
-      x_hat, sigma_vec, s_c, ref_pos_33, scn_mask_33, aatype_oh,
+      x_hat,
+      sigma_vec,
+      s_c,
+      ref_pos_33,
+      scn_mask_33,
+      aatype_oh,
+      x_self_cond_33=x_cond_cur,
+      ref_pos_37=ref_pos_37 * std_mask37[..., None],
     )
     d_cur = (x_hat - denoised) / jnp.maximum(t_hat, 1e-8)
     x_next = x_hat + step_scale * (t_next - t_hat) * d_cur
-    return x_next * scn_mask_33[..., None]
+    return x_next * scn_mask_33[..., None], denoised * scn_mask_33[..., None]
 
-  x_local_33 = jax.lax.fori_loop(0, num_steps, _body_fn, x_init)
+  x_local_33, _ = jax.lax.fori_loop(0, num_steps, _body_fn, (x_init, x_cond_init))
 
   # Assemble full local Atom37 and transform back to global coordinates
   local_bb = global_to_local_atom37(atom37_xyz, atom37_mask, scale=coord_scale)
@@ -655,6 +681,9 @@ class SidechainConfidenceModule(eqx.Module):
     mask: Float[Array, " L"],
     residue_idx: Int[Array, " L"],
     chain_idx: Int[Array, " L"],
+    *,
+    h_esv: Float[Array, "L K 512"] | None = None,
+    e_idx: Int[Array, "L K"] | None = None,
   ) -> Float[Array, "L 37"]:
     """Predict per-atom expected sidechain error (pSCE) in Atom37 representation.
 
@@ -674,6 +703,10 @@ class SidechainConfidenceModule(eqx.Module):
       Parameter ``residue_idx``.
     chain_idx : Int[Array, ' L']
       Parameter ``chain_idx``.
+    h_esv : Float[Array, 'L K 512'] | None
+      Parameter ``h_esv``.
+    e_idx : Int[Array, 'L K'] | None
+      Parameter ``e_idx``.
 
     Returns
     -------
@@ -692,10 +725,18 @@ class SidechainConfidenceModule(eqx.Module):
       and self.mlp_0 is not None
       and self.mlp_2 is not None
     ):
+      h_v_enc = h_v_fa.astype(dtype)
+      if h_esv is not None and e_idx is not None:
+        mask_2d = mask_f[:, None] * mask_f[None, :]
+        mask_attend = jnp.take_along_axis(mask_2d, e_idx, axis=1)
+        h_esv_cur = h_esv.astype(dtype)
+        h_s_dummy = jnp.zeros_like(h_v_enc)
+        for dec_layer in self.decoder_layers:
+          h_v_enc, h_esv_cur = dec_layer(h_v_enc, h_esv_cur, h_s_dummy, e_idx, mask_f, mask_attend)  # type: ignore[misc]
       local_37 = global_to_local_atom37(atom37_xyz, atom37_mask)
       scn_flat = jnp.take(local_37, NON_BB_IDXS_ARR, axis=1).reshape(num_l, 99)
       h_v = (
-        h_v_fa.astype(dtype)
+        h_v_enc
         + _linear(self.aatype_embedder, aatype_oh)
         + _linear(self.sidechain_encoder, scn_flat)
       )
@@ -726,7 +767,8 @@ class SidechainConfidenceModule(eqx.Module):
       logits_33 = _linear(self.W_out_4, h_out).reshape(num_l, 33, self.num_bins)
 
     probs = jax.nn.softmax(logits_33, axis=-1)
-    bin_centers = jnp.linspace(0.125, 15.875, self.num_bins, dtype=dtype)
+    lower = jnp.linspace(0.0, 8.0, self.num_bins, dtype=dtype)
+    bin_centers = lower + (lower[1] - lower[0]) * 0.5
     psce_33 = jnp.sum(probs * bin_centers[None, None, :], axis=-1)
 
     psce_37 = jnp.zeros((num_l, 37), dtype=dtype).at[:, NON_BB_IDXS_ARR].set(psce_33)
