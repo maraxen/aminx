@@ -274,6 +274,31 @@ def _options(spec: Any) -> FAMPNNOptions:  # noqa: ANN401
   return cast("FAMPNNOptions", opt)
 
 
+_DEFAULT_CHECKPOINT_ID = "fampnn_0_3"
+
+
+def _checkpoint_id(spec: Any) -> str:  # noqa: ANN401
+  """Effective FAMPNN checkpoint id: ``spec.checkpoint_id``, else ``spec.fampnn.checkpoint_id``.
+
+  The two fields name the same thing, so a run that sets both must set them equal. A run that sets
+  neither gets ``fampnn_0_3``.
+
+  Raises
+  ------
+  ValueError
+    If both are set and differ.
+  """
+  spec_id = getattr(spec, "checkpoint_id", None)
+  options_id = _options(spec).checkpoint_id
+  if spec_id is not None and options_id is not None and spec_id != options_id:
+    msg = (
+      f"conflicting FAMPNN checkpoint ids: spec.checkpoint_id={spec_id!r} but "
+      f"spec.fampnn.checkpoint_id={options_id!r}; set one of them, or make them equal"
+    )
+    raise ValueError(msg)
+  return str(spec_id or options_id or _DEFAULT_CHECKPOINT_ID)
+
+
 def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
   raw = getattr(spec, "inputs", ())
   if isinstance(raw, (str, Path)):
@@ -591,15 +616,14 @@ class FAMPNNDriver:
     FAMPNNModel
       Loaded ``FAMPNNModel``.
     """
-    options = _options(spec)
-    ckpt_id = str(getattr(spec, "checkpoint_id", None) or options.checkpoint_id or "fampnn_0_3")
+    ckpt_id = _checkpoint_id(spec)
     local = getattr(spec, "model_local_path", None)
     if local is not None:
       path = Path(str(local))
       if path.suffix.lower() in (".pt", ".ckpt", ".pth"):
         return _load_fampnn_torch(path)
       return _load_fampnn_eqx(path, ckpt_id)
-    artifact = _resolve_driver_checkpoint(spec, "fampnn")
+    artifact = _resolve_driver_checkpoint(spec, "fampnn", checkpoint_id=ckpt_id)
     if artifact is None:
       msg = (
         "FAMPNNDriver requires model_local_path, a checkpoint registry entry with sha256, "
