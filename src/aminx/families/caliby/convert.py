@@ -127,17 +127,26 @@ def infer_caliby_checkpoint_kind(
   return "potts", model_version
 
 
+def _require(sd: Mapping[str, np.ndarray], key: str) -> np.ndarray:
+  """Return ``sd[key]``, raising ``KeyError`` that names the missing checkpoint key."""
+  if key not in sd:
+    msg = f"Caliby checkpoint is missing required key {key!r}"
+    raise KeyError(msg)
+  return sd[key]
+
+
 def _load_linear(
   linear: eqx.nn.Linear,
   sd: Mapping[str, np.ndarray],
   prefix: str,
 ) -> eqx.nn.Linear:
-  w = jnp.asarray(sd[f"{prefix}.weight"], dtype=jnp.float32)
+  w = jnp.asarray(_require(sd, f"{prefix}.weight"), dtype=jnp.float32)
   if w.shape != linear.weight.shape:
     msg = f"Shape mismatch at {prefix}.weight: {w.shape} vs {linear.weight.shape}"
     raise ValueError(msg)
   linear = eqx.tree_at(lambda m: m.weight, linear, w)
   if linear.bias is not None:
+    # Optional: upstream projections may omit a bias term; a missing bias is zero, not random.
     if f"{prefix}.bias" in sd:
       b = jnp.asarray(sd[f"{prefix}.bias"], dtype=jnp.float32)
     else:
@@ -151,11 +160,12 @@ def _load_layernorm(
   sd: Mapping[str, np.ndarray],
   prefix: str,
 ) -> eqx.nn.LayerNorm:
-  if norm.weight is not None and f"{prefix}.weight" in sd:
-    w = jnp.asarray(sd[f"{prefix}.weight"], dtype=jnp.float32)
+  # Required: any LayerNorm affine parameter the module carries must come from the checkpoint.
+  if norm.weight is not None:
+    w = jnp.asarray(_require(sd, f"{prefix}.weight"), dtype=jnp.float32)
     norm = eqx.tree_at(lambda m: m.weight, norm, w)
-  if norm.bias is not None and f"{prefix}.bias" in sd:
-    b = jnp.asarray(sd[f"{prefix}.bias"], dtype=jnp.float32)
+  if norm.bias is not None:
+    b = jnp.asarray(_require(sd, f"{prefix}.bias"), dtype=jnp.float32)
     norm = eqx.tree_at(lambda m: m.bias, norm, b)
   return norm
 
@@ -198,12 +208,13 @@ def _load_dec_layer(
     ln = _load_layernorm(getattr(layer, n_name), sd, f"{prefix}.{n_name}")
     layer = eqx.tree_at(lambda m, n=n_name: getattr(m, n), layer, ln)
   if layer.update_edges:
+    # Required when this layer updates edges: the module carries these projections.
     for edge_w in ("W11", "W12", "W13"):
       cur_lin = getattr(layer, edge_w)
-      if cur_lin is not None and f"{prefix}.{edge_w}.weight" in sd:
+      if cur_lin is not None:
         lin = _load_linear(cur_lin, sd, f"{prefix}.{edge_w}")
         layer = eqx.tree_at(lambda m, n=edge_w: getattr(m, n), layer, lin)
-    if layer.norm3 is not None and f"{prefix}.norm3.weight" in sd:
+    if layer.norm3 is not None:
       ln3 = _load_layernorm(layer.norm3, sd, f"{prefix}.norm3")
       layer = eqx.tree_at(lambda m: m.norm3, layer, ln3)
   dense = _load_ffn(layer.dense, sd, f"{prefix}.dense")
@@ -252,13 +263,15 @@ def _load_mpnn(
   w_e = _load_linear(mpnn.W_e, sd, f"{prefix}.W_e")
   mpnn = eqx.tree_at(lambda m: m.features, mpnn, feat)
   mpnn = eqx.tree_at(lambda m: m.W_e, mpnn, w_e)
-  if mpnn.W_s is not None and f"{prefix}.W_s.weight" in sd:
-    ws_w = jnp.asarray(sd[f"{prefix}.W_s.weight"], dtype=jnp.float32)
+  # W_s / W_out exist only when the model is built with use_sequence / has_w_out; when present
+  # they are required.
+  if mpnn.W_s is not None:
+    ws_w = jnp.asarray(_require(sd, f"{prefix}.W_s.weight"), dtype=jnp.float32)
     if ws_w.shape != mpnn.W_s.weight.shape and ws_w.T.shape == mpnn.W_s.weight.shape:
       ws_w = ws_w.T
     w_s = eqx.tree_at(lambda m: m.weight, mpnn.W_s, ws_w)
     mpnn = eqx.tree_at(lambda m: m.W_s, mpnn, w_s)
-  if mpnn.W_out is not None and f"{prefix}.W_out.weight" in sd:
+  if mpnn.W_out is not None:
     w_out = _load_linear(mpnn.W_out, sd, f"{prefix}.W_out")
     mpnn = eqx.tree_at(lambda m: m.W_out, mpnn, w_out)
   enc_layers = tuple(
@@ -331,14 +344,18 @@ def convert_caliby_potts_state_dict(
 
   potts: CalibyGraphPotts = model.potts_decoder
   if is_factor:
-    if potts.log_scale is not None and "potts_decoder.log_scale" in sd:
-      ls = jnp.asarray(sd["potts_decoder.log_scale"], dtype=jnp.float32)
+    if potts.log_scale is not None:
+      ls = jnp.asarray(_require(sd, "potts_decoder.log_scale"), dtype=jnp.float32)
       potts = eqx.tree_at(lambda m: m.log_scale, potts, ls)
+    # W_h_bg / W_J_bg are the only optional heads. The model allocates them only when the
+    # checkpoint carries them (has_bg is derived from their presence above), so a None head
+    # here means "absent by design". Every allocated factor head is required.
     for fn_name in ("W_h", "W_J_left", "W_J_right", "W_h_bg", "W_J_bg"):
       cur_l = getattr(potts, fn_name)
-      if cur_l is not None and f"potts_decoder.{fn_name}.weight" in sd:
-        loaded_l = _load_linear(cur_l, sd, f"potts_decoder.{fn_name}")
-        potts = eqx.tree_at(lambda m, n=fn_name: getattr(m, n), potts, loaded_l)
+      if cur_l is None:
+        continue
+      loaded_l = _load_linear(cur_l, sd, f"potts_decoder.{fn_name}")
+      potts = eqx.tree_at(lambda m, n=fn_name: getattr(m, n), potts, loaded_l)
   else:
     for lin_name in ("node_Wait_i", "node_Wait_j", "edge_Wait", "node_to_h"):
       lin = _load_linear(getattr(potts, lin_name), sd, f"potts_decoder.{lin_name}")
@@ -485,7 +502,7 @@ def convert_caliby_checkpoint(
       "use_sequence": potts_m.mpnn.W_s is not None,  # type: ignore[attr-defined]
       "update_decoder_edges": potts_m.mpnn.decoder_layers[0].update_edges,  # type: ignore[attr-defined]
       "has_w_out": potts_m.mpnn.W_out is not None,  # type: ignore[attr-defined]
-      "has_bg": bool(potts_m.potts_decoder.has_bg),  # type: ignore[attr-defined]
+      "has_bg": potts_m.potts_decoder.has_bg,  # type: ignore[attr-defined]
       "bg_dim": int(potts_m.potts_decoder.bg_dim),  # type: ignore[attr-defined]
     }
   out_p = Path(output_path)

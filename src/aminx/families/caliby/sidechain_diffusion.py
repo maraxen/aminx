@@ -379,8 +379,12 @@ class CalibySidechainMLP(eqx.Module):
   Matches upstream ``caliby_packer_{000,010,030}.ckpt`` where ``denoiser.atom_mpnn.*``
   (normalized to ``mpnn.*``) computes trunk node embeddings and ``x_embedder``,
   ``t_embedder``, ``c_embedder``, ``blocks``, and ``final_layer`` denoise the
-  33 local rigid-frame Atom37 sidechain coordinates ``(33 * 3 = 99)`` with
-  ``99 (noisy) + 99 (self-cond) + 32 (sequence one-hot) = 230`` input channels.
+  33 local rigid-frame Atom37 sidechain coordinates with ``230`` input channels:
+  per atom the noisy and self-conditioning coordinates are interleaved as
+  ``[x, y, z, cx, cy, cz]`` (33 * 6 = 198 channels, matching upstream
+  ``scn_diffusion_mlp.py`` where the self-conditioning is concatenated on the
+  coordinate axis before the ``(atom xyz)`` flatten), followed by the 32-way
+  sequence one-hot.
 
   Attributes
   ----------
@@ -435,7 +439,8 @@ class CalibySidechainMLP(eqx.Module):
     Parameters
     ----------
     in_channels : int, default=230
-      Input feature channels (``99 + 99 + 32 = 230``).
+      Input feature channels (``33 * 6 + 32 = 230``: per-atom interleaved
+      noisy/self-conditioning coordinates, then the sequence one-hot).
     hidden_size : int, default=256
       Denoising MLP hidden dimension.
     out_channels : int, default=99
