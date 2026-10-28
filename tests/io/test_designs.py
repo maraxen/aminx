@@ -51,7 +51,7 @@ def test_write_and_close_persists_to_zarr(tmp_path: Path) -> None:
   root = zarr.open_group(str(tmp_path / "designs.zarr"), mode="r")
   group = root["0"]
   assert np.array_equal(group["sequence"][:], np.full(N_CANONICAL, 7, dtype=np.uint8))
-  assert group["logits"].dtype == np.float16
+  assert group["logits"].dtype == np.float32
   assert group["scores"][:] == pytest.approx([0.5])
   assert group.attrs["pool_type"] == "BackboneOnly"
   assert group.attrs["parent_structure_idx"] == 0
@@ -84,12 +84,46 @@ def test_wrong_sequence_shape_raises(tmp_path: Path) -> None:
     writer.write((0,), bad)
 
 
-def test_out_of_range_logits_raise(tmp_path: Path) -> None:
+def test_non_finite_logits_raise(tmp_path: Path) -> None:
   writer = _writer(tmp_path)
   bad = _payload()
-  bad["logits"] = np.full((N_CANONICAL, 21), 1e5, dtype=np.float32)
-  with pytest.raises(AssertionError, match="float16-safe range"):
+  bad["logits"] = np.full((N_CANONICAL, 21), np.nan, dtype=np.float32)
+  with pytest.raises(AssertionError, match="finite"):
     writer.write((0,), bad)
+
+
+def test_wave_index_and_decoding_order_persisted_from_payload(tmp_path: Path) -> None:
+  writer = _writer(tmp_path)
+  payload = _payload()
+  payload["wave_index"] = np.array([0, 1, 0, 1], dtype=np.int32)
+  payload["decoding_order"] = np.array([2, 0, 3, 1], dtype=np.int32)
+  writer.write((0,), payload)
+  writer.close()
+
+  root = zarr.open_group(str(tmp_path / "designs.zarr"), mode="r")
+  group = root["0"]
+  assert np.array_equal(group["wave_index"][:], np.array([0, 1, 0, 1], dtype=np.int32))
+  assert np.array_equal(group["decoding_order"][:], np.array([2, 0, 3, 1], dtype=np.int32))
+  assert group.attrs["wave_index"] == [0, 1, 0, 1]
+  assert group.attrs["decoding_order"] == [2, 0, 3, 1]
+
+
+def test_wave_index_and_decoding_order_persisted_from_write_kwargs(tmp_path: Path) -> None:
+  writer = _writer(tmp_path)
+  payload = _payload()
+  writer.write(
+    (0,),
+    payload,
+    wave_index=3,
+    decoding_order=np.array([1, 2, 3, 0], dtype=np.int32),
+  )
+  writer.close()
+
+  root = zarr.open_group(str(tmp_path / "designs.zarr"), mode="r")
+  group = root["0"]
+  assert group.attrs["wave_index"] == 3
+  assert np.array_equal(group["decoding_order"][:], np.array([1, 2, 3, 0], dtype=np.int32))
+  assert group.attrs["decoding_order"] == [1, 2, 3, 0]
 
 
 def test_nested_structure_key_becomes_zarr_group_path(tmp_path: Path) -> None:
@@ -216,3 +250,30 @@ class TestLogitsBiasSemanticsContract:
     assert stored["bias_array_group"] is None
     # And it must still carry the real information: the bias WAS nonzero.
     assert stored["bias_is_nonzero"] is True
+
+
+def test_logits_zero_mean_centered_and_shape_guards(tmp_path: Path) -> None:
+  """Verify logits are zero-mean centered along the amino-acid axis and wave/order shapes are validated."""
+  writer = _writer(tmp_path)
+  payload = _payload()
+  raw_logits = np.arange(N_CANONICAL * 21, dtype=np.float32).reshape(N_CANONICAL, 21) + 5.0
+  payload["logits"] = raw_logits
+  writer.write((0,), payload, wave_index=np.int64(2))
+  writer.close()
+
+  root = zarr.open_group(str(tmp_path / "designs.zarr"), mode="r")
+  stored_logits = root["0"]["logits"][:]
+  np.testing.assert_allclose(np.mean(stored_logits, axis=-1), 0.0, atol=1e-5)
+  assert root["0"].attrs["wave_index"] == 2
+
+  with pytest.raises(AssertionError, match="wave_index shape"):
+    writer2 = DesignZarrWriter.from_multistate_shapes(
+      str(tmp_path / "designs2.zarr"), n_canonical=N_CANONICAL, n_states=N_STATES
+    )
+    writer2.write((0,), _payload(), wave_index=np.array([0, 1], dtype=np.int32))
+
+  with pytest.raises(AssertionError, match="decoding_order shape"):
+    writer3 = DesignZarrWriter.from_multistate_shapes(
+      str(tmp_path / "designs3.zarr"), n_canonical=N_CANONICAL, n_states=N_STATES
+    )
+    writer3.write((0,), _payload(), decoding_order=np.array([0, 1], dtype=np.int32))

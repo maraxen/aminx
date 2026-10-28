@@ -66,7 +66,7 @@ import hashlib
 import json
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -117,9 +117,25 @@ PROTONPOTTS_MODEL_KINDS = ("scoring", "ph", "decoder")
 # Only these two are ever a browser-export target (browser_integration.md's
 # BUCKETS ladder: 128, 256). Nothing else in a --models-dir is ever copied,
 # named or not -- see check_stray_onnx_data.
-MODEL_FILES = ["p07_sample_L128.onnx", "p07_sample_L256.onnx"]
+MODEL_FILES = [
+    "p07_sample_L128.onnx",
+    "p07_sample_L256.onnx",
+    "p07_encoder_L128.onnx",
+    "p07_encoder_L256.onnx",
+    "p07_decoder_L128.onnx",
+    "p07_decoder_L256.onnx",
+    "p07_fuse_L128.onnx",
+    "p07_fuse_L256.onnx",
+    "p07_wave_L128.onnx",
+    "p07_wave_L256.onnx",
+]
 
-SAMPLER_FILES = ["aminx_sampler.mjs", "runspec_core.mjs"]
+SAMPLER_FILES = [
+    "aminx_sampler.mjs",
+    "runspec_core.mjs",
+    "split_driver.mjs",
+    "split_loop.mjs",
+]
 
 # The exact specifier site/worker.js carries in the source tree, and what it
 # becomes once aminx-sampler/ is copied in beside it. Kept as one pair here
@@ -459,7 +475,79 @@ def copy_protonpotts_models(out_dir: Path, kind: str, models_dir: Path, plan: li
         print(f"   {name}: {source.stat().st_size / 1024 / 1024:.1f} MiB, sha256 {digest[:16]}...")
 
 
-def build(out_dir: Path, models_dir: Path | None, protonpotts_dirs: dict[str, Path] | None = None) -> int:
+def named_potts_files(manifest: dict) -> dict[str, str]:
+    """Map every file a Potts MANIFEST.json names to its manifest sha256."""
+    named: dict[str, str] = {}
+    problems: list[str] = []
+    buckets = manifest.get("buckets", [])
+    bucket_list = buckets.values() if isinstance(buckets, dict) else buckets
+    for bucket in bucket_list:
+        graphs = bucket.get("graphs", {}) if isinstance(bucket, dict) else {}
+        graph_list = graphs.values() if isinstance(graphs, dict) else graphs
+        for graph in graph_list:
+            if not isinstance(graph, dict) or "file" not in graph or "sha256" not in graph:
+                problems.append(f"graph entry without both 'file' and 'sha256': {graph!r}"[:200])
+                continue
+            named[graph["file"]] = graph["sha256"]
+    if problems:
+        raise ValueError("; ".join(problems))
+    return named
+
+
+def plan_potts_models(models_dir: Path) -> tuple[list[tuple[str, Path]], list[str]]:
+    """Validate Potts weight directory WITHOUT copying anything."""
+    manifest_path = models_dir / "MANIFEST.json"
+    if not manifest_path.is_file():
+        return [], [f"potts: {manifest_path} does not exist"]
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        named = named_potts_files(manifest)
+    except (ValueError, AttributeError, TypeError) as error:
+        return [], [f"potts: cannot read {manifest_path}: {error}"]
+
+    problems = []
+    plan = []
+    for name, want in sorted(named.items()):
+        if not name or "/" in name or "\\" in name or ".." in name:
+            problems.append(f"potts: manifest names {name!r}, which is not a bare filename")
+            continue
+        source = models_dir / name
+        if not source.is_file():
+            problems.append(f"potts: manifest names {name!r} but {source} is missing")
+            continue
+        got = hashlib.sha256(source.read_bytes()).hexdigest()
+        if got != want:
+            problems.append(
+                f"potts: {name} sha256 {got[:16]}... differs from the manifest's {want[:16]}...",
+            )
+            continue
+        plan.append((name, source))
+
+    if not problems:
+        for extra in sorted(models_dir.iterdir()):
+            if extra.is_file() and extra.name != "MANIFEST.json" and extra.name not in named:
+                print(f"   potts: ignoring {extra.name}: not named by MANIFEST.json, never copied")
+    return plan, problems
+
+
+def copy_potts_models(out_dir: Path, models_dir: Path, plan: list[tuple[str, Path]]) -> None:
+    """Copy an already-validated plan into dist/potts/models/."""
+    dest_dir = out_dir / "potts" / "models"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(models_dir / "MANIFEST.json", dest_dir / "MANIFEST.json")
+    print(f"copying potts models from {models_dir}:")
+    for name, source in plan:
+        shutil.copy2(source, dest_dir / name)
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        print(f"   {name}: {source.stat().st_size / 1024 / 1024:.1f} MiB, sha256 {digest[:16]}...")
+
+
+def build(
+    out_dir: Path,
+    models_dir: Path | None,
+    protonpotts_dirs: dict[str, Path] | None = None,
+    potts_dir: Path | None = None,
+) -> int:
     problems = (
         site_allow_list_problems() + sampler_problems() + worker_import_problems()
         + protonpotts_problems()
@@ -470,6 +558,12 @@ def build(out_dir: Path, models_dir: Path | None, protonpotts_dirs: dict[str, Pa
         plan, plan_problems = plan_protonpotts_models(kind, directory)
         problems += plan_problems
         protonpotts_plans[kind] = plan
+
+    potts_plan: list[tuple[str, Path]] = []
+    if potts_dir is not None:
+        potts_plan, potts_problems = plan_potts_models(potts_dir)
+        problems += potts_problems
+
     if problems:
         print("refusing to build -- the allow-list disagrees with the tree:", file=sys.stderr)
         for problem in problems:
@@ -529,11 +623,14 @@ def build(out_dir: Path, models_dir: Path | None, protonpotts_dirs: dict[str, Pa
         if kind in protonpotts_dirs:
             copy_protonpotts_models(out_dir, kind, protonpotts_dirs[kind], protonpotts_plans[kind])
 
+    if potts_dir is not None:
+        copy_potts_models(out_dir, potts_dir, potts_plan)
+
     (out_dir / "models").mkdir(parents=True, exist_ok=True)
     (out_dir / "models" / "MANIFEST.json").write_text(
         json.dumps({
             "commit": build_commit(),
-            "built_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "built_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
             "models": manifest_models,
         }, indent=2) + "\n",
         encoding="utf-8",
@@ -547,7 +644,8 @@ def build(out_dir: Path, models_dir: Path | None, protonpotts_dirs: dict[str, Pa
     protonpotts_note = (
         f", protonpotts models: {', '.join(sorted(protonpotts_dirs))}" if protonpotts_dirs else ""
     )
-    print(f"{out_dir}/  {count} files, {total / 1024 / 1024:.1f} MiB{model_note}{protonpotts_note}")
+    potts_note = f", potts models from {potts_dir}" if potts_dir else ""
+    print(f"{out_dir}/  {count} files, {total / 1024 / 1024:.1f} MiB{model_note}{protonpotts_note}{potts_note}")
     return 0
 
 
@@ -556,6 +654,8 @@ if __name__ == "__main__":
     parser.add_argument("--out", default="dist", help="output directory (default: dist)")
     parser.add_argument("--models-dir", default=None,
                          help="directory holding p07_sample_L128.onnx / p07_sample_L256.onnx")
+    parser.add_argument("--potts-dir", default=None,
+                         help="exported Potts directory (MANIFEST.json + named graphs)")
     parser.add_argument("--protonpotts-scoring-dir", default=None,
                          help="exported ProtonPotts scoring directory (MANIFEST.json + named graphs)")
     parser.add_argument("--protonpotts-ph-dir", default=None,
@@ -570,6 +670,7 @@ if __name__ == "__main__":
         raise SystemExit(check())
 
     models_directory = Path(arguments.models_dir).resolve() if arguments.models_dir else None
+    potts_directory = Path(arguments.potts_dir).resolve() if arguments.potts_dir else None
     protonpotts_directories = {
         kind: Path(value).resolve()
         for kind, value in (
@@ -579,4 +680,11 @@ if __name__ == "__main__":
         )
         if value
     }
-    raise SystemExit(build((ROOT / arguments.out).resolve(), models_directory, protonpotts_directories))
+    raise SystemExit(
+        build(
+            (ROOT / arguments.out).resolve(),
+            models_directory,
+            protonpotts_directories,
+            potts_directory,
+        )
+    )

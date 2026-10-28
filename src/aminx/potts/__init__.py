@@ -29,6 +29,11 @@ from aminx.potts.sampling import (
   parallel_tempering,
 )
 from aminx.potts.spec import PottsRunSpec
+from aminx.potts.trw import (
+  DifferentiableTRW,
+  project_to_zero_sum_gauge,
+  tree_marginals_to_potts,
+)
 
 try:
   from aminx.potts.poe import PoeModel, PoeOutput, PoeParams
@@ -40,6 +45,7 @@ __all__ = [
   "POTTS_ALPHABET",
   "POTTS_TO_MPNN_ALPHABET_MAP",
   "CalibrationModule",
+  "DifferentiableTRW",
   "IdentityCalibration",
   "LearnedCalibration",
   "PoeModel",
@@ -54,4 +60,6 @@ __all__ = [
   "load_calibration",
   "log_energy",
   "parallel_tempering",
+  "project_to_zero_sum_gauge",
+  "tree_marginals_to_potts",
 ]

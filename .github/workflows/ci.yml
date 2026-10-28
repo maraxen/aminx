@@ -8,10 +8,15 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   epic-attribution-lint:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,30 +26,54 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check decode-path commits reference an epic ID (backlog #2954)
-        run: python3 scripts/check_epic_attribution.py "origin/${{ github.base_ref }}..HEAD"
+        run: python3 scripts/check_epic_attribution.py "origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}"
 
   unit-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
       PYTHONDONTWRITEBYTECODE: 1
       # requires-python is ">=3.13" with no upper bound, so uv otherwise resolves CPython 3.15, which torch has no wheel for.
       UV_PYTHON: "3.13"
+      JAX_COMPILATION_CACHE_DIR: ${{ runner.temp }}/jax_compilation_cache
+      JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS: "0.5"
     steps:
       - uses: actions/checkout@v4
         with:
           lfs: true
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+          fetch-depth: 0
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      - name: Install ast-grep
-        run: npm install -g @ast-grep/cli
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: uv-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            uv-${{ runner.os }}-py3.13-
+      - name: Restore XLA compilation cache (pull request)
+        if: github.event_name == 'pull_request'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/jax_compilation_cache
+          key: xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-
+            xla-${{ runner.os }}-py3.13-
+      - name: Cache XLA compilation artifacts (main)
+        if: github.event_name != 'pull_request'
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/jax_compilation_cache
+          key: xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          restore-keys: |
+            xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-
+            xla-${{ runner.os }}-py3.13-
       - name: Install dependencies and run tests
         run: |
+          # --extra dev brings ast-grep-cli (`sg` binary for lint gates; pyproject.toml:113).
           # --extra laser brings ProDy, which families/laser_mpnn/featurize.py imports. Without it
           # every tests/port/test_laser_*.py and tests/knob_semantics/test_laser_*.py module fails at
           # COLLECTION, so the LASEr waves were never actually executed here (aminx #165 CI).
@@ -59,22 +88,38 @@ jobs:
           # scripts/redsox/run_gate.py rather than by this job. Its tests import redsox at call time
           # precisely so a missing install FAILS loudly where the gate actually runs -- excluding the
           # marker here keeps that signal on the gate host instead of reading as a red CI run.
-          # Determine marker expression based on event type
+          # Determine marker expression and test targets based on event type (aminx debt #2691).
           if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "Pull request: running fast tests (excluding slow, parity_heavy, parity_audit, redsox_gate)."
+            echo "Pull request: selecting diff-implicated fast tests + always-run guards (excluding slow, parity_heavy, parity_audit, redsox_gate)."
             MARKER="not slow and not parity_heavy and not parity_audit and not redsox_gate"
             # No coverage on PRs: four #165 runs were killed by "The runner has received a shutdown
             # signal" at ~91% of the suite, and coverage is the likeliest extra load on a 4-vCPU
-            # runner. Codecov uploads only on main anyway. Fallback if this is not enough: -n 2;
-            # long-term fix: shard the job (aminx debt #2585, #2582).
+            # runner. Codecov uploads only on main anyway. Use --dist loadscope so each module's
+            # JAX compilations stay on one worker, and cap workers at -n 2 on tiny (<=25) or
+            # broad (>150 / full-suite) runs to prevent 4-worker OOM kills (aminx debt #2585, #2582).
             COV_ARGS=""
+            uv run python scripts/ci/select_affected_tests.py \
+              --base "origin/${{ github.base_ref }}" \
+              --head HEAD \
+              --explain \
+              --write-pytest-args .pytest-targets.txt
+            mapfile -t PYTEST_TARGETS < .pytest-targets.txt
+            if [ "${#PYTEST_TARGETS[@]}" -eq 1 ] && [ "${PYTEST_TARGETS[0]}" == "." ]; then
+              WORKERS="2"
+            elif [ "${#PYTEST_TARGETS[@]}" -le 25 ] || [ "${#PYTEST_TARGETS[@]}" -gt 150 ]; then
+              WORKERS="2"
+            else
+              WORKERS="auto"
+            fi
+            uv run pytest -n "$WORKERS" --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
           else
-            echo "Push to main: excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
+            echo "Push to main: running full suite excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
             MARKER="not parity_heavy and not parity_audit and not redsox_gate"
             COV_ARGS="--cov=src --cov-report=xml --cov-report=term"
+            # Cap at -n 2 --dist loadscope on full-suite + coverage + slow runs to stay under the
+            # 16 GB runner memory ceiling (aminx debt #2585, #2582).
+            uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER"
           fi
-
-          uv run pytest -n auto $COV_ARGS -m "$MARKER"
       - name: Upload coverage to Codecov
         if: github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4

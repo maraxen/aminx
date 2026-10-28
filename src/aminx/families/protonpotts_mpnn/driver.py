@@ -51,7 +51,11 @@ from aminx.families.protonpotts_mpnn.features import (
   kept_residues,
   loaded_residues,
 )
-from aminx.families.protonpotts_mpnn.ph_config import DEFAULT_DEP_MAP, HOST_METHODS, config_from_options
+from aminx.families.protonpotts_mpnn.ph_config import (
+  DEFAULT_DEP_MAP,
+  HOST_METHODS,
+  config_from_options,
+)
 from aminx.families.protonpotts_mpnn.ph_design import (
   PHDesign,
   design_structure,

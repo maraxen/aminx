@@ -68,7 +68,7 @@ def test_conditional_decode_bitforbit_identical_legacy_vs_adapter(
 
     max_abs_diff = float(jnp.max(jnp.abs(legacy_logits - adapter_logits)))
 
-    if _legacy_peels_unit_chunk(strategy, num_states) or strategy_cls is Vmap or num_states == 1:
+    if _legacy_peels_unit_chunk(strategy, num_states) or num_states == 1:
         # aminx #2391 (PR #179), debt-2900: On single-state axes (num_states == 1) or Vmap dispatch,
         # the legacy path and make_axis_dispatch_via_xtrax may compile through slightly different
         # XLA programs (or unbatched vs vmapped unit chunks), leading to float32 reassociation

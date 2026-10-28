@@ -141,6 +141,9 @@ function resolveGraph(key, session, bucketGraphs) {
   const entry = bucketGraphs ? bucketGraphs[key] : undefined;
   const declared = entry ? entry.input_names : undefined;
   if (declared === undefined) {
+    if (!pinned) {
+      throw new Error(`no graph definition or pinned fallback for ${key}`);
+    }
     checkInputCount(session, key, pinned.order);
     return pinned;
   }
@@ -154,7 +157,10 @@ function resolveGraph(key, session, bucketGraphs) {
     throw new Error(`manifest ${key}.input_names contains duplicates: ${declared.join(", ")}`);
   }
   checkInputCount(session, `${key} (manifest input_names)`, declared);
-  const dtypes = entry.input_dtypes ?? pinned.dtypes;
+  const dtypes = entry.input_dtypes ?? pinned?.dtypes;
+  if (!dtypes) {
+    throw new Error(`manifest ${key}.input_dtypes is required when no pinned dtypes exist`);
+  }
   if (dtypes.length !== declared.length) {
     throw new Error(`manifest ${key}.input_dtypes has ${dtypes.length} entries for ${declared.length} inputs`);
   }
@@ -223,6 +229,8 @@ export async function createSplitSampler(
       throw new Error(`manifest has no bucket ${manifestBucket}`);
     }
     bucketGraphs = entry.graphs;
+  } else if (manifest && typeof manifest.graphs === "object" && manifest.graphs !== null) {
+    bucketGraphs = manifest.graphs;
   }
 
   const [encoderSession, waveSession, decoderSession, fuseSession] = await Promise.all([

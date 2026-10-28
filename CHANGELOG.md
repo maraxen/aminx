@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Post-v0.3.0 triage and debt remediation (PR #240):** Unified Zarr + Parquet campaign sink (`UnifiedCampaignSink`, `CampaignSinkInspector`), closed-form tree-marginal Potts inverse (`tree_marginals_to_potts`, `project_to_zero_sum_gauge`), HLO smell checker (`check_hlo_smells`, `assert_no_hlo_smells`), custom `WaveScheduleBundle` threading through `SamplingSpecification`, synchronized `output_path`/`output_zarr_path`/`output_h5_path` aliases, and content-addressed deterministic `run_id` hashing.
+
+- **`ScoringSpecification.ar_mask`: score under a caller-chosen visibility pattern.**
+  `runner.score` scores every position under full context minus self, `p(s_i | s_{-i}, X)`,
+  a pseudo-likelihood whose conditionals do not multiply into a normalised joint. `ar_mask`
+  (`(L, L)`, `ar_mask[i, j] == 1` iff `i` sees `j`, the sampler's convention) scores under an
+  autoregressive factorisation instead: with a causal, self-excluding mask for an order the
+  returned logits are `p(s_i | s_{earlier}, X)` and their summed log-probs are
+  `log p_order(s)`. That is the quantity staged-order comparisons need, and it was not
+  reachable from the production surface (`score_sequence` took an `ar_mask`; the runner never
+  forwarded one). Validated at construction (square, binary, zero diagonal). Supported on the
+  plain per-structure path; `average_node_features` and `state_position_map` raise rather
+  than score under the default mask unannounced. **`ar_mask=None` (the default) is unchanged:**
+  scores and logits are bit-identical to `v0.2.0a3` on a real structure (measured on the
+  original base, not re-measured on 0.3.0).
+  `make_score_split_fns(...).score_candidate` gains the matching optional `ar_mask`.
+
 ## 0.3.0 (2026-10-21)
 
 ### Changed (breaking)

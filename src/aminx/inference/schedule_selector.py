@@ -72,22 +72,9 @@ SCHEDULE_KEY_POLICY: dict[DecodingSchedule, ScheduleKeyPolicy] = {
   # schedule_variance converges to the categorical floor instead of the permutation-noise
   # floor. Reusing one key is the definition of this arm, not an accident.
   "frozen_random_sigma": "run_level",
-  # One coloring per structure. Varying it per sample would confound coloring choice with
-  # sampling noise, which is the opposite of what the coloring arms are for.
-  #
-  # The two coloring arms reach run_level for DIFFERENT reasons, and conflating them
-  # misdescribes the code: `color_positions` consults `key` ONLY when `improper=True`
-  # (it permutes the adjacency relabeling). Plain `chromatic` is fully DETERMINISTIC given
-  # the adjacency -- greedy DSATUR over a fixed ordering -- and never reads the key at all.
-  # So chromatic's run_level status is about uniform broadcast semantics in
-  # `build_wave_schedule_per_sample`, not about holding a random draw fixed.
-  #
-  # Consequence worth knowing: `schedule_consumes_key("chromatic")` is True, so
-  # `build_inference_bundle` demands a key for an arm that ignores it, and says the arm
-  # "consumes a PRNG key". That is a nominal requirement, not a real one. It is left in
-  # place because uniformity across the coloring arms is cheap and no caller selects
-  # `schedule=` today, but the error message overstates the case -- see backlog #4191.
-  "chromatic": "run_level",
+  # Plain chromatic coloring is fully DETERMINISTIC given the adjacency -- greedy
+  # DSATUR over a fixed ordering -- and never reads the key at all.
+  "chromatic": "unused",
   "improper_coloring": "run_level",
 }
 """Which key discipline each schedule arm requires.
@@ -132,7 +119,7 @@ def schedule_consumes_key(mode: DecodingSchedule) -> bool:
     mode: One of the five schedule arms.
 
   Returns:
-    True for every arm except ``fixed_n_to_c``.
+    False for both ``fixed_n_to_c`` and ``chromatic``, True for all other arms.
 
   Raises:
     ValueError: If ``mode`` is not a known schedule arm.
@@ -350,7 +337,7 @@ def color_positions(
 
 
 def select_decoding_order(
-  key: PRNGKeyArray,
+  key: PRNGKeyArray | None,
   seq_len: int,
   mode: Literal["random_ar", "fixed_n_to_c", "frozen_random_sigma"],
 ) -> Int[Array, " L"]:
@@ -364,14 +351,17 @@ def select_decoding_order(
   """
   if mode == "fixed_n_to_c":
     return jnp.arange(seq_len, dtype=jnp.int32)
+  if key is None:
+    msg = f"schedule mode {mode!r} requires a PRNG `key`."
+    raise ValueError(msg)
   return jax.random.permutation(key, seq_len).astype(jnp.int32)
 
 
 def build_wave_schedule(
   mode: DecodingSchedule,
   *,
-  key: PRNGKeyArray,
   tie_group_map: Int[Array, " L"],
+  key: PRNGKeyArray | None = None,
   coords: Float[Array, "L 4 3"] | None = None,
   mask: Float[Array, " L"] | None = None,
   k_neighbors: int = 48,
@@ -388,6 +378,9 @@ def build_wave_schedule(
   """
   seq_len = tie_group_map.shape[-1]
   if mode in _ORDER_SCHEDULES:
+    if schedule_consumes_key(mode) and key is None:
+      msg = f"schedule mode {mode!r} requires a PRNG `key`."
+      raise ValueError(msg)
     decoding_order = select_decoding_order(key, seq_len, mode)
     return WaveScheduleBundle.from_tie_groups(tie_group_map, decoding_order)
 

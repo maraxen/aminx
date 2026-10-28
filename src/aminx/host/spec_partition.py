@@ -51,6 +51,8 @@ CAMPAIGN_OWNED_KEYS: frozenset[str] = frozenset(
     "chunk_id",
     "sample_start",
     "sample_count",
+    "output_path",
+    "output_zarr_path",
     "output_h5_path",
   },
 )
@@ -83,6 +85,10 @@ EXCLUDED_WITH_REASON: Mapping[str, str] = {
   "dedup_specs": (
     "list[DedupSpec]; dedup_fn/gather_fn are callables. A campaign row genuinely cannot carry a "
     "dedup axis -- setting this is an error, not a dropped knob"
+  ),
+  "wave": (
+    "WaveScheduleBundle (eqx.Module with JAX arrays); _to_json_value has no branch for it and "
+    "raises SpecJSONEncodeError"
   ),
 }
 

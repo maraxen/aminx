@@ -85,7 +85,7 @@ class TestPolicyTable:
       ("fixed_n_to_c", "unused"),
       ("random_ar", "per_sample"),
       ("frozen_random_sigma", "run_level"),
-      ("chromatic", "run_level"),
+      ("chromatic", "unused"),
       ("improper_coloring", "run_level"),
     ],
   )
@@ -93,10 +93,11 @@ class TestPolicyTable:
     """The per-arm policy matches seed protocol M6."""
     assert schedule_key_policy(mode) == expected
 
-  def test_only_fixed_n_to_c_ignores_the_key(self):
-    """fixed_n_to_c is the sole arm that does not read its key."""
+  def test_fixed_n_to_c_and_chromatic_ignore_the_key(self):
+    """fixed_n_to_c and chromatic do not read a key."""
     assert not schedule_consumes_key("fixed_n_to_c")
-    for mode in set(SCHEDULE_KEY_POLICY) - {"fixed_n_to_c"}:
+    assert not schedule_consumes_key("chromatic")
+    for mode in set(SCHEDULE_KEY_POLICY) - {"fixed_n_to_c", "chromatic"}:
       assert schedule_consumes_key(mode), mode
 
   def test_unknown_mode_raises(self):
@@ -254,7 +255,7 @@ class TestBundleBuilderRefusesToInventAKey:
     }
 
   @pytest.mark.parametrize(
-    "mode", ["random_ar", "frozen_random_sigma", "chromatic", "improper_coloring"]
+    "mode", ["random_ar", "frozen_random_sigma", "improper_coloring"]
   )
   def test_missing_key_raises_for_key_consuming_arms(self, mode):
     """Every arm that reads a key refuses to run without one."""
@@ -275,6 +276,13 @@ class TestBundleBuilderRefusesToInventAKey:
     """The default arm is unaffected -- no key, no error, no behaviour change."""
     bundle, _config = build_inference_bundle(
       schedule="fixed_n_to_c", schedule_key=None, **self._minimal_structure_kwargs()
+    )
+    assert bundle is not None
+
+  def test_chromatic_needs_no_key(self):
+    """Chromatic schedule is deterministic given adjacency and needs no key."""
+    bundle, _config = build_inference_bundle(
+      schedule="chromatic", schedule_key=None, **self._minimal_structure_kwargs()
     )
     assert bundle is not None
 
@@ -302,3 +310,22 @@ class TestBundleBuilderRefusesToInventAKey:
       **self._minimal_structure_kwargs(),
     )
     assert bundle is not None
+
+  def test_build_wave_schedule_fixed_n_to_c_accepts_key_none(self):
+    """build_wave_schedule('fixed_n_to_c') executes without key and generates 0..seq_len-1."""
+    # Degenerate case: one tie group per position (identity map)
+    identity_map = jnp.arange(SEQ_LEN, dtype=jnp.int32)
+    bundle_id = build_wave_schedule("fixed_n_to_c", tie_group_map=identity_map, key=None)
+    assert bundle_id is not None
+    np.testing.assert_array_equal(np.asarray(bundle_id.group_ids).ravel(), np.arange(SEQ_LEN))
+
+    # Real tie groups case: 6 tie groups of 2 positions each
+    bundle_tied = build_wave_schedule("fixed_n_to_c", tie_group_map=TIE_GROUP_MAP, key=None)
+    assert bundle_tied is not None
+    np.testing.assert_array_equal(np.asarray(bundle_tied.group_ids).ravel(), np.arange(6))
+
+  def test_build_wave_schedule_random_ar_requires_key(self):
+    """build_wave_schedule('random_ar') raises ValueError when key is None."""
+    with pytest.raises(ValueError, match="schedule mode 'random_ar' requires a PRNG `key`"):
+      build_wave_schedule("random_ar", tie_group_map=TIE_GROUP_MAP, key=None)
+

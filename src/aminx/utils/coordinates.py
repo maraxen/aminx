@@ -16,7 +16,6 @@ from aminx.types.arrays import (
   StructureAtomicCoordinates,
 )
 
-
 _MIN_BACKBONE_ATOMS = 4  # N, CA, C, O
 
 

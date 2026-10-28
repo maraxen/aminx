@@ -761,7 +761,6 @@ def run_sample(
   noise_batch_size: Annotated[int, _OPT(help="Noise batch size")] = 1,
   temperature_batch_size: Annotated[int, _OPT(help="Temperature batch size")] = 1,
   average_node_features: Annotated[bool, _OPT(help="Average node features")] = False,
-  average_encoding_mode: Annotated[str, _OPT(help="Encoding averaging mode")] = "inputs_and_noise",
   multi_state_strategy: Annotated[
     str,
     _OPT(help="Multi-state aggregation strategy"),
@@ -895,7 +894,6 @@ def run_score(
   return_all_scores: Annotated[bool, _OPT(help="Return all scores")] = False,
   output_h5_path: Annotated[Path | None, _OPT(help="HDF5 output path")] = None,
   average_node_features: Annotated[bool, _OPT(help="Average node features")] = False,
-  average_encoding_mode: Annotated[str, _OPT(help="Encoding averaging mode")] = "inputs_and_noise",
   noise_batch_size: Annotated[int, _OPT(help="Noise batch size")] = 4,
   multi_state_strategy: Annotated[
     str,
@@ -980,7 +978,6 @@ def run_jacobian(
   noise_batch_size: Annotated[int, _OPT(help="Noise batch size")] = 1,
   jacobian_batch_size: Annotated[int, _OPT(help="Jacobian batch size")] = 16,
   average_encodings: Annotated[bool, _OPT(help="Average encodings")] = True,
-  average_encoding_mode: Annotated[str, _OPT(help="Encoding averaging mode")] = "inputs_and_noise",
   combine: Annotated[bool, _OPT(help="Combine Jacobians")] = False,
   combine_batch_size: Annotated[int, _OPT(help="Combine batch size")] = 8,
   output_h5_path: Annotated[
@@ -1330,7 +1327,6 @@ def spec_emit_sample(
   noise_batch_size: Annotated[int, _OPT(help="Noise batch size")] = 1,
   temperature_batch_size: Annotated[int, _OPT(help="Temperature batch size")] = 1,
   average_node_features: Annotated[bool, _OPT(help="Average node features")] = False,
-  average_encoding_mode: Annotated[str, _OPT(help="Encoding averaging mode")] = "inputs_and_noise",
   multi_state_strategy: Annotated[
     str,
     _OPT(help="Multi-state aggregation strategy"),
@@ -1457,7 +1453,6 @@ def spec_emit_score(
   return_all_scores: Annotated[bool, _OPT(help="Return all scores")] = False,
   output_h5_path: Annotated[Path | None, _OPT(help="HDF5 output path")] = None,
   average_node_features: Annotated[bool, _OPT(help="Average node features")] = False,
-  average_encoding_mode: Annotated[str, _OPT(help="Encoding averaging mode")] = "inputs_and_noise",
   noise_batch_size: Annotated[int, _OPT(help="Noise batch size")] = 4,
   multi_state_strategy: Annotated[
     str,
@@ -1535,7 +1530,6 @@ def spec_emit_jacobian(
   noise_batch_size: Annotated[int, _OPT(help="Noise batch size")] = 1,
   jacobian_batch_size: Annotated[int, _OPT(help="Jacobian batch size")] = 16,
   average_encodings: Annotated[bool, _OPT(help="Average encodings")] = True,
-  average_encoding_mode: Annotated[str, _OPT(help="Encoding averaging mode")] = "inputs_and_noise",
   combine: Annotated[bool, _OPT(help="Combine Jacobians")] = False,
   combine_batch_size: Annotated[int, _OPT(help="Combine batch size")] = 8,
   output_h5_path: Annotated[
