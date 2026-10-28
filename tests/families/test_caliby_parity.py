@@ -842,7 +842,7 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
         h_v_t, h_e_t, e_idx_t, mask_att_t = _torch_mpnn_from_raw_sd(
           raw_sd, "model._orig_mod.denoiser.atom_mpnn", t_dt, return_decoder_edges=True,
         )
-        k_potts = min(48, e_idx_t.shape[1])
+        k_potts = min(30, e_idx_t.shape[1])
         h_e_tr = h_e_t[:, :k_potts, :]
         e_idx_tr = e_idx_t[:, :k_potts]
         mask_att_tr = mask_att_t[:, :k_potts]
@@ -852,9 +852,9 @@ def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
         row_i = torch.arange(L, dtype=torch.long)[:, None]
         valid_e = mask_att_tr * (e_idx_tr != row_i).to(t_dt)
         num_f = raw_sd[f"{pbase}.W_J_left.weight"].shape[0] // 32
-        j_l = (scale * valid_e[..., None] * lin_sd(h_e_tr, f"{pbase}.W_J_left")).reshape(L, k_potts, 32, num_f)
-        j_r = (scale * valid_e[..., None] * lin_sd(h_e_tr, f"{pbase}.W_J_right")).reshape(L, k_potts, num_f, 32)
-        j_knn = torch.matmul(j_l, j_r)
+        j_l = (valid_e[..., None] * lin_sd(h_e_tr, f"{pbase}.W_J_left")).reshape(L, k_potts, 32, num_f)
+        j_r = (valid_e[..., None] * lin_sd(h_e_tr, f"{pbase}.W_J_right")).reshape(L, k_potts, 32, num_f)
+        j_knn = scale * torch.matmul(j_l, torch.swapaxes(j_r, -1, -2))
         h_t = (h_t - h_t.mean(dim=-1, keepdim=True)) * mask_v_t
         j_knn = (
           j_knn

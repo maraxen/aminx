@@ -171,7 +171,7 @@ class CalibyGraphPotts(eqx.Module):
   W_J_bg: eqx.nn.Linear | None = None
   num_states: int = eqx.field(static=True, default=32)
   num_factors: int = eqx.field(static=True, default=64)
-  k_neighbors_potts: int = eqx.field(static=True, default=48)
+  k_neighbors_potts: int = eqx.field(static=True, default=30)
   parameterization: str = eqx.field(static=True, default="factorized")
   symmetric_J: bool = eqx.field(static=True, default=True)  # noqa: N815
   bg_dim: int = eqx.field(static=True, default=1)
@@ -183,7 +183,7 @@ class CalibyGraphPotts(eqx.Module):
     num_states: int = 32,
     num_factors: int = 64,
     *,
-    k_neighbors_potts: int = 48,
+    k_neighbors_potts: int = 30,
     parameterization: str = "factorized",
     symmetric_J: bool = True,  # noqa: N803
     has_bg: bool = False,
@@ -308,21 +308,19 @@ class CalibyGraphPotts(eqx.Module):
       h = scale * mask_v * _linear(self.W_h, h_v)
 
       num_factors_eff = self.W_J_left.weight.shape[0] // self.num_states
-      j_left = (
-        scale
-        * valid_edge[..., None]
-        * _linear(self.W_J_left, h_e_trunc)
-      ).reshape(
-        num_tokens, k_eff, self.num_states, num_factors_eff,
+      j_left = (valid_edge[..., None] * _linear(self.W_J_left, h_e_trunc)).reshape(
+        num_tokens,
+        k_eff,
+        self.num_states,
+        num_factors_eff,
       )
-      j_right = (
-        scale
-        * valid_edge[..., None]
-        * _linear(self.W_J_right, h_e_trunc)
-      ).reshape(
-        num_tokens, k_eff, num_factors_eff, self.num_states,
+      j_right = (valid_edge[..., None] * _linear(self.W_J_right, h_e_trunc)).reshape(
+        num_tokens,
+        k_eff,
+        self.num_states,
+        num_factors_eff,
       )
-      j_knn = jnp.matmul(j_left, j_right)
+      j_knn = scale * jnp.matmul(j_left, jnp.swapaxes(j_right, -1, -2))
       # Zero-sum gauge
       h = (h - jnp.mean(h, axis=-1, keepdims=True)) * mask_v
       j_knn = (
