@@ -169,6 +169,52 @@ def test_cdr_transform_refuses_logits_without_matching_residue_axis() -> None:
   assert jnp.all(out[cdr_mask, 19] > 0.0)
 
 
+def test_region_weights_semantics_unspecified_unit_overlap_and_ignored_raise() -> None:
+  """Verify unweighted CDR loops keep scale 1.0 and ambiguous or ignored weights raise."""
+  residue_idx = jnp.arange(1, 13, dtype=jnp.int32)
+  chain_idx = jnp.zeros(12, dtype=jnp.int32)
+  masks = build_cdr_region_mask(
+    residue_idx,
+    chain_idx,
+    cdr_ranges={"H1": (1, 3), "H2": (5, 7), "H3": (9, 11)},
+  )
+  target = jnp.full((20,), 0.02, dtype=jnp.float32).at[19].set(0.62)
+  unweighted = make_cdr_frequency_logit_transform(masks, target_frequencies=target, weight=1.5)
+
+  # H2 and H3 are not in region_weights: they keep the unweighted scale 1.0, not 0.
+  partial = make_cdr_frequency_logit_transform(
+    masks,
+    target_frequencies=target,
+    weight=1.5,
+    region_weights={"H1": 0.5},
+  )
+  assert jnp.allclose(partial.cdr_bias[4], unweighted.cdr_bias[4])
+  assert jnp.allclose(partial.cdr_bias[8], unweighted.cdr_bias[8])
+  assert jnp.allclose(partial.cdr_bias[0], 0.5 * unweighted.cdr_bias[0])
+
+  # An aggregate and one of its loops overlap and would double-count shared positions.
+  with pytest.raises(ValueError, match="overlap"):
+    make_cdr_frequency_logit_transform(
+      masks, target_frequencies=target, region_weights={"h1": 1.0, "heavy_cdr": 1.0},
+    )
+  with pytest.raises(ValueError, match="overlap"):
+    make_cdr_frequency_logit_transform(
+      masks, target_frequencies=target, region_weights={"H1": 1.0, "h1": 2.0},
+    )
+
+  # Unknown region names are refused rather than ignored.
+  with pytest.raises(ValueError, match="unknown"):
+    make_cdr_frequency_logit_transform(
+      masks, target_frequencies=target, region_weights={"h9": 1.0},
+    )
+
+  # A plain mask array carries no loop labels, so region weights would be silently ignored.
+  with pytest.raises(ValueError, match="region"):
+    make_cdr_frequency_logit_transform(
+      masks.any_cdr, target_frequencies=target, region_weights={"h1": 2.0},
+    )
+
+
 def test_cdr_physicochemical_descriptors_barley_and_lehninger() -> None:
   """Verify Barley PC1/PC2 and Lehninger charge match AntiBMPNN README examples to 1e-4."""
   seq1 = _encode_sequence("ARSKSTYLSRDSSGYDY")
