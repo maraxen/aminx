@@ -36,6 +36,7 @@ def test_model_family_literal_includes_driver_families() -> None:
         "pottsmpnn",
         "protonpottsmpnn",
         "lasermpnn",
+        "caliby",
         "fampnn",
     }
 
