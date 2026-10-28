@@ -117,6 +117,7 @@ def test_missing_prody_names_the_laser_extra(monkeypatch: pytest.MonkeyPatch) ->
     message = str(excinfo.value)
     assert "--extra laser" in message
     assert "aminx[laser]" in message
+    assert "prody" in message
 
 
 def test_thermompnn_is_refused_until_it_has_a_driver() -> None:
@@ -127,7 +128,6 @@ def test_thermompnn_is_refused_until_it_has_a_driver() -> None:
     with pytest.raises(ValueError, match="thermompnn has no driver yet"):
         SamplingSpecification(inputs="x.pdb", model_family="thermompnn")
     assert "thermompnn" not in MODEL_FAMILIES
-    assert "prody" in message
 
 
 def test_missing_prody_fails_at_family_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
