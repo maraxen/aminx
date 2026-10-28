@@ -422,6 +422,19 @@ def _coords_batch(
   return np.reshape(built, (batch, length, *built.shape[1:]))
 
 
+# Rows per vectorized decode step when ``samples_chunk_size`` is unset. The chunk
+# window is then every sample, so an uncapped vmap would grow with num_samples.
+# An explicit ``samples_chunk_size`` sets the step to the whole window instead.
+_DEFAULT_MAX_ROWS = 32
+
+
+def _max_rows(spec: Any) -> int | None:  # noqa: ANN401
+  """Vectorized rows per decode step: the whole window if the chunk is explicit."""
+  if getattr(spec, "samples_chunk_size", None):
+    return None
+  return _DEFAULT_MAX_ROWS
+
+
 class SampleStages:
   """Per-chunk LASEr sample. Untied structures are encoded once per level."""
 
@@ -544,6 +557,7 @@ class SampleStages:
       budget_mask=_budget(features, options),
       charged_mask=_charged(features, options),
       bias=_logit_bias(self._spec, item.chain_mask),
+      max_rows=_max_rows(self._spec),
     )
     laser_index = np.asarray(decoded.sequence)
     produced: dict[str, np.ndarray] = {

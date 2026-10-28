@@ -74,6 +74,9 @@ def _parity(
   n_samples: int,
   temperatures: Sequence[float | None],
   seed: int,
+  options: dict | None = None,
+  partial_chain: bool = False,
+  max_rows: int | None = None,
 ) -> None:
   features = featurize(pdb, dtype=_working_dtype())
   length = int(features.sequence_indices.shape[0])
@@ -85,6 +88,11 @@ def _parity(
   uniforms = rng.random((batch, length * 5))
   temps = [temperature for _ in range(n_samples) for temperature in temperatures]
   chain_mask = np.zeros((length,), dtype=bool)
+  if partial_chain:
+    chain_mask[: length // 2] = True
+  extra = dict(options or {})
+  if extra.pop("random_bias", False):
+    extra["bias"] = rng.normal(size=(length, 21)).astype(np.float32)
   first_shell = np.asarray(features.first_shell_ligand_contact_mask)
   budget = budget_mask_for(
     np.asarray(features.resnum_indices),
@@ -124,6 +132,7 @@ def _parity(
       disabled_residues=("X",),
       budget_mask=budget,
       charged_mask=charged,
+      **extra,
     )
     for index in range(batch)
   ]
@@ -148,6 +157,8 @@ def _parity(
     disabled_residues=("X",),
     budget_mask=budget,
     charged_mask=charged,
+    max_rows=max_rows,
+    **extra,
   )
   ref_sequence = np.stack([np.asarray(row.sequence) for row in refs])
   ref_chi = np.stack([np.asarray(row.chi_degrees) for row in refs])
@@ -169,6 +180,51 @@ def test_batched_decode_matches_decode_order(tmp_path: Path, model_path: Path) -
   joint = LaserJointDecode(key=jax.random.PRNGKey(11))
   _parity(model, joint, pdb, n_samples=4, temperatures=(0.2, 0.7), seed=11)
   _parity(model, joint, pdb, n_samples=2, temperatures=(None, 0.5), seed=12)
+
+
+_OPTION_CASES = {
+  "fs_sequence_temp": ({"fs_sequence_temp": 0.3}, False),
+  "min_p_and_chi_temp": ({"seq_min_p": 0.05, "chi_min_p": 0.05, "chi_temperature": 0.5}, False),
+  "partial_chain_ignore_zeros": ({"ignore_chain_mask_zeros": True}, True),
+  "partial_chain": ({}, True),
+  "repack_all": ({"repack_all": True}, True),
+  "logit_bias": ({"random_bias": True}, False),
+  "tight_budgets": ({"ala_budget": 1, "gly_budget": 1}, False),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_OPTION_CASES))
+def test_batched_decode_matches_decode_order_with_options(
+  case: str,
+  tmp_path: Path,
+  model_path: Path,
+) -> None:
+  """Non-default decode options keep batched == per-sample, including a None row."""
+  options, partial_chain = _OPTION_CASES[case]
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb)
+  model = eqx.tree_deserialise_leaves(model_path, LASErMPNN(key=jax.random.PRNGKey(0)))
+  joint = LaserJointDecode(key=jax.random.PRNGKey(13))
+  _parity(
+    model,
+    joint,
+    pdb,
+    n_samples=2,
+    temperatures=(None, 0.4),
+    seed=21,
+    options=options,
+    partial_chain=partial_chain,
+  )
+
+
+def test_batched_decode_bounded_rows_matches_decode_order(tmp_path: Path, model_path: Path) -> None:
+  """``max_rows`` below the batch (with a remainder) still matches per-sample decode."""
+  pdb = tmp_path / "complex.pdb"
+  _write_pdb(pdb)
+  model = eqx.tree_deserialise_leaves(model_path, LASErMPNN(key=jax.random.PRNGKey(0)))
+  joint = LaserJointDecode(key=jax.random.PRNGKey(17))
+  _parity(model, joint, pdb, n_samples=4, temperatures=(0.2, 0.7), seed=17, max_rows=3)
+  _parity(model, joint, pdb, n_samples=5, temperatures=(0.3,), seed=18, max_rows=2)
 
 
 def test_sample_host_matches_per_sample_reference(

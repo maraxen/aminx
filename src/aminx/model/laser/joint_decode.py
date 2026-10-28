@@ -1254,6 +1254,7 @@ def _scan_residues_batched(
   gly_budget: int,
   ignore_chain_mask_zeros: bool,
   repack_all: bool,
+  max_rows: int | None,
 ) -> tuple[
   Int[Array, "batch l"],
   Float[Array, "batch l 21"],
@@ -1261,7 +1262,12 @@ def _scan_residues_batched(
   Float[Array, "batch l 4 72"],
   Float[Array, "batch 4 l h"],
 ]:
-  """Vmap ``_scan_residues`` over samples. Encoder tensors are broadcast."""
+  """Map ``_scan_residues`` over samples, vectorized ``max_rows`` rows at a time.
+
+  Encoder tensors are closed over, so every row shares one copy. ``max_rows=None``
+  vectorizes the whole batch; otherwise ``lax.map`` bounds memory to ``max_rows``
+  rows per step, whatever the batch size.
+  """
 
   def one(
     order: Int[Array, " l"],
@@ -1307,12 +1313,17 @@ def _scan_residues_batched(
       repack_all=repack_all,
     )
 
-  if per_temperature:
-    return jax.vmap(one, in_axes=(0, 0, 0))(orders, draws, temperatures)
-  return jax.vmap(
-    lambda order, row_draws: one(order, row_draws, sequence_temperature),
-    in_axes=(0, 0),
-  )(orders, draws)
+  def row(
+    xs: tuple[Int[Array, " l"], Float[Array, " draws"], Float[Array, ""]],
+  ) -> tuple[Array, Array, Array, Array, Array]:
+    order, row_draws, temperature = xs
+    return one(order, row_draws, temperature if per_temperature else sequence_temperature)
+
+  xs = (orders, draws, temperatures)
+  batch = int(orders.shape[0])
+  if max_rows is None or batch <= max_rows:
+    return jax.vmap(row)(xs)
+  return jax.lax.map(row, xs, batch_size=max_rows)
 
 
 def decode_order_batched(
@@ -1349,14 +1360,20 @@ def decode_order_batched(
   charged_mask: Bool[NDArray[np.bool_], " l"] | None = None,
   bias: Float[NDArray[np.floating], "l 21"] | None = None,
   protein_loop: bool = True,
+  max_rows: int | None = None,
 ) -> JointDecodeBatch:
-  """Encode once, then vmap ``_scan_residues`` over the leading sample axis.
+  """Encode once, then map ``_scan_residues`` over the leading sample axis.
 
   ``decoding_order`` is ``(batch, L)`` and ``uniforms`` is ``(batch, draws)``
   or one row per sample. ``sequence_temperature`` is a scalar or one value per
   sample (``None`` is argmax). A scalar stays on the ``decode_order`` branch.
   Rows that disagree are passed as a model-dtype vector, with NaN for ``None``.
+  ``max_rows`` caps how many rows one vectorized step holds (``None``: all of
+  them), so peak memory does not grow with the batch.
   """
+  if max_rows is not None and max_rows < 1:
+    msg = f"max_rows must be positive or None, got {max_rows}"
+    raise ValueError(msg)
   prepared = _encoded_scan_inputs(
     encoder,
     backbone,
@@ -1440,6 +1457,7 @@ def decode_order_batched(
     gly_budget=gly_budget,
     ignore_chain_mask_zeros=ignore_chain_mask_zeros,
     repack_all=prepared.effective_repack,
+    max_rows=max_rows,
   )
   chi_logits_np = np.asarray(chi_logits)
   return JointDecodeBatch(
