@@ -140,18 +140,20 @@ def local_to_global_scn(
   -------
   Float[Array, "L A 3"]
     Reconstructed global coordinates ``(L, 23, 3)`` or ``(L, 37, 3)``.
+    Ghost atoms (mask 0) are the origin in the local frame and CA in the global frame.
+    Backbone atoms N, CA, C, O stay the input coordinates.
   """
   n_xyz = atom_xyz[:, 0, :]
   ca_xyz = atom_xyz[:, 1, :]
   c_xyz = atom_xyz[:, 2, :]
   rot, t_ca = rigid_from_3_points(c_xyz, ca_xyz, n_xyz)
   scn_mask = _extract_scn33_mask(atom_mask)
-  scn_global = (jnp.einsum("laj,lij->lai", scn_local, rot) + t_ca[:, None, :]) * scn_mask[..., None]
+  transformed = jnp.einsum("laj,lij->lai", scn_local, rot) + t_ca[:, None, :]
+  scn_global = jnp.where(scn_mask[..., None] > 0, transformed, t_ca[:, None, :])
 
   num_a = atom_xyz.shape[1]
   if num_a == 37:
-    out37 = atom_xyz.at[:, _AF2_SCN_IDXS_ARR, :].set(scn_global)
-    return out37 * atom_mask[..., None]
+    return atom_xyz.at[:, _AF2_SCN_IDXS_ARR, :].set(scn_global)
   return jnp.concatenate([atom_xyz[:, :4, :], scn_global[:, :19, :]], axis=1)
 
 
@@ -650,7 +652,10 @@ def edm_sidechain_sample(
   """
   dtype = packer.x_embedder.weight.dtype
   num_l = atom23_xyz.shape[0]
-  scn_mask = _extract_scn33_mask(atom23_mask).astype(dtype)
+  # Residues with a CA are generated in every Atom23 sidechain slot.
+  # The MPNN trunk below keeps the backbone-only mask from ``atom23_mask``.
+  gen_mask = atom23_mask.at[:, 4:].set(atom23_mask[:, 1:2])
+  scn_mask = _extract_scn33_mask(gen_mask).astype(dtype)
 
   # Run backbone MPNN trunk once
   bb_only_mask = jnp.concatenate([atom23_mask[:, :5], jnp.zeros((num_l, 18), dtype=atom23_mask.dtype)], axis=1)
@@ -728,4 +733,4 @@ def edm_sidechain_sample(
     (x_init, x_cond_init),
     (t_steps_padded[:-1], t_steps_padded[1:], step_keys),
   )
-  return local_to_global_scn(x_final, atom23_xyz, atom23_mask)
+  return local_to_global_scn(x_final, atom23_xyz, gen_mask)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os as _os
+import types
 from pathlib import Path
 
 import jax
@@ -1018,3 +1019,43 @@ def test_caliby_ensemble_potts_averaging() -> None:
   assert h_het.shape == (num_l, num_s)
   assert j_het.shape == (num_l, num_l, num_s, num_s)
   assert jnp.allclose(j_het, jnp.transpose(j_het, (1, 0, 3, 2)), atol=1e-6)
+
+
+def test_local_to_global_scn_ghost_sidechains_land_on_ca() -> None:
+  """Absent Atom23 sidechain slots land on CA; a present slot keeps a nonzero local offset."""
+  n_tok = 2
+  ca = jnp.array([[1.5, -2.0, 3.25], [0.5, 4.0, -1.0]], dtype=jnp.float32)
+  xyz = jnp.zeros((n_tok, 23, 3), dtype=jnp.float32)
+  xyz = xyz.at[:, 0, :].set(ca + jnp.array([1.0, 0.0, 0.0], dtype=jnp.float32))
+  xyz = xyz.at[:, 1, :].set(ca)
+  xyz = xyz.at[:, 2, :].set(ca + jnp.array([0.0, 1.0, 0.0], dtype=jnp.float32))
+  xyz = xyz.at[:, 3, :].set(ca + jnp.array([0.0, 0.0, 1.0], dtype=jnp.float32))
+  mask = jnp.zeros((n_tok, 23), dtype=jnp.float32).at[:, :4].set(1.0)
+  local = jnp.zeros((n_tok, 33, 3), dtype=jnp.float32)
+
+  ghost = local_to_global_scn(local, xyz, mask)
+  assert jnp.allclose(ghost[:, 4:, :], ca[:, None, :], atol=1e-5)
+  assert not jnp.allclose(ghost[:, 4:, :], 0.0, atol=1e-6)
+  assert jnp.allclose(ghost[:, :4, :], xyz[:, :4, :], atol=1e-6)
+
+  mask_on = mask.at[:, 4:].set(1.0)
+  local_on = local.at[:, 0, :].set(jnp.array([2.0, -3.0, 4.0], dtype=jnp.float32))
+  present = local_to_global_scn(local_on, xyz, mask_on)
+  assert not jnp.allclose(present[:, 4, :], 0.0, atol=1e-6)
+
+
+def test_caliby_packer_sample_schema_and_handles() -> None:
+  """Packer checkpoints expose only the sample schema; Potts sample still returns energy."""
+  drv = CalibyDriver()
+  packer = types.SimpleNamespace(checkpoint_id="caliby_packer_010")
+  assert drv.handles(packer, "sample")
+  assert not drv.handles(packer, "score:energy")
+  assert not drv.handles(packer, "score:nll")
+  assert not drv.handles(packer, "score:logits")
+  schema = drv.result_schema(packer, "sample")
+  assert set(schema) == {"sequences", "packed_atom23_xyz"}
+
+  potts = types.SimpleNamespace(checkpoint_id="caliby")
+  assert drv.handles(potts, "sample")
+  potts_schema = drv.result_schema(potts, "sample")
+  assert set(potts_schema) == {"sequences", "energy"}

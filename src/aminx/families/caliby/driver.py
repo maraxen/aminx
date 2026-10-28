@@ -102,6 +102,20 @@ def _options(spec: Any) -> CalibyOptions:  # noqa: ANN401
   return cast("CalibyOptions", opt)
 
 
+def _is_packer_checkpoint(spec: Any) -> bool:  # noqa: ANN401
+  """Return whether ``spec`` selects a Caliby sidechain packer checkpoint.
+
+  Checkpoint id resolution matches ``CalibyDriver.load``: ``spec.checkpoint_id``
+  when set, otherwise ``CalibyOptions.checkpoint_id``. A path whose name contains
+  ``packer`` is also a packer. The default options id ``caliby`` stays Potts.
+  """
+  options = _options(spec)
+  ckpt_id = str(getattr(spec, "checkpoint_id", None) or options.checkpoint_id or "caliby_distill")
+  local = getattr(spec, "model_local_path", None)
+  path_name = Path(str(local)).name if local is not None else ""
+  return ckpt_id in CALIBY_PACKER_CHECKPOINTS or "packer" in path_name
+
+
 def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
   raw = getattr(spec, "inputs", ())
   if isinstance(raw, (str, Path)):
@@ -290,7 +304,7 @@ class _CalibyStages:
         step_scale=self._options.packer_step_scale,
         key=step_key,
       )
-      packed_rows.append(packed[None, ...])
+      packed_rows.append(packed.astype(jnp.float32))
       seq_rows.append(jnp.asarray(item.aatype_aminx, dtype=jnp.int32)[None, None, :])
     return {
       "sequences": jnp.stack(seq_rows, axis=0),
@@ -379,6 +393,9 @@ class _CalibyStages:
     seed = int(getattr(self._spec, "random_seed", 0) or 0)
 
     if isinstance(self._model, CalibySidechainMLP):
+      if self._purpose != "sample":
+        msg = f"caliby packer supports only purpose 'sample', got {self._purpose!r}"
+        raise ValueError(msg)
       return self._run_packer(prepared, dropout_key, seed)
 
     potts_model = cast("CalibyModel", self._model)
@@ -544,7 +561,10 @@ class CalibyDriver:
   mpnn_fallback_purposes: frozenset[str] = frozenset()
 
   def handles(self, spec: Any, purpose: str) -> bool:  # noqa: ANN401
-    """Return ``True`` for ``sample``, ``score:energy``, ``score:nll``, and ``score:logits``.
+    """Return whether ``purpose`` is handled for this checkpoint.
+
+    A packer checkpoint handles only ``sample``. A Potts checkpoint handles
+    ``sample``, ``score:energy``, ``score:nll``, and ``score:logits``.
 
     Parameters
     ----------
@@ -558,7 +578,8 @@ class CalibyDriver:
     bool
       Whether ``purpose`` is handled natively by ``CalibyDriver``.
     """
-    del spec
+    if _is_packer_checkpoint(spec):
+      return purpose == "sample"
     return purpose in _HANDLED
 
   def load(self, spec: Any) -> eqx.Module:  # noqa: ANN401
@@ -710,7 +731,14 @@ class CalibyDriver:
     Mapping[str, SinkArraySpec]
       Output array specifications.
     """
-    del spec
+    if _is_packer_checkpoint(spec):
+      if purpose != "sample":
+        msg = f"caliby packer does not support purpose {purpose!r}"
+        raise ValueError(msg)
+      return {
+        "sequences": SinkArraySpec(dims=("N_samples", "D_temp", "L"), dtype="int32", attrs={}),
+        "packed_atom23_xyz": SinkArraySpec(dims=("L", "A", "3"), dtype="float32", attrs={}),
+      }
     if purpose == "score:energy":
       return {
         "energy": SinkArraySpec(dims=("N_cand",), dtype="float32", attrs={}),
