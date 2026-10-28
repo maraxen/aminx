@@ -122,9 +122,15 @@ def get_topology_for_checkpoint(checkpoint_id: str) -> dict[str, int | bool | st
     "atom_context_num": 16,
     "physics_feature_dim": 0,
     "model_type": "protein",
+    "cyclic": False,
   }
 
   name = checkpoint_id.lower()
+
+  # CyclicMPNN checkpoints wrap intra-chain sequence offsets (head-to-tail cyclic peptides).
+  # The flag is a static field of the skeleton, so it must be set at construction time.
+  if "cyclicmpnn" in name:
+    topology["cyclic"] = True
 
   if "v_32" in name:
     topology["k_neighbors"] = 32
@@ -537,6 +543,7 @@ def load_model(
       num_positional_embeddings=topo["num_positional_embeddings"],
       dropout_rate=dropout_rate,
       ca_only=(model_type == "ca"),
+      cyclic=bool(topo["cyclic"]),
       key=key,
     )
 

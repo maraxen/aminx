@@ -141,3 +141,25 @@ def test_cyclic_neighbor_offsets_even_length_antipodal(length: int):
   assert int(offsets[length - 1, 0]) == -1
   half = length // 2
   assert abs(int(offsets[0, half])) == half
+
+
+@pytest.mark.parametrize(
+  ("checkpoint_id", "expected_cyclic"),
+  [("cyclicmpnn", True), ("cyclicmpnn_v_48_010.eqx.zst", True), ("antibmpnn", False)],
+)
+def test_load_model_sets_static_cyclic_flag_from_family(
+  monkeypatch: pytest.MonkeyPatch, checkpoint_id: str, expected_cyclic: bool
+) -> None:
+  """Verify load_model builds the skeleton with cyclic set from the checkpoint family."""
+  from aminx.io import weights as weights_mod
+
+  captured: dict[str, object] = {}
+
+  def fake_load_weights(*, checkpoint_id: str, local_path: str | None, skeleton: object) -> object:
+    captured["skeleton"] = skeleton
+    return skeleton
+
+  monkeypatch.setattr(weights_mod, "load_weights", fake_load_weights)
+  weights_mod.load_model(checkpoint_id)
+
+  assert captured["skeleton"].cyclic is expected_cyclic
