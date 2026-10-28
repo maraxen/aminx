@@ -974,3 +974,26 @@ def test_thermompnn_checkpoint_id_is_not_routed_to_a_driver(tmp_pdb_path: str) -
     spec = SamplingSpecification(inputs=tmp_pdb_path, checkpoint_id="thermo_mpnn_v1_default")
 
     assert spec.model_family not in DRIVER_MODEL_FAMILIES
+
+
+@pytest.mark.parametrize(
+    ("field", "options_name", "family"),
+    [
+        ("caliby", "CalibyOptions", "caliby"),
+        ("fampnn", "FAMPNNOptions", "fampnn"),
+    ],
+)
+def test_family_options_reach_run_spec_only_for_their_family(
+    tmp_pdb_path: str, field: str, options_name: str, family: str
+) -> None:
+    """Caliby/FAMPNN options ride on ``RunSpec`` for their own family and are refused on any other."""
+    from aminx.run import options as options_mod  # noqa: PLC0415
+    from aminx.run.spec import build_run_spec  # noqa: PLC0415
+
+    options = getattr(options_mod, options_name)()
+
+    own = SamplingSpecification(inputs=tmp_pdb_path, model_family=family, **{field: options})
+    assert getattr(build_run_spec(own), field) is options
+
+    with pytest.raises(ValueError, match=f"{field} options require model_family '{family}'"):
+        build_run_spec(SamplingSpecification(inputs=tmp_pdb_path, **{field: options}))
