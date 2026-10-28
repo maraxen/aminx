@@ -20,9 +20,27 @@ import equinox as eqx
 import jax
 from proxide.ops.dataset import create_protein_dataset
 
-from aminx.host.family_driver import FAMILY_DRIVERS, validate_model_family
+from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, FAMILY_DRIVERS, validate_model_family
 from aminx.io.weights import family_checkpoints, load_model, resolve_family_checkpoint
 from aminx.run.resources import proxide_dataset_resource_kwargs
+
+# Checkpoint-id prefixes that name a driver-backed family even when the spec's model_family is
+# unset. Ids in the pinned family table are matched through the table instead.
+_LEGACY_DRIVER_ID_PREFIXES: tuple[str, ...] = ("pottsmpnn_", "protonpottsmpnn_", "lasermpnn_")
+
+
+def _requires_sha256(model_family: str | None, checkpoint_name: str) -> bool:
+  """Whether a registry entry for this family or id must carry a ``sha256``.
+
+  A driver-backed family (see ``DRIVER_MODEL_FAMILIES``) requires it, and so does an id whose
+  pinned family table entry belongs to a driver-backed family (``caliby``, ``fampnn``, ...).
+  """
+  if model_family in DRIVER_MODEL_FAMILIES:
+    return True
+  pinned = family_checkpoints().get(checkpoint_name)
+  if pinned is not None and pinned.family in DRIVER_MODEL_FAMILIES:
+    return True
+  return checkpoint_name.startswith(_LEGACY_DRIVER_ID_PREFIXES)
 
 
 def _loader_inputs(inputs: Sequence[str | StringIO] | str | StringIO) -> Sequence[str | StringIO]:
@@ -59,17 +77,10 @@ def _resolve_local_checkpoint_from_registry(spec: Specs, checkpoint_id: str | No
     )
     raise ValueError(msg)
   checkpoint_name = checkpoint_id if isinstance(checkpoint_id, str) else ""
-  driver_family = spec.model_family in {"pottsmpnn", "protonpottsmpnn", "lasermpnn"} or checkpoint_name.startswith(
-    (
-      "pottsmpnn_",
-      "protonpottsmpnn_",
-      "lasermpnn_",
-    ),
-  )
-  if driver_family and "sha256" not in found:
+  if _requires_sha256(spec.model_family, checkpoint_name) and "sha256" not in found:
     msg = (
       f"Registry entry for model_family={spec.model_family!r} "
-      f"checkpoint_id={spec.checkpoint_id!r} must include sha256"
+      f"checkpoint_id={checkpoint_id!r} must include sha256"
     )
     raise ValueError(msg)
   artifact = _artifact_path_for_registry_entry(reg_path, str(found["artifact_path"]))
