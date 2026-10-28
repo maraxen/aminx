@@ -176,7 +176,7 @@ def test_driver_resolver_prefers_registry_then_table(
   _write(tmp_path)
   monkeypatch.setenv(WEIGHTS_DIR_ENV, str(tmp_path))
   # prep imported the names at import time, so patch its references too
-  import aminx.host.prep as prep  # noqa: PLC0415
+  from aminx.host import prep  # noqa: PLC0415
 
   monkeypatch.setattr(prep, "family_checkpoints", lambda: {table.checkpoint_id: table})
   hit = SimpleNamespace(checkpoint_registry_path=None, checkpoint_id=table.checkpoint_id)
@@ -214,13 +214,20 @@ def test_shipped_table_is_well_formed_and_licensed() -> None:
     (REPO / ".praxia/docs/decisions").glob("*redistribution-of-pottsmpnn-lasermpnn-and-protonpottsmpnn*.md"),
   ).read_text(encoding="utf-8")
   notice = (REPO / "NOTICE-weights.md").read_text(encoding="utf-8")
-  prefixes = {"pottsmpnn": "pottsmpnn_", "lasermpnn": "lasermpnn_", "protonpottsmpnn": "protonpottsmpnn_"}
+  prefixes: dict[str, tuple[str, ...]] = {
+    "pottsmpnn": ("pottsmpnn_",),
+    "lasermpnn": ("lasermpnn_",),
+    "protonpottsmpnn": ("protonpottsmpnn_",),
+    "caliby": ("caliby", "soluble_caliby"),
+    "fampnn": ("fampnn_",),
+    "thermompnn": ("thermo_mpnn_",),
+  }
   for row in raw["checkpoints"]:
     cid = row["checkpoint_id"]
     assert row["family"] in prefixes
     assert cid.startswith(prefixes[row["family"]])
-    assert row["filename"] == f"{cid}.eqx"
-    assert row["manifest_filename"] == f"{cid}.json"
+    assert row["filename"] in (f"{cid}.eqx", f"{cid}.eqx.zst")
+    assert row["manifest_filename"] in (f"{cid}.json", f"{cid}.manifest.json")
     assert re.fullmatch(r"[0-9a-f]{64}", row["sha256"])
     assert re.fullmatch(r"[0-9a-f]{64}", row["manifest_sha256"])
     assert cid in record, f"{cid} has no entry in the licence decision record"

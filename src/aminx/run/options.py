@@ -143,3 +143,40 @@ class LaserOptions:
   strict_load: bool = True
   output_fasta: bool = False
   output_fasta_only: bool = False
+
+
+@dataclass(frozen=True)
+class FAMPNNOptions:
+  """Options for Full-Atom MPNN (FAMPNN) family execution.
+
+  Attributes
+  ----------
+  checkpoint_id : str
+      FAMPNN checkpoint identifier.
+  num_seq_steps : int
+      Number of masked autoregressive (MAR) sequence refinement steps.
+  num_scn_steps : int
+      Number of EDM sidechain coordinate diffusion steps per MAR step.
+  sigma_min : float
+      Minimum noise level for Karras EDM schedule.
+  sigma_max : float
+      Maximum noise level for Karras EDM schedule.
+  rho : float
+      Schedule curvature exponent for Karras EDM schedule.
+  s_churn : float
+      Stochastic churn parameter for Karras EDM schedule.
+  step_scale : float
+      Velocity step scaling factor during EDM sampling.
+  pack_each_step : bool
+      Whether to diffuse sidechain coordinates at every MAR sequence step.
+  """
+
+  checkpoint_id: str = "fampnn_0_3"
+  num_seq_steps: int = 8
+  num_scn_steps: int = 18
+  sigma_min: float = 0.002
+  sigma_max: float = 80.0
+  rho: float = 7.0
+  s_churn: float = 0.0
+  step_scale: float = 1.5
+  pack_each_step: bool = True

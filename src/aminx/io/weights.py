@@ -43,7 +43,11 @@ HF_REPO_ID = "maraxen/aminx"
 # (abmpnn_v_48_020, hypermpnn_v_48_{002,010,020,030}, cyclicmpnn_v_48_010, ca_v_48_{002,010,020},
 # thermo_mpnn_v1_default, thermo_mpnn_v2_ens{1,2,3}, thermo_mpnn_d_ens{1,2,3}) plus updated
 # NOTICE-weights.md and README.md. All prior MPNN and family weights remain byte-identical.
-HF_REVISION = "c47a40c4cb8c5684a2d2460ef442d7c20124e24c"
+#
+# 5ff5cf16 (2026-10-27) only ADDED files: the 4 AntiBMPNN checkpoints
+# (antibmpnn_v_48_{000,010,020,030}.eqx.zst), 8 Caliby checkpoints + manifests,
+# 3 FAMPNN checkpoints + manifests, and 7 ThermoMPNN manifests.
+HF_REVISION = "5ff5cf1643842ed8eb2d511d0281a5a0db14170e"
 
 #: Env var naming a directory that is AUTHORITATIVE for weights when set. A missing file there
 #: raises instead of silently falling through to the Hub -- the silent fallback is the defect
@@ -381,7 +385,7 @@ def load_weights(
         WEIGHTS_DIR_ENV,
         os.environ.get(WEIGHTS_DIR_ENV),
       )
-    with open(local_path, "rb") as f:
+    with Path(local_path).open("rb") as f:
       header = f.read(4)
       f.seek(0)
       if header == b"\x28\xb5\x2f\xfd":  # zstd magic number (little-endian)
@@ -446,10 +450,7 @@ def load_model(
   if not checkpoint_id:
     if model_weights and model_version:
       filename = LEGACY_ALIAS_MAP.get((model_weights, model_version))
-      if filename:
-        checkpoint_id = filename
-      else:
-        checkpoint_id = f"{model_weights}_{model_version}.eqx.zst"
+      checkpoint_id = filename or f"{model_weights}_{model_version}.eqx.zst"
     elif model_weights == "abmpnn":
       checkpoint_id = "abmpnn_v_48_020.eqx.zst"
     elif model_weights == "hypermpnn":
@@ -525,7 +526,7 @@ def load_model(
     skeleton=skeleton,
   )
 
-  return loaded
+  return loaded  # noqa: RET504
 
 
 # --- Family checkpoints (PottsMPNN, ProtonPottsMPNN, LASErMPNN) --------------------------------

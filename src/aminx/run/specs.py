@@ -26,12 +26,12 @@ if TYPE_CHECKING:
   )
 
   from aminx.types.protocols import ConformationalStates
-  from aminx.types.stages import DecodingFusionFn, EncodingFusionFn
+  from aminx.types.stages import DecodingFusionFn, EncodingFusionFn  # noqa: TID251
   from aminx.utils.catjac import CombineCatJacPairFn
   from aminx.utils.decoding_order import DecodingOrderFn
 
   from .batch_mapping import MappedBy
-  from .options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
+  from .options import FAMPNNOptions, LaserOptions, PottsMPNNOptions, ProtonPottsOptions
 
 
 # Type aliases for convenience
@@ -289,6 +289,8 @@ class RunSpecification:
   """ProtonPottsMPNN knobs. ``None`` means the family defaults; set only for ``protonpottsmpnn``."""
   laser: LaserOptions | None = None
   """LASErMPNN knobs. ``None`` means the family defaults; set only for ``lasermpnn``."""
+  fampnn: FAMPNNOptions | None = None
+  """FAMPNN knobs. ``None`` means the family defaults; set only for ``fampnn``."""
 
   run_spec: RunSpec = field(init=False, repr=False)
   _run_spec_synced: bool = field(init=False, default=False)
@@ -339,7 +341,7 @@ class RunSpecification:
         if isinstance(self.backbone_noise, float):
           bb_noise = (self.backbone_noise,)
         elif isinstance(self.backbone_noise, Sequence):
-          bb_noise = tuple(self.backbone_noise)  # type: ignore
+          bb_noise = tuple(self.backbone_noise)  # type: ignore[arg-type]
 
       bb_mode: Literal["direct", "thermal"] = self.backbone_noise_mode or "direct"
       bundles = [b for b in bundles if b.feature_type != "backbone"]
@@ -361,7 +363,7 @@ class RunSpecification:
         if isinstance(self.estat_noise, float):
           estat_levels = (self.estat_noise,)
         elif isinstance(self.estat_noise, Sequence):
-          estat_levels = tuple(self.estat_noise)  # type: ignore
+          estat_levels = tuple(self.estat_noise)  # type: ignore[arg-type]
         bundles.append(
           FeatureNoiseBundle(
             feature_type="electrostatic",
@@ -388,7 +390,7 @@ class RunSpecification:
         if isinstance(self.vdw_noise, float):
           vdw_levels = (self.vdw_noise,)
         elif isinstance(self.vdw_noise, Sequence):
-          vdw_levels = tuple(self.vdw_noise)  # type: ignore
+          vdw_levels = tuple(self.vdw_noise)  # type: ignore[arg-type]
         bundles.append(
           FeatureNoiseBundle(
             feature_type="vdw",

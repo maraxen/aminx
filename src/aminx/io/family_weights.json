@@ -73,6 +73,30 @@
       "sha256": "09a1dc415428b11e5990aa6f0192c8db28e97ebce2f55338a67b1877f765530e",
       "manifest_filename": "protonpottsmpnn_v6_30.json",
       "manifest_sha256": "617f9ba2d56c959e71286a38defe75d1318326523ffe35a02b3c7617779926e1"
+    },
+    {
+      "checkpoint_id": "fampnn_0_0",
+      "family": "fampnn",
+      "filename": "fampnn_0_0.eqx.zst",
+      "sha256": "c0cd51925311c6f6756d6253968d8f5117904372304956a494d796427fb69cc9",
+      "manifest_filename": "fampnn_0_0.manifest.json",
+      "manifest_sha256": "7408ef927ac4dd3db3a699bb0a17c418f5b0c56e1dd33d492f493e0675651c5d"
+    },
+    {
+      "checkpoint_id": "fampnn_0_3",
+      "family": "fampnn",
+      "filename": "fampnn_0_3.eqx.zst",
+      "sha256": "ae73b3fb10d206bdf863469f109162129e84447a83b6004deda7618624274565",
+      "manifest_filename": "fampnn_0_3.manifest.json",
+      "manifest_sha256": "fc1a88748225fb584fd2178bd9e9124891f620f53c1770f9b2854e1e840db68b"
+    },
+    {
+      "checkpoint_id": "fampnn_0_3_cath",
+      "family": "fampnn",
+      "filename": "fampnn_0_3_cath.eqx.zst",
+      "sha256": "baacd18f6d3f554bdba2044255688ef4ca42a0bab8a851d5ec09625b50fa9463",
+      "manifest_filename": "fampnn_0_3_cath.manifest.json",
+      "manifest_sha256": "81178d3f72a13c2ab5f5e7877fe67ded137b8203fa6098f74836356ae63ba4fc"
     }
   ]
 }
