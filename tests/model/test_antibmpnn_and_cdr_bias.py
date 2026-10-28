@@ -42,7 +42,7 @@ def test_antibmpnn_weights_registration_and_topology() -> None:
   assert "antibmpnn" in get_args(MODEL_WEIGHTS)
   assert "v_48_000" in get_args(MODEL_VERSION)
   assert _BARE_VARIANT_DEFAULTS["antibmpnn"] == "antibmpnn_v_48_000.eqx.zst"
-  assert LEGACY_ALIAS_MAP[("antibmpnn", "v_48_002")] == "antibmpnn_v_48_000.eqx.zst"
+  assert ("antibmpnn", "v_48_002") not in LEGACY_ALIAS_MAP
 
   for ver in ("v_48_000", "v_48_010", "v_48_020", "v_48_030"):
     expected_file = f"antibmpnn_{ver}.eqx.zst"
@@ -51,6 +51,14 @@ def test_antibmpnn_weights_registration_and_topology() -> None:
     assert topo["model_type"] == "protein"
     assert topo["k_neighbors"] == 48
     assert topo["num_positional_embeddings"] == 32
+
+
+def test_antibmpnn_v_48_002_is_refused_not_aliased() -> None:
+  """Verify requesting antibmpnn v_48_002 raises instead of silently loading v_48_000."""
+  from aminx.io.weights import load_model
+
+  with pytest.raises(ValueError, match="v_48_002"):
+    load_model(model_weights="antibmpnn", model_version="v_48_002")
 
 
 def test_build_cdr_region_mask_and_test_cdr_region_mask_chothia_and_imgt() -> None:
