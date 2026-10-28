@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TextIO, cast
 
-from aminx.host.family_driver import ModelFamily, validate_model_family
+from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, ModelFamily, validate_model_family
 from aminx.io.proxide_fetch import InputResolutionError
-from aminx.io.weights import get_topology_for_checkpoint
+from aminx.io.weights import family_checkpoints, get_topology_for_checkpoint
 from aminx.model.versions import MODEL_VERSION, MODEL_WEIGHTS
 
 from .spec import UNSET, RunSpec, Unset, _as_temperature_tuple, build_run_spec
@@ -52,6 +52,19 @@ AlignmentStrategy = Literal["sequence", "structure"]
 TiedPositionMode = Literal["auto", "direct"] | None
 
 logger = logging.getLogger(__name__)
+
+
+def _pinned_driver_family(checkpoint_id: str) -> str | None:
+  """Driver-backed family that a pinned checkpoint id belongs to, else ``None``.
+
+  The pinned family table (``family_weights.json``) is the source of the ids. Only families with
+  a driver count, so a ThermoMPNN id (family de-registered) stays unrouted, and an id that is not
+  in the table never routes by prefix alone.
+  """
+  pinned = family_checkpoints().get(checkpoint_id)
+  if pinned is None or pinned.family not in DRIVER_MODEL_FAMILIES:
+    return None
+  return pinned.family
 
 
 @dataclass(frozen=True)
@@ -480,12 +493,17 @@ class RunSpecification:
     # Prefixes are decided before model_type is consulted, so a potts/laser id
     # cannot fall through to proteinmpnn (get_topology reports model_type protein).
     checkpoint_name = self.checkpoint_id if isinstance(self.checkpoint_id, str) else ""
+    pinned_family = _pinned_driver_family(checkpoint_name) if self.model_family is None else None
     if self.model_family is None and checkpoint_name.startswith("pottsmpnn_"):
       object.__setattr__(self, "model_family", "pottsmpnn")
     elif self.model_family is None and checkpoint_name.startswith("protonpottsmpnn_"):
       object.__setattr__(self, "model_family", "protonpottsmpnn")
     elif self.model_family is None and checkpoint_name.startswith("lasermpnn_"):
       object.__setattr__(self, "model_family", "lasermpnn")
+    elif pinned_family is not None:
+      # caliby and fampnn ids (caliby, soluble_caliby*, caliby_packer_*, fampnn_*) are matched
+      # through the pinned family table, so an unpinned "caliby_..." id does not route anywhere.
+      object.__setattr__(self, "model_family", pinned_family)
 
     derived_topology = (
       get_topology_for_checkpoint(self.checkpoint_id) if self.checkpoint_id is not None else None
