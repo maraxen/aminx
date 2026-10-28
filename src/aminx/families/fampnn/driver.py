@@ -276,6 +276,38 @@ def _options(spec: Any) -> FAMPNNOptions:  # noqa: ANN401
 
 _DEFAULT_CHECKPOINT_ID = "fampnn_0_3"
 
+# Spec fields that constrain decoding but that the FAMPNN stages never read. Setting one would
+# otherwise produce unconstrained output with no error, so ``load`` refuses the run instead.
+_UNSUPPORTED_CONSTRAINT_FIELDS: tuple[str, ...] = (
+  "fixed_positions",
+  "fixed_tokens",
+  "fixed_mask",
+  "bias",
+  "omit_aa",
+  "omit_aa_per_position",
+)
+
+
+def _reject_unsupported_constraints(spec: Any) -> None:  # noqa: ANN401
+  """Raise ``ValueError`` if ``spec`` sets a constraint field the FAMPNN driver would drop.
+
+  Raises
+  ------
+  ValueError
+    If any field in ``_UNSUPPORTED_CONSTRAINT_FIELDS`` is set to a non-empty value.
+  """
+  present = [name for name in _UNSUPPORTED_CONSTRAINT_FIELDS if _is_set(getattr(spec, name, None))]
+  if present:
+    msg = (
+      f"fampnn does not apply {', '.join(present)}; the run would ignore them and return "
+      "unconstrained sequences. Unset these fields for fampnn."
+    )
+    raise ValueError(msg)
+
+
+def _is_set(value: Any) -> bool:  # noqa: ANN401
+  return value is not None and not (isinstance(value, (tuple, list, Mapping)) and len(value) == 0)
+
 
 def _checkpoint_id(spec: Any) -> str:  # noqa: ANN401
   """Effective FAMPNN checkpoint id: ``spec.checkpoint_id``, else ``spec.fampnn.checkpoint_id``.
@@ -616,6 +648,7 @@ class FAMPNNDriver:
     FAMPNNModel
       Loaded ``FAMPNNModel``.
     """
+    _reject_unsupported_constraints(spec)
     ckpt_id = _checkpoint_id(spec)
     local = getattr(spec, "model_local_path", None)
     if local is not None:

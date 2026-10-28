@@ -25,6 +25,9 @@ def _spec(**fields: Any) -> SimpleNamespace:  # noqa: ANN401
     "fixed_positions": None,
     "fixed_mask": None,
     "fixed_tokens": None,
+    "bias": None,
+    "omit_aa": (),
+    "omit_aa_per_position": None,
   }
   base.update(fields)
   return SimpleNamespace(**base)
@@ -84,3 +87,30 @@ def test_conflicting_spec_and_options_checkpoint_ids_raise(resolved: dict[str, A
     )
 
   assert "loaded_id" not in resolved
+
+
+@pytest.mark.parametrize(
+  "fields",
+  [
+    {"fixed_positions": [1, 2]},
+    {"fixed_tokens": [3]},
+    {"fixed_mask": [0, 1]},
+    {"bias": [[0.0] * 21]},
+    {"omit_aa": ("C",)},
+    {"omit_aa_per_position": {3: "W"}},
+  ],
+  ids=["fixed_positions", "fixed_tokens", "fixed_mask", "bias", "omit_aa", "omit_aa_per_position"],
+)
+def test_unsupported_constraint_fields_raise_instead_of_being_dropped(
+  resolved: dict[str, Any], fields: dict[str, Any],
+) -> None:
+  with pytest.raises(ValueError, match="does not apply"):
+    FAMPNNDriver().load(_spec(**fields))
+
+  assert "loaded_id" not in resolved
+
+
+def test_empty_constraint_fields_are_accepted(resolved: dict[str, Any]) -> None:
+  FAMPNNDriver().load(_spec(omit_aa=(), omit_aa_per_position=None, fixed_positions=None))
+
+  assert resolved["loaded_id"] == "fampnn_0_3"
