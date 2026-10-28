@@ -6,6 +6,7 @@ refuses rather than dropping, and that the logits it returns belong to the seque
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
@@ -136,6 +137,50 @@ def test_score_purposes_refuse_sequences_to_score(purpose: str) -> None:
   """
   with pytest.raises(ValueError, match="does not apply sequences_to_score"):
     FAMPNNDriver().stages(_spec(sequences_to_score=("ACDE",)), purpose, model=None)  # type: ignore[arg-type]
+
+
+class _GetcwdPayload:
+  """Pickles as a call to ``os.getcwd``, a harmless stand-in for a hostile ``__reduce__``."""
+
+  def __reduce__(self) -> tuple[Any, ...]:
+    """Return the callable and arguments the unpickler would invoke.
+
+    Parameters
+    ----------
+    self : _GetcwdPayload
+      Instance being pickled.
+
+    Returns
+    -------
+    tuple[Any, ...]
+      ``(os.getcwd, ())``.
+    """
+    import os  # noqa: PLC0415
+
+    return (os.getcwd, ())
+
+
+def test_fampnn_torch_checkpoint_refuses_a_reduce_payload(tmp_path: Path) -> None:
+  """A FAMPNN ``.pt`` loads through the restricted unpickler, so a ``__reduce__`` global is refused.
+
+  Parameters
+  ----------
+  tmp_path : Path
+    Pytest temporary directory that holds the hostile checkpoint.
+
+  Returns
+  -------
+  None
+    Asserts the refusal.
+  """
+  torch = pytest.importorskip("torch")
+  import pickle  # noqa: PLC0415
+
+  path = tmp_path / "hostile.pt"
+  torch.save({"state_dict": _GetcwdPayload()}, path)
+
+  with pytest.raises(pickle.UnpicklingError, match="Refusing to unpickle"):
+    driver_mod._load_fampnn_torch(path)
 
 
 class _FakeOut(NamedTuple):

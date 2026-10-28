@@ -1139,7 +1139,7 @@ def test_caliby_torch_unpickler_refuses_arbitrary_globals() -> None:
 
   import pytest  # noqa: PLC0415
 
-  from aminx.families.caliby.driver import _RestrictedCalibyUnpickler  # noqa: PLC0415
+  from aminx.io.torch_checkpoint import RestrictedTorchUnpickler as _RestrictedCalibyUnpickler  # noqa: PLC0415
 
   _SENTINEL_CALLS.clear()
   payload = pickle.dumps(_SentinelPayload())

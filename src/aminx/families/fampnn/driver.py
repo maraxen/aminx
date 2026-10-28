@@ -33,6 +33,7 @@ from aminx.families.potts_mpnn.featurize import PottsInputError, parse_pdb_upstr
 from aminx.host.bucketing import bucket_ladder
 from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, FamilyStages, SinkArraySpec
 from aminx.host.prep import _resolve_driver_checkpoint
+from aminx.io.torch_checkpoint import load_restricted_torch_checkpoint
 from aminx.run.options import FAMPNNOptions
 
 _HANDLED: frozenset[str] = frozenset({
@@ -609,9 +610,7 @@ def _load_fampnn_eqx(path: Path, checkpoint_id: str) -> FAMPNNModel:
 
 
 def _load_fampnn_torch(path: Path) -> FAMPNNModel:
-  import torch  # noqa: PLC0415
-
-  raw = torch.load(path, map_location="cpu", weights_only=False)
+  raw = load_restricted_torch_checkpoint(path)
   return convert_fampnn_state_dict(raw)
 
 
