@@ -45,7 +45,7 @@ def test_compute_neighbor_offsets_cyclic_wrapping_and_antisymmetry() -> None:
 
 
 def test_compute_neighbor_offsets_cyclic_multichain_and_padding() -> None:
-  """Verify per-chain span L_c ignores padded residues and non-contiguous numbering gaps."""
+  """Verify per-chain span L_c (max - min + 1 of residue_index) ignores padded residues and a non-zero chain start."""
   res_idx = jnp.array([101, 102, 103, 104, 105, 106, 0, 0, 1, 2, 3, 4], dtype=jnp.int32)
   chain_idx = jnp.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1], dtype=jnp.int32)
   mask = jnp.array([1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1], dtype=jnp.float32)
@@ -141,3 +141,25 @@ def test_cyclic_neighbor_offsets_even_length_antipodal(length: int):
   assert int(offsets[length - 1, 0]) == -1
   half = length // 2
   assert abs(int(offsets[0, half])) == half
+
+
+@pytest.mark.parametrize(
+  ("checkpoint_id", "expected_cyclic"),
+  [("cyclicmpnn", True), ("cyclicmpnn_v_48_010.eqx.zst", True), ("antibmpnn", False)],
+)
+def test_load_model_sets_static_cyclic_flag_from_family(
+  monkeypatch: pytest.MonkeyPatch, checkpoint_id: str, expected_cyclic: bool
+) -> None:
+  """Verify load_model builds the skeleton with cyclic set from the checkpoint family."""
+  from aminx.io import weights as weights_mod
+
+  captured: dict[str, object] = {}
+
+  def fake_load_weights(*, checkpoint_id: str, local_path: str | None, skeleton: object) -> object:
+    captured["skeleton"] = skeleton
+    return skeleton
+
+  monkeypatch.setattr(weights_mod, "load_weights", fake_load_weights)
+  weights_mod.load_model(checkpoint_id)
+
+  assert captured["skeleton"].cyclic is expected_cyclic

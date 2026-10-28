@@ -42,7 +42,7 @@ def test_antibmpnn_weights_registration_and_topology() -> None:
   assert "antibmpnn" in get_args(MODEL_WEIGHTS)
   assert "v_48_000" in get_args(MODEL_VERSION)
   assert _BARE_VARIANT_DEFAULTS["antibmpnn"] == "antibmpnn_v_48_000.eqx.zst"
-  assert LEGACY_ALIAS_MAP[("antibmpnn", "v_48_002")] == "antibmpnn_v_48_000.eqx.zst"
+  assert ("antibmpnn", "v_48_002") not in LEGACY_ALIAS_MAP
 
   for ver in ("v_48_000", "v_48_010", "v_48_020", "v_48_030"):
     expected_file = f"antibmpnn_{ver}.eqx.zst"
@@ -51,6 +51,14 @@ def test_antibmpnn_weights_registration_and_topology() -> None:
     assert topo["model_type"] == "protein"
     assert topo["k_neighbors"] == 48
     assert topo["num_positional_embeddings"] == 32
+
+
+def test_antibmpnn_v_48_002_is_refused_not_aliased() -> None:
+  """Verify requesting antibmpnn v_48_002 raises instead of silently loading v_48_000."""
+  from aminx.io.weights import load_model
+
+  with pytest.raises(ValueError, match="v_48_002"):
+    load_model(model_weights="antibmpnn", model_version="v_48_002")
 
 
 def test_build_cdr_region_mask_and_test_cdr_region_mask_chothia_and_imgt() -> None:
@@ -134,6 +142,102 @@ def test_cdr_frequency_logit_transform_invariants() -> None:
   assert jnp.all(diff[:, 20] == 0.0)
   assert jnp.all(diff[cdr_mask, 19] > 0.0)
   assert jnp.all(diff[cdr_mask, 0] < 0.0)
+
+
+def test_cdr_transform_refuses_logits_without_matching_residue_axis() -> None:
+  """Verify a bound transform raises on logits with no matching residue axis, not residue 0's bias."""
+  cdr_mask = jnp.array([True, False, True, False])
+  target = jnp.full((20,), 0.02, dtype=jnp.float32).at[19].set(0.62)
+  transform = make_cdr_frequency_logit_transform(
+    cdr_mask,
+    target_frequencies=target,
+    weight=1.5,
+  )
+
+  # Single-step (V,) logits carry no residue position: the caller must use the 3-arg protocol.
+  with pytest.raises(ValueError, match="residue axis"):
+    transform(jnp.zeros((21,), dtype=jnp.float32))
+
+  # (L', V) logits with L' != N cannot be aligned to the per-residue bias.
+  with pytest.raises(ValueError, match="residue axis"):
+    transform(jnp.zeros((3, 21), dtype=jnp.float32))
+
+  # Matching (N, V) logits are still biased per residue.
+  out = transform(jnp.zeros((4, 21), dtype=jnp.float32))
+  assert out.shape == (4, 21)
+  assert jnp.all(out[~cdr_mask] == 0.0)
+  assert jnp.all(out[cdr_mask, 19] > 0.0)
+
+
+def test_cdr_transform_direct_mask_is_keyword_only_and_positional_is_bias() -> None:
+  """Verify cdr_mask= is read as a mask, a positional array as a bias, and unbound bias calls work."""
+  target = jnp.full((20,), 0.02, dtype=jnp.float32).at[19].set(0.62)
+  mask_bound = jnp.zeros((21,), dtype=jnp.float32).at[:5].set(1.0)
+  mask_other = jnp.zeros((21,), dtype=jnp.float32).at[10:15].set(1.0)
+  logits = jnp.zeros((21, 21), dtype=jnp.float32)
+
+  bound = make_cdr_frequency_logit_transform(mask_bound, target_frequencies=target, weight=1.5)
+  plain = bound(logits)
+
+  # Keyword cdr_mask= is the mask, even for a float length-21 array on a bound transform.
+  other_ref = make_cdr_frequency_logit_transform(mask_other, target_frequencies=target, weight=1.5)
+  assert jnp.allclose(bound(logits, cdr_mask=mask_other), other_ref(logits), atol=1e-6)
+  assert jnp.allclose(bound(logits, cdr_mask=mask_bound), plain, atol=1e-6)
+
+  # The same array passed positionally is a per-token bias, never a mask.
+  assert jnp.allclose(bound(logits, mask_other), plain + mask_other[None, :], atol=1e-6)
+
+  # Unbound transform: the standard (per_state, bias) call adds the bias and the global log-odds.
+  unbound = make_cdr_frequency_logit_transform(None, target_frequencies=target, weight=1.5)
+  bias = jnp.arange(21.0, dtype=jnp.float32)
+  out = unbound(jnp.zeros((4, 21), dtype=jnp.float32), bias)
+  assert jnp.allclose(out, bias[None, :] + unbound.cdr_bias[None, :], atol=1e-6)
+
+
+def test_region_weights_semantics_unspecified_unit_overlap_and_ignored_raise() -> None:
+  """Verify unweighted CDR loops keep scale 1.0 and ambiguous or ignored weights raise."""
+  residue_idx = jnp.arange(1, 13, dtype=jnp.int32)
+  chain_idx = jnp.zeros(12, dtype=jnp.int32)
+  masks = build_cdr_region_mask(
+    residue_idx,
+    chain_idx,
+    cdr_ranges={"H1": (1, 3), "H2": (5, 7), "H3": (9, 11)},
+  )
+  target = jnp.full((20,), 0.02, dtype=jnp.float32).at[19].set(0.62)
+  unweighted = make_cdr_frequency_logit_transform(masks, target_frequencies=target, weight=1.5)
+
+  # H2 and H3 are not in region_weights: they keep the unweighted scale 1.0, not 0.
+  partial = make_cdr_frequency_logit_transform(
+    masks,
+    target_frequencies=target,
+    weight=1.5,
+    region_weights={"H1": 0.5},
+  )
+  assert jnp.allclose(partial.cdr_bias[4], unweighted.cdr_bias[4])
+  assert jnp.allclose(partial.cdr_bias[8], unweighted.cdr_bias[8])
+  assert jnp.allclose(partial.cdr_bias[0], 0.5 * unweighted.cdr_bias[0])
+
+  # An aggregate and one of its loops overlap and would double-count shared positions.
+  with pytest.raises(ValueError, match="overlap"):
+    make_cdr_frequency_logit_transform(
+      masks, target_frequencies=target, region_weights={"h1": 1.0, "heavy_cdr": 1.0},
+    )
+  with pytest.raises(ValueError, match="overlap"):
+    make_cdr_frequency_logit_transform(
+      masks, target_frequencies=target, region_weights={"H1": 1.0, "h1": 2.0},
+    )
+
+  # Unknown region names are refused rather than ignored.
+  with pytest.raises(ValueError, match="unknown"):
+    make_cdr_frequency_logit_transform(
+      masks, target_frequencies=target, region_weights={"h9": 1.0},
+    )
+
+  # A plain mask array carries no loop labels, so region weights would be silently ignored.
+  with pytest.raises(ValueError, match="region"):
+    make_cdr_frequency_logit_transform(
+      masks.any_cdr, target_frequencies=target, region_weights={"h1": 2.0},
+    )
 
 
 def test_cdr_physicochemical_descriptors_barley_and_lehninger() -> None:

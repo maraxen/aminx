@@ -76,6 +76,14 @@ class ArithmeticMeanLogits(eqx.Module):
         items.append(transforms)
     if cdr_transform is not None:
       items.append(cdr_transform)
+    for item in items:
+      if not callable(item):
+        msg = (
+          "ArithmeticMeanLogits transforms must be callable (a logit transform module or "
+          f"function); got {type(item).__name__}. A CDRRegionMasks tuple, a mask array, or a "
+          "misspelled transform name is not a transform."
+        )
+        raise TypeError(msg)
     self.transforms = tuple(items)
 
   def __call__(
@@ -139,8 +147,7 @@ class ArithmeticMeanLogits(eqx.Module):
       result = result + bias
 
     for tfm in self.transforms:
-      if callable(tfm):
-        result = tfm(result)
+      result = tfm(result)
 
     return result
 

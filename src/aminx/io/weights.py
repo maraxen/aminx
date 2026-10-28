@@ -81,7 +81,6 @@ LEGACY_ALIAS_MAP = {
   ("soluble", "v_48_030"): "solublempnn_v_48_030.eqx.zst",
   ("abmpnn", "v_48_020"): "abmpnn_v_48_020.eqx.zst",
   ("antibmpnn", "v_48_000"): "antibmpnn_v_48_000.eqx.zst",
-  ("antibmpnn", "v_48_002"): "antibmpnn_v_48_000.eqx.zst",
   ("antibmpnn", "v_48_010"): "antibmpnn_v_48_010.eqx.zst",
   ("antibmpnn", "v_48_020"): "antibmpnn_v_48_020.eqx.zst",
   ("antibmpnn", "v_48_030"): "antibmpnn_v_48_030.eqx.zst",
@@ -93,6 +92,16 @@ LEGACY_ALIAS_MAP = {
   ("ca", "v_48_002"): "ca_v_48_002.eqx.zst",
   ("ca", "v_48_010"): "ca_v_48_010.eqx.zst",
   ("ca", "v_48_020"): "ca_v_48_020.eqx.zst",
+}
+
+# (model_weights, model_version) pairs that are NOT published on the Hub. They are refused with a
+# clear error instead of being aliased to another checkpoint, which would load different weights
+# under the requested name.
+UNPUBLISHED_CHECKPOINTS: dict[tuple[str, str], str] = {
+  ("antibmpnn", "v_48_002"): (
+    "antibmpnn v_48_002 is not published; the AntiBMPNN checkpoints are v_48_000, v_48_010, "
+    "v_48_020 and v_48_030."
+  ),
 }
 
 _BARE_VARIANT_DEFAULTS = {
@@ -133,6 +142,9 @@ def _resolve_checkpoint_id(
     checkpoint_id = None
     version_was_positional = True
 
+  if model_weights and model_version and (model_weights, str(model_version)) in UNPUBLISHED_CHECKPOINTS:
+    raise ValueError(UNPUBLISHED_CHECKPOINTS[(model_weights, str(model_version))])
+
   if not checkpoint_id:
     weights_key = model_weights.lower() if isinstance(model_weights, str) else None
     if weights_key in _BARE_VARIANT_DEFAULTS:
@@ -170,9 +182,15 @@ def get_topology_for_checkpoint(checkpoint_id: str) -> dict[str, int | bool | st
     "atom_context_num": 16,
     "physics_feature_dim": 0,
     "model_type": "protein",
+    "cyclic": False,
   }
 
   name = checkpoint_id.lower()
+
+  # CyclicMPNN checkpoints wrap intra-chain sequence offsets (head-to-tail cyclic peptides).
+  # The flag is a static field of the skeleton, so it must be set at construction time.
+  if "cyclicmpnn" in name:
+    topology["cyclic"] = True
 
   if "v_32" in name:
     topology["k_neighbors"] = 32
@@ -553,6 +571,7 @@ def load_model(
       num_positional_embeddings=topo["num_positional_embeddings"],
       dropout_rate=dropout_rate,
       ca_only=(model_type == "ca"),
+      cyclic=bool(topo["cyclic"]),
       key=key,
     )
 

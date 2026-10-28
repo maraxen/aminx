@@ -245,12 +245,50 @@ def build_cdr_region_mask(
   )
 
 
+_REGION_NAMES: tuple[str, ...] = (
+  "h1",
+  "h2",
+  "h3",
+  "l1",
+  "l2",
+  "l3",
+  "heavy_cdr",
+  "light_cdr",
+  "any_cdr",
+)
+
+# Aggregate region -> the regions it contains. A weighted key and any region it contains (or that
+# contains it) cover the same positions, so such a pair is refused as an overlap.
+_REGION_CONTAINS: dict[str, frozenset[str]] = {
+  "any_cdr": frozenset(_REGION_NAMES) - {"any_cdr"},
+  "heavy_cdr": frozenset({"h1", "h2", "h3"}),
+  "light_cdr": frozenset({"l1", "l2", "l3"}),
+}
+
+
 def _compute_region_scale(
   cdr_mask: CDRRegionMasks | jax.Array,
   region_masks: CDRRegionMasks | None = None,
   region_weights: Mapping[str, float] | None = None,
 ) -> jax.Array:
-  """Compute per-position float32 scaling factor from CDR mask and optional loop weights."""
+  """Compute per-position float32 scale from the CDR mask and optional per-region weights.
+
+  Without ``region_weights`` the result is the CDR mask itself (1.0 inside CDRs, else 0.0).
+
+  With ``region_weights`` the semantics are:
+
+  - Each weighted key multiplies the positions of its region by its weight.
+  - A CDR position in no weighted region keeps scale 1.0 (unspecified regions are unscaled).
+  - Keys are region names, case-insensitive, from ``h1..h3``, ``l1..l3``, ``heavy_cdr``,
+    ``light_cdr`` and ``any_cdr``. An unknown key raises ``ValueError``.
+  - Two keys whose regions overlap (an aggregate and one of its loops, ``any_cdr`` with any
+    other region, or two names that differ only by case) raise ``ValueError``: the shared
+    positions would otherwise be ambiguous or double-counted.
+  - Weights need loop labels: pass a :class:`CDRRegionMasks` ``cdr_mask`` or ``region_masks``.
+    A plain mask array with weights raises ``ValueError`` rather than ignoring the weights.
+
+  Overlap and unknown-key checks depend only on the key names, so they are static under ``jit``.
+  """
   if isinstance(cdr_mask, CDRRegionMasks):
     base_mask = cdr_mask.any_cdr.astype(jnp.float32)
     eff_regions = cdr_mask if region_masks is None else region_masks
@@ -258,15 +296,43 @@ def _compute_region_scale(
     base_mask = jnp.asarray(cdr_mask, dtype=jnp.float32)
     eff_regions = region_masks
 
-  if eff_regions is not None and region_weights:
-    norm_weights = {k.lower(): float(v) for k, v in region_weights.items()}
-    scale = jnp.zeros_like(base_mask, dtype=jnp.float32)
-    for loop_name in ("h1", "h2", "h3", "l1", "l2", "l3", "heavy_cdr", "light_cdr", "any_cdr"):
-      if loop_name in norm_weights:
-        loop_m = getattr(eff_regions, loop_name).astype(jnp.float32)
-        scale = scale + loop_m * norm_weights[loop_name]
-    return base_mask * scale
-  return base_mask
+  if not region_weights:
+    return base_mask
+
+  norm_weights = {k.lower(): float(v) for k, v in region_weights.items()}
+  if len(norm_weights) != len(region_weights):
+    msg = (
+      f"region_weights keys overlap: {sorted(region_weights)} contain names that differ only "
+      "by case."
+    )
+    raise ValueError(msg)
+  unknown = sorted(set(norm_weights) - set(_REGION_NAMES))
+  if unknown:
+    msg = (
+      f"region_weights has unknown region(s) {unknown}; expected a subset of {list(_REGION_NAMES)}."
+    )
+    raise ValueError(msg)
+  names = sorted(norm_weights)
+  for i, a in enumerate(names):
+    for b in names[i + 1 :]:
+      if b in _REGION_CONTAINS.get(a, frozenset()) or a in _REGION_CONTAINS.get(b, frozenset()):
+        msg = (
+          f"region_weights keys overlap: {a!r} and {b!r} cover the same positions; weight "
+          "only one of them."
+        )
+        raise ValueError(msg)
+  if eff_regions is None:
+    msg = (
+      "region_weights need region labels: pass a CDRRegionMasks cdr_mask or region_masks. "
+      "A plain cdr_mask array has no loop labels, so the weights would be ignored."
+    )
+    raise ValueError(msg)
+
+  scale = jnp.ones_like(base_mask, dtype=jnp.float32)
+  for name, weight in norm_weights.items():
+    loop_m = jnp.asarray(getattr(eff_regions, name), dtype=jnp.bool_)
+    scale = jnp.where(loop_m, weight, scale)
+  return base_mask * scale
 
 
 class CDRFrequencyLogitTransform(eqx.Module):
@@ -277,9 +343,9 @@ class CDRFrequencyLogitTransform(eqx.Module):
      or ``(logits, step, mask)`` where ``cdr_mask`` was pre-bound at construction
      time and ``logits`` has shape ``(S, L, V)``, ``(L, V)``, ``(S, V)`` (single-step
      AR at ``step``), or ``(V,)`` (single-step AR at ``step``).
-  2. Direct calls ``(logits, cdr_mask, *, region_masks=None, region_weights=None)``
-     where ``cdr_mask`` (a boolean/float mask of length ``L`` or ``CDRRegionMasks``)
-     is passed as the second argument.
+  2. Direct per-call masks ``(logits, *, cdr_mask=..., region_masks=None, region_weights=None)``
+     where ``cdr_mask`` (a boolean/float mask of length ``L`` or ``CDRRegionMasks``) is
+     keyword-only. A positional array is always a bias, never a mask.
 
   Attributes
   ----------
@@ -329,25 +395,36 @@ class CDRFrequencyLogitTransform(eqx.Module):
     self.base_transform = base_transform
     self.has_bound_mask = has_bound_mask
 
-  def __call__(  # noqa: PLR0911
+  def __call__(
     self,
     per_state: Logits,
-    bias_or_step_or_mask: jax.Array | CDRRegionMasks | int | None = None,
+    bias_or_step: jax.Array | int | None = None,
     mask: jax.Array | None = None,
     *,
+    cdr_mask: jax.Array | CDRRegionMasks | None = None,
     region_masks: CDRRegionMasks | None = None,
     region_weights: Mapping[str, float] | None = None,
   ) -> Logits:
     """Apply inner logit transform (if any) followed by the CDR log-odds bias.
 
+    The positional arguments are dispatched by position only, never by shape or dtype:
+
+    - ``(per_state, bias)``: the second positional argument is a bias.
+    - ``(per_state, step, mask)``: the 3-arg ``LogitTransform`` protocol; ``step`` is the
+      decoding step index and ``mask`` is accepted for protocol compatibility.
+    - ``(per_state, cdr_mask=...)``: a direct per-call mask, keyword-only.
+
     Parameters
     ----------
     per_state : Logits
       Input logits array.
-    bias_or_step_or_mask : jax.Array | CDRRegionMasks | int | None, optional
-      Optional bias tensor, decoding step index, or CDR region mask.
+    bias_or_step : jax.Array | int | None, optional
+      Bias tensor (standard protocol) or decoding step index (3-arg protocol).
     mask : jax.Array | None, optional
-      Optional valid-residue mask for the 3-arg ``LogitTransform`` protocol.
+      Valid-residue mask for the 3-arg protocol. Its presence selects that protocol.
+    cdr_mask : jax.Array | CDRRegionMasks | None, optional
+      Keyword-only per-call CDR mask of length ``N`` or :class:`CDRRegionMasks`. Cannot be
+      combined with ``bias_or_step`` or ``mask``.
     region_masks : CDRRegionMasks | None, optional
       Optional per-loop CDR boolean masks for loop-specific weighting.
     region_weights : Mapping[str, float] | None, optional
@@ -357,15 +434,34 @@ class CDRFrequencyLogitTransform(eqx.Module):
     -------
     Logits
       Biased logits with the same shape as ``per_state``.
+
+    Raises
+    ------
+    ValueError
+      If a per-residue bias is bound and the logits have no residue axis of length ``N``
+      (for example a single-step ``(V,)`` vector called without a step index).
     """
-    # Case 1: 3-arg LogitTransform protocol signature (logits, step, mask)
-    if mask is not None or (
-      bias_or_step_or_mask is not None
-      and not isinstance(bias_or_step_or_mask, CDRRegionMasks)
-      and jnp.asarray(bias_or_step_or_mask).ndim == 0
-      and jnp.issubdtype(jnp.asarray(bias_or_step_or_mask).dtype, jnp.integer)
-    ):
-      step_idx = jnp.asarray(bias_or_step_or_mask, dtype=jnp.int32)
+    # Direct per-call mask: keyword-only, never inferred from a positional argument.
+    if cdr_mask is not None:
+      if bias_or_step is not None or mask is not None:
+        msg = (
+          "cdr_mask= is keyword-only and cannot be combined with a positional bias, step, or mask."
+        )
+        raise ValueError(msg)
+      scale = _compute_region_scale(
+        cdr_mask,
+        region_masks=region_masks,
+        region_weights=region_weights,
+      )
+      out = self.base_transform(per_state, None) if self.base_transform is not None else per_state
+      return out + scale[..., None] * self.log_odds_21
+
+    # Case 1: 3-arg LogitTransform protocol (logits, step, mask), selected by the presence of mask.
+    if mask is not None:
+      if bias_or_step is None:
+        msg = "The 3-arg protocol (logits, step, mask) requires a decoding step index."
+        raise ValueError(msg)
+      step_idx = jnp.asarray(bias_or_step, dtype=jnp.int32)
       out = self.base_transform(per_state, None) if self.base_transform is not None else per_state
       if self.cdr_bias.ndim == 2:
         if out.ndim >= 2 and out.shape[-2] == self.cdr_bias.shape[0]:
@@ -374,25 +470,8 @@ class CDRFrequencyLogitTransform(eqx.Module):
         return out + step_bias
       return out + self.cdr_bias
 
-    # Case 2: Direct call (logits, cdr_mask, *, region_masks=..., region_weights=...)
-    if isinstance(bias_or_step_or_mask, CDRRegionMasks) or (
-      bias_or_step_or_mask is not None
-      and (
-        jnp.issubdtype(jnp.asarray(bias_or_step_or_mask).dtype, jnp.bool_)
-        or jnp.asarray(bias_or_step_or_mask).shape[-1] != 21
-        or not self.has_bound_mask
-      )
-    ):
-      scale = _compute_region_scale(
-        bias_or_step_or_mask,
-        region_masks=region_masks,
-        region_weights=region_weights,
-      )
-      out = self.base_transform(per_state, None) if self.base_transform is not None else per_state
-      return out + scale[..., None] * self.log_odds_21
-
-    # Case 3: Standard BatchLogitFn signature (per_state, bias=None)
-    bias = bias_or_step_or_mask
+    # Case 2: Standard BatchLogitFn signature (per_state, bias=None)
+    bias = bias_or_step
     if self.base_transform is not None:
       out = self.base_transform(per_state, bias)
     else:
@@ -415,10 +494,17 @@ class CDRFrequencyLogitTransform(eqx.Module):
       )
       return out + scale[..., None] * self.log_odds_21
 
-    if self.cdr_bias.ndim == 2 and out.ndim == 1:
-      return out + self.cdr_bias[0]
-    if self.cdr_bias.ndim == 2 and out.ndim == 2 and out.shape[0] != self.cdr_bias.shape[0]:
-      return out + self.cdr_bias[0]
+    if self.cdr_bias.ndim == 2:
+      # A per-residue bias needs a residue axis of length N on the logits. A (V,) vector has no
+      # position, and a different length cannot be aligned; neither may fall back to residue 0.
+      n_res = self.cdr_bias.shape[0]
+      if out.ndim < 2 or out.shape[-2] != n_res:
+        msg = (
+          f"CDR bias is per residue (N={n_res}) but logits of shape {tuple(out.shape)} have no "
+          f"matching residue axis. For a single decoding step pass the step index with the "
+          f"3-arg protocol: transform(logits, step, mask)."
+        )
+        raise ValueError(msg)
     return out + self.cdr_bias
 
 
@@ -461,7 +547,10 @@ def make_cdr_frequency_logit_transform(
   region_masks : CDRRegionMasks | None, optional
     Optional loop masks for per-loop weighting when ``region_weights`` is supplied.
   region_weights : Mapping[str, float] | None, optional
-    Optional per-loop weight multipliers keyed by loop name (``"h1".."l3"``).
+    Optional per-region weight multipliers keyed by region name (``"h1".."l3"``,
+    ``"heavy_cdr"``, ``"light_cdr"``, ``"any_cdr"``). Unweighted CDR positions keep scale 1.0.
+    Overlapping keys, unknown keys, and weights without region labels raise ``ValueError``;
+    see :func:`_compute_region_scale` for the full semantics.
 
   Returns
   -------
@@ -472,7 +561,7 @@ def make_cdr_frequency_logit_transform(
   ------
   ValueError
     If ``target_frequencies`` or ``background_frequencies`` do not have last dimension
-    ``20`` or ``21``.
+    ``20`` or ``21``, or if ``region_weights`` is ambiguous, unknown, or cannot be applied.
   """
   def _extract_aa20(freq: jax.Array | None, name: str) -> jax.Array:
     if freq is None:
