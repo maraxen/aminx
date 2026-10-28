@@ -1172,13 +1172,21 @@ def _factor_potts_raw_sd(key: jax.Array) -> dict[str, np.ndarray]:
 
 def test_caliby_converter_rejects_missing_required_keys() -> None:
   """Raise KeyError naming a missing required factor or LayerNorm key."""
+  import re  # noqa: PLC0415
+
   import pytest  # noqa: PLC0415
 
   base = _factor_potts_raw_sd(jax.random.PRNGKey(46))
-  for missing in ("potts_decoder.W_J_left.weight", "mpnn.encoder_layers.0.norm1.weight"):
-    assert missing in base
-    raw = {k: v for k, v in base.items() if k != missing}
-    with pytest.raises(KeyError, match=missing.replace(".", r"\.")):
+  # W_J_left is not used here: its absence flips the converter's is_factor detection, so the
+  # error would name a factorized-branch key. W_h is a required factor head that keeps the mode.
+  for suffix in ("decoder_S_potts.W_h.weight", "encoder_layers.0.norm1.weight"):
+    matches = [k for k in base if k.endswith(suffix)]
+    assert len(matches) == 1, matches
+    (raw_key,) = matches
+    # The converter reports the normalized name, so derive it with the same normalizer.
+    normalized_key = next(iter(normalize_caliby_state_dict({raw_key: base[raw_key]})))
+    raw = {k: v for k, v in base.items() if k != raw_key}
+    with pytest.raises(KeyError, match=re.escape(normalized_key)):
       convert_caliby_potts_state_dict(raw)
 
 
