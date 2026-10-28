@@ -45,7 +45,7 @@ def test_compute_neighbor_offsets_cyclic_wrapping_and_antisymmetry() -> None:
 
 
 def test_compute_neighbor_offsets_cyclic_multichain_and_padding() -> None:
-  """Verify per-chain span L_c ignores padded residues and non-contiguous numbering gaps."""
+  """Verify per-chain span L_c (max - min + 1 of residue_index) ignores padded residues and a non-zero chain start."""
   res_idx = jnp.array([101, 102, 103, 104, 105, 106, 0, 0, 1, 2, 3, 4], dtype=jnp.int32)
   chain_idx = jnp.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1], dtype=jnp.int32)
   mask = jnp.array([1, 1, 1, 1, 1, 1, 0, 0, 1, 1, 1, 1], dtype=jnp.float32)
