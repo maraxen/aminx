@@ -329,7 +329,7 @@ class CDRFrequencyLogitTransform(eqx.Module):
     self.base_transform = base_transform
     self.has_bound_mask = has_bound_mask
 
-  def __call__(  # noqa: PLR0911
+  def __call__(
     self,
     per_state: Logits,
     bias_or_step_or_mask: jax.Array | CDRRegionMasks | int | None = None,
@@ -357,6 +357,12 @@ class CDRFrequencyLogitTransform(eqx.Module):
     -------
     Logits
       Biased logits with the same shape as ``per_state``.
+
+    Raises
+    ------
+    ValueError
+      If a per-residue bias is bound and the logits have no residue axis of length ``N``
+      (for example a single-step ``(V,)`` vector called without a step index).
     """
     # Case 1: 3-arg LogitTransform protocol signature (logits, step, mask)
     if mask is not None or (
@@ -415,10 +421,17 @@ class CDRFrequencyLogitTransform(eqx.Module):
       )
       return out + scale[..., None] * self.log_odds_21
 
-    if self.cdr_bias.ndim == 2 and out.ndim == 1:
-      return out + self.cdr_bias[0]
-    if self.cdr_bias.ndim == 2 and out.ndim == 2 and out.shape[0] != self.cdr_bias.shape[0]:
-      return out + self.cdr_bias[0]
+    if self.cdr_bias.ndim == 2:
+      # A per-residue bias needs a residue axis of length N on the logits. A (V,) vector has no
+      # position, and a different length cannot be aligned; neither may fall back to residue 0.
+      n_res = self.cdr_bias.shape[0]
+      if out.ndim < 2 or out.shape[-2] != n_res:
+        msg = (
+          f"CDR bias is per residue (N={n_res}) but logits of shape {tuple(out.shape)} have no "
+          f"matching residue axis. For a single decoding step pass the step index with the "
+          f"3-arg protocol: transform(logits, step, mask)."
+        )
+        raise ValueError(msg)
     return out + self.cdr_bias
 
 

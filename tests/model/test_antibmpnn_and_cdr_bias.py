@@ -144,6 +144,31 @@ def test_cdr_frequency_logit_transform_invariants() -> None:
   assert jnp.all(diff[cdr_mask, 0] < 0.0)
 
 
+def test_cdr_transform_refuses_logits_without_matching_residue_axis() -> None:
+  """Verify a bound transform raises on logits with no matching residue axis, not residue 0's bias."""
+  cdr_mask = jnp.array([True, False, True, False])
+  target = jnp.full((20,), 0.02, dtype=jnp.float32).at[19].set(0.62)
+  transform = make_cdr_frequency_logit_transform(
+    cdr_mask,
+    target_frequencies=target,
+    weight=1.5,
+  )
+
+  # Single-step (V,) logits carry no residue position: the caller must use the 3-arg protocol.
+  with pytest.raises(ValueError, match="residue axis"):
+    transform(jnp.zeros((21,), dtype=jnp.float32))
+
+  # (L', V) logits with L' != N cannot be aligned to the per-residue bias.
+  with pytest.raises(ValueError, match="residue axis"):
+    transform(jnp.zeros((3, 21), dtype=jnp.float32))
+
+  # Matching (N, V) logits are still biased per residue.
+  out = transform(jnp.zeros((4, 21), dtype=jnp.float32))
+  assert out.shape == (4, 21)
+  assert jnp.all(out[~cdr_mask] == 0.0)
+  assert jnp.all(out[cdr_mask, 19] > 0.0)
+
+
 def test_cdr_physicochemical_descriptors_barley_and_lehninger() -> None:
   """Verify Barley PC1/PC2 and Lehninger charge match AntiBMPNN README examples to 1e-4."""
   seq1 = _encode_sequence("ARSKSTYLSRDSSGYDY")
