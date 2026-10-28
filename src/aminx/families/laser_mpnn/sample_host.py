@@ -1,7 +1,8 @@
 """LASEr ``sample`` body: joint decode, tied decode, and rotamer coordinates.
 
-The scan is ``decode_order`` / ``tied_decode``. This module only builds the
-order, the uniform stream, and the result-schema arrays around those calls.
+Untied samples encode the structure once and vmap ``decode_order_batched``.
+Tied samples still call ``tied_decode`` once per sample. This module builds
+the order, the uniform stream, and the result-schema arrays around those calls.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ from aminx.families.laser_mpnn.featurize import (
 from aminx.host.family_driver import FamilyBatch, SinkArraySpec
 from aminx.host.omit_aa_bias import compile_omit_aa_bias, omit_aa_is_active
 from aminx.model.laser.graphs import GraphStructure
-from aminx.model.laser.joint_decode import chi_position_mask, decode_order
+from aminx.model.laser.joint_decode import chi_position_mask, decode_order, decode_order_batched
 from aminx.model.laser.tied import tied_decode
 from aminx.run.options import LaserOptions
 
@@ -146,7 +147,11 @@ def _tied_partner(
     return None
   try:
     partner = _featurize_one(
-      Path(options.tied_second_input), spec, options, noise_fold=1, level=level,
+      Path(options.tied_second_input),
+      spec,
+      options,
+      noise_fold=1,
+      level=level,
     )
   except LaserInputError as exc:
     msg = f"tied_second_input: {exc}"
@@ -373,11 +378,14 @@ def _canonical_sequence(laser_index: np.ndarray) -> np.ndarray:
 
 
 def _token_prob(logits: np.ndarray, laser_index: np.ndarray) -> np.ndarray:
-  """``softmax(stored)[sampled]``: the post-min-p probability of the drawn token."""
+  """``softmax(stored)[sampled]``: the post-min-p probability of the drawn token.
+
+  ``logits`` / ``laser_index`` may carry a leading sample axis.
+  """
   probs = jax.nn.softmax(jnp.asarray(logits), axis=-1)
   index = jnp.asarray(laser_index, dtype=jnp.int32)
-  picked = jnp.take_along_axis(probs, index[:, None], axis=-1)[:, 0]
-  return np.asarray(picked, dtype=np.float32)
+  picked = jnp.take_along_axis(probs, index[..., None], axis=-1)
+  return np.asarray(picked[..., 0], dtype=np.float32)
 
 
 def _coords(
@@ -396,8 +404,26 @@ def _coords(
   return np.asarray(built, dtype=np.float32)
 
 
+def _coords_batch(
+  model: Any,  # noqa: ANN401
+  backbone: np.ndarray,
+  chi: np.ndarray,
+  sequence: np.ndarray,
+) -> np.ndarray:
+  """``_coords`` over a leading sample axis. Residues are independent."""
+  batch, length = sequence.shape
+  flat_backbone = np.concatenate([np.asarray(backbone)] * batch, axis=0)
+  built = _coords(
+    model,
+    flat_backbone,
+    np.reshape(np.asarray(chi), (batch * length, 4)),
+    np.reshape(np.asarray(sequence), (batch * length,)),
+  )
+  return np.reshape(built, (batch, length, *built.shape[1:]))
+
+
 class SampleStages:
-  """Per-chunk LASEr sample. One structure is decoded once per sample and temperature."""
+  """Per-chunk LASEr sample. Untied structures are encoded once per level."""
 
   def __init__(self, model: Any, spec: Any) -> None:  # noqa: ANN401
     self._model = model
@@ -443,6 +469,110 @@ class SampleStages:
     chunk_count: int,
     dropout_key: jax.Array,
   ) -> dict[str, np.ndarray]:
+    # ``tied_decode`` encodes inside ``tied.py`` and does not share ``_scan_residues``.
+    if item.tied is not None:
+      return self._one_level_tied(item, chunk_start, chunk_count, dropout_key)
+    return self._one_level_untied(item, chunk_start, chunk_count, dropout_key)
+
+  def _one_level_untied(
+    self,
+    item: _Sampled,
+    chunk_start: int,
+    chunk_count: int,
+    dropout_key: jax.Array,
+  ) -> dict[str, np.ndarray]:
+    """One encode, one batched scan. The loop only builds orders and uniforms."""
+    temperatures = _temperatures(self._spec)
+    n_temp = len(temperatures)
+    orders: list[np.ndarray] = []
+    uniform_rows: list[np.ndarray] = []
+    temp_row: list[float | None] = []
+    for offset in range(chunk_count):
+      for temp_index, temperature in enumerate(temperatures):
+        flat = (chunk_start + offset) * n_temp + temp_index
+        key = jax.random.fold_in(dropout_key, flat)
+        order, uniforms, _chi_u = _order_and_uniforms(
+          self._spec,
+          item.chain_mask,
+          np.asarray(item.features.extra_atom_contact_mask),
+          key,
+          tied=False,
+        )
+        orders.append(order)
+        uniform_rows.append(uniforms)
+        temp_row.append(temperature)
+    return self._pack_untied(item, orders, uniform_rows, temp_row)
+
+  def _pack_untied(
+    self,
+    item: _Sampled,
+    orders: list[np.ndarray],
+    uniform_rows: list[np.ndarray],
+    temp_row: list[float | None],
+  ) -> dict[str, np.ndarray]:
+    features = item.features
+    options = self._options
+    model = self._model
+    decoded = decode_order_batched(
+      model.encoder,
+      model.decoder,
+      self._joint,
+      features.backbone_coords,
+      features.ligand_coords,
+      features.ligand_atomic_numbers,
+      features.ligand_subbatch_indices,
+      np.asarray(model.period_index),
+      np.asarray(model.group_index),
+      _graph(model),
+      np.asarray(features.sequence_indices),
+      np.asarray(features.chi_angles),
+      item.chain_mask,
+      np.asarray(features.first_shell_ligand_contact_mask),
+      np.stack(orders),
+      uniform_rows,
+      sequence_temperature=tuple(temp_row),
+      chi_temperature=options.chi_temp,
+      fs_sequence_temp=options.fs_sequence_temp,
+      seq_min_p=float(options.seq_min_p),
+      chi_min_p=float(options.chi_min_p),
+      ala_budget=int(options.ala_budget),
+      gly_budget=int(options.gly_budget),
+      disabled_residues=tuple(options.disabled_residues),
+      ignore_chain_mask_zeros=bool(options.ignore_chain_mask_zeros),
+      repack_all=bool(options.repack_all),
+      repack_only=bool(options.repack_only),
+      budget_mask=_budget(features, options),
+      charged_mask=_charged(features, options),
+      bias=_logit_bias(self._spec, item.chain_mask),
+    )
+    laser_index = np.asarray(decoded.sequence)
+    produced: dict[str, np.ndarray] = {
+      "sequence": _canonical_sequence(laser_index),
+      "seq_log_prob": _token_prob(np.asarray(decoded.sequence_logits), laser_index),
+      "chi_deg": np.asarray(decoded.chi_degrees, dtype=np.float32),
+      "chi_mask": np.asarray(chi_position_mask(laser_index)),
+    }
+    if _include_coords(options):
+      produced["sidechain_coords"] = _coords_batch(
+        model,
+        features.backbone_coords,
+        np.asarray(decoded.chi_degrees),
+        laser_index,
+      )
+    if options.output_fasta or options.output_fasta_only:
+      produced["fasta"] = produced["sequence"]
+    if options.output_fasta_only:
+      return {"fasta": produced["fasta"]}
+    return produced
+
+  def _one_level_tied(
+    self,
+    item: _Sampled,
+    chunk_start: int,
+    chunk_count: int,
+    dropout_key: jax.Array,
+  ) -> dict[str, np.ndarray]:
+    """Per-sample ``tied_decode``. The scan is not the untied ``_scan_residues``."""
     temperatures = _temperatures(self._spec)
     n_temp = len(temperatures)
     sequence: list[np.ndarray] = []
@@ -459,7 +589,7 @@ class SampleStages:
       for temp_index, temperature in enumerate(temperatures):
         flat = (chunk_start + offset) * n_temp + temp_index
         key = jax.random.fold_in(dropout_key, flat)
-        decoded = self._decode(item, temperature, key)
+        decoded = self._decode_tied(item, temperature, key)
         sequence.append(decoded["sequence"])
         seq_log_prob.append(decoded["seq_log_prob"])
         chi_deg.append(decoded["chi_deg"])

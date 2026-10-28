@@ -3,7 +3,8 @@
 Ports one iteration of ``LASErMPNN.sample`` (``utils/model.py:776-934``).
 ``decode_residue`` puts the residue first in ``decoding_order``, which is the
 dump's one-step setup. ``decode_order`` scans that same step over the full
-permutation. A residue becomes visible to later ones only through the sequence
+permutation. ``decode_order_batched`` encodes once and vmaps that scan over a
+leading sample axis. A residue becomes visible to later ones only through the sequence
 embedding and the binned-χ RBF the step already writes into the carry.
 
 Masked edges are not rebuilt from scratch. ``LaserDecoder._teacher_edges`` is
@@ -40,6 +41,7 @@ Pseudocode:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import NamedTuple
 
@@ -179,6 +181,48 @@ def _draw(
 def _dtype_scalar(value: float, like: Float[Array, " v"]) -> Float[Array, ""]:
   """A 0-d tensor in ``like``'s dtype. A bare Python float would widen f32 division to f64."""
   return jnp.zeros((), dtype=like.dtype) + value
+
+
+def _sequence_choice_array(
+  logits: Float[Array, " 21"],
+  uniforms: Float[Array, " draws"],
+  cursor: Int[Array, ""],
+  first_shell: Bool[Array, ""],
+  *,
+  sequence_temperature: Float[Array, ""],
+  fs_sequence_temp: float | None,
+  seq_min_p: float,
+) -> tuple[Float[Array, " 21"], Int[Array, ""], Int[Array, ""]]:
+  """Sequence choice when ``sequence_temperature`` is a 0-d array.
+
+  NaN is the batched stand-in for ``None``. With no first-shell temperature
+  that row is argmax and consumes no sequence draw. Otherwise NaN uses the
+  ``1e-6`` fallback the scalar ``None`` branch uses.
+  """
+  sampling_logits = minp_warp_logits(logits, seq_min_p)
+  is_none = jnp.isnan(sequence_temperature)
+  if fs_sequence_temp is None:
+    safe = jnp.where(
+      is_none,
+      jnp.asarray(1.0, dtype=sampling_logits.dtype),
+      sequence_temperature.astype(sampling_logits.dtype),
+    )
+    choice_s, cursor_s = _draw(jax.nn.softmax(sampling_logits / safe), uniforms, cursor)
+    stored = jnp.where(is_none, logits, sampling_logits)
+    choice = jnp.where(is_none, jnp.argmax(logits).astype(jnp.int32), choice_s)
+    return stored, choice, jnp.where(is_none, cursor, cursor_s)
+  fallback = jnp.where(
+    is_none,
+    _dtype_scalar(1e-6, sampling_logits),
+    sequence_temperature.astype(sampling_logits.dtype),
+  )
+  t_eff = jnp.where(
+    first_shell,
+    _dtype_scalar(fs_sequence_temp, sampling_logits),
+    fallback,
+  )
+  choice, cursor_out = _draw(jax.nn.softmax(sampling_logits / t_eff), uniforms, cursor)
+  return sampling_logits, choice, cursor_out
 
 
 class LaserJointDecode(eqx.Module):
@@ -323,7 +367,20 @@ def _run_joint_step(  # noqa: PLR0915 — χ loop stays in this traced body so L
   # T_eff is None only when no temperature and no first-shell temperature are
   # set. That path is argmax and does not warp. Otherwise min-p runs on the
   # untempered logits, and the temperature divides the warped tensor.
-  if sequence_temperature is None and fs_sequence_temp is None:
+  # A traced temperature (the batched path) is a 0-d array. NaN means this
+  # sample's sequence temperature is None. Python floats stay on the branch
+  # below so a single ``decode_order`` call is unchanged.
+  if isinstance(sequence_temperature, jax.Array):
+    stored, choice, cursor = _sequence_choice_array(
+      logits,
+      inputs.uniforms,
+      cursor,
+      inputs.first_shell[step],
+      sequence_temperature=sequence_temperature,
+      fs_sequence_temp=fs_sequence_temp,
+      seq_min_p=seq_min_p,
+    )
+  elif sequence_temperature is None and fs_sequence_temp is None:
     stored = logits
     choice = jnp.argmax(logits).astype(jnp.int32)
   else:
@@ -841,6 +898,18 @@ class JointDecodeResult:
   node_scalars: NDArray[np.floating]
 
 
+@dataclass(frozen=True, slots=True)
+class JointDecodeBatch:
+  """``decode_order_batched``: the same fields as ``JointDecodeResult``, with a leading sample axis."""
+
+  sequence: NDArray[np.int64]
+  sequence_logits: NDArray[np.floating]
+  chi_degrees: NDArray[np.floating]
+  chi_logits: NDArray[np.floating]
+  chi_bins: NDArray[np.int64]
+  node_scalars: NDArray[np.floating]
+
+
 def chi_position_mask(sequence: NDArray[np.integer]) -> NDArray[np.bool_]:
   """χ slots defined for each letter. X uses the GLY row, which is all False."""
   letters = np.asarray(sequence)
@@ -900,6 +969,126 @@ def decode_order(
   matching ``run_inference.py`` before ``sample``. ``repack_all`` alone leaves
   ``chain_mask`` as given and only drops input-χ retention.
   """
+  prepared = _encoded_scan_inputs(
+    encoder,
+    backbone,
+    ligand_coords,
+    ligand_atomic_numbers,
+    ligand_subbatch,
+    period_index,
+    group_index,
+    structure,
+    sequence_indices,
+    chi_angles,
+    chain_mask,
+    first_shell,
+    budget_mask=budget_mask,
+    charged_mask=charged_mask,
+    bias=bias,
+    disabled_residues=disabled_residues,
+    repack_all=repack_all,
+    repack_only=repack_only,
+    protein_loop=protein_loop,
+  )
+  order = np.asarray(decoding_order, dtype=np.int32)
+  if int(order.shape[0]) != prepared.n_res:
+    msg = f"decoding_order length {order.shape[0]} != structure length {prepared.n_res}"
+    raise ValueError(msg)
+  draws = _pad_uniform_row(
+    uniforms,
+    prepared.n_res,
+    sampling=_sampling(sequence_temperature, chi_temperature, fs_sequence_temp),
+  )
+  sequence, seq_logits, chi_degrees, chi_logits, nodes = _scan_residues(
+    joint,
+    decoder,
+    prepared.ligand_scalars,
+    prepared.pr_edges,
+    prepared.pr_neighbours,
+    prepared.pr_mask,
+    prepared.lp_edges,
+    prepared.lp_neighbours,
+    prepared.lp_mask,
+    jnp.asarray(order),
+    prepared.input_sequence,
+    prepared.input_chi,
+    prepared.chain_mask,
+    prepared.first_shell,
+    prepared.budget_mask,
+    prepared.charged_mask,
+    prepared.disabled,
+    prepared.bias,
+    jnp.asarray(draws),
+    prepared.node_scalars,
+    prepared.node_vectors,
+    sequence_temperature=sequence_temperature,
+    chi_temperature=chi_temperature,
+    fs_sequence_temp=fs_sequence_temp,
+    seq_min_p=seq_min_p,
+    chi_min_p=chi_min_p,
+    ala_budget=ala_budget,
+    gly_budget=gly_budget,
+    ignore_chain_mask_zeros=ignore_chain_mask_zeros,
+    repack_all=prepared.effective_repack,
+  )
+  chi_logits_np = np.asarray(chi_logits)
+  return JointDecodeResult(
+    sequence=np.asarray(sequence, dtype=np.int64),
+    sequence_logits=np.asarray(seq_logits),
+    chi_degrees=np.asarray(chi_degrees),
+    chi_logits=chi_logits_np,
+    chi_bins=np.argmax(chi_logits_np, axis=-1).astype(np.int64),
+    node_scalars=np.asarray(nodes),
+  )
+
+
+class _ScanInputs(NamedTuple):
+  """Encoder broadcast plus the host masks one structure shares across samples."""
+
+  ligand_scalars: Array
+  pr_edges: Array
+  pr_neighbours: Array
+  pr_mask: Array
+  lp_edges: Array
+  lp_neighbours: Array
+  lp_mask: Array
+  input_sequence: Array
+  input_chi: Array
+  chain_mask: Array
+  first_shell: Array
+  budget_mask: Array
+  charged_mask: Array
+  disabled: Array
+  bias: Array
+  node_scalars: Array
+  node_vectors: Array
+  n_res: int
+  effective_repack: bool
+
+
+def _encoded_scan_inputs(
+  encoder: LaserEncoder,
+  backbone: Float[NDArray[np.floating], "l 5 3"],
+  ligand_coords: Float[NDArray[np.floating], "a 3"],
+  ligand_atomic_numbers: Int[NDArray[np.integer], " a"],
+  ligand_subbatch: Int[NDArray[np.integer], " a"],
+  period_index: Int[NDArray[np.integer], " 118"],
+  group_index: Int[NDArray[np.integer], " 118"],
+  structure: GraphStructure,
+  sequence_indices: Int[NDArray[np.integer], " l"],
+  chi_angles: Float[NDArray[np.floating], "l 4"],
+  chain_mask: Bool[NDArray[np.bool_], " l"],
+  first_shell: Bool[NDArray[np.bool_], " l"],
+  *,
+  budget_mask: Bool[NDArray[np.bool_], " l"] | None,
+  charged_mask: Bool[NDArray[np.bool_], " l"] | None,
+  bias: Float[NDArray[np.floating], "l 21"] | None,
+  disabled_residues: tuple[str, ...],
+  repack_all: bool,
+  repack_only: bool,
+  protein_loop: bool,
+) -> _ScanInputs:
+  """Encode ``backbone`` once and pack the graph the residue scan reads."""
   encoded = encode_structure(
     encoder,
     backbone,
@@ -912,15 +1101,10 @@ def decode_order(
     protein_loop=protein_loop,
   )
   n_res = int(encoded.prot_scalars.shape[0])
-  order = np.asarray(decoding_order, dtype=np.int32)
-  if int(order.shape[0]) != n_res:
-    msg = f"decoding_order length {order.shape[0]} != structure length {n_res}"
-    raise ValueError(msg)
   mask = np.asarray(chain_mask, dtype=bool)
   # repack_only is a host rewrite of the batch, not a per-step branch.
   if repack_only:
     mask = np.ones((n_res,), dtype=bool)
-  effective_repack = repack_all or repack_only
   packed_pr = pack_edges(n_res, encoded.pr_pr_idx)
   packed_lp = pack_edges(n_res, encoded.lig_pr_idx)
   pr_edges = scatter_edge_values(n_res, packed_pr, encoded.pr_pr_eattr)
@@ -932,15 +1116,6 @@ def decode_order(
   node_v = np.zeros((4, *vectors.shape), dtype=vectors.dtype)
   node_s[0] = scalars
   node_v[0] = vectors
-  draws = np.asarray(uniforms, dtype=np.float64)
-  if draws.ndim == 2:
-    draws = draws[0]
-  if _sampling(sequence_temperature, chi_temperature, fs_sequence_temp):
-    need = n_res * _DRAWS_PER_STEP
-    if int(draws.shape[0]) < need:
-      draws = np.pad(draws, (0, need - int(draws.shape[0])))
-  else:
-    draws = np.asarray(draws if draws.shape[0] else np.zeros((1,), dtype=np.float64))
   region = (
     np.zeros((n_res,), dtype=bool) if budget_mask is None else np.asarray(budget_mask, dtype=bool)
   )
@@ -948,29 +1123,315 @@ def decode_order(
     np.zeros((n_res,), dtype=bool) if charged_mask is None else np.asarray(charged_mask, dtype=bool)
   )
   logit_bias = np.zeros((n_res, 21), dtype=dtype) if bias is None else np.asarray(bias, dtype=dtype)
-  sequence, seq_logits, chi_degrees, chi_logits, nodes = _scan_residues(
+  return _ScanInputs(
+    ligand_scalars=jnp.asarray(encoded.lig_scalars),
+    pr_edges=jnp.asarray(pr_edges),
+    pr_neighbours=jnp.asarray(packed_pr.neighbours),
+    pr_mask=jnp.asarray(packed_pr.mask),
+    lp_edges=jnp.asarray(lp_edges),
+    lp_neighbours=jnp.asarray(packed_lp.neighbours),
+    lp_mask=jnp.asarray(packed_lp.mask),
+    input_sequence=jnp.asarray(sequence_indices, dtype=jnp.int32),
+    input_chi=jnp.asarray(chi_angles, dtype=dtype),
+    chain_mask=jnp.asarray(mask),
+    first_shell=jnp.asarray(first_shell),
+    budget_mask=jnp.asarray(region),
+    charged_mask=jnp.asarray(charged),
+    disabled=jnp.asarray(_disabled_mask(disabled_residues)),
+    bias=jnp.asarray(logit_bias),
+    node_scalars=jnp.asarray(node_s),
+    node_vectors=jnp.asarray(node_v),
+    n_res=n_res,
+    effective_repack=repack_all or repack_only,
+  )
+
+
+def _pad_uniform_row(uniforms: NDArray[np.floating], n_res: int, *, sampling: bool) -> np.ndarray:
+  """Match ``decode_order``'s uniform padding for one sample."""
+  draws = np.asarray(uniforms, dtype=np.float64)
+  if draws.ndim == 2:
+    draws = draws[0]
+  draws = np.reshape(draws, (-1,))
+  if sampling:
+    need = n_res * _DRAWS_PER_STEP
+    if int(draws.shape[0]) < need:
+      draws = np.pad(draws, (0, need - int(draws.shape[0])))
+  elif int(draws.shape[0]) == 0:
+    draws = np.zeros((1,), dtype=np.float64)
+  return np.asarray(draws, dtype=np.float64)
+
+
+def _is_temperature_scalar(value: object) -> bool:
+  return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _temperature_rows(
+  sequence_temperature: float | None | Sequence[float | None] | NDArray[np.floating],
+  batch: int,
+) -> list[float | None]:
+  """One temperature per sample. A scalar is broadcast. NaN in an array is ``None``."""
+  if sequence_temperature is None or _is_temperature_scalar(sequence_temperature):
+    value = None if sequence_temperature is None else float(sequence_temperature)
+    return [value] * batch
+  floating_vector = isinstance(sequence_temperature, np.ndarray) and np.issubdtype(
+    sequence_temperature.dtype,
+    np.floating,
+  )
+  if floating_vector:
+    flat = np.asarray(sequence_temperature, dtype=np.float64).reshape(-1)
+    rows: list[float | None] = [None if np.isnan(value) else float(value) for value in flat]
+  else:
+    rows = []
+    for item in sequence_temperature:
+      if item is None:
+        rows.append(None)
+      elif _is_temperature_scalar(item):
+        rows.append(float(item))
+      else:
+        msg = "sequence_temperature entries must be floats or None"
+        raise TypeError(msg)
+  if len(rows) != batch:
+    msg = f"sequence_temperature length {len(rows)} != batch {batch}"
+    raise ValueError(msg)
+  return rows
+
+
+def _uniform_rows(
+  uniforms: NDArray[np.floating] | Sequence[NDArray[np.floating]],
+  batch: int,
+) -> list[np.ndarray]:
+  """Per-sample uniform streams. ``(batch, draws)`` or a sequence of rows."""
+  if isinstance(uniforms, np.ndarray) and uniforms.ndim == 2 and int(uniforms.shape[0]) == batch:
+    return [np.asarray(uniforms[index], dtype=np.float64) for index in range(batch)]
+  if isinstance(uniforms, np.ndarray) and uniforms.ndim == 1 and batch == 1:
+    return [np.asarray(uniforms, dtype=np.float64)]
+  if isinstance(uniforms, (list, tuple)) and len(uniforms) == batch:
+    return [np.asarray(row, dtype=np.float64) for row in uniforms]
+  msg = f"uniforms must be ({batch}, draws) or a sequence of {batch} rows"
+  raise ValueError(msg)
+
+
+def _temperature_vector(rows: list[float | None], dtype: np.dtype) -> np.ndarray:
+  """Model-dtype temperatures. NaN marks a ``None`` (argmax) row."""
+  out = np.empty((len(rows),), dtype=dtype)
+  for index, value in enumerate(rows):
+    out[index] = np.nan if value is None else np.asarray(value, dtype=dtype)
+  return out
+
+
+@eqx.filter_jit
+def _scan_residues_batched(
+  joint: LaserJointDecode,
+  decoder: LaserDecoder,
+  ligand_scalars: Float[Array, "a h"],
+  pr_edges: Float[Array, "l kp e"],
+  pr_neighbours: Int[Array, "l kp"],
+  pr_mask: Bool[Array, "l kp"],
+  lp_edges: Float[Array, "l kl e"],
+  lp_neighbours: Int[Array, "l kl"],
+  lp_mask: Bool[Array, "l kl"],
+  orders: Int[Array, "batch l"],
+  input_sequence: Int[Array, " l"],
+  input_chi: Float[Array, "l 4"],
+  chain_mask: Bool[Array, " l"],
+  first_shell: Bool[Array, " l"],
+  budget_mask: Bool[Array, " l"],
+  charged_mask: Bool[Array, " l"],
+  disabled: Bool[Array, " 21"],
+  bias: Float[Array, "l 21"],
+  draws: Float[Array, "batch draws"],
+  node_scalars: Float[Array, "4 l h"],
+  node_vectors: Float[Array, "4 l v 3"],
+  temperatures: Float[Array, " batch"],
+  *,
+  per_temperature: bool,
+  sequence_temperature: float | None,
+  chi_temperature: float | None,
+  fs_sequence_temp: float | None,
+  seq_min_p: float,
+  chi_min_p: float,
+  ala_budget: int,
+  gly_budget: int,
+  ignore_chain_mask_zeros: bool,
+  repack_all: bool,
+) -> tuple[
+  Int[Array, "batch l"],
+  Float[Array, "batch l 21"],
+  Float[Array, "batch l 4"],
+  Float[Array, "batch l 4 72"],
+  Float[Array, "batch 4 l h"],
+]:
+  """Vmap ``_scan_residues`` over samples. Encoder tensors are broadcast."""
+
+  def one(
+    order: Int[Array, " l"],
+    row_draws: Float[Array, " draws"],
+    temperature: float | None | Float[Array, ""],
+  ) -> tuple[
+    Int[Array, " l"],
+    Float[Array, "l 21"],
+    Float[Array, "l 4"],
+    Float[Array, "l 4 72"],
+    Float[Array, "4 l h"],
+  ]:
+    return _scan_residues(
+      joint,
+      decoder,
+      ligand_scalars,
+      pr_edges,
+      pr_neighbours,
+      pr_mask,
+      lp_edges,
+      lp_neighbours,
+      lp_mask,
+      order,
+      input_sequence,
+      input_chi,
+      chain_mask,
+      first_shell,
+      budget_mask,
+      charged_mask,
+      disabled,
+      bias,
+      row_draws,
+      node_scalars,
+      node_vectors,
+      sequence_temperature=temperature,
+      chi_temperature=chi_temperature,
+      fs_sequence_temp=fs_sequence_temp,
+      seq_min_p=seq_min_p,
+      chi_min_p=chi_min_p,
+      ala_budget=ala_budget,
+      gly_budget=gly_budget,
+      ignore_chain_mask_zeros=ignore_chain_mask_zeros,
+      repack_all=repack_all,
+    )
+
+  if per_temperature:
+    return jax.vmap(one, in_axes=(0, 0, 0))(orders, draws, temperatures)
+  return jax.vmap(
+    lambda order, row_draws: one(order, row_draws, sequence_temperature),
+    in_axes=(0, 0),
+  )(orders, draws)
+
+
+def decode_order_batched(
+  encoder: LaserEncoder,
+  decoder: LaserDecoder,
+  joint: LaserJointDecode,
+  backbone: Float[NDArray[np.floating], "l 5 3"],
+  ligand_coords: Float[NDArray[np.floating], "a 3"],
+  ligand_atomic_numbers: Int[NDArray[np.integer], " a"],
+  ligand_subbatch: Int[NDArray[np.integer], " a"],
+  period_index: Int[NDArray[np.integer], " 118"],
+  group_index: Int[NDArray[np.integer], " 118"],
+  structure: GraphStructure,
+  sequence_indices: Int[NDArray[np.integer], " l"],
+  chi_angles: Float[NDArray[np.floating], "l 4"],
+  chain_mask: Bool[NDArray[np.bool_], " l"],
+  first_shell: Bool[NDArray[np.bool_], " l"],
+  decoding_order: Int[NDArray[np.integer], "batch l"],
+  uniforms: Float[NDArray[np.floating], "batch draws"]
+  | Sequence[Float[NDArray[np.floating], " draws"]],
+  *,
+  sequence_temperature: float | None | Sequence[float | None] | NDArray[np.floating] = None,
+  chi_temperature: float | None = None,
+  fs_sequence_temp: float | None = None,
+  seq_min_p: float = 0.0,
+  chi_min_p: float = 0.0,
+  ala_budget: int = 4,
+  gly_budget: int = 0,
+  disabled_residues: tuple[str, ...] = ("X",),
+  ignore_chain_mask_zeros: bool = False,
+  repack_all: bool = False,
+  repack_only: bool = False,
+  budget_mask: Bool[NDArray[np.bool_], " l"] | None = None,
+  charged_mask: Bool[NDArray[np.bool_], " l"] | None = None,
+  bias: Float[NDArray[np.floating], "l 21"] | None = None,
+  protein_loop: bool = True,
+) -> JointDecodeBatch:
+  """Encode once, then vmap ``_scan_residues`` over the leading sample axis.
+
+  ``decoding_order`` is ``(batch, L)`` and ``uniforms`` is ``(batch, draws)``
+  or one row per sample. ``sequence_temperature`` is a scalar or one value per
+  sample (``None`` is argmax). A scalar stays on the ``decode_order`` branch.
+  Rows that disagree are passed as a model-dtype vector, with NaN for ``None``.
+  """
+  prepared = _encoded_scan_inputs(
+    encoder,
+    backbone,
+    ligand_coords,
+    ligand_atomic_numbers,
+    ligand_subbatch,
+    period_index,
+    group_index,
+    structure,
+    sequence_indices,
+    chi_angles,
+    chain_mask,
+    first_shell,
+    budget_mask=budget_mask,
+    charged_mask=charged_mask,
+    bias=bias,
+    disabled_residues=disabled_residues,
+    repack_all=repack_all,
+    repack_only=repack_only,
+    protein_loop=protein_loop,
+  )
+  order = np.asarray(decoding_order, dtype=np.int32)
+  if order.ndim != 2:
+    msg = f"decoding_order must have shape (batch, length), got {order.shape}"
+    raise ValueError(msg)
+  batch = int(order.shape[0])
+  if int(order.shape[1]) != prepared.n_res:
+    msg = f"decoding_order length {order.shape[1]} != structure length {prepared.n_res}"
+    raise ValueError(msg)
+  rows = _temperature_rows(sequence_temperature, batch)
+  per_temperature = not all(value == rows[0] for value in rows)
+  scalar_temperature = rows[0]
+  padded = [
+    _pad_uniform_row(
+      row,
+      prepared.n_res,
+      sampling=_sampling(temperature, chi_temperature, fs_sequence_temp),
+    )
+    for row, temperature in zip(_uniform_rows(uniforms, batch), rows, strict=True)
+  ]
+  width = max(int(row.shape[0]) for row in padded)
+  stacked = np.zeros((batch, width), dtype=np.float64)
+  for index, row in enumerate(padded):
+    stacked[index, : int(row.shape[0])] = row
+  scalar_dtype = np.dtype(prepared.node_scalars.dtype)
+  temperature_vector = (
+    _temperature_vector(rows, scalar_dtype)
+    if per_temperature
+    else np.zeros((batch,), dtype=scalar_dtype)
+  )
+  sequence, seq_logits, chi_degrees, chi_logits, nodes = _scan_residues_batched(
     joint,
     decoder,
-    jnp.asarray(encoded.lig_scalars),
-    jnp.asarray(pr_edges),
-    jnp.asarray(packed_pr.neighbours),
-    jnp.asarray(packed_pr.mask),
-    jnp.asarray(lp_edges),
-    jnp.asarray(packed_lp.neighbours),
-    jnp.asarray(packed_lp.mask),
+    prepared.ligand_scalars,
+    prepared.pr_edges,
+    prepared.pr_neighbours,
+    prepared.pr_mask,
+    prepared.lp_edges,
+    prepared.lp_neighbours,
+    prepared.lp_mask,
     jnp.asarray(order),
-    jnp.asarray(sequence_indices, dtype=jnp.int32),
-    jnp.asarray(chi_angles, dtype=dtype),
-    jnp.asarray(mask),
-    jnp.asarray(first_shell),
-    jnp.asarray(region),
-    jnp.asarray(charged),
-    jnp.asarray(_disabled_mask(disabled_residues)),
-    jnp.asarray(logit_bias),
-    jnp.asarray(draws),
-    jnp.asarray(node_s),
-    jnp.asarray(node_v),
-    sequence_temperature=sequence_temperature,
+    prepared.input_sequence,
+    prepared.input_chi,
+    prepared.chain_mask,
+    prepared.first_shell,
+    prepared.budget_mask,
+    prepared.charged_mask,
+    prepared.disabled,
+    prepared.bias,
+    jnp.asarray(stacked),
+    prepared.node_scalars,
+    prepared.node_vectors,
+    jnp.asarray(temperature_vector),
+    per_temperature=per_temperature,
+    sequence_temperature=None if per_temperature else scalar_temperature,
     chi_temperature=chi_temperature,
     fs_sequence_temp=fs_sequence_temp,
     seq_min_p=seq_min_p,
@@ -978,10 +1439,10 @@ def decode_order(
     ala_budget=ala_budget,
     gly_budget=gly_budget,
     ignore_chain_mask_zeros=ignore_chain_mask_zeros,
-    repack_all=effective_repack,
+    repack_all=prepared.effective_repack,
   )
   chi_logits_np = np.asarray(chi_logits)
-  return JointDecodeResult(
+  return JointDecodeBatch(
     sequence=np.asarray(sequence, dtype=np.int64),
     sequence_logits=np.asarray(seq_logits),
     chi_degrees=np.asarray(chi_degrees),
