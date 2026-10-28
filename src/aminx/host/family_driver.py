@@ -35,7 +35,6 @@ ModelFamily = Literal[
   "protonpottsmpnn",
   "lasermpnn",
   "fampnn",
-  "thermompnn",
 ]
 # Driver-backed families need a registered FamilyDriver, imported on first use from the
 # module named here. A missing driver is an error, never a fallback to the stock path.
@@ -44,7 +43,12 @@ DRIVER_BACKED_FAMILY_MODULES: dict[str, str] = {
   "protonpottsmpnn": "aminx.families.protonpotts_mpnn",
   "lasermpnn": "aminx.families.laser_mpnn",
   "fampnn": "aminx.families.fampnn",
-  "thermompnn": "aminx.families.thermo_mpnn",
+}
+# Families that are not runnable yet. Each maps to the reason, which validation reports verbatim.
+# ThermoMPNN has model and convert code under aminx.families.thermo_mpnn but no FamilyDriver.
+UNIMPLEMENTED_MODEL_FAMILIES: dict[str, str] = {
+  "thermompnn": "thermompnn has no driver yet (aminx.families.thermo_mpnn has model and convert "
+  "code only); the request is refused rather than run on the stock path",
 }
 # Every declared family that is not driver-backed runs on the stock MPNN path.
 STOCK_MODEL_FAMILIES: tuple[str, ...] = tuple(
@@ -60,6 +64,8 @@ DRIVER_MODEL_FAMILIES: frozenset[str] = frozenset(DRIVER_BACKED_FAMILY_MODULES)
 
 def validate_model_family(value: object) -> str:
   """Return ``value`` when it names a known family; raise ValueError listing the valid names."""
+  if isinstance(value, str) and value in UNIMPLEMENTED_MODEL_FAMILIES:
+    raise ValueError(UNIMPLEMENTED_MODEL_FAMILIES[value])
   if isinstance(value, str) and value in MODEL_FAMILIES:
     return value
   valid = ", ".join(repr(name) for name in MODEL_FAMILIES)

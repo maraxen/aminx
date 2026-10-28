@@ -145,7 +145,7 @@ OBSERVATIONS: dict[str, Verdict] = {
   "protonpotts": NotApplicable(reason="ProtonPottsOptions require model_family protonpottsmpnn (build_run_spec ValueError otherwise), and campaign mode refuses driver families (T0.5)"),
   "caliby": NotApplicable(reason="CalibyOptions require model_family caliby (build_run_spec ValueError otherwise), and campaign mode dispatches caliby via FamilyDriver (campaign.py:130)"),
   "fampnn": NotApplicable(reason="FAMPNNOptions require model_family fampnn (build_run_spec ValueError otherwise), and campaign mode dispatches fampnn via FamilyDriver (campaign.py:130)"),
-  "thermompnn": NotApplicable(reason="ThermoMPNNOptions require model_family thermompnn (build_run_spec ValueError otherwise), and campaign mode dispatches thermompnn via FamilyDriver (campaign.py:130)"),
+  "thermompnn": NotApplicable(reason="ThermoMPNNOptions are inert: model_family thermompnn is refused at spec validation (no FamilyDriver yet), so no run reads them"),
   "tie_group_map": Bundle(param="tie_group_map", reason="threaded to the bundle at kernel_dispatch.py:228"),
   "state_weights": Bundle(param="state_weights", reason="threaded to the bundle at kernel_dispatch.py:229"),
   "state_position_map": Bundle(param="state_position_map", reason="broadcast + threaded at kernel_dispatch.py:230-232"),
