@@ -1149,3 +1149,43 @@ def test_caliby_torch_unpickler_refuses_arbitrary_globals() -> None:
 
   ok = pickle.dumps(collections.OrderedDict(weight=1))
   assert _RestrictedCalibyUnpickler(io.BytesIO(ok)).load() == collections.OrderedDict(weight=1)
+
+
+def _factor_potts_raw_sd(key: jax.Array) -> dict[str, np.ndarray]:
+  """Build a complete upstream-keyed factor Potts state dict (v1, with background heads).
+
+  Parameters
+  ----------
+  key : jax.Array
+    PRNG key for the reference model.
+
+  Returns
+  -------
+  dict[str, np.ndarray]
+    Raw state dict containing every key the converter requires.
+  """
+  ref = CalibyModel(
+    k_neighbors=6, model_version=1, parameterization="factor", has_bg=True, bg_dim=1, key=key
+  )
+  return _extract_raw_caliby_potts_sd(ref)
+
+
+def test_caliby_converter_rejects_missing_required_keys() -> None:
+  """Raise KeyError naming a missing required factor or LayerNorm key."""
+  import pytest  # noqa: PLC0415
+
+  base = _factor_potts_raw_sd(jax.random.PRNGKey(46))
+  for missing in ("potts_decoder.W_J_left.weight", "mpnn.encoder_layers.0.norm1.weight"):
+    assert missing in base
+    raw = {k: v for k, v in base.items() if k != missing}
+    with pytest.raises(KeyError, match=missing.replace(".", r"\.")):
+      convert_caliby_potts_state_dict(raw)
+
+
+def test_caliby_converter_still_accepts_absent_optional_background_heads() -> None:
+  """Convert a factor checkpoint with the optional background heads absent."""
+  base = _factor_potts_raw_sd(jax.random.PRNGKey(47))
+  raw = {k: v for k, v in base.items() if "_bg." not in k}
+  converted = convert_caliby_potts_state_dict(raw)
+  assert converted.potts_decoder.W_h_bg is None
+  assert converted.potts_decoder.W_J_bg is None
