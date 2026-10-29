@@ -26,7 +26,14 @@ from xtrax.run import RunSpec as _XtraxRunSpec
 from aminx.types.stages import DecodingFusionFn, EncodingFusionFn
 
 if TYPE_CHECKING:
-  from aminx.run.options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
+  from aminx.run.options import (
+    CalibyOptions,
+    FAMPNNOptions,
+    LaserOptions,
+    PottsMPNNOptions,
+    ProtonPottsOptions,
+    ThermoMPNNOptions,
+  )
 
 
 class IOConfig(eqx.Module):
@@ -213,6 +220,9 @@ class RunSpec(_XtraxRunSpec):
   potts_mpnn: PottsMPNNOptions | None = eqx.field(static=True, default=None)
   protonpotts: ProtonPottsOptions | None = eqx.field(static=True, default=None)
   laser: LaserOptions | None = eqx.field(static=True, default=None)
+  caliby: CalibyOptions | None = eqx.field(static=True, default=None)
+  fampnn: FAMPNNOptions | None = eqx.field(static=True, default=None)
+  thermompnn: ThermoMPNNOptions | None = eqx.field(static=True, default=None)
   encoding_fusion: EncodingFusionFn | None = eqx.field(static=True, default=None)
   decoding_fusion: DecodingFusionFn | None = eqx.field(static=True, default=None)
 
@@ -656,6 +666,18 @@ def build_run_spec(spec: object) -> RunSpec:
   if laser is not None and family != "lasermpnn":
     msg = f"laser options require model_family 'lasermpnn', got {family!r}"
     raise ValueError(msg)
+  caliby = getattr(spec, "caliby", None)
+  fampnn = getattr(spec, "fampnn", None)
+  thermompnn = getattr(spec, "thermompnn", None)
+  if caliby is not None and family != "caliby":
+    msg = f"caliby options require model_family 'caliby', got {family!r}"
+    raise ValueError(msg)
+  if fampnn is not None and family != "fampnn":
+    msg = f"fampnn options require model_family 'fampnn', got {family!r}"
+    raise ValueError(msg)
+  if thermompnn is not None and family != "thermompnn":
+    msg = f"thermompnn options require model_family 'thermompnn', got {family!r}"
+    raise ValueError(msg)
 
   omit_raw = getattr(spec, "omit_aa", ())
   omit_aa = tuple(omit_raw) if omit_raw else ()
@@ -710,4 +732,7 @@ def build_run_spec(spec: object) -> RunSpec:
     potts_mpnn=potts_mpnn,
     protonpotts=protonpotts,
     laser=laser,
+    caliby=caliby,
+    fampnn=fampnn,
+    thermompnn=thermompnn,
   )

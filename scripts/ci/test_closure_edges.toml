@@ -151,11 +151,13 @@ dynamic_count = 1
 
 [module."tests/host/test_family_driver_seam.py"]
 # Deliberately tests lazy family driver loading via load_family_driver(...)
-# without top-level imports of the three driver-backed family packages.
+# without top-level imports of the five driver-backed family packages.
 soft = [
   "aminx.families.potts_mpnn",
   "aminx.families.laser_mpnn",
   "aminx.families.protonpotts_mpnn",
+  "aminx.families.caliby",
+  "aminx.families.fampnn",
 ]
 
 [module."tests/host/test_model_family_validation.py"]
@@ -164,6 +166,8 @@ soft = [
   "aminx.families.potts_mpnn",
   "aminx.families.laser_mpnn",
   "aminx.families.protonpotts_mpnn",
+  "aminx.families.caliby",
+  "aminx.families.fampnn",
 ]
 
 [module."tests/io/test_family_weights.py"]
@@ -173,6 +177,7 @@ files = [
   "src/aminx/io/family_weights.json",
   "NOTICE-weights.md",
   ".praxia/docs/decisions/261014_redistribution-of-pottsmpnn-lasermpnn-and-protonpottsmpnn-weights-on-hugging-face.md",
+  ".praxia/docs/specs/261026_mpnn-variant-weights-scope-spec.md",
 ]
 data_prefixes = [
   ".praxia/docs/decisions/",
@@ -258,6 +263,15 @@ data_prefixes = [
   "tests/knob_gate/",
   "tests/port/selftest_coverage/",
 ]
+
+[module."scripts/weights/build_family_weights.py"]
+# 1 call site (line 158): _load_script() uses spec_from_file_location to load the
+# Potts and ProtonPotts checkpoint converters named at lines 222 and 228.
+files = [
+  "scripts/recapture/pottsmpnn_model_to_eqx.py",
+  "scripts/parity/convert_protonpotts_checkpoint.py",
+]
+dynamic_count = 1
 
 [module."tests/parity/reference_utils.py"]
 # 1 call site (line 295): shared parity helper using spec_from_file_location to

@@ -12,7 +12,7 @@
 #               global prefixes, with the reason below
 #   data        path prefixes of non-.py inputs the vehicle reads
 #
-# THE THREE DYNAMIC SITES (found 261008 by scanning the closures, all rows):
+# THE DYNAMIC SITES (three found 261008 by scanning the closures, all rows; io/__init__.py added 261028):
 #
 #   src/aminx/host/runner.py          importlib.import_module(_DRIVER_BACKED_FAMILIES[family])
 #       Imports the family package named by the request's model_family. A LASEr
@@ -21,6 +21,13 @@
 #       family is intentionally absent. The closure scan proves the other family is
 #       not reachable by any import statement; this table is the only claim that it
 #       is not reached by the string table either.
+#   src/aminx/io/__init__.py          importlib.import_module(_LAZY_SUBMODULES[name])
+#       Lazy re-export of aminx.io.campaign_sink and aminx.io.designs on attribute
+#       access. Every `from aminx.io.<x> import ...` adds this file to a closure. No
+#       parity vehicle touches either lazy name (the closure scan finds no import of
+#       them), so they are intentionally not declared as `soft`. This reviewed claim
+#       is only as strong as that scan: a vehicle that starts using a lazy name must
+#       import it statically or declare it `soft`.
 #   src/aminx/io/weights.py           importlib.resources.files("aminx.model_params")
 #       Packaged weight files. They are non-.py files under src/aminx/, so they stay
 #       GLOBAL (any change invalidates every row) because this table declares no
@@ -39,24 +46,25 @@
 
 [slug.laser_proofread_parity]
 soft = ["aminx.families.laser_mpnn"]
-dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
 
 [slug.laser_proofread_unconditional_parity]
 soft = ["aminx.families.laser_mpnn"]
-dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
 
 [slug.laser_decode_e2e]
 soft = ["aminx.families.laser_mpnn"]
-dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
 
 [slug.laser_score_parity]
 soft = ["aminx.families.laser_mpnn"]
-dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/weights.py"]
+dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
 
 [slug.potts_ar_decode]
 soft = ["aminx.families.potts_mpnn"]
 dynamic_ok = [
   "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]
@@ -65,6 +73,7 @@ dynamic_ok = [
 soft = ["aminx.families.potts_mpnn"]
 dynamic_ok = [
   "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]
@@ -73,6 +82,7 @@ dynamic_ok = [
 soft = ["aminx.families.potts_mpnn"]
 dynamic_ok = [
   "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]
@@ -81,6 +91,7 @@ dynamic_ok = [
 soft = ["aminx.families.potts_mpnn"]
 dynamic_ok = [
   "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]
@@ -126,6 +137,7 @@ dynamic_ok = [
   "scripts/parity/protonpotts_ph_knobs_parity.py",
   "scripts/parity/protonpotts_ph_objective_knobs_parity.py",
   "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]

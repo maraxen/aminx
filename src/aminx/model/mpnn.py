@@ -37,6 +37,7 @@ class Aminx(eqx.Module):
   node_features_dim: int = eqx.field(static=True)
   edge_features_dim: int = eqx.field(static=True)
   num_decoder_layers: int = eqx.field(static=True)
+  cyclic: bool = eqx.field(static=True, default=False)
   capabilities: ModelCapabilities = eqx.field(static=True, default=PRXTEIN_MPNN_CAPABILITIES)
 
   def __init__(
@@ -54,11 +55,51 @@ class Aminx(eqx.Module):
     dropout_rate: float = 0.1,
     *,
     ca_only: bool = False,
+    cyclic: bool = False,
     key: PRNGKeyArray,
   ) -> None:
+    """Initialize the complete ProteinMPNN model.
+
+    Parameters
+    ----------
+    node_features : int
+      Node embedding dimension.
+    edge_features : int
+      Edge embedding dimension.
+    hidden_features : int
+      Hidden layer dimension in encoder and decoder MLPs.
+    num_encoder_layers : int
+      Number of message-passing encoder layers.
+    num_decoder_layers : int
+      Number of message-passing decoder layers.
+    k_neighbors : int
+      Number of nearest neighbors per residue in the k-NN graph.
+    num_positional_embeddings : int, optional
+      Maximum relative sequence offset ``max_relative_feature``.
+    physics_feature_dim : int | None, optional
+      Optional physics feature dimension for ``PhysicsEncoder``.
+    num_amino_acids : int, optional
+      Output logit vocabulary size.
+    vocab_size : int, optional
+      Input sequence embedding vocabulary size.
+    dropout_rate : float, optional
+      Dropout probability in encoder and decoder layers.
+    ca_only : bool, optional
+      If True, use ``ProteinFeaturesCA`` instead of ``ProteinFeatures``.
+    cyclic : bool, optional
+      If True, wrap intra-chain sequence offsets across cycle length.
+    key : PRNGKeyArray
+      PRNG key for parameter initialization.
+
+    Returns
+    -------
+    None
+      Initializes module attributes in place.
+    """
     self.node_features_dim = node_features
     self.edge_features_dim = edge_features
     self.num_decoder_layers = num_decoder_layers
+    self.cyclic = cyclic
 
     keys = jax.random.split(key, 5)
 
@@ -68,6 +109,7 @@ class Aminx(eqx.Module):
       edge_features,
       k_neighbors,
       num_positional_embeddings=num_positional_embeddings,
+      cyclic=cyclic,
       key=keys[0],
     )
     self.encoder = (
@@ -116,11 +158,12 @@ class Aminx(eqx.Module):
     backbone_noise: float | jax.Array = 0.0,
     backbone_noise_mode: str = "direct",
     structure_mapping: jax.Array | None = None,
-    y: jax.Array | None = None,
-    y_t: jax.Array | None = None,
-    y_m: jax.Array | None = None,
+    y: jax.Array | None = None,  # noqa: ARG002
+    y_t: jax.Array | None = None,  # noqa: ARG002
+    y_m: jax.Array | None = None,  # noqa: ARG002
     inference: bool = True,
     initial_node_features: jax.Array | None = None,
+    cyclic: bool | jax.Array | None = None,
   ) -> tuple[jax.Array, jax.Array, jax.Array]:
     """Single-state encoder: features + encoder for one conformational state.
 
@@ -128,27 +171,46 @@ class Aminx(eqx.Module):
     It is NOT an inference entry point — use the Sprint 2 inference API:
     build_inference_bundle + score_conditional/score_unconditional/sample_autoregressive kernels.
 
-    Args:
-        coords: (L, 4, 3) atom coordinates for one state.
-        mask: (L,) residue mask.
-        residue_index: (L,) residue indices.
-        chain_index: (L,) chain indices.
-        prng_key: PRNG key for encoder dropout.
-        backbone_noise: scalar backbone noise level.
-        backbone_noise_mode: mode for backbone noise ("direct" or other).
-        structure_mapping: optional structure isolation mapping.
-        y: accepted but ignored (for API compatibility with LigandMPNN).
-        y_t: accepted but ignored (for API compatibility with LigandMPNN).
-        y_m: accepted but ignored (for API compatibility with LigandMPNN).
-        inference: When True, encoder dropout is disabled. Training must pass False.
+    Parameters
+    ----------
+    coords : jax.Array
+      ``(L, 4, 3)`` atom coordinates for one state.
+    mask : jax.Array
+      ``(L,)`` residue mask.
+    residue_index : jax.Array
+      ``(L,)`` residue indices.
+    chain_index : jax.Array
+      ``(L,)`` chain indices.
+    prng_key : PRNGKeyArray | None, optional
+      PRNG key for encoder dropout.
+    backbone_noise : float | jax.Array, optional
+      Scalar backbone noise level.
+    backbone_noise_mode : str, optional
+      Mode for backbone noise (``"direct"`` or ``"thermal"``).
+    structure_mapping : jax.Array | None, optional
+      Optional structure isolation mapping.
+    y : jax.Array | None, optional
+      Accepted but ignored (for API compatibility with LigandMPNN).
+    y_t : jax.Array | None, optional
+      Accepted but ignored (for API compatibility with LigandMPNN).
+    y_m : jax.Array | None, optional
+      Accepted but ignored (for API compatibility with LigandMPNN).
+    inference : bool, optional
+      When True, encoder dropout is disabled. Training must pass False.
+    initial_node_features : jax.Array | None, optional
+      Optional initial node features for ``PhysicsEncoder``.
+    cyclic : bool | jax.Array | None, optional
+      Optional override for cyclic intra-chain sequence offset wrapping.
 
-    Returns:
-        (node_features, edge_features, neighbor_indices) for this state.
-
+    Returns
+    -------
+    tuple[jax.Array, jax.Array, jax.Array]
+      ``(node_features, edge_features, neighbor_indices)`` for this state.
     """
     if prng_key is None:
       prng_key = jax.random.PRNGKey(0)
 
+    effective_cyclic = self.cyclic if cyclic is None else cyclic
     edge_features, neighbor_indices, feat_node_features, _ = self.features(
       prng_key,
       coords,
@@ -158,6 +220,7 @@ class Aminx(eqx.Module):
       backbone_noise,
       backbone_noise_mode=backbone_noise_mode,
       structure_mapping=structure_mapping,
+      cyclic=effective_cyclic,
     )
     # initial_node_features overrides ProteinFeatures output (always None for soluble);
     # used by membrane models to pass one-hot physics labels through PhysicsEncoder.

@@ -376,6 +376,24 @@
   "src/aminx/model/capabilities.py::ModelCapabilities": {
     "internal": "model capability flags consulted across P00-P14, no dedicated P-ID"
   },
+  "src/aminx/model/cdr_bias.py::CDRFrequencyLogitTransform": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::CDRPhysicochemicalDescriptors": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::CDRRegionMasks": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::build_cdr_region_mask": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::compute_cdr_physicochemical_descriptors": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::make_cdr_frequency_logit_transform": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
   "src/aminx/model/decoder.py::Decoder": "P05",
   "src/aminx/model/decoder.py::DecoderLayer": "P05",
   "src/aminx/model/decoder.py::DecoderLayerJ": "P05",
@@ -629,6 +647,8 @@
   "src/aminx/potts/sampling.py::parallel_tempering": "P22",
   "src/aminx/potts/sampling.py::parallel_tempering_round": "P22",
   "src/aminx/potts/spec.py::PottsRunSpec": "P22",
+  "src/aminx/potts/trw.py::project_to_zero_sum_gauge": "P22",
+  "src/aminx/potts/trw.py::tree_marginals_to_potts": "P22",
   "src/aminx/sampling/__init__.py::sample": "P07",
   "src/aminx/sampling/conditional_logits.py::make_batched_conditional_logits_fn": "P05",
   "src/aminx/sampling/conditional_logits.py::make_batched_conditional_logits_split_fn": "P05",

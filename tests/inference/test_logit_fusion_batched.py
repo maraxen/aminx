@@ -191,3 +191,16 @@ def test_arithmetic_mean_mismatched_weights_raises_clear_error():
 
     with pytest.raises(ValueError, match=r"state_weights length 3 incompatible with 16 states; expected length 1 or 16"):
         fuser(per_state)
+
+
+def test_arithmetic_mean_rejects_non_callable_transforms():
+    """ArithmeticMeanLogits refuses non-callable transforms at construction, not at call time."""
+    from aminx.inference.logits import ArithmeticMeanLogits
+
+    weights = jnp.ones(1)
+    with pytest.raises(TypeError, match="transform"):
+        ArithmeticMeanLogits(weights=weights, transforms=jnp.ones((21,)))
+    with pytest.raises(TypeError, match="transform"):
+        ArithmeticMeanLogits(weights=weights, cdr_transform=(jnp.ones((3,)), jnp.ones((3,))))
+    with pytest.raises(TypeError, match="transform"):
+        ArithmeticMeanLogits(weights=weights, transforms=[lambda x: x, "typo"])

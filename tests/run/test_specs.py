@@ -946,3 +946,54 @@ class TestSpecJsonRoundTrip:
 
         assert restored.fixed_mask is not None
         assert len(restored.fixed_mask) == 3
+
+
+@pytest.mark.parametrize(
+    ("checkpoint_id", "expected_family"),
+    [
+        ("fampnn_0_3", "fampnn"),
+        ("fampnn_0_3_cath", "fampnn"),
+        ("caliby", "caliby"),
+        ("soluble_caliby_distill", "caliby"),
+        ("caliby_packer_010", "caliby"),
+    ],
+)
+def test_model_family_is_derived_from_pinned_caliby_and_fampnn_ids(
+    tmp_pdb_path: str, checkpoint_id: str, expected_family: str
+) -> None:
+    """A pinned caliby or fampnn id routes to its family, as potts and laser ids already do."""
+    spec = SamplingSpecification(inputs=tmp_pdb_path, checkpoint_id=checkpoint_id)
+
+    assert spec.model_family == expected_family
+
+
+def test_thermompnn_checkpoint_id_is_not_routed_to_a_driver(tmp_pdb_path: str) -> None:
+    """ThermoMPNN ids stay unrouted: the family is de-registered and has no driver."""
+    from aminx.host.family_driver import DRIVER_MODEL_FAMILIES  # noqa: PLC0415
+
+    spec = SamplingSpecification(inputs=tmp_pdb_path, checkpoint_id="thermo_mpnn_v1_default")
+
+    assert spec.model_family not in DRIVER_MODEL_FAMILIES
+
+
+@pytest.mark.parametrize(
+    ("field", "options_name", "family"),
+    [
+        ("caliby", "CalibyOptions", "caliby"),
+        ("fampnn", "FAMPNNOptions", "fampnn"),
+    ],
+)
+def test_family_options_reach_run_spec_only_for_their_family(
+    tmp_pdb_path: str, field: str, options_name: str, family: str
+) -> None:
+    """Caliby/FAMPNN options ride on ``RunSpec`` for their own family and are refused on any other."""
+    from aminx.run import options as options_mod  # noqa: PLC0415
+    from aminx.run.spec import build_run_spec  # noqa: PLC0415
+
+    options = getattr(options_mod, options_name)()
+
+    own = SamplingSpecification(inputs=tmp_pdb_path, model_family=family, **{field: options})
+    assert getattr(build_run_spec(own), field) is options
+
+    with pytest.raises(ValueError, match=f"{field} options require model_family '{family}'"):
+        build_run_spec(SamplingSpecification(inputs=tmp_pdb_path, **{field: options}))

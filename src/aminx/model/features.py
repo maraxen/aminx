@@ -134,7 +134,18 @@ def top_k(
   synthetic rows that are sliced away before return; it never mixes into a real
   row's own (full-length) last axis.
 
-  Returns:
+  Parameters
+  ----------
+  x : jax.Array
+    Input array whose ``k`` largest entries along the last axis are selected.
+  k : int
+    Number of top entries to select along the last axis.
+  row_chunk : int | None, optional
+    Optional batch row chunk size for bounded stack allocation during sort.
+
+  Returns
+  -------
+  tuple[jax.Array, jax.Array]
     ``(values, indices)``, matching ``jax.lax.top_k``'s contract on finite input.
     Non-finite input keeps the ordering ``jnp.argsort(-x)`` gave: NaNs sort last
     rather than first, and signed zeros compare equal. That differs from
@@ -173,6 +184,18 @@ def _top_k_row_chunked(x: jax.Array, k: int, row_chunk: int) -> tuple[jax.Array,
   grouped = flat.reshape(n_chunks, row_chunk, sort_len)
 
   def body(chunk_x: jax.Array) -> tuple[jax.Array, jax.Array]:
+    """Run unchunked top_k on one chunk of rows.
+
+    Parameters
+    ----------
+    chunk_x : jax.Array
+      Chunk of rows of shape ``(row_chunk, sort_len)``.
+
+    Returns
+    -------
+    tuple[jax.Array, jax.Array]
+      Top-k values and indices for ``chunk_x``.
+    """
     return _top_k_unchunked(chunk_x, k)
 
   vals, idx = jax.lax.map(body, grouped)
@@ -218,7 +241,9 @@ def select_neighbors(
       are replaced with ``+inf``. Set ``False`` when ``distances`` already encodes masked-pair
       distances (e.g. ``ProteinFeaturesCA``'s ``D_adjust``).
 
-  Returns:
+  Returns
+  -------
+  Int[Array, "L k"]
     ``(L, k_clamped)`` int32 neighbor indices, nearest first (``aminx.model.features.top_k``'s
     tie-break order).
   """
@@ -258,9 +283,21 @@ def _encode_and_project_edges(
   neighbor_indices: jax.Array,
   *edge_tensors: jax.Array,
   one_hot_dtype: jnp.dtype | None = None,
+  cyclic: bool | jax.Array = False,
+  mask: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]:
-  """Compute positional offset embeddings and project concatenated edge features."""
-  neighbor_offsets = compute_neighbor_offsets(residue_index, neighbor_indices)
+  """Compute positional offset embeddings and project concatenated edge features.
+
+  ``cyclic`` wraps intra-chain offsets over each chain's valid span (``mask`` selects the valid
+  residues); ``False`` returns the linear offsets bit-for-bit.
+  """
+  neighbor_offsets = compute_neighbor_offsets(
+    residue_index,
+    neighbor_indices,
+    cyclic=cyclic,
+    chain_index=chain_index,
+    mask=mask,
+  )
   edge_chains = (chain_index[:, None] == chain_index[None, :]).astype(jnp.int32)
   edge_chains_neighbors = jnp.take_along_axis(
     edge_chains,
@@ -318,6 +355,7 @@ class ProteinFeatures(eqx.Module):
   rbf_dim: int = eqx.field(static=True)
   pos_embed_dim: int = eqx.field(static=True)
   num_positional_embeddings: int = eqx.field(static=True)
+  cyclic: bool = eqx.field(static=True, default=False)
 
   def __init__(
     self,
@@ -326,9 +364,31 @@ class ProteinFeatures(eqx.Module):
     k_neighbors: int,
     num_positional_embeddings: int = 16,
     *,
+    cyclic: bool = False,
     key: PRNGKeyArray,
   ) -> None:
-    """Initialize feature extraction layers."""
+    """Initialize feature extraction layers.
+
+    Parameters
+    ----------
+    node_features : int
+      Node feature dimension (unused in backbone edge feature projection).
+    edge_features : int
+      Edge feature output dimension.
+    k_neighbors : int
+      Number of nearest neighbors per residue.
+    num_positional_embeddings : int, optional
+      Maximum relative sequence offset ``max_relative_feature``.
+    cyclic : bool, optional
+      Whether to wrap intra-chain sequence offsets across cycle length.
+    key : PRNGKeyArray
+      PRNG key for parameter initialization.
+
+    Returns
+    -------
+    None
+      Initializes module attributes in place.
+    """
     del node_features  # Unused, kept for API compatibility
 
     keys = jax.random.split(key, 3)
@@ -337,6 +397,7 @@ class ProteinFeatures(eqx.Module):
     self.rbf_dim = 16
     self.pos_embed_dim = 16  # Fixed output dim
     self.num_positional_embeddings = num_positional_embeddings
+    self.cyclic = cyclic
 
     pos_one_hot_dim = 2 * num_positional_embeddings + 2
     edge_embed_in_dim = 16 + 16 * 25  # Matches POS_EMBED_DIM + RBF_DIM * 25
@@ -360,11 +421,45 @@ class ProteinFeatures(eqx.Module):
     initial_node_features: jnp.ndarray | None = None,
     rbf_features: jnp.ndarray | None = None,
     neighbor_indices: jnp.ndarray | None = None,
+    *,
+    cyclic: bool | jax.Array | None = None,
   ) -> ProteinEdgeStageTensors:
     """Run the edge pipeline and return intermediates for JAX vs PyTorch diagnosis.
 
     Stages mirror the reference ordering: concat embeddings → ``w_e`` → layer norm
     → ``w_e_proj`` (final edge features returned from ``__call__``).
+
+    Parameters
+    ----------
+    prng_key : PRNGKeyArray
+      PRNG key for coordinate noise.
+    structure_coordinates : StructureAtomicCoordinates
+      Atomic coordinates ``(N, 4, 3)``.
+    mask : AlphaCarbonMask
+      Alpha carbon presence mask.
+    residue_index : ResidueIndex
+      Residue sequence indices.
+    chain_index : ChainIndex
+      Chain integer indices.
+    backbone_noise : BackboneNoise | None
+      Standard deviation of Gaussian coordinate noise.
+    backbone_noise_mode : str, optional
+      Mode for backbone noise (``"direct"`` or ``"thermal"``).
+    structure_mapping : jnp.ndarray | None, optional
+      Optional structure ID mapping to isolate multi-state neighbors.
+    initial_node_features : jnp.ndarray | None, optional
+      Optional initial node features.
+    rbf_features : jnp.ndarray | None, optional
+      Optional precomputed RBF features ``(N, K, 400)``.
+    neighbor_indices : jnp.ndarray | None, optional
+      Optional precomputed ``(N, K)`` neighbor indices.
+    cyclic : bool | jax.Array | None, optional
+      Optional override for cyclic intra-chain sequence offset wrapping.
+
+    Returns
+    -------
+    ProteinEdgeStageTensors
+      Named tuple of intermediate and final projected edge tensors.
     """
     node_features = None if initial_node_features is None else initial_node_features
 
@@ -426,6 +521,8 @@ class ProteinFeatures(eqx.Module):
       chain_index,
       neighbor_indices,
       rbf,
+      cyclic=self.cyclic if cyclic is None else cyclic,
+      mask=mask,
     )
 
     return ProteinEdgeStageTensors(
@@ -453,29 +550,42 @@ class ProteinFeatures(eqx.Module):
     initial_node_features: jnp.ndarray | None = None,
     rbf_features: jnp.ndarray | None = None,
     neighbor_indices: jnp.ndarray | None = None,
+    *,
+    cyclic: bool | jax.Array | None = None,
   ) -> tuple[EdgeFeatures, NeighborIndices, NodeFeatures | None, PRNGKeyArray]:
     """Extract and project features from protein structure.
 
-    Args:
-      prng_key: PRNG key for coordinate noise.
-      structure_coordinates: Atomic coordinates (N, CA, C, O).
-      mask: Alpha carbon mask.
-      residue_index: Residue indices.
-      chain_index: Chain indices.
-      backbone_noise: Noise to add to backbone coordinates.
-      backbone_noise_mode: Mode for backbone noise ("direct" or "thermal").
-      structure_mapping: Optional (N,) array mapping each residue to a structure ID.
-                        When provided (multi-state mode), prevents cross-structure
-                        neighbors to avoid information leakage between conformational states.
-      initial_node_features: Optional initial node features.
-      rbf_features: Optional precomputed RBF features from proxide (N, K, 400).
-                    If provided, dynamic graph building/noise is skipped for edges.
-      neighbor_indices: Optional precomputed neighbor indices from proxide (N, K).
-                        Must be provided if rbf_features is provided to ensure consistency.
+    Parameters
+    ----------
+    prng_key : PRNGKeyArray
+      PRNG key for coordinate noise.
+    structure_coordinates : StructureAtomicCoordinates
+      Atomic coordinates (N, CA, C, O).
+    mask : AlphaCarbonMask
+      Alpha carbon mask.
+    residue_index : ResidueIndex
+      Residue indices.
+    chain_index : ChainIndex
+      Chain indices.
+    backbone_noise : BackboneNoise | None
+      Noise to add to backbone coordinates.
+    backbone_noise_mode : str, optional
+      Mode for backbone noise ("direct" or "thermal").
+    structure_mapping : jnp.ndarray | None, optional
+      Optional (N,) array mapping each residue to a structure ID.
+    initial_node_features : jnp.ndarray | None, optional
+      Optional initial node features.
+    rbf_features : jnp.ndarray | None, optional
+      Optional precomputed RBF features from proxide (N, K, 400).
+    neighbor_indices : jnp.ndarray | None, optional
+      Optional precomputed neighbor indices from proxide (N, K).
+    cyclic : bool | jax.Array | None, optional
+      Optional override for cyclic intra-chain sequence offset wrapping.
 
-    Returns:
-      Tuple of (edge_features, neighbor_indices, updated_prng_key).
-
+    Returns
+    -------
+    tuple[EdgeFeatures, NeighborIndices, NodeFeatures | None, PRNGKeyArray]
+      Tuple of ``(edge_features, neighbor_indices, node_features_out, updated_prng_key)``.
     """
     stages = self.forward_edge_stages(
       prng_key,
@@ -489,6 +599,7 @@ class ProteinFeatures(eqx.Module):
       initial_node_features=initial_node_features,
       rbf_features=rbf_features,
       neighbor_indices=neighbor_indices,
+      cyclic=cyclic,
     )
     return stages.final, stages.neighbor_indices, stages.node_features_out, stages.prng_key
 
@@ -605,6 +716,7 @@ class ProteinFeaturesCA(eqx.Module):
   rbf_dim: int = eqx.field(static=True)
   pos_embed_dim: int = eqx.field(static=True)
   num_positional_embeddings: int = eqx.field(static=True)
+  cyclic: bool = eqx.field(static=True, default=False)
 
   def __init__(
     self,
@@ -613,6 +725,7 @@ class ProteinFeaturesCA(eqx.Module):
     k_neighbors: int,
     num_positional_embeddings: int = 16,
     *,
+    cyclic: bool = False,
     key: PRNGKeyArray,
   ) -> None:
     """Initialize CA-only feature extraction layers.
@@ -627,6 +740,8 @@ class ProteinFeaturesCA(eqx.Module):
       Number of nearest neighbors per residue.
     num_positional_embeddings : int
       Maximum relative sequence offset ``max_relative_feature``.
+    cyclic : bool
+      Whether to wrap intra-chain sequence offsets across cycle length.
     key : PRNGKeyArray
       PRNG key for parameter initialization.
 
@@ -643,6 +758,7 @@ class ProteinFeaturesCA(eqx.Module):
     self.rbf_dim = 16
     self.pos_embed_dim = 16
     self.num_positional_embeddings = num_positional_embeddings
+    self.cyclic = cyclic
 
     pos_one_hot_dim = 2 * num_positional_embeddings + 2
     edge_embed_in_dim = 16 + 16 * 9 + 7  # 167
@@ -667,6 +783,7 @@ class ProteinFeaturesCA(eqx.Module):
     neighbor_indices: jnp.ndarray | None = None,
     *,
     row_chunk: int | None = None,
+    cyclic: bool | jax.Array | None = None,
   ) -> ProteinEdgeStageTensors:
     """Run the CA-only edge pipeline and return intermediates.
 
@@ -696,6 +813,8 @@ class ProteinFeaturesCA(eqx.Module):
       Optional precomputed ``(N, K)`` neighbor indices.
     row_chunk : int | None
       Optional chunk size forwarded to :func:`select_neighbors`.
+    cyclic : bool | jax.Array | None
+      Optional override for cyclic intra-chain sequence offset wrapping.
 
     Returns
     -------
@@ -778,6 +897,8 @@ class ProteinFeaturesCA(eqx.Module):
       rbf_all,
       o_features,
       one_hot_dtype=ca.dtype,
+      cyclic=self.cyclic if cyclic is None else cyclic,
+      mask=mask,
     )
 
     return ProteinEdgeStageTensors(
@@ -805,6 +926,8 @@ class ProteinFeaturesCA(eqx.Module):
     initial_node_features: jnp.ndarray | None = None,
     rbf_features: jnp.ndarray | None = None,
     neighbor_indices: jnp.ndarray | None = None,
+    *,
+    cyclic: bool | jax.Array | None = None,
   ) -> tuple[EdgeFeatures, NeighborIndices, NodeFeatures | None, PRNGKeyArray]:
     """Extract and project CA-only features from protein structure.
 
@@ -832,6 +955,8 @@ class ProteinFeaturesCA(eqx.Module):
       Unused placeholder for API compatibility with ``ProteinFeatures``.
     neighbor_indices : jnp.ndarray | None
       Optional precomputed ``(N, K)`` neighbor indices.
+    cyclic : bool | jax.Array | None
+      Optional override for cyclic intra-chain sequence offset wrapping.
 
     Returns
     -------
@@ -850,5 +975,6 @@ class ProteinFeaturesCA(eqx.Module):
       initial_node_features=initial_node_features,
       rbf_features=rbf_features,
       neighbor_indices=neighbor_indices,
+      cyclic=cyclic,
     )
     return stages.final, stages.neighbor_indices, stages.node_features_out, stages.prng_key

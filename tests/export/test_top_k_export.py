@@ -257,6 +257,12 @@ class TestNoRemainingLaxTopKCallSites:
     assert found == {
       "host/logit_aggregation.py",
       "inference/schedule_selector.py",
+      # Driver-family kNN (added with the caliby and fampnn stack). Traced model code run under
+      # the family driver's jit, not an export input: no export wrapper imports aminx.families
+      # (aminx/export/wrappers.py), and iree-compile never sees these graphs. If a family is
+      # ever exported, these must move to aminx.model.features.top_k first.
+      "families/caliby/features.py",
+      "families/fampnn/features.py",
     }, f"host-side jax.lax.top_k call sites changed: {sorted(found)}"
 
   def test_the_guard_detects_a_call(self, tmp_path: Path) -> None:

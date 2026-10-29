@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TextIO, cast
 
-from aminx.host.family_driver import ModelFamily, validate_model_family
+from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, ModelFamily, validate_model_family
 from aminx.io.proxide_fetch import InputResolutionError
-from aminx.io.weights import get_topology_for_checkpoint
+from aminx.io.weights import family_checkpoints, get_topology_for_checkpoint
 from aminx.model.versions import MODEL_VERSION, MODEL_WEIGHTS
 
 from .spec import UNSET, RunSpec, Unset, _as_temperature_tuple, build_run_spec
@@ -26,12 +26,19 @@ if TYPE_CHECKING:
   )
 
   from aminx.types.protocols import ConformationalStates
-  from aminx.types.stages import DecodingFusionFn, EncodingFusionFn
+  from aminx.types.stages import DecodingFusionFn, EncodingFusionFn  # noqa: TID251
   from aminx.utils.catjac import CombineCatJacPairFn
   from aminx.utils.decoding_order import DecodingOrderFn
 
   from .batch_mapping import MappedBy
-  from .options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
+  from .options import (
+    CalibyOptions,
+    FAMPNNOptions,
+    LaserOptions,
+    PottsMPNNOptions,
+    ProtonPottsOptions,
+    ThermoMPNNOptions,
+  )
 
 
 # Type aliases for convenience
@@ -45,6 +52,19 @@ AlignmentStrategy = Literal["sequence", "structure"]
 TiedPositionMode = Literal["auto", "direct"] | None
 
 logger = logging.getLogger(__name__)
+
+
+def _pinned_driver_family(checkpoint_id: str) -> str | None:
+  """Driver-backed family that a pinned checkpoint id belongs to, else ``None``.
+
+  The pinned family table (``family_weights.json``) is the source of the ids. Only families with
+  a driver count, so a ThermoMPNN id (family de-registered) stays unrouted, and an id that is not
+  in the table never routes by prefix alone.
+  """
+  pinned = family_checkpoints().get(checkpoint_id)
+  if pinned is None or pinned.family not in DRIVER_MODEL_FAMILIES:
+    return None
+  return pinned.family
 
 
 @dataclass(frozen=True)
@@ -291,6 +311,12 @@ class RunSpecification:
   """ProtonPottsMPNN knobs. ``None`` means the family defaults; set only for ``protonpottsmpnn``."""
   laser: LaserOptions | None = None
   """LASErMPNN knobs. ``None`` means the family defaults; set only for ``lasermpnn``."""
+  caliby: CalibyOptions | None = None
+  """Caliby knobs. ``None`` means the family defaults; set only for ``caliby``."""
+  fampnn: FAMPNNOptions | None = None
+  """FAMPNN knobs. ``None`` means the family defaults; set only for ``fampnn``."""
+  thermompnn: ThermoMPNNOptions | None = None
+  """ThermoMPNN knobs. ``None`` means the family defaults; set only for ``thermompnn``."""
 
   run_spec: RunSpec = field(init=False, repr=False)
   _run_spec_synced: bool = field(init=False, default=False)
@@ -341,7 +367,7 @@ class RunSpecification:
         if isinstance(self.backbone_noise, float):
           bb_noise = (self.backbone_noise,)
         elif isinstance(self.backbone_noise, Sequence):
-          bb_noise = tuple(self.backbone_noise)  # type: ignore
+          bb_noise = tuple(self.backbone_noise)  # type: ignore[arg-type]
 
       bb_mode: Literal["direct", "thermal"] = self.backbone_noise_mode or "direct"
       bundles = [b for b in bundles if b.feature_type != "backbone"]
@@ -363,7 +389,7 @@ class RunSpecification:
         if isinstance(self.estat_noise, float):
           estat_levels = (self.estat_noise,)
         elif isinstance(self.estat_noise, Sequence):
-          estat_levels = tuple(self.estat_noise)  # type: ignore
+          estat_levels = tuple(self.estat_noise)  # type: ignore[arg-type]
         bundles.append(
           FeatureNoiseBundle(
             feature_type="electrostatic",
@@ -390,7 +416,7 @@ class RunSpecification:
         if isinstance(self.vdw_noise, float):
           vdw_levels = (self.vdw_noise,)
         elif isinstance(self.vdw_noise, Sequence):
-          vdw_levels = tuple(self.vdw_noise)  # type: ignore
+          vdw_levels = tuple(self.vdw_noise)  # type: ignore[arg-type]
         bundles.append(
           FeatureNoiseBundle(
             feature_type="vdw",
@@ -467,12 +493,17 @@ class RunSpecification:
     # Prefixes are decided before model_type is consulted, so a potts/laser id
     # cannot fall through to proteinmpnn (get_topology reports model_type protein).
     checkpoint_name = self.checkpoint_id if isinstance(self.checkpoint_id, str) else ""
+    pinned_family = _pinned_driver_family(checkpoint_name) if self.model_family is None else None
     if self.model_family is None and checkpoint_name.startswith("pottsmpnn_"):
       object.__setattr__(self, "model_family", "pottsmpnn")
     elif self.model_family is None and checkpoint_name.startswith("protonpottsmpnn_"):
       object.__setattr__(self, "model_family", "protonpottsmpnn")
     elif self.model_family is None and checkpoint_name.startswith("lasermpnn_"):
       object.__setattr__(self, "model_family", "lasermpnn")
+    elif pinned_family is not None:
+      # caliby and fampnn ids (caliby, soluble_caliby*, caliby_packer_*, fampnn_*) are matched
+      # through the pinned family table, so an unpinned "caliby_..." id does not route anywhere.
+      object.__setattr__(self, "model_family", pinned_family)
 
     derived_topology = (
       get_topology_for_checkpoint(self.checkpoint_id) if self.checkpoint_id is not None else None
@@ -544,6 +575,8 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   "lasermpnn": frozenset(
     {"nll", "logits", "proofread_unconditional", "proofread_conditional"},
   ),
+  "caliby": frozenset({"nll", "logits", "energy"}),
+  "fampnn": frozenset({"nll", "logits"}),
 }
 
 

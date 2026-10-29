@@ -120,6 +120,16 @@ def test_missing_prody_names_the_laser_extra(monkeypatch: pytest.MonkeyPatch) ->
     assert "prody" in message
 
 
+def test_thermompnn_is_refused_until_it_has_a_driver() -> None:
+    """ThermoMPNN has model and convert code but no FamilyDriver. Requesting it must fail at spec
+    validation with a message that says why, not fall through to a stock or silent path."""
+    with pytest.raises(ValueError, match="thermompnn has no driver yet"):
+        validate_model_family("thermompnn")
+    with pytest.raises(ValueError, match="thermompnn has no driver yet"):
+        SamplingSpecification(inputs="x.pdb", model_family="thermompnn")
+    assert "thermompnn" not in MODEL_FAMILIES
+
+
 def test_missing_prody_fails_at_family_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "prody", None)
     with pytest.raises(ImportError, match="--extra laser"):

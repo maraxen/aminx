@@ -20,9 +20,27 @@ import equinox as eqx
 import jax
 from proxide.ops.dataset import create_protein_dataset
 
-from aminx.host.family_driver import FAMILY_DRIVERS, validate_model_family
+from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, FAMILY_DRIVERS, validate_model_family
 from aminx.io.weights import family_checkpoints, load_model, resolve_family_checkpoint
 from aminx.run.resources import proxide_dataset_resource_kwargs
+
+# Checkpoint-id prefixes that name a driver-backed family even when the spec's model_family is
+# unset. Ids in the pinned family table are matched through the table instead.
+_LEGACY_DRIVER_ID_PREFIXES: tuple[str, ...] = ("pottsmpnn_", "protonpottsmpnn_", "lasermpnn_")
+
+
+def _requires_sha256(model_family: str | None, checkpoint_name: str) -> bool:
+  """Whether a registry entry for this family or id must carry a ``sha256``.
+
+  A driver-backed family (see ``DRIVER_MODEL_FAMILIES``) requires it, and so does an id whose
+  pinned family table entry belongs to a driver-backed family (``caliby``, ``fampnn``, ...).
+  """
+  if model_family in DRIVER_MODEL_FAMILIES:
+    return True
+  pinned = family_checkpoints().get(checkpoint_name)
+  if pinned is not None and pinned.family in DRIVER_MODEL_FAMILIES:
+    return True
+  return checkpoint_name.startswith(_LEGACY_DRIVER_ID_PREFIXES)
 
 
 def _loader_inputs(inputs: Sequence[str | StringIO] | str | StringIO) -> Sequence[str | StringIO]:
@@ -34,10 +52,11 @@ def _artifact_path_for_registry_entry(registry_path: Path, artifact_path: str) -
   return path if path.is_absolute() else (registry_path.parent / path).resolve()
 
 
-def _resolve_local_checkpoint_from_registry(spec: Specs) -> str | None:
+def _resolve_local_checkpoint_from_registry(spec: Specs, checkpoint_id: str | None = None) -> str | None:
   if spec.checkpoint_registry_path is None:
     return None
-  if spec.checkpoint_id is None:
+  checkpoint_id = spec.checkpoint_id if checkpoint_id is None else checkpoint_id
+  if checkpoint_id is None:
     msg = "checkpoint_id is required when checkpoint_registry_path is set"
     raise ValueError(msg)
   reg_path = spec.checkpoint_registry_path
@@ -47,28 +66,21 @@ def _resolve_local_checkpoint_from_registry(spec: Specs) -> str | None:
   for entry in entries:
     if (
       entry.get("model_family") == spec.model_family
-      and entry.get("checkpoint_id") == spec.checkpoint_id
+      and entry.get("checkpoint_id") == checkpoint_id
     ):
       found = entry
       break
   if found is None:
     msg = (
       f"No checkpoint registry entry found for model_family={spec.model_family!r} "
-      f"checkpoint_id={spec.checkpoint_id!r}"
+      f"checkpoint_id={checkpoint_id!r}"
     )
     raise ValueError(msg)
-  checkpoint_name = spec.checkpoint_id if isinstance(spec.checkpoint_id, str) else ""
-  driver_family = spec.model_family in {"pottsmpnn", "protonpottsmpnn", "lasermpnn"} or checkpoint_name.startswith(
-    (
-      "pottsmpnn_",
-      "protonpottsmpnn_",
-      "lasermpnn_",
-    ),
-  )
-  if driver_family and "sha256" not in found:
+  checkpoint_name = checkpoint_id if isinstance(checkpoint_id, str) else ""
+  if _requires_sha256(spec.model_family, checkpoint_name) and "sha256" not in found:
     msg = (
       f"Registry entry for model_family={spec.model_family!r} "
-      f"checkpoint_id={spec.checkpoint_id!r} must include sha256"
+      f"checkpoint_id={checkpoint_id!r} must include sha256"
     )
     raise ValueError(msg)
   artifact = _artifact_path_for_registry_entry(reg_path, str(found["artifact_path"]))
@@ -80,20 +92,22 @@ def _resolve_local_checkpoint_from_registry(spec: Specs) -> str | None:
   return str(artifact)
 
 
-def _resolve_driver_checkpoint(spec: Specs, family: str) -> str | None:
+def _resolve_driver_checkpoint(spec: Specs, family: str, checkpoint_id: str | None = None) -> str | None:
   """Artifact path for a family driver: the registry entry, else the pinned hub table.
 
   Order after ``model_local_path`` (which the driver handles itself): a ``checkpoint_registry_path``
   entry, then ``checkpoint_id`` looked up in the sha256-pinned family table
   (:func:`aminx.io.weights.resolve_family_checkpoint`, which honours ``AMINX_WEIGHTS_DIR`` and the
-  ``HF_REVISION`` pin). ``None`` means neither applies and the driver raises its own error.
+  ``HF_REVISION`` pin). ``checkpoint_id`` overrides ``spec.checkpoint_id`` when given, so a driver
+  that resolves its id from its own options passes it here. ``None`` means neither applies and the
+  driver raises its own error.
   """
-  from_registry = _resolve_local_checkpoint_from_registry(spec)
+  effective = spec.checkpoint_id if checkpoint_id is None else checkpoint_id
+  from_registry = _resolve_local_checkpoint_from_registry(spec, effective)
   if from_registry is not None:
     return from_registry
-  checkpoint_id = spec.checkpoint_id
-  if isinstance(checkpoint_id, str) and checkpoint_id in family_checkpoints():
-    return resolve_family_checkpoint(checkpoint_id, family=family).path
+  if isinstance(effective, str) and effective in family_checkpoints():
+    return resolve_family_checkpoint(effective, family=family).path
   return None
 
 
