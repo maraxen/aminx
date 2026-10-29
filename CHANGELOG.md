@@ -1,8 +1,36 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 (2026-10-29)
+
+### Changed
+
+- xtrax is pinned to `0.4.1b5` (was `0.4.1b2`).
+- No API that existed in 0.3.0 changed incompatibly. Everything below is new since 0.3.0.
 
 ### Added
+
+- **Caliby family** (`aminx.families.caliby`, `model_family="caliby"`): port of ProteinDesignLab/caliby, with the atom MPNN, the graph Potts head (the Potts couplings scaled once, 30-neighbour truncation, zero-gauge and reciprocal symmetrization), the sidechain packer, `CalibyDriver` and strict state-dict converters. Eight checkpoints (`caliby`, `soluble_caliby`, `soluble_caliby_v1`, `caliby_distill`, `soluble_caliby_distill`, `caliby_packer_{000,010,030}`) are pinned in `family_weights.json`. `CalibyOptions.checkpoint_id=None` defers to `RunSpecification.checkpoint_id`, then to `caliby`; when both are set they must agree. Scores are the log-softmax over all 21 states including GAP, unmasked, to match upstream. This also corrects the earlier conflation of KeatingLab PottsMPNN with Caliby.
+- **FAMPNN family** (`aminx.families.fampnn`, `model_family="fampnn"`): port of richardshuai/fampnn, the full-atom MPNN with GVP encoder and sidechain diffusion, `FAMPNNDriver` and strict converters. Checkpoints `fampnn_0_0`, `fampnn_0_3`, `fampnn_0_3_cath`. FAMPNN checkpoints load through a restricted unpickler (`aminx.io.torch_checkpoint`); constraint fields the driver would silently drop are refused.
+- **ThermoMPNN driver** (`aminx.families.thermo_mpnn.ThermoMPNNDriver`): ThermoMPNN v1/v2 and ThermoMPNN-D as a registered driver family (`model_family="thermompnn"`, `output_kind="ddg"`), which derives from ThermoMPNN checkpoint ids and requires a pinned `sha256` for registry entries like the other driver families.
+- **AntiBMPNN checkpoints and CDR frequency bias** (`aminx.model.cdr_bias`): `antibmpnn_v_48_{000,010,020,030}`, IMGT/Chothia/Kabat CDR ranges, `cdr_region_mask`, `build_cdr_bias_matrix`, `make_cdr_bias_logit_transform`. The direct CDR mask is keyword-only (`cdr_mask=`). `antibmpnn` `v_48_002` is refused rather than aliased to `v_48_000`, because it is not a published checkpoint.
+- **CyclicMPNN offset wrapping**: `cyclic` on `Aminx`, `ProteinFeatures` and `ProteinFeaturesCA` wraps same-chain relative-position offsets head to tail; non-cyclic behaviour is bit-identical. `Aminx.cyclic` is set from the `cyclicmpnn` checkpoint family.
+- **MPNN variant weights** (#234): AbMPNN, HyperMPNN, CyclicMPNN, CA-only ProteinMPNN (`ProteinFeaturesCA`) and ThermoMPNN models, with pinned Hub revisions.
+- **Multi-backend campaigns** (#244): `BackendArmSpec` arms across model families, a hoisted-compile cache keyed by `TopologyKey` (`HoistedTopologyExecutor`) so checkpoints with the same static structure share one executable (`cyclicmpnn` gets its own), and a unified campaign sink.
+- **Potts**: `condition_on_fixed_sites` for exact conditioning on fixed identities (#227), the k-NN adjacency `W` forwarded to `PottsResult` (#228), and real multi-state PoE inference in place of silently using state 0 (#231).
+- **Opt-in AR wave loop** on `xtrax.intent.loop` (`AutoregressiveConfig.intent_loop`, #232); the pre-registered benchmark outcome was `no_contrast` (scan compiled 1.03× slower than while at L=512), so it stays off by default.
+- **`RunSpec`** carries `caliby`, `fampnn` and `thermompnn` options and refuses them for any other `model_family`.
+- **Incremental CI test selection** (`scripts/ci/select_affected_tests.py`): selects tests from static import closures, falling back to the full suite whenever a closure is unsound.
+- Documentation of the Tier 1–5 model families in `docs/models/mpnn_variants.md`.
+
+### Known limitations
+
+- Caliby's Potts sampler is not Gibbs. Sampling-key `fold_in` collisions are recorded in the draw-site registry rather than fixed.
+- Residue-numbering parity with the upstream Caliby and FAMPNN featurizers is not established.
+- Caliby sidechain packing is not exposed as a separate `pack_sidechains` stage, and the CDR transform does not take per-step `(V,)` logits.
+- Long sequences (around L=500) can run slowly or out of memory on the new family loops.
+- The two tests in `tests/knob_gate/test_knob_superset.py` need the `redsox` package and fail without it.
+
+### Also in this release
 
 - **Post-v0.3.0 triage and debt remediation (PR #240):** Unified Zarr + Parquet campaign sink (`UnifiedCampaignSink`, `CampaignSinkInspector`), closed-form tree-marginal Potts inverse (`tree_marginals_to_potts`, `project_to_zero_sum_gauge`), HLO smell checker (`check_hlo_smells`, `assert_no_hlo_smells`), custom `WaveScheduleBundle` threading through `SamplingSpecification`, synchronized `output_path`/`output_zarr_path`/`output_h5_path` aliases, and content-addressed deterministic `run_id` hashing.
 
