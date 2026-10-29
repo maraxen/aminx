@@ -120,6 +120,14 @@ def test_missing_prody_names_the_laser_extra(monkeypatch: pytest.MonkeyPatch) ->
     assert "prody" in message
 
 
+def test_thermompnn_is_a_driver_backed_family() -> None:
+    """ThermoMPNN has a registered FamilyDriver module, so it validates like the other driver families."""
+    assert validate_model_family("thermompnn") == "thermompnn"
+    assert SamplingSpecification(inputs="x.pdb", model_family="thermompnn").model_family == "thermompnn"
+    assert "thermompnn" in MODEL_FAMILIES
+    assert DRIVER_BACKED_FAMILY_MODULES["thermompnn"] == "aminx.families.thermo_mpnn"
+
+
 def test_missing_prody_fails_at_family_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "prody", None)
     with pytest.raises(ImportError, match="--extra laser"):

@@ -23,7 +23,7 @@ _ALLOWLIST = Path(__file__).with_name("sidecar_conditions_allowlist.toml")
 # SQL subset actually used: boolean/SQL keywords, comparisons, arithmetic,
 # IN lists, and a fixed set of scalar functions called as name(...).
 _KEYWORDS = frozenset({"AND", "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE"})
-_FUNCTIONS = frozenset({"min", "max", "count", "abs", "sum", "avg", "len", "round"})
+_FUNCTIONS = frozenset({"min", "max", "count", "abs", "sum", "avg", "len", "round", "starts_with"})
 
 _TOKEN_RE = re.compile(
     r"""

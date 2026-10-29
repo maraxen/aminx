@@ -206,6 +206,8 @@ def _refine(
     binding: str = "none",
     tables: BindingTables | None = None,
     uniforms: jax.Array | None = None,
+    tie_groups: np.ndarray | None = None,
+    tied: bool = False,
 ) -> object:
     length = etab.shape[0]
     module = _decoder()
@@ -234,7 +236,9 @@ def _refine(
         jnp.zeros((length, _V), dtype=jnp.float32),
         jnp.zeros((length, _V), dtype=jnp.float32),
         jnp.zeros((length, _V), dtype=jnp.float32),
-        jnp.arange(length, dtype=jnp.int32)[:, None],
+        jnp.arange(length, dtype=jnp.int32)[:, None]
+        if tie_groups is None
+        else jnp.asarray(tie_groups, dtype=jnp.int32),
         jnp.ones((length,), dtype=jnp.float32),
         jnp.zeros((length, _H), dtype=jnp.float32),
         jnp.zeros((length, 1, _H), dtype=jnp.float32),
@@ -244,7 +248,7 @@ def _refine(
         pssm_bias_flag=False,
         pssm_log_odds_flag=False,
         binding=binding,
-        tied=False,
+        tied=tied,
         tied_epistasis=False,
         max_iters=max_iters,
     )
@@ -369,3 +373,47 @@ def test_optimize_fasta_and_num_samples_knobs(tmp_path: Path, caplog: pytest.Log
     )
     assert "sequence" in sample_schema(designing)
     assert "sample_rank" in sample_schema(designing)
+
+
+def test_tied_group_any_member_fixed_preserves_token() -> None:
+    """Tied group where any member is fixed (chain_mask=0) keeps that fixed member's token across the group in potts mode, while tied nodes follows §6.5 last-member chain_mask semantics."""
+    length = 2
+    flat = jnp.zeros((length, 1, _A, _A))
+    # In potts mode (_visit_tied_group), any fixed member freezes the group to that fixed member's token:
+    # Case 1: first member fixed (chain_mask=[0.0, 1.0]) -> copies sequence[0] == 7
+    res_first = _refine(
+        "potts",
+        flat,
+        bias_index=3,
+        sequence=np.asarray([7, 2], dtype=np.int32),
+        chain_mask=np.asarray([0.0, 1.0], dtype=np.float32),
+        tie_groups=np.asarray([[0, 1]], dtype=np.int32),
+        tied=True,
+    )
+    assert np.array_equal(np.asarray(res_first.sequence), np.asarray([7, 7])), (
+        f"Expected fixed token 7 across tied group when first member is fixed, got {res_first.sequence}"
+    )
+    # Case 2: second member fixed (chain_mask=[1.0, 0.0]) -> copies sequence[1] == 2
+    res_second = _refine(
+        "potts",
+        flat,
+        bias_index=3,
+        sequence=np.asarray([7, 2], dtype=np.int32),
+        chain_mask=np.asarray([1.0, 0.0], dtype=np.float32),
+        tie_groups=np.asarray([[0, 1]], dtype=np.int32),
+        tied=True,
+    )
+    assert np.array_equal(np.asarray(res_second.sequence), np.asarray([2, 2])), (
+        f"Expected fixed token 2 across tied group when second member is fixed, got {res_second.sequence}"
+    )
+    # Case 3: tied nodes mode checks chain_mask[last_safe] (§6.5)
+    res_nodes_last_fixed = _refine(
+        "nodes",
+        flat,
+        bias_index=3,
+        sequence=np.asarray([7, 2], dtype=np.int32),
+        chain_mask=np.asarray([1.0, 0.0], dtype=np.float32),
+        tie_groups=np.asarray([[0, 1]], dtype=np.int32),
+        tied=True,
+    )
+    assert np.array_equal(np.asarray(res_nodes_last_fixed.sequence), np.asarray([2, 2]))

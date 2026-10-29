@@ -3,21 +3,31 @@ title: Caliby nature and dataset investigation
 research_id: 260605_caliby-nature-and-dataset
 task_id: 260605_multistate-potts
 date: 260605
-status: in-progress
+status: superseded_by_261027_caliby-family-port-spec
 backlog_item: 1298
 ---
 
 # Caliby Nature and Dataset Investigation
 
+> [!WARNING] **HISTORICAL MISATTRIBUTION CORRECTION (Debt #3072)**
+> This 2026-06-05 document misidentified **"Caliby"** as an internal shorthand ("calibration y") for a post-hoc TRW marginal calibration sidecar.
+> **Upstream Caliby** (`ProteinDesignLab/caliby`, Shuai, Widatalla, Huang et al., *bioRxiv* `10.1101/2025.09.30.679633` / Zenodo `10.5281/zenodo.18644985`) is a **3D-coordinate Potts model + flow-matching / EDM sidechain diffusion packer** created by the Protein Design Lab (Po-Ssu Huang Lab, Stanford).
+> The internal Potts marginal calibration utility remains in `src/aminx/potts/calibration.py`, whereas the true upstream Caliby model family is implemented in `src/aminx/families/caliby/` per `.praxia/docs/specs/261027_caliby-family-port-spec.md`.
+
+
 ## Summary
 
-Caliby (calibration y) is a learned correction sidecar for TRW marginals in Potts inference. This document investigates its nature, computational requirement, dataset dependencies, and implementation plan for aminx integration.
+**Attribution Correction**: Caliby is the deep-learning Potts inverse folding model developed by the Possu Huang Lab at Stanford (`ProteinDesignLab/caliby`), which learns an explicit Potts model ($h, J$) and samples sequences via MCMC. Earlier notes conjecturing that Caliby stood for "calibration y" or was an internal mistypotts post-hoc sidecar were an errant folk etymology. In aminx, `CalibrationModule` serves as an independent marginals-calibration sidecar for TRW inference. This document clarifies Caliby's true origin and investigates calibration requirements for aminx integration.
 
 ## Findings
 
 ### 1. Caliby Definition and Purpose
 
-**What is caliby?**
+**Origin and True Nature:**
+- **Caliby** is a deep-learning inverse folding framework by the Possu Huang Lab at Stanford (`ProteinDesignLab/caliby`). It directly predicts explicit Potts parameters ($h$ single-site fields and $J$ pairwise couplings) from backbone coordinates and generates sequences via MCMC sampling.
+- *Historical note*: The earlier conjecture that "caliby" stood for "calibration y" was an internal misattribution. The aminx `CalibrationModule` (`src/aminx/potts/calibration.py`) provides post-hoc TRW marginal calibration.
+
+**What is the aminx calibration module?**
 - Post-hoc correction applied to TRW marginal probabilities after full TRW inference completes
 - Learned module (eqx.Module subclass) that maps marginals → corrected marginals
 - Captures systematic biases in TRW marginals relative to target distributions (e.g., native sequences, experimental folding)
@@ -29,7 +39,7 @@ Caliby (calibration y) is a learned correction sidecar for TRW marginals in Pott
 - Post-hoc marginal correction is cheaper and more interpretable: identifies which marginals are systematically over/under-confident
 
 **Design decision from ADR 260605_integration-architecture-for-mistypotts.md:**
-- Caliby is a **learned sidecar** — stored separately from potts_<id>.eqx.zst
+- The calibration module is a **learned sidecar** — stored separately from potts_<id>.eqx.zst
 - Versioned independently (caliby_<id>.eqx.zst)
 - Can be updated without retraining PottsModel
 - Default behavior: caliby_path=None → IdentityCalibration (no-op), enabling safe rollout
@@ -62,12 +72,10 @@ Caliby (calibration y) is a learned correction sidecar for TRW marginals in Pott
   - Native sequences (ground truth)
   - Optionally: experimental folding data, stability measurements, etc.
 
-**Dataset location in mistypotts:**
-- **Investigation status:** NOT FOUND in current mistypotts codebase
-- Grep for "caliby\|calibration" in mistypotts/src yields no matches
-- ROADMAP mentions "calibration diagnostics" (c_i metrics) but not a full calibration dataset
-- F4 implementation summary covers per-residue diagnostics, not caliby recapture pipeline
-- **Conclusion:** Caliby dataset does not yet exist in mistypotts; specification is a prerequisite
+**Dataset location and relation to Caliby:**
+- Possu Huang Lab's Caliby model (`ProteinDesignLab/caliby`) uses CATH/PDB inverse-folding training splits.
+- For aminx's internal `CalibrationModule`: investigation in mistypotts showed no dedicated calibration dataset in mistypotts.
+- **Conclusion:** Calibration dataset for aminx's `CalibrationModule` does not yet exist in mistypotts; specification is a prerequisite.
 
 **Candidate sources:**
 - Could be derived from training split of ProteinMPNN data (if available)

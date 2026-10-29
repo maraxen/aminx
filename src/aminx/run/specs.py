@@ -10,9 +10,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TextIO, cast
 
-from aminx.host.family_driver import ModelFamily, validate_model_family
+from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, ModelFamily, validate_model_family
 from aminx.io.proxide_fetch import InputResolutionError
-from aminx.io.weights import get_topology_for_checkpoint
+from aminx.io.weights import family_checkpoints, get_topology_for_checkpoint
 from aminx.model.versions import MODEL_VERSION, MODEL_WEIGHTS
 
 from .spec import UNSET, RunSpec, Unset, _as_temperature_tuple, build_run_spec
@@ -52,6 +52,19 @@ AlignmentStrategy = Literal["sequence", "structure"]
 TiedPositionMode = Literal["auto", "direct"] | None
 
 logger = logging.getLogger(__name__)
+
+
+def _pinned_driver_family(checkpoint_id: str) -> str | None:
+  """Driver-backed family that a pinned checkpoint id belongs to, else ``None``.
+
+  The pinned family table (``family_weights.json``) is the source of the ids. Only families with
+  a driver count, so a ThermoMPNN id (family de-registered) stays unrouted, and an id that is not
+  in the table never routes by prefix alone.
+  """
+  pinned = family_checkpoints().get(checkpoint_id)
+  if pinned is None or pinned.family not in DRIVER_MODEL_FAMILIES:
+    return None
+  return pinned.family
 
 
 @dataclass(frozen=True)
@@ -157,7 +170,7 @@ class RunSpecification:
   Attributes:
       inputs: A sequence of input file paths or text streams, or a single input.
       model_weights: The model weights to use (default is "original").
-      model_version: The model version to use (default is "v_48_020.pkl").
+      model_version: The model version to use (default is "v_48_020").
       batch_size: The batch size to use (default is 32).
       backbone_noise: The backbone noise levels to use (default is (0.0,)).
                       Can be a single float or a sequence of floats.
@@ -167,7 +180,7 @@ class RunSpecification:
       model: An optional model ID to use (default is None).
       altloc: The alternate location to use (default is "first").
       decoding_order_fn: An optional function to generate the decoding order (default is None).
-      conformational_states: ConformationalStates (from ensemble_tools.dbscan) to use for coarse graining the inference.
+      conformational_states: Optional conformational states representation to use for coarse graining the inference.
       max_length: Maximum sequence length for padding/truncation (default is 512).
                   Set to None to disable padding. Controls memory usage - smaller values
                   reduce memory but may cause recompilation for different sequence lengths.
@@ -178,11 +191,11 @@ class RunSpecification:
       max_workers: Optional maximum number of data loading workers.
 
   Note:
-      Use ``output_h5_path`` on task-specific subclasses for streaming output (Zarr store
-      for sampling/jacobian; not yet implemented for score/inspect).
+      Use ``output_path`` (or ``output_zarr_path``; ``output_h5_path`` is kept as a deprecated alias)
+      on task-specific subclasses for streaming output (Zarr store for sampling/jacobian;
+      not yet implemented for score/inspect).
       ``output_dir`` (when set) overrides inferred output roots from ``cache_path`` / streaming
       output parents in :func:`~aminx.run.spec.build_run_spec`.
-      A saved document may still carry legacy ``output_path``; spec JSON migration drops it.
 
   """
 
@@ -229,7 +242,9 @@ class RunSpecification:
   conformational_states: ConformationalStates | None = None
   cache_path: str | Path | None = None
   output_dir: str | Path | None = None
-  """Explicit host output root; preferred over ``cache_path`` / ``output_h5_path`` inference."""
+  """Explicit host output root; preferred over ``cache_path`` / ``output_path`` inference."""
+  run_id: str | None = None
+  """Optional explicit run ID for provenance; if unset, derived deterministically."""
   max_buffer_size: int | None = None
   """Optional dataset buffer cap (bytes); forwarded to proxide-style loaders when set."""
   overwrite_cache: bool = False
@@ -478,12 +493,17 @@ class RunSpecification:
     # Prefixes are decided before model_type is consulted, so a potts/laser id
     # cannot fall through to proteinmpnn (get_topology reports model_type protein).
     checkpoint_name = self.checkpoint_id if isinstance(self.checkpoint_id, str) else ""
+    pinned_family = _pinned_driver_family(checkpoint_name) if self.model_family is None else None
     if self.model_family is None and checkpoint_name.startswith("pottsmpnn_"):
       object.__setattr__(self, "model_family", "pottsmpnn")
     elif self.model_family is None and checkpoint_name.startswith("protonpottsmpnn_"):
       object.__setattr__(self, "model_family", "protonpottsmpnn")
     elif self.model_family is None and checkpoint_name.startswith("lasermpnn_"):
       object.__setattr__(self, "model_family", "lasermpnn")
+    elif pinned_family is not None:
+      # caliby and fampnn ids (caliby, soluble_caliby*, caliby_packer_*, fampnn_*) are matched
+      # through the pinned family table, so an unpinned "caliby_..." id does not route anywhere.
+      object.__setattr__(self, "model_family", pinned_family)
 
     derived_topology = (
       get_topology_for_checkpoint(self.checkpoint_id) if self.checkpoint_id is not None else None
@@ -530,7 +550,8 @@ class RunSpecification:
       )
 
     self._resolve_family_defaults()
-    self._sync_run_spec()
+    if type(self).__post_init__ is RunSpecification.__post_init__:
+      self._sync_run_spec()
 
 
 _SEQUENCE_OUTPUT_KINDS = frozenset({"nll", "logits"})
@@ -574,6 +595,65 @@ def _validate_output_kind(output_kind: str, model_family: str | None) -> None:
     )
     raise ValueError(msg)
 
+def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
+  """Check a user-supplied scoring ``ar_mask`` and return it as a float32 ``(L, L)`` array.
+
+  Refuses what has silently produced wrong numbers before: a non-square or non-2D mask, a
+  non-binary one, and a nonzero diagonal. A residue that sees its own token is handed the
+  answer it is being scored on (measured at +0.036 nats on 1LVB, see ``scoring/score.py``), so
+  the diagonal is checked here rather than trusted.
+  """
+  import numpy as np  # noqa: PLC0415
+
+  mask = np.asarray(ar_mask, dtype=np.float32)
+  if mask.ndim != 2 or mask.shape[0] != mask.shape[1]:
+    msg = f"ScoringSpecification.ar_mask must be a square (L, L) array, got shape {mask.shape}."
+    raise ValueError(msg)
+  if not np.all((mask == 0.0) | (mask == 1.0)):
+    msg = "ScoringSpecification.ar_mask must be binary (0/1): ar_mask[i, j] == 1 iff i sees j."
+    raise ValueError(msg)
+  if np.any(np.diagonal(mask) != 0.0):
+    msg = (
+      "ScoringSpecification.ar_mask must have a zero diagonal: a position that sees its own "
+      "token is scored on the answer it was given. Use a self-excluding mask "
+      "(e.g. aminx.utils.autoregression.ar_mask_from_decoding_order)."
+    )
+    raise ValueError(msg)
+  return mask
+
+
+
+def _resolve_output_paths(spec: RunSpecification) -> None:
+  """Normalize and synchronize output_path, output_zarr_path, and output_h5_path."""
+  def _norm(val: Any) -> Any:
+    return Path(val) if isinstance(val, (str, Path)) else val
+
+  p_out = _norm(getattr(spec, "output_path", None))
+  p_zarr = _norm(getattr(spec, "output_zarr_path", None))
+  p_h5 = _norm(getattr(spec, "output_h5_path", None))
+  present = [p for p in (p_out, p_zarr, p_h5) if p is not None]
+  if not present:
+    return
+  unique = set(present)
+  if len(unique) == 1:
+    resolved_out = present[0]
+  elif len(present) == 3 and len(unique) == 2:
+    # dataclasses.replace(spec, output_*_path=new_path) on an already-synced spec:
+    # two fields still hold the old synced path; the singleton holds the replacement.
+    counts = {p: present.count(p) for p in unique}
+    resolved_out = next(p for p, c in counts.items() if c == 1)
+  else:
+    msg = (
+      "Conflicting output paths specified: "
+      f"output_path={getattr(spec, 'output_path', None)!r}, "
+      f"output_zarr_path={getattr(spec, 'output_zarr_path', None)!r}, "
+      f"output_h5_path={getattr(spec, 'output_h5_path', None)!r}"
+    )
+    raise ValueError(msg)
+  object.__setattr__(spec, "output_path", resolved_out)
+  object.__setattr__(spec, "output_zarr_path", resolved_out)
+  object.__setattr__(spec, "output_h5_path", resolved_out)
+
 
 @register_spec
 @dataclass
@@ -595,6 +675,17 @@ class ScoringSpecification(RunSpecification):
           neither, ``score()`` raises rather than scoring ligand-free.
       ligand_context_path: Ligand context file (same format as sampling's).
       multi_state_temperature: N/A for scoring; score() returns negative log-likelihood of a fixed sequence, invariant to temperature. Accepted for API symmetry but does not affect output.
+      ar_mask: Optional ``(L, L)`` visibility mask, ``ar_mask[i, j] == 1`` iff position ``i``
+          SEES the sequence token at ``j`` (the same convention the sampler uses). ``None``
+          (the default) scores every position under full context minus self,
+          ``p(s_i | s_{-i}, X)``, exactly as before. Set it to score under an
+          autoregressive factorisation instead: with a causal, self-excluding mask for an
+          order, the per-position logits are ``p(s_i | s_{earlier}, X)`` and their summed
+          log-probs are ``log p_order(s)``. This is a different estimand from the default,
+          not a refinement of it: the full-context conditionals do not multiply into a
+          normalised joint. Must be binary with a zero diagonal. Every sequence scored must
+          have exactly ``L`` residues. Supported on the plain per-structure path only;
+          ``average_node_features`` and ``state_position_map`` raise.
 
   """
 
@@ -612,6 +703,8 @@ class ScoringSpecification(RunSpecification):
   return_logits: bool = False
   return_decoding_orders: bool = False
   return_all_scores: bool = False
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   average_node_features: bool = False
   noise_batch_size: int = 4
@@ -621,6 +714,7 @@ class ScoringSpecification(RunSpecification):
   # scored with NO ligand and nothing said so (#167).
   ligand_conditioning: bool = False
   ligand_context_path: str | Path | None = None
+  ar_mask: ArrayLike | None = None
 
   def __post_init__(self) -> None:
     """Post-initialization processing."""
@@ -633,10 +727,11 @@ class ScoringSpecification(RunSpecification):
         "`sequences_to_score` must be a non-empty list of strings."
       )
       raise ValueError(msg)
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    _resolve_output_paths(self)
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
+    if self.ar_mask is not None:
+      object.__setattr__(self, "ar_mask", _validated_scoring_ar_mask(self.ar_mask))
     self._sync_run_spec()
 
 
@@ -657,6 +752,8 @@ class SamplingSpecification(RunSpecification):
   use_concrete: bool = False
   concrete_tau_start: float = 1.0
   concrete_tau_end: float = 0.1
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   return_logits: bool = True
   return_decoding_orders: bool = False
@@ -710,6 +807,7 @@ class SamplingSpecification(RunSpecification):
   omit_aa_per_position: Mapping[int, str] | None = None
   carry_specs: list[CarrySpec] | None = None
   dedup_specs: list[DedupSpec] | None = None
+  wave: Any | None = None
 
   def _resolve_family_defaults(self) -> None:
     object.__setattr__(
@@ -784,8 +882,7 @@ class SamplingSpecification(RunSpecification):
         msg = "sample_count must be positive when grid_mode=True."
         raise ValueError(msg)
       object.__setattr__(self, "sample_count", sample_count)
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    _resolve_output_paths(self)
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
     self._sync_run_spec()
@@ -804,6 +901,8 @@ class JacobianSpecification(RunSpecification):
   combine_weights: ArrayLike | None = None
   combine_fn: CombineCatJacPairFn | None = None
   combine_fn_kwargs: dict[str, Any] | None = None
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   compute_apc: bool = True
   apc_batch_size: int = 8
@@ -814,8 +913,7 @@ class JacobianSpecification(RunSpecification):
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    _resolve_output_paths(self)
     self._sync_run_spec()
 
 
@@ -827,6 +925,8 @@ MIN_PAIR = 2
 class InspectionSpecification(RunSpecification):
   """Configuration for inspecting model encodings and features."""
 
+  output_path: str | Path | None = None
+  output_zarr_path: str | Path | None = None
   output_h5_path: str | Path | None = None
   inspection_features: Sequence[
     Literal[
@@ -859,8 +959,7 @@ class InspectionSpecification(RunSpecification):
     """Post-initialization processing."""
     object.__setattr__(self, "_run_spec_synced", False)
     super().__post_init__()
-    if self.output_h5_path and isinstance(self.output_h5_path, str):
-      object.__setattr__(self, "output_h5_path", Path(self.output_h5_path))
+    _resolve_output_paths(self)
     if self.cross_input_similarity and len(_loader_inputs(self.inputs)) < MIN_PAIR:
       msg = f"Cross-input similarity requires at least {MIN_PAIR} input structures."
       raise ValueError(msg)

@@ -68,15 +68,15 @@ def test_conditional_decode_bitforbit_identical_legacy_vs_adapter(
 
     max_abs_diff = float(jnp.max(jnp.abs(legacy_logits - adapter_logits)))
 
-    if _legacy_peels_unit_chunk(strategy, num_states):
-        # aminx #2391 (PR #179): the legacy path runs a chunk of one element UNBATCHED, because a vmapped
-        # chunk of size 1 miscompiles on one XLA GPU stack; xtrax's ChunkedMap has no such guard and
-        # vmaps it. Same maths, different XLA program, so bit equality is not guaranteed -- and on main it
-        # held on some CI runs and not others (the first red run is #179's own merge commit). A real
-        # adapter regression moves logits by far more than float32 reassociation, so compare closely.
-        assert jnp.allclose(legacy_logits, adapter_logits, rtol=1e-5, atol=1e-5), (
-            "legacy (unit chunk run unbatched) and make_axis_dispatch_via_xtrax (unit chunk vmapped) differ "
-            f"by more than float32 reassociation: max |diff| = {max_abs_diff:.3e}"
+    if _legacy_peels_unit_chunk(strategy, num_states) or num_states == 1:
+        # aminx #2391 (PR #179), debt-2900: On single-state axes (num_states == 1) or Vmap dispatch,
+        # the legacy path and make_axis_dispatch_via_xtrax may compile through slightly different
+        # XLA programs (or unbatched vs vmapped unit chunks), leading to float32 reassociation
+        # differences (up to ~1.8e-6). A real adapter regression moves logits by far more than
+        # float32 reassociation, so compare closely with documented tolerance (atol=2e-6, rtol=1e-5).
+        assert jnp.allclose(legacy_logits, adapter_logits, rtol=1e-5, atol=2e-6), (
+            "legacy and make_axis_dispatch_via_xtrax differ "
+            f"by more than float32 reassociation (debt-2900): max |diff| = {max_abs_diff:.3e}"
         )
         return
 

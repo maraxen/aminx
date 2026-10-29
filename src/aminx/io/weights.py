@@ -81,7 +81,6 @@ LEGACY_ALIAS_MAP = {
   ("soluble", "v_48_030"): "solublempnn_v_48_030.eqx.zst",
   ("abmpnn", "v_48_020"): "abmpnn_v_48_020.eqx.zst",
   ("antibmpnn", "v_48_000"): "antibmpnn_v_48_000.eqx.zst",
-  ("antibmpnn", "v_48_002"): "antibmpnn_v_48_000.eqx.zst",
   ("antibmpnn", "v_48_010"): "antibmpnn_v_48_010.eqx.zst",
   ("antibmpnn", "v_48_020"): "antibmpnn_v_48_020.eqx.zst",
   ("antibmpnn", "v_48_030"): "antibmpnn_v_48_030.eqx.zst",
@@ -95,6 +94,16 @@ LEGACY_ALIAS_MAP = {
   ("ca", "v_48_020"): "ca_v_48_020.eqx.zst",
 }
 
+# (model_weights, model_version) pairs that are NOT published on the Hub. They are refused with a
+# clear error instead of being aliased to another checkpoint, which would load different weights
+# under the requested name.
+UNPUBLISHED_CHECKPOINTS: dict[tuple[str, str], str] = {
+  ("antibmpnn", "v_48_002"): (
+    "antibmpnn v_48_002 is not published; the AntiBMPNN checkpoints are v_48_000, v_48_010, "
+    "v_48_020 and v_48_030."
+  ),
+}
+
 _BARE_VARIANT_DEFAULTS = {
   "abmpnn": "abmpnn_v_48_020.eqx.zst",
   "antibmpnn": "antibmpnn_v_48_000.eqx.zst",
@@ -103,6 +112,66 @@ _BARE_VARIANT_DEFAULTS = {
   "ca": "ca_v_48_020.eqx.zst",
   "campnn": "ca_v_48_020.eqx.zst",
 }
+
+_IMPLICIT_DEFAULT_MODEL_VERSION = "v_48_020"
+
+
+def _resolve_checkpoint_id(
+  checkpoint_id: str | None = None,
+  model_weights: str | None = "original",
+  model_version: str | None = None,
+) -> str:
+  """Resolve ``(checkpoint_id, model_weights, model_version)`` to a checkpoint filename."""
+  if checkpoint_id:
+    bare = checkpoint_id.lower().removesuffix(".zst").removesuffix(".eqx")
+    if bare in _BARE_VARIANT_DEFAULTS:
+      checkpoint_id = _BARE_VARIANT_DEFAULTS[bare]
+
+  version_was_positional = False
+  # Support legacy API usage where checkpoint_id was named model_version
+  if checkpoint_id and (
+    "_v_" in checkpoint_id
+    or "mpnn" in checkpoint_id
+    or checkpoint_id.startswith(("ca_", "campnn_"))
+  ):
+    # Valid checkpoint id
+    pass
+  elif checkpoint_id and not model_version:
+    # They passed 'v_48_020' into checkpoint_id
+    model_version = checkpoint_id
+    checkpoint_id = None
+    version_was_positional = True
+
+  if model_weights and model_version and (model_weights, str(model_version)) in UNPUBLISHED_CHECKPOINTS:
+    raise ValueError(UNPUBLISHED_CHECKPOINTS[(model_weights, str(model_version))])
+
+  if not checkpoint_id:
+    weights_key = model_weights.lower() if isinstance(model_weights, str) else None
+    if weights_key in _BARE_VARIANT_DEFAULTS:
+      variant_key = "ca" if weights_key == "campnn" else weights_key
+      version_str = str(model_version) if model_version is not None else None
+      if version_str is None:
+        checkpoint_id = _BARE_VARIANT_DEFAULTS[weights_key]
+      else:
+        filename = LEGACY_ALIAS_MAP.get((variant_key, version_str))
+        if filename is not None:
+          checkpoint_id = filename
+        elif version_str == _IMPLICIT_DEFAULT_MODEL_VERSION and not version_was_positional:
+          checkpoint_id = _BARE_VARIANT_DEFAULTS[weights_key]
+        else:
+          available = sorted(ver for (w, ver) in LEGACY_ALIAS_MAP if w == variant_key)
+          msg = (
+            f"Checkpoint version {version_str!r} is not available for "
+            f"model_weights={model_weights!r}; available versions: {available}"
+          )
+          raise ValueError(msg)
+    elif model_weights and model_version:
+      filename = LEGACY_ALIAS_MAP.get((model_weights, str(model_version)))
+      checkpoint_id = filename or f"{model_weights}_{model_version}.eqx.zst"
+    else:
+      checkpoint_id = "proteinmpnn_v_48_020.eqx.zst"
+
+  return checkpoint_id
 
 
 def get_topology_for_checkpoint(checkpoint_id: str) -> dict[str, int | bool | str]:
@@ -113,9 +182,15 @@ def get_topology_for_checkpoint(checkpoint_id: str) -> dict[str, int | bool | st
     "atom_context_num": 16,
     "physics_feature_dim": 0,
     "model_type": "protein",
+    "cyclic": False,
   }
 
   name = checkpoint_id.lower()
+
+  # CyclicMPNN checkpoints wrap intra-chain sequence offsets (head-to-tail cyclic peptides).
+  # The flag is a static field of the skeleton, so it must be set at construction time.
+  if "cyclicmpnn" in name:
+    topology["cyclic"] = True
 
   if "v_32" in name:
     topology["k_neighbors"] = 32
@@ -435,40 +510,11 @@ def load_model(
   if key is None:
     key = jax.random.PRNGKey(0)
 
-  if checkpoint_id:
-    bare = checkpoint_id.lower().removesuffix(".zst").removesuffix(".eqx")
-    if bare in _BARE_VARIANT_DEFAULTS:
-      checkpoint_id = _BARE_VARIANT_DEFAULTS[bare]
-
-  # Support legacy API usage where checkpoint_id was named model_version
-  if checkpoint_id and (
-    "_v_" in checkpoint_id
-    or "mpnn" in checkpoint_id
-    or checkpoint_id.startswith(("ca_", "campnn_"))
-  ):
-    # Valid checkpoint id
-    pass
-  elif checkpoint_id and not model_version:
-    # They passed 'v_48_020' into checkpoint_id
-    model_version = checkpoint_id
-    checkpoint_id = None
-
-  if not checkpoint_id:
-    if model_weights and model_version:
-      filename = LEGACY_ALIAS_MAP.get((model_weights, model_version))
-      checkpoint_id = filename or f"{model_weights}_{model_version}.eqx.zst"
-    elif model_weights == "abmpnn":
-      checkpoint_id = "abmpnn_v_48_020.eqx.zst"
-    elif model_weights == "antibmpnn":
-      checkpoint_id = "antibmpnn_v_48_000.eqx.zst"
-    elif model_weights == "hypermpnn":
-      checkpoint_id = "hypermpnn_v_48_020.eqx.zst"
-    elif model_weights == "cyclicmpnn":
-      checkpoint_id = "cyclicmpnn_v_48_010.eqx.zst"
-    elif model_weights == "ca":
-      checkpoint_id = "ca_v_48_020.eqx.zst"
-    else:
-      checkpoint_id = "proteinmpnn_v_48_020.eqx.zst"
+  checkpoint_id = _resolve_checkpoint_id(
+    checkpoint_id=checkpoint_id,
+    model_weights=model_weights,
+    model_version=model_version,
+  )
 
   if not checkpoint_id.endswith(".zst") and not local_path:
     checkpoint_id = f"{checkpoint_id}.eqx.zst"
@@ -525,16 +571,15 @@ def load_model(
       num_positional_embeddings=topo["num_positional_embeddings"],
       dropout_rate=dropout_rate,
       ca_only=(model_type == "ca"),
+      cyclic=bool(topo["cyclic"]),
       key=key,
     )
 
-  loaded = load_weights(
+  return load_weights(
     checkpoint_id=checkpoint_id,
     local_path=local_path,
     skeleton=skeleton,
   )
-
-  return loaded  # noqa: RET504
 
 
 # --- Family checkpoints (PottsMPNN, ProtonPottsMPNN, LASErMPNN) --------------------------------
@@ -551,14 +596,14 @@ FAMILY_TABLE_RESOURCE = "family_weights.json"
 
 @dataclass(frozen=True)
 class FamilyCheckpoint:
-  """One pinned family artifact: a raw ``.eqx`` plus its JSON manifest, both checksummed."""
+  """One pinned family artifact: a raw ``.eqx``/``.eqx.zst`` plus optional JSON manifest, checksummed."""
 
   checkpoint_id: str
   family: str
   filename: str
   sha256: str
-  manifest_filename: str
-  manifest_sha256: str
+  manifest_filename: str | None = None
+  manifest_sha256: str | None = None
 
 
 def family_checkpoints() -> dict[str, FamilyCheckpoint]:
@@ -570,11 +615,48 @@ def family_checkpoints() -> dict[str, FamilyCheckpoint]:
       family=entry["family"],
       filename=entry["filename"],
       sha256=entry["sha256"],
-      manifest_filename=entry["manifest_filename"],
-      manifest_sha256=entry["manifest_sha256"],
+      manifest_filename=entry.get("manifest_filename"),
+      manifest_sha256=entry.get("manifest_sha256"),
     )
     for entry in raw["checkpoints"]
   }
+
+
+def verify_pinned_file(path: str | Path, expected_sha256: str, *, what: str = "checkpoint") -> Path:
+  """Return ``path`` only if its sha256 equals ``expected_sha256``; refuse otherwise.
+
+  Used for checkpoints that are loaded directly from a file (for example a torch
+  ``.pt`` that a converter reads) rather than resolved through the family registry.
+  The digest is computed over the whole file, so a truncated or edited copy fails.
+
+  Parameters
+  ----------
+  path : str | Path
+    File to verify.
+  expected_sha256 : str
+    Hex digest the file must have.
+  what : str, default="checkpoint"
+    Noun used in the refusal message.
+
+  Returns
+  -------
+  Path
+    ``path`` as a ``Path``, unchanged, when the digest matches.
+
+  Raises
+  ------
+  ValueError
+    If the file's sha256 differs from ``expected_sha256``.
+  """
+  file_path = Path(path)
+  digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
+  if digest != expected_sha256:
+    msg = (
+      f"{what} {file_path} has sha256 {digest}, but the pin is {expected_sha256}. "
+      "Refusing to load it: the file was changed, truncated or is a different revision."
+    )
+    raise ValueError(msg)
+  return file_path
 
 
 def _verified_family_file(filename: str, expected_sha256: str, what: str) -> tuple[str, Path]:
@@ -591,12 +673,13 @@ def _verified_family_file(filename: str, expected_sha256: str, what: str) -> tup
 
 
 def resolve_family_checkpoint(checkpoint_id: str, *, family: str | None = None) -> WeightProvenance:
-  """Resolve a family checkpoint to a verified local ``.eqx`` and describe it.
+  """Resolve a family checkpoint to a verified local ``.eqx``/``.eqx.zst`` and describe it.
 
   Raises :class:`ValueError` for an unknown id, a family mismatch, or a checksum mismatch on the
   artifact or its manifest, and :class:`FileNotFoundError` when ``AMINX_WEIGHTS_DIR`` is
-  authoritative and lacks the file. The manifest is resolved next to the artifact because the
-  drivers read it from there (it carries static fields the ``.eqx`` format drops).
+  authoritative and lacks the file. When ``manifest_filename`` is present on the entry, the
+  manifest is resolved and verified next to the artifact because the drivers read it from there
+  (it carries static fields the ``.eqx`` format drops).
   """
   table = family_checkpoints()
   entry = table.get(checkpoint_id)
@@ -607,10 +690,14 @@ def resolve_family_checkpoint(checkpoint_id: str, *, family: str | None = None) 
     msg = f"checkpoint {checkpoint_id!r} belongs to family {entry.family!r}, not {family!r}"
     raise ValueError(msg)
   source, path = _verified_family_file(entry.filename, entry.sha256, "artifact")
-  _, manifest = _verified_family_file(entry.manifest_filename, entry.manifest_sha256, "manifest")
-  if manifest.parent != path.parent:
-    msg = f"manifest {manifest} is not next to artifact {path}; the drivers read it from there"
-    raise ValueError(msg)
+  if entry.manifest_filename is not None or entry.manifest_sha256 is not None:
+    if entry.manifest_filename is None or entry.manifest_sha256 is None:
+      msg = f"checkpoint {checkpoint_id!r} has incomplete manifest metadata in {FAMILY_TABLE_RESOURCE}"
+      raise ValueError(msg)
+    _, manifest = _verified_family_file(entry.manifest_filename, entry.manifest_sha256, "manifest")
+    if manifest.parent != path.parent:
+      msg = f"manifest {manifest} is not next to artifact {path}; the drivers read it from there"
+      raise ValueError(msg)
   return WeightProvenance(
     filename=entry.filename,
     source=source,

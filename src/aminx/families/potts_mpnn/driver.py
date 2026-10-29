@@ -49,10 +49,10 @@ from aminx.families.potts_mpnn.sample_host import (
   sample_axes,
   sample_schema,
 )
+from aminx.host.bucketing import bucket_ladder
 from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, FamilyStages, SinkArraySpec
 from aminx.host.prep import _resolve_driver_checkpoint
 from aminx.run.options import PottsMPNNOptions
-from aminx.host.bucketing import bucket_ladder
 from aminx.types.boundaries import AxisBoundary
 
 log = logging.getLogger(__name__)

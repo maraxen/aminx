@@ -205,6 +205,7 @@ class ExactBatch:
   randn: np.ndarray
   decoding_order: np.ndarray
   ar_mask: np.ndarray
+  manifest_length: int | None = None
 
 
 def _assert_tokens_match_reference_parser(
@@ -400,6 +401,7 @@ def build_exact_batch(fixture: dict[str, Any], data_utils_module: types.ModuleTy
     randn=randn,
     decoding_order=order,
     ar_mask=ar_mask,
+    manifest_length=int(fixture["L"]) if "L" in fixture else None,
   )
 
 
@@ -973,13 +975,74 @@ def _qualifying_groups(fixture: dict[str, Any]) -> list[list[int]]:
   ]
 
 
-def _reverify_knn_disjoint(batch: ExactBatch, groups: list[list[int]]) -> None:
+def _guard_stale_manifest(
+  fixture: dict[str, Any] | None,
+  batch: Any,
+  groups: list[list[int]] | None = None,
+) -> None:
+  """Refuse stale manifest entries before consuming P09 tie groups against a parsed fixture.
+
+  Exits 2 if ``batch.length != fixture["L"]`` or if any group member is ``< 0`` or
+  ``>= batch.length``.
+  """
+  parsed_length = int(batch.length)
+  name = (
+    str(fixture["name"])
+    if fixture is not None and "name" in fixture
+    else str(getattr(batch, "fixture_name", "<unknown>"))
+  )
+  manifest_l = (
+    int(fixture["L"])
+    if fixture is not None and "L" in fixture
+    else getattr(batch, "manifest_length", None)
+  )
+  if manifest_l is not None and parsed_length != int(manifest_l):
+    print(
+      f"layer_a_exact: stale manifest for fixture {name}: "
+      f"parsed length={parsed_length} != manifest L={manifest_l}; "
+      f"run `fixtures.py --refresh {name}`",
+      file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+  checked_groups: list[list[int]] = (
+    list(groups)
+    if groups is not None
+    else (_qualifying_groups(fixture) if fixture is not None else [])
+  )
+  if fixture is not None:
+    for entry in fixture.get("tie_groups_knn_disjoint", []):
+      members = entry.get("members")
+      if members is not None:
+        checked_groups.append(list(members))
+
+  out_of_range = sorted(
+    {m for group in checked_groups for m in group if m < 0 or m >= parsed_length}
+  )
+  if out_of_range:
+    manifest_l_display = int(manifest_l) if manifest_l is not None else parsed_length
+    print(
+      f"layer_a_exact: stale manifest for fixture {name}: "
+      f"tie-group member(s) {out_of_range} out of range for parsed length={parsed_length} "
+      f"(manifest L={manifest_l_display}); "
+      f"run `fixtures.py --refresh {name}`",
+      file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+
+def _reverify_knn_disjoint(
+  batch: ExactBatch,
+  groups: list[list[int]],
+  fixture: dict[str, Any] | None = None,
+) -> None:
   """Re-check k-NN disjointness at k=48 and k=32 from THIS harness's own featuriser.
 
   Exits 2 on any violation (R2-C3): the manifest's own qualification is trusted
   as a starting point, but this row's own aminx k-NN call is the one whose
   disjointness the fused-distribution comparison actually depends on.
   """
+  _guard_stale_manifest(fixture, batch, groups)
   for k in K_VALUES:
     if k >= batch.length - 1:
       continue
@@ -1010,6 +1073,7 @@ def row_p09(
   )
 
   groups = _qualifying_groups(fixture)
+  _guard_stale_manifest(fixture, batch, groups)
   if not groups:
     return [
       _row(
@@ -1023,7 +1087,7 @@ def row_p09(
       )
     ]
 
-  _reverify_knn_disjoint(batch, groups)
+  _reverify_knn_disjoint(batch, groups, fixture)
 
   jax_model, pt_model, torch, _model_utils = full_model_bundle
   fd = _reference_feature_dict(torch, batch)
@@ -1514,6 +1578,7 @@ def _control_reversed_order(
     randn=batch.randn,
     decoding_order=reversed_order,
     ar_mask=reversed_ar_mask,
+    manifest_length=batch.manifest_length,
   )
   aminx_log_probs_reversed = _score_aminx_conditional(jax_model, reversed_batch)
   on_effect = _max_abs(ref_log_probs_matched, aminx_log_probs_reversed)
@@ -1625,6 +1690,7 @@ def _control_tie_group_flip(
   `effect == 0.0` here). A genuine membership swap is required to move anything.
   """
   groups = _qualifying_groups(fixture)
+  _guard_stale_manifest(fixture, batch, groups)
   if len(groups) < 2:
     return None
 

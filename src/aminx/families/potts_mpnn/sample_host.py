@@ -35,10 +35,10 @@ from aminx.families.potts_mpnn.featurize import PottsFeatures, pad
 from aminx.families.potts_mpnn.model import PottsMPNN, _encoder_states, cast_floating
 from aminx.families.potts_mpnn.noise_levels import potts_backbone_noise_levels
 from aminx.families.potts_mpnn.refine import BindingTables, PottsRefine, check_tied_only_groups
+from aminx.host.bucketing import bucket_ladder
 from aminx.host.family_driver import FamilyBatch, SinkArraySpec
 from aminx.host.omit_aa_bias import omit_letter_indices
 from aminx.run.options import PottsMPNNOptions
-from aminx.host.bucketing import bucket_ladder
 
 log = logging.getLogger(__name__)
 

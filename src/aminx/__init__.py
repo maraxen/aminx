@@ -24,7 +24,8 @@ from .sampling import make_conditional_logits_fn, make_sample_sequences, sample
 from .scoring import make_score_fn, score
 
 try:
-  from importlib.metadata import version as _meta_version, PackageNotFoundError as _PkgNFE
+  from importlib.metadata import PackageNotFoundError as _PkgNFE
+  from importlib.metadata import version as _meta_version
 
   __version__ = _meta_version("aminx")
 except _PkgNFE:

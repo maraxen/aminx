@@ -9,6 +9,7 @@ Supports:
 
 from __future__ import annotations
 
+import logging
 import pickle
 from collections.abc import Mapping
 from pathlib import Path
@@ -25,12 +26,83 @@ from aminx.families.thermo_mpnn.model import (
   ThermoMPNNDouble,
   cast_floating,
 )
-from aminx.io.weights import load_weights
+from aminx.io.weights import load_weights, resolve_family_checkpoint
 
 if TYPE_CHECKING:
   from aminx.model.decoder import DecoderLayer
   from aminx.model.encoder import EncoderLayer
   from aminx.model.mpnn import Aminx
+
+log = logging.getLogger(__name__)
+
+_ALLOWED_UNPICKLE_GLOBALS: frozenset[tuple[str, str]] = frozenset(
+  {
+    ("collections", "OrderedDict"),
+    ("collections", "defaultdict"),
+    ("builtins", "dict"),
+    ("builtins", "list"),
+    ("builtins", "tuple"),
+    ("builtins", "set"),
+    ("builtins", "frozenset"),
+    ("builtins", "int"),
+    ("builtins", "float"),
+    ("builtins", "str"),
+    ("builtins", "bytes"),
+    ("builtins", "bool"),
+    ("builtins", "complex"),
+    ("builtins", "slice"),
+    ("builtins", "object"),
+    ("builtins", "getattr"),
+    ("__builtin__", "dict"),
+    ("__builtin__", "list"),
+    ("__builtin__", "tuple"),
+    ("__builtin__", "set"),
+    ("__builtin__", "object"),
+    ("copy_reg", "_reconstructor"),
+    ("copyreg", "_reconstructor"),
+    ("typing", "Any"),
+    ("torch._utils", "_rebuild_tensor"),
+    ("torch._utils", "_rebuild_tensor_v2"),
+    ("torch._utils", "_rebuild_parameter"),
+    ("torch._utils", "_rebuild_device_tensor_from_numpy"),
+    ("torch.storage", "_load_from_bytes"),
+    ("torch", "FloatStorage"),
+    ("torch", "DoubleStorage"),
+    ("torch", "HalfStorage"),
+    ("torch", "BFloat16Storage"),
+    ("torch", "ByteStorage"),
+    ("torch", "CharStorage"),
+    ("torch", "ShortStorage"),
+    ("torch", "IntStorage"),
+    ("torch", "LongStorage"),
+    ("torch", "BoolStorage"),
+    ("torch", "Size"),
+    ("torch", "device"),
+    ("torch", "dtype"),
+    ("numpy.core.multiarray", "_reconstruct"),
+    ("numpy.core.multiarray", "scalar"),
+    ("numpy._core.multiarray", "_reconstruct"),
+    ("numpy._core.multiarray", "scalar"),
+    ("numpy", "ndarray"),
+    ("numpy", "dtype"),
+    ("numpy", "float32"),
+    ("numpy", "float64"),
+    ("numpy", "int64"),
+    ("numpy", "int32"),
+  },
+)
+
+_PLACEHOLDER_UNPICKLE_GLOBALS: frozenset[tuple[str, str]] = frozenset(
+  {
+    ("argparse", "Namespace"),
+  },
+)
+
+_PLACEHOLDER_UNPICKLE_MODULE_PREFIXES: tuple[str, ...] = (
+  "pytorch_lightning.",
+  "lightning_fabric.",
+  "omegaconf.",
+)
 
 
 class _UnpicklePlaceholder:
@@ -68,10 +140,10 @@ class _UnpicklePlaceholder:
 
 
 class _SafeUnpickler(pickle.Unpickler):
-  """Unpickler that substitutes ``_UnpicklePlaceholder`` for unavailable metadata classes."""
+  """Allowlist-enforcing unpickler for ThermoMPNN PyTorch / PyTorch Lightning checkpoints."""
 
   def find_class(self, module: str, name: str) -> Any:  # noqa: ANN401
-    """Resolve ``(module, name)`` or return ``_UnpicklePlaceholder``.
+    """Resolve an allowlisted ``(module, name)``, stub Lightning metadata, or refuse.
 
     Parameters
     ----------
@@ -83,12 +155,25 @@ class _SafeUnpickler(pickle.Unpickler):
     Returns
     -------
     Any
-      Resolved class or :class:`_UnpicklePlaceholder`.
+      Resolved allowlisted class or :class:`_UnpicklePlaceholder`.
+
+    Raises
+    ------
+    pickle.UnpicklingError
+      If ``(module, name)`` is not on the explicit checkpoint allowlist.
     """
-    try:
+    if (module, name) in _ALLOWED_UNPICKLE_GLOBALS:
       return super().find_class(module, name)
-    except (ModuleNotFoundError, ImportError, AttributeError):
+    if (module, name) in _PLACEHOLDER_UNPICKLE_GLOBALS or (
+      module in ("pytorch_lightning", "lightning_fabric", "omegaconf")
+      or module.startswith(_PLACEHOLDER_UNPICKLE_MODULE_PREFIXES)
+    ):
       return _UnpicklePlaceholder
+    msg = (
+      f"Refusing to unpickle disallowed global '{module}.{name}'; "
+      "only allowlisted torch/numpy/collections/builtins/pytorch_lightning checkpoint globals are permitted."
+    )
+    raise pickle.UnpicklingError(msg)
 
 
 class _SafePickleModule:
@@ -439,10 +524,53 @@ def _sequential_linear_indices(state: Mapping[str, np.ndarray], prefix: str) -> 
   return sorted(indices)
 
 
+def _has_embedded_mpnn_trunk(norm_state: Mapping[str, Any]) -> bool:
+  """Return True when normalized ``norm_state`` contains ``prot_mpnn.*`` trunk keys."""
+  return any(key.startswith("prot_mpnn.") for key in norm_state)
+
+
+def _resolve_and_convert_mpnn_trunk(
+  norm_state: Mapping[str, np.ndarray],
+  consumed: set[str],
+  target_mpnn: Aminx,
+  mpnn_state_dict: Mapping[str, Any] | None,
+  *,
+  override_embedded_mpnn: bool,
+  owner_name: str,
+) -> Aminx:
+  """Convert the ProteinMPNN trunk from ``norm_state`` or ``mpnn_state_dict``."""
+  has_embedded = _has_embedded_mpnn_trunk(norm_state)
+  if mpnn_state_dict is None:
+    return _convert_mpnn_trunk(norm_state, consumed, target_mpnn, prefix="prot_mpnn.")
+
+  if has_embedded and not override_embedded_mpnn:
+    msg = (
+      f"{owner_name} state_dict already embeds a 'prot_mpnn.*' trunk, and a separate "
+      "mpnn_state_dict was also supplied. Omit mpnn_state_dict to use the embedded trunk, "
+      "or pass override_embedded_mpnn=True to explicitly replace it."
+    )
+    raise ValueError(msg)
+
+  mpnn_norm = _normalize_state_dict(mpnn_state_dict)
+  mpnn_consumed: set[str] = set()
+  mpnn_prefix = "prot_mpnn." if "prot_mpnn.W_s.weight" in mpnn_norm else ""
+  mpnn = _convert_mpnn_trunk(mpnn_norm, mpnn_consumed, target_mpnn, prefix=mpnn_prefix)
+  mpnn_unconsumed = set(mpnn_norm) - mpnn_consumed
+  if mpnn_unconsumed:
+    msg = f"unconsumed keys in fallback mpnn_state_dict: {sorted(mpnn_unconsumed)}"
+    raise ValueError(msg)
+  if has_embedded and override_embedded_mpnn:
+    for k in norm_state:
+      if k.startswith("prot_mpnn."):
+        consumed.add(k)
+  return mpnn
+
+
 def convert_thermo_mpnn_state_dict(
   state_dict: Mapping[str, Any],
   *,
   mpnn_state_dict: Mapping[str, Any] | None = None,
+  override_embedded_mpnn: bool = False,
   apply_chain_mask_to_order: bool | None = None,
   subtract_mut: bool = True,
   key: jax.Array | None = None,
@@ -457,6 +585,9 @@ def convert_thermo_mpnn_state_dict(
     Raw or normalized ThermoMPNN state dictionary.
   mpnn_state_dict : Mapping[str, Any] | None
     Optional fallback ProteinMPNN trunk state dictionary when not embedded in ``state_dict``.
+  override_embedded_mpnn : bool
+    When ``True``, allow ``mpnn_state_dict`` to replace an embedded ``prot_mpnn.*`` trunk.
+    Defaults to ``False`` (raises :class:`ValueError` if both are present).
   apply_chain_mask_to_order : bool | None
     Optional override for ``apply_chain_mask_to_order`` (defaults to ``False`` for v1, ``True`` for v2).
   subtract_mut : bool
@@ -515,17 +646,14 @@ def convert_thermo_mpnn_state_dict(
     jnp.float32,
   )
 
-  if mpnn_state_dict is not None:
-    mpnn_norm = _normalize_state_dict(mpnn_state_dict)
-    mpnn_consumed: set[str] = set()
-    mpnn_prefix = "prot_mpnn." if "prot_mpnn.W_s.weight" in mpnn_norm else ""
-    mpnn = _convert_mpnn_trunk(mpnn_norm, mpnn_consumed, model.mpnn, prefix=mpnn_prefix)
-    # Also mark any prot_mpnn.* keys in norm_state as consumed if present
-    for k in norm_state:
-      if k.startswith("prot_mpnn."):
-        consumed.add(k)
-  else:
-    mpnn = _convert_mpnn_trunk(norm_state, consumed, model.mpnn, prefix="prot_mpnn.")
+  mpnn = _resolve_and_convert_mpnn_trunk(
+    norm_state,
+    consumed,
+    model.mpnn,
+    mpnn_state_dict,
+    override_embedded_mpnn=override_embedded_mpnn,
+    owner_name="ThermoMPNN",
+  )
   model = eqx.tree_at(lambda mod: mod.mpnn, model, mpnn)
 
   la = _convert_light_attention_1d(norm_state, consumed, model.light_attention)
@@ -563,6 +691,7 @@ def convert_thermo_mpnn_double_state_dict(
   state_dict: Mapping[str, Any],
   *,
   mpnn_state_dict: Mapping[str, Any] | None = None,
+  override_embedded_mpnn: bool = False,
   key: jax.Array | None = None,
 ) -> ThermoMPNNDouble:
   """Convert a ThermoMPNN-D Siamese state dict into :class:`ThermoMPNNDouble`.
@@ -575,6 +704,9 @@ def convert_thermo_mpnn_double_state_dict(
     Raw or normalized ThermoMPNN-D state dictionary.
   mpnn_state_dict : Mapping[str, Any] | None
     Optional fallback ProteinMPNN trunk state dictionary when not embedded in ``state_dict``.
+  override_embedded_mpnn : bool
+    When ``True``, allow ``mpnn_state_dict`` to replace an embedded ``prot_mpnn.*`` trunk.
+    Defaults to ``False`` (raises :class:`ValueError` if both are present).
   key : jax.Array | None
     Optional PRNG key for skeleton initialization.
 
@@ -612,16 +744,14 @@ def convert_thermo_mpnn_double_state_dict(
     jnp.float32,
   )
 
-  if mpnn_state_dict is not None:
-    mpnn_norm = _normalize_state_dict(mpnn_state_dict)
-    mpnn_consumed: set[str] = set()
-    mpnn_prefix = "prot_mpnn." if "prot_mpnn.W_s.weight" in mpnn_norm else ""
-    mpnn = _convert_mpnn_trunk(mpnn_norm, mpnn_consumed, model.mpnn, prefix=mpnn_prefix)
-    for k in norm_state:
-      if k.startswith("prot_mpnn."):
-        consumed.add(k)
-  else:
-    mpnn = _convert_mpnn_trunk(norm_state, consumed, model.mpnn, prefix="prot_mpnn.")
+  mpnn = _resolve_and_convert_mpnn_trunk(
+    norm_state,
+    consumed,
+    model.mpnn,
+    mpnn_state_dict,
+    override_embedded_mpnn=override_embedded_mpnn,
+    owner_name="ThermoMPNNDouble",
+  )
   model = eqx.tree_at(lambda mod: mod.mpnn, model, mpnn)
 
   proj_norm = _convert_layer_norm(
@@ -662,7 +792,8 @@ def _load_raw_checkpoint(path: str | Path) -> dict[str, np.ndarray]:
   ckpt_path = Path(path)
   if ckpt_path.suffix.lower() == ".npz":
     with np.load(ckpt_path) as data:
-      return {k: np.asarray(data[k]) for k in data.files}
+      raw_npz = {k: np.asarray(data[k]) for k in data.files}
+    return _normalize_state_dict(raw_npz)
 
   import torch  # noqa: PLC0415
 
@@ -680,15 +811,33 @@ def _load_raw_checkpoint(path: str | Path) -> dict[str, np.ndarray]:
 
 def _resolve_fallback_mpnn_state(
   ckpt_path: Path,
-  state: Mapping[str, np.ndarray],
+  state: Mapping[str, Any],
   mpnn_path: str | Path | None,
+  *,
+  override_embedded_mpnn: bool = False,
 ) -> dict[str, np.ndarray] | None:
+  norm_state = _normalize_state_dict(state)
+  has_embedded = _has_embedded_mpnn_trunk(norm_state)
+  if has_embedded:
+    if mpnn_path is not None and not override_embedded_mpnn:
+      msg = (
+        f"Checkpoint {ckpt_path} already embeds a 'prot_mpnn.*' trunk, and mpnn_path={mpnn_path!r} "
+        "was also supplied. Omit mpnn_path to use the embedded trunk, or pass "
+        "override_embedded_mpnn=True to explicitly replace it."
+      )
+      raise ValueError(msg)
+    if mpnn_path is not None and override_embedded_mpnn:
+      return _load_raw_checkpoint(mpnn_path)
+    return None
   if mpnn_path is not None:
     return _load_raw_checkpoint(mpnn_path)
-  if "prot_mpnn.W_s.weight" in state:
-    return None
   candidate = ckpt_path.resolve().parent.parent / "vanilla_model_weights" / "v_48_020.pt"
   if candidate.is_file():
+    log.info(
+      "Using directory-layout fallback ProteinMPNN trunk weights at %s for checkpoint %s",
+      candidate,
+      ckpt_path,
+    )
     return _load_raw_checkpoint(candidate)
   return None
 
@@ -697,6 +846,7 @@ def load_thermo_mpnn_pt(
   path: str | Path,
   *,
   mpnn_path: str | Path | None = None,
+  override_embedded_mpnn: bool = False,
   apply_chain_mask_to_order: bool | None = None,
   subtract_mut: bool = True,
   key: jax.Array | None = None,
@@ -709,6 +859,8 @@ def load_thermo_mpnn_pt(
     Path to the ThermoMPNN checkpoint file.
   mpnn_path : str | Path | None
     Optional path to vanilla ``v_48_020.pt`` when not embedded in ``path``.
+  override_embedded_mpnn : bool
+    When ``True``, allow ``mpnn_path`` to replace an embedded ``prot_mpnn.*`` trunk.
   apply_chain_mask_to_order : bool | None
     Optional override for ``apply_chain_mask_to_order``.
   subtract_mut : bool
@@ -723,10 +875,16 @@ def load_thermo_mpnn_pt(
   """
   ckpt_path = Path(path)
   state = _load_raw_checkpoint(ckpt_path)
-  mpnn_state = _resolve_fallback_mpnn_state(ckpt_path, state, mpnn_path)
+  mpnn_state = _resolve_fallback_mpnn_state(
+    ckpt_path,
+    state,
+    mpnn_path,
+    override_embedded_mpnn=override_embedded_mpnn,
+  )
   return convert_thermo_mpnn_state_dict(
     state,
     mpnn_state_dict=mpnn_state,
+    override_embedded_mpnn=override_embedded_mpnn,
     apply_chain_mask_to_order=apply_chain_mask_to_order,
     subtract_mut=subtract_mut,
     key=key,
@@ -737,6 +895,7 @@ def load_thermo_mpnn_double_pt(
   path: str | Path,
   *,
   mpnn_path: str | Path | None = None,
+  override_embedded_mpnn: bool = False,
   key: jax.Array | None = None,
 ) -> ThermoMPNNDouble:
   """Load a ThermoMPNN-D double-mutant model from a ``.pt``, ``.ckpt``, or ``.npz`` file.
@@ -747,6 +906,8 @@ def load_thermo_mpnn_double_pt(
     Path to the ThermoMPNN-D checkpoint file.
   mpnn_path : str | Path | None
     Optional path to vanilla ``v_48_020.pt`` when not embedded in ``path``.
+  override_embedded_mpnn : bool
+    When ``True``, allow ``mpnn_path`` to replace an embedded ``prot_mpnn.*`` trunk.
   key : jax.Array | None
     Optional PRNG key for skeleton initialization.
 
@@ -757,10 +918,16 @@ def load_thermo_mpnn_double_pt(
   """
   ckpt_path = Path(path)
   state = _load_raw_checkpoint(ckpt_path)
-  mpnn_state = _resolve_fallback_mpnn_state(ckpt_path, state, mpnn_path)
+  mpnn_state = _resolve_fallback_mpnn_state(
+    ckpt_path,
+    state,
+    mpnn_path,
+    override_embedded_mpnn=override_embedded_mpnn,
+  )
   return convert_thermo_mpnn_double_state_dict(
     state,
     mpnn_state_dict=mpnn_state,
+    override_embedded_mpnn=override_embedded_mpnn,
     key=key,
   )
 
@@ -776,6 +943,10 @@ def load_thermo_mpnn_checkpoint(
   key: jax.Array | None = None,
 ) -> ThermoMPNN:
   """Load a serialized ``.eqx.zst`` / ``.eqx`` ThermoMPNN checkpoint from Hub or local path.
+
+  When ``local_path`` is ``None``, resolves ``checkpoint_id`` through
+  :func:`aminx.io.weights.resolve_family_checkpoint` (enforcing ``family_weights.json`` sha256
+  pinning).
 
   Parameters
   ----------
@@ -802,11 +973,8 @@ def load_thermo_mpnn_checkpoint(
   if key is None:
     key = jax.random.PRNGKey(0)
   name = checkpoint_id.lower()
-  is_v1 = (
-    has_ddg_out_scale
-    if has_ddg_out_scale is not None
-    else ("v1" in name or "default" in name)
-  )
+  is_v1 = "v1" in name or "default" in name
+  ddg_out_scale = is_v1 if has_ddg_out_scale is None else has_ddg_out_scale
   kernel_size = (
     light_attention_kernel_size
     if light_attention_kernel_size is not None
@@ -820,18 +988,28 @@ def load_thermo_mpnn_checkpoint(
   skeleton = cast_floating(
     ThermoMPNN(
       light_attention_kernel_size=kernel_size,
-      has_ddg_out_scale=is_v1,
+      has_ddg_out_scale=ddg_out_scale,
       apply_chain_mask_to_order=chain_mask_order,
       subtract_mut=subtract_mut,
       key=key,
     ),
     jnp.float32,
   )
-  loaded = load_weights(
-    checkpoint_id=checkpoint_id,
-    local_path=str(local_path) if local_path is not None else None,
-    skeleton=skeleton,
-  )
+  if local_path is None:
+    bare_id = checkpoint_id.removesuffix(".zst").removesuffix(".eqx")
+    provenance = resolve_family_checkpoint(bare_id, family="thermompnn")
+    resolved_path = provenance.path
+    loaded = load_weights(
+      checkpoint_id=None,
+      local_path=resolved_path,
+      skeleton=skeleton,
+    )
+  else:
+    loaded = load_weights(
+      checkpoint_id=checkpoint_id,
+      local_path=str(local_path),
+      skeleton=skeleton,
+    )
   return cast("ThermoMPNN", loaded)
 
 
@@ -842,6 +1020,10 @@ def load_thermo_mpnn_double_checkpoint(
   key: jax.Array | None = None,
 ) -> ThermoMPNNDouble:
   """Load a serialized ``.eqx.zst`` / ``.eqx`` ThermoMPNN-D checkpoint from Hub or local path.
+
+  When ``local_path`` is ``None``, resolves ``checkpoint_id`` through
+  :func:`aminx.io.weights.resolve_family_checkpoint` (enforcing ``family_weights.json`` sha256
+  pinning).
 
   Parameters
   ----------
@@ -860,9 +1042,19 @@ def load_thermo_mpnn_double_checkpoint(
   if key is None:
     key = jax.random.PRNGKey(0)
   skeleton = cast_floating(ThermoMPNNDouble(key=key), jnp.float32)
-  loaded = load_weights(
-    checkpoint_id=checkpoint_id,
-    local_path=str(local_path) if local_path is not None else None,
-    skeleton=skeleton,
-  )
+  if local_path is None:
+    bare_id = checkpoint_id.removesuffix(".zst").removesuffix(".eqx")
+    provenance = resolve_family_checkpoint(bare_id, family="thermompnn")
+    resolved_path = provenance.path
+    loaded = load_weights(
+      checkpoint_id=None,
+      local_path=resolved_path,
+      skeleton=skeleton,
+    )
+  else:
+    loaded = load_weights(
+      checkpoint_id=checkpoint_id,
+      local_path=str(local_path),
+      skeleton=skeleton,
+    )
   return cast("ThermoMPNNDouble", loaded)

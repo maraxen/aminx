@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import jax
@@ -192,8 +193,10 @@ def test_multi_backend_manifest(
   assert id_orig["checkpoint_id"] == "proteinmpnn_v_48_020"
   monkeypatch.delenv("AMINX_WEIGHTS_DIR")
   id_thermo = _checkpoint_identity({"checkpoint_id": "thermo_mpnn_v1_default"})
-  assert id_thermo["route"] == "family_checkpoint_id"
-  assert id_thermo["family"] == "thermompnn"
+  # weight_provenance resolves family-table ids itself, so the route is the plain checkpoint_id one.
+  assert id_thermo["route"] == "checkpoint_id"
+  assert id_thermo["checkpoint_id"] == "thermo_mpnn_v1_default"
+  assert re.fullmatch(r"[0-9a-f]{64}", id_thermo["sha256"])
 
   with pytest.raises(ValueError, match="empty sequence"):
     plan_campaign_manifest(
@@ -209,7 +212,7 @@ def test_multi_backend_manifest(
 def test_topology_key_weight_hoisting(
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-  """Prove eqx.partition/eqx.combine hoisting compiles once across all 6 vanilla MPNN weight families."""
+  """Prove eqx.partition/eqx.combine hoisting compiles once across the 5 non-cyclic MPNN weight families."""
   families = ("original", "soluble", "abmpnn", "hypermpnn", "cyclicmpnn", "antibmpnn")
   versions = {
     "original": "v_48_020",
@@ -240,9 +243,16 @@ def test_topology_key_weight_hoisting(
   ]
   for fam in families:
     assert (fam, versions[fam]) in LEGACY_ALIAS_MAP
+  # ``Aminx.cyclic`` is a static field, so cyclicmpnn has its own static treedef and its own key;
+  # the other five families share one.
   keys = [extract_topology_key(m) for m in models]
-  assert len(set(keys)) == 1
-  shared_key: TopologyKey = keys[0]
+  vanilla = [(fam, m, k) for (fam, m, k) in zip(families, models, keys, strict=True) if fam != "cyclicmpnn"]
+  cyclic = [(fam, m, k) for (fam, m, k) in zip(families, models, keys, strict=True) if fam == "cyclicmpnn"]
+  assert len({k for _, _, k in vanilla}) == 1
+  assert len(cyclic) == 1
+  assert cyclic[0][2] != vanilla[0][2]
+  assert cyclic[0][2].use_cyclic_offset is True
+  shared_key: TopologyKey = vanilla[0][2]
   ckpt_topo = get_topology_for_checkpoint("proteinmpnn_v_48_020")
   assert shared_key.k_neighbors == ckpt_topo["k_neighbors"]
   assert shared_key.num_positional_embeddings == ckpt_topo["num_positional_embeddings"]
@@ -269,7 +279,12 @@ def test_topology_key_weight_hoisting(
     w_out = getattr(model, "w_out")
     return x @ w_out.weight.T + w_out.bias
 
-  outputs = [executor.run(m, _step, x_dummy, topology_key=shared_key) for m in models]
-  assert len(outputs) == 6
+  outputs = [executor.run(m, _step, x_dummy, topology_key=shared_key) for _, m, _ in vanilla]
+  assert len(outputs) == 5
   assert executor.compile_counts[shared_key] == 1
   assert executor.total_compiles() == 1
+
+  cyclic_key = cyclic[0][2]
+  executor.run(cyclic[0][1], _step, x_dummy, topology_key=cyclic_key)
+  assert executor.compile_counts[cyclic_key] == 1
+  assert executor.total_compiles() == 2

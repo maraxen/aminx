@@ -1247,7 +1247,12 @@ def extract_topology_key(
   )
   atom_ctx = int(getattr(feats, "atom_context_num", 0))
   use_sc = bool(getattr(model, "ligand_mpnn_use_side_chain_context", False))
-  use_cyclic = bool(getattr(feats, "use_cyclic_offset", getattr(model, "use_cyclic_offset", False)))
+  # ``Aminx.cyclic`` is a static Equinox field, so a cyclic checkpoint has a different static
+  # treedef from the others and cannot share their hoisted executable.
+  use_cyclic = bool(
+    getattr(model, "cyclic", False)
+    or getattr(feats, "use_cyclic_offset", getattr(model, "use_cyclic_offset", False)),
+  )
   aug_eps = float(getattr(feats, "augment_eps", 0.0))
   ca_only = type(feats).__name__ == "ProteinFeaturesCA" if feats is not None else False
   model_type = str(

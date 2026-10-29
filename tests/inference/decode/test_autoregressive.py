@@ -725,3 +725,118 @@ def test_wave_order_sort_key_matches_stable_argsort(length: int) -> None:
     got = _tie_free_wave_order(decode_wave, length)
     want = jnp.argsort(decode_wave, stable=True)
     chex.assert_trees_all_equal(got, want)
+
+
+def test_while_loop_multi_group_wave_coverage():
+    """AutoregressiveDecode with use_while_loop=True decodes all positions in G>1 multi-group waves."""
+    num_residues = 12
+    model, _, _ = _build_scheduled_fixture(
+        num_residues=num_residues,
+        seed=50,
+        schedule="fixed_n_to_c",
+    )
+    rng = np.random.default_rng(50)
+    coordinates = jnp.array(rng.normal(size=(num_residues, 4, 3)).astype(np.float32))
+    mask = jnp.ones((num_residues,), dtype=jnp.float32)
+    tie_group_map = jnp.arange(num_residues, dtype=jnp.int32)
+
+    stacked = build_wave_schedule_per_sample(
+        "chromatic",
+        key=jax.random.PRNGKey(1),
+        num_samples=1,
+        tie_group_map=tie_group_map,
+        coords=coordinates,
+        mask=mask,
+        k_neighbors=4,
+    )
+    wave = jax.tree.map(lambda leaf: leaf[0], stacked)
+    assert wave.group_ids.shape[1] > 1, f"Expected G > 1 multi-group wave schedule, got G={wave.group_ids.shape[1]}"
+
+    bundle, config = build_inference_bundle(
+        coords=coordinates,
+        mask=mask,
+        residue_index=jnp.arange(num_residues, dtype=jnp.int32),
+        chain_index=jnp.zeros((num_residues,), dtype=jnp.int32),
+        state_weights=jnp.ones(1),
+        sequence=None,
+        mode="sample_autoregressive",
+        tie_group_map=tie_group_map,
+        wave=wave,
+    )
+
+    L = int(bundle.geometry.residue_index.shape[1])
+    wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
+    ar_decode = AutoregressiveDecode(
+        model=model,
+        state_iterator=VmapIterator(),
+        wave_iterator=JaxScanIterator(),
+        wave_carry=wave_carry,
+        use_while_loop=True,
+    )
+    stage_set = make_stage_set(
+        strategy="arithmetic_mean",
+        state_weights=bundle.conditioning.state_weights,
+    )
+    k_enc, k_dec = jax.random.split(jax.random.PRNGKey(999))
+    encode_fn = make_encode_fn(model, use_rolling_state=False)
+    enc = encode_fn(bundle, k_enc, config)
+    result = ar_decode(key=k_dec, enc=enc, bundle=bundle, config=config, stage_set=stage_set)
+
+    assert result.sequence.shape == (num_residues,)
+    assert bool(jnp.all(result.sequence >= 0)), "All positions must be drawn (no UNDRAWN_TOKEN)"
+    logits_row_norms = jnp.sum(jnp.abs(result.logits), axis=-1)
+    assert bool(jnp.all(logits_row_norms > 0)), "All positions must have non-zero logits"
+
+
+def test_empty_schedule_with_real_ties():
+    """WaveScheduleBundle.empty() combined with real tie groups samples each tie group once and assigns identical tokens."""
+    num_residues = 8
+    model, _, _ = _build_scheduled_fixture(
+        num_residues=num_residues,
+        seed=42,
+        schedule="fixed_n_to_c",
+    )
+    rng = np.random.default_rng(42)
+    coordinates = jnp.array(rng.normal(size=(num_residues, 4, 3)).astype(np.float32))
+    mask = jnp.ones((num_residues,), dtype=jnp.float32)
+    # Pairs of tied residues: [0, 0, 1, 1, 2, 2, 3, 3]
+    tie_group_map = (jnp.arange(num_residues) // 2).astype(jnp.int32)
+    empty_wave = WaveScheduleBundle.empty(num_residues)
+
+    bundle, config = build_inference_bundle(
+        coords=coordinates,
+        mask=mask,
+        residue_index=jnp.arange(num_residues, dtype=jnp.int32),
+        chain_index=jnp.zeros((num_residues,), dtype=jnp.int32),
+        state_weights=jnp.ones(1),
+        sequence=None,
+        mode="sample_autoregressive",
+        tie_group_map=tie_group_map,
+        wave=empty_wave,
+    )
+
+    L = int(bundle.geometry.residue_index.shape[1])
+    wave_carry = CarryShape(name="sequence", shape=(L,), dtype=jnp.int32)
+    ar_decode = AutoregressiveDecode(
+        model=model,
+        state_iterator=VmapIterator(),
+        wave_iterator=JaxScanIterator(),
+        wave_carry=wave_carry,
+    )
+    stage_set = make_stage_set(
+        strategy="arithmetic_mean",
+        state_weights=bundle.conditioning.state_weights,
+    )
+    k_enc, k_dec = jax.random.split(jax.random.PRNGKey(123))
+    encode_fn = make_encode_fn(model, use_rolling_state=False)
+    enc = encode_fn(bundle, k_enc, config)
+    result = ar_decode(key=k_dec, enc=enc, bundle=bundle, config=config, stage_set=stage_set)
+
+    assert result.sequence.shape == (num_residues,)
+    # Verify tied residues receive identical sampled tokens
+    seq = np.asarray(result.sequence)
+    for g in range(4):
+        members = np.flatnonzero(np.asarray(tie_group_map) == g)
+        assert len(members) == 2
+        assert seq[members[0]] == seq[members[1]], f"Tied residues {members} must share sampled token"
+

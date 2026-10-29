@@ -28,10 +28,40 @@ _REFERENCE_COMMIT = "26ec57ac976ade5379920dbd43c7f97a91cf82de"
 # Module-level cache: memoize the acquired path so we clone at most once per process.
 _cached_reference_path: Path | None = None
 
+PARITY_REPOS_ENV = "AMINX_PARITY_REPOS"
+
 
 def project_root() -> Path:
   """Return repository root directory."""
   return Path(__file__).resolve().parents[2]
+
+
+def parity_repo_roots() -> tuple[Path, ...]:
+  """Return candidate root directories for external parity repositories.
+
+  Reads ``$AMINX_PARITY_REPOS`` (``os.pathsep``-separated list of directories)
+  first, then falls back to ``~/repos``.
+  """
+  roots: list[Path] = []
+  raw = os.environ.get(PARITY_REPOS_ENV, "")
+  if raw.strip():
+    for entry in raw.split(os.pathsep):
+      stripped = entry.strip()
+      if stripped:
+        roots.append(Path(stripped).expanduser())
+  default_root = Path.home() / "repos"
+  if default_root not in roots:
+    roots.append(default_root)
+  return tuple(roots)
+
+
+def find_parity_repo_file(rel_path: str | Path) -> Path | None:
+  """Locate ``rel_path`` under :func:`parity_repo_roots`, or return ``None``."""
+  for root in parity_repo_roots():
+    candidate = root / rel_path
+    if candidate.is_file():
+      return candidate
+  return None
 
 
 def _acquire_ephemeral_reference() -> Path:

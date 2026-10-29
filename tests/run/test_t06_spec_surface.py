@@ -194,6 +194,8 @@ def _campaign_owned(**overrides: object) -> dict[str, object]:
         "chunk_id": None,
         "sample_start": None,
         "sample_count": None,
+        "output_path": "out.zarr",
+        "output_zarr_path": "out.zarr",
         "output_h5_path": "out.zarr",
     }
     owned.update(overrides)

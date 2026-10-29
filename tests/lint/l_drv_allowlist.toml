@@ -102,3 +102,20 @@ reason = "sequential_dependency"
 path = "src/aminx/families/protonpotts_mpnn/ph_methods.py"
 qualname = "_gibbs_sweep"
 reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/fampnn/sidechain_diffusion.py"
+qualname = "edm_sample"
+reason = "sequential_dependency"
+
+[[entries]]
+path = "src/aminx/families/fampnn/driver.py"
+qualname = "mar_sample"
+reason = "sequential_dependency"
+
+# Caliby EDM sidechain sampler: each Karras step's denoiser input is the x_cur and x_cond the
+# previous step returned (carry of jax.lax.scan), so the steps cannot be batched.
+[[entries]]
+path = "src/aminx/families/caliby/sidechain_diffusion.py"
+qualname = "edm_sidechain_sample"
+reason = "sequential_dependency"

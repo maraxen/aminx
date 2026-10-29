@@ -87,6 +87,11 @@ def _spec_sample_rung(
     The rung, or ``None`` to keep the padded length.
 
   """
+  if (
+    getattr(spec, "wave", None) is not None
+    or getattr(getattr(getattr(spec, "run_spec", None), "sampling", None), "wave", None) is not None
+  ):
+    return None
   # getattr: test doubles and older plans may omit either sink field (or set it to None).
   stage_set = getattr(plan, "stage_set", None)
   has_sinks = bool(
@@ -153,7 +158,21 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
     # For default case (init=None, no real carry), this is a carry-passthrough.
     init = strategy.init if strategy.init is not None else jnp.array(0)
 
-    def scan_body(carry, x):
+    def scan_body(carry: Any, x: Any) -> tuple[Any, Any]:
+      """Scan iteration step wrapping the mapping body.
+
+      Parameters
+      ----------
+      carry : Any
+        Loop carry state.
+      x : Any
+        Current slice input.
+
+      Returns
+      -------
+      tuple[Any, Any]
+        Pair of updated carry and output value.
+      """
       y = body(x)
       return carry, y  # carry-passthrough: carry is not updated
 
@@ -370,7 +389,15 @@ def _sample_batch(  # noqa: PLR0915
       else None
     )
 
+  custom_wave = (
+    getattr(spec, "wave", None)
+    if getattr(spec, "wave", None) is not None
+    else getattr(spec.run_spec.sampling, "wave", None)
+  )
+
   def _with_sample_order(bundle: Any, sample_key: Any) -> Any:  # noqa: ANN401
+    if custom_wave is not None:
+      return bundle
     return with_decoding_order(
       bundle,
       decoding_order_key(sample_key),
@@ -401,6 +428,7 @@ def _sample_batch(  # noqa: PLR0915
         omit_aa_per_position=spec.run_spec.sampling.omit_aa_per_position,
         seq_len=rung if rung is not None else seq_len,
       )
+    wave = getattr(spec, "wave", None) or getattr(spec.run_spec.sampling, "wave", None)
     return _structure_bundle_kwargs(
       structure_idx,
       per_structure=per_structure,
@@ -410,6 +438,7 @@ def _sample_batch(  # noqa: PLR0915
         "state_weights": state_weights,
         "mode": "sample_ar",
         "inference": True,
+        "wave": wave,
       },
     )
 
@@ -604,7 +633,19 @@ def _sample_batch(  # noqa: PLR0915
       # Step 1: encode at each noise level
       noise_indices = jnp.arange(len(spec.run_spec.sampling.backbone_noise), dtype=jnp.int32)
 
-      def encode_at_noise(noise_and_idx):
+      def encode_at_noise(noise_and_idx: tuple[Any, Any]) -> Any:
+        """Encode structure at specified backbone noise level.
+
+        Parameters
+        ----------
+        noise_and_idx : tuple[Any, Any]
+          Pair of (noise_value, noise_index).
+
+        Returns
+        -------
+        Any
+          Encoded latent features.
+        """
         noise_val, noise_idx = noise_and_idx
         bundle, config = _build_bundle(noise_val)
         encode_key = jax.random.fold_in(base_key, structure_idx)

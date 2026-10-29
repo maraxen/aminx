@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
-from aminx.families.potts_mpnn.features import potts_edge_features
+from aminx.families.potts_mpnn.features import _layer_norm, _linear, potts_edge_features
 from aminx.model.mpnn import Aminx
 
 THERMO_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
@@ -71,14 +71,6 @@ def cast_floating[ModuleT: eqx.Module](model: ModuleT, dtype: jnp.dtype) -> Modu
   return cast("ModuleT", jax.tree.map(_cast, model))
 
 
-def _linear(layer: eqx.nn.Linear, x: Float[Array, "... I"]) -> Float[Array, "... O"]:
-  """Apply ``eqx.nn.Linear`` over the trailing axis of ``x`` without ``vmap``."""
-  out = x @ layer.weight.T
-  if layer.bias is not None:
-    out = out + layer.bias
-  return out
-
-
 def _linear_cast(
   layer: eqx.nn.Linear,
   x: Float[Array, "... I"],
@@ -88,18 +80,6 @@ def _linear_cast(
   out = x @ layer.weight.astype(dtype).T
   if layer.bias is not None:
     out = out + layer.bias.astype(dtype)
-  return out
-
-
-def _layer_norm(norm: eqx.nn.LayerNorm, x: Float[Array, "... H"]) -> Float[Array, "... H"]:
-  """Apply ``eqx.nn.LayerNorm`` over the trailing axis of ``x`` without ``vmap``."""
-  mean = jnp.mean(x, axis=-1, keepdims=True)
-  variance = jnp.var(x, axis=-1, keepdims=True)
-  out = (x - mean) * jax.lax.rsqrt(variance + norm.eps)
-  if norm.weight is not None:
-    out = out * norm.weight
-  if norm.bias is not None:
-    out = out + norm.bias
   return out
 
 

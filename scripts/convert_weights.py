@@ -799,6 +799,14 @@ def convert_physics_encoder(
     return jax_model
 
 
+def _detect_num_positional_embeddings(pt_state_dict: dict[str, Any]) -> int:
+    """Infer ``num_positional_embeddings`` from the positional linear weight tensor."""
+    pos_weight = pt_state_dict.get("features.embeddings.linear.weight")
+    if pos_weight is None:
+        pos_weight = pt_state_dict.get("features.positional_embeddings.linear.weight")
+    return (pos_weight.shape[1] - 2) // 2 if pos_weight is not None else 16
+
+
 def convert_state_dict_to_aminx(
     pt_state_dict: dict[str, Any],
     *,
@@ -814,12 +822,7 @@ def convert_state_dict_to_aminx(
     edge_embed_w = pt_state_dict.get("features.edge_embedding.weight")
     is_ca_only = edge_embed_w is not None and tuple(edge_embed_w.shape)[1] == 167
     is_membrane = ("features.node_embedding.weight" in pt_state_dict) and not is_ca_only
-
-    pos_weight = pt_state_dict.get("features.embeddings.linear.weight")
-    if pos_weight is None:
-        pos_weight = pt_state_dict.get("features.positional_embeddings.linear.weight")
-    num_pos = (pos_weight.shape[1] - 2) // 2 if pos_weight is not None else 16
-
+    num_pos = _detect_num_positional_embeddings(pt_state_dict)
     k_neighbors = int((checkpoint_payload or {}).get("num_edges", 48))
 
     jax_model = Aminx(
@@ -849,7 +852,7 @@ def convert_mpnn_checkpoint(
     """Load a PyTorch ``.pt`` checkpoint from disk and convert it to an ``Aminx`` model."""
     import torch
 
-    checkpoint = torch.load(str(pt_path), map_location="cpu", weights_only=False)
+    checkpoint = torch.load(str(pt_path), map_location="cpu", weights_only=True)
     checkpoint_payload = checkpoint if isinstance(checkpoint, dict) else None
     pt_state_dict = (
         checkpoint["model_state_dict"]
@@ -885,7 +888,7 @@ def main():
 
     try:
         import torch
-        checkpoint = torch.load(args.input, map_location="cpu", weights_only=False)
+        checkpoint = torch.load(args.input, map_location="cpu", weights_only=True)
         checkpoint_payload = checkpoint if isinstance(checkpoint, dict) else None
         if "model_state_dict" in checkpoint:
             pt_state_dict = checkpoint["model_state_dict"]
@@ -902,27 +905,13 @@ def main():
 
     # Initialize JAX model with matching architecture
     from aminx.model.ligand_mpnn import PrxteinLigandMPNN
-    from aminx.model.mpnn import Aminx
 
     key = jax.random.PRNGKey(0)
 
     # Detect architecture type
     is_packer = "W_torsions.weight" in pt_state_dict
     is_ligand = "features.type_linear.weight" in pt_state_dict or "features.node_project_down.weight" in pt_state_dict
-    edge_embed_w = pt_state_dict.get("features.edge_embedding.weight")
-    is_ca_only = edge_embed_w is not None and tuple(edge_embed_w.shape)[1] == 167
-    is_membrane = ("features.node_embedding.weight" in pt_state_dict) and not is_ca_only
-
-    # Detect positional embedding size
-    pos_weight = pt_state_dict.get("features.embeddings.linear.weight")
-    if pos_weight is None:
-        pos_weight = pt_state_dict.get("features.positional_embeddings.linear.weight")
-
-    if pos_weight is not None:
-        num_pos = (pos_weight.shape[1] - 2) // 2
-        print(f"Detected num_positional_embeddings: {num_pos}")
-    else:
-        num_pos = 16
+    num_pos = _detect_num_positional_embeddings(pt_state_dict)
 
     if is_packer:
         print("Detected Packer architecture")
@@ -966,28 +955,11 @@ def main():
         jax_model = convert_full_model(pt_state_dict, jax_model)
     else:
         print("Detected standard ProteinMPNN architecture")
-        if is_ca_only:
-            print("  Special case: CA-only model detected (using ProteinFeaturesCA)")
-        if is_membrane:
-            print("  Special case: Membrane model detected (using PhysicsEncoder for node_embedding)")
-
-        jax_model = Aminx(
-            node_features=128,
-            edge_features=128,
-            hidden_features=128,
-            num_encoder_layers=3,
-            num_decoder_layers=3,
-            k_neighbors=int((checkpoint_payload or {}).get("num_edges", 48)),
-            num_positional_embeddings=num_pos,
-            physics_feature_dim=3 if is_membrane else None,
-            dropout_rate=0.0,
-            ca_only=is_ca_only,
+        jax_model = convert_state_dict_to_aminx(
+            pt_state_dict,
+            checkpoint_payload=checkpoint_payload,
             key=key,
         )
-        jax_model = convert_full_model(pt_state_dict, jax_model)
-
-        if is_membrane:
-            jax_model = convert_physics_encoder(pt_state_dict, jax_model)
 
     # Save
     print(f"Saving JAX weights to {args.output}")

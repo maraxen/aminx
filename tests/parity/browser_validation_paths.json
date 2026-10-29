@@ -163,6 +163,21 @@
   "src/aminx/host/family_driver.py::SinkArraySpec": {
     "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
   },
+  "src/aminx/host/campaign.py::BackendArmSpec": {
+    "internal": "Multi-backend campaign planning: names one backend arm (model family + checkpoint) of a server-side campaign grid. The browser runs a single ProteinMPNN model and has no campaign planner; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/campaign.py::normalize_backend_arm": {
+    "internal": "Multi-backend campaign planning: normalizes a backend arm spelling into BackendArmSpec. The browser runs a single ProteinMPNN model and has no campaign planner; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/plan.py::HoistedTopologyExecutor": {
+    "internal": "Server-side XLA compile cache keyed by TopologyKey so several checkpoints share one executable. The browser exports one ONNX graph per checkpoint and has no JIT cache; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/plan.py::TopologyKey": {
+    "internal": "Static architectural key for the server-side hoisted-compile cache. No browser P-ID reaches it; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/plan.py::extract_topology_key": {
+    "internal": "Builds the TopologyKey for the server-side hoisted-compile cache. No browser P-ID reaches it; covered by tests/host/test_multi_backend_campaign.py."
+  },
   "src/aminx/host/family_driver.py::refuse_driver_family": {
     "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
   },
@@ -376,6 +391,24 @@
   "src/aminx/model/capabilities.py::ModelCapabilities": {
     "internal": "model capability flags consulted across P00-P14, no dedicated P-ID"
   },
+  "src/aminx/model/cdr_bias.py::CDRFrequencyLogitTransform": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::CDRPhysicochemicalDescriptors": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::CDRRegionMasks": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::build_cdr_region_mask": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::compute_cdr_physicochemical_descriptors": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
+  "src/aminx/model/cdr_bias.py::make_cdr_frequency_logit_transform": {
+    "internal": "AntiBMPNN CDR-bias utilities (model/cdr_bias.py); not in the browser ProteinMPNN sampling scope, so no P-ID"
+  },
   "src/aminx/model/decoder.py::Decoder": "P05",
   "src/aminx/model/decoder.py::DecoderLayer": "P05",
   "src/aminx/model/decoder.py::DecoderLayerJ": "P05",
@@ -403,6 +436,9 @@
   },
   "src/aminx/model/features.py::ProteinEdgeStageTensors": "P03",
   "src/aminx/model/features.py::ProteinFeatures": "P03",
+  "src/aminx/model/features.py::ProteinFeaturesCA": {
+    "internal": "CA-only ProteinMPNN feature extractor (ca_only=True, v_48_002/010/020 CA-only checkpoints, PR #234). The browser export and P03 validate only the full-atom ProteinFeatures path; CA-only parity is covered by tests/parity/test_mpnn_variants_tier1_tier2.py."
+  },
   "src/aminx/model/features.py::select_neighbors": "P03",
   "src/aminx/model/features.py::top_k": "P03",
   "src/aminx/model/laser/decoder.py::LaserDecoder": {
@@ -626,6 +662,8 @@
   "src/aminx/potts/sampling.py::parallel_tempering": "P22",
   "src/aminx/potts/sampling.py::parallel_tempering_round": "P22",
   "src/aminx/potts/spec.py::PottsRunSpec": "P22",
+  "src/aminx/potts/trw.py::project_to_zero_sum_gauge": "P22",
+  "src/aminx/potts/trw.py::tree_marginals_to_potts": "P22",
   "src/aminx/sampling/__init__.py::sample": "P07",
   "src/aminx/sampling/conditional_logits.py::make_batched_conditional_logits_fn": "P05",
   "src/aminx/sampling/conditional_logits.py::make_batched_conditional_logits_split_fn": "P05",

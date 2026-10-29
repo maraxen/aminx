@@ -148,6 +148,10 @@ REGISTRY: dict[str, tuple[str, str]] = {
     "exempt",
     "searchsorted over sorted string keys; a lookup, not a draw",
   ),
+  "types/bundles.py::from_colors": (
+    "exempt",
+    "maps tie-group IDs to contiguous group indices (0..G-1), not amino-acid token draws",
+  ),
   "host/averaging.py::_make_encoding_sampling_split_fn_legacy.sample_fn.sample_group_step": (
     "x_excluded",
     "generic host sampler, grouped positions",
@@ -245,6 +249,25 @@ REGISTRY: dict[str, tuple[str, str]] = {
     "exempt",
     "draws a chi rotamer bin, not a residue",
   ),
+  # --- Driver-backed families added by the caliby and fampnn stack ------------------------
+  "families/caliby/driver.py::_run_potts_sample": (
+    "known_gap",
+    "Caliby Potts sampler: each sweep is one parallel categorical over all sites (not Gibbs), "
+    "from the field of the previous state. X (index 20 in ACDEFGHIKLMNPQRSTVWYX) is not masked; "
+    "it is only penalised by options.omit_gap_penalty (run/options.py:172, default 1e6, named "
+    "'gap' but applied to index 20). A configured zero re-enables X. Seeds are "
+    "fold_in(seed + idx*100 + t_idx), which collides once there are 100 or more temperatures "
+    "(debt #3121/#3122). Vectorisation: the item, temperature and sample loops (driver.py "
+    "~327-345) are Python loops, which the vectorize rule treats as a defect. Not fixed here.",
+  ),
+  "families/fampnn/driver.py::mar_sample._mar_step": (
+    "family_excluded",
+    "FAMPNN MAR unmasking: categorical over the first 20 logits only, which drops X at index 20 "
+    "of FAMPNN_ALPHABET ARNDCQEGHILKMFPSTWYVX. Runs inside a fori_loop (allowlisted). Caller-side "
+    "defects, not fixed here: the per-sample key comes from fold_in(seed + idx*100 + t_idx) "
+    "(driver.py:528), which collides at 100+ temperatures (same as caliby, debt #3121/#3122), and "
+    "the samples and temperatures are a Python loop calling mar_sample (driver.py:526-535).",
+  ),
 }
 
 #: For each ``family_excluded`` site: (file, qualname, exact source text) triples. Every
@@ -268,6 +291,14 @@ FAMILY_EVIDENCE: dict[str, tuple[tuple[str, str, str], ...]] = {
   "families/protonpotts_mpnn/ph_export.py::make_visit.visit": (
     ("families/protonpotts_mpnn/ph_export.py", "make_visit.visit", "ph_descent.block_objective("),
     ("families/protonpotts_mpnn/ph_descent.py", "_allowed_tokens", "member & valid_tokens[None, :]"),
+  ),
+  "families/fampnn/driver.py::mar_sample._mar_step": (
+    ("families/fampnn/driver.py", "mar_sample._mar_step", "logits_20 = fwd_out.logits_fampnn[:, :20] / t_eff"),
+    (
+      "families/fampnn/driver.py",
+      "mar_sample._mar_step",
+      "sampled_aa = jax.random.categorical(k_cat, logits_20, axis=-1)",
+    ),
   ),
   "model/laser/joint_decode.py::_draw": (
     ("model/laser/joint_decode.py", "_run_joint_step", "jnp.where(sampling & inputs.disabled, floor, logits)"),

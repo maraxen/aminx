@@ -912,7 +912,11 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
   tuple[str, dict[str, Any]]
     Result of ``compute_unit_input_hash``.
   """
-  spec_without_output = {k: v for k, v in sampling_spec_payload.items() if k != "output_h5_path"}
+  spec_without_output = {
+    k: v
+    for k, v in sampling_spec_payload.items()
+    if k not in ("output_h5_path", "output_path", "output_zarr_path")
+  }
   components: dict[str, Any] = {
     "spec_sha256": hashlib.sha256(canonical_json_bytes(spec_without_output)).hexdigest(),
     "inputs": [_hash_input_entry(entry) for entry in _normalize_inputs(sampling_spec_payload.get("inputs", []))]
@@ -1519,15 +1523,24 @@ def plan_campaign_manifest(  # noqa: PLR0915
                 campaign_id=campaign_id,
                 row_hash=row["manifest_row_hash"],
               )
+              # Built from dataclasses.fields(), NOT hand-listed. The hand-written 23-key literal
+              # this replaces drifted from an 88-field dataclass with nothing enforcing the sync,
+              # which is the single root cause of all twelve silently-dropped knobs -- including
+              # fixed_mask, i.e. no residue was ever actually held fixed in any produced design.
+              # spec_partition raises at import if any field is classified nowhere.
               row["sampling_spec"] = campaign_sampling_spec_payload(
                 spec_variant,
                 campaign_owned={
                   "grid_mode": True,
+                  # The planner owns chunking; the caller's samples_chunk_size is replaced, not
+                  # dropped -- this row covers exactly sample_count designs.
                   "samples_chunk_size": sample_count,
                   "job_id": row["job_id"],
                   "chunk_id": row["chunk_id"],
                   "sample_start": row["sample_start"],
                   "sample_count": row["sample_count"],
+                  "output_path": row["output_h5_path"],
+                  "output_zarr_path": row["output_h5_path"],
                   "output_h5_path": row["output_h5_path"],
                 },
               )
@@ -1871,6 +1884,8 @@ def run_manifest_row(  # noqa: PLR0915
       raise RuntimeError(msg)
 
     worker_payload = dict(sampling_spec_payload)
+    worker_payload["output_path"] = str(partial_path)
+    worker_payload["output_zarr_path"] = str(partial_path)
     worker_payload["output_h5_path"] = str(partial_path)
     worker_payload = migrate_removed_spec_keys(worker_payload)
     worker_payload = {

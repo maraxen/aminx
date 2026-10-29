@@ -98,7 +98,12 @@ def test_g_optout_matches_golden() -> None:
       produced[f"{name}__score__logits"] = np.asarray(scored["logits"])
   for key in golden.files:
     assert key in produced, key
-    assert np.array_equal(produced[key], golden[key]), key
+    # debt-2570, debt-2713: Discrete sequence tokens require strict equality,
+    # while floating-point logits and scores allow micro-ULP compiler/hardware tolerance.
+    if np.issubdtype(golden[key].dtype, np.floating):
+      np.testing.assert_allclose(produced[key], golden[key], rtol=1e-5, atol=1e-5, err_msg=key)
+    else:
+      assert np.array_equal(produced[key], golden[key]), key
 
 
 @pytest.mark.slow

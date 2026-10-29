@@ -91,6 +91,9 @@ def _mock_sampling_spec() -> MagicMock:
     spec.potts_mpnn = None
     spec.laser = None
     spec.protonpotts = None
+    spec.caliby = None
+    spec.fampnn = None
+    spec.thermompnn = None
     spec.omit_aa = ()
     spec.omit_aa_per_position = None
     return spec

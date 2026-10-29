@@ -167,3 +167,77 @@ class TestBuildRunSpecPlan:
         rs = build_run_spec(spec)
         assert rs.plan.use_unified_driver is True
         assert isinstance(rs.plan.use_unified_driver, bool)
+
+
+class TestRunIdDeterminism:
+    """Tests for deterministic RunSpec.run_id population (backlog-5560)."""
+
+    def test_run_id_is_deterministic(self) -> None:
+        from aminx.run.specs import SamplingSpecification
+        from xtrax.run.sink import derive_sink_spec
+
+        spec1 = SamplingSpecification(inputs="dummy.pdb", random_seed=42)
+        spec2 = SamplingSpecification(inputs="dummy.pdb", random_seed=42)
+        rs1 = build_run_spec(spec1)
+        rs2 = build_run_spec(spec2)
+
+        assert rs1.run_id is not None
+        assert rs1.run_id == rs2.run_id
+        assert rs1.run_id.startswith("run-")
+
+        # derive_sink_spec uses rs.run_id instead of generating a fresh UUID
+        sink_spec1 = derive_sink_spec(rs1, output_dir=Path("/tmp/out"))
+        sink_spec2 = derive_sink_spec(rs2, output_dir=Path("/tmp/out"))
+        assert sink_spec1.run_id == rs1.run_id
+        assert sink_spec1.run_id == sink_spec2.run_id
+
+    def test_run_id_differs_for_different_specs(self) -> None:
+        from aminx.run.specs import SamplingSpecification
+
+        spec1 = SamplingSpecification(inputs="dummy.pdb", random_seed=42)
+        spec2 = SamplingSpecification(inputs="dummy.pdb", random_seed=43)
+        rs1 = build_run_spec(spec1)
+        rs2 = build_run_spec(spec2)
+
+        assert rs1.run_id != rs2.run_id
+
+    def test_explicit_run_id_respected(self) -> None:
+        from aminx.run.specs import SamplingSpecification
+
+        spec = SamplingSpecification(inputs="dummy.pdb", run_id="custom-run-123")
+        rs = build_run_spec(spec)
+        assert rs.run_id == "custom-run-123"
+
+
+class TestOutputPaths:
+    """Tests for output_path canonical attribute and aliases."""
+
+    def test_output_path_canonical(self) -> None:
+        from aminx.run.specs import SamplingSpecification
+
+        spec = SamplingSpecification(inputs="dummy.pdb", output_path="/tmp/test.zarr")
+        assert spec.output_path == Path("/tmp/test.zarr")
+        assert spec.output_zarr_path == Path("/tmp/test.zarr")
+        assert spec.output_h5_path == Path("/tmp/test.zarr")
+
+        rs = build_run_spec(spec)
+        assert rs.io.output_path == Path("/tmp/test.zarr")
+        assert rs.io.output_zarr_path == Path("/tmp/test.zarr")
+        assert rs.io.output_h5_path == Path("/tmp/test.zarr")
+
+    def test_output_zarr_path_sets_canonical(self) -> None:
+        from aminx.run.specs import SamplingSpecification
+
+        spec = SamplingSpecification(inputs="dummy.pdb", output_zarr_path="/tmp/test2.zarr")
+        assert spec.output_path == Path("/tmp/test2.zarr")
+        assert spec.output_zarr_path == Path("/tmp/test2.zarr")
+        assert spec.output_h5_path == Path("/tmp/test2.zarr")
+
+    def test_output_h5_path_deprecated_sets_canonical(self) -> None:
+        from aminx.run.specs import SamplingSpecification
+
+        spec = SamplingSpecification(inputs="dummy.pdb", output_h5_path="/tmp/test3.h5")
+        assert spec.output_path == Path("/tmp/test3.h5")
+        assert spec.output_zarr_path == Path("/tmp/test3.h5")
+        assert spec.output_h5_path == Path("/tmp/test3.h5")
+

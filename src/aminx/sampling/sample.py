@@ -18,7 +18,7 @@ from aminx.inference.logits import make_stage_set
 from aminx.registry import SAMPLERS
 from aminx.types.bundles import WaveScheduleBundle
 from aminx.types.protocols import ModelProtocol, SamplerFn
-from aminx.utils.autoregression import decoding_order_from_wave
+from aminx.utils.autoregression import decoding_order_from_wave, generate_wave_ar_mask
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
 
 _AMINO_ACID_VOCAB = 21
@@ -71,8 +71,6 @@ def make_sample_sequences(
   model: ModelProtocol,
   decoding_order_fn: DecodingOrderFn = _DEFAULT_DECODING_ORDER_FN,
   sampling_strategy: Literal["temperature", "straight_through"] = "temperature",
-  _num_encoder_layers: int = 3,
-  _num_decoder_layers: int = 3,
   use_concrete: bool = False,
   tau_start: float = 1.0,
   tau_end: float = 0.1,
@@ -91,8 +89,6 @@ def make_sample_sequences(
     A function that samples sequences from structures.
 
   """
-  del _num_encoder_layers, _num_decoder_layers
-
   if sampling_strategy == "straight_through":
     # Construct a default stage_set with arithmetic_mean strategy (default for STE).
     # Callers can pass state_weights at sample time to override the logit_transform.
@@ -163,7 +159,13 @@ def make_sample_sequences(
         inference=True,
       )
       if wave_schedule is not None:
-        bundle = eqx.tree_at(lambda b: b.wave, bundle, wave_schedule)
+        wave_mask = generate_wave_ar_mask(wave_schedule, bundle.conditioning.tie_group_map[0])
+        wave_mask = jnp.broadcast_to(wave_mask[None, ...], (S, L, L))
+        bundle = eqx.tree_at(
+          lambda b: (b.wave, b.conditioning.ar_mask),
+          bundle,
+          (wave_schedule, wave_mask),
+        )
 
       final_seq, final_logits, _ = optimize_fn(
         prng_key,
@@ -174,7 +176,12 @@ def make_sample_sequences(
         temperature,
         use_rolling_state=use_rolling_state,
       )
-      return final_seq, final_logits, jnp.arange(L)
+      order_out = (
+        decoding_order_from_wave(bundle.wave, bundle.conditioning.tie_group_map[0])
+        if wave_schedule is not None
+        else jnp.arange(L)
+      )
+      return final_seq, final_logits, order_out
 
     return cast("SamplerFn", sample_sequences)
 

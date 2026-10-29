@@ -1,0 +1,59 @@
+[experiment]
+hypothesis = """
+Task 261027_aminx-laser-chunk-sweep. LASErMPNN production sampling
+(aminx.host.runner.sample, checkpoint_id lasermpnn_nothing_heldout resolved from the
+Hub at the pinned HF_REVISION) of tests/fixtures/laser/103m_1.pdb (myoglobin, L=154,
+n=256 samples, seed 0, temperature 0.1) costs at least 2x less per sample with
+samples_chunk_size=128 than with 8, the value the confirm script uses, on one GPU, with
+no XLA recompile in the timed call and valid output at every chunk size (8, 32, 128).
+
+Each chunk size is one unit in its own subprocess (timeout 1800 s), stamped on
+completion with a config digest and reused under --resume only on a digest match; the
+result lists reused units. A warm call with the same n precedes the timed call; its
+first_s (weight load + compile + one run) is recorded but not judged. steady_s includes
+one weight load and host featurization per call, which is the same at every chunk size.
+
+Control: compiles are counted through jax_log_compiles in both calls. The warm call must
+log at least one compile at every chunk size (compile_counter_live); otherwise a steady
+count of 0 is not evidence of a cache hit.
+
+Wall-time estimate: unknown on GPU. An untracked local CPU smoke test (n=2, chunk 2) took
+44 s/sample, so a GPU is expected to be at least 50x faster. Each unit runs n twice.
+Bounded by 3 units x 1800 s.
+"""
+
+[outcomes.recompiles]
+condition = "all_valid AND compile_counter_live AND max_steady_compiles > 0"
+decision = "The timed call recompiles, so per-sample time is confounded by compile. Find what is rebuilt per runner.sample call and fix it before choosing a chunk size."
+reasoning = "A chunk-size comparison is meaningful only if steady-state calls hit the compile cache."
+is_residual = false
+
+[outcomes.pass]
+condition = "all_valid AND compile_counter_live AND max_steady_compiles = 0 AND speedup_largest_vs_smallest >= 2.0"
+decision = "Use best_chunk for long LASEr sampling runs on GPU (confirm script, production) and record peak_bytes as the memory cost; propose it as the GPU default in a follow-up."
+reasoning = "A 2x per-sample gain with no recompile and valid output is worth a default change."
+is_residual = false
+
+[outcomes.marginal]
+condition = "all_valid AND compile_counter_live AND max_steady_compiles = 0 AND speedup_largest_vs_smallest >= 1.2 AND speedup_largest_vs_smallest < 2.0"
+decision = "Chunk size helps a little; adopt best_chunk only where memory is free, and look inside the sample step for the larger cost."
+reasoning = "Under 2x the chunk is not the main lever."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT all_valid OR NOT compile_counter_live OR speedup_largest_vs_smallest IS NULL OR (max_steady_compiles = 0 AND speedup_largest_vs_smallest < 1.2)"
+decision = "Either a unit failed (failed_units says which: OOM, timeout, bad output), the compile counter saw no compile in the warm call (its check is dead), or chunk size does not move per-sample cost; profile the decode step itself."
+reasoning = "Residual: no usable chunk-size signal."
+is_residual = true
+
+[breakdown]
+waive = "per_chunk holds each chunk size's timing, compile counts, peak memory and validity; the outcome is judged on the smallest-vs-largest ratio only."
+
+[result_schema]
+backend = "str"
+device_kind = "str"
+all_valid = "bool"
+compile_counter_live = "bool"
+max_steady_compiles = "int"
+speedup_largest_vs_smallest = "float"
+best_chunk = "int"

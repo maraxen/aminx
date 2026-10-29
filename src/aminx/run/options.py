@@ -151,18 +151,23 @@ class CalibyOptions:
 
   Attributes
   ----------
-  checkpoint_id : str
+  checkpoint_id : str | None
     Caliby checkpoint identifier (e.g. ``"caliby"``, ``"soluble_caliby"``,
-    ``"caliby_distill"``, ``"caliby_packer_010"``).
-  num_ensemble_conformers : int
-    Number of Gaussian noise conformers for ensemble Potts parameter averaging.
-  sigma_ensemble : float
-    Standard deviation of Gaussian coordinate perturbations for ensemble generation.
+    ``"caliby_distill"``, ``"caliby_packer_010"``). ``None`` defers to
+    ``RunSpecification.checkpoint_id``, then to ``caliby``; when both are set they must agree.
+    A packer identifier (``caliby_packer_000`` / ``010`` / ``030``) selects the sidechain packer.
+  ensemble_conformers : int
+    Number of Gaussian noise conformers whose Potts parameters are averaged
+    (read by the driver; ``1`` disables the ensemble).
+  ensemble_noise_std : float
+    Standard deviation in angstroms of the coordinate perturbation used to generate
+    each ensemble conformer (read by the driver; ``0.0`` disables the ensemble).
+  packer_step_scale : float
+    Heun step scale of the sidechain packer sampler, matching upstream
+    ``edm_sidechain_sample`` (``1.5``).
   """
 
-  checkpoint_id: str = "caliby"
-  num_ensemble_conformers: int = 1
-  sigma_ensemble: float = 0.0
+  checkpoint_id: str | None = None
   ensemble_conformers: int = 1
   ensemble_noise_std: float = 0.0
   omit_gap_penalty: float = 1e6
@@ -171,9 +176,7 @@ class CalibyOptions:
   packer_sigma_max: float = 80.0
   packer_rho: float = 7.0
   packer_s_churn: float = 0.0
-  packer_step_scale: float = 1.0
-  pack_sidechains: bool = False
-  packer_checkpoint: str = "caliby_packer_010"
+  packer_step_scale: float = 1.5
 
 
 @dataclass(frozen=True)
@@ -182,8 +185,9 @@ class FAMPNNOptions:
 
   Attributes
   ----------
-  checkpoint_id : str
-      FAMPNN checkpoint identifier.
+  checkpoint_id : str | None
+      FAMPNN checkpoint identifier. ``None`` defers to ``RunSpecification.checkpoint_id``, then to
+      ``fampnn_0_3``; when both are set they must agree.
   num_seq_steps : int
       Number of masked autoregressive (MAR) sequence refinement steps.
   num_scn_steps : int
@@ -202,7 +206,7 @@ class FAMPNNOptions:
       Whether to diffuse sidechain coordinates at every MAR sequence step.
   """
 
-  checkpoint_id: str = "fampnn_0_3"
+  checkpoint_id: str | None = None
   num_seq_steps: int = 8
   num_scn_steps: int = 18
   sigma_min: float = 0.002
