@@ -19,6 +19,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from aminx.host.schema_versions import CAMPAIGN_SINK_SCHEMA_VERSION, SCHEMA_VERSIONS
 
 CAMPAIGN_METRICS_COLUMNS: tuple[str, ...] = (
@@ -208,7 +210,7 @@ class UnifiedCampaignSink:
         return json.loads(raw[len(b"JSON_PARQUET_V1\n") :].decode("utf-8"))
       return []
 
-  def write_arm_results(
+  def write_arm_results(  # noqa: PLR0915
     self,
     *,
     arm_id: str,
@@ -272,17 +274,27 @@ class UnifiedCampaignSink:
       if arrays:
         for name, val in arrays.items():
           _validate_safe_segment(str(name), "array_name")
-          arr_meta_path = staging_row / f"{name}.json"
-          if hasattr(val, "tolist"):
-            serializable = val.tolist()
-          elif isinstance(val, (list, tuple, dict, int, float, str)):
-            serializable = val
-          else:
-            serializable = list(val)
-          arr_meta_path.write_text(
-            json.dumps({"name": name, "data": serializable}, sort_keys=True) + "\n",
-            encoding="utf-8",
+          np_arr = np.asarray(val)
+          if np_arr.dtype.hasobject:
+            msg = f"array {name!r} has object dtype and cannot be stored as a Zarr array"
+            raise ValueError(msg)
+          arr_dir = staging_row / name
+          arr_dir.mkdir(parents=True, exist_ok=True)
+          zarray_meta = {
+            "chunks": list(np_arr.shape) if np_arr.ndim > 0 else [1],
+            "compressor": None,
+            "dtype": np_arr.dtype.str,
+            "fill_value": 0,
+            "filters": None,
+            "order": "C",
+            "shape": list(np_arr.shape),
+            "zarr_format": 2,
+          }
+          (arr_dir / ".zarray").write_text(
+            json.dumps(zarray_meta, indent=2, sort_keys=True) + "\n", encoding="utf-8",
           )
+          chunk_key = ".".join("0" for _ in range(max(np_arr.ndim, 1)))
+          (arr_dir / chunk_key).write_bytes(np_arr.tobytes(order="C"))
 
       # Atomic replace of only the target_row subgroup
       backup_row = arm_dir / f".backup_{manifest_row_hash}_{uuid.uuid4().hex}"
@@ -363,7 +375,30 @@ class UnifiedCampaignSink:
       for r in self._records:
         for c in CAMPAIGN_METRICS_COLUMNS:
           cols[c].append(r.get(c))
-      table = pa.table(cols)
+      schema = pa.schema(
+        [
+          ("campaign_id", pa.string()),
+          ("structure_id", pa.string()),
+          ("state_group_id", pa.string()),
+          ("backend_arm_id", pa.string()),
+          ("model_family", pa.string()),
+          ("checkpoint_id", pa.string()),
+          ("sample_idx", pa.int64()),
+          ("temperature", pa.float64()),
+          ("backbone_noise", pa.float64()),
+          ("sequence", pa.string()),
+          ("sequence_length", pa.int64()),
+          ("score_nll", pa.float64()),
+          ("sequence_recovery", pa.float64()),
+          ("perplexity", pa.float64()),
+          ("sc_rmsd", pa.float64()),
+          ("sc_plddt", pa.float64()),
+          ("ddg_pred", pa.float64()),
+          ("manifest_row_hash", pa.string()),
+          ("zarr_group_path", pa.string()),
+        ],
+      )
+      table = pa.table(cols, schema=schema)
       pq.write_table(table, tmp_pq)
       wrote_pyarrow = True
     except Exception:  # noqa: BLE001

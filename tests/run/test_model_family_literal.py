@@ -38,6 +38,7 @@ def test_model_family_literal_includes_driver_families() -> None:
         "lasermpnn",
         "caliby",
         "fampnn",
+        "thermompnn",
     }
 
 

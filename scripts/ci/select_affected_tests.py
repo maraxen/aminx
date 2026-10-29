@@ -83,6 +83,7 @@ _FAMILY_STRING_TO_MODULE: Mapping[str, str] = {
     "lasermpnn": "aminx.families.laser_mpnn",
     "caliby": "aminx.families.caliby",
     "fampnn": "aminx.families.fampnn",
+    "thermompnn": "aminx.families.thermo_mpnn",
 }
 _BROAD_DIRS = frozenset(
     {

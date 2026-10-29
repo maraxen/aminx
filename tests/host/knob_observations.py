@@ -274,20 +274,25 @@ OBSERVATIONS: dict[str, Verdict] = {
   "protonpotts": IncompatibleArchitecture(
     reason="ProtonPottsOptions require model_family protonpottsmpnn (run/specs.py:460), refused in campaign mode at host/campaign.py:612",
   ),
-  "caliby": IncompatibleArchitecture(
-    reason="CalibyOptions (run/options.py:149) apply only to model_family caliby; campaign mode "
-    "refuses that family via refuse_driver_family (host/family_driver.py:193), called at "
-    "host/campaign.py:110 with surface='campaign'",
+  # caliby/fampnn/thermompnn run in campaign mode only as multi-backend arms: a row without a
+  # backend arm still goes through refuse_driver_family (host/campaign.py:276), while an arm
+  # whose model_family is one of them is dispatched to its FamilyDriver (host/campaign.py:1442).
+  # The options are therefore carried per arm and are not a base-spec campaign knob.
+  "caliby": NotApplicable(
+    reason="CalibyOptions (run/options.py:149) apply only to model_family caliby; a campaign row "
+    "reaches that family only through a backend arm (host/campaign.py:1442), and refuse_driver_family "
+    "(host/family_driver.py:187) still refuses it on a row with no arm (host/campaign.py:276)",
   ),
-  "fampnn": IncompatibleArchitecture(
-    reason="FAMPNNOptions (run/options.py:183) apply only to model_family fampnn; campaign mode "
-    "refuses that family via refuse_driver_family (host/family_driver.py:193), called at "
-    "host/campaign.py:110 with surface='campaign'",
+  "fampnn": NotApplicable(
+    reason="FAMPNNOptions (run/options.py:183) apply only to model_family fampnn; a campaign row "
+    "reaches that family only through a backend arm (host/campaign.py:1442), and refuse_driver_family "
+    "(host/family_driver.py:187) still refuses it on a row with no arm (host/campaign.py:276)",
   ),
-  "thermompnn": IncompatibleArchitecture(
-    reason="ThermoMPNNOptions (run/options.py:221) is a spec field that no driver or host code "
-    "reads; model_family thermompnn is refused by validate_model_family (host/family_driver.py:69-70), "
-    "which RunSpecification.__post_init__ (run/specs.py:342) calls",
+  "thermompnn": NotApplicable(
+    reason="ThermoMPNNOptions (run/options.py:221) apply only to model_family thermompnn; a campaign "
+    "row reaches that family only through a backend arm (host/campaign.py:1442), and "
+    "refuse_driver_family (host/family_driver.py:187) still refuses it on a row with no arm "
+    "(host/campaign.py:276)",
   ),
 
   # --- PlannerDerived: planner-derived per-row variables --------------------------------

@@ -1,1 +1,21 @@
 """Host runtime utilities for inference planning, streaming, and kernel dispatch."""
+
+from __future__ import annotations
+
+from typing import Any
+
+__all__ = [
+  "CampaignSinkInspector",
+  "CampaignSinkSummary",
+  "UnifiedCampaignSink",
+  "inspect_campaign_sink",
+]
+
+
+def __getattr__(name: str) -> Any:  # noqa: ANN401
+  if name in __all__:
+    from aminx.io import campaign_sink  # noqa: PLC0415
+
+    return getattr(campaign_sink, name)
+  msg = f"module {__name__!r} has no attribute {name!r}"
+  raise AttributeError(msg)

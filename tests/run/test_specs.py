@@ -967,13 +967,14 @@ def test_model_family_is_derived_from_pinned_caliby_and_fampnn_ids(
     assert spec.model_family == expected_family
 
 
-def test_thermompnn_checkpoint_id_is_not_routed_to_a_driver(tmp_pdb_path: str) -> None:
-    """ThermoMPNN ids stay unrouted: the family is de-registered and has no driver."""
+def test_thermompnn_checkpoint_id_is_routed_to_its_driver(tmp_pdb_path: str) -> None:
+    """ThermoMPNN ids derive the thermompnn family, which is driver-backed."""
     from aminx.host.family_driver import DRIVER_MODEL_FAMILIES  # noqa: PLC0415
 
     spec = SamplingSpecification(inputs=tmp_pdb_path, checkpoint_id="thermo_mpnn_v1_default")
 
-    assert spec.model_family not in DRIVER_MODEL_FAMILIES
+    assert spec.model_family == "thermompnn"
+    assert spec.model_family in DRIVER_MODEL_FAMILIES
 
 
 @pytest.mark.parametrize(

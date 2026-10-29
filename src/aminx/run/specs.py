@@ -577,6 +577,7 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   ),
   "caliby": frozenset({"nll", "logits", "energy"}),
   "fampnn": frozenset({"nll", "logits"}),
+  "thermompnn": frozenset({"ddg"}),
 }
 
 

@@ -151,13 +151,14 @@ dynamic_count = 1
 
 [module."tests/host/test_family_driver_seam.py"]
 # Deliberately tests lazy family driver loading via load_family_driver(...)
-# without top-level imports of the five driver-backed family packages.
+# without top-level imports of the six driver-backed family packages.
 soft = [
   "aminx.families.potts_mpnn",
   "aminx.families.laser_mpnn",
   "aminx.families.protonpotts_mpnn",
   "aminx.families.caliby",
   "aminx.families.fampnn",
+  "aminx.families.thermo_mpnn",
 ]
 
 [module."tests/host/test_model_family_validation.py"]
@@ -168,6 +169,7 @@ soft = [
   "aminx.families.protonpotts_mpnn",
   "aminx.families.caliby",
   "aminx.families.fampnn",
+  "aminx.families.thermo_mpnn",
 ]
 
 [module."tests/io/test_family_weights.py"]

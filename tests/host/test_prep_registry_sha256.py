@@ -87,9 +87,9 @@ def test_driver_family_entry_with_matching_sha256_resolves(tmp_path: Path) -> No
 def test_non_driver_family_entry_without_sha256_is_still_accepted(tmp_path: Path) -> None:
   reg_path = _write_registry(
     tmp_path,
-    [{"model_family": "thermompnn", "checkpoint_id": "thermo_mpnn_v1_default", "artifact_path": "weights.eqx"}],
+    [{"model_family": "proteinmpnn", "checkpoint_id": "proteinmpnn_v_48_020", "artifact_path": "weights.eqx"}],
   )
 
-  resolved = _resolve_local_checkpoint_from_registry(_spec(reg_path, "thermompnn", "thermo_mpnn_v1_default"))
+  resolved = _resolve_local_checkpoint_from_registry(_spec(reg_path, "proteinmpnn", "proteinmpnn_v_48_020"))
 
   assert resolved == str((tmp_path / "weights.eqx").resolve())

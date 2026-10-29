@@ -163,6 +163,21 @@
   "src/aminx/host/family_driver.py::SinkArraySpec": {
     "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
   },
+  "src/aminx/host/campaign.py::BackendArmSpec": {
+    "internal": "Multi-backend campaign planning: names one backend arm (model family + checkpoint) of a server-side campaign grid. The browser runs a single ProteinMPNN model and has no campaign planner; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/campaign.py::normalize_backend_arm": {
+    "internal": "Multi-backend campaign planning: normalizes a backend arm spelling into BackendArmSpec. The browser runs a single ProteinMPNN model and has no campaign planner; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/plan.py::HoistedTopologyExecutor": {
+    "internal": "Server-side XLA compile cache keyed by TopologyKey so several checkpoints share one executable. The browser exports one ONNX graph per checkpoint and has no JIT cache; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/plan.py::TopologyKey": {
+    "internal": "Static architectural key for the server-side hoisted-compile cache. No browser P-ID reaches it; covered by tests/host/test_multi_backend_campaign.py."
+  },
+  "src/aminx/host/plan.py::extract_topology_key": {
+    "internal": "Builds the TopologyKey for the server-side hoisted-compile cache. No browser P-ID reaches it; covered by tests/host/test_multi_backend_campaign.py."
+  },
   "src/aminx/host/family_driver.py::refuse_driver_family": {
     "internal": "FamilyDriver seam: the host-side protocol by which a non-ProteinMPNN family (PottsMPNN, LASErMPNN) plugs into host/runner.py. ProteinMPNN does not route through it, so no browser P-ID reaches it; covered by tests/host/test_family_driver_seam.py."
   },

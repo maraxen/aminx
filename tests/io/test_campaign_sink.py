@@ -218,3 +218,97 @@ def test_cross_backend_consensus_equal_arm_weighting(tmp_path: Path) -> None:
   import math
   assert consensus["per_position_entropy"][0] == pytest.approx(math.log(2.0))
   assert consensus["consensus_sequence"] == "AAAA"
+
+
+def test_unified_campaign_sink_atomic_write(tmp_path: Path) -> None:
+  """Verify UnifiedCampaignSink writes real Zarr v2 datasets and atomic multi-row appends."""
+  import numpy as np
+  import zarr
+
+  sink_root = tmp_path / "atomic_sink"
+  sink = UnifiedCampaignSink(sink_root, campaign_id="camp_atomic", git_sha="deadbeef")
+
+  seq_arr_1 = np.array([[0, 1, 2, 3], [4, 5, 6, 7]], dtype=np.int32)
+  sink.write_arm_results(
+    arm_id="original",
+    model_family="mpnn",
+    checkpoint_id="proteinmpnn_v_48_020",
+    manifest_row_hash="row_hash_1",
+    records=[
+      {
+        "structure_id": "1crn",
+        "sample_idx": 0,
+        "temperature": 0.1,
+        "sequence": "ACDE",
+        "score_nll": 1.15,
+      }
+    ],
+    arrays={"sequences": seq_arr_1},
+  )
+
+  seq_arr_2 = np.array([[8, 9, 10, 11]], dtype=np.int32)
+  sink.write_arm_results(
+    arm_id="original",
+    model_family="mpnn",
+    checkpoint_id="proteinmpnn_v_48_020",
+    manifest_row_hash="row_hash_2",
+    records=[
+      {
+        "structure_id": "2ci2",
+        "sample_idx": 0,
+        "temperature": 0.1,
+        "sequence": "FGHI",
+        "score_nll": 1.05,
+      }
+    ],
+    arrays={"sequences": seq_arr_2},
+  )
+
+  zarr_path = inspect_campaign_sink(sink_root).open_arm_zarr("original")
+  root_grp = zarr.open_group(str(zarr_path), mode="r")
+  assert "row_hash_1" in root_grp
+  assert "row_hash_2" in root_grp
+  assert (zarr_path / "row_hash_1" / "sequences" / ".zarray").exists()
+  assert (zarr_path / "row_hash_2" / "sequences" / ".zarray").exists()
+  np.testing.assert_array_equal(root_grp["row_hash_1"]["sequences"][:], seq_arr_1)
+  np.testing.assert_array_equal(root_grp["row_hash_2"]["sequences"][:], seq_arr_2)
+
+
+def test_campaign_sink_inspector(tmp_path: Path) -> None:
+  """Verify CampaignSinkInspector summary(include_empty_arms), verify_integrity(check_arms), and consensus."""
+  sink_root = tmp_path / "inspector_sink"
+  sink = UnifiedCampaignSink(sink_root, campaign_id="camp_insp", git_sha="feedface")
+
+  sink.write_arm_results(
+    arm_id="populated_arm",
+    model_family="mpnn",
+    checkpoint_id="proteinmpnn_v_48_020",
+    manifest_row_hash="hash_pop",
+    records=[
+      {
+        "structure_id": "1abc",
+        "sample_idx": 0,
+        "temperature": 0.1,
+        "sequence": "ACDEF",
+        "score_nll": 1.2,
+      }
+    ],
+    arrays={"sequences": [[0, 1, 2, 3, 4]]},
+  )
+  sink.write_arm_results(
+    arm_id="empty_arm",
+    model_family="mpnn",
+    checkpoint_id="proteinmpnn_v_48_020",
+    manifest_row_hash="hash_empty",
+    records=[],
+    arrays={},
+  )
+
+  inspector = inspect_campaign_sink(sink_root)
+  summary_all = inspector.summary(include_empty_arms=True)
+  assert "empty_arm" in summary_all.arms
+  assert "populated_arm" in summary_all.arms
+
+  summary_non_empty = inspector.summary(include_empty_arms=False)
+  assert summary_non_empty.arms == ("populated_arm",)
+
