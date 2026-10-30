@@ -188,7 +188,7 @@ def _load_outcomes(path: Path) -> list[OutcomeRecord]:
         wasxfail=bool(raw.get("wasxfail", False)),
         mutant=str(mutant) if isinstance(mutant, str) and mutant else None,
         exc_type=str(exc_type) if isinstance(exc_type, str) and exc_type else None,
-      )
+      ),
     )
   return records
 
@@ -317,7 +317,12 @@ def _validate_sidecar(
   git_hash = run["git_hash"]
   if not git_hash or not is_ancestor(git_hash):
     return False
-  if row_is_stale(changed_paths(git_hash), closure_for(slug)):
+  if row_is_stale(
+    changed_paths(git_hash),
+    closure_for(slug),
+    repo=Path(__file__).resolve().parents[2],
+    git_hash=git_hash,
+  ):
     return False
   try:
     expected_digest = sidecar_digest(slug)
@@ -364,7 +369,7 @@ def _object_dict(value: object) -> dict[str, object] | None:
   """Narrow a TOML value to ``dict[str, object]`` for ty."""
   if not isinstance(value, dict):
     return None
-  return cast(dict[str, object], value)
+  return cast("dict[str, object]", value)
 
 
 def _branch_rows(manifest: Mapping[str, object]) -> list[dict[str, object]]:
@@ -374,8 +379,26 @@ def _branch_rows(manifest: Mapping[str, object]) -> list[dict[str, object]]:
   typed: list[dict[str, object]] = []
   for row in rows:
     if isinstance(row, dict):
-      typed.append(cast(dict[str, object], row))
+      typed.append(cast("dict[str, object]", row))
   return typed
+
+
+def _load_ledger(ledger_path: str | Path) -> dict[str, object] | None:
+  target = Path(ledger_path)
+  if target.is_dir():
+    shards = sorted(target.glob("*.toml"))
+    if not shards:
+      return None
+    merged_sidecar: dict[str, object] = {}
+    for shard in shards:
+      data = tomllib.loads(shard.read_text(encoding="utf-8"))
+      table = data.get("sidecar", {})
+      if isinstance(table, dict):
+        merged_sidecar.update(table)
+    return {"sidecar": merged_sidecar}
+  if target.is_file():
+    return tomllib.loads(target.read_text(encoding="utf-8"))
+  return None
 
 
 def check_branch_coverage(
@@ -383,6 +406,7 @@ def check_branch_coverage(
   outcomes_path: str | Path,
   ledger_path: str | Path,
   *,
+  family: str | None = None,
   resolve_run: Callable[[str], CoolRun | None] | None = None,
   changed_paths: Callable[[str], Sequence[str]] | None = None,
   is_ancestor: Callable[[str], bool] | None = None,
@@ -413,11 +437,17 @@ def check_branch_coverage(
     return "instrument_invalid"
   outcomes = _load_outcomes(Path(outcomes_path))
 
+  ledger = _load_ledger(ledger_path)
+  if ledger is None:
+    return "instrument_invalid"
+
   invalid = False
   clean_fail = False
   sidecar_ids: dict[str, set[str]] = defaultdict(set)
+  matched_any_row = False
 
   for row in rows:
+    row_family = row.get("family")
     vehicle = _object_dict(row.get("vehicle"))
     if vehicle is None:
       invalid = True
@@ -427,12 +457,22 @@ def check_branch_coverage(
     if not isinstance(row_id, str) or not row_id:
       invalid = True
       continue
+
+    if family is not None:
+      if row_family is not None and row_family != family:
+        continue
+      if row_family is None and kind == "sidecar":
+        slug = vehicle.get("slug")
+        if slug and slug not in cast("dict[str, object]", ledger.get("sidecar", {})):
+          continue
+
+    matched_any_row = True
     if kind == "pytest":
       nodeids = vehicle.get("nodeids")
       if not isinstance(nodeids, list) or not all(isinstance(node, str) for node in nodeids):
         invalid = True
         continue
-      typed_ids = cast(list[str], nodeids)
+      typed_ids = cast("list[str]", nodeids)
       clean = _clean_state(outcomes, typed_ids)
       if clean == "fail":
         clean_fail = True
@@ -450,26 +490,24 @@ def check_branch_coverage(
     else:
       invalid = True
 
+  if family is not None and not matched_any_row:
+    return "instrument_invalid"
+
   if sidecar_ids:
-    ledger_file = Path(ledger_path)
-    if not ledger_file.is_file():
-      invalid = True
-    else:
-      ledger = tomllib.loads(ledger_file.read_text(encoding="utf-8"))
-      for slug, row_ids in sidecar_ids.items():
-        ok = _validate_sidecar(
-          slug=slug,
-          row_ids=row_ids,
-          ledger=ledger,
-          resolve_run=resolve,
-          changed_paths=changed,
-          is_ancestor=ancestor,
-          registry_sha256=registry,
-          sidecar_digest=digest,
-          closure_for=closure,
-        )
-        if not ok:
-          invalid = True
+    for slug, row_ids in sidecar_ids.items():
+      ok = _validate_sidecar(
+        slug=slug,
+        row_ids=row_ids,
+        ledger=ledger,
+        resolve_run=resolve,
+        changed_paths=changed,
+        is_ancestor=ancestor,
+        registry_sha256=registry,
+        sidecar_digest=digest,
+        closure_for=closure,
+      )
+      if not ok:
+        invalid = True
 
   if invalid:
     return "instrument_invalid"

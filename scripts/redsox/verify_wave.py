@@ -50,8 +50,8 @@ def _repo() -> Path:
 REPO = _repo()
 sys.path.insert(0, str(REPO / "tests" / "knob_gate"))
 
-from _closure import loaded_outside_closure, row_is_stale  # noqa: E402
-from _coverage import (  # noqa: E402
+from _closure import loaded_outside_closure, row_is_stale
+from _coverage import (
   _argv_mutants,
   _weights_required,
   default_changed_paths,
@@ -63,25 +63,68 @@ from _coverage import (  # noqa: E402
 )
 
 
-def _manifest_rows() -> dict[str, set[str]]:
+def _manifest_rows(
+  family: str | None = None,
+  allowed_slugs: set[str] | None = None,
+) -> dict[str, set[str]]:
   """``slug -> {row id}`` for every sidecar-backed row."""
   path = REPO / "tests" / "knob_gate" / "branch_manifest.toml"
   rows = tomllib.loads(path.read_text(encoding="utf-8")).get("branch", [])
   by_slug: dict[str, set[str]] = defaultdict(set)
   for row in rows:
+    row_family = row.get("family")
     vehicle = row.get("vehicle", {})
     if vehicle.get("kind") == "sidecar":
-      by_slug[vehicle["slug"]].add(row["id"])
+      slug = vehicle["slug"]
+      if family is not None:
+        if row_family is not None and row_family != family:
+          continue
+        if row_family is None and allowed_slugs is not None and slug not in allowed_slugs:
+          continue
+      by_slug[slug].add(row["id"])
   return dict(by_slug)
 
 
-def _ledger_ids() -> dict[str, str]:
-  path = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
-  table = tomllib.loads(path.read_text(encoding="utf-8")).get("sidecar", {})
-  return {slug: body["bth_run_id"] for slug, body in table.items() if "bth_run_id" in body}
+def _ledger_ids(family: str | None = None) -> dict[str, str]:
+  ledgers_dir = REPO / "tests" / "knob_gate" / "ledgers"
+  if family and family != "all":
+    path = ledgers_dir / f"{family}.toml"
+    if not path.is_file():
+      legacy = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
+      if legacy.is_file():
+        path = legacy
+    if not path.is_file():
+      return {}
+    table = tomllib.loads(path.read_text(encoding="utf-8")).get("sidecar", {})
+    return {
+      slug: body["bth_run_id"]
+      for slug, body in table.items()
+      if isinstance(body, dict) and "bth_run_id" in body
+    }
+
+  if ledgers_dir.is_dir():
+    shards = sorted(ledgers_dir.glob("*.toml"))
+    if shards:
+      merged: dict[str, str] = {}
+      for shard in shards:
+        table = tomllib.loads(shard.read_text(encoding="utf-8")).get("sidecar", {})
+        for slug, body in table.items():
+          if isinstance(body, dict) and "bth_run_id" in body:
+            merged[slug] = body["bth_run_id"]
+      return merged
+
+  legacy = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
+  if legacy.is_file():
+    table = tomllib.loads(legacy.read_text(encoding="utf-8")).get("sidecar", {})
+    return {
+      slug: body["bth_run_id"]
+      for slug, body in table.items()
+      if isinstance(body, dict) and "bth_run_id" in body
+    }
+  return {}
 
 
-def _scoped_hits(paths: list[str], slug: str) -> list[str]:
+def _scoped_hits(paths: list[str], slug: str, git_hash: str | None = None) -> list[str]:
   """The offending paths, for the message only.
 
   The VERDICT comes from the gate's ``row_is_stale``; this just names which
@@ -89,7 +132,7 @@ def _scoped_hits(paths: list[str], slug: str) -> list[str]:
   path landed since that run" is unactionable without knowing which commit did it.
   """
   closure = default_closure_for(slug)
-  return [str(p) for p in paths if row_is_stale([str(p)], closure)]
+  return [str(p) for p in paths if row_is_stale([str(p)], closure, repo=REPO, git_hash=git_hash)]
 
 
 def _resolve_hint(run_id: str) -> str:
@@ -141,10 +184,10 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   if git_hash:
     ok &= _report("ancestor of HEAD", default_is_ancestor(git_hash))
     changed = default_changed_paths(git_hash)
-    hits = _scoped_hits(changed, slug)
+    hits = _scoped_hits(changed, slug, git_hash=str(git_hash))
     ok &= _report(
       "no path in the row's closure since",
-      not row_is_stale(changed, default_closure_for(slug)),
+      not row_is_stale(changed, default_closure_for(slug), repo=REPO, git_hash=str(git_hash)),
       f"{len(hits)} scoped: {sorted(set(hits))[:3]}" if hits else "",
     )
 
@@ -197,7 +240,7 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
     logger.info("    [n/a ] loaded files inside closure    no loaded_files.json (run predates the hook)")
 
   ok &= _report(
-    "controls clean == pass", controls.get("clean") == "pass", repr(controls.get("clean"))
+    "controls clean == pass", controls.get("clean") == "pass", repr(controls.get("clean")),
   )
   mutants = controls.get("mutants", {})
   ok &= _report(
@@ -207,7 +250,7 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   )
   not_failed = [k for k, v in mutants.items() if v != "failed"]
   ok &= _report(
-    "every control failed", not not_failed, f"not failed: {not_failed}" if not_failed else ""
+    "every control failed", not not_failed, f"not failed: {not_failed}" if not_failed else "",
   )
 
   # The gate requires a non-empty weights map only for slugs matching
@@ -245,14 +288,27 @@ def main(argv: list[str] | None = None) -> int:
     metavar="SLUG=RUNID",
     help="override a slug's run id; repeatable. Defaults to the ledger.",
   )
+  parser.add_argument(
+    "--family",
+    type=str,
+    default=None,
+    help="filter verification to a specific family shard (e.g. 'potts')",
+  )
+  parser.add_argument(
+    "--all",
+    action="store_true",
+    help="evaluate all families in aggregate (default)",
+  )
   args = parser.parse_args(argv)
   logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-  rows = _manifest_rows()
-  ids = _ledger_ids()
+  family = None if args.all else args.family
+  ids = _ledger_ids(family=family)
   for pair in args.run:
     slug, _, rid = pair.partition("=")
     ids[slug] = rid
+
+  rows = _manifest_rows(family=family, allowed_slugs=set(ids.keys()))
 
   if not ids:
     logger.info("no run ids: the ledger is empty and no --run was given")

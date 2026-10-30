@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from knob_gate._closure import (
   Closure,
   compute_closure,
@@ -190,7 +189,7 @@ def test_missing_vehicle_script_raises(tmp_path: Path) -> None:
     ("pyproject.toml", True),
     ("uv.lock", True),
     ("scripts/recapture/convert.py", True),  # still global
-    ("aminx-oracles/pin.toml", True),  # still global
+    ("aminx-oracles/pin.toml", False),  # no oracle_dirs declared; not global
     ("tests/port/test_new.py", False),  # re-run by the gate's step 2, not row evidence
     ("README.md", False),
     ("docs/guide.md", False),
@@ -262,6 +261,31 @@ def test_family_change_invalidates_only_its_own_rows() -> None:
   assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS]
   assert [s for s in ALL_SLUGS if row_is_stale(laser_change, _real(s))] == list(LASER_SLUGS)
   assert [s for s in ALL_SLUGS if row_is_stale(proton_change, _real(s))] == list(PROTON_SLUGS)
+
+
+def test_oracle_dirs_scoping() -> None:
+  laser_oracle = ["aminx-oracles/dumps/b3_laser_owned/sample.bin"]
+  proton_oracle = ["aminx-oracles-protonpotts/weights.pt"]
+
+  # LASEr rows declare b3_laser_owned; Potts and ProtonPotts do not
+  assert [s for s in ALL_SLUGS if row_is_stale(laser_oracle, _real(s))] == list(LASER_SLUGS)
+
+  # ProtonPotts rows declare aminx-oracles-protonpotts; Potts and LASEr do not
+  assert [s for s in ALL_SLUGS if row_is_stale(proton_oracle, _real(s))] == list(PROTON_SLUGS)
+
+
+def test_uv_lock_scoping() -> None:
+  potts_closure = _real("potts_ar_decode")
+  # Modifying unrelated package (e.g. ruff, sphinx) does not invalidate potts_ar_decode
+  assert not row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"ruff"})
+  assert not row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"sphinx"})
+
+  # Modifying imported package (e.g. jax, numpy) does invalidate potts_ar_decode
+  assert row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"jax"})
+  assert row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"numpy"})
+
+  # No changed packages passed -> conservative fallback marks stale
+  assert row_is_stale(["uv.lock"], potts_closure)
 
 
 @pytest.mark.parametrize("slug", PROTON_SLUGS)

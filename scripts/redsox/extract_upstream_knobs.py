@@ -18,9 +18,9 @@ import sys
 import tomllib
 import warnings
 from collections.abc import Mapping, Sequence
-from typing import cast
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 _MANUAL_BEGIN = "# MANUAL (not AST-derivable)"
 _MANUAL_END = "# END MANUAL"
@@ -80,12 +80,83 @@ class Extract:
   unresolved: list[str]
 
 
+@dataclass(frozen=True)
+class UpstreamFamilyConfig:
+  """Declarative extraction configuration for an upstream MPNN family."""
+
+  family: str
+  class_prefix: str
+  env_var: str
+  default_paths: tuple[str, ...]
+  commit_var: str
+  has_vendor_pin: bool
+  extract_argparse: bool = False
+  argparse_globs: tuple[str, ...] = ("*.py",)
+  dataclass_targets: tuple[tuple[str, tuple[str, ...]], ...] = ()
+  function_targets: tuple[tuple[str, tuple[str, ...]], ...] = ()
+  public_sampling_methods: bool = False
+  yaml_configs: tuple[str, ...] = ()
+  checkpoint_params: bool = False
+  extract_potts_cfg: bool = False
+
+
+FAMILY_REGISTRY: dict[str, UpstreamFamilyConfig] = {
+  "potts": UpstreamFamilyConfig(
+    family="potts",
+    class_prefix="Potts",
+    env_var="AMINX_POTTS_ROOT",
+    default_paths=("~/repos/PottsMPNN",),
+    commit_var="POTTSMPNN_COMMIT",
+    has_vendor_pin=True,
+    extract_argparse=True,
+    public_sampling_methods=True,
+    extract_potts_cfg=True,
+  ),
+  "laser": UpstreamFamilyConfig(
+    family="laser",
+    class_prefix="Laser",
+    env_var="AMINX_LASER_ROOT",
+    default_paths=("~/repos/LASErMPNN",),
+    commit_var="LASERMPNN_COMMIT",
+    has_vendor_pin=True,
+    extract_argparse=True,
+    public_sampling_methods=True,
+    checkpoint_params=True,
+  ),
+  "protonpotts": UpstreamFamilyConfig(
+    family="protonpotts",
+    class_prefix="ProtonPotts",
+    env_var="AMINX_PROTONPOTTS_ROOT",
+    default_paths=(
+      "~/repos/ProtonPottsMPNN",
+      "~/projects/aminx-oracles-protonpotts/ProtonPottsMPNN",
+    ),
+    commit_var="PROTONPOTTSMPNN_COMMIT",
+    has_vendor_pin=False,
+    dataclass_targets=(
+      (
+        "foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py",
+        ("PHDesignCriteria",),
+      ),
+    ),
+    function_targets=(
+      (
+        "foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py",
+        ("run_ph_redesign",),
+      ),
+    ),
+  ),
+}
+
+
 def _pascal(stem: str) -> str:
   parts = re.split(r"[^0-9A-Za-z]+", stem)
   return "".join(part[:1].upper() + part[1:] for part in parts if part)
 
 
 def _repo_prefix(repo: str) -> str:
+  if repo in FAMILY_REGISTRY:
+    return FAMILY_REGISTRY[repo].class_prefix
   if repo == "laser":
     return "Laser"
   if repo == "protonpotts":
@@ -127,10 +198,11 @@ def _read_commit(root: Path) -> str:
   return "MISSING"
 
 
-def _protonpotts_commit(root: Path, override: str | None) -> str:
-  """The recorded ProtonPottsMPNN commit: the override, else the checkout's git HEAD (no VENDOR_PIN.toml there)."""
+def _resolve_commit(cfg: UpstreamFamilyConfig, root: Path, override: str | None = None) -> str:
   if override:
     return override
+  if cfg.has_vendor_pin:
+    return _read_commit(root)
   head = root / ".git"
   if not head.exists():
     return "MISSING"
@@ -141,6 +213,11 @@ def _protonpotts_commit(root: Path, override: str | None) -> str:
     text=True,
   )
   return completed.stdout.strip() if completed.returncode == 0 and completed.stdout.strip() else "MISSING"
+
+
+def _protonpotts_commit(root: Path, override: str | None) -> str:
+  """The recorded ProtonPottsMPNN commit: the override, else the checkout's git HEAD (no VENDOR_PIN.toml there)."""
+  return _resolve_commit(FAMILY_REGISTRY["protonpotts"], root, override)
 
 
 def _extractor_sha256() -> str:
@@ -625,17 +702,28 @@ def _call_name(call: ast.Call) -> str:
   return ""
 
 
-def _protonpotts_dataclass_entries(root: Path, path: Path, unresolved: list[str]) -> list[Entry]:
+def _extract_dataclass_entries(
+  repo: str,
+  root: Path,
+  path: Path,
+  class_names: frozenset[str],
+  unresolved: list[str],
+) -> list[Entry]:
   """One Entry per named dataclass in ``path``; each annotated field is one knob."""
   rel = _rel(root, path)
-  tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+  try:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+  except (SyntaxError, OSError) as exc:
+    if isinstance(exc, SyntaxError):
+      unresolved.append(f"{rel}:{exc.lineno or 0}: syntax error: {exc.msg}")
+    return []
   found: list[Entry] = []
   for node in ast.walk(tree):
-    if not (isinstance(node, ast.ClassDef) and node.name in _PROTONPOTTS_DATACLASSES):
+    if not (isinstance(node, ast.ClassDef) and node.name in class_names):
       continue
-    slug = _ident(f"protonpotts_{path.stem}_{node.name}")
-    class_name = f"ProtonPotts{_pascal(path.stem)}{_pascal(node.name)}Knobs"
-    entry = Entry(repo="protonpotts", slug=slug, class_name=class_name, origin=f"{rel}:{node.lineno}:{node.name}")
+    slug = _ident(f"{repo}_{path.stem}_{node.name}")
+    class_name = f"{_repo_prefix(repo)}{_pascal(path.stem)}{_pascal(node.name)}Knobs"
+    entry = Entry(repo=repo, slug=slug, class_name=class_name, origin=f"{rel}:{node.lineno}:{node.name}")
     for stmt in node.body:
       if not (isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name)):
         continue
@@ -653,7 +741,7 @@ def _protonpotts_dataclass_entries(root: Path, path: Path, unresolved: list[str]
       frozen = _freeze(value) if resolved else None
       entry.knobs.append(
         Knob(
-          repo="protonpotts",
+          repo=repo,
           slug=slug,
           class_name=class_name,
           dest=dest,
@@ -672,17 +760,12 @@ def _protonpotts_dataclass_entries(root: Path, path: Path, unresolved: list[str]
   return found
 
 
+def _protonpotts_dataclass_entries(root: Path, path: Path, unresolved: list[str]) -> list[Entry]:
+  return _extract_dataclass_entries("protonpotts", root, path, _PROTONPOTTS_DATACLASSES, unresolved)
+
+
 def _extract_protonpotts(root: Path, unresolved: list[str]) -> list[Entry]:
-  engine = root / _PROTONPOTTS_ENGINE
-  if not engine.is_file():
-    unresolved.append(f"{_rel(root, engine)}:0: ProtonPottsMPNN engine file is absent")
-    return []
-  entries = _protonpotts_dataclass_entries(root, engine, unresolved)
-  entries.extend(_function_entries("protonpotts", root, engine, unresolved, names=_PROTONPOTTS_FUNCS))
-  found = {entry.origin.rsplit(":", 1)[-1] for entry in entries}
-  for name in sorted((_PROTONPOTTS_DATACLASSES | _PROTONPOTTS_FUNCS) - found):
-    unresolved.append(f"{_rel(root, engine)}:0: expected {name} was not found")
-  return entries
+  return _extract_family(FAMILY_REGISTRY["protonpotts"], root, unresolved)
 
 
 def _cfg_chain(node: ast.AST) -> tuple[str, str] | None:
@@ -820,7 +903,7 @@ def _flatten_yaml(
 ) -> list[tuple[tuple[str, ...], object, int]]:
   if isinstance(node, dict):
     rows: list[tuple[tuple[str, ...], object, int]] = []
-    mapping = cast(dict[str, tuple[object, int]], node)
+    mapping = cast("dict[str, tuple[object, int]]", node)
     for key in sorted(mapping):
       child, child_line = mapping[key]
       rows.extend(_flatten_yaml(child, child_line, prefix + (str(key),)))
@@ -1054,38 +1137,91 @@ def _extract_checkpoint_params(root: Path, unresolved: list[str]) -> Entry | Non
   return entry
 
 
-def extract(potts_root: Path, laser_root: Path, protonpotts_root: Path | None = None) -> Extract:
-  """Walk the pinned trees and return sorted entry points.
-
-  ``protonpotts_root`` is optional: without it the output is exactly what the two-root extractor produced.
-  """
-  unresolved: list[str] = []
+def _extract_family(
+  cfg: UpstreamFamilyConfig,
+  root: Path,
+  unresolved: list[str],
+) -> list[Entry]:
+  """Extract all knob entries declared for one upstream family configuration."""
+  if not root.is_dir():
+    unresolved.append(f"{root}:0: upstream root is absent")
+    return []
   entries: list[Entry] = []
-  for repo, root in (("potts", potts_root), ("laser", laser_root)):
-    if not root.is_dir():
-      unresolved.append(f"{root}:0: upstream root is absent")
-      continue
+
+  if cfg.extract_argparse:
     for path in _py_files(root):
-      parsed = _extract_argparse(repo, root, path, unresolved)
+      parsed = _extract_argparse(cfg.family, root, path, unresolved)
       if parsed is not None and parsed.knobs:
         entries.append(parsed)
-      if repo == "laser":
-        entries.extend(_function_entries(repo, root, path, unresolved))
-    if repo == "potts":
-      entries.append(_extract_potts_cfg(root, unresolved))
-    if repo == "laser":
-      checkpoint = _extract_checkpoint_params(root, unresolved)
-      if checkpoint is not None:
-        entries.append(checkpoint)
-  # Potts public sampling methods are entry points too (sample / tied_sample).
-  if potts_root.is_dir():
-    for path in _py_files(potts_root):
-      entries.extend(_function_entries("potts", potts_root, path, unresolved))
-  if protonpotts_root is not None:
-    if protonpotts_root.is_dir():
-      entries.extend(_extract_protonpotts(protonpotts_root, unresolved))
-    else:
-      unresolved.append(f"{protonpotts_root}:0: upstream root is absent")
+
+  if cfg.public_sampling_methods:
+    for path in _py_files(root):
+      entries.extend(_function_entries(cfg.family, root, path, unresolved, names=_SAMPLING_FUNCS))
+
+  for rel_path_str, class_names in cfg.dataclass_targets:
+    target_path = root / rel_path_str
+    if not target_path.is_file():
+      unresolved.append(f"{_rel(root, target_path)}:0: {cfg.class_prefix}MPNN engine file is absent")
+      continue
+    dc_entries = _extract_dataclass_entries(
+      cfg.family, root, target_path, frozenset(class_names), unresolved,
+    )
+    entries.extend(dc_entries)
+    found_names = {entry.origin.rsplit(":", 1)[-1] for entry in dc_entries}
+    for name in sorted(set(class_names) - found_names):
+      unresolved.append(f"{_rel(root, target_path)}:0: expected {name} was not found")
+
+  for rel_path_str, func_names in cfg.function_targets:
+    target_path = root / rel_path_str
+    if not target_path.is_file():
+      unresolved.append(f"{_rel(root, target_path)}:0: {cfg.class_prefix}MPNN engine file is absent")
+      continue
+    fn_entries = _function_entries(
+      cfg.family, root, target_path, unresolved, names=frozenset(func_names),
+    )
+    entries.extend(fn_entries)
+    found_names = {entry.origin.rsplit(":", 1)[-1] for entry in fn_entries}
+    for name in sorted(set(func_names) - found_names):
+      unresolved.append(f"{_rel(root, target_path)}:0: expected {name} was not found")
+
+  if cfg.extract_potts_cfg:
+    entries.append(_extract_potts_cfg(root, unresolved))
+
+  if cfg.checkpoint_params:
+    checkpoint = _extract_checkpoint_params(root, unresolved)
+    if checkpoint is not None:
+      entries.append(checkpoint)
+
+  return entries
+
+
+def extract(
+  potts_root: Path | None = None,
+  laser_root: Path | None = None,
+  protonpotts_root: Path | None = None,
+  *,
+  roots: Mapping[str, Path] | None = None,
+) -> Extract:
+  """Walk the pinned trees and return sorted entry points."""
+  roots_map: dict[str, Path] = {}
+  if roots is not None:
+    roots_map.update(roots)
+  else:
+    if potts_root is not None:
+      roots_map["potts"] = potts_root
+    if laser_root is not None:
+      roots_map["laser"] = laser_root
+    if protonpotts_root is not None:
+      roots_map["protonpotts"] = protonpotts_root
+
+  unresolved: list[str] = []
+  entries: list[Entry] = []
+  for family, cfg in FAMILY_REGISTRY.items():
+    if family not in roots_map:
+      continue
+    root = roots_map[family]
+    entries.extend(_extract_family(cfg, root, unresolved))
+
   deduped: dict[str, Entry] = {}
   for entry in entries:
     if not entry.knobs:
@@ -1143,13 +1279,30 @@ def _knob_line(knob: Knob) -> str:
 
 def render_surfaces(
   extracted: Extract,
-  potts_commit: str,
-  laser_commit: str,
-  sha256: str,
+  potts_commit: str | None = None,
+  laser_commit: str | None = None,
+  sha256: str = "",
   protonpotts_commit: str | None = None,
+  *,
+  commits: Mapping[str, str] | None = None,
 ) -> str:
   """Render ``reference_surfaces.py`` including the manual block."""
-  names = "PottsMPNN and LASErMPNN" if protonpotts_commit is None else "PottsMPNN, LASErMPNN and ProtonPottsMPNN"
+  commit_map: dict[str, str] = {}
+  if commits is not None:
+    commit_map.update(commits)
+  else:
+    if potts_commit is not None:
+      commit_map["potts"] = potts_commit
+    if laser_commit is not None:
+      commit_map["laser"] = laser_commit
+    if protonpotts_commit is not None:
+      commit_map["protonpotts"] = protonpotts_commit
+
+  if "protonpotts" in commit_map:
+    names = "PottsMPNN, LASErMPNN and ProtonPottsMPNN"
+  else:
+    names = "PottsMPNN and LASErMPNN"
+
   lines: list[str] = [
     f'"""Generated reference surfaces for upstream {names} knobs.',
     "",
@@ -1161,12 +1314,22 @@ def render_surfaces(
     "",
     "from dataclasses import dataclass",
     "",
-    f'POTTSMPNN_COMMIT = "{potts_commit}"',
-    f'LASERMPNN_COMMIT = "{laser_commit}"',
-    *([] if protonpotts_commit is None else [f'PROTONPOTTSMPNN_COMMIT = "{protonpotts_commit}"']),
+    f'POTTSMPNN_COMMIT = "{commit_map.get("potts", "MISSING")}"',
+    f'LASERMPNN_COMMIT = "{commit_map.get("laser", "MISSING")}"',
+    *([] if "protonpotts" not in commit_map else [f'PROTONPOTTSMPNN_COMMIT = "{commit_map["protonpotts"]}"']),
+  ]
+
+  for family, commit in commit_map.items():
+    if family in {"potts", "laser", "protonpotts"}:
+      continue
+    cfg = FAMILY_REGISTRY.get(family)
+    var_name = cfg.commit_var if cfg else f"{family.upper()}MPNN_COMMIT"
+    lines.append(f'{var_name} = "{commit}"')
+
+  lines.extend([
     f'EXTRACTOR_SHA256 = "{sha256}"',
     "",
-  ]
+  ])
   for entry in extracted.entries:
     lines.append("@dataclass(frozen=True)")
     lines.append(f"class {entry.class_name}:")
@@ -1509,8 +1672,8 @@ def _counts(extracted: Extract) -> list[str]:
 
 def main(argv: Sequence[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
-  parser.add_argument("--potts-root", type=Path, required=True)
-  parser.add_argument("--laser-root", type=Path, required=True)
+  parser.add_argument("--potts-root", type=Path, default=None, help="Path to PottsMPNN checkout")
+  parser.add_argument("--laser-root", type=Path, default=None, help="Path to LASErMPNN checkout")
   parser.add_argument(
     "--protonpotts-root",
     type=Path,
@@ -1521,6 +1684,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     "--protonpotts-commit",
     default=None,
     help="Commit to record for --protonpotts-root (it ships no VENDOR_PIN.toml); default is its git HEAD.",
+  )
+  parser.add_argument(
+    "--root",
+    action="append",
+    default=[],
+    help="Upstream root in FAMILY=PATH format. May be repeated.",
+  )
+  parser.add_argument(
+    "--commit",
+    action="append",
+    default=[],
+    help="Commit override in FAMILY=COMMIT format. May be repeated.",
   )
   parser.add_argument("--out", type=Path, required=True)
   parser.add_argument(
@@ -1536,17 +1711,53 @@ def main(argv: Sequence[str] | None = None) -> int:
   )
   args = parser.parse_args(argv)
   warnings.filterwarnings("ignore", category=SyntaxWarning)
-  potts_root = args.potts_root.expanduser().resolve()
-  laser_root = args.laser_root.expanduser().resolve()
-  protonpotts_root = args.protonpotts_root.expanduser().resolve() if args.protonpotts_root else None
-  extracted = extract(potts_root, laser_root, protonpotts_root)
+
+  roots: dict[str, Path] = {}
+  for item in args.root:
+    family, sep, path_str = item.partition("=")
+    if not sep:
+      print(f"REFUSING: --root must be FAMILY=PATH format, got {item!r}", file=sys.stderr)
+      return 2
+    roots[family.strip().lower()] = Path(path_str.strip()).expanduser().resolve()
+
+  if args.potts_root:
+    roots["potts"] = args.potts_root.expanduser().resolve()
+  if args.laser_root:
+    roots["laser"] = args.laser_root.expanduser().resolve()
+  if args.protonpotts_root:
+    roots["protonpotts"] = args.protonpotts_root.expanduser().resolve()
+
+  commit_overrides: dict[str, str] = {}
+  for item in args.commit:
+    family, sep, commit_str = item.partition("=")
+    if not sep:
+      print(f"REFUSING: --commit must be FAMILY=COMMIT format, got {item!r}", file=sys.stderr)
+      return 2
+    commit_overrides[family.strip().lower()] = commit_str.strip()
+
+  if args.protonpotts_commit:
+    commit_overrides["protonpotts"] = args.protonpotts_commit
+
+  if "potts" not in roots or "laser" not in roots:
+    print("REFUSING: both potts and laser roots must be specified", file=sys.stderr)
+    return 2
+
+  extracted = extract(roots=roots)
   sha = _extractor_sha256()
+
+  commits: dict[str, str] = {}
+  for family, root in roots.items():
+    cfg = FAMILY_REGISTRY.get(family)
+    override = commit_overrides.get(family)
+    if cfg is not None:
+      commits[family] = _resolve_commit(cfg, root, override)
+    else:
+      commits[family] = override or "MISSING"
+
   text = render_surfaces(
     extracted,
-    _read_commit(potts_root),
-    _read_commit(laser_root),
-    sha,
-    None if protonpotts_root is None else _protonpotts_commit(protonpotts_root, args.protonpotts_commit),
+    sha256=sha,
+    commits=commits,
   )
   if args.check:
     return _check(args.out, text)

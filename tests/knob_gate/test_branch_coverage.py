@@ -33,9 +33,15 @@ _NEEDS_GATE = pytest.mark.skipif(
 @_NEEDS_GATE
 def test_branch_coverage() -> None:
   outcomes = os.environ["AMINX_REDSOX_OUTCOMES_READ"]
+  family = os.environ.get("AMINX_REDSOX_FAMILY")
+  if family:
+    ledger_path = _HERE / "ledgers" / f"{family}.toml"
+  else:
+    ledger_path = _HERE / "ledgers"
   verdict = check_branch_coverage(
     _HERE / "branch_manifest.toml",
     outcomes,
-    _HERE / "sidecar_ledger.toml",
+    ledger_path,
+    family=family,
   )
   assert verdict == "pass", verdict
