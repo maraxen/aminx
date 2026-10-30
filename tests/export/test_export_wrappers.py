@@ -762,7 +762,7 @@ class TestP07BundleArMaskPinning:
     decoding_order = jnp.array([5, 4, 3, 2, 1, 0], dtype=jnp.int32)
 
     bundle, _ = p07_bundle(*self._dummy_inputs(length, decoding_order, tie_group_map))
-    ar_mask = bundle.ar_mask
+    ar_mask = bundle.conditioning.ar_mask[0]
 
     assert ar_mask.shape == (length, length)
     # Self-exclusion: diagonal is strictly 0.0
@@ -787,7 +787,7 @@ class TestP07BundleArMaskPinning:
     decoding_order = jnp.array([2, 4, 0, 5, 1, 3], dtype=jnp.int32)
 
     bundle, _ = p07_bundle(*self._dummy_inputs(length, decoding_order, tie_group_map))
-    ar_mask = np.asarray(bundle.ar_mask)
+    ar_mask = np.asarray(bundle.conditioning.ar_mask[0])
 
     assert ar_mask.shape == (length, length)
     # Self-exclusion on diagonal
