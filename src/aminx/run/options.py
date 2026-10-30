@@ -242,5 +242,5 @@ class ThermoMPNNOptions:
   mode: Literal["single", "double"] = "single"
   distance_threshold: float = 5.0
   batch_size: int = 10000
-  dtype: Literal["float32", "float16"] = "float16"
+  dtype: Literal["float32", "float16"] = "float32"
   ensemble: bool = True

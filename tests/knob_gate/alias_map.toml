@@ -3592,3 +3592,46 @@ targets = ["variants_json"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_variants_json"]
 note = "aminx-only: the JSON file of variants for score:energy / score:ddg. Upstream scores through compute_g_bind on an atom array and has no variants-file knob."
+
+[[row]]
+ref = "thermo_model__checkpoint_id"
+targets = ["checkpoint_id"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_checkpoint_id"]
+note = "ThermoMPNN model checkpoint selection (v1 default vs v2 single-mutant vs v2 double-mutant)."
+
+[[row]]
+ref = "thermo_model__mode"
+targets = ["mode"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_mode"]
+note = "Mode selector: single-mutant ddg table vs double-mutant epistatic Siamese score."
+
+[[row]]
+ref = "thermo_model__distance_threshold"
+targets = ["distance_threshold"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_distance_threshold"]
+note = "C-alpha distance threshold in Angstroms for selecting candidate residue pairs in double mutant mode."
+
+[[row]]
+ref = "thermo_model__ensemble"
+targets = ["ensemble"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_ensemble"]
+note = "Whether to average predictions across the 3 ensemble model members or evaluate a single checkpoint."
+
+[[row]]
+ref = "thermo_model__dtype"
+targets = ["dtype"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_dtype"]
+note = "Numerical precision: float32 (default) vs float16."
+
+[[row]]
+ref = "__aminx_only__thermo_batch_size"
+upstream = false
+targets = ["batch_size"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_batch_size"]
+note = "aminx-only: chunk size for batching residue pairs in double-mutant evaluation."

@@ -620,4 +620,15 @@ class pottsmpnn_input_list:
   pottsmpnn_input_list__pdb: str | None = None  # type=str; help=PDB stem (text before the first |); sample_seqs.py:81-94
   pottsmpnn_input_list__designed_chains: str | None = None  # type=str; help=designed chains (colon-separated); sample_seqs.py:81-94
   pottsmpnn_input_list__fixed_chains: str | None = None  # type=str; help=fixed chains (colon-separated); sample_seqs.py:81-94
+
+
+@dataclass(frozen=True)
+class ThermoModelKnobs:
+  """Upstream ThermoMPNN model options."""
+
+  thermo_model__checkpoint_id: str = "thermo_mpnn_v1_default"
+  thermo_model__mode: str = "single"
+  thermo_model__distance_threshold: float = 5.0
+  thermo_model__ensemble: bool = True
+  thermo_model__dtype: str = "float32"
 # END MANUAL

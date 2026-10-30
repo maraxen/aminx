@@ -1,0 +1,4 @@
+[sidecar]
+
+[sidecar.thermo_mpnn_parity]
+bth_run_id = "pending_remote_run"

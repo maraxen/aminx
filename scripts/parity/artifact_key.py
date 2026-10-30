@@ -27,7 +27,13 @@ from pathlib import Path
 # Vendored upstream repository directory names, as cloned under ~/repos. The key
 # is anchored at whichever of these appears in the path; anything else is keyed
 # by basename, which is the honest fallback for a file we do not place.
-_UPSTREAM_ROOTS: tuple[str, ...] = ("LASErMPNN", "PottsMPNN", "ProtonPottsMPNN")
+_UPSTREAM_ROOTS: tuple[str, ...] = (
+  "LASErMPNN",
+  "PottsMPNN",
+  "ProtonPottsMPNN",
+  "ThermoMPNN",
+  "ThermoMPNN-D",
+)
 
 
 def stable_artifact_key(path: str | Path) -> str:
