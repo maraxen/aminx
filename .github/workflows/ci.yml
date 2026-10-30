@@ -31,7 +31,16 @@ jobs:
   unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # The full suite on one 4-vCPU runner outlives the runner (killed at ~96% after ~41 min), so pushes
+    # to main split it into 4 shards (scripts/ci/shard_tests.py). Pull requests run the selector's subset
+    # as a single job.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3]') }}
     env:
+      SHARD_TOTAL: 4
+      SHARD_INDEX: ${{ matrix.shard }}
       PYTHONDONTWRITEBYTECODE: 1
       # requires-python is ">=3.13" with no upper bound, so uv otherwise resolves CPython 3.15, which torch has no wheel for.
       UV_PYTHON: "3.13"
@@ -70,8 +79,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/jax_compilation_cache
-          key: xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-${{ github.sha }}
+          key: xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-shard${{ matrix.shard }}-${{ github.sha }}
           restore-keys: |
+            xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-shard${{ matrix.shard }}-
             xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-
             xla-${{ runner.os }}-py3.13-
       - name: Install dependencies and run tests
@@ -116,17 +126,22 @@ jobs:
             fi
             uv run pytest -n "$WORKERS" --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
           else
-            echo "Push to main: running full suite excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
+            echo "Push to main: running shard $SHARD_INDEX of $SHARD_TOTAL of the full suite excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
             MARKER="not parity_heavy and not parity_audit and not redsox_gate"
             COV_ARGS="--cov=src --cov-report=xml --cov-report=term"
+            uv run python scripts/ci/shard_tests.py \
+              --index "$SHARD_INDEX" --total "$SHARD_TOTAL" \
+              --write-pytest-args .pytest-targets.txt
+            mapfile -t PYTEST_TARGETS < .pytest-targets.txt
             # Cap at -n 2 --dist loadscope on full-suite + coverage + slow runs to stay under the
             # 16 GB runner memory ceiling (aminx debt #2585, #2582).
-            uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER"
+            uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
           fi
       - name: Upload coverage to Codecov
         if: github.ref == 'refs/heads/main'
         uses: codecov/codecov-action@v4
         with:
           files: ./coverage.xml
+          flags: shard${{ matrix.shard }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
