@@ -930,6 +930,12 @@ def score(  # noqa: PLR0915
         logits : jax.Array, optional
             Per-position logits if return_logits=True. Shape: (num_structures, num_sequences, L, 21),
             with the same trailing-D axis position as scores: (S, C, D, L, 21) for D >= 2.
+        loss_xy : jax.Array, optional
+            Auxiliary ligand-proximal negative log-likelihood score if return_loss_xy=True.
+        ligand_confidence : jax.Array, optional
+            Auxiliary ligand-proximal confidence (exp(-loss_xy)) if return_loss_xy=True.
+        mask_xy : jax.Array, optional
+            Per-residue boolean mask indicating residues within cutoff of ligand atoms.
         decoding_orders : None, optional
             Present (and always ``None``) if return_decoding_orders=True. Every score()
             path is full-context teacher forcing (``1 - I`` mask, no waves), so there is no
@@ -1097,6 +1103,7 @@ def score(  # noqa: PLR0915
   all_scores, all_logits = [], None
   if spec.return_logits:
     all_logits = []
+  all_loss_xy, all_mask_xy = [], []
 
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -1373,6 +1380,37 @@ def score(  # noqa: PLR0915
     if rung is not None:
       batch_logits = repad_residue_axis(batch_logits, struct_len, -2)
 
+    if getattr(spec, "return_loss_xy", False):
+      from aminx.scoring.ligand_cutoff import (  # noqa: PLC0415
+        compute_ligand_cutoff_mask,
+        compute_loss_xy,
+      )
+      cutoff = float(getattr(spec, "ligand_cutoff_for_score", 8.0))
+      y_c, _, y_m = batch_ligand
+
+      def _calc_struct_loss_xy(
+        coords: jax.Array,
+        res_mask: jax.Array,
+        logits_struct: jax.Array,
+        yc: jax.Array | None,
+        ym: jax.Array | None,
+        *,
+        _cutoff: float = cutoff,
+        _seqs: jax.Array = stacked_sequences,
+      ) -> tuple[jax.Array, jax.Array]:
+        m_xy, _ = compute_ligand_cutoff_mask(coords, yc, ym, res_mask, cutoff=_cutoff)
+
+        def _per_cand(cand_logits: jax.Array, cand_seq: jax.Array) -> jax.Array:
+          return compute_loss_xy(cand_logits, cand_seq, m_xy)
+
+        return jax.vmap(_per_cand)(logits_struct, _seqs), m_xy
+
+      b_loss_xy, b_mask_xy = jax.vmap(_calc_struct_loss_xy)(
+        batched_ensemble.coordinates, batched_ensemble.mask, batch_logits, y_c, y_m,
+      )
+      all_loss_xy.append(b_loss_xy)
+      all_mask_xy.append(b_mask_xy)
+
     all_scores.append(batch_scores)
     if spec.run_spec.sampling.return_logits and all_logits is not None:
       all_logits.append(batch_logits)
@@ -1396,6 +1434,11 @@ def score(  # noqa: PLR0915
       "noise_levels": noise_levels,
     },
   }
+
+  if getattr(spec, "return_loss_xy", False) and all_loss_xy:
+    results["loss_xy"] = jnp.concatenate(all_loss_xy, axis=0)
+    results["mask_xy"] = jnp.concatenate(all_mask_xy, axis=0)
+    results["ligand_confidence"] = jnp.exp(-results["loss_xy"])
 
   if spec.run_spec.sampling.return_logits and all_logits is not None:
     # Shape: (num_structures, num_sequences, L, 21), or (S, C, D, L, 21) with D >= 2 levels.

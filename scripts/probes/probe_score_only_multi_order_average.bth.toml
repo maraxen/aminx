@@ -1,0 +1,32 @@
+[experiment]
+hypothesis = "Multi-order causal permutation score averaging evaluates M random permutations under causal DAG masks, averages outputs in probability space yielding properly normalized categorical distributions, and satisfies Jensen's inequality (ensemble NLL <= mean sample NLL)."
+stage_name = "validation"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "status == 'PASS' AND shapes_valid AND probs_normalized AND jensen_satisfied"
+decision = "Promote score_only_multi_order_average implementation."
+reasoning = "All multi-order causal permutation scoring shapes, probability normalization, and Jensen's inequality invariants hold."
+is_residual = false
+
+[outcomes.fail]
+condition = "status != 'PASS' OR NOT shapes_valid OR NOT probs_normalized OR NOT jensen_satisfied"
+decision = "Reject score_only_multi_order_average implementation."
+reasoning = "Multi-order scoring failed one or more mathematical invariants."
+is_residual = true
+
+[result_schema]
+probe_name = "str"
+clause = "str"
+status = "str"
+praxia_debt_id = "int"
+praxia_debt_slug = "str"
+num_orders = "int"
+ensemble_nll = "float"
+mean_sample_nll = "float"
+shapes_valid = "bool"
+probs_normalized = "bool"
+jensen_satisfied = "bool"
