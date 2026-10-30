@@ -76,22 +76,25 @@ def test_resolve_tie_groups_explicit():
 @pytest.mark.parametrize(
     "decoding_order, expected_mask",
     [
-        # Diagonals are 0 as of 2026-08-27: no position reads its own slot. Each expected
-        # matrix below is its previous value with the diagonal zeroed and nothing else
-        # touched. Note the argument is a RANK array -- `decoding_order[i]` is the step at
-        # which position i decodes -- so for [2, 0, 1] position 0 decodes last and sees
-        # both others.
+        # Diagonals are 0: no position reads its own slot.
+        # Defect 9 retired the rank-vs-order split hazard: `decoding_order` is consistently
+        # an ORDER array (`decoding_order[t]` is the position decoded at step t).
+        # For [0, 1, 2]: pos 0 decodes first, pos 1 second (sees pos 0), pos 2 last (sees both).
         (
             jnp.array([0, 1, 2]),
-            jnp.array([[0, 0, 0], [1, 0, 0], [1, 1, 0]]),
+            jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]], dtype=jnp.float32),
         ),
+        # For [2, 0, 1]: step 0 decodes pos 2, step 1 decodes pos 0 (sees pos 2),
+        # step 2 decodes pos 1 (sees pos 2 and pos 0).
         (
             jnp.array([2, 0, 1]),
-            jnp.array([[0, 1, 1], [0, 0, 0], [0, 1, 0]]),
+            jnp.array([[0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [0.0, 0.0, 0.0]], dtype=jnp.float32),
         ),
+        # For [1, 2, 0]: step 0 decodes pos 1, step 1 decodes pos 2 (sees pos 1),
+        # step 2 decodes pos 0 (sees pos 1 and pos 2).
         (
             jnp.array([1, 2, 0]),
-            jnp.array([[0, 0, 1], [1, 0, 1], [0, 0, 0]]),
+            jnp.array([[0.0, 1.0, 1.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=jnp.float32),
         ),
     ],
 )
@@ -109,7 +112,7 @@ def test_generate_ar_mask(decoding_order, expected_mask):
     mask = generate_ar_mask(decoding_order)
     chex.assert_trees_all_equal(mask, expected_mask)
     chex.assert_shape(mask, (len(decoding_order), len(decoding_order)))
-    chex.assert_type(mask, int)
+    chex.assert_type(mask, float)
 
 
 def test_generate_wave_ar_mask_matches_generate_ar_mask_for_g1_schedules():
@@ -250,14 +253,13 @@ def _walk_eqns(jaxpr):
 
 
 def test_generate_ar_mask_tied_branch_sorts_tie_free() -> None:
-  """The tied branch's group sort must carry an index tiebreak, not rely on stability.
-
-  Guards the exported wave schedule: IREE does not honour JAX's stable-sort tie order,
-  and every absent group shares the sentinel key, so ties are the common case.
+  """With generate_ar_mask delegating to ar_mask_from_decoding_order, the mask is
+  computed via scatter-min without sorting (completely eliminating sort stability issues).
+  Any sort operation introduced must be tie-free (is_stable=False, num_keys=2).
   """
   length = 8
   decoding_order = jnp.arange(length, dtype=jnp.int32)
-  # Two real multi-member groups plus singletons, so the tied branch is actually taken.
+  # Two real multi-member groups plus singletons.
   tie_group_map = jnp.array([0, 0, 2, 3, 3, 5, 6, 7], dtype=jnp.int32)
 
   jaxpr = jax.make_jaxpr(
@@ -265,7 +267,6 @@ def test_generate_ar_mask_tied_branch_sorts_tie_free() -> None:
   )(decoding_order, tie_group_map)
 
   sorts = [eqn for eqn in _walk_eqns(jaxpr.jaxpr) if str(eqn.primitive) == "sort"]
-  assert sorts, "generate_ar_mask's tied branch traced no sort at all; test is vacuous"
   for eqn in sorts:
     assert eqn.params.get("is_stable") is False, (
       "generate_ar_mask lowered a STABLE sort. The tied branch must sort on "
@@ -275,3 +276,4 @@ def test_generate_ar_mask_tied_branch_sorts_tie_free() -> None:
     assert eqn.params.get("num_keys") == 2, (
       f"expected a two-key (key, index) sort, got num_keys={eqn.params.get('num_keys')}"
     )
+

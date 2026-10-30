@@ -147,109 +147,36 @@ def generate_ar_mask(
 ) -> AutoRegressiveMask:
   """Get the self-excluding autoregressive mask for the given decoding order.
 
-  **Argument convention -- read before passing a deliberate order.** The untied branch
-  compares ``decoding_order`` VALUES as a RANK array (``decoding_order[i]`` = the decode
-  step of position ``i``), whereas everything in ``utils.decoding_order`` returns an ORDER
-  array (``order[t]`` = the position decoded at step ``t``); the tied branch indexes it as an
-  ORDER array. For a uniformly random permutation the two readings are identically
-  distributed, so the mix-up is invisible until someone supplies a structured order (blocks,
-  a rotation, a counterfactual schedule), which silently yields the mask of a different
-  order. ColabDesign applies ``order.argsort()`` first for this reason. To turn an ORDER
-  array into a mask use :func:`ar_mask_from_decoding_order` (#166).
+  Delegates to :func:`ar_mask_from_decoding_order` to avoid the rank-vs-order
+  split hazard (#1982 / Defect 9). Both untied and tied branches consume an ORDER array
+  (``order[t]`` = position decoded at step ``t``).
 
-  **The diagonal is 0: no position ever reads its own slot.** This matches both
-  independent reference implementations, verified against primary source:
+  Parameters
+  ----------
+  decoding_order : DecodingOrder
+      (L,) ORDER array: position decoded at each step.
+  chain_idx : jnp.ndarray | None
+      Optional (L,) chain indices. When provided, positions in different chains
+      are masked out (cross-chain visibility is 0).
+  tie_group_map : jnp.ndarray | None
+      Optional (L,) tie group id per position. Tied positions are mutually
+      visible and decode together.
+  num_groups : int | None
+      Legacy parameter retained for signature compatibility. Unused.
 
-  * stock LigandMPNN (``dauparas/LigandMPNN``, ``model_utils.py:227-231`` and four further
-    call sites) builds ``1 - torch.triu(torch.ones(L, L))``. ``torch.triu`` defaults to
-    ``diagonal=0``, so this is strictly lower-triangular, and conjugating it by a
-    permutation matrix preserves the zero diagonal for any decoding order.
-  * ColabDesign (``colabdesign/mpnn/utils.py:19-26``) builds ``jnp.tri(L, k=-1)`` and
-    permutes it by ``order.argsort()``.
-
-  Until 2026-08-27 the untied branch here was ``(row_indices >= col_indices)`` --
-  non-strict -- so the diagonal was 1 and every position read its own slot. The rationale
-  given was that a not-yet-drawn position's slot holds an inert placeholder. That premise
-  did not hold: ``inference/decode/autoregressive.py`` initialized undrawn slots to token
-  index 0, and ``MPNN_ALPHABET`` is ``"ACDEFGHIKLMNPQRSTVWYX"``, so index 0 is ALANINE
-  (the unknown token X is index 20). ``model/decoder.py:124`` embeds it as
-  ``one_hot_sequence @ w_s_weight`` -- a real, nonzero row of a pretrained matrix. Since
-  the decoder gathers this mask into ``attention_mask`` to gate the *sequence* edge
-  features (``model/decoder.py:144-146``) and a residue is always among its own KNN
-  neighbours (self-distance 0 is the global minimum), each position was being fed the
-  assertion "I am alanine" about itself at the exact step it decided its own identity.
-  Measured downstream: mean JSD 0.0296 over designable positions, with an
-  alanine-specific probability shift of -0.0049 against a mean of 0.0016 across the other
-  twenty tokens.
-
-  The undrawn sentinel is now ``-1``, whose one-hot is the zero vector -- matching the
-  reference's ``h_S = torch.zeros_like(h_V)``. Self-exclusion alone already makes undrawn
-  slots unreachable (a causal mask hides them from every other position), so the sentinel
-  is defence in depth, and it makes "not yet drawn" distinguishable from "alanine" in
-  stored sequences.
-
-  Tie semantics are deliberately UNCHANGED: same-tie-group positions remain mutually
-  visible. Whether that matches the reference's tied decoding is a separate, open
-  question -- it is not the diagonal, and it is not settled here.
-
-  For full context minus self (non-causal; correct for scoring a known sequence, wrong for
-  an autoregressive decode) use :func:`full_context_ar_mask`.
+  Returns
+  -------
+  AutoRegressiveMask
+      (L, L) mask with diagonal 0, where mask[i, j] == 1 iff position i sees
+      position j's decoded sequence.
   """
-  N = decoding_order.shape[0]
-
-  if tie_group_map is None:
-    row_indices = decoding_order[:, None]
-    col_indices = decoding_order[None, :]
-    ar_mask = (row_indices >= col_indices).astype(jnp.int32)
-  else:
-    # Use N as the static size for range-based ops
-    # group_mask: (N, N)
-    group_mask = tie_group_map[decoding_order][None, :] == jnp.arange(N)[:, None]
-
-    # Identify which groups are actually present
-    group_present = jnp.any(group_mask, axis=1)
-
-    # group_first_occurrence: (N,)
-    group_first_occurrence = jnp.argmax(group_mask, axis=1)
-
-    # Sort groups by their first occurrence in the decoding order
-    # We only care about present groups
-    #
-    # IREE does not honour JAX's stable-sort tie order (xtrax export safety rule
-    # `sort-stability`), and `jnp.argsort` defaults to `stable=True`. Every absent
-    # group shares the SAME sentinel key (N + 1) here, so ties are the common
-    # case, not an edge case. Fold the group index into the sort key instead of
-    # relying on the default's tie order -- same fix as `model.features.top_k`
-    # (PR #156) and `utils.decoding_order.random_decoding_order`: sort
-    # lexicographically on (key, index) with `num_keys=2`, a strict total order
-    # (no two indices are equal), so every correct sort returns this permutation
-    # whether or not it is stable.
-    group_sort_key = jnp.where(group_present, group_first_occurrence, N + 1)
-    group_index = jax.lax.broadcasted_iota(jnp.int32, group_sort_key.shape, 0)
-    _, group_decoding_order = jax.lax.sort(
-      (group_sort_key, group_index),
-      dimension=0,
-      is_stable=False,
-      num_keys=2,
-    )
-
-    # If num_groups is provided, we can use it to mask the decoding steps
-    # but for now, we just use the full order found.
-    # The decoding_step_map will only be indexed by tie_group_map.
-
-    decoding_step_map = get_decoding_step_map(tie_group_map, group_decoding_order)
-    ar_mask = make_autoregressive_mask(decoding_step_map).astype(jnp.int32)
-
+  del num_groups
+  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
   if chain_idx is not None:
-    same_chain = (chain_idx[:, None] == chain_idx[None, :]).astype(jnp.int32)
+    same_chain = (chain_idx[:, None] == chain_idx[None, :]).astype(ar_mask.dtype)
     ar_mask = ar_mask * same_chain
+  return ar_mask
 
-  # Self-exclusion, applied once for BOTH branches. For the untied branch this is exactly
-  # equivalent to making the comparison strict -- `decoding_order` is a permutation, so
-  # `decoding_order[i] == decoding_order[j]` only when i == j -- and it leaves the tied
-  # branch's same-group mutual visibility untouched, which is the deliberate scope
-  # boundary described in the docstring.
-  return ar_mask * (1 - jnp.eye(N, dtype=ar_mask.dtype))
 
 
 def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -> jnp.ndarray:
