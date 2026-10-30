@@ -51,6 +51,10 @@ DEFAULT_CHECKPOINT_ID = "proteinmpnn_v_48_020"
 # package finds nothing under uvx. tests/agent/test_mcp_surface.py keeps this in sync with the
 # source tree.
 KNOWN_CHECKPOINT_IDS: tuple[str, ...] = (
+  "antibmpnn_v_48_000",
+  "antibmpnn_v_48_010",
+  "antibmpnn_v_48_020",
+  "antibmpnn_v_48_030",
   "global_label_membrane_mpnn_v_48_020",
   "ligandmpnn_sc_v_32_002_16",
   "ligandmpnn_v_32_005_25",

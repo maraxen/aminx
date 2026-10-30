@@ -389,7 +389,7 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         )
         self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", ci_yml)
         self.assertIn("timeout-minutes: 45", ci_yml)
-        self.assertIn("JAX_COMPILATION_CACHE_DIR:", ci_yml)
+        self.assertIn('echo "JAX_COMPILATION_CACHE_DIR=$RUNNER_TEMP/jax_compilation_cache" >> "$GITHUB_ENV"', ci_yml)
         self.assertIn("key: xla-${{ runner.os }}-py3.13-${{ hashFiles('uv.lock') }}-${{ github.sha }}", ci_yml)
         self.assertIn("scripts/ci/select_affected_tests.py", ci_yml)
         self.assertIn("--write-pytest-args .pytest-targets.txt", ci_yml)
