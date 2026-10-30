@@ -35,13 +35,16 @@ jobs:
       PYTHONDONTWRITEBYTECODE: 1
       # requires-python is ">=3.13" with no upper bound, so uv otherwise resolves CPython 3.15, which torch has no wheel for.
       UV_PYTHON: "3.13"
-      JAX_COMPILATION_CACHE_DIR: ${{ runner.temp }}/jax_compilation_cache
       JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS: "0.5"
     steps:
       - uses: actions/checkout@v4
         with:
           lfs: true
           fetch-depth: 0
+      # The `runner` context is not available in job-level `env`, so a `${{ runner.temp }}` there
+      # makes the whole workflow invalid and no job runs. Set it from a step instead.
+      - name: Set JAX compilation cache dir
+        run: echo "JAX_COMPILATION_CACHE_DIR=$RUNNER_TEMP/jax_compilation_cache" >> "$GITHUB_ENV"
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
