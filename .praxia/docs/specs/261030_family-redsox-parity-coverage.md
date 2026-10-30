@@ -184,9 +184,24 @@ re-wave in section 5.
 4. FAMPNN, Caliby, AntiBMPNN oracles and vehicles.
 5. One wave, one gate run, one ledger rewrite covering old and new rows.
 
-## 6. Decisions needed
+## 6. Decisions (recorded 261030)
 
-- Do new families enter the existing redsox gate as additional rows, or get a second gate so the
-  Potts/LASEr/ProtonPotts ledger is not invalidated by their churn?
-- Is the stock-path FAIL grade re-graded as a whole (re-run `parity_validate_mpnn`), or closed
-  defect by defect?
+- **Ledger layout: one gate engine, one ledger per family.** Staleness is already per row via
+  import closure (`scripts/redsox/stale_rows.py`) **[verified]**, so splitting the ledger does not
+  change which rows go stale. It decouples gate verdicts (one stale family no longer reds the
+  whole gate) and lets a family be re-waved and re-ledgered alone. Shared stock-model edits still
+  correctly invalidate every family that imports them. Layout:
+  `tests/knob_gate/ledgers/<family>.toml` plus a per-family manifest section, and `run_gate.py
+  --family <f>` with an aggregate mode that reads all shards. The existing ledger becomes the
+  `potts` shard (Potts/LASEr/ProtonPotts) unchanged. **[unverified]** that `run_gate.py` and
+  `verify_wave.py` assume a single ledger file only at their load sites; probe first.
+- **Narrow the global-staleness set** (`uv.lock`, `pyproject.toml`, `scripts/recapture/`,
+  `aminx-oracles/`): scope `uv.lock` to the resolved versions of packages a row's closure imports,
+  and `aminx-oracles/` to the oracle dirs the row reads. This is the lever that cuts invalidation;
+  the per-family split is not.
+- **Stock path: close defect by defect, re-grade once.** Each of 7, 8, 9, the shipped-weight check
+  and the four MISSING clauses gets its own pre-registered probe and its own PR; one
+  `parity_validate_mpnn` re-run follows at the end. It still reads FAIL until an O1
+  `layer_a_sampling_validate` exists.
+- **Autonomy:** draft PRs and pre-registered titanix runs (GPUs 2/3) without asking; never merge;
+  ask before a full redsox wave or an HF re-upload.
