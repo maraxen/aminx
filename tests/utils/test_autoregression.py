@@ -9,6 +9,7 @@ import pytest
 from aminx.run.specs import RunSpecification
 from aminx.utils.autoregression import (
   ar_mask_from_decoding_order,
+  full_context_ar_mask,
   generate_ar_mask,
   generate_wave_ar_mask,
   resolve_tie_groups,
