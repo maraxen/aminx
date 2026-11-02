@@ -33,6 +33,24 @@
       "sha256": "a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b",
       "family": "protonpottsmpnn",
       "upstream": "ProtonPottsMPNN"
+    },
+    {
+      "artifact_path": "ThermoMPNN/models/thermoMPNN_default.pt",
+      "sha256": "af449118ccfb4e34971d802321907ed82a8a035ae80f055bf8fc56009a4a838a",
+      "family": "thermompnn",
+      "upstream": "ThermoMPNN"
+    },
+    {
+      "artifact_path": "ThermoMPNN-D/model_weights/ThermoMPNN-ens1.ckpt",
+      "sha256": "38248de157190e1f9efe4378239f8db9ec9d8155a2942bfa4aed2f2042dd2277",
+      "family": "thermompnn",
+      "upstream": "ThermoMPNN-D"
+    },
+    {
+      "artifact_path": "ThermoMPNN-D/model_weights/ThermoMPNN-D-ens1.ckpt",
+      "sha256": "b2c1a8f8cfd36c27fbda3758db2998aeec758f4d62acd5f8742860b73ed55804",
+      "family": "thermompnn",
+      "upstream": "ThermoMPNN-D"
     }
   ]
 }
