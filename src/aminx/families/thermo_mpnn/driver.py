@@ -55,7 +55,7 @@ V2_DOUBLE_ENSEMBLE_IDS: tuple[str, str, str] = (
 
 DEFAULT_CHECKPOINT_ID: str = "thermo_mpnn_v1_default"
 _VALID_SCORE_MODES: frozenset[str] = frozenset(
-  {"score:ddg", "score:ddg_double", "single", "double"}
+  {"score:ddg", "score:ddg_double", "single", "double"},
 )
 _VALID_DTYPES: frozenset[str] = frozenset({"float32", "float16"})
 
@@ -102,7 +102,9 @@ def _resolve_checkpoint_id(spec: Any, opts: ThermoMPNNOptions) -> str:  # noqa: 
 
 def _is_double_checkpoint(checkpoint_id: str) -> bool:
   """Return True when ``checkpoint_id`` names a ThermoMPNN-D (double-mutant) checkpoint."""
-  return checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id or "double" in checkpoint_id
+  return (
+    checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id or "double" in checkpoint_id
+  )
 
 
 def _calc_dtype(name: str) -> Any:  # noqa: ANN401
@@ -455,7 +457,8 @@ class ThermoMPNNDriver:
       return {
         "coords": coords_arr,
         "mask": np.asarray(
-          pdb_path.get("mask", np.ones((num_l,), dtype=np.float32)), dtype=np.float32
+          pdb_path.get("mask", np.ones((num_l,), dtype=np.float32)),
+          dtype=np.float32,
         ),
         "residue_index": np.asarray(
           pdb_path.get("residue_index", np.arange(num_l, dtype=np.int32)),
