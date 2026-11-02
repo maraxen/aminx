@@ -4,9 +4,7 @@
 
 ### Changed
 
-- `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself.
-- `generate_ar_mask` returns a float32 mask (0.0/1.0) on every path. It previously returned int32.
-- `AutoRegressiveMask` (`aminx.types.arrays`, exported from `aminx.types`) is typed `Float`, not `Bool`. Annotation-only change; no runtime effect beyond the dtype above.
+- `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself. The return dtype is unchanged (int32).
 
 ## 0.4.0 (2026-10-29)
 
