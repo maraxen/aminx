@@ -482,3 +482,57 @@ def test_checkpoint_double_predicate_is_shared_by_load_and_schema(
     model_local_path=None,
   )
   assert "ddg_double" in driver.result_schema(spec, "score:ddg")
+
+
+def test_knob_semantics_mixed_pair_counts_in_one_batch() -> None:
+  """A batch whose items have P>0 and P=0 pairs pads the pair axis instead of failing."""
+  driver = ThermoMPNNDriver()
+  spec = SimpleNamespace(
+    checkpoint_id="thermo_mpnn_d_ens1",
+    thermompnn=ThermoMPNNOptions(mode="double", distance_threshold=6.0),
+    model_local_path=None,
+  )
+  model = convert_thermo_mpnn_double_state_dict(_build_synthetic_v2_double_state_dict())
+  item_close = driver.prepare_structure(_UBQ_PDB)
+  item_far = dict(item_close)
+  item_far["coords"] = np.asarray(item_close["coords"]) * 10.0  # no CA-CA pair within 6 A
+  batch = driver.collate_batch((item_close, item_far), input_indices=(0, 1))
+  stages = driver.stages(spec, "score:ddg", model)
+  produced = dict(
+    stages(
+      batch,
+      chunk_start=0,
+      chunk_count=2,
+      scalar_dropout=False,
+      dropout_key=jax.random.PRNGKey(0),
+    ),
+  )
+  pairs = np.asarray(produced["pair_indices"])
+  doubles = np.asarray(produced["ddg_double"])
+  n_close = int(np.sum(pairs[0, :, 0] >= 0))
+  assert n_close > 0
+  assert pairs.shape == (2, n_close, 2)
+  assert doubles.shape == (2, n_close, 21, 21)
+  assert np.all(pairs[1] == -1)
+  assert np.all(np.isnan(doubles[1]))
+  assert np.all(np.isfinite(doubles[0]))
+
+
+def test_knob_semantics_zero_pairs_through_write_outputs(tmp_path: Path) -> None:
+  """P=0 outputs survive write_outputs with the declared (0, 21, 21) and (0, 2) shapes."""
+  driver = ThermoMPNNDriver()
+  results = {
+    "ddg": np.zeros((5, 21), dtype=np.float32),
+    "ddg_double": np.zeros((0, 21, 21), dtype=np.float32),
+    "pair_indices": np.zeros((0, 2), dtype=np.int32),
+  }
+  out = driver.write_outputs(tmp_path / "zero_pairs", results)
+  npy = out / "ddg_double.npy"
+  if npy.exists():  # zarr absent: the documented .npy fallback
+    assert np.load(npy).shape == (0, 21, 21)
+    assert np.load(out / "pair_indices.npy").shape == (0, 2)
+  else:
+    zarr = pytest.importorskip("zarr")
+    group = zarr.open_group(str(out), mode="r")
+    assert group["ddg_double"].shape == (0, 21, 21)
+    assert group["pair_indices"].shape == (0, 2)

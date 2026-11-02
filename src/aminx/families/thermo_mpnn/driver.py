@@ -268,6 +268,27 @@ def _score_double_ddg(
   return ddg_single, ddg_double, pair_indices
 
 
+def _stack_pair_rows(rows: list[jax.Array], *, fill: float) -> jax.Array:
+  """Stack per-item pair outputs, padding the pair axis to the largest count.
+
+  Items in one batch can have different numbers of pairs (one may have P=0). Padded
+  ``ddg_double`` rows are NaN and padded ``pair_indices`` rows are -1; consumers must
+  check ``pair_indices >= 0``. A single item is returned unchanged.
+  """
+  if len(rows) == 1:
+    return rows[0]
+  n_pairs = max(int(row.shape[0]) for row in rows)
+  padded = [
+    jnp.pad(
+      row,
+      [(0, n_pairs - int(row.shape[0]))] + [(0, 0)] * (row.ndim - 1),
+      constant_values=fill,
+    )
+    for row in rows
+  ]
+  return jnp.stack(padded, axis=0)
+
+
 class _ThermoScoreStages:
   """Per-batch ``score:ddg`` stage callable for :class:`ThermoMPNNDriver`."""
 
@@ -381,10 +402,8 @@ class _ThermoScoreStages:
       "ddg": ddg_rows[0] if len(ddg_rows) == 1 else jnp.stack(ddg_rows, axis=0),
     }
     if double_rows:
-      out["ddg_double"] = (
-        double_rows[0] if len(double_rows) == 1 else jnp.stack(double_rows, axis=0)
-      )
-      out["pair_indices"] = pair_rows[0] if len(pair_rows) == 1 else jnp.stack(pair_rows, axis=0)
+      out["ddg_double"] = _stack_pair_rows(double_rows, fill=float("nan"))
+      out["pair_indices"] = _stack_pair_rows(pair_rows, fill=-1)
     return out
 
 
