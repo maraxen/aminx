@@ -87,19 +87,19 @@ def test_resolve_tie_groups_explicit():
         # For [0, 1, 2]: pos 0 decodes first, pos 1 second (sees pos 0), pos 2 last (sees both).
         (
             jnp.array([0, 1, 2]),
-            jnp.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 1.0, 0.0]], dtype=jnp.float32),
+            jnp.array([[0, 0, 0], [1, 0, 0], [1, 1, 0]], dtype=jnp.int32),
         ),
         # For [2, 0, 1]: step 0 decodes pos 2, step 1 decodes pos 0 (sees pos 2),
         # step 2 decodes pos 1 (sees pos 2 and pos 0).
         (
             jnp.array([2, 0, 1]),
-            jnp.array([[0.0, 0.0, 1.0], [1.0, 0.0, 1.0], [0.0, 0.0, 0.0]], dtype=jnp.float32),
+            jnp.array([[0, 0, 1], [1, 0, 1], [0, 0, 0]], dtype=jnp.int32),
         ),
         # For [1, 2, 0]: step 0 decodes pos 1, step 1 decodes pos 2 (sees pos 1),
         # step 2 decodes pos 0 (sees pos 1 and pos 2).
         (
             jnp.array([1, 2, 0]),
-            jnp.array([[0.0, 1.0, 1.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=jnp.float32),
+            jnp.array([[0, 1, 1], [0, 0, 0], [0, 1, 0]], dtype=jnp.int32),
         ),
     ],
 )
@@ -117,7 +117,7 @@ def test_generate_ar_mask(decoding_order, expected_mask):
     mask = generate_ar_mask(decoding_order)
     chex.assert_trees_all_equal(mask, expected_mask)
     chex.assert_shape(mask, (len(decoding_order), len(decoding_order)))
-    assert mask.dtype == jnp.float32, mask.dtype
+    chex.assert_type(mask, int)
 
 
 def test_generate_wave_ar_mask_matches_generate_ar_mask_for_g1_schedules():
