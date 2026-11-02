@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 from pathlib import Path
@@ -54,6 +55,7 @@ from aminx.families.thermo_mpnn import (  # noqa: E402
   convert_thermo_mpnn_double_state_dict,
   convert_thermo_mpnn_state_dict,
 )
+from aminx.families.thermo_mpnn.stats import pearson_r  # noqa: E402
 
 
 def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]:
@@ -285,17 +287,9 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
   v2_f16_max_abs_diff = float(np.max(np.abs(jax_v2_f16 - torch_v2_f16)))
   double_f16_max_abs_diff = float(np.max(np.abs(jax_double_f16 - torch_double_f16)))
 
-  def _pearson_r(x: np.ndarray, y: np.ndarray) -> float:
-    x_flat = np.asarray(x, dtype=np.float64).ravel()
-    y_flat = np.asarray(y, dtype=np.float64).ravel()
-    x_c = x_flat - np.mean(x_flat)
-    y_c = y_flat - np.mean(y_flat)
-    denom = float(np.sqrt(np.sum(x_c**2) * np.sum(y_c**2)))
-    return float(np.sum(x_c * y_c) / denom) if denom != 0.0 else 1.0
-
-  v1_f16_pearson_r = _pearson_r(jax_v1_f16, torch_v1_f16)
-  v2_f16_pearson_r = _pearson_r(jax_v2_f16, torch_v2_f16)
-  double_f16_pearson_r = _pearson_r(jax_double_f16, torch_double_f16)
+  v1_f16_pearson_r = pearson_r(jax_v1_f16, torch_v1_f16)
+  v2_f16_pearson_r = pearson_r(jax_v2_f16, torch_v2_f16)
+  double_f16_pearson_r = pearson_r(jax_double_f16, torch_double_f16)
 
   wt_v1 = jax_v1_f64[np.arange(sequence.shape[0]), sequence]
   wt_v2 = jax_v2_f64[np.arange(sequence.shape[0]), sequence]
@@ -323,6 +317,10 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     "permuted_output_weights": "failed" if neg_ctrl_permuted_out_diff > 1e-2 else "passed",
   }
 
+  def _r_passes(r: float) -> bool:
+    # NaN (zero variance or NaN input) is a FAIL; NaN > x is False but say so explicitly.
+    return math.isfinite(r) and r > 0.999
+
   is_pass = (
     weight_meta.get("weight_source") == "upstream_checkpoint"
     and v1_f64_max_abs_diff < 1e-7
@@ -334,9 +332,9 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     and v1_f16_max_abs_diff < 1.5e-2
     and v2_f16_max_abs_diff < 1.5e-2
     and double_f16_max_abs_diff < 1.5e-2
-    and v1_f16_pearson_r > 0.999
-    and v2_f16_pearson_r > 0.999
-    and double_f16_pearson_r > 0.999
+    and _r_passes(v1_f16_pearson_r)
+    and _r_passes(v2_f16_pearson_r)
+    and _r_passes(double_f16_pearson_r)
     and wt_self_max_abs_diff == 0.0
     and order_invariance_max_abs_diff == 0.0
     and neg_ctrl_min_max_abs_diff > 1e-2
@@ -349,6 +347,12 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     and v1_f32_max_abs_diff < 1e-3
     and v2_f32_max_abs_diff < 1e-3
     and double_f32_max_abs_diff < 1e-3
+    and v1_f16_max_abs_diff < 1.5e-2
+    and v2_f16_max_abs_diff < 1.5e-2
+    and double_f16_max_abs_diff < 1.5e-2
+    and _r_passes(v1_f16_pearson_r)
+    and _r_passes(v2_f16_pearson_r)
+    and _r_passes(double_f16_pearson_r)
     and wt_self_max_abs_diff == 0.0
     and order_invariance_max_abs_diff == 0.0
     and neg_ctrl_min_max_abs_diff > 1e-2
@@ -383,6 +387,17 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     "neg_ctrl_min_max_abs_diff": neg_ctrl_min_max_abs_diff,
     "_statuses": statuses,
   }
+
+
+def _json_safe(value: object) -> object:
+  """Replace non-finite floats with ``None``: a bare NaN token is not valid JSON."""
+  if isinstance(value, float) and not math.isfinite(value):
+    return None
+  if isinstance(value, dict):
+    return {k: _json_safe(v) for k, v in value.items()}
+  if isinstance(value, list):
+    return [_json_safe(v) for v in value]
+  return value
 
 
 def main() -> None:
@@ -435,6 +450,7 @@ def main() -> None:
   n_failed = sum(1 for s in mutants_report.values() if s == "failed")
   result["n_listed"] = n_listed
   result["n_failed"] = n_failed
+  result = _json_safe(result)
 
   weights: dict[str, str] = {}
   if result.get("weight_source") == "upstream_checkpoint":

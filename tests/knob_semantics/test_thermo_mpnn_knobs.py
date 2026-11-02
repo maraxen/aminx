@@ -47,6 +47,7 @@ from aminx.families.thermo_mpnn import driver as thermo_driver_module
 from aminx.host.family_runner import _check_chunk
 from aminx.families.thermo_mpnn.driver import ThermoMPNNDriver
 from aminx.families.thermo_mpnn.model import ThermoMPNNDouble
+from aminx.families.thermo_mpnn.stats import pearson_r
 from aminx.run.options import ThermoMPNNOptions
 
 
@@ -205,10 +206,7 @@ def test_knob_semantics_dtype() -> None:
   assert max_abs_diff < 1.5e-2
   assert max_abs_diff > 0.0
 
-  x_c = f32_ddg.ravel() - np.mean(f32_ddg)
-  y_c = f16_ddg.ravel() - np.mean(f16_ddg)
-  pearson_r = float(np.sum(x_c * y_c) / np.sqrt(np.sum(x_c**2) * np.sum(y_c**2)))
-  assert pearson_r > 0.999
+  assert pearson_r(f32_ddg, f16_ddg) > 0.999
 
 
 def test_knob_semantics_batch_size() -> None:
@@ -428,3 +426,11 @@ def test_knob_semantics_float16_passes_result_schema() -> None:
   }
   _check_chunk(leading, schema, n_structures=1)
   assert np.asarray(produced["ddg"]).dtype == np.float32
+
+
+def test_pearson_r_zero_variance_is_nan() -> None:
+  """A constant output has undefined correlation: NaN, never 1.0, so it cannot pass an r gate."""
+  ramp = np.arange(12, dtype=np.float64)
+  assert np.isnan(pearson_r(np.ones(12), ramp))
+  assert np.isnan(pearson_r(ramp, np.full(12, 3.0)))
+  assert pearson_r(ramp, 2.0 * ramp + 1.0) == pytest.approx(1.0)
