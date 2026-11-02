@@ -108,16 +108,6 @@ bth_run_id = "54f00c93-59c5-490f-b036-672fc91a612a"
 # Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row 0ae1cf5f (43a7a3bd, CPU) stays on record.
 bth_run_id = "0a76c73f-e162-4536-a597-5ed893e7edf1"
 
-[sidecar.protonpotts_parity]
-# REWRITTEN 261013 at 78ed94d0 (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Run on GPU 2 at 78ed94d0 (13 waves, 99 controls all 'failed', nothing reused, tree clean). The first GPU run e2a185de at
-# 31ded6de FAILED the f32 minimum bands and stays on record; the bands were then widened to the measured CPU+GPU floor
-# (ph_block 5e-5, ph_methods 4e-4), disclosed in the three sidecars. The CPU fallback 66b3099c at ab6897a0 also passed.
-# Previous row f3c82564 (43a7a3bd) stays on record.
-bth_run_id = "818c1dc7-ddc7-4bf8-aba2-076810ddb914"
-
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
 
