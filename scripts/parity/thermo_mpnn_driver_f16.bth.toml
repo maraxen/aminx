@@ -1,0 +1,37 @@
+# Pre-registration for the float16 driver path. Committed BEFORE scripts/parity/thermo_mpnn_driver_f16.py
+# exists; the script must not be run until this commit is in history. Thresholds are copied from the
+# float16 bars already stated in scripts/parity/thermo_mpnn_parity.bth.toml ("1.5e-2 with Pearson r > 0.999
+# in float16"); none is new. Outcomes are numeric over recorded fields. The script emits no verdict field.
+
+[experiment]
+hypothesis = "Driver path: ThermoMPNNDriver.score under dtype='float16' (via ThermoMPNNOptions) matches ThermoMPNNDriver.score under dtype='float32' on the same inputs, on 1ubq.pdb (tests/data/1ubq.pdb), with upstream checkpoints thermo_mpnn_v1_default (ddg) and thermo_mpnn_d_ens1 (ddg and, in mode='double', ddg_double). For each compared array, max absolute difference < 1.5e-2 and Pearson r > 0.999 between the float16 and float32 outputs. This requires the upstream weights and is meant to run on titanix."
+stage_name = "validation"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "weight_source == 'upstream_checkpoint' AND v1_ddg_max_abs_diff < 1.5e-2 AND v1_ddg_pearson_r > 0.999 AND d_ddg_max_abs_diff < 1.5e-2 AND d_ddg_pearson_r > 0.999 AND d_n_pairs > 0 AND d_ddg_double_max_abs_diff < 1.5e-2 AND d_ddg_double_pearson_r > 0.999"
+decision = "Driver float16 path matches float32 within the float16 bars; the float16 stage may be used."
+reasoning = "Every compared array (ddg for v1 and d_ens1, ddg_double for d_ens1 with at least one pair) is within 1.5e-2 max-abs and has Pearson r > 0.999 against float32."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT COALESCE(weight_source == 'upstream_checkpoint' AND v1_ddg_max_abs_diff < 1.5e-2 AND v1_ddg_pearson_r > 0.999 AND d_ddg_max_abs_diff < 1.5e-2 AND d_ddg_pearson_r > 0.999 AND d_n_pairs > 0 AND d_ddg_double_max_abs_diff < 1.5e-2 AND d_ddg_double_pearson_r > 0.999, FALSE)"
+decision = "Block use of the float16 driver path; debug the float16 cast or the driver's float16 compute path."
+reasoning = "Any compared array breaches a float16 bar, is NULL or NaN (NULL r or NULL max-abs), the weights are not upstream, or no pair was scored. NULL inputs fall through to this residual via COALESCE."
+is_residual = true
+
+[result_schema]
+pdb_id = "str"
+weight_source = "str"
+n_residues = "int"
+v1_ddg_max_abs_diff = "float"
+v1_ddg_pearson_r = "float"
+d_ddg_max_abs_diff = "float"
+d_ddg_pearson_r = "float"
+d_n_pairs = "int"
+d_ddg_double_max_abs_diff = "float"
+d_ddg_double_pearson_r = "float"
