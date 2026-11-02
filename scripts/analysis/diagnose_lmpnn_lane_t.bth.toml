@@ -1,0 +1,41 @@
+[metadata]
+title = "aminx 0.4.0 lmpnn__base Lane T divergence diagnosis and localization"
+created = "261102"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On aminx 0.4.0 lmpnn__base Lane T, conditional log-probability divergence from upstream LigandMPNN (0.0636 nats) clusters along specific structural or decoding axes (decode rank, ligand distance, or padding boundary), and bisection against incremental cache vs full recompute identifies the isolating mechanism."
+stage_name = "diagnosis"
+
+[outcomes.divergence_localized]
+condition = "max_abs_logprob > 0.001 AND num_positions_exceeding_tol > 0 AND (rank_correlation_pvalue < 0.05 OR ligand_dist_correlation_pvalue < 0.05 OR incremental_diff_detected = true)"
+decision = "Divergence localized to specific structural/temporal axes or execution kernel."
+reasoning = "Per-position logprob error exceeds 1e-3 tolerance and shows significant correlation with decode rank, ligand distance, or differs between incremental and full recompute."
+is_residual = false
+
+[outcomes.divergence_reproduced_unclustered]
+condition = "max_abs_logprob > 0.001 AND num_positions_exceeding_tol > 0"
+decision = "Divergence reproduced but not clustered on measured axes."
+reasoning = "Per-position logprob error exceeds 1e-3 tolerance across designed positions without strong correlation to tested axes."
+is_residual = false
+
+[outcomes.divergence_not_reproduced]
+condition = "max_abs_logprob <= 0.001"
+decision = "Divergence not reproduced under CPU float32."
+reasoning = "All designed positions pass within 1e-3 logprob tolerance."
+is_residual = true
+
+[result_schema]
+max_abs_logprob = "float"
+mean_abs_logprob = "float"
+num_positions_exceeding_tol = "int"
+total_designed_positions = "int"
+fraction_positions_exceeding_tol = "float"
+first_divergent_rank = "int"
+first_divergent_position = "int"
+rank_correlation = "float"
+rank_correlation_pvalue = "float"
+ligand_dist_correlation = "float"
+ligand_dist_correlation_pvalue = "float"
+incremental_diff_detected = "bool"
+incremental_vs_full_max_diff = "float"
