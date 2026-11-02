@@ -167,6 +167,7 @@ def _score_single_ddg(
   return (ddg_raw - wt_ddg) * mask[:, None]
 
 
+@eqx.filter_jit
 def _score_double_ddg(
   model: ThermoMPNNDouble,
   coords: Float[Array, "L 4 3"],
