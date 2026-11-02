@@ -27,7 +27,6 @@ import argparse
 import logging
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 logger = logging.getLogger("stale_rows")
@@ -52,66 +51,15 @@ from _coverage import (
   default_is_ancestor,
   default_resolve_run,
 )
-
-
-def _manifest_slugs(
-  family: str | None = None,
-  allowed_slugs: set[str] | None = None,
-) -> list[str]:
-  path = REPO / "tests" / "knob_gate" / "branch_manifest.toml"
-  rows = tomllib.loads(path.read_text(encoding="utf-8")).get("branch", [])
-  slugs: set[str] = set()
-  for r in rows:
-    row_family = r.get("family")
-    vehicle = r.get("vehicle", {})
-    if vehicle.get("kind") == "sidecar":
-      slug = vehicle["slug"]
-      if family is not None:
-        if row_family is not None and row_family != family:
-          continue
-        if row_family is None and allowed_slugs is not None and slug not in allowed_slugs:
-          continue
-      slugs.add(slug)
-  return sorted(slugs)
-
-
-def _ledger_ids(family: str | None = None) -> dict[str, str]:
-  ledgers_dir = REPO / "tests" / "knob_gate" / "ledgers"
-  if family and family != "all":
-    path = ledgers_dir / f"{family}.toml"
-    if not path.is_file():
-      legacy = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
-      if legacy.is_file():
-        path = legacy
-    if not path.is_file():
-      return {}
-    table = tomllib.loads(path.read_text(encoding="utf-8")).get("sidecar", {})
-    return {
-      slug: body["bth_run_id"]
-      for slug, body in table.items()
-      if isinstance(body, dict) and "bth_run_id" in body
-    }
-
-  if ledgers_dir.is_dir():
-    shards = sorted(ledgers_dir.glob("*.toml"))
-    if shards:
-      merged: dict[str, str] = {}
-      for shard in shards:
-        table = tomllib.loads(shard.read_text(encoding="utf-8")).get("sidecar", {})
-        for slug, body in table.items():
-          if isinstance(body, dict) and "bth_run_id" in body:
-            merged[slug] = body["bth_run_id"]
-      return merged
-
-  legacy = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
-  if legacy.is_file():
-    table = tomllib.loads(legacy.read_text(encoding="utf-8")).get("sidecar", {})
-    return {
-      slug: body["bth_run_id"]
-      for slug, body in table.items()
-      if isinstance(body, dict) and "bth_run_id" in body
-    }
-  return {}
+from _ledger import (
+  LEDGERS_DIRNAME,
+  MANIFEST_NAME,
+  LedgerError,
+  ledger_ids,
+  load_manifest_rows,
+  rows_for_family,
+  sidecar_slugs,
+)
 
 
 def _diff_names(base: str, head: str) -> list[str]:
@@ -136,7 +84,7 @@ def assess(
   if run_commit:
     changed = _diff_names(run_commit, head)
     closure = default_closure_for(slug)
-    hits = [p for p in changed if row_is_stale([p], closure, repo=REPO, git_hash=run_commit)]
+    hits = [p for p in changed if row_is_stale([p], closure, repo=REPO, git_hash=run_commit, head=head)]
     why = "closure unsound or unavailable: global rule" if closure is None or not closure.sound else ""
     return {
       "slug": slug,
@@ -183,8 +131,16 @@ def main(argv: list[str] | None = None) -> int:
   args = parser.parse_args(argv)
   logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-  ids = _ledger_ids(family=args.family)
-  slugs = _manifest_slugs(family=args.family, allowed_slugs=set(ids.keys()))
+  knob_gate = REPO / "tests" / "knob_gate"
+  try:
+    ids = ledger_ids(knob_gate / LEDGERS_DIRNAME, args.family)
+    scoped = rows_for_family(load_manifest_rows(knob_gate / MANIFEST_NAME), args.family)
+  except LedgerError as exc:
+    logger.info("REFUSING: %s", exc)
+    return 2
+  # Every scoped manifest slug is assessed, including one with no ledger id: that row reports
+  # "no ledger run id" and is STALE, instead of disappearing from the table.
+  slugs = sorted(sidecar_slugs(scoped))
   results = [
     assess(slug, ids.get(slug), run_commit=args.run_commit, head=args.head)
     for slug in slugs

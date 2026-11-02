@@ -31,8 +31,6 @@ import argparse
 import json
 import logging
 import sys
-import tomllib
-from collections import defaultdict
 from pathlib import Path
 
 logger = logging.getLogger("verify_wave")
@@ -61,67 +59,16 @@ from _coverage import (
   default_resolve_run,
   default_sidecar_digest,
 )
-
-
-def _manifest_rows(
-  family: str | None = None,
-  allowed_slugs: set[str] | None = None,
-) -> dict[str, set[str]]:
-  """``slug -> {row id}`` for every sidecar-backed row."""
-  path = REPO / "tests" / "knob_gate" / "branch_manifest.toml"
-  rows = tomllib.loads(path.read_text(encoding="utf-8")).get("branch", [])
-  by_slug: dict[str, set[str]] = defaultdict(set)
-  for row in rows:
-    row_family = row.get("family")
-    vehicle = row.get("vehicle", {})
-    if vehicle.get("kind") == "sidecar":
-      slug = vehicle["slug"]
-      if family is not None:
-        if row_family is not None and row_family != family:
-          continue
-        if row_family is None and allowed_slugs is not None and slug not in allowed_slugs:
-          continue
-      by_slug[slug].add(row["id"])
-  return dict(by_slug)
-
-
-def _ledger_ids(family: str | None = None) -> dict[str, str]:
-  ledgers_dir = REPO / "tests" / "knob_gate" / "ledgers"
-  if family and family != "all":
-    path = ledgers_dir / f"{family}.toml"
-    if not path.is_file():
-      legacy = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
-      if legacy.is_file():
-        path = legacy
-    if not path.is_file():
-      return {}
-    table = tomllib.loads(path.read_text(encoding="utf-8")).get("sidecar", {})
-    return {
-      slug: body["bth_run_id"]
-      for slug, body in table.items()
-      if isinstance(body, dict) and "bth_run_id" in body
-    }
-
-  if ledgers_dir.is_dir():
-    shards = sorted(ledgers_dir.glob("*.toml"))
-    if shards:
-      merged: dict[str, str] = {}
-      for shard in shards:
-        table = tomllib.loads(shard.read_text(encoding="utf-8")).get("sidecar", {})
-        for slug, body in table.items():
-          if isinstance(body, dict) and "bth_run_id" in body:
-            merged[slug] = body["bth_run_id"]
-      return merged
-
-  legacy = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
-  if legacy.is_file():
-    table = tomllib.loads(legacy.read_text(encoding="utf-8")).get("sidecar", {})
-    return {
-      slug: body["bth_run_id"]
-      for slug, body in table.items()
-      if isinstance(body, dict) and "bth_run_id" in body
-    }
-  return {}
+from _ledger import (
+  LEDGERS_DIRNAME,
+  MANIFEST_NAME,
+  LedgerError,
+  ledger_ids,
+  load_manifest_rows,
+  recorded_elsewhere,
+  rows_for_family,
+  sidecar_slugs,
+)
 
 
 def _scoped_hits(paths: list[str], slug: str, git_hash: str | None = None) -> list[str]:
@@ -303,20 +250,33 @@ def main(argv: list[str] | None = None) -> int:
   logging.basicConfig(level=logging.INFO, format="%(message)s")
 
   family = None if args.all else args.family
-  ids = _ledger_ids(family=family)
+  ledgers_dir = REPO / "tests" / "knob_gate" / LEDGERS_DIRNAME
+  try:
+    ids = ledger_ids(ledgers_dir, family)
+    scoped = rows_for_family(load_manifest_rows(REPO / "tests" / "knob_gate" / MANIFEST_NAME), family)
+  except LedgerError as exc:
+    logger.info("REFUSING: %s", exc)
+    return 2
   for pair in args.run:
     slug, _, rid = pair.partition("=")
     ids[slug] = rid
 
-  rows = _manifest_rows(family=family, allowed_slugs=set(ids.keys()))
+  # Manifest slugs come from the UNFILTERED family scope, so a slug with no ledger entry is
+  # counted as missing rather than dropped from the check.
+  rows = sidecar_slugs(scoped)
 
-  if not ids:
-    logger.info("no run ids: the ledger is empty and no --run was given")
+  if not ids and not rows:
+    logger.info("no run ids and no manifest rows: nothing to verify")
     return 2
 
   results = {}
   for slug in sorted(ids):
     if slug not in rows:
+      if family is not None:
+        # A family read sees only its own shard; an entry there for a slug the family's
+        # manifest rows do not name is not this family's to grade.
+        logger.info("=== %s  ignored: no %s manifest row names this slug", slug, family)
+        continue
       logger.info("=== %s  SKIPPED: no manifest rows for this slug", slug)
       results[slug] = False
       continue
@@ -324,8 +284,10 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("")
 
   missing = sorted(set(rows) - set(ids))
-  if missing:
-    logger.info("no run id yet for: %s", ", ".join(missing))
+  for slug in missing:
+    elsewhere = recorded_elsewhere(ledgers_dir, family, slug) if family else None
+    hint = f" (recorded in ledgers/{elsewhere}, not this family's shard)" if elsewhere else ""
+    logger.info("no run id yet for: %s%s", slug, hint)
   good = sorted(s for s, v in results.items() if v)
   bad = sorted(s for s, v in results.items() if not v)
   logger.info("would grade: %s", ", ".join(good) if good else "(none)")

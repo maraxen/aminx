@@ -18,8 +18,10 @@ from typing import Literal, TypedDict, cast
 
 try:  # imported as knob_gate._coverage (pytest) or as bare _coverage (scripts/redsox)
   from ._closure import Closure, compute_closure, row_is_stale
+  from ._ledger import LedgerError, ledger_ids, rows_for_family
 except ImportError:
   from _closure import Closure, compute_closure, row_is_stale  # type: ignore[no-redef]
+  from _ledger import LedgerError, ledger_ids, rows_for_family  # type: ignore[no-redef]
 
 Verdict =Literal["pass", "fail", "instrument_invalid"]
 
@@ -383,19 +385,17 @@ def _branch_rows(manifest: Mapping[str, object]) -> list[dict[str, object]]:
   return typed
 
 
-def _load_ledger(ledger_path: str | Path) -> dict[str, object] | None:
+def _load_ledger(ledger_path: str | Path, family: str | None) -> dict[str, object] | None:
+  """The sidecar table the step-1c check reads.
+
+  A directory is a shard set and resolves through ``_ledger.ledger_ids`` (the one rule shared
+  with verify_wave and stale_rows). A single file is an explicit shard, used as given; it is how
+  the coverage fixtures name their ledger.
+  """
   target = Path(ledger_path)
   if target.is_dir():
-    shards = sorted(target.glob("*.toml"))
-    if not shards:
-      return None
-    merged_sidecar: dict[str, object] = {}
-    for shard in shards:
-      data = tomllib.loads(shard.read_text(encoding="utf-8"))
-      table = data.get("sidecar", {})
-      if isinstance(table, dict):
-        merged_sidecar.update(table)
-    return {"sidecar": merged_sidecar}
+    ids = ledger_ids(target, family)
+    return {"sidecar": {slug: {"bth_run_id": run_id} for slug, run_id in ids.items()}}
   if target.is_file():
     return tomllib.loads(target.read_text(encoding="utf-8"))
   return None
@@ -437,17 +437,22 @@ def check_branch_coverage(
     return "instrument_invalid"
   outcomes = _load_outcomes(Path(outcomes_path))
 
-  ledger = _load_ledger(ledger_path)
+  try:
+    ledger = _load_ledger(ledger_path, family)
+    # A family-scoped read of a row with no family cannot be attributed: loud, not skipped.
+    scoped_rows = rows_for_family(rows, family)
+  except LedgerError:
+    return "instrument_invalid"
   if ledger is None:
+    return "instrument_invalid"
+  if family is not None and not scoped_rows:
     return "instrument_invalid"
 
   invalid = False
   clean_fail = False
   sidecar_ids: dict[str, set[str]] = defaultdict(set)
-  matched_any_row = False
 
-  for row in rows:
-    row_family = row.get("family")
+  for row in scoped_rows:
     vehicle = _object_dict(row.get("vehicle"))
     if vehicle is None:
       invalid = True
@@ -458,15 +463,6 @@ def check_branch_coverage(
       invalid = True
       continue
 
-    if family is not None:
-      if row_family is not None and row_family != family:
-        continue
-      if row_family is None and kind == "sidecar":
-        slug = vehicle.get("slug")
-        if slug and slug not in cast("dict[str, object]", ledger.get("sidecar", {})):
-          continue
-
-    matched_any_row = True
     if kind == "pytest":
       nodeids = vehicle.get("nodeids")
       if not isinstance(nodeids, list) or not all(isinstance(node, str) for node in nodeids):
@@ -489,9 +485,6 @@ def check_branch_coverage(
       sidecar_ids[slug].add(row_id)
     else:
       invalid = True
-
-  if family is not None and not matched_any_row:
-    return "instrument_invalid"
 
   if sidecar_ids:
     for slug, row_ids in sidecar_ids.items():

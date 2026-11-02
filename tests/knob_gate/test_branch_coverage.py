@@ -33,15 +33,13 @@ _NEEDS_GATE = pytest.mark.skipif(
 @_NEEDS_GATE
 def test_branch_coverage() -> None:
   outcomes = os.environ["AMINX_REDSOX_OUTCOMES_READ"]
-  family = os.environ.get("AMINX_REDSOX_FAMILY")
-  if family:
-    ledger_path = _HERE / "ledgers" / f"{family}.toml"
-  else:
-    ledger_path = _HERE / "ledgers"
+  family = os.environ.get("AMINX_REDSOX_FAMILY") or None
+  # Always the shard directory: the shared rule in _ledger.py picks the family's own shard, with
+  # no fallback to another family's ledger (a laser read must never see potts run ids).
   verdict = check_branch_coverage(
     _HERE / "branch_manifest.toml",
     outcomes,
-    ledger_path,
+    _HERE / "ledgers",
     family=family,
   )
   assert verdict == "pass", verdict
