@@ -8,12 +8,13 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
+from aminx.types.bundles import WaveScheduleBundle
+
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
   from aminx.run.specs import RunSpecification
   from aminx.types.arrays import AutoRegressiveMask, DecodingOrder
-  from aminx.types.bundles import WaveScheduleBundle
   from aminx.utils.data_structures import Protein
 
 
@@ -147,9 +148,16 @@ def generate_ar_mask(
 ) -> AutoRegressiveMask:
   """Get the self-excluding autoregressive mask for the given decoding order.
 
-  Delegates to :func:`ar_mask_from_decoding_order` to avoid the rank-vs-order
-  split hazard (#1982 / Defect 9). Both untied and tied branches consume an ORDER array
-  (``order[t]`` = position decoded at step ``t``).
+  Delegates to :func:`ar_mask_from_decoding_order` (#1982 / Defect 9). Both the untied and
+  the tied branch consume an ORDER array (``order[t]`` = position decoded at step ``t``).
+
+  **Contract: the argument is an ORDER array, never a rank array.** A rank array
+  (``rank[i]`` = step at which position ``i`` decodes, i.e. ``argsort(order)``) is a
+  different, equally valid permutation, so passing one yields the mask of the inverse order
+  with no error. Nothing here can detect that: both encodings are permutations of
+  ``0 .. L-1``, so the values alone do not say which one was passed. Invert a rank array
+  first. The convention itself is pinned by ``tests/utils/test_autoregression.py`` and
+  ``tests/inference/test_fixed_position_self_visibility.py``.
 
   Parameters
   ----------
@@ -167,8 +175,10 @@ def generate_ar_mask(
   Returns
   -------
   AutoRegressiveMask
-      (L, L) mask with diagonal 0, where mask[i, j] == 1 iff position i sees
-      position j's decoded sequence.
+      (L, L) **float32** mask (values 0.0 or 1.0; the diagonal is 0), where mask[i, j] == 1
+      iff position i sees position j's decoded sequence. Float, not bool or int, because the
+      decoder gathers it into a float attention mask and ``ConditioningBundle.ar_mask`` is
+      typed Float; the bundle builders cast it to float32 as well.
   """
   del num_groups
   ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
@@ -176,7 +186,6 @@ def generate_ar_mask(
     same_chain = (chain_idx[:, None] == chain_idx[None, :]).astype(ar_mask.dtype)
     ar_mask = ar_mask * same_chain
   return ar_mask
-
 
 
 def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -> jnp.ndarray:
@@ -278,13 +287,8 @@ def ar_mask_from_decoding_order(
   This is the mask to pair with what ``utils.decoding_order`` functions return. It is built
   through the same schedule the sampler decodes with (``WaveScheduleBundle.from_decoding_order``
   then :func:`generate_wave_ar_mask`), so a mask built here and a wave built from the same
-  order cannot disagree.
-
-  Do not pass an order to :func:`generate_ar_mask` directly: its untied branch compares
-  ``decoding_order`` values as a RANK array, while its tied branch indexes by it as an ORDER
-  array. For a uniformly random permutation the mix-up is invisible in distribution, which
-  is why it survived; for any deliberate order (a custom ``decoding_order_fn``, a
-  counterfactual schedule) it silently yields a mask for a different order (debt #1982).
+  order cannot disagree. :func:`generate_ar_mask` computes the same mask for an order and
+  additionally accepts ``chain_idx``.
 
   Args:
     decoding_order: (L,) ORDER array.
@@ -294,8 +298,6 @@ def ar_mask_from_decoding_order(
   Returns:
     (L, L) float32 mask; ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
   """
-  from aminx.types.bundles import WaveScheduleBundle  # noqa: PLC0415 -- type-only at module level
-
   seq_len = decoding_order.shape[0]
   groups = jnp.arange(seq_len, dtype=jnp.int32) if tie_group_map is None else tie_group_map
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(decoding_order), tie_group_map)
