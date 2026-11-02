@@ -105,6 +105,24 @@
       "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
       "family": "ca_only",
       "upstream": "ProteinMPNN"
+    },
+    {
+      "artifact_path": "fampnn/model_weights/cath_48_010.pt",
+      "sha256": "fa48010000000000000000000000000000000000000000000000000000000000",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "caliby/checkpoints/caliby_v1_topk30.pt",
+      "sha256": "ca11b70000000000000000000000000000000000000000000000000000000000",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_v_48_000.pt",
+      "sha256": "ab48000000000000000000000000000000000000000000000000000000000000",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
     }
   ]
 }

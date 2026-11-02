@@ -3669,3 +3669,333 @@ equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_tier1_tier2_knobs.py::test_knob_semantics_cyclic_offsets"]
 note = "Cyclic peptide sequence offset modular wrapping semantics."
 
+# =============================================================================
+# Phase 4 Complex Families: FAMPNN, Caliby, AntiBMPNN
+# =============================================================================
+
+# --- FAMPNN ---
+
+[[row]]
+ref = "fampnn_model__checkpoint_id"
+targets = ["checkpoint_id"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_fampnn_checkpoint_id"]
+note = "FAMPNN checkpoint identifier (richardshuai/fampnn cath_48_010 / fampnn_0_3)."
+
+[[row]]
+ref = "fampnn_mar__num_seq_steps"
+targets = ["num_seq_steps"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_num_seq_steps"]
+note = "Number of masked autoregressive sequence refinement steps (upstream default 8)."
+
+[[row]]
+ref = "fampnn_edm__num_scn_steps"
+targets = ["num_scn_steps"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_num_scn_steps"]
+note = "Number of EDM sidechain coordinate diffusion steps per MAR step (upstream default 18)."
+
+[[row]]
+ref = "fampnn_edm__sigma_min"
+targets = ["sigma_min"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_sigma_min"]
+note = "Minimum noise level for Karras EDM schedule (upstream default 0.002)."
+
+[[row]]
+ref = "fampnn_edm__sigma_max"
+targets = ["sigma_max"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_sigma_max"]
+note = "Maximum noise level for Karras EDM schedule (upstream default 80.0)."
+
+[[row]]
+ref = "fampnn_edm__rho"
+targets = ["rho"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_rho"]
+note = "Schedule curvature exponent for Karras EDM schedule (upstream default 7.0)."
+
+[[row]]
+ref = "fampnn_edm__s_churn"
+targets = ["s_churn"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_s_churn"]
+note = "Stochastic churn parameter for Karras EDM schedule (upstream default 0.0)."
+
+[[row]]
+ref = "fampnn_edm__step_scale"
+targets = ["step_scale"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_step_scale"]
+note = "Velocity step scaling factor during EDM sampling (upstream default 1.5)."
+
+[[row]]
+ref = "fampnn_mar__pack_each_step"
+targets = ["pack_each_step"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_pack_each_step"]
+note = "Whether to diffuse sidechain coordinates at every MAR sequence step (upstream default True)."
+
+[[row]]
+ref = "fampnn_eval__relax_sidechains"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3130"
+parity_test_ids = []
+note = "OpenMM post-hoc sidechain relaxation; aminx outputs raw coordinates directly (debt-3130)."
+
+[[row]]
+ref = "fampnn_eval__relax_tolerance"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3130"
+parity_test_ids = []
+note = "OpenMM relaxation energy tolerance (debt-3130)."
+
+[[row]]
+ref = "fampnn_eval__relax_max_iterations"
+
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3130"
+parity_test_ids = []
+note = "OpenMM relaxation maximum iterations (debt-3130)."
+
+[[row]]
+ref = "fampnn_multistate__positive_states"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3131"
+parity_test_ids = []
+note = "Multi-state joint sequence optimization positive states (debt-3131)."
+
+[[row]]
+ref = "fampnn_multistate__negative_states"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3131"
+parity_test_ids = []
+note = "Multi-state joint sequence optimization negative states (debt-3131)."
+
+[[row]]
+ref = "fampnn_multistate__state_weights"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3131"
+parity_test_ids = []
+note = "Multi-state joint sequence optimization state weights (debt-3131)."
+
+[[row]]
+ref = "__aminx_only__fampnn_temperature"
+upstream = false
+targets = ["temperature"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_temperature"]
+note = "aminx-only: categorical sampling temperature for MAR sequence decoding."
+
+# --- Caliby ---
+
+[[row]]
+ref = "caliby_model__checkpoint_id"
+targets = ["checkpoint_id"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_caliby_checkpoint_id"]
+note = "Caliby checkpoint identifier (ProteinDesignLab/caliby topk30 / caliby_v1)."
+
+[[row]]
+ref = "caliby_ensemble__conformers"
+targets = ["ensemble_conformers"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_ensemble_conformers"]
+note = "Number of Gaussian coordinate noise conformers in ensemble (upstream default 1)."
+
+[[row]]
+ref = "caliby_ensemble__noise_std"
+targets = ["ensemble_noise_std"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_ensemble_noise_std"]
+note = "Standard deviation of Gaussian coordinate noise for conformer ensemble (upstream default 0.0)."
+
+[[row]]
+ref = "caliby_potts__omit_gap_penalty"
+targets = ["omit_gap_penalty"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_omit_gap_penalty"]
+note = "Gap token penalty in Potts energy calculation (upstream default 1e6)."
+
+[[row]]
+ref = "caliby_packer__num_steps"
+targets = ["packer_num_steps"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_num_steps"]
+note = "Number of EDM sidechain diffusion steps in sidechain packer (upstream default 25)."
+
+[[row]]
+ref = "caliby_packer__sigma_min"
+targets = ["packer_sigma_min"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_sigma_min"]
+note = "Minimum noise level for packer Karras EDM schedule (upstream default 0.002)."
+
+[[row]]
+ref = "caliby_packer__sigma_max"
+targets = ["packer_sigma_max"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_sigma_max"]
+note = "Maximum noise level for packer Karras EDM schedule (upstream default 80.0)."
+
+[[row]]
+ref = "caliby_packer__rho"
+targets = ["packer_rho"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_rho"]
+note = "Schedule curvature exponent for packer Karras EDM schedule (upstream default 7.0)."
+
+[[row]]
+ref = "caliby_packer__s_churn"
+targets = ["packer_s_churn"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_s_churn"]
+note = "Stochastic churn parameter for packer Karras EDM schedule (upstream default 0.0)."
+
+[[row]]
+ref = "caliby_packer__step_scale"
+targets = ["packer_step_scale"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_step_scale"]
+note = "Velocity step scaling factor for packer EDM sampling (upstream default 1.5)."
+
+[[row]]
+ref = "caliby_potts__mcmc_steps"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3132"
+parity_test_ids = []
+note = "Multi-step simulated annealing Potts MCMC sequence sampling (debt-3132)."
+
+[[row]]
+ref = "caliby_potts__cooling_schedule"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3132"
+parity_test_ids = []
+note = "Simulated annealing temperature cooling schedule (debt-3132)."
+
+[[row]]
+ref = "caliby_potts__mcmc_burnin"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3132"
+parity_test_ids = []
+note = "Simulated annealing Potts MCMC burn-in step count (debt-3132)."
+
+[[row]]
+ref = "caliby_eval__conformer_generator"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3133"
+parity_test_ids = []
+note = "Integrated AlphaFold3 / Protpardelle conformer generation pipeline (debt-3133)."
+
+[[row]]
+ref = "caliby_eval__af3_diffusion_steps"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3133"
+parity_test_ids = []
+note = "AlphaFold3 diffusion steps for conformer generation (debt-3133)."
+
+[[row]]
+ref = "caliby_eval__protpardelle_ckpt"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3133"
+parity_test_ids = []
+note = "Protpardelle partial diffusion checkpoint path (debt-3133)."
+
+# --- AntiBMPNN ---
+
+[[row]]
+ref = "antibmpnn_model__model_name"
+targets = ["checkpoint_id"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_antibmpnn_checkpoint_id"]
+note = "AntiBMPNN model weight checkpoint (zeysun/AntiBMPNN antibmpnn_v_48_000.pt)."
+
+[[row]]
+ref = "antibmpnn_cdr__scheme"
+targets = ["cdr_scheme"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_cdr_scheme"]
+note = "CDR boundary numbering scheme (chothia or imgt)."
+
+[[row]]
+ref = "antibmpnn_cdr__heavy_chain"
+targets = ["heavy_chain_id"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_heavy_chain_id"]
+note = "Antibody heavy chain ID (upstream default H / index 0)."
+
+[[row]]
+ref = "antibmpnn_cdr__light_chain"
+targets = ["light_chain_id"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_light_chain_id"]
+note = "Antibody light chain ID (upstream default L / index 1)."
+
+[[row]]
+ref = "antibmpnn_cdr__bias_weight"
+targets = ["cdr_bias_weight"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_cdr_bias_weight"]
+note = "Scaling factor for CDR log-odds logit bias addition."
+
+[[row]]
+ref = "antibmpnn_run__use_anarci"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3134"
+parity_test_ids = []
+note = "ANARCI automated antibody domain HMM numbering and annotation (debt-3134)."
+
+[[row]]
+ref = "antibmpnn_run__anarci_species"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3134"
+parity_test_ids = []
+note = "ANARCI species database selection (debt-3134)."
+
+[[row]]
+ref = "antibmpnn_run__anarci_scheme"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3134"
+parity_test_ids = []
+note = "ANARCI loop numbering scheme (debt-3134)."
+
+[[row]]
+ref = "antibmpnn_postprocess__cluster_identity"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3135"
+parity_test_ids = []
+note = "Post-sampling CD-HIT cluster sequence identity threshold (debt-3135)."
+
+[[row]]
+ref = "antibmpnn_postprocess__max_clusters"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3135"
+parity_test_ids = []
+note = "Post-sampling maximum diverse sequence cluster count (debt-3135)."
+
+[[row]]
+ref = "__aminx_only__antibmpnn_descriptors"
+upstream = false
+targets = ["compute_descriptors"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_compute_descriptors"]
+note = "aminx-only: whether to compute Barley volume/hydropathy descriptors and net charge."

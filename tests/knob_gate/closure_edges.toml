@@ -172,4 +172,30 @@ dynamic_ok = [
 ]
 data = ["tests/data/1ubq.pdb"]
 
+[slug.fampnn_parity]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
+data = ["tests/data/1ubq.pdb"]
+
+[slug.caliby_parity]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
+data = ["tests/data/1ubq.pdb"]
+
+[slug.antibmpnn_parity]
+soft = ["aminx.host.runner"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb"]
 
