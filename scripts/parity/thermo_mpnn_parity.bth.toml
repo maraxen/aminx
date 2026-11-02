@@ -1,3 +1,16 @@
+# Provenance (261102_pr-remediation, read from git history and the bathos catalog):
+# - origin/main (ab05bdce, sidecar sha256 75a48921...) graded outcomes numerically from
+#   recorded fields with f64/f32 bars only. Catalog runs 8c722b72 (error) and 6c39cbbe
+#   (pass) at commit a6e1573b used that sidecar. Their pass is pre-registered for f64/f32.
+# - de2e2b95 (PR #258) added the float16 bars to the hypothesis and rewrote every outcome to
+#   clean='pass'/'marginal', a verdict the script computes itself, in the same commit that
+#   added the float16 stage. No catalog run exists for the float16 criteria, so the float16
+#   verdict is NOT pre-registered and must not be cited as such.
+# - This revision grades numerically again from recorded fields. Every threshold below is one
+#   stated in the hypothesis text or carried over from origin/main; no threshold was changed.
+#   The float16 bars are new in de2e2b95, so they are a receipt until a run uses this sidecar.
+# - [requires.waiver] was removed in de2e2b95 without a reason. It is restored: it relaxes only
+#   [requires] artifact checks, and this sidecar has no [requires] table, so it gates nothing.
 [experiment]
 hypothesis = "JAX ThermoMPNN (v1/v2 single-mutant) and ThermoMPNNDouble (v2 epistatic Siamese) match the upstream PyTorch reference within 1e-7 in float64, 1e-4 in float32, and 1.5e-2 with Pearson r > 0.999 in float16 on 1ubq.pdb, preserve exact 0.0 wild-type self-mutation and mutation-slot order invariance, and fail decisively (> 1e-2) under all four structural/algebraic negative controls."
 stage_name = "validation"
@@ -9,20 +22,23 @@ reproduces_paper = "doi:10.1073/pnas.2314853121"
 positive_outcome = ["pass"]
 negative_outcome = ["fail", "marginal"]
 
+[requires.waiver]
+reason = "CPU parity verification vehicle against upstream PyTorch checkpoints"
+
 [outcomes.pass]
-condition = "clean = 'pass' AND n_listed > 0 AND n_failed = n_listed"
+condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-7 AND v2_f64_max_abs_diff < 1e-7 AND double_f64_max_abs_diff < 1e-7 AND v1_f32_max_abs_diff < 1e-4 AND v2_f32_max_abs_diff < 1e-4 AND double_f32_max_abs_diff < 1e-4 AND v1_f16_max_abs_diff < 1.5e-2 AND v2_f16_max_abs_diff < 1.5e-2 AND double_f16_max_abs_diff < 1.5e-2 AND v1_f16_pearson_r > 0.999 AND v2_f16_pearson_r > 0.999 AND double_f16_pearson_r > 0.999 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2 AND n_listed > 0 AND n_failed == n_listed"
 decision = "Promote ThermoMPNN and ThermoMPNNDouble JAX ports and converted .eqx.zst weights."
 reasoning = "All single-mutant (v1/v2) and double-mutant (v2) stages match upstream PyTorch checkpoints within 1e-7 in float64, 1e-4 in float32, and 1.5e-2 with Pearson r > 0.999 in float16, algebraic invariants hold exactly, and all negative controls trip."
 is_residual = false
 
 [outcomes.marginal]
-condition = "clean = 'marginal' AND n_listed > 0 AND n_failed = n_listed"
+condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-5 AND v2_f64_max_abs_diff < 1e-5 AND double_f64_max_abs_diff < 1e-5 AND v1_f32_max_abs_diff < 1e-3 AND v2_f32_max_abs_diff < 1e-3 AND double_f32_max_abs_diff < 1e-3 AND (v1_f64_max_abs_diff >= 1e-7 OR v2_f64_max_abs_diff >= 1e-7 OR double_f64_max_abs_diff >= 1e-7 OR v1_f32_max_abs_diff >= 1e-4 OR v2_f32_max_abs_diff >= 1e-4 OR double_f32_max_abs_diff >= 1e-4) AND v1_f16_max_abs_diff < 1.5e-2 AND v2_f16_max_abs_diff < 1.5e-2 AND double_f16_max_abs_diff < 1.5e-2 AND v1_f16_pearson_r > 0.999 AND v2_f16_pearson_r > 0.999 AND double_f16_pearson_r > 0.999 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2 AND n_listed > 0 AND n_failed == n_listed"
 decision = "Investigate numerical drift between PyTorch and JAX stages before promoting."
-reasoning = "Forward outputs on upstream checkpoints are close to PyTorch, exact invariants hold, and negative controls trip, but tolerances exceed the strict pass bar."
+reasoning = "Forward outputs on upstream checkpoints are close to PyTorch, exact invariants hold, and negative controls trip, but float64 or float32 tolerances exceed the strict 1e-7 / 1e-4 parity bar."
 is_residual = false
 
 [outcomes.fail]
-condition = "NOT (clean IN ('pass', 'marginal') AND n_listed > 0 AND n_failed = n_listed)"
+condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR v1_f16_max_abs_diff >= 1.5e-2 OR v2_f16_max_abs_diff >= 1.5e-2 OR double_f16_max_abs_diff >= 1.5e-2 OR v1_f16_pearson_r IS NULL OR v2_f16_pearson_r IS NULL OR double_f16_pearson_r IS NULL OR v1_f16_pearson_r <= 0.999 OR v2_f16_pearson_r <= 0.999 OR double_f16_pearson_r <= 0.999 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2 OR n_failed != n_listed OR n_listed = 0"
 decision = "Block promotion and debug trunk, LightAttention1D, or Siamese head mismatch (or re-run against upstream checkpoints)."
 reasoning = "Run used synthetic weights, parity error exceeds tolerance, an algebraic invariant is violated, or a negative control failed to trip."
 is_residual = true
