@@ -8,13 +8,12 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
-from aminx.types.bundles import WaveScheduleBundle
-
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
   from aminx.run.specs import RunSpecification
   from aminx.types.arrays import AutoRegressiveMask, DecodingOrder
+  from aminx.types.bundles import WaveScheduleBundle
   from aminx.utils.data_structures import Protein
 
 
@@ -298,6 +297,11 @@ def ar_mask_from_decoding_order(
   Returns:
     (L, L) float32 mask; ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
   """
+  # Deferred import, deliberately not at module level. aminx/__init__.py imports aminx.sampling,
+  # which imports this module, so a module-level `from aminx.types.bundles import ...` here closes
+  # a cycle through the package root. Found by a static import walk; not verified by running.
+  from aminx.types.bundles import WaveScheduleBundle  # noqa: PLC0415 -- see comment above
+
   seq_len = decoding_order.shape[0]
   groups = jnp.arange(seq_len, dtype=jnp.int32) if tie_group_map is None else tie_group_map
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(decoding_order), tie_group_map)
