@@ -39,7 +39,12 @@ from aminx.io.weights import get_topology_for_checkpoint, load_model
 from aminx.model import Aminx
 from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors, top_k
-from aminx.utils.autoregression import generate_wave_ar_mask
+from aminx.utils.autoregression import (
+  ar_mask_from_decoding_order,
+  full_context_ar_mask,
+  generate_ar_mask,
+  generate_wave_ar_mask,
+)
 from scripts.browser_validation._lattice import cubic_lattice_ca
 
 # --------------------------------------------------------------------------------------
@@ -857,3 +862,18 @@ class TestP07BundleArMaskPinning:
             f"ties={np.asarray(tie_group_map).tolist()}"
           ),
         )
+
+  def test_p07_bundle_exported_ar_mask_dtype_contract(self) -> None:
+    """Pin the AR mask contract: mask helpers return int8; exported p07_bundle ar_mask is float32."""
+    length = 6
+    order = jnp.arange(length, dtype=jnp.int32)
+    tie = jnp.zeros(length, dtype=jnp.int32)
+    bundle, _ = p07_bundle(*self._dummy_inputs(length, order, tie))
+    assert bundle.conditioning.ar_mask.dtype == jnp.float32
+
+    wave = bundle.wave
+    assert generate_ar_mask(order).dtype == jnp.int8
+    assert generate_ar_mask(order, tie_group_map=tie).dtype == jnp.int8
+    assert ar_mask_from_decoding_order(order, tie_group_map=tie).dtype == jnp.int8
+    assert generate_wave_ar_mask(wave, tie).dtype == jnp.int8
+    assert full_context_ar_mask(length).dtype == jnp.int8
