@@ -10,8 +10,11 @@ run 18c1d29c) failed on a 496-residue structure, with ddg errors up to ~0.4 agai
 while correlation stayed >= 0.9997. The error was observed to grow with system size: ddg
 max-abs difference rose from about 0.03-0.05 on a 76-residue structure to about 0.4 on a
 496-residue one (three structures; mechanism not established), so larger systems are less
-reliable. Selecting float16 emits a ``UserWarning`` from :meth:`ThermoMPNNDriver.score`. Use
-float16 for screening or ranking only. The cause of the large error has not been identified.
+reliable. A follow-up diagnostic (run 611e5c8c) found the worst error concentrated in a few
+entries (top 1% of pairs held ~65% of the squared error at 496 residues; rms error rose only
+~2.5x), so individual predictions can be far off even when the average error is small.
+Selecting float16 emits a ``UserWarning`` from :meth:`ThermoMPNNDriver.score`. Use float16 for
+screening or ranking only. The cause of the large error has not been identified.
 """
 
 from __future__ import annotations
@@ -75,6 +78,10 @@ _FLOAT16_WARNING: str = (
   "The error was observed to grow with system size: ddg max-abs difference rose from about "
   "0.03-0.05 on a 76-residue structure to about 0.4 on a 496-residue one (three structures; "
   "mechanism not established), so larger systems are less reliable. "
+  "A follow-up diagnostic (run 611e5c8c) found the worst error concentrated in a few entries "
+  "(the top 1% of pairs held ~65% of the squared error at 496 residues, while the rms error "
+  "rose only ~2.5x, 0.005 to 0.012), so individual predictions can be far off even when "
+  "the average error is small. "
   "Use float16 for screening or ranking only."
 )
 
