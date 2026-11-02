@@ -102,7 +102,7 @@ def _resolve_checkpoint_id(spec: Any, opts: ThermoMPNNOptions) -> str:  # noqa: 
 
 def _is_double_checkpoint(checkpoint_id: str) -> bool:
   """Return True when ``checkpoint_id`` names a ThermoMPNN-D (double-mutant) checkpoint."""
-  return checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id
+  return checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id or "double" in checkpoint_id
 
 
 def _calc_dtype(name: str) -> Any:  # noqa: ANN401
@@ -600,11 +600,7 @@ class ThermoMPNNDriver:
     if local_path is not None:
       path = Path(local_path)
       if path.suffix.lower() in {".pt", ".ckpt", ".npz"}:
-        if (
-          checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS
-          or "_d_" in checkpoint_id
-          or "double" in checkpoint_id
-        ):
+        if _is_double_checkpoint(checkpoint_id):
           return load_thermo_mpnn_double_pt(path, key=key)
         return load_thermo_mpnn_pt(path, key=key)
 
@@ -618,7 +614,7 @@ class ThermoMPNNDriver:
         load_thermo_mpnn_double_checkpoint(cid, local_path=local_path, key=key)
         for cid in V2_DOUBLE_ENSEMBLE_IDS
       )
-    if checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id:
+    if _is_double_checkpoint(checkpoint_id):
       return load_thermo_mpnn_double_checkpoint(
         checkpoint_id,
         local_path=local_path,
@@ -921,7 +917,7 @@ class ThermoMPNNDriver:
     sequence: Int[Array, " L"],
     *,
     mode: str = "score:ddg",
-    double_mutant: bool | None = None,
+    double_mutant: bool = False,
     pair_indices: Int[Array, "P 2"] | None = None,
     distance_threshold: float = 5.0,
     batch_size: int = 10000,
@@ -947,10 +943,11 @@ class ThermoMPNNDriver:
       Wild-type integer sequence ``(L,)``.
     mode : str, default="score:ddg"
       Scoring capability mode (must be ``"score:ddg"``, ``"single"``, or ``"double"``).
-    double_mutant : bool | None, default=None
-      Whether to evaluate double-mutant ΔΔG. ``None`` means auto: True for a
-      ``ThermoMPNNDouble`` model (epistatic), False otherwise. When ``options`` is given,
-      ``options.mode`` decides and this argument is ignored.
+    double_mutant : bool, default=False
+      Whether to evaluate double-mutant ΔΔG. A ``ThermoMPNNDouble`` model always gets
+      double-mutant output when ``options`` is None (as on ``origin/main``), even if this
+      is False. When ``options`` is given, ``options.mode`` decides and this argument is
+      ignored, so ``options.mode="single"`` on a Double model returns single-mutant output.
     pair_indices : Int[Array, "P 2"] | None, optional
       Optional explicit ``(P, 2)`` residue pairs for double-mutant scoring.
     distance_threshold : float, default=5.0
@@ -1001,8 +998,8 @@ class ThermoMPNNDriver:
       msg = "ThermoMPNNDriver.score requires at least one model."
       raise ValueError(msg)
 
-    if double_mutant is None:
-      double_mutant = isinstance(models[0], ThermoMPNNDouble)
+    if opts is None and isinstance(models[0], ThermoMPNNDouble):
+      double_mutant = True
 
     if not ensemble and len(models) > 1:
       models = (models[0],)

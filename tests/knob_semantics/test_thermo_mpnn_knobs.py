@@ -434,3 +434,51 @@ def test_pearson_r_zero_variance_is_nan() -> None:
   assert np.isnan(pearson_r(np.ones(12), ramp))
   assert np.isnan(pearson_r(ramp, np.full(12, 3.0)))
   assert pearson_r(ramp, 2.0 * ramp + 1.0) == pytest.approx(1.0)
+
+
+def test_knob_semantics_double_model_forces_double_without_options() -> None:
+  """Without options, a ThermoMPNNDouble model gives double output even when double_mutant=False."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_double_state_dict(_build_synthetic_v2_double_state_dict())
+
+  res = driver.score(
+    model,
+    coords,
+    mask,
+    residue_index,
+    chain_index,
+    sequence,
+    double_mutant=False,
+  )
+  assert "ddg_double" in res
+  assert res["ddg_double"].shape[1:] == (21, 21)
+
+
+def test_checkpoint_double_predicate_is_shared_by_load_and_schema(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A local .pt id containing 'double' routes to the double loader and the schema agrees."""
+  driver = ThermoMPNNDriver()
+  routed: list[str] = []
+  monkeypatch.setattr(
+    thermo_driver_module,
+    "load_thermo_mpnn_double_pt",
+    lambda path, *, key=None: routed.append(f"double:{path.name}") or "double-model",
+  )
+  monkeypatch.setattr(
+    thermo_driver_module,
+    "load_thermo_mpnn_pt",
+    lambda path, *, key=None: routed.append(f"single:{path.name}") or "single-model",
+  )
+  assert thermo_driver_module._is_double_checkpoint("thermo_mpnn_double_custom")
+  assert driver.load_model("thermo_mpnn_double_custom", local_path="w.pt") == "double-model"
+  assert driver.load_model("thermo_mpnn_v1_default", local_path="w.pt") == "single-model"
+  assert routed == ["double:w.pt", "single:w.pt"]
+
+  spec = SimpleNamespace(
+    checkpoint_id="thermo_mpnn_double_custom",
+    thermompnn=None,
+    model_local_path=None,
+  )
+  assert "ddg_double" in driver.result_schema(spec, "score:ddg")
