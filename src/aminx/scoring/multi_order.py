@@ -49,6 +49,22 @@ class MultiOrderScoreResult(NamedTuple):
   mean_sample_nll: jax.Array
 
 
+def _resolve_num_groups(tie_group_map: jax.Array | None, num_groups: int | None) -> int | None:
+  """Return the static group count for the tie draw, or None when there are no ties."""
+  if tie_group_map is None:
+    return None
+  if num_groups is not None:
+    return int(num_groups)
+  try:
+    return int(jnp.max(tie_group_map)) + 1
+  except jax.errors.ConcretizationTypeError as exc:
+    msg = (
+      "score_multi_order_average: tie_group_map is traced, so num_groups must be passed "
+      "explicitly (it is a static int)."
+    )
+    raise ValueError(msg) from exc
+
+
 def score_multi_order_average(
   model: ModelProtocol,
   prng_key: PRNGKeyArray,
@@ -61,6 +77,7 @@ def score_multi_order_average(
   *,
   backbone_noise: float = 0.0,
   tie_group_map: jax.Array | None = None,
+  num_groups: int | None = None,
   ligand_coords: jax.Array | None = None,
   ligand_atom_types: jax.Array | None = None,
   ligand_mask: jax.Array | None = None,
@@ -94,8 +111,11 @@ def score_multi_order_average(
     chain_index: Chain indices (L,).
     num_orders: Number of random causal permutation draws M (default: 16).
     backbone_noise: Backbone coordinate perturbation standard deviation.
-    tie_group_map: Optional (L,) tie group id per position, ids in ``[0, L)``. Tied positions
-      decode together and are mutually visible in each order's mask.
+    tie_group_map: Optional (L,) tie group id per position, ids in ``[0, num_groups)``. Tied
+      positions decode together and are mutually visible in each order's mask.
+    num_groups: Number of tie groups (static). Required when ``tie_group_map`` is traced, that
+      is, when this function runs under ``jax.jit``/``jax.vmap`` over the map. If omitted, it is
+      derived as ``max(tie_group_map) + 1``, which needs a concrete map.
     ligand_coords: Optional ligand coordinates.
     ligand_atom_types: Optional ligand atom types.
     ligand_mask: Optional ligand atom validity mask.
@@ -107,6 +127,13 @@ def score_multi_order_average(
   Returns:
     MultiOrderScoreResult containing ensemble_nll, mean_probs, std_probs,
     sample_nlls, decoding_orders, and mean_sample_nll.
+
+  Raises:
+    ValueError: If ``tie_group_map`` is traced and ``num_groups`` is not given.
+
+  JIT: ``num_groups`` is the only static input the tie draw needs. With ``num_groups`` given,
+  ``tie_group_map`` may be a traced array. Without it, the map must be concrete, because
+  ``num_groups`` is then read from its values.
   """
   if inference and isinstance(model, eqx.Module):
     model = eqx.nn.inference_mode(model, value=True)
@@ -126,10 +153,10 @@ def score_multi_order_average(
   # Generate M random causal decoding orders with the same draw the sampler uses, so the
   # order and the mask built from it agree on ties. num_groups is static and must bound the ids.
   order_keys = jax.random.split(prng_key, num_orders)
-  num_groups = None if tie_group_map is None else int(jnp.max(tie_group_map)) + 1
+  resolved_num_groups = _resolve_num_groups(tie_group_map, num_groups)
 
   def _draw_order(k: PRNGKeyArray) -> jax.Array:
-    order, _ = random_decoding_order(k, l_len, tie_group_map, num_groups)
+    order, _ = random_decoding_order(k, l_len, tie_group_map, resolved_num_groups)
     return order
 
   decoding_orders = jax.vmap(_draw_order)(order_keys)  # (M, L)

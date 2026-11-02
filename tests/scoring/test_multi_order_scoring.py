@@ -171,3 +171,60 @@ def test_tied_residues_decode_as_a_unit_in_every_order(small_model: Aminx) -> No
         for j in members:
           if i != j:
             assert mask[i, j] == 1.0 and mask[j, i] == 1.0
+
+
+def test_traced_tie_map_without_num_groups_is_refused(small_model: Aminx) -> None:
+  """A traced tie map needs a static num_groups; the refusal is raised before any model work."""
+  seq_len = 4
+  coords = jnp.zeros((seq_len, 4, 3))
+
+  def _run(tie: jax.Array) -> jax.Array:
+    return score_multi_order_average(
+      model=small_model,
+      prng_key=jax.random.PRNGKey(0),
+      sequence=jnp.arange(seq_len) % 20,
+      structure_coordinates=coords,
+      mask=jnp.ones((seq_len,)),
+      residue_index=jnp.arange(seq_len),
+      chain_index=jnp.zeros((seq_len,), dtype=jnp.int32),
+      num_orders=2,
+      tie_group_map=tie,
+    ).ensemble_nll
+
+  with pytest.raises(ValueError, match="num_groups"):
+    jax.jit(_run)(jnp.array([0, 0, 1, 1], dtype=jnp.int32))
+
+
+def test_traced_tie_map_with_explicit_num_groups_runs_under_jit(small_model: Aminx) -> None:
+  """With num_groups static, the tie map may be traced. Not executed locally (tests run on titanix)."""
+  seq_len = 4
+  coords = jnp.zeros((seq_len, 4, 3))
+
+  def _run(tie: jax.Array) -> jax.Array:
+    return score_multi_order_average(
+      model=small_model,
+      prng_key=jax.random.PRNGKey(0),
+      sequence=jnp.arange(seq_len) % 20,
+      structure_coordinates=coords,
+      mask=jnp.ones((seq_len,)),
+      residue_index=jnp.arange(seq_len),
+      chain_index=jnp.zeros((seq_len,), dtype=jnp.int32),
+      num_orders=2,
+      tie_group_map=tie,
+      num_groups=2,
+    ).ensemble_nll
+
+  eager = score_multi_order_average(
+    model=small_model,
+    prng_key=jax.random.PRNGKey(0),
+    sequence=jnp.arange(seq_len) % 20,
+    structure_coordinates=coords,
+    mask=jnp.ones((seq_len,)),
+    residue_index=jnp.arange(seq_len),
+    chain_index=jnp.zeros((seq_len,), dtype=jnp.int32),
+    num_orders=2,
+    tie_group_map=jnp.array([0, 0, 1, 1], dtype=jnp.int32),
+    num_groups=2,
+  ).ensemble_nll
+  traced = jax.jit(_run)(jnp.array([0, 0, 1, 1], dtype=jnp.int32))
+  assert float(traced) == pytest.approx(float(eager), rel=1e-5)
