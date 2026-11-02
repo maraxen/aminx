@@ -34,7 +34,7 @@ def test_head_reaches_the_uv_lock_comparison(monkeypatch: pytest.MonkeyPatch) ->
 
   def fake_row_is_stale(
     paths: list[str],
-    closure: object,
+    _closure: object,
     *,
     repo: Path | None = None,  # noqa: ARG001 - keyword must match row_is_stale's signature
     git_hash: str | None = None,
