@@ -14,6 +14,8 @@
 #   under this sidecar.
 # - Thresholds: every threshold below is stated in the hypothesis text or carried over from
 #   ab05bdce; none was changed.
+# - The fail clause also matches NULL max-abs and Pearson values (the script writes NaN as null);
+#   no threshold changed.
 # - [requires.waiver] was removed in de2e2b95 without a reason and is restored. It relaxes only
 #   [requires], which this sidecar does not declare, so it gates nothing either way.
 [experiment]
@@ -43,7 +45,7 @@ reasoning = "Forward outputs on upstream checkpoints are close to PyTorch, exact
 is_residual = false
 
 [outcomes.fail]
-condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR v1_f16_max_abs_diff >= 1.5e-2 OR v2_f16_max_abs_diff >= 1.5e-2 OR double_f16_max_abs_diff >= 1.5e-2 OR v1_f16_pearson_r IS NULL OR v2_f16_pearson_r IS NULL OR double_f16_pearson_r IS NULL OR v1_f16_pearson_r <= 0.999 OR v2_f16_pearson_r <= 0.999 OR double_f16_pearson_r <= 0.999 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2 OR n_failed != n_listed OR n_listed == 0"
+condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR v1_f16_max_abs_diff >= 1.5e-2 OR v2_f16_max_abs_diff >= 1.5e-2 OR double_f16_max_abs_diff >= 1.5e-2 OR v1_f16_pearson_r IS NULL OR v2_f16_pearson_r IS NULL OR double_f16_pearson_r IS NULL OR v1_f16_pearson_r <= 0.999 OR v2_f16_pearson_r <= 0.999 OR double_f16_pearson_r <= 0.999 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2 OR n_failed != n_listed OR n_listed == 0 OR v1_f64_max_abs_diff IS NULL OR v2_f64_max_abs_diff IS NULL OR double_f64_max_abs_diff IS NULL OR v1_f32_max_abs_diff IS NULL OR v2_f32_max_abs_diff IS NULL OR double_f32_max_abs_diff IS NULL OR v1_f16_max_abs_diff IS NULL OR v2_f16_max_abs_diff IS NULL OR double_f16_max_abs_diff IS NULL OR wt_self_max_abs_diff IS NULL OR order_invariance_max_abs_diff IS NULL OR neg_ctrl_min_max_abs_diff IS NULL"
 decision = "Block promotion and debug trunk, LightAttention1D, or Siamese head mismatch (or re-run against upstream checkpoints)."
 reasoning = "Run used synthetic weights, parity error exceeds tolerance, an algebraic invariant is violated, or a negative control failed to trip."
 is_residual = true
