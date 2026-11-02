@@ -19,7 +19,7 @@ reasoning = "Every compared array (ddg for v1 and d_ens1, ddg_double for d_ens1 
 is_residual = false
 
 [outcomes.fail]
-condition = "NOT COALESCE(weight_source == 'upstream_checkpoint' AND v1_ddg_max_abs_diff < 1.5e-2 AND v1_ddg_pearson_r > 0.999 AND d_ddg_max_abs_diff < 1.5e-2 AND d_ddg_pearson_r > 0.999 AND d_n_pairs > 0 AND d_ddg_double_max_abs_diff < 1.5e-2 AND d_ddg_double_pearson_r > 0.999, FALSE)"
+condition = "NOT (weight_source == 'upstream_checkpoint' AND v1_ddg_max_abs_diff < 1.5e-2 AND v1_ddg_pearson_r > 0.999 AND d_ddg_max_abs_diff < 1.5e-2 AND d_ddg_pearson_r > 0.999 AND d_n_pairs > 0 AND d_ddg_double_max_abs_diff < 1.5e-2 AND d_ddg_double_pearson_r > 0.999) OR weight_source IS NULL OR v1_ddg_max_abs_diff IS NULL OR v1_ddg_pearson_r IS NULL OR d_ddg_max_abs_diff IS NULL OR d_ddg_pearson_r IS NULL OR d_n_pairs IS NULL OR d_ddg_double_max_abs_diff IS NULL OR d_ddg_double_pearson_r IS NULL"
 decision = "Block use of the float16 driver path; debug the float16 cast or the driver's float16 compute path."
 reasoning = "Any compared array breaches a float16 bar, is NULL or NaN (NULL r or NULL max-abs), the weights are not upstream, or no pair was scored. NULL inputs fall through to this residual via COALESCE."
 is_residual = true
