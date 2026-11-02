@@ -12,6 +12,7 @@ import ast
 import difflib
 import hashlib
 import keyword
+import os
 import re
 import subprocess
 import sys
@@ -149,6 +150,41 @@ FAMILY_REGISTRY: dict[str, UpstreamFamilyConfig] = {
 }
 
 
+@dataclass(frozen=True)
+class RootDecision:
+  """Which layer chose an upstream checkout, so a surprising root is traceable to its cause."""
+
+  family: str
+  path: Path
+  source: str
+
+
+#: Families whose root must resolve. ProtonPottsMPNN is optional: it only adds surfaces.
+REQUIRED_FAMILIES: tuple[str, ...] = ("potts", "laser")
+
+
+def resolve_family_root(
+  cfg: UpstreamFamilyConfig,
+  explicit: Path | None,
+  environ: Mapping[str, str],
+) -> RootDecision | None:
+  """Checkout for one family: explicit argument > env var > first existing default path.
+
+  An explicit argument or env var is taken as given (the caller refuses if it is not a directory),
+  so a typo never silently falls through to a default checkout. Returns None when no layer resolves.
+  """
+  if explicit is not None:
+    return RootDecision(cfg.family, explicit.expanduser().resolve(), "argument")
+  value = environ.get(cfg.env_var, "").strip()
+  if value:
+    return RootDecision(cfg.family, Path(value).expanduser().resolve(), f"env:{cfg.env_var}")
+  for raw in cfg.default_paths:
+    candidate = Path(raw).expanduser()
+    if candidate.is_dir():
+      return RootDecision(cfg.family, candidate.resolve(), f"default:{raw}")
+  return None
+
+
 def _pascal(stem: str) -> str:
   parts = re.split(r"[^0-9A-Za-z]+", stem)
   return "".join(part[:1].upper() + part[1:] for part in parts if part)
@@ -213,11 +249,6 @@ def _resolve_commit(cfg: UpstreamFamilyConfig, root: Path, override: str | None 
     text=True,
   )
   return completed.stdout.strip() if completed.returncode == 0 and completed.stdout.strip() else "MISSING"
-
-
-def _protonpotts_commit(root: Path, override: str | None) -> str:
-  """The recorded ProtonPottsMPNN commit: the override, else the checkout's git HEAD (no VENDOR_PIN.toml there)."""
-  return _resolve_commit(FAMILY_REGISTRY["protonpotts"], root, override)
 
 
 def _extractor_sha256() -> str:
@@ -622,6 +653,8 @@ def _function_entries(
   except (SyntaxError, OSError) as exc:
     if isinstance(exc, SyntaxError):
       unresolved.append(f"{_rel(root, path)}:{exc.lineno or 0}: syntax error: {exc.msg}")
+    else:
+      unresolved.append(f"{_rel(root, path)}:0: cannot read file: {exc}")
     return []
   rel = _rel(root, path)
   stem = path.stem
@@ -663,13 +696,6 @@ def _function_entries(
     entry.knobs.sort(key=lambda knob: (knob.dest, knob.line))
     found.append(entry)
   return found
-
-
-# ProtonPottsMPNN has no argparse CLI on its design path. Its knobs are the fields of one dataclass plus the
-# arguments of one engine method, both in the vendored foundry package (spec §50).
-_PROTONPOTTS_ENGINE = Path("foundry/models/mpnn/src/mpnn/inference_engines/potts_mpnn_ph.py")
-_PROTONPOTTS_DATACLASSES = frozenset({"PHDesignCriteria"})
-_PROTONPOTTS_FUNCS = frozenset({"run_ph_redesign"})
 
 
 def _field_default(value: ast.AST | None) -> tuple[ast.AST | None, str]:
@@ -714,8 +740,12 @@ def _extract_dataclass_entries(
   try:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
   except (SyntaxError, OSError) as exc:
+    # Both causes are recorded: an unreadable file is as much a gap in the surface as a syntax error,
+    # and an empty list with no message hides which one happened.
     if isinstance(exc, SyntaxError):
       unresolved.append(f"{rel}:{exc.lineno or 0}: syntax error: {exc.msg}")
+    else:
+      unresolved.append(f"{rel}:0: cannot read file: {exc}")
     return []
   found: list[Entry] = []
   for node in ast.walk(tree):
@@ -758,14 +788,6 @@ def _extract_dataclass_entries(
     entry.knobs.sort(key=lambda knob: (knob.dest, knob.line))
     found.append(entry)
   return found
-
-
-def _protonpotts_dataclass_entries(root: Path, path: Path, unresolved: list[str]) -> list[Entry]:
-  return _extract_dataclass_entries("protonpotts", root, path, _PROTONPOTTS_DATACLASSES, unresolved)
-
-
-def _extract_protonpotts(root: Path, unresolved: list[str]) -> list[Entry]:
-  return _extract_family(FAMILY_REGISTRY["protonpotts"], root, unresolved)
 
 
 def _cfg_chain(node: ast.AST) -> tuple[str, str] | None:
@@ -1712,20 +1734,43 @@ def main(argv: Sequence[str] | None = None) -> int:
   args = parser.parse_args(argv)
   warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-  roots: dict[str, Path] = {}
+  explicit: dict[str, Path] = {}
   for item in args.root:
     family, sep, path_str = item.partition("=")
     if not sep:
       print(f"REFUSING: --root must be FAMILY=PATH format, got {item!r}", file=sys.stderr)
       return 2
-    roots[family.strip().lower()] = Path(path_str.strip()).expanduser().resolve()
-
+    explicit[family.strip().lower()] = Path(path_str.strip())
   if args.potts_root:
-    roots["potts"] = args.potts_root.expanduser().resolve()
+    explicit["potts"] = args.potts_root
   if args.laser_root:
-    roots["laser"] = args.laser_root.expanduser().resolve()
+    explicit["laser"] = args.laser_root
   if args.protonpotts_root:
-    roots["protonpotts"] = args.protonpotts_root.expanduser().resolve()
+    explicit["protonpotts"] = args.protonpotts_root
+
+  roots: dict[str, Path] = {}
+  for family, cfg in FAMILY_REGISTRY.items():
+    decision = resolve_family_root(cfg, explicit.get(family), os.environ)
+    if decision is None:
+      if family in REQUIRED_FAMILIES:
+        print(
+          f"REFUSING: no {family} root: pass --{family}-root, set {cfg.env_var}, "
+          f"or check out one of {', '.join(cfg.default_paths)}",
+          file=sys.stderr,
+        )
+        return 2
+      continue
+    if not decision.path.is_dir():
+      print(
+        f"REFUSING: {family} root {decision.path} ({decision.source}) is not a directory",
+        file=sys.stderr,
+      )
+      return 2
+    roots[family] = decision.path
+    print(f"root {family}: {decision.path} [{decision.source}]")
+  for family, path in explicit.items():
+    if family not in FAMILY_REGISTRY:
+      roots[family] = path.expanduser().resolve()
 
   commit_overrides: dict[str, str] = {}
   for item in args.commit:
@@ -1737,10 +1782,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
   if args.protonpotts_commit:
     commit_overrides["protonpotts"] = args.protonpotts_commit
-
-  if "potts" not in roots or "laser" not in roots:
-    print("REFUSING: both potts and laser roots must be specified", file=sys.stderr)
-    return 2
 
   extracted = extract(roots=roots)
   sha = _extractor_sha256()
