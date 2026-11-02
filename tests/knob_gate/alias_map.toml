@@ -3596,9 +3596,9 @@ note = "aminx-only: the JSON file of variants for score:energy / score:ddg. Upst
 [[row]]
 ref = "thermo_model__checkpoint_id"
 targets = ["checkpoint_id"]
-equivalence = "identical"
+equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_checkpoint_id"]
-note = "ThermoMPNN model checkpoint selection (v1 default vs v2 single-mutant vs v2 double-mutant)."
+note = "ThermoMPNN checkpoint selection (v1 default vs v2 single-mutant vs v2 double-mutant). Not identical: the reference default is 'thermo_mpnn_v1_default', while aminx's option defaults to None and resolves explicit option > spec.checkpoint_id > that same v1 default. The named ids route the same way; the test drives that precedence through load/stages."
 
 [[row]]
 ref = "thermo_model__mode"
