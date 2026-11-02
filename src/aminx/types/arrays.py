@@ -57,10 +57,10 @@ SequenceEdgeFeatures = Float[
   ArrayLike,
   "num_residues num_neighbors num_features",
 ]  # Sequence edge features
-AutoRegressiveMask = Float[
+AutoRegressiveMask = Bool[
   ArrayLike,
   "num_residues num_residues",
-]  # Mask for autoregressive decoding: float32 0/1 values (see generate_ar_mask)
+]  # Mask for autoregressive decoding
 InputBias = Float[ArrayLike, "num_residues num_classes"]  # Input bias for classification
 InputLengths = Int[ArrayLike, "num_sequences"]  # Lengths of input sequences
 BFactors = Float[ArrayLike, "num_residues num_atom_types"]  # B-factors for residues

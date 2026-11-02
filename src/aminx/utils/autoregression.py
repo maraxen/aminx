@@ -174,13 +174,15 @@ def generate_ar_mask(
   Returns
   -------
   AutoRegressiveMask
-      (L, L) **float32** mask (values 0.0 or 1.0; the diagonal is 0), where mask[i, j] == 1
-      iff position i sees position j's decoded sequence. Float, not bool or int, because the
-      decoder gathers it into a float attention mask and ``ConditioningBundle.ar_mask`` is
-      typed Float; the bundle builders cast it to float32 as well.
+      (L, L) **int32** mask (values 0 or 1; the diagonal is 0), where mask[i, j] == 1 iff
+      position i sees position j's decoded sequence. int32 is the dtype this function has
+      always returned; the delegated float32 mask is cast here, before the ``chain_idx``
+      product, so every path returns int32. ``ar_mask_from_decoding_order`` itself stays
+      float32.
   """
   del num_groups
   ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
+  ar_mask = ar_mask.astype(jnp.int32)
   if chain_idx is not None:
     same_chain = (chain_idx[:, None] == chain_idx[None, :]).astype(ar_mask.dtype)
     ar_mask = ar_mask * same_chain
@@ -286,8 +288,8 @@ def ar_mask_from_decoding_order(
   This is the mask to pair with what ``utils.decoding_order`` functions return. It is built
   through the same schedule the sampler decodes with (``WaveScheduleBundle.from_decoding_order``
   then :func:`generate_wave_ar_mask`), so a mask built here and a wave built from the same
-  order cannot disagree. :func:`generate_ar_mask` computes the same mask for an order and
-  additionally accepts ``chain_idx``.
+  order cannot disagree. :func:`generate_ar_mask` gives the same 0/1 values for an order (as
+  int32 rather than float32) and additionally accepts ``chain_idx``.
 
   Args:
     decoding_order: (L,) ORDER array.
