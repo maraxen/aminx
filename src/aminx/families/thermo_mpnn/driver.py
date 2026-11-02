@@ -54,6 +54,8 @@ V2_DOUBLE_ENSEMBLE_IDS: tuple[str, str, str] = (
 )
 
 DEFAULT_CHECKPOINT_ID: str = "thermo_mpnn_v1_default"
+_VALID_SCORE_MODES: frozenset[str] = frozenset({"score:ddg", "score:ddg_double", "single", "double"})
+_VALID_DTYPES: frozenset[str] = frozenset({"float32", "float16"})
 
 log = logging.getLogger(__name__)
 
@@ -916,7 +918,7 @@ class ThermoMPNNDriver:
     sequence: Int[Array, " L"],
     *,
     mode: str = "score:ddg",
-    double_mutant: bool = False,
+    double_mutant: bool | None = None,
     pair_indices: Int[Array, "P 2"] | None = None,
     distance_threshold: float = 5.0,
     batch_size: int = 10000,
@@ -942,8 +944,10 @@ class ThermoMPNNDriver:
       Wild-type integer sequence ``(L,)``.
     mode : str, default="score:ddg"
       Scoring capability mode (must be ``"score:ddg"``, ``"single"``, or ``"double"``).
-    double_mutant : bool, default=False
-      Whether to evaluate double-mutant epistatic ΔΔG.
+    double_mutant : bool | None, default=None
+      Whether to evaluate double-mutant ΔΔG. ``None`` means auto: True for a
+      ``ThermoMPNNDouble`` model (epistatic), False otherwise. When ``options`` is given,
+      ``options.mode`` decides and this argument is ignored.
     pair_indices : Int[Array, "P 2"] | None, optional
       Optional explicit ``(P, 2)`` residue pairs for double-mutant scoring.
     distance_threshold : float, default=5.0
@@ -960,9 +964,16 @@ class ThermoMPNNDriver:
     Returns
     -------
     dict[str, jax.Array]
-      Dictionary containing ``"ddg"`` ``(L, 21)`` and, when ``double_mutant=True``,
-      ``"ddg_double"`` ``(P, 21, 21)`` and ``"pair_indices"`` ``(P, 2)``.
+      ``"ddg"`` ``(L, 21)`` float32. When double-mutant scoring is on, also
+      ``"ddg_double"`` ``(P, 21, 21)`` float32 and ``"pair_indices"`` ``(P, 2)`` int32.
+      For a ``ThermoMPNNDouble`` model ``ddg_double`` is epistatic; for a single-mutant
+      model it is the additive approximation ``s_i + s_j`` (see the schema attribute
+      ``ddg_double_method``). ``P`` is 0 when no residue pair is within
+      ``distance_threshold``; no pairs are substituted.
     """
+    if mode not in _VALID_SCORE_MODES:
+      msg = f"Unsupported ThermoMPNN score mode: {mode!r}; expected one of {sorted(_VALID_SCORE_MODES)}."
+      raise ValueError(msg)
     opts = options
     if opts is not None:
       double_mutant = opts.mode == "double"
@@ -970,6 +981,9 @@ class ThermoMPNNDriver:
       batch_size = opts.batch_size
       dtype = opts.dtype
       ensemble = opts.ensemble
+    if dtype not in _VALID_DTYPES:
+      msg = f"Unsupported ThermoMPNN dtype: {dtype!r}; expected 'float32' or 'float16'."
+      raise ValueError(msg)
 
     if mode in ("double", "score:ddg_double"):
       double_mutant = True
@@ -984,13 +998,16 @@ class ThermoMPNNDriver:
       msg = "ThermoMPNNDriver.score requires at least one model."
       raise ValueError(msg)
 
+    if double_mutant is None:
+      double_mutant = isinstance(models[0], ThermoMPNNDouble)
+
     if not ensemble and len(models) > 1:
       models = (models[0],)
 
-    calc_dtype = jnp.float16 if dtype == "float16" else jnp.float32
+    calc_dtype = _calc_dtype(dtype)
     coords = jnp.asarray(coords, dtype=calc_dtype)
     mask = jnp.asarray(mask, dtype=calc_dtype)
-    models = tuple(cast_floating(m, calc_dtype) for m in models)
+    models = tuple(_ensure_dtype(m, calc_dtype) for m in models)
 
     inv_n = 1.0 / float(len(models))
     if double_mutant:
@@ -1004,31 +1021,29 @@ class ThermoMPNNDriver:
         valid_pair = (mask[i_idx] > 0) & (mask[j_idx] > 0) & (pair_dists <= distance_threshold)
         p_idx = jnp.stack([i_idx, j_idx], axis=-1)[valid_pair]
         if p_idx.shape[0] == 0:
-          if num_l >= 2:
-            p_idx = jnp.stack(
-              [
-                jnp.arange(num_l - 1, dtype=jnp.int32),
-                jnp.arange(1, num_l, dtype=jnp.int32),
-              ],
-              axis=-1,
-            )
-          else:
-            p_idx = jnp.zeros((1, 2), dtype=jnp.int32)
+          log.warning(
+            "ThermoMPNN double-mutant scoring: no residue pair within distance_threshold=%.2f A; "
+            "returning zero epistatic pairs.",
+            distance_threshold,
+          )
+          p_idx = jnp.zeros((0, 2), dtype=jnp.int32)
       else:
         p_idx = jnp.asarray(pair_indices, dtype=jnp.int32)
 
       if isinstance(models[0], ThermoMPNNDouble):
-        first_s, first_d, pair_idx = _score_double_ddg(
+        first_s, first_d, _ = _score_double_ddg(
           models[0], coords, mask, residue_index, chain_index, sequence, p_idx, batch_size=batch_size,
         )
         sum_single = first_s
         sum_double = first_d
         for m in models[1:]:
-          s_ddg, d_ddg, pair_idx = _score_double_ddg(
+          s_ddg, d_ddg, _ = _score_double_ddg(
             m, coords, mask, residue_index, chain_index, sequence, p_idx, batch_size=batch_size,
           )
           sum_single = sum_single + s_ddg
           sum_double = sum_double + d_ddg
+        ddg_single = sum_single * inv_n
+        ddg_double = sum_double * inv_n
       else:
         sum_single = _score_single_ddg(
           models[0], coords, mask, residue_index, chain_index, sequence,
@@ -1038,14 +1053,13 @@ class ThermoMPNNDriver:
             m, coords, mask, residue_index, chain_index, sequence,
           )
         s_avg = sum_single * inv_n
-        sum_double = (
-          s_avg[p_idx[:, 0], :, None] + s_avg[p_idx[:, 1], None, :]
-        ) / inv_n
-        pair_idx = p_idx
+        ddg_single = s_avg
+        # Additive approximation s_i + s_j (not epistatic); see ddg_double_method in the schema.
+        ddg_double = s_avg[p_idx[:, 0], :, None] + s_avg[p_idx[:, 1], None, :]
       return {
-        "ddg": sum_single * inv_n,
-        "ddg_double": sum_double * inv_n,
-        "pair_indices": pair_idx,
+        "ddg": ddg_single.astype(jnp.float32),
+        "ddg_double": ddg_double.astype(jnp.float32),
+        "pair_indices": p_idx.astype(jnp.int32),
       }
 
     if isinstance(models[0], ThermoMPNNDouble):
@@ -1080,7 +1094,7 @@ class ThermoMPNNDriver:
         sum_ddg = sum_ddg + _score_single_ddg(
           m, coords, mask, residue_index, chain_index, sequence,
         )
-    return {"ddg": sum_ddg * inv_n}
+    return {"ddg": (sum_ddg * inv_n).astype(jnp.float32)}
 
 
 def get_driver(*, family: str = "thermompnn") -> ThermoMPNNDriver:

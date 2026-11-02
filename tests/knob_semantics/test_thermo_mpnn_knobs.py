@@ -17,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import equinox as eqx
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -43,6 +44,7 @@ from aminx.families.thermo_mpnn import (
   convert_thermo_mpnn_state_dict,
 )
 from aminx.families.thermo_mpnn import driver as thermo_driver_module
+from aminx.host.family_runner import _check_chunk
 from aminx.families.thermo_mpnn.driver import ThermoMPNNDriver
 from aminx.families.thermo_mpnn.model import ThermoMPNNDouble
 from aminx.run.options import ThermoMPNNOptions
@@ -314,3 +316,115 @@ def test_knob_semantics_checkpoint_id(routed_loaders: list[tuple[str, str]]) -> 
   assert routed_loaders[-1] == ("single", "thermo_mpnn_v1_default")
   assert not isinstance(model, ThermoMPNNDouble)
   assert "ddg_double" not in driver.result_schema(spec, "score:ddg")
+
+
+def test_knob_semantics_mode_and_dtype_validation() -> None:
+  """Unknown mode or dtype values are rejected instead of silently accepted."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
+
+  with pytest.raises(ValueError, match="mode"):
+    driver.score(model, coords, mask, residue_index, chain_index, sequence, mode="doubel")
+  with pytest.raises(ValueError, match="dtype"):
+    driver.score(model, coords, mask, residue_index, chain_index, sequence, dtype="fp16")
+  with pytest.raises(ValueError, match="mode"):
+    ThermoMPNNOptions(mode="doubel")  # type: ignore[arg-type]
+  with pytest.raises(ValueError, match="dtype"):
+    ThermoMPNNOptions(dtype="fp16")  # type: ignore[arg-type]
+
+
+def test_knob_semantics_double_model_default_outputs() -> None:
+  """A ThermoMPNNDouble model with default arguments returns ddg, ddg_double and pair_indices."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_double_state_dict(_build_synthetic_v2_double_state_dict())
+
+  res = driver.score(model, coords, mask, residue_index, chain_index, sequence)
+  assert "ddg" in res
+  assert "ddg_double" in res
+  assert "pair_indices" in res
+  num_pairs = res["pair_indices"].shape[0]
+  assert num_pairs > 0
+  assert res["ddg_double"].shape == (num_pairs, 21, 21)
+
+
+def test_knob_semantics_no_pairs_within_threshold() -> None:
+  """No residue pair within distance_threshold gives zero epistatic pairs, not adjacent pairs."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_double_state_dict(_build_synthetic_v2_double_state_dict())
+
+  res = driver.score(
+    model,
+    coords,
+    mask,
+    residue_index,
+    chain_index,
+    sequence,
+    options=ThermoMPNNOptions(mode="double", distance_threshold=3.0),
+  )
+  assert np.asarray(res["pair_indices"]).shape == (0, 2)
+  assert np.asarray(res["ddg_double"]).shape == (0, 21, 21)
+
+
+def test_knob_semantics_additive_double_for_single_model() -> None:
+  """Single-mutant model with mode='double' returns s_i + s_j and says so in the schema."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_state_dict(_build_synthetic_v2_single_state_dict())
+
+  res = driver.score(
+    model,
+    coords,
+    mask,
+    residue_index,
+    chain_index,
+    sequence,
+    options=ThermoMPNNOptions(mode="double", distance_threshold=6.0),
+  )
+  pairs = np.asarray(res["pair_indices"])
+  ddg = np.asarray(res["ddg"])
+  assert pairs.shape[0] > 0
+  expected = ddg[pairs[:, 0], :, None] + ddg[pairs[:, 1], None, :]
+  np.testing.assert_allclose(np.asarray(res["ddg_double"]), expected, atol=1e-5)
+
+  spec = SimpleNamespace(
+    checkpoint_id="thermo_mpnn_v2_ens1",
+    thermompnn=ThermoMPNNOptions(mode="double"),
+    model_local_path=None,
+  )
+  schema = driver.result_schema(spec, "score:ddg")
+  assert schema["ddg_double"].attrs["ddg_double_method"] == "additive"
+
+
+def test_knob_semantics_float16_passes_result_schema() -> None:
+  """float16 stage output goes through the family_runner schema check (float32 declared)."""
+  driver = ThermoMPNNDriver()
+  spec = SimpleNamespace(
+    checkpoint_id="thermo_mpnn_v1_default",
+    thermompnn=ThermoMPNNOptions(dtype="float16"),
+    model_local_path=None,
+  )
+  model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
+  stages = driver.stages(spec, "score:ddg", model)
+  batch = driver.collate_batch((driver.prepare_structure(_UBQ_PDB),), input_indices=(0,))
+  produced = dict(
+    stages(
+      batch,
+      chunk_start=0,
+      chunk_count=1,
+      scalar_dropout=False,
+      dropout_key=jax.random.PRNGKey(0),
+    ),
+  )
+  schema = driver.result_schema(spec, "score:ddg")
+  # Mirror family_runner._consume_batch: single-structure output gains the leading axis.
+  leading = {
+    name: np.asarray(value)[None, ...]
+    if np.asarray(value).ndim == len(schema[name].dims)
+    else np.asarray(value)
+    for name, value in produced.items()
+  }
+  _check_chunk(leading, schema, n_structures=1)
+  assert np.asarray(produced["ddg"]).dtype == np.float32
