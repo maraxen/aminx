@@ -662,10 +662,11 @@ class ThermoMPNNDriver:
     checkpoint_id = _resolve_checkpoint_id(spec, opts)
     local_path = getattr(spec, "model_local_path", None)
     loaded = self.load_model(checkpoint_id, local_path=local_path)
-    target = _calc_dtype(opts.dtype)
+    # Weights keep the precision they were loaded in. stages() casts once to
+    # opts.dtype, so a later float32 score() on this object is not upcast from float16.
     if isinstance(loaded, tuple):
-      return ThermoMPNNEnsemble(tuple(_ensure_dtype(m, target) for m in loaded))
-    return _ensure_dtype(loaded, target)
+      return ThermoMPNNEnsemble(loaded)
+    return loaded
 
   def mpnn_core(self, model: eqx.Module) -> Any:  # noqa: ANN401
     """Return the embedded ProteinMPNN trunk, or None.
