@@ -195,7 +195,8 @@ def scan_file(repo: Path, path: str) -> tuple[set[str], list[int]]:
   return found, dynamic
 
 
-def load_edges(path: Path = _EDGES_FILE) -> Mapping[str, Mapping[str, object]]:
+def load_edges(path: Path | None = None) -> Mapping[str, Mapping[str, object]]:
+  path = _EDGES_FILE if path is None else path  # read at call time, so a test can point it elsewhere
   if not path.is_file():
     return {}
   table = tomllib.loads(path.read_text(encoding="utf-8")).get("slug", {})
@@ -335,12 +336,16 @@ def changed_packages_in_uv_lock(
         name = _canonical_package(str(p["name"]))
         # The dependency list is part of the entry: a bumped or dropped transitive edge changes
         # which packages a row can reach, even when the package's own version is unchanged.
+        # uv.lock carries these per package: [package.optional-dependencies] and
+        # [package.dev-dependencies] tables. An extra or dev-group edge change counts too.
         res[name] = (
           p.get("version"),
           p.get("source"),
           p.get("sdist"),
           p.get("wheels"),
           p.get("dependencies"),
+          p.get("optional-dependencies"),
+          p.get("dev-dependencies"),
         )
     return res
 
@@ -416,14 +421,24 @@ def compute_closure(
 
 
 @functools.cache
-def _declared_oracle_dirs() -> tuple[str, ...]:
-  """Every oracle directory any row declares, so an undeclared oracle path can be told apart."""
+def _declared_oracle_dirs_at(path: str, mtime_ns: int) -> tuple[str, ...]:
+  """Oracle dirs declared in one edges file. Keyed by path AND mtime, so a different or edited file
+  is never answered from a stale entry."""
   dirs: set[str] = set()
-  for body in load_edges().values():
+  for body in load_edges(Path(path)).values():
     value = body.get("oracle_dirs", [])
     if isinstance(value, list):
       dirs.update(_norm(str(item)) for item in value if isinstance(item, str))
   return tuple(sorted(dirs))
+
+
+def _declared_oracle_dirs() -> tuple[str, ...]:
+  path = _EDGES_FILE
+  try:
+    mtime_ns = path.stat().st_mtime_ns
+  except OSError:
+    mtime_ns = -1
+  return _declared_oracle_dirs_at(str(path), mtime_ns)
 
 
 def row_is_stale(

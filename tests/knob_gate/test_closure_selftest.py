@@ -330,6 +330,53 @@ def test_dependency_list_change_marks_the_package_changed(tmp_path: Path) -> Non
   assert changed_packages_in_uv_lock(tmp_path, base) == {"jax"}
 
 
+def test_declared_oracle_dirs_follow_the_edges_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  # Pre-fix the declared set was cached once against the global file, so a different or edited edges
+  # file was answered from stale data. Now the cache is keyed by path and mtime.
+  from knob_gate import _closure  # noqa: PLC0415
+
+  edges = tmp_path / "closure_edges.toml"
+  edges.write_text('[slug.a]\noracle_dirs = ["aminx-oracles/dumps/x/"]\n', encoding="utf-8")
+  os.utime(edges, ns=(1_000_000_000, 1_000_000_000))
+  monkeypatch.setattr(_closure, "_EDGES_FILE", edges)
+  path = "aminx-oracles/dumps/x/a.bin"
+  assert _closure.row_is_stale([path], Closure("b", frozenset())) is False
+
+  edges.write_text("[slug.a]\noracle_dirs = []\n", encoding="utf-8")
+  os.utime(edges, ns=(2_000_000_000, 2_000_000_000))
+  assert _closure.row_is_stale([path], Closure("b", frozenset())) is True
+
+
+@pytest.mark.parametrize(
+  ("table", "body"),
+  [
+    ("optional-dependencies", 'cuda = [{ name = "jax-cuda" }]\n'),
+    ("dev-dependencies", 'test = [{ name = "pytest" }]\n'),
+  ],
+)
+def test_extra_and_dev_group_changes_mark_the_package_changed(
+  tmp_path: Path, table: str, body: str,
+) -> None:
+  from knob_gate._closure import changed_packages_in_uv_lock  # noqa: PLC0415
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  before = '[[package]]\nname = "jax"\nversion = "1.0"\n'
+  after = before + f"[package.{table}]\n" + body
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(before, encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "before")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(after, encoding="utf-8")
+  assert changed_packages_in_uv_lock(tmp_path, base) == {"jax"}
+
+
 @pytest.mark.parametrize(
   ("source", "expected"),
   [
