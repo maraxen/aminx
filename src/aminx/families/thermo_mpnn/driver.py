@@ -54,7 +54,9 @@ V2_DOUBLE_ENSEMBLE_IDS: tuple[str, str, str] = (
 )
 
 DEFAULT_CHECKPOINT_ID: str = "thermo_mpnn_v1_default"
-_VALID_SCORE_MODES: frozenset[str] = frozenset({"score:ddg", "score:ddg_double", "single", "double"})
+_VALID_SCORE_MODES: frozenset[str] = frozenset(
+  {"score:ddg", "score:ddg_double", "single", "double"}
+)
 _VALID_DTYPES: frozenset[str] = frozenset({"float32", "float16"})
 
 log = logging.getLogger(__name__)
@@ -382,9 +384,7 @@ class _ThermoScoreStages:
       out["ddg_double"] = (
         double_rows[0] if len(double_rows) == 1 else jnp.stack(double_rows, axis=0)
       )
-      out["pair_indices"] = (
-        pair_rows[0] if len(pair_rows) == 1 else jnp.stack(pair_rows, axis=0)
-      )
+      out["pair_indices"] = pair_rows[0] if len(pair_rows) == 1 else jnp.stack(pair_rows, axis=0)
     return out
 
 
@@ -435,12 +435,16 @@ class ThermoMPNNDriver:
       num_l = int(coords_arr.shape[0])
       return {
         "coords": coords_arr,
-        "mask": np.asarray(pdb_path.get("mask", np.ones((num_l,), dtype=np.float32)), dtype=np.float32),
+        "mask": np.asarray(
+          pdb_path.get("mask", np.ones((num_l,), dtype=np.float32)), dtype=np.float32
+        ),
         "residue_index": np.asarray(
-          pdb_path.get("residue_index", np.arange(num_l, dtype=np.int32)), dtype=np.int32,
+          pdb_path.get("residue_index", np.arange(num_l, dtype=np.int32)),
+          dtype=np.int32,
         ),
         "chain_index": np.asarray(
-          pdb_path.get("chain_index", np.zeros((num_l,), dtype=np.int32)), dtype=np.int32,
+          pdb_path.get("chain_index", np.zeros((num_l,), dtype=np.int32)),
+          dtype=np.int32,
         ),
         "sequence": np.clip(
           np.asarray(pdb_path.get("sequence", np.zeros((num_l,), dtype=np.int32)), dtype=np.int32),
@@ -558,11 +562,7 @@ class ThermoMPNNDriver:
       Host batch ready for :meth:`stages`.
     """
     prepared = tuple(dict(it) for it in items)
-    indices = (
-      input_indices
-      if input_indices is not None
-      else tuple(range(len(prepared)))
-    )
+    indices = input_indices if input_indices is not None else tuple(range(len(prepared)))
     lengths = tuple(int(np.asarray(it["coords"]).shape[0]) for it in prepared)
     arrays: dict[str, Any] = {"prepared": prepared}
     if len(prepared) == 1:
@@ -600,7 +600,11 @@ class ThermoMPNNDriver:
     if local_path is not None:
       path = Path(local_path)
       if path.suffix.lower() in {".pt", ".ckpt", ".npz"}:
-        if checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id or "double" in checkpoint_id:
+        if (
+          checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS
+          or "_d_" in checkpoint_id
+          or "double" in checkpoint_id
+        ):
           return load_thermo_mpnn_double_pt(path, key=key)
         return load_thermo_mpnn_pt(path, key=key)
 
@@ -616,10 +620,14 @@ class ThermoMPNNDriver:
       )
     if checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id:
       return load_thermo_mpnn_double_checkpoint(
-        checkpoint_id, local_path=local_path, key=key,
+        checkpoint_id,
+        local_path=local_path,
+        key=key,
       )
     return load_thermo_mpnn_checkpoint(
-      checkpoint_id, local_path=local_path, key=key,
+      checkpoint_id,
+      local_path=local_path,
+      key=key,
     )
 
   def load(self, spec: Any) -> eqx.Module:  # noqa: ANN401
@@ -675,11 +683,7 @@ class ThermoMPNNDriver:
         Iterator of collated single-structure batches.
     """
     raw_inputs = getattr(spec, "inputs", ())
-    inputs_list = (
-      [raw_inputs]
-      if isinstance(raw_inputs, (str, Path, Mapping))
-      else list(raw_inputs)
-    )
+    inputs_list = [raw_inputs] if isinstance(raw_inputs, (str, Path, Mapping)) else list(raw_inputs)
     pending: list[tuple[int, str]] = []
     for index, item in enumerate(inputs_list):
       try:
@@ -859,7 +863,8 @@ class ThermoMPNNDriver:
           grp[name] = arr
     except Exception:  # noqa: BLE001
       (out_path / ".zgroup").write_text(
-        json.dumps({"zarr_format": 2}, indent=2) + "\n", encoding="utf-8",
+        json.dumps({"zarr_format": 2}, indent=2) + "\n",
+        encoding="utf-8",
       )
       (out_path / ".zattrs").write_text(
         json.dumps(
@@ -907,10 +912,7 @@ class ThermoMPNNDriver:
   def score(  # noqa: PLR0915
     self,
     model_or_ensemble: (
-      ThermoMPNN
-      | ThermoMPNNDouble
-      | ThermoMPNNEnsemble
-      | Sequence[ThermoMPNN | ThermoMPNNDouble]
+      ThermoMPNN | ThermoMPNNDouble | ThermoMPNNEnsemble | Sequence[ThermoMPNN | ThermoMPNNDouble]
     ),
     coords: Float[Array, "L 4 3"],
     mask: Float[Array, " L"],
@@ -1033,13 +1035,27 @@ class ThermoMPNNDriver:
 
       if isinstance(models[0], ThermoMPNNDouble):
         first_s, first_d, _ = _score_double_ddg(
-          models[0], coords, mask, residue_index, chain_index, sequence, p_idx, batch_size=batch_size,
+          models[0],
+          coords,
+          mask,
+          residue_index,
+          chain_index,
+          sequence,
+          p_idx,
+          batch_size=batch_size,
         )
         sum_single = first_s
         sum_double = first_d
         for m in models[1:]:
           s_ddg, d_ddg, _ = _score_double_ddg(
-            m, coords, mask, residue_index, chain_index, sequence, p_idx, batch_size=batch_size,
+            m,
+            coords,
+            mask,
+            residue_index,
+            chain_index,
+            sequence,
+            p_idx,
+            batch_size=batch_size,
           )
           sum_single = sum_single + s_ddg
           sum_double = sum_double + d_ddg
@@ -1047,11 +1063,21 @@ class ThermoMPNNDriver:
         ddg_double = sum_double * inv_n
       else:
         sum_single = _score_single_ddg(
-          models[0], coords, mask, residue_index, chain_index, sequence,
+          models[0],
+          coords,
+          mask,
+          residue_index,
+          chain_index,
+          sequence,
         )
         for m in models[1:]:
           sum_single = sum_single + _score_single_ddg(
-            m, coords, mask, residue_index, chain_index, sequence,
+            m,
+            coords,
+            mask,
+            residue_index,
+            chain_index,
+            sequence,
           )
         s_avg = sum_single * inv_n
         ddg_single = s_avg
@@ -1089,11 +1115,21 @@ class ThermoMPNNDriver:
         sum_ddg = sum_ddg + s_ddg
     else:
       sum_ddg = _score_single_ddg(
-        models[0], coords, mask, residue_index, chain_index, sequence,
+        models[0],
+        coords,
+        mask,
+        residue_index,
+        chain_index,
+        sequence,
       )
       for m in models[1:]:
         sum_ddg = sum_ddg + _score_single_ddg(
-          m, coords, mask, residue_index, chain_index, sequence,
+          m,
+          coords,
+          mask,
+          residue_index,
+          chain_index,
+          sequence,
         )
     return {"ddg": (sum_ddg * inv_n).astype(jnp.float32)}
 
