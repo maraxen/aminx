@@ -154,11 +154,10 @@ def test_matches_colabdesign_bit_for_bit_on_the_untied_path():
       ORDER array   order[k] = which position is decoded at step k
       RANK  array   rank[i]  = at which step position i is decoded   (rank = argsort(order))
 
-  ColabDesign's `get_ar_mask` calls `order.argsort()` first, so it expects an ORDER array.
-  `generate_ar_mask` compares `decoding_order` values directly, so it expects a RANK array.
-  Handing both the SAME permutation compares two different orders and fails for every
-  non-identity permutation -- which says nothing about either implementation. Each is given
-  the encoding it documents.
+  ColabDesign's `get_ar_mask` calls `order.argsort()` first, so it takes an ORDER array and
+  inverts it internally. `generate_ar_mask` also takes an ORDER array (`order[t]` = position
+  decoded at step t), so the same array is passed to both below. A RANK array (`argsort(order)`)
+  handed to either one would silently compute the mask of the inverse order.
   """
   cd_utils = pytest.importorskip(
     "colabdesign.mpnn.utils",
