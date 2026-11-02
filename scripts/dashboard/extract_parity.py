@@ -23,6 +23,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+# The shared shard-resolution rule (tests/knob_gate/_ledger.py). Importing it has no side effects.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tests" / "knob_gate"))
+from _ledger import LEDGERS_DIRNAME, ledger_ids
+
 log = logging.getLogger("extract_parity")
 
 SCHEMA_VERSION = "parity_dashboard_v1"
@@ -127,12 +131,8 @@ def _parse_results(
 
 
 def load_ledger(repo: Path) -> dict[str, str]:
-  data = tomllib.loads((repo / "tests/knob_gate/sidecar_ledger.toml").read_text())
-  out: dict[str, str] = {}
-  for slug, table in data.get("sidecar", {}).items():
-    if isinstance(table, dict) and "bth_run_id" in table:
-      out[slug] = str(table["bth_run_id"])
-  return out
+  """Run ids for every family: the dashboard is not family-scoped, so every shard is merged."""
+  return ledger_ids(repo / "tests/knob_gate" / LEDGERS_DIRNAME, None)
 
 
 def load_manifest(repo: Path) -> list[dict[str, Any]]:
