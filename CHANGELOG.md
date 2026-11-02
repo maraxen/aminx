@@ -4,7 +4,8 @@
 
 ### Changed
 
-- `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself. The return dtype is unchanged (int32).
+- Autoregressive (AR) mask dtype narrowed to `int8` across all mask helpers (`generate_ar_mask`, `ar_mask_from_decoding_order`, `generate_wave_ar_mask`, `full_context_ar_mask`), `ConditioningBundle.ar_mask`, and the `AutoRegressiveMask` type alias (1 byte per element vs 4 bytes for float32/int32). Export boundaries (`p07_bundle`, browser validation) explicitly cast to `float32` as required.
+- `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself.
 - `generate_ar_mask`'s `chain_idx`, `tie_group_map` and `num_groups` are keyword-only. A tie map passed as the second positional argument used to bind to `chain_idx` silently; passing these positionally now raises `TypeError`.
 
 ## 0.4.0 (2026-10-29)
