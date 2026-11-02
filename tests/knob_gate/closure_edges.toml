@@ -156,3 +156,20 @@ dynamic_ok = [
 ]
 data = ["tests/data/1ubq.pdb"]
 
+[slug.tier1_variants_parity]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb"]
+
+[slug.ca_only_parity]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb"]
+
+

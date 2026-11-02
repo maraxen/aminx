@@ -1,0 +1,4 @@
+# Sidecar ledger shard for CA-Only ProteinMPNN vehicle runs.
+# Owning task records [sidecar.ca_only_parity] after the vehicle run on titanix.
+
+[sidecar]

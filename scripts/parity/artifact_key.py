@@ -33,6 +33,10 @@ _UPSTREAM_ROOTS: tuple[str, ...] = (
   "ProtonPottsMPNN",
   "ThermoMPNN",
   "ThermoMPNN-D",
+  "AbMPNN",
+  "HyperMPNN",
+  "CyclicMPNN",
+  "ProteinMPNN",
 )
 
 
