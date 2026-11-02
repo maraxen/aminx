@@ -10,6 +10,8 @@ Implements the reference LigandMPNN ligand cutoff scoring protocol (clause
 
 from __future__ import annotations
 
+import math
+import numbers
 from typing import NamedTuple
 
 import jax
@@ -17,7 +19,6 @@ import jax.numpy as jnp
 
 DEFAULT_LIGAND_CUTOFF_ANGSTROMS: float = 8.0
 SCORE_EPS: float = 1e-8
-LIGAND_MASK_SENTINEL_SQ_DIST: float = 1000.0  # matches data_utils.py:893
 
 
 class LigandScoreResult(NamedTuple):
@@ -59,6 +60,20 @@ def compute_virtual_c_beta(
   a = jnp.cross(b, c_vec, axis=-1)
 
   return -0.58273431 * a + 0.56802827 * b - 0.54067466 * c_vec + ca
+
+
+def validate_ligand_cutoff(cutoff: object) -> None:
+  """Raise ``ValueError`` unless ``cutoff`` is a finite, strictly positive distance in Angstroms.
+
+  Only concrete numbers are checked. A traced cutoff (inside ``jax.jit``) is passed through,
+  because its value is not known at trace time; callers validate before tracing.
+  """
+  if not isinstance(cutoff, numbers.Real):
+    return
+  value = float(cutoff)
+  if not (math.isfinite(value) and value > 0.0):
+    msg = f"ligand cutoff must be a finite positive distance in Angstroms, got {cutoff!r}"
+    raise ValueError(msg)
 
 
 @jax.jit
@@ -105,7 +120,10 @@ def compute_ligand_cutoff_mask(
     y_mask = ligand_mask.astype(jnp.float32)  # (L, M)
     diff = cb[:, None, :] - y_coords  # (L, M, 3)
     sq_dist = jnp.sum(diff**2, axis=-1)  # (L, M)
-    sq_dist_masked = sq_dist * y_mask + (1.0 - y_mask) * LIGAND_MASK_SENTINEL_SQ_DIST
+    # Masked ligand atoms are excluded with +inf, not a finite sentinel: a finite value (the old
+    # 1000 A^2, i.e. 31.6 A) would cap the nearest distance and mark residues proximal under any
+    # cutoff above it, even when every valid atom is farther away.
+    sq_dist_masked = jnp.where(y_mask > 0.0, sq_dist, jnp.inf)
     min_sq_dist = jnp.min(sq_dist_masked, axis=-1)  # (L,)
     has_valid_ligand = (jnp.sum(y_mask, axis=-1) > 0.0).astype(jnp.float32)
   else:
@@ -114,7 +132,7 @@ def compute_ligand_cutoff_mask(
     y_mask = ligand_mask.reshape(-1).astype(jnp.float32)  # (M,)
     diff = cb[:, None, :] - y_coords[None, :, :]  # (L, M, 3)
     sq_dist = jnp.sum(diff**2, axis=-1)  # (L, M)
-    sq_dist_masked = sq_dist * y_mask[None, :] + (1.0 - y_mask[None, :]) * LIGAND_MASK_SENTINEL_SQ_DIST
+    sq_dist_masked = jnp.where(y_mask[None, :] > 0.0, sq_dist, jnp.inf)
     min_sq_dist = jnp.min(sq_dist_masked, axis=-1)  # (L,)
     has_valid_ligand = (jnp.sum(y_mask) > 0.0).astype(jnp.float32)
 
@@ -137,18 +155,34 @@ def compute_loss_xy(
       loss_per_residue = -(S_one_hot * log_probs).sum(-1)
       average_loss = sum(loss_per_residue * mask_xy) / (sum(mask_xy) + 1e-8)
 
+  The two forms are told apart by DTYPE, never by shape: an integer token sequence whose length
+  happens to equal the vocabulary size (L == 21) is still tokens. Rank/shape dispatch silently
+  read such a sequence as one-hot.
+
   Args:
-    logits: Model prediction logits, shape (..., L, 21).
-    sequence: Integer sequence tokens (..., L) or one-hot (..., L, 21).
+    logits: Model prediction logits, shape (..., L, 21). The leading axes may carry candidates
+      and a noise-level axis; the sequence broadcasts against them.
+    sequence: Integer sequence tokens (..., L) (any integer dtype), or a FLOATING one-hot
+      (..., L, 21).
     mask_xy: Ligand-proximal residue mask, shape (..., L).
 
   Returns:
-    Scalar or batch of ligand-proximal NLL loss_XY values.
+    Scalar or batch of ligand-proximal NLL loss_XY values, shaped like ``logits`` without its
+    trailing vocabulary axis and its residue axis.
+
+  Raises:
+    ValueError: If ``sequence`` is floating but its last axis is not the vocabulary size.
   """
   vocab_size = logits.shape[-1]
-  if sequence.shape[-1] != vocab_size:
+  if jnp.issubdtype(sequence.dtype, jnp.integer):
     seq_one_hot = jax.nn.one_hot(sequence.astype(jnp.int32), vocab_size)
   else:
+    if sequence.shape[-1] != vocab_size:
+      msg = (
+        f"compute_loss_xy: a floating sequence must be one-hot with last axis {vocab_size}, "
+        f"got shape {sequence.shape}. Integer tokens must have an integer dtype."
+      )
+      raise ValueError(msg)
     seq_one_hot = sequence
 
   log_probs = jax.nn.log_softmax(logits, axis=-1)
@@ -184,7 +218,11 @@ def evaluate_ligand_cutoff_score(
   Returns:
     LigandScoreResult with loss_xy, ligand_confidence, mask_xy, closest_distances,
     and num_ligand_proximal_residues.
+
+  Raises:
+    ValueError: If ``cutoff`` is not a finite positive number.
   """
+  validate_ligand_cutoff(cutoff)
   mask_xy, d_xy = compute_ligand_cutoff_mask(
     coordinates=coordinates,
     ligand_coords=ligand_coords,
@@ -203,3 +241,49 @@ def evaluate_ligand_cutoff_score(
     closest_distances=d_xy,
     num_ligand_proximal_residues=num_proximal,
   )
+
+
+def evaluate_ligand_cutoff_candidates(
+  coordinates: jax.Array,
+  sequences: jax.Array,
+  logits: jax.Array,
+  residue_mask: jax.Array,
+  ligand_coords: jax.Array | None = None,
+  ligand_mask: jax.Array | None = None,
+  cutoff: float = DEFAULT_LIGAND_CUTOFF_ANGSTROMS,
+) -> LigandScoreResult:
+  """Run :func:`evaluate_ligand_cutoff_score` for every candidate of one structure.
+
+  This is the production path used by ``aminx.host.runner.score``. The candidate axis is the
+  leading axis of ``sequences`` and ``logits``; the structure-level inputs are shared.
+
+  Args:
+    coordinates: (L, 3+, 3) backbone coordinates of the structure.
+    sequences: (C, L) integer tokens, one row per candidate.
+    logits: (C, ..., L, 21) logits per candidate. The ``...`` axes (a noise-level axis, when
+      present) are carried through unchanged.
+    residue_mask: (L,) residue mask.
+    ligand_coords: Optional ligand coordinates for this structure.
+    ligand_mask: Optional ligand atom mask for this structure.
+    cutoff: Distance cutoff in Angstroms.
+
+  Returns:
+    LigandScoreResult whose fields carry a leading candidate axis: ``loss_xy`` and
+    ``ligand_confidence`` are (C, ...); ``mask_xy`` and ``closest_distances`` are (C, L);
+    ``num_ligand_proximal_residues`` is (C,). The mask depends only on the structure, so every
+    row of ``mask_xy`` is identical.
+  """
+  validate_ligand_cutoff(cutoff)
+
+  def _one(seq: jax.Array, lg: jax.Array) -> LigandScoreResult:
+    return evaluate_ligand_cutoff_score(
+      coordinates=coordinates,
+      sequence=seq,
+      logits=lg,
+      residue_mask=residue_mask,
+      ligand_coords=ligand_coords,
+      ligand_mask=ligand_mask,
+      cutoff=cutoff,
+    )
+
+  return jax.vmap(_one)(sequences, logits)
