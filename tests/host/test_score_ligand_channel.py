@@ -16,6 +16,7 @@ import pytest
 
 from aminx.host.runner import score
 from aminx.run.specs import SamplingSpecification, ScoringSpecification
+from aminx.scoring.ligand_cutoff import DEFAULT_LIGAND_CUTOFF_ANGSTROMS
 
 _STRUCTURE = "tests/data/1ubq.pdb"
 _LIGAND_CHECKPOINT = "ligandmpnn_v_32_020_25"
@@ -57,6 +58,29 @@ def test_side_chain_conditioning_is_refused_not_dropped() -> None:
 def test_ligand_on_the_averaged_path_is_refused(path_kwarg: dict) -> None:
   with pytest.raises(NotImplementedError, match="averaged-feature"):
     score(_spec(average_node_features=True, **path_kwarg))
+
+
+def test_loss_xy_is_refused_on_the_fused_multistate_path() -> None:
+  """The fused multi-state path returns before the loss loop; it must refuse, not drop loss_xy."""
+  spec = _spec(
+    return_loss_xy=True,
+    state_position_map=np.zeros((1, len(_UBIQUITIN)), dtype=np.int32),
+  )
+  with pytest.raises(NotImplementedError, match="return_loss_xy"):
+    score(spec)
+
+
+@pytest.mark.parametrize("bad_cutoff", [0.0, -2.0, float("nan")])
+def test_loss_xy_refuses_a_non_positive_cutoff(bad_cutoff: float) -> None:
+  with pytest.raises(ValueError, match="positive distance"):
+    score(_spec(return_loss_xy=True, ligand_cutoff_for_score=bad_cutoff))
+
+
+def test_ligand_cutoff_default_is_the_shared_constant() -> None:
+  """One literal, not a getattr fallback in the runner."""
+  assert ScoringSpecification(inputs=[_STRUCTURE], sequences_to_score=[_UBIQUITIN]).ligand_cutoff_for_score == (
+    DEFAULT_LIGAND_CUTOFF_ANGSTROMS
+  )
 
 
 def test_ligand_on_a_protein_checkpoint_is_refused() -> None:

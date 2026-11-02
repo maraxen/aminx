@@ -70,6 +70,10 @@ from aminx.run.specs import (
   SamplingSpecification,
   ScoringSpecification,
 )
+from aminx.scoring.ligand_cutoff import (
+  evaluate_ligand_cutoff_candidates,
+  validate_ligand_cutoff,
+)
 
 # Families whose dispatch REQUIRES a registered FamilyDriver. The stock MPNN path
 # cannot serve these, so a missing driver is an error, never a silent fallback.
@@ -931,11 +935,15 @@ def score(  # noqa: PLR0915
             Per-position logits if return_logits=True. Shape: (num_structures, num_sequences, L, 21),
             with the same trailing-D axis position as scores: (S, C, D, L, 21) for D >= 2.
         loss_xy : jax.Array, optional
-            Auxiliary ligand-proximal negative log-likelihood score if return_loss_xy=True.
+            Auxiliary ligand-proximal negative log-likelihood if return_loss_xy=True. Shape:
+            (num_structures, num_sequences), or (num_structures, num_sequences, D) with the
+            same trailing noise axis as ``scores``. Not supported with state_position_map.
         ligand_confidence : jax.Array, optional
-            Auxiliary ligand-proximal confidence (exp(-loss_xy)) if return_loss_xy=True.
+            Auxiliary ligand-proximal confidence (exp(-loss_xy)) if return_loss_xy=True, with
+            the same shape as ``loss_xy``.
         mask_xy : jax.Array, optional
-            Per-residue boolean mask indicating residues within cutoff of ligand atoms.
+            Per-residue mask (1.0 within ``ligand_cutoff_for_score`` of a valid ligand atom),
+            shape (num_structures, L). It depends only on the structure.
         decoding_orders : None, optional
             Present (and always ``None``) if return_decoding_orders=True. Every score()
             path is full-context teacher forcing (``1 - I`` mask, no waves), so there is no
@@ -1018,6 +1026,18 @@ def score(  # noqa: PLR0915
       "it would be silently dropped there. Score per structure, or omit the ligand fields."
     )
     raise NotImplementedError(msg)
+
+  # return_loss_xy is computed in the per-structure loop only. The fused multi-state path returns
+  # before that loop, so it would drop loss_xy, mask_xy and ligand_confidence without a word.
+  if spec.return_loss_xy and spec.state_position_map is not None:
+    msg = (
+      "score runner: return_loss_xy=True is not implemented for the fused multi-state path "
+      "(state_position_map); the ligand-proximal loss would be silently dropped there. Score per "
+      "structure, or set return_loss_xy=False."
+    )
+    raise NotImplementedError(msg)
+  if spec.return_loss_xy:
+    validate_ligand_cutoff(spec.ligand_cutoff_for_score)
 
   if ligand_requested and spec.model_family != "ligandmpnn":
     msg = (
@@ -1103,7 +1123,7 @@ def score(  # noqa: PLR0915
   all_scores, all_logits = [], None
   if spec.return_logits:
     all_logits = []
-  all_loss_xy, all_mask_xy = [], []
+  all_loss_xy, all_conf_xy, all_mask_xy = [], [], []
 
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
@@ -1380,13 +1400,9 @@ def score(  # noqa: PLR0915
     if rung is not None:
       batch_logits = repad_residue_axis(batch_logits, struct_len, -2)
 
-    if getattr(spec, "return_loss_xy", False):
-      from aminx.scoring.ligand_cutoff import (  # noqa: PLC0415
-        compute_ligand_cutoff_mask,
-        compute_loss_xy,
-      )
-      cutoff = float(getattr(spec, "ligand_cutoff_for_score", 8.0))
+    if spec.return_loss_xy:
       y_c, _, y_m = batch_ligand
+      cutoff = spec.ligand_cutoff_for_score
 
       def _calc_struct_loss_xy(
         coords: jax.Array,
@@ -1395,20 +1411,21 @@ def score(  # noqa: PLR0915
         yc: jax.Array | None,
         ym: jax.Array | None,
         *,
-        _cutoff: float = cutoff,
         _seqs: jax.Array = stacked_sequences,
-      ) -> tuple[jax.Array, jax.Array]:
-        m_xy, _ = compute_ligand_cutoff_mask(coords, yc, ym, res_mask, cutoff=_cutoff)
+        _cutoff: float = cutoff,
+      ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        # Production path: the same per-candidate evaluation the unit tests exercise. The
+        # mask depends only on the structure, so every candidate row is identical.
+        scores = evaluate_ligand_cutoff_candidates(
+          coords, _seqs, logits_struct, res_mask, yc, ym, cutoff=_cutoff,
+        )
+        return scores.loss_xy, scores.ligand_confidence, scores.mask_xy[0]
 
-        def _per_cand(cand_logits: jax.Array, cand_seq: jax.Array) -> jax.Array:
-          return compute_loss_xy(cand_logits, cand_seq, m_xy)
-
-        return jax.vmap(_per_cand)(logits_struct, _seqs), m_xy
-
-      b_loss_xy, b_mask_xy = jax.vmap(_calc_struct_loss_xy)(
+      b_loss_xy, b_conf, b_mask_xy = jax.vmap(_calc_struct_loss_xy)(
         batched_ensemble.coordinates, batched_ensemble.mask, batch_logits, y_c, y_m,
       )
       all_loss_xy.append(b_loss_xy)
+      all_conf_xy.append(b_conf)
       all_mask_xy.append(b_mask_xy)
 
     all_scores.append(batch_scores)
@@ -1435,10 +1452,13 @@ def score(  # noqa: PLR0915
     },
   }
 
-  if getattr(spec, "return_loss_xy", False) and all_loss_xy:
+  if spec.return_loss_xy and all_loss_xy:
+    # Carry the noise axis exactly as ``scores`` does: loss_xy and ligand_confidence are
+    # (S, C) for one noise level and (S, C, D) for D >= 2. mask_xy depends only on the
+    # structure, so it is (S, L).
     results["loss_xy"] = jnp.concatenate(all_loss_xy, axis=0)
+    results["ligand_confidence"] = jnp.concatenate(all_conf_xy, axis=0)
     results["mask_xy"] = jnp.concatenate(all_mask_xy, axis=0)
-    results["ligand_confidence"] = jnp.exp(-results["loss_xy"])
 
   if spec.run_spec.sampling.return_logits and all_logits is not None:
     # Shape: (num_structures, num_sequences, L, 21), or (S, C, D, L, 21) with D >= 2 levels.
