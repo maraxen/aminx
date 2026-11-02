@@ -1,4 +1,4 @@
-# ruff: noqa: S101
+# ruff: noqa: S101, SLF001
 """ThermoMPNN and ThermoMPNN-D knob semantics tests.
 
 Tests the semantic behavior and plumbing of all 6 ThermoMPNNOptions knobs:
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import equinox as eqx
 import jax.numpy as jnp
@@ -41,7 +42,9 @@ from aminx.families.thermo_mpnn import (
   convert_thermo_mpnn_double_state_dict,
   convert_thermo_mpnn_state_dict,
 )
+from aminx.families.thermo_mpnn import driver as thermo_driver_module
 from aminx.families.thermo_mpnn.driver import ThermoMPNNDriver
+from aminx.families.thermo_mpnn.model import ThermoMPNNDouble
 from aminx.run.options import ThermoMPNNOptions
 
 
@@ -238,33 +241,76 @@ def test_knob_semantics_batch_size() -> None:
   np.testing.assert_allclose(res_chunked["ddg_double"], res_unchunked["ddg_double"], atol=1e-5)
 
 
-def test_knob_semantics_checkpoint_id() -> None:
-  """Checkpoint_id selects architecture and produces distinct model outputs."""
+@pytest.fixture
+def routed_loaders(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+  """Swap the checkpoint loaders for synthetic-weight fakes that record ``(kind, id)`` per call."""
+  calls: list[tuple[str, str]] = []
+
+  def _single(checkpoint_id: str, *, local_path: object = None, key: object = None) -> eqx.Module:
+    del local_path, key
+    calls.append(("single", checkpoint_id))
+    sd = (
+      _build_synthetic_v1_state_dict()
+      if "v1" in checkpoint_id
+      else _build_synthetic_v2_single_state_dict()
+    )
+    return convert_thermo_mpnn_state_dict(sd)
+
+  def _double(checkpoint_id: str, *, local_path: object = None, key: object = None) -> eqx.Module:
+    del local_path, key
+    calls.append(("double", checkpoint_id))
+    return convert_thermo_mpnn_double_state_dict(_build_synthetic_v2_double_state_dict())
+
+  monkeypatch.setattr(thermo_driver_module, "load_thermo_mpnn_checkpoint", _single)
+  monkeypatch.setattr(thermo_driver_module, "load_thermo_mpnn_double_checkpoint", _double)
+  return calls
+
+
+def test_knob_semantics_checkpoint_id(routed_loaders: list[tuple[str, str]]) -> None:
+  """checkpoint_id resolves option > spec.checkpoint_id > default and drives load, stages and schema."""
   driver = ThermoMPNNDriver()
-  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
 
-  sd_v1 = _build_synthetic_v1_state_dict()
-  sd_v2 = _build_synthetic_v2_single_state_dict()
-  m_v1 = convert_thermo_mpnn_state_dict(sd_v1)
-  m_v2 = convert_thermo_mpnn_state_dict(sd_v2)
+  def _spec(spec_id: str | None, opts: ThermoMPNNOptions | None) -> SimpleNamespace:
+    return SimpleNamespace(checkpoint_id=spec_id, thermompnn=opts, model_local_path=None)
 
-  res_v1 = driver.score(
-    m_v1,
-    coords,
-    mask,
-    residue_index,
-    chain_index,
-    sequence,
-    options=ThermoMPNNOptions(checkpoint_id="thermo_mpnn_v1_default"),
-  )
-  res_v2 = driver.score(
-    m_v2,
-    coords,
-    mask,
-    residue_index,
-    chain_index,
-    sequence,
-    options=ThermoMPNNOptions(checkpoint_id="thermo_mpnn_v2_ens1"),
-  )
+  # Layer 3: nothing set anywhere -> v1 default, single-mutant outputs only.
+  spec = _spec(None, None)
+  model = driver.load(spec)
+  assert routed_loaders[-1] == ("single", "thermo_mpnn_v1_default")
+  assert not driver.stages(spec, "score:ddg", model)._double_mutant
+  assert "ddg_double" not in driver.result_schema(spec, "score:ddg")
 
-  assert not np.allclose(res_v1["ddg"], res_v2["ddg"], atol=1e-2)
+  # Layer 2: spec.checkpoint_id with a default-valued options block (used to be shadowed by v1).
+  spec = _spec("thermo_mpnn_v2_ens1", ThermoMPNNOptions())
+  model = driver.load(spec)
+  assert routed_loaders[-1] == ("single", "thermo_mpnn_v2_ens1")
+  assert not driver.stages(spec, "score:ddg", model)._double_mutant
+  assert "ddg_double" not in driver.result_schema(spec, "score:ddg")
+
+  # Layer 2 with a ThermoMPNN-D id: loads the double model and both stage and schema go double.
+  spec = _spec("thermo_mpnn_d_ens1", None)
+  model = driver.load(spec)
+  assert routed_loaders[-1] == ("double", "thermo_mpnn_d_ens1")
+  assert isinstance(model, ThermoMPNNDouble)
+  assert driver.stages(spec, "score:ddg", model)._double_mutant
+  schema = driver.result_schema(spec, "score:ddg")
+  assert "ddg_double" in schema
+  assert schema["ddg_double"].attrs["ddg_double_method"] == "epistatic"
+
+  # Ensemble id routes to three double members.
+  n_before = len(routed_loaders)
+  spec = _spec("thermo_mpnn_d_ensemble", None)
+  driver.load(spec)
+  assert routed_loaders[n_before:] == [("double", cid) for cid in thermo_driver_module.V2_DOUBLE_ENSEMBLE_IDS]
+
+  # Layer 1: explicit option beats spec.checkpoint_id in both directions.
+  spec = _spec("thermo_mpnn_v2_ens1", ThermoMPNNOptions(checkpoint_id="thermo_mpnn_d_ens2"))
+  driver.load(spec)
+  assert routed_loaders[-1] == ("double", "thermo_mpnn_d_ens2")
+  assert "ddg_double" in driver.result_schema(spec, "score:ddg")
+
+  spec = _spec("thermo_mpnn_d_ens1", ThermoMPNNOptions(checkpoint_id="thermo_mpnn_v1_default"))
+  model = driver.load(spec)
+  assert routed_loaders[-1] == ("single", "thermo_mpnn_v1_default")
+  assert not isinstance(model, ThermoMPNNDouble)
+  assert "ddg_double" not in driver.result_schema(spec, "score:ddg")

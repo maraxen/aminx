@@ -8,6 +8,7 @@ and 3-member v2 ensembles (``thermo_mpnn_v2_ensemble`` for single-mutant SSM and
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -52,6 +53,10 @@ V2_DOUBLE_ENSEMBLE_IDS: tuple[str, str, str] = (
   "thermo_mpnn_d_ens3",
 )
 
+DEFAULT_CHECKPOINT_ID: str = "thermo_mpnn_v1_default"
+
+log = logging.getLogger(__name__)
+
 _AA3_TO_1: dict[str, str] = {
   "ALA": "A",
   "CYS": "C",
@@ -74,6 +79,44 @@ _AA3_TO_1: dict[str, str] = {
   "TRP": "W",
   "TYR": "Y",
 }
+
+
+def _options_for(spec: Any) -> ThermoMPNNOptions:  # noqa: ANN401
+  """Return ``spec.thermompnn`` or the family defaults."""
+  return getattr(spec, "thermompnn", None) or ThermoMPNNOptions()
+
+
+def _resolve_checkpoint_id(spec: Any, opts: ThermoMPNNOptions) -> str:  # noqa: ANN401
+  """Resolve the checkpoint id: explicit option, then ``spec.checkpoint_id``, then the default."""
+  if opts.checkpoint_id:
+    return str(opts.checkpoint_id)
+  spec_id = getattr(spec, "checkpoint_id", None)
+  if spec_id:
+    return str(spec_id)
+  return DEFAULT_CHECKPOINT_ID
+
+
+def _is_double_checkpoint(checkpoint_id: str) -> bool:
+  """Return True when ``checkpoint_id`` names a ThermoMPNN-D (double-mutant) checkpoint."""
+  return checkpoint_id in V2_DOUBLE_ENSEMBLE_IDS or "_d_" in checkpoint_id
+
+
+def _calc_dtype(name: str) -> Any:  # noqa: ANN401
+  """Map an options dtype name to the JAX compute dtype."""
+  return jnp.float16 if name == "float16" else jnp.float32
+
+
+def _ensure_dtype(model: eqx.Module, dtype: Any) -> eqx.Module:  # noqa: ANN401
+  """Return ``model`` with floating leaves in ``dtype``, skipping the cast when already there."""
+  target = jnp.dtype(dtype)
+  floats = [
+    leaf
+    for leaf in jax.tree.leaves(model)
+    if eqx.is_array(leaf) and jnp.issubdtype(leaf.dtype, jnp.floating)
+  ]
+  if all(leaf.dtype == target for leaf in floats):
+    return model
+  return cast_floating(model, target)
 
 
 class ThermoMPNNEnsemble(eqx.Module):
@@ -589,13 +632,14 @@ class ThermoMPNNDriver:
     eqx.Module
         Loaded :class:`ThermoMPNN`, :class:`ThermoMPNNDouble`, or :class:`ThermoMPNNEnsemble`.
     """
-    opts = getattr(spec, "thermompnn", None) or ThermoMPNNOptions()
-    checkpoint_id = str(opts.checkpoint_id or getattr(spec, "checkpoint_id", None) or "thermo_mpnn_v1_default")
+    opts = _options_for(spec)
+    checkpoint_id = _resolve_checkpoint_id(spec, opts)
     local_path = getattr(spec, "model_local_path", None)
     loaded = self.load_model(checkpoint_id, local_path=local_path)
+    target = _calc_dtype(opts.dtype)
     if isinstance(loaded, tuple):
-      return ThermoMPNNEnsemble(loaded)
-    return loaded
+      return ThermoMPNNEnsemble(tuple(_ensure_dtype(m, target) for m in loaded))
+    return _ensure_dtype(loaded, target)
 
   def mpnn_core(self, model: eqx.Module) -> Any:  # noqa: ANN401
     """Return the embedded ProteinMPNN trunk, or None.
@@ -707,11 +751,11 @@ class ThermoMPNNDriver:
     if purpose != "score:ddg":
       msg = f"Unsupported ThermoMPNN purpose: {purpose!r}; expected 'score:ddg'."
       raise ValueError(msg)
-    opts = getattr(spec, "thermompnn", None) or ThermoMPNNOptions()
-    ckpt_id = str(opts.checkpoint_id or getattr(spec, "checkpoint_id", None) or "")
+    opts = _options_for(spec)
+    ckpt_id = _resolve_checkpoint_id(spec, opts)
     double_mutant = (
       opts.mode == "double"
-      or "_d_" in ckpt_id
+      or _is_double_checkpoint(ckpt_id)
       or isinstance(model, ThermoMPNNDouble)
       or (
         isinstance(model, ThermoMPNNEnsemble)
@@ -719,6 +763,8 @@ class ThermoMPNNDriver:
         and isinstance(model.models[0], ThermoMPNNDouble)
       )
     )
+    # Cast the weights once here, not on every score() call.
+    model = _ensure_dtype(model, _calc_dtype(opts.dtype))
     return _ThermoScoreStages(self, model, double_mutant=double_mutant, opts=opts)
 
   def result_schema(self, spec: Any, purpose: str) -> Mapping[str, SinkArraySpec]:  # noqa: ANN401
@@ -739,8 +785,8 @@ class ThermoMPNNDriver:
     if purpose != "score:ddg":
       msg = f"Unsupported ThermoMPNN purpose: {purpose!r}; expected 'score:ddg'."
       raise ValueError(msg)
-    opts = getattr(spec, "thermompnn", None) or ThermoMPNNOptions()
-    ckpt_id = str(opts.checkpoint_id or getattr(spec, "checkpoint_id", None) or "")
+    opts = _options_for(spec)
+    ckpt_id = _resolve_checkpoint_id(spec, opts)
     schema: dict[str, SinkArraySpec] = {
       "ddg": SinkArraySpec(
         dims=("L_total", "A"),
@@ -748,11 +794,14 @@ class ThermoMPNNDriver:
         attrs={"alphabet": THERMO_ALPHABET},
       ),
     }
-    if opts.mode == "double" or "_d_" in ckpt_id:
+    if opts.mode == "double" or _is_double_checkpoint(ckpt_id):
+      # "epistatic": ThermoMPNN-D pair head. "additive": s_i + s_j from single-mutant
+      # predictions of a non-D checkpoint scored with mode="double".
+      method = "epistatic" if _is_double_checkpoint(ckpt_id) else "additive"
       schema["ddg_double"] = SinkArraySpec(
         dims=("P", "A", "A"),
         dtype="float32",
-        attrs={"alphabet": THERMO_ALPHABET},
+        attrs={"alphabet": THERMO_ALPHABET, "ddg_double_method": method},
       )
       schema["pair_indices"] = SinkArraySpec(
         dims=("P", "pair"),
