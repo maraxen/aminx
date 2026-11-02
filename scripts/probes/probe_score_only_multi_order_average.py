@@ -86,7 +86,6 @@ def run_probe() -> dict[str, object]:
     "status": "PASS" if probe_passed else "FAIL",
     "praxia_debt_id": praxia_debt_id,
     "praxia_debt_slug": praxia_debt_slug,
-    "debt_verification": "declared, not verified against praxia",
     "num_orders": num_orders,
     "ensemble_nll": float(result.ensemble_nll),
     "mean_sample_nll": float(result.mean_sample_nll),
@@ -118,6 +117,7 @@ def main() -> None:
     bth_path.parent.mkdir(parents=True, exist_ok=True)
     bth_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+  logger.info("debt #%s: declared, not verified against praxia", result["praxia_debt_id"])
   logger.info("Probe score_only_multi_order_average: %s", result["status"])
 
 

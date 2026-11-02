@@ -1,8 +1,8 @@
 """Pre-registered probe for Clause 3: packer_chi_sampling formal waiver and boundary.
 
 The waiver is declared against Praxia debt #3165. This probe runs without Praxia, so it cannot
-verify that registration. ``debt_verification`` in the output says so; the sidecar's pass
-condition still reads the declared id.
+verify that registration. A log line says so; the JSON keeps the sidecar's [result_schema] keys
+only, and the pass condition still reads the declared id.
 """
 
 from __future__ import annotations
@@ -123,7 +123,6 @@ def run_probe() -> dict[str, object]:
     "waiver_status": "WAIVED_UNDER_DEBT",
     "praxia_debt_id": praxia_debt_id,
     "praxia_debt_slug": praxia_debt_slug,
-    "debt_verification": DEBT_VERIFICATION,
     "shapes_valid": shapes_valid,
     "concentration_floor_valid": concentration_floor_valid,
     "boundary_documented": boundary_documented,
@@ -152,6 +151,7 @@ def main() -> None:
     bth_path.parent.mkdir(parents=True, exist_ok=True)
     bth_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+  logger.info("debt #%s: %s", result["praxia_debt_id"], DEBT_VERIFICATION)
   logger.info("Probe packer_chi_sampling_boundary: %s", result["status"])
 
 
