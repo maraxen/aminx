@@ -18,6 +18,11 @@ if TYPE_CHECKING:
     DesignPayload,
     DesignZarrWriter,
   )
+  from aminx.io.membrane import (
+    construct_membrane_labels,
+    construct_membrane_physics_features,
+    parse_residue_spec,
+  )
 
 __all__ = [
   "CAMPAIGN_METRICS_COLUMNS",
@@ -27,7 +32,10 @@ __all__ = [
   "DesignPayload",
   "DesignZarrWriter",
   "UnifiedCampaignSink",
+  "construct_membrane_labels",
+  "construct_membrane_physics_features",
   "inspect_campaign_sink",
+  "parse_residue_spec",
 ]
 
 _LAZY_SUBMODULES: dict[str, str] = {
@@ -39,6 +47,9 @@ _LAZY_SUBMODULES: dict[str, str] = {
   "DesignMetadata": "aminx.io.designs",
   "DesignPayload": "aminx.io.designs",
   "DesignZarrWriter": "aminx.io.designs",
+  "construct_membrane_labels": "aminx.io.membrane",
+  "construct_membrane_physics_features": "aminx.io.membrane",
+  "parse_residue_spec": "aminx.io.membrane",
 }
 
 
