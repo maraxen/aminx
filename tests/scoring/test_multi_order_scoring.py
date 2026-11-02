@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import pytest
 
 from aminx.model.mpnn import Aminx
 from aminx.scoring.multi_order import MultiOrderScoreResult, score_multi_order_average
+from aminx.utils.autoregression import ar_mask_from_decoding_order
 
 
 @pytest.fixture
@@ -58,7 +60,7 @@ def test_score_multi_order_average_shapes_and_prob_normalization(
 
   # Check that mean probabilities sum to 1.0 along the vocab axis
   prob_sums = jnp.sum(result.mean_probs, axis=-1)
-  assert jnp.allclose(prob_sums, jnp.ones(seq_len), atol=1e-5)
+  assert np.asarray(prob_sums) == pytest.approx(np.ones(seq_len), abs=1e-5)
 
   # Check that std probabilities are non-negative
   assert jnp.all(result.std_probs >= 0.0)
@@ -130,5 +132,42 @@ def test_multi_order_determinism(small_model: Aminx) -> None:
     num_orders=3,
   )
 
-  assert jnp.allclose(res1.ensemble_nll, res2.ensemble_nll)
-  assert jnp.array_equal(res1.decoding_orders, res2.decoding_orders)
+  # Bitwise identical for an identical key: exact equality, not a tolerance.
+  assert float(res1.ensemble_nll) == float(res2.ensemble_nll)
+  assert np.array_equal(np.asarray(res1.decoding_orders), np.asarray(res2.decoding_orders))
+
+
+def test_tied_residues_decode_as_a_unit_in_every_order(small_model: Aminx) -> None:
+  """Each tie group occupies consecutive steps, and its members see each other in the mask."""
+  seq_len = 6
+  tie = np.array([0, 1, 0, 2, 1, 3], dtype=np.int32)  # groups {0: [0,2], 1: [1,4], 2: [3], 3: [5]}
+  coords = jnp.zeros((seq_len, 4, 3))
+  coords = coords.at[:, 1, 0].set(jnp.arange(seq_len) * 3.8)
+
+  result = score_multi_order_average(
+    model=small_model,
+    prng_key=jax.random.PRNGKey(55),
+    sequence=jnp.arange(seq_len) % 20,
+    structure_coordinates=coords,
+    mask=jnp.ones((seq_len,)),
+    residue_index=jnp.arange(seq_len),
+    chain_index=jnp.zeros((seq_len,), dtype=jnp.int32),
+    num_orders=16,
+    tie_group_map=jnp.asarray(tie),
+  )
+
+  for order in np.asarray(result.decoding_orders):
+    assert sorted(order.tolist()) == list(range(seq_len))
+    step_of = {int(pos): t for t, pos in enumerate(order)}
+    for group in (0, 1):
+      members = [i for i in range(seq_len) if tie[i] == group]
+      steps = sorted(step_of[i] for i in members)
+      assert steps[-1] - steps[0] == len(members) - 1, f"group {group} not contiguous: {steps}"
+
+    mask = np.asarray(ar_mask_from_decoding_order(jnp.asarray(order), jnp.asarray(tie)))
+    for group in (0, 1):
+      members = [i for i in range(seq_len) if tie[i] == group]
+      for i in members:
+        for j in members:
+          if i != j:
+            assert mask[i, j] == 1.0 and mask[j, i] == 1.0

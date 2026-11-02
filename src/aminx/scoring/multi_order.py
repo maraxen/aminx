@@ -30,6 +30,7 @@ from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.logits import make_stage_set  # noqa: TID251
 from aminx.scoring.score import _nll_from_logits
 from aminx.utils.autoregression import ar_mask_from_decoding_order
+from aminx.utils.decoding_order import random_decoding_order
 
 if TYPE_CHECKING:
   from aminx.types.protocols import ModelProtocol
@@ -72,7 +73,9 @@ def score_multi_order_average(
 
   Matches reference score.py:280-327 behavior:
   For each order:
-    1. Fresh random permutation over positions.
+    1. Fresh random decoding order over positions. Tied positions (``tie_group_map``) are drawn
+       as units and decode at one step, the same draw the sampler uses, so the causal mask built
+       from the order is tie-aware.
     2. Causal order mask (no future positions visible, zero diagonal).
     3. Forward decoder pass yielding logits and log_probs.
     4. Probabilities P^(m) = exp(log_probs).
@@ -91,7 +94,8 @@ def score_multi_order_average(
     chain_index: Chain indices (L,).
     num_orders: Number of random causal permutation draws M (default: 16).
     backbone_noise: Backbone coordinate perturbation standard deviation.
-    tie_group_map: Optional symmetry tie group mapping.
+    tie_group_map: Optional (L,) tie group id per position, ids in ``[0, L)``. Tied positions
+      decode together and are mutually visible in each order's mask.
     ligand_coords: Optional ligand coordinates.
     ligand_atom_types: Optional ligand atom types.
     ligand_mask: Optional ligand atom validity mask.
@@ -119,11 +123,14 @@ def score_multi_order_average(
 
   res_mask = mask.astype(jnp.float32)
 
-  # Generate M random causal decoding orders
+  # Generate M random causal decoding orders with the same draw the sampler uses, so the
+  # order and the mask built from it agree on ties. num_groups is static and must bound the ids.
   order_keys = jax.random.split(prng_key, num_orders)
+  num_groups = None if tie_group_map is None else int(jnp.max(tie_group_map)) + 1
 
   def _draw_order(k: PRNGKeyArray) -> jax.Array:
-    return jax.random.permutation(k, l_len)
+    order, _ = random_decoding_order(k, l_len, tie_group_map, num_groups)
+    return order
 
   decoding_orders = jax.vmap(_draw_order)(order_keys)  # (M, L)
 
