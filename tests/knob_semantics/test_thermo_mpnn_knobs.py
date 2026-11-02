@@ -566,6 +566,7 @@ def test_knob_semantics_float16_warns_once_per_score_call() -> None:
   assert len(messages) == 1
   assert "thermo_mpnn_driver_f16_v2.bth.toml" in messages[0]
   assert "18c1d29c" in messages[0]
+  assert "grow with system size" in messages[0]
 
 
 def test_knob_semantics_float32_and_float64_do_not_warn() -> None:

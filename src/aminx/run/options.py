@@ -236,7 +236,8 @@ class ThermoMPNNOptions:
   dtype : Literal["float32", "float16"]
       Floating-point precision for trunk and head evaluation. ``"float32"`` is the default.
       ``"float16"`` is not validated for ThermoMPNN (see the driver module docstring): the
-      float16 parity gate failed on a large structure, so it is for screening or ranking only,
+      float16 parity gate failed on a 496-residue structure, and the error was observed to grow
+      with system size (mechanism not established). Float16 is for screening or ranking only,
       and selecting it emits a ``UserWarning``.
   ensemble : bool
       Whether to average across all 3 v2 ensemble members when using v2/D.

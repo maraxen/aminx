@@ -7,9 +7,11 @@ and 3-member v2 ensembles (``thermo_mpnn_v2_ensemble`` for single-mutant SSM and
 Precision: ``dtype="float32"`` is the default. ``dtype="float16"`` is available but NOT
 validated. The precision-based parity gate (``scripts/parity/thermo_mpnn_driver_f16_v2.bth.toml``,
 run 18c1d29c) failed on a 496-residue structure, with ddg errors up to ~0.4 against float32
-while correlation stayed >= 0.9997. Selecting float16 emits a ``UserWarning`` from
-:meth:`ThermoMPNNDriver.score`. Use float16 for screening or ranking only. The cause of the
-large error has not been identified.
+while correlation stayed >= 0.9997. The error was observed to grow with system size: ddg
+max-abs difference rose from about 0.03-0.05 on a 76-residue structure to about 0.4 on a
+496-residue one (three structures; mechanism not established), so larger systems are less
+reliable. Selecting float16 emits a ``UserWarning`` from :meth:`ThermoMPNNDriver.score`. Use
+float16 for screening or ranking only. The cause of the large error has not been identified.
 """
 
 from __future__ import annotations
@@ -70,6 +72,9 @@ _FLOAT16_WARNING: str = (
   "float16 is not validated for ThermoMPNN: the precision-based parity gate "
   "(scripts/parity/thermo_mpnn_driver_f16_v2.bth.toml, run 18c1d29c) failed on a "
   "496-residue structure (ddg errors up to ~0.4 vs float32; correlation >= 0.9997). "
+  "The error was observed to grow with system size: ddg max-abs difference rose from about "
+  "0.03-0.05 on a 76-residue structure to about 0.4 on a 496-residue one (three structures; "
+  "mechanism not established), so larger systems are less reliable. "
   "Use float16 for screening or ranking only."
 )
 
