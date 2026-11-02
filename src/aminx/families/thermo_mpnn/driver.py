@@ -232,12 +232,14 @@ def _score_double_ddg(
   if num_p == 0:
     return ddg_single, jnp.zeros((0, 21, 21), dtype=ddg_single.dtype), pair_indices
 
-  if batch_size <= 0 or num_p <= batch_size:
-    p_rep = jnp.repeat(pair_indices.astype(jnp.int32), 21 * 21, axis=0)
-    aa_0 = jnp.tile(jnp.repeat(aa_range, 21), num_p)
-    aa_1 = jnp.tile(aa_range, num_p * 21)
+  def _pair_block(pairs: Int[Array, "C 2"]) -> Float[Array, "C 21 21"]:
+    """Double-mutant ddG for ``C`` pairs: the (C * 441) mutation grid in one model call."""
+    c_len = int(pairs.shape[0])
+    p_rep = jnp.repeat(pairs.astype(jnp.int32), 21 * 21, axis=0)
+    aa_0 = jnp.tile(jnp.repeat(aa_range, 21), c_len)
+    aa_1 = jnp.tile(aa_range, c_len * 21)
     double_aas = jnp.stack([aa_0, aa_1], axis=-1)
-    ddg_double = model(
+    return model(
       coords,
       mask,
       residue_index,
@@ -245,27 +247,21 @@ def _score_double_ddg(
       sequence,
       p_rep,
       double_aas,
-    ).reshape(num_p, 21, 21)
+    ).reshape(c_len, 21, 21)
+
+  if batch_size <= 0 or num_p <= batch_size:
+    ddg_double = _pair_block(pair_indices)
   else:
-    ddg_double_chunks = []
-    for start_idx in range(0, num_p, batch_size):
-      chunk_p = pair_indices[start_idx : start_idx + batch_size]
-      c_len = int(chunk_p.shape[0])
-      p_rep = jnp.repeat(chunk_p.astype(jnp.int32), 21 * 21, axis=0)
-      aa_0 = jnp.tile(jnp.repeat(aa_range, 21), c_len)
-      aa_1 = jnp.tile(aa_range, c_len * 21)
-      double_aas = jnp.stack([aa_0, aa_1], axis=-1)
-      chunk_ddg = model(
-        coords,
-        mask,
-        residue_index,
-        chain_index,
-        sequence,
-        p_rep,
-        double_aas,
-      ).reshape(c_len, 21, 21)
-      ddg_double_chunks.append(chunk_ddg)
-    ddg_double = jnp.concatenate(ddg_double_chunks, axis=0)
+    # Chunk the pairs with lax.map (one compiled body, sequential over chunks) instead of a
+    # Python loop. Pad the last chunk by repeating the final pair; those rows are sliced off.
+    n_chunks = -(-num_p // batch_size)
+    padded = jnp.pad(
+      pair_indices.astype(jnp.int32),
+      ((0, n_chunks * batch_size - num_p), (0, 0)),
+      mode="edge",
+    )
+    chunks = padded.reshape(n_chunks, batch_size, 2)
+    ddg_double = jax.lax.map(_pair_block, chunks).reshape(n_chunks * batch_size, 21, 21)[:num_p]
 
   return ddg_single, ddg_double, pair_indices
 
