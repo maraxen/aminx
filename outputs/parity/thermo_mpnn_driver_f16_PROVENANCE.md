@@ -49,3 +49,12 @@ Tolerance is `68 * 2^-10 * scale`, where `scale` is the max absolute float32 ref
 Pearson r is at least 0.9997 for every quantity.
 
 No cause is asserted for the ho1 d_ens1 ddg excess.
+
+## Error diagnostic (exploration), run 611e5c8c-6c6e-4744-b92c-cc9199ec6723
+
+- Sidecar `scripts/parity/thermo_mpnn_f16_error_diagnostic.bth.toml` (sha 23bfa173...) committed in 43f183b1, before the script (92c7968b). Run on titanix CPU at 92c7968b, tree clean (weights skip-worktree as above). bth outcome `observed` (exploration sidecar); the class below is read by hand from the recorded fields.
+- Files: `thermo_mpnn_f16_error_diagnostic.json`, `thermo_mpnn_f16_error_diagnostic_pairs.npz` (per-pair arrays).
+- Class for ho1 (1SMD, 496 residues) d_ens1 ddg, by the sidecar's definitions: **concentrated** (no non-finite values, max |f16| 2.258 so no overflow, top-1% of 629 pairs hold 64.6% of squared error; top-5% hold 78.1%).
+- Worst entry: residue i=430, a=9, f32 value -0.636 (not an extreme output), |diff| 0.3995.
+- Descriptive size comparison (ddg, d_ens1): 76 residues rms 0.0050 / max 0.030 / top-1% share 0.21; 153 residues rms 0.0049 / max 0.040 / 0.24; 496 residues rms 0.0123 / max 0.400 / 0.65. rms is flat from 76 to 153 and about 2.5x at 496, while max is about 13x; the large max is driven by a few entries. Three structures cannot separate size from structure-specific effects. Mechanism not established; intermediate activations were not recorded.
+- Correlation of |error| with |f32 value|: Spearman 0.21 / 0.38 / 0.28 (ubq / ho2 / ho1). With pair sequence separation (ddg_double): -0.09 / -0.04 / -0.03.
