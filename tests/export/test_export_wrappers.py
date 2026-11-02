@@ -839,10 +839,11 @@ class TestP07BundleArMaskPinning:
     """
     rng = np.random.default_rng(20261030)
     for length in (6, 9):
-      for _ in range(4):
+      for _ in range(16):
         decoding_order = jnp.asarray(rng.permutation(length), dtype=jnp.int32)
-        # Tie ids stay in 0 .. L-1, the convention both wave constructors index by.
-        tie_group_map = jnp.asarray(rng.integers(0, 3, size=length), dtype=jnp.int32)
+        # Tie ids stay in 0 .. L-1 (the smallest L here is 6, so 0..4 is in range), the
+        # convention both wave constructors index by.
+        tie_group_map = jnp.asarray(rng.integers(0, 5, size=length), dtype=jnp.int32)
 
         bundle, _ = p07_bundle(*self._dummy_inputs(length, decoding_order, tie_group_map))
         exported_mask = np.asarray(bundle.conditioning.ar_mask[0])
