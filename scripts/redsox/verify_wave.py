@@ -257,13 +257,27 @@ def main(argv: list[str] | None = None) -> int:
   except LedgerError as exc:
     logger.info("REFUSING: %s", exc)
     return 2
+  overrides: list[str] = []
   for pair in args.run:
     slug, _, rid = pair.partition("=")
+    overrides.append(slug)
     ids[slug] = rid
 
   # Manifest slugs come from the UNFILTERED family scope, so a slug with no ledger entry is
   # counted as missing rather than dropped from the check.
   rows = sidecar_slugs(scoped)
+
+  if family is not None:
+    # An explicit --run is the operator's own instruction. A family read that does not name the
+    # slug would otherwise log it as ignored and exit 0, so the override is refused instead.
+    refused = sorted(slug for slug in overrides if slug not in rows)
+    if refused:
+      logger.info(
+        "REFUSING: --run names slug(s) the %s family's manifest rows do not name: %s",
+        family,
+        ", ".join(refused),
+      )
+      return 2
 
   if not ids and not rows:
     logger.info("no run ids and no manifest rows: nothing to verify")

@@ -9,6 +9,7 @@ first remote run is their first execution.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -73,20 +74,51 @@ def test_sidecar_slugs_keep_every_row_of_a_scope() -> None:
   assert sidecar_slugs(rows_for_family(rows, "potts")) == {"potts_x": {"a", "b"}}
 
 
-def test_family_scoped_coverage_is_invalid_for_an_unattributed_row(tmp_path: Path) -> None:
-  # Pre-fix: the family-scoped verdict skipped a family-less row whose slug was absent from the
-  # ledger, so the verdict could come out 'pass'. Unscoped it was already instrument_invalid.
-  manifest = tmp_path / "manifest.toml"
-  manifest.write_text(
-    '[[branch]]\nid = "m1"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_absent"\n',
-    encoding="utf-8",
-  )
-  outcomes = tmp_path / "outcomes.jsonl"
-  outcomes.write_text("", encoding="utf-8")
+_PYTEST_ROW = (
+  '[[branch]]\nid = "m1"\nfamily = "potts"\n[branch.vehicle]\nkind = "pytest"\nnodeids = ["t::a"]\n'
+)
+
+
+def _outcomes(path: Path) -> Path:
+  """A clean pass for t::a and an AssertionError kill of mutant m1: the pytest row grades 'pass'."""
+  records = [
+    {"nodeid": "t::a", "when": "call", "outcome": "passed", "mutant": None},
+    {"nodeid": "t::a", "when": "call", "outcome": "failed", "exc_type": "AssertionError", "mutant": "m1"},
+  ]
+  path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+  return path
+
+
+def test_family_scoped_coverage_refuses_an_unattributed_row(tmp_path: Path) -> None:
+  # Pre-fix: a family-less sidecar row whose slug was absent from the ledger was skipped in a family
+  # scope, the potts pytest row alone matched, and the verdict was 'pass'. The fixture is first
+  # shown to be passable on its own, so the only reason for instrument_invalid is the unattributed row.
+  outcomes = _outcomes(tmp_path / "outcomes.jsonl")
   ledgers = tmp_path / "ledgers"
   _shard(ledgers, "potts", _POTTS_SHARD)
+  alone = tmp_path / "alone.toml"
+  alone.write_text(_PYTEST_ROW, encoding="utf-8")
+  assert check_branch_coverage(alone, outcomes, ledgers, family="potts") == "pass"
+
+  unattributed = tmp_path / "unattributed.toml"
+  unattributed.write_text(
+    _PYTEST_ROW + '\n[[branch]]\nid = "ghost"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_absent"\n',
+    encoding="utf-8",
+  )
+  assert check_branch_coverage(unattributed, outcomes, ledgers, family="potts") == "instrument_invalid"
+
+
+def test_family_row_with_no_ledger_entry_is_instrument_invalid(tmp_path: Path) -> None:
+  outcomes = _outcomes(tmp_path / "outcomes.jsonl")
+  ledgers = tmp_path / "ledgers"
+  _shard(ledgers, "potts", _POTTS_SHARD)
+  manifest = tmp_path / "manifest.toml"
+  manifest.write_text(
+    _PYTEST_ROW
+    + '\n[[branch]]\nid = "ghost2"\nfamily = "potts"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_absent"\n',
+    encoding="utf-8",
+  )
   assert check_branch_coverage(manifest, outcomes, ledgers, family="potts") == "instrument_invalid"
-  assert check_branch_coverage(manifest, outcomes, ledgers, family=None) == "instrument_invalid"
 
 
 def _load_verify_wave() -> ModuleType:
@@ -100,20 +132,65 @@ def _load_verify_wave() -> ModuleType:
   return module
 
 
-def test_verify_wave_exits_nonzero_for_a_manifest_slug_without_a_ledger_entry(
+_ENERGY_ROW = (
+  '[[branch]]\nid = "m1"\nfamily = "potts"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_energy_parity"\n'
+)
+
+
+def _verify_wave_at(
   tmp_path: Path,
   monkeypatch: pytest.MonkeyPatch,
-) -> None:
-  # Pre-fix: --family potts filtered the manifest by the ledger, so potts_absent vanished and the
-  # run exited 0 with an unverified slug. potts_energy_parity is recorded and "verifies" here.
+  manifest_text: str,
+) -> ModuleType:
   knob_gate = tmp_path / "tests" / "knob_gate"
   _shard(knob_gate / "ledgers", "potts", _POTTS_SHARD)
-  (knob_gate / "branch_manifest.toml").write_text(
-    '[[branch]]\nid = "m1"\nfamily = "potts"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_energy_parity"\n\n'
-    '[[branch]]\nid = "m2"\nfamily = "potts"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_absent"\n',
-    encoding="utf-8",
-  )
+  (knob_gate / "branch_manifest.toml").write_text(manifest_text, encoding="utf-8")
   verify_wave = _load_verify_wave()
   monkeypatch.setattr(verify_wave, "REPO", tmp_path)
   monkeypatch.setattr(verify_wave, "verify", lambda _slug, _rid, _ids: True)
+  return verify_wave
+
+
+def test_familyless_row_under_a_family_read_is_refused(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  # Pre-fix: the family-less potts_absent row was dropped by the allowed-slug filter, nothing was
+  # reported missing, and the run exited 0 with an unverified manifest slug.
+  verify_wave = _verify_wave_at(
+    tmp_path,
+    monkeypatch,
+    _ENERGY_ROW + '\n[[branch]]\nid = "m2"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_absent"\n',
+  )
+  assert verify_wave.main(["--family", "potts"]) == 2
+
+
+def test_family_slug_without_a_ledger_entry_is_the_exact_missing_set(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+  caplog: pytest.LogCaptureFixture,
+) -> None:
+  caplog.set_level("INFO")
+  verify_wave = _verify_wave_at(
+    tmp_path,
+    monkeypatch,
+    _ENERGY_ROW
+    + '\n[[branch]]\nid = "m2"\nfamily = "potts"\n[branch.vehicle]\nkind = "sidecar"\nslug = "potts_absent"\n',
+  )
   assert verify_wave.main(["--family", "potts"]) == 1
+  missing = [r.getMessage() for r in caplog.records if r.getMessage().startswith("no run id yet for:")]
+  assert missing == ["no run id yet for: potts_absent"]
+
+
+def test_run_override_for_a_slug_outside_the_family_is_refused(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  # Pre-fix: the override was logged 'ignored' and the run could still exit 0. Now it is an error.
+  verify_wave = _verify_wave_at(tmp_path, monkeypatch, _ENERGY_ROW)
+  assert verify_wave.main(["--family", "potts", "--run", "laser_score_parity=zzz"]) == 2
+
+
+def test_unknown_family_exits_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  verify_wave = _verify_wave_at(tmp_path, monkeypatch, _ENERGY_ROW)
+  assert verify_wave.main(["--family", "nosuch"]) == 2
