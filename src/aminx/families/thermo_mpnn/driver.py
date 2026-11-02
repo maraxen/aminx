@@ -3,12 +3,20 @@
 Supports ``score:ddg`` across single-checkpoint v1 (``thermo_mpnn_v1_default``)
 and 3-member v2 ensembles (``thermo_mpnn_v2_ensemble`` for single-mutant SSM and
 ``thermo_mpnn_d_ensemble`` for epistatic double-mutant ΔΔG).
+
+Precision: ``dtype="float32"`` is the default. ``dtype="float16"`` is available but NOT
+validated. The precision-based parity gate (``scripts/parity/thermo_mpnn_driver_f16_v2.bth.toml``,
+run 18c1d29c) failed on a 496-residue structure, with ddg errors up to ~0.4 against float32
+while correlation stayed >= 0.9997. Selecting float16 emits a ``UserWarning`` from
+:meth:`ThermoMPNNDriver.score`. Use float16 for screening or ranking only. The cause of the
+large error has not been identified.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import warnings
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -58,6 +66,12 @@ _VALID_SCORE_MODES: frozenset[str] = frozenset(
   {"score:ddg", "score:ddg_double", "single", "double"},
 )
 _VALID_DTYPES: frozenset[str] = frozenset({"float32", "float16"})
+_FLOAT16_WARNING: str = (
+  "float16 is not validated for ThermoMPNN: the precision-based parity gate "
+  "(scripts/parity/thermo_mpnn_driver_f16_v2.bth.toml, run 18c1d29c) failed on a "
+  "496-residue structure (ddg errors up to ~0.4 vs float32; correlation >= 0.9997). "
+  "Use float16 for screening or ranking only."
+)
 
 log = logging.getLogger(__name__)
 
@@ -975,6 +989,7 @@ class ThermoMPNNDriver:
       Pair batch chunk size for ThermoMPNN-D double-mutant scoring.
     dtype : str, default="float32"
       Floating-point precision for trunk and head evaluation (``"float32"`` or ``"float16"``).
+      ``"float16"`` is not validated for ThermoMPNN and emits a ``UserWarning`` on each call.
     ensemble : bool, default=True
       Whether to average across all ensemble members when using an ensemble.
     options : ThermoMPNNOptions | None, optional
@@ -1003,6 +1018,8 @@ class ThermoMPNNDriver:
     if dtype not in _VALID_DTYPES:
       msg = f"Unsupported ThermoMPNN dtype: {dtype!r}; expected 'float32' or 'float16'."
       raise ValueError(msg)
+    if dtype == "float16":
+      warnings.warn(_FLOAT16_WARNING, UserWarning, stacklevel=2)
 
     if mode in ("double", "score:ddg_double"):
       double_mutant = True

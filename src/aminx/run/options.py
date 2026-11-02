@@ -234,7 +234,10 @@ class ThermoMPNNOptions:
   batch_size : int
       Pair batch chunk size for ThermoMPNN-D double-mutant scoring.
   dtype : Literal["float32", "float16"]
-      Floating-point precision for trunk and head evaluation.
+      Floating-point precision for trunk and head evaluation. ``"float32"`` is the default.
+      ``"float16"`` is not validated for ThermoMPNN (see the driver module docstring): the
+      float16 parity gate failed on a large structure, so it is for screening or ranking only,
+      and selecting it emits a ``UserWarning``.
   ensemble : bool
       Whether to average across all 3 v2 ensemble members when using v2/D.
   """

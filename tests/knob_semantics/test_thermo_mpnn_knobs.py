@@ -13,6 +13,7 @@ Tests the semantic behavior and plumbing of all 6 ThermoMPNNOptions knobs:
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -189,15 +190,16 @@ def test_knob_semantics_dtype() -> None:
     sequence,
     options=ThermoMPNNOptions(dtype="float32"),
   )
-  res_f16 = driver.score(
-    model,
-    coords,
-    mask,
-    residue_index,
-    chain_index,
-    sequence,
-    options=ThermoMPNNOptions(dtype="float16"),
-  )
+  with pytest.warns(UserWarning, match="float16 is not validated"):
+    res_f16 = driver.score(
+      model,
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      sequence,
+      options=ThermoMPNNOptions(dtype="float16"),
+    )
 
   f32_ddg = np.asarray(res_f32["ddg"])
   f16_ddg = np.asarray(res_f16["ddg"])
@@ -407,15 +409,16 @@ def test_knob_semantics_float16_passes_result_schema() -> None:
   model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
   stages = driver.stages(spec, "score:ddg", model)
   batch = driver.collate_batch((driver.prepare_structure(_UBQ_PDB),), input_indices=(0,))
-  produced = dict(
-    stages(
-      batch,
-      chunk_start=0,
-      chunk_count=1,
-      scalar_dropout=False,
-      dropout_key=jax.random.PRNGKey(0),
-    ),
-  )
+  with pytest.warns(UserWarning, match="float16 is not validated"):
+    produced = dict(
+      stages(
+        batch,
+        chunk_start=0,
+        chunk_count=1,
+        scalar_dropout=False,
+        dropout_key=jax.random.PRNGKey(0),
+      ),
+    )
   schema = driver.result_schema(spec, "score:ddg")
   # Mirror family_runner._consume_batch: single-structure output gains the leading axis.
   leading = {
@@ -536,3 +539,52 @@ def test_knob_semantics_zero_pairs_through_write_outputs(tmp_path: Path) -> None
     group = zarr.open_group(str(out), mode="r")
     assert group["ddg_double"].shape == (0, 21, 21)
     assert group["pair_indices"].shape == (0, 2)
+
+
+def _float_warnings(record: list[warnings.WarningMessage]) -> list[str]:
+  """Messages of the float16 'not validated' warning among ``record``."""
+  return [str(w.message) for w in record if "float16 is not validated" in str(w.message)]
+
+
+def test_knob_semantics_float16_warns_once_per_score_call() -> None:
+  """Selecting float16 warns on each score() call, with the sidecar and run id cited."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
+  with warnings.catch_warnings(record=True) as record:
+    warnings.simplefilter("always")
+    driver.score(
+      model,
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      sequence,
+      options=ThermoMPNNOptions(dtype="float16"),
+    )
+  messages = _float_warnings(record)
+  assert len(messages) == 1
+  assert "thermo_mpnn_driver_f16_v2.bth.toml" in messages[0]
+  assert "18c1d29c" in messages[0]
+
+
+def test_knob_semantics_float32_and_float64_do_not_warn() -> None:
+  """float32 (the default) and float64 selections emit no float16 warning."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
+  with warnings.catch_warnings(record=True) as record:
+    warnings.simplefilter("always")
+    driver.score(model, coords, mask, residue_index, chain_index, sequence)
+    driver.score(
+      model,
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      sequence,
+      options=ThermoMPNNOptions(dtype="float32"),
+    )
+  assert _float_warnings(record) == []
+  with pytest.raises(ValueError, match="dtype"):
+    driver.score(model, coords, mask, residue_index, chain_index, sequence, dtype="float64")
