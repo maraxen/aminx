@@ -4,9 +4,12 @@
 #   run HEAD (git_hash) is ef8810c2, where this file does not exist. The commit therefore post-dates
 #   the run.
 # - The working-tree mtime of this file was 14:17:14 (last write), before the output. That is
-#   file-system evidence only: no bathos run record exists for the output (no event in
-#   ~/.bth/catalog/logs), and the output's prereg_sha256 is the sha of layer_a/preregistered_params.json,
-#   not of this file, so the output is not bound to this sidecar's bytes.
+#   file-system evidence only, and it gives no start time for the run. Checked on 2026-11-02 with
+#   `bth sql` against the user catalog (~/.bth/catalog): no run row has sidecar_path containing
+#   parity_validate_mpnn_261030, and none has sidecar_sha256 15d3f4da... (the sha of this file as
+#   committed in 8f3bb3fc). The only validate-script runs there are from 2026-09-26 against other
+#   sidecars. The output's prereg_sha256 is the sha of layer_a/preregistered_params.json, not of this
+#   file, so the output is not bound to this sidecar's bytes.
 # - Verdict for the recorded run: NOT pre-registered. Cite it as post-hoc-amended. The recorded run
 #   grades as `fail` (parity_grade=FAIL, prereq_status=missing) under the outcomes below, and that
 #   outcome was derived by hand from the output, not evaluated by bth.
