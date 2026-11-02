@@ -1,5 +1,6 @@
 # Sharded ledger for ThermoMPNN / ThermoMPNN-D.
-# Recorded after vehicle execution on titanix GPUs 2/3 (bth run).
+# No vehicle run is recorded yet: the [sidecar] table below is empty and the titanix
+# GPU 2/3 bth run is pending. Do not read this gate as executed until that run exists.
 
 [sidecar]
 # [sidecar.thermo_mpnn_parity]
