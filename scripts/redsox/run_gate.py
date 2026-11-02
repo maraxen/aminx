@@ -29,7 +29,11 @@ from gate_common import NONPORT, declared_wave, nodeid_path, repo_root, target_w
 
 logger = logging.getLogger(__name__)
 
-_UV = ("uv", "run", "--no-sync")
+_UV = (
+  tuple(os.environ["AMINX_GATE_UV"].split())
+  if "AMINX_GATE_UV" in os.environ
+  else ("uv", "run", "--no-sync")
+)
 
 
 def _parse(argv: list[str]) -> argparse.Namespace:
@@ -267,7 +271,7 @@ def main(argv: list[str] | None = None) -> None:
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
   )
   args = _parse(sys.argv[1:] if argv is None else argv)
-  family = None if args.all else args.family
+  family = None if (args.all or args.family == "all") else args.family
   results_path = _require_results_path()
   repo = repo_root(Path(__file__))
   out = _gate_out(repo)

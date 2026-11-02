@@ -82,6 +82,7 @@ JSON_FIELDS = (
 
 from aminx.io.upstream_pdb import (
   PottsInputError,
+  _parse_biounits,
   parse_pdb_upstream,
 )
 

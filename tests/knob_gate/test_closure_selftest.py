@@ -42,6 +42,7 @@ POTTS_SLUGS = (
   "potts_ddg_megascale",
 )
 PROTON_SLUGS = ("protonpotts_parity",)
+THERMO_SLUGS = ("thermo_mpnn_parity",)
 TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
@@ -51,7 +52,7 @@ PHASE4_SLUGS = (
   "caliby_parity",
   "antibmpnn_parity",
 )
-ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS, *PHASE4_SLUGS)
+ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *PHASE4_SLUGS)
 
 
 def _make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
@@ -274,7 +275,7 @@ def test_family_change_invalidates_only_its_own_rows() -> None:
   potts_change = ["src/aminx/families/potts_mpnn/decode.py"]
   laser_change = ["src/aminx/families/laser_mpnn/driver.py"]
   proton_change = ["src/aminx/families/protonpotts_mpnn/ph_descent.py"]
-  assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS]
+  assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS, *THERMO_SLUGS]
   assert [s for s in ALL_SLUGS if row_is_stale(laser_change, _real(s))] == list(LASER_SLUGS)
   assert [s for s in ALL_SLUGS if row_is_stale(proton_change, _real(s))] == list(PROTON_SLUGS)
 
@@ -440,7 +441,7 @@ def test_protonpotts_row_reaches_its_family_and_not_laser(slug: str) -> None:
     assert needed in closure.files, needed
 
 
-@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *TIER1_TIER2_SLUGS, *PHASE4_SLUGS])
+@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *PHASE4_SLUGS])
 def test_other_families_do_not_depend_on_protonpotts_code(slug: str) -> None:
   closure = _real(slug)
   assert not [f for f in closure.files if "protonpotts" in f], "a Potts/LASEr row reaches ProtonPotts code"
