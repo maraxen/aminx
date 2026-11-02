@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from aminx.utils.aa_convert import string_to_protein_sequence
 from aminx.scoring.ligand_cutoff import (
   DEFAULT_LIGAND_CUTOFF_ANGSTROMS,
   compute_ligand_cutoff_mask,
@@ -100,6 +101,7 @@ def test_compute_loss_xy_arithmetic() -> None:
   """Test loss_xy computes exact weighted categorical cross-entropy."""
   # Sequence of 3 residues: tokens [0, 5, 10]
   seq = jnp.array([0, 5, 10])
+  assert jnp.issubdtype(seq.dtype, jnp.integer)
 
   # Logits where true tokens have known values
   logits = jnp.zeros((3, 21))
@@ -191,13 +193,18 @@ def test_masked_ligand_atom_does_not_cap_the_nearest_distance() -> None:
 
 
 def test_nearest_valid_distance_is_exact_beyond_the_old_sentinel() -> None:
-  """A valid atom at 34 A reads as 34 A (the old sentinel reported 31.6 A)."""
+  """A masked atom on the C-beta must not cap a valid atom at 34 A.
+
+  The masked atom sits at distance 0. The old finite sentinel (1000 A^2 = 31.6 A) replaced it, so
+  the old code reported min(1000, 34^2) -> 31.6 A. The fixed code reports the valid 34 A.
+  """
   coords = _single_residue_coords(jnp.zeros(3))
   cb = compute_virtual_c_beta(coords)[0]
-  ligand_coords = jnp.stack([cb + jnp.array([34.0, 0.0, 0.0])])
+  ligand_coords = jnp.stack([cb, cb + jnp.array([34.0, 0.0, 0.0])])  # masked, then valid
+  ligand_mask = jnp.array([0.0, 1.0])
 
   mask_xy, d_xy = compute_ligand_cutoff_mask(
-    coords, ligand_coords, jnp.ones((1,)), jnp.ones((1,)), cutoff=40.0
+    coords, ligand_coords, ligand_mask, jnp.ones((1,)), cutoff=40.0
   )
   assert float(d_xy[0]) == pytest.approx(34.0, abs=1e-4)
   assert float(mask_xy[0]) == 1.0
@@ -207,6 +214,10 @@ def test_nearest_valid_distance_is_exact_beyond_the_old_sentinel() -> None:
 def test_non_positive_or_non_finite_cutoff_is_refused(bad_cutoff: float) -> None:
   with pytest.raises(ValueError, match="positive distance"):
     validate_ligand_cutoff(bad_cutoff)
+  with pytest.raises(ValueError, match="positive distance"):
+    compute_ligand_cutoff_mask(
+      jnp.zeros((2, 4, 3)), jnp.zeros((1, 3)), jnp.ones((1,)), jnp.ones((2,)), cutoff=bad_cutoff
+    )
   with pytest.raises(ValueError, match="positive distance"):
     evaluate_ligand_cutoff_score(
       coordinates=jnp.zeros((2, 4, 3)),
@@ -243,3 +254,9 @@ def test_candidate_helper_carries_the_noise_axis() -> None:
       assert float(result.ligand_confidence[c, d]) == pytest.approx(
         float(jnp.exp(-expected)), rel=1e-5
       )
+
+
+def test_string_to_protein_sequence_is_an_integer_dtype() -> None:
+  """The runner feeds string_to_protein_sequence output to compute_loss_xy as tokens."""
+  tokens = string_to_protein_sequence("ACDEFGHIKLMNPQRSTVWY")
+  assert jnp.issubdtype(jnp.asarray(tokens).dtype, jnp.integer)

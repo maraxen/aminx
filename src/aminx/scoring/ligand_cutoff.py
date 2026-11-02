@@ -76,8 +76,34 @@ def validate_ligand_cutoff(cutoff: object) -> None:
     raise ValueError(msg)
 
 
-@jax.jit
 def compute_ligand_cutoff_mask(
+  coordinates: jax.Array,
+  ligand_coords: jax.Array | None,
+  ligand_mask: jax.Array | None,
+  residue_mask: jax.Array,
+  cutoff: float = DEFAULT_LIGAND_CUTOFF_ANGSTROMS,
+) -> tuple[jax.Array, jax.Array]:
+  """Validate a concrete ``cutoff``, then compute the ligand-proximal mask (see ``_kernel``).
+
+  Not jitted itself, so a concrete non-positive or non-finite cutoff raises ``ValueError``
+  before tracing. The jitted kernel below is called with the same arguments, so jit and vmap
+  over the coordinates and ligand still work. A traced cutoff is passed through unchecked.
+
+  Raises:
+    ValueError: If ``cutoff`` is a concrete number that is not finite and positive.
+  """
+  validate_ligand_cutoff(cutoff)
+  return _compute_ligand_cutoff_mask_kernel(
+    coordinates,
+    ligand_coords,
+    ligand_mask,
+    residue_mask,
+    cutoff,
+  )
+
+
+@jax.jit
+def _compute_ligand_cutoff_mask_kernel(
   coordinates: jax.Array,
   ligand_coords: jax.Array | None,
   ligand_mask: jax.Array | None,
