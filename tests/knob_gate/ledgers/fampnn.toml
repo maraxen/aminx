@@ -1,0 +1,4 @@
+# Sidecar ledger shard for FAMPNN vehicle runs.
+# Owning task records [sidecar.fampnn_parity] after the vehicle run on titanix.
+
+[sidecar]

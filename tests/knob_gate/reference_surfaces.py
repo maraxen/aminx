@@ -620,4 +620,64 @@ class pottsmpnn_input_list:
   pottsmpnn_input_list__pdb: str | None = None  # type=str; help=PDB stem (text before the first |); sample_seqs.py:81-94
   pottsmpnn_input_list__designed_chains: str | None = None  # type=str; help=designed chains (colon-separated); sample_seqs.py:81-94
   pottsmpnn_input_list__fixed_chains: str | None = None  # type=str; help=fixed chains (colon-separated); sample_seqs.py:81-94
+
+
+@dataclass(frozen=True)
+class FAMPNNReferenceKnobs:
+  """Upstream richardshuai/fampnn knobs."""
+
+  fampnn_model__checkpoint_id: str | None = None
+  fampnn_mar__num_seq_steps: int = 8
+  fampnn_edm__num_scn_steps: int = 18
+  fampnn_edm__sigma_min: float = 0.002
+  fampnn_edm__sigma_max: float = 80.0
+  fampnn_edm__rho: float = 7.0
+  fampnn_edm__s_churn: float = 0.0
+  fampnn_edm__step_scale: float = 1.5
+  fampnn_mar__pack_each_step: bool = True
+  fampnn_eval__relax_sidechains: bool = False
+  fampnn_eval__relax_tolerance: float = 1.0
+  fampnn_eval__relax_max_iterations: int = 100
+  fampnn_multistate__positive_states: tuple[object, ...] = ()
+  fampnn_multistate__negative_states: tuple[object, ...] = ()
+  fampnn_multistate__state_weights: tuple[object, ...] = ()
+
+
+@dataclass(frozen=True)
+class CalibyReferenceKnobs:
+  """Upstream ProteinDesignLab/caliby knobs."""
+
+  caliby_model__checkpoint_id: str | None = None
+  caliby_ensemble__conformers: int = 1
+  caliby_ensemble__noise_std: float = 0.0
+  caliby_potts__omit_gap_penalty: float = 1e6
+  caliby_packer__num_steps: int = 25
+  caliby_packer__sigma_min: float = 0.002
+  caliby_packer__sigma_max: float = 80.0
+  caliby_packer__rho: float = 7.0
+  caliby_packer__s_churn: float = 0.0
+  caliby_packer__step_scale: float = 1.5
+  caliby_potts__mcmc_steps: int = 1000
+  caliby_potts__cooling_schedule: str = "geometric"
+  caliby_potts__mcmc_burnin: int = 100
+  caliby_eval__conformer_generator: str = "af3"
+  caliby_eval__af3_diffusion_steps: int = 50
+  caliby_eval__protpardelle_ckpt: str | None = None
+
+
+@dataclass(frozen=True)
+class AntiBMPNNReferenceKnobs:
+  """Upstream zeysun/AntiBMPNN knobs."""
+
+  antibmpnn_model__model_name: str | None = None
+  antibmpnn_cdr__scheme: str = "chothia"
+  antibmpnn_cdr__heavy_chain: str = "H"
+  antibmpnn_cdr__light_chain: str = "L"
+  antibmpnn_cdr__bias_weight: float = 1.0
+  antibmpnn_run__use_anarci: bool = False
+  antibmpnn_run__anarci_species: str = "human"
+  antibmpnn_run__anarci_scheme: str = "chothia"
+  antibmpnn_postprocess__cluster_identity: float = 0.9
+  antibmpnn_postprocess__max_clusters: int = 100
 # END MANUAL
+

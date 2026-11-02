@@ -1,0 +1,31 @@
+[experiment]
+hypothesis = "JAX FAMPNN stages L1 (Atom14/37 frame transformations and RBF features), L2 (FAEncoder + GVPGraphEmbedding + MLP trunk sequence logits), and L3 (1-step continuous EDM sidechain denoising with injected noise) achieve parity within 1e-4 in float32, and all negative controls (corrupt_atom_order, corrupt_w_out, zero_edm_self_cond) fail decisively (> 1e-2)."
+stage_name = "validation"
+
+[reproduction]
+reproduces_paper = "doi:10.1101/2024.09.13.612948"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[requires.waiver]
+reason = "FAMPNN parity verification vehicle against upstream PyTorch checkpoints"
+
+[outcomes.pass]
+condition = "clean == 'pass' AND mutants.corrupt_atom_order == 'failed' AND mutants.corrupt_w_out == 'failed' AND mutants.zero_edm_self_cond == 'failed'"
+decision = "Promote FAMPNN JAX port and knob coverage."
+reasoning = "Clean run passes all graded stages L1/L2/L3, and all three negative control mutants trip."
+is_residual = false
+
+[outcomes.fail]
+condition = "clean != 'pass' OR mutants.corrupt_atom_order != 'failed' OR mutants.corrupt_w_out != 'failed' OR mutants.zero_edm_self_cond != 'failed'"
+decision = "Block promotion and debug FAMPNN feature, GVP, or EDM denoiser implementation."
+reasoning = "Parity delta exceeds tolerance or negative controls failed to trip."
+is_residual = true
+
+[result_schema]
+family = "str"
+clean = "str"
+mutants = "dict"
+weights = "dict"

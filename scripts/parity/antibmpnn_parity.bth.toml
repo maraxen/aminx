@@ -1,0 +1,31 @@
+[experiment]
+hypothesis = "JAX AntiBMPNN stages L1 (CDR region masks on heavy and light chains), L2 (CDR log-odds frequency logit transformation), and L3 (sampling and Barley PC1/PC2 + Lehninger net charge descriptors with injected noise) achieve parity within 1e-4 in float32, and all negative controls (swap_chain_ids, zero_cdr_bias, wrong_lehninger_pka) fail decisively (> 1e-2)."
+stage_name = "validation"
+
+[reproduction]
+reproduces_paper = "doi:10.1101/2024.04.18.590119"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[requires.waiver]
+reason = "AntiBMPNN parity verification vehicle against upstream PyTorch checkpoints"
+
+[outcomes.pass]
+condition = "clean == 'pass' AND mutants.swap_chain_ids == 'failed' AND mutants.zero_cdr_bias == 'failed' AND mutants.wrong_lehninger_pka == 'failed'"
+decision = "Promote AntiBMPNN JAX port and knob coverage."
+reasoning = "Clean run passes all graded stages L1/L2/L3, and all three negative control mutants trip."
+is_residual = false
+
+[outcomes.fail]
+condition = "clean != 'pass' OR mutants.swap_chain_ids != 'failed' OR mutants.zero_cdr_bias != 'failed' OR mutants.wrong_lehninger_pka != 'failed'"
+decision = "Block promotion and debug AntiBMPNN CDR masking, logit bias, or descriptor pipeline."
+reasoning = "Parity delta exceeds tolerance or negative controls failed to trip."
+is_residual = true
+
+[result_schema]
+family = "str"
+clean = "str"
+mutants = "dict"
+weights = "dict"

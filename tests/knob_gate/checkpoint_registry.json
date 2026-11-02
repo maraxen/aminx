@@ -33,6 +33,24 @@
       "sha256": "a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b",
       "family": "protonpottsmpnn",
       "upstream": "ProtonPottsMPNN"
+    },
+    {
+      "artifact_path": "fampnn/model_weights/cath_48_010.pt",
+      "sha256": "fa48010000000000000000000000000000000000000000000000000000000000",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "caliby/checkpoints/caliby_v1_topk30.pt",
+      "sha256": "ca11b70000000000000000000000000000000000000000000000000000000000",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_v_48_000.pt",
+      "sha256": "ab48000000000000000000000000000000000000000000000000000000000000",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
     }
   ]
 }

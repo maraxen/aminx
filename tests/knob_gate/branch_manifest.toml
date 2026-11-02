@@ -1123,3 +1123,88 @@ mutant = "ph_objective_knobs.block_zscales"
 [branch.vehicle]
 kind = "sidecar"
 slug = "protonpotts_parity"
+
+# ==============================================================================
+# Phase 4: Complex Families (FAMPNN, Caliby, AntiBMPNN) Parity Vehicles
+# ==============================================================================
+
+[[branch]]
+id = "corrupt_atom_order"
+stage = "P4"
+fixture = "synthetic"
+mutant = "corrupt_atom_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+id = "corrupt_w_out"
+stage = "P4"
+fixture = "synthetic"
+mutant = "corrupt_w_out"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+id = "zero_edm_self_cond"
+stage = "P4"
+fixture = "synthetic"
+mutant = "zero_edm_self_cond"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+id = "reverse_coordinate_frame"
+stage = "P4"
+fixture = "synthetic"
+mutant = "reverse_coordinate_frame"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+id = "unpermuted_alphabet"
+stage = "P4"
+fixture = "synthetic"
+mutant = "unpermuted_alphabet"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+id = "zero_gap_penalty"
+stage = "P4"
+fixture = "synthetic"
+mutant = "zero_gap_penalty"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+id = "swap_chain_ids"
+stage = "P4"
+fixture = "synthetic"
+mutant = "swap_chain_ids"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+id = "zero_cdr_bias"
+stage = "P4"
+fixture = "synthetic"
+mutant = "zero_cdr_bias"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+id = "wrong_lehninger_pka"
+stage = "P4"
+fixture = "synthetic"
+mutant = "wrong_lehninger_pka"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
