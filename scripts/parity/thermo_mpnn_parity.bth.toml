@@ -1,16 +1,21 @@
-# Provenance (261102_pr-remediation, read from git history and the bathos catalog):
-# - origin/main (ab05bdce, sidecar sha256 75a48921...) graded outcomes numerically from
-#   recorded fields with f64/f32 bars only. Catalog runs 8c722b72 (error) and 6c39cbbe
-#   (pass) at commit a6e1573b used that sidecar. Their pass is pre-registered for f64/f32.
-# - de2e2b95 (PR #258) added the float16 bars to the hypothesis and rewrote every outcome to
-#   clean='pass'/'marginal', a verdict the script computes itself, in the same commit that
-#   added the float16 stage. No catalog run exists for the float16 criteria, so the float16
-#   verdict is NOT pre-registered and must not be cited as such.
-# - This revision grades numerically again from recorded fields. Every threshold below is one
-#   stated in the hypothesis text or carried over from origin/main; no threshold was changed.
-#   The float16 bars are new in de2e2b95, so they are a receipt until a run uses this sidecar.
-# - [requires.waiver] was removed in de2e2b95 without a reason. It is restored: it relaxes only
-#   [requires] artifact checks, and this sidecar has no [requires] table, so it gates nothing.
+# Provenance (261102_pr-remediation; re-verified against git and the bathos catalog):
+# - Sidecar sha256 75a48921... is the file at commit ab05bdce (f64/f32 gating, no weight_source
+#   gate). It is NOT origin/main's tip (ef8810c2 carries sha 6408d1a1..., from 06632dfe, which
+#   adds a weight_source gate).
+# - Catalog runs 8c722b72 (error) and 6c39cbbe (pass) used sidecar 75a48921 at commit a6e1573b.
+#   Both were recorded with git_dirty=true (uncommitted tree), so neither is a clean verdict on
+#   a committed sidecar.
+# - Clauses in the current file that ab05bdce did not have: the weight_source gate in
+#   pass/marginal/fail; n_listed > 0 and n_failed == n_listed in pass/marginal; the float16
+#   max-abs and Pearson r bars in pass/marginal/fail; the float16 and clean/n_listed/n_failed
+#   result_schema fields. The float16 criteria first appeared in de2e2b95.
+# - The f64/f32 numbers were produced under the earlier sidecar 75a48921. The current version
+#   has not been run, so neither the f64/f32 verdict nor the float16 verdict is pre-registered
+#   under this sidecar.
+# - Thresholds: every threshold below is stated in the hypothesis text or carried over from
+#   ab05bdce; none was changed.
+# - [requires.waiver] was removed in de2e2b95 without a reason and is restored. It relaxes only
+#   [requires], which this sidecar does not declare, so it gates nothing either way.
 [experiment]
 hypothesis = "JAX ThermoMPNN (v1/v2 single-mutant) and ThermoMPNNDouble (v2 epistatic Siamese) match the upstream PyTorch reference within 1e-7 in float64, 1e-4 in float32, and 1.5e-2 with Pearson r > 0.999 in float16 on 1ubq.pdb, preserve exact 0.0 wild-type self-mutation and mutation-slot order invariance, and fail decisively (> 1e-2) under all four structural/algebraic negative controls."
 stage_name = "validation"
@@ -38,7 +43,7 @@ reasoning = "Forward outputs on upstream checkpoints are close to PyTorch, exact
 is_residual = false
 
 [outcomes.fail]
-condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR v1_f16_max_abs_diff >= 1.5e-2 OR v2_f16_max_abs_diff >= 1.5e-2 OR double_f16_max_abs_diff >= 1.5e-2 OR v1_f16_pearson_r IS NULL OR v2_f16_pearson_r IS NULL OR double_f16_pearson_r IS NULL OR v1_f16_pearson_r <= 0.999 OR v2_f16_pearson_r <= 0.999 OR double_f16_pearson_r <= 0.999 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2 OR n_failed != n_listed OR n_listed = 0"
+condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR v1_f16_max_abs_diff >= 1.5e-2 OR v2_f16_max_abs_diff >= 1.5e-2 OR double_f16_max_abs_diff >= 1.5e-2 OR v1_f16_pearson_r IS NULL OR v2_f16_pearson_r IS NULL OR double_f16_pearson_r IS NULL OR v1_f16_pearson_r <= 0.999 OR v2_f16_pearson_r <= 0.999 OR double_f16_pearson_r <= 0.999 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2 OR n_failed != n_listed OR n_listed == 0"
 decision = "Block promotion and debug trunk, LightAttention1D, or Siamese head mismatch (or re-run against upstream checkpoints)."
 reasoning = "Run used synthetic weights, parity error exceeds tolerance, an algebraic invariant is violated, or a negative control failed to trip."
 is_residual = true
