@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,9 @@ from aminx.io.membrane import (
   construct_membrane_physics_features,
   parse_residue_spec,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def run_probe() -> dict[str, object]:
@@ -81,6 +85,7 @@ def run_probe() -> dict[str, object]:
 
 
 def main() -> None:
+  logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
   parser = argparse.ArgumentParser(description="Probe for membrane_label_construction clause.")
   parser.add_argument(
     "--out",
@@ -101,7 +106,7 @@ def main() -> None:
     bth_path.parent.mkdir(parents=True, exist_ok=True)
     bth_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-  print(f"Probe membrane_label_construction: {result['status']}")
+  logger.info("Probe membrane_label_construction: %s", result["status"])
 
 
 if __name__ == "__main__":

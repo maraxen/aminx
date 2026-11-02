@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -21,8 +22,12 @@ from aminx.model.mpnn import Aminx
 from aminx.scoring.multi_order import score_multi_order_average
 
 
+logger = logging.getLogger(__name__)
+
+
 def run_probe() -> dict[str, object]:
   """Execute probe verifying multi-order score averaging, probability normalization, and Jensen's inequality."""
+  # Declared debt id. Praxia is not reachable from this probe, so nothing here verifies it.
   praxia_debt_id = 3166
   praxia_debt_slug = "debt-multi-order-scoring-average"
 
@@ -81,6 +86,7 @@ def run_probe() -> dict[str, object]:
     "status": "PASS" if probe_passed else "FAIL",
     "praxia_debt_id": praxia_debt_id,
     "praxia_debt_slug": praxia_debt_slug,
+    "debt_verification": "declared, not verified against praxia",
     "num_orders": num_orders,
     "ensemble_nll": float(result.ensemble_nll),
     "mean_sample_nll": float(result.mean_sample_nll),
@@ -91,6 +97,7 @@ def run_probe() -> dict[str, object]:
 
 
 def main() -> None:
+  logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
   parser = argparse.ArgumentParser(description="Probe for score_only_multi_order_average clause.")
   parser.add_argument(
     "--out",
@@ -111,7 +118,7 @@ def main() -> None:
     bth_path.parent.mkdir(parents=True, exist_ok=True)
     bth_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-  print(f"Probe score_only_multi_order_average: {result['status']}")
+  logger.info("Probe score_only_multi_order_average: %s", result["status"])
 
 
 if __name__ == "__main__":
