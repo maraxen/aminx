@@ -42,6 +42,8 @@ cannot make a recorded vehicle run wrong. ``test_closure_selftest.py`` pins this
 from __future__ import annotations
 
 import ast
+import functools
+import importlib.metadata
 import subprocess
 import sys
 import tomllib
@@ -55,7 +57,22 @@ _ALWAYS_GLOBAL_FILES = frozenset({"pyproject.toml"})
 _ALWAYS_GLOBAL_PREFIXES = ("scripts/recapture/",)
 _STDLIB = frozenset(sys.stdlib_module_names | {"__future__", "typing"})
 _LOCAL_ROOTS = frozenset({"aminx", "scripts"})
-_PACKAGE_ALIASES = {"bio": "biopython", "yaml": "pyyaml"}
+# Import name -> distribution name, where the two differ in a way canonicalisation cannot fix.
+# Keys are dotted prefixes: the LONGEST matching prefix wins, so ``google.protobuf`` maps without
+# making every ``google.*`` import look like protobuf. Installed metadata (packages_distributions)
+# is consulted too, when this interpreter has the package; this table is what works without it.
+_IMPORT_TO_DIST = {
+  "bio": "biopython",
+  "cv2": "opencv-python",
+  "dateutil": "python-dateutil",
+  "google.protobuf": "protobuf",
+  "orbax": "orbax-checkpoint",
+  "PIL": "pillow",
+  "pkg_resources": "setuptools",
+  "sklearn": "scikit-learn",
+  "skimage": "scikit-image",
+  "yaml": "pyyaml",
+}
 
 # Calls that load code or data the import graph cannot see.
 _DYNAMIC_CALLS = frozenset(
@@ -186,8 +203,30 @@ def load_edges(path: Path = _EDGES_FILE) -> Mapping[str, Mapping[str, object]]:
 
 
 def _canonical_package(name: str) -> str:
-  norm = name.lower().replace("_", "-")
-  return _PACKAGE_ALIASES.get(norm, norm)
+  return name.lower().replace("_", "-").replace(".", "-")
+
+
+@functools.cache
+def _installed_import_map() -> Mapping[str, tuple[str, ...]]:
+  """``top-level import -> distribution names`` for this interpreter; empty when unavailable."""
+  try:
+    return importlib.metadata.packages_distributions()
+  except Exception:
+    return {}
+
+
+def _import_to_distributions(dotted: str) -> set[str]:
+  """Every distribution an import may come from. A superset is the safe direction: an extra name
+  can only make a row stale, never fresh."""
+  parts = dotted.split(".")
+  for end in range(len(parts), 0, -1):
+    alias = _IMPORT_TO_DIST.get(".".join(parts[:end]))
+    if alias is not None:
+      return {_canonical_package(alias)}
+  names = {_canonical_package(parts[0])}
+  for dist in _installed_import_map().get(parts[0], ()):
+    names.add(_canonical_package(dist))
+  return names
 
 
 def _imported_third_party(repo: Path, path: str) -> set[str]:
@@ -198,17 +237,18 @@ def _imported_third_party(repo: Path, path: str) -> set[str]:
     tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=path)
   except Exception:
     return set()
-  packages: set[str] = set()
+  dotted_names: list[str] = []
   for node in ast.walk(tree):
     if isinstance(node, ast.Import):
-      for alias in node.names:
-        root = alias.name.split(".")[0]
-        if root not in _STDLIB and root not in _LOCAL_ROOTS and _module_file(repo, root) is None:
-          packages.add(_canonical_package(root))
+      dotted_names.extend(alias.name for alias in node.names)
     elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
-      root = node.module.split(".")[0]
-      if root not in _STDLIB and root not in _LOCAL_ROOTS and _module_file(repo, root) is None:
-        packages.add(_canonical_package(root))
+      dotted_names.append(node.module)
+  packages: set[str] = set()
+  for dotted in dotted_names:
+    root = dotted.split(".")[0]
+    if root in _STDLIB or root in _LOCAL_ROOTS or _module_file(repo, root) is not None:
+      continue
+    packages.update(_import_to_distributions(dotted))
   return packages
 
 
@@ -245,33 +285,43 @@ def _resolve_transitive_packages(
   return frozenset(resolved)
 
 
+def _lock_at(repo: Path, rev: str) -> str | None:
+  proc = subprocess.run(
+    ["git", "show", f"{rev}:uv.lock"],
+    cwd=repo,
+    capture_output=True,
+    text=True,
+    check=False,
+  )
+  return proc.stdout if proc.returncode == 0 else None
+
+
 def changed_packages_in_uv_lock(
   repo: Path,
   git_hash: str | None,
-  head: str = "HEAD",
+  head: str | None = None,
 ) -> set[str] | None:
-  """Names of packages modified in uv.lock between git_hash and head (or working dir)."""
+  """Names of packages whose uv.lock entry differs between ``git_hash`` and ``head``.
+
+  ``head=None`` compares against the working-tree uv.lock, which is what a live gate run sees.
+  A ref name reads that ref's uv.lock with ``git show``, so a what-if against another ref
+  (``stale_rows.py --head``) uses that ref's lock, not the working tree's.
+  """
   if not git_hash:
     return None
-  lock_path = repo / "uv.lock"
-  if not lock_path.is_file():
-    return None
-  try:
-    curr_data = tomllib.loads(lock_path.read_text(encoding="utf-8"))
-  except Exception:
-    return None
-
-  try:
-    proc = subprocess.run(
-      ["git", "show", f"{git_hash}:uv.lock"],
-      cwd=repo,
-      capture_output=True,
-      text=True,
-      check=False,
-    )
-    if proc.returncode != 0:
+  if head is None:
+    lock_path = repo / "uv.lock"
+    if not lock_path.is_file():
       return None
-    old_data = tomllib.loads(proc.stdout)
+    new_text: str | None = lock_path.read_text(encoding="utf-8")
+  else:
+    new_text = _lock_at(repo, head)
+  old_text = _lock_at(repo, git_hash)
+  if new_text is None or old_text is None:
+    return None
+  try:
+    old_data = tomllib.loads(old_text)
+    curr_data = tomllib.loads(new_text)
   except Exception:
     return None
 
@@ -283,7 +333,15 @@ def changed_packages_in_uv_lock(
     for p in pkg_list:
       if isinstance(p, dict) and "name" in p:
         name = _canonical_package(str(p["name"]))
-        res[name] = (p.get("version"), p.get("source"), p.get("sdist"), p.get("wheels"))
+        # The dependency list is part of the entry: a bumped or dropped transitive edge changes
+        # which packages a row can reach, even when the package's own version is unchanged.
+        res[name] = (
+          p.get("version"),
+          p.get("source"),
+          p.get("sdist"),
+          p.get("wheels"),
+          p.get("dependencies"),
+        )
     return res
 
   old_map = _package_map(old_data)
@@ -357,12 +415,24 @@ def compute_closure(
   )
 
 
+@functools.cache
+def _declared_oracle_dirs() -> tuple[str, ...]:
+  """Every oracle directory any row declares, so an undeclared oracle path can be told apart."""
+  dirs: set[str] = set()
+  for body in load_edges().values():
+    value = body.get("oracle_dirs", [])
+    if isinstance(value, list):
+      dirs.update(_norm(str(item)) for item in value if isinstance(item, str))
+  return tuple(sorted(dirs))
+
+
 def row_is_stale(
   paths: Sequence[str],
   closure: Closure | None,
   *,
   repo: Path | None = None,
   git_hash: str | None = None,
+  head: str | None = None,
   uv_changed_packages: set[str] | None = None,
 ) -> bool:
   """True when any changed path can alter the closure's row result.
@@ -382,7 +452,7 @@ def row_is_stale(
       if uv_changed_packages is not None:
         changed_pkgs = uv_changed_packages
       elif repo is not None and git_hash is not None:
-        changed_pkgs = changed_packages_in_uv_lock(repo, git_hash)
+        changed_pkgs = changed_packages_in_uv_lock(repo, git_hash, head)
       else:
         changed_pkgs = None
 
@@ -392,10 +462,16 @@ def row_is_stale(
         return True
       continue
 
-    if path.startswith("aminx-oracles/") or (closure and any(path.startswith(p) for p in closure.oracle_dirs)):
+    # Oracle roots (aminx-oracles/, aminx-oracles-protonpotts/). A LASEr vehicle reads its oracle
+    # through AMINX_LASER_ORACLE_DIR, outside the import graph, so the closure cannot prove that a
+    # path is irrelevant to any row. A path that a row declares is relevant to that row only; a path
+    # no row declares (pin.toml, a dump outside b3_laser_owned/) is global, as it was before narrowing.
+    if path.startswith("aminx-oracles"):
       if closure is None or not closure.sound:
         return True
       if any(path.startswith(p) for p in closure.oracle_dirs):
+        return True
+      if not any(path.startswith(p) for p in _declared_oracle_dirs()):
         return True
       continue
 

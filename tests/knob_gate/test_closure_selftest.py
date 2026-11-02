@@ -189,7 +189,7 @@ def test_missing_vehicle_script_raises(tmp_path: Path) -> None:
     ("pyproject.toml", True),
     ("uv.lock", True),
     ("scripts/recapture/convert.py", True),  # still global
-    ("aminx-oracles/pin.toml", False),  # no oracle_dirs declared; not global
+    ("aminx-oracles/pin.toml", True),  # no row declares it: global, the safe side
     ("tests/port/test_new.py", False),  # re-run by the gate's step 2, not row evidence
     ("README.md", False),
     ("docs/guide.md", False),
@@ -272,6 +272,80 @@ def test_oracle_dirs_scoping() -> None:
 
   # ProtonPotts rows declare aminx-oracles-protonpotts; Potts and LASEr do not
   assert [s for s in ALL_SLUGS if row_is_stale(proton_oracle, _real(s))] == list(PROTON_SLUGS)
+
+
+def test_undeclared_oracle_path_is_global_declared_one_is_row_scoped() -> None:
+  # A path no row declares must stale every row; a declared one only the rows that declare it.
+  uncovered = "aminx-oracles/dumps/elsewhere/x.bin"
+  assert [s for s in ALL_SLUGS if row_is_stale([uncovered], _real(s))] == list(ALL_SLUGS)
+  declared = "aminx-oracles/dumps/b3_laser_owned/sample.bin"
+  assert [s for s in ALL_SLUGS if row_is_stale([declared], _real(s))] == list(LASER_SLUGS)
+
+
+def test_uv_lock_head_is_read_from_the_ref_not_the_working_tree(tmp_path: Path) -> None:
+  # Pre-fix: changed_packages_in_uv_lock ignored its head argument and always read the working tree.
+  from knob_gate._closure import changed_packages_in_uv_lock  # noqa: PLC0415
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  lock_v1 = '[[package]]\nname = "jax"\nversion = "1.0"\n'
+  lock_v2 = '[[package]]\nname = "jax"\nversion = "2.0"\n'
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(lock_v1, encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "v1")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(lock_v2, encoding="utf-8")
+  _git("commit", "-q", "-am", "v2")
+  # Working tree now equals HEAD (v2). Diffing base against HEAD must see the change; diffing
+  # base against base itself must not, even though the working tree differs from base.
+  (tmp_path / "uv.lock").write_text(lock_v1, encoding="utf-8")
+  assert changed_packages_in_uv_lock(tmp_path, base, "HEAD") == {"jax"}
+  assert changed_packages_in_uv_lock(tmp_path, base, base) == set()
+
+
+def test_dependency_list_change_marks_the_package_changed(tmp_path: Path) -> None:
+  from knob_gate._closure import changed_packages_in_uv_lock  # noqa: PLC0415
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  before = '[[package]]\nname = "jax"\nversion = "1.0"\n'
+  after = before + '[[package.dependencies]]\nname = "ml-dtypes"\n'
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(before, encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "before")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(after, encoding="utf-8")
+  assert changed_packages_in_uv_lock(tmp_path, base) == {"jax"}
+
+
+@pytest.mark.parametrize(
+  ("source", "expected"),
+  [
+    ("import orbax.checkpoint as ocp\n", "orbax-checkpoint"),
+    ("from PIL import Image\n", "pillow"),
+    ("import sklearn.linear_model\n", "scikit-learn"),
+    ("import cv2\n", "opencv-python"),
+    ("from google.protobuf import message\n", "protobuf"),
+    ("import yaml\n", "pyyaml"),
+  ],
+)
+def test_import_names_map_to_distribution_names(tmp_path: Path, source: str, expected: str) -> None:
+  from knob_gate._closure import _imported_third_party  # noqa: PLC0415
+
+  repo = _make_repo(tmp_path, {"scripts/parity/veh.py": source})
+  assert expected in _imported_third_party(repo, "scripts/parity/veh.py")
 
 
 def test_uv_lock_scoping() -> None:
