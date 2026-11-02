@@ -30,7 +30,6 @@ from _ledger import LEDGERS_DIRNAME, ledger_ids
 log = logging.getLogger("extract_parity")
 
 SCHEMA_VERSION = "parity_dashboard_v1"
-LEDGER_FAMILIES = ("protonpotts", "potts", "laser")
 WAVE_PREFIXES = ("scripts/parity/", "scripts/protonpotts/", "scripts/browser")
 WAVE_SCRIPT_RE = re.compile(r"scripts/(?:parity|protonpotts|browser)[^\s'\"]*")
 SIDECAR_TITLE_CHARS = 600
@@ -145,8 +144,31 @@ def load_alias_map(repo: Path) -> list[dict[str, Any]]:
   return list(data.get("row", []))
 
 
-def family_of_slug(slug: str) -> str | None:
-  for prefix in LEDGER_FAMILIES:
+def family_index(manifest: list[dict[str, Any]]) -> tuple[dict[str, str], tuple[str, ...]]:
+  """Family lookup built from the manifest, not hardcoded: exact sidecar slug -> family, plus the
+  family names as prefixes (longest first) for slugs that have no manifest row (upstream knobs)."""
+  slug_table: dict[str, str] = {}
+  families: set[str] = set()
+  for row in manifest:
+    family = row.get("family")
+    if not isinstance(family, str) or not family:
+      continue
+    families.add(family)
+    vehicle = row.get("vehicle")
+    if (
+      isinstance(vehicle, dict)
+      and vehicle.get("kind") == "sidecar"
+      and isinstance(vehicle.get("slug"), str)
+    ):
+      slug_table[str(vehicle["slug"])] = family
+  return slug_table, tuple(sorted(families, key=len, reverse=True))
+
+
+def family_of_slug(slug: str, index: tuple[dict[str, str], tuple[str, ...]]) -> str | None:
+  slug_table, prefixes = index
+  if slug in slug_table:
+    return slug_table[slug]
+  for prefix in prefixes:
     if slug.startswith(prefix):
       return prefix
   return None
@@ -226,12 +248,13 @@ def build_ledger(
     slug = str(row.get("vehicle", {}).get("slug", ""))
     controls_by_slug.setdefault(slug, []).append(row)
 
+  index = family_index(manifest)
   entries: list[dict[str, Any]] = []
   for slug, run_id in ledger.items():
     run = runs.get(run_id)
     entry: dict[str, Any] = {
       "slug": slug,
-      "family": family_of_slug(slug),
+      "family": family_of_slug(slug, index),
       "run_id": run_id,
       "stale": (slug in stale) if stale is not None else None,
       "record": _record(run) if run is not None else None,
@@ -341,7 +364,10 @@ def build_waves(
   return waves
 
 
-def build_knobs(alias_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_knobs(
+  alias_rows: list[dict[str, Any]],
+  index: tuple[dict[str, str], tuple[str, ...]],
+) -> list[dict[str, Any]]:
   knobs = []
   for row in alias_rows:
     entry = _clean(dict(row))
@@ -350,7 +376,9 @@ def build_knobs(alias_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     upstream_entry = ref.partition("__")[0]
     entry["upstream_entry"] = upstream_entry or None
     entry["family"] = (
-      "aminx_only" if not upstream_entry else family_of_slug(upstream_entry) or upstream_entry
+      "aminx_only"
+      if not upstream_entry
+      else family_of_slug(upstream_entry, index) or upstream_entry
     )
     entry["covered_by_parity"] = bool(row.get("parity_test_ids"))
     knobs.append(entry)
@@ -382,7 +410,7 @@ def build_dashboard(
     "ledger": build_ledger(ledger, manifest, runs, repo, stale, warnings, cache, controls_root),
     "history": build_history(list(ledger), runs, warnings),
     "waves": build_waves(runs, repo, warnings, cache),
-    "knobs": build_knobs(alias_rows),
+    "knobs": build_knobs(alias_rows, family_index(manifest)),
     "manifest_counts": manifest_counts,
     "warnings": warnings,
   }
