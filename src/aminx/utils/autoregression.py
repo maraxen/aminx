@@ -297,9 +297,10 @@ def ar_mask_from_decoding_order(
   Returns:
     (L, L) float32 mask; ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
   """
-  # Deferred import, deliberately not at module level. aminx/__init__.py imports aminx.sampling,
-  # which imports this module, so a module-level `from aminx.types.bundles import ...` here closes
-  # a cycle through the package root. Found by a static import walk; not verified by running.
+  # Lazy import kept as a precaution. A static walk of explicit imports from aminx.types.* finds
+  # no path back to this module. The only path found runs through the package root:
+  # aminx.types.bundles -> aminx (aminx/__init__.py) -> aminx.sampling.sample -> this module.
+  # Whether a module-level import would actually fail at runtime is NOT established: it was not run.
   from aminx.types.bundles import WaveScheduleBundle  # noqa: PLC0415 -- see comment above
 
   seq_len = decoding_order.shape[0]
@@ -366,8 +367,9 @@ def full_context_ar_mask(seq_len: int) -> jnp.ndarray:
   - the runner's ``decoded_node_features`` feature (#4204).
 
   - ``scoring/score.py`` -- a FIFTH site, and a different variant: not an all-zero mask but
-    a self-*inclusive* one, ``generate_ar_mask(decoding_order)``, whose diagonal is 1. That
-    leaked each residue's own identity into its own prediction (+0.036243 nats on 1LVB
+    a self-*inclusive* one, ``generate_ar_mask(decoding_order)`` as it was before the diagonal
+    fix, whose diagonal was 1. That leaked each residue's own identity into its own
+    prediction (+0.036243 nats on 1LVB
     chain A, paired over 8 seeds, t = 41.3) and made the score depend on the PRNG key at
     ``backbone_noise=0``, since a fresh order meant a fresh mask.
 
