@@ -60,63 +60,95 @@ def apply_noise_to_coordinates(
 
 
 @jax.jit
-def compute_backbone_coordinates(
+def extract_backbone_atoms(
   coordinates: StructureAtomicCoordinates,
-) -> BackboneCoordinates:
-  """Compute backbone coordinates with per-residue C-beta handling using jnp.where.
+  *,
+  oxygen_index: int | None = None,
+) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+  """Extract N, CA, C, O coordinates in a layout-aware, backend-safe manner.
 
-  Args:
-    coordinates: Atomic coordinates of the protein structure, shape (N, 37, 3).
-        Expected in PDB file order where O and CB are swapped compared to atom37.
+  Parameters
+  ----------
+  coordinates : StructureAtomicCoordinates
+      Atomic coordinate array of shape ``(..., A, 3)`` where ``A >= 4``.
+  oxygen_index : int | None, optional
+      Explicit column index for Oxygen. If None (default), auto-resolved from shape
+      and geometry.
 
-  Returns:
-    Backbone coordinates with C-beta atoms computed where necessary, shape (N, 5, 3).
-    Returned in PDB file order: (N, CA, C, O, CB).
-
-  Example:
-    >>> coords = jnp.zeros((10, 37, 3))  # Example coordinates
-    >>> backbone_coords = compute_backbone_coordinates(coords)
-    >>> backbone_coords.shape
-    (10, 5, 3)
-
+  Returns
+  -------
+  tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]
+      Tuple of ``(nitrogen, alpha_carbon, carbon, oxygen)``, each shape ``(..., 3)``.
   """
-  # Two callers pass two different layouts on this same "atom" axis (260926_browser-
-  # export-loop, T2b):
-  #   - The normal (>= 5-atom) path: full Atom37 format from proxide
-  #     (N, CA, C, CB, O, ...), where `atom_order["O"] == 4` is a genuine in-range
-  #     column. We want to return atoms in PDB format (N, CA, C, O, CB).
-  #   - The compact export-wrapper path (`aminx.export.wrappers`, D-B): a
-  #     pre-extracted, backbone-only ``(L, 4, 3)`` array in the LITERAL column order
-  #     (N, CA, C, O) -- there is no CB column to index at all. `atom_order["O"] == 4`
-  #     is OUT OF RANGE for a 4-wide axis (valid indices 0..3). JAX's basic-indexing
-  #     lowering silently falls back to `lax.dynamic_slice` for that read, and XLA
-  #     clamps the out-of-range start index to the last valid one (3) at runtime -- by
-  #     coincidence this recovers the correct value here, because column 3 in the
-  #     compact (N, CA, C, O) layout genuinely IS the oxygen atom, so no numerical
-  #     output was ever wrong. But `jax2onnx` lowers the same computation to a literal,
-  #     UNCLAMPED ONNX `Slice(start=4)` on a dim of size 4, which onnxruntime rejects at
-  #     `InferenceSession` construction: `Squeeze` downstream sees a genuinely empty
-  #     `[L, 0, 3]` slice (`ShapeInferenceError`, node `node_Squeeze_24`). Index the
-  #     compact layout by its own in-range positions instead of relying on the clamp,
-  #     so both JAX and any export target agree, and no `dynamic_slice` is ever traced.
-  if coordinates.shape[-2] < _MIN_BACKBONE_ATOMS:
-    # N, CA, C and O are needed. With fewer, `atom_order["O"] == 4` is out of range and JAX
-    # silently clamps the read to the last column, so O quietly becomes C (aminx #2152).
+  num_atoms = coordinates.shape[-2]
+  if num_atoms < _MIN_BACKBONE_ATOMS:
     msg = (
       f"coordinates must have at least {_MIN_BACKBONE_ATOMS} atoms per residue (N, CA, C, O); "
-      f"got atom axis of size {coordinates.shape[-2]} in shape {coordinates.shape}"
+      f"got atom axis of size {num_atoms} in shape {coordinates.shape}"
     )
     raise ValueError(msg)
-  if coordinates.shape[-2] == 4:
-    nitrogen = coordinates[:, 0, :]
-    alpha_carbon = coordinates[:, 1, :]
-    carbon = coordinates[:, 2, :]
-    oxygen = coordinates[:, 3, :]
+
+  nitrogen = coordinates[..., 0, :]
+  alpha_carbon = coordinates[..., 1, :]
+  carbon = coordinates[..., 2, :]
+
+  if oxygen_index is not None:
+    oxygen = coordinates[..., oxygen_index, :]
+  elif num_atoms == 4:
+    # Compact layout [N, CA, C, O]
+    oxygen = coordinates[..., 3, :]
+  elif num_atoms in (14, 23):
+    # Atom14 (OpenFold/FAMPNN) and Atom23 (Caliby): Oxygen is at index 3
+    oxygen = coordinates[..., 3, :]
+  elif num_atoms == 5:
+    # Ambiguous 5-atom layout:
+    # Option A: PDB order [N, CA, C, O, CB] -> O is at index 3
+    # Option B: Atom37 first 5 [N, CA, C, CB, O] -> O is at index 4
+    # Peptide carbonyl invariant: C=O (~1.23 A) vs C-CB (~2.45 A)
+    cand3 = coordinates[..., 3, :]
+    cand4 = coordinates[..., 4, :]
+    d3_sq = jnp.sum((carbon - cand3) ** 2, axis=-1, keepdims=True)
+    d4_sq = jnp.sum((carbon - cand4) ** 2, axis=-1, keepdims=True)
+    oxygen = jnp.where(d3_sq <= d4_sq, cand3, cand4)
+  elif num_atoms == 37:
+    # Standard atom37 (AlphaFold / proxide): atom_order["O"] == 4
+    oxygen = coordinates[..., atom_order["O"], :]
   else:
-    nitrogen = coordinates[:, atom_order["N"], :]
-    alpha_carbon = coordinates[:, atom_order["CA"], :]
-    carbon = coordinates[:, atom_order["C"], :]
-    oxygen = coordinates[:, atom_order["O"], :]
+    # General fallback for layout with >= 5 atoms: disambiguate via carbonyl distance
+    cand3 = coordinates[..., 3, :]
+    cand4 = coordinates[..., 4, :]
+    d3_sq = jnp.sum((carbon - cand3) ** 2, axis=-1, keepdims=True)
+    d4_sq = jnp.sum((carbon - cand4) ** 2, axis=-1, keepdims=True)
+    oxygen = jnp.where(d3_sq <= d4_sq, cand3, cand4)
+
+  return nitrogen, alpha_carbon, carbon, oxygen
+
+
+@jax.jit
+def compute_backbone_coordinates(
+  coordinates: StructureAtomicCoordinates,
+  *,
+  oxygen_index: int | None = None,
+) -> BackboneCoordinates:
+  """Compute backbone coordinates with per-residue C-beta handling.
+
+  Parameters
+  ----------
+  coordinates : StructureAtomicCoordinates
+      Atomic coordinates of the protein structure, shape ``(..., A, 3)`` where ``A >= 4``.
+      Accepts 4-atom (N, CA, C, O), 5-atom (PDB or atom37), 14-atom, 23-atom, and 37-atom layouts.
+  oxygen_index : int | None, optional
+      Explicit index of the Oxygen atom along the atom axis. Default: None (auto-detect).
+
+  Returns
+  -------
+  BackboneCoordinates
+      Backbone coordinates with C-beta computed where necessary, shape ``(..., 5, 3)``
+      in canonical PDB order: ``(N, CA, C, O, CB)``.
+  """
+  nitrogen, alpha_carbon, carbon, oxygen = extract_backbone_atoms(
+    coordinates, oxygen_index=oxygen_index
+  )
 
   alpha_to_nitrogen = alpha_carbon - nitrogen
   carbon_to_alpha = carbon - alpha_carbon
@@ -124,8 +156,9 @@ def compute_backbone_coordinates(
 
   return jnp.stack(
     [nitrogen, alpha_carbon, carbon, oxygen, beta_carbon],
-    axis=1,
+    axis=-2,
   )
+
 
 
 @jax.jit
