@@ -186,6 +186,7 @@ def run_tier1_parity_suite(
         jnp.asarray(chain_index, dtype=jnp.int32),
         jnp.asarray(sequence, dtype=jnp.int32),
         jnp.asarray(decoding_order, dtype=jnp.int32),
+        use_potts_ca_dist=False,
       )
     clean_f64_diff = 0.0
     clean_f32_diff = 1.2e-6
@@ -206,6 +207,7 @@ def run_tier1_parity_suite(
           jnp.asarray(chain_index, dtype=jnp.int32),
           jnp.asarray(sequence, dtype=jnp.int32),
           jnp.asarray(decoding_order, dtype=jnp.int32),
+          use_potts_ca_dist=False,
         )
       pt_e, pt_v, pt_lp = _torch_teacher_forced_forward(
         pt_path,
@@ -230,6 +232,7 @@ def run_tier1_parity_suite(
           jnp.asarray(chain_index, dtype=jnp.int32),
           jnp.asarray(sequence, dtype=jnp.int32),
           jnp.asarray(decoding_order, dtype=jnp.int32),
+          use_potts_ca_dist=False,
         )
       pt_e32, pt_v32, pt_lp32 = _torch_teacher_forced_forward(
         pt_path,
@@ -263,6 +266,7 @@ def run_tier1_parity_suite(
     chain_i32,
     seq_i32,
     dec_i32,
+    use_potts_ca_dist=False,
   )
   clean_lp_np = np.asarray(clean_log_probs)
 
@@ -363,6 +367,7 @@ def run_tier1_parity_suite(
       chain_i32,
       seq_i32,
       dec_i32,
+      use_potts_ca_dist=False,
     )
     return float(np.max(np.abs(np.asarray(bad_lp) - clean_lp_np)))
 
@@ -377,6 +382,7 @@ def run_tier1_parity_suite(
       chain_i32,
       seq_i32,
       shifted_dec,
+      use_potts_ca_dist=False,
     )
     return float(np.max(np.abs(np.asarray(bad_lp) - clean_lp_np)))
 
