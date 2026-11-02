@@ -42,6 +42,10 @@ cannot make a recorded vehicle run wrong. ``test_closure_selftest.py`` pins this
 from __future__ import annotations
 
 import ast
+import functools
+import importlib.metadata
+import subprocess
+import sys
 import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -49,8 +53,27 @@ from pathlib import Path
 
 _ROOTS = ("src", "scripts/parity")
 _NARROWED_PY_PREFIXES = ("src/aminx/", "scripts/parity/")
-_ALWAYS_GLOBAL_FILES = frozenset({"pyproject.toml", "uv.lock"})
-_ALWAYS_GLOBAL_PREFIXES = ("scripts/recapture/", "aminx-oracles/")
+_ALWAYS_GLOBAL_FILES = frozenset({"pyproject.toml"})
+_ALWAYS_GLOBAL_PREFIXES = ("scripts/recapture/",)
+_STDLIB = frozenset(sys.stdlib_module_names | {"__future__", "typing"})
+_LOCAL_ROOTS = frozenset({"aminx", "scripts"})
+# Import name -> distribution name, where the two differ in a way canonicalisation cannot fix.
+# Keys are dotted prefixes: the LONGEST matching prefix wins, so ``google.protobuf`` maps without
+# making every ``google.*`` import look like protobuf. Installed metadata (packages_distributions)
+# is consulted too, when this interpreter has the package; this table is what works without it.
+_IMPORT_TO_DIST = {
+  "bio": "biopython",
+  "cv2": "opencv-python",
+  "dateutil": "python-dateutil",
+  "google.protobuf": "protobuf",
+  "orbax": "orbax-checkpoint",
+  "PIL": "pillow",
+  "pkg_resources": "setuptools",
+  "sklearn": "scikit-learn",
+  "skimage": "scikit-image",
+  "yaml": "pyyaml",
+}
+
 # Calls that load code or data the import graph cannot see.
 _DYNAMIC_CALLS = frozenset(
   {
@@ -61,7 +84,7 @@ _DYNAMIC_CALLS = frozenset(
     "entry_points",
     "iter_modules",
     "files",  # importlib.resources.files: package data
-  }
+  },
 )
 _EDGES_FILE = Path(__file__).with_name("closure_edges.toml")
 
@@ -74,6 +97,8 @@ class Closure:
   files: frozenset[str]
   data_prefixes: tuple[str, ...] = ()
   undeclared_dynamic: tuple[str, ...] = field(default=())
+  oracle_dirs: tuple[str, ...] = field(default=())
+  packages: frozenset[str] = field(default=frozenset())
 
   @property
   def sound(self) -> bool:
@@ -170,11 +195,167 @@ def scan_file(repo: Path, path: str) -> tuple[set[str], list[int]]:
   return found, dynamic
 
 
-def load_edges(path: Path = _EDGES_FILE) -> Mapping[str, Mapping[str, object]]:
+def load_edges(path: Path | None = None) -> Mapping[str, Mapping[str, object]]:
+  path = _EDGES_FILE if path is None else path  # read at call time, so a test can point it elsewhere
   if not path.is_file():
     return {}
   table = tomllib.loads(path.read_text(encoding="utf-8")).get("slug", {})
   return {str(slug): body for slug, body in table.items() if isinstance(body, dict)}
+
+
+def _canonical_package(name: str) -> str:
+  return name.lower().replace("_", "-").replace(".", "-")
+
+
+@functools.cache
+def _installed_import_map() -> Mapping[str, tuple[str, ...]]:
+  """``top-level import -> distribution names`` for this interpreter; empty when unavailable."""
+  try:
+    return importlib.metadata.packages_distributions()
+  except Exception:
+    return {}
+
+
+def _import_to_distributions(dotted: str) -> set[str]:
+  """Every distribution an import may come from. A superset is the safe direction: an extra name
+  can only make a row stale, never fresh."""
+  parts = dotted.split(".")
+  for end in range(len(parts), 0, -1):
+    alias = _IMPORT_TO_DIST.get(".".join(parts[:end]))
+    if alias is not None:
+      return {_canonical_package(alias)}
+  names = {_canonical_package(parts[0])}
+  for dist in _installed_import_map().get(parts[0], ()):
+    names.add(_canonical_package(dist))
+  return names
+
+
+def _imported_third_party(repo: Path, path: str) -> set[str]:
+  file_path = repo / path
+  if not file_path.is_file():
+    return set()
+  try:
+    tree = ast.parse(file_path.read_text(encoding="utf-8"), filename=path)
+  except Exception:
+    return set()
+  dotted_names: list[str] = []
+  for node in ast.walk(tree):
+    if isinstance(node, ast.Import):
+      dotted_names.extend(alias.name for alias in node.names)
+    elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+      dotted_names.append(node.module)
+  packages: set[str] = set()
+  for dotted in dotted_names:
+    root = dotted.split(".")[0]
+    if root in _STDLIB or root in _LOCAL_ROOTS or _module_file(repo, root) is not None:
+      continue
+    packages.update(_import_to_distributions(dotted))
+  return packages
+
+
+def _resolve_transitive_packages(
+  direct: Iterable[str],
+  lock_path: Path,
+) -> frozenset[str]:
+  if not lock_path.is_file():
+    return frozenset(direct)
+  try:
+    data = tomllib.loads(lock_path.read_text(encoding="utf-8"))
+  except Exception:
+    return frozenset(direct)
+  deps_map: dict[str, set[str]] = {}
+  for pkg in data.get("package", []):
+    if isinstance(pkg, dict) and "name" in pkg:
+      name = _canonical_package(str(pkg["name"]))
+      deps: set[str] = set()
+      for dep in pkg.get("dependencies", []):
+        if isinstance(dep, dict) and "name" in dep:
+          deps.add(_canonical_package(str(dep["name"])))
+      deps_map[name] = deps
+
+  resolved: set[str] = set()
+  queue = [_canonical_package(p) for p in direct]
+  while queue:
+    curr = queue.pop()
+    if curr in resolved:
+      continue
+    resolved.add(curr)
+    for child in deps_map.get(curr, ()):
+      if child not in resolved:
+        queue.append(child)
+  return frozenset(resolved)
+
+
+def _lock_at(repo: Path, rev: str) -> str | None:
+  proc = subprocess.run(
+    ["git", "show", f"{rev}:uv.lock"],
+    cwd=repo,
+    capture_output=True,
+    text=True,
+    check=False,
+  )
+  return proc.stdout if proc.returncode == 0 else None
+
+
+def changed_packages_in_uv_lock(
+  repo: Path,
+  git_hash: str | None,
+  head: str | None = None,
+) -> set[str] | None:
+  """Names of packages whose uv.lock entry differs between ``git_hash`` and ``head``.
+
+  ``head=None`` compares against the working-tree uv.lock, which is what a live gate run sees.
+  A ref name reads that ref's uv.lock with ``git show``, so a what-if against another ref
+  (``stale_rows.py --head``) uses that ref's lock, not the working tree's.
+  """
+  if not git_hash:
+    return None
+  if head is None:
+    lock_path = repo / "uv.lock"
+    if not lock_path.is_file():
+      return None
+    new_text: str | None = lock_path.read_text(encoding="utf-8")
+  else:
+    new_text = _lock_at(repo, head)
+  old_text = _lock_at(repo, git_hash)
+  if new_text is None or old_text is None:
+    return None
+  try:
+    old_data = tomllib.loads(old_text)
+    curr_data = tomllib.loads(new_text)
+  except Exception:
+    return None
+
+  def _package_map(data: dict[str, object]) -> dict[str, tuple[object, ...]]:
+    pkg_list = data.get("package", [])
+    if not isinstance(pkg_list, list):
+      return {}
+    res: dict[str, tuple[object, ...]] = {}
+    for p in pkg_list:
+      if isinstance(p, dict) and "name" in p:
+        name = _canonical_package(str(p["name"]))
+        # The dependency list is part of the entry: a bumped or dropped transitive edge changes
+        # which packages a row can reach, even when the package's own version is unchanged.
+        # uv.lock carries these per package: [package.optional-dependencies] and
+        # [package.dev-dependencies] tables. An extra or dev-group edge change counts too.
+        res[name] = (
+          p.get("version"),
+          p.get("source"),
+          p.get("sdist"),
+          p.get("wheels"),
+          p.get("dependencies"),
+          p.get("optional-dependencies"),
+          p.get("dev-dependencies"),
+        )
+    return res
+
+  old_map = _package_map(old_data)
+  curr_map = _package_map(curr_data)
+  changed: set[str] = set()
+  for name in set(old_map) | set(curr_map):
+    if old_map.get(name) != curr_map.get(name):
+      changed.add(name)
+  return changed
 
 
 def _strings(body: Mapping[str, object], key: str) -> list[str]:
@@ -200,6 +381,7 @@ def compute_closure(
 
   dynamic_ok = {_norm(item) for item in _strings(body, "dynamic_ok")}
   data = tuple(_norm(item) for item in _strings(body, "data"))
+  oracle_dirs = tuple(_norm(item) for item in _strings(body, "oracle_dirs"))
   files: set[str] = set()
   undeclared: list[str] = []
   queue: list[str] = [entry]
@@ -222,12 +404,51 @@ def compute_closure(
       target = _module_file(repo, module)
       if target is not None and target not in files:
         queue.append(target)
-  return Closure(slug, frozenset(files), data, tuple(sorted(undeclared)))
+
+  direct_pkgs: set[str] = set()
+  for f in files:
+    direct_pkgs.update(_imported_third_party(repo, f))
+  packages = _resolve_transitive_packages(direct_pkgs, repo / "uv.lock")
+
+  return Closure(
+    slug=slug,
+    files=frozenset(files),
+    data_prefixes=data,
+    undeclared_dynamic=tuple(sorted(undeclared)),
+    oracle_dirs=oracle_dirs,
+    packages=packages,
+  )
+
+
+@functools.cache
+def _declared_oracle_dirs_at(path: str, mtime_ns: int) -> tuple[str, ...]:
+  """Oracle dirs declared in one edges file. Keyed by path AND mtime, so a different or edited file
+  is never answered from a stale entry."""
+  dirs: set[str] = set()
+  for body in load_edges(Path(path)).values():
+    value = body.get("oracle_dirs", [])
+    if isinstance(value, list):
+      dirs.update(_norm(str(item)) for item in value if isinstance(item, str))
+  return tuple(sorted(dirs))
+
+
+def _declared_oracle_dirs() -> tuple[str, ...]:
+  path = _EDGES_FILE
+  try:
+    mtime_ns = path.stat().st_mtime_ns
+  except OSError:
+    mtime_ns = -1
+  return _declared_oracle_dirs_at(str(path), mtime_ns)
 
 
 def row_is_stale(
   paths: Sequence[str],
   closure: Closure | None,
+  *,
+  repo: Path | None = None,
+  git_hash: str | None = None,
+  head: str | None = None,
+  uv_changed_packages: set[str] | None = None,
 ) -> bool:
   """True when any changed path can alter the closure's row result.
 
@@ -239,6 +460,36 @@ def row_is_stale(
     path = _norm(raw)
     if path in _ALWAYS_GLOBAL_FILES or path.startswith(_ALWAYS_GLOBAL_PREFIXES):
       return True
+
+    if path == "uv.lock":
+      if closure is None or not closure.sound:
+        return True
+      if uv_changed_packages is not None:
+        changed_pkgs = uv_changed_packages
+      elif repo is not None and git_hash is not None:
+        changed_pkgs = changed_packages_in_uv_lock(repo, git_hash, head)
+      else:
+        changed_pkgs = None
+
+      if changed_pkgs is None:
+        return True
+      if bool(closure.packages & changed_pkgs):
+        return True
+      continue
+
+    # Oracle roots (aminx-oracles/, aminx-oracles-protonpotts/). A LASEr vehicle reads its oracle
+    # through AMINX_LASER_ORACLE_DIR, outside the import graph, so the closure cannot prove that a
+    # path is irrelevant to any row. A path that a row declares is relevant to that row only; a path
+    # no row declares (pin.toml, a dump outside b3_laser_owned/) is global, as it was before narrowing.
+    if path.startswith("aminx-oracles"):
+      if closure is None or not closure.sound:
+        return True
+      if any(path.startswith(p) for p in closure.oracle_dirs):
+        return True
+      if not any(path.startswith(p) for p in _declared_oracle_dirs()):
+        return True
+      continue
+
     if path.startswith("tests/port/"):
       continue
     if not path.startswith(_NARROWED_PY_PREFIXES):

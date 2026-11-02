@@ -31,8 +31,6 @@ import argparse
 import json
 import logging
 import sys
-import tomllib
-from collections import defaultdict
 from pathlib import Path
 
 logger = logging.getLogger("verify_wave")
@@ -50,8 +48,8 @@ def _repo() -> Path:
 REPO = _repo()
 sys.path.insert(0, str(REPO / "tests" / "knob_gate"))
 
-from _closure import loaded_outside_closure, row_is_stale  # noqa: E402
-from _coverage import (  # noqa: E402
+from _closure import loaded_outside_closure, row_is_stale
+from _coverage import (
   _argv_mutants,
   _weights_required,
   default_changed_paths,
@@ -61,27 +59,19 @@ from _coverage import (  # noqa: E402
   default_resolve_run,
   default_sidecar_digest,
 )
+from _ledger import (
+  LEDGERS_DIRNAME,
+  MANIFEST_NAME,
+  LedgerError,
+  ledger_ids,
+  load_manifest_rows,
+  recorded_elsewhere,
+  rows_for_family,
+  sidecar_slugs,
+)
 
 
-def _manifest_rows() -> dict[str, set[str]]:
-  """``slug -> {row id}`` for every sidecar-backed row."""
-  path = REPO / "tests" / "knob_gate" / "branch_manifest.toml"
-  rows = tomllib.loads(path.read_text(encoding="utf-8")).get("branch", [])
-  by_slug: dict[str, set[str]] = defaultdict(set)
-  for row in rows:
-    vehicle = row.get("vehicle", {})
-    if vehicle.get("kind") == "sidecar":
-      by_slug[vehicle["slug"]].add(row["id"])
-  return dict(by_slug)
-
-
-def _ledger_ids() -> dict[str, str]:
-  path = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
-  table = tomllib.loads(path.read_text(encoding="utf-8")).get("sidecar", {})
-  return {slug: body["bth_run_id"] for slug, body in table.items() if "bth_run_id" in body}
-
-
-def _scoped_hits(paths: list[str], slug: str) -> list[str]:
+def _scoped_hits(paths: list[str], slug: str, git_hash: str | None = None) -> list[str]:
   """The offending paths, for the message only.
 
   The VERDICT comes from the gate's ``row_is_stale``; this just names which
@@ -89,7 +79,7 @@ def _scoped_hits(paths: list[str], slug: str) -> list[str]:
   path landed since that run" is unactionable without knowing which commit did it.
   """
   closure = default_closure_for(slug)
-  return [str(p) for p in paths if row_is_stale([str(p)], closure)]
+  return [str(p) for p in paths if row_is_stale([str(p)], closure, repo=REPO, git_hash=git_hash)]
 
 
 def _resolve_hint(run_id: str) -> str:
@@ -141,10 +131,10 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   if git_hash:
     ok &= _report("ancestor of HEAD", default_is_ancestor(git_hash))
     changed = default_changed_paths(git_hash)
-    hits = _scoped_hits(changed, slug)
+    hits = _scoped_hits(changed, slug, git_hash=str(git_hash))
     ok &= _report(
       "no path in the row's closure since",
-      not row_is_stale(changed, default_closure_for(slug)),
+      not row_is_stale(changed, default_closure_for(slug), repo=REPO, git_hash=str(git_hash)),
       f"{len(hits)} scoped: {sorted(set(hits))[:3]}" if hits else "",
     )
 
@@ -197,7 +187,7 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
     logger.info("    [n/a ] loaded files inside closure    no loaded_files.json (run predates the hook)")
 
   ok &= _report(
-    "controls clean == pass", controls.get("clean") == "pass", repr(controls.get("clean"))
+    "controls clean == pass", controls.get("clean") == "pass", repr(controls.get("clean")),
   )
   mutants = controls.get("mutants", {})
   ok &= _report(
@@ -207,7 +197,7 @@ def verify(slug: str, run_id: str, row_ids: set[str]) -> bool:
   )
   not_failed = [k for k, v in mutants.items() if v != "failed"]
   ok &= _report(
-    "every control failed", not not_failed, f"not failed: {not_failed}" if not_failed else ""
+    "every control failed", not not_failed, f"not failed: {not_failed}" if not_failed else "",
   )
 
   # The gate requires a non-empty weights map only for slugs matching
@@ -245,22 +235,62 @@ def main(argv: list[str] | None = None) -> int:
     metavar="SLUG=RUNID",
     help="override a slug's run id; repeatable. Defaults to the ledger.",
   )
+  parser.add_argument(
+    "--family",
+    type=str,
+    default=None,
+    help="filter verification to a specific family shard (e.g. 'potts')",
+  )
+  parser.add_argument(
+    "--all",
+    action="store_true",
+    help="evaluate all families in aggregate (default)",
+  )
   args = parser.parse_args(argv)
   logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-  rows = _manifest_rows()
-  ids = _ledger_ids()
+  family = None if args.all else args.family
+  ledgers_dir = REPO / "tests" / "knob_gate" / LEDGERS_DIRNAME
+  try:
+    ids = ledger_ids(ledgers_dir, family)
+    scoped = rows_for_family(load_manifest_rows(REPO / "tests" / "knob_gate" / MANIFEST_NAME), family)
+  except LedgerError as exc:
+    logger.info("REFUSING: %s", exc)
+    return 2
+  overrides: list[str] = []
   for pair in args.run:
     slug, _, rid = pair.partition("=")
+    overrides.append(slug)
     ids[slug] = rid
 
-  if not ids:
-    logger.info("no run ids: the ledger is empty and no --run was given")
+  # Manifest slugs come from the UNFILTERED family scope, so a slug with no ledger entry is
+  # counted as missing rather than dropped from the check.
+  rows = sidecar_slugs(scoped)
+
+  if family is not None:
+    # An explicit --run is the operator's own instruction. A family read that does not name the
+    # slug would otherwise log it as ignored and exit 0, so the override is refused instead.
+    refused = sorted(slug for slug in overrides if slug not in rows)
+    if refused:
+      logger.info(
+        "REFUSING: --run names slug(s) the %s family's manifest rows do not name: %s",
+        family,
+        ", ".join(refused),
+      )
+      return 2
+
+  if not ids and not rows:
+    logger.info("no run ids and no manifest rows: nothing to verify")
     return 2
 
   results = {}
   for slug in sorted(ids):
     if slug not in rows:
+      if family is not None:
+        # A family read sees only its own shard; an entry there for a slug the family's
+        # manifest rows do not name is not this family's to grade.
+        logger.info("=== %s  ignored: no %s manifest row names this slug", slug, family)
+        continue
       logger.info("=== %s  SKIPPED: no manifest rows for this slug", slug)
       results[slug] = False
       continue
@@ -268,8 +298,10 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("")
 
   missing = sorted(set(rows) - set(ids))
-  if missing:
-    logger.info("no run id yet for: %s", ", ".join(missing))
+  for slug in missing:
+    elsewhere = recorded_elsewhere(ledgers_dir, family, slug) if family else None
+    hint = f" (recorded in ledgers/{elsewhere}, not this family's shard)" if elsewhere else ""
+    logger.info("no run id yet for: %s%s", slug, hint)
   good = sorted(s for s, v in results.items() if v)
   bad = sorted(s for s, v in results.items() if not v)
   logger.info("would grade: %s", ", ".join(good) if good else "(none)")

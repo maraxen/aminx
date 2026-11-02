@@ -40,6 +40,17 @@ def _parse(argv: list[str]) -> argparse.Namespace:
     default=None,
     help="log file for pytest output (default: $OUT/run_gate.log)",
   )
+  parser.add_argument(
+    "--family",
+    type=str,
+    default=None,
+    help="evaluate a specific family shard (e.g. 'potts')",
+  )
+  parser.add_argument(
+    "--all",
+    action="store_true",
+    help="evaluate all families in aggregate (default)",
+  )
   return parser.parse_args(argv)
 
 
@@ -158,7 +169,7 @@ def _as_dict(value: object) -> dict[str, object] | None:
   """Narrow a TOML value the way ty accepts ``dict[str, object]``."""
   if not isinstance(value, dict):
     return None
-  return cast(dict[str, object], value)
+  return cast("dict[str, object]", value)
 
 
 def _branch_rows(repo: Path) -> list[dict[str, object]]:
@@ -183,12 +194,17 @@ def _step1b(
   waves: list[str],
   base_env: dict[str, str],
   log: Path,
+  family: str | None = None,
 ) -> int:
   """One pytest per (row, wave). Status is not folded into ``rc``."""
   id_waves = _id_waves(out, waves)
   runs = 0
   select_root = out / "mutant_select"
   for row in _branch_rows(repo):
+    if family is not None:
+      row_family = row.get("family")
+      if row_family is not None and row_family != family:
+        continue
     vehicle = _as_dict(row.get("vehicle"))
     if vehicle is None or vehicle.get("kind") != "pytest":
       continue
@@ -222,7 +238,7 @@ def _step1b(
   return runs
 
 
-def _step2(repo: Path, out: Path, base_env: dict[str, str], log: Path) -> bool:
+def _step2(repo: Path, out: Path, base_env: dict[str, str], log: Path, family: str | None = None) -> bool:
   env = dict(base_env)
   # Step 2 reads the jsonl. The outcome hooks stay off only while the wave
   # variable is unset; leaving a parent value in the environment would
@@ -231,6 +247,10 @@ def _step2(repo: Path, out: Path, base_env: dict[str, str], log: Path) -> bool:
   env.pop("AMINX_PORT_MUTANT", None)
   env.pop("AMINX_REDSOX_SELECT", None)
   env.pop("AMINX_REDSOX_OUTCOMES", None)
+  if family is not None:
+    env["AMINX_REDSOX_FAMILY"] = family
+  else:
+    env.pop("AMINX_REDSOX_FAMILY", None)
   env["AMINX_REDSOX_OUTCOMES_READ"] = str(out / "outcomes.jsonl")
   argv = [*_UV, "pytest", "-o", "addopts=", "tests/knob_gate", "-q"]
   return _run(argv, cwd=repo, env=env, log=log) == 0
@@ -247,6 +267,7 @@ def main(argv: list[str] | None = None) -> None:
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
   )
   args = _parse(sys.argv[1:] if argv is None else argv)
+  family = None if args.all else args.family
   results_path = _require_results_path()
   repo = repo_root(Path(__file__))
   out = _gate_out(repo)
@@ -282,8 +303,8 @@ def main(argv: list[str] | None = None) -> None:
   try:
     rc = _step1(repo, out, waves, base_env, log_path)
     n_ids = _count_ids(out, waves)
-    n_mutant_runs = _step1b(repo, out, waves, base_env, log_path)
-    step2_passed = _step2(repo, out, base_env, log_path)
+    n_mutant_runs = _step1b(repo, out, waves, base_env, log_path, family=family)
+    step2_passed = _step2(repo, out, base_env, log_path, family=family)
   except Exception:
     logger.exception("gate failed before it could grade")
     raise SystemExit(1) from None
