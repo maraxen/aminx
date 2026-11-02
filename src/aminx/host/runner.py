@@ -968,6 +968,15 @@ def score(  # noqa: PLR0915
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)
     if d.handles(spec, purpose):
+      # Family drivers return before the per-structure loop, and none of them computes
+      # loss_xy / mask_xy / ligand_confidence. Refuse rather than return scores without them.
+      if spec.return_loss_xy:
+        msg = (
+          f"score runner: return_loss_xy=True is not implemented for the {d.name} driver "
+          f"(purpose {purpose!r}); the ligand-proximal loss would be silently dropped. "
+          "Set return_loss_xy=False, or score with the stock MPNN path."
+        )
+        raise NotImplementedError(msg)
       return run_family_driver(d, spec, purpose)
     if purpose not in d.mpnn_fallback_purposes:
       msg = f"{d.name} does not support {purpose} in v1"

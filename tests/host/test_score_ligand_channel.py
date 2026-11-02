@@ -83,6 +83,32 @@ def test_ligand_cutoff_default_is_the_shared_constant() -> None:
   )
 
 
+class _StubFamilyDriver:
+  """A driver that claims every scoring purpose. It must never run for return_loss_xy."""
+
+  name = "stub_family"
+  mpnn_fallback_purposes: frozenset[str] = frozenset()
+
+  def handles(self, spec: object, purpose: str) -> bool:
+    del spec, purpose
+    return True
+
+
+def test_loss_xy_is_refused_when_a_family_driver_handles_the_request(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Driver paths return before the loss loop; a silent drop of return_loss_xy is refused."""
+  import aminx.host.runner as runner
+
+  def _driver_must_not_run(*args: object, **kwargs: object) -> None:
+    pytest.fail("the family driver ran although return_loss_xy=True")
+
+  monkeypatch.setattr(runner, "_family_driver_for", lambda spec: _StubFamilyDriver())
+  monkeypatch.setattr(runner, "run_family_driver", _driver_must_not_run)
+  with pytest.raises(NotImplementedError, match="stub_family"):
+    score(_spec(return_loss_xy=True))
+
+
 def test_ligand_on_a_protein_checkpoint_is_refused() -> None:
   """A protein checkpoint has no ligand channel; accepting the request would drop it."""
   with pytest.raises(ValueError, match="no ligand channel"):
@@ -128,3 +154,39 @@ def test_ligand_changes_the_score_and_missing_tensors_raise(tmp_path: Path) -> N
   # ligand_conditioning=True with nothing to condition on is an error, never a silent fallback.
   with pytest.raises(ValueError, match="requires ligand context tensors"):
     score(_spec(ligand_conditioning=True))
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+def test_loss_xy_shapes_with_two_noise_levels(tmp_path: Path) -> None:
+  """With D=2 noise levels: loss_xy and ligand_confidence are (S, C, D); mask_xy is (S, L).
+
+  Not executed locally: this needs the LigandMPNN checkpoint and runs on titanix.
+  """
+  from aminx.host._sampling_helper import _canonical_structure_ids_for_spec
+
+  base = _spec(return_loss_xy=True, backbone_noise=(0.0, 0.1))
+  (structure_id,) = _canonical_structure_ids_for_spec(base)
+  ligand_file = tmp_path / "ligand.npz"
+  _write_synthetic_ligand(ligand_file, structure_id)
+
+  spec = _spec(
+    return_loss_xy=True,
+    backbone_noise=(0.0, 0.1),
+    ligand_conditioning=True,
+    ligand_context_path=ligand_file,
+  )
+  out = score(spec)
+  n_struct, n_cand, n_noise = 1, 1, 2
+
+  assert np.asarray(out["scores"]).shape == (n_struct, n_cand, n_noise)
+  assert np.asarray(out["loss_xy"]).shape == (n_struct, n_cand, n_noise)
+  assert np.asarray(out["ligand_confidence"]).shape == (n_struct, n_cand, n_noise)
+  # mask_xy depends only on the structure; its residue axis is padded, so check rank and S only.
+  assert np.asarray(out["mask_xy"]).ndim == 2
+  assert np.asarray(out["mask_xy"]).shape[0] == n_struct
+  np.testing.assert_allclose(
+    np.asarray(out["ligand_confidence"]),
+    np.exp(-np.asarray(out["loss_xy"])),
+    rtol=1e-5,
+  )
