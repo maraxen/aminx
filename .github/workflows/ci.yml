@@ -28,7 +28,10 @@ jobs:
       - name: Check decode-path commits reference an epic ID (backlog #2954)
         run: python3 scripts/check_epic_attribution.py "origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}"
 
-  unit-tests:
+  # The matrix job has a different id from the required check. A matrix job reports checks named
+  # `<id> (<value>)`, so a required check named `unit-tests` would never be reported. The stable
+  # `unit-tests` job at the end of this file aggregates these legs.
+  unit-tests-shards:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     # The full suite on one 4-vCPU runner outlives the runner (killed at ~96% after ~41 min), so pushes
@@ -39,6 +42,8 @@ jobs:
       matrix:
         shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3]') }}
     env:
+      # Must equal the length of the push-to-main matrix above. The sharder cannot see the matrix, so a
+      # mismatch would leave files unrun without an error.
       SHARD_TOTAL: 4
       SHARD_INDEX: ${{ matrix.shard }}
       PYTHONDONTWRITEBYTECODE: 1
@@ -133,9 +138,15 @@ jobs:
               --index "$SHARD_INDEX" --total "$SHARD_TOTAL" \
               --write-pytest-args .pytest-targets.txt
             mapfile -t PYTEST_TARGETS < .pytest-targets.txt
-            # Cap at -n 2 --dist loadscope on full-suite + coverage + slow runs to stay under the
-            # 16 GB runner memory ceiling (aminx debt #2585, #2582).
-            uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
+            # An empty shard is legitimate (the sharder exits 0). Never call pytest with no paths:
+            # that would collect the whole suite.
+            if [ "${#PYTEST_TARGETS[@]}" -eq 0 ]; then
+              echo "Shard $SHARD_INDEX of $SHARD_TOTAL has no test files; nothing to run."
+            else
+              # Cap at -n 2 --dist loadscope on full-suite + coverage + slow runs to stay under the
+              # 16 GB runner memory ceiling (aminx debt #2585, #2582).
+              uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
+            fi
           fi
       - name: Upload coverage to Codecov
         if: github.ref == 'refs/heads/main'
@@ -145,3 +156,19 @@ jobs:
           flags: shard${{ matrix.shard }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  # Stable aggregate for the required status check `unit-tests` (active ruleset on main, GitHub Actions
+  # integration 15368). It runs even when a shard fails and fails unless every shard succeeded, so a
+  # cancelled or skipped shard cannot pass the gate.
+  unit-tests:
+    needs: [unit-tests-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every unit-test shard to succeed
+        env:
+          SHARDS_RESULT: ${{ needs.unit-tests-shards.result }}
+        run: |
+          echo "unit-tests-shards result: $SHARDS_RESULT"
+          test "$SHARDS_RESULT" = "success"
