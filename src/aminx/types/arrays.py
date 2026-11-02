@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Union
 
 import numpy as np
-from jaxtyping import Array, Bool, Float, Int, PRNGKeyArray, PyTree
+from jaxtyping import Array, Bool, Float, Int, Int8, PRNGKeyArray, PyTree
 
 if TYPE_CHECKING:
   from aminx.model.ligand_mpnn import PrxteinLigandMPNN
@@ -57,10 +57,10 @@ SequenceEdgeFeatures = Float[
   ArrayLike,
   "num_residues num_neighbors num_features",
 ]  # Sequence edge features
-AutoRegressiveMask = Bool[
+AutoRegressiveMask = Int8[
   ArrayLike,
   "num_residues num_residues",
-]  # Mask for autoregressive decoding
+]  # Mask for autoregressive decoding (int8, 0 or 1)
 InputBias = Float[ArrayLike, "num_residues num_classes"]  # Input bias for classification
 InputLengths = Int[ArrayLike, "num_sequences"]  # Lengths of input sequences
 BFactors = Float[ArrayLike, "num_residues num_atom_types"]  # B-factors for residues

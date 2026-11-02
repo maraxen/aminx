@@ -175,15 +175,13 @@ def generate_ar_mask(
   Returns
   -------
   AutoRegressiveMask
-      (L, L) **int32** mask (values 0 or 1; the diagonal is 0), where mask[i, j] == 1 iff
-      position i sees position j's decoded sequence. int32 is the dtype this function has
-      always returned; the delegated float32 mask is cast here, before the ``chain_idx``
-      product, so every path returns int32. ``ar_mask_from_decoding_order`` itself stays
-      float32.
+      (L, L) **int8** mask (values 0 or 1; the diagonal is 0), where mask[i, j] == 1 iff
+      position i sees position j's decoded sequence. All mask helpers and bundle storage
+      agree on this int8 contract.
   """
   del num_groups
   ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
-  ar_mask = ar_mask.astype(jnp.int32)
+  ar_mask = ar_mask.astype(jnp.int8)
   if chain_idx is not None:
     same_chain = (chain_idx[:, None] == chain_idx[None, :]).astype(ar_mask.dtype)
     ar_mask = ar_mask * same_chain
@@ -260,7 +258,7 @@ def generate_wave_ar_mask(
   Returns
   -------
   AutoRegressiveMask
-      Shape (L, L); 1 where position i can see position j's decoded sequence.
+      (L, L) **int8** mask; 1 where position i can see position j's decoded sequence.
 
   """
   seq_len = tie_group_map.shape[0]
@@ -270,7 +268,7 @@ def generate_wave_ar_mask(
   earlier_wave = position_wave_index[:, None] > position_wave_index[None, :]
   same_group = tie_group_map[:, None] == tie_group_map[None, :]
 
-  mask = (earlier_wave | (same_wave & same_group)).astype(jnp.float32)
+  mask = (earlier_wave | (same_wave & same_group)).astype(jnp.int8)
   # Self-exclusion, matching :func:`generate_ar_mask` and both reference implementations.
   # `same_wave & same_group` is trivially true on the diagonal, so without this every
   # position read its own slot -- see the "WHY THIS EXISTS" section of the module docstring in
@@ -278,7 +276,7 @@ def generate_wave_ar_mask(
   # measured. Only the diagonal is removed: same-wave/same-group mutual
   # visibility (and the same-wave/different-group invisibility that gives this schedule
   # its Jacobi independence) are both preserved exactly.
-  return mask * (1 - jnp.eye(seq_len, dtype=mask.dtype))
+  return mask * (1 - jnp.eye(seq_len, dtype=jnp.int8))
 
 
 def ar_mask_from_decoding_order(
@@ -291,7 +289,7 @@ def ar_mask_from_decoding_order(
   through the same schedule the sampler decodes with (``WaveScheduleBundle.from_decoding_order``
   then :func:`generate_wave_ar_mask`), so a mask built here and a wave built from the same
   order cannot disagree. :func:`generate_ar_mask` gives the same 0/1 values for an order (as
-  int32 rather than float32) and additionally accepts ``chain_idx``.
+  int8) and additionally accepts ``chain_idx``.
 
   Args:
     decoding_order: (L,) ORDER array.
@@ -299,7 +297,7 @@ def ar_mask_from_decoding_order(
       visible and decode at their earliest member's step, as in :func:`generate_ar_mask`.
 
   Returns:
-    (L, L) float32 mask; ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
+    (L, L) int8 mask; ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
   """
   # Lazy import kept as a precaution. A static walk of explicit imports from aminx.types.* finds
   # no path back to this module. The only path found runs through the package root:
@@ -347,7 +345,7 @@ def decoding_order_from_wave(
   return jnp.asarray(order, dtype=jnp.int32)
 
 
-def full_context_ar_mask(seq_len: int) -> jnp.ndarray:
+def full_context_ar_mask(seq_len: int) -> AutoRegressiveMask:
   """Every position sees every other position's sequence, but not its own: ``1 - I``.
 
   ``ar_mask[i, j] == 1`` means position ``i`` SEES position ``j``'s sequence. The decoder
@@ -394,6 +392,6 @@ def full_context_ar_mask(seq_len: int) -> jnp.ndarray:
     seq_len: Number of positions.
 
   Returns:
-    ``(seq_len, seq_len)`` float32 mask, ones off the diagonal and zeros on it.
+    ``(seq_len, seq_len)`` int8 mask, ones off the diagonal and zeros on it.
   """
-  return jnp.ones((seq_len, seq_len), dtype=jnp.float32) - jnp.eye(seq_len, dtype=jnp.float32)
+  return jnp.ones((seq_len, seq_len), dtype=jnp.int8) - jnp.eye(seq_len, dtype=jnp.int8)

@@ -10,7 +10,7 @@ from __future__ import annotations
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Bool, Float, Int
+from jaxtyping import Array, Bool, Float, Int, Int8
 
 
 class GeometryBundle(eqx.Module):
@@ -117,8 +117,8 @@ class ConditioningBundle(eqx.Module):
   sequence_oh : Float[Array, "L V"]
       One-hot encoded input sequence for conditional decoding.
       All zeros for unconditional or autoregressive-only modes.
-  ar_mask : Float[Array, "S L L"]
-      Autoregressive attention mask. 1.0 = visible, 0.0 = masked.
+  ar_mask : Int8[Array, "S L L"]
+      Autoregressive attention mask (int8). 1 = visible, 0 = masked.
       All-ones for purely conditional (non-AR) scoring.
   temperature : Float[Array, ""]
       Sampling temperature (scalar). Default 1.0 = no temperature scaling.
@@ -139,7 +139,7 @@ class ConditioningBundle(eqx.Module):
   state_position_map: Int[Array, "S L"]
   state_weights: Float[Array, "S"]
   sequence_oh: Float[Array, "L V"]  # zeros for unconditional/AR
-  ar_mask: Float[Array, "S L L"]  # full 1s for purely conditional
+  ar_mask: Int8[Array, "S L L"]  # full 1s for purely conditional
   temperature: Float[Array, ""] = eqx.field(default_factory=lambda: jnp.array(1.0))
 
 
