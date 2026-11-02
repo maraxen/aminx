@@ -12,6 +12,7 @@ import ast
 import difflib
 import hashlib
 import keyword
+import logging
 import os
 import re
 import subprocess
@@ -80,6 +81,8 @@ class Extract:
   entries: list[Entry]
   unresolved: list[str]
 
+
+logger = logging.getLogger("extract_upstream_knobs")
 
 @dataclass(frozen=True)
 class UpstreamFamilyConfig:
@@ -1734,6 +1737,7 @@ def main(argv: Sequence[str] | None = None) -> int:
   args = parser.parse_args(argv)
   warnings.filterwarnings("ignore", category=SyntaxWarning)
 
+  logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
   explicit: dict[str, Path] = {}
   for item in args.root:
     family, sep, path_str = item.partition("=")
@@ -1767,7 +1771,8 @@ def main(argv: Sequence[str] | None = None) -> int:
       )
       return 2
     roots[family] = decision.path
-    print(f"root {family}: {decision.path} [{decision.source}]")
+    # Layer notes go to stderr through logging; stdout stays for the data summary below.
+    logger.info("root %s: %s [%s]", family, decision.path, decision.source)
   for family, path in explicit.items():
     if family not in FAMILY_REGISTRY:
       roots[family] = path.expanduser().resolve()

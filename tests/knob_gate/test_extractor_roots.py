@@ -54,10 +54,23 @@ def test_env_var_beats_default_path(tmp_path: Path) -> None:
   assert decision.source == "env:AMINX_POTTS_ROOT"
 
 
-def test_blank_env_var_is_unset(tmp_path: Path) -> None:
-  decision = EX.resolve_family_root(_cfg(), None, {"AMINX_POTTS_ROOT": "   "})
-  # Blank means unset: the decision, if any, comes from a default path, never from the env layer.
-  assert decision is None or decision.source != "env:AMINX_POTTS_ROOT"
+def test_blank_env_var_falls_through_to_the_default_layer(tmp_path: Path) -> None:
+  # Pre-fix this asserted only "not the env layer", which a None result also satisfies. Now the
+  # check names the next layer down: a blank env var is unset, so the existing default is reported.
+  checkout = tmp_path / "PottsMPNN"
+  checkout.mkdir()
+  cfg = EX.UpstreamFamilyConfig(
+    family="potts",
+    class_prefix="Potts",
+    env_var="AMINX_POTTS_ROOT",
+    default_paths=(str(checkout),),
+    commit_var="POTTSMPNN_COMMIT",
+    has_vendor_pin=True,
+  )
+  decision = EX.resolve_family_root(cfg, None, {"AMINX_POTTS_ROOT": "   "})
+  assert decision is not None
+  assert decision.source == f"default:{checkout}"
+  assert decision.path == checkout.resolve()
 
 
 def test_default_path_is_used_last_and_names_the_layer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
