@@ -39,6 +39,7 @@ from aminx.io.weights import get_topology_for_checkpoint, load_model
 from aminx.model import Aminx
 from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors, top_k
+from aminx.utils.autoregression import generate_wave_ar_mask
 from scripts.browser_validation._lattice import cubic_lattice_ca
 
 # --------------------------------------------------------------------------------------
@@ -516,12 +517,12 @@ class TestFindRngPrimitives:
 # (xtrax's `sort-stability` rule): NOT from `inference/decode/autoregressive.py`'s wave
 # order (P04 goes through `UnconditionalDecode`, which never calls
 # `AutoregressiveDecode.__call__`), but from `build_inference_bundle` ->
-# `generate_ar_mask`'s tied branch (`utils/autoregression.py`, ~L207), whose
-# `group_decoding_order = jnp.argsort(...)` relied on the default `stable=True` over a
-# key where every "group not present" slot shares one sentinel. See
-# `tests/utils/test_autoregression.py::test_group_decoding_order_tie_free_matches_stable_argsort`
-# for the unit-level tie-free-key proof, and this class's own red-check (documented in
-# the T4 report) for confirmation this test fails on the pre-fix code.
+# `generate_ar_mask`'s tied branch, whose `group_decoding_order = jnp.argsort(...)` relied
+# on the default `stable=True` over a key where every "group not present" slot shares one
+# sentinel. That branch is gone: the mask now comes from the scatter-based wave path, which
+# traces no sort at all (see
+# `tests/utils/test_autoregression.py::test_generate_ar_mask_traces_no_sort`). This class's
+# own red-check (documented in the T4 report) confirms this test fails on the pre-fix code.
 # --------------------------------------------------------------------------------------
 
 
@@ -733,7 +734,7 @@ class TestP07BundleArMaskPinning:
     length: int,
     decoding_order: jax.Array,
     tie_group_map: jax.Array,
-  ):
+  ) -> tuple[jax.Array, ...]:
     coords = jnp.zeros((length, 4, 3), dtype=jnp.float32)
     mask = jnp.ones((length,), dtype=jnp.float32)
     residue_index = jnp.arange(length, dtype=jnp.int32)
@@ -826,3 +827,32 @@ class TestP07BundleArMaskPinning:
     ], dtype=np.float32)
     assert np.array_equal(ar_mask, expected)
 
+  def test_p07_bundle_exported_wave_and_ar_mask_describe_one_schedule(self) -> None:
+    """The exported wave and the exported ar_mask must imply the same visibility.
+
+    p07_bundle builds its wave with ``wave_from_decoding_order`` and its ar_mask with
+    ``ar_mask_from_decoding_order`` (which goes through ``WaveScheduleBundle.from_decoding_order``).
+    The two constructors number their waves differently (one wave per tie group in
+    first-step order, versus one wave per step), so the comparison is on what each implies:
+    the mask generated from the exported wave must equal the exported ar_mask. Random
+    permutations with tied groups, including groups whose members are far apart in the order.
+    """
+    rng = np.random.default_rng(20261030)
+    for length in (6, 9):
+      for _ in range(4):
+        decoding_order = jnp.asarray(rng.permutation(length), dtype=jnp.int32)
+        # Tie ids stay in 0 .. L-1, the convention both wave constructors index by.
+        tie_group_map = jnp.asarray(rng.integers(0, 3, size=length), dtype=jnp.int32)
+
+        bundle, _ = p07_bundle(*self._dummy_inputs(length, decoding_order, tie_group_map))
+        exported_mask = np.asarray(bundle.conditioning.ar_mask[0])
+        wave_implied_mask = np.asarray(generate_wave_ar_mask(bundle.wave, tie_group_map))
+
+        np.testing.assert_array_equal(
+          wave_implied_mask,
+          exported_mask,
+          err_msg=(
+            f"order={np.asarray(decoding_order).tolist()} "
+            f"ties={np.asarray(tie_group_map).tolist()}"
+          ),
+        )
