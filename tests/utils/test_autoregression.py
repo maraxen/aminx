@@ -176,69 +176,9 @@ def test_generate_wave_ar_mask_padding_tolerant():
 
 
 # --------------------------------------------------------------------------------------
-# generate_ar_mask's tied branch: tie-free (key, index) lex sort must reproduce the
-# identical permutation a stable argsort on the key alone would (T4, sort-stability).
-#
-# Until this fix, `generate_ar_mask`'s tied branch computed `group_decoding_order` with
-# a bare `jnp.argsort(...)` (default `stable=True`) over a key where every absent group
-# shares the SAME sentinel (`N + 1`) -- the exact shape of tie IREE does not resolve the
-# same way XLA does (measured 260911, see `model.features.top_k`'s docstring). This is
-# the actual export blocker for `aminx.export.make_p04_unconditional` (P04): it traced,
-# via `build_inference_bundle` -> `generate_ar_mask`, to `autoregression.py`'s tied
-# branch, NOT to `inference/decode/autoregressive.py`'s wave-order sort (see also
-# `test_wave_order_sort_key_matches_stable_argsort` below, which covers that second,
-# separate sort fixed alongside this one for the same reason).
-# --------------------------------------------------------------------------------------
-
-
-def _stable_argsort_reference(group_present: np.ndarray, group_first_occurrence: np.ndarray, n: int):
-  key = jnp.where(jnp.asarray(group_present), jnp.asarray(group_first_occurrence), n + 1)
-  return jnp.argsort(key, stable=True)
-
-
-def _tie_free_group_decoding_order(group_present: np.ndarray, group_first_occurrence: np.ndarray, n: int):
-  """Reproduces generate_ar_mask's tied-branch formula (autoregression.py, ~L207-215)."""
-  key = jnp.where(jnp.asarray(group_present), jnp.asarray(group_first_occurrence), n + 1)
-  index = jax.lax.broadcasted_iota(jnp.int32, key.shape, 0)
-  _, order = jax.lax.sort((key, index), dimension=0, is_stable=False, num_keys=2)
-  return order
-
-
-@pytest.mark.parametrize("n", [1, 2, 5, 16, 64])
-def test_group_decoding_order_tie_free_matches_stable_argsort(n: int):
-  """Random (group_present, group_first_occurrence) pairs, many ties (sparse presence
-  forces most slots onto the shared N+1 sentinel), several group counts."""
-  rng = np.random.default_rng(1234 + n)
-  for _ in range(25):
-    group_present = rng.random(n) < 0.3
-    group_first_occurrence = rng.integers(0, max(n, 1), size=n).astype(np.int32)
-    got = _tie_free_group_decoding_order(group_present, group_first_occurrence, n)
-    want = _stable_argsort_reference(group_present, group_first_occurrence, n)
-    chex.assert_trees_all_equal(got, want)
-
-  # All-absent: every slot ties on the sentinel -- the densest possible tie case.
-  group_present = np.zeros(n, dtype=bool)
-  group_first_occurrence = rng.integers(0, max(n, 1), size=n).astype(np.int32)
-  got = _tie_free_group_decoding_order(group_present, group_first_occurrence, n)
-  want = _stable_argsort_reference(group_present, group_first_occurrence, n)
-  chex.assert_trees_all_equal(got, want)
-
-
-# --------------------------------------------------------------------------------------
-# STRUCTURAL guard on the fix above. The two tests preceding this one reimplement
-# generate_ar_mask's formula inside this file and check the PROPERTY (that a tie-free
-# (key, index) lex sort reproduces a stable argsort). They never call generate_ar_mask,
-# so reverting the function to a bare `jnp.argsort(..., stable=True)` leaves them green
-# -- the property is still true of the copy, and the copy is what they exercise.
-#
-# That gap matters concretely: main (release 0.2.0a2) still carries the argsort version,
-# `git merge-tree` reports a merge of it with this branch as textually CLEAN, and the
-# exported Graph W bakes this function into the .onnx. A silent revert would therefore
-# reach the browser artifacts with no conflict marker and no failing test.
-#
-# So assert on the traced jaxpr instead of on a reimplementation: the sort that orders
-# tie groups must be tie-free (`is_stable=False`, two keys). A revert lowers to
-# `is_stable=True` with one key and fails here.
+# Jaxpr walker for the sort-free guard below. The tied-branch sort tests that used to sit
+# here reimplemented a formula that no longer exists in production (Defect 9 removed the
+# sort), so they guarded nothing and were deleted rather than reworded.
 # --------------------------------------------------------------------------------------
 
 

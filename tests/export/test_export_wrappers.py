@@ -679,7 +679,7 @@ class TestKeyIndependenceOfNative:
 # tied key would change the generated design silently and identically on both sides of
 # every parity comparison. Asserting on the traced jaxpr is the only thing that catches
 # it -- the same reasoning, and the same guard shape, as
-# test_generate_ar_mask_tied_branch_sorts_tie_free in tests/utils/test_autoregression.py.
+# test_generate_ar_mask_traces_no_sort in tests/utils/test_autoregression.py.
 # --------------------------------------------------------------------------------------
 
 
