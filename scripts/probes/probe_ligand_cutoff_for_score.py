@@ -78,7 +78,21 @@ def run_probe() -> dict[str, object]:
   logits = logits.at[1, 2].set(5.0)
   seq = jnp.array([1, 2, 3, 4])
   loss_xy = float(compute_loss_xy(logits, seq, mask_8a))
-  loss_xy_valid = bool(loss_xy > 0.0 and not np.isnan(loss_xy) and not np.isinf(loss_xy))
+  loss_xy_finite = bool(loss_xy > 0.0 and not np.isnan(loss_xy) and not np.isinf(loss_xy))
+
+  # Known answer, by hand: two proximal residues, both given UNIFORM logits over the 21-token
+  # vocabulary, so each contributes NLL = ln(21) and the mask-weighted mean is
+  # ln(21) * 2 / (2 + 1e-8). Residues outside the mask are given a confidently WRONG prediction
+  # (they must not move the answer). The expected value is computed here from the formula, not
+  # from the library.
+  known_logits = jnp.zeros((l_len, 21))
+  known_logits = known_logits.at[2, 5].set(40.0).at[3, 5].set(40.0)  # masked-out, token 5 wrong
+  known_mask = jnp.array([1.0, 1.0, 0.0, 0.0])
+  known_seq = jnp.array([1, 2, 3, 4])
+  known_expected = float(np.log(21.0) * 2.0 / (2.0 + 1e-8))
+  known_value = float(compute_loss_xy(known_logits, known_seq, known_mask))
+  loss_xy_known_answer_error = abs(known_value - known_expected)
+  loss_xy_valid = bool(loss_xy_finite and loss_xy_known_answer_error < 1e-5)
 
   probe_passed = bool(
     cb_diff < 1e-6 and cutoff_gating_passed and empty_control_passed and loss_xy_valid
@@ -93,6 +107,7 @@ def run_probe() -> dict[str, object]:
     "empty_control_passed": empty_control_passed,
     "loss_xy_valid": loss_xy_valid,
     "loss_xy_value": loss_xy,
+    "loss_xy_known_answer_error": loss_xy_known_answer_error,
     "num_proximal_residues": int(jnp.sum(mask_8a)),
   }
 

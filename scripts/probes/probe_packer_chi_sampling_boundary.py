@@ -2,7 +2,7 @@
 
 The waiver is declared against Praxia debt #3213. This probe runs without Praxia, so it cannot
 verify that registration. A log line says so; the JSON keeps the sidecar's [result_schema] keys
-only, and the pass condition still reads the declared id.
+only, and the pass condition reads the id from ``PACKER_CHI_SAMPLING_DEBT_ID`` in the library.
 """
 
 from __future__ import annotations
@@ -77,9 +77,10 @@ def _synthetic_bundle() -> PackerBundle:
 
 def run_probe() -> dict[str, object]:
   """Check Packer output invariants and the boundary premise of the packer_chi_sampling waiver."""
-  # Declared debt id. Praxia is not reachable from this probe, so nothing here verifies it.
-  praxia_debt_id = 3213
-  praxia_debt_slug = "debt-packer-chi-sampling-engine"
+  # The declared debt id comes from the library constant, so the probe and the module cannot
+  # drift apart. Praxia is not reachable from here: whether the debt exists is NOT verified.
+  praxia_debt_id = packer_module.PACKER_CHI_SAMPLING_DEBT_ID
+  praxia_debt_slug = packer_module.PACKER_CHI_SAMPLING_DEBT_SLUG
 
   config = InferenceConfig(inference=True)
   packer = _small_packer()
@@ -109,8 +110,21 @@ def run_probe() -> dict[str, object]:
   )
   concentration_floor_valid = concentration_floor_valid and floor_under_extreme_logit
 
-  # 3. Boundary premise: aminx has no NeRF side-chain reconstruction in the packer module.
-  boundary_documented = "nerf" not in inspect.getsource(packer_module).lower()
+  # 3. Boundary premise: no NeRF/chi-sampling/reconstruction callable exists in the packer
+  #    module, and the module docstring states the waiver and the debt id.
+  names = [name.lower() for name, _ in inspect.getmembers(packer_module, callable)]
+  has_engine = any(("nerf" in n or "reconstruct" in n or "sample_chi" in n) for n in names)
+  doc = inspect.getdoc(packer_module) or ""
+  boundary_documented = bool(
+    not has_engine
+    and f"#{praxia_debt_id}" in doc
+    and "waived" in doc.lower()
+  )
+  waiver_status = (
+    "WAIVED_UNDER_DEBT"
+    if boundary_documented and isinstance(praxia_debt_id, int) and praxia_debt_id > 0
+    else "NOT_WAIVED"
+  )
 
   probe_passed = bool(shapes_valid and concentration_floor_valid and boundary_documented)
   logger.info("probe checks: shapes_valid=%s floor=%s boundary=%s",
@@ -120,7 +134,7 @@ def run_probe() -> dict[str, object]:
     "probe_name": "packer_chi_sampling_boundary",
     "clause": "packer_chi_sampling",
     "status": "PASS" if probe_passed else "FAIL",
-    "waiver_status": "WAIVED_UNDER_DEBT",
+    "waiver_status": waiver_status,
     "praxia_debt_id": praxia_debt_id,
     "praxia_debt_slug": praxia_debt_slug,
     "shapes_valid": shapes_valid,

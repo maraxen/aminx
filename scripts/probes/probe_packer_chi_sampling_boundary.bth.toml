@@ -16,7 +16,7 @@ reasoning = "Packer parameter output invariants hold, and Cartesian sampling bou
 is_residual = false
 
 [outcomes.fail]
-condition = "status != 'PASS' OR waiver_status != 'WAIVED_UNDER_DEBT' OR praxia_debt_id != 3213 OR NOT shapes_valid OR NOT concentration_floor_valid"
+condition = "status != 'PASS' OR waiver_status != 'WAIVED_UNDER_DEBT' OR praxia_debt_id != 3213 OR NOT shapes_valid OR NOT concentration_floor_valid OR NOT boundary_documented"
 decision = "Reject packer_chi_sampling waiver."
 reasoning = "Waiver or parameter validation failed."
 is_residual = true

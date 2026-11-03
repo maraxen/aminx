@@ -110,5 +110,7 @@ def test_concentration_floor_is_the_softplus_offset_when_raw_logit_is_very_negat
 
 def test_waiver_premise_no_nerf_engine_in_the_packer_module() -> None:
   """The waiver assumes aminx has no NeRF reconstruction. If that changes, the waiver must be revisited."""
-  source = inspect.getsource(packer_module).lower()
-  assert "nerf" not in source
+  names = [name.lower() for name, _ in inspect.getmembers(packer_module, callable)]
+  assert not any("nerf" in n or "reconstruct" in n or "sample_chi" in n for n in names)
+  doc = inspect.getdoc(packer_module) or ""
+  assert f"#{packer_module.PACKER_CHI_SAMPLING_DEBT_ID}" in doc

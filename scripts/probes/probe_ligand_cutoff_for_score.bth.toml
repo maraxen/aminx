@@ -1,5 +1,5 @@
 [experiment]
-hypothesis = "Virtual C-beta calculation matches reference empirical coefficients within 1e-6, distance gating identifies residues within 8.0 A of valid ligand atoms, negative control correctly rejects fully-masked ligand arrays, and loss_XY auxiliary NLL is finite."
+hypothesis = "Virtual C-beta calculation matches reference empirical coefficients within 1e-6, distance gating identifies residues within 8.0 A of valid ligand atoms, negative control correctly rejects fully-masked ligand arrays, and loss_XY auxiliary NLL is finite and equals ln(21) * 2 / (2 + 1e-8) on a two-residue uniform-logit case (abs error < 1e-5)."
 stage_name = "validation"
 
 [controls]
@@ -27,4 +27,5 @@ cutoff_gating_passed = "bool"
 empty_control_passed = "bool"
 loss_xy_valid = "bool"
 loss_xy_value = "float"
+loss_xy_known_answer_error = "float"
 num_proximal_residues = "int"

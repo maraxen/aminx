@@ -1,8 +1,9 @@
-"""Pre-registered probe for Clause 4: score_only_multi_order_average."""
+"""Pre-registered probe for Clause 4: score_only_multi_order_average (library-only, debt #3214)."""
 
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import logging
 import os
@@ -20,13 +21,32 @@ if str(_REPO_ROOT / "src") not in sys.path:
 
 from aminx.model.mpnn import Aminx
 from aminx.scoring.multi_order import score_multi_order_average
-
+from aminx.utils.decoding_order import random_design_order
 
 logger = logging.getLogger(__name__)
 
 
+def _score(model: Aminx, key: jax.Array, sequence: jax.Array, num_orders: int, **structure):
+  return score_multi_order_average(
+    model=model,
+    prng_key=key,
+    sequence=sequence,
+    num_orders=num_orders,
+    **structure,
+  )
+
+
 def run_probe() -> dict[str, object]:
-  """Execute probe verifying multi-order score averaging, probability normalization, and Jensen's inequality."""
+  """Check shapes, the causal-mask invariant, a sensitivity control and fixed-first ordering.
+
+  Causal invariant (one order, so ``mean_probs`` is that order's per-position distribution):
+  changing the identity of the token decoded at step ``t`` must not change the distribution at
+  any position decoded at or before step ``t``. A mask that leaked future tokens fails it.
+  Sensitivity control: changing the FIRST-decoded token must change some other position, so the
+  invariant is not satisfied by a model that ignores the sequence. Neither check depends on an
+  upstream dump; none was available, so the reference's chain-mask order
+  (LigandMPNN model_utils.py:581-584) is checked as a property, not as a bit-for-bit match.
+  """
   # Declared debt id. Praxia is not reachable from this probe, so nothing here verifies it.
   praxia_debt_id = 3214
   praxia_debt_slug = "debt-multi-order-scoring-average"
@@ -47,21 +67,15 @@ def run_probe() -> dict[str, object]:
 
   coords = jnp.zeros((seq_len, 4, 3))
   coords = coords.at[:, 1, 0].set(jnp.arange(seq_len) * 3.8)
-  mask = jnp.ones(seq_len)
-  residue_index = jnp.arange(seq_len)
-  chain_index = jnp.zeros(seq_len, dtype=jnp.int32)
+  structure = {
+    "structure_coordinates": coords,
+    "mask": jnp.ones(seq_len),
+    "residue_index": jnp.arange(seq_len),
+    "chain_index": jnp.zeros(seq_len, dtype=jnp.int32),
+  }
   sequence = jnp.arange(seq_len) % 20
 
-  result = score_multi_order_average(
-    model=model,
-    prng_key=key,
-    sequence=sequence,
-    structure_coordinates=coords,
-    mask=mask,
-    residue_index=residue_index,
-    chain_index=chain_index,
-    num_orders=num_orders,
-  )
+  result = _score(model, key, sequence, num_orders, **structure)
 
   shapes_valid = bool(
     result.mean_probs.shape == (seq_len, 21)
@@ -70,15 +84,58 @@ def run_probe() -> dict[str, object]:
     and result.decoding_orders.shape == (num_orders, seq_len)
   )
 
-  probs_normalized = bool(
-    jnp.allclose(jnp.sum(result.mean_probs, axis=-1), jnp.ones(seq_len), atol=1e-5)
+  # --- causal-mask invariant, single order ---
+  base = _score(model, key, sequence, 1, **structure)
+  order = [int(i) for i in base.decoding_orders[0]]
+
+  def _flip(seq: jax.Array, pos: int) -> jax.Array:
+    return seq.at[pos].set((seq[pos] + 7) % 20)
+
+  causal_max_diff = 0.0
+  for step in (seq_len // 2, seq_len - 1):
+    flipped = _score(model, key, _flip(sequence, order[step]), 1, **structure)
+    upto = jnp.asarray(order[: step + 1])
+    diff = jnp.max(jnp.abs(flipped.mean_probs[upto] - base.mean_probs[upto]))
+    causal_max_diff = max(causal_max_diff, float(diff))
+  causal_invariant_holds = bool(causal_max_diff < 1e-5)
+
+  # --- sensitivity control: the first-decoded token is visible to every later position ---
+  first = order[0]
+  flipped_first = _score(model, key, _flip(sequence, first), 1, **structure)
+  later = jnp.asarray(order[1:])
+  sensitivity_diff = float(
+    jnp.max(jnp.abs(flipped_first.mean_probs[later] - base.mean_probs[later]))
+  )
+  sensitivity_control_passed = bool(sensitivity_diff > 1e-6)
+
+  # --- fixed positions decode first (reference argsort((chain_mask + 1e-4) * |randn|)) ---
+  fixed_positions = {1, 4}
+  fixed_mask = jnp.zeros(seq_len).at[jnp.asarray(sorted(fixed_positions))].set(1.0)
+  untied = jnp.arange(seq_len, dtype=jnp.int32)
+  fixed_first_order_valid = True
+  for seed in range(8):
+    design_order = [
+      int(i) for i in random_design_order(jax.random.PRNGKey(seed), untied, fixed_mask)
+    ]
+    fixed_first_order_valid = bool(
+      fixed_first_order_valid
+      and set(design_order[: len(fixed_positions)]) == fixed_positions
+      and sorted(design_order) == list(range(seq_len))
+    )
+
+  # Informational, not gating: score_multi_order_average draws orders with random_decoding_order
+  # and exposes no fixed_mask/chain_mask, so it cannot reproduce the reference's chain-mask-aware
+  # order. This records that gap; it is the reason the debt (#3214) stays open.
+  multi_order_has_fixed_param = bool(
+    {"fixed_mask", "chain_mask"} & set(inspect.signature(score_multi_order_average).parameters)
   )
 
-  jensen_satisfied = bool(
-    float(result.ensemble_nll) <= float(result.mean_sample_nll) + 1e-6
+  probe_passed = bool(
+    shapes_valid
+    and causal_invariant_holds
+    and sensitivity_control_passed
+    and fixed_first_order_valid
   )
-
-  probe_passed = bool(shapes_valid and probs_normalized and jensen_satisfied)
 
   return {
     "probe_name": "score_only_multi_order_average",
@@ -90,8 +147,12 @@ def run_probe() -> dict[str, object]:
     "ensemble_nll": float(result.ensemble_nll),
     "mean_sample_nll": float(result.mean_sample_nll),
     "shapes_valid": shapes_valid,
-    "probs_normalized": probs_normalized,
-    "jensen_satisfied": jensen_satisfied,
+    "causal_invariant_holds": causal_invariant_holds,
+    "causal_max_diff": causal_max_diff,
+    "sensitivity_control_passed": sensitivity_control_passed,
+    "sensitivity_diff": sensitivity_diff,
+    "fixed_first_order_valid": fixed_first_order_valid,
+    "multi_order_has_fixed_param": multi_order_has_fixed_param,
   }
 
 
@@ -118,6 +179,8 @@ def main() -> None:
     bth_path.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
   logger.info("debt #%s: declared, not verified against praxia", result["praxia_debt_id"])
+  if not result["multi_order_has_fixed_param"]:
+    logger.warning("score_multi_order_average has no fixed_mask/chain_mask parameter (debt #3214).")
   logger.info("Probe score_only_multi_order_average: %s", result["status"])
 
 
