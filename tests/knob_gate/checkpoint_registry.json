@@ -54,37 +54,37 @@
     },
     {
       "artifact_path": "AbMPNN/abmpnn.pt",
-      "sha256": "7c592a5e5edd89642c6923ecb6a8b0094e639aa17bdd3ef476bad22bd1c8aec1",
+      "sha256": "fd41b40ee0f51974d73e1acb754cd8acaa36b3327543d5d28bcf4aa4e07b4a1b",
       "family": "ab_mpnn",
       "upstream": "AbMPNN"
     },
     {
       "artifact_path": "HyperMPNN/retrained_models/v48_002_epoch240_hyper.pt",
-      "sha256": "8e78704c9199b098d93ab99e571da256bc51b4f2f0816c21948c895c4ee47343",
+      "sha256": "361eb322cb7161ca9d3a12f57449ff7e6c1fd2a3bca58f449745ec72da9bd328",
       "family": "hyper_mpnn",
       "upstream": "HyperMPNN"
     },
     {
       "artifact_path": "HyperMPNN/retrained_models/v48_010_epoch300_hyper.pt",
-      "sha256": "e44447bdf0c226772cf44a1a81f267469504594b0d1f7084d28d1baca30bd6df",
+      "sha256": "e78b26ab17739ba3925d3338e6ce12d4456824242225a9ff950ddf58b72d9ded",
       "family": "hyper_mpnn",
       "upstream": "HyperMPNN"
     },
     {
       "artifact_path": "HyperMPNN/retrained_models/v48_020_epoch300_hyper.pt",
-      "sha256": "d89b9f1e5c1bd89607843c7421d277c52d5ec773b1c2cf04b3088678861ab2bb",
+      "sha256": "2635afa506cbad850af3fffa7629d80b72ee166d386e2d63a05435b5bd9b459f",
       "family": "hyper_mpnn",
       "upstream": "HyperMPNN"
     },
     {
       "artifact_path": "HyperMPNN/retrained_models/v48_030_epoch300_hyper.pt",
-      "sha256": "359d318efa1208ed687a564d5356470036e3fc345b3d041d3a7db8f371a0f161",
+      "sha256": "38127172626406205a31bfafd4bbc38bbf1561dd54900997a8b409f4ae362ced",
       "family": "hyper_mpnn",
       "upstream": "HyperMPNN"
     },
     {
       "artifact_path": "CyclicMPNN/cyclicmpnn_weights/cyclicmpnn_48_010.pt",
-      "sha256": "dca1683c76431ce21e64be110e38f395dadb13580e02fd391a93c009567fb0a9",
+      "sha256": "db204a0e4f501f6deae94b7c0da807a1baf812ca823701ff408199d1be84a146",
       "family": "cyclic_mpnn",
       "upstream": "CyclicMPNN"
     },
