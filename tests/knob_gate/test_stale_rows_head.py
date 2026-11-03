@@ -49,3 +49,16 @@ def test_head_reaches_the_uv_lock_comparison(monkeypatch: pytest.MonkeyPatch) ->
   monkeypatch.setattr(stale_rows, "row_is_stale", fake_row_is_stale)
   stale_rows.assess("potts_x", None, run_commit="abc123", head="refX")
   assert seen == {"paths": ["uv.lock"], "git_hash": "abc123", "head": "refX"}
+
+
+def test_unknown_family_exits_nonzero_and_lists_valid_families(
+  caplog: pytest.LogCaptureFixture,
+) -> None:
+  # Pre-fix, an unknown --family selected no rows, printed nothing and returned 0: a silent all-fresh.
+  stale_rows = _load_stale_rows()
+  with caplog.at_level("ERROR", logger="stale_rows"):
+    rc = stale_rows.main(["--slugs", "--family", "potntial"])
+  assert rc != 0
+  assert "potntial" in caplog.text
+  for family in ("laser", "potts", "protonpotts"):
+    assert family in caplog.text

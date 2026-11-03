@@ -119,6 +119,15 @@ def rows_for_family(rows: Sequence[Mapping[str, object]], family: str | None) ->
   return scoped
 
 
+def known_families(ledgers_dir: Path, rows: Sequence[Mapping[str, object]]) -> list[str]:
+  """Every family name a ``--family`` value may take: one per ledger shard, plus each manifest family."""
+  names: set[str] = set()
+  if ledgers_dir.is_dir():
+    names.update(path.stem for path in ledgers_dir.glob("*.toml"))
+  names.update(str(row["family"]) for row in rows if isinstance(row.get("family"), str))
+  return sorted(names)
+
+
 def sidecar_slugs(rows: Sequence[Mapping[str, object]]) -> dict[str, set[str]]:
   """``slug -> {row id}`` for every sidecar-backed row."""
   by_slug: dict[str, set[str]] = {}

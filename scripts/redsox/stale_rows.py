@@ -52,9 +52,11 @@ from _coverage import (
   default_resolve_run,
 )
 from _ledger import (
+  ALL,
   LEDGERS_DIRNAME,
   MANIFEST_NAME,
   LedgerError,
+  known_families,
   ledger_ids,
   load_manifest_rows,
   rows_for_family,
@@ -133,8 +135,17 @@ def main(argv: list[str] | None = None) -> int:
 
   knob_gate = REPO / "tests" / "knob_gate"
   try:
+    manifest = load_manifest_rows(knob_gate / MANIFEST_NAME)
+    valid = known_families(knob_gate / LEDGERS_DIRNAME, manifest)
+    # An unknown name used to select no rows and print nothing with exit 0, which reads as "all fresh".
+    if args.family is not None and args.family != ALL and args.family not in valid:
+      logger.error(
+        "REFUSING: unknown --family %r; valid families: %s (or %s)",
+        args.family, ", ".join(valid), ALL,
+      )
+      return 2
     ids = ledger_ids(knob_gate / LEDGERS_DIRNAME, args.family)
-    scoped = rows_for_family(load_manifest_rows(knob_gate / MANIFEST_NAME), args.family)
+    scoped = rows_for_family(manifest, args.family)
   except LedgerError as exc:
     logger.info("REFUSING: %s", exc)
     return 2
