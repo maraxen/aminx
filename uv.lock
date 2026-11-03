@@ -192,7 +192,7 @@ requires-dist = [
     { name = "biopython", marker = "extra == 'tests'", specifier = ">=1.83" },
     { name = "chex", marker = "extra == 'dev'" },
     { name = "chex", marker = "extra == 'tests'" },
-    { name = "cisternal", marker = "extra == 'agent'", specifier = ">=0.1.3,<0.2" },
+    { name = "cisternal", marker = "extra == 'agent'", specifier = ">=0.1.6,<0.2" },
     { name = "dm-tree", marker = "extra == 'tests'", specifier = ">=0.1.8" },
     { name = "equinox", specifier = ">=0.13.2" },
     { name = "foldcomp", marker = "extra == 'dev'" },
@@ -623,7 +623,7 @@ wheels = [
 
 [[package]]
 name = "cisternal"
-version = "0.1.3"
+version = "0.1.6"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cyclopts", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -631,9 +631,9 @@ dependencies = [
     { name = "opentelemetry-api", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "pyyaml", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2e/86/989482ddd6a8136afe82bac56ff3732c95b66059e10b052630e4ecc93616/cisternal-0.1.3.tar.gz", hash = "sha256:9d6d6d439beef3cb84f3f3f289f49699fe199da07364f5e3fa352d7266d975c2", size = 428804, upload-time = "2026-10-17T14:01:00.177Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6b/cb/7e060501dbf61c314c00aa1a1e980e42d0122aa4c51d5b287ef62c665ba3/cisternal-0.1.6.tar.gz", hash = "sha256:fbb06aeb1f0056ed550b975fd8552b75067caeccfd7b6bd8d70ecdf15dd38c47", size = 436136, upload-time = "2026-11-02T22:16:19.73Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c4/a7/c294e0f513bd08df38b28a8dc3b97d63701ff85e32f298a375498ddb2206/cisternal-0.1.3-py3-none-any.whl", hash = "sha256:af48cc28fc8406aad251ae8b6078acaa65d5de2933c8c23cc909d3915f166756", size = 278235, upload-time = "2026-10-17T14:00:58.888Z" },
+    { url = "https://files.pythonhosted.org/packages/62/6e/8ff1bf1a3a6cdfd7f7209105936a69ecee39c734a967cda231f41bb97069/cisternal-0.1.6-py3-none-any.whl", hash = "sha256:8ddf0f45c1679cb967ca787288cfe2c411a6885b9bb0763a4b59d07b55248e06", size = 281625, upload-time = "2026-11-02T22:16:18.539Z" },
 ]
 
 [[package]]
