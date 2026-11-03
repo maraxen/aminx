@@ -90,19 +90,19 @@
     },
     {
       "artifact_path": "ProteinMPNN/ca_model_weights/v_48_002.pt",
-      "sha256": "925f2ca1007bf9b02e0e7f420ff00eb91f50fcc2722f64b42e644ae95adaa131",
-      "family": "ca_only",
-      "upstream": "ProteinMPNN"
-    },
-    {
-      "artifact_path": "ProteinMPNN/ca_model_weights/v_48_010.pt",
       "sha256": "ec038b44a987d7c8351b6ed887c82a2370d54e45e55a6bdaf508a729cef0340e",
       "family": "ca_only",
       "upstream": "ProteinMPNN"
     },
     {
+      "artifact_path": "ProteinMPNN/ca_model_weights/v_48_010.pt",
+      "sha256": "cdb50498d45578d20b271fa7817b8cd8bfde3875ad69dbd3f5e4b5dd3e588301",
+      "family": "ca_only",
+      "upstream": "ProteinMPNN"
+    },
+    {
       "artifact_path": "ProteinMPNN/ca_model_weights/v_48_020.pt",
-      "sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+      "sha256": "f28f40170e21858c5ff31ef50b6e63414ff76dc331b19f85aa8586a12031744a",
       "family": "ca_only",
       "upstream": "ProteinMPNN"
     },
