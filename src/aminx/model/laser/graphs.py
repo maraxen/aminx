@@ -205,12 +205,15 @@ def pack_edges(n_nodes: int, edge_index: Int[NDArray[np.integer], "2 e"]) -> Pac
     return PackedEdges(empty_i, empty_m, empty_e, empty_e)
   counts = np.bincount(sink, minlength=n_nodes)
   width = int(counts.max())
-  slots = np.empty((n_edges,), dtype=np.int64)
-  seen = np.zeros((n_nodes,), dtype=np.int64)
-  for edge in range(n_edges):
-    row = int(sink[edge])
-    slots[edge] = seen[row]
-    seen[row] = slots[edge] + 1
+
+  order = np.argsort(sink, kind="stable")
+  diffs = np.empty(n_edges, dtype=np.bool_)
+  diffs[0] = True
+  np.not_equal(sink[order[1:]], sink[order[:-1]], out=diffs[1:])
+  group_starts = np.maximum.accumulate(np.where(diffs, np.arange(n_edges), 0))
+  slots = np.empty(n_edges, dtype=np.int64)
+  slots[order] = np.arange(n_edges) - group_starts
+
   neighbours = np.zeros((n_nodes, width), dtype=np.int64)
   mask = np.zeros((n_nodes, width), dtype=np.bool_)
   neighbours[sink, slots] = source
@@ -229,30 +232,26 @@ def _knn_block(
   n_local = int(coords.shape[0])
   if n_local == 0 or k <= 0:
     return np.zeros((2, 0), dtype=np.int64)
-  requested = k if loop else k + 1
-  take = min(requested, n_local)
+  if not loop and n_local <= 1:
+    return np.zeros((2, 0), dtype=np.int64)
+
   delta = coords[:, None, :] - coords[None, :, :]
   squared = np.sum(delta * delta, axis=-1)
-  order = np.argsort(squared, axis=1, kind="stable")[:, :take]
-  sources: list[int] = []
-  sinks: list[int] = []
-  for local in range(n_local):
-    query = int(global_index[local])
-    kept = 0
-    for column in range(take):
-      neighbour_local = int(order[local, column])
-      if not loop and neighbour_local == local:
-        continue
-      if kept == k:
-        break
-      sources.append(int(global_index[neighbour_local]))
-      sinks.append(query)
-      kept += 1
-  if not sources:
-    return np.zeros((2, 0), dtype=np.int64)
+  if loop:
+    take = min(k, n_local)
+    order = np.argsort(squared, axis=1, kind="stable")[:, :take]
+    sources = global_index[order].reshape(-1)
+    sinks = np.repeat(global_index, take)
+  else:
+    take = min(k, n_local - 1)
+    np.fill_diagonal(squared, np.inf)
+    order = np.argsort(squared, axis=1, kind="stable")[:, :take]
+    sources = global_index[order].reshape(-1)
+    sinks = np.repeat(global_index, take)
+
   return np.stack(
     (
-      np.asarray(sources, dtype=np.int64),
-      np.asarray(sinks, dtype=np.int64),
+      sources.astype(np.int64, copy=False),
+      sinks.astype(np.int64, copy=False),
     ),
   )
