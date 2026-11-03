@@ -1,5 +1,5 @@
 [experiment]
-hypothesis = "Packer chi sampling is formally waived under Praxia debt debt-packer-chi-sampling-engine (#3165) due to requirement of 3D NeRF Cartesian coordinate reconstruction and von Mises mixture recycling, with PackerResult mixture parameters verified to meet 4-angle 3-mixture shapes and concentration >= 0.1 floor."
+hypothesis = "Packer chi sampling is formally waived under Praxia debt debt-packer-chi-sampling-engine (#3213) due to requirement of 3D NeRF Cartesian coordinate reconstruction and von Mises mixture recycling, with PackerResult mixture parameters verified to meet 4-angle 3-mixture shapes and concentration >= 0.1 floor."
 stage_name = "validation"
 
 [controls]
@@ -10,13 +10,13 @@ negative_outcome = ["fail"]
 reason = "Packer 3D Cartesian atom reconstruction engine and von Mises sampling loop waived under debt-packer-chi-sampling-engine"
 
 [outcomes.pass]
-condition = "status == 'PASS' AND waiver_status == 'WAIVED_UNDER_DEBT' AND praxia_debt_id == 3165 AND shapes_valid AND concentration_floor_valid AND boundary_documented"
-decision = "Record formal waiver under Praxia debt 3165 for packer_chi_sampling."
+condition = "status == 'PASS' AND waiver_status == 'WAIVED_UNDER_DEBT' AND praxia_debt_id == 3213 AND shapes_valid AND concentration_floor_valid AND boundary_documented"
+decision = "Record formal waiver under Praxia debt 3213 for packer_chi_sampling."
 reasoning = "Packer parameter output invariants hold, and Cartesian sampling boundary is properly documented and linked to filed technical debt."
 is_residual = false
 
 [outcomes.fail]
-condition = "status != 'PASS' OR waiver_status != 'WAIVED_UNDER_DEBT' OR praxia_debt_id != 3165 OR NOT shapes_valid OR NOT concentration_floor_valid"
+condition = "status != 'PASS' OR waiver_status != 'WAIVED_UNDER_DEBT' OR praxia_debt_id != 3213 OR NOT shapes_valid OR NOT concentration_floor_valid"
 decision = "Reject packer_chi_sampling waiver."
 reasoning = "Waiver or parameter validation failed."
 is_residual = true

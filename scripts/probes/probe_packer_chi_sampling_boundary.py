@@ -1,6 +1,6 @@
 """Pre-registered probe for Clause 3: packer_chi_sampling formal waiver and boundary.
 
-The waiver is declared against Praxia debt #3165. This probe runs without Praxia, so it cannot
+The waiver is declared against Praxia debt #3213. This probe runs without Praxia, so it cannot
 verify that registration. A log line says so; the JSON keeps the sidecar's [result_schema] keys
 only, and the pass condition still reads the declared id.
 """
@@ -78,7 +78,7 @@ def _synthetic_bundle() -> PackerBundle:
 def run_probe() -> dict[str, object]:
   """Check Packer output invariants and the boundary premise of the packer_chi_sampling waiver."""
   # Declared debt id. Praxia is not reachable from this probe, so nothing here verifies it.
-  praxia_debt_id = 3165
+  praxia_debt_id = 3213
   praxia_debt_slug = "debt-packer-chi-sampling-engine"
 
   config = InferenceConfig(inference=True)

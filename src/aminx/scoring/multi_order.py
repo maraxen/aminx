@@ -13,7 +13,7 @@ Implements the reference LigandMPNN multi-order score averaging protocol (clause
     NLL = -sum(log(P_mean[i, s_i]) * mask[i]) / (sum(mask) + 1e-8)
   as well as individual sample NLLs and order arrays.
 
-Formally tracked under Praxia debt `debt-multi-order-scoring-average` (debt #3166).
+Formally tracked under Praxia debt `debt-multi-order-scoring-average` (debt #3214).
 """
 
 from __future__ import annotations

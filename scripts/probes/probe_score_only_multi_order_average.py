@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def run_probe() -> dict[str, object]:
   """Execute probe verifying multi-order score averaging, probability normalization, and Jensen's inequality."""
   # Declared debt id. Praxia is not reachable from this probe, so nothing here verifies it.
-  praxia_debt_id = 3166
+  praxia_debt_id = 3214
   praxia_debt_slug = "debt-multi-order-scoring-average"
 
   seq_len = 6

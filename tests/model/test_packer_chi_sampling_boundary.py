@@ -4,7 +4,7 @@ The upstream reference reconstructs side-chain atoms with a 3D NeRF engine. amin
 von Mises mixture parameters that ``Packer`` predicts. These tests exercise the real
 ``Packer.__call__`` output, not arithmetic restated in the test.
 
-The waiver itself, debt ``debt-packer-chi-sampling-engine`` (#3165), is tracked in Praxia. The
+The waiver itself, debt ``debt-packer-chi-sampling-engine`` (#3213), is tracked in Praxia. The
 tests cannot verify that registration, so they do not claim to.
 """
 
