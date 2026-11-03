@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Drive the redsox gate (spec §6.6 steps 0, 1, 1b, and 2).
 
-Writes ``{rc, step2_passed, n_ids, n_mutant_runs}`` to ``$BTH_RESULTS_PATH``
-and exits 0 whenever the tree was graded, including a fail verdict. A missing
+Writes ``{rc, step2_passed, n_ids, n_mutant_runs, family, covers_whole_gate}``
+to ``$BTH_RESULTS_PATH`` and exits 0 whenever the tree was graded, including a
+fail verdict. ``family`` is ``"all"`` or the single family a ``--family`` run
+graded; only ``covers_whole_gate = true`` is a whole-gate verdict. A missing
 results path, a step-0 crash, or an unexpected exception is a harness crash
 and exits non-zero. Step 1b's pytest status is not folded into ``rc``.
 
@@ -308,9 +310,19 @@ def main(argv: list[str] | None = None) -> None:
   except Exception:
     logger.exception("gate failed before it could grade")
     raise SystemExit(1) from None
+  # A --family run grades only that family's branch rows and step-2 surfaces. Record the scope in
+  # the payload so a pass from a single-family run cannot be read as a whole-gate pass.
+  scope = "all" if family is None else family
+  if family is not None:
+    logger.warning(
+      "family-scoped run: this pass covers family %r only, not the whole gate",
+      family,
+    )
   _write_results(
     results_path,
     {
+      "family": scope,
+      "covers_whole_gate": family is None,
       "n_ids": n_ids,
       "n_mutant_runs": n_mutant_runs,
       "rc": rc,
