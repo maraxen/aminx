@@ -526,8 +526,8 @@ def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> Non
   out_loaded = tmp_path / f"loaded_{slug}.json"
   python_bin = sys.executable
   for candidate in (
-    repo_root().parent.parent / ".venv" / "bin" / "python",
     repo_root() / ".venv" / "bin" / "python",
+    repo_root().parent.parent / ".venv" / "bin" / "python",
   ):
     if candidate.is_file() and os.access(candidate, os.X_OK):
       python_bin = str(candidate)
