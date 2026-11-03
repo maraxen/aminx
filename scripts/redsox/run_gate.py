@@ -14,15 +14,18 @@ scripts/redsox/run_gate.py`` so bathos can see this file's sidecar. A
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import tomllib
 from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path
+from types import FrameType
 from typing import cast
 
 from gate_common import NONPORT, declared_wave, nodeid_path, repo_root, target_wave_names
@@ -93,23 +96,179 @@ def _child_env(out: Path) -> dict[str, str]:
   return env
 
 
-def _run(argv: list[str], *, cwd: Path, env: dict[str, str], log: Path) -> int:
+def _chunk_timeout_s() -> float:
+  raw = os.environ.get("AMINX_GATE_CHUNK_TIMEOUT_S")
+  if raw:
+    return float(raw)
+  return 3600.0
+
+
+def _terminate_pg(pid: int) -> None:
+  try:
+    os.killpg(pid, signal.SIGTERM)
+  except ProcessLookupError:
+    return
+  except PermissionError:
+    return
+  try:
+    os.killpg(pid, signal.SIGKILL)
+  except (ProcessLookupError, PermissionError):
+    return
+
+
+def _run(
+  argv: list[str],
+  *,
+  cwd: Path,
+  env: dict[str, str],
+  log: Path,
+  timeout_s: float | None = None,
+) -> int:
   logger.info("exec %s", " ".join(argv))
-  completed = subprocess.run(  # noqa: S603 -- argv is the spec's fixed uv/pytest list
+  limit = _chunk_timeout_s() if timeout_s is None else timeout_s
+  proc = subprocess.Popen(  # noqa: S603 -- argv is the spec's fixed uv/pytest list
     argv,
     cwd=cwd,
     env=env,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    start_new_session=True,
+  )
+
+  def _forward_signal(signum: int, _frame: FrameType | None) -> None:
+    _terminate_pg(proc.pid)
+    raise SystemExit(128 + signum)
+
+  old_term = signal.signal(signal.SIGTERM, _forward_signal)
+  old_int = signal.signal(signal.SIGINT, _forward_signal)
+  try:
+    try:
+      stdout, stderr = proc.communicate(timeout=limit)
+      returncode = proc.returncode
+    except subprocess.TimeoutExpired:
+      logger.error("chunk timed out after %ss: %s", limit, " ".join(argv))
+      _terminate_pg(proc.pid)
+      stdout, stderr = proc.communicate()
+      returncode = 124
+  finally:
+    signal.signal(signal.SIGTERM, old_term)
+    signal.signal(signal.SIGINT, old_int)
+
+  with log.open("a", encoding="utf-8") as handle:
+    handle.write(f"\n$ {' '.join(argv)}\n")
+    handle.write(stdout or "")
+    handle.write(stderr or "")
+    handle.write(f"\nexit {returncode}\n")
+  logger.info("exit %s (output in %s)", returncode, log)
+  return returncode
+
+
+def _head_sha(repo: Path) -> str:
+  completed = subprocess.run(
+    ["git", "rev-parse", "HEAD"],
+    cwd=repo,
     capture_output=True,
     text=True,
     check=False,
   )
-  with log.open("a", encoding="utf-8") as handle:
-    handle.write(f"\n$ {' '.join(argv)}\n")
-    handle.write(completed.stdout)
-    handle.write(completed.stderr)
-    handle.write(f"\nexit {completed.returncode}\n")
-  logger.info("exit %s (output in %s)", completed.returncode, log)
-  return completed.returncode
+  if completed.returncode == 0:
+    return completed.stdout.strip()
+  return "unknown"
+
+
+def _unit_sha256(
+  repo: Path,
+  select_file: Path,
+  files: list[str],
+  wave: str,
+  mutant: str | None,
+) -> str:
+  hasher = hashlib.sha256()
+  hasher.update(f"head:{_head_sha(repo)}\n".encode())
+  hasher.update(f"wave:{wave}\n".encode())
+  hasher.update(f"mutant:{mutant or ''}\n".encode())
+  hasher.update(b"select:\n")
+  if select_file.is_file():
+    hasher.update(select_file.read_bytes())
+  hasher.update(b"\nfiles:\n")
+  for rel in sorted(files):
+    hasher.update(f"{rel}:".encode())
+    candidate = repo / rel
+    if candidate.is_file():
+      hasher.update(hashlib.sha256(candidate.read_bytes()).hexdigest().encode())
+    else:
+      hasher.update(b"missing")
+    hasher.update(b"\n")
+  return hasher.hexdigest()
+
+
+def _valid_jsonl_file(path: Path) -> bool:
+  if not path.is_file():
+    return False
+  try:
+    text = path.read_text(encoding="utf-8")
+  except OSError:
+    return False
+  for line in text.splitlines():
+    if not line.strip():
+      continue
+    try:
+      parsed = json.loads(line)
+    except json.JSONDecodeError:
+      return False
+    if not isinstance(parsed, dict):
+      return False
+  return True
+
+
+def _unit_is_reusable(
+  stamp_path: Path,
+  outcomes_path: Path,
+  expected_sha256: str,
+  *,
+  require_zero_rc: bool,
+) -> tuple[bool, int]:
+  if not stamp_path.is_file() or not _valid_jsonl_file(outcomes_path):
+    return False, 1
+  try:
+    stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+  except (OSError, json.JSONDecodeError):
+    return False, 1
+  if not isinstance(stamp, dict):
+    return False, 1
+  if stamp.get("sha256") != expected_sha256:
+    return False, 1
+  rc = stamp.get("rc")
+  if not isinstance(rc, int) or isinstance(rc, bool) or rc == 124:
+    return False, 1
+  if require_zero_rc and rc != 0:
+    return False, rc
+  return True, rc
+
+
+def _write_unit_stamp(stamp_path: Path, sha256: str, rc: int) -> None:
+  stamp_path.parent.mkdir(parents=True, exist_ok=True)
+  tmp = stamp_path.with_suffix(".stamp.tmp")
+  payload = {"rc": rc, "sha256": sha256}
+  tmp.write_text(json.dumps(payload, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+  tmp.replace(stamp_path)
+
+
+def _assemble_outcomes(out: Path, unit_outcome_files: list[Path]) -> None:
+  """Atomically rebuild ``out/outcomes.jsonl`` from completed per-unit files in order."""
+  tmp = out / "outcomes.jsonl.tmp"
+  target = out / "outcomes.jsonl"
+  with tmp.open("w", encoding="utf-8") as dst:
+    for unit_file in unit_outcome_files:
+      if not unit_file.is_file():
+        continue
+      content = unit_file.read_text(encoding="utf-8")
+      if content:
+        dst.write(content)
+        if not content.endswith("\n"):
+          dst.write("\n")
+  tmp.replace(target)
 
 
 def _read_lines(path: Path) -> list[str]:
@@ -145,10 +304,9 @@ def _step1(
   base_env: dict[str, str],
   log: Path,
 ) -> int:
-  # A reused OUT must not mix an earlier invocation into this grade.
-  outcomes = out / "outcomes.jsonl"
-  if outcomes.exists():
-    outcomes.unlink()
+  units_dir = out / "units"
+  units_dir.mkdir(parents=True, exist_ok=True)
+  unit_files: list[Path] = []
   rc = 0
   for wave in waves:
     files = _read_lines(out / f"files_{wave}.txt")
@@ -158,14 +316,37 @@ def _step1(
       logger.error("wave %s has no files; refusing an unbounded pytest", wave)
       rc = 1
       continue
+    select_path = out / f"ids_{wave}.txt"
+    unit_id = f"step1__{wave}"
+    unit_outcomes = units_dir / f"{unit_id}.outcomes.jsonl"
+    unit_stamp = units_dir / f"{unit_id}.stamp.json"
+    digest = _unit_sha256(repo, select_path, files, wave, None)
+    reusable, _ = _unit_is_reusable(
+      unit_stamp,
+      unit_outcomes,
+      digest,
+      require_zero_rc=True,
+    )
+    if reusable:
+      logger.info("reusing completed wave %s (sha256=%s)", wave, digest[:12])
+      unit_files.append(unit_outcomes)
+      continue
+    unit_stamp.unlink(missing_ok=True)
+    unit_outcomes.unlink(missing_ok=True)
     env = dict(base_env)
     env["AMINX_PORT_WAVE"] = wave
-    env["AMINX_REDSOX_SELECT"] = str(out / f"ids_{wave}.txt")
-    env["AMINX_REDSOX_OUTCOMES"] = str(outcomes)
+    env["AMINX_REDSOX_SELECT"] = str(select_path)
+    env["AMINX_REDSOX_OUTCOMES"] = str(unit_outcomes)
     env.pop("AMINX_PORT_MUTANT", None)
     code = _run(_pytest(files), cwd=repo, env=env, log=log)
+    if not unit_outcomes.exists():
+      unit_outcomes.write_text("", encoding="utf-8")
+    if _valid_jsonl_file(unit_outcomes) and code != 124:
+      _write_unit_stamp(unit_stamp, digest, code)
     if code != 0:
       rc = 1
+    unit_files.append(unit_outcomes)
+  _assemble_outcomes(out, unit_files)
   return rc
 
 
@@ -204,6 +385,10 @@ def _step1b(
   id_waves = _id_waves(out, waves)
   runs = 0
   select_root = out / "mutant_select"
+  units_dir = out / "units"
+  units_dir.mkdir(parents=True, exist_ok=True)
+  step1_files = [units_dir / f"step1__{wave}.outcomes.jsonl" for wave in waves]
+  step1b_files: list[Path] = []
   for row in _branch_rows(repo):
     if family is not None:
       row_family = row.get("family")
@@ -232,13 +417,36 @@ def _step1b(
       select.parent.mkdir(parents=True, exist_ok=True)
       select.write_text("".join(f"{nodeid}\n" for nodeid in group), encoding="utf-8")
       files = sorted({nodeid_path(nodeid) for nodeid in group})
+      unit_id = f"step1b__{row_id}__{wave}"
+      unit_outcomes = units_dir / f"{unit_id}.outcomes.jsonl"
+      unit_stamp = units_dir / f"{unit_id}.stamp.json"
+      digest = _unit_sha256(repo, select, files, wave, row_id)
+      reusable, _ = _unit_is_reusable(
+        unit_stamp,
+        unit_outcomes,
+        digest,
+        require_zero_rc=False,
+      )
+      if reusable:
+        logger.info("reusing completed mutant %s__%s (sha256=%s)", row_id, wave, digest[:12])
+        step1b_files.append(unit_outcomes)
+        runs += 1
+        continue
+      unit_stamp.unlink(missing_ok=True)
+      unit_outcomes.unlink(missing_ok=True)
       env = dict(base_env)
       env["AMINX_PORT_WAVE"] = wave
       env["AMINX_PORT_MUTANT"] = row_id
       env["AMINX_REDSOX_SELECT"] = str(select)
-      env["AMINX_REDSOX_OUTCOMES"] = str(out / "outcomes.jsonl")
-      _run(_pytest(files), cwd=repo, env=env, log=log)
+      env["AMINX_REDSOX_OUTCOMES"] = str(unit_outcomes)
+      code = _run(_pytest(files), cwd=repo, env=env, log=log)
+      if not unit_outcomes.exists():
+        unit_outcomes.write_text("", encoding="utf-8")
+      if _valid_jsonl_file(unit_outcomes) and code != 124:
+        _write_unit_stamp(unit_stamp, digest, code)
+      step1b_files.append(unit_outcomes)
       runs += 1
+  _assemble_outcomes(out, [*step1_files, *step1b_files])
   return runs
 
 
