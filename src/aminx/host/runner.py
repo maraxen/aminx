@@ -70,10 +70,6 @@ from aminx.run.specs import (
   SamplingSpecification,
   ScoringSpecification,
 )
-from aminx.scoring.ligand_cutoff import (
-  evaluate_ligand_cutoff_candidates,
-  validate_ligand_cutoff,
-)
 
 # Families whose dispatch REQUIRES a registered FamilyDriver. The stock MPNN path
 # cannot serve these, so a missing driver is an error, never a silent fallback.
@@ -1046,6 +1042,13 @@ def score(  # noqa: PLR0915
     )
     raise NotImplementedError(msg)
   if spec.return_loss_xy:
+    # Lazy: keeps the runner's module-level import closure narrow (guarded by
+    # tests/test_import_isolation.py); evaluate_ligand_cutoff_candidates below closes over it.
+    from aminx.scoring.ligand_cutoff import (  # noqa: PLC0415
+      evaluate_ligand_cutoff_candidates,
+      validate_ligand_cutoff,
+    )
+
     validate_ligand_cutoff(spec.ligand_cutoff_for_score)
     if not ligand_requested:
       # Without a ligand there is no proximal set: the old path fed (None, None, None) to the
