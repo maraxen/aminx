@@ -377,6 +377,49 @@ def test_extra_and_dev_group_changes_mark_the_package_changed(
   assert changed_packages_in_uv_lock(tmp_path, base) == {"jax"}
 
 
+def test_gpu_plugin_only_lock_bump_marks_rows_stale(tmp_path: Path) -> None:
+  # Pre-fix: _resolve_transitive_packages followed only [package.dependencies]. jax[cuda12] reaches
+  # jax-cuda12-plugin through [package.optional-dependencies], so a bump touching only that plugin
+  # left every row fresh even though the GPU rows execute it.
+  from knob_gate._closure import (  # noqa: PLC0415
+    _resolve_transitive_packages,
+    changed_packages_in_uv_lock,
+  )
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  def _lock(plugin_version: str) -> str:
+    return (
+      '[[package]]\nname = "jax"\nversion = "1.0"\n'
+      '[package.optional-dependencies]\ncuda12 = [{ name = "jax-cuda12-plugin" }]\n'
+      '[[package]]\nname = "jax-cuda12-plugin"\n'
+      f'version = "{plugin_version}"\n'
+      '[[package]]\nname = "nvidia-cudnn-cu12"\nversion = "9.0"\n'
+      '[[package]]\nname = "unrelated-tool"\nversion = "1.0"\n'
+    )
+
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(_lock("1.0"), encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "before")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(_lock("1.1"), encoding="utf-8")
+
+  changed = changed_packages_in_uv_lock(tmp_path, base)
+  assert changed == {"jax-cuda12-plugin"}
+  packages = _resolve_transitive_packages({"jax"}, tmp_path / "uv.lock")
+  assert "jax-cuda12-plugin" in packages
+  assert "nvidia-cudnn-cu12" in packages  # always reachable, even with no edge from jax
+  assert "unrelated-tool" not in packages
+  closure = Closure(slug="synthetic", files=frozenset(), packages=packages)
+  assert row_is_stale(["uv.lock"], closure, uv_changed_packages=changed)
+
+
 @pytest.mark.parametrize(
   ("source", "expected"),
   [

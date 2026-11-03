@@ -42,6 +42,7 @@ cannot make a recorded vehicle run wrong. ``test_closure_selftest.py`` pins this
 from __future__ import annotations
 
 import ast
+import fnmatch
 import functools
 import importlib.metadata
 import subprocess
@@ -56,6 +57,10 @@ _NARROWED_PY_PREFIXES = ("src/aminx/", "scripts/parity/")
 _ALWAYS_GLOBAL_FILES = frozenset({"pyproject.toml"})
 _ALWAYS_GLOBAL_PREFIXES = ("scripts/recapture/",)
 _STDLIB = frozenset(sys.stdlib_module_names | {"__future__", "typing"})
+# GPU runtime packages a JAX row executes through without importing them: jax[cuda12] pulls
+# jax-cuda12-plugin / jax-cuda12-pjrt / nvidia-* through [package.optional-dependencies], which the
+# import scan cannot see. Treated as always reachable, so a bump to any of them marks rows stale.
+_ALWAYS_REACHABLE_PACKAGE_GLOBS = ("nvidia-*", "jax-cuda*", "jaxlib")
 _LOCAL_ROOTS = frozenset({"aminx", "scripts"})
 # Import name -> distribution name, where the two differ in a way canonicalisation cannot fix.
 # Keys are dotted prefixes: the LONGEST matching prefix wins, so ``google.protobuf`` maps without
@@ -271,10 +276,23 @@ def _resolve_transitive_packages(
       for dep in pkg.get("dependencies", []):
         if isinstance(dep, dict) and "name" in dep:
           deps.add(_canonical_package(str(dep["name"])))
+      # [package.optional-dependencies] maps extra -> list of edges. An extra is a real edge: the
+      # row installs it whenever the package is installed with that extra (jax[cuda12] -> plugins).
+      extras = pkg.get("optional-dependencies", {})
+      for edges in extras.values() if isinstance(extras, dict) else ():
+        for dep in edges if isinstance(edges, list) else ():
+          if isinstance(dep, dict) and "name" in dep:
+            deps.add(_canonical_package(str(dep["name"])))
       deps_map[name] = deps
 
   resolved: set[str] = set()
   queue = [_canonical_package(p) for p in direct]
+  # GPU runtime packages are reachable whenever present in the lock (see _ALWAYS_REACHABLE_*).
+  queue.extend(
+    name
+    for name in deps_map
+    if any(fnmatch.fnmatchcase(name, glob) for glob in _ALWAYS_REACHABLE_PACKAGE_GLOBS)
+  )
   while queue:
     curr = queue.pop()
     if curr in resolved:
