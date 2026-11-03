@@ -273,8 +273,9 @@ def generate_wave_ar_mask(
   mask = (earlier_wave | (same_wave & same_group)).astype(jnp.float32)
   # Self-exclusion, matching :func:`generate_ar_mask` and both reference implementations.
   # `same_wave & same_group` is trivially true on the diagonal, so without this every
-  # position read its own slot -- see generate_ar_mask's docstring for why that is wrong
-  # and what it measured. Only the diagonal is removed: same-wave/same-group mutual
+  # position read its own slot -- see the "WHY THIS EXISTS" section of the module docstring in
+  # tests/inference/test_fixed_position_self_visibility.py for why that is wrong and what it
+  # measured. Only the diagonal is removed: same-wave/same-group mutual
   # visibility (and the same-wave/different-group invisibility that gives this schedule
   # its Jacobi independence) are both preserved exactly.
   return mask * (1 - jnp.eye(seq_len, dtype=mask.dtype))
