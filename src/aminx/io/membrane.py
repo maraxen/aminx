@@ -11,6 +11,8 @@ Implements the reference MembraneMPNN label construction protocol (clause
   evaluate to 0 (2 * 1 * (1 - 1) + 1 * 1 * (1 - 1) == 0).
 - Supports global membrane topology label broadcast (--global_transmembrane_label in {0, 1, 2}).
 - Produces (L, 3) one-hot float32 physics_features for consumption by Aminx membrane models.
+
+Library-only: these helpers are not wired into any run path (no runner or spec calls them).
 """
 
 from __future__ import annotations
