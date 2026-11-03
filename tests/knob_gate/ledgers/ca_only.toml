@@ -2,3 +2,6 @@
 # Owning task records [sidecar.ca_only_parity] after the vehicle run on titanix.
 
 [sidecar]
+
+[sidecar.ca_only_parity]
+bth_run_id = "6ff45d99-c759-4ce9-8e10-bbcef4e31b5e"

@@ -1,4 +1,6 @@
 # Sidecar ledger shard for Caliby vehicle runs.
-# Owning task records [sidecar.caliby_parity] after the vehicle run on titanix.
 
 [sidecar]
+
+[sidecar.caliby_parity]
+bth_run_id = "0a5c9cf3-2da8-4fa9-b609-5f1d1b7a45ac"
