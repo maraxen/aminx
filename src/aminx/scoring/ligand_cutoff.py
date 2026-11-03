@@ -82,6 +82,7 @@ def compute_ligand_cutoff_mask(
   ligand_mask: jax.Array | None,
   residue_mask: jax.Array,
   cutoff: float = DEFAULT_LIGAND_CUTOFF_ANGSTROMS,
+  chain_mask: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
   """Validate a concrete ``cutoff``, then compute the ligand-proximal mask (see ``_kernel``).
 
@@ -99,6 +100,7 @@ def compute_ligand_cutoff_mask(
     ligand_mask,
     residue_mask,
     cutoff,
+    chain_mask,
   )
 
 
@@ -109,6 +111,7 @@ def _compute_ligand_cutoff_mask_kernel(
   ligand_mask: jax.Array | None,
   residue_mask: jax.Array,
   cutoff: float = DEFAULT_LIGAND_CUTOFF_ANGSTROMS,
+  chain_mask: jax.Array | None = None,
 ) -> tuple[jax.Array, jax.Array]:
   """Compute per-residue mask indicating residues within `cutoff` A of valid ligand atoms.
 
@@ -123,6 +126,9 @@ def _compute_ligand_cutoff_mask_kernel(
     ligand_mask: Ligand validity mask (M,) or (L, M), or None.
     residue_mask: (L,) protein residue mask (1.0 for valid, 0.0 for padding).
     cutoff: Distance cutoff in Angstroms (default: 8.0 A).
+    chain_mask: Optional (L,) designable-chain mask (1.0 designable). Multiplied into
+      ``mask_xy`` as the reference does (run.py:434-439: ``mask * mask_XY * chain_mask``).
+      ``None`` keeps every residue (all-ones), the previous behaviour.
 
   Returns:
     Tuple of:
@@ -132,6 +138,8 @@ def _compute_ligand_cutoff_mask_kernel(
   l_len = coordinates.shape[0]
   cb = compute_virtual_c_beta(coordinates)  # (L, 3)
   res_mask = residue_mask.astype(jnp.float32)
+  if chain_mask is not None:
+    res_mask = res_mask * chain_mask.astype(jnp.float32)
 
   if ligand_coords is None or ligand_mask is None:
     empty_mask = jnp.zeros((l_len,), dtype=jnp.float32)
@@ -229,6 +237,7 @@ def evaluate_ligand_cutoff_score(
   ligand_coords: jax.Array | None = None,
   ligand_mask: jax.Array | None = None,
   cutoff: float = DEFAULT_LIGAND_CUTOFF_ANGSTROMS,
+  chain_mask: jax.Array | None = None,
 ) -> LigandScoreResult:
   """Evaluate ligand-proximal score and confidence metrics.
 
@@ -240,6 +249,8 @@ def evaluate_ligand_cutoff_score(
     ligand_coords: Optional ligand coordinates.
     ligand_mask: Optional ligand atom mask.
     cutoff: Distance cutoff in Angstroms (default: 8.0 A).
+    chain_mask: Optional (L,) designable-chain mask folded into ``mask_xy`` (see
+      ``compute_ligand_cutoff_mask``). ``None`` means all residues.
 
   Returns:
     LigandScoreResult with loss_xy, ligand_confidence, mask_xy, closest_distances,
@@ -255,6 +266,7 @@ def evaluate_ligand_cutoff_score(
     ligand_mask=ligand_mask,
     residue_mask=residue_mask,
     cutoff=cutoff,
+    chain_mask=chain_mask,
   )
   loss_xy = compute_loss_xy(logits=logits, sequence=sequence, mask_xy=mask_xy)
   ligand_confidence = jnp.exp(-loss_xy)
@@ -277,6 +289,7 @@ def evaluate_ligand_cutoff_candidates(
   ligand_coords: jax.Array | None = None,
   ligand_mask: jax.Array | None = None,
   cutoff: float = DEFAULT_LIGAND_CUTOFF_ANGSTROMS,
+  chain_mask: jax.Array | None = None,
 ) -> LigandScoreResult:
   """Run :func:`evaluate_ligand_cutoff_score` for every candidate of one structure.
 
@@ -292,6 +305,8 @@ def evaluate_ligand_cutoff_candidates(
     ligand_coords: Optional ligand coordinates for this structure.
     ligand_mask: Optional ligand atom mask for this structure.
     cutoff: Distance cutoff in Angstroms.
+    chain_mask: Optional (L,) designable-chain mask shared by every candidate (see
+      ``compute_ligand_cutoff_mask``).
 
   Returns:
     LigandScoreResult whose fields carry a leading candidate axis: ``loss_xy`` and
@@ -310,6 +325,7 @@ def evaluate_ligand_cutoff_candidates(
       ligand_coords=ligand_coords,
       ligand_mask=ligand_mask,
       cutoff=cutoff,
+      chain_mask=chain_mask,
     )
 
   return jax.vmap(_one)(sequences, logits)

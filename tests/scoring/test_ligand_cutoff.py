@@ -260,3 +260,29 @@ def test_string_to_protein_sequence_is_an_integer_dtype() -> None:
   """The runner feeds string_to_protein_sequence output to compute_loss_xy as tokens."""
   tokens = string_to_protein_sequence("ACDEFGHIKLMNPQRSTVWY")
   assert jnp.issubdtype(jnp.asarray(tokens).dtype, jnp.integer)
+
+
+def test_chain_mask_is_folded_into_the_proximal_mask() -> None:
+  """Reference run.py:434-439: combined mask = mask * mask_XY * chain_mask."""
+  l_len = 4
+  coords = jnp.zeros((l_len, 4, 3))  # every CB at the origin, inside any cutoff
+  ligand_coords = jnp.zeros((1, 3))
+  ligand_mask = jnp.ones((1,))
+  residue_mask = jnp.ones((l_len,))
+  sequence = jnp.array([0, 1, 2, 3], dtype=jnp.int32)
+  # Residues 0 and 2 are predicted perfectly; residues 1 and 3 are predicted badly.
+  logits = jnp.zeros((l_len, 21))
+  logits = logits.at[0, 0].set(50.0).at[2, 2].set(50.0)
+  chain_mask = jnp.array([1.0, 0.0, 1.0, 0.0])
+
+  without = evaluate_ligand_cutoff_score(coords, sequence, logits, residue_mask, ligand_coords, ligand_mask)
+  with_chain = evaluate_ligand_cutoff_score(
+    coords, sequence, logits, residue_mask, ligand_coords, ligand_mask, chain_mask=chain_mask
+  )
+
+  assert np.asarray(without.mask_xy).tolist() == [1.0, 1.0, 1.0, 1.0]
+  assert np.asarray(with_chain.mask_xy).tolist() == [1.0, 0.0, 1.0, 0.0]
+  assert int(with_chain.num_ligand_proximal_residues) == 2
+  # Only the two well-predicted residues remain, so loss_xy collapses toward 0.
+  assert float(with_chain.loss_xy) == pytest.approx(0.0, abs=1e-4)
+  assert float(without.loss_xy) > 1.0

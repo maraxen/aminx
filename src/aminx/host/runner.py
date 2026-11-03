@@ -1047,6 +1047,16 @@ def score(  # noqa: PLR0915
     raise NotImplementedError(msg)
   if spec.return_loss_xy:
     validate_ligand_cutoff(spec.ligand_cutoff_for_score)
+    if not ligand_requested:
+      # Without a ligand there is no proximal set: the old path fed (None, None, None) to the
+      # kernel and returned loss_xy=0 and ligand_confidence=1 -- a perfect-looking score for a
+      # quantity that was never computed. Refuse instead of fabricating it.
+      msg = (
+        "score runner: return_loss_xy=True needs a ligand context (set ligand_conditioning=True "
+        "and/or ligand_context_path); without one the ligand-proximal loss is undefined and "
+        "would be reported as loss_xy=0, ligand_confidence=1."
+      )
+      raise ValueError(msg)
 
   if ligand_requested and spec.model_family != "ligandmpnn":
     msg = (
@@ -1425,6 +1435,9 @@ def score(  # noqa: PLR0915
       ) -> tuple[jax.Array, jax.Array, jax.Array]:
         # Production path: the same per-candidate evaluation the unit tests exercise. The
         # mask depends only on the structure, so every candidate row is identical.
+        # chain_mask (reference run.py:434-439 multiplies it into the combined mask) is left
+        # at None: score() refuses every fixed position above, so the designable-chain mask
+        # is all-ones here and the library default is exactly equivalent.
         scores = evaluate_ligand_cutoff_candidates(
           coords, _seqs, logits_struct, res_mask, yc, ym, cutoff=_cutoff,
         )

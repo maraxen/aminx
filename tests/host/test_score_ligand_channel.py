@@ -70,6 +70,12 @@ def test_loss_xy_is_refused_on_the_fused_multistate_path() -> None:
     score(spec)
 
 
+def test_loss_xy_without_ligand_context_is_refused() -> None:
+  """No ligand -> no proximal set. The old path returned loss_xy=0, ligand_confidence=1."""
+  with pytest.raises(ValueError, match="needs a ligand context"):
+    score(_spec(return_loss_xy=True))
+
+
 @pytest.mark.parametrize("bad_cutoff", [0.0, -2.0, float("nan")])
 def test_loss_xy_refuses_a_non_positive_cutoff(bad_cutoff: float) -> None:
   with pytest.raises(ValueError, match="positive distance"):
