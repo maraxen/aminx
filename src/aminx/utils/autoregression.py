@@ -141,6 +141,7 @@ def resolve_tie_groups(
 @jax.jit
 def generate_ar_mask(
   decoding_order: DecodingOrder,
+  *,
   chain_idx: jnp.ndarray | None = None,
   tie_group_map: jnp.ndarray | None = None,
   num_groups: int | None = None,

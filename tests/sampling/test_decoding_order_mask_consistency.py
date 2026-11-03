@@ -74,9 +74,10 @@ def test_mask_from_order_matches_generate_ar_mask_tied():
 def test_tie_map_is_not_treated_as_chain_index():
   """Pin the positional-argument trap the STE paths fell into.
 
-  ``generate_ar_mask(order, tie_map)`` binds the tie map to ``chain_idx`` (its second
-  positional parameter), which hides every position of a different tie group -- i.e. almost
-  all context. ``ar_mask_from_decoding_order``'s second parameter IS the tie map, so a
+  A tie map passed positionally to ``generate_ar_mask`` would bind to ``chain_idx`` (its
+  second parameter before it became keyword-only), hiding every position of a different
+  tie group -- i.e. almost all context. ``ar_mask_from_decoding_order``'s second parameter
+  IS the tie map, so a
   position must see earlier positions of OTHER groups.
   """
   tie_group_map = jnp.array([0, 0, 1, 1, 2, 2, 3], dtype=jnp.int32)
@@ -84,7 +85,9 @@ def test_tie_map_is_not_treated_as_chain_index():
   ours = np.asarray(ar_mask_from_decoding_order(order, tie_group_map))
   # The last-decoded position (6, its own group) sees all six earlier positions.
   assert ours[6].sum() == 6  # noqa: PLR2004
-  trap = np.asarray(generate_ar_mask(order, tie_group_map))  # tie map lands in chain_idx
+  # Passed explicitly as chain_idx: generate_ar_mask's chain_idx is keyword-only, so the
+  # positional form no longer binds here at all; this pins what the misbinding would do.
+  trap = np.asarray(generate_ar_mask(order, chain_idx=tie_group_map))
   assert trap[6].sum() == 0, "premise: the positional call hides other groups entirely"
 
 
