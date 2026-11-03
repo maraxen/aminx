@@ -1,0 +1,6 @@
+# Sidecar ledger shard for Tier 1 MPNN variants (AbMPNN, HyperMPNN, CyclicMPNN).
+
+[sidecar]
+
+[sidecar.tier1_variants_parity]
+bth_run_id = "6d6bff3f-8887-412b-8503-4f18578943ea"

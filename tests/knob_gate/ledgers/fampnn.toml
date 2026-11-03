@@ -1,0 +1,6 @@
+# Sidecar ledger shard for FAMPNN vehicle runs.
+
+[sidecar]
+
+[sidecar.fampnn_parity]
+bth_run_id = "be5e9e41-0e6b-40f8-9164-bc7fd712366e"

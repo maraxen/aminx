@@ -1,0 +1,23 @@
+# Laser-family sidecar run ids. A family-scoped read of 'laser' reads this shard and nothing else
+# (tests/knob_gate/_ledger.py). Entries moved byte-for-byte from ledgers/potts.toml; run ids unchanged.
+
+[sidecar]
+
+[sidecar.laser_proofread_parity]
+# REWRITTEN 261102 at 021a96be (Stage B vectorized parity wave, Titanix GPU 2).
+# Cool-tier record: completed, outcome pass, git_dirty false.
+bth_run_id = "7c9c989b-b7e0-44c9-89d4-a610e4030225"
+
+[sidecar.laser_proofread_unconditional_parity]
+# Verified 261102 on Titanix GPU 2 (run d4afec68-c1a7-431e-a28d-185a8aafd444, completed, outcome pass, git_dirty false, 14/14 PASS).
+bth_run_id = "d4afec68-c1a7-431e-a28d-185a8aafd444"
+
+[sidecar.laser_decode_e2e]
+# REWRITTEN 261102 at 021a96be (Stage B vectorized parity wave, Titanix GPU 2).
+# Cool-tier record: completed, outcome pass, git_dirty false.
+bth_run_id = "7a5a7862-7ea9-4584-812a-84ed5e143b49"
+
+[sidecar.laser_score_parity]
+# REWRITTEN 261102 at 021a96be (Stage B vectorized parity wave, Titanix GPU 2).
+# Cool-tier record: completed, outcome pass, git_dirty false.
+bth_run_id = "739cc599-6146-44ce-80a7-9dbfe864e979"

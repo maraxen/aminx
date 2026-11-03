@@ -11,6 +11,7 @@ from aminx.utils.coordinates import (
     compute_c_beta,
     compute_cb_precise,
     extend_coordinate,
+    extract_backbone_atoms,
 )
 
 KEY = jax.random.PRNGKey(42)
@@ -159,3 +160,66 @@ class TestCoordinates(chex.TestCase):
         bond_length = jnp.linalg.norm(cb - ca)
         chex.assert_trees_all_close(bond_length, 1.522, atol=1e-3)
         chex.assert_tree_all_finite(cb)
+
+    @chex.variants(with_jit=True, without_jit=True)
+    def test_extract_backbone_atoms_unambiguous_widths(self):
+        """Test extraction for 4, 14, 23, and 37 atom layouts."""
+        extract_fn = self.variant(extract_backbone_atoms)
+
+        # 4-atom: compact layout (N, CA, C, O) -> O is index 3
+        coords4 = jnp.zeros((5, 4, 3)).at[:, 3, 0].set(1.23)
+        n, ca, c, o = extract_fn(coords4)
+        chex.assert_trees_all_close(o[:, 0], jnp.full(5, 1.23))
+
+        # 14-atom: Atom14 (N, CA, C, O, CB, ...) -> O is index 3
+        coords14 = jnp.zeros((5, 14, 3)).at[:, 3, 0].set(1.23)
+        n, ca, c, o = extract_fn(coords14)
+        chex.assert_trees_all_close(o[:, 0], jnp.full(5, 1.23))
+
+        # 23-atom: Atom23 (N, CA, C, O, CB, ...) -> O is index 3
+        coords23 = jnp.zeros((5, 23, 3)).at[:, 3, 0].set(1.23)
+        n, ca, c, o = extract_fn(coords23)
+        chex.assert_trees_all_close(o[:, 0], jnp.full(5, 1.23))
+
+        # 37-atom: Atom37 (N, CA, C, CB, O, ...) -> O is index 4
+        coords37 = jnp.zeros((5, 37, 3)).at[:, 4, 0].set(1.23)
+        n, ca, c, o = extract_fn(coords37)
+        chex.assert_trees_all_close(o[:, 0], jnp.full(5, 1.23))
+
+    @chex.variants(with_jit=True, without_jit=True)
+    def test_extract_backbone_atoms_ambiguous_5_atom(self):
+        """Disambiguate 5-atom PDB (O=3) vs Atom37 slice (O=4) via peptide carbonyl geometry."""
+        extract_fn = self.variant(extract_backbone_atoms)
+
+        # Case 1: PDB order (N, CA, C, O, CB) where candidate 3 is O (d ~ 1.23 A) and cand 4 is CB (d ~ 2.45 A)
+        coords_pdb = jnp.zeros((5, 5, 3))
+        coords_pdb = coords_pdb.at[:, 2, :].set(jnp.array([0.0, 0.0, 0.0]))  # C
+        coords_pdb = coords_pdb.at[:, 3, :].set(jnp.array([1.23, 0.0, 0.0]))  # O
+        coords_pdb = coords_pdb.at[:, 4, :].set(jnp.array([2.45, 0.0, 0.0]))  # CB
+        _, _, _, o_pdb = extract_fn(coords_pdb)
+        chex.assert_trees_all_close(o_pdb, coords_pdb[:, 3, :])
+
+        # Case 2: Atom37 slice (N, CA, C, CB, O) where candidate 3 is CB (d ~ 2.45 A) and cand 4 is O (d ~ 1.23 A)
+        coords_a37 = jnp.zeros((5, 5, 3))
+        coords_a37 = coords_a37.at[:, 2, :].set(jnp.array([0.0, 0.0, 0.0]))  # C
+        coords_a37 = coords_a37.at[:, 3, :].set(jnp.array([2.45, 0.0, 0.0]))  # CB
+        coords_a37 = coords_a37.at[:, 4, :].set(jnp.array([1.23, 0.0, 0.0]))  # O
+        _, _, _, o_a37 = extract_fn(coords_a37)
+        chex.assert_trees_all_close(o_a37, coords_a37[:, 4, :])
+
+    @chex.variants(with_jit=True, without_jit=True)
+    def test_compute_backbone_coordinates_idempotent(self):
+        """compute_backbone_coordinates must be strictly idempotent on its own (5-atom PDB) output."""
+        compute_fn = self.variant(compute_backbone_coordinates)
+
+        # Start with realistic 37-atom coords
+        coords37 = jnp.zeros((10, 37, 3))
+        coords37 = coords37.at[:, 0, :].set(jnp.array([-1.45, 0.0, 0.0]))  # N
+        coords37 = coords37.at[:, 1, :].set(jnp.array([0.0, 0.0, 0.0]))    # CA
+        coords37 = coords37.at[:, 2, :].set(jnp.array([1.53, 0.0, 0.0]))   # C
+        coords37 = coords37.at[:, 3, :].set(jnp.array([0.5, 1.4, 0.0]))    # CB (atom37 col 3)
+        coords37 = coords37.at[:, 4, :].set(jnp.array([2.0, 1.1, 0.0]))    # O  (atom37 col 4, d(C, O) ~ 1.23)
+
+        bb1 = compute_fn(coords37)
+        bb2 = compute_fn(bb1)
+        chex.assert_trees_all_close(bb1, bb2)

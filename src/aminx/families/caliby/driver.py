@@ -35,11 +35,11 @@ from aminx.families.caliby.potts import (
   slice_potts_params,
 )
 from aminx.families.caliby.sidechain_diffusion import CalibySidechainMLP, edm_sidechain_sample
-from aminx.families.potts_mpnn.featurize import PottsInputError, parse_pdb_upstream
 from aminx.host.bucketing import bucket_ladder
 from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, FamilyStages, SinkArraySpec
 from aminx.host.prep import _resolve_driver_checkpoint
 from aminx.io.torch_checkpoint import load_restricted_torch_checkpoint
+from aminx.io.upstream_pdb import PottsInputError, parse_pdb_upstream
 from aminx.run.options import CalibyOptions
 
 _HANDLED: frozenset[str] = frozenset({

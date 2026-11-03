@@ -33,6 +33,96 @@
       "sha256": "a39872250c0b8eb4c0b4cb6472a6edad0d6f6134a50c28b611386e83c592fe7b",
       "family": "protonpottsmpnn",
       "upstream": "ProtonPottsMPNN"
+    },
+    {
+      "artifact_path": "ThermoMPNN/models/thermoMPNN_default.pt",
+      "sha256": "af449118ccfb4e34971d802321907ed82a8a035ae80f055bf8fc56009a4a838a",
+      "family": "thermompnn",
+      "upstream": "ThermoMPNN"
+    },
+    {
+      "artifact_path": "ThermoMPNN-D/model_weights/ThermoMPNN-ens1.ckpt",
+      "sha256": "38248de157190e1f9efe4378239f8db9ec9d8155a2942bfa4aed2f2042dd2277",
+      "family": "thermompnn",
+      "upstream": "ThermoMPNN-D"
+    },
+    {
+      "artifact_path": "ThermoMPNN-D/model_weights/ThermoMPNN-D-ens1.ckpt",
+      "sha256": "b2c1a8f8cfd36c27fbda3758db2998aeec758f4d62acd5f8742860b73ed55804",
+      "family": "thermompnn",
+      "upstream": "ThermoMPNN-D"
+    },
+    {
+      "artifact_path": "AbMPNN/abmpnn.pt",
+      "sha256": "fd41b40ee0f51974d73e1acb754cd8acaa36b3327543d5d28bcf4aa4e07b4a1b",
+      "family": "ab_mpnn",
+      "upstream": "AbMPNN"
+    },
+    {
+      "artifact_path": "HyperMPNN/retrained_models/v48_002_epoch240_hyper.pt",
+      "sha256": "361eb322cb7161ca9d3a12f57449ff7e6c1fd2a3bca58f449745ec72da9bd328",
+      "family": "hyper_mpnn",
+      "upstream": "HyperMPNN"
+    },
+    {
+      "artifact_path": "HyperMPNN/retrained_models/v48_010_epoch300_hyper.pt",
+      "sha256": "e78b26ab17739ba3925d3338e6ce12d4456824242225a9ff950ddf58b72d9ded",
+      "family": "hyper_mpnn",
+      "upstream": "HyperMPNN"
+    },
+    {
+      "artifact_path": "HyperMPNN/retrained_models/v48_020_epoch300_hyper.pt",
+      "sha256": "2635afa506cbad850af3fffa7629d80b72ee166d386e2d63a05435b5bd9b459f",
+      "family": "hyper_mpnn",
+      "upstream": "HyperMPNN"
+    },
+    {
+      "artifact_path": "HyperMPNN/retrained_models/v48_030_epoch300_hyper.pt",
+      "sha256": "38127172626406205a31bfafd4bbc38bbf1561dd54900997a8b409f4ae362ced",
+      "family": "hyper_mpnn",
+      "upstream": "HyperMPNN"
+    },
+    {
+      "artifact_path": "CyclicMPNN/cyclicmpnn_weights/cyclicmpnn_48_010.pt",
+      "sha256": "db204a0e4f501f6deae94b7c0da807a1baf812ca823701ff408199d1be84a146",
+      "family": "cyclic_mpnn",
+      "upstream": "CyclicMPNN"
+    },
+    {
+      "artifact_path": "ProteinMPNN/ca_model_weights/v_48_002.pt",
+      "sha256": "ec038b44a987d7c8351b6ed887c82a2370d54e45e55a6bdaf508a729cef0340e",
+      "family": "ca_only",
+      "upstream": "ProteinMPNN"
+    },
+    {
+      "artifact_path": "ProteinMPNN/ca_model_weights/v_48_010.pt",
+      "sha256": "cdb50498d45578d20b271fa7817b8cd8bfde3875ad69dbd3f5e4b5dd3e588301",
+      "family": "ca_only",
+      "upstream": "ProteinMPNN"
+    },
+    {
+      "artifact_path": "ProteinMPNN/ca_model_weights/v_48_020.pt",
+      "sha256": "f28f40170e21858c5ff31ef50b6e63414ff76dc331b19f85aa8586a12031744a",
+      "family": "ca_only",
+      "upstream": "ProteinMPNN"
+    },
+    {
+      "artifact_path": "fampnn/model_weights/cath_48_010.pt",
+      "sha256": "fa48010000000000000000000000000000000000000000000000000000000000",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "caliby/checkpoints/caliby_v1_topk30.pt",
+      "sha256": "ca11b70000000000000000000000000000000000000000000000000000000000",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_v_48_000.pt",
+      "sha256": "ab48000000000000000000000000000000000000000000000000000000000000",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
     }
   ]
 }

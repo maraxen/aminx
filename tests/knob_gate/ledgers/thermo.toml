@@ -1,0 +1,6 @@
+# Sharded ledger for ThermoMPNN / ThermoMPNN-D.
+
+[sidecar]
+
+[sidecar.thermo_mpnn_parity]
+bth_run_id = "1d0d741f-283c-490a-92e0-df716a5b068e"

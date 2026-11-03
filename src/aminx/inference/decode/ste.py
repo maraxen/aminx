@@ -265,9 +265,9 @@ class STEDecode(eqx.Module):
         num_groups,
       )
 
-      # Generate AR masks for each decoding order (batch_size, L, L). Not generate_ar_mask:
-      # it reads a RANK array, and its second positional parameter is `chain_idx`, so the
-      # tie map passed here used to land there (debt #1982).
+      # Generate AR masks for each decoding order (batch_size, L, L). Built with
+      # ar_mask_from_decoding_order, not generate_ar_mask: its second positional parameter
+      # is `chain_idx`, so a tie map passed there lands in the wrong slot (debt #1982).
       ar_masks = jax.vmap(ar_mask_from_decoding_order, in_axes=(0, None))(
         decoding_orders,
         tie_group_map[0] if tie_group_map is not None else None,

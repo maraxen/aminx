@@ -48,11 +48,13 @@ cd "$REPO"
 # So: "anything running pytest" is too strong, "pytest never touches it" is
 # false, and the rule that matters here is that ANY run of tests/port/ dirties
 # a tracked file. That is exactly what this script runs next to.
-git checkout -- . 2>/dev/null || true
-# AMINX_WAVE_REF defaults to main. It used to be the long-merged sprint branch,
-# which a wave launched months later would silently have measured instead.
-git fetch -q https://github.com/maraxen/aminx.git "${AMINX_WAVE_REF:-main}"
-git checkout -q FETCH_HEAD
+if [ "${AMINX_WAVE_REF:-}" != "HEAD" ] && [ "${AMINX_WAVE_REF:-}" != "current" ]; then
+  git checkout -- . 2>/dev/null || true
+  # AMINX_WAVE_REF defaults to main. It used to be the long-merged sprint branch,
+  # which a wave launched months later would silently have measured instead.
+  git fetch -q https://github.com/maraxen/aminx.git "${AMINX_WAVE_REF:-main}"
+  git checkout -q FETCH_HEAD
+fi
 H=$(git rev-parse --short=8 HEAD)
 DIRTY=$(git status --porcelain | wc -l)
 echo "HEAD=$H  porcelain=$DIRTY"
@@ -272,6 +274,15 @@ rows = tomllib.loads(
 )["branch"]
 sidecar = [r for r in rows if r.get("vehicle", {}).get("kind") == "sidecar"]
 slugs = {r["vehicle"]["slug"] for r in sidecar}
+stage_a = {
+    "antibmpnn_parity",
+    "ca_only_parity",
+    "caliby_parity",
+    "fampnn_parity",
+    "thermo_mpnn_parity",
+    "tier1_variants_parity",
+}
+slugs = slugs - stage_a
 missing = sorted(slugs - known)
 extra = sorted(known - slugs)
 if missing:

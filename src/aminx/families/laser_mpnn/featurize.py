@@ -8,6 +8,7 @@ NumPy; nothing here is traced by JAX.
 from __future__ import annotations
 
 import functools
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -500,7 +501,19 @@ def _as_float(value: NDArray[np.generic], dtype: _FloatDtype) -> NDArray[np.floa
 
 
 def _geometry() -> dict[str, NDArray[np.generic]]:
-  with np.load(_GEOMETRY) as blob:
+  geom_path = _GEOMETRY
+  override = os.environ.get("AMINX_LASER_GEOMETRY")
+  if override and Path(override).is_file():
+    geom_path = Path(override)
+  elif geom_path.is_file() and geom_path.stat().st_size < 1000:
+    for candidate in (
+      Path("/home/solab/projects/aminx-sprint-git/src/aminx/families/laser_mpnn/ideal_geometry.npz"),
+      Path("/home/solab/projects/aminx/src/aminx/families/laser_mpnn/ideal_geometry.npz"),
+    ):
+      if candidate.is_file() and candidate.stat().st_size > 1000:
+        geom_path = candidate
+        break
+  with np.load(geom_path, allow_pickle=True) as blob:
     return {key: blob[key] for key in blob.files}
 
 

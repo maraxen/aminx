@@ -1,0 +1,4 @@
+# Sidecar ledger shard for AbMPNN vehicle runs.
+# Owning task records [sidecar.tier1_variants_parity] after the vehicle run on titanix.
+
+[sidecar]

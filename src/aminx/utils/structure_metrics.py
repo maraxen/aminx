@@ -5,6 +5,11 @@ from __future__ import annotations
 import jax.numpy as jnp
 
 
+from proxide.core.containers import atom_order
+
+from aminx.utils.coordinates import compute_c_beta
+
+
 def _extract_ca_coordinates(coordinates: jnp.ndarray) -> jnp.ndarray:
   if coordinates.ndim == 2:
     return coordinates
@@ -18,15 +23,36 @@ def _extract_ca_coordinates(coordinates: jnp.ndarray) -> jnp.ndarray:
 
 
 def _extract_cb_coordinates(coordinates: jnp.ndarray) -> jnp.ndarray:
+  """Extract or compute C-beta coordinates from atomic coordinate array."""
   if coordinates.ndim == 2:
     return coordinates
   if coordinates.ndim == 3:
-    # MPNN atom order: N=0, CA=1, C=2, CB=3 (glycine may lack CB; caller supplies CA fallback)
-    if coordinates.shape[1] < 4:
-      # JAX would silently clamp the read to the last column and return a wrong atom (aminx #2152).
+    num_atoms = coordinates.shape[1]
+    if num_atoms < 4:
       msg = f"coordinates need a CB column (atom axis >= 4); got shape {coordinates.shape}"
       raise ValueError(msg)
-    return coordinates[:, 3, :]
+    if num_atoms == 4:
+      # Compact 4-atom (N, CA, C, O): compute virtual C-beta
+      n = coordinates[:, 0, :]
+      ca = coordinates[:, 1, :]
+      c = coordinates[:, 2, :]
+      return compute_c_beta(ca - n, c - ca, ca)
+    if num_atoms == 5:
+      # Disambiguate PDB order (N, CA, C, O, CB) vs Atom37 slice (N, CA, C, CB, O)
+      c = coordinates[:, 2, :]
+      cand3 = coordinates[:, 3, :]
+      cand4 = coordinates[:, 4, :]
+      d3_sq = jnp.sum((c - cand3) ** 2, axis=-1, keepdims=True)
+      d4_sq = jnp.sum((c - cand4) ** 2, axis=-1, keepdims=True)
+      return jnp.where(d3_sq <= d4_sq, cand4, cand3)
+    if num_atoms == 37:
+      # Atom37 standard: CB is at index 3 (proxide atom_order["CB"])
+      return coordinates[:, atom_order["CB"], :]
+    # Default: compute virtual C-beta from N, CA, C
+    n = coordinates[:, 0, :]
+    ca = coordinates[:, 1, :]
+    c = coordinates[:, 2, :]
+    return compute_c_beta(ca - n, c - ca, ca)
   msg = f"coordinates must be (L, 3) or (L, A, 3); got shape {coordinates.shape}"
   raise ValueError(msg)
 

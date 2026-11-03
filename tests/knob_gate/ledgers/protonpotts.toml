@@ -1,0 +1,9 @@
+# ProtonPottsMPNN sidecar run ids. A family-scoped read of 'protonpotts' reads this shard and nothing else
+# (tests/knob_gate/_ledger.py). Entries moved byte-for-byte from ledgers/potts.toml; run ids unchanged.
+
+[sidecar]
+
+[sidecar.protonpotts_parity]
+# REWRITTEN 261102 at 021a96be (Stage B vectorized parity wave, Titanix GPU 2).
+# Cool-tier record: completed, outcome pass, git_dirty false.
+bth_run_id = "3be5cee2-5362-4ad3-9a10-625001312056"

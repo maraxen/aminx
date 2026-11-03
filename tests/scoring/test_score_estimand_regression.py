@@ -7,7 +7,7 @@ existing suite passed throughout because it exercises the *averaged* branch, whi
 ``score_conditional`` default.
 
 DEFECT 1 -- the AR mask included the diagonal. ``scoring/score.py`` built its mask with
-``generate_ar_mask(decoding_order)``, whose untied branch is ``(row >= col)`` -- non-strict --
+``generate_ar_mask(decoding_order)``, whose untied branch was ``(row >= col)`` -- non-strict --
 so ``ar_mask[i, i] == 1`` under every permutation. Since a residue is always among its own
 KNN neighbours, the decoder gated that residue's TRUE one-hot into its own node update.
 Measured on 1LVB chain A: +0.036243 nats (paired over 8 seeds, sd 0.002482, t = 41.3),

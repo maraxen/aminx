@@ -223,9 +223,10 @@ class ThermoMPNNOptions:
 
   Attributes
   ----------
-  checkpoint_id : str
+  checkpoint_id : str | None
       Checkpoint or ensemble identifier (e.g. ``"thermo_mpnn_v1_default"``,
-      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``).
+      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``). ``None`` defers to
+      ``spec.checkpoint_id``, then to ``"thermo_mpnn_v1_default"``.
   mode : Literal["single", "double"]
       Single-mutant SSM (``"single"``) or double-mutant epistatic (``"double"``) mode.
   distance_threshold : float
@@ -238,9 +239,47 @@ class ThermoMPNNOptions:
       Whether to average across all 3 v2 ensemble members when using v2/D.
   """
 
-  checkpoint_id: str = "thermo_mpnn_v1_default"
+  checkpoint_id: str | None = None
   mode: Literal["single", "double"] = "single"
   distance_threshold: float = 5.0
   batch_size: int = 10000
-  dtype: Literal["float32", "float16"] = "float16"
+  dtype: Literal["float32", "float16"] = "float32"
   ensemble: bool = True
+
+  def __post_init__(self) -> None:
+    """Reject unknown ``mode`` or ``dtype`` values at construction time."""
+    if self.mode not in ("single", "double"):
+      msg = f"Unknown ThermoMPNN mode {self.mode!r}. Use 'single' or 'double'."
+      raise ValueError(msg)
+    if self.dtype not in ("float32", "float16"):
+      msg = f"Unknown ThermoMPNN dtype {self.dtype!r}. Use 'float32' or 'float16'."
+      raise ValueError(msg)
+
+
+@dataclass(frozen=True)
+class AntiBMPNNOptions:
+  """Options for AntiBMPNN antibody CDR design and descriptor calculation.
+
+  Attributes
+  ----------
+  checkpoint_id : str | None
+      AntiBMPNN checkpoint identifier.
+  cdr_scheme : str
+      CDR loop boundary scheme ('chothia' or 'imgt').
+  heavy_chain_id : str | int
+      Chain identifier for heavy chain.
+  light_chain_id : str | int
+      Chain identifier for light chain.
+  cdr_bias_weight : float
+      Multiplicative scaling factor for CDR log-odds logit bias.
+  compute_descriptors : bool
+      Whether to compute Barley volume/hydropathy descriptors and net charge.
+  """
+
+  checkpoint_id: str | None = None
+  cdr_scheme: str = "chothia"
+  heavy_chain_id: str | int = 0
+  light_chain_id: str | int = 1
+  cdr_bias_weight: float = 1.0
+  compute_descriptors: bool = True
+

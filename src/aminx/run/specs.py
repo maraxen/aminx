@@ -715,6 +715,8 @@ class ScoringSpecification(RunSpecification):
   ligand_conditioning: bool = False
   ligand_context_path: str | Path | None = None
   ar_mask: ArrayLike | None = None
+  return_loss_xy: bool = False
+  ligand_cutoff_for_score: float = 8.0
 
   def __post_init__(self) -> None:
     """Post-initialization processing."""

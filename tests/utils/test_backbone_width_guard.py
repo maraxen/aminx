@@ -19,7 +19,14 @@ _L = 6
 
 
 def _coords(width: int, seed: int = 0) -> jnp.ndarray:
-    return jnp.asarray(np.random.default_rng(seed).standard_normal((_L, width, 3)).astype(np.float32))
+    rng = np.random.default_rng(seed)
+    arr = rng.standard_normal((_L, width, 3)).astype(np.float32)
+    if width >= 5:
+        # Atom37 layout: col 2 is C, col 3 is CB, col 4 is O.
+        # Ensure peptide carbonyl invariant: d(C, O) ~ 1.23 A < d(C, CB) ~ 2.45 A.
+        arr[:, 4] = arr[:, 2] + np.array([1.23, 0.0, 0.0], dtype=np.float32)
+        arr[:, 3] = arr[:, 2] + np.array([2.45, 0.0, 0.0], dtype=np.float32)
+    return jnp.asarray(arr)
 
 
 @pytest.mark.parametrize("width", [1, 2, 3])
@@ -33,12 +40,12 @@ def test_compute_backbone_coordinates_rejects_fewer_than_four_atoms(width, jitte
 @pytest.mark.parametrize("width", [4, 5, 14, 37])
 @pytest.mark.parametrize("jitted", [False, True], ids=["eager", "jit"])
 def test_valid_layouts_are_unchanged(width, jitted):
-    """4 = compact (N, CA, C, O); >= 5 = atom37-style (N, CA, C, CB, O, ...). Output is (N, CA, C, O, CB)."""
+    """4 = compact (N, CA, C, O); 14 = Atom14 (N, CA, C, O, CB, ...); 5/37 = atom37-style (N, CA, C, CB, O, ...)."""
     x = _coords(width)
     fn = jax.jit(compute_backbone_coordinates) if jitted else compute_backbone_coordinates
     out = np.asarray(fn(x))
     xn = np.asarray(x)
-    o_col = 3 if width == 4 else 4
+    o_col = 3 if width in (4, 14) else 4
     assert out.shape == (_L, 5, 3)
     np.testing.assert_array_equal(out[:, 0], xn[:, 0])  # N
     np.testing.assert_array_equal(out[:, 1], xn[:, 1])  # CA
@@ -63,7 +70,11 @@ def test_cb_distance_rejects_arrays_without_a_cb_column(width):
 def test_cb_distance_uses_column_three_for_valid_widths(width):
     x = _coords(width)
     got = np.asarray(calculate_cb_distance_matrix(x))
-    cb = np.asarray(x)[:, 3, :]
+    if width == 4:
+        from aminx.utils.coordinates import compute_c_beta
+        cb = np.asarray(compute_c_beta(x[:, 1] - x[:, 0], x[:, 2] - x[:, 1], x[:, 1]))
+    else:
+        cb = np.asarray(x)[:, 3, :]
     want = np.linalg.norm(cb[:, None, :] - cb[None, :, :], axis=-1)
     np.testing.assert_allclose(got, want, rtol=1e-5, atol=1e-5)
 
