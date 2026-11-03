@@ -4,26 +4,20 @@
 [sidecar]
 
 [sidecar.laser_proofread_parity]
-# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row d4a3b47a (43a7a3bd, CPU) stays on record.
-bth_run_id = "598be4db-853c-42e5-89fc-c39eb1312fa4"
+# REWRITTEN 261102 at 021a96be (Stage B vectorized parity wave, Titanix GPU 2).
+# Cool-tier record: completed, outcome pass, git_dirty false.
+bth_run_id = "7c9c989b-b7e0-44c9-89d4-a610e4030225"
 
 [sidecar.laser_proofread_unconditional_parity]
-# Verified 261102 on Titanix GPU 2 (run 74bd760a-e37d-4ab5-ba2f-580e2437b9d0, completed, outcome pass, git_dirty false, 14/14 PASS).
-bth_run_id = "74bd760a-e37d-4ab5-ba2f-580e2437b9d0"
+# Verified 261102 on Titanix GPU 2 (run d4afec68-c1a7-431e-a28d-185a8aafd444, completed, outcome pass, git_dirty false, 14/14 PASS).
+bth_run_id = "d4afec68-c1a7-431e-a28d-185a8aafd444"
 
 [sidecar.laser_decode_e2e]
-# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row 8ea2e30f (43a7a3bd, CPU) stays on record.
-bth_run_id = "174b4aa6-ba9e-428f-8ed4-098d03e6a9ed"
+# REWRITTEN 261102 at 021a96be (Stage B vectorized parity wave, Titanix GPU 2).
+# Cool-tier record: completed, outcome pass, git_dirty false.
+bth_run_id = "7a5a7862-7ea9-4584-812a-84ed5e143b49"
 
 [sidecar.laser_score_parity]
-# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row 2d5670c8 (43a7a3bd, CPU) stays on record.
-bth_run_id = "05f53baa-1882-4d17-9d87-bdd63af31e6b"
+# REWRITTEN 261102 at 021a96be (Stage B vectorized parity wave, Titanix GPU 2).
+# Cool-tier record: completed, outcome pass, git_dirty false.
+bth_run_id = "739cc599-6146-44ce-80a7-9dbfe864e979"
