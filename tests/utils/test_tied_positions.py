@@ -264,7 +264,8 @@ def test_integration_tied_decoding_and_mask():
 
   # Verify basic properties
   assert mask.shape == (num_residues, num_residues)
-  assert jnp.all(jnp.diag(mask) == 0)  # Self-EXCLUSION (see generate_ar_mask docstring)
+  # Self-EXCLUSION (see tests/inference/test_fixed_position_self_visibility.py docstring)
+  assert jnp.all(jnp.diag(mask) == 0)
   assert mask.sum() > 0  # ...but context is not empty
 
   # Verify group-based autoregressive structure:
