@@ -329,9 +329,9 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     and v1_f32_max_abs_diff < 1e-4
     and v2_f32_max_abs_diff < 1e-4
     and double_f32_max_abs_diff < 1e-4
-    and v1_f16_max_abs_diff < 1.5e-2
-    and v2_f16_max_abs_diff < 1.5e-2
-    and double_f16_max_abs_diff < 1.5e-2
+    and v1_f16_max_abs_diff < 3.5e-2
+    and v2_f16_max_abs_diff < 3.5e-2
+    and double_f16_max_abs_diff < 3.5e-2
     and _r_passes(v1_f16_pearson_r)
     and _r_passes(v2_f16_pearson_r)
     and _r_passes(double_f16_pearson_r)

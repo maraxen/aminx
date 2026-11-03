@@ -101,6 +101,20 @@ def default_resolve_run(run_id: str) -> CoolRun | None:
 
   path = default_catalog_dir() / "runs" / "aminx" / f"run_{run_id}.parquet"
   if not path.is_file():
+    exporter = repo_root() / "scripts" / "redsox" / "export_run_parquet.py"
+    if exporter.is_file():
+      for py_bin in (
+        Path("/home/solab/.local/share/uv/tools/bathos/bin/python"),
+        Path(sys.executable),
+      ):
+        if py_bin.is_file():
+          subprocess.run(
+            [str(py_bin), str(exporter), run_id, str(default_catalog_dir())],
+            check=False,
+            capture_output=True,
+          )
+          break
+  if not path.is_file():
     return None
   table = pq.read_table(path)
   if table.num_rows < 1:
@@ -110,6 +124,16 @@ def default_resolve_run(run_id: str) -> CoolRun | None:
   values = {name: table.column(name)[0].as_py() for name in _RUN_FIELDS}
   argv = values["argv"]
   output_paths = values["output_paths"]
+  if isinstance(argv, str):
+    try:
+      argv = json.loads(argv)
+    except Exception:
+      pass
+  if isinstance(output_paths, str):
+    try:
+      output_paths = json.loads(output_paths)
+    except Exception:
+      pass
   if not isinstance(argv, list) or not isinstance(output_paths, list):
     return None
   return CoolRun(

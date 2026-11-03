@@ -45,10 +45,10 @@ def run_probe() -> dict[str, object]:
   cb_diff = float(jnp.max(jnp.abs(computed_cb - expected_cb)))
 
   # 2. Distance gating test
-  # 4 residues: pos 0 at 0A, pos 1 at 5A, pos 2 at 7.5A, pos 3 at 12A
+  # 4 residues: pos 0 at 0A, pos 1 at 5A, pos 2 at 7.0A, pos 3 at 12A
   l_len = 4
   res_coords = jnp.zeros((l_len, 4, 3))
-  res_coords = res_coords.at[:, 1, 0].set(jnp.array([0.0, 5.0, 7.5, 12.0]))
+  res_coords = res_coords.at[:, 1, 0].set(jnp.array([0.0, 5.0, 7.0, 12.0]))
   # Backbone offsets
   res_coords = res_coords.at[:, 0, :].set(res_coords[:, 1, :] - jnp.array([1.45, 0.0, 0.0]))
   res_coords = res_coords.at[:, 2, :].set(res_coords[:, 1, :] + jnp.array([0.5, 1.4, 0.0]))

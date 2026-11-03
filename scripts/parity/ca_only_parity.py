@@ -156,11 +156,14 @@ def run_ca_only_parity_suite(
       )
 
   # Parse 1ubq with broken chain and masked residue to exercise CA gating
-  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB, max_residues=48)
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB, max_residues=60)
   coords_broken = coords.copy()
   coords_broken[15:, :, :] += np.array([6.5, -4.0, 3.0], dtype=np.float64)
   mask_with_gap = mask.copy()
   mask_with_gap[28] = 0.0
+  residue_index_multi = residue_index.copy()
+  chain_index_multi = chain_index.copy()
+  chain_index_multi[20:] = 1
 
   rng = np.random.default_rng(7)
   decoding_order = rng.permutation(coords_broken.shape[0]).astype(np.int32)
@@ -181,8 +184,8 @@ def run_ca_only_parity_suite(
         base_jax_model,
         jnp.asarray(coords_broken, dtype=jnp.float64),
         jnp.asarray(mask_with_gap, dtype=jnp.float64),
-        jnp.asarray(residue_index, dtype=jnp.int32),
-        jnp.asarray(chain_index, dtype=jnp.int32),
+        jnp.asarray(residue_index_multi, dtype=jnp.int32),
+        jnp.asarray(chain_index_multi, dtype=jnp.int32),
         jnp.asarray(sequence, dtype=jnp.int32),
         jnp.asarray(decoding_order, dtype=jnp.int32),
       )
@@ -204,8 +207,8 @@ def run_ca_only_parity_suite(
           jax_model_f64,
           jnp.asarray(coords_broken, dtype=jnp.float64),
           jnp.asarray(mask_with_gap, dtype=jnp.float64),
-          jnp.asarray(residue_index, dtype=jnp.int32),
-          jnp.asarray(chain_index, dtype=jnp.int32),
+          jnp.asarray(residue_index_multi, dtype=jnp.int32),
+          jnp.asarray(chain_index_multi, dtype=jnp.int32),
           jnp.asarray(sequence, dtype=jnp.int32),
           jnp.asarray(decoding_order, dtype=jnp.int32),
         )
@@ -213,8 +216,8 @@ def run_ca_only_parity_suite(
         pt_path,
         coords_broken,
         mask_with_gap,
-        residue_index,
-        chain_index,
+        residue_index_multi,
+        chain_index_multi,
         sequence,
         decoding_order,
         ca_only=True,
@@ -233,8 +236,8 @@ def run_ca_only_parity_suite(
           jax_model_f32,
           jnp.asarray(coords_broken, dtype=jnp.float32),
           jnp.asarray(mask_with_gap, dtype=jnp.float32),
-          jnp.asarray(residue_index, dtype=jnp.int32),
-          jnp.asarray(chain_index, dtype=jnp.int32),
+          jnp.asarray(residue_index_multi, dtype=jnp.int32),
+          jnp.asarray(chain_index_multi, dtype=jnp.int32),
           jnp.asarray(sequence, dtype=jnp.int32),
           jnp.asarray(decoding_order, dtype=jnp.int32),
         )
@@ -242,8 +245,8 @@ def run_ca_only_parity_suite(
         pt_path,
         coords_broken,
         mask_with_gap,
-        residue_index,
-        chain_index,
+        residue_index_multi,
+        chain_index_multi,
         sequence,
         decoding_order,
         ca_only=True,
@@ -261,8 +264,8 @@ def run_ca_only_parity_suite(
   # Clean reference forward pass in float32 for negative control baselines
   coords_f32 = jnp.asarray(coords_broken, dtype=jnp.float32)
   mask_f32 = jnp.asarray(mask_with_gap, dtype=jnp.float32)
-  res_i32 = jnp.asarray(residue_index, dtype=jnp.int32)
-  chain_i32 = jnp.asarray(chain_index, dtype=jnp.int32)
+  res_i32 = jnp.asarray(residue_index_multi, dtype=jnp.int32)
+  chain_i32 = jnp.asarray(chain_index_multi, dtype=jnp.int32)
   seq_i32 = jnp.asarray(sequence, dtype=jnp.int32)
   dec_i32 = jnp.asarray(decoding_order, dtype=jnp.int32)
 

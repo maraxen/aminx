@@ -8,14 +8,15 @@ import numpy as np
 import torch
 
 repo_root = Path(__file__).resolve().parent.parent.parent
-ref_root = Path("/home/marielle/projects/aminx/reference_ligandmpnn_clone")
+ref_root = Path(os.environ.get("REFERENCE_PATH", "/home/marielle/projects/aminx/reference_ligandmpnn_clone"))
 sys.path.insert(0, str(ref_root))
 sys.path.insert(0, str(repo_root / "scripts" / "parity"))
 
 import e2e_run_api_parity as e2e
 
 def main():
-    os.environ["REFERENCE_PATH"] = str(ref_root)
+    if "REFERENCE_PATH" not in os.environ:
+        os.environ["REFERENCE_PATH"] = str(ref_root)
     _, _, _ = e2e._import_reference_torch()
     ctx = e2e.ref_context("lmpnn", "base", batch=1)
     fd = ctx["fd"]
