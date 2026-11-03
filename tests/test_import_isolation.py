@@ -113,3 +113,30 @@ def test_attempt_recorder_fires() -> None:
         f"so the isolation gates cannot fail either:\nstdout: {result.stdout}"
     )
     assert "runtime import attempt" in result.stderr, result.stderr
+
+
+_RUNNER_LAZY_PROBE = """
+import sys
+
+import aminx.host.runner  # noqa: F401
+
+leaked = [
+    m for m in ("aminx.scoring.multi_order", "aminx.scoring.ligand_cutoff") if m in sys.modules
+]
+if leaked:
+    raise AssertionError("runner module-level import pulled in: " + repr(leaked))
+print("OK: runner import closure is narrow")
+"""
+
+
+def test_runner_import_does_not_pull_scoring_helpers() -> None:
+    """Importing aminx.host.runner must not import multi_order or ligand_cutoff.
+
+    ligand_cutoff is imported lazily inside score() (return_loss_xy path only).
+    """
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", _RUNNER_LAZY_PROBE],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stdout: {result.stdout}\nstderr: {result.stderr}"

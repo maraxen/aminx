@@ -1,4 +1,9 @@
-"""JAX/Equinox implementation of the LigandMPNN Side-Chain Packer."""
+"""JAX/Equinox implementation of the LigandMPNN Side-Chain Packer.
+
+Boundary: this module predicts von Mises mixture parameters only (``PackerResult``). Chi sampling
+and NeRF Cartesian side-chain reconstruction are NOT implemented; that clause
+(``packer_chi_sampling``) is waived under Praxia debt #3213 (``PACKER_CHI_SAMPLING_DEBT_ID``).
+"""
 
 from __future__ import annotations
 
@@ -21,6 +26,11 @@ if TYPE_CHECKING:
   from aminx.types.arrays import (
     PRNGKeyArray,
   )
+
+# Praxia debt that carries the packer_chi_sampling waiver (chi sampling + NeRF reconstruction).
+# The packer probe reads these so the declared id lives in one place.
+PACKER_CHI_SAMPLING_DEBT_ID: int = 3213
+PACKER_CHI_SAMPLING_DEBT_SLUG: str = "debt-packer-chi-sampling-engine"
 
 # Constants for periodic table features
 # Group; 19 categories including 0
