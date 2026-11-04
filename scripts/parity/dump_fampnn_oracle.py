@@ -44,7 +44,13 @@ LOG = logging.getLogger("dump_fampnn_oracle")
 
 CKPTS = ("fampnn_0_3", "fampnn_0_3_cath", "fampnn_0_0")
 SAMPLER_CKPTS = ("fampnn_0_3", "fampnn_0_3_cath")
-FIXTURES = ("1ubq", "1ubq_AB")
+FIXTURES = ("1ubq", "1ubq_AB", "3e1r")
+# fixed positions per fixture: (fixed_pos_seq, fixed_pos_scn) in upstream syntax
+FIXED_POS = {
+  "1ubq": ("A1-20,A31-35", "A1-20"),
+  "1ubq_AB": ("A1-20,B45-50", "A1-20"),
+  "3e1r": ("A170-180,B170-175,C797-800", "A170-175"),
+}
 
 # (name, aatype_visible fn, scn_visible fn, zero_masked_coords)
 STATES = ("all_masked", "half", "seqonly", "partial", "full")
@@ -196,7 +202,7 @@ def build(args) -> int:  # noqa: PLR0915
   pdb_1ubq = Path(args.pdb).resolve()
   pdb_ab = out_dir / "1ubq_split_AB.pdb"
   ab_sha = make_split_ab_pdb(pdb_1ubq, pdb_ab)
-  pdbs = {"1ubq": pdb_1ubq, "1ubq_AB": pdb_ab}
+  pdbs = {"1ubq": pdb_1ubq, "1ubq_AB": pdb_ab, "3e1r": fam_root / "data" / "pdbs" / "3e1r.pdb"}
 
   arrays: dict[str, np.ndarray] = {}
   meta: dict = {
@@ -408,9 +414,9 @@ def build(args) -> int:  # noqa: PLR0915
       # ---- sample: full MAR loop under injected RNG ------------------------------
       import pandas as pd
 
-      fixed_seq = "A1-20,A31-35" if fx == "1ubq" else "A1-20,B45-50"
-      fixed_df = pd.DataFrame({"fixed_pos_seq": [fixed_seq], "fixed_pos_scn": ["A1-20"]}, index=[fx])
-      meta.setdefault("fixed_pos", {})[fx] = {"fixed_pos_seq": fixed_seq, "fixed_pos_scn": "A1-20"}
+      fixed_seq, fixed_scn = FIXED_POS[fx]
+      fixed_df = pd.DataFrame({"fixed_pos_seq": [fixed_seq], "fixed_pos_scn": [fixed_scn]}, index=[fx])
+      meta.setdefault("fixed_pos", {})[fx] = {"fixed_pos_seq": fixed_seq, "fixed_pos_scn": fixed_scn}
       sample_cfgs = {
         "A_default": dict(S=4, scn_steps=50, step_scale=1.5, s_churn=0.0, T=0.1, seq_only=False, repack_last=True, psce=0.3, fixed=False),
         "B_fixed": dict(S=4, scn_steps=50, step_scale=1.5, s_churn=0.0, T=0.1, seq_only=False, repack_last=True, psce=0.3, fixed=True),

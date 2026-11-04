@@ -4,23 +4,23 @@ created = "261104"
 schema_version = "0.3"
 
 [experiment]
-hypothesis = "aminx FAMPNN (structure prep, FAEncoder, sidechain denoiser and EDM loop, confidence head, linear-K masked-autoregressive sampler with psce re-mask and overrides, fixed-position parsing) reproduces a sealed dump of the real upstream fampnn code (commit aaf788b) loaded with the released weights fampnn_0_0, fampnn_0_3 and fampnn_0_3_cath, on 1ubq and a two-chain split of 1ubq, with every continuous array within 1e-7 absolute in float64 for the parse, encoder and single-denoiser-call stages and within 2e-6 absolute in float64 for the EDM-loop and sampler stages, and within max(1e-4, 10 x the sealed upstream's own float32-vs-float64 deviation) in float32, every discrete array (aatype, neighbour indices, masks, orders) exact, and every one of nine aminx-side code perturbations leaving the float64 band by more than 1e-4 or flipping a discrete value."
+hypothesis = "aminx FAMPNN (structure prep, FAEncoder, sidechain denoiser and EDM loop, confidence head, linear-K masked-autoregressive sampler with psce re-mask and overrides, fixed-position parsing) reproduces a sealed dump of the real upstream fampnn code (commit aaf788b) loaded with the released weights fampnn_0_0, fampnn_0_3 and fampnn_0_3_cath, on 1ubq, a two-chain split of 1ubq, and the held-out three-chain input 3e1r (upstream data/pdbs/3e1r.pdb), with every continuous array within 1e-7 absolute in float64 for the parse, encoder and single-denoiser-call stages and within 2e-6 absolute in float64 for the EDM-loop and sampler stages, and within max(1e-4, 10 x the sealed upstream's own float32-vs-float64 deviation) in float32, every discrete array (aatype, neighbour indices, masks, orders) exact, and every one of nine aminx-side code perturbations leaving the float64 band by more than 1e-4 or flipping a discrete value."
 stage_name = "validation"
 novel = false
 
 [outcomes.pass]
-condition = "clean = 'pass' AND oracle_sealed = 1 AND oracle_f32_content_sha256 = 'c903b3808b3f30fc491e4feb8407a9c1d60492836a325185e3712c8fed456b4c' AND oracle_f64_content_sha256 = '9494f1531e7b6a7c482883d82f933cfdeda5f360dd0ceeca626b66d601a9e553' AND weights_sha_ok = 1 AND fixture_sha_ok = 1 AND weight_source = 'upstream_checkpoint' AND leaf_provenance_max_abs = 0.0 AND f64_n_over_band = 0 AND f32_n_over_band = 0 AND f64_discrete_mismatches = 0 AND f32_discrete_mismatches = 0 AND parse_discrete_mismatches = 0 AND fixed_pos_mismatches = 0 AND n_listed = 9 AND n_failed = n_listed"
+condition = "clean = 'pass' AND oracle_sealed = 1 AND oracle_f32_content_sha256 = 'ce11f3f60846d243df1f28cb8d46f7b9cd9c7fba3b4b6637ffe48d8250a238fb' AND oracle_f64_content_sha256 = '3c46bff41a0c7cbc6d0a6184288d8290d885a8c26c823d5f286b4ee6779882dd' AND weights_sha_ok = 1 AND fixture_sha_ok = 1 AND weight_source = 'upstream_checkpoint' AND leaf_provenance_max_abs = 0.0 AND f64_n_over_band = 0 AND f32_n_over_band = 0 AND f64_discrete_mismatches = 0 AND f32_discrete_mismatches = 0 AND parse_discrete_mismatches = 0 AND fixed_pos_mismatches = 0 AND heldout_n_checks > 0 AND heldout_f64_n_over_band = 0 AND heldout_f32_n_over_band = 0 AND heldout_discrete_mismatches = 0 AND n_listed = 9 AND n_failed = n_listed"
 decision = "FAMPNN parity holds against the real upstream; the alias_map and branch_manifest rows for this vehicle may enter a ledger wave."
 reasoning = "Every graded array of every stage is inside its band in both precisions, no leaf of the converted model is random-initialised and live, and all nine negative controls trip."
 is_residual = false
-adversarial_check = "NOT (clean = 'pass' AND oracle_sealed = 1 AND weights_sha_ok = 1 AND n_listed = 9 AND n_failed = n_listed)"
+adversarial_check = "NOT (clean = 'pass' AND oracle_sealed = 1 AND weights_sha_ok = 1 AND heldout_n_checks > 0 AND heldout_f64_n_over_band = 0 AND n_listed = 9 AND n_failed = n_listed)"
 
 [outcomes.fail]
-condition = "NOT (clean = 'pass' AND oracle_sealed = 1 AND oracle_f32_content_sha256 = 'c903b3808b3f30fc491e4feb8407a9c1d60492836a325185e3712c8fed456b4c' AND oracle_f64_content_sha256 = '9494f1531e7b6a7c482883d82f933cfdeda5f360dd0ceeca626b66d601a9e553' AND weights_sha_ok = 1 AND fixture_sha_ok = 1 AND weight_source = 'upstream_checkpoint' AND leaf_provenance_max_abs = 0.0 AND f64_n_over_band = 0 AND f32_n_over_band = 0 AND f64_discrete_mismatches = 0 AND f32_discrete_mismatches = 0 AND parse_discrete_mismatches = 0 AND fixed_pos_mismatches = 0 AND n_listed = 9 AND n_failed = n_listed)"
+condition = "NOT (clean = 'pass' AND oracle_sealed = 1 AND oracle_f32_content_sha256 = 'ce11f3f60846d243df1f28cb8d46f7b9cd9c7fba3b4b6637ffe48d8250a238fb' AND oracle_f64_content_sha256 = '3c46bff41a0c7cbc6d0a6184288d8290d885a8c26c823d5f286b4ee6779882dd' AND weights_sha_ok = 1 AND fixture_sha_ok = 1 AND weight_source = 'upstream_checkpoint' AND leaf_provenance_max_abs = 0.0 AND f64_n_over_band = 0 AND f32_n_over_band = 0 AND f64_discrete_mismatches = 0 AND f32_discrete_mismatches = 0 AND parse_discrete_mismatches = 0 AND fixed_pos_mismatches = 0 AND heldout_n_checks > 0 AND heldout_f64_n_over_band = 0 AND heldout_f32_n_over_band = 0 AND heldout_discrete_mismatches = 0 AND n_listed = 9 AND n_failed = n_listed)"
 decision = "Do not claim FAMPNN parity. Read stage_f64_worst_max_abs and the .rows.json breakdown to find the first stage that leaves its band; a control that did not trip means that stage is not under test."
 reasoning = "Any array outside its band, a discrete mismatch, an unsealed oracle or wrong weights, a live random leaf, or a negative control that fails to trip falsifies the vehicle."
 is_residual = true
-adversarial_check = "clean = 'pass' AND oracle_sealed = 1 AND weights_sha_ok = 1 AND n_listed = 9 AND n_failed = n_listed"
+adversarial_check = "clean = 'pass' AND oracle_sealed = 1 AND weights_sha_ok = 1 AND heldout_n_checks > 0 AND heldout_f64_n_over_band = 0 AND n_listed = 9 AND n_failed = n_listed"
 
 [result_schema]
 clean = "str"
@@ -45,6 +45,10 @@ f32_worst_dev_over_band = "float"
 parse_max_abs_diff = "float"
 parse_discrete_mismatches = "int"
 fixed_pos_mismatches = "int"
+heldout_n_checks = "int"
+heldout_f64_n_over_band = "int"
+heldout_f32_n_over_band = "int"
+heldout_discrete_mismatches = "int"
 wall_seconds = "float"
 consts_f64_worst_max_abs = "float"
 consts_f32_worst_max_abs = "float"
@@ -93,15 +97,16 @@ production dtype stays within the same order.
 """
 upstream = "~/repos/fampnn @ aaf788b (titanix /home/solab/repos/fampnn); fampnn code is imported unmodified"
 oracle_inputs = "real released checkpoints; real fixtures tests/data/1ubq.pdb and a two-chain relabel of it (scripts/parity/fampnn_fixtures.py)"
-oracle_f32_file_sha256 = "d8b38894a48c09d6808008e13d7c7ee1c02aa8cd898b017863d35870289f5a2c"
-oracle_f64_file_sha256 = "c68eaac50213c3eb85530940e4816ae841c5457c4540ad583039eff7c9596fe2"
-oracle_f32_content_sha256 = "c903b3808b3f30fc491e4feb8407a9c1d60492836a325185e3712c8fed456b4c"
-oracle_f64_content_sha256 = "9494f1531e7b6a7c482883d82f933cfdeda5f360dd0ceeca626b66d601a9e553"
+oracle_f32_file_sha256 = "2c6fba9889b235eb97076e825ddf3807ff0245392f52aea5a139a9b43d1b0a16"
+oracle_f64_file_sha256 = "491ab6753a2fa7d86cf726caf63f66c4c616a6cd4384ff2828119168b13e13f5"
+oracle_f32_content_sha256 = "ce11f3f60846d243df1f28cb8d46f7b9cd9c7fba3b4b6637ffe48d8250a238fb"
+oracle_f64_content_sha256 = "3c46bff41a0c7cbc6d0a6184288d8290d885a8c26c823d5f286b4ee6779882dd"
 oracle_reproducibility = "two f32 dumps from the same inputs on titanix had identical content_sha256 (261104)"
 weights_sha256_fampnn_0_0 = "afbdfda29e6f2a1bd340971bb226638afb1bf460cfbc29f115d3b5964622c006"
 weights_sha256_fampnn_0_3 = "8969b3f1f3c941178076c7800952595a18b56fd3828d15bb993d3ef537938a05"
 weights_sha256_fampnn_0_3_cath = "81112a9b8d436d9baf5233a3603bac911c75b9782ced59dae5a2726316802218"
 fixture_sha256_1ubq = "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161"
+fixture_sha256_3e1r = "b561f7b28fae53a980add1691edd6b52d3b0565ad15615ab7ea9b209df189928"
 fixture_sha256_1ubq_AB = "f080c6ce0621195b61040ea297f3efca726071ae1f54714d1e2c49d51783d7dd"
 injection_points = """
 Every torch RNG primitive upstream uses is served from a recorded queue and any other RNG primitive raises:
@@ -136,6 +141,15 @@ step_scale_one (edm): step_scale 1.0 instead of 1.5.
 conf_bins_0_8 (edm psce): bin range 0-8 instead of 0-4.
 ghost_atoms_to_origin (edm): ghost sidechain atoms at the origin instead of CA.
 chain_embedding_off (enc, two-chain fixture): all residues on one chain.
-categorical_reversed_cdf (sample): inverse-CDF draw with 1-u.
+categorical_reversed_cdf (sample, config D at T = 1.0, where the distribution is not peaked): inverse-CDF draw with 1-u.
+"""
+heldout = """
+DEV / HELD-OUT SPLIT. The float64 loop band, the float32 multiplier and the pass rule were set while looking at
+1ubq and the two-chain split of 1ubq (see supersedes). 3e1r is upstream's own example input (three chains, residue
+numbers 165-210, 167-208 and 797-809, 112 HETATM records, no altlocs or insertion codes). It was added to the
+oracle after those bands were fixed, and no aminx-versus-oracle number had been computed on it when this file was
+committed. The pass rule requires the held-out checks on their own (heldout_*), so a fit to the two dev fixtures
+that does not transfer fails the outcome even if every dev check passes. The categorical_reversed_cdf control
+moved from config A (T = 0.1, peaked, tripped with a continuous deviation of only 2.3e-7) to config D (T = 1.0).
 """
 wall_time_estimate = "about 11 minutes on titanix CPU (JAX_PLATFORMS=cpu, 4 threads), measured 634 s for a full development run; allow 20 minutes"

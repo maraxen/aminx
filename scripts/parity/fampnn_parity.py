@@ -69,12 +69,12 @@ LOG = logging.getLogger("fampnn_parity")
 
 # ---- pinned identities (the sealed oracle and the released weights) ---------------------------------
 PINNED_ORACLE_CONTENT_SHA256 = {
-  "f32": "c903b3808b3f30fc491e4feb8407a9c1d60492836a325185e3712c8fed456b4c",
-  "f64": "9494f1531e7b6a7c482883d82f933cfdeda5f360dd0ceeca626b66d601a9e553",
+  "f32": "ce11f3f60846d243df1f28cb8d46f7b9cd9c7fba3b4b6637ffe48d8250a238fb",
+  "f64": "3c46bff41a0c7cbc6d0a6184288d8290d885a8c26c823d5f286b4ee6779882dd",
 }
 PINNED_ORACLE_FILE_SHA256 = {
-  "f32": "d8b38894a48c09d6808008e13d7c7ee1c02aa8cd898b017863d35870289f5a2c",
-  "f64": "c68eaac50213c3eb85530940e4816ae841c5457c4540ad583039eff7c9596fe2",
+  "f32": "2c6fba9889b235eb97076e825ddf3807ff0245392f52aea5a139a9b43d1b0a16",
+  "f64": "491ab6753a2fa7d86cf726caf63f66c4c616a6cd4384ff2828119168b13e13f5",
 }
 PINNED_WEIGHTS_SHA256 = {
   "fampnn_0_0": "afbdfda29e6f2a1bd340971bb226638afb1bf460cfbc29f115d3b5964622c006",
@@ -83,7 +83,8 @@ PINNED_WEIGHTS_SHA256 = {
 }
 CKPTS = tuple(PINNED_WEIGHTS_SHA256)
 SAMPLER_CKPTS = ("fampnn_0_3", "fampnn_0_3_cath")
-FIXTURES = ("1ubq", "1ubq_AB")
+FIXTURES = ("1ubq", "1ubq_AB", "3e1r")
+HELDOUT = "3e1r"  # upstream data/pdbs/3e1r.pdb: added after the bands were fitted on 1ubq and 1ubq_AB
 STATES = ("all_masked", "half", "seqonly", "partial", "full")
 EDM_TAGS = ("s50", "s12_sc1", "s12_churn")
 SAMPLE_TAGS = ("A_default", "B_fixed", "C_seqonly_argmax", "D_churn_hot")
@@ -509,7 +510,9 @@ def run_mutant(name: str, o64: Oracle, models64: dict[str, Any]) -> tuple[str, d
     if "edm" in stages:
       stage_edm(led, o64, models64[ck], ck, fx, tags=("s50",))
     if "sample" in stages:
-      stage_sample(led, o64, models64[ck], ck, fx, tags=("A_default",))
+      # the categorical draw is only exercised where the distribution is not peaked: T = 1.0 is config D
+      tag = "D_churn_hot" if name == "categorical_reversed_cdf" else "A_default"
+      stage_sample(led, o64, models64[ck], ck, fx, tags=(tag,))
   dev = max([r["dev"] for r in led.rows if r["kind"] == "cont"], default=0.0)
   nd = int(sum(r["dev"] for r in led.rows if r["kind"] == "disc"))
   status = "failed" if (dev > MUTANT_TRIP or nd > 0) else "passed"
@@ -594,8 +597,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
   fixture_ok = (
     ab_sha == o64.meta["pdb_sha256"]["1ubq_AB"]
     and _sha256(_REPO_ROOT / "tests/data/1ubq.pdb") == o64.meta["pdb_sha256"]["1ubq"]
+    and _sha256(froot / "data" / "pdbs" / "3e1r.pdb") == o64.meta["pdb_sha256"][HELDOUT]
   )
-  pdbs = {"1ubq": _REPO_ROOT / "tests/data/1ubq.pdb", "1ubq_AB": ab_pdb}
+  pdbs = {"1ubq": _REPO_ROOT / "tests/data/1ubq.pdb", "1ubq_AB": ab_pdb, HELDOUT: froot / "data" / "pdbs" / "3e1r.pdb"}
 
   for o, models in ((o64, models64), (o32, models32)):
     stage_consts(led, o)
@@ -629,6 +633,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     (r["dev"] / r["band"] for r in rows if r["arm"] == "f32" and r["kind"] == "cont" and r["band"] > 0),
     default=0.0,
   )
+  held = [r for r in rows if HELDOUT in r["key"]]
+  held_f64_over = sum(1 for r in held if r["arm"] == "f64" and r["kind"] == "cont" and not r["dev"] <= r["band"])
+  held_f32_over = sum(1 for r in held if r["arm"] == "f32" and r["kind"] == "cont" and not r["dev"] <= r["band"])
+  held_disc = int(sum(r["dev"] for r in held if r["kind"] == "disc"))
   parse_dev = max((r["dev"] for r in rows if r["stage"] == "parse" and r["kind"] == "cont"), default=0.0)
   parse_disc = int(sum(r["dev"] for r in rows if r["stage"] == "parse" and r["kind"] == "disc"))
   fixed_disc = int(sum(r["dev"] for r in rows if r["stage"] == "fixed" and r["kind"] == "disc"))
@@ -657,6 +665,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     "f64_discrete_mismatches": disc64,
     "f32_discrete_mismatches": disc32,
     "f32_worst_dev_over_band": f32_ratio,
+    "heldout_n_checks": len(held),
+    "heldout_f64_n_over_band": held_f64_over,
+    "heldout_f32_n_over_band": held_f32_over,
+    "heldout_discrete_mismatches": held_disc,
     "parse_max_abs_diff": parse_dev,
     "parse_discrete_mismatches": parse_disc,
     "fixed_pos_mismatches": fixed_disc,

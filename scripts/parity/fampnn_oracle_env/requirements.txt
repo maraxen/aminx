@@ -1,0 +1,24 @@
+# Pure-Python extras the upstream FAMPNN code imports, installed beside the aminx-verify venv with
+#   uv pip install --python <venv>/bin/python --target $P4_ROOT/extra --no-deps -r requirements.txt
+# (the venv supplies torch 2.12.0+cu130, numpy 2.4.6, einops, scipy, pandas, biotite on python 3.13.14;
+#  the oracle recorded in the sealed manifests ran with exactly these).
+# Not installed: timm (its import chain needs torchvision; scripts/parity/fampnn_oracle_env/timm is a stub that
+# copies timm 1.0.31's Mlp and use_fused_attn), openfold (vendored inside the fampnn checkout as <root>/openfold
+# and found because dump_fampnn_oracle.py puts the checkout root on sys.path).
+# Where the sealed dumps live: titanix /home/solab/scratch/p4-fampnn/oracle/{f32,f64}/ (66 MB each); regenerate with
+# launch_fampnn_oracle.sh; identity is the content_sha256 pinned in fampnn_parity.py and fampnn_parity.bth.toml.
+omegaconf==2.4.0
+antlr4-python3-runtime==4.9.3
+PyYAML==6.0.3
+torchtyping==0.1.5
+typeguard==2.13.3
+gemmi==0.7.5
+rdkit==2026.9.1
+torch_geometric==2.8.1
+xxhash==4.0.2
+psutil==7.2.2
+requests==2.34.2
+aiohttp==3.14.5
+fsspec==2026.9.0
+jinja2==3.1.6
+markupsafe==3.0.4
