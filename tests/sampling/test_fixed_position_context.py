@@ -175,6 +175,29 @@ def test_spec_refuses_a_non_default_mode_on_paths_that_cannot_honour_it():
   SamplingSpecification(**base, fixed_position_context="mutual_context")
 
 
+def test_spec_refuses_a_seed_on_paths_that_ignore_it():
+  """A decoding_order_seed recorded in the store but skipped by the sampler is refused (agy review, PR #266)."""
+  from aminx.run.specs import SamplingSpecification
+
+  base = {"inputs": ["/tmp/x.pdb"], "checkpoint_id": "ckpt_001"}
+  for bypass in ({"decoding_order_fn": random_decoding_order}, {"wave": object()}, {"sampling_strategy": "straight_through"}):
+    with pytest.raises(ValueError, match="no effect"):
+      SamplingSpecification(**base, decoding_order_seed=7, **bypass)
+  SamplingSpecification(**base, decoding_order_seed=7)  # control: the seed alone is accepted
+
+
+@pytest.mark.parametrize("kwargs", [{"fixed_position_context": "canonical_order"}, {"decoding_order_seed": 7}])
+def test_spec_refuses_order_controls_for_driver_backed_families(kwargs):
+  """Driver families never reach with_decoding_order; both an explicit family and one derived from the id are refused."""
+  from aminx.run.specs import SamplingSpecification
+
+  for family_args in ({"model_family": "pottsmpnn"}, {"checkpoint_id": "pottsmpnn_v_48_020"}):
+    spec_args = {"inputs": ["/tmp/x.pdb"], "checkpoint_id": "ckpt_001", **family_args}
+    with pytest.raises(ValueError, match="driver-backed"):
+      SamplingSpecification(**spec_args, **kwargs)
+  SamplingSpecification(inputs=["/tmp/x.pdb"], model_family="pottsmpnn")  # control: no order control, accepted
+
+
 def test_fused_sampler_refuses_modes_when_the_order_is_not_randomized():
   """``randomize_decoding_order=False`` skips with_decoding_order, so a mode or seed would be silently dropped."""
   bundle, config = _bundle(1)

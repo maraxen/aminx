@@ -394,7 +394,7 @@ class RunSpecification:
 
     # A non-default mode on a path that cannot honour it would be recorded in the store while
     # having no effect: refuse instead of silently ignoring it.
-    if self.fixed_position_context != "random_order":
+    if self.fixed_position_context != "random_order" or self.decoding_order_seed is not None:
       bypass = []
       if self.decoding_order_fn is not None:
         bypass.append("decoding_order_fn")
@@ -403,7 +403,10 @@ class RunSpecification:
       if getattr(self, "sampling_strategy", "temperature") == "straight_through":
         bypass.append("sampling_strategy='straight_through'")
       if bypass:
-        msg = f"fixed_position_context={self.fixed_position_context!r} has no effect together with {', '.join(bypass)}."
+        msg = (
+          f"fixed_position_context={self.fixed_position_context!r} / "
+          f"decoding_order_seed={self.decoding_order_seed!r} have no effect together with {', '.join(bypass)}."
+        )
         raise ValueError(msg)
 
     # Handle backward compatibility: convert old-style noise params to noise list
@@ -557,6 +560,19 @@ class RunSpecification:
       # caliby and fampnn ids (caliby, soluble_caliby*, caliby_packer_*, fampnn_*) are matched
       # through the pinned family table, so an unpinned "caliby_..." id does not route anywhere.
       object.__setattr__(self, "model_family", pinned_family)
+
+    # Driver-backed families decode through run_family_driver and never reach with_decoding_order,
+    # so the order controls would be recorded without effect. Checked here because the family is
+    # only final (derived from checkpoint_id) at this point.
+    if self.model_family in DRIVER_MODEL_FAMILIES and (
+      self.fixed_position_context != "random_order" or self.decoding_order_seed is not None
+    ):
+      msg = (
+        f"fixed_position_context={self.fixed_position_context!r} / decoding_order_seed="
+        f"{self.decoding_order_seed!r} have no effect with model_family={self.model_family!r} "
+        "(driver-backed families do not use the shared decoding-order path)."
+      )
+      raise ValueError(msg)
 
     derived_topology = (
       get_topology_for_checkpoint(self.checkpoint_id) if self.checkpoint_id is not None else None
