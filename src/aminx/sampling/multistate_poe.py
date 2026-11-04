@@ -118,6 +118,7 @@ def sample_states_fused(
   sample_batch_size: int | None = None,
   randomize_decoding_order: bool = True,  # noqa: FBT001, FBT002
   decoding_order_seed: int | None = None,
+  fixed_position_context: str = "random_order",
 ) -> tuple[Int[Array, "n_samples L"], Float[Array, "n_samples L 21"]]:
   """Draw n_samples independent samples from an already-built, already-fused bundle.
 
@@ -193,6 +194,10 @@ def sample_states_fused(
       the pairing control: the logits at a position depend on the order of the other
       positions even when all of them are fixed.
 
+  fixed_position_context : str, default "random_order"
+      How fixed positions are conditioned on each other: ``random_order`` (reference
+      behaviour), ``canonical_order`` or ``mutual_context``. See ``with_decoding_order``.
+
   Returns
   -------
   tuple
@@ -233,7 +238,9 @@ def sample_states_fused(
     # groups), keyed off -- not split from -- the sample key. randomize_decoding_order=False
     # keeps whatever schedule the caller built into `bundle`.
     sample_bundle = (
-      with_decoding_order(bundle, decoding_order_key(key, decoding_order_seed))
+      with_decoding_order(
+        bundle, decoding_order_key(key, decoding_order_seed), fixed_context=fixed_position_context
+      )
       if randomize_decoding_order
       else bundle
     )
@@ -492,6 +499,7 @@ def sample_multistate_poe_bead(
     prng_key,
     n_samples,
     decoding_order_seed=spec.run_spec.sampling.decoding_order_seed,
+    fixed_position_context=spec.run_spec.sampling.fixed_position_context,
   )
 
 

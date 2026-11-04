@@ -235,6 +235,10 @@ OBSERVATIONS: dict[str, Verdict] = {
     reason="a plain int that must survive the manifest round trip; read at kernel_dispatch.py (_with_sample_order) "
     "and multistate_poe.py (sample_states_fused) to draw the decoding order from the seed alone",
   ),
+  "fixed_position_context": SpecOnly(
+    reason="a plain str read at kernel_dispatch.py (_with_sample_order) and multistate_poe.py "
+    "(sample_states_fused) to choose how the fixed block is ordered/masked in with_decoding_order",
+  ),
   "multi_state_strategy": SpecOnly(
     reason="selects stage_set.logit_transform via make_stage_set, plan.py:797",
   ),

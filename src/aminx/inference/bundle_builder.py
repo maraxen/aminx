@@ -381,6 +381,9 @@ def build_inference_bundle(
 DECODING_ORDER_KEY_SALT = 0x0DEC0DE
 
 
+FIXED_CONTEXT_MODES = ("random_order", "canonical_order", "mutual_context")
+
+
 def decoding_order_key(sample_key: jax.Array, order_seed: int | None = None) -> jax.Array:
   """The key a sample's random decoding order is drawn from (derived, not split).
 
@@ -414,6 +417,7 @@ def with_decoding_order(
   key: jax.Array,
   decoding_order_fn: DecodingOrderFn | None = None,
   num_groups: int | None = None,
+  fixed_context: str = "random_order",
 ) -> InferenceBundle:
   """Set a bundle's wave schedule AND ar_mask from one freshly drawn decoding order.
 
@@ -429,19 +433,40 @@ def with_decoding_order(
       the ``DecodingOrderFn`` signature overrides it; it receives the tie map only when
       ``num_groups`` is given, as ``random_decoding_order`` requires.
     num_groups: Number of tie groups, forwarded to ``decoding_order_fn``.
+    fixed_context: How positions whose token is fixed are conditioned on EACH OTHER. In an
+      autoregressive MPNN a position's logits depend on the order of the other positions even
+      when every one of them is fixed, because each neighbour's hidden state is conditioned on
+      its own predecessors only. ``"random_order"`` (default; the reference ProteinMPNN /
+      LigandMPNN behaviour) decodes the fixed block in a random order, so that order is a
+      nuisance variable. ``"canonical_order"`` decodes it in position order: a valid causal
+      order, in-distribution, deterministic given the fixed set. ``"mutual_context"`` makes
+      every fixed position see every other fixed position (a non-causal block that no
+      training mask produced, so it is out of distribution) and removes the order dependence
+      entirely. Only ``decoding_order_fn=None`` is supported for the last two.
 
   Returns:
     The bundle with ``wave`` and ``conditioning.ar_mask`` replaced.
   """
+  if fixed_context not in FIXED_CONTEXT_MODES:
+    msg = f"fixed_context must be one of {FIXED_CONTEXT_MODES}, got {fixed_context!r}"
+    raise ValueError(msg)
+  if fixed_context != "random_order" and decoding_order_fn is not None:
+    msg = f"fixed_context={fixed_context!r} requires the default decoding order (decoding_order_fn=None)"
+    raise ValueError(msg)
   cond = bundle.conditioning
   tie = cond.tie_group_map[0]
   seq_len = tie.shape[0]
   if decoding_order_fn is None:
     fixed = cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask
-    order = random_design_order(key, tie, fixed)
+    order = random_design_order(key, tie, fixed, "index" if fixed_context == "canonical_order" else "random")
   else:
     order, _ = decoding_order_fn(key, seq_len, tie if num_groups is not None else None, num_groups)
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(order), tie)
   mask = generate_wave_ar_mask(wave, tie).astype(cond.ar_mask.dtype)
+  if fixed_context == "mutual_context":
+    fixed_pos = (cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask) > 0.5
+    group_fixed = jnp.zeros((seq_len,), dtype=jnp.int32).at[tie].max(fixed_pos.astype(jnp.int32))[tie] > 0
+    fixed_block = group_fixed[:, None] & group_fixed[None, :] & ~jnp.eye(seq_len, dtype=bool)
+    mask = jnp.maximum(mask, fixed_block.astype(mask.dtype))
   mask = jnp.broadcast_to(mask[None, ...], cond.ar_mask.shape)
   return eqx.tree_at(lambda b: (b.wave, b.conditioning.ar_mask), bundle, (wave, mask))

@@ -189,6 +189,13 @@ class RunSpecification:
         autoregressive runner path and ``sample_multistate_poe_bead``; it is ignored by
         ``model_family`` drivers (laser/fampnn/caliby/potts), ``sampling_strategy=
         "straight_through"``, scoring, and when ``wave`` is supplied. Range ``[0, 2**32)``.
+      fixed_position_context: How fixed positions are conditioned on each other when sampling.
+        ``"random_order"`` (default) is the reference ProteinMPNN/LigandMPNN behaviour: the
+        fixed block decodes in a random order. ``"canonical_order"`` decodes it in position
+        order (causal, in-distribution, deterministic given the fixed set). ``"mutual_context"``
+        lets every fixed position see every other fixed position (non-causal, out of
+        distribution) and removes the order dependence. Same support limits as
+        ``decoding_order_seed``; not part of ``manifest_row_hash``.
       conformational_states: Optional conformational states representation to use for coarse graining the inference.
       max_length: Maximum sequence length for padding/truncation (default is 512).
                   Set to None to disable padding. Controls memory usage - smaller values
@@ -249,6 +256,7 @@ class RunSpecification:
   altloc: Literal["first", "all"] = "first"
   decoding_order_fn: DecodingOrderFn | None = None
   decoding_order_seed: int | None = None
+  fixed_position_context: str = "random_order"
   conformational_states: ConformationalStates | None = None
   cache_path: str | Path | None = None
   output_dir: str | Path | None = None
@@ -375,6 +383,13 @@ class RunSpecification:
         raise ValueError(msg)
       if not isinstance(order_seed, int):
         object.__setattr__(self, "decoding_order_seed", int(order_seed))
+
+    if self.fixed_position_context not in ("random_order", "canonical_order", "mutual_context"):
+      msg = (
+        "fixed_position_context must be 'random_order', 'canonical_order' or 'mutual_context', "
+        f"got {self.fixed_position_context!r}"
+      )
+      raise ValueError(msg)
 
     # Handle backward compatibility: convert old-style noise params to noise list
     bundles = list(self.noise)  # Start with provided bundles
