@@ -282,6 +282,7 @@ def build(args) -> int:  # noqa: PLR0915
 
       def _hook(_m, _inp, outp, captured=captured):
         captured["logits"], captured["feat"] = outp
+        captured["amask"] = _inp[3]  # atom_mask_noised exactly as upstream computed it (sd_model.py:48-51)
 
       hh = den.seq_design_module.register_forward_hook(_hook)
       state_h_V = {}
@@ -299,6 +300,7 @@ def build(args) -> int:  # noqa: PLR0915
           aatype_noised=aat_noised[0],
           scn_vis=vs[0],
           x_in=x_in[0],
+          atom_mask_noised=captured["amask"][0],
           logits=captured["logits"][0],
           log_probs=logp[0],
           h_V=feat["h_V"][0],
@@ -346,6 +348,16 @@ def build(args) -> int:  # noqa: PLR0915
           traj_out.append(_np(outp[0])[0].copy())
 
         hk = scn_mod.scn_denoiser.register_forward_hook(_rec, with_kwargs=True)
+        import fampnn.model.sidechain_diffusion.scn_diffusion_mlp as _scn_mlp_mod
+
+        _orig_tsf = _scn_mlp_mod.transform_sidechain_frame
+        _local_final: list[np.ndarray] = []
+
+        def _tsf(x_scn, *a, **k):  # read-only wrapper: records the final local sidechain state, then calls upstream
+          _local_final.append(_np(x_scn)[0].copy())
+          return _orig_tsf(x_scn, *a, **k)
+
+        _scn_mlp_mod.transform_sidechain_frame = _tsf
         try:
           ts = sampling_utils.get_timesteps_from_schedule("linear", nsteps, 0.0, 1.0)[None].to(dt)
           churn_cfg = {"s_churn": s_churn, "s_noise": 1.0, "s_t_min": 0.01, "s_t_max": 50.0, "num_steps": nsteps}
@@ -362,12 +374,14 @@ def build(args) -> int:  # noqa: PLR0915
           )
         finally:
           hk.remove()
+          _scn_mlp_mod.transform_sidechain_frame = _orig_tsf
           q.uninstall()
         lg = q.drain_log()
         _stage(
           arrays,
           f"{P}/edm/{tag}",
           timesteps=ts[0],
+          x_local_final=_local_final[0],
           x_scn_global=x1[0],
           psce=aux["psce"][0],
           prior_z=lg["randn"][0],
