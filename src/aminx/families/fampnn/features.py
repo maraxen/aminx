@@ -7,6 +7,7 @@ Ports ``atom37_to_atom14``, ``atom14_to_atom37``, ``backbone_coords_to_frames``,
 
 from __future__ import annotations
 
+import functools
 import math
 from typing import cast
 
@@ -47,12 +48,14 @@ def f32_exp_table(x32: np.ndarray) -> np.ndarray:
   return np.exp(np.asarray(x32, dtype=np.float32).astype(np.float64)).astype(np.float32)
 
 
+@functools.lru_cache(maxsize=8)
 def timestep_frequency_table(half: int, max_period: float = 10000.0) -> np.ndarray:
   """``TimestepEmbedder.timestep_embedding`` frequencies (``dit_utils.py:261``), float32, shape ``(half,)``."""
   arange = np.arange(0, half, dtype=np.float32)
   return f32_exp_table((np.float32(-math.log(max_period)) * arange) / np.float32(half))
 
 
+@functools.lru_cache(maxsize=32)
 def positional_embedding_table(num_res: int, num_embeddings: int = 16) -> np.ndarray:
   """``positional_embeddings`` (``data.py:427-442``) for every offset ``-(L-1)..(L-1)``, float32 ``(2L-1, E)``.
 

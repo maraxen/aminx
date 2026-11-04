@@ -101,7 +101,7 @@ class FAMPNNTimestepEmbedder(eqx.Module):
     half = self.frequency_embedding_size // 2
     # The frequency table is float32 in every precision, as upstream's ``torch.arange(..., dtype=torch.float32)``
     # (dit_utils.py:261): an f64 run reuses the same f32 table (correctly rounded; see ``timestep_frequency_table``).
-    freqs = jnp.asarray(timestep_frequency_table(half)).astype(dtype)
+    freqs = jnp.astype(timestep_frequency_table(half), dtype)
     args = t.astype(dtype)[:, None] * freqs[None, :]
     emb = jnp.concatenate([jnp.cos(args), jnp.sin(args)], axis=-1)
     return _linear(self.mlp_2, jax.nn.silu(_linear(self.mlp_0, emb)))

@@ -548,7 +548,7 @@ class GVPGraphEmbedding(eqx.Module):
     # offset is a fixed float32 table (see ``positional_embedding_table``); gather it instead of re-deriving
     # cos/sin with backend float32 kernels.
     d_offset = jnp.arange(num_l, dtype=jnp.int32)[:, None] - e_idx.astype(jnp.int32)
-    table = jnp.asarray(positional_embedding_table(num_l, self.num_positional_embeddings))
+    table = positional_embedding_table(num_l, self.num_positional_embeddings)
     pos_emb = jnp.take(table, d_offset + (num_l - 1), axis=0).astype(dtype)
     edge_s_raw = jnp.concatenate([rbf_ca, pos_emb], axis=-1)
 
