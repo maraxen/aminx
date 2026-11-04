@@ -449,7 +449,7 @@ def test_knob_semantics_float16_passes_result_schema() -> None:
   driver = ThermoMPNNDriver()
   spec = SimpleNamespace(
     checkpoint_id="thermo_mpnn_v1_default",
-    thermompnn=ThermoMPNNOptions(dtype="float16"),
+    thermompnn=ThermoMPNNOptions(dtype="float16", allow_float16=True),
     model_local_path=None,
   )
   model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
@@ -606,7 +606,7 @@ def test_knob_semantics_float16_warns_once_per_score_call() -> None:
       residue_index,
       chain_index,
       sequence,
-      options=ThermoMPNNOptions(dtype="float16"),
+      options=ThermoMPNNOptions(dtype="float16", allow_float16=True),
     )
   messages = _float_warnings(record)
   assert len(messages) == 1
