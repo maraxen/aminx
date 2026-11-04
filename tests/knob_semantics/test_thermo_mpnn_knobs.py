@@ -174,8 +174,14 @@ def test_knob_semantics_ensemble() -> None:
   assert not np.allclose(res_ens_true["ddg"], res_ens_false["ddg"], atol=1e-3)
 
 
-def test_knob_semantics_dtype() -> None:
-  """Float16 execution runs stably and matches float32 within tolerance band."""
+@pytest.mark.xfail(
+  strict=False,
+  reason="float16 fails the ThermoMPNN parity band on real weights: v1 run f12f3209 missed 1.5e-2 "
+  "with 0.048; v2 run 18c1d29c ho1 d_ddg max-abs 0.3995 vs tolerance 0.1499. This synthetic-weight "
+  "check does not reproduce that failure, so it may XPASS; it is not parity evidence either way.",
+)
+def test_knob_semantics_dtype_float16_band() -> None:
+  """Float16 execution matches float32 within the 1.5e-2 band (xfail: the band fails on real weights)."""
   driver = ThermoMPNNDriver()
   coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
   sd = _build_synthetic_v1_state_dict()
@@ -198,7 +204,7 @@ def test_knob_semantics_dtype() -> None:
       residue_index,
       chain_index,
       sequence,
-      options=ThermoMPNNOptions(dtype="float16"),
+      options=ThermoMPNNOptions(dtype="float16", allow_float16=True),
     )
 
   f32_ddg = np.asarray(res_f32["ddg"])
@@ -209,6 +215,46 @@ def test_knob_semantics_dtype() -> None:
   assert max_abs_diff > 0.0
 
   assert pearson_r(f32_ddg, f16_ddg) > 0.999
+
+
+def test_knob_semantics_dtype() -> None:
+  """float32 is the default and float16 is refused without the explicit allow_float16 bypass."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
+  args = (model, coords, mask, residue_index, chain_index, sequence)
+
+  assert ThermoMPNNOptions().dtype == "float32"
+  assert ThermoMPNNOptions().allow_float16 is False
+  res = driver.score(*args, options=ThermoMPNNOptions(dtype="float32"))
+  assert res["ddg"].dtype == jnp.float32
+
+  with pytest.raises(ValueError, match="allow_float16"):
+    ThermoMPNNOptions(dtype="float16")
+  with pytest.raises(ValueError, match="allow_float16"):
+    driver.score(*args, dtype="float16")
+
+
+def test_knob_semantics_allow_float16() -> None:
+  """allow_float16=True lets float16 run (with a UserWarning); it is inert for float32."""
+  driver = ThermoMPNNDriver()
+  coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
+  model = convert_thermo_mpnn_state_dict(_build_synthetic_v1_state_dict())
+  args = (model, coords, mask, residue_index, chain_index, sequence)
+
+  opts = ThermoMPNNOptions(dtype="float16", allow_float16=True)
+  assert opts.allow_float16 is True
+  with pytest.warns(UserWarning, match="float16 is not validated"):
+    via_options = driver.score(*args, options=opts)
+  with pytest.warns(UserWarning, match="float16 is not validated"):
+    via_kwarg = driver.score(*args, dtype="float16", allow_float16=True)
+  np.testing.assert_array_equal(np.asarray(via_options["ddg"]), np.asarray(via_kwarg["ddg"]))
+
+  with warnings.catch_warnings():
+    warnings.simplefilter("error")
+    f32_plain = driver.score(*args, options=ThermoMPNNOptions(dtype="float32"))
+    f32_flag = driver.score(*args, options=ThermoMPNNOptions(dtype="float32", allow_float16=True))
+  np.testing.assert_array_equal(np.asarray(f32_plain["ddg"]), np.asarray(f32_flag["ddg"]))
 
 
 def test_knob_semantics_batch_size() -> None:

@@ -77,7 +77,7 @@ def run_driver_f16_suite(pdb_path: Path) -> dict[str, Any]:
   v1_model = driver.load(v1_spec)
   log.info("loaded %s", V1_CHECKPOINT)
   v1_f32 = _score(driver, v1_model, inputs, options=ThermoMPNNOptions(checkpoint_id=V1_CHECKPOINT, mode="single", dtype="float32"))
-  v1_f16 = _score(driver, v1_model, inputs, options=ThermoMPNNOptions(checkpoint_id=V1_CHECKPOINT, mode="single", dtype="float16"))
+  v1_f16 = _score(driver, v1_model, inputs, options=ThermoMPNNOptions(checkpoint_id=V1_CHECKPOINT, mode="single", dtype="float16", allow_float16=True))
 
   d_spec = SimpleNamespace(checkpoint_id=DOUBLE_CHECKPOINT, thermompnn=None, model_local_path=None)
   d_model = driver.load(d_spec)
@@ -88,7 +88,7 @@ def run_driver_f16_suite(pdb_path: Path) -> dict[str, Any]:
     driver,
     d_model,
     inputs,
-    options=ThermoMPNNOptions(checkpoint_id=DOUBLE_CHECKPOINT, mode="double", dtype="float16"),
+    options=ThermoMPNNOptions(checkpoint_id=DOUBLE_CHECKPOINT, mode="double", dtype="float16", allow_float16=True),
     pair_indices=pairs,
   )
 

@@ -13,7 +13,9 @@ max-abs difference rose from about 0.03-0.05 on a 76-residue structure to about 
 reliable. A follow-up diagnostic (run 611e5c8c) found the worst error concentrated in a few
 entries (top 1% of pairs held ~65% of the squared error at 496 residues; rms error rose only
 ~2.5x), so individual predictions can be far off even when the average error is small.
-Selecting float16 emits a ``UserWarning`` from :meth:`ThermoMPNNDriver.score`. Use float16 for
+Selecting float16 raises ``ValueError`` unless ``allow_float16=True`` is passed (``ThermoMPNNOptions.allow_float16``
+or the ``allow_float16`` argument of :meth:`ThermoMPNNDriver.score`); a bypassed call still emits a
+``UserWarning`` from :meth:`ThermoMPNNDriver.score`. Use float16 for
 screening or ranking only. The cause of the large error has not been identified.
 """
 
@@ -52,7 +54,7 @@ from aminx.host.family_driver import (
   FamilyStages,
   SinkArraySpec,
 )
-from aminx.run.options import ThermoMPNNOptions
+from aminx.run.options import _FLOAT16_REFUSAL, ThermoMPNNOptions
 
 V2_SINGLE_ENSEMBLE_IDS: tuple[str, str, str] = (
   "thermo_mpnn_v2_ens1",
@@ -398,6 +400,7 @@ class _ThermoScoreStages:
         batch_size=self._opts.batch_size,
         dtype=self._opts.dtype,
         ensemble=self._opts.ensemble,
+        allow_float16=self._opts.allow_float16,
       )
 
     ddg_rows: list[jax.Array] = []
@@ -417,6 +420,7 @@ class _ThermoScoreStages:
         batch_size=self._opts.batch_size,
         dtype=self._opts.dtype,
         ensemble=self._opts.ensemble,
+        allow_float16=self._opts.allow_float16,
       )
       ddg_rows.append(res["ddg"])
       if "ddg_double" in res:
@@ -968,6 +972,7 @@ class ThermoMPNNDriver:
     batch_size: int = 10000,
     dtype: str = "float32",
     ensemble: bool = True,
+    allow_float16: bool = False,
     options: ThermoMPNNOptions | None = None,
   ) -> dict[str, jax.Array]:
     """Compute ΔΔG predictions for a single model or a 3-model ensemble.
@@ -1001,7 +1006,11 @@ class ThermoMPNNDriver:
       Pair batch chunk size for ThermoMPNN-D double-mutant scoring.
     dtype : str, default="float32"
       Floating-point precision for trunk and head evaluation (``"float32"`` or ``"float16"``).
-      ``"float16"`` is not validated for ThermoMPNN and emits a ``UserWarning`` on each call.
+      ``"float16"`` fails the parity band and raises ``ValueError`` unless ``allow_float16`` is
+      true; a bypassed call emits a ``UserWarning``.
+    allow_float16 : bool, default=False
+      Explicit bypass for ``dtype="float16"``. Ignored when ``options`` is given
+      (``options.allow_float16`` decides).
     ensemble : bool, default=True
       Whether to average across all ensemble members when using an ensemble.
     options : ThermoMPNNOptions | None, optional
@@ -1027,10 +1036,13 @@ class ThermoMPNNDriver:
       batch_size = opts.batch_size
       dtype = opts.dtype
       ensemble = opts.ensemble
+      allow_float16 = opts.allow_float16
     if dtype not in _VALID_DTYPES:
       msg = f"Unsupported ThermoMPNN dtype: {dtype!r}; expected 'float32' or 'float16'."
       raise ValueError(msg)
     if dtype == "float16":
+      if not allow_float16:
+        raise ValueError(_FLOAT16_REFUSAL)
       warnings.warn(_FLOAT16_WARNING, UserWarning, stacklevel=2)
 
     if mode in ("double", "score:ddg_double"):

@@ -96,7 +96,7 @@ def _score_structure(
   out: dict[str, Any] = {f"n_residues_{prefix}": int(inputs["sequence"].shape[0])}
 
   v1_f32 = _score(driver, v1_model, inputs, options=ThermoMPNNOptions(checkpoint_id=V1_CHECKPOINT, mode="single", dtype="float32"))
-  v1_f16 = _score(driver, v1_model, inputs, options=ThermoMPNNOptions(checkpoint_id=V1_CHECKPOINT, mode="single", dtype="float16"))
+  v1_f16 = _score(driver, v1_model, inputs, options=ThermoMPNNOptions(checkpoint_id=V1_CHECKPOINT, mode="single", dtype="float16", allow_float16=True))
   out.update(_record(prefix, "v1_ddg", v1_f32["ddg"], v1_f16["ddg"]))
 
   d_f32 = _score(driver, d_model, inputs, options=ThermoMPNNOptions(checkpoint_id=DOUBLE_CHECKPOINT, mode="double", dtype="float32"))
@@ -105,7 +105,7 @@ def _score_structure(
     driver,
     d_model,
     inputs,
-    options=ThermoMPNNOptions(checkpoint_id=DOUBLE_CHECKPOINT, mode="double", dtype="float16"),
+    options=ThermoMPNNOptions(checkpoint_id=DOUBLE_CHECKPOINT, mode="double", dtype="float16", allow_float16=True),
     pair_indices=pairs,
   )
   out[f"{prefix}_d_n_pairs"] = int(pairs.shape[0])

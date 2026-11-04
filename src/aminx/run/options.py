@@ -217,6 +217,15 @@ class FAMPNNOptions:
   pack_each_step: bool = True
 
 
+_FLOAT16_REFUSAL: str = (
+  "ThermoMPNN dtype='float16' fails the parity band and is refused unless you pass "
+  "allow_float16=True (ThermoMPNNOptions.allow_float16, or the allow_float16 argument of "
+  "ThermoMPNNDriver.score; spec files: thermompnn.allow_float16 = true). Evidence: v1 run "
+  "f12f3209 missed the 1.5e-2 band with 0.048; v2 run 18c1d29c ho1 d_ddg max-abs 0.3995 vs "
+  "tolerance 0.1499."
+)
+
+
 @dataclass(frozen=True)
 class ThermoMPNNOptions:
   """Options for ThermoMPNN and ThermoMPNN-D stability prediction.
@@ -238,7 +247,12 @@ class ThermoMPNNOptions:
       ``"float16"`` is not validated for ThermoMPNN (see the driver module docstring): the
       float16 parity gate failed on a 496-residue structure, and the error was observed to grow
       with system size (mechanism not established). Float16 is for screening or ranking only,
-      and selecting it emits a ``UserWarning``.
+      and selecting it requires ``allow_float16=True``.
+  allow_float16 : bool
+      Explicit bypass for ``dtype="float16"``. Float16 fails the ThermoMPNN parity band (v1 run
+      f12f3209 missed 1.5e-2 with 0.048; v2 run 18c1d29c ho1 d_ddg 0.3995 vs 0.1499), so
+      ``dtype="float16"`` raises ``ValueError`` unless this is ``True``. A bypassed call still
+      emits a ``UserWarning``. Has no effect with ``dtype="float32"``.
   ensemble : bool
       Whether to average across all 3 v2 ensemble members when using v2/D.
   """
@@ -249,6 +263,7 @@ class ThermoMPNNOptions:
   batch_size: int = 10000
   dtype: Literal["float32", "float16"] = "float32"
   ensemble: bool = True
+  allow_float16: bool = False
 
   def __post_init__(self) -> None:
     """Reject unknown ``mode`` or ``dtype`` values at construction time."""
@@ -258,3 +273,5 @@ class ThermoMPNNOptions:
     if self.dtype not in ("float32", "float16"):
       msg = f"Unknown ThermoMPNN dtype {self.dtype!r}. Use 'float32' or 'float16'."
       raise ValueError(msg)
+    if self.dtype == "float16" and not self.allow_float16:
+      raise ValueError(_FLOAT16_REFUSAL)

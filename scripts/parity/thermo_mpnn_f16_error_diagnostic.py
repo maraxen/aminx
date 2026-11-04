@@ -181,7 +181,7 @@ def _run_structure(
     driver,
     d_model,
     inputs,
-    options=ThermoMPNNOptions(checkpoint_id=DOUBLE_CHECKPOINT, mode="double", dtype="float16"),
+    options=ThermoMPNNOptions(checkpoint_id=DOUBLE_CHECKPOINT, mode="double", dtype="float16", allow_float16=True),
     pair_indices=pairs,
   )
   out: dict[str, Any] = {f"{prefix}_n_residues": n_res, f"{prefix}_n_pairs": int(pairs.shape[0])}
