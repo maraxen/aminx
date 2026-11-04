@@ -1,0 +1,68 @@
+# v2 driver float16 gate. Supersedes thermo_mpnn_driver_f16.bth.toml (run f12f3209 FAIL) by a NEW sidecar.
+# Do not edit the old sidecar; its FAIL stays on record. 1ubq results here are post-hoc.
+
+[experiment]
+hypothesis = "Driver float16 precision, v2 (SUPERSEDES thermo_mpnn_driver_f16.bth.toml after its run f12f3209 graded FAIL). WRITTEN AFTER SEEING the 1ubq numbers of f12f3209 (ddg max-abs 0.0480 / 0.0303, ddg_double 0.0517 against the fixed 1.5e-2 bar; Pearson r 0.99996). Therefore every 1ubq result under this sidecar is POST-HOC and must NOT be cited as pre-registered. Held-out structures 1SMD and 1mbn were selected by file listing order before their numbers were examined; their results are the pre-registered evidence. Claim: for ThermoMPNNDriver.score under dtype='float16' against dtype='float32' on the same inputs, each compared array satisfies max_abs_diff <= tol, tol = K * eps16 * S, where eps16 = 2^-10 (float16 machine epsilon), S = max |float32 reference| over the compared array, K = 68, and Pearson r > 0.999. Derivation: all trunk and head ops in thermo_mpnn_trunk and ThermoMPNN.__call__ run in the input dtype (cast_floating / coords.dtype), so each op's output is rounded to float16 (relative error <= eps16/2). The longest dependence path has 3 encoder + 3 decoder layers at about 10 rounded ops each (matmul, bias, residual, LayerNorm, FFN) plus about 8 readout ops (3 linear+bias+ReLU, ddg_out), giving about 68. A linear bound sums these errors (worst case); K = 68 is an estimate from reading the code, not a measured bound, and a random-walk bound would be about sqrt(68) times eps16. S is the reference scale because the error of a rounded op is proportional to the magnitude it rounds. Pearson r > 0.999 is kept from the existing bar; it is scale-free and is not derived from eps16. This gate loads single checkpoints (v1_default, d_ens1), so ensemble averaging is not exercised and adds nothing to K. Requires upstream weights and should run on titanix via bth run."
+stage_name = "validation"
+novel = true
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "weight_source == 'upstream_checkpoint' AND ubq_v1_ddg_scale > 0 AND ubq_v1_ddg_max_abs_diff <= 0.06640625 * ubq_v1_ddg_scale AND ubq_v1_ddg_pearson_r > 0.999 AND ubq_d_ddg_scale > 0 AND ubq_d_ddg_max_abs_diff <= 0.06640625 * ubq_d_ddg_scale AND ubq_d_ddg_pearson_r > 0.999 AND ubq_d_ddg_double_scale > 0 AND ubq_d_ddg_double_max_abs_diff <= 0.06640625 * ubq_d_ddg_double_scale AND ubq_d_ddg_double_pearson_r > 0.999 AND ubq_d_n_pairs > 0 AND ho1_v1_ddg_scale > 0 AND ho1_v1_ddg_max_abs_diff <= 0.06640625 * ho1_v1_ddg_scale AND ho1_v1_ddg_pearson_r > 0.999 AND ho1_d_ddg_scale > 0 AND ho1_d_ddg_max_abs_diff <= 0.06640625 * ho1_d_ddg_scale AND ho1_d_ddg_pearson_r > 0.999 AND ho1_d_ddg_double_scale > 0 AND ho1_d_ddg_double_max_abs_diff <= 0.06640625 * ho1_d_ddg_double_scale AND ho1_d_ddg_double_pearson_r > 0.999 AND ho1_d_n_pairs > 0 AND ho2_v1_ddg_scale > 0 AND ho2_v1_ddg_max_abs_diff <= 0.06640625 * ho2_v1_ddg_scale AND ho2_v1_ddg_pearson_r > 0.999 AND ho2_d_ddg_scale > 0 AND ho2_d_ddg_max_abs_diff <= 0.06640625 * ho2_d_ddg_scale AND ho2_d_ddg_pearson_r > 0.999 AND ho2_d_ddg_double_scale > 0 AND ho2_d_ddg_double_max_abs_diff <= 0.06640625 * ho2_d_ddg_double_scale AND ho2_d_ddg_double_pearson_r > 0.999 AND ho2_d_n_pairs > 0"
+decision = "Driver float16 path meets the precision-derived tolerance on 1ubq (post-hoc) and on both held-out structures."
+reasoning = "Every compared array (v1 ddg; d_ens1 ddg and ddg_double; for each of 1ubq, 1SMD, 1mbn) is within K*eps16*S max-abs and has Pearson r > 0.999, with at least one epistatic pair."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (weight_source == 'upstream_checkpoint' AND ubq_v1_ddg_scale > 0 AND ubq_v1_ddg_max_abs_diff <= 0.06640625 * ubq_v1_ddg_scale AND ubq_v1_ddg_pearson_r > 0.999 AND ubq_d_ddg_scale > 0 AND ubq_d_ddg_max_abs_diff <= 0.06640625 * ubq_d_ddg_scale AND ubq_d_ddg_pearson_r > 0.999 AND ubq_d_ddg_double_scale > 0 AND ubq_d_ddg_double_max_abs_diff <= 0.06640625 * ubq_d_ddg_double_scale AND ubq_d_ddg_double_pearson_r > 0.999 AND ubq_d_n_pairs > 0 AND ho1_v1_ddg_scale > 0 AND ho1_v1_ddg_max_abs_diff <= 0.06640625 * ho1_v1_ddg_scale AND ho1_v1_ddg_pearson_r > 0.999 AND ho1_d_ddg_scale > 0 AND ho1_d_ddg_max_abs_diff <= 0.06640625 * ho1_d_ddg_scale AND ho1_d_ddg_pearson_r > 0.999 AND ho1_d_ddg_double_scale > 0 AND ho1_d_ddg_double_max_abs_diff <= 0.06640625 * ho1_d_ddg_double_scale AND ho1_d_ddg_double_pearson_r > 0.999 AND ho1_d_n_pairs > 0 AND ho2_v1_ddg_scale > 0 AND ho2_v1_ddg_max_abs_diff <= 0.06640625 * ho2_v1_ddg_scale AND ho2_v1_ddg_pearson_r > 0.999 AND ho2_d_ddg_scale > 0 AND ho2_d_ddg_max_abs_diff <= 0.06640625 * ho2_d_ddg_scale AND ho2_d_ddg_pearson_r > 0.999 AND ho2_d_ddg_double_scale > 0 AND ho2_d_ddg_double_max_abs_diff <= 0.06640625 * ho2_d_ddg_double_scale AND ho2_d_ddg_double_pearson_r > 0.999 AND ho2_d_n_pairs > 0) OR weight_source IS NULL OR ubq_d_n_pairs IS NULL OR ubq_v1_ddg_scale IS NULL OR ubq_v1_ddg_max_abs_diff IS NULL OR ubq_v1_ddg_pearson_r IS NULL OR ubq_d_ddg_scale IS NULL OR ubq_d_ddg_max_abs_diff IS NULL OR ubq_d_ddg_pearson_r IS NULL OR ubq_d_ddg_double_scale IS NULL OR ubq_d_ddg_double_max_abs_diff IS NULL OR ubq_d_ddg_double_pearson_r IS NULL OR ho1_d_n_pairs IS NULL OR ho1_v1_ddg_scale IS NULL OR ho1_v1_ddg_max_abs_diff IS NULL OR ho1_v1_ddg_pearson_r IS NULL OR ho1_d_ddg_scale IS NULL OR ho1_d_ddg_max_abs_diff IS NULL OR ho1_d_ddg_pearson_r IS NULL OR ho1_d_ddg_double_scale IS NULL OR ho1_d_ddg_double_max_abs_diff IS NULL OR ho1_d_ddg_double_pearson_r IS NULL OR ho2_d_n_pairs IS NULL OR ho2_v1_ddg_scale IS NULL OR ho2_v1_ddg_max_abs_diff IS NULL OR ho2_v1_ddg_pearson_r IS NULL OR ho2_d_ddg_scale IS NULL OR ho2_d_ddg_max_abs_diff IS NULL OR ho2_d_ddg_pearson_r IS NULL OR ho2_d_ddg_double_scale IS NULL OR ho2_d_ddg_double_max_abs_diff IS NULL OR ho2_d_ddg_double_pearson_r IS NULL"
+decision = "Block use of the float16 driver path; the precision-derived bound is not met or an input is NULL."
+reasoning = "Any compared array breaches its tolerance or the Pearson bar, any scale, comparison or pair count is NULL, or the weights are not upstream."
+is_residual = true
+
+[result_schema]
+weight_source = "str"
+n_residues_ubq = "int"
+n_residues_ho1 = "int"
+n_residues_ho2 = "int"
+ubq_d_n_pairs = "int"
+ho1_d_n_pairs = "int"
+ho2_d_n_pairs = "int"
+ubq_v1_ddg_scale = "float"
+ubq_v1_ddg_max_abs_diff = "float"
+ubq_v1_ddg_rms_abs_diff = "float"
+ubq_v1_ddg_pearson_r = "float"
+ubq_d_ddg_scale = "float"
+ubq_d_ddg_max_abs_diff = "float"
+ubq_d_ddg_rms_abs_diff = "float"
+ubq_d_ddg_pearson_r = "float"
+ubq_d_ddg_double_scale = "float"
+ubq_d_ddg_double_max_abs_diff = "float"
+ubq_d_ddg_double_rms_abs_diff = "float"
+ubq_d_ddg_double_pearson_r = "float"
+ho1_v1_ddg_scale = "float"
+ho1_v1_ddg_max_abs_diff = "float"
+ho1_v1_ddg_rms_abs_diff = "float"
+ho1_v1_ddg_pearson_r = "float"
+ho1_d_ddg_scale = "float"
+ho1_d_ddg_max_abs_diff = "float"
+ho1_d_ddg_rms_abs_diff = "float"
+ho1_d_ddg_pearson_r = "float"
+ho1_d_ddg_double_scale = "float"
+ho1_d_ddg_double_max_abs_diff = "float"
+ho1_d_ddg_double_rms_abs_diff = "float"
+ho1_d_ddg_double_pearson_r = "float"
+ho2_v1_ddg_scale = "float"
+ho2_v1_ddg_max_abs_diff = "float"
+ho2_v1_ddg_rms_abs_diff = "float"
+ho2_v1_ddg_pearson_r = "float"
+ho2_d_ddg_scale = "float"
+ho2_d_ddg_max_abs_diff = "float"
+ho2_d_ddg_rms_abs_diff = "float"
+ho2_d_ddg_pearson_r = "float"
+ho2_d_ddg_double_scale = "float"
+ho2_d_ddg_double_max_abs_diff = "float"
+ho2_d_ddg_double_rms_abs_diff = "float"
+ho2_d_ddg_double_pearson_r = "float"

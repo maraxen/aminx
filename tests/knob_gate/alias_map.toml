@@ -3625,3 +3625,97 @@ targets = ["topology"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_tier1_tier2_knobs.py::test_knob_semantics_cyclic_offsets"]
 note = "Cyclic peptide sequence offset modular wrapping semantics."
+
+[[row]]
+ref = "thermo_model__mode"
+targets = ["mode"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_mode"]
+note = "Upstream --mode is single | additive | epistatic (v2_ssm.py:540-545, branches :483-495). aminx mode is single | double: 'double' is epistatic when the checkpoint is a ThermoMPNN-D one and additive (s_i + s_j) otherwise (driver.py:845-848), so additive and epistatic are not independently selectable by mode alone."
+
+[[row]]
+ref = "thermo_model__pdb"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream --pdb input path (v2_ssm.py:546); aminx takes structures through the spec."
+
+[[row]]
+ref = "thermo_model__batch_size"
+targets = ["batch_size"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_batch_size"]
+note = "Upstream --batch_size default 256 (v2_ssm.py:547-553), used only in epistatic mode (:495). aminx default is 10000 and the test pins only that chunking leaves predictions unchanged, not the default. Earlier alias map wrongly called this aminx-only."
+
+[[row]]
+ref = "thermo_model__out"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream --out csv prefix (v2_ssm.py:554-555, written at :533); aminx writes through its sinks."
+
+[[row]]
+ref = "thermo_model__chains"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3221"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; tracked by debt #3221 (ThermoMPNN knobs chains, threshold, ss_penalty unimplemented). Upstream --chains restricts load_pdb to the listed chains (v2_ssm.py:479, :556-560); no ThermoMPNNOptions field."
+
+[[row]]
+ref = "thermo_model__threshold"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3221"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; tracked by debt #3221 (ThermoMPNN knobs chains, threshold, ss_penalty unimplemented). Upstream --threshold (default -0.5) filters the output rows (v2_ssm.py:487-495, :512, :561-566); no aminx-side filter was found (unverified: not traced through the driver)."
+
+[[row]]
+ref = "thermo_model__distance"
+targets = ["distance_threshold"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_distance_threshold"]
+note = "Upstream flag is --distance (default 5.0 A, CA-CA pair filter in double modes; v2_ssm.py:505-506, :567-572); aminx field is distance_threshold with the same default. The earlier reference name 'distance_threshold' does not exist upstream."
+
+[[row]]
+ref = "thermo_model__ss_penalty"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3221"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; tracked by debt #3221 (ThermoMPNN knobs chains, threshold, ss_penalty unimplemented). Upstream --ss_penalty adds a disulfide-breakage penalty (v2_ssm.py:508-509, :573-577); no ThermoMPNNOptions field."
+
+# --- AMINX-ONLY ROWS (upstream = false): upstream has no such flag. ---
+[[row]]
+ref = "__aminx_only__thermo_checkpoint_id"
+upstream = false
+targets = ["checkpoint_id"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_checkpoint_id"]
+note = "aminx-only: explicit checkpoint selection (option > spec.checkpoint_id > thermo_mpnn_v1_default). Upstream picks the checkpoint from --mode inside get_config/get_model (v2_ssm.py:477-478); it has no checkpoint flag."
+
+[[row]]
+ref = "__aminx_only__thermo_ensemble"
+upstream = false
+targets = ["ensemble"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_ensemble"]
+note = "aminx-only: average the 3 v2 ensemble members or evaluate one. v2_ssm.py has no ensemble flag."
+
+[[row]]
+ref = "__aminx_only__thermo_dtype"
+upstream = false
+targets = ["dtype"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_dtype"]
+note = "aminx-only: float32 (default) vs float16. v2_ssm.py has no dtype flag. float16 FAILS the parity band (v1 run f12f3209 0.048 vs 1.5e-2; v2 run 18c1d29c ho1 d_ddg 0.3995 vs 0.1499) and is refused unless allow_float16=True. The semantics test pins the refusal; the f16-vs-f32 band check test_knob_semantics_dtype_float16_band is xfail and deliberately not cited here."
+
+[[row]]
+ref = "__aminx_only__thermo_allow_float16"
+upstream = false
+targets = ["allow_float16"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_allow_float16"]
+note = "aminx-only: explicit bypass required for dtype='float16' (ValueError without it). Inert for float32. No upstream analogue."
