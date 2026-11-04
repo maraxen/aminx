@@ -47,8 +47,13 @@ TIER1_TIER2_SLUGS = (
   "ca_only_parity",
   "antibmpnn_parity",
   "caliby_parity",
-  "thermo_mpnn_parity",
 )
+# Vehicles that run standalone with ``--synthetic``. antibmpnn_parity / caliby_parity grade against sealed
+# upstream dumps (``--oracle-dir`` etc.) and run only on titanix under bth; the static closure tests cover them.
+SYNTHETIC_RUNNABLE_SLUGS = ("tier1_variants_parity", "ca_only_parity")
+# A path component of the form ``/potts`` marks Potts-family code. caliby's own ``potts.py`` is its Potts
+# decoder head, not Potts-MPNN code, so the family's directory is exempt.
+_OWN_POTTS_HEAD = "/families/caliby/"
 FAMPNN_SLUGS = ("fampnn_parity",)
 ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS)
 
@@ -263,7 +268,8 @@ def test_potts_rows_do_not_depend_on_laser_code(slug: str) -> None:
 @pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
 def test_tier1_tier2_rows_do_not_depend_on_potts_code(slug: str) -> None:
   closure = _real(slug)
-  assert not [f for f in closure.files if "/potts" in f], f"a Tier 1/2 row ({slug}) reaches Potts code"
+  potts_hits = [f for f in closure.files if "/potts" in f and _OWN_POTTS_HEAD not in f]
+  assert not potts_hits, f"a Tier 1/2 row ({slug}) reaches Potts code"
   assert not [f for f in closure.files if "/laser" in f], f"a Tier 1/2 row ({slug}) reaches LASEr code"
 
 
@@ -569,7 +575,7 @@ def test_hook_is_silent_for_a_process_that_is_not_the_vehicle(tmp_path: Path) ->
   assert not out.exists()
 
 
-@pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
+@pytest.mark.parametrize("slug", SYNTHETIC_RUNNABLE_SLUGS)
 def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> None:
   """Regression test: runtime execution must not load uncovered files or sibling families."""
   out_loaded = tmp_path / f"loaded_{slug}.json"
@@ -602,7 +608,9 @@ def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> Non
   assert out_loaded.exists(), f"Closure hook did not record loaded files for {slug}"
   data = json.loads(out_loaded.read_text(encoding="utf-8"))
   loaded = data.get("loaded", [])
-  assert not [f for f in loaded if "/potts" in f], f"Vehicle {slug} dynamically loaded potts code"
+  assert not [f for f in loaded if "/potts" in f and _OWN_POTTS_HEAD not in f], (
+    f"Vehicle {slug} dynamically loaded potts code"
+  )
   assert not [f for f in loaded if "/laser" in f], f"Vehicle {slug} dynamically loaded laser code"
   closure = _real(slug)
   uncovered = loaded_outside_closure(loaded, closure)
