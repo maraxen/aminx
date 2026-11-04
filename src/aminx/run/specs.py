@@ -394,9 +394,11 @@ class RunSpecification:
 
     # A non-default mode on a path that cannot honour it would be recorded in the store while
     # having no effect: refuse instead of silently ignoring it.
+    # decoding_order_fn is the exception for the seed: the seeded key IS forwarded to the custom
+    # function, so a seed is live there; only the mode is ignored.
     if self.fixed_position_context != "random_order" or self.decoding_order_seed is not None:
       bypass = []
-      if self.decoding_order_fn is not None:
+      if self.decoding_order_fn is not None and self.fixed_position_context != "random_order":
         bypass.append("decoding_order_fn")
       if getattr(self, "wave", None) is not None:
         bypass.append("a supplied wave")

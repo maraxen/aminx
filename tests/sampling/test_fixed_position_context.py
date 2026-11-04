@@ -180,13 +180,19 @@ def test_spec_refuses_a_seed_on_paths_that_ignore_it():
   from aminx.run.specs import SamplingSpecification
 
   base = {"inputs": ["/tmp/x.pdb"], "checkpoint_id": "ckpt_001"}
-  for bypass in ({"decoding_order_fn": random_decoding_order}, {"wave": object()}, {"sampling_strategy": "straight_through"}):
-    with pytest.raises(ValueError, match="no effect"):
-      SamplingSpecification(**base, decoding_order_seed=7, **bypass)
+  for seed in (7, 0):  # 0 is a valid, falsy seed
+    for bypass in ({"wave": object()}, {"sampling_strategy": "straight_through"}):
+      with pytest.raises(ValueError, match="no effect"):
+        SamplingSpecification(**base, decoding_order_seed=seed, **bypass)
   SamplingSpecification(**base, decoding_order_seed=7)  # control: the seed alone is accepted
+  # the seed IS live with decoding_order_fn (the seeded key is forwarded to it), so it must be accepted
+  SamplingSpecification(**base, decoding_order_seed=7, decoding_order_fn=random_decoding_order)
 
 
-@pytest.mark.parametrize("kwargs", [{"fixed_position_context": "canonical_order"}, {"decoding_order_seed": 7}])
+@pytest.mark.parametrize(
+  "kwargs",
+  [{"fixed_position_context": "canonical_order"}, {"fixed_position_context": "mutual_context"}, {"decoding_order_seed": 7}, {"decoding_order_seed": 0}],
+)
 def test_spec_refuses_order_controls_for_driver_backed_families(kwargs):
   """Driver families never reach with_decoding_order; both an explicit family and one derived from the id are refused."""
   from aminx.run.specs import SamplingSpecification
