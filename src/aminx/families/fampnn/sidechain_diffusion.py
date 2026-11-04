@@ -101,9 +101,11 @@ class FAMPNNTimestepEmbedder(eqx.Module):
     """
     dtype = self.mlp_0.weight.dtype
     half = self.frequency_embedding_size // 2
+    # The frequency table is float32 in every precision, as upstream's
+    # ``torch.arange(..., dtype=torch.float32)`` (dit_utils.py:261): an f64 run reuses the same f32-rounded table.
     freqs = jnp.exp(
-      -math.log(10000.0) * jnp.arange(0, half, dtype=dtype) / half,
-    )
+      -math.log(10000.0) * jnp.arange(0, half, dtype=jnp.float32) / half,
+    ).astype(dtype)
     args = t.astype(dtype)[:, None] * freqs[None, :]
     emb = jnp.concatenate([jnp.cos(args), jnp.sin(args)], axis=-1)
     return _linear(self.mlp_2, jax.nn.silu(_linear(self.mlp_0, emb)))
@@ -301,6 +303,10 @@ class SidechainDiffusionModule(eqx.Module):
   final_layer: FAMPNNFinalLayer
   f_embedder: eqx.nn.Linear | None = None
   sigma_data: float = eqx.field(static=True, default=1.0)
+  edm_s_min: float = eqx.field(static=True, default=0.01)
+  edm_s_max: float = eqx.field(static=True, default=80.0)
+  edm_rho: float = eqx.field(static=True, default=7.0)
+  use_self_conditioning: bool = eqx.field(static=True, default=True)
 
   def __init__(
     self,
@@ -312,6 +318,10 @@ class SidechainDiffusionModule(eqx.Module):
     *,
     has_f_embedder: bool = False,
     sigma_data: float = 1.0,
+    edm_s_min: float = 0.01,
+    edm_s_max: float = 80.0,
+    edm_rho: float = 7.0,
+    use_self_conditioning: bool = True,
     key: jax.Array | None = None,
   ) -> None:
     """Initialize ``SidechainDiffusionModule``.
@@ -332,6 +342,11 @@ class SidechainDiffusionModule(eqx.Module):
       Parameter ``has_f_embedder``.
     sigma_data : float
       Parameter ``sigma_data``.
+    edm_s_min, edm_s_max, edm_rho : float
+      EDM noise-level schedule from the checkpoint's ``interpolant`` config
+      (``s_min=0.01``, ``s_max=80``, ``rho=7`` in all released checkpoints).
+    use_self_conditioning : bool
+      Whether the denoiser takes the previous ``x1_pred`` as an input (all released checkpoints do).
     key : jax.Array | None
       Parameter ``key``.
 
@@ -359,6 +374,10 @@ class SidechainDiffusionModule(eqx.Module):
       key=keys[-1],
     )
     self.sigma_data = sigma_data
+    self.edm_s_min = edm_s_min
+    self.edm_s_max = edm_s_max
+    self.edm_rho = edm_rho
+    self.use_self_conditioning = use_self_conditioning
 
   def compute_conditioning(
     self,

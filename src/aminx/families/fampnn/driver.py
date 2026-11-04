@@ -597,6 +597,12 @@ def _load_fampnn_eqx(path: Path, checkpoint_id: str) -> FAMPNNModel:
     has_f_embedder=bool(meta.get("has_f_embedder", True)),
     conf_num_bins=int(meta.get("conf_num_bins", 50)),
     conf_has_upstream_heads=bool(meta.get("conf_has_upstream_heads", True)),
+    scn_sigma_data=float(meta.get("scn_sigma_data", 0.6399999856948853)),
+    edm_s_min=float(meta.get("edm_s_min", 0.01)),
+    edm_s_max=float(meta.get("edm_s_max", 80.0)),
+    edm_rho=float(meta.get("edm_rho", 7.0)),
+    conf_min_bin=float(meta.get("conf_min_bin", 0.0)),
+    conf_max_bin=float(meta.get("conf_max_bin", 4.0)),
     key=jax.random.PRNGKey(0),
   )
   if path.suffix == ".zst":

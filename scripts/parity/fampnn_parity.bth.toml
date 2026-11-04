@@ -1,31 +1,114 @@
+[metadata]
+title = "FAMPNN parity against the real upstream code and released weights"
+created = "261104"
+schema_version = "0.3"
+
 [experiment]
-hypothesis = "JAX FAMPNN stages L1 (Atom14/37 frame transformations and RBF features), L2 (FAEncoder + GVPGraphEmbedding + MLP trunk sequence logits), and L3 (1-step continuous EDM sidechain denoising with injected noise) achieve parity within 1e-4 in float32, and all negative controls (corrupt_atom_order, corrupt_w_out, zero_edm_self_cond) fail decisively (> 1e-2)."
+hypothesis = "aminx FAMPNN (structure prep, FAEncoder, sidechain denoiser and EDM loop, confidence head, linear-K masked-autoregressive sampler with psce re-mask and overrides, fixed-position parsing) reproduces a sealed dump of the real upstream fampnn code (commit aaf788b) loaded with the released weights fampnn_0_0, fampnn_0_3 and fampnn_0_3_cath, on 1ubq and a two-chain split of 1ubq, with every continuous array within 1e-7 absolute in float64 and within max(1e-4, 5 x the sealed upstream's own float32-vs-float64 deviation) in float32, every discrete array (aatype, neighbour indices, masks, orders) exact, and every one of nine aminx-side code perturbations leaving the float64 band by more than 1e-4 or flipping a discrete value."
 stage_name = "validation"
-
-[reproduction]
-reproduces_paper = "doi:10.1101/2024.09.13.612948"
-
-[controls]
-positive_outcome = ["pass"]
-negative_outcome = ["fail"]
-
-[requires.waiver]
-reason = "FAMPNN parity verification vehicle against upstream PyTorch checkpoints"
+novel = false
 
 [outcomes.pass]
-condition = "clean == 'pass' AND mutants.corrupt_atom_order == 'failed' AND mutants.corrupt_w_out == 'failed' AND mutants.zero_edm_self_cond == 'failed'"
-decision = "Promote FAMPNN JAX port and knob coverage."
-reasoning = "Clean run passes all graded stages L1/L2/L3, and all three negative control mutants trip."
+condition = "clean = 'pass' AND oracle_sealed = 1 AND oracle_f32_content_sha256 = '0c85c5801ba9202dacb2ef8c28c945a50deb318c35e56f6bebd17b8c481610b3' AND oracle_f64_content_sha256 = 'cf322a0b7b41f7db29d1873a55d49264be838d2b4de35009bdd56501e51ebbb2' AND weights_sha_ok = 1 AND fixture_sha_ok = 1 AND weight_source = 'upstream_checkpoint' AND leaf_provenance_max_abs = 0.0 AND f64_n_over_band = 0 AND f32_n_over_band = 0 AND f64_discrete_mismatches = 0 AND f32_discrete_mismatches = 0 AND parse_discrete_mismatches = 0 AND fixed_pos_mismatches = 0 AND n_listed = 9 AND n_failed = n_listed"
+decision = "FAMPNN parity holds against the real upstream; the alias_map and branch_manifest rows for this vehicle may enter a ledger wave."
+reasoning = "Every graded array of every stage is inside its band in both precisions, no leaf of the converted model is random-initialised and live, and all nine negative controls trip."
 is_residual = false
+adversarial_check = "NOT (clean = 'pass' AND oracle_sealed = 1 AND weights_sha_ok = 1 AND n_listed = 9 AND n_failed = n_listed)"
 
 [outcomes.fail]
-condition = "clean != 'pass' OR mutants.corrupt_atom_order != 'failed' OR mutants.corrupt_w_out != 'failed' OR mutants.zero_edm_self_cond != 'failed'"
-decision = "Block promotion and debug FAMPNN feature, GVP, or EDM denoiser implementation."
-reasoning = "Parity delta exceeds tolerance or negative controls failed to trip."
+condition = "NOT (clean = 'pass' AND oracle_sealed = 1 AND oracle_f32_content_sha256 = '0c85c5801ba9202dacb2ef8c28c945a50deb318c35e56f6bebd17b8c481610b3' AND oracle_f64_content_sha256 = 'cf322a0b7b41f7db29d1873a55d49264be838d2b4de35009bdd56501e51ebbb2' AND weights_sha_ok = 1 AND fixture_sha_ok = 1 AND weight_source = 'upstream_checkpoint' AND leaf_provenance_max_abs = 0.0 AND f64_n_over_band = 0 AND f32_n_over_band = 0 AND f64_discrete_mismatches = 0 AND f32_discrete_mismatches = 0 AND parse_discrete_mismatches = 0 AND fixed_pos_mismatches = 0 AND n_listed = 9 AND n_failed = n_listed)"
+decision = "Do not claim FAMPNN parity. Read stage_f64_worst_max_abs and the .rows.json breakdown to find the first stage that leaves its band; a control that did not trip means that stage is not under test."
+reasoning = "Any array outside its band, a discrete mismatch, an unsealed oracle or wrong weights, a live random leaf, or a negative control that fails to trip falsifies the vehicle."
 is_residual = true
+adversarial_check = "clean = 'pass' AND oracle_sealed = 1 AND weights_sha_ok = 1 AND n_listed = 9 AND n_failed = n_listed"
 
 [result_schema]
-family = "str"
 clean = "str"
-mutants = "dict"
-weights = "dict"
+n_listed = "int"
+n_failed = "int"
+weight_source = "str"
+oracle_sealed = "int"
+oracle_f32_content_sha256 = "str"
+oracle_f64_content_sha256 = "str"
+oracle_f32_file_sha256 = "str"
+oracle_f64_file_sha256 = "str"
+weights_sha_ok = "int"
+fixture_sha_ok = "int"
+leaf_provenance_max_abs = "float"
+n_checks_f64 = "int"
+n_checks_f32 = "int"
+f64_n_over_band = "int"
+f32_n_over_band = "int"
+f64_discrete_mismatches = "int"
+f32_discrete_mismatches = "int"
+f32_worst_dev_over_band = "float"
+parse_max_abs_diff = "float"
+parse_discrete_mismatches = "int"
+fixed_pos_mismatches = "int"
+wall_seconds = "float"
+enc_f64_worst_max_abs = "float"
+scn1_f64_worst_max_abs = "float"
+edm_f64_worst_max_abs = "float"
+sample_f64_worst_max_abs = "float"
+enc_f32_worst_max_abs = "float"
+scn1_f32_worst_max_abs = "float"
+edm_f32_worst_max_abs = "float"
+sample_f32_worst_max_abs = "float"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+registered = """
+Registered 261104 before any run of this script against the sealed dumps. The oracle dumps
+(scripts/parity/dump_fampnn_oracle.py, run by scripts/parity/launch_fampnn_oracle.sh on titanix) were produced
+and hashed first; no aminx-vs-oracle number had been computed when this file was committed. Bands, mutant
+count, hashes and the pass rule are fixed here and are not edited after a run.
+"""
+upstream = "~/repos/fampnn @ aaf788b (titanix /home/solab/repos/fampnn); fampnn code is imported unmodified"
+oracle_inputs = "real released checkpoints; real fixtures tests/data/1ubq.pdb and a two-chain relabel of it (scripts/parity/fampnn_fixtures.py)"
+oracle_f32_file_sha256 = "febf2905d846efe63528adee08deb897e61cb1cc0eb127be89f259b2133f77b2"
+oracle_f64_file_sha256 = "95fedecfd0b19429b4eba48a3abdf985df5416080999061483ebf4665cdc2d35"
+oracle_f32_content_sha256 = "0c85c5801ba9202dacb2ef8c28c945a50deb318c35e56f6bebd17b8c481610b3"
+oracle_f64_content_sha256 = "cf322a0b7b41f7db29d1873a55d49264be838d2b4de35009bdd56501e51ebbb2"
+oracle_reproducibility = "two f32 dumps from the same inputs on titanix had identical content_sha256 (261104)"
+weights_sha256_fampnn_0_0 = "afbdfda29e6f2a1bd340971bb226638afb1bf460cfbc29f115d3b5964622c006"
+weights_sha256_fampnn_0_3 = "8969b3f1f3c941178076c7800952595a18b56fd3828d15bb993d3ef537938a05"
+weights_sha256_fampnn_0_3_cath = "81112a9b8d436d9baf5233a3603bac911c75b9782ced59dae5a2726316802218"
+fixture_sha256_1ubq = "d4a6812d8951cf6594e6a0763f089e35f5a80b62acb3c117b2c5565228a7b161"
+fixture_sha256_1ubq_AB = "f080c6ce0621195b61040ea297f3efca726071ae1f54714d1e2c49d51783d7dd"
+injection_points = """
+Every torch RNG primitive upstream uses is served from a recorded queue and any other RNG primitive raises:
+torch.rand_like at fampnn/sampling_utils.py:21 (decoding order); torch.multinomial at
+fampnn/model/fampnn_denoiser.py:95 (replaced by an inverse-CDF draw on injected uniforms, the only change of
+mechanism); torch.randn in fampnn/interpolants/edm_interpolant.py sample_prior (EDM prior, scaled by sigma(0)
+by upstream itself); torch.randn_like in edm_interpolant.py churn (only when s_churn != 0).
+"""
+f64_oracle = """
+The float64 oracle sets torch's default dtype to float64 after import, casts the model and the module-level
+float32 reference-conformer table, and routes Tensor.float() to float64 (upstream hard-codes .float() at
+fampnn/model/fampnn.py:360). Values are unchanged. Upstream builds its timestep-frequency table in float32
+(dit_utils.py:261), so that table is float32-rounded in the float64 oracle; aminx reproduces the same float32 table.
+"""
+env_stubs = """
+Oracle environment: omegaconf, torchtyping (typeguard 2.13.3), gemmi, rdkit, torch_geometric installed with
+uv pip install --target; torchvision-free timm stub in scripts/parity/fampnn_oracle_env (verbatim copy of timm
+1.0.31 Mlp, the only timm symbol upstream uses besides use_fused_attn).
+"""
+bands = """
+float64: 1e-7 absolute on every continuous array. float32: max(1e-4, 5 x floor) per array, floor = max abs
+difference between the sealed upstream float32 and float64 dumps of that array. Discrete arrays exact.
+Negative control tripped when its targeted stage exceeds 1e-4 in float64 or flips a discrete value.
+"""
+mutants = """
+sigma_min_old_default (scn1, edm): s_min 0.002 instead of the checkpoint's 0.01.
+cosine_unmask_schedule (sample): cosine-warped K schedule instead of linear.
+rank_decoding_order (sample): rank (double argsort) instead of upstream's argsort permutation.
+selfcond_off (scn1, edm): drop the self-conditioning input.
+step_scale_one (edm): step_scale 1.0 instead of 1.5.
+conf_bins_0_8 (edm psce): bin range 0-8 instead of 0-4.
+ghost_atoms_to_origin (edm): ghost sidechain atoms at the origin instead of CA.
+chain_embedding_off (enc, two-chain fixture): all residues on one chain.
+categorical_reversed_cdf (sample): inverse-CDF draw with 1-u.
+"""
+wall_time_estimate = "<= 40 min on titanix CPU (JAX_PLATFORMS=cpu), dominated by float64 sampler compilation and the 32 sampler arm-runs; to be profiled and amended (estimate only, outcomes untouched) before the registered run"
