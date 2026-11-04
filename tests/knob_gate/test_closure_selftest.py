@@ -45,6 +45,7 @@ PROTON_SLUGS = ("protonpotts_parity",)
 TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
+  "antibmpnn_parity",
 )
 ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS)
 

@@ -639,7 +639,6 @@ class ThermoModelKnobs:
   thermo_model__distance: float = 5.0  # type=float; --distance (CA-CA cutoff); v2_ssm.py:567-572
   thermo_model__ss_penalty: bool = False  # store_true; --ss_penalty; v2_ssm.py:573-577
 # END MANUAL
-
 # MANUAL (not AST-derivable)
 # AntiBMPNN (zeysun/AntiBMPNN @ 7e6329ba3c317e7344c6b09add72dea2390af39a), re-derived 261104 from the argparse
 # blocks. Running_AntiBMPNN_run.py:405-452 is the ProteinMPNN flag set. There is NO cdr_scheme, heavy/light chain,
