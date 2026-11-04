@@ -335,6 +335,8 @@ def main() -> None:  # noqa: C901, PLR0915
         if tensor is not None:
           out[f"pk/call{call}_{field}"] = _np(tensor[0], want)
     out["pk/sigma_data"] = np.asarray(float(sdm.scn_interpolant.sigma_data), dtype=want)
+    for name in ("s_min", "s_max", "rho"):
+      out[f"pk/{name}"] = np.asarray(float(getattr(sdm.scn_interpolant, name)), dtype=want)
 
   # ---- seal --------------------------------------------------------------------------------------
   args.out_dir.mkdir(parents=True, exist_ok=True)
