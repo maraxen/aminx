@@ -676,3 +676,56 @@ class CalibyKnobs:
   caliby_api__out_dir: str | None = None  # api.py:94 / eval/sampling/seq_des.yaml:7
   caliby_ckpt__augment_eps: float = 0.3  # checkpoint cfg model.denoiser.augment_eps; atom_mpnn_denoiser.py:134-139, applied only in training mode
 # END MANUAL
+# MANUAL (not AST-derivable)
+# AntiBMPNN (zeysun/AntiBMPNN @ 7e6329ba3c317e7344c6b09add72dea2390af39a), re-derived 261104 from the argparse
+# blocks. Running_AntiBMPNN_run.py:405-452 is the ProteinMPNN flag set. There is NO cdr_scheme, heavy/light chain,
+# bias_weight, ANARCI or clustering flag anywhere in the repository (rg over *.py *.sh 261104: the only CDR text is a
+# function name, CDRH3_Comb, in helper_scripts/parsing_design_result.py).
+@dataclass(frozen=True)
+class AntiBMPNNRunKnobs:
+  """Running_AntiBMPNN_run.py argparse block (lines 407-452)."""
+
+  antibmpnn_run__suppress_print: int = 0  # type=int; --suppress_print; 0 for False, 1 for True; read at :49 (print_all); Running_AntiBMPNN_run.py:407
+  antibmpnn_run__ca_only: bool = False  # type=bool; --ca_only; store_true; selects CA-only parsing and model (:148, :167); no CA-only AntiBMPNN checkpoint exists; Running_AntiBMPNN_run.py:410
+  antibmpnn_run__path_to_model_weights: str = ""  # type=str; --path_to_model_weights; NEVER READ: checkpoint dir is hard-coded '../antibmpnn_model_weights' at :35; Running_AntiBMPNN_run.py:411
+  antibmpnn_run__model_name: str = "v_48_020"  # type=str; --model_name; checkpoint stem under ../antibmpnn_model_weights (:39); the shipped files are antibmpnn_000..100.pt so the default names no file; Running_AntiBMPNN_run.py:412
+  antibmpnn_run__use_soluble_model: bool = False  # type=bool; --use_soluble_model; store_true; NEVER READ in main(); Running_AntiBMPNN_run.py:413
+  antibmpnn_run__seed: int = 0  # type=int; --seed; NEVER READ: the seed is drawn at random at :26-30; Running_AntiBMPNN_run.py:416
+  antibmpnn_run__save_score: int = 0  # type=int; --save_score; 0/1; writes scores/<name>.npz (:390-391); Running_AntiBMPNN_run.py:418
+  antibmpnn_run__save_probs: int = 0  # type=int; --save_probs; 0/1; writes probs/<name>.npz (:392-396); Running_AntiBMPNN_run.py:419
+  antibmpnn_run__score_only: int = 0  # type=int; --score_only; 0/1; scores the input backbone-sequence pair under a random decoding order (:225-270); Running_AntiBMPNN_run.py:421
+  antibmpnn_run__path_to_fasta: str = ""  # type=str; --path_to_fasta; score FASTA sequences with --score_only (:227-240); Running_AntiBMPNN_run.py:422
+  antibmpnn_run__conditional_probs_only: int = 0  # type=int; --conditional_probs_only; 0/1; log p(s_i | rest of sequence and backbone) (:271-282); Running_AntiBMPNN_run.py:425
+  antibmpnn_run__conditional_probs_only_backbone: int = 0  # type=int; --conditional_probs_only_backbone; 0/1; log p(s_i | backbone) only (:278); Running_AntiBMPNN_run.py:426
+  antibmpnn_run__unconditional_probs_only: int = 0  # type=int; --unconditional_probs_only; 0/1; one forward pass, p(s_i | backbone) (:283-293); Running_AntiBMPNN_run.py:427
+  antibmpnn_run__backbone_noise: float = 0.0  # type=float; --backbone_noise; std of Gaussian noise added to backbone atoms: augment_eps (:167); Running_AntiBMPNN_run.py:429
+  antibmpnn_run__num_seq_per_target: int = 1  # type=int; --num_seq_per_target; sequences per target; NUM_BATCHES = num_seq_per_target // batch_size (:43); Running_AntiBMPNN_run.py:430
+  antibmpnn_run__batch_size: int = 1  # type=int; --batch_size; clones per batch (:44, :221); Running_AntiBMPNN_run.py:431
+  antibmpnn_run__max_length: int = 200000  # type=int; --max_length; proteins longer than this are dropped by StructureDatasetPDB (:149); Running_AntiBMPNN_run.py:432
+  antibmpnn_run__sampling_temp: str = "0.1"  # type=str; --sampling_temp; space-separated temperatures (:45); Running_AntiBMPNN_run.py:433
+  antibmpnn_run__out_folder: str | None = None  # type=str; --out_folder; output folder (:41); Running_AntiBMPNN_run.py:435
+  antibmpnn_run__pdb_path: str = ""  # type=str; --pdb_path; single PDB to design (:147); Running_AntiBMPNN_run.py:436
+  antibmpnn_run__pdb_path_chains: str = ""  # type=str; --pdb_path_chains; chains to design; the rest are fixed (:151-157); Running_AntiBMPNN_run.py:437
+  antibmpnn_run__jsonl_path: str | None = None  # type=str; --jsonl_path; pre-parsed structures (:159); Running_AntiBMPNN_run.py:438
+  antibmpnn_run__chain_id_jsonl: str = ""  # type=str; --chain_id_jsonl; designed / fixed chain dictionary (:52); Running_AntiBMPNN_run.py:439
+  antibmpnn_run__fixed_positions_jsonl: str = ""  # type=str; --fixed_positions_jsonl; fixed-position dictionary (:63); Running_AntiBMPNN_run.py:440
+  antibmpnn_run__omit_AAs: str = "X"  # type=str; --omit_AAs; type=list: a CLI value is split into letters and REPLACES the default 'X' omit (:46, :50); Running_AntiBMPNN_run.py:441
+  antibmpnn_run__bias_AA_jsonl: str = ""  # type=str; --bias_AA_jsonl; per-letter logit bias dictionary (:100, :141-145); Running_AntiBMPNN_run.py:442
+  antibmpnn_run__bias_by_res_jsonl: str = ""  # type=str; --bias_by_res_jsonl; per-position logit bias dictionary (:124); Running_AntiBMPNN_run.py:444
+  antibmpnn_run__omit_AA_jsonl: str = ""  # type=str; --omit_AA_jsonl; per-position omitted letters (:88); Running_AntiBMPNN_run.py:445
+  antibmpnn_run__pssm_jsonl: str = ""  # type=str; --pssm_jsonl; PSSM dictionary (:75); Running_AntiBMPNN_run.py:446
+  antibmpnn_run__pssm_multi: float = 0.0  # type=float; --pssm_multi; 0.0 ignores the PSSM, 1.0 ignores the model; Running_AntiBMPNN_run.py:447
+  antibmpnn_run__pssm_threshold: float = 0.0  # type=float; --pssm_threshold; restricts letters per position via pssm_log_odds (:223); Running_AntiBMPNN_run.py:448
+  antibmpnn_run__pssm_log_odds_flag: int = 0  # type=int; --pssm_log_odds_flag; 0/1; Running_AntiBMPNN_run.py:449
+  antibmpnn_run__pssm_bias_flag: int = 0  # type=int; --pssm_bias_flag; 0/1; Running_AntiBMPNN_run.py:450
+  antibmpnn_run__tied_positions_jsonl: str = ""  # type=str; --tied_positions_jsonl; tied-position dictionary (:112); selects tied_sample (:313); Running_AntiBMPNN_run.py:452
+
+
+@dataclass(frozen=True)
+class AntiBMPNNParseResultKnobs:
+  """helper_scripts/parsing_design_result.py argparse block (lines 89-91)."""
+
+  antibmpnn_parse__dir: str | None = None  # type=str; --dir directory of .fa files; parsing_design_result.py:89
+  antibmpnn_parse__start: int | None = None  # type=int; --start first residue, 1-based (seq[start-1:end], :24-26); parsing_design_result.py:90
+  antibmpnn_parse__end: int | None = None  # type=int; --end last residue, inclusive; parsing_design_result.py:91
+# END MANUAL

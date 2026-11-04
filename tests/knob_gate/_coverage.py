@@ -49,6 +49,7 @@ _WEIGHT_PREFIXES = (
   "thermo_",
   "tier1_",
   "ca_only_",
+  "antibmpnn_",
 )
 
 

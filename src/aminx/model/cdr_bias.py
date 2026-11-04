@@ -1,9 +1,15 @@
-"""Antibody CDR sequence-numbering masks, frequency logit transforms, and Barley descriptors.
+"""AntiBMPNN design descriptors (upstream-derived) and aminx-only CDR-bias utilities.
 
-Implements the inference-time CDR region masking, target amino-acid frequency
-log-odds logit biasing, and Barley/Lehninger physicochemical descriptor calculation
-described in AntiBMPNN (Zeyu Sun et al., 2024; <https://github.com/zeysun/AntiBMPNN>;
-Zenodo DOI ``10.5281/zenodo.13387792``).
+UPSTREAM-DERIVED, graded against the real ``peptides`` call in scripts/parity/antibmpnn_parity.py:
+``compute_cdr_physicochemical_descriptors`` (PD1/PD2 means and Lehninger net charge, as in
+AntiBMPNN ``helper_scripts/parsing_design_result.py:44-52``).
+
+AMINX-ONLY, NO UPSTREAM COUNTERPART (verified 261104: neither ``Running_AntiBMPNN_run.py`` nor
+``protein_mpnn_utils.py`` contains any CDR, scheme or numbering logic; the real design flow selects
+positions with ``make_fixed_positions_dict.py --specify_non_fixed``): ``build_cdr_region_mask``,
+``CDRRegionMasks``, ``CDRFrequencyLogitTransform`` and ``make_cdr_frequency_logit_transform``. They are
+kept only because other aminx code imports them; they are not an AntiBMPNN feature and nothing here
+grades them against upstream (debt TBD-ANTIBMPNN-1).
 """
 
 from __future__ import annotations
@@ -26,54 +32,58 @@ if TYPE_CHECKING:
 # index 20 ('X') is the unknown/padding token (always neutral / 0.0).
 ALPHABET_21: str = "ACDEFGHIKLMNPQRSTVWYX"
 
-# Barley et al. (2018) PC1 (volume / size) and PC2 (hydrophobicity / polarity)
-# descriptor scales in Aminx 21-token alphabetical order (A..Y, X=0.0).
+# Physical descriptors PD1 (related to residue volume) and PD2 (related to hydrophilicity),
+# Barley et al. (2018) J. Chem. Inf. Model. 58(2):234-243, in Aminx 21-token alphabetical order
+# (A..Y, X=0.0). These are the values of ``peptides.tables.PHYSICAL_DESCRIPTORS`` (peptides 0.5.0), the
+# table behind ``peptides.Peptide.physical_descriptors()`` that AntiBMPNN's
+# ``helper_scripts/parsing_design_result.py:44-48`` calls. An earlier hand-typed table here did not match
+# it (max |delta| 1.5 on GSGSGS); scripts/parity/antibmpnn_parity.py now grades this against the real call.
 BARLEY_PD1_VOLUME: tuple[float, ...] = (
-  -1.56,  # A (0)
-  -0.76,  # C (1)
-  -1.19,  # D (2)
-  -0.37,  # E (3)
-  1.10,   # F (4)
-  -2.06,  # G (5)
-  0.33,   # H (6)
-  0.21,   # I (7)
-  0.15,   # K (8)
-  0.21,   # L (9)
-  0.42,   # M (10)
-  -0.95,  # N (11)
-  -1.01,  # P (12)
-  -0.12,  # Q (13)
-  0.95,   # R (14)
-  -1.32,  # S (15)
-  -0.79,  # T (16)
-  -0.38,  # V (17)
-  2.19,   # W (18)
-  1.29,   # Y (19)
-  0.0,    # X (20)
+  -2.9,  # A (0)
+  -1.89,  # C (1)
+  -0.92,  # D (2)
+  0.16,  # E (3)
+  2.22,  # F (4)
+  -4.04,  # G (5)
+  0.83,  # H (6)
+  0.51,  # I (7)
+  0.92,  # K (8)
+  0.52,  # L (9)
+  0.92,  # M (10)
+  -0.68,  # N (11)
+  -1.25,  # P (12)
+  0.36,  # Q (13)
+  2.41,  # R (14)
+  -2.36,  # S (15)
+  -1.19,  # T (16)
+  -0.65,  # V (17)
+  4.28,  # W (18)
+  2.75,  # Y (19)
+  0.0,  # X (20)
 )
 
 BARLEY_PD2_HYDRO: tuple[float, ...] = (
-  -0.96,  # A (0)
-  -0.94,  # C (1)
-  1.25,   # D (2)
-  1.13,   # E (3)
-  -1.52,  # F (4)
-  -0.22,  # G (5)
-  0.33,   # H (6)
-  -1.47,  # I (7)
-  1.17,   # K (8)
-  -1.42,  # L (9)
-  -1.01,  # M (10)
-  0.81,   # N (11)
-  -0.17,  # P (12)
-  0.72,   # Q (13)
-  0.88,   # R (14)
-  0.85,   # S (15)
-  0.28,   # T (16)
-  -1.16,  # V (17)
-  -1.27,  # W (18)
-  -0.61,  # Y (19)
-  0.0,    # X (20)
+  -1.03,  # A (0)
+  0.15,  # C (1)
+  1.23,  # D (2)
+  1.28,  # E (3)
+  -1.47,  # F (4)
+  0.01,  # G (5)
+  1.15,  # H (6)
+  -1.32,  # I (7)
+  1.23,  # K (8)
+  -1.4,  # L (9)
+  -1.42,  # M (10)
+  0.79,  # N (11)
+  -0.64,  # P (12)
+  1.09,  # Q (13)
+  1.31,  # R (14)
+  0.38,  # S (15)
+  0.28,  # T (16)
+  -1.27,  # V (17)
+  -0.18,  # W (18)
+  -0.18,  # Y (19)
+  0.0,  # X (20)
 )
 
 # Lehninger pKa table used by peptides.Peptide.charge(pKscale="Lehninger") in AntiBMPNN

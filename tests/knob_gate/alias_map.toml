@@ -3939,3 +3939,285 @@ targets = ["packer_s_churn"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_s_churn"]
 note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. TBD-CALIBY-3."
+
+# ==============================================================================
+# Phase 4 (P4 redo 261104): AntiBMPNN. Re-derived from Running_AntiBMPNN_run.py and
+# helper_scripts/parsing_design_result.py at zeysun/AntiBMPNN 7e6329ba. Placeholder
+# debt ids TBD-ANTIBMPNN-n are substituted by the orchestrator.
+# ==============================================================================
+
+[[row]]
+ref = "antibmpnn_run__suppress_print"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Verbosity only; read at Running_AntiBMPNN_run.py:49 (print_all)."
+
+[[row]]
+ref = "antibmpnn_run__ca_only"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:410. Selects CA-only parsing and model (:148, :167). No CA-only AntiBMPNN checkpoint exists (all 11 antibmpnn_*.pt are all-atom, k=48), so with these weights the flag only breaks load_state_dict; aminx exposes CA models separately as model_weights='ca'."
+
+[[row]]
+ref = "antibmpnn_run__path_to_model_weights"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:411. Declared and NEVER READ (rg args.path_to_model_weights: no hit); the checkpoint directory is hard-coded to '../antibmpnn_model_weights' at :35. Verified 261104."
+
+[[row]]
+ref = "antibmpnn_run__use_soluble_model"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:413. Declared and NEVER READ in main() (rg args.use_soluble_model: no hit). Verified 261104."
+
+[[row]]
+ref = "antibmpnn_run__seed"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:416. Declared and NEVER READ: main() draws seed = np.random.randint(0, 999) at :26 and ignores args.seed (rg args.seed: no hit). Upstream runs are therefore not reproducible from the CLI; aminx random_seed is a separate, working knob."
+
+[[row]]
+ref = "antibmpnn_run__save_score"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:418, :390-391. Writes scores/<name>.npz; aminx returns scores through its sinks."
+
+[[row]]
+ref = "antibmpnn_run__save_probs"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:419, :392-396. Writes probs/<name>.npz; aminx returns logits through return_logits and its sinks."
+
+[[row]]
+ref = "antibmpnn_run__out_folder"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:435. Output directory."
+
+[[row]]
+ref = "antibmpnn_run__jsonl_path"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:438. Pre-parsed structures from parse_multiple_chains.py; aminx parses PDB/CIF directly."
+
+[[row]]
+ref = "antibmpnn_run__conditional_probs_only_backbone"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-ANTIBMPNN-3"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:426, :278, model.conditional_probs(..., backbone_only) at protein_mpnn_utils.py:1292. UNIMPLEMENTED for the generic ProteinMPNN path: score() allows output_kind 'nll' only for model_family proteinmpnn (specs.py _validate_output_kind) and no spec field requests backbone-only conditionals."
+
+[[row]]
+ref = "antibmpnn_run__unconditional_probs_only"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-ANTIBMPNN-3"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:427, :283-293, model.unconditional_probs. UNIMPLEMENTED for the generic ProteinMPNN path (same reason as conditional_probs_only_backbone)."
+
+[[row]]
+ref = "antibmpnn_run__pssm_jsonl"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-ANTIBMPNN-2"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:446. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
+
+[[row]]
+ref = "antibmpnn_run__pssm_multi"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-ANTIBMPNN-2"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:447. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
+
+[[row]]
+ref = "antibmpnn_run__pssm_threshold"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-ANTIBMPNN-2"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:448. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
+
+[[row]]
+ref = "antibmpnn_run__pssm_log_odds_flag"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-ANTIBMPNN-2"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:449. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
+
+[[row]]
+ref = "antibmpnn_run__pssm_bias_flag"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-ANTIBMPNN-2"
+parity_test_ids = []
+note = "Running_AntiBMPNN_run.py:450. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
+
+[[row]]
+ref = "antibmpnn_run__model_name"
+targets = ["checkpoint_id", "model_local_path"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_model_name"]
+note = "Running_AntiBMPNN_run.py:412, :39. Upstream stem antibmpnn_000..100 (noise 0.0..1.0 A in 0.1 steps, checkpoint['noise_level']); aminx checkpoint_id antibmpnn_v_48_000..030 (Hub, HF_REVISION 5ff5cf16). antibmpnn_040..100 are NOT on the Hub: reachable only through model_local_path after scripts/convert_weights.py (debt TBD-ANTIBMPNN-4). The upstream default 'v_48_020' names no file in antibmpnn_model_weights/."
+
+[[row]]
+ref = "antibmpnn_run__score_only"
+targets = ["output_kind"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_score_only"]
+note = "Running_AntiBMPNN_run.py:421, :225-270. Upstream scores the native sequence under a RANDOM decoding order (forward(..., randn_1)): the autoregressive factorisation. aminx score() default is the full-context conditional p(s_i | s_-i, X); the upstream estimand is reached with ar_mask (specs.py ScoringSpecification.ar_mask). The vehicle grades the teacher-forced AR log-probs against upstream."
+
+[[row]]
+ref = "antibmpnn_run__path_to_fasta"
+targets = ["sequences_to_score"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_path_to_fasta"]
+note = "Running_AntiBMPNN_run.py:422, :227-240. Score FASTA sequences of the structure length; aminx sequences_to_score takes strings."
+
+[[row]]
+ref = "antibmpnn_run__conditional_probs_only"
+targets = ["return_logits"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_conditional_probs_only"]
+note = "Running_AntiBMPNN_run.py:425, :271-282. log p(s_i | rest of sequence, backbone) = aminx score(return_logits=True) full-context logits."
+
+[[row]]
+ref = "antibmpnn_run__backbone_noise"
+targets = ["backbone_noise"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_backbone_noise"]
+note = "Running_AntiBMPNN_run.py:429, :167 (augment_eps added to X at protein_mpnn_utils.py:965). aminx backbone_noise is a std per noise level."
+
+[[row]]
+ref = "antibmpnn_run__num_seq_per_target"
+targets = ["num_samples"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_num_seq_per_target"]
+note = "Running_AntiBMPNN_run.py:430, :43. Upstream draws (num_seq_per_target // batch_size) * batch_size sequences, silently dropping the remainder; aminx num_samples draws exactly that many."
+
+[[row]]
+ref = "antibmpnn_run__batch_size"
+targets = ["samples_batch_size"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_batch_size"]
+note = "Running_AntiBMPNN_run.py:431, :44. Chunk size only; upstream default 1, aminx samples_batch_size default 16. The test pins that chunking leaves the number of sequences unchanged."
+
+[[row]]
+ref = "antibmpnn_run__max_length"
+targets = ["max_length"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_max_length"]
+note = "Running_AntiBMPNN_run.py:432, :149. Upstream DROPS proteins longer than max_length (StructureDatasetPDB); aminx pads/truncates to max_length (truncation_strategy, default random_crop)."
+
+[[row]]
+ref = "antibmpnn_run__sampling_temp"
+targets = ["temperature"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_sampling_temp"]
+note = "Running_AntiBMPNN_run.py:433, :45, protein_mpnn_utils.py:1165-1166. Upstream str of space-separated temperatures; aminx float or sequence. Probability = softmax((logits+bias)/T); graded in the vehicle sampler stage."
+
+[[row]]
+ref = "antibmpnn_run__pdb_path"
+targets = ["inputs"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_pdb_path"]
+note = "Running_AntiBMPNN_run.py:436, :147. Single PDB to design."
+
+[[row]]
+ref = "antibmpnn_run__pdb_path_chains"
+targets = ["fixed_mask"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_fixed_positions"]
+note = "Running_AntiBMPNN_run.py:437, :151-157. Upstream names the DESIGNED chains and fixes the rest. aminx has no designed-chain list on the generic path; a fixed chain is a fixed_mask plus fixed_tokens."
+
+[[row]]
+ref = "antibmpnn_run__chain_id_jsonl"
+targets = ["fixed_mask"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_fixed_positions"]
+note = "Running_AntiBMPNN_run.py:439, :52. Designed / fixed chain dictionary; expressed in aminx as fixed_mask over the fixed chains."
+
+[[row]]
+ref = "antibmpnn_run__fixed_positions_jsonl"
+targets = ["fixed_mask"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_fixed_positions"]
+note = "Running_AntiBMPNN_run.py:440, :63, protein_mpnn_utils.py:301-305. Fixed positions keep the native residue; aminx requires fixed_tokens alongside fixed_mask (refuses to default to alanine)."
+
+[[row]]
+ref = "antibmpnn_run__omit_AAs"
+targets = ["omit_aa"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_omit_aa"]
+note = "Running_AntiBMPNN_run.py:441, :46, :50, protein_mpnn_utils.py:1166 (constant*1e8). CLI value replaces the default 'X'; aminx omit_aa omits listed letters at designed positions."
+
+[[row]]
+ref = "antibmpnn_run__bias_AA_jsonl"
+targets = ["bias"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_bias_aa"]
+note = "Running_AntiBMPNN_run.py:442, :141-145, protein_mpnn_utils.py:1166 (constant_bias/T). Per-letter bias added to every position's logits before /T."
+
+[[row]]
+ref = "antibmpnn_run__bias_by_res_jsonl"
+targets = ["bias"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_bias_by_res"]
+note = "Running_AntiBMPNN_run.py:444, :124, protein_mpnn_utils.py:1147,:1166. Per-position (L,21) bias; same aminx bias field."
+
+[[row]]
+ref = "antibmpnn_run__omit_AA_jsonl"
+targets = ["omit_aa_per_position"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_omit_aa_per_position"]
+note = "Running_AntiBMPNN_run.py:445, :88, protein_mpnn_utils.py:1176-1179. Per-position omitted letters."
+
+[[row]]
+ref = "antibmpnn_run__tied_positions_jsonl"
+targets = ["tie_group_map"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_tied_positions"]
+note = "Running_AntiBMPNN_run.py:452, :112, :313 (tied_sample). Tied positions share one sampled letter. aminx's working channel is the per-position tie_group_map array; the RunSpecification.tied_positions field is accepted and never resolved (utils.autoregression.resolve_tie_groups has no caller in src/, verified 261104), so setting it silently does nothing (debt TBD-ANTIBMPNN-5)."
+
+[[row]]
+ref = "antibmpnn_parse__dir"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "helper_scripts/parsing_design_result.py:89. Directory of .fa files to post-process."
+
+[[row]]
+ref = "antibmpnn_parse__start"
+targets = ["descriptor_start"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_descriptor_segment"]
+note = "helper_scripts/parsing_design_result.py:90, slice at :24-26 (start_r -= 1; seq[start_r:end_r]). 1-based inclusive start."
+
+[[row]]
+ref = "antibmpnn_parse__end"
+targets = ["descriptor_end"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_descriptor_segment"]
+note = "helper_scripts/parsing_design_result.py:91, slice at :26. Inclusive end."

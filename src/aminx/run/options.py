@@ -279,27 +279,29 @@ class ThermoMPNNOptions:
 
 @dataclass(frozen=True)
 class AntiBMPNNOptions:
-  """Options for AntiBMPNN antibody CDR design and descriptor calculation.
+  """Options for AntiBMPNN design post-processing (descriptor scoring of a designed segment).
+
+  AntiBMPNN's sampling CLI (``Running_AntiBMPNN_run.py``) is the ProteinMPNN flag set and needs no
+  family options: the model is a ProteinMPNN-architecture checkpoint selected through
+  ``RunSpecification.checkpoint_id`` (``antibmpnn_v_48_000`` ...). The only AntiBMPNN-specific
+  logic upstream is ``helper_scripts/parsing_design_result.py``, which slices each design at
+  ``--start``/``--end`` (1-based, inclusive: ``seq[start-1:end]``, lines 24-26) and reports the
+  ``peptides`` PD1/PD2 means and the Lehninger net charge at pH 7.4 (lines 44-52).
+
+  Earlier revisions carried ``cdr_scheme``, ``heavy_chain_id``, ``light_chain_id``,
+  ``cdr_bias_weight``, ``checkpoint_id`` and ``compute_descriptors``. None has an upstream
+  counterpart (no CDR scheme, chain role or bias weight exists in the AntiBMPNN repository) and none
+  was read by any code path, so they were removed rather than relabelled.
 
   Attributes
   ----------
-  checkpoint_id : str | None
-      AntiBMPNN checkpoint identifier.
-  cdr_scheme : str
-      CDR loop boundary scheme ('chothia' or 'imgt').
-  heavy_chain_id : str | int
-      Chain identifier for heavy chain.
-  light_chain_id : str | int
-      Chain identifier for light chain.
-  cdr_bias_weight : float
-      Multiplicative scaling factor for CDR log-odds logit bias.
-  compute_descriptors : bool
-      Whether to compute Barley volume/hydropathy descriptors and net charge.
+  descriptor_start : int | None
+      First residue of the scored segment, 1-based inclusive (upstream ``--start``). ``None``
+      scores from the first residue.
+  descriptor_end : int | None
+      Last residue of the scored segment, 1-based inclusive (upstream ``--end``). ``None``
+      scores to the last residue.
   """
 
-  checkpoint_id: str | None = None
-  cdr_scheme: str = "chothia"
-  heavy_chain_id: str | int = 0
-  light_chain_id: str | int = 1
-  cdr_bias_weight: float = 1.0
-  compute_descriptors: bool = True
+  descriptor_start: int | None = None
+  descriptor_end: int | None = None
