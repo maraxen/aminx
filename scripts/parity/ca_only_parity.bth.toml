@@ -1,0 +1,46 @@
+[experiment]
+hypothesis = "JAX implementation of CA-Only ProteinMPNN (v_48_002, v_48_010, v_48_020) matches upstream PyTorch reference within 1e-7 in float64 and documented tolerance tier (p99.9 < 1e-4, max < 1e-3) in float32 on 1ubq.pdb, preserves exact coordinate dimensionality equivalence, and fails decisively (> 1e-2) under all four structural/algebraic negative controls."
+stage_name = "validation"
+
+[reproduction]
+reproduces_paper = "doi:10.1126/science.add2187"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail", "marginal"]
+
+[requires.waiver]
+reason = "CPU parity verification vehicle against upstream PyTorch checkpoints"
+
+[outcomes.pass]
+condition = "weight_source == 'upstream_checkpoint' AND f64_max_abs_diff < 1e-7 AND f32_q999_abs_diff < 1e-4 AND f32_max_abs_diff < 1e-3 AND coord_equivalence_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2 AND n_listed > 0 AND n_failed == n_listed"
+decision = "Promote CA-Only ProteinMPNN JAX port and converted weights."
+reasoning = "CA-Only ProteinMPNN matches upstream PyTorch checkpoints within float64 and documented float32 tolerances, coordinates are equivalent, and all four negative controls trip decisively."
+is_residual = false
+
+[outcomes.marginal]
+condition = "weight_source == 'upstream_checkpoint' AND f64_max_abs_diff < 1e-5 AND f32_q999_abs_diff < 5e-4 AND f32_max_abs_diff < 5e-3 AND (f64_max_abs_diff >= 1e-7 OR f32_q999_abs_diff >= 1e-4 OR f32_max_abs_diff >= 1e-3) AND coord_equivalence_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2 AND n_listed > 0 AND n_failed == n_listed"
+decision = "Investigate numerical drift between PyTorch and JAX before promoting."
+reasoning = "Forward outputs are close to PyTorch, coordinates are equivalent, but tolerances exceed the strict bar."
+is_residual = false
+
+[outcomes.fail]
+condition = "weight_source != 'upstream_checkpoint' OR f64_max_abs_diff >= 1e-5 OR f32_q999_abs_diff >= 5e-4 OR f32_max_abs_diff >= 5e-3 OR coord_equivalence_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2 OR n_failed != n_listed OR n_listed == 0 OR f64_max_abs_diff IS NULL OR f32_q999_abs_diff IS NULL OR f32_max_abs_diff IS NULL OR coord_equivalence_diff IS NULL OR neg_ctrl_min_max_abs_diff IS NULL"
+decision = "Block promotion and debug CA-Only ProteinMPNN featurizer, virtual frames, or weights conversion."
+reasoning = "Run used synthetic weights, parity error exceeds tolerance, coordinate equivalence broke, or a negative control failed to trip."
+is_residual = true
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+weight_source = "str"
+f64_max_abs_diff = "float"
+f32_q999_abs_diff = "float"
+f32_max_abs_diff = "float"
+coord_equivalence_diff = "float"
+neg_ctrl_quaternion_sign_flip_diff = "float"
+neg_ctrl_rbf_block_swap_diff = "float"
+neg_ctrl_zero_edge_features_diff = "float"
+neg_ctrl_permuted_output_weights_diff = "float"
+neg_ctrl_min_max_abs_diff = "float"

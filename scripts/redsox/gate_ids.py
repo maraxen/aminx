@@ -81,7 +81,7 @@ def _collect(repo: Path, extra_files: list[str]) -> list[tuple[str, str, str]]:
 
 
 def _write_lists(
-  repo: Path, out: Path, waves: dict[str, list[str]], files_of: dict[str, str]
+  repo: Path, out: Path, waves: dict[str, list[str]], files_of: dict[str, str],
 ) -> int:
   names = [NONPORT, *target_wave_names(repo)]
   for wave in sorted(waves):
@@ -93,7 +93,7 @@ def _write_lists(
     nodeids = sorted(set(waves.get(wave, [])))
     file_names = sorted({files_of[nodeid] for nodeid in nodeids})
     (out / f"ids_{wave}.txt").write_text(
-      "".join(f"{nodeid}\n" for nodeid in nodeids), encoding="utf-8"
+      "".join(f"{nodeid}\n" for nodeid in nodeids), encoding="utf-8",
     )
     (out / f"files_{wave}.txt").write_text(
       "".join(f"{name}\n" for name in file_names),
@@ -145,10 +145,10 @@ def emit(repo: Path, out: Path) -> int:
 def _parse(argv: list[str]) -> argparse.Namespace:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument(
-    "--out", type=Path, required=True, help="directory for ids_<W>.txt and files_<W>.txt"
+    "--out", type=Path, required=True, help="directory for ids_<W>.txt and files_<W>.txt",
   )
   parser.add_argument(
-    "--log", type=Path, default=None, help="log file (default: <out>/gate_ids.log)"
+    "--log", type=Path, default=None, help="log file (default: <out>/gate_ids.log)",
   )
   return parser.parse_args(argv)
 

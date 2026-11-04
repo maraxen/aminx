@@ -1,7 +1,7 @@
 # Z1 runbook — closing the redsox gate
 
 The gate grades `tests/knob_gate/branch_manifest.toml` against the gate's
-outcomes and `tests/knob_gate/sidecar_ledger.toml`. Every sidecar-backed row
+outcomes and the family's ledger shard, `tests/knob_gate/ledgers/<family>.toml`. Every sidecar-backed row
 needs a bathos run that satisfies all **14** step-1c conditions
 (`tests/knob_gate/_coverage.py:287-340`).
 
@@ -395,7 +395,7 @@ Consequence: **`laser_score_parity`'s only passing run is ineligible.**
 `f11f2bf1` is an ancestor of `6cb81d49` ("key oracle weights by a stable
 identifier, not an absolute path"), so it predates the fix. Its run id must NOT
 be written to the ledger as "already passed" — group 2 re-runs it. The stale
-`laser_decode_e2e` id already sitting in `sidecar_ledger.toml` is ineligible for
+`laser_decode_e2e` id already sitting in `ledgers/laser.toml` is ineligible for
 the same two reasons and must be replaced, not kept.
 
 All six vehicles do route weights through `stable_artifact_key`, directly or via

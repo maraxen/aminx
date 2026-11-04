@@ -11,7 +11,7 @@ from dataclasses import dataclass
 POTTSMPNN_COMMIT = "0cb0a58874e373d664114f1735deab77614e4ab5"
 LASERMPNN_COMMIT = "e70f2c6d765416f7e29d51bfd6d4e08496438878"
 PROTONPOTTSMPNN_COMMIT = "09682abfa7d20e0abcdeea0490b7a4b1c190aee3"
-EXTRACTOR_SHA256 = "6bb1ae1c3e63dc465c565092f7dc92c7c8490553d83eb2f0eda20f0b895b9f7b"
+EXTRACTOR_SHA256 = "dcfd2039e7de0e65dac53d189ba8e085669b38353f115836c0a062a442c2359d"
 
 @dataclass(frozen=True)
 class LaserCheckpointParamsKnobs:
@@ -623,61 +623,19 @@ class pottsmpnn_input_list:
 
 
 @dataclass(frozen=True)
-class FAMPNNReferenceKnobs:
-  """Upstream richardshuai/fampnn knobs."""
+class ThermoModelKnobs:
+  """Upstream ThermoMPNN-D v2_ssm.py command-line flags (argparse block, v2_ssm.py:538-576).
 
-  fampnn_model__checkpoint_id: str | None = None
-  fampnn_mar__num_seq_steps: int = 8
-  fampnn_edm__num_scn_steps: int = 18
-  fampnn_edm__sigma_min: float = 0.002
-  fampnn_edm__sigma_max: float = 80.0
-  fampnn_edm__rho: float = 7.0
-  fampnn_edm__s_churn: float = 0.0
-  fampnn_edm__step_scale: float = 1.5
-  fampnn_mar__pack_each_step: bool = True
-  fampnn_eval__relax_sidechains: bool = False
-  fampnn_eval__relax_tolerance: float = 1.0
-  fampnn_eval__relax_max_iterations: int = 100
-  fampnn_multistate__positive_states: tuple[object, ...] = ()
-  fampnn_multistate__negative_states: tuple[object, ...] = ()
-  fampnn_multistate__state_weights: tuple[object, ...] = ()
+  Upstream exposes no checkpoint, ensemble or dtype flag: the checkpoint is chosen by --mode
+  through get_config/get_model (v2_ssm.py:477-478), ensembling and precision are not options.
+  """
 
-
-@dataclass(frozen=True)
-class CalibyReferenceKnobs:
-  """Upstream ProteinDesignLab/caliby knobs."""
-
-  caliby_model__checkpoint_id: str | None = None
-  caliby_ensemble__conformers: int = 1
-  caliby_ensemble__noise_std: float = 0.0
-  caliby_potts__omit_gap_penalty: float = 1e6
-  caliby_packer__num_steps: int = 25
-  caliby_packer__sigma_min: float = 0.002
-  caliby_packer__sigma_max: float = 80.0
-  caliby_packer__rho: float = 7.0
-  caliby_packer__s_churn: float = 0.0
-  caliby_packer__step_scale: float = 1.5
-  caliby_potts__mcmc_steps: int = 1000
-  caliby_potts__cooling_schedule: str = "geometric"
-  caliby_potts__mcmc_burnin: int = 100
-  caliby_eval__conformer_generator: str = "af3"
-  caliby_eval__af3_diffusion_steps: int = 50
-  caliby_eval__protpardelle_ckpt: str | None = None
-
-
-@dataclass(frozen=True)
-class AntiBMPNNReferenceKnobs:
-  """Upstream zeysun/AntiBMPNN knobs."""
-
-  antibmpnn_model__model_name: str | None = None
-  antibmpnn_cdr__scheme: str = "chothia"
-  antibmpnn_cdr__heavy_chain: str = "H"
-  antibmpnn_cdr__light_chain: str = "L"
-  antibmpnn_cdr__bias_weight: float = 1.0
-  antibmpnn_run__use_anarci: bool = False
-  antibmpnn_run__anarci_species: str = "human"
-  antibmpnn_run__anarci_scheme: str = "chothia"
-  antibmpnn_postprocess__cluster_identity: float = 0.9
-  antibmpnn_postprocess__max_clusters: int = 100
+  thermo_model__mode: str = "single"  # type=str; --mode single|additive|epistatic; v2_ssm.py:540-545
+  thermo_model__pdb: str = "./2OCJ.pdb"  # type=str; --pdb; v2_ssm.py:546
+  thermo_model__batch_size: int = 256  # type=int; --batch_size (epistatic only, v2_ssm.py:495); v2_ssm.py:547-553
+  thermo_model__out: str = "ssm"  # type=str; --out csv prefix; v2_ssm.py:554-555
+  thermo_model__chains: list[str] | None = None  # nargs=+; --chains; v2_ssm.py:556-560
+  thermo_model__threshold: float = -0.5  # type=float; --threshold; v2_ssm.py:561-566
+  thermo_model__distance: float = 5.0  # type=float; --distance (CA-CA cutoff); v2_ssm.py:567-572
+  thermo_model__ss_penalty: bool = False  # store_true; --ss_penalty; v2_ssm.py:573-577
 # END MANUAL
-

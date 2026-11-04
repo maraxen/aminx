@@ -1,0 +1,6 @@
+# CA-only ProteinMPNN shard. EMPTY: no vehicle run has been recorded, so nothing here is graded.
+# Vehicle: scripts/parity/ca_only_parity.py (slug ca_only_parity); its four branch rows carry family = "ca_only".
+# Not yet run. A [sidecar.ca_only_parity] bth_run_id lands here only after a titanix run that passes the
+# step 1c conditions described in potts.toml.
+
+[sidecar]

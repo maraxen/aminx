@@ -40,7 +40,7 @@ from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors
 from aminx.tiling.strategy import Vmap
 from aminx.types.bundles import EncoderOutput, WaveScheduleBundle
-from aminx.utils.autoregression import generate_ar_mask
+from aminx.utils.autoregression import ar_mask_from_decoding_order
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 from aminx.utils.radial_basis import compute_radial_basis
 
@@ -351,12 +351,12 @@ def p07_bundle(
 ) -> tuple[InferenceBundle, InferenceConfig]:
   """Bundle whose wave and ``ar_mask`` come from ``decoding_order`` and ``tie_group_map``.
 
-  Every sampling control is an argument. ``generate_ar_mask`` is called with the tie
-  map (ORDER-array convention: ``tie_group_map[decoding_order]``), which is what
-  identity ``arange(L)`` uses for "no ties".
+  Every sampling control is an argument. ``ar_mask_from_decoding_order`` is called with
+  the ORDER array and tie map (ORDER-array convention: ``order[t]`` = position decoded
+  at step ``t``).
   """
   wave = wave_from_decoding_order(decoding_order, tie_group_map)
-  ar_mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
+  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
   return build_inference_bundle(
     coords=coords,
     mask=mask,

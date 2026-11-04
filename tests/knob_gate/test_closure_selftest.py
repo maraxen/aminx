@@ -18,7 +18,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 from knob_gate._closure import (
   Closure,
   compute_closure,
@@ -43,12 +42,11 @@ POTTS_SLUGS = (
   "potts_ddg_megascale",
 )
 PROTON_SLUGS = ("protonpotts_parity",)
-PHASE4_SLUGS = (
-  "fampnn_parity",
-  "caliby_parity",
-  "antibmpnn_parity",
+TIER1_TIER2_SLUGS = (
+  "tier1_variants_parity",
+  "ca_only_parity",
 )
-ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *PHASE4_SLUGS)
+ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS)
 
 
 def _make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
@@ -195,7 +193,7 @@ def test_missing_vehicle_script_raises(tmp_path: Path) -> None:
     ("pyproject.toml", True),
     ("uv.lock", True),
     ("scripts/recapture/convert.py", True),  # still global
-    ("aminx-oracles/pin.toml", True),  # still global
+    ("aminx-oracles/pin.toml", True),  # no row declares it: global, the safe side
     ("tests/port/test_new.py", False),  # re-run by the gate's step 2, not row evidence
     ("README.md", False),
     ("docs/guide.md", False),
@@ -258,6 +256,13 @@ def test_potts_rows_do_not_depend_on_laser_code(slug: str) -> None:
   assert any("/potts_mpnn/" in f for f in closure.files)
 
 
+@pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
+def test_tier1_tier2_rows_do_not_depend_on_potts_code(slug: str) -> None:
+  closure = _real(slug)
+  assert not [f for f in closure.files if "/potts" in f], f"a Tier 1/2 row ({slug}) reaches Potts code"
+  assert not [f for f in closure.files if "/laser" in f], f"a Tier 1/2 row ({slug}) reaches LASEr code"
+
+
 def test_family_change_invalidates_only_its_own_rows() -> None:
   # ProtonPottsMPNN is built on the Potts model, energy and merge code, so a Potts change reaches its row too;
   # the reverse must not hold, and neither family reaches LASEr.
@@ -267,6 +272,195 @@ def test_family_change_invalidates_only_its_own_rows() -> None:
   assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS]
   assert [s for s in ALL_SLUGS if row_is_stale(laser_change, _real(s))] == list(LASER_SLUGS)
   assert [s for s in ALL_SLUGS if row_is_stale(proton_change, _real(s))] == list(PROTON_SLUGS)
+
+
+def test_oracle_dirs_scoping() -> None:
+  laser_oracle = ["aminx-oracles/dumps/b3_laser_owned/sample.bin"]
+  proton_oracle = ["aminx-oracles-protonpotts/weights.pt"]
+
+  # LASEr rows declare b3_laser_owned; Potts and ProtonPotts do not
+  assert [s for s in ALL_SLUGS if row_is_stale(laser_oracle, _real(s))] == list(LASER_SLUGS)
+
+  # ProtonPotts rows declare aminx-oracles-protonpotts; Potts and LASEr do not
+  assert [s for s in ALL_SLUGS if row_is_stale(proton_oracle, _real(s))] == list(PROTON_SLUGS)
+
+
+def test_undeclared_oracle_path_is_global_declared_one_is_row_scoped() -> None:
+  # A path no row declares must stale every row; a declared one only the rows that declare it.
+  uncovered = "aminx-oracles/dumps/elsewhere/x.bin"
+  assert [s for s in ALL_SLUGS if row_is_stale([uncovered], _real(s))] == list(ALL_SLUGS)
+  declared = "aminx-oracles/dumps/b3_laser_owned/sample.bin"
+  assert [s for s in ALL_SLUGS if row_is_stale([declared], _real(s))] == list(LASER_SLUGS)
+
+
+def test_uv_lock_head_is_read_from_the_ref_not_the_working_tree(tmp_path: Path) -> None:
+  # Pre-fix: changed_packages_in_uv_lock ignored its head argument and always read the working tree.
+  from knob_gate._closure import changed_packages_in_uv_lock  # noqa: PLC0415
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  lock_v1 = '[[package]]\nname = "jax"\nversion = "1.0"\n'
+  lock_v2 = '[[package]]\nname = "jax"\nversion = "2.0"\n'
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(lock_v1, encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "v1")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(lock_v2, encoding="utf-8")
+  _git("commit", "-q", "-am", "v2")
+  # Working tree now equals HEAD (v2). Diffing base against HEAD must see the change; diffing
+  # base against base itself must not, even though the working tree differs from base.
+  (tmp_path / "uv.lock").write_text(lock_v1, encoding="utf-8")
+  assert changed_packages_in_uv_lock(tmp_path, base, "HEAD") == {"jax"}
+  assert changed_packages_in_uv_lock(tmp_path, base, base) == set()
+
+
+def test_dependency_list_change_marks_the_package_changed(tmp_path: Path) -> None:
+  from knob_gate._closure import changed_packages_in_uv_lock  # noqa: PLC0415
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  before = '[[package]]\nname = "jax"\nversion = "1.0"\n'
+  after = before + '[[package.dependencies]]\nname = "ml-dtypes"\n'
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(before, encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "before")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(after, encoding="utf-8")
+  assert changed_packages_in_uv_lock(tmp_path, base) == {"jax"}
+
+
+def test_declared_oracle_dirs_follow_the_edges_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  # Pre-fix the declared set was cached once against the global file, so a different or edited edges
+  # file was answered from stale data. Now the cache is keyed by path and mtime.
+  from knob_gate import _closure  # noqa: PLC0415
+
+  edges = tmp_path / "closure_edges.toml"
+  edges.write_text('[slug.a]\noracle_dirs = ["aminx-oracles/dumps/x/"]\n', encoding="utf-8")
+  os.utime(edges, ns=(1_000_000_000, 1_000_000_000))
+  monkeypatch.setattr(_closure, "_EDGES_FILE", edges)
+  path = "aminx-oracles/dumps/x/a.bin"
+  assert _closure.row_is_stale([path], Closure("b", frozenset())) is False
+
+  edges.write_text("[slug.a]\noracle_dirs = []\n", encoding="utf-8")
+  os.utime(edges, ns=(2_000_000_000, 2_000_000_000))
+  assert _closure.row_is_stale([path], Closure("b", frozenset())) is True
+
+
+@pytest.mark.parametrize(
+  ("table", "body"),
+  [
+    ("optional-dependencies", 'cuda = [{ name = "jax-cuda" }]\n'),
+    ("dev-dependencies", 'test = [{ name = "pytest" }]\n'),
+  ],
+)
+def test_extra_and_dev_group_changes_mark_the_package_changed(
+  tmp_path: Path, table: str, body: str,
+) -> None:
+  from knob_gate._closure import changed_packages_in_uv_lock  # noqa: PLC0415
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  before = '[[package]]\nname = "jax"\nversion = "1.0"\n'
+  after = before + f"[package.{table}]\n" + body
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(before, encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "before")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(after, encoding="utf-8")
+  assert changed_packages_in_uv_lock(tmp_path, base) == {"jax"}
+
+
+def test_gpu_plugin_only_lock_bump_marks_rows_stale(tmp_path: Path) -> None:
+  # Pre-fix: _resolve_transitive_packages followed only [package.dependencies]. jax[cuda12] reaches
+  # jax-cuda12-plugin through [package.optional-dependencies], so a bump touching only that plugin
+  # left every row fresh even though the GPU rows execute it.
+  from knob_gate._closure import (  # noqa: PLC0415
+    _resolve_transitive_packages,
+    changed_packages_in_uv_lock,
+  )
+
+  def _git(*args: str) -> str:
+    return subprocess.run(
+      ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+  def _lock(plugin_version: str) -> str:
+    return (
+      '[[package]]\nname = "jax"\nversion = "1.0"\n'
+      '[package.optional-dependencies]\ncuda12 = [{ name = "jax-cuda12-plugin" }]\n'
+      '[[package]]\nname = "jax-cuda12-plugin"\n'
+      f'version = "{plugin_version}"\n'
+      '[[package]]\nname = "nvidia-cudnn-cu12"\nversion = "9.0"\n'
+      '[[package]]\nname = "unrelated-tool"\nversion = "1.0"\n'
+    )
+
+  _git("init", "-q")
+  _git("config", "user.email", "t@example.invalid")
+  _git("config", "user.name", "t")
+  (tmp_path / "uv.lock").write_text(_lock("1.0"), encoding="utf-8")
+  _git("add", "uv.lock")
+  _git("commit", "-q", "-m", "before")
+  base = _git("rev-parse", "HEAD")
+  (tmp_path / "uv.lock").write_text(_lock("1.1"), encoding="utf-8")
+
+  changed = changed_packages_in_uv_lock(tmp_path, base)
+  assert changed == {"jax-cuda12-plugin"}
+  packages = _resolve_transitive_packages({"jax"}, tmp_path / "uv.lock")
+  assert "jax-cuda12-plugin" in packages
+  assert "nvidia-cudnn-cu12" in packages  # always reachable, even with no edge from jax
+  assert "unrelated-tool" not in packages
+  closure = Closure(slug="synthetic", files=frozenset(), packages=packages)
+  assert row_is_stale(["uv.lock"], closure, uv_changed_packages=changed)
+
+
+@pytest.mark.parametrize(
+  ("source", "expected"),
+  [
+    ("import orbax.checkpoint as ocp\n", "orbax-checkpoint"),
+    ("from PIL import Image\n", "pillow"),
+    ("import sklearn.linear_model\n", "scikit-learn"),
+    ("import cv2\n", "opencv-python"),
+    ("from google.protobuf import message\n", "protobuf"),
+    ("import yaml\n", "pyyaml"),
+  ],
+)
+def test_import_names_map_to_distribution_names(tmp_path: Path, source: str, expected: str) -> None:
+  from knob_gate._closure import _imported_third_party  # noqa: PLC0415
+
+  repo = _make_repo(tmp_path, {"scripts/parity/veh.py": source})
+  assert expected in _imported_third_party(repo, "scripts/parity/veh.py")
+
+
+def test_uv_lock_scoping() -> None:
+  potts_closure = _real("potts_ar_decode")
+  # Modifying unrelated package (e.g. ruff, sphinx) does not invalidate potts_ar_decode
+  assert not row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"ruff"})
+  assert not row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"sphinx"})
+
+  # Modifying imported package (e.g. jax, numpy) does invalidate potts_ar_decode
+  assert row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"jax"})
+  assert row_is_stale(["uv.lock"], potts_closure, uv_changed_packages={"numpy"})
+
+  # No changed packages passed -> conservative fallback marks stale
+  assert row_is_stale(["uv.lock"], potts_closure)
 
 
 @pytest.mark.parametrize("slug", PROTON_SLUGS)
@@ -284,7 +478,7 @@ def test_protonpotts_row_reaches_its_family_and_not_laser(slug: str) -> None:
     assert needed in closure.files, needed
 
 
-@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *PHASE4_SLUGS])
+@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *TIER1_TIER2_SLUGS])
 def test_other_families_do_not_depend_on_protonpotts_code(slug: str) -> None:
   closure = _real(slug)
   assert not [f for f in closure.files if "protonpotts" in f], "a Potts/LASEr row reaches ProtonPotts code"
@@ -361,3 +555,43 @@ def test_hook_is_silent_for_a_process_that_is_not_the_vehicle(tmp_path: Path) ->
   """An oracle interpreter spawned by a vehicle inherits the env and must not write."""
   out = _run_hooked(tmp_path, "child.py", "veh.py")
   assert not out.exists()
+
+
+@pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
+def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> None:
+  """Regression test: runtime execution must not load uncovered files or sibling families."""
+  out_loaded = tmp_path / f"loaded_{slug}.json"
+  python_bin = sys.executable
+  for candidate in (
+    repo_root().parent.parent / ".venv" / "bin" / "python",
+    repo_root() / ".venv" / "bin" / "python",
+  ):
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+      python_bin = str(candidate)
+      break
+  cur_pythonpath = os.environ.get("PYTHONPATH", "")
+  env = {
+    **os.environ,
+    "AMINX_CLOSURE_OUT": str(out_loaded),
+    "AMINX_CLOSURE_SCRIPT": f"{slug}.py",
+    "AMINX_CLOSURE_REPO": str(repo_root()),
+    "PYTHONPATH": f"{HOOK_DIR}:{cur_pythonpath}" if cur_pythonpath else str(HOOK_DIR),
+    "OMP_NUM_THREADS": "4",
+  }
+  cmd = [
+    python_bin,
+    str(repo_root() / "scripts" / "parity" / f"{slug}.py"),
+    "--synthetic",
+    "--out",
+    str(tmp_path / f"{slug}_out.json"),
+  ]
+  done = subprocess.run(cmd, env=env, check=False, capture_output=True, text=True)
+  assert done.returncode == 0, f"Vehicle {slug} failed:\nSTDOUT:\n{done.stdout}\nSTDERR:\n{done.stderr}"
+  assert out_loaded.exists(), f"Closure hook did not record loaded files for {slug}"
+  data = json.loads(out_loaded.read_text(encoding="utf-8"))
+  loaded = data.get("loaded", [])
+  assert not [f for f in loaded if "/potts" in f], f"Vehicle {slug} dynamically loaded potts code"
+  assert not [f for f in loaded if "/laser" in f], f"Vehicle {slug} dynamically loaded laser code"
+  closure = _real(slug)
+  uncovered = loaded_outside_closure(loaded, closure)
+  assert uncovered == [], f"Vehicle {slug} loaded files outside declared closure: {uncovered}"
