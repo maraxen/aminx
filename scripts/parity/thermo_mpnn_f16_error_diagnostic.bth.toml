@@ -1,0 +1,128 @@
+# Diagnostic for the float16 ho1 d_ens1 ddg excess. Pre-registered BEFORE scripts/parity/thermo_mpnn_f16_error_diagnostic.py exists.
+# Exploration only: its classes are not a gate. Do not cite the classes as pre-registered findings beyond this sidecar.
+
+[experiment]
+hypothesis = "Diagnostic (exploration, not a gate): what drives the ho1 (1SMD, 496 residues) d_ens1 ddg max-abs error of about 0.40 in the float16 driver path (run 18c1d29c; tolerance 0.1499), against float32. This question was asked AFTER the ho1 excess was seen in 18c1d29c, so its classification is post-hoc relative to that observation. Method: score ThermoMPNNDriver with checkpoint thermo_mpnn_d_ens1 in float32 and float16 on 1ubq, 1SMD and 1mbn (same inputs as scripts/parity/thermo_mpnn_driver_f16_v2.py), and record per-entry error e = f16 - f32 for the single-mutant ddg (L x 21) and the double-mutant ddg_double (P x 21 x 21), with the top-1% and top-5% share of total squared error, the argmax entry and its float32 value, non-finite or > 60000 float16 outputs, Spearman correlation of |e| with |f32| and, for ddg_double, with sequence separation |i-j|. The model is a single checkpoint (not an ensemble), so per-member outputs are the same as the ensemble output; intermediate activations inside the model are NOT recorded. Graded classes, exhaustive and mutually exclusive, for the ho1 (1SMD) ddg case only: concentrated = top-1% share of squared error >= 0.5 with all float16 outputs finite and <= 60000; nonfinite = any non-finite or > 60000 float16 output; diffuse = otherwise with top-1% share < 0.5; unclassified = any graded field NULL (residual). Size dependence (ubq 76, ho2 153, ho1 496 residues) is reported DESCRIPTIVELY ONLY and is not graded. The 1ubq and 1mbn fields are not graded. Requires upstream weights; run on titanix via bth run."
+stage_name = "exploration"
+question = "What drives the ho1 (1SMD) d_ens1 ddg float16 error of about 0.40: concentrated in a few entries, non-finite or overflowing float16 outputs, or spread out?"
+
+[observe]
+outputs = ["thermo_mpnn_f16_error_diagnostic.json"]
+looking_for = "A top-1% share of squared error near 0.5 or above, a non-finite or > 60000 float16 entry, or a diffuse spread."
+sanity = ["ho1_n_residues > 0", "ho1_ddg_scale_f32 > 0"]
+
+[breakdown]
+waive = "Single structure and single array: the classes are computed from the whole per-entry distribution (top-1% share, finiteness), and the max is a diagnostic reading, not a per-unit worst case; no per-unit breakdown applies."
+
+[outcomes.concentrated]
+condition = "(ho1_ddg_nonfinite_count_f16 = 0 AND ho1_ddg_max_abs_f16 <= 60000) AND ho1_ddg_top1_share >= 0.5"
+decision = "The ho1 d_ens1 ddg float16 error is dominated by a small set of entries (top 1% holds at least half of the squared error)."
+reasoning = "Top-1% share of squared error >= 0.5 on the 1SMD d_ens1 ddg array, with all float16 outputs finite and <= 60000."
+source = "provisional:post-hoc exploratory class for the ho1 d_ens1 ddg excess; not a gate"
+is_residual = false
+
+[outcomes.nonfinite]
+condition = "(ho1_ddg_nonfinite_count_f16 > 0 OR ho1_ddg_max_abs_f16 > 60000)"
+decision = "A float16 output overflows or is non-finite; the float16 path is unsafe for this structure."
+reasoning = "Any non-finite float16 ddg entry or any entry above 60000 on the 1SMD d_ens1 ddg array."
+source = "provisional:post-hoc exploratory class for the ho1 d_ens1 ddg excess; not a gate"
+is_residual = false
+
+[outcomes.diffuse]
+condition = "(ho1_ddg_nonfinite_count_f16 = 0 AND ho1_ddg_max_abs_f16 <= 60000) AND ho1_ddg_top1_share < 0.5"
+decision = "The ho1 d_ens1 ddg float16 error is spread across entries (top 1% holds less than half of the squared error)."
+reasoning = "Top-1% share < 0.5, all float16 outputs finite and <= 60000, on the 1SMD d_ens1 ddg array."
+source = "provisional:post-hoc exploratory class for the ho1 d_ens1 ddg excess; not a gate"
+is_residual = false
+
+[outcomes.unclassified]
+condition = "ho1_ddg_nonfinite_count_f16 IS NULL OR ho1_ddg_max_abs_f16 IS NULL OR ho1_ddg_top1_share IS NULL"
+decision = "Diagnostic did not complete for the graded array; no class is assigned."
+reasoning = "A graded field (nonfinite count, max-abs float16, or top-1% share) is NULL."
+is_residual = true
+
+[result_schema]
+ubq_n_residues = "int"
+ubq_n_pairs = "int"
+ubq_ddg_scale_f32 = "float"
+ubq_ddg_max_abs_diff = "float"
+ubq_ddg_rms_abs_diff = "float"
+ubq_ddg_top1_share = "float"
+ubq_ddg_top5_share = "float"
+ubq_ddg_argmax_i = "int"
+ubq_ddg_argmax_a = "int"
+ubq_ddg_argmax_f32 = "float"
+ubq_ddg_nonfinite_count_f16 = "int"
+ubq_ddg_max_abs_f16 = "float"
+ubq_ddg_spearman_abserr_vs_abs_f32 = "float"
+ubq_ddg_pearson_r = "float"
+ubq_dd_max_abs_diff = "float"
+ubq_dd_rms_abs_diff = "float"
+ubq_dd_top1_share = "float"
+ubq_dd_top5_share = "float"
+ubq_dd_argmax_i = "int"
+ubq_dd_argmax_j = "int"
+ubq_dd_argmax_a = "int"
+ubq_dd_argmax_b = "int"
+ubq_dd_argmax_f32 = "float"
+ubq_dd_nonfinite_count_f16 = "int"
+ubq_dd_max_abs_f16 = "float"
+ubq_dd_spearman_abserr_vs_abs_f32 = "float"
+ubq_dd_spearman_abserr_vs_sep = "float"
+ubq_dd_pearson_r = "float"
+ho1_n_residues = "int"
+ho1_n_pairs = "int"
+ho1_ddg_scale_f32 = "float"
+ho1_ddg_max_abs_diff = "float"
+ho1_ddg_rms_abs_diff = "float"
+ho1_ddg_top1_share = "float"
+ho1_ddg_top5_share = "float"
+ho1_ddg_argmax_i = "int"
+ho1_ddg_argmax_a = "int"
+ho1_ddg_argmax_f32 = "float"
+ho1_ddg_nonfinite_count_f16 = "int"
+ho1_ddg_max_abs_f16 = "float"
+ho1_ddg_spearman_abserr_vs_abs_f32 = "float"
+ho1_ddg_pearson_r = "float"
+ho1_dd_max_abs_diff = "float"
+ho1_dd_rms_abs_diff = "float"
+ho1_dd_top1_share = "float"
+ho1_dd_top5_share = "float"
+ho1_dd_argmax_i = "int"
+ho1_dd_argmax_j = "int"
+ho1_dd_argmax_a = "int"
+ho1_dd_argmax_b = "int"
+ho1_dd_argmax_f32 = "float"
+ho1_dd_nonfinite_count_f16 = "int"
+ho1_dd_max_abs_f16 = "float"
+ho1_dd_spearman_abserr_vs_abs_f32 = "float"
+ho1_dd_spearman_abserr_vs_sep = "float"
+ho1_dd_pearson_r = "float"
+ho2_n_residues = "int"
+ho2_n_pairs = "int"
+ho2_ddg_scale_f32 = "float"
+ho2_ddg_max_abs_diff = "float"
+ho2_ddg_rms_abs_diff = "float"
+ho2_ddg_top1_share = "float"
+ho2_ddg_top5_share = "float"
+ho2_ddg_argmax_i = "int"
+ho2_ddg_argmax_a = "int"
+ho2_ddg_argmax_f32 = "float"
+ho2_ddg_nonfinite_count_f16 = "int"
+ho2_ddg_max_abs_f16 = "float"
+ho2_ddg_spearman_abserr_vs_abs_f32 = "float"
+ho2_ddg_pearson_r = "float"
+ho2_dd_max_abs_diff = "float"
+ho2_dd_rms_abs_diff = "float"
+ho2_dd_top1_share = "float"
+ho2_dd_top5_share = "float"
+ho2_dd_argmax_i = "int"
+ho2_dd_argmax_j = "int"
+ho2_dd_argmax_a = "int"
+ho2_dd_argmax_b = "int"
+ho2_dd_argmax_f32 = "float"
+ho2_dd_nonfinite_count_f16 = "int"
+ho2_dd_max_abs_f16 = "float"
+ho2_dd_spearman_abserr_vs_abs_f32 = "float"
+ho2_dd_spearman_abserr_vs_sep = "float"
+ho2_dd_pearson_r = "float"

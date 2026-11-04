@@ -1241,3 +1241,48 @@ mutant = "ph_objective_knobs.block_zscales"
 [branch.vehicle]
 kind = "sidecar"
 slug = "protonpotts_parity"
+
+# ==============================================================================
+# Phase 2: ThermoMPNN / ThermoMPNN-D Parity Vehicle
+# ==============================================================================
+
+[[branch]]
+family = "thermo"
+id = "reversed_hidden"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "reversed_hidden"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
+
+[[branch]]
+family = "thermo"
+id = "omit_seq_subtraction"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "omit_seq_subtraction"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
+
+[[branch]]
+family = "thermo"
+id = "zero_edge_features"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "zero_edge_features"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
+
+[[branch]]
+family = "thermo"
+id = "permuted_output_weights"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "permuted_output_weights"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
+
