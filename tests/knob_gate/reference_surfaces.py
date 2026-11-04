@@ -638,4 +638,41 @@ class ThermoModelKnobs:
   thermo_model__threshold: float = -0.5  # type=float; --threshold; v2_ssm.py:561-566
   thermo_model__distance: float = 5.0  # type=float; --distance (CA-CA cutoff); v2_ssm.py:567-572
   thermo_model__ss_penalty: bool = False  # store_true; --ss_penalty; v2_ssm.py:573-577
+
+@dataclass(frozen=True)
+class CalibyKnobs:
+  """Upstream Caliby (ProteinDesignLab/caliby @ 41d31560c3c73d7980d94f40f3c852b90bfab5c0) run knobs.
+
+  Re-derived 261104 from the upstream files, not from aminx. Sources: the packaged sampling config
+  caliby/configs/seq_des/inference.yaml (line numbers below), the Hydra run configs
+  caliby/configs/eval/sampling/seq_des.yaml, and the Python API caliby/api.py. The invented knobs of
+  the earlier attempt (mcmc_*, cooling_schedule, conformer_generator, af3_diffusion_steps) do not exist
+  in any of these files (rg over the whole repo, 261104). The packer's sigma schedule (s_min 0.01,
+  s_max 80, rho 7) is read from the checkpoint's own config (checkpoint cfg model.denoiser.interpolant)
+  and is not a run knob.
+  """
+
+  caliby_inference__batch_size: int = 4  # inference.yaml:4; subbatch size of compute_potts_params (atom_mpnn_denoiser.py:356)
+  caliby_inference__num_seqs_per_pdb: int = 1  # inference.yaml:5; sequences drawn per structure (atom_mpnn_denoiser.py:227)
+  caliby_inference__verbose: bool = True  # inference.yaml:6
+  caliby_inference__num_workers: int = 2  # inference.yaml:7; dataloader workers
+  caliby_inference__omit_aas: list[str] | None = None  # inference.yaml:10; globally banned residues, X always banned (atom_mpnn_denoiser.py:194-199)
+  caliby_inference__ensemble_ignore_res_idx_mismatch: bool = False  # inference.yaml:11; conformer-file ensembles (seq_des_utils.py:1025)
+  caliby_inference__gaussian_conformers_n_conformers: int = 0  # inference.yaml:15; atom_mpnn_denoiser.py:156-161
+  caliby_inference__gaussian_conformers_noise_std: float = 0.0  # inference.yaml:16; 0 disables (atom_mpnn_denoiser.py:157)
+  caliby_inference__potts_regularization: str = "LCP"  # inference.yaml:20; atom_mpnn_denoiser.py:216-222
+  caliby_inference__potts_sweeps: int = 500  # inference.yaml:21
+  caliby_inference__potts_proposal: str = "dlmc"  # inference.yaml:22
+  caliby_inference__potts_temperature: float = 0.01  # inference.yaml:23 (api.py:48 temperature)
+  caliby_inference__potts_rejection_step: bool = False  # inference.yaml:24
+  caliby_inference__potts_only_cond: bool = False  # inference.yaml:25; atom_mpnn_denoiser.py:168-176
+  caliby_inference__scn_packing_num_steps: int = 50  # inference.yaml:30; scn_diffusion_mlp.py:115
+  caliby_inference__scn_packing_step_scale: float = 1.5  # inference.yaml:31; scn_diffusion_mlp.py:116, edm_interpolant.py:150
+  caliby_run__seed: int = 0  # eval/sampling/seq_des.yaml:2; L.seed_everything (seq_des.py:22)
+  caliby_run__ckpt_name_or_path: str = "caliby"  # eval/sampling/seq_des.yaml:6; weights.py:11-18 registry or literal .ckpt path
+  caliby_run__pos_constraint_csv: str | None = None  # eval/sampling/seq_des.yaml:18; seq_des.py:45
+  caliby_run__run_self_consistency_eval: bool = False  # eval/sampling/seq_des.yaml:21; seq_des.py:66
+  caliby_api__use_primary_res_type: bool = True  # api.py:151 ensemble_sample
+  caliby_api__out_dir: str | None = None  # api.py:94 / eval/sampling/seq_des.yaml:7
+  caliby_ckpt__augment_eps: float = 0.3  # checkpoint cfg model.denoiser.augment_eps; atom_mpnn_denoiser.py:134-139, applied only in training mode
 # END MANUAL

@@ -1,31 +1,59 @@
+# Pre-registration for the Caliby parity vehicle against SEALED UPSTREAM ORACLE DUMPS (P4 redo, 261104).
+# Supersedes the earlier sidecar whose clean arm diffed aminx against aminx and whose weights were random.
+#
+# What is compared: aminx (JAX) against dumps written by scripts/parity/dump_caliby_oracle.py from the real
+# ProteinDesignLab/caliby code at commit 41d31560c3c73d7980d94f40f3c852b90bfab5c0 (clean porcelain) loaded
+# with the real released checkpoints. Dump sha256 are pinned in scripts/parity/caliby_oracle_dumps.sha256.json
+# and re-derived bit-identically on a second oracle run (caliby/float64 and caliby_packer_010/float32).
+# Checkpoint sha256 are in tests/knob_gate/checkpoint_registry.json.
+#
+# Known limits, stated before the run: the Potts DLMC sampler (debt #3121) and the packer Euler sampler loop
+# with self-conditioning (TBD-CALIBY-3) are NOT compared; aminx does not implement those algorithms. The
+# packer is graded at float32 only (upstream's timestep embedder is float32). Oracle atomworks is 2.2.1, the
+# upstream pin is the atomworks-caliby fork, so featurization of 1ubq is matched only where the sealed dump
+# shows it (stage s0, up to a global translation because upstream centers the structure).
+#
+# Wall-time estimate: oracle dumps ~20 s each on CPU (done once, sealed). Vehicle: 7 clean arms ~2 min,
+# 10 mutants x 2 float64 arms ~15 min total on titanix CPU (measured 261104 in a dev run, same code).
+# Pre-run disclosure: during development the vehicle was executed several times and the numbers seen; the
+# bands below are the family-parity bands from the P4 brief (f64 1e-7, f32 1e-4) and were not tuned to them.
+# Two stage bands are looser and are fixed here, not after seeing a verdict: s7 (driver path casts inputs
+# to float32 by construction) uses 1e-4 and s0 coordinates (upstream centered coordinates are float32 values)
+# use 1e-4.
+
 [experiment]
-hypothesis = "JAX Caliby stages L1 (atom23 frames and rigid_from_3_points geometry), L2 (Potts parameters slicing and alphabet permutation), and L3 (Potts energy with gap penalty and injected EDM noise) achieve parity within 1e-4 in float32, and all negative controls (reverse_coordinate_frame, unpermuted_alphabet, zero_gap_penalty) fail decisively (> 1e-2)."
+hypothesis = "aminx Caliby reproduces the real upstream caliby model on tests/data/1ubq.pdb stage by stage (neighbor graph exactly; edge features, encoder, decoder, 32-state Potts fields and couplings, 21-state aminx-alphabet parameters, conditional energies, wild-type and alternative-sequence energies, Gaussian-conformer ensemble aggregate) within 1e-7 at float64 and 1e-4 at float32 for the caliby, soluble_caliby_v1 and caliby_distill checkpoints, and the packer trunk plus two sidechain-denoiser calls for caliby_packer_010 within 1e-4 at float32; and each of ten aminx-side code mutants moves at least one stage out of band."
 stage_name = "validation"
 
 [reproduction]
-reproduces_paper = "doi:10.1101/2024.10.15.618520"
+reproduces_paper = "doi:10.1101/2025.09.30.679633"
 
 [controls]
 positive_outcome = ["pass"]
 negative_outcome = ["fail"]
 
-[requires.waiver]
-reason = "Caliby parity verification vehicle against upstream PyTorch checkpoints"
-
 [outcomes.pass]
-condition = "clean == 'pass' AND mutants.reverse_coordinate_frame == 'failed' AND mutants.unpermuted_alphabet == 'failed' AND mutants.zero_gap_penalty == 'failed'"
-decision = "Promote Caliby JAX port and knob coverage."
-reasoning = "Clean run passes all graded stages L1/L2/L3, and all three negative control mutants trip."
+condition = "clean == 'pass' AND weight_source == 'upstream_checkpoint' AND n_arms == 7 AND n_clean_arms_in_band == 7 AND n_listed == 10 AND n_failed == n_listed"
+decision = "Treat the exercised Caliby stages as reproducing upstream; the sampler loops remain open under #3121 and TBD-CALIBY-3."
+reasoning = "Every clean arm is in band against sealed upstream dumps and every mutant tripped, so the diff has power."
 is_residual = false
 
 [outcomes.fail]
-condition = "clean != 'pass' OR mutants.reverse_coordinate_frame != 'failed' OR mutants.unpermuted_alphabet != 'failed' OR mutants.zero_gap_penalty != 'failed'"
-decision = "Block promotion and debug Caliby feature, Potts head, or EDM packer implementation."
-reasoning = "Parity delta exceeds tolerance or negative controls failed to trip."
+condition = "clean != 'pass' OR weight_source != 'upstream_checkpoint' OR n_arms != 7 OR n_clean_arms_in_band != 7 OR n_listed != 10 OR n_failed != n_listed"
+decision = "Block promotion; read clean_summary.out_of_band for the first stage that left its band."
+reasoning = "A clean arm is out of band, or a mutant survived (the diff cannot see that perturbation)."
 is_residual = true
 
 [result_schema]
-family = "str"
 clean = "str"
+n_arms = "int"
+n_clean_arms_in_band = "int"
+n_listed = "int"
+n_failed = "int"
+weight_source = "str"
+oracle_dump_sha256 = "dict"
+clean_summary = "dict"
+clean_stages = "dict"
 mutants = "dict"
-weights = "dict"
+mutant_detail = "dict"
+not_compared = "list"
