@@ -156,7 +156,7 @@ def test_knob_semantics_ensemble_conformers() -> None:
   for c in (2, 5):
     ens = generate_gaussian_ensemble(xyz, mask, num_conformers=c, noise_std=0.3, key=jax.random.PRNGKey(0))
     assert ens.shape[0] == c
-    # Documented divergence (TBD-CALIBY-5): conformer 0 is the unperturbed structure here; upstream
+    # Documented divergence (3242): conformer 0 is the unperturbed structure here; upstream
     # noises every conformer (atom_mpnn_denoiser.py:571).
     np.testing.assert_array_equal(np.asarray(ens[0]), np.asarray(xyz))
     assert float(jnp.max(jnp.abs(ens[1:] - xyz[None]))) > 0.0

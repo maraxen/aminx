@@ -73,7 +73,7 @@ def test_knob_semantics_model_name() -> None:
 
   for version in ("v_48_000", "v_48_010", "v_48_020", "v_48_030"):
     assert ("antibmpnn", version) in LEGACY_ALIAS_MAP
-  assert ("antibmpnn", "v_48_040") not in LEGACY_ALIAS_MAP  # upstream ships antibmpnn_040..100.pt; debt TBD-ANTIBMPNN-4
+  assert ("antibmpnn", "v_48_040") not in LEGACY_ALIAS_MAP  # upstream ships antibmpnn_040..100.pt; debt 3247
   first = load_model(checkpoint_id="antibmpnn_v_48_000")
   second = load_model(checkpoint_id="antibmpnn_v_48_010")
   assert not np.array_equal(np.asarray(first.w_out.weight), np.asarray(second.w_out.weight))
@@ -220,7 +220,7 @@ def test_knob_semantics_tied_positions() -> None:
 
   The ``tied_positions`` spec field is NOT the working channel: ``utils.autoregression.resolve_tie_groups``
   (which would turn it into a map) has no caller in src/ (verified 261104), so setting it changes nothing
-  (debt TBD-ANTIBMPNN-5). The per-position ``tie_group_map`` array is what reaches the decoder.
+  (debt 3248). The per-position ``tie_group_map`` array is what reaches the decoder.
   """
   groups = np.arange(_MAX_LENGTH, dtype=np.int32)
   groups[1] = groups[2] = 0

@@ -9,7 +9,7 @@ AMINX-ONLY, NO UPSTREAM COUNTERPART (verified 261104: neither ``Running_AntiBMPN
 positions with ``make_fixed_positions_dict.py --specify_non_fixed``): ``build_cdr_region_mask``,
 ``CDRRegionMasks``, ``CDRFrequencyLogitTransform`` and ``make_cdr_frequency_logit_transform``. They are
 kept only because other aminx code imports them; they are not an AntiBMPNN feature and nothing here
-grades them against upstream (debt TBD-ANTIBMPNN-1).
+grades them against upstream (debt 3244).
 """
 
 from __future__ import annotations

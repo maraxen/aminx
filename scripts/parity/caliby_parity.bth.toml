@@ -8,7 +8,7 @@
 # Checkpoint sha256 are in tests/knob_gate/checkpoint_registry.json.
 #
 # Known limits, stated before the run: the Potts DLMC sampler (debt #3121) and the packer Euler sampler loop
-# with self-conditioning (TBD-CALIBY-3) are NOT compared; aminx does not implement those algorithms. The
+# with self-conditioning (3240) are NOT compared; aminx does not implement those algorithms. The
 # packer is graded at float32 only (upstream's timestep embedder is float32). Oracle atomworks is 2.2.1, the
 # upstream pin is the atomworks-caliby fork, so featurization of 1ubq is matched only where the sealed dump
 # shows it (stage s0, up to a global translation because upstream centers the structure).
@@ -34,7 +34,7 @@ negative_outcome = ["fail"]
 
 [outcomes.pass]
 condition = "clean == 'pass' AND weight_source == 'upstream_checkpoint' AND n_arms == 7 AND n_clean_arms_in_band == 7 AND n_listed == 10 AND n_failed == n_listed"
-decision = "Treat the exercised Caliby stages as reproducing upstream; the sampler loops remain open under #3121 and TBD-CALIBY-3."
+decision = "Treat the exercised Caliby stages as reproducing upstream; the sampler loops remain open under #3121 and 3240."
 reasoning = "Every clean arm is in band against sealed upstream dumps and every mutant tripped, so the diff has power."
 is_residual = false
 

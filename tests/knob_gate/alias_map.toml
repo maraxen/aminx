@@ -3757,7 +3757,7 @@ note = "Upstream num_workers (inference.yaml:7) is the dataloader worker count."
 ref = "caliby_inference__omit_aas"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-CALIBY-1"
+reason = "deferred:3238"
 parity_test_ids = []
 note = "UNIMPLEMENTED in aminx. Upstream bans the listed residues plus X and all non-protein tokens at every site (atom_mpnn_denoiser.py:194-199). CalibyDriver._run_potts_sample reads neither spec.omit_aa nor omit_aa_per_position (driver.py:327-380)."
 
@@ -3765,7 +3765,7 @@ note = "UNIMPLEMENTED in aminx. Upstream bans the listed residues plus X and all
 ref = "caliby_inference__ensemble_ignore_res_idx_mismatch"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-CALIBY-2"
+reason = "deferred:3239"
 parity_test_ids = []
 note = "UNIMPLEMENTED in aminx. Conformer-file ensembles (api.ensemble_sample / score_ensemble, seq_des_utils.py:1025 _validate_ensemble_alignment) have no aminx input path."
 
@@ -3774,7 +3774,7 @@ ref = "caliby_inference__gaussian_conformers_n_conformers"
 targets = ["ensemble_conformers"]
 equivalence = "divergence"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_ensemble_conformers"]
-note = "Upstream n_conformers (inference.yaml:15, default 0) repeats the batch n times and adds noise to EVERY conformer (atom_mpnn_denoiser.py:556-575), raising if n <= 0 when noise_std > 0. aminx ensemble_conformers (default 1) keeps conformer 0 unperturbed and noises C-1 (potts.py generate_gaussian_ensemble). Per-conformer Potts parameters are averaged identically (sealed-oracle stage s6 in caliby_parity). Tracked as TBD-CALIBY-5."
+note = "Upstream n_conformers (inference.yaml:15, default 0) repeats the batch n times and adds noise to EVERY conformer (atom_mpnn_denoiser.py:556-575), raising if n <= 0 when noise_std > 0. aminx ensemble_conformers (default 1) keeps conformer 0 unperturbed and noises C-1 (potts.py generate_gaussian_ensemble). Per-conformer Potts parameters are averaged identically (sealed-oracle stage s6 in caliby_parity). Tracked as 3242."
 
 [[row]]
 ref = "caliby_inference__gaussian_conformers_noise_std"
@@ -3836,20 +3836,20 @@ ref = "caliby_inference__scn_packing_num_steps"
 targets = ["packer_num_steps"]
 equivalence = "divergence"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_num_steps"]
-note = "Upstream num_steps default 50 (inference.yaml:30) counts Euler steps over t=linspace(0,1,S+1) with self-conditioning (scn_diffusion_mlp.py:115-128). aminx packer_num_steps default 25 counts Karras Heun steps (sidechain_diffusion.py edm_sidechain_sample). The single denoiser call is oracle-matched (pk_call1/2 stages); the sampler loop is not. TBD-CALIBY-3."
+note = "Upstream num_steps default 50 (inference.yaml:30) counts Euler steps over t=linspace(0,1,S+1) with self-conditioning (scn_diffusion_mlp.py:115-128). aminx packer_num_steps default 25 counts Karras Heun steps (sidechain_diffusion.py edm_sidechain_sample). The single denoiser call is oracle-matched (pk_call1/2 stages); the sampler loop is not. 3240."
 
 [[row]]
 ref = "caliby_inference__scn_packing_step_scale"
 targets = ["packer_step_scale"]
 equivalence = "divergence"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_step_scale"]
-note = "Upstream step_scale 1.5 multiplies the Euler score (edm_interpolant.py:150). aminx packer_step_scale 1.5 multiplies both Heun slopes. Same default, different integrator. TBD-CALIBY-3."
+note = "Upstream step_scale 1.5 multiplies the Euler score (edm_interpolant.py:150). aminx packer_step_scale 1.5 multiplies both Heun slopes. Same default, different integrator. 3240."
 
 [[row]]
 ref = "caliby_run__seed"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-CALIBY-6"
+reason = "deferred:3243"
 parity_test_ids = []
 note = "Upstream seed (eval/sampling/seq_des.yaml:2) calls L.seed_everything (seq_des.py:22), seeding torch/numpy/python globally. aminx random_seed seeds a JAX key; streams cannot match, and no test pins the seeding contract yet."
 
@@ -3864,7 +3864,7 @@ note = "Upstream ckpt_name_or_path (eval/sampling/seq_des.yaml:6, weights.py:11-
 ref = "caliby_run__pos_constraint_csv"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-CALIBY-4"
+reason = "deferred:3241"
 parity_test_ids = []
 note = "UNIMPLEMENTED in aminx. Upstream fixed_pos_seq / fixed_pos_scn / fixed_pos_override_seq / pos_restrict_aatype / symmetry columns (seq_des_utils.py:553-996) have no aminx equivalent in CalibyDriver."
 
@@ -3880,7 +3880,7 @@ note = "Upstream runs AF2 folding self-consistency after design (seq_des.py:66);
 ref = "caliby_api__use_primary_res_type"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-CALIBY-2"
+reason = "deferred:3239"
 parity_test_ids = []
 note = "UNIMPLEMENTED in aminx; belongs to the conformer-file ensemble API (api.py:151)."
 
@@ -3914,7 +3914,7 @@ upstream = false
 targets = ["packer_sigma_min"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_sigma_min"]
-note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default 0.002 is not upstream's. TBD-CALIBY-3."
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default 0.002 is not upstream's. 3240."
 
 [[row]]
 ref = "__aminx_only__caliby_packer_sigma_max"
@@ -3922,7 +3922,7 @@ upstream = false
 targets = ["packer_sigma_max"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_sigma_max"]
-note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. TBD-CALIBY-3."
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. 3240."
 
 [[row]]
 ref = "__aminx_only__caliby_packer_rho"
@@ -3930,7 +3930,7 @@ upstream = false
 targets = ["packer_rho"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_rho"]
-note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. TBD-CALIBY-3."
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. 3240."
 
 [[row]]
 ref = "__aminx_only__caliby_packer_s_churn"
@@ -3938,12 +3938,12 @@ upstream = false
 targets = ["packer_s_churn"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_s_churn"]
-note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. TBD-CALIBY-3."
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. 3240."
 
 # ==============================================================================
 # Phase 4 (P4 redo 261104): AntiBMPNN. Re-derived from Running_AntiBMPNN_run.py and
 # helper_scripts/parsing_design_result.py at zeysun/AntiBMPNN 7e6329ba. Placeholder
-# debt ids TBD-ANTIBMPNN-n are substituted by the orchestrator.
+# debt ids are #3244-#3248.
 # ==============================================================================
 
 [[row]]
@@ -4022,7 +4022,7 @@ note = "Running_AntiBMPNN_run.py:438. Pre-parsed structures from parse_multiple_
 ref = "antibmpnn_run__conditional_probs_only_backbone"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-ANTIBMPNN-3"
+reason = "deferred:3246"
 parity_test_ids = []
 note = "Running_AntiBMPNN_run.py:426, :278, model.conditional_probs(..., backbone_only) at protein_mpnn_utils.py:1292. UNIMPLEMENTED for the generic ProteinMPNN path: score() allows output_kind 'nll' only for model_family proteinmpnn (specs.py _validate_output_kind) and no spec field requests backbone-only conditionals."
 
@@ -4030,7 +4030,7 @@ note = "Running_AntiBMPNN_run.py:426, :278, model.conditional_probs(..., backbon
 ref = "antibmpnn_run__unconditional_probs_only"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-ANTIBMPNN-3"
+reason = "deferred:3246"
 parity_test_ids = []
 note = "Running_AntiBMPNN_run.py:427, :283-293, model.unconditional_probs. UNIMPLEMENTED for the generic ProteinMPNN path (same reason as conditional_probs_only_backbone)."
 
@@ -4038,7 +4038,7 @@ note = "Running_AntiBMPNN_run.py:427, :283-293, model.unconditional_probs. UNIMP
 ref = "antibmpnn_run__pssm_jsonl"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-ANTIBMPNN-2"
+reason = "deferred:3245"
 parity_test_ids = []
 note = "Running_AntiBMPNN_run.py:446. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
 
@@ -4046,7 +4046,7 @@ note = "Running_AntiBMPNN_run.py:446. UNIMPLEMENTED for the generic ProteinMPNN 
 ref = "antibmpnn_run__pssm_multi"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-ANTIBMPNN-2"
+reason = "deferred:3245"
 parity_test_ids = []
 note = "Running_AntiBMPNN_run.py:447. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
 
@@ -4054,7 +4054,7 @@ note = "Running_AntiBMPNN_run.py:447. UNIMPLEMENTED for the generic ProteinMPNN 
 ref = "antibmpnn_run__pssm_threshold"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-ANTIBMPNN-2"
+reason = "deferred:3245"
 parity_test_ids = []
 note = "Running_AntiBMPNN_run.py:448. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
 
@@ -4062,7 +4062,7 @@ note = "Running_AntiBMPNN_run.py:448. UNIMPLEMENTED for the generic ProteinMPNN 
 ref = "antibmpnn_run__pssm_log_odds_flag"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-ANTIBMPNN-2"
+reason = "deferred:3245"
 parity_test_ids = []
 note = "Running_AntiBMPNN_run.py:449. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
 
@@ -4070,7 +4070,7 @@ note = "Running_AntiBMPNN_run.py:449. UNIMPLEMENTED for the generic ProteinMPNN 
 ref = "antibmpnn_run__pssm_bias_flag"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-ANTIBMPNN-2"
+reason = "deferred:3245"
 parity_test_ids = []
 note = "Running_AntiBMPNN_run.py:450. UNIMPLEMENTED for the generic ProteinMPNN path: SamplingSpecification has no PSSM field (the pssm_* fields exist only on PottsMPNNOptions). Upstream blends probs at protein_mpnn_utils.py:1167-1175."
 
@@ -4079,7 +4079,7 @@ ref = "antibmpnn_run__model_name"
 targets = ["checkpoint_id", "model_local_path"]
 equivalence = "divergence"
 parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_model_name"]
-note = "Running_AntiBMPNN_run.py:412, :39. Upstream stem antibmpnn_000..100 (noise 0.0..1.0 A in 0.1 steps, checkpoint['noise_level']); aminx checkpoint_id antibmpnn_v_48_000..030 (Hub, HF_REVISION 5ff5cf16). antibmpnn_040..100 are NOT on the Hub: reachable only through model_local_path after scripts/convert_weights.py (debt TBD-ANTIBMPNN-4). The upstream default 'v_48_020' names no file in antibmpnn_model_weights/."
+note = "Running_AntiBMPNN_run.py:412, :39. Upstream stem antibmpnn_000..100 (noise 0.0..1.0 A in 0.1 steps, checkpoint['noise_level']); aminx checkpoint_id antibmpnn_v_48_000..030 (Hub, HF_REVISION 5ff5cf16). antibmpnn_040..100 are NOT on the Hub: reachable only through model_local_path after scripts/convert_weights.py (debt 3247). The upstream default 'v_48_020' names no file in antibmpnn_model_weights/."
 
 [[row]]
 ref = "antibmpnn_run__score_only"
@@ -4198,7 +4198,7 @@ ref = "antibmpnn_run__tied_positions_jsonl"
 targets = ["tie_group_map"]
 equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_tied_positions"]
-note = "Running_AntiBMPNN_run.py:452, :112, :313 (tied_sample). Tied positions share one sampled letter. aminx's working channel is the per-position tie_group_map array; the RunSpecification.tied_positions field is accepted and never resolved (utils.autoregression.resolve_tie_groups has no caller in src/, verified 261104), so setting it silently does nothing (debt TBD-ANTIBMPNN-5)."
+note = "Running_AntiBMPNN_run.py:452, :112, :313 (tied_sample). Tied positions share one sampled letter. aminx's working channel is the per-position tie_group_map array; the RunSpecification.tied_positions field is accepted and never resolved (utils.autoregression.resolve_tie_groups has no caller in src/, verified 261104), so setting it silently does nothing (debt 3248)."
 
 [[row]]
 ref = "antibmpnn_parse__dir"
@@ -4282,7 +4282,7 @@ note = "Upstream single input PDB for scoring (score.yaml:9, score_multi.py:44);
 ref = "fampnn__mutations_path"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-FAMPNN-2"
+reason = "deferred:3253"
 parity_test_ids = []
 note = "NOT IMPLEMENTED. Upstream score_multi.py / score_all_muts.py score a CSV of mutations with scoring_utils.score_seq (masks only the mutated positions, keeps neighbours and their sidechains; sampling-free). aminx score:nll and score:logits score the wild type with the whole sequence and all sidechains masked, which is upstream SeqDenoiser.score on a fully masked input, not the mutation protocol."
 
@@ -4297,7 +4297,7 @@ note = "Upstream repeats each PDB num_seqs_per_pdb times and designs one sequenc
 ref = "fampnn__num_samples_per_pdb"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-FAMPNN-1"
+reason = "deferred:3252"
 parity_test_ids = []
 note = "NOT IMPLEMENTED. pack.yaml:9 belongs to the packing entry point (inference/pack.py -> SeqDenoiser.sidechain_pack), which aminx does not expose as a purpose; the driver handles sample, score:nll and score:logits only. The sampler's repack_last path is the same denoiser call."
 
@@ -4447,6 +4447,6 @@ note = "seq_design.yaml:43. In units of sigma_data (edm_interpolant.py:142-143).
 ref = "fampnn__restrict_pos_aatype"
 targets = []
 equivalence = "exclusion"
-reason = "deferred:TBD-FAMPNN-3"
+reason = "deferred:3254"
 parity_test_ids = []
 note = "NOT IMPLEMENTED. In-code argument of SeqDenoiser.sample (sd_model.py:162, applied at fampnn_denoiser.py:113-119): per-position allowed amino acids, disallowed logits set to -1e9 before sampling. Not a config key. aminx driver.load refuses omit_aa / omit_aa_per_position / bias for fampnn rather than ignore them."
