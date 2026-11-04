@@ -19,6 +19,7 @@ from aminx.families.fampnn.features import (
   compute_fampnn_knn,
   compute_fampnn_rbf,
   get_rotation_frames,
+  positional_embedding_table,
 )
 
 
@@ -38,10 +39,13 @@ def _normalize_zero_safe(
   *,
   axis: int = -1,
 ) -> Float[Array, "... 3"]:
-  """Normalize 3D vectors to unit length, mapping exact zero vectors to zero."""
-  sq = jnp.sum(v * v, axis=axis, keepdims=True)
-  norm = jnp.sqrt(jnp.where(sq > 0, sq, 1.0))
-  return jnp.where(sq > 0, v / norm, jnp.zeros_like(v))
+  """Upstream ``normalize`` (``fampnn/data/data.py:379-384``): ``v / sqrt(sum(v^2) + 1e-8)``.
+
+  Not a unit vector (the epsilon sits inside the square root) and exactly zero for a zero vector.
+  Upstream also maps non-finite results to 0 (``nan_to_num``).
+  """
+  out = v / jnp.sqrt(jnp.sum(v * v, axis=axis, keepdims=True) + 1e-8)
+  return jnp.where(jnp.isfinite(out), out, jnp.zeros_like(out))
 
 
 def _compute_backbone_dihedrals(
@@ -76,12 +80,15 @@ def _compute_virtual_cb_unit(
   ca_xyz: Float[Array, "L 3"],
   c_xyz: Float[Array, "L 3"],
 ) -> Float[Array, "L 3"]:
-  """Compute upstream FAMPNN tetrahedral unit vector ``-bisector*sqrt(1/3) - perp*sqrt(2/3)``."""
-  u = _normalize_zero_safe(n_xyz - ca_xyz, axis=-1)
+  """Upstream ``sidechains`` (``fampnn/data/data.py:394-400``).
+
+  ``c, n = normalize(C - CA), normalize(N - CA); vec = -normalize(c + n) * sqrt(1/3) - normalize(c x n) * sqrt(2/3)``.
+  """
   c = _normalize_zero_safe(c_xyz - ca_xyz, axis=-1)
-  b = _normalize_zero_safe(u - c, axis=-1)
-  n = _normalize_zero_safe(jnp.cross(u, c), axis=-1)
-  return -b * math.sqrt(1.0 / 3.0) - n * math.sqrt(2.0 / 3.0)
+  n = _normalize_zero_safe(n_xyz - ca_xyz, axis=-1)
+  bisector = _normalize_zero_safe(c + n, axis=-1)
+  perp = _normalize_zero_safe(jnp.cross(c, n), axis=-1)
+  return -bisector * math.sqrt(1.0 / 3.0) - perp * math.sqrt(2.0 / 3.0)
 
 
 class GVPLayerNorm(eqx.Module):
@@ -104,14 +111,18 @@ class GVPLayerNorm(eqx.Module):
   scalar_norm: eqx.nn.LayerNorm
   s_dim: int = eqx.field(static=True)
   v_dim: int = eqx.field(static=True)
+  v_eps: float = eqx.field(static=True, default=1e-4)
 
-  def __init__(self, dims: tuple[int, int]) -> None:
+  def __init__(self, dims: tuple[int, int], v_eps: float = 1e-4) -> None:
     """Initialize ``GVPLayerNorm``.
 
     Parameters
     ----------
     dims : tuple[int, int]
       Tuple ``(s_dim, v_dim)`` of scalar and vector channel counts.
+    v_eps : float
+      Vector-channel epsilon (upstream ``LayerNorm(dims, eps=...)``: 1e-4 in the graph embedding and the
+      conv layers, 1e-8 in the ``W_out`` head). The scalar ``nn.LayerNorm`` always uses its default 1e-5.
 
     Returns
     -------
@@ -119,9 +130,10 @@ class GVPLayerNorm(eqx.Module):
       Initializes instance state.
     """
     s_dim, v_dim = dims
-    self.scalar_norm = eqx.nn.LayerNorm(s_dim, eps=1e-4)
+    self.scalar_norm = eqx.nn.LayerNorm(s_dim, eps=1e-5)
     self.s_dim = s_dim
     self.v_dim = v_dim
+    self.v_eps = v_eps
 
   def __call__(
     self,
@@ -145,12 +157,13 @@ class GVPLayerNorm(eqx.Module):
     s_out = _layer_norm(self.scalar_norm, s)
     if self.v_dim == 0 or v is None:
       return s_out, None
-    vn = jnp.sum(v * v, axis=-1, keepdims=True) + 1e-4
-    nonzero_mask = (vn > 2e-4).astype(v.dtype)
+    eps = self.v_eps
+    vn = jnp.sum(v * v, axis=-1, keepdims=True) + eps
+    nonzero_mask = (vn > 2 * eps).astype(v.dtype)
     vn = jnp.sum(vn * nonzero_mask, axis=-2, keepdims=True) / (
-      1e-4 + jnp.sum(nonzero_mask, axis=-2, keepdims=True)
+      eps + jnp.sum(nonzero_mask, axis=-2, keepdims=True)
     )
-    vn = jnp.sqrt(vn + 1e-4)
+    vn = jnp.sqrt(vn + eps)
     v_out = nonzero_mask * (v / vn)
     return s_out, v_out
 
@@ -531,13 +544,12 @@ class GVPGraphEmbedding(eqx.Module):
     rbf_ca = compute_fampnn_rbf(e_dist, d_min=0.0, d_max=20.0, num_rbf=self.num_rbf)
 
     # Sinusoidal relative positional encoding (data.py:427-442: i - j index offset, [cos, sin])
-    d_offset = jnp.arange(num_l, dtype=dtype)[:, None] - e_idx.astype(dtype)
-    freqs = jnp.exp(
-      jnp.arange(0, self.num_positional_embeddings, 2, dtype=dtype)
-      * -(math.log(10000.0) / self.num_positional_embeddings),
-    )
-    angles = d_offset[..., None] * freqs[None, None, :]
-    pos_emb = jnp.concatenate([jnp.cos(angles), jnp.sin(angles)], axis=-1)
+    # Upstream (data.py:427-442) forms the angles in float32 whatever the model dtype, so the embedding of an
+    # offset is a fixed float32 table (see ``positional_embedding_table``); gather it instead of re-deriving
+    # cos/sin with backend float32 kernels.
+    d_offset = jnp.arange(num_l, dtype=jnp.int32)[:, None] - e_idx.astype(jnp.int32)
+    table = jnp.asarray(positional_embedding_table(num_l, self.num_positional_embeddings))
+    pos_emb = jnp.take(table, d_offset + (num_l - 1), axis=0).astype(dtype)
     edge_s_raw = jnp.concatenate([rbf_ca, pos_emb], axis=-1)
 
     xyz_j = xyz[e_idx]
@@ -774,7 +786,7 @@ class GVPEncoder(eqx.Module):
     out_dim = node_h_dim[0] + 3 * node_h_dim[1]
     self.norm_gvp_out = eqx.nn.LayerNorm(out_dim, eps=1e-5)
     if w_out_mode == "gvp":
-      self.w_out_norm = GVPLayerNorm(node_h_dim)
+      self.w_out_norm = GVPLayerNorm(node_h_dim, v_eps=1e-8)
       self.w_out_gvp = GVP(node_h_dim, (node_h_dim[0], 0), key=keys[-2])
       self.w_out_linear = None
     elif w_out_mode == "linear":

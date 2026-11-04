@@ -4,10 +4,10 @@ Runs the upstream ``SeqDenoiser`` (fampnn/model/sd_model.py) on real fixtures an
 ``.npz`` per dtype. Nothing from aminx is imported. Randomness is *injected* at the torch RNG
 primitives that upstream calls, so every stochastic step is deterministic and recorded:
 
-  torch.rand_like   fampnn/sampling_utils.py:21     get_decoding_order  (residue decoding order)
-  torch.multinomial fampnn/model/fampnn_denoiser.py:95  sample_aatype   (per-position categorical draw)
-  torch.randn       fampnn/interpolants/edm_interpolant.py:~118 sample_prior (EDM prior, scaled by sigma(0))
-  torch.randn_like  fampnn/interpolants/edm_interpolant.py:~139 churn   (Karras stochastic churn; s_churn>0)
+  torch.rand_like   fampnn/sampling_utils.py:25     get_decoding_order  (residue decoding order)
+  torch.multinomial fampnn/model/fampnn_denoiser.py:129 sample_aatype   (per-position categorical draw)
+  torch.randn       fampnn/interpolants/edm_interpolant.py:121 sample_prior (EDM prior, scaled by sigma(0))
+  torch.randn_like  fampnn/interpolants/edm_interpolant.py:149 churn   (Karras stochastic churn; s_churn>0)
 
 Any RNG call that is not served from an injected queue raises, so no randomness is unaccounted for.
 ``torch.multinomial`` is replaced by an inverse-CDF draw on injected uniforms (the only change of
@@ -207,12 +207,25 @@ def build(args) -> int:  # noqa: PLR0915
     "ab_sha256_written": ab_sha,
     "weights_sha256": {},
     "injection_points": {
-      "rand_like": "fampnn/sampling_utils.py:21 (get_decoding_order)",
-      "multinomial": "fampnn/model/fampnn_denoiser.py:95 (sample_aatype); replaced by inverse-CDF on injected uniforms",
-      "randn": "fampnn/interpolants/edm_interpolant.py:~118 (sample_prior)",
-      "randn_like": "fampnn/interpolants/edm_interpolant.py:~139 (churn)",
+      "rand_like": "fampnn/sampling_utils.py:25 (get_decoding_order)",
+      "multinomial": "fampnn/model/fampnn_denoiser.py:129 (sample_aatype); replaced by inverse-CDF on injected uniforms",
+      "randn": "fampnn/interpolants/edm_interpolant.py:121 (sample_prior)",
+      "randn_like": "fampnn/interpolants/edm_interpolant.py:149 (churn)",
     },
   }
+
+  # ---- module-level constants of the real upstream code -------------------------------------------
+  from fampnn.data.data import positional_embeddings
+
+  arrays["consts/ref_pos_atom37"] = _np(life.RESTYPE_REF_POS_ATOM37)
+  num_l_tab = 80
+  offs = torch.arange(-(num_l_tab - 1), num_l_tab)
+  arrays["consts/posemb_offsets"] = _np(offs)
+  arrays["consts/posemb_table"] = _np(positional_embeddings(torch.stack([offs, torch.zeros_like(offs)]), num_positional_embeddings=16))
+  meta["consts_note"] = (
+    "ref_pos_atom37 row 20 (UNK) is an unseeded RDKit embed (life.py:419-424), different in every process; "
+    "graded rows are 0-19. posemb_table is upstream positional_embeddings (data.py:427-442) on offsets -(L-1)..(L-1), L=80."
+  )
 
   rng_master = np.random.default_rng(20261104)
   for ckpt_name in CKPTS:

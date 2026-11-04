@@ -50,10 +50,10 @@ class SamplerNoise(NamedTuple):
   Attributes
   ----------
   decoding_u : Float[Array, " L"]
-    Uniforms behind the residue decoding order (``torch.rand_like`` at ``sampling_utils.py:21``).
+    Uniforms behind the residue decoding order (``torch.rand_like`` at ``sampling_utils.py:25``).
   categorical_u : Float[Array, "S L"]
     One uniform per residue per MAR step for the inverse-CDF categorical draw
-    (``torch.multinomial`` at ``fampnn_denoiser.py:95``). Unused when ``temperature == 0``.
+    (``torch.multinomial`` at ``fampnn_denoiser.py:129``). Unused when ``temperature == 0``.
   prior_z : Float[Array, "C L 33 3"]
     Unit normal behind the EDM prior of each denoiser call, ``C = S + repack_last``
     (``torch.randn`` in ``edm_interpolant.py::sample_prior``).
@@ -181,7 +181,7 @@ def unmask_targets(
   length: Float[Array, ""],
   num_partial: Int[Array, ""],
 ) -> Int[Array, " S1"]:
-  """Cumulative number of revealed residues at each timestep (``sd_model.py:~232-234``).
+  """Cumulative number of revealed residues at each timestep (``sd_model.py:233-234``).
 
   ``K_i = ceil(t_i * (L - n_partial)) + n_partial``: the schedule is defined over the masked residues.
   """
@@ -257,7 +257,7 @@ def scn_denoise_local(
   valid: Float[Array, " L"],
   x_self_cond: Float[Array, "L 33 3"] | None,
 ) -> Float[Array, "L 33 3"]:
-  """``SidechainMLP.forward`` (``scn_diffusion_mlp.py:~170-216``) with EDM preconditioning.
+  """``SidechainMLP.forward`` (``scn_diffusion_mlp.py:189-238``) with EDM preconditioning.
 
   ``c_in`` scales the input, the self-conditioning coordinates are divided by ``sigma_data`` (zeros
   when absent), ``c_noise = log(sigma) / 4`` drives the timestep embedding, the per-token reference
@@ -316,7 +316,7 @@ def scn_edm_loop(
   s_t_min: float,
   s_t_max: float,
 ) -> tuple[Float[Array, "L 33 3"], EdmTrace]:
-  """The Euler EDM loop of ``SidechainDiffusionModule.sidechain_diffusion`` (``scn_diffusion_mlp.py:~52-78``).
+  """The Euler EDM loop of ``SidechainDiffusionModule.sidechain_diffusion`` (``scn_diffusion_mlp.py:80-98``).
 
   Prior ``z * sigma(t=0)``; per step: optional Karras churn (``edm_interpolant.py::churn``), one
   denoiser call, ``x += (sigma(t_next) - sigma(t)) * step_scale * (x - x1_pred) / sigma(t)``, and
@@ -338,7 +338,10 @@ def scn_edm_loop(
       churn_mask = ((s_t_min * sd) <= sigma) & (sigma <= (s_t_max * sd))
       gamma = (s_churn / num_steps) * churn_mask.astype(dtype)
       sigma_hat = sigma + gamma * sigma
-      xt = xt + (z * s_noise) * jnp.sqrt(sigma_hat**2 - sigma**2)
+      # outside the churn window the added noise is exactly zero (torch gives sqrt(0)); under XLA fusion
+      # ``sigma_hat**2 - sigma**2`` can round to a tiny negative number, so select instead of subtracting blindly.
+      noise_scale = jnp.where(churn_mask, jnp.sqrt(jnp.maximum(sigma_hat**2 - sigma**2, 0.0)), 0.0)
+      xt = xt + (z * s_noise) * noise_scale
       t = _sigma_inv(diffusion, sigma_hat)
     cond_in = x_cond if diffusion.use_self_conditioning else None
     x1 = scn_denoise_local(diffusion, xt, t, h_v, aatype, valid, cond_in)
@@ -521,7 +524,7 @@ def encoder_backbone(
   atom37_mask_noised: Float[Array, "L 37"],
   aatype_noised: Int[Array, " L"],
 ) -> tuple[Float[Array, "L 4 3"], Float[Array, "L 4"]]:
-  """Atom14 backbone (N, CA, C, O) as the encoder sees it, missing atoms replaced by CA (``fampnn.py:~67``)."""
+  """Atom14 backbone (N, CA, C, O) as the encoder sees it, missing atoms replaced by CA (``fampnn.py:88``)."""
   xyz14, mask14 = atom37_to_atom14(atom37_xyz, atom37_mask_noised, jnp.clip(aatype_noised, 0, 20))
   ca = xyz14[:, 1:2, :]
   xyz14 = jnp.where(mask14[..., None] > 0, xyz14, ca)
@@ -571,7 +574,7 @@ def mar_sample_upstream(  # noqa: PLR0913, PLR0915
   conf_min_bin: float = 0.0,
   conf_max_bin: float = 4.0,
 ) -> MarResult:
-  """``SeqDenoiser.sample`` (``sd_model.py:~157-320``): linear-K masked autoregressive design + repack.
+  """``SeqDenoiser.sample`` (``sd_model.py:148-291``): linear-K masked autoregressive design + repack.
 
   Per step: denoise (sequence head, aatype draw, 50-step sidechain EDM at every position), reveal the
   next K residues in decoding order, optionally re-mask low-confidence sidechains
@@ -638,7 +641,7 @@ def mar_sample_upstream(  # noqa: PLR0913, PLR0915
     seq_probs_t = unmask(seq_probs_t, call.seq_probs, seq_prev, seq_mlm)
     psce_t = unmask(psce_t, call.psce, scn_prev, scn_mlm)
     if psce_threshold is not None:
-      # re-mask low-confidence sidechains, except after the last step (sd_model.py:~250)
+      # re-mask low-confidence sidechains, except after the last step (sd_model.py:255)
       m = RESTYPE_ATOM37_MASK[jnp.clip(aatype_t, 0, 20)][:, NON_BB_IDXS_ARR].astype(dtype)
       per_res = jnp.sum(psce_t * m, axis=-1) / jnp.maximum(jnp.sum(m, axis=-1), 1.0)
       keep = jnp.where(last, 1.0, (per_res <= psce_threshold).astype(dtype))

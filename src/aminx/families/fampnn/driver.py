@@ -1,14 +1,15 @@
 """FAMPNN family driver for ``sample``, ``score:nll``, and ``score:logits``.
 
-Implements Masked Autoregressive (MAR) cosine-schedule joint sequence + sidechain
-generation (``mar_sample``) and teacher-forced / masked scoring across all 3
-released FAMPNN checkpoints (``fampnn_0_0``, ``fampnn_0_3``, ``fampnn_0_3_cath``).
+``sample`` runs :func:`aminx.families.fampnn.sampler.mar_sample_upstream`, the port of upstream
+``SeqDenoiser.sample`` (linear-K masked-autoregressive design with 50-step EDM sidechain packing,
+psce re-masking, fixed positions and a final repack), across the 3 released checkpoints
+(``fampnn_0_0``, ``fampnn_0_3``, ``fampnn_0_3_cath``). ``score:*`` masks the whole sequence and all
+sidechains and reads the sequence head (upstream ``SeqDenoiser.score`` on a fully masked input).
 """
 
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any, NamedTuple, cast
@@ -17,18 +18,17 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Float, Int
 from xtrax.tiling import AxisSpec
 
 from aminx.families.fampnn.constants import (
-  AMINX_ALPHABET,
-  AMINX_TO_FAMPNN_PERM,
+  AMINX_TO_FAMPNN_ARR,
   FAMPNN_TO_AMINX_ARR,
-  RESTYPE_ATOM37_MASK,
+  NON_BB_IDXS_ARR,
 )
 from aminx.families.fampnn.convert import convert_fampnn_state_dict
 from aminx.families.fampnn.model import FAMPNNModel
-from aminx.families.fampnn.sidechain_diffusion import edm_sample
+from aminx.families.fampnn.pdb import read_fampnn_pdb
+from aminx.families.fampnn.sampler import draw_sampler_noise, mar_sample_upstream, override_masks, timestep_schedule
 from aminx.host.bucketing import bucket_ladder
 from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, FamilyStages, SinkArraySpec
 from aminx.host.prep import _resolve_driver_checkpoint
@@ -42,8 +42,6 @@ _HANDLED: frozenset[str] = frozenset({
   "score:logits",
 })
 
-_AMINX_TO_FAMPNN_NP = np.asarray(AMINX_TO_FAMPNN_PERM, dtype=np.int32)
-
 
 class FAMPNNPrepared(NamedTuple):
   """Prepared single-structure inputs for FAMPNN scoring and sampling.
@@ -51,19 +49,23 @@ class FAMPNNPrepared(NamedTuple):
   Attributes
   ----------
   atom37_xyz : np.ndarray
-    Atom37 coordinates of shape ``(L, 37, 3)`` (with backbone slots ``0, 1, 2, 4`` populated).
+    Atom37 coordinates ``(L, 37, 3)``: every recognised atom in the file (side chains included), zero elsewhere.
   atom37_mask : np.ndarray
-    Atom37 presence mask of shape ``(L, 37)``.
+    Atom37 presence mask ``(L, 37)`` (1 where the file had the atom).
   mask : np.ndarray
-    Valid residue mask of shape ``(L,)``.
+    Valid residue mask ``(L,)`` (upstream ``seq_mask``: all ones).
   residue_idx : np.ndarray
-    Residue sequence numbers of shape ``(L,)``.
+    PDB residue numbers plus insertion-code offsets ``(L,)``.
   chain_idx : np.ndarray
-    Chain IDs of shape ``(L,)``.
+    Chain order of first appearance ``(L,)``.
   aatype_aminx : np.ndarray
-    Wild-type sequence in Aminx 21-token order ``(L,)``.
+    Input sequence in Aminx 21-token order ``(L,)``.
   aatype_fampnn : np.ndarray
-    Wild-type sequence in FAMPNN 21-token order ``(L,)``.
+    Input sequence in FAMPNN 21-token order ``(L,)``.
+  missing_atom_mask : np.ndarray | None
+    ``(L, 37)``: atoms the residue type has that the file lacks (upstream ``missing_atom_mask``).
+  chain_id_mapping : dict[str, int] | None
+    Chain letter to ``chain_idx`` (needed to parse ``fixed_pos_seq`` / ``fixed_pos_scn``).
   """
 
   atom37_xyz: np.ndarray
@@ -73,204 +75,8 @@ class FAMPNNPrepared(NamedTuple):
   chain_idx: np.ndarray
   aatype_aminx: np.ndarray
   aatype_fampnn: np.ndarray
-
-
-def mar_sample(
-  model: FAMPNNModel,
-  atom37_xyz: Float[Array, "L 37 3"],
-  atom37_mask: Float[Array, "L 37"],
-  aatype_init: Int[Array, " L"],
-  seq_mask_init: Float[Array, " L"],
-  mask: Float[Array, " L"],
-  residue_idx: Int[Array, " L"],
-  chain_idx: Int[Array, " L"],
-  *,
-  num_seq_steps: int = 8,
-  temperature: float = 0.1,
-  num_scn_steps: int = 18,
-  sigma_min: float = 0.002,
-  sigma_max: float = 80.0,
-  rho: float = 7.0,
-  s_churn: float = 0.0,
-  step_scale: float = 1.5,
-  pack_each_step: bool = True,
-  key: jax.Array | None = None,
-) -> tuple[Int[Array, " L"], Float[Array, "L 21"], Float[Array, "L 37 3"], Float[Array, "L 37"]]:
-  """Run Masked Autoregressive (MAR) cosine-schedule joint sequence + sidechain sampling.
-
-  Uses ``jax.lax.fori_loop`` over the ``num_seq_steps`` MAR unmasking iterations
-  (allowlisted in ``tests/lint/l_drv_allowlist.toml`` with ``reason = "sequential_dependency"``).
-
-  Parameters
-  ----------
-  model : FAMPNNModel
-    Loaded ``FAMPNNModel`` instance.
-  atom37_xyz : Float[Array, "L 37 3"]
-    Initial Atom37 coordinates ``(L, 37, 3)``.
-  atom37_mask : Float[Array, "L 37"]
-    Initial Atom37 validity mask ``(L, 37)``.
-  aatype_init : Int[Array, " L"]
-    Initial residue types in FAMPNN token order ``0..20``.
-  seq_mask_init : Float[Array, " L"]
-    Initial sequence visibility mask ``(L,)`` (``1.0`` fixed, ``0.0`` to design).
-  mask : Float[Array, " L"]
-    Valid residue mask ``(L,)``.
-  residue_idx : Int[Array, " L"]
-    Residue sequence numbers ``(L,)``.
-  chain_idx : Int[Array, " L"]
-    Chain IDs ``(L,)``.
-  num_seq_steps : int, default=8
-    Number of MAR unmasking steps.
-  temperature : float, default=0.1
-    Categorical sequence sampling temperature.
-  num_scn_steps : int, default=18
-    Number of EDM sidechain diffusion steps per unmasking step.
-  sigma_min : float, default=0.002
-    Minimum EDM noise level.
-  sigma_max : float, default=80.0
-    Maximum EDM noise level.
-  rho : float, default=7.0
-    Karras schedule curvature exponent.
-  s_churn : float, default=0.0
-    EDM churn parameter.
-  step_scale : float, default=1.5
-    EDM drift step scale.
-  pack_each_step : bool, default=True
-    Whether to run EDM sidechain packing at every MAR step or only at the final step.
-  key : jax.Array | None, optional
-    PRNG key for random unmasking order, categorical sampling, and EDM diffusion.
-
-  Returns
-  -------
-  tuple[Int[Array, " L"], Float[Array, "L 21"], Float[Array, "L 37 3"], Float[Array, "L 37"]]
-    Tuple ``(seq_aminx, logits_aminx, packed_atom37_xyz, psce_atom37)``. ``logits_aminx`` are the
-    logits of a forward pass on the returned sequence, so their argmax agrees with ``seq_aminx``.
-  """
-  if key is None:
-    key = jax.random.PRNGKey(0)
-  dtype = atom37_xyz.dtype
-  num_l = atom37_xyz.shape[0]
-  t_eff = max(temperature, 1e-4)
-
-  k_order, k_loop, k_final_scn = jax.random.split(key, 3)
-  # Rank designable positions by random priority so cosine schedule unmasks them deterministically
-  designable = (mask > 0) & (seq_mask_init <= 0)
-  num_designable = jnp.sum(designable.astype(jnp.int32))
-  rand_scores = jax.random.uniform(k_order, (num_l,), dtype=dtype)
-  # Fixed positions get priority -1.0; padded positions get +2.0; designable get [0, 1)
-  priority = jnp.where(seq_mask_init > 0, -1.0, jnp.where(mask > 0, rand_scores, 2.0))
-  ranks = jnp.argsort(jnp.argsort(priority))
-  num_fixed = jnp.sum((seq_mask_init > 0).astype(jnp.int32))
-
-  steps_eff = max(num_seq_steps, 1)
-  init_logits = jnp.zeros((num_l, 21), dtype=dtype)
-  init_state = (aatype_init, seq_mask_init.astype(dtype), atom37_xyz, atom37_mask, init_logits)
-
-  def _mar_step(
-    step_i: int,
-    carry: tuple[
-      Int[Array, " L"],
-      Float[Array, " L"],
-      Float[Array, "L 37 3"],
-      Float[Array, "L 37"],
-      Float[Array, "L 21"],
-    ],
-  ) -> tuple[
-    Int[Array, " L"],
-    Float[Array, " L"],
-    Float[Array, "L 37 3"],
-    Float[Array, "L 37"],
-    Float[Array, "L 21"],
-  ]:
-    cur_aa, cur_seq_mask, cur_xyz, cur_atom_mask, _ = carry
-    step_key = jax.random.fold_in(k_loop, step_i)
-    k_cat, k_scn = jax.random.split(step_key, 2)
-
-    fwd_out = model(
-      cur_xyz, cur_atom_mask, cur_aa, cur_seq_mask, mask, residue_idx, chain_idx,
-    )
-    logits_20 = fwd_out.logits_fampnn[:, :20] / t_eff
-    sampled_aa = jax.random.categorical(k_cat, logits_20, axis=-1).astype(jnp.int32)
-
-    # Cosine unmasking schedule: fraction remaining masked after step_i+1 is cos(pi/2 * (step_i+1)/T)
-    frac_unmasked = 1.0 - jnp.cos(0.5 * math.pi * (step_i + 1) / steps_eff)
-    target_unmasked = num_fixed + jnp.ceil(frac_unmasked * num_designable).astype(jnp.int32)
-    newly_unmasked = (ranks < target_unmasked) & (cur_seq_mask <= 0) & (mask > 0)
-
-    next_aa = jnp.where(newly_unmasked, sampled_aa, cur_aa)
-    next_seq_mask = jnp.where(newly_unmasked, jnp.ones_like(cur_seq_mask), cur_seq_mask)
-
-    if pack_each_step:
-      next_xyz = edm_sample(
-        model.scn_diffusion,
-        cur_xyz,
-        cur_atom_mask,
-        fwd_out.h_v,
-        next_aa,
-        num_steps=num_scn_steps,
-        sigma_min=sigma_min,
-        sigma_max=sigma_max,
-        rho=rho,
-        s_churn=s_churn,
-        step_scale=step_scale,
-        key=k_scn,
-      )
-      std_m37 = RESTYPE_ATOM37_MASK[jnp.clip(next_aa, 0, 20)].astype(dtype)
-      next_atom_mask = jnp.where(newly_unmasked[:, None], std_m37, cur_atom_mask)
-    else:
-      next_xyz = cur_xyz
-      next_atom_mask = cur_atom_mask
-
-    return (next_aa, next_seq_mask, next_xyz, next_atom_mask, fwd_out.logits_aminx)
-
-  final_aa, final_seq_mask, final_xyz, final_atom_mask, final_logits_aminx = jax.lax.fori_loop(
-    0, steps_eff, _mar_step, init_state,
-  )
-
-  if not pack_each_step:
-    fwd_final = model(
-      final_xyz, final_atom_mask, final_aa, final_seq_mask, mask, residue_idx, chain_idx,
-    )
-    final_xyz = edm_sample(
-      model.scn_diffusion,
-      final_xyz,
-      final_atom_mask,
-      fwd_final.h_v,
-      final_aa,
-      num_steps=num_scn_steps,
-      sigma_min=sigma_min,
-      sigma_max=sigma_max,
-      rho=rho,
-      s_churn=s_churn,
-      step_scale=step_scale,
-      key=k_final_scn,
-    )
-    final_atom_mask = RESTYPE_ATOM37_MASK[jnp.clip(final_aa, 0, 20)].astype(dtype)
-
-  # The loop's last forward pass ran before the final step unmasked its positions, so its logits
-  # describe a sequence that was never returned. One forward on the final state fixes that, and
-  # the confidence head reads the same pass.
-  fwd_last = model(
-    final_xyz, final_atom_mask, final_aa, final_seq_mask, mask, residue_idx, chain_idx,
-  )
-  final_logits_aminx = fwd_last.logits_aminx
-  if model.scn_confidence is not None:
-    psce_37 = model.scn_confidence(
-      final_xyz,
-      final_atom_mask,
-      fwd_last.h_v,
-      final_aa,
-      mask,
-      residue_idx,
-      chain_idx,
-      h_esv=fwd_last.h_e,
-      e_idx=fwd_last.e_idx,
-    )
-  else:
-    psce_37 = jnp.full((num_l, 37), jnp.nan, dtype=dtype)
-
-  seq_aminx = FAMPNN_TO_AMINX_ARR[jnp.clip(final_aa, 0, 20)]
-  return seq_aminx, final_logits_aminx, final_xyz, psce_37
+  missing_atom_mask: np.ndarray | None = None
+  chain_id_mapping: dict[str, int] | None = None
 
 
 def _options(spec: Any) -> FAMPNNOptions:  # noqa: ANN401
@@ -344,80 +150,27 @@ def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
   return list(raw)
 
 
-def _encode_aminx_seq(seq_str: str) -> np.ndarray:
-  return np.asarray(
-    [AMINX_ALPHABET.index(ch) if ch in AMINX_ALPHABET else 20 for ch in seq_str],
-    dtype=np.int32,
-  )
-
-
 def _prepare_structure(item: Any) -> FAMPNNPrepared:  # noqa: ANN401
   if isinstance(item, FAMPNNPrepared):
     return item
   if not isinstance(item, (str, Path)):
     raise PottsInputError("fampnn_requires_pdb_or_prepared")
-  path = Path(item)
-  parsed_list = parse_pdb_upstream(path, skip_gaps=False)
-  parsed = parsed_list[0]
-
-  chain_letters = sorted(
-    key.removeprefix("seq_chain_")
-    for key in parsed
-    if key.startswith("seq_chain_")
-  )
-  coords_list: list[np.ndarray] = []
-  seq_chars: list[str] = []
-  res_idx_list: list[int] = []
-  chain_idx_list: list[int] = []
-
-  for c_idx, letter in enumerate(chain_letters):
-    seq_c = str(parsed[f"seq_chain_{letter}"])
-    coords_c = parsed[f"coords_chain_{letter}"]
-    n_c = len(seq_c)
-    bb4 = np.stack(
-      [
-        np.asarray(coords_c[f"N_chain_{letter}"], dtype=np.float32),
-        np.asarray(coords_c[f"CA_chain_{letter}"], dtype=np.float32),
-        np.asarray(coords_c[f"C_chain_{letter}"], dtype=np.float32),
-        np.asarray(coords_c[f"O_chain_{letter}"], dtype=np.float32),
-      ],
-      axis=1,
-    )
-    coords_list.append(bb4)
-    seq_chars.extend(list(seq_c))
-    res_idx_list.extend(range(1, n_c + 1))
-    chain_idx_list.extend([c_idx] * n_c)
-
-  bb4_all = np.concatenate(coords_list, axis=0)
-  num_l = bb4_all.shape[0]
-  atom37_xyz = np.zeros((num_l, 37, 3), dtype=np.float32)
-  # Atom37 slots: 0=N, 1=CA, 2=C, 4=O
-  bb_clean = np.nan_to_num(bb4_all, nan=0.0)
-  atom37_xyz[:, 0, :] = bb_clean[:, 0, :]
-  atom37_xyz[:, 1, :] = bb_clean[:, 1, :]
-  atom37_xyz[:, 2, :] = bb_clean[:, 2, :]
-  atom37_xyz[:, 4, :] = bb_clean[:, 3, :]
-
-  bb_valid = np.all(np.isfinite(bb4_all), axis=-1).astype(np.float32)
-  atom37_mask = np.zeros((num_l, 37), dtype=np.float32)
-  atom37_mask[:, 0] = bb_valid[:, 0]
-  atom37_mask[:, 1] = bb_valid[:, 1]
-  atom37_mask[:, 2] = bb_valid[:, 2]
-  atom37_mask[:, 4] = bb_valid[:, 3]
-  mask = np.all(bb_valid > 0, axis=-1).astype(np.float32)
-
-  wt_seq = "".join(seq_chars)
-  aatype_aminx = _encode_aminx_seq(wt_seq)
-  aatype_fampnn = _AMINX_TO_FAMPNN_NP[aatype_aminx]
-
+  try:
+    st = read_fampnn_pdb(item)
+  except ValueError as exc:
+    raise PottsInputError(str(exc)) from exc
+  num_l = st.aatype.shape[0]
+  aatype_fampnn = st.aatype.astype(np.int32)
   return FAMPNNPrepared(
-    atom37_xyz=atom37_xyz,
-    atom37_mask=atom37_mask,
-    mask=mask,
-    residue_idx=np.asarray(res_idx_list, dtype=np.int32),
-    chain_idx=np.asarray(chain_idx_list, dtype=np.int32),
-    aatype_aminx=aatype_aminx,
+    atom37_xyz=st.atom37_xyz.astype(np.float32),
+    atom37_mask=st.atom37_mask.astype(np.float32),
+    mask=np.ones((num_l,), dtype=np.float32),
+    residue_idx=st.residue_index.astype(np.int32),
+    chain_idx=st.chain_index.astype(np.int32),
+    aatype_aminx=np.asarray(FAMPNN_TO_AMINX_ARR)[aatype_fampnn].astype(np.int32),
     aatype_fampnn=aatype_fampnn,
+    missing_atom_mask=st.missing_atom_mask.astype(np.float32),
+    chain_id_mapping=dict(st.chain_id_mapping),
   )
 
 
@@ -509,8 +262,8 @@ class _FAMPNNStages:
 
     seed = int(getattr(self._spec, "random_seed", 0) or 0)
     num_samples = int(getattr(self._spec, "num_samples", 1) or 1)
-    temps_raw = getattr(self._spec, "temperature", 0.1)
-    temps = [float(temps_raw)] if isinstance(temps_raw, (int, float)) else [float(t) for t in temps_raw]
+    temps = _temperatures(getattr(self._spec, "temperature", None))
+    opt = self._options
 
     seq_batches: list[jax.Array] = []
     logit_batches: list[jax.Array] = []
@@ -518,8 +271,7 @@ class _FAMPNNStages:
     psce_batches: list[jax.Array] = []
 
     for idx, item in enumerate(prepared):
-      num_l = item.atom37_xyz.shape[0]
-      seq_mask_init = jnp.zeros((num_l,), dtype=jnp.float32)
+      inputs = _sample_inputs(item, opt)
       t_seqs: list[jax.Array] = []
       t_logits: list[jax.Array] = []
       t_xyz: list[jax.Array] = []
@@ -529,39 +281,11 @@ class _FAMPNNStages:
           jax.random.fold_in(dropout_key, seed + idx * 100 + t_idx),
           num_samples,
         )
-        s_list: list[jax.Array] = []
-        l_list: list[jax.Array] = []
-        x_list: list[jax.Array] = []
-        p_list: list[jax.Array] = []
-        for s_key in s_keys:
-          seq_amx, logits_amx, packed_xyz, psce = mar_sample(
-            self._model,
-            jnp.asarray(item.atom37_xyz, dtype=jnp.float32),
-            jnp.asarray(item.atom37_mask, dtype=jnp.float32),
-            jnp.asarray(item.aatype_fampnn, dtype=jnp.int32),
-            seq_mask_init,
-            jnp.asarray(item.mask, dtype=jnp.float32),
-            jnp.asarray(item.residue_idx, dtype=jnp.int32),
-            jnp.asarray(item.chain_idx, dtype=jnp.int32),
-            num_seq_steps=self._options.num_seq_steps,
-            temperature=temp,
-            num_scn_steps=self._options.num_scn_steps,
-            sigma_min=self._options.sigma_min,
-            sigma_max=self._options.sigma_max,
-            rho=self._options.rho,
-            s_churn=self._options.s_churn,
-            step_scale=self._options.step_scale,
-            pack_each_step=self._options.pack_each_step,
-            key=s_key,
-          )
-          s_list.append(seq_amx)
-          l_list.append(logits_amx)
-          x_list.append(packed_xyz)
-          p_list.append(psce)
-        t_seqs.append(jnp.stack(s_list, axis=0))
-        t_logits.append(jnp.stack(l_list, axis=0))
-        t_xyz.append(jnp.stack(x_list, axis=0))
-        t_psce.append(jnp.stack(p_list, axis=0))
+        outs = [_sample_one(self._model, inputs, opt, temp, s_key) for s_key in s_keys]
+        t_seqs.append(jnp.stack([o[0] for o in outs], axis=0))
+        t_logits.append(jnp.stack([o[1] for o in outs], axis=0))
+        t_xyz.append(jnp.stack([o[2] for o in outs], axis=0))
+        t_psce.append(jnp.stack([o[3] for o in outs], axis=0))
       seq_batches.append(jnp.stack(t_seqs, axis=1))
       logit_batches.append(jnp.stack(t_logits, axis=1))
       xyz_batches.append(jnp.stack(t_xyz, axis=1))
@@ -573,6 +297,125 @@ class _FAMPNNStages:
       "packed_atom37_xyz": jnp.stack(xyz_batches, axis=0),
       "psce": jnp.stack(psce_batches, axis=0),
     }
+
+
+_DEFAULT_TEMPERATURE = 0.1  # seq_design.yaml:20
+
+
+def _temperatures(raw: Any) -> list[float]:  # noqa: ANN401
+  """Sampling temperatures of the spec; upstream's ``temperature: 0.1`` when the spec leaves it unset."""
+  if isinstance(raw, (int, float)) and not isinstance(raw, bool):
+    return [float(raw)]
+  if isinstance(raw, (list, tuple)) and raw:
+    return [_DEFAULT_TEMPERATURE if t is None else float(t) for t in raw]
+  return [_DEFAULT_TEMPERATURE]
+
+
+def _sample_inputs(item: FAMPNNPrepared, opt: FAMPNNOptions) -> dict[str, Any]:
+  """Device arrays and override masks for one structure (``get_override_masks``, ``mode="seq_design"``)."""
+  num_l = item.atom37_xyz.shape[0]
+  missing = item.missing_atom_mask
+  if missing is None:
+    missing = np.zeros_like(item.atom37_mask)
+  aov, sov = override_masks(
+    opt.fixed_pos_seq,
+    opt.fixed_pos_scn,
+    item.chain_id_mapping or {},
+    item.residue_idx,
+    item.chain_idx,
+  )
+  if bool(np.any(np.asarray(sov) > np.asarray(aov))):
+    msg = "Sidechain cannot be fixed at any positions where sequence is not fixed (fixed_pos_scn must lie inside fixed_pos_seq)"
+    raise ValueError(msg)
+  xyz = jnp.asarray(item.atom37_xyz, dtype=jnp.float32)
+  return {
+    "x": xyz,
+    "aatype": jnp.asarray(item.aatype_fampnn, dtype=jnp.int32),
+    "valid": jnp.asarray(item.mask, dtype=jnp.float32),
+    "missing": jnp.asarray(missing, dtype=jnp.float32),
+    "residue_idx": jnp.asarray(item.residue_idx, dtype=jnp.int32),
+    "chain_idx": jnp.asarray(item.chain_idx, dtype=jnp.int32),
+    "aov": jnp.asarray(aov, dtype=jnp.float32),
+    "sov": jnp.asarray(sov, dtype=jnp.float32),
+    "num_l": num_l,
+  }
+
+
+@eqx.filter_jit
+def _sample_core(
+  model: FAMPNNModel,
+  arrays: dict[str, jax.Array],
+  noise: Any,  # noqa: ANN401
+  timesteps: jax.Array,
+  timesteps_scn: jax.Array,
+  cfg: tuple,
+) -> Any:  # noqa: ANN401
+  temperature, seq_only, repack_last, psce_threshold, step_scale, s_churn, s_noise, s_t_min, s_t_max = cfg
+  return mar_sample_upstream(
+    model,
+    arrays["x"],
+    arrays["aatype"],
+    arrays["valid"],
+    arrays["missing"],
+    arrays["residue_idx"],
+    arrays["chain_idx"],
+    timesteps,
+    noise,
+    temperature=temperature,
+    seq_only=seq_only,
+    repack_last=repack_last,
+    psce_threshold=psce_threshold,
+    aatype_override_mask=arrays["aov"],
+    scn_override_mask=arrays["sov"],
+    timesteps_scn=timesteps_scn,
+    step_scale=step_scale,
+    s_churn=s_churn,
+    s_noise=s_noise,
+    s_t_min=s_t_min,
+    s_t_max=s_t_max,
+    conf_min_bin=model.conf_min_bin,
+    conf_max_bin=model.conf_max_bin,
+  )
+
+
+def _sample_one(
+  model: FAMPNNModel,
+  inputs: dict[str, Any],
+  opt: FAMPNNOptions,
+  temperature: float,
+  key: jax.Array,
+) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+  """One designed sample: ``(sequence, log seq_probs, atom37 xyz, psce)`` in Aminx token order / Atom37 layout."""
+  num_l = int(inputs["num_l"])
+  noise = draw_sampler_noise(
+    key,
+    num_l,
+    opt.num_seq_steps,
+    opt.num_scn_steps,
+    repack_last=opt.repack_last,
+    s_churn=opt.s_churn,
+  )
+  ts = timestep_schedule(opt.seq_timestep_mode, opt.num_seq_steps, opt.seq_t_start, opt.seq_t_end)
+  ts_scn = timestep_schedule(opt.scn_timestep_mode, opt.num_scn_steps, opt.scn_t_start, opt.scn_t_end)
+  cfg = (
+    float(temperature),
+    bool(opt.seq_only),
+    bool(opt.repack_last),
+    None if opt.psce_threshold is None else float(opt.psce_threshold),
+    float(opt.step_scale),
+    float(opt.s_churn),
+    float(opt.s_noise),
+    float(opt.s_t_min),
+    float(opt.s_t_max),
+  )
+  arrays = {k: v for k, v in inputs.items() if k != "num_l"}
+  res = _sample_core(model, arrays, noise, ts, ts_scn, cfg)
+  seq_aminx = FAMPNN_TO_AMINX_ARR[jnp.clip(res.aatype_final, 0, 20)]
+  # logits: log of the unscaled distribution each residue was drawn from (aux["seq_probs"], sd_model.py:252)
+  probs = res.seq_probs[:, jnp.asarray(AMINX_TO_FAMPNN_ARR)]
+  logits_aminx = jnp.log(jnp.maximum(probs, 1e-30))
+  psce37 = jnp.zeros((num_l, 37), dtype=res.psce.dtype).at[:, NON_BB_IDXS_ARR].set(res.psce)
+  return seq_aminx, logits_aminx, res.x_final, psce37
 
 
 def _load_fampnn_eqx(path: Path, checkpoint_id: str) -> FAMPNNModel:

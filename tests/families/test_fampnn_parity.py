@@ -189,8 +189,8 @@ def test_fa_encoder_and_fampnn_model_forward_variants() -> None:
   assert model_cath.scn_confidence is None
 
 
-def test_sidechain_diffusion_and_test_mar_sample_via_driver() -> None:
-  """Verify FAMPNNDriver score:logits, score:nll, and MAR+EDM sample modes."""
+def test_driver_score_and_upstream_sampler_shapes() -> None:
+  """Verify FAMPNNDriver score:logits, score:nll, and the upstream-faithful MAR+EDM sample path run end to end."""
   key = jax.random.PRNGKey(4)
   L = 6
   coords37 = np.zeros((L, 37, 3), dtype=np.float32)
@@ -214,7 +214,7 @@ def test_sidechain_diffusion_and_test_mar_sample_via_driver() -> None:
   )
   batch = FamilyBatch(input_indices=(0,), arrays={"prepared": (prep,)}, skipped=(), lengths=(L,))
 
-  model = FAMPNNModel(has_confidence=False, key=key)
+  model = FAMPNNModel(has_confidence=False, has_f_embedder=True, key=key)
   spec = SamplingSpecification(
     inputs=(),
     model_family="fampnn",
@@ -222,7 +222,8 @@ def test_sidechain_diffusion_and_test_mar_sample_via_driver() -> None:
       checkpoint_id="fampnn_0_3_cath",
       num_seq_steps=1,
       num_scn_steps=2,
-      pack_each_step=False,
+      repack_last=False,
+      psce_threshold=None,
     ),
     num_samples=1,
     temperature=0.1,

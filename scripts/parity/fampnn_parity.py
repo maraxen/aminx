@@ -52,7 +52,8 @@ from artifact_key import stable_artifact_key  # noqa: E402
 from fampnn_fixtures import make_split_ab_pdb  # noqa: E402
 
 from aminx.families.fampnn import sampler  # noqa: E402
-from aminx.families.fampnn.constants import NON_BB_IDXS_ARR, RESTYPE_ATOM37_MASK  # noqa: E402
+from aminx.families.fampnn.constants import NON_BB_IDXS_ARR, RESTYPE_ATOM37_MASK, RESTYPE_REF_POS_ATOM37  # noqa: E402
+from aminx.families.fampnn.features import positional_embedding_table  # noqa: E402
 from aminx.families.fampnn import sidechain_diffusion as sd_mod  # noqa: E402
 from aminx.families.fampnn.convert import convert_fampnn_state_dict  # noqa: E402
 from aminx.families.fampnn.driver import _prepare_structure  # noqa: E402
@@ -62,12 +63,12 @@ LOG = logging.getLogger("fampnn_parity")
 
 # ---- pinned identities (the sealed oracle and the released weights) ---------------------------------
 PINNED_ORACLE_CONTENT_SHA256 = {
-  "f32": "0c85c5801ba9202dacb2ef8c28c945a50deb318c35e56f6bebd17b8c481610b3",
-  "f64": "cf322a0b7b41f7db29d1873a55d49264be838d2b4de35009bdd56501e51ebbb2",
+  "f32": "c903b3808b3f30fc491e4feb8407a9c1d60492836a325185e3712c8fed456b4c",
+  "f64": "9494f1531e7b6a7c482883d82f933cfdeda5f360dd0ceeca626b66d601a9e553",
 }
 PINNED_ORACLE_FILE_SHA256 = {
-  "f32": "febf2905d846efe63528adee08deb897e61cb1cc0eb127be89f259b2133f77b2",
-  "f64": "95fedecfd0b19429b4eba48a3abdf985df5416080999061483ebf4665cdc2d35",
+  "f32": "d8b38894a48c09d6808008e13d7c7ee1c02aa8cd898b017863d35870289f5a2c",
+  "f64": "c68eaac50213c3eb85530940e4816ae841c5457c4540ad583039eff7c9596fe2",
 }
 PINNED_WEIGHTS_SHA256 = {
   "fampnn_0_0": "afbdfda29e6f2a1bd340971bb226638afb1bf460cfbc29f115d3b5964622c006",
@@ -82,6 +83,8 @@ EDM_TAGS = ("s50", "s12_sc1", "s12_churn")
 SAMPLE_TAGS = ("A_default", "B_fixed", "C_seqonly_argmax", "D_churn_hot")
 
 F64_BAND = 1.0e-7
+F64_BAND_LOOP = 2.0e-6  # edm and sample stages: see the sidecar [data].bands derivation
+LOOP_STAGES = ("edm", "sample")
 F32_BAND_FLOOR = 1.0e-4
 F32_FLOOR_MULT = 5.0
 MUTANT_TRIP = 1.0e-4
@@ -136,21 +139,21 @@ class Ledger:
     self.floors = floors
     self.rows: list[dict[str, Any]] = []
 
-  def band(self, arm: str, key: str) -> float:
+  def band(self, arm: str, stage: str, key: str) -> float:
     if arm == "f64":
-      return F64_BAND
+      return F64_BAND_LOOP if stage in LOOP_STAGES else F64_BAND
     return max(F32_BAND_FLOOR, F32_FLOOR_MULT * self.floors.get(key, 0.0))
 
   def cont(self, arm: str, stage: str, key: str, ours: Any, ref: np.ndarray) -> float:  # noqa: ANN401
     a = np.asarray(ours, dtype=np.float64)
     b = np.asarray(ref, dtype=np.float64)
     if a.shape != b.shape:
-      self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": float("inf"), "band": self.band(arm, key), "kind": "shape"})
+      self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": float("inf"), "band": self.band(arm, stage, key), "kind": "shape"})
       return float("inf")
     dev = float(np.max(np.abs(a - b))) if a.size else 0.0
     if not np.isfinite(dev):
       dev = float("inf")
-    self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": dev, "band": self.band(arm, key), "kind": "cont"})
+    self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": dev, "band": self.band(arm, stage, key), "kind": "cont"})
     return dev
 
   def disc(self, arm: str, stage: str, key: str, ours: Any, ref: np.ndarray) -> int:  # noqa: ANN401
@@ -217,13 +220,17 @@ def _j(o: Oracle, key: str, dtype: Any | None = None) -> jax.Array:  # noqa: ANN
 
 
 def stage_parse(led: Ledger, o: Oracle, fx: str, pdb: Path) -> None:
+  """aminx structure prep against upstream ``load_feats_from_pdb`` + ``process_single_pdb`` (all 37 atoms)."""
   prep = _prepare_structure(pdb)
   P = f"fampnn_0_3/{fx}/parse"
-  led.cont(o.arm, "parse", f"{fx}/backbone_xyz", prep.atom37_xyz[:, [0, 1, 2, 4], :], o.d[f"{P}/x"][:, [0, 1, 2, 4], :])
+  led.cont(o.arm, "parse", f"{fx}/atom37_xyz", prep.atom37_xyz, o.d[f"{P}/x"])
+  led.disc(o.arm, "parse", f"{fx}/atom37_mask", prep.atom37_mask, o.d[f"{P}/atom_mask"])
+  led.disc(o.arm, "parse", f"{fx}/missing_atom_mask", prep.missing_atom_mask, o.d[f"{P}/missing_atom_mask"])
   led.disc(o.arm, "parse", f"{fx}/aatype", prep.aatype_fampnn, o.d[f"{P}/aatype"])
   led.disc(o.arm, "parse", f"{fx}/chain_index", prep.chain_idx, o.d[f"{P}/chain_index"])
   led.disc(o.arm, "parse", f"{fx}/residue_index", prep.residue_idx, o.d[f"{P}/residue_index"])
   led.disc(o.arm, "parse", f"{fx}/valid_mask", prep.mask, o.d[f"{P}/seq_mask"])
+  led.disc(o.arm, "parse", f"{fx}/chain_id_mapping", np.asarray(sorted(prep.chain_id_mapping.items())), np.asarray(sorted(o.meta["chain_id_mapping"][fx].items())))
 
 
 def stage_enc(led: Ledger, o: Oracle, model: Any, ck: str, fx: str, *, states: tuple[str, ...] = STATES, flat_chain: bool = False) -> None:  # noqa: ANN401
@@ -312,6 +319,13 @@ def stage_edm(led: Ledger, o: Oracle, model: Any, ck: str, fx: str, *, tags: tup
     led.cont(o.arm, "edm", f"{S}/traj_out", tr_out, o.d[f"{S}/traj_out"])
     led.cont(o.arm, "edm", f"{S}/x_scn_global", x_glob, o.d[f"{S}/x_scn_global"])
     led.cont(o.arm, "edm", f"{S}/psce", psce, o.d[f"{S}/psce"])
+
+
+def stage_consts(led: Ledger, o: Oracle) -> None:
+  """Module-level constants: the CCD reference conformers (rows 0-19) and the float32 positional table."""
+  led.cont(o.arm, "consts", "ref_pos_atom37[:20]", np.asarray(RESTYPE_REF_POS_ATOM37)[:20], o.d["consts/ref_pos_atom37"][:20])
+  num_l = (o.d["consts/posemb_offsets"].shape[0] + 1) // 2
+  led.cont(o.arm, "consts", "posemb_table", positional_embedding_table(num_l, 16), o.d["consts/posemb_table"])
 
 
 def stage_fixed(led: Ledger, o: Oracle, ck: str, fx: str) -> None:
@@ -562,6 +576,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
   pdbs = {"1ubq": _REPO_ROOT / "tests/data/1ubq.pdb", "1ubq_AB": ab_pdb}
 
   for o, models in ((o64, models64), (o32, models32)):
+    stage_consts(led, o)
     for fx in FIXTURES:
       stage_parse(led, o, fx, pdbs[fx])
       stage_fixed(led, o, "fampnn_0_3", fx)
@@ -624,7 +639,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     "wall_seconds": time.time() - t0,
   }
   for arm in ("f64", "f32"):
-    for stage in ("enc", "scn1", "edm", "sample"):
+    for stage in ("consts", "enc", "scn1", "edm", "sample"):
       result[f"{stage}_{arm}_worst_max_abs"] = _worst(rows, arm, stage)
   for m, dev in mutant_dev.items():
     result[f"mutant_{m}_max_abs_diff"] = dev["max_abs_diff"]
@@ -654,7 +669,7 @@ def main() -> int:
   ap.add_argument("--controls-out", type=Path, default=None, help="branch_controls.json path")
   ap.add_argument("--work-dir", type=Path, default=Path(os.environ.get("TMPDIR", "/tmp")) / "fampnn_parity")
   args = ap.parse_args()
-  logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+  logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)
   if not args.oracle_dir:
     print("ERROR: set AMINX_FAMPNN_ORACLE_DIR or --oracle-dir", file=sys.stderr)
     return 2

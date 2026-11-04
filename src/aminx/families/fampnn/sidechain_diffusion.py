@@ -16,8 +16,6 @@ from jaxtyping import Array, Float, Int
 
 from aminx.families.fampnn.constants import (
   NON_BB_IDXS_ARR,
-  RESTYPE_ATOM37_MASK,
-  RESTYPE_REF_POS_ATOM37,
 )
 from aminx.families.fampnn.features import (
   SidechainProteinFeatures,
@@ -25,7 +23,7 @@ from aminx.families.fampnn.features import (
   _linear,
   atom37_to_atom14,
   global_to_local_atom37,
-  local_to_global_atom37,
+  timestep_frequency_table,
 )
 from aminx.families.fampnn.gvp import GVPEncoder
 
@@ -101,11 +99,9 @@ class FAMPNNTimestepEmbedder(eqx.Module):
     """
     dtype = self.mlp_0.weight.dtype
     half = self.frequency_embedding_size // 2
-    # The frequency table is float32 in every precision, as upstream's
-    # ``torch.arange(..., dtype=torch.float32)`` (dit_utils.py:261): an f64 run reuses the same f32-rounded table.
-    freqs = jnp.exp(
-      -math.log(10000.0) * jnp.arange(0, half, dtype=jnp.float32) / half,
-    ).astype(dtype)
+    # The frequency table is float32 in every precision, as upstream's ``torch.arange(..., dtype=torch.float32)``
+    # (dit_utils.py:261): an f64 run reuses the same f32 table (correctly rounded; see ``timestep_frequency_table``).
+    freqs = jnp.asarray(timestep_frequency_table(half)).astype(dtype)
     args = t.astype(dtype)[:, None] * freqs[None, :]
     emb = jnp.concatenate([jnp.cos(args), jnp.sin(args)], axis=-1)
     return _linear(self.mlp_2, jax.nn.silu(_linear(self.mlp_0, emb)))
@@ -476,143 +472,6 @@ class SidechainDiffusionModule(eqx.Module):
 
     d_x = c_skip[:, None, None] * x_noisy_33.astype(dtype) + c_out[:, None, None] * f_x
     return d_x * mask_f[..., None]
-
-
-def edm_sample(
-  diffusion: SidechainDiffusionModule,
-  atom37_xyz: Float[Array, "L 37 3"],
-  atom37_mask: Float[Array, "L 37"],
-  h_v: Float[Array, "L 128"],
-  aatype: Int[Array, " L"],
-  *,
-  num_steps: int = 18,
-  sigma_min: float = 0.002,
-  sigma_max: float = 80.0,
-  rho: float = 7.0,
-  s_churn: float = 0.0,
-  s_min: float = 0.0,
-  s_max: float = float("inf"),
-  s_noise: float = 1.0,
-  step_scale: float = 1.5,
-  coord_scale: float = 1.9,
-  key: jax.Array | None = None,
-) -> Float[Array, "L 37 3"]:
-  """Sample full-atom sidechain coordinates via Karras EDM schedule using ``lax.fori_loop``.
-
-  Parameters
-  ----------
-  diffusion : SidechainDiffusionModule
-    Parameter ``diffusion``.
-  atom37_xyz : Float[Array, 'L 37 3']
-    Parameter ``atom37_xyz``.
-  atom37_mask : Float[Array, 'L 37']
-    Parameter ``atom37_mask``.
-  h_v : Float[Array, 'L 128']
-    Parameter ``h_v``.
-  aatype : Int[Array, ' L']
-    Parameter ``aatype``.
-  num_steps : int
-    Parameter ``num_steps``.
-  sigma_min : float
-    Parameter ``sigma_min``.
-  sigma_max : float
-    Parameter ``sigma_max``.
-  rho : float
-    Parameter ``rho``.
-  s_churn : float
-    Parameter ``s_churn``.
-  s_min : float
-    Parameter ``s_min``.
-  s_max : float
-    Parameter ``s_max``.
-  s_noise : float
-    Parameter ``s_noise``.
-  step_scale : float
-    Parameter ``step_scale``.
-  coord_scale : float
-    Parameter ``coord_scale``.
-  key : jax.Array | None
-    Parameter ``key``.
-
-  Returns
-  -------
-  Float[Array, 'L 37 3']
-    Result of ``edm_sample``.
-  """
-  if key is None:
-    key = jax.random.PRNGKey(0)
-  dtype = diffusion.x_embedder.weight.dtype
-  num_l = atom37_xyz.shape[0]
-  aa_clamped = jnp.clip(aatype, 0, 20)
-  aatype_oh = jax.nn.one_hot(aa_clamped, 21, dtype=dtype)
-
-  std_mask37 = RESTYPE_ATOM37_MASK[aa_clamped].astype(dtype)
-  scn_mask_33 = jnp.take(std_mask37, NON_BB_IDXS_ARR, axis=1)
-  ref_pos_37 = RESTYPE_REF_POS_ATOM37[aa_clamped].astype(dtype) / coord_scale
-  ref_pos_33 = jnp.take(ref_pos_37, NON_BB_IDXS_ARR, axis=1) * scn_mask_33[..., None]
-
-  s_c = h_v.astype(dtype) if diffusion.f_embedder is not None else diffusion.compute_conditioning(h_v, aatype_oh)
-
-  step_indices = jnp.arange(num_steps, dtype=dtype)
-  inv_rho = 1.0 / rho
-  s_max_rho = sigma_max**inv_rho
-  s_min_rho = sigma_min**inv_rho
-  denom = max(num_steps - 1, 1)
-  t_steps = ((s_max_rho + step_indices / denom * (s_min_rho - s_max_rho)) ** rho) * diffusion.sigma_data
-  t_steps_padded = jnp.concatenate([t_steps, jnp.zeros((1,), dtype=dtype)], axis=0)
-
-  k_init, k_loop = jax.random.split(key, 2)
-  x_init = (
-    jax.random.normal(k_init, (num_l, 33, 3), dtype=dtype)
-    * t_steps_padded[0]
-    * scn_mask_33[..., None]
-  )
-  x_cond_init = jnp.zeros_like(x_init)
-  gamma_val = min(s_churn / max(num_steps, 1), math.sqrt(2.0) - 1.0) if s_churn > 0.0 else 0.0
-
-  def _body_fn(
-    step_i: int,
-    carry: tuple[Float[Array, "L 33 3"], Float[Array, "L 33 3"]],
-  ) -> tuple[Float[Array, "L 33 3"], Float[Array, "L 33 3"]]:
-    x_cur, x_cond_cur = carry
-    t_cur = t_steps_padded[step_i]
-    t_next = t_steps_padded[step_i + 1]
-    step_key = jax.random.fold_in(k_loop, step_i)
-
-    in_churn = (t_cur >= s_min) & (t_cur <= s_max)
-    gamma = jnp.where(in_churn, gamma_val, 0.0)
-    t_hat = t_cur + gamma * t_cur
-    noise_std = jnp.sqrt(jnp.maximum(t_hat * t_hat - t_cur * t_cur, 0.0)) * s_noise
-    eps = jax.random.normal(step_key, x_cur.shape, dtype=dtype) * scn_mask_33[..., None]
-    x_hat = x_cur + noise_std * eps
-
-    sigma_vec = jnp.broadcast_to(t_hat, (num_l,))
-    denoised = diffusion.denoise_step(
-      x_hat,
-      sigma_vec,
-      s_c,
-      ref_pos_33,
-      scn_mask_33,
-      aatype_oh,
-      x_self_cond_33=x_cond_cur,
-      ref_pos_37=ref_pos_37 * std_mask37[..., None],
-    )
-    d_cur = (x_hat - denoised) / jnp.maximum(t_hat, 1e-8)
-    x_next = x_hat + step_scale * (t_next - t_hat) * d_cur
-    return x_next * scn_mask_33[..., None], denoised * scn_mask_33[..., None]
-
-  x_local_33, _ = jax.lax.fori_loop(0, num_steps, _body_fn, (x_init, x_cond_init))
-
-  # Assemble full local Atom37 and transform back to global coordinates
-  local_bb = global_to_local_atom37(atom37_xyz, atom37_mask, scale=coord_scale)
-  local_full = local_bb.at[:, NON_BB_IDXS_ARR, :].set(x_local_33)
-  full_mask37 = jnp.maximum(atom37_mask.astype(dtype), std_mask37)
-  global_full = local_to_global_atom37(
-    local_full, atom37_xyz, full_mask37, scale=coord_scale,
-  )
-  # Preserve exact input backbone slots (0, 1, 2, 4)
-  bb_slots = jnp.array([0, 1, 2, 4], dtype=jnp.int32)
-  return global_full.at[:, bb_slots, :].set(atom37_xyz[:, bb_slots, :])
 
 
 class SidechainConfidenceModule(eqx.Module):
