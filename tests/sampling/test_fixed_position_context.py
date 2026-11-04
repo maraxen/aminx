@@ -186,7 +186,13 @@ def test_spec_refuses_a_seed_on_paths_that_ignore_it():
         SamplingSpecification(**base, decoding_order_seed=seed, **bypass)
   SamplingSpecification(**base, decoding_order_seed=7)  # control: the seed alone is accepted
   # the seed IS live with decoding_order_fn (the seeded key is forwarded to it), so it must be accepted
-  SamplingSpecification(**base, decoding_order_seed=7, decoding_order_fn=random_decoding_order)
+  for seed in (7, 0):
+    SamplingSpecification(**base, decoding_order_seed=seed, decoding_order_fn=random_decoding_order)
+  # ...but a non-default mode alongside the fn is still refused, with or without a seed
+  for mode in ("canonical_order", "mutual_context"):
+    for seed_kw in ({}, {"decoding_order_seed": 7}):
+      with pytest.raises(ValueError, match="no effect"):
+        SamplingSpecification(**base, fixed_position_context=mode, decoding_order_fn=random_decoding_order, **seed_kw)
 
 
 @pytest.mark.parametrize(
@@ -197,7 +203,12 @@ def test_spec_refuses_order_controls_for_driver_backed_families(kwargs):
   """Driver families never reach with_decoding_order; both an explicit family and one derived from the id are refused."""
   from aminx.run.specs import SamplingSpecification
 
-  for family_args in ({"model_family": "pottsmpnn"}, {"checkpoint_id": "pottsmpnn_v_48_020"}):
+  for family_args in (
+    {"model_family": "pottsmpnn"},
+    {"checkpoint_id": "pottsmpnn_v_48_020"},
+    {"checkpoint_id": "caliby"},
+    {"checkpoint_id": "fampnn_0_3"},
+  ):
     spec_args = {"inputs": ["/tmp/x.pdb"], "checkpoint_id": "ckpt_001", **family_args}
     with pytest.raises(ValueError, match="driver-backed"):
       SamplingSpecification(**spec_args, **kwargs)
