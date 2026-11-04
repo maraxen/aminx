@@ -218,6 +218,32 @@ def test_state_position_map_broadcasts_across_batch(monkeypatch):
         assert jnp.array_equal(call["state_position_map"], _STATE_POSITION_MAP)
 
 
+def test_decoding_order_seed_draws_every_samples_order_from_the_seed(monkeypatch):
+    """A set ``decoding_order_seed`` replaces the sample-key-derived order key on the runner path.
+
+    The key handed to with_decoding_order must be the seed's key whatever the sample key is, so two
+    rows carrying the same seed decode in one shared order. Unset, the key stays sample-derived
+    (covered by test_every_sample_decodes_with_its_own_random_order).
+    """
+    from aminx.inference.bundle_builder import decoding_order_key
+
+    spec = SamplingSpecification(
+        inputs=["/tmp/test.pdb"], checkpoint_id="ckpt_001", decoding_order_seed=9,
+    )
+    order_calls: list = []
+    _run_sample_batch_capturing_bundle_kwargs(monkeypatch, spec, order_calls=order_calls)
+
+    assert order_calls
+    expected = jax.random.key_data(decoding_order_key(jax.random.key(123), 9))
+    for call in order_calls:
+        assert jnp.array_equal(jax.random.key_data(call["key"]), expected)
+        # and it is NOT the key derived from the (stubbed) sample key
+        assert not jnp.array_equal(
+            jax.random.key_data(call["key"]),
+            jax.random.key_data(decoding_order_key(jax.random.key(0))),
+        )
+
+
 def test_every_sample_decodes_with_its_own_random_order(monkeypatch):
     """runner.sample's default is a random decoding order per sample, not N->C.
 

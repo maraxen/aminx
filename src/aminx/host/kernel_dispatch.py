@@ -400,7 +400,7 @@ def _sample_batch(  # noqa: PLR0915
       return bundle
     return with_decoding_order(
       bundle,
-      decoding_order_key(sample_key),
+      decoding_order_key(sample_key, spec.run_spec.sampling.decoding_order_seed),
       custom_order_fn,
       order_num_groups,
     )

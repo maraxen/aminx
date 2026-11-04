@@ -381,9 +381,28 @@ def build_inference_bundle(
 DECODING_ORDER_KEY_SALT = 0x0DEC0DE
 
 
-def decoding_order_key(sample_key: jax.Array) -> jax.Array:
-  """The key a sample's random decoding order is drawn from (derived, not split)."""
-  return jax.random.fold_in(sample_key, DECODING_ORDER_KEY_SALT)
+def decoding_order_key(sample_key: jax.Array, order_seed: int | None = None) -> jax.Array:
+  """The key a sample's random decoding order is drawn from (derived, not split).
+
+  By default the order key is derived from the sample key, so it differs between rows (the
+  sample key folds in the row's manifest hash) and between samples. That makes the order a
+  nuisance variable that two rows can never share: the logits of an autoregressive MPNN at a
+  position depend on the order of the *other* positions even when all of them are fixed,
+  because each neighbour's hidden state is conditioned on its own predecessors only.
+
+  When ``order_seed`` is given the key is drawn from that seed alone, ignoring ``sample_key``:
+  every sample of every row carrying the same ``order_seed`` decodes in the same order. That is
+  the pairing control for comparing arms (single vs fused, or fused at different ``k``): run
+  the arms at the same ``order_seed``, and K different seeds give K matched replicates.
+
+  Args:
+    sample_key: The per-sample decode key.
+    order_seed: ``None`` (default) keeps the key derived from ``sample_key``. An int draws the
+      key from the seed only.
+  """
+  if order_seed is None:
+    return jax.random.fold_in(sample_key, DECODING_ORDER_KEY_SALT)
+  return jax.random.fold_in(jax.random.PRNGKey(order_seed), DECODING_ORDER_KEY_SALT)
 
 
 def with_decoding_order(

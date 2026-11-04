@@ -117,6 +117,7 @@ def sample_states_fused(
   n_samples: int,
   sample_batch_size: int | None = None,
   randomize_decoding_order: bool = True,  # noqa: FBT001, FBT002
+  decoding_order_seed: int | None = None,
 ) -> tuple[Int[Array, "n_samples L"], Float[Array, "n_samples L 21"]]:
   """Draw n_samples independent samples from an already-built, already-fused bundle.
 
@@ -185,6 +186,12 @@ def sample_states_fused(
       Draw a fresh random decoding order per sample (fixed positions first, uniform over
       tie groups) -- the package-wide default. False decodes in the schedule already on
       `bundle` (N->C unless the caller built another).
+  decoding_order_seed : int | None, default None
+      None draws each sample's order from its own sample key (the default). An int draws
+      every sample's order from that seed alone, so all samples -- and any other row
+      carrying the same seed, fused or single-state -- decode in one shared order. This is
+      the pairing control: the logits at a position depend on the order of the other
+      positions even when all of them are fixed.
 
   Returns
   -------
@@ -226,7 +233,9 @@ def sample_states_fused(
     # groups), keyed off -- not split from -- the sample key. randomize_decoding_order=False
     # keeps whatever schedule the caller built into `bundle`.
     sample_bundle = (
-      with_decoding_order(bundle, decoding_order_key(key)) if randomize_decoding_order else bundle
+      with_decoding_order(bundle, decoding_order_key(key, decoding_order_seed))
+      if randomize_decoding_order
+      else bundle
     )
     result = _sample_autoregressive_kernel(
       model, key, sample_bundle, config, stage_set, state_strategy=state_strategy,
@@ -475,7 +484,15 @@ def sample_multistate_poe_bead(
     )
     raise NotImplementedError(msg)
 
-  return sample_states_fused(model, bundle, config, stage_set, prng_key, n_samples)
+  return sample_states_fused(
+    model,
+    bundle,
+    config,
+    stage_set,
+    prng_key,
+    n_samples,
+    decoding_order_seed=spec.run_spec.sampling.decoding_order_seed,
+  )
 
 
 def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str, Any]:
