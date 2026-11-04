@@ -1379,3 +1379,78 @@ mutant = "permuted_output_weights"
 [branch.vehicle]
 kind = "sidecar"
 slug = "thermo_mpnn_parity"
+
+# ==============================================================================
+# Phase 4 redo (261104): AntiBMPNN. Seven aminx-side perturbations, each must push its designated stage above 1e-3
+# against the sealed real-upstream dump. Vehicle: scripts/parity/antibmpnn_parity.py. EMPTY ledger shard until a real wave.
+# ==============================================================================
+
+[[branch]]
+family = "antibmpnn"
+id = "reversed_ar_mask"
+stage = "P4-logits"
+fixture = "HuJ3"
+mutant = "reversed_ar_mask"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+family = "antibmpnn"
+id = "zero_edge_embedding"
+stage = "P4-features"
+fixture = "HuJ3"
+mutant = "zero_edge_embedding"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+family = "antibmpnn"
+id = "swap_checkpoint_noise"
+stage = "P4-logits"
+fixture = "HuJ3"
+mutant = "swap_checkpoint_noise"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+family = "antibmpnn"
+id = "omit_penalty_dropped"
+stage = "P4-sampler"
+fixture = "HuJ3"
+mutant = "omit_penalty_dropped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+family = "antibmpnn"
+id = "lehninger_pka_shifted"
+stage = "P4-descriptors"
+fixture = "HuJ3"
+mutant = "lehninger_pka_shifted"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+family = "antibmpnn"
+id = "barley_tables_swapped"
+stage = "P4-descriptors"
+fixture = "HuJ3"
+mutant = "barley_tables_swapped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
+
+[[branch]]
+family = "antibmpnn"
+id = "parser_wrong_atom_order"
+stage = "P4-parse"
+fixture = "HuJ3"
+mutant = "parser_wrong_atom_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "antibmpnn_parity"
