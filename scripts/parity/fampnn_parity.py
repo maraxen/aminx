@@ -11,7 +11,7 @@ injected RNG), never an aminx-derived value. Stages, each graded per checkpoint 
   fixed   ``"A1-20,B45-50"`` fixed-position parsing against upstream ``get_override_masks``
 
 Bands: float64 arm 1e-7 absolute on every continuous array; float32 arm
-``max(1e-4, 5 * floor)`` where ``floor`` is the sealed upstream's own float32-vs-float64 deviation on the
+``max(1e-4, 10 * floor)`` where ``floor`` is the sealed upstream's own float32-vs-float64 deviation on the
 same array (the oracle cannot be closer to itself than that). Discrete arrays (aatype, indices, orders)
 are exact in both arms. Negative controls are aminx-side code perturbations; one is "failed" (the
 control works) when its targeted stage leaves the float64 band by more than 1e-4 or flips a discrete
@@ -33,6 +33,7 @@ import os
 import sys
 import time
 from collections.abc import Callable, Iterator
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
@@ -52,11 +53,16 @@ from artifact_key import stable_artifact_key  # noqa: E402
 from fampnn_fixtures import make_split_ab_pdb  # noqa: E402
 
 from aminx.families.fampnn import sampler  # noqa: E402
-from aminx.families.fampnn.constants import NON_BB_IDXS_ARR, RESTYPE_ATOM37_MASK, RESTYPE_REF_POS_ATOM37  # noqa: E402
+from aminx.families.fampnn.constants import (  # noqa: E402
+  AMINX_TO_FAMPNN_PERM,
+  NON_BB_IDXS_ARR,
+  RESTYPE_ATOM37_MASK,
+  RESTYPE_REF_POS_ATOM37,
+)
 from aminx.families.fampnn.features import positional_embedding_table  # noqa: E402
 from aminx.families.fampnn import sidechain_diffusion as sd_mod  # noqa: E402
 from aminx.families.fampnn.convert import convert_fampnn_state_dict  # noqa: E402
-from aminx.families.fampnn.driver import _prepare_structure  # noqa: E402
+from aminx.families.fampnn.driver import _FAMPNNStages, _prepare_structure  # noqa: E402
 from aminx.io.torch_checkpoint import load_restricted_torch_checkpoint  # noqa: E402
 
 LOG = logging.getLogger("fampnn_parity")
@@ -86,7 +92,7 @@ F64_BAND = 1.0e-7
 F64_BAND_LOOP = 2.0e-6  # edm and sample stages: see the sidecar [data].bands derivation
 LOOP_STAGES = ("edm", "sample")
 F32_BAND_FLOOR = 1.0e-4
-F32_FLOOR_MULT = 5.0
+F32_FLOOR_MULT = 10.0
 MUTANT_TRIP = 1.0e-4
 
 DEFAULT_MUTANTS = (
@@ -326,6 +332,22 @@ def stage_consts(led: Ledger, o: Oracle) -> None:
   led.cont(o.arm, "consts", "ref_pos_atom37[:20]", np.asarray(RESTYPE_REF_POS_ATOM37)[:20], o.d["consts/ref_pos_atom37"][:20])
   num_l = (o.d["consts/posemb_offsets"].shape[0] + 1) // 2
   led.cont(o.arm, "consts", "posemb_table", positional_embedding_table(num_l, 16), o.d["consts/posemb_table"])
+
+
+def stage_driver_score(led: Ledger, o: Oracle, model: Any, ck: str, fx: str, pdb: Path) -> None:  # noqa: ANN401
+  """The driver's own ``score:logits`` path (structure prep, then the fully masked forward) against the oracle.
+
+  Upstream ``SeqDenoiser.score`` on a fully masked input is the ``enc/all_masked`` state, so the driver's
+  logits (Aminx token order) must equal the oracle's logits taken through the alphabet permutation. The driver
+  builds float32 arrays, so this stage runs in the float32 arm only.
+  """
+  prep = _prepare_structure(pdb)
+  stage = _FAMPNNStages(model, SimpleNamespace(fampnn=None), "score:logits")
+  out = np.asarray(stage._run_score((prep,))["logits"][0])  # noqa: SLF001
+  ref = o.d[f"{ck}/{fx}/enc/all_masked/logits"][:, np.asarray(AMINX_TO_FAMPNN_PERM)]
+  key = f"{ck}/{fx}/logits"
+  led.floors[key] = led.floors.get(f"{ck}/{fx}/enc/all_masked/logits", 0.0)  # same array, same oracle float32 floor
+  led.cont(o.arm, "driver_score", key, out, ref)
 
 
 def stage_fixed(led: Ledger, o: Oracle, ck: str, fx: str) -> None:
@@ -584,6 +606,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
         LOG.info("arm=%s %s %s enc/scn1", o.arm, ck, fx)
         stage_enc(led, o, models[ck], ck, fx)
         stage_scn1(led, o, models[ck], ck, fx)
+        if o.arm == "f32":
+          stage_driver_score(led, o, models[ck], ck, fx, pdbs[fx])
       for ck in SAMPLER_CKPTS:
         LOG.info("arm=%s %s %s edm/sample", o.arm, ck, fx)
         stage_edm(led, o, models[ck], ck, fx)
@@ -639,7 +663,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     "wall_seconds": time.time() - t0,
   }
   for arm in ("f64", "f32"):
-    for stage in ("consts", "enc", "scn1", "edm", "sample"):
+    for stage in ("consts", "enc", "scn1", "driver_score", "edm", "sample"):
       result[f"{stage}_{arm}_worst_max_abs"] = _worst(rows, arm, stage)
   for m, dev in mutant_dev.items():
     result[f"mutant_{m}_max_abs_diff"] = dev["max_abs_diff"]

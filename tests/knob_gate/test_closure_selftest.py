@@ -46,7 +46,8 @@ TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
 )
-ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS)
+FAMPNN_SLUGS = ("fampnn_parity",)
+ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS)
 
 
 def _make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
@@ -261,6 +262,14 @@ def test_tier1_tier2_rows_do_not_depend_on_potts_code(slug: str) -> None:
   closure = _real(slug)
   assert not [f for f in closure.files if "/potts" in f], f"a Tier 1/2 row ({slug}) reaches Potts code"
   assert not [f for f in closure.files if "/laser" in f], f"a Tier 1/2 row ({slug}) reaches LASEr code"
+
+
+@pytest.mark.parametrize("slug", FAMPNN_SLUGS)
+def test_fampnn_rows_do_not_depend_on_other_family_code(slug: str) -> None:
+  closure = _real(slug)
+  assert not [f for f in closure.files if "/potts" in f], f"a FAMPNN row ({slug}) reaches Potts code"
+  assert not [f for f in closure.files if "/laser" in f], f"a FAMPNN row ({slug}) reaches LASEr code"
+  assert any("/fampnn/" in f for f in closure.files)
 
 
 def test_family_change_invalidates_only_its_own_rows() -> None:
