@@ -7,7 +7,12 @@ import numpy as np
 import pytest
 
 from aminx.run.specs import RunSpecification
-from aminx.utils.autoregression import generate_ar_mask, generate_wave_ar_mask, resolve_tie_groups
+from aminx.utils.autoregression import (
+  ar_mask_from_decoding_order,
+  generate_ar_mask,
+  generate_wave_ar_mask,
+  resolve_tie_groups,
+)
 from aminx.utils.data_structures import Protein
 from aminx.types.bundles import WaveScheduleBundle
 
@@ -76,22 +81,25 @@ def test_resolve_tie_groups_explicit():
 @pytest.mark.parametrize(
     "decoding_order, expected_mask",
     [
-        # Diagonals are 0 as of 2026-08-27: no position reads its own slot. Each expected
-        # matrix below is its previous value with the diagonal zeroed and nothing else
-        # touched. Note the argument is a RANK array -- `decoding_order[i]` is the step at
-        # which position i decodes -- so for [2, 0, 1] position 0 decodes last and sees
-        # both others.
+        # Diagonals are 0: no position reads its own slot.
+        # Defect 9 retired the rank-vs-order split hazard: `decoding_order` is consistently
+        # an ORDER array (`decoding_order[t]` is the position decoded at step t).
+        # For [0, 1, 2]: pos 0 decodes first, pos 1 second (sees pos 0), pos 2 last (sees both).
         (
             jnp.array([0, 1, 2]),
-            jnp.array([[0, 0, 0], [1, 0, 0], [1, 1, 0]]),
+            jnp.array([[0, 0, 0], [1, 0, 0], [1, 1, 0]], dtype=jnp.int32),
         ),
+        # For [2, 0, 1]: step 0 decodes pos 2, step 1 decodes pos 0 (sees pos 2),
+        # step 2 decodes pos 1 (sees pos 2 and pos 0).
         (
             jnp.array([2, 0, 1]),
-            jnp.array([[0, 1, 1], [0, 0, 0], [0, 1, 0]]),
+            jnp.array([[0, 0, 1], [1, 0, 1], [0, 0, 0]], dtype=jnp.int32),
         ),
+        # For [1, 2, 0]: step 0 decodes pos 1, step 1 decodes pos 2 (sees pos 1),
+        # step 2 decodes pos 0 (sees pos 1 and pos 2).
         (
             jnp.array([1, 2, 0]),
-            jnp.array([[0, 0, 1], [1, 0, 1], [0, 0, 0]]),
+            jnp.array([[0, 1, 1], [0, 0, 0], [0, 1, 0]], dtype=jnp.int32),
         ),
     ],
 )
@@ -168,69 +176,9 @@ def test_generate_wave_ar_mask_padding_tolerant():
 
 
 # --------------------------------------------------------------------------------------
-# generate_ar_mask's tied branch: tie-free (key, index) lex sort must reproduce the
-# identical permutation a stable argsort on the key alone would (T4, sort-stability).
-#
-# Until this fix, `generate_ar_mask`'s tied branch computed `group_decoding_order` with
-# a bare `jnp.argsort(...)` (default `stable=True`) over a key where every absent group
-# shares the SAME sentinel (`N + 1`) -- the exact shape of tie IREE does not resolve the
-# same way XLA does (measured 260911, see `model.features.top_k`'s docstring). This is
-# the actual export blocker for `aminx.export.make_p04_unconditional` (P04): it traced,
-# via `build_inference_bundle` -> `generate_ar_mask`, to `autoregression.py`'s tied
-# branch, NOT to `inference/decode/autoregressive.py`'s wave-order sort (see also
-# `test_wave_order_sort_key_matches_stable_argsort` below, which covers that second,
-# separate sort fixed alongside this one for the same reason).
-# --------------------------------------------------------------------------------------
-
-
-def _stable_argsort_reference(group_present: np.ndarray, group_first_occurrence: np.ndarray, n: int):
-  key = jnp.where(jnp.asarray(group_present), jnp.asarray(group_first_occurrence), n + 1)
-  return jnp.argsort(key, stable=True)
-
-
-def _tie_free_group_decoding_order(group_present: np.ndarray, group_first_occurrence: np.ndarray, n: int):
-  """Reproduces generate_ar_mask's tied-branch formula (autoregression.py, ~L207-215)."""
-  key = jnp.where(jnp.asarray(group_present), jnp.asarray(group_first_occurrence), n + 1)
-  index = jax.lax.broadcasted_iota(jnp.int32, key.shape, 0)
-  _, order = jax.lax.sort((key, index), dimension=0, is_stable=False, num_keys=2)
-  return order
-
-
-@pytest.mark.parametrize("n", [1, 2, 5, 16, 64])
-def test_group_decoding_order_tie_free_matches_stable_argsort(n: int):
-  """Random (group_present, group_first_occurrence) pairs, many ties (sparse presence
-  forces most slots onto the shared N+1 sentinel), several group counts."""
-  rng = np.random.default_rng(1234 + n)
-  for _ in range(25):
-    group_present = rng.random(n) < 0.3
-    group_first_occurrence = rng.integers(0, max(n, 1), size=n).astype(np.int32)
-    got = _tie_free_group_decoding_order(group_present, group_first_occurrence, n)
-    want = _stable_argsort_reference(group_present, group_first_occurrence, n)
-    chex.assert_trees_all_equal(got, want)
-
-  # All-absent: every slot ties on the sentinel -- the densest possible tie case.
-  group_present = np.zeros(n, dtype=bool)
-  group_first_occurrence = rng.integers(0, max(n, 1), size=n).astype(np.int32)
-  got = _tie_free_group_decoding_order(group_present, group_first_occurrence, n)
-  want = _stable_argsort_reference(group_present, group_first_occurrence, n)
-  chex.assert_trees_all_equal(got, want)
-
-
-# --------------------------------------------------------------------------------------
-# STRUCTURAL guard on the fix above. The two tests preceding this one reimplement
-# generate_ar_mask's formula inside this file and check the PROPERTY (that a tie-free
-# (key, index) lex sort reproduces a stable argsort). They never call generate_ar_mask,
-# so reverting the function to a bare `jnp.argsort(..., stable=True)` leaves them green
-# -- the property is still true of the copy, and the copy is what they exercise.
-#
-# That gap matters concretely: main (release 0.2.0a2) still carries the argsort version,
-# `git merge-tree` reports a merge of it with this branch as textually CLEAN, and the
-# exported Graph W bakes this function into the .onnx. A silent revert would therefore
-# reach the browser artifacts with no conflict marker and no failing test.
-#
-# So assert on the traced jaxpr instead of on a reimplementation: the sort that orders
-# tie groups must be tie-free (`is_stable=False`, two keys). A revert lowers to
-# `is_stable=True` with one key and fails here.
+# Jaxpr walker for the sort-free guard below. The tied-branch sort tests that used to sit
+# here reimplemented a formula that no longer exists in production (Defect 9 removed the
+# sort), so they guarded nothing and were deleted rather than reworded.
 # --------------------------------------------------------------------------------------
 
 
@@ -249,29 +197,84 @@ def _walk_eqns(jaxpr):
           yield from _walk_eqns(candidate)
 
 
-def test_generate_ar_mask_tied_branch_sorts_tie_free() -> None:
-  """The tied branch's group sort must carry an index tiebreak, not rely on stability.
+def test_generate_ar_mask_traces_no_sort() -> None:
+  """generate_ar_mask's mask path traces NO sort primitive, tied or untied.
 
-  Guards the exported wave schedule: IREE does not honour JAX's stable-sort tie order,
-  and every absent group shares the sentinel key, so ties are the common case.
+  The mask is built by scatter (``.at[].min`` / ``.at[].set``) over the wave schedule, not by
+  sorting, so there is no sort whose stability could differ between XLA and IREE. This
+  recurses into every nested jaxpr (the ``jit`` wrapper, custom-jvp and ``cond`` bodies) so
+  a sort hidden inside a sub-computation is still seen. A future sort on this path must be
+  justified against the export stability rule and this test updated with it.
+
+  Non-vacuity: the traced program must contain a scatter, the primitive the mask is built
+  with. Without that, an empty sort list would prove nothing.
   """
   length = 8
   decoding_order = jnp.arange(length, dtype=jnp.int32)
-  # Two real multi-member groups plus singletons, so the tied branch is actually taken.
+  # Two real multi-member groups plus singletons, so the tied path is exercised.
   tie_group_map = jnp.array([0, 0, 2, 3, 3, 5, 6, 7], dtype=jnp.int32)
 
   jaxpr = jax.make_jaxpr(
     lambda order, ties: generate_ar_mask(order, tie_group_map=ties),
   )(decoding_order, tie_group_map)
 
-  sorts = [eqn for eqn in _walk_eqns(jaxpr.jaxpr) if str(eqn.primitive) == "sort"]
-  assert sorts, "generate_ar_mask's tied branch traced no sort at all; test is vacuous"
-  for eqn in sorts:
-    assert eqn.params.get("is_stable") is False, (
-      "generate_ar_mask lowered a STABLE sort. The tied branch must sort on "
-      "(key, index) with is_stable=False so the permutation does not depend on the "
-      "backend's tie handling -- see the comment block above."
-    )
-    assert eqn.params.get("num_keys") == 2, (
-      f"expected a two-key (key, index) sort, got num_keys={eqn.params.get('num_keys')}"
-    )
+  eqns = list(_walk_eqns(jaxpr.jaxpr))
+  primitive_names = {str(eqn.primitive) for eqn in eqns}
+  assert any("scatter" in name for name in primitive_names), (
+    f"no scatter primitive traced (saw {sorted(primitive_names)}); this test would be vacuous"
+  )
+  sorts = [eqn for eqn in eqns if str(eqn.primitive) == "sort"]
+  assert not sorts, (
+    f"generate_ar_mask's mask path traced {len(sorts)} sort primitive(s); it must stay "
+    "sort-free so no stable-vs-unstable tie order can reach the exported graph"
+  )
+
+
+def _brute_force_mask(order: np.ndarray, tie: np.ndarray) -> np.ndarray:
+  """Independent NumPy reference: i sees j iff j's decode wave is earlier than i's, or they
+  share a tie group; a group decodes at the step of its earliest member; diagonal is 0."""
+  length = order.shape[0]
+  step = np.empty(length, dtype=np.int64)
+  step[order] = np.arange(length)
+  first_step = {g: step[tie == g].min() for g in np.unique(tie)}
+  wave = np.array([first_step[tie[i]] for i in range(length)])
+  mask = np.zeros((length, length), dtype=np.float32)
+  for i in range(length):
+    for j in range(length):
+      if i == j:
+        continue
+      if wave[i] > wave[j] or tie[i] == tie[j]:
+        mask[i, j] = 1.0
+  return mask
+
+
+@pytest.mark.parametrize("length", [5, 8])
+def test_generate_ar_mask_matches_brute_force_for_random_orders(length: int) -> None:
+  """Random (non-involution) ORDER arrays, untied and tied, against an independent reference.
+
+  Before Defect 9 the untied branch read its argument as a RANK array, so for any
+  non-identity permutation this mask was the mask of the inverse order. This test fails
+  on that code and passes on the ORDER contract.
+  """
+  rng = np.random.default_rng(7 + length)
+  for _ in range(6):
+    order = rng.permutation(length).astype(np.int32)
+    untied = np.asarray(generate_ar_mask(jnp.asarray(order)))
+    np.testing.assert_array_equal(untied, _brute_force_mask(order, np.arange(length)))
+
+    tie = rng.integers(0, 3, size=length).astype(np.int32)
+    tied = np.asarray(generate_ar_mask(jnp.asarray(order), tie_group_map=jnp.asarray(tie)))
+    np.testing.assert_array_equal(tied, _brute_force_mask(order, tie))
+
+
+def test_generate_ar_mask_equals_ar_mask_from_decoding_order() -> None:
+  """generate_ar_mask (no chain_idx) and ar_mask_from_decoding_order are one function now."""
+  order = jnp.asarray([3, 1, 0, 2, 4], dtype=jnp.int32)
+  ties = jnp.asarray([0, 1, 0, 2, 2], dtype=jnp.int32)
+  np.testing.assert_array_equal(
+    np.asarray(generate_ar_mask(order)), np.asarray(ar_mask_from_decoding_order(order))
+  )
+  np.testing.assert_array_equal(
+    np.asarray(generate_ar_mask(order, tie_group_map=ties)),
+    np.asarray(ar_mask_from_decoding_order(order, ties)),
+  )

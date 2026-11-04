@@ -117,3 +117,9 @@ node_modules/
 # bathos writes .bth/refs/manifest.jsonl into the run tree during `bth run`; it made the
 # titanix provenance smoke see git_dirty=true (T4 attempt 1).
 .bth/refs/
+
+# praxia writes runtime telemetry and subagent output into the working tree;
+# these are local churn, not project source (the superproject ignores the same paths).
+.praxia/telemetry.jsonl
+.praxia/telemetry.jsonl.lock
+.praxia/subagent_outputs/

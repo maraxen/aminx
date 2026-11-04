@@ -1,0 +1,14 @@
+# ProtonPottsMPNN sidecar run ids. A family-scoped read of 'protonpotts' reads this shard and nothing else
+# (tests/knob_gate/_ledger.py). Entries moved byte-for-byte from ledgers/potts.toml; run ids unchanged.
+
+[sidecar]
+
+[sidecar.protonpotts_parity]
+# REWRITTEN 261013 at 78ed94d0 (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
+# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
+# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
+# Run on GPU 2 at 78ed94d0 (13 waves, 99 controls all 'failed', nothing reused, tree clean). The first GPU run e2a185de at
+# 31ded6de FAILED the f32 minimum bands and stays on record; the bands were then widened to the measured CPU+GPU floor
+# (ph_block 5e-5, ph_methods 4e-4), disclosed in the three sidecars. The CPU fallback 66b3099c at ab6897a0 also passed.
+# Previous row f3c82564 (43a7a3bd) stays on record.
+bth_run_id = "818c1dc7-ddc7-4bf8-aba2-076810ddb914"

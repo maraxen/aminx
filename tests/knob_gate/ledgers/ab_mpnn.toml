@@ -1,4 +1,8 @@
-# Sidecar ledger shard for AbMPNN vehicle runs.
-# Owning task records [sidecar.tier1_variants_parity] after the vehicle run on titanix.
+# AbMPNN shard. EMPTY: no vehicle run has been recorded, so nothing here is graded.
+# Vehicle: scripts/parity/tier1_variants_parity.py (slug tier1_variants_parity), one sidecar shared by AbMPNN,
+# HyperMPNN and CyclicMPNN. Branch rows for its four shared mutants carry family = "ab_mpnn"; the cyclic-only mutant
+# is attributed to cyclic_mpnn and hyper_mpnn has no rows of its own.
+# Not yet run. A [sidecar.tier1_variants_parity] bth_run_id lands here only after a titanix run that passes the
+# step 1c conditions described in potts.toml.
 
 [sidecar]

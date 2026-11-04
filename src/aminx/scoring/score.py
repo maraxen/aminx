@@ -153,8 +153,9 @@ def make_score_fn(
       #
       # It replaces ``generate_ar_mask(decoding_order)``, which was wrong twice over:
       #
-      # 1. Its untied branch is ``(row_indices >= col_indices)`` -- NON-strict -- so
-      #    ``ar_mask[i, i] == 1`` under every permutation. Because a residue is always
+      # 1. Before the diagonal fix, its untied branch was ``(row_indices >= col_indices)`` --
+      #    NON-strict -- so ``ar_mask[i, i] == 1`` under every permutation. The current
+      #    function is self-excluding, but this call site was written against the old one. Because a residue is always
       #    among its own KNN neighbours, ``model/decoder.py`` gated that residue's TRUE
       #    one-hot into its own node update. Measured leak on 1LVB chain A: +0.036243
       #    nats (paired over 8 seeds, sd 0.002482, t = 41.3), i.e. the score was

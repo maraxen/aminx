@@ -47,18 +47,22 @@
 [slug.laser_proofread_parity]
 soft = ["aminx.families.laser_mpnn"]
 dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
+oracle_dirs = ["aminx-oracles/dumps/b3_laser_owned/"]
 
 [slug.laser_proofread_unconditional_parity]
 soft = ["aminx.families.laser_mpnn"]
 dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
+oracle_dirs = ["aminx-oracles/dumps/b3_laser_owned/"]
 
 [slug.laser_decode_e2e]
 soft = ["aminx.families.laser_mpnn"]
 dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
+oracle_dirs = ["aminx-oracles/dumps/b3_laser_owned/"]
 
 [slug.laser_score_parity]
 soft = ["aminx.families.laser_mpnn"]
 dynamic_ok = ["src/aminx/host/runner.py", "src/aminx/io/__init__.py", "src/aminx/io/weights.py"]
+oracle_dirs = ["aminx-oracles/dumps/b3_laser_owned/"]
 
 [slug.potts_ar_decode]
 soft = ["aminx.families.potts_mpnn"]
@@ -141,6 +145,7 @@ dynamic_ok = [
   "src/aminx/io/weights.py",
   "src/aminx/families/potts_mpnn/driver.py",
 ]
+oracle_dirs = ["aminx-oracles-protonpotts/"]
 
 [slug.tier1_variants_parity]
 dynamic_ok = [
@@ -157,4 +162,3 @@ dynamic_ok = [
   "src/aminx/io/weights.py",
 ]
 data = ["tests/data/1ubq.pdb"]
-
