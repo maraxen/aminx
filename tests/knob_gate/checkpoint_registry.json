@@ -105,6 +105,30 @@
       "sha256": "b2c1a8f8cfd36c27fbda3758db2998aeec758f4d62acd5f8742860b73ed55804",
       "family": "thermompnn",
       "upstream": "ThermoMPNN-D"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/caliby.ckpt",
+      "sha256": "4a1c22c5f1c62c62a3aa9c1e6bec65e63a37faeccad5cd6b7d94536cedb1ee74",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/caliby_distill.ckpt",
+      "sha256": "c64dc940764b4e3d15a94b81d3f1406aa71df5f7b0a840c00b7adc0d331758da",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/soluble_caliby_v1.ckpt",
+      "sha256": "af08ccf22b59f222b7f4442bf8fa90efec363f6474794e6c22a40043b709af3a",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/caliby_packer_010.ckpt",
+      "sha256": "1e437578ffb7a4e97fc41de38cc9862ad48cd6300e73611e1b1b1801c7027b99",
+      "family": "caliby",
+      "upstream": "caliby"
     }
   ]
 }

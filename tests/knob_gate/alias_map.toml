@@ -3719,3 +3719,223 @@ targets = ["allow_float16"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_allow_float16"]
 note = "aminx-only: explicit bypass required for dtype='float16' (ValueError without it). Inert for float32. No upstream analogue."
+
+# --- CALIBY (P4 redo 261104; re-derived from upstream caliby 41d31560) ---
+
+[[row]]
+ref = "caliby_inference__batch_size"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream batch_size (inference.yaml:4) is the subbatch size of compute_potts_params (atom_mpnn_denoiser.py:356); results do not depend on it. aminx processes one structure per stage call."
+
+[[row]]
+ref = "caliby_inference__num_seqs_per_pdb"
+targets = ["num_samples"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_num_samples"]
+note = "Upstream num_seqs_per_pdb (inference.yaml:5, loop atom_mpnn_denoiser.py:227) draws that many sequences per structure; aminx SamplingSpecification.num_samples gives the N_samples axis of the sequences output (driver.py _run_potts_sample)."
+
+[[row]]
+ref = "caliby_inference__verbose"
+targets = []
+equivalence = "exclusion"
+reason = "no_op"
+parity_test_ids = []
+note = "Upstream verbose (inference.yaml:6) only controls printing of constraint information."
+
+[[row]]
+ref = "caliby_inference__num_workers"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream num_workers (inference.yaml:7) is the dataloader worker count."
+
+[[row]]
+ref = "caliby_inference__omit_aas"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-CALIBY-1"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx. Upstream bans the listed residues plus X and all non-protein tokens at every site (atom_mpnn_denoiser.py:194-199). CalibyDriver._run_potts_sample reads neither spec.omit_aa nor omit_aa_per_position (driver.py:327-380)."
+
+[[row]]
+ref = "caliby_inference__ensemble_ignore_res_idx_mismatch"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-CALIBY-2"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx. Conformer-file ensembles (api.ensemble_sample / score_ensemble, seq_des_utils.py:1025 _validate_ensemble_alignment) have no aminx input path."
+
+[[row]]
+ref = "caliby_inference__gaussian_conformers_n_conformers"
+targets = ["ensemble_conformers"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_ensemble_conformers"]
+note = "Upstream n_conformers (inference.yaml:15, default 0) repeats the batch n times and adds noise to EVERY conformer (atom_mpnn_denoiser.py:556-575), raising if n <= 0 when noise_std > 0. aminx ensemble_conformers (default 1) keeps conformer 0 unperturbed and noises C-1 (potts.py generate_gaussian_ensemble). Per-conformer Potts parameters are averaged identically (sealed-oracle stage s6 in caliby_parity). Tracked as TBD-CALIBY-5."
+
+[[row]]
+ref = "caliby_inference__gaussian_conformers_noise_std"
+targets = ["ensemble_noise_std"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_ensemble_noise_std"]
+note = "Upstream noise_std (inference.yaml:16, default 0.0, 0 disables, atom_mpnn_denoiser.py:157) is the std in Angstrom of N(0,1) noise added to coordinates (:571). aminx ensemble_noise_std has the same default and unit; the test pins the empirical std of the perturbation. RNG streams differ (JAX vs torch), so parity is statistical."
+
+[[row]]
+ref = "caliby_inference__potts_regularization"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3121"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; debt #3121 (Caliby driver Gibbs sampler). Upstream knob (214-222 LCP complexity penalty) feeds GraphPotts.sample (potts.py:351, sample_potts :579); aminx _run_potts_sample draws one categorical from a local field, not the upstream sweep sampler."
+
+[[row]]
+ref = "caliby_inference__potts_sweeps"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3121"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; debt #3121 (Caliby driver Gibbs sampler). Upstream knob (inference.yaml:21) feeds GraphPotts.sample (potts.py:351, sample_potts :579); aminx _run_potts_sample draws one categorical from a local field, not the upstream sweep sampler."
+
+[[row]]
+ref = "caliby_inference__potts_proposal"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3121"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; debt #3121 (Caliby driver Gibbs sampler). Upstream knob (inference.yaml:22 dlmc/gibbs/chromatic) feeds GraphPotts.sample (potts.py:351, sample_potts :579); aminx _run_potts_sample draws one categorical from a local field, not the upstream sweep sampler."
+
+[[row]]
+ref = "caliby_inference__potts_temperature"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3121"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; debt #3121 (Caliby driver Gibbs sampler). Upstream knob (inference.yaml:23) feeds GraphPotts.sample (potts.py:351, sample_potts :579); aminx _run_potts_sample draws one categorical from a local field, not the upstream sweep sampler."
+
+[[row]]
+ref = "caliby_inference__potts_rejection_step"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3121"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; debt #3121 (Caliby driver Gibbs sampler). Upstream knob (inference.yaml:24) feeds GraphPotts.sample (potts.py:351, sample_potts :579); aminx _run_potts_sample draws one categorical from a local field, not the upstream sweep sampler."
+
+[[row]]
+ref = "caliby_inference__potts_only_cond"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3121"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; debt #3121. Upstream zeroes the model-level seq_cond_mask but keeps it in the Potts model (atom_mpnn_denoiser.py:168-176); aminx has no sequence conditioning in the sampler."
+
+[[row]]
+ref = "caliby_inference__scn_packing_num_steps"
+targets = ["packer_num_steps"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_num_steps"]
+note = "Upstream num_steps default 50 (inference.yaml:30) counts Euler steps over t=linspace(0,1,S+1) with self-conditioning (scn_diffusion_mlp.py:115-128). aminx packer_num_steps default 25 counts Karras Heun steps (sidechain_diffusion.py edm_sidechain_sample). The single denoiser call is oracle-matched (pk_call1/2 stages); the sampler loop is not. TBD-CALIBY-3."
+
+[[row]]
+ref = "caliby_inference__scn_packing_step_scale"
+targets = ["packer_step_scale"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_step_scale"]
+note = "Upstream step_scale 1.5 multiplies the Euler score (edm_interpolant.py:150). aminx packer_step_scale 1.5 multiplies both Heun slopes. Same default, different integrator. TBD-CALIBY-3."
+
+[[row]]
+ref = "caliby_run__seed"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-CALIBY-6"
+parity_test_ids = []
+note = "Upstream seed (eval/sampling/seq_des.yaml:2) calls L.seed_everything (seq_des.py:22), seeding torch/numpy/python globally. aminx random_seed seeds a JAX key; streams cannot match, and no test pins the seeding contract yet."
+
+[[row]]
+ref = "caliby_run__ckpt_name_or_path"
+targets = ["checkpoint_id"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_caliby_checkpoint_id"]
+note = "Upstream ckpt_name_or_path (eval/sampling/seq_des.yaml:6, weights.py:11-18 registry names, literal .ckpt path). aminx checkpoint_id takes the same eight names; a model_local_path ending .ckpt loads through convert_caliby_*_state_dict. The real caliby/soluble_caliby_v1/caliby_distill/caliby_packer_010 checkpoints load and match the sealed oracle (caliby_parity)."
+
+[[row]]
+ref = "caliby_run__pos_constraint_csv"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-CALIBY-4"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx. Upstream fixed_pos_seq / fixed_pos_scn / fixed_pos_override_seq / pos_restrict_aatype / symmetry columns (seq_des_utils.py:553-996) have no aminx equivalent in CalibyDriver."
+
+[[row]]
+ref = "caliby_run__run_self_consistency_eval"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "Upstream runs AF2 folding self-consistency after design (seq_des.py:66); a post-hoc evaluation, not part of the design computation."
+
+[[row]]
+ref = "caliby_api__use_primary_res_type"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-CALIBY-2"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; belongs to the conformer-file ensemble API (api.py:151)."
+
+[[row]]
+ref = "caliby_api__out_dir"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream output directory for CIFs (api.py:94)."
+
+[[row]]
+ref = "caliby_ckpt__augment_eps"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Checkpoint cfg model.denoiser.augment_eps (0.3) adds coordinate noise only when self.training (atom_mpnn_denoiser.py:134-139); inference sets noise to zeros."
+
+[[row]]
+ref = "__aminx_only__caliby_omit_gap_penalty"
+upstream = false
+targets = ["omit_gap_penalty"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_omit_gap_penalty"]
+note = "aminx-only. Upstream excludes the gap and non-protein tokens by banning them in the sampler (atom_mpnn_denoiser.py:194-199); aminx adds a large energy to the GAP state instead."
+
+[[row]]
+ref = "__aminx_only__caliby_packer_sigma_min"
+upstream = false
+targets = ["packer_sigma_min"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_sigma_min"]
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default 0.002 is not upstream's. TBD-CALIBY-3."
+
+[[row]]
+ref = "__aminx_only__caliby_packer_sigma_max"
+upstream = false
+targets = ["packer_sigma_max"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_sigma_max"]
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. TBD-CALIBY-3."
+
+[[row]]
+ref = "__aminx_only__caliby_packer_rho"
+upstream = false
+targets = ["packer_rho"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_rho"]
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. TBD-CALIBY-3."
+
+[[row]]
+ref = "__aminx_only__caliby_packer_s_churn"
+upstream = false
+targets = ["packer_s_churn"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_packer_s_churn"]
+note = "aminx-only. Upstream has no run knob for this: its EDM schedule is fixed by the checkpoint cfg (interpolant s_min 0.01, s_max 80, rho 7; edm_interpolant.py:19-23) and its sampler has no stochastic churn. aminx default  is not upstream's. TBD-CALIBY-3."

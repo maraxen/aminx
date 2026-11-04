@@ -1379,3 +1379,104 @@ mutant = "permuted_output_weights"
 [branch.vehicle]
 kind = "sidecar"
 slug = "thermo_mpnn_parity"
+
+[[branch]]
+family = "caliby"
+id = "rbf_range_shrunk"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "rbf_range_shrunk"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "virtual_cb_sign_flipped"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "virtual_cb_sign_flipped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "neighbors_farthest"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "neighbors_farthest"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "neighbor_gather_off_by_one"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "neighbor_gather_off_by_one"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "gap_embedding_row_swapped"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "gap_embedding_row_swapped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "masked_atoms_not_ca_filled"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "masked_atoms_not_ca_filled"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "potts_unsymmetrized"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "potts_unsymmetrized"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "alphabet_unpermuted"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "alphabet_unpermuted"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "energy_pair_term_doubled"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "energy_pair_term_doubled"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+
+[[branch]]
+family = "caliby"
+id = "ensemble_sum_not_mean"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "ensemble_sum_not_mean"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity"
+

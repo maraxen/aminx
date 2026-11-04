@@ -171,3 +171,12 @@ dynamic_ok = [
   "src/aminx/io/weights.py",
 ]
 data = ["tests/data/1ubq.pdb"]
+
+[slug.caliby_parity]
+soft = ["aminx.families.caliby"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb", "tests/port/reference/caliby/"]
