@@ -29,6 +29,7 @@ from aminx.export.wrappers import (
   PINNED_CHECKPOINT_ID,
   make_p03_featurize,
   make_p04_unconditional,
+  p07_bundle,
   zero_dropout,
 )
 from aminx.inference import score_unconditional
@@ -38,6 +39,7 @@ from aminx.io.weights import get_topology_for_checkpoint, load_model
 from aminx.model import Aminx
 from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors, top_k
+from aminx.utils.autoregression import generate_wave_ar_mask
 from scripts.browser_validation._lattice import cubic_lattice_ca
 
 # --------------------------------------------------------------------------------------
@@ -515,12 +517,12 @@ class TestFindRngPrimitives:
 # (xtrax's `sort-stability` rule): NOT from `inference/decode/autoregressive.py`'s wave
 # order (P04 goes through `UnconditionalDecode`, which never calls
 # `AutoregressiveDecode.__call__`), but from `build_inference_bundle` ->
-# `generate_ar_mask`'s tied branch (`utils/autoregression.py`, ~L207), whose
-# `group_decoding_order = jnp.argsort(...)` relied on the default `stable=True` over a
-# key where every "group not present" slot shares one sentinel. See
-# `tests/utils/test_autoregression.py::test_group_decoding_order_tie_free_matches_stable_argsort`
-# for the unit-level tie-free-key proof, and this class's own red-check (documented in
-# the T4 report) for confirmation this test fails on the pre-fix code.
+# `generate_ar_mask`'s tied branch, whose `group_decoding_order = jnp.argsort(...)` relied
+# on the default `stable=True` over a key where every "group not present" slot shares one
+# sentinel. That branch is gone: the mask now comes from the scatter-based wave path, which
+# traces no sort at all (see
+# `tests/utils/test_autoregression.py::test_generate_ar_mask_traces_no_sort`). This class's
+# own red-check (documented in the T4 report) confirms this test fails on the pre-fix code.
 # --------------------------------------------------------------------------------------
 
 
@@ -677,7 +679,7 @@ class TestKeyIndependenceOfNative:
 # tied key would change the generated design silently and identically on both sides of
 # every parity comparison. Asserting on the traced jaxpr is the only thing that catches
 # it -- the same reasoning, and the same guard shape, as
-# test_generate_ar_mask_tied_branch_sorts_tie_free in tests/utils/test_autoregression.py.
+# test_generate_ar_mask_traces_no_sort in tests/utils/test_autoregression.py.
 # --------------------------------------------------------------------------------------
 
 
@@ -716,3 +718,142 @@ def test_wave_from_decoding_order_sorts_are_tie_free(length: int) -> None:
       "and IREE does not honour JAX's stable-sort tie order, so a tied key here would "
       "change the design silently -- see the comment block above."
     )
+
+
+# --------------------------------------------------------------------------------------
+# (g) p07_bundle ar_mask pinning tests: causality and tied positions on reverse and
+# custom decoding orders (Defect 9 / task 261030_family-parity-coverage).
+# --------------------------------------------------------------------------------------
+
+
+class TestP07BundleArMaskPinning:
+  """Pinning unit tests for p07_bundle: causality and tied-position mutual visibility."""
+
+  @staticmethod
+  def _dummy_inputs(
+    length: int,
+    decoding_order: jax.Array,
+    tie_group_map: jax.Array,
+  ) -> tuple[jax.Array, ...]:
+    coords = jnp.zeros((length, 4, 3), dtype=jnp.float32)
+    mask = jnp.ones((length,), dtype=jnp.float32)
+    residue_index = jnp.arange(length, dtype=jnp.int32)
+    chain_index = jnp.zeros((length,), dtype=jnp.int32)
+    bias = jnp.zeros((length, 21), dtype=jnp.float32)
+    fixed_mask = jnp.zeros((length,), dtype=jnp.float32)
+    fixed_tokens = jnp.zeros((length,), dtype=jnp.int32)
+    temperature = jnp.array(1.0, dtype=jnp.float32)
+    return (
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      decoding_order,
+      bias,
+      fixed_mask,
+      fixed_tokens,
+      temperature,
+      tie_group_map,
+    )
+
+  def test_p07_bundle_ar_mask_reverse_decoding_order_causality(self) -> None:
+    """Reverse order [L-1, ..., 0] must yield strictly upper-triangular causal mask."""
+    length = 6
+    tie_group_map = jnp.arange(length, dtype=jnp.int32)
+    decoding_order = jnp.array([5, 4, 3, 2, 1, 0], dtype=jnp.int32)
+
+    bundle, _ = p07_bundle(*self._dummy_inputs(length, decoding_order, tie_group_map))
+    ar_mask = bundle.conditioning.ar_mask[0]
+
+    assert ar_mask.shape == (length, length)
+    # Self-exclusion: diagonal is strictly 0.0
+    assert np.all(np.diag(np.asarray(ar_mask)) == 0.0)
+
+    # In reverse order [5, 4, 3, 2, 1, 0]:
+    # pos 5 decodes at step 0 (sees nobody)
+    # pos 4 decodes at step 1 (sees pos 5)
+    # ...
+    # pos 0 decodes at step 5 (sees pos 5, 4, 3, 2, 1)
+    # Position i decodes at step (5 - i). Pos i sees pos j iff step(j) < step(i) <=> j > i.
+    expected = jnp.triu(jnp.ones((length, length), dtype=jnp.float32), k=1)
+    assert np.array_equal(np.asarray(ar_mask), np.asarray(expected))
+
+  def test_p07_bundle_ar_mask_custom_order_tied_positions(self) -> None:
+    """Custom order with tied positions verifies mutual visibility and causal precedence."""
+    length = 6
+    # Group 0: {0, 3}; Group 1: {1, 4}; Group 2: {2}; Group 3: {5}
+    tie_group_map = jnp.array([0, 1, 2, 0, 1, 3], dtype=jnp.int32)
+    # Order visits: 2 (grp 2, wave 0), 4 (grp 1, wave 1), 0 (grp 0, wave 2),
+    # 5 (grp 3, wave 3), then duplicate group positions 1 and 3.
+    decoding_order = jnp.array([2, 4, 0, 5, 1, 3], dtype=jnp.int32)
+
+    bundle, _ = p07_bundle(*self._dummy_inputs(length, decoding_order, tie_group_map))
+    ar_mask = np.asarray(bundle.conditioning.ar_mask[0])
+
+    assert ar_mask.shape == (length, length)
+    # Self-exclusion on diagonal
+    assert np.all(np.diag(ar_mask) == 0.0)
+
+    # Mutual visibility between tied positions in Group 1 ({1, 4})
+    assert ar_mask[1, 4] == 1.0, "pos 1 must see tied partner pos 4"
+    assert ar_mask[4, 1] == 1.0, "pos 4 must see tied partner pos 1"
+
+    # Mutual visibility between tied positions in Group 0 ({0, 3})
+    assert ar_mask[0, 3] == 1.0, "pos 0 must see tied partner pos 3"
+    assert ar_mask[3, 0] == 1.0, "pos 3 must see tied partner pos 0"
+
+    # Causality checks across waves:
+    # Wave 0 (pos 2) decodes first -> sees nobody
+    assert np.sum(ar_mask[2]) == 0.0, "earliest position must have zero visible context"
+
+    # Wave 1 ({1, 4}) sees wave 0 (pos 2) + each other
+    assert ar_mask[1, 2] == 1.0
+    assert ar_mask[4, 2] == 1.0
+    # and cannot see later waves (pos 0, 3, 5)
+    assert ar_mask[1, 0] == 0.0 and ar_mask[1, 3] == 0.0 and ar_mask[1, 5] == 0.0
+    assert ar_mask[4, 0] == 0.0 and ar_mask[4, 3] == 0.0 and ar_mask[4, 5] == 0.0
+
+    # Wave 3 (pos 5) decodes last -> sees all positions 0, 1, 2, 3, 4
+    assert np.sum(ar_mask[5]) == 5.0, "latest position must see all previously decoded positions"
+
+    # Full exact expected mask check
+    expected = np.array([
+      [0.0, 1.0, 1.0, 1.0, 1.0, 0.0],  # pos 0 (grp 0, wave 2): sees 2 (w0), 1,4 (w1), 3 (same grp)
+      [0.0, 0.0, 1.0, 0.0, 1.0, 0.0],  # pos 1 (grp 1, wave 1): sees 2 (w0), 4 (same grp)
+      [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # pos 2 (grp 2, wave 0): sees nobody
+      [1.0, 1.0, 1.0, 0.0, 1.0, 0.0],  # pos 3 (grp 0, wave 2): sees 2 (w0), 1,4 (w1), 0 (same grp)
+      [0.0, 1.0, 1.0, 0.0, 0.0, 0.0],  # pos 4 (grp 1, wave 1): sees 2 (w0), 1 (same grp)
+      [1.0, 1.0, 1.0, 1.0, 1.0, 0.0],  # pos 5 (grp 3, wave 3): sees 2 (w0), 1,4 (w1), 0,3 (w2)
+    ], dtype=np.float32)
+    assert np.array_equal(ar_mask, expected)
+
+  def test_p07_bundle_exported_wave_and_ar_mask_describe_one_schedule(self) -> None:
+    """The exported wave and the exported ar_mask must imply the same visibility.
+
+    p07_bundle builds its wave with ``wave_from_decoding_order`` and its ar_mask with
+    ``ar_mask_from_decoding_order`` (which goes through ``WaveScheduleBundle.from_decoding_order``).
+    The two constructors number their waves differently (one wave per tie group in
+    first-step order, versus one wave per step), so the comparison is on what each implies:
+    the mask generated from the exported wave must equal the exported ar_mask. Random
+    permutations with tied groups, including groups whose members are far apart in the order.
+    """
+    rng = np.random.default_rng(20261030)
+    for length in (6, 9):
+      for _ in range(16):
+        decoding_order = jnp.asarray(rng.permutation(length), dtype=jnp.int32)
+        # Tie ids stay in 0 .. L-1 (the smallest L here is 6, so 0..4 is in range), the
+        # convention both wave constructors index by.
+        tie_group_map = jnp.asarray(rng.integers(0, 5, size=length), dtype=jnp.int32)
+
+        bundle, _ = p07_bundle(*self._dummy_inputs(length, decoding_order, tie_group_map))
+        exported_mask = np.asarray(bundle.conditioning.ar_mask[0])
+        wave_implied_mask = np.asarray(generate_wave_ar_mask(bundle.wave, tie_group_map))
+
+        np.testing.assert_array_equal(
+          wave_implied_mask,
+          exported_mask,
+          err_msg=(
+            f"order={np.asarray(decoding_order).tolist()} "
+            f"ties={np.asarray(tie_group_map).tolist()}"
+          ),
+        )

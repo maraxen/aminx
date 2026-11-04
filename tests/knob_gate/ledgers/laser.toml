@@ -1,0 +1,32 @@
+# Laser-family sidecar run ids. A family-scoped read of 'laser' reads this shard and nothing else
+# (tests/knob_gate/_ledger.py). Entries moved byte-for-byte from ledgers/potts.toml; run ids unchanged.
+
+[sidecar]
+
+[sidecar.laser_proofread_parity]
+# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
+# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
+# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
+# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row d4a3b47a (43a7a3bd, CPU) stays on record.
+bth_run_id = "598be4db-853c-42e5-89fc-c39eb1312fa4"
+
+[sidecar.laser_proofread_unconditional_parity]
+# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
+# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
+# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
+# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row a861cb55 (43a7a3bd, CPU) stays on record.
+bth_run_id = "f9328d63-4bc5-46c6-ae9b-56c75c9cb5f8"
+
+[sidecar.laser_decode_e2e]
+# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
+# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
+# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
+# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row 8ea2e30f (43a7a3bd, CPU) stays on record.
+bth_run_id = "174b4aa6-ba9e-428f-8ed4-098d03e6a9ed"
+
+[sidecar.laser_score_parity]
+# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
+# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
+# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
+# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row 2d5670c8 (43a7a3bd, CPU) stays on record.
+bth_run_id = "05f53baa-1882-4d17-9d87-bdd63af31e6b"

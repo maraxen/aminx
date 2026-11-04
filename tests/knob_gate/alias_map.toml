@@ -3594,44 +3594,87 @@ parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_
 note = "aminx-only: the JSON file of variants for score:energy / score:ddg. Upstream scores through compute_g_bind on an atom array and has no variants-file knob."
 
 [[row]]
-ref = "thermo_model__checkpoint_id"
-targets = ["checkpoint_id"]
-equivalence = "semantic"
-parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_checkpoint_id"]
-note = "ThermoMPNN checkpoint selection (v1 default vs v2 single-mutant vs v2 double-mutant). Not identical: the reference default is 'thermo_mpnn_v1_default', while aminx's option defaults to None and resolves explicit option > spec.checkpoint_id > that same v1 default. The named ids route the same way; the test drives that precedence through load/stages."
-
-[[row]]
 ref = "thermo_model__mode"
 targets = ["mode"]
-equivalence = "identical"
+equivalence = "divergence"
 parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_mode"]
-note = "Mode selector: single-mutant ddg table vs double-mutant epistatic Siamese score."
+note = "Upstream --mode is single | additive | epistatic (v2_ssm.py:540-545, branches :483-495). aminx mode is single | double: 'double' is epistatic when the checkpoint is a ThermoMPNN-D one and additive (s_i + s_j) otherwise (driver.py:845-848), so additive and epistatic are not independently selectable by mode alone."
 
 [[row]]
-ref = "thermo_model__distance_threshold"
+ref = "thermo_model__pdb"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream --pdb input path (v2_ssm.py:546); aminx takes structures through the spec."
+
+[[row]]
+ref = "thermo_model__batch_size"
+targets = ["batch_size"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_batch_size"]
+note = "Upstream --batch_size default 256 (v2_ssm.py:547-553), used only in epistatic mode (:495). aminx default is 10000 and the test pins only that chunking leaves predictions unchanged, not the default. Earlier alias map wrongly called this aminx-only."
+
+[[row]]
+ref = "thermo_model__out"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream --out csv prefix (v2_ssm.py:554-555, written at :533); aminx writes through its sinks."
+
+[[row]]
+ref = "thermo_model__chains"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx, mislabelled 'internal' only because no deferred ticket id exists in DEFERRED_IDS.txt: owner to file one and switch to deferred:<id>. Upstream --chains restricts load_pdb to the listed chains (v2_ssm.py:479, :556-560); no ThermoMPNNOptions field."
+
+[[row]]
+ref = "thermo_model__threshold"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx, mislabelled 'internal' only because no deferred ticket id exists: owner to file one and switch to deferred:<id>. Upstream --threshold (default -0.5) filters the output rows (v2_ssm.py:487-495, :512, :561-566); no aminx-side filter was found (unverified: not traced through the driver)."
+
+[[row]]
+ref = "thermo_model__distance"
 targets = ["distance_threshold"]
 equivalence = "identical"
 parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_distance_threshold"]
-note = "C-alpha distance threshold in Angstroms for selecting candidate residue pairs in double mutant mode."
+note = "Upstream flag is --distance (default 5.0 A, CA-CA pair filter in double modes; v2_ssm.py:505-506, :567-572); aminx field is distance_threshold with the same default. The earlier reference name 'distance_threshold' does not exist upstream."
 
 [[row]]
-ref = "thermo_model__ensemble"
-targets = ["ensemble"]
-equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_ensemble"]
-note = "Whether to average predictions across the 3 ensemble model members or evaluate a single checkpoint."
+ref = "thermo_model__ss_penalty"
+targets = []
+equivalence = "exclusion"
+reason = "internal"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx, mislabelled 'internal' only because no deferred ticket id exists: owner to file one and switch to deferred:<id>. Upstream --ss_penalty adds a disulfide-breakage penalty (v2_ssm.py:508-509, :573-577); no ThermoMPNNOptions field."
 
+# --- AMINX-ONLY ROWS (upstream = false): upstream has no such flag. ---
 [[row]]
-ref = "thermo_model__dtype"
-targets = ["dtype"]
-equivalence = "identical"
-parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_dtype"]
-note = "Numerical precision: float32 (default) vs float16."
-
-[[row]]
-ref = "__aminx_only__thermo_batch_size"
+ref = "__aminx_only__thermo_checkpoint_id"
 upstream = false
-targets = ["batch_size"]
+targets = ["checkpoint_id"]
 equivalence = "aminx_extension"
-parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_batch_size"]
-note = "aminx-only: chunk size for batching residue pairs in double-mutant evaluation."
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_checkpoint_id"]
+note = "aminx-only: explicit checkpoint selection (option > spec.checkpoint_id > thermo_mpnn_v1_default). Upstream picks the checkpoint from --mode inside get_config/get_model (v2_ssm.py:477-478); it has no checkpoint flag."
+
+[[row]]
+ref = "__aminx_only__thermo_ensemble"
+upstream = false
+targets = ["ensemble"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_ensemble"]
+note = "aminx-only: average the 3 v2 ensemble members or evaluate one. v2_ssm.py has no ensemble flag."
+
+[[row]]
+ref = "__aminx_only__thermo_dtype"
+upstream = false
+targets = ["dtype"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_dtype"]
+note = "aminx-only: float32 (default) vs float16. v2_ssm.py has no dtype flag; float16 parity gate currently FAILS (see thermo float16 sidecars)."

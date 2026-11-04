@@ -421,7 +421,8 @@ class WaveScheduleBundle(eqx.Module):
     ----------
     decoding_order : Int[Array, "L"]
         ORDER array: `decoding_order[t]` is the position decoded at step `t`. Not a rank
-        array -- see `aminx.utils.autoregression.generate_ar_mask` for the distinction.
+        array (`rank = argsort(order)`); see
+        `aminx.utils.autoregression.ar_mask_from_decoding_order`.
     tie_group_map : Int[Array, "L"] | None
         Tie group id per position (state-0 convention). `None` means untied (each
         position its own group).
