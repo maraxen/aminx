@@ -128,6 +128,12 @@ def test_spec_rejects_non_integer_seed(bad):
         _spec(decoding_order_seed=bad)
 
 
-def test_spec_rejects_negative_seed():
+@pytest.mark.parametrize("bad", [-1, 2**32, 2**63])
+def test_spec_rejects_out_of_range_seed(bad):
     with pytest.raises(ValueError, match="decoding_order_seed"):
-        _spec(decoding_order_seed=-1)
+        _spec(decoding_order_seed=bad)
+
+
+def test_spec_accepts_the_range_endpoints():
+    assert _spec(decoding_order_seed=0).decoding_order_seed == 0
+    assert _spec(decoding_order_seed=2**32 - 1).decoding_order_seed == 2**32 - 1

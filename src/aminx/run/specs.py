@@ -183,8 +183,12 @@ class RunSpecification:
       decoding_order_seed: If set, every sample decodes in the order drawn from this seed alone
         (independent of the row hash and the sample key), so rows with the same seed share one
         decoding order. ``None`` (default) keeps the per-sample random order. Like
-        ``random_seed``, it is not part of ``manifest_row_hash``: campaign rows that differ
-        only in this seed need distinct output roots.
+        ``random_seed``, it is not part of ``manifest_row_hash`` and is not written to the
+        store's provenance attrs: campaign rows that differ only in this seed need distinct
+        output roots, and a resumed store is not checked against it. Honoured only by the
+        autoregressive runner path and ``sample_multistate_poe_bead``; it is ignored by
+        ``model_family`` drivers (laser/fampnn/caliby/potts), ``sampling_strategy=
+        "straight_through"``, scoring, and when ``wave`` is supplied. Range ``[0, 2**32)``.
       conformational_states: Optional conformational states representation to use for coarse graining the inference.
       max_length: Maximum sequence length for padding/truncation (default is 512).
                   Set to None to disable padding. Controls memory usage - smaller values
@@ -365,8 +369,9 @@ class RunSpecification:
       if isinstance(order_seed, bool) or not isinstance(order_seed, numbers.Integral):
         msg = f"decoding_order_seed must be an int or None, got {type(order_seed).__name__}"
         raise TypeError(msg)
-      if order_seed < 0:
-        msg = f"decoding_order_seed must be non-negative, got {order_seed}"
+      if not 0 <= order_seed < 2**32:
+        # jax.random.PRNGKey takes a 32-bit seed; larger values overflow or wrap depending on jax_enable_x64.
+        msg = f"decoding_order_seed must be in [0, 2**32), got {order_seed}"
         raise ValueError(msg)
       if not isinstance(order_seed, int):
         object.__setattr__(self, "decoding_order_seed", int(order_seed))

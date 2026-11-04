@@ -98,8 +98,10 @@ def test_probe_logits_are_identical_across_samples_under_a_seed():
 
 def test_fused_k_copies_equal_k_times_single_under_a_shared_seed():
   k = 3
+  # Different sample keys on purpose: with the SAME key the single and fused rows draw the same order
+  # whether or not a seed is set, so only the seed can pair them here.
   single = _probe_logits(1, jax.random.PRNGKey(0), 1, 3)[0]
-  fused = _probe_logits(k, jax.random.PRNGKey(0), 1, 3)[0]
+  fused = _probe_logits(k, jax.random.PRNGKey(1), 1, 3)[0]
   assert _rel(fused / k, single) < 1e-4
 
 
