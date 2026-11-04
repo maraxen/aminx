@@ -62,7 +62,7 @@ def main() -> None:
   csv = pd.read_csv(str(fa_copy) + "_Paresd_Result.csv")
   cols = ["combination", "PD1_volume", "PD2_hydro", "PD3_charge"]
   dump: dict[str, np.ndarray] = {
-    "csv/combination": csv["combination"].astype(str).to_numpy(),
+    "csv/combination": np.asarray(csv["combination"].astype(str).tolist(), dtype="U"),
     "csv/PD1_volume": csv["PD1_volume"].to_numpy(dtype=np.float64),
     "csv/PD2_hydro": csv["PD2_hydro"].to_numpy(dtype=np.float64),
     "csv/PD3_charge": csv["PD3_charge"].to_numpy(dtype=np.float64),

@@ -218,6 +218,7 @@ def run_checkpoint(pu: Any, root: Path, name: str, feats: dict[str, dict[str, An
           E, E_idx = model.features(X, mask, f["residue_idx"], f["chain_encoding_all"])
           h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]), dtype=dt)
           h_E = model.W_e(E)
+          h_E0 = h_E.clone()
           mask_attend = pu.gather_nodes(mask.unsqueeze(-1), E_idx).squeeze(-1)
           mask_attend = mask.unsqueeze(-1) * mask_attend
           for layer in model.encoder_layers:
@@ -235,7 +236,12 @@ def run_checkpoint(pu: Any, root: Path, name: str, feats: dict[str, dict[str, An
         dump[f"{pre}/log_probs_tf"] = log_probs.numpy()
         if name == PRIMARY and cfg_name == "cdr5":
           dump[f"{pre}/E"] = E.numpy()
+          dump[f"{pre}/h_E0"] = h_E0.numpy()
           dump[f"{pre}/h_E_enc"] = h_E.numpy()
+        if double:
+          # upstream sample() allocates all_probs as float32 (protein_mpnn_utils.py:1130) and scatters a
+          # float64 slice into it (:1181), so the sampler is dumped and graded in float32 only.
+          continue
         out = sample_once(pu, model, f, cfg, randn2, noise, double=double)
         S_new = out["S"]
         with torch.no_grad():
@@ -247,10 +253,9 @@ def run_checkpoint(pu: Any, root: Path, name: str, feats: dict[str, dict[str, An
         dump[f"{pre}/probs_sample"] = out["probs"].numpy()
         dump[f"{pre}/order_sample"] = out["decoding_order"].numpy()
         dump[f"{pre}/log_probs_sample"] = lp_new.numpy()
-        if precision == "f32":
-          dump[f"{pre}/randn1"] = randn1.numpy()
-          dump[f"{pre}/randn2"] = randn2.numpy()
-          dump[f"{pre}/gumbel"] = noise
+        dump[f"{pre}/randn1"] = randn1.numpy()
+        dump[f"{pre}/randn2"] = randn2.numpy()
+        dump[f"{pre}/gumbel"] = noise
     log.info("%s %s done", name, precision)
 
 

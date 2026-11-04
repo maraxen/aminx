@@ -1,31 +1,105 @@
-[experiment]
-hypothesis = "JAX AntiBMPNN stages L1 (CDR region masks on heavy and light chains), L2 (CDR log-odds frequency logit transformation), and L3 (sampling and Barley PC1/PC2 + Lehninger net charge descriptors with injected noise) achieve parity within 1e-4 in float32, and all negative controls (swap_chain_ids, zero_cdr_bias, wrong_lehninger_pka) fail decisively (> 1e-2)."
-stage_name = "validation"
+# AntiBMPNN parity vehicle -- P4 redo (task 261104_p4-antibmpnn). Replaces the PR #261 sidecar, whose clean
+# arm diffed aminx against aminx and whose weights were never loaded.
+#
+# DISCLOSURE (before this file was committed): the harness was debugged by running the clean arm and the seven
+# mutant arms once against the sealed dump, so the author had seen the stage magnitudes: f64 ~1e-13, f32 features
+# 6.2e-5 / encoder 5.6e-5 / logits 1.68e-4 (above the 1e-4 pass band, so a MARGINAL clean verdict is the expected
+# result), and that the earlier hand-typed PD1/PD2 table in aminx.model.cdr_bias disagreed with
+# peptides.tables.PHYSICAL_DESCRIPTORS (fixed in the same commit as this sidecar). No band below was chosen from
+# those numbers: f64 1e-7 and f32 1e-4 are the bands the P4 brief fixes, the (1e-4, 1e-3] marginal band and the
+# >1e-3 fail band are the LASEr/thermo convention.
+#
+# WALL TIME (measured on titanix CPU, JAX_PLATFORMS=cpu, OMP_NUM_THREADS=4): clean arm ~46 s, each mutant arm
+# ~20-26 s, whole run ~4 min. Each arm is its own interpreter with its own 3600 s timeout, nothing is long enough
+# to need preemption-safe resume; a failed run is simply re-run (inputs are sha256-pinned below, so a rerun cannot
+# silently grade different bytes). Nothing resume-related changes [outcomes].
 
-[reproduction]
-reproduces_paper = "doi:10.1101/2024.04.18.590119"
+[metadata]
+title = "AntiBMPNN parity against a sealed real-upstream dump"
+created = "261104"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "aminx (JAX) matches the real AntiBMPNN upstream (protein_mpnn_utils.py + antibmpnn_{000..100}.pt on inputs/HuJ3/HuJ3.pdb, sealed dump) at every stage: PDB parse exact (<1e-9), edge features / encoder / teacher-forced log-probs within 1e-7 in float64 and 1e-4 in float32 for all 11 checkpoints, per-position sampling distribution and Gumbel-drawn tokens for two sampler configurations (cdr5, knobs) within 1e-4 with zero token mismatches, the shipped antibmpnn_v_48_{000,010,020,030} Hub weights equal to the .pt, and the design descriptors (PD1, PD2, Lehninger charge) equal to peptides 0.5.0 as called by helper_scripts/parsing_design_result.py; and each of seven aminx-side code perturbations drives its designated stage above 1e-3."
+stage_name = "validation"
+novel = false
 
 [controls]
 positive_outcome = ["pass"]
-negative_outcome = ["fail"]
-
-[requires.waiver]
-reason = "AntiBMPNN parity verification vehicle against upstream PyTorch checkpoints"
+negative_outcome = ["fail", "marginal"]
 
 [outcomes.pass]
-condition = "clean == 'pass' AND mutants.swap_chain_ids == 'failed' AND mutants.zero_cdr_bias == 'failed' AND mutants.wrong_lehninger_pka == 'failed'"
-decision = "Promote AntiBMPNN JAX port and knob coverage."
-reasoning = "Clean run passes all graded stages L1/L2/L3, and all three negative control mutants trip."
+condition = "clean == 'pass' AND weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND max_abs_f64 < 1e-7 AND max_abs_f32 < 1e-4 AND parse_max_abs < 1e-9 AND sampler_token_mismatch == 0 AND n_checkpoints == 11 AND n_listed == 7 AND n_failed == n_listed"
+decision = "AntiBMPNN is at numerical parity with the real upstream; record the sidecar in the AntiBMPNN ledger shard."
+reasoning = "Every stage is inside the f64 1e-7 / f32 1e-4 band against the sealed dump of the real code and weights, sampler tokens agree exactly, and all seven negative controls leave the fail band."
+is_residual = false
+
+[outcomes.marginal]
+condition = "weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND max_abs_f64 < 1e-5 AND max_abs_f32 < 1e-3 AND (max_abs_f64 >= 1e-7 OR max_abs_f32 >= 1e-4) AND parse_max_abs < 1e-9 AND sampler_token_mismatch == 0 AND n_checkpoints == 11 AND n_listed == 7 AND n_failed == n_listed"
+decision = "Do not claim the 1e-4 float32 band; report float32 drift as measured and rely on the float64 result for algorithmic equality."
+reasoning = "The comparison is alive (negative controls all fail, tokens agree, f64 is inside its band) but at least one float32 gap is in [1e-4, 1e-3) or one float64 gap is in [1e-7, 1e-5)."
 is_residual = false
 
 [outcomes.fail]
-condition = "clean != 'pass' OR mutants.swap_chain_ids != 'failed' OR mutants.zero_cdr_bias != 'failed' OR mutants.wrong_lehninger_pka != 'failed'"
-decision = "Block promotion and debug AntiBMPNN CDR masking, logit bias, or descriptor pipeline."
-reasoning = "Parity delta exceeds tolerance or negative controls failed to trip."
+condition = "NOT (weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND max_abs_f64 < 1e-5 AND max_abs_f32 < 1e-3 AND parse_max_abs < 1e-9 AND sampler_token_mismatch == 0 AND n_checkpoints == 11 AND n_listed == 7 AND n_failed == n_listed)"
+decision = "Block: a stage disagrees with the real upstream, an oracle or weight hash did not verify, or a negative control did not trip."
+reasoning = "Anything outside the marginal envelope, a missing checkpoint, a token mismatch, an unverified sealed input, or a surviving mutant falsifies the vehicle."
 is_residual = true
 
 [result_schema]
-family = "str"
 clean = "str"
-mutants = "dict"
-weights = "dict"
+n_listed = "int"
+n_failed = "int"
+oracle_verified = "int"
+weight_source = "str"
+n_checkpoints = "int"
+max_abs_f64 = "float"
+max_abs_f32 = "float"
+parse_max_abs = "float"
+features_f32 = "float"
+encoder_f32 = "float"
+logits_f32 = "float"
+sampler_f32 = "float"
+published_f32 = "float"
+descriptors_csv = "float"
+descriptors_direct = "float"
+descriptors_ph_sweep = "float"
+sampler_token_mismatch = "int"
+mutant_values = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle_scripts = "scripts/parity/dump_antibmpnn_oracle.py (torch env) and scripts/parity/dump_antibmpnn_descriptors_oracle.py (pandas+peptides env)"
+oracle_dump_sha256 = "cc242788fa67d2f2160fa341077743cf25c929b759e80c3dbc15b2af89c387d9"
+descriptors_dump_sha256 = "a964f542a9cfb140027a6775e6e876ee0b4c3b8a36d904a6a45f87d661dd3a9f"
+oracle_location = "titanix /home/solab/scratch/p4-antibmpnn/oracle (ANTIBMPNN_ORACLE_DIR); not committed (22 MB), regenerable with the two scripts, hashes pinned here"
+upstream_repo = "https://github.com/zeysun/AntiBMPNN"
+upstream_commit = "7e6329ba3c317e7344c6b09add72dea2390af39a"
+protein_mpnn_utils_sha256 = "74c8f9b7553422a7a0bbd705874844ee103c8926c2c96f154a87e0b824071e1b"
+runner_sha256 = "ca85c210c83556f6c1de7df0ab9ccf9dd76d55265215a24c24a5d4180f150c2b"
+parsing_design_result_sha256 = "3181966d8d1e5b198d74a21c911c89b0af2efa02130cf6456c986e6ed317b252"
+peptides_version = "0.5.0"
+torch_version = "2.12.0+cu130"
+fixture = "inputs/HuJ3/HuJ3.pdb"
+fixture_sha256 = "92bcd6feefe750497199c70cf942fd1061baec85e639aac098d47daf70c641a1"
+hub_revision = "5ff5cf1643842ed8eb2d511d0281a5a0db14170e"
+bands = "f64 max|delta| < 1e-7; f32 < 1e-4; marginal f64 < 1e-5 and f32 < 1e-3; mutant fails when its designated stage exceeds 1e-3"
+mutants = "reversed_ar_mask:logits, zero_edge_embedding:features, swap_checkpoint_noise:logits, omit_penalty_dropped:sampler, lehninger_pka_shifted:descriptors, barley_tables_swapped:descriptors, parser_wrong_atom_order:parse"
+
+[data.checkpoints]
+antibmpnn_000 = "7c14574f83156585c28a014079adf48bb71addb57122db54b61a83b2492ddf2c"
+antibmpnn_010 = "58da25cfdbc9c801f77720beb034e7a87d16fdf669397cd11e1268dade853386"
+antibmpnn_020 = "3c1fbfae7d10654fcf536c1edd808291949d7721e6d358c150070e2a74b10b9b"
+antibmpnn_030 = "651298c90f5b166cea30a97a3378045cc65bfe152b5bb5c3128edca00c1b7eb1"
+antibmpnn_040 = "af4b002d93de346e89ba2a8fb4606a47fb179c8dec9e9234a94eaaa5cc1ea7d2"
+antibmpnn_050 = "a9a91c90a4aa70a6721d4db9bda3dd4e8ce41b93384d43044d92335d910feb17"
+antibmpnn_060 = "8b1074f1b46062896b524f0c5c037eae77d6c9a950b0dc4e769834a2d25b6c11"
+antibmpnn_070 = "b0482ec87ee83d79b15283dd1d2eef8675b11ccb7c83bd2b5c8ba2a08f0f2072"
+antibmpnn_080 = "e08ede6918ceaf22ab88644a79fd29fc0c76f9a53933f2326b5479651c7a5faa"
+antibmpnn_090 = "3c32d6c88e4842b7b8cfbddb9f7c923b1423a18237f00e0eae2070cb4dbcc6b6"
+antibmpnn_100 = "d43ebf95f0229b8bca74ef320fbe14f3d2a7158710a22370211680c3dca189c9"
+
+[provenance]
+note = "Graded invocation on titanix: bth run -- uv run --no-sync python scripts/parity/antibmpnn_parity.py --oracle-dir $ANTIBMPNN_ORACLE_DIR --antibmpnn-root /home/solab/repos/AntiBMPNN --mutants reversed_ar_mask,zero_edge_embedding,swap_checkpoint_noise,omit_penalty_dropped,lehninger_pka_shifted,barley_tables_swapped,parser_wrong_atom_order --controls-out $SC/antibmpnn_parity/<git-sha8>/branch_controls.json. Injection points: decoding order via the randn argument of ProteinMPNN.forward/sample (protein_mpnn_utils.py:1057,1104), categorical draw via torch.multinomial at :1180 replaced by a Gumbel-max on stored noise, float64 via a torch.Tensor.float patch (upstream hard-codes .float() at :734,:1084,:1121; no source edit). Float64 sampler is not graded: upstream allocates all_probs as float32 (:1130)."
