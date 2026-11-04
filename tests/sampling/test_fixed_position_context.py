@@ -160,3 +160,39 @@ def test_random_order_leaves_a_fused_vs_single_residual_control():
 @pytest.mark.parametrize("mode", ["canonical_order", "mutual_context"])
 def test_other_modes_remove_the_residual_without_any_seed(mode):
   assert _residual(mode) < 1e-4
+
+
+def test_mutual_context_and_canonical_order_give_distinct_probe_logits():
+  """The two non-default modes are different conditionings, not aliases of each other."""
+  canonical = _probe_logits(1, jax.random.PRNGKey(0), "canonical_order")
+  mutual = _probe_logits(1, jax.random.PRNGKey(0), "mutual_context")
+  assert np.linalg.norm(canonical - mutual) / np.linalg.norm(canonical) > 1e-3
+
+
+def test_index_mode_orders_tied_fixed_groups_by_first_position():
+  """Tie groups sort by their first member, not by their id; designed groups still follow."""
+  tie = jnp.asarray([2, 0, 2, 0, 1, 1, 3, 3], dtype=jnp.int32)
+  fixed = jnp.asarray([1, 1, 1, 1, 0, 0, 0, 0], dtype=jnp.float32)
+  for k in range(6):
+    order = list(np.asarray(random_design_order(jax.random.PRNGKey(k), tie, fixed, "index")))
+    # group {0,2} (first position 0) precedes group {1,3} (first position 1); members adjacent by position
+    assert order[:4] == [0, 2, 1, 3]
+    assert set(order[4:]) == {4, 5, 6, 7}
+
+
+def test_mutual_context_ignores_a_non_fixed_member_of_a_partly_fixed_tie_group():
+  """A non-fixed tie member is undrawn until its wave, so no fixed position may be told to read it."""
+  bundle, _ = _bundle(1)
+  tie = jnp.arange(LENGTH, dtype=jnp.int32).at[3].set(PROBE)  # positions 3 and PROBE tied; 3 is fixed, PROBE is not
+  cond = eqx.tree_at(lambda c: c.tie_group_map, bundle.conditioning, jnp.broadcast_to(tie, bundle.conditioning.tie_group_map.shape))
+  bundle = eqx.tree_at(lambda b: b.conditioning, bundle, cond)
+  key = jax.random.PRNGKey(0)
+  base = np.asarray(with_decoding_order(bundle, key, fixed_context="random_order").conditioning.ar_mask)[0]
+  mutual = np.asarray(with_decoding_order(bundle, key, fixed_context="mutual_context").conditioning.ar_mask)[0]
+  added = mutual - base
+  assert (added >= 0).all()  # mutual_context only ever adds visibility
+  # PROBE is not itself fixed (only its tie partner 3 is), so mutual_context adds nothing that reads or is read by it
+  assert added[PROBE].sum() == 0 and added[:, PROBE].sum() == 0
+  fixed = [i for i in range(LENGTH) if i != PROBE]
+  # and among the genuinely fixed positions every pair ends up mutually visible
+  assert all(mutual[i, j] == 1.0 for i in fixed for j in fixed if i != j)

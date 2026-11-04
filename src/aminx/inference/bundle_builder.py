@@ -442,7 +442,10 @@ def with_decoding_order(
       order, in-distribution, deterministic given the fixed set. ``"mutual_context"`` makes
       every fixed position see every other fixed position (a non-causal block that no
       training mask produced, so it is out of distribution) and removes the order dependence
-      entirely. Only ``decoding_order_fn=None`` is supported for the last two.
+      entirely. Only ``decoding_order_fn=None`` is supported for the last two. Because the mask
+      then disagrees with the sequential wave schedule, the incremental decoder's exactness
+      check fails and ``incremental="auto"`` silently falls back to full recompute (correct,
+      slower); ``incremental="force"`` is NOT supported with ``mutual_context``.
 
   Returns:
     The bundle with ``wave`` and ``conditioning.ar_mask`` replaced.
@@ -464,9 +467,10 @@ def with_decoding_order(
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(order), tie)
   mask = generate_wave_ar_mask(wave, tie).astype(cond.ar_mask.dtype)
   if fixed_context == "mutual_context":
+    # Position-level, not group-level: a fixed position's token is pre-written into the decode
+    # carry, whereas a non-fixed member of a partly fixed tie group is undrawn until its wave runs.
     fixed_pos = (cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask) > 0.5
-    group_fixed = jnp.zeros((seq_len,), dtype=jnp.int32).at[tie].max(fixed_pos.astype(jnp.int32))[tie] > 0
-    fixed_block = group_fixed[:, None] & group_fixed[None, :] & ~jnp.eye(seq_len, dtype=bool)
+    fixed_block = fixed_pos[:, None] & fixed_pos[None, :] & ~jnp.eye(seq_len, dtype=bool)
     mask = jnp.maximum(mask, fixed_block.astype(mask.dtype))
   mask = jnp.broadcast_to(mask[None, ...], cond.ar_mask.shape)
   return eqx.tree_at(lambda b: (b.wave, b.conditioning.ar_mask), bundle, (wave, mask))
