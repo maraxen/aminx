@@ -50,6 +50,7 @@ _WEIGHT_PREFIXES = (
   "tier1_",
   "ca_only_",
   "antibmpnn_",
+  "fampnn_",
 )
 
 

@@ -728,4 +728,57 @@ class AntiBMPNNParseResultKnobs:
   antibmpnn_parse__dir: str | None = None  # type=str; --dir directory of .fa files; parsing_design_result.py:89
   antibmpnn_parse__start: int | None = None  # type=int; --start first residue, 1-based (seq[start-1:end], :24-26); parsing_design_result.py:90
   antibmpnn_parse__end: int | None = None  # type=int; --end last residue, inclusive; parsing_design_result.py:91
+
+
+FAMPNN_COMMIT = "aaf788b1502ad95d5c5a84455cfc53f2544f3b45"
+
+
+@dataclass(frozen=True)
+class FampnnKnobs:
+  """Upstream FAMPNN run knobs: the union of ``configs/{seq_design,pack,score}.yaml`` plus the one in-code argument.
+
+  Derived by reading ``~/repos/fampnn`` at ``FAMPNN_COMMIT`` (261104, replaces an earlier set that named
+  ``num_scn_steps``, ``num_seq_steps``, ``sigma_min``, ``sigma_max``, ``rho`` and ``pack_each_step``; none is a
+  config key, and the sigma range and rho are checkpoint ``model_cfg`` values, not run knobs). A key shared by
+  several configs is one field; its comment lists every config line. Lines are ``seq_design.yaml`` unless
+  prefixed. Defaults are the ``seq_design.yaml`` value; ``checkpoint_path`` differs per config
+  (pack.yaml:6 ``fampnn_0_0.pt``, score.yaml:6 ``fampnn_0_3_cath.pt``). Read by code (verified with ``rg 'cfg\\.'``
+  over ``fampnn/inference/``): every key below by at least one of seq_design.py, pack.py, score_multi.py and
+  score_all_muts.py; ``fixed_pos_verbose`` only as the ``verbose=`` print flag of ``get_override_masks``
+  (pack.py:109); ``scn_diffusion.timestep_schedule.num_steps`` and ``churn_cfg.num_steps`` are YAML
+  interpolations of ``scn_diffusion.num_steps`` and are not separate knobs here.
+  """
+
+  fampnn__seed: int = 0  # type=int; seq_design.yaml:2, pack.yaml:2, score.yaml:2; seed_everything sampling_utils.py:13-16
+  fampnn__batch_size: int = 16  # type=int; :3, pack.yaml:3, score.yaml:3
+  fampnn__checkpoint_path: str = "weights/fampnn_0_3.pt"  # type=str; :6, pack.yaml:6, score.yaml:6
+  fampnn__out_dir: str = "outputs/seq_design"  # type=str; :7, pack.yaml:7, score.yaml:7
+  fampnn__pdb_dir: str | None = None  # type=str; :10, pack.yaml:10
+  fampnn__pdb_key_list: object | None = None  # type=path; :11, pack.yaml:11
+  fampnn__pdb_path: str | None = None  # type=str; score.yaml:9
+  fampnn__mutations_path: str | None = None  # type=str; score.yaml:10 (read by score_multi.py -> scoring_utils.score_seq)
+  fampnn__num_seqs_per_pdb: int = 1  # type=int; :9
+  fampnn__num_samples_per_pdb: int = 1  # type=int; pack.yaml:9
+  fampnn__presort_by_length: bool = False  # type=bool; :12 (seq_design.py:79, ordering only)
+  fampnn__fixed_pos_csv: str | None = None  # type=path; :15, pack.yaml:12 (columns fixed_pos_seq, fixed_pos_scn; sampling_utils.py:92-190)
+  fampnn__fixed_pos_verbose: bool = True  # type=bool; :16, pack.yaml:13
+  fampnn__seq_only: bool = False  # type=bool; :19 (sd_model.py:247 scn_mlm_mask)
+  fampnn__temperature: float = 0.1  # type=float; :20 (fampnn_denoiser.py:112-129; 0 = argmax)
+  fampnn__repack_last: bool = True  # type=bool; :21 (sd_model.py:273)
+  fampnn__psce_threshold: float | None = 0.3  # type=float|null; :22 (sd_model.py:255)
+  fampnn__timestep_schedule__num_steps: int = 100  # type=int; :25
+  fampnn__timestep_schedule__mode: str = "linear"  # type=str; :26 (sampling_utils.py:75-100)
+  fampnn__timestep_schedule__t_start: float = 0.0  # type=float; :27
+  fampnn__timestep_schedule__t_end: float = 1.0  # type=float; :28
+  fampnn__scn_diffusion__num_steps: int = 50  # type=int; :32, pack.yaml:17, score.yaml:14
+  fampnn__scn_diffusion__timestep_schedule__mode: str = "linear"  # type=str; :35, pack.yaml:20, score.yaml:17
+  fampnn__scn_diffusion__timestep_schedule__t_start: float = 0.0  # type=float; :36, pack.yaml:21, score.yaml:18
+  fampnn__scn_diffusion__timestep_schedule__t_end: float = 1.0  # type=float; :37, pack.yaml:22, score.yaml:19
+  fampnn__scn_diffusion__step_scale: float = 1.5  # type=float; :38, pack.yaml:23, score.yaml:20 (edm_interpolant.py:179-180)
+  fampnn__scn_diffusion__churn_cfg__s_churn: float = 0.0  # type=float; :40, pack.yaml:25, score.yaml:22 (edm_interpolant.py:139-153)
+  fampnn__scn_diffusion__churn_cfg__s_noise: float = 1.0  # type=float; :41, pack.yaml:26, score.yaml:23
+  fampnn__scn_diffusion__churn_cfg__s_t_min: float = 0.01  # type=float; :42, pack.yaml:27, score.yaml:24
+  fampnn__scn_diffusion__churn_cfg__s_t_max: float = 50.0  # type=float; :43, pack.yaml:28, score.yaml:25
+  fampnn__restrict_pos_aatype: object | None = None  # in-code argument of SeqDenoiser.sample (sd_model.py:162); no config key
+
 # END MANUAL

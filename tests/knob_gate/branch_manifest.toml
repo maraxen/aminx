@@ -1554,3 +1554,97 @@ mutant = "parser_wrong_atom_order"
 [branch.vehicle]
 kind = "sidecar"
 slug = "antibmpnn_parity"
+
+# ==============================================================================
+# Phase 4: FAMPNN parity vehicle (redo 261104; sealed upstream oracle, real weights)
+# ==============================================================================
+
+[[branch]]
+family = "fampnn"
+id = "sigma_min_old_default"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "sigma_min_old_default"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "cosine_unmask_schedule"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "cosine_unmask_schedule"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "rank_decoding_order"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "rank_decoding_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "selfcond_off"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "selfcond_off"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "step_scale_one"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "step_scale_one"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "conf_bins_0_8"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "conf_bins_0_8"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "ghost_atoms_to_origin"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "ghost_atoms_to_origin"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "chain_embedding_off"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "chain_embedding_off"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"
+
+[[branch]]
+family = "fampnn"
+id = "categorical_reversed_cdf"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "categorical_reversed_cdf"
+[branch.vehicle]
+kind = "sidecar"
+slug = "fampnn_parity"

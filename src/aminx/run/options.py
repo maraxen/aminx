@@ -183,38 +183,65 @@ class CalibyOptions:
 class FAMPNNOptions:
   """Options for Full-Atom MPNN (FAMPNN) family execution.
 
+  Every field mirrors a key of the upstream run configs (``~/repos/fampnn/configs/seq_design.yaml``;
+  ``pack.yaml`` and ``score.yaml`` share the ``scn_diffusion`` block); the line cited is
+  ``seq_design.yaml``. ``temperature`` and the number of samples live on the sampling spec
+  (``SamplingSpecification.temperature``, ``num_samples``), not here.
+
   Attributes
   ----------
   checkpoint_id : str | None
       FAMPNN checkpoint identifier. ``None`` defers to ``RunSpecification.checkpoint_id``, then to
-      ``fampnn_0_3``; when both are set they must agree.
+      ``fampnn_0_3``; when both are set they must agree. aminx-only (upstream takes ``checkpoint_path``).
   num_seq_steps : int
-      Number of masked autoregressive (MAR) sequence refinement steps.
+      ``timestep_schedule.num_steps`` (:25): masked-autoregressive sequence steps.
+  seq_timestep_mode : str
+      ``timestep_schedule.mode`` (:26): ``linear`` | ``square`` | ``cubic`` | ``sqrt`` | ``cbrt`` | ``cosine``.
+  seq_t_start, seq_t_end : float
+      ``timestep_schedule.t_start`` / ``t_end`` (:27-28).
   num_scn_steps : int
-      Number of EDM sidechain coordinate diffusion steps per MAR step.
-  sigma_min : float
-      Minimum noise level for Karras EDM schedule.
-  sigma_max : float
-      Maximum noise level for Karras EDM schedule.
-  rho : float
-      Schedule curvature exponent for Karras EDM schedule.
-  s_churn : float
-      Stochastic churn parameter for Karras EDM schedule.
+      ``scn_diffusion.num_steps`` (:32): EDM sidechain steps per denoiser call.
+  scn_timestep_mode : str
+      ``scn_diffusion.timestep_schedule.mode`` (:35).
+  scn_t_start, scn_t_end : float
+      ``scn_diffusion.timestep_schedule.t_start`` / ``t_end`` (:36-37).
   step_scale : float
-      Velocity step scaling factor during EDM sampling.
-  pack_each_step : bool
-      Whether to diffuse sidechain coordinates at every MAR sequence step.
+      ``scn_diffusion.step_scale`` (:38): multiplies the Euler drift.
+  s_churn, s_noise, s_t_min, s_t_max : float
+      ``scn_diffusion.churn_cfg`` (:40-43): Karras stochastic churn. ``s_t_min`` / ``s_t_max`` are in
+      units of the checkpoint's ``sigma_data``; churn is off when ``s_churn == 0``.
+  seq_only : bool
+      ``seq_only`` (:19): reveal the sequence but not sidechains during design.
+  repack_last : bool
+      ``repack_last`` (:21): one final sidechain pack for the finished sequence.
+  psce_threshold : float | None
+      ``psce_threshold`` (:22): re-mask sidechains whose mean predicted sidechain error is above this;
+      ``None`` keeps all.
+  fixed_pos_seq, fixed_pos_scn : str
+      The two columns of upstream's ``fixed_pos_csv`` (:14-15) in its ``"A1-100,B5"`` syntax: positions
+      whose sequence (resp. sidechains) are held fixed to the input structure. aminx takes them as strings
+      applying to every input; upstream picks a row per PDB name.
   """
 
   checkpoint_id: str | None = None
-  num_seq_steps: int = 8
-  num_scn_steps: int = 18
-  sigma_min: float = 0.002
-  sigma_max: float = 80.0
-  rho: float = 7.0
-  s_churn: float = 0.0
+  num_seq_steps: int = 100
+  seq_timestep_mode: str = "linear"
+  seq_t_start: float = 0.0
+  seq_t_end: float = 1.0
+  num_scn_steps: int = 50
+  scn_timestep_mode: str = "linear"
+  scn_t_start: float = 0.0
+  scn_t_end: float = 1.0
   step_scale: float = 1.5
-  pack_each_step: bool = True
+  s_churn: float = 0.0
+  s_noise: float = 1.0
+  s_t_min: float = 0.01
+  s_t_max: float = 50.0
+  seq_only: bool = False
+  repack_last: bool = True
+  psce_threshold: float | None = 0.3
+  fixed_pos_seq: str = ""
+  fixed_pos_scn: str = ""
 
 
 _FLOAT16_REFUSAL: str = (

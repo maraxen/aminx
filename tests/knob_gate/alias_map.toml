@@ -4221,3 +4221,232 @@ targets = ["descriptor_end"]
 equivalence = "identical"
 parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_descriptor_segment"]
 note = "helper_scripts/parsing_design_result.py:91, slice at :26. Inclusive end."
+
+# --- FAMPNN (261104 redo): rows re-derived from ~/repos/fampnn configs/{seq_design,pack,score}.yaml ---
+
+[[row]]
+ref = "fampnn__seed"
+targets = ["random_seed"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_seed"]
+note = "Upstream seeds python, numpy and torch (sampling_utils.py:13-16). aminx random_seed seeds a JAX key stream that is split per sample; the same seed gives the same result inside aminx but not the same numbers as torch (the vehicle injects the noise instead)."
+
+[[row]]
+ref = "fampnn__batch_size"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = "Upstream batch_size only chunks PDBs per forward (seq_design.py:107); aminx tiles structures through the xtrax axis (driver.axes) and its own RunSpecification.batch_size is a separate host knob. Output does not depend on it except through RNG stream order."
+
+[[row]]
+ref = "fampnn__checkpoint_path"
+targets = ["checkpoint_id"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_checkpoint_id"]
+note = "Upstream takes a .pt path (seq_design.yaml:6; defaults differ per config: pack fampnn_0_0, score fampnn_0_3_cath). aminx selects by id (fampnn_0_0, fampnn_0_3, fampnn_0_3_cath) resolved through the checkpoint table, or model_local_path for a .pt; spec.checkpoint_id and FAMPNNOptions.checkpoint_id must agree."
+
+[[row]]
+ref = "fampnn__out_dir"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream output directory (seq_design.yaml:7); aminx writes through its sinks."
+
+[[row]]
+ref = "fampnn__pdb_dir"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream input directory (seq_design.yaml:10, glob *.pdb at seq_design.py:74); aminx takes inputs through the spec."
+
+[[row]]
+ref = "fampnn__pdb_key_list"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream list of file names to use from pdb_dir (seq_design.yaml:11, seq_design.py:67-70); aminx takes inputs through the spec."
+
+[[row]]
+ref = "fampnn__pdb_path"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream single input PDB for scoring (score.yaml:9, score_multi.py:44); aminx takes inputs through the spec."
+
+[[row]]
+ref = "fampnn__mutations_path"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-FAMPNN-2"
+parity_test_ids = []
+note = "NOT IMPLEMENTED. Upstream score_multi.py / score_all_muts.py score a CSV of mutations with scoring_utils.score_seq (masks only the mutated positions, keeps neighbours and their sidechains; sampling-free). aminx score:nll and score:logits score the wild type with the whole sequence and all sidechains masked, which is upstream SeqDenoiser.score on a fully masked input, not the mutation protocol."
+
+[[row]]
+ref = "fampnn__num_seqs_per_pdb"
+targets = ["num_samples"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_num_samples"]
+note = "Upstream repeats each PDB num_seqs_per_pdb times and designs one sequence per repeat (seq_design.yaml:9, seq_design.py:104). aminx num_samples draws that many independent designs per input from split keys."
+
+[[row]]
+ref = "fampnn__num_samples_per_pdb"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-FAMPNN-1"
+parity_test_ids = []
+note = "NOT IMPLEMENTED. pack.yaml:9 belongs to the packing entry point (inference/pack.py -> SeqDenoiser.sidechain_pack), which aminx does not expose as a purpose; the driver handles sample, score:nll and score:logits only. The sampler's repack_last path is the same denoiser call."
+
+[[row]]
+ref = "fampnn__presort_by_length"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = "Upstream orders PDBs longest first for efficiency (seq_design.yaml:12, seq_design.py:79); aminx buckets by length itself (bucket_ladder)."
+
+[[row]]
+ref = "fampnn__fixed_pos_csv"
+targets = ["fixed_pos_seq", "fixed_pos_scn"]
+equivalence = "divergence"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_fixed_pos_seq", "tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_fixed_pos_scn"]
+note = "Upstream reads a CSV, one row per PDB name, with columns fixed_pos_seq and fixed_pos_scn in the syntax A1-100,B5 (seq_design.yaml:14-15, sampling_utils.py:92-190; a PDB not in the CSV has no fixed positions). aminx takes the two strings directly on FAMPNNOptions and applies them to every input (no per-name rows) and parses them with the same grammar; fixing a sidechain where the sequence is not fixed raises, as upstream (sd_model.py ValueError)."
+
+[[row]]
+ref = "fampnn__fixed_pos_verbose"
+targets = []
+equivalence = "exclusion"
+reason = "visualization"
+parity_test_ids = []
+note = "Print flag passed as verbose= to get_override_masks (seq_design.yaml:16, pack.py:109); no effect on results."
+
+[[row]]
+ref = "fampnn__seq_only"
+targets = ["seq_only"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_seq_only"]
+note = "seq_design.yaml:19. Sidechains are not packed during design (scn_mlm_mask stays at the provided sidechains), sd_model.py:247."
+
+[[row]]
+ref = "fampnn__temperature"
+targets = ["temperature"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_temperature"]
+note = "seq_design.yaml:20. SamplingSpecification.temperature (aminx default unset -> 0.1 as upstream). 0 is argmax and draws nothing; > 0 samples softmax(logits / T) with X masked to -1e9 first (fampnn_denoiser.py:112-129)."
+
+[[row]]
+ref = "fampnn__repack_last"
+targets = ["repack_last"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_repack_last"]
+note = "seq_design.yaml:21. One extra sidechain_pack on the finished sequence, keeping provided sidechains (sd_model.py:273)."
+
+[[row]]
+ref = "fampnn__psce_threshold"
+targets = ["psce_threshold"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_psce_threshold"]
+note = "seq_design.yaml:22. After every step but the last, sidechains whose mean psce over present atoms exceeds the threshold are re-masked (sd_model.py:255); null keeps all."
+
+[[row]]
+ref = "fampnn__timestep_schedule__num_steps"
+targets = ["num_seq_steps"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_num_seq_steps"]
+note = "seq_design.yaml:25. Number of masked-autoregressive steps; the cumulative reveal count is ceil(t_i * (L - n_fixed)) + n_fixed (sd_model.py:233-234). The earlier aminx default of 8 was invented."
+
+[[row]]
+ref = "fampnn__timestep_schedule__mode"
+targets = ["seq_timestep_mode"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_seq_timestep_mode"]
+note = "seq_design.yaml:26. linear | square | cubic | sqrt | cbrt | cosine (sampling_utils.py:75-100). The earlier aminx hard-wired a cosine unmask schedule, which upstream does not use by default."
+
+[[row]]
+ref = "fampnn__timestep_schedule__t_start"
+targets = ["seq_t_start"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_seq_t_start"]
+note = "seq_design.yaml:27."
+
+[[row]]
+ref = "fampnn__timestep_schedule__t_end"
+targets = ["seq_t_end"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_seq_t_end"]
+note = "seq_design.yaml:28."
+
+[[row]]
+ref = "fampnn__scn_diffusion__num_steps"
+targets = ["num_scn_steps"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_num_scn_steps"]
+note = "seq_design.yaml:32 (pack.yaml:17, score.yaml:14). Euler steps per denoiser call; scn_diffusion.timestep_schedule.num_steps and churn_cfg.num_steps are YAML interpolations of this key. The earlier aminx default of 18 was invented."
+
+[[row]]
+ref = "fampnn__scn_diffusion__timestep_schedule__mode"
+targets = ["scn_timestep_mode"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_scn_timestep_mode"]
+note = "seq_design.yaml:35."
+
+[[row]]
+ref = "fampnn__scn_diffusion__timestep_schedule__t_start"
+targets = ["scn_t_start"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_scn_t_start"]
+note = "seq_design.yaml:36. The prior is still drawn at sigma(t=0) (edm_interpolant.py:121)."
+
+[[row]]
+ref = "fampnn__scn_diffusion__timestep_schedule__t_end"
+targets = ["scn_t_end"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_scn_t_end"]
+note = "seq_design.yaml:37."
+
+[[row]]
+ref = "fampnn__scn_diffusion__step_scale"
+targets = ["step_scale"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_step_scale"]
+note = "seq_design.yaml:38. Multiplies the Euler score term (edm_interpolant.py:179-180)."
+
+[[row]]
+ref = "fampnn__scn_diffusion__churn_cfg__s_churn"
+targets = ["s_churn"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_s_churn"]
+note = "seq_design.yaml:40. 0 disables churn entirely (edm_interpolant.py:139); gamma = s_churn / num_steps inside the sigma window, no sqrt(2)-1 cap (the earlier aminx capped it)."
+
+[[row]]
+ref = "fampnn__scn_diffusion__churn_cfg__s_noise"
+targets = ["s_noise"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_s_noise"]
+note = "seq_design.yaml:41. Scales the churn noise (edm_interpolant.py:149)."
+
+[[row]]
+ref = "fampnn__scn_diffusion__churn_cfg__s_t_min"
+targets = ["s_t_min"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_s_t_min"]
+note = "seq_design.yaml:42. In units of sigma_data (edm_interpolant.py:142-143)."
+
+[[row]]
+ref = "fampnn__scn_diffusion__churn_cfg__s_t_max"
+targets = ["s_t_max"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_fampnn_knobs.py::test_knob_semantics_s_t_max"]
+note = "seq_design.yaml:43. In units of sigma_data (edm_interpolant.py:142-143)."
+
+[[row]]
+ref = "fampnn__restrict_pos_aatype"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:TBD-FAMPNN-3"
+parity_test_ids = []
+note = "NOT IMPLEMENTED. In-code argument of SeqDenoiser.sample (sd_model.py:162, applied at fampnn_denoiser.py:113-119): per-position allowed amino acids, disallowed logits set to -1e9 before sampling. Not a config key. aminx driver.load refuses omit_aa / omit_aa_per_position / bias for fampnn rather than ignore them."

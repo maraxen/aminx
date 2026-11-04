@@ -103,14 +103,16 @@ path = "src/aminx/families/protonpotts_mpnn/ph_methods.py"
 qualname = "_gibbs_sweep"
 reason = "sequential_dependency"
 
+# FAMPNN: each EDM step's input is the state the previous step returned, and each masked-autoregressive
+# step reveals residues the next step conditions on (both are jax.lax.scan carries).
 [[entries]]
-path = "src/aminx/families/fampnn/sidechain_diffusion.py"
-qualname = "edm_sample"
+path = "src/aminx/families/fampnn/sampler.py"
+qualname = "scn_edm_loop"
 reason = "sequential_dependency"
 
 [[entries]]
-path = "src/aminx/families/fampnn/driver.py"
-qualname = "mar_sample"
+path = "src/aminx/families/fampnn/sampler.py"
+qualname = "mar_sample_upstream"
 reason = "sequential_dependency"
 
 # Caliby EDM sidechain sampler: each Karras step's denoiser input is the x_cur and x_cond the

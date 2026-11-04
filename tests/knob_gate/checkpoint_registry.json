@@ -195,6 +195,24 @@
       "sha256": "d43ebf95f0229b8bca74ef320fbe14f3d2a7158710a22370211680c3dca189c9",
       "family": "antibmpnn",
       "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "fampnn/weights/fampnn_0_0.pt",
+      "sha256": "afbdfda29e6f2a1bd340971bb226638afb1bf460cfbc29f115d3b5964622c006",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "fampnn/weights/fampnn_0_3.pt",
+      "sha256": "8969b3f1f3c941178076c7800952595a18b56fd3828d15bb993d3ef537938a05",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "fampnn/weights/fampnn_0_3_cath.pt",
+      "sha256": "81112a9b8d436d9baf5233a3603bac911c75b9782ced59dae5a2726316802218",
+      "family": "fampnn",
+      "upstream": "fampnn"
     }
   ]
 }

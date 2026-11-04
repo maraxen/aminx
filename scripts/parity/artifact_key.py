@@ -39,6 +39,7 @@ _UPSTREAM_ROOTS: tuple[str, ...] = (
   "CyclicMPNN",
   "ProteinMPNN",
   "caliby_weights",
+  "fampnn",
 )
 
 

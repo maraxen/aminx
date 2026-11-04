@@ -21,6 +21,7 @@ from knob_gate._outcomes import passed_nodeids
 from aminx.run.options import (
   AntiBMPNNOptions,
   CalibyOptions,
+  FAMPNNOptions,
   LaserOptions,
   PottsMPNNOptions,
   ProtonPottsOptions,
@@ -90,6 +91,7 @@ TGT = (
   ThermoMPNNOptions,
   CalibyOptions,
   AntiBMPNNOptions,
+  FAMPNNOptions,
 )
 TGT_F = {field.name for cls in TGT for field in fields(cls)}
 LIVE = [row for row in ROWS if row["equivalence"] != "exclusion"]
@@ -105,6 +107,7 @@ NEW_FIELDS = (
   | {field.name for field in fields(ThermoMPNNOptions)}
   | {field.name for field in fields(CalibyOptions)}
   | {field.name for field in fields(AntiBMPNNOptions)}
+  | {field.name for field in fields(FAMPNNOptions)}
   | {"omit_aa", "omit_aa_per_position", "output_kind"}
 )
 
