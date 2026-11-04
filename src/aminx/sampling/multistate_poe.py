@@ -728,6 +728,16 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     # `schema_version` it can be added without moving any manifest row hash or output path.
     "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
+    # Hash-free. How fixed positions are conditioned on each other ("random_order" is the
+    # reference ProteinMPNN/LigandMPNN behaviour; see with_decoding_order). Always recorded so a
+    # non-default mode can never be mistaken for the default in a stored row.
+    "fixed_position_context": spec.run_spec.sampling.fixed_position_context,
+    # Hash-free; present only when a shared order seed was set (absence = per-sample random order).
+    **(
+      {"decoding_order_seed": int(spec.run_spec.sampling.decoding_order_seed)}
+      if spec.run_spec.sampling.decoding_order_seed is not None
+      else {}
+    ),
     "ligand_conditioning": int(bool(spec.ligand_conditioning)),
     "ligand_conditioning_mode": ligand_conditioning_mode(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),
