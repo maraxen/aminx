@@ -449,6 +449,7 @@ def main() -> None:
   parser.add_argument("--arms", type=str, default="", help="Comma list ckpt/dtype to restrict clean arms (dev only).")
   parser.add_argument("--out", type=Path, default=Path("outputs/parity/caliby_parity.json"))
   parser.add_argument("--controls-out", type=Path, default=None)
+  parser.add_argument("--work-dir", type=Path, default=None, help="Accepted for launch_wave compatibility; unused.")
   args = parser.parse_args()
   logging.basicConfig(level=logging.INFO, format="%(message)s")
 
