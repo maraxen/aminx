@@ -2232,11 +2232,12 @@ note = "mutation_search.* deferred (aminx tech debt 2070)"
 
 [[row]]
 ref = "potts_parse_multiple_chains__ca_only"
-targets = []
-equivalence = "exclusion"
-reason = "deferred:2068"
-parity_test_ids = []
-note = "CA-only deferred (aminx tech debt 2068)"
+targets = ["model_weights"]
+equivalence = "semantic"
+parity_test_ids = [
+  "tests/knob_semantics/test_tier1_tier2_knobs.py::test_knob_semantics_ca_only",
+]
+note = "CA-only model weights routing and featurizer semantics."
 
 [[row]]
 ref = "potts_parse_multiple_chains__input_path"
@@ -3592,6 +3593,38 @@ targets = ["variants_json"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_protonpotts_driver_knobs.py::test_knob_semantics_variants_json"]
 note = "aminx-only: the JSON file of variants for score:energy / score:ddg. Upstream scores through compute_g_bind on an atom array and has no variants-file knob."
+
+[[row]]
+ref = "__aminx_only__abmpnn"
+upstream = false
+targets = ["model_weights"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_tier1_tier2_knobs.py::test_knob_semantics_abmpnn"]
+note = "AbMPNN antibody model weights selection."
+
+[[row]]
+ref = "__aminx_only__hypermpnn"
+upstream = false
+targets = ["model_weights"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_tier1_tier2_knobs.py::test_knob_semantics_hypermpnn"]
+note = "HyperMPNN hypervariable noise tier model weights selection."
+
+[[row]]
+ref = "__aminx_only__cyclicmpnn"
+upstream = false
+targets = ["model_weights"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_tier1_tier2_knobs.py::test_knob_semantics_cyclicmpnn"]
+note = "CyclicMPNN cyclic peptide model weights selection."
+
+[[row]]
+ref = "__aminx_only__cyclic_offsets"
+upstream = false
+targets = ["topology"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_tier1_tier2_knobs.py::test_knob_semantics_cyclic_offsets"]
+note = "Cyclic peptide sequence offset modular wrapping semantics."
 
 [[row]]
 ref = "thermo_model__mode"

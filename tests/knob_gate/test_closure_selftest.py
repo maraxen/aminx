@@ -42,7 +42,11 @@ POTTS_SLUGS = (
   "potts_ddg_megascale",
 )
 PROTON_SLUGS = ("protonpotts_parity",)
-ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS)
+TIER1_TIER2_SLUGS = (
+  "tier1_variants_parity",
+  "ca_only_parity",
+)
+ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS)
 
 
 def _make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
@@ -250,6 +254,13 @@ def test_potts_rows_do_not_depend_on_laser_code(slug: str) -> None:
   closure = _real(slug)
   assert not [f for f in closure.files if "/laser" in f], "a Potts row reaches LASEr code"
   assert any("/potts_mpnn/" in f for f in closure.files)
+
+
+@pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
+def test_tier1_tier2_rows_do_not_depend_on_potts_code(slug: str) -> None:
+  closure = _real(slug)
+  assert not [f for f in closure.files if "/potts" in f], f"a Tier 1/2 row ({slug}) reaches Potts code"
+  assert not [f for f in closure.files if "/laser" in f], f"a Tier 1/2 row ({slug}) reaches LASEr code"
 
 
 def test_family_change_invalidates_only_its_own_rows() -> None:
@@ -467,7 +478,7 @@ def test_protonpotts_row_reaches_its_family_and_not_laser(slug: str) -> None:
     assert needed in closure.files, needed
 
 
-@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS])
+@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *TIER1_TIER2_SLUGS])
 def test_other_families_do_not_depend_on_protonpotts_code(slug: str) -> None:
   closure = _real(slug)
   assert not [f for f in closure.files if "protonpotts" in f], "a Potts/LASEr row reaches ProtonPotts code"
@@ -544,3 +555,43 @@ def test_hook_is_silent_for_a_process_that_is_not_the_vehicle(tmp_path: Path) ->
   """An oracle interpreter spawned by a vehicle inherits the env and must not write."""
   out = _run_hooked(tmp_path, "child.py", "veh.py")
   assert not out.exists()
+
+
+@pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
+def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> None:
+  """Regression test: runtime execution must not load uncovered files or sibling families."""
+  out_loaded = tmp_path / f"loaded_{slug}.json"
+  python_bin = sys.executable
+  for candidate in (
+    repo_root().parent.parent / ".venv" / "bin" / "python",
+    repo_root() / ".venv" / "bin" / "python",
+  ):
+    if candidate.is_file() and os.access(candidate, os.X_OK):
+      python_bin = str(candidate)
+      break
+  cur_pythonpath = os.environ.get("PYTHONPATH", "")
+  env = {
+    **os.environ,
+    "AMINX_CLOSURE_OUT": str(out_loaded),
+    "AMINX_CLOSURE_SCRIPT": f"{slug}.py",
+    "AMINX_CLOSURE_REPO": str(repo_root()),
+    "PYTHONPATH": f"{HOOK_DIR}:{cur_pythonpath}" if cur_pythonpath else str(HOOK_DIR),
+    "OMP_NUM_THREADS": "4",
+  }
+  cmd = [
+    python_bin,
+    str(repo_root() / "scripts" / "parity" / f"{slug}.py"),
+    "--synthetic",
+    "--out",
+    str(tmp_path / f"{slug}_out.json"),
+  ]
+  done = subprocess.run(cmd, env=env, check=False, capture_output=True, text=True)
+  assert done.returncode == 0, f"Vehicle {slug} failed:\nSTDOUT:\n{done.stdout}\nSTDERR:\n{done.stderr}"
+  assert out_loaded.exists(), f"Closure hook did not record loaded files for {slug}"
+  data = json.loads(out_loaded.read_text(encoding="utf-8"))
+  loaded = data.get("loaded", [])
+  assert not [f for f in loaded if "/potts" in f], f"Vehicle {slug} dynamically loaded potts code"
+  assert not [f for f in loaded if "/laser" in f], f"Vehicle {slug} dynamically loaded laser code"
+  closure = _real(slug)
+  uncovered = loaded_outside_closure(loaded, closure)
+  assert uncovered == [], f"Vehicle {slug} loaded files outside declared closure: {uncovered}"

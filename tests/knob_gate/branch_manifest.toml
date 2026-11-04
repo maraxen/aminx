@@ -1243,6 +1243,100 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 # ==============================================================================
+# Phase 3: Tier 1 & Tier 2 MPNN Variant Vehicles
+# ==============================================================================
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_reversed_hidden"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_reversed_hidden"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_zero_edge_features"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_zero_edge_features"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_permuted_output_weights"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_permuted_output_weights"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_shifted_decoding_order"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_shifted_decoding_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "cyclic_mpnn"
+id = "tier1_linear_offsets_on_cyclic"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_linear_offsets_on_cyclic"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_quaternion_sign_flip"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_quaternion_sign_flip"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_rbf_block_swap"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_rbf_block_swap"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_zero_edge_features"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_zero_edge_features"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_permuted_output_weights"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_permuted_output_weights"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+# ==============================================================================
 # Phase 2: ThermoMPNN / ThermoMPNN-D Parity Vehicle
 # ==============================================================================
 
@@ -1285,4 +1379,3 @@ mutant = "permuted_output_weights"
 [branch.vehicle]
 kind = "sidecar"
 slug = "thermo_mpnn_parity"
-
