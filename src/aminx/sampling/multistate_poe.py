@@ -205,6 +205,12 @@ def sample_states_fused(
       (n_samples, L, 21) float32.
 
   """
+  if not randomize_decoding_order and (fixed_position_context != "random_order" or decoding_order_seed is not None):
+    msg = (
+      "fixed_position_context / decoding_order_seed have no effect with randomize_decoding_order=False "
+      "(the bundle's own schedule is used); unset them or randomize the order."
+    )
+    raise ValueError(msg)
   sample_keys = jax.random.split(prng_key, n_samples)
   num_states = bundle.geometry.coords.shape[0]
 

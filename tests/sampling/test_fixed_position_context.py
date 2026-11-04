@@ -162,6 +162,28 @@ def test_other_modes_remove_the_residual_without_any_seed(mode):
   assert _residual(mode) < 1e-4
 
 
+def test_spec_refuses_a_non_default_mode_on_paths_that_cannot_honour_it():
+  """A mode that would be recorded in the store but ignored by the sampler is refused at the spec."""
+  from aminx.run.specs import SamplingSpecification
+
+  base = {"inputs": ["/tmp/x.pdb"], "checkpoint_id": "ckpt_001"}
+  for bypass in ({"decoding_order_fn": random_decoding_order}, {"wave": object()}, {"sampling_strategy": "straight_through"}):
+    with pytest.raises(ValueError, match="no effect"):
+      SamplingSpecification(**base, fixed_position_context="canonical_order", **bypass)
+  # control: the default mode is accepted alongside the same bypasses, and the mode alone is accepted
+  SamplingSpecification(**base, decoding_order_fn=random_decoding_order)
+  SamplingSpecification(**base, fixed_position_context="mutual_context")
+
+
+def test_fused_sampler_refuses_modes_when_the_order_is_not_randomized():
+  """``randomize_decoding_order=False`` skips with_decoding_order, so a mode or seed would be silently dropped."""
+  bundle, config = _bundle(1)
+  stage_set = make_stage_set(strategy="product", state_weights=jnp.ones(1))
+  for kwargs in ({"fixed_position_context": "canonical_order"}, {"decoding_order_seed": 3}):
+    with pytest.raises(ValueError, match="randomize_decoding_order"):
+      sample_states_fused(_model(), bundle, config, stage_set, jax.random.PRNGKey(0), 1, randomize_decoding_order=False, **kwargs)
+
+
 def test_mutual_context_and_canonical_order_give_distinct_probe_logits():
   """The two non-default modes are different conditionings, not aliases of each other."""
   canonical = _probe_logits(1, jax.random.PRNGKey(0), "canonical_order")

@@ -392,6 +392,20 @@ class RunSpecification:
       )
       raise ValueError(msg)
 
+    # A non-default mode on a path that cannot honour it would be recorded in the store while
+    # having no effect: refuse instead of silently ignoring it.
+    if self.fixed_position_context != "random_order":
+      bypass = []
+      if self.decoding_order_fn is not None:
+        bypass.append("decoding_order_fn")
+      if getattr(self, "wave", None) is not None:
+        bypass.append("a supplied wave")
+      if getattr(self, "sampling_strategy", "temperature") == "straight_through":
+        bypass.append("sampling_strategy='straight_through'")
+      if bypass:
+        msg = f"fixed_position_context={self.fixed_position_context!r} has no effect together with {', '.join(bypass)}."
+        raise ValueError(msg)
+
     # Handle backward compatibility: convert old-style noise params to noise list
     bundles = list(self.noise)  # Start with provided bundles
 
