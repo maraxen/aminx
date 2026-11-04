@@ -69,8 +69,14 @@ def test_seed_makes_key_independent_of_sample_key():
 def test_different_seeds_give_different_keys_and_zero_is_a_real_seed():
     keys = {s: np.asarray(decoding_order_key(jax.random.PRNGKey(0), s)).tobytes() for s in (0, 1, 2, 3)}
     assert len(set(keys.values())) == 4
-    # An unrelated sample key: PRNGKey(0) is, by construction, the key seed 0 derives from.
-    assert keys[0] != np.asarray(decoding_order_key(jax.random.PRNGKey(99), None)).tobytes()
+    # Seed 0 must not be treated as "unset": with the sample key PRNGKey(5) the unseeded key is
+    # derived from PRNGKey(5), while seed 0 derives from PRNGKey(0). An `if not order_seed`
+    # regression would make these equal.
+    sample_key = jax.random.PRNGKey(5)
+    assert (
+      np.asarray(decoding_order_key(sample_key, 0)).tobytes()
+      != np.asarray(decoding_order_key(sample_key, None)).tobytes()
+    )
 
 
 def test_seed_pins_the_realised_order_and_mask_across_sample_keys():

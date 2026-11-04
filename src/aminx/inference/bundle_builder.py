@@ -395,6 +395,10 @@ def decoding_order_key(sample_key: jax.Array, order_seed: int | None = None) -> 
   the pairing control for comparing arms (single vs fused, or fused at different ``k``): run
   the arms at the same ``order_seed``, and K different seeds give K matched replicates.
 
+  Cost: with a seed all samples of a row share ONE order, so draws are conditional on that
+  order instead of marginalised over orders. Use it for paired comparisons, not as a
+  production default.
+
   Args:
     sample_key: The per-sample decode key.
     order_seed: ``None`` (default) keeps the key derived from ``sample_key``. An int draws the
