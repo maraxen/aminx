@@ -50,6 +50,13 @@ def design_descriptors(sequences: Sequence[str], options: AntiBMPNNOptions | Non
   out: list[DesignDescriptors] = []
   for sequence in sequences:
     segment = design_segment(sequence, options)
+    bad = next(((pos, ch) for pos, ch in enumerate(segment) if ch not in _ALPHABET), None)
+    if bad is not None:
+      msg = (
+        f"design sequence has invalid residue {bad[1]!r} at position {bad[0]} of the selected segment "
+        f"(allowed: {_ALPHABET}; no chain break '/', lowercase, B, Z or U)"
+      )
+      raise ValueError(msg)
     tokens = jnp.asarray([_ALPHABET.index(letter) for letter in segment], dtype=jnp.int32)
     got = cdr_bias.compute_cdr_physicochemical_descriptors(tokens, ph=DESCRIPTOR_PH)
     out.append(DesignDescriptors(segment, float(got.pd1_volume), float(got.pd2_hydro), float(got.pd3_charge)))

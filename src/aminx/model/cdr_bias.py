@@ -1,6 +1,6 @@
 """AntiBMPNN design descriptors (upstream-derived) and aminx-only CDR-bias utilities.
 
-UPSTREAM-DERIVED, graded against the real ``peptides`` call in scripts/parity/antibmpnn_parity_v2.py:
+UPSTREAM-DERIVED, graded against the real ``peptides`` call in scripts/parity/antibmpnn_parity_v3.py:
 ``compute_cdr_physicochemical_descriptors`` (PD1/PD2 means and Lehninger net charge, as in
 AntiBMPNN ``helper_scripts/parsing_design_result.py:49,53``: ``physical_descriptors()`` and ``charge(pH=7.4)``).
 
@@ -37,7 +37,7 @@ ALPHABET_21: str = "ACDEFGHIKLMNPQRSTVWYX"
 # (A..Y, X=0.0). These are the values of ``peptides.tables.PHYSICAL_DESCRIPTORS`` (peptides 0.5.0), the
 # table behind ``peptides.Peptide.physical_descriptors()`` that AntiBMPNN's
 # ``helper_scripts/parsing_design_result.py:49`` calls. An earlier hand-typed table here did not match
-# it (max |delta| 1.5 on GSGSGS); scripts/parity/antibmpnn_parity_v2.py grades this against the real call.
+# it (max |delta| 1.5 on GSGSGS); scripts/parity/antibmpnn_parity_v3.py grades this against the real call.
 BARLEY_PD1_VOLUME: tuple[float, ...] = (
   -2.9,  # A (0)
   -1.89,  # C (1)

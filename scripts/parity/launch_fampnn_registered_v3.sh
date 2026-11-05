@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # FAMPNN parity v3 on titanix (CPU JAX), either a plain development run or the bth-recorded graded run.
-#   usage: launch_fampnn_registered_v3.sh <dev|bth> [git ref, default wt/261104-p4fix2-fampnn]
+#   usage: launch_fampnn_registered_v3.sh <dev|bth> <git ref>   (the ref is required; there is no default)
 # Needs: the sealed oracle dumps ($ORACLE_DIR/{f32,f64}) and the float64-table diagnostic oracle ($F64TAB_DIR/f64).
 # The checkout lives under $P4FIX_ROOT/repo and is reset to the ref, so a bth run records git_dirty=false.
 set -euo pipefail
 export PATH="$HOME/.local/bin:$PATH"
 MODE="${1:?dev|bth}"
-REF="${2:-wt/261104-p4fix2-fampnn}"
+REF="${2:?git ref required: pass the branch or sha to grade as the second argument}"
 P4FIX_ROOT="${P4FIX_ROOT:-/home/solab/scratch/p4fix2-fampnn}"
 VENV_PY="${VENV_PY:-/home/solab/projects/aminx-verify-261102-256/.venv/bin/python}"
 REPO="$P4FIX_ROOT/repo"

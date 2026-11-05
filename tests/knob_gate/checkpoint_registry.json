@@ -213,6 +213,34 @@
       "sha256": "81112a9b8d436d9baf5233a3603bac911c75b9782ced59dae5a2726316802218",
       "family": "fampnn",
       "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "daef630d7ef35e862450cdc81ccdcd7ab94ecc99b36c006fe336dcd5483b2bae",
+      "sha256": "daef630d7ef35e862450cdc81ccdcd7ab94ecc99b36c006fe336dcd5483b2bae",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_000.eqx.zst (HF snapshot). Key is the HF blob name (== sha256): artifact_key.py has no marker for the snapshot, so antibmpnn_parity_v3.py records it bare."
+    },
+    {
+      "artifact_path": "d9c4f2343b18e854f2a4565ab7250fc9e2538b981e5538d55af1c4bc63c16414",
+      "sha256": "d9c4f2343b18e854f2a4565ab7250fc9e2538b981e5538d55af1c4bc63c16414",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_010.eqx.zst (HF snapshot). Key is the HF blob name (== sha256)."
+    },
+    {
+      "artifact_path": "90b2554dc20e550acca8f4e6d864264638c2fad3798e2b55d8a489a144fa0e58",
+      "sha256": "90b2554dc20e550acca8f4e6d864264638c2fad3798e2b55d8a489a144fa0e58",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_020.eqx.zst (HF snapshot). Key is the HF blob name (== sha256)."
+    },
+    {
+      "artifact_path": "5c155208f707cee0d6b7733f897c503cb379c6b8a31a4bc9ccf3e7f01aa04abf",
+      "sha256": "5c155208f707cee0d6b7733f897c503cb379c6b8a31a4bc9ccf3e7f01aa04abf",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_030.eqx.zst (HF snapshot). Key is the HF blob name (== sha256)."
     }
   ]
 }

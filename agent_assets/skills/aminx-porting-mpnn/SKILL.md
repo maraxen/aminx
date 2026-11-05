@@ -29,7 +29,7 @@ Read first: `.praxia/docs/plans/261030_family-parity-goal-prompt.md` and `.praxi
 - If a stage cannot be compared bitwise (no injection hook), say why in the sidecar and file a debt. Do not paper over it.
 
 ## 4. Mutants (negative controls)
-- Aminx-side monkeypatches that must trip the diff. A mutant trips only on a FINITE over-band diff. NaN, inf, shape mismatch and exceptions are recorded separately and the crash count must be 0 (a crashed mutant had been counted as a trip). The reference implementation is `scripts/parity/caliby_parity_v2.py` (`n_crashed`, `nonfinite`); the AntiBMPNN and FAMPNN v2 vehicles predate the rule and are being brought up to it.
+- Aminx-side monkeypatches that must trip the diff. A mutant trips only on a FINITE over-band diff. NaN, inf, shape mismatch and exceptions are recorded separately and the crash count must be 0 (a crashed mutant had been counted as a trip). The reference implementation is `scripts/parity/caliby_parity_v2.py` (`n_crashed`, `nonfinite`); the AntiBMPNN and FAMPNN v3 sidecars implement it (`antibmpnn_parity_v3`, `fampnn_parity_v3`); the v2 vehicles are superseded.
 - Include a mutant that reintroduces each aminx fix you make to shared model code, and check it has power: a scale mutant is invisible when the scale is near 1, and a neighbour-count mutant only works if the fixture has enough residues.
 - Give every arm its own mutants (a packer or secondary arm with none has no power evidence).
 - Label weight-level controls (edit loaded parameters) apart from code-level mutants.
