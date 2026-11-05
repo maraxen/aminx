@@ -177,7 +177,7 @@ def main() -> int:
   args = ap.parse_args()
   logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)
   sealed, tabdir = Path(args.sealed_dir), Path(args.f64tab_dir)
-  tabs = _load_npz(tabdir / "diag_tables.npz")
+  tabs = _load_npz(tabdir / "f64" / "diag_tables.npz")
   res: dict[str, Any] = {"variant": args.variant}
 
   if args.variant == "none":
