@@ -1,0 +1,72 @@
+[experiment]
+title = "Fused-vs-single probe-logit residual, aminx-only repro v2: fused path in every arm, in-radius padding with a detecting control, checked instrument"
+campaign = "fixed-position-context"
+
+hypothesis = """
+PRE-REGISTRATION v2, committed BEFORE its graded run. v1 (fused_vs_single_order_repro.py, graded run ffc3c1b1) was reviewed by agy (dispatch aaaa7777, claim_verified null; findings re-tested)
+and its padding, batch-row and fused-path claims were withdrawn: the padding arm placed pad positions 50 units away (vacuous), the batch and padding arms ran single-state only, the instrument
+checks were partial. v2 fixes exactly those. It is NOT blind: v1's arms and values were seen. Thresholds are unchanged from v1.
+
+SCOPE, stated up front so it cannot be overread: synthetic scaled-weight Aminx (weights x4 is a test choice), 16 positions, ONE free probe, no backbone noise, no dropout. In a one-free-probe
+design with all other positions fixed, no sampling-key path outside the order draw is live, so key independence here means only that. Nothing is claimed about designs with several free
+positions, noise, or the real checkpoint.
+
+ARMS (R = relative L2 of the centred probe logits, k = 3 fused vs single unless stated; three geometries, seeds 5, 6, 7):
+ A1 control: random_order, keys 0 / 1. Predicted R > 1e-3 on ALL 3 geometries.
+ A2 shared key: random_order, key 0 / 0. Predicted R <= 1e-4. (Pins key and order together; cannot separate them, and is not claimed to.)
+ A3 pinned order, different keys: canonical_order, keys 0 / 1. Predicted R <= 1e-4.
+ A4 seed: random_order, decoding_order_seed = 11, keys 0 / 1. Predicted R <= 1e-4.
+ A5 batch row, on the FUSED k = 3 path, canonical_order, key 0: A5a spread across the 4 samples of one call under random_order is > 1e-3 on all 3 geometries; A5b spread under
+    canonical_order <= 1e-4; A5c sample 0 of the 4-sample fused call vs the 1-sample fused call <= 1e-4 (under canonical_order the key is not live in this fixture, per A3, so the changed
+    split key does not confound it).
+ A6 padding, on the FUSED k = 3 path, canonical_order, key 0: 8 padding positions that are masked out and sit INSIDE the coordinate cloud (same distribution as the real residues, so a
+    mask-ignoring k-NN would select them). Predicted fused padded vs fused unpadded R <= 1e-4. DETECTION CONTROL: the same 8 positions treated as REAL residues (mask 1, fixed) must change
+    the probe logits by > 1e-3 on all 3 geometries, otherwise the arm cannot see padding and is not interpretable.
+ Mode liveness: rel(single@canonical, single@random) > 1e-3 on all 3 geometries.
+
+CONTROLS (instrument_ok): every logit array of every arm finite; single-path probe-logit norm > 1e-6 on every geometry; the number of free positions read from the BUNDLE's own fixed_mask
+equals 1 for the unpadded and padded bundles; geometries give distinct single-path logits; version parsed with a regex >= 0.4.0; the aminx module inside the distribution it claims; backend
+and device recorded.
+
+NOTHING IS RETUNED after seeing values. The record keeps booleans only (bathos), so no residual magnitudes are quoted from this run.
+"""
+
+[outcomes.pass]
+condition = "instrument_ok = true AND reproduces_control = true AND modes_are_live = true AND key_alone_removes = true AND pinned_order_removes = true AND seed_removes = true AND batch_spread_is_order_induced = true AND batch_size_inert = true AND padding_control_detects = true AND padding_inert = true"
+decision = """In this fixture (one free probe, no noise) the fused-vs-single residual is consistent with decoding order of the fixed positions as its source; it is removed by shared key, pinned order or seed, and is not produced by the batch row or by masked in-radius padding on the fused path. Says nothing about designs with several free positions or noise, or the real checkpoint; the mechanism stays a hypothesis."""
+reasoning = """Every arm runs the fused path; the padding arm carries a detection control showing it can see padding."""
+is_residual = false
+
+[outcomes.marginal]
+condition = "instrument_ok = true AND reproduces_control = true AND modes_are_live = true AND (key_alone_removes = false OR pinned_order_removes = false OR seed_removes = false OR batch_spread_is_order_induced = false OR batch_size_inert = false OR padding_control_detects = false OR padding_inert = false)"
+decision = """The residual reproduces, but some removal arm fails or the padding arm cannot detect padding: read the booleans. A failed removal arm names a further factor; a failed detection control means the padding claim stays unsupported."""
+reasoning = """Partial outcomes do not count as the whole cause or no cause."""
+is_residual = false
+
+[outcomes.fail]
+condition = "instrument_ok = false OR reproduces_control = false OR modes_are_live = false"
+decision = """INSTRUMENT OR PREMISE FAILURE: no verdict on which factor matters. Fix the instrument; do not retune thresholds."""
+reasoning = """Residual branch: the exact complement of pass and marginal."""
+is_residual = true
+
+[result_schema]
+instrument_ok = "bool"
+reproduces_control = "bool"
+modes_are_live = "bool"
+key_alone_removes = "bool"
+pinned_order_removes = "bool"
+seed_removes = "bool"
+batch_spread_is_order_induced = "bool"
+batch_size_inert = "bool"
+padding_control_detects = "bool"
+padding_inert = "bool"
+min_residual_control = "float"
+max_residual_key_pinned = "float"
+max_residual_order_pinned = "float"
+max_residual_seed = "float"
+min_spread_random = "float"
+max_spread_canonical = "float"
+max_residual_batch_size = "float"
+max_residual_padding = "float"
+min_residual_padding_control = "float"
+min_mode_liveness = "float"
