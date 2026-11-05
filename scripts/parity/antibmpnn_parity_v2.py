@@ -279,10 +279,20 @@ def _stage_entry(d: Any, root: Path, ckpts: tuple[str, ...]) -> dict[str, Any]: 
   if PRIMARY in ckpts:
     # --conditional_probs_only (Running_AntiBMPNN_run.py:271-282): upstream ProteinMPNN.conditional_probs
     floor = _floors(d, PRIMARY, "knobs")["logits"]
-    full = _entry_logp(pdb, f"antibmpnn_{PUBLISHED[PRIMARY]}", seq, None, length)
-    bb = _entry_logp(pdb, f"antibmpnn_{PUBLISHED[PRIMARY]}", seq, np.zeros((length, length), dtype=np.float32), length)
+    # Upstream decodes each position LAST (protein_mpnn_utils.py:1330: order key (order_mask + 1e-4) * |randn|, order_mask
+    # = e_i), so row i sees every other residue and no other position sees s_i.  aminx's default full-context mask is a
+    # different estimand (every position sees s_i, which leaks back into row i through later layers), so each probed
+    # position gets its own ar_mask built from the same stored randn and fed through runner.score.
+    randn = np.asarray(d["condprobs/randn"][0], dtype=np.float32)
+    probe = list(range(0, length, 10))
+    full = np.zeros((length, 21), dtype=np.float32)
+    for i in probe:
+      key = (np.eye(length, dtype=np.float32)[i] + np.float32(0.0001)) * np.abs(randn)
+      full[i] = _entry_logp(pdb, f"antibmpnn_{PUBLISHED[PRIMARY]}", seq, _np_ar_mask(np.argsort(key, kind="stable")), length)[i]
+    bb =_entry_logp(pdb, f"antibmpnn_{PUBLISHED[PRIMARY]}", seq, np.zeros((length, length), dtype=np.float32), length)
     for stage, got, key in (("entry_cond_full", full, "condprobs/full"), ("entry_cond_backbone", bb, "condprobs/backbone_only")):
-      gap = _maxabs(got, d[key][0])
+      rows = probe if stage == "entry_cond_full" else list(range(length))
+      gap = _maxabs(got[rows], d[key][0][rows])
       cells.append({"ckpt": PRIMARY, "stage": stage, "gap_same": gap, "gap_f64": gap, "floor": floor})
   return {"cells": cells}
 

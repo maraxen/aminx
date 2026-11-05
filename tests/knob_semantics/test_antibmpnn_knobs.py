@@ -130,17 +130,26 @@ def test_knob_semantics_conditional_probs_only() -> None:
     sequences_to_score=[_NATIVE], output_kind="nll",
   )["scores"]).reshape(-1)[0])
   assert nll == pytest.approx(-float(np.mean(full[np.arange(_L), native])), abs=1e-3)
-  # (3) conditional on the REST: changing residue j changes the row at some other position, but never row j itself
-  j = 30
-  mutated = _NATIVE[:j] + ("A" if _NATIVE[j] != "A" else "G") + _NATIVE[j + 1 :]
-  other = _logp(mutated)
-  assert np.array_equal(other[j], full[j]), "row j must not see its own residue"
-  assert np.max(np.abs(np.delete(other, j, axis=0) - np.delete(full, j, axis=0))) > 1e-3, "other rows must see residue j"
+  # (3) conditional on the REST, never on itself. Upstream decodes each position LAST (conditional_probs,
+  # protein_mpnn_utils.py:1330) so its row sees every other residue and none sees it. The default full-context mask
+  # is NOT that: all other positions see s_i, so their states carry s_i back to row i in later layers (verified
+  # 261104: changing s_j moves row j under ar_mask=None). The per-position mask below is the upstream estimand.
+  i, j = 30, 10
+  order = np.r_[np.delete(np.arange(_L), i), i]
+  rank = np.empty(_L, dtype=np.int64)
+  rank[order] = np.arange(_L)
+  last = (rank[None, :] < rank[:, None]).astype(np.float32)
+  assert last[i].sum() == _L - 1
+  row = _logp(ar_mask=last)[i]
+  own = _NATIVE[:i] + ("A" if _NATIVE[i] != "A" else "G") + _NATIVE[i + 1 :]
+  rest = _NATIVE[:j] + ("A" if _NATIVE[j] != "A" else "G") + _NATIVE[j + 1 :]
+  assert np.array_equal(_logp(own, ar_mask=last)[i], row), "decoded last: row i must not see its own residue"
+  assert np.max(np.abs(_logp(rest, ar_mask=last)[i] - row)) > 1e-3, "row i must see the other residues"
   # (4) backbone-only: with nothing visible, the rows do not depend on the sequence at all
   zero = np.zeros((_L, _L), dtype=np.float32)
   bb = _logp(ar_mask=zero)
   np.testing.assert_allclose(np.exp(bb).sum(axis=-1), 1.0, atol=1e-9)
-  assert np.array_equal(_logp(mutated, ar_mask=zero), bb)
+  assert np.array_equal(_logp(rest, ar_mask=zero), bb)
   assert np.max(np.abs(bb - full)) > 1e-3, "backbone-only differs from full-context conditionals"
 
 

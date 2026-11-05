@@ -13,6 +13,10 @@
 #    at checkpoints 050/100 logits 3.5e-6..6e-6. One throwaway spike ran aminx runner.score at checkpoints 000 and 030
 #    on the cdr5 order and saw log-prob gaps vs the float64 upstream of 4.3e-4 and 6.4e-6 (plus 1.6e-4 and 8e-6 vs the
 #    float32 upstream); no other aminx-vs-v2-dump number had been seen when the rule below was fixed.
+#  * A knob-semantics test run (not against the dump) showed that under the default ar_mask=None, changing the residue
+#    at j moves the aminx logits AT j (2-hop leakage through later layers), so aminx's default full-context score is not
+#    upstream's conditional_probs estimand (which decodes the probed position last). The entry stage therefore feeds
+#    runner.score a per-position ar_mask (probed position last, built from the dump's stored randn) for conditional_probs.
 #  * The float32 rule below is derived from the floor, not from any aminx value: a tolerance scaled by the
 #    measured upstream f32-vs-f64 gap for that (checkpoint, stage), because two independent float32
 #    implementations each sit about one floor from the truth. The multipliers (3 pass, 10 marginal) and absolute
