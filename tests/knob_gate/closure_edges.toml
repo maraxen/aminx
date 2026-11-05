@@ -184,10 +184,10 @@ dynamic_ok = [
 ]
 data = ["tests/data/1ubq.pdb", "tests/port/reference/caliby/"]
 
-# AntiBMPNN (P4 redo 261104). The vehicle reads sealed upstream dumps (outside the repo, sha256-pinned in the
-# sidecar [data]) and the HuJ3 fixture/checkpoints under the upstream clone. It imports aminx.io.weights
-# (load_model for the shipped-weights stage) but NOT any potts_mpnn module.
-[slug.antibmpnn_parity]
+# AntiBMPNN v2 (261104_p4-review-fixes). The vehicle reads sealed upstream dumps (outside the repo, sha256-pinned in the
+# sidecar [data]) and the HuJ3 fixture/checkpoints under the upstream clone. It drives aminx.host.runner.score (entry
+# stage, published weights via aminx.io.weights) but NOT any potts_mpnn module.
+[slug.antibmpnn_parity_v2]
 dynamic_ok = [
   "src/aminx/host/runner.py",
   "src/aminx/io/__init__.py",

@@ -4100,7 +4100,7 @@ ref = "antibmpnn_run__conditional_probs_only"
 targets = ["return_logits"]
 equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_conditional_probs_only"]
-note = "Running_AntiBMPNN_run.py:425, :271-282. log p(s_i | rest of sequence, backbone) = aminx score(return_logits=True) full-context logits."
+note = "Running_AntiBMPNN_run.py:425, :271-282 -> ProteinMPNN.conditional_probs (protein_mpnn_utils.py:1292), which decodes each probed position LAST. aminx score(return_logits=True) with ar_mask=None is NOT that estimand (verified 261104: all other positions see s_i, so s_i leaks back into row i through later layers; changing s_j moves row j). The faithful aminx form is a per-position ar_mask (probed position last), scored through score(ar_mask=..., return_logits=True); the knob test and antibmpnn_parity_v2 entry_cond_full use it. The default full-context score is a different estimand (spec ar_mask docstring says as much)."
 
 [[row]]
 ref = "antibmpnn_run__backbone_noise"
@@ -4211,16 +4211,16 @@ note = "helper_scripts/parsing_design_result.py:89. Directory of .fa files to po
 [[row]]
 ref = "antibmpnn_parse__start"
 targets = ["descriptor_start"]
-equivalence = "identical"
+equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_descriptor_segment"]
-note = "helper_scripts/parsing_design_result.py:90, slice at :24-26 (start_r -= 1; seq[start_r:end_r]). 1-based inclusive start."
+note = "helper_scripts/parsing_design_result.py:90 (add_argument, type=int, NO default), slice at :8 and :27-28 (start_r -= 1; seq[start_r:end_r]). Same 1-based slice when given; NOT identical: AntiBMPNNOptions.descriptor_start defaults to None = score from the first residue, whereas upstream with --start omitted is None and crashes on `start_r -= 1` (:8)."
 
 [[row]]
 ref = "antibmpnn_parse__end"
 targets = ["descriptor_end"]
-equivalence = "identical"
+equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_descriptor_segment"]
-note = "helper_scripts/parsing_design_result.py:91, slice at :26. Inclusive end."
+note = "helper_scripts/parsing_design_result.py:91 (add_argument, type=int, NO declared default), slice at :27-28. Same inclusive end when given; NOT declared identical: AntiBMPNNOptions.descriptor_end defaults to None = score to the last residue, and upstream with --end omitted also slices to the end, but only because str[a:None] does so, not by contract."
 
 # --- FAMPNN (261104 redo): rows re-derived from ~/repos/fampnn configs/{seq_design,pack,score}.yaml ---
 

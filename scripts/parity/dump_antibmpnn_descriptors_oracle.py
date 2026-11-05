@@ -2,9 +2,9 @@
 
 Upstream scores designed segments in ``helper_scripts/parsing_design_result.py``:
 
-* ``CDRH3_Comb`` (line 5) slices ``seq[start-1:end]`` (lines 24-26), then
+* ``CDRH3_Comb`` (line 6) slices ``seq[start-1:end]`` (lines 8, 27-28), then
   ``peptides.Peptide(seq).physical_descriptors()`` -> PD1 (volume), PD2 (hydrophobicity)
-  (lines 44-48) and ``peptide.charge(pH=7.4)`` (default ``pKscale="Lehninger"``, line 51).
+  (line 49) and ``peptide.charge(pH=7.4)`` (default ``pKscale="Lehninger"``, line 53).
 
 This script (1) runs the REAL ``CDRH3_Comb`` on the ``.fa`` produced by the real runner
 (``dump_antibmpnn_oracle.py``) and reads back its CSV, and (2) calls the same ``peptides`` API at
@@ -69,7 +69,7 @@ def main() -> None:
   }
   assert set(cols) <= set(csv.columns)
 
-  # (2) full-precision peptides calls on sampled sequences and slices (parsing_design_result.py:44-52)
+  # (2) full-precision peptides calls on sampled sequences and slices (parsing_design_result.py:49,53)
   seqs: list[str] = ["".join(ALPHABET[i] for i in oracle["feat/cdr5/S"][0])]
   for cfg in ("cdr5", "knobs"):
     s = oracle[f"antibmpnn_000/f32/{cfg}/S_sample"][0]

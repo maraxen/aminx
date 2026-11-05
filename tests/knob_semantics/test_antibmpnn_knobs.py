@@ -6,7 +6,7 @@ tests drive aminx's real ``sample`` / ``score`` on the real ``antibmpnn_v_48_000
 check what each upstream flag MEANS, not that a dataclass stores a value. The only AntiBMPNN-specific
 upstream logic is ``helper_scripts/parsing_design_result.py`` (descriptor scoring of a design segment).
 
-Numerical parity with the real upstream is NOT claimed here; that is ``scripts/parity/antibmpnn_parity.py``.
+Numerical parity with the real upstream is NOT claimed here; that is ``scripts/parity/antibmpnn_parity_v2.py``.
 The earlier revision of this file tested ``cdr_scheme`` / ``heavy_chain_id`` / ``light_chain_id`` /
 ``cdr_bias_weight`` and a ``checkpoint_id`` option, none of which exists upstream (rg 261104 over the
 AntiBMPNN repository); those options were removed.
@@ -98,19 +98,60 @@ def test_knob_semantics_path_to_fasta() -> None:
   assert _score(_NATIVE) < _score(shuffled)
 
 
-@weights
-def test_knob_semantics_conditional_probs_only() -> None:
-  """conditional_probs_only: full-context conditionals are returned as normalised log-probs when asked for."""
+def _logp(sequence: str = _NATIVE, **kwargs) -> np.ndarray:  # noqa: ANN003
+  """Per-position log-softmax of the logits ``score(return_logits=True)`` returns, shape ``(L, 21)``."""
   from aminx.host.runner import score
 
   result = score(
     inputs=[str(_PDB)], checkpoint_id=_CHECKPOINT, max_length=_MAX_LENGTH, random_seed=0,
-    sequences_to_score=[_NATIVE], output_kind="nll", return_logits=True,
+    sequences_to_score=[sequence], output_kind="nll", return_logits=True, **kwargs,
   )
-  logits = np.asarray(result["logits"], dtype=np.float64)
-  assert logits.shape[-1] == 21
-  flat = logits.reshape(-1, 21)[:_L]
-  assert np.all(np.isfinite(flat))
+  logits = np.asarray(result["logits"], dtype=np.float64).reshape(-1, 21)[:_L]
+  shifted = logits - logits.max(axis=-1, keepdims=True)
+  return shifted - np.log(np.exp(shifted).sum(axis=-1, keepdims=True))
+
+
+@weights
+def test_knob_semantics_conditional_probs_only() -> None:
+  """conditional_probs_only: p(s_i | rest of sequence, backbone) -- a normalised row per position that sees the
+  other residues but never its own (upstream ``ProteinMPNN.conditional_probs``, protein_mpnn_utils.py:1292;
+  ``conditional_probs_only_backbone`` -> p(s_i | backbone), an all-zero ``ar_mask``)."""
+  from aminx.host.runner import score
+
+  native = _native_tokens()
+  full = _logp()
+  assert full.shape == (_L, 21)
+  # (1) score() returns RAW logits (not log-probs); their log-softmax is a normalised distribution per position.
+  # This only guards shape / finiteness; checks (2)-(4) carry the semantics.
+  np.testing.assert_allclose(np.exp(full).sum(axis=-1), 1.0, atol=1e-9)
+  assert np.all(np.isfinite(full))
+  # (2) the returned logits are the ones the NLL is made of: score == -mean_i log p(native_i | rest)
+  nll = float(np.asarray(score(
+    inputs=[str(_PDB)], checkpoint_id=_CHECKPOINT, max_length=_MAX_LENGTH, random_seed=0,
+    sequences_to_score=[_NATIVE], output_kind="nll",
+  )["scores"]).reshape(-1)[0])
+  assert nll == pytest.approx(-float(np.mean(full[np.arange(_L), native])), abs=1e-3)
+  # (3) conditional on the REST, never on itself. Upstream decodes each position LAST (conditional_probs,
+  # protein_mpnn_utils.py:1330) so its row sees every other residue and none sees it. The default full-context mask
+  # is NOT that: all other positions see s_i, so their states carry s_i back to row i in later layers (verified
+  # 261104: changing s_j moves row j under ar_mask=None). The per-position mask below is the upstream estimand.
+  i, j = 30, 10
+  order = np.r_[np.delete(np.arange(_L), i), i]
+  rank = np.empty(_L, dtype=np.int64)
+  rank[order] = np.arange(_L)
+  last = (rank[None, :] < rank[:, None]).astype(np.float32)
+  assert last[i].sum() == _L - 1
+  row = _logp(ar_mask=last)[i]
+  own = _NATIVE[:i] + ("A" if _NATIVE[i] != "A" else "G") + _NATIVE[i + 1 :]
+  rest = _NATIVE[:j] + ("A" if _NATIVE[j] != "A" else "G") + _NATIVE[j + 1 :]
+  assert np.array_equal(_logp(own, ar_mask=last)[i], row), "decoded last: row i must not see its own residue"
+  assert np.max(np.abs(_logp(rest, ar_mask=last)[i] - row)) > 1e-3, "row i must see the other residues"
+  # (4) backbone-only: with nothing visible, the rows do not depend on the sequence at all
+  zero = np.zeros((_L, _L), dtype=np.float32)
+  bb = _logp(ar_mask=zero)
+  np.testing.assert_allclose(np.exp(bb).sum(axis=-1), 1.0, atol=1e-9)
+  assert np.array_equal(_logp(rest, ar_mask=zero), bb)
+  assert np.max(np.abs(bb - full)) > 1e-3, "backbone-only differs from full-context conditionals"
 
 
 @weights
@@ -240,7 +281,7 @@ def test_knob_semantics_descriptor_segment() -> None:
   """
   full = "EVQLVESGGGLVQPGGSLRLSCAASGSIFNQYAMAWFRQAPGKEREFVAGMGAVPHYGEFVKGRFTISRDNSKNTVYLQMNSLRAEDTAVYYCARSKSTYISYNSNGYDYWGQGTLVTVSS"
   options = AntiBMPNNOptions(descriptor_start=102, descriptor_end=106)
-  assert design_segment(full, options) == "SYNSN"  # the example's designed window (parsing_design_result.py:24-26)
+  assert design_segment(full, options) == "SYNSN"  # the example's designed window (parsing_design_result.py:8,27-28)
   assert design_segment(full, AntiBMPNNOptions()) == full
   assert design_segment(full, AntiBMPNNOptions(descriptor_start=3)) == full[2:]
   assert design_segment(full, AntiBMPNNOptions(descriptor_end=4)) == full[:4]

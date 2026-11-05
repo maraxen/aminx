@@ -312,13 +312,17 @@ class AntiBMPNNOptions:
   family options: the model is a ProteinMPNN-architecture checkpoint selected through
   ``RunSpecification.checkpoint_id`` (``antibmpnn_v_48_000`` ...). The only AntiBMPNN-specific
   logic upstream is ``helper_scripts/parsing_design_result.py``, which slices each design at
-  ``--start``/``--end`` (1-based, inclusive: ``seq[start-1:end]``, lines 24-26) and reports the
-  ``peptides`` PD1/PD2 means and the Lehninger net charge at pH 7.4 (lines 44-52).
+  ``--start``/``--end`` (1-based, inclusive: ``seq[start-1:end]``, lines 8, 27-28) and reports the
+  ``peptides`` PD1/PD2 means and the Lehninger net charge at pH 7.4 (lines 49, 53).
 
   Earlier revisions carried ``cdr_scheme``, ``heavy_chain_id``, ``light_chain_id``,
   ``cdr_bias_weight``, ``checkpoint_id`` and ``compute_descriptors``. None has an upstream
   counterpart (no CDR scheme, chain role or bias weight exists in the AntiBMPNN repository) and none
   was read by any code path, so they were removed rather than relabelled.
+
+  Both fields default to ``None`` (whole sequence); upstream declares NO default for ``--start`` /
+  ``--end`` (parsing_design_result.py:90-91) and crashes on ``start_r -= 1`` (:8) when ``--start`` is
+  omitted, so the defaults are aminx's, not upstream's.
 
   Attributes
   ----------

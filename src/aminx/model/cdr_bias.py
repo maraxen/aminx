@@ -1,8 +1,8 @@
 """AntiBMPNN design descriptors (upstream-derived) and aminx-only CDR-bias utilities.
 
-UPSTREAM-DERIVED, graded against the real ``peptides`` call in scripts/parity/antibmpnn_parity.py:
+UPSTREAM-DERIVED, graded against the real ``peptides`` call in scripts/parity/antibmpnn_parity_v2.py:
 ``compute_cdr_physicochemical_descriptors`` (PD1/PD2 means and Lehninger net charge, as in
-AntiBMPNN ``helper_scripts/parsing_design_result.py:44-52``).
+AntiBMPNN ``helper_scripts/parsing_design_result.py:49,53``: ``physical_descriptors()`` and ``charge(pH=7.4)``).
 
 AMINX-ONLY, NO UPSTREAM COUNTERPART (verified 261104: neither ``Running_AntiBMPNN_run.py`` nor
 ``protein_mpnn_utils.py`` contains any CDR, scheme or numbering logic; the real design flow selects
@@ -36,8 +36,8 @@ ALPHABET_21: str = "ACDEFGHIKLMNPQRSTVWYX"
 # Barley et al. (2018) J. Chem. Inf. Model. 58(2):234-243, in Aminx 21-token alphabetical order
 # (A..Y, X=0.0). These are the values of ``peptides.tables.PHYSICAL_DESCRIPTORS`` (peptides 0.5.0), the
 # table behind ``peptides.Peptide.physical_descriptors()`` that AntiBMPNN's
-# ``helper_scripts/parsing_design_result.py:44-48`` calls. An earlier hand-typed table here did not match
-# it (max |delta| 1.5 on GSGSGS); scripts/parity/antibmpnn_parity.py now grades this against the real call.
+# ``helper_scripts/parsing_design_result.py:49`` calls. An earlier hand-typed table here did not match
+# it (max |delta| 1.5 on GSGSGS); scripts/parity/antibmpnn_parity_v2.py grades this against the real call.
 BARLEY_PD1_VOLUME: tuple[float, ...] = (
   -2.9,  # A (0)
   -1.89,  # C (1)
@@ -665,7 +665,8 @@ def compute_cdr_physicochemical_descriptors(
 ) -> CDRPhysicochemicalDescriptors:
   """Compute vectorized Barley PC1/PC2 and Lehninger net charge descriptors.
 
-  Matches the ``peptides.Peptide(seq).descriptors()["PD1", "PD2"]`` and
+  Matches ``peptides.Peptide(seq).physical_descriptors()`` (PD1, PD2; the call at
+  ``AntiBMPNN/helper_scripts/parsing_design_result.py:49``, NOT ``.descriptors()``) and
   ``peptides.Peptide(seq).charge(pH=7.4, pKscale="Lehninger")`` evaluation
   metrics reported in ``AntiBMPNN/README.md``.
 
