@@ -1,4 +1,4 @@
 # Sidecar ledger shard for AntiBMPNN vehicle runs.
-# Owning task records [sidecar.antibmpnn_parity] after the vehicle run on titanix.
+# Owning task records [sidecar.antibmpnn_parity_v2] after the vehicle run on titanix.
 
 [sidecar]
