@@ -726,7 +726,7 @@ class AntiBMPNNParseResultKnobs:
   """helper_scripts/parsing_design_result.py argparse block (lines 89-91)."""
 
   antibmpnn_parse__dir: str | None = None  # type=str; --dir directory of .fa files; parsing_design_result.py:89
-  antibmpnn_parse__start: int | None = None  # type=int; --start first residue, 1-based (seq[start-1:end], :24-26); parsing_design_result.py:90
+  antibmpnn_parse__start: int | None = None  # type=int; --start first residue, 1-based (seq[start-1:end], :8,:27-28); parsing_design_result.py:90
   antibmpnn_parse__end: int | None = None  # type=int; --end last residue, inclusive; parsing_design_result.py:91
 
 

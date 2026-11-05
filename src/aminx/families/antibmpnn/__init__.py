@@ -20,7 +20,7 @@ from aminx.run.options import AntiBMPNNOptions
 if TYPE_CHECKING:
   from collections.abc import Sequence
 
-#: Net charge is reported at this pH (parsing_design_result.py:51 ``peptide.charge(pH=7.4)``).
+#: Net charge is reported at this pH (parsing_design_result.py:53 ``peptide.charge(pH=7.4)``).
 DESCRIPTOR_PH = 7.4
 _ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
 

@@ -57,6 +57,9 @@ decision = "Block: a stage disagrees with the real upstream, an oracle or weight
 reasoning = "Anything outside the marginal envelope, a missing checkpoint or entry cell, a token or index mismatch, an unverified sealed input, or a surviving mutant falsifies the vehicle."
 is_residual = true
 
+[breakdown]
+waive = "One fixture (HuJ3 chain B, 121 residues) and one precision-pair per cell: the per-unit worst cases are already carried as decomposition.per_cell_f32 / per_cell_entry (checkpoint x stage, gap and floor); the gated scalars are maxima over those cells plus counts, not an aggregate that hides a per-unit tail."
+
 [result_schema]
 clean = "str"
 n_listed = "int"
