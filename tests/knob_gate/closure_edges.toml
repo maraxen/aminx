@@ -175,7 +175,7 @@ dynamic_ok = [
 ]
 data = ["tests/data/1ubq.pdb"]
 
-[slug.caliby_parity]
+[slug.caliby_parity_v2]
 soft = ["aminx.families.caliby"]
 dynamic_ok = [
   "src/aminx/host/runner.py",

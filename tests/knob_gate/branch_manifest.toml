@@ -1388,7 +1388,7 @@ fixture = "1ubq.pdb"
 mutant = "rbf_range_shrunk"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1398,7 +1398,7 @@ fixture = "1ubq.pdb"
 mutant = "virtual_cb_sign_flipped"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1408,7 +1408,7 @@ fixture = "1ubq.pdb"
 mutant = "neighbors_farthest"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1418,7 +1418,7 @@ fixture = "1ubq.pdb"
 mutant = "neighbor_gather_off_by_one"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1428,7 +1428,7 @@ fixture = "1ubq.pdb"
 mutant = "gap_embedding_row_swapped"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1438,7 +1438,7 @@ fixture = "1ubq.pdb"
 mutant = "masked_atoms_not_ca_filled"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1448,7 +1448,7 @@ fixture = "1ubq.pdb"
 mutant = "potts_unsymmetrized"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1458,7 +1458,7 @@ fixture = "1ubq.pdb"
 mutant = "alphabet_unpermuted"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1468,7 +1468,7 @@ fixture = "1ubq.pdb"
 mutant = "energy_pair_term_doubled"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
 
 [[branch]]
 family = "caliby"
@@ -1478,7 +1478,69 @@ fixture = "1ubq.pdb"
 mutant = "ensemble_sum_not_mean"
 [branch.vehicle]
 kind = "sidecar"
-slug = "caliby_parity"
+slug = "caliby_parity_v2"
+
+# Caliby v2 (261104_p4-review-fixes): six added mutants. Four reintroduce the shared-model fixes in
+# families/caliby/{features,potts}.py; two are packer-arm (caliby_packer_010/float32) mutants.
+[[branch]]
+family = "caliby"
+id = "slot4_virtual_cb_written"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "slot4_virtual_cb_written"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity_v2"
+
+[[branch]]
+family = "caliby"
+id = "potts_scale_single_factor"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "potts_scale_single_factor"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity_v2"
+
+[[branch]]
+family = "caliby"
+id = "potts_j_right_transposed_read"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "potts_j_right_transposed_read"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity_v2"
+
+[[branch]]
+family = "caliby"
+id = "k_neighbors_potts_truncated"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "k_neighbors_potts_truncated"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity_v2"
+
+[[branch]]
+family = "caliby"
+id = "packer_sigma_scaled"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "packer_sigma_scaled"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity_v2"
+
+[[branch]]
+family = "caliby"
+id = "packer_selfcond_dropped"
+stage = "P4"
+fixture = "1ubq.pdb"
+mutant = "packer_selfcond_dropped"
+[branch.vehicle]
+kind = "sidecar"
+slug = "caliby_parity_v2"
 
 # ==============================================================================
 # Phase 4 fix (261104_p4-review-fixes): AntiBMPNN v2. Nine perturbations, each must push its designated stage above

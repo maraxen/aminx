@@ -48,9 +48,9 @@ TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
   "antibmpnn_parity_v2",
-  "caliby_parity",
+  "caliby_parity_v2",
 )
-# Vehicles that run standalone with ``--synthetic``. antibmpnn_parity_v2 / caliby_parity grade against sealed
+# Vehicles that run standalone with ``--synthetic``. antibmpnn_parity_v2 / caliby_parity_v2 grade against sealed
 # upstream dumps (``--oracle-dir`` etc.) and run only on titanix under bth; the static closure tests cover them.
 SYNTHETIC_RUNNABLE_SLUGS = ("tier1_variants_parity", "ca_only_parity")
 # A path component of the form ``/potts`` marks Potts-family code. caliby's own ``potts.py`` is its Potts
@@ -60,7 +60,7 @@ _OWN_POTTS_HEAD = "/families/caliby/"
 
 def _is_own_potts_head(slug: str, path: str) -> bool:
   """The exemption belongs to the caliby row alone; any other row reaching caliby code is still a leak."""
-  return slug == "caliby_parity" and _OWN_POTTS_HEAD in path
+  return slug == "caliby_parity_v2" and _OWN_POTTS_HEAD in path
 FAMPNN_SLUGS = ("fampnn_parity", "fampnn_parity_v2")
 ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS)
 
