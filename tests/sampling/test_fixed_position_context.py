@@ -188,6 +188,11 @@ def test_spec_refuses_a_seed_on_paths_that_ignore_it():
   # the seed IS live with decoding_order_fn (the seeded key is forwarded to it), so it must be accepted
   for seed in (7, 0):
     SamplingSpecification(**base, decoding_order_seed=seed, decoding_order_fn=random_decoding_order)
+  # ...except with several inputs: the fused path never receives decoding_order_fn, so a seed beside it is refused
+  with pytest.raises(ValueError, match="no effect"):
+    SamplingSpecification(
+      inputs=["/tmp/a.pdb", "/tmp/b.pdb"], checkpoint_id="ckpt_001", decoding_order_seed=7, decoding_order_fn=random_decoding_order
+    )
   # ...but a non-default mode alongside the fn is still refused, with or without a seed
   for mode in ("canonical_order", "mutual_context"):
     for seed_kw in ({}, {"decoding_order_seed": 7}):

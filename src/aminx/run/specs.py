@@ -398,7 +398,12 @@ class RunSpecification:
     # function, so a seed is live there; only the mode is ignored.
     if self.fixed_position_context != "random_order" or self.decoding_order_seed is not None:
       bypass = []
-      if self.decoding_order_fn is not None and self.fixed_position_context != "random_order":
+      fused_input = isinstance(self.inputs, (list, tuple)) and len(self.inputs) > 1
+      # The fused (multi-input) path never receives decoding_order_fn, so there a seed beside it
+      # would be recorded while the function is ignored; on the single-input path the seed is live.
+      if self.decoding_order_fn is not None and (
+        self.fixed_position_context != "random_order" or (self.decoding_order_seed is not None and fused_input)
+      ):
         bypass.append("decoding_order_fn")
       if getattr(self, "wave", None) is not None:
         bypass.append("a supplied wave")
