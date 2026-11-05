@@ -368,7 +368,13 @@ def local_to_global_scn(
   stub = jnp.zeros((x_bb.shape[0], 37, 3), dtype=x_bb.dtype)
   stub = stub.at[:, 0].set(x_bb[:, 0]).at[:, 1].set(x_bb[:, 1]).at[:, 2].set(x_bb[:, 2])
   rot, ca = backbone_coords_to_frames(stub)
-  glob = jnp.einsum("laj,lij->lai", x_local, rot) + ca[:, None, :]
+  # Upstream's ``Rigid`` / ``Rotation`` force float32 on the frame whatever the model dtype (openfold
+  # rigid_utils.py:320-322 for the rotation matrices, :860 for the translation): in a float64 run the frame is
+  # rounded to float32 and then applied in float64. Reproduce that rounding (a no-op for float32 runs); the
+  # ghost-atom fill below uses the unrounded CA, as upstream's ``x_bb[..., CA, :]`` does (data.py:572).
+  rot = rot.astype(jnp.float32).astype(x_bb.dtype)
+  ca_rigid = ca.astype(jnp.float32).astype(x_bb.dtype)
+  glob = jnp.einsum("laj,lij->lai", x_local, rot) + ca_rigid[:, None, :]
   frame_ok = jnp.min(bb_atom_mask[:, jnp.array([0, 1, 2])], axis=-1) > 0
   glob = jnp.where(scn_atom_mask[..., None] > 0, glob, ca[:, None, :])
   return jnp.where(frame_ok[:, None, None], glob, ca[:, None, :])
