@@ -154,11 +154,10 @@ def test_matches_colabdesign_bit_for_bit_on_the_untied_path():
       ORDER array   order[k] = which position is decoded at step k
       RANK  array   rank[i]  = at which step position i is decoded   (rank = argsort(order))
 
-  ColabDesign's `get_ar_mask` calls `order.argsort()` first, so it expects an ORDER array.
-  `generate_ar_mask` compares `decoding_order` values directly, so it expects a RANK array.
-  Handing both the SAME permutation compares two different orders and fails for every
-  non-identity permutation -- which says nothing about either implementation. Each is given
-  the encoding it documents.
+  ColabDesign's `get_ar_mask` calls `order.argsort()` first, so it takes an ORDER array and
+  inverts it internally. `generate_ar_mask` also takes an ORDER array (`order[t]` = position
+  decoded at step t), so the same array is passed to both below. A RANK array (`argsort(order)`)
+  handed to either one would silently compute the mask of the inverse order.
   """
   cd_utils = pytest.importorskip(
     "colabdesign.mpnn.utils",
@@ -166,39 +165,32 @@ def test_matches_colabdesign_bit_for_bit_on_the_untied_path():
   )
   for seed in (0, 1, 2, 3, 4):
     order = np.random.default_rng(seed).permutation(L)
-    rank = np.argsort(order)
     theirs = np.asarray(cd_utils.get_ar_mask(jnp.asarray(order, dtype=jnp.int32))).astype(int)
-    ours = np.asarray(generate_ar_mask(jnp.asarray(rank, dtype=jnp.int32))).astype(int)
+    ours = np.asarray(generate_ar_mask(jnp.asarray(order, dtype=jnp.int32))).astype(int)
     assert np.array_equal(ours, theirs), (
       f"diverges from ColabDesign at order seed={seed}; "
       f"differing cells: {np.argwhere(ours != theirs).tolist()[:10]}"
     )
 
 
-def test_generate_ar_mask_consumes_a_rank_array_not_an_order_array():
-  """Pin the convention, because nothing else in this repo does.
+def test_generate_ar_mask_consumes_an_order_array():
+  """Pin the convention: Defect 9 retired the rank-vs-order hazard.
 
-  This is NOT the diagonal fix and is deliberately out of its scope -- but it is a live
-  inconsistency worth pinning while it is understood: `tests/parity/test_full_model_parity.py`
-  builds its fixture with
-      order_position = {token: pos for pos, token in enumerate(decoding_order)}
-  which treats `decoding_order` as an ORDER array, the OPPOSITE of what this function
-  assumes. Both are valid random orders for a uniform random permutation, so the
-  disagreement has never surfaced as a failure -- it would only bite code that specifies a
-  decoding order deliberately (a counterfactual schedule, or reproducing a named order).
-
-  If this assertion ever fails, the convention was changed; reconcile the parity fixture
-  and this function together rather than editing one side.
+  `generate_ar_mask` now consistently consumes an ORDER array: `order[t]` = position
+  decoded at step `t`.
   """
-  # rank[i] = step of position i. Position 2 decodes first, then 0, then 3, then 1.
-  rank = jnp.asarray([1, 3, 0, 2], dtype=jnp.int32)
-  m = np.asarray(generate_ar_mask(rank)).astype(int)
+  # order[t] = position decoded at step t.
+  # Position 2 decodes at step 0, pos 0 at step 1, pos 3 at step 2, pos 1 at step 3.
+  order = jnp.asarray([2, 0, 3, 1], dtype=jnp.int32)
+  m = np.asarray(generate_ar_mask(order)).astype(int)
   # Position 0 (step 1) must see position 2 (step 0) and nothing later.
   assert m[0, 2] == 1, "position decoded at step 1 cannot see the step-0 position"
   assert m[0, 1] == 0, "position decoded at step 1 sees a step-3 position"
   assert m[0, 3] == 0, "position decoded at step 1 sees a step-2 position"
   # The first-decoded position sees nobody.
   assert m[2].sum() == 0, "the step-0 position has visible context"
+  # The last-decoded position (pos 1, step 3) sees all previously decoded positions.
+  assert m[1, 2] == 1 and m[1, 0] == 1 and m[1, 3] == 1
 
 
 # ---------------------------------------------------------------------------

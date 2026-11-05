@@ -28,18 +28,74 @@ jobs:
       - name: Check decode-path commits reference an epic ID (backlog #2954)
         run: python3 scripts/check_epic_attribution.py "origin/${{ github.base_ref }}..${{ github.event.pull_request.head.sha }}"
 
-  unit-tests:
+  # Decides how the unit-test matrix is split for this run. Standard library only: the selector and
+  # scripts/ci/choose_shards.py import no third-party package, so this job skips `uv sync` and finishes
+  # in well under a minute. Pushes to main always shard the full suite. A pull request runs the diff
+  # selection here and either runs it as one job or shards the full suite (see choose_shards.py).
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.choose.outputs.mode }}
+      shards: ${{ steps.choose.outputs.shards }}
+      shard_total: ${{ steps.choose.outputs.shard_total }}
+    env:
+      # The one place the full-suite shard count is written. The matrix and SHARD_TOTAL derive from it.
+      FULL_SHARD_COUNT: "4"
+      # A pull request whose selection covers at least this fraction of the test files runs the full
+      # suite as shards instead of one selected job. Single threshold for the whole workflow. Chosen by
+      # the owner on 2026-11-02: broad selections (#255: 361 of 435 files, 83%) took past the job timeout
+      # as one job, while a selection under half the suite fits well inside it.
+      SHARDING_SELECTION_THRESHOLD: "0.5"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Python
+        if: github.event_name == 'pull_request'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Select tests and choose shards
+        id: choose
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            python3 scripts/ci/select_affected_tests.py \
+              --base "origin/$BASE_REF" --head HEAD --explain --json > "$RUNNER_TEMP/selector.json"
+            python3 scripts/ci/choose_shards.py --event pull_request \
+              --selector-json "$RUNNER_TEMP/selector.json" \
+              --full-shard-count "$FULL_SHARD_COUNT" --threshold "$SHARDING_SELECTION_THRESHOLD" \
+              --github-output "$GITHUB_OUTPUT"
+          else
+            python3 scripts/ci/choose_shards.py --event "$EVENT_NAME" \
+              --full-shard-count "$FULL_SHARD_COUNT" --threshold "$SHARDING_SELECTION_THRESHOLD" \
+              --github-output "$GITHUB_OUTPUT"
+          fi
+          cat "$GITHUB_OUTPUT"
+
+  # The matrix job has a different id from the required check. A matrix job reports checks named
+  # `<id> (<value>)`, so a required check named `unit-tests` would never be reported. The stable
+  # `unit-tests` job at the end of this file aggregates these legs.
+  unit-tests-shards:
+    needs: [select]
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # The full suite on one 4-vCPU runner outlives the runner (killed at ~96% after ~41 min), so pushes
-    # to main split it into 4 shards (scripts/ci/shard_tests.py). Pull requests run the selector's subset
-    # as a single job.
+    # The full suite on one 4-vCPU runner outlives the runner (killed at ~96% after ~41 min), so the full
+    # suite runs as four shards (scripts/ci/shard_tests.py) on pushes to main and on pull requests with a
+    # broad selection. A quarter of the suite takes about 12-15 minutes, so 45 is a cap, not the target.
+    # A small pull-request selection runs as one job (scripts/ci/select_affected_tests.py).
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ github.event_name == 'pull_request' && fromJSON('[0]') || fromJSON('[0,1,2,3]') }}
+        shard: ${{ fromJSON(needs.select.outputs.shards || '[0]') }}
     env:
-      SHARD_TOTAL: 4
+      # Both come from the select job, so the matrix length and the sharder's --total cannot drift apart.
+      # The aggregate job checks that the matrix length equals shard_total.
+      SHARD_TOTAL: ${{ needs.select.outputs.shard_total }}
+      RUN_MODE: ${{ needs.select.outputs.mode }}
       SHARD_INDEX: ${{ matrix.shard }}
       PYTHONDONTWRITEBYTECODE: 1
       # requires-python is ">=3.13" with no upper bound, so uv otherwise resolves CPython 3.15, which torch has no wheel for.
@@ -101,9 +157,9 @@ jobs:
           # scripts/redsox/run_gate.py rather than by this job. Its tests import redsox at call time
           # precisely so a missing install FAILS loudly where the gate actually runs -- excluding the
           # marker here keeps that signal on the gate host instead of reading as a red CI run.
-          # Determine marker expression and test targets based on event type (aminx debt #2691).
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            echo "Pull request: selecting diff-implicated fast tests + always-run guards (excluding slow, parity_heavy, parity_audit, redsox_gate)."
+          # Mode comes from the select job (aminx debt #2691). Each mode keeps its own marker.
+          if [ "$RUN_MODE" = "pr-selected" ]; then
+            echo "Pull request, small selection: running the selected fast tests + always-run guards (excluding slow, parity_heavy, parity_audit, redsox_gate)."
             MARKER="not slow and not parity_heavy and not parity_audit and not redsox_gate"
             # No coverage on PRs: four #165 runs were killed by "The runner has received a shutdown
             # signal" at ~91% of the suite, and coverage is the likeliest extra load on a 4-vCPU
@@ -126,16 +182,35 @@ jobs:
             fi
             uv run pytest -n "$WORKERS" --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
           else
-            echo "Push to main: running shard $SHARD_INDEX of $SHARD_TOTAL of the full suite excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
-            MARKER="not parity_heavy and not parity_audit and not redsox_gate"
-            COV_ARGS="--cov=src --cov-report=xml --cov-report=term"
+            case "$RUN_MODE" in
+              pr-full)
+                echo "Pull request, broad selection: running shard $SHARD_INDEX of $SHARD_TOTAL of the full suite excluding slow, parity_heavy, parity_audit and redsox_gate. No coverage on PRs."
+                MARKER="not slow and not parity_heavy and not parity_audit and not redsox_gate"
+                COV_ARGS=""
+                ;;
+              push-full)
+                echo "Push to main: running shard $SHARD_INDEX of $SHARD_TOTAL of the full suite excluding parity_heavy, parity_audit (parity workflows) and redsox_gate (gate host)."
+                MARKER="not parity_heavy and not parity_audit and not redsox_gate"
+                COV_ARGS="--cov=src --cov-report=xml --cov-report=term"
+                ;;
+              *)
+                echo "unknown RUN_MODE '$RUN_MODE' from the select job" >&2
+                exit 1
+                ;;
+            esac
             uv run python scripts/ci/shard_tests.py \
               --index "$SHARD_INDEX" --total "$SHARD_TOTAL" \
               --write-pytest-args .pytest-targets.txt
             mapfile -t PYTEST_TARGETS < .pytest-targets.txt
-            # Cap at -n 2 --dist loadscope on full-suite + coverage + slow runs to stay under the
-            # 16 GB runner memory ceiling (aminx debt #2585, #2582).
-            uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
+            # An empty shard is legitimate (the sharder exits 0). Never call pytest with no paths:
+            # that would collect the whole suite.
+            if [ "${#PYTEST_TARGETS[@]}" -eq 0 ]; then
+              echo "Shard $SHARD_INDEX of $SHARD_TOTAL has no test files; nothing to run."
+            else
+              # Cap at -n 2 --dist loadscope on full-suite + coverage + slow runs to stay under the
+              # 16 GB runner memory ceiling (aminx debt #2585, #2582).
+              uv run pytest -n 2 --dist loadscope $COV_ARGS -m "$MARKER" "${PYTEST_TARGETS[@]}"
+            fi
           fi
       - name: Upload coverage to Codecov
         if: github.ref == 'refs/heads/main'
@@ -145,3 +220,40 @@ jobs:
           flags: shard${{ matrix.shard }}
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  # Stable aggregate for the required status check `unit-tests` (active ruleset on main, GitHub Actions
+  # integration 15368). It runs even when an earlier job failed or was skipped, and it fails unless the
+  # select job and every shard succeeded. A matrix that was skipped because select failed therefore reads
+  # as red, not green.
+  unit-tests:
+    needs: [select, unit-tests-shards]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SELECT_RESULT: ${{ needs.select.result }}
+      SHARDS_RESULT: ${{ needs.unit-tests-shards.result }}
+      SHARD_IDS: ${{ needs.select.outputs.shards }}
+      SHARD_TOTAL: ${{ needs.select.outputs.shard_total }}
+    steps:
+      - name: Require select and every unit-test shard to succeed
+        run: |
+          echo "select result: $SELECT_RESULT"
+          echo "unit-tests-shards result: $SHARDS_RESULT"
+          if [ "$SELECT_RESULT" != "success" ]; then
+            echo "select job did not succeed, so the shard matrix could not be chosen" >&2
+            exit 1
+          fi
+          if [ "$SHARDS_RESULT" != "success" ]; then
+            echo "unit-tests-shards result is '$SHARDS_RESULT' (failure, cancelled or skipped)" >&2
+            exit 1
+          fi
+          # Guard against a matrix whose length disagrees with the sharder's --total.
+          python3 - <<'PY'
+          import json, os, sys
+          ids = json.loads(os.environ["SHARD_IDS"])
+          total = int(os.environ["SHARD_TOTAL"])
+          if len(ids) != total:
+              sys.exit(f"matrix has {len(ids)} legs but shard_total is {total}")
+          print(f"all {total} shard leg(s) succeeded")
+          PY

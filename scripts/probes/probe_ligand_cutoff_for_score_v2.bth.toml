@@ -1,0 +1,35 @@
+[experiment]
+hypothesis = "Supersedes probe_ligand_cutoff_for_score (v1, run 6a6abe5e failed: its CA-distance expectation was wrong, the library gates on virtual CB distance). Virtual C-beta calculation matches the reference empirical coefficients within 1e-6. Distance gating, using CB distance from the ligand atom, matches a hand-computed expected mask of [1,1,1,0,0] at CB distances [1.509, 5.728, 7.900, 8.100, 12.632] A with an 8.0 A cutoff, and the straddle pair (7.90 A inside, 8.10 A outside) falls on the expected sides. Negative control correctly rejects fully-masked ligand arrays. loss_XY auxiliary NLL is finite and equals ln(21) * 2 / (2 + 1e-8) on a two-residue uniform-logit case (abs error < 1e-5)."
+stage_name = "validation"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "status == 'PASS' AND cb_max_abs_diff < 1e-6 AND cutoff_gating_passed AND straddle_passed AND empty_control_passed AND loss_xy_valid"
+decision = "Promote ligand_cutoff_for_score implementation."
+reasoning = "All virtual C-beta coordinates, CB-distance cutoffs (including the 7.90 / 8.10 A straddle pair), negative controls, and loss_XY outputs match the reference specification."
+is_residual = false
+
+[outcomes.fail]
+condition = "status != 'PASS' OR cb_max_abs_diff >= 1e-6 OR NOT cutoff_gating_passed OR NOT straddle_passed OR NOT empty_control_passed OR NOT loss_xy_valid"
+decision = "Reject ligand_cutoff_for_score implementation."
+reasoning = "One or more invariants failed to meet the reference specification."
+is_residual = true
+
+[result_schema]
+probe_name = "str"
+clause = "str"
+status = "str"
+cb_max_abs_diff = "float"
+cutoff_gating_passed = "bool"
+straddle_passed = "bool"
+straddle_cb_distance_inside = "float"
+straddle_cb_distance_outside = "float"
+empty_control_passed = "bool"
+loss_xy_valid = "bool"
+loss_xy_value = "float"
+loss_xy_known_answer_error = "float"
+num_proximal_residues = "int"
+expected_num_proximal_residues = "int"

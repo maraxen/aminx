@@ -1,0 +1,6 @@
+# HyperMPNN shard. EMPTY and has NO branch rows: HyperMPNN checkpoints are exercised by the shared vehicle
+# scripts/parity/tier1_variants_parity.py (slug tier1_variants_parity), but its mutants are attributed to the
+# ab_mpnn and cyclic_mpnn families, so a --family hyper_mpnn read covers zero rows.
+# Not yet run. Either add hyper_mpnn-tagged rows or record the shared run id here after the titanix run.
+
+[sidecar]

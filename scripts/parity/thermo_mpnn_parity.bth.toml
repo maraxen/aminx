@@ -1,5 +1,25 @@
+# Provenance (261102_pr-remediation; re-verified against git and the bathos catalog):
+# - Sidecar sha256 75a48921... is the file at commit ab05bdce (f64/f32 gating, no weight_source
+#   gate). It is NOT origin/main's tip (ef8810c2 carries sha 6408d1a1..., from 06632dfe, which
+#   adds a weight_source gate).
+# - Catalog runs 8c722b72 (error) and 6c39cbbe (pass) used sidecar 75a48921 at commit a6e1573b.
+#   Both were recorded with git_dirty=true (uncommitted tree), so neither is a clean verdict on
+#   a committed sidecar.
+# - Clauses in the current file that ab05bdce did not have: the weight_source gate in
+#   pass/marginal/fail; n_listed > 0 and n_failed == n_listed in pass/marginal; the float16
+#   max-abs and Pearson r bars in pass/marginal/fail; the float16 and clean/n_listed/n_failed
+#   result_schema fields. The float16 criteria first appeared in de2e2b95.
+# - The f64/f32 numbers were produced under the earlier sidecar 75a48921. The current version
+#   has not been run, so neither the f64/f32 verdict nor the float16 verdict is pre-registered
+#   under this sidecar.
+# - Thresholds: every threshold below is stated in the hypothesis text or carried over from
+#   ab05bdce; none was changed.
+# - The fail clause also matches NULL max-abs and Pearson values (the script writes NaN as null);
+#   no threshold changed.
+# - [requires.waiver] was removed in de2e2b95 without a reason and is restored. It relaxes only
+#   [requires], which this sidecar does not declare, so it gates nothing either way.
 [experiment]
-hypothesis = "JAX ThermoMPNN (v1/v2 single-mutant) and ThermoMPNNDouble (v2 epistatic Siamese) match the upstream PyTorch reference within 1e-7 in float64 and 1e-4 in float32 on 1ubq.pdb, preserve exact 0.0 wild-type self-mutation and mutation-slot order invariance, and fail decisively (> 1e-2) under all four structural/algebraic negative controls."
+hypothesis = "JAX ThermoMPNN (v1/v2 single-mutant) and ThermoMPNNDouble (v2 epistatic Siamese) match the upstream PyTorch reference within 1e-7 in float64, 1e-4 in float32, and 1.5e-2 with Pearson r > 0.999 in float16 on 1ubq.pdb, preserve exact 0.0 wild-type self-mutation and mutation-slot order invariance, and fail decisively (> 1e-2) under all four structural/algebraic negative controls."
 stage_name = "validation"
 
 [reproduction]
@@ -13,24 +33,27 @@ negative_outcome = ["fail", "marginal"]
 reason = "CPU parity verification vehicle against upstream PyTorch checkpoints"
 
 [outcomes.pass]
-condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-7 AND v2_f64_max_abs_diff < 1e-7 AND double_f64_max_abs_diff < 1e-7 AND v1_f32_max_abs_diff < 1e-4 AND v2_f32_max_abs_diff < 1e-4 AND double_f32_max_abs_diff < 1e-4 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2"
+condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-7 AND v2_f64_max_abs_diff < 1e-7 AND double_f64_max_abs_diff < 1e-7 AND v1_f32_max_abs_diff < 1e-4 AND v2_f32_max_abs_diff < 1e-4 AND double_f32_max_abs_diff < 1e-4 AND v1_f16_max_abs_diff < 1.5e-2 AND v2_f16_max_abs_diff < 1.5e-2 AND double_f16_max_abs_diff < 1.5e-2 AND v1_f16_pearson_r > 0.999 AND v2_f16_pearson_r > 0.999 AND double_f16_pearson_r > 0.999 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2 AND n_listed > 0 AND n_failed == n_listed"
 decision = "Promote ThermoMPNN and ThermoMPNNDouble JAX ports and converted .eqx.zst weights."
-reasoning = "All single-mutant (v1/v2) and double-mutant (v2) stages match upstream PyTorch checkpoints within 1e-7 in float64 and 1e-4 in float32, algebraic invariants hold exactly, and all negative controls trip."
+reasoning = "All single-mutant (v1/v2) and double-mutant (v2) stages match upstream PyTorch checkpoints within 1e-7 in float64, 1e-4 in float32, and 1.5e-2 with Pearson r > 0.999 in float16, algebraic invariants hold exactly, and all negative controls trip."
 is_residual = false
 
 [outcomes.marginal]
-condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-5 AND v2_f64_max_abs_diff < 1e-5 AND double_f64_max_abs_diff < 1e-5 AND v1_f32_max_abs_diff < 1e-3 AND v2_f32_max_abs_diff < 1e-3 AND double_f32_max_abs_diff < 1e-3 AND (v1_f64_max_abs_diff >= 1e-7 OR v2_f64_max_abs_diff >= 1e-7 OR double_f64_max_abs_diff >= 1e-7 OR v1_f32_max_abs_diff >= 1e-4 OR v2_f32_max_abs_diff >= 1e-4 OR double_f32_max_abs_diff >= 1e-4) AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2"
+condition = "weight_source == 'upstream_checkpoint' AND v1_f64_max_abs_diff < 1e-5 AND v2_f64_max_abs_diff < 1e-5 AND double_f64_max_abs_diff < 1e-5 AND v1_f32_max_abs_diff < 1e-3 AND v2_f32_max_abs_diff < 1e-3 AND double_f32_max_abs_diff < 1e-3 AND (v1_f64_max_abs_diff >= 1e-7 OR v2_f64_max_abs_diff >= 1e-7 OR double_f64_max_abs_diff >= 1e-7 OR v1_f32_max_abs_diff >= 1e-4 OR v2_f32_max_abs_diff >= 1e-4 OR double_f32_max_abs_diff >= 1e-4) AND v1_f16_max_abs_diff < 1.5e-2 AND v2_f16_max_abs_diff < 1.5e-2 AND double_f16_max_abs_diff < 1.5e-2 AND v1_f16_pearson_r > 0.999 AND v2_f16_pearson_r > 0.999 AND double_f16_pearson_r > 0.999 AND wt_self_max_abs_diff == 0.0 AND order_invariance_max_abs_diff == 0.0 AND neg_ctrl_min_max_abs_diff > 1e-2 AND n_listed > 0 AND n_failed == n_listed"
 decision = "Investigate numerical drift between PyTorch and JAX stages before promoting."
 reasoning = "Forward outputs on upstream checkpoints are close to PyTorch, exact invariants hold, and negative controls trip, but float64 or float32 tolerances exceed the strict 1e-7 / 1e-4 parity bar."
 is_residual = false
 
 [outcomes.fail]
-condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2"
+condition = "weight_source != 'upstream_checkpoint' OR v1_f64_max_abs_diff >= 1e-5 OR v2_f64_max_abs_diff >= 1e-5 OR double_f64_max_abs_diff >= 1e-5 OR v1_f32_max_abs_diff >= 1e-3 OR v2_f32_max_abs_diff >= 1e-3 OR double_f32_max_abs_diff >= 1e-3 OR v1_f16_max_abs_diff >= 1.5e-2 OR v2_f16_max_abs_diff >= 1.5e-2 OR double_f16_max_abs_diff >= 1.5e-2 OR v1_f16_pearson_r IS NULL OR v2_f16_pearson_r IS NULL OR double_f16_pearson_r IS NULL OR v1_f16_pearson_r <= 0.999 OR v2_f16_pearson_r <= 0.999 OR double_f16_pearson_r <= 0.999 OR wt_self_max_abs_diff != 0.0 OR order_invariance_max_abs_diff != 0.0 OR neg_ctrl_min_max_abs_diff <= 1e-2 OR n_failed != n_listed OR n_listed == 0 OR v1_f64_max_abs_diff IS NULL OR v2_f64_max_abs_diff IS NULL OR double_f64_max_abs_diff IS NULL OR v1_f32_max_abs_diff IS NULL OR v2_f32_max_abs_diff IS NULL OR double_f32_max_abs_diff IS NULL OR v1_f16_max_abs_diff IS NULL OR v2_f16_max_abs_diff IS NULL OR double_f16_max_abs_diff IS NULL OR wt_self_max_abs_diff IS NULL OR order_invariance_max_abs_diff IS NULL OR neg_ctrl_min_max_abs_diff IS NULL"
 decision = "Block promotion and debug trunk, LightAttention1D, or Siamese head mismatch (or re-run against upstream checkpoints)."
 reasoning = "Run used synthetic weights, parity error exceeds tolerance, an algebraic invariant is violated, or a negative control failed to trip."
 is_residual = true
 
 [result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
 pdb_id = "str"
 num_residues = "int"
 n_neighbor_pairs = "int"
@@ -50,6 +73,12 @@ double_f64_max_abs_diff = "float"
 v1_f32_max_abs_diff = "float"
 v2_f32_max_abs_diff = "float"
 double_f32_max_abs_diff = "float"
+v1_f16_max_abs_diff = "float"
+v2_f16_max_abs_diff = "float"
+double_f16_max_abs_diff = "float"
+v1_f16_pearson_r = "float"
+v2_f16_pearson_r = "float"
+double_f16_pearson_r = "float"
 wt_self_max_abs_diff = "float"
 order_invariance_max_abs_diff = "float"
 neg_ctrl_reversed_hidden_diff = "float"

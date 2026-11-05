@@ -1,0 +1,7 @@
+# Sharded ledger for ThermoMPNN / ThermoMPNN-D.
+# No vehicle run is recorded yet: the [sidecar] table below is empty and the titanix
+# GPU 2/3 bth run is pending. Do not read this gate as executed until that run exists.
+
+[sidecar]
+# [sidecar.thermo_mpnn_parity]
+# bth_run_id = "<full-uuid>"  # Populated upon remote execution on titanix

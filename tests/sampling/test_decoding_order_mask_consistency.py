@@ -5,8 +5,9 @@ while the bundle kept its default N->C wave. Two things were wrong at once:
 
 * the kernel drew positions N->C, but each position saw a context chosen by a different
   permutation -- so it read undrawn slots and missed drawn ones;
-* ``generate_ar_mask``'s untied branch reads a RANK array, but ``decoding_order_fn`` returns an
-  ORDER array.
+* (Before Defect 9) ``generate_ar_mask``'s untied branch read a RANK array, but
+  ``decoding_order_fn`` returns an ORDER array. It now reads an ORDER array, so the rank
+  hazard is pinned explicitly below rather than assumed away.
 
 For a uniformly random permutation neither is visible in distribution, which is why it
 survived. These tests use a deliberate, non-involutive order so that both would show.
@@ -41,11 +42,25 @@ def test_rotated_order_is_not_its_own_rank():
   assert not np.array_equal(order, np.argsort(order))
 
 
-def test_mask_from_order_matches_rank_convention_untied():
+def test_mask_from_order_matches_generate_ar_mask_untied():
   order = _rotated_order(L)
   ours = np.asarray(ar_mask_from_decoding_order(order))
-  ref = np.asarray(generate_ar_mask(jnp.argsort(order).astype(jnp.int32)))
+  ref = np.asarray(generate_ar_mask(order))
   np.testing.assert_array_equal(ours, ref)
+
+
+def test_passing_a_rank_array_to_generate_ar_mask_gives_the_inverse_order_mask():
+  """The hazard, pinned: generate_ar_mask takes an ORDER array, so a RANK array is misread.
+
+  ``argsort(order)`` is the rank array of ``order``. Handed to generate_ar_mask it is read as
+  an order, so the mask is the one for the inverse permutation. Nothing raises: both are
+  permutations of 0..L-1. A caller holding a rank array must invert it first.
+  """
+  order = _rotated_order(L)
+  rank = jnp.argsort(order).astype(jnp.int32)
+  misread = np.asarray(generate_ar_mask(rank))
+  np.testing.assert_array_equal(misread, np.asarray(ar_mask_from_decoding_order(rank)))
+  assert not np.array_equal(misread, np.asarray(ar_mask_from_decoding_order(order)))
 
 
 def test_mask_from_order_matches_generate_ar_mask_tied():
@@ -59,9 +74,10 @@ def test_mask_from_order_matches_generate_ar_mask_tied():
 def test_tie_map_is_not_treated_as_chain_index():
   """Pin the positional-argument trap the STE paths fell into.
 
-  ``generate_ar_mask(order, tie_map)`` binds the tie map to ``chain_idx`` (its second
-  positional parameter), which hides every position of a different tie group -- i.e. almost
-  all context. ``ar_mask_from_decoding_order``'s second parameter IS the tie map, so a
+  A tie map passed positionally to ``generate_ar_mask`` would bind to ``chain_idx`` (its
+  second parameter before it became keyword-only), hiding every position of a different
+  tie group -- i.e. almost all context. ``ar_mask_from_decoding_order``'s second parameter
+  IS the tie map, so a
   position must see earlier positions of OTHER groups.
   """
   tie_group_map = jnp.array([0, 0, 1, 1, 2, 2, 3], dtype=jnp.int32)
@@ -69,7 +85,9 @@ def test_tie_map_is_not_treated_as_chain_index():
   ours = np.asarray(ar_mask_from_decoding_order(order, tie_group_map))
   # The last-decoded position (6, its own group) sees all six earlier positions.
   assert ours[6].sum() == 6  # noqa: PLR2004
-  trap = np.asarray(generate_ar_mask(order, tie_group_map))  # tie map lands in chain_idx
+  # Passed explicitly as chain_idx: generate_ar_mask's chain_idx is keyword-only, so the
+  # positional form no longer binds here at all; this pins what the misbinding would do.
+  trap = np.asarray(generate_ar_mask(order, chain_idx=tie_group_map))
   assert trap[6].sum() == 0, "premise: the positional call hides other groups entirely"
 
 

@@ -217,15 +217,25 @@ class FAMPNNOptions:
   pack_each_step: bool = True
 
 
+_FLOAT16_REFUSAL: str = (
+  "ThermoMPNN dtype='float16' fails the parity band and is refused unless you pass "
+  "allow_float16=True (ThermoMPNNOptions.allow_float16, or the allow_float16 argument of "
+  "ThermoMPNNDriver.score; spec files: thermompnn.allow_float16 = true). Evidence: v1 run "
+  "f12f3209 missed the 1.5e-2 band with 0.048; v2 run 18c1d29c ho1 d_ddg max-abs 0.3995 vs "
+  "tolerance 0.1499."
+)
+
+
 @dataclass(frozen=True)
 class ThermoMPNNOptions:
   """Options for ThermoMPNN and ThermoMPNN-D stability prediction.
 
   Attributes
   ----------
-  checkpoint_id : str
+  checkpoint_id : str | None
       Checkpoint or ensemble identifier (e.g. ``"thermo_mpnn_v1_default"``,
-      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``).
+      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``). ``None`` defers to
+      ``spec.checkpoint_id``, then to ``"thermo_mpnn_v1_default"``.
   mode : Literal["single", "double"]
       Single-mutant SSM (``"single"``) or double-mutant epistatic (``"double"``) mode.
   distance_threshold : float
@@ -233,14 +243,35 @@ class ThermoMPNNOptions:
   batch_size : int
       Pair batch chunk size for ThermoMPNN-D double-mutant scoring.
   dtype : Literal["float32", "float16"]
-      Floating-point precision for trunk and head evaluation.
+      Floating-point precision for trunk and head evaluation. ``"float32"`` is the default.
+      ``"float16"`` is not validated for ThermoMPNN (see the driver module docstring): the
+      float16 parity gate failed on a 496-residue structure, and the error was observed to grow
+      with system size (mechanism not established). Float16 is for screening or ranking only,
+      and selecting it requires ``allow_float16=True``.
+  allow_float16 : bool
+      Explicit bypass for ``dtype="float16"``. Float16 fails the ThermoMPNN parity band (v1 run
+      f12f3209 missed 1.5e-2 with 0.048; v2 run 18c1d29c ho1 d_ddg 0.3995 vs 0.1499), so
+      ``dtype="float16"`` raises ``ValueError`` unless this is ``True``. A bypassed call still
+      emits a ``UserWarning``. Has no effect with ``dtype="float32"``.
   ensemble : bool
       Whether to average across all 3 v2 ensemble members when using v2/D.
   """
 
-  checkpoint_id: str = "thermo_mpnn_v1_default"
+  checkpoint_id: str | None = None
   mode: Literal["single", "double"] = "single"
   distance_threshold: float = 5.0
   batch_size: int = 10000
-  dtype: Literal["float32", "float16"] = "float16"
+  dtype: Literal["float32", "float16"] = "float32"
   ensemble: bool = True
+  allow_float16: bool = False
+
+  def __post_init__(self) -> None:
+    """Reject unknown ``mode`` or ``dtype`` values at construction time."""
+    if self.mode not in ("single", "double"):
+      msg = f"Unknown ThermoMPNN mode {self.mode!r}. Use 'single' or 'double'."
+      raise ValueError(msg)
+    if self.dtype not in ("float32", "float16"):
+      msg = f"Unknown ThermoMPNN dtype {self.dtype!r}. Use 'float32' or 'float16'."
+      raise ValueError(msg)
+    if self.dtype == "float16" and not self.allow_float16:
+      raise ValueError(_FLOAT16_REFUSAL)

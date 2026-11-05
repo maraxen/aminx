@@ -11,7 +11,7 @@ from dataclasses import dataclass
 POTTSMPNN_COMMIT = "0cb0a58874e373d664114f1735deab77614e4ab5"
 LASERMPNN_COMMIT = "e70f2c6d765416f7e29d51bfd6d4e08496438878"
 PROTONPOTTSMPNN_COMMIT = "09682abfa7d20e0abcdeea0490b7a4b1c190aee3"
-EXTRACTOR_SHA256 = "6bb1ae1c3e63dc465c565092f7dc92c7c8490553d83eb2f0eda20f0b895b9f7b"
+EXTRACTOR_SHA256 = "dcfd2039e7de0e65dac53d189ba8e085669b38353f115836c0a062a442c2359d"
 
 @dataclass(frozen=True)
 class LaserCheckpointParamsKnobs:
@@ -620,4 +620,22 @@ class pottsmpnn_input_list:
   pottsmpnn_input_list__pdb: str | None = None  # type=str; help=PDB stem (text before the first |); sample_seqs.py:81-94
   pottsmpnn_input_list__designed_chains: str | None = None  # type=str; help=designed chains (colon-separated); sample_seqs.py:81-94
   pottsmpnn_input_list__fixed_chains: str | None = None  # type=str; help=fixed chains (colon-separated); sample_seqs.py:81-94
+
+
+@dataclass(frozen=True)
+class ThermoModelKnobs:
+  """Upstream ThermoMPNN-D v2_ssm.py command-line flags (argparse block, v2_ssm.py:538-576).
+
+  Upstream exposes no checkpoint, ensemble or dtype flag: the checkpoint is chosen by --mode
+  through get_config/get_model (v2_ssm.py:477-478), ensembling and precision are not options.
+  """
+
+  thermo_model__mode: str = "single"  # type=str; --mode single|additive|epistatic; v2_ssm.py:540-545
+  thermo_model__pdb: str = "./2OCJ.pdb"  # type=str; --pdb; v2_ssm.py:546
+  thermo_model__batch_size: int = 256  # type=int; --batch_size (epistatic only, v2_ssm.py:495); v2_ssm.py:547-553
+  thermo_model__out: str = "ssm"  # type=str; --out csv prefix; v2_ssm.py:554-555
+  thermo_model__chains: list[str] | None = None  # nargs=+; --chains; v2_ssm.py:556-560
+  thermo_model__threshold: float = -0.5  # type=float; --threshold; v2_ssm.py:561-566
+  thermo_model__distance: float = 5.0  # type=float; --distance (CA-CA cutoff); v2_ssm.py:567-572
+  thermo_model__ss_penalty: bool = False  # store_true; --ss_penalty; v2_ssm.py:573-577
 # END MANUAL

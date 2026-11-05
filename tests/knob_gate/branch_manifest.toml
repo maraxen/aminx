@@ -11,6 +11,7 @@
 # disk, and whose --output-paths include /<slug>/<git sha8>/branch_controls.json.
 
 [[branch]]
+family = "laser"
 id = "reversed_order"
 stage = "B5b"
 fixture = "laser_decode_e2e_examples"
@@ -20,6 +21,7 @@ kind = "sidecar"
 slug = "laser_decode_e2e"
 
 [[branch]]
+family = "laser"
 id = "chi_bin_plus_one"
 stage = "B5b"
 fixture = "laser_decode_e2e_examples"
@@ -29,6 +31,7 @@ kind = "sidecar"
 slug = "laser_decode_e2e"
 
 [[branch]]
+family = "laser"
 id = "offset_zero"
 stage = "B5b"
 fixture = "laser_decode_e2e_examples"
@@ -38,6 +41,7 @@ kind = "sidecar"
 slug = "laser_decode_e2e"
 
 [[branch]]
+family = "laser"
 id = "chi2_equals_chi1"
 stage = "B5b"
 fixture = "laser_decode_e2e_examples"
@@ -47,6 +51,7 @@ kind = "sidecar"
 slug = "laser_decode_e2e"
 
 [[branch]]
+family = "laser"
 id = "lambda_on_logits"
 stage = "B5b"
 fixture = "laser_decode_e2e_examples"
@@ -56,6 +61,7 @@ kind = "sidecar"
 slug = "laser_decode_e2e"
 
 [[branch]]
+family = "potts"
 id = "ar_mask_present_chain_m_pos"
 stage = "A5"
 fixture = "potts_example_pdbs"
@@ -65,6 +71,7 @@ kind = "sidecar"
 slug = "potts_ar_decode"
 
 [[branch]]
+family = "potts"
 id = "permute_etab_out_rows"
 stage = "A5"
 fixture = "potts_example_pdbs"
@@ -80,6 +87,7 @@ slug = "potts_energy_parity"
 # because :309 compares the raw argv string to exactly this set of ids.
 
 [[branch]]
+family = "laser"
 id = "reduction_swap"
 stage = "B7"
 fixture = "laser_proofread_examples"
@@ -89,6 +97,7 @@ kind = "sidecar"
 slug = "laser_proofread_parity"
 
 [[branch]]
+family = "laser"
 id = "ddof_0"
 stage = "B7"
 fixture = "laser_proofread_examples"
@@ -98,6 +107,7 @@ kind = "sidecar"
 slug = "laser_proofread_parity"
 
 [[branch]]
+family = "laser"
 id = "scalar_off"
 stage = "B7"
 fixture = "laser_proofread_examples"
@@ -107,6 +117,7 @@ kind = "sidecar"
 slug = "laser_proofread_parity"
 
 [[branch]]
+family = "laser"
 id = "vector_on"
 stage = "B7"
 fixture = "laser_proofread_examples"
@@ -122,6 +133,7 @@ slug = "laser_proofread_parity"
 # because :309 compares the raw argv string to exactly this set of ids.
 
 [[branch]]
+family = "laser"
 id = "unc_no_dropout"
 stage = "B7"
 fixture = "laser_proofread_examples"
@@ -131,6 +143,7 @@ kind = "sidecar"
 slug = "laser_proofread_unconditional_parity"
 
 [[branch]]
+family = "laser"
 id = "unc_scalar_off"
 stage = "B7"
 fixture = "laser_proofread_examples"
@@ -140,6 +153,7 @@ kind = "sidecar"
 slug = "laser_proofread_unconditional_parity"
 
 [[branch]]
+family = "laser"
 id = "unc_vector_on"
 stage = "B7"
 fixture = "laser_proofread_examples"
@@ -154,6 +168,7 @@ slug = "laser_proofread_unconditional_parity"
 # independent rows and each slug's --mutants must match its own set.
 
 [[branch]]
+family = "potts"
 id = "ar_mask_present_chain_m_pos"
 stage = "A6"
 fixture = "potts_example_pdbs"
@@ -163,6 +178,7 @@ kind = "sidecar"
 slug = "potts_ar_refine_exact"
 
 [[branch]]
+family = "potts"
 id = "wrong_partition_sign"
 stage = "A6"
 fixture = "potts_ar_refine_examples"
@@ -172,6 +188,7 @@ kind = "sidecar"
 slug = "potts_ar_refine_exact"
 
 [[branch]]
+family = "potts"
 id = "ntoc_refine_order"
 stage = "A6"
 fixture = "potts_ar_refine_examples"
@@ -187,6 +204,7 @@ slug = "potts_ar_refine_exact"
 # f11f2bf1 controls carry an absolute weights key (trap 3).
 
 [[branch]]
+family = "laser"
 id = "permute_decoder_layer"
 stage = "B4"
 fixture = "laser_score_examples"
@@ -211,6 +229,7 @@ slug = "laser_score_parity"
 # now happened in the stated order.
 
 [[branch]]
+family = "potts"
 id = "skip_transpose_merge_pair"
 stage = "A6"
 fixture = "megascale_test_subset"
@@ -234,6 +253,7 @@ slug = "potts_ddg_megascale"
 # <wave>.<control>. Each must report 'failed'. The ids are the --mutants string launch_wave.sh passes, by exact equality.
 
 [[branch]]
+family = "protonpotts"
 id = "features.backbone_threshold_0_5"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -243,6 +263,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.atom_threshold_just_below_half"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -252,6 +273,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.backbone_without_o"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -261,6 +283,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.no_arginine_fix"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -270,6 +293,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.no_keep_last_by_number"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -279,6 +303,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.atom_threshold_0_8"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -288,6 +313,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.r_idx_last_plus_one"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -297,6 +323,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.s_first_token_changed"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -306,6 +333,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.chain_labels_inverted"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -315,6 +343,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.x_m_first_atom_flipped"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -324,6 +353,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "features.x_nudged_by_1e-4"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -333,6 +363,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "encoder.pair_order_not_permuted"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -342,6 +373,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "encoder.pair_order_inverse_permutation"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -351,6 +383,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "encoder.token_order_not_permuted"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -360,6 +393,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "encoder.etab_not_permuted"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -369,6 +403,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "encoder.etab_first_axis_only"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -378,6 +413,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "encoder.output_nudged_1e-6_f64"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -387,6 +423,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "encoder.output_nudged_4x_band_f32"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -396,6 +433,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "energy.double_merge"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -405,6 +443,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "energy.no_merge"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -414,6 +453,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "energy.merge_without_transpose"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -423,6 +463,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "energy.upstream_token_order"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -432,6 +473,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "energy.energy_halved"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -441,6 +483,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "energy.energy_nudged_just_outside_f64"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -450,6 +493,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "energy.energy_nudged_4x_band_f32"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -459,6 +503,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "driver.token_names_in_upstream_order"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -468,6 +513,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "driver.candidate_rows_reversed"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -477,6 +523,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "driver.energy_nudged_4x_band"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -486,6 +533,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.uniforms_shifted_by_one"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -495,6 +543,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.combined_lambda_0p4"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -504,6 +553,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.block_size_2"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -513,6 +563,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.forbidden_tokens_not_applied"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -522,6 +573,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.repetitive_window_off"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -531,6 +583,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.wrong_contrast_token"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -540,6 +593,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.zscale_nudged_outside_f64"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -549,6 +603,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_block.energy_nudged_outside_f64"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -558,6 +613,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_greedy.uniforms_shifted_by_one"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -567,6 +623,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_greedy.block_size_2"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -576,6 +633,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_greedy.forbidden_tokens_not_applied"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -585,6 +643,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_greedy.repetitive_window_off"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -594,6 +653,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_greedy.cdf_in_aminx_token_order"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -603,6 +663,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_greedy.energy_nudged_outside_f64"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -612,6 +673,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_driver.combined_lambda_0p6"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -621,6 +683,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_driver.block_size_2"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -630,6 +693,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_driver.forbidden_tokens_reduced_to_unk"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -639,6 +703,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_driver.repetitive_window_off"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -648,6 +713,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_driver.wrong_contrast_token"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -657,6 +723,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.bias_ignored"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -666,6 +733,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.scalar_temperature"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -675,6 +743,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.x_not_zeroed"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -684,6 +753,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.fixed_treated_as_designed"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -693,6 +763,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.token_order_upstream"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -702,6 +773,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.cms_uses_conditional_mask"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -711,6 +783,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.uniforms_shifted_one_step"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -720,6 +793,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.cdf_in_aminx_order"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -729,6 +803,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "decoder.nudged_4x_band"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -738,6 +813,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ddg.ddg_sign_flipped"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -747,6 +823,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ddg.token_names_in_upstream_order"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -756,6 +833,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ddg.mutant_rows_reversed"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -765,6 +843,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ddg.energies_without_reference_subtracted"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -774,6 +853,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ddg.ddg_nudged_4x_band"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -783,6 +863,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.shared_order_across_rows"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -792,6 +873,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.uniforms_rows_swapped"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -801,6 +883,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.all_residues_designed"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -810,6 +893,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.cdf_in_aminx_order"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -819,6 +903,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.uniforms_shifted_one_step"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -828,6 +913,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.single_row_repeated"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -837,6 +923,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.temperature_one"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -846,6 +933,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "sample.nudged_4x_band"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -855,6 +943,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.cdf_in_aminx_order"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -864,6 +953,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.uniforms_shifted_one"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -873,6 +963,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.randints_shifted_one"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -882,6 +973,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.permutations_reversed"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -891,6 +983,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.field_untempered"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -900,6 +993,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.zscales_sample_std"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -909,6 +1003,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.temperature_doubled"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -918,6 +1013,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.combined_lambda_wrong"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -927,6 +1023,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.two_phase_frac_wrong"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -936,6 +1033,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.selective_flipped"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -945,6 +1043,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.backend_swapped"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -954,6 +1053,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.selective_source_swapped"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -963,6 +1063,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.valid_mask_all_true"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -972,6 +1073,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.pin_contrast_wrong"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -981,6 +1083,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.centre_among_designable"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -990,6 +1093,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.scan_unmasked"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -999,6 +1103,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.scan_selective_formula"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1008,6 +1113,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.gibbs_outgoing_only"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1017,6 +1123,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.cv_cap_wrong"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1026,6 +1133,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_methods.nudged_4x_band"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1035,6 +1143,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_knobs.position_knn"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1044,6 +1153,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_knobs.position_energy"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1053,6 +1163,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_knobs.swapped"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1062,6 +1173,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_knobs.shifted"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1071,6 +1183,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_objective_knobs.ignore_global"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1080,6 +1193,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_objective_knobs.flip_global"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1089,6 +1203,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_objective_knobs.ignore_adjrep"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1098,6 +1213,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_objective_knobs.ignore_self"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1107,6 +1223,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_objective_knobs.shifted"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1116,6 +1233,7 @@ kind = "sidecar"
 slug = "protonpotts_parity"
 
 [[branch]]
+family = "protonpotts"
 id = "ph_objective_knobs.block_zscales"
 stage = "P10"
 fixture = "protonpotts_dumps"
@@ -1123,3 +1241,141 @@ mutant = "ph_objective_knobs.block_zscales"
 [branch.vehicle]
 kind = "sidecar"
 slug = "protonpotts_parity"
+
+# ==============================================================================
+# Phase 3: Tier 1 & Tier 2 MPNN Variant Vehicles
+# ==============================================================================
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_reversed_hidden"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_reversed_hidden"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_zero_edge_features"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_zero_edge_features"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_permuted_output_weights"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_permuted_output_weights"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ab_mpnn"
+id = "tier1_shifted_decoding_order"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_shifted_decoding_order"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "cyclic_mpnn"
+id = "tier1_linear_offsets_on_cyclic"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "tier1_linear_offsets_on_cyclic"
+[branch.vehicle]
+kind = "sidecar"
+slug = "tier1_variants_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_quaternion_sign_flip"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_quaternion_sign_flip"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_rbf_block_swap"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_rbf_block_swap"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_zero_edge_features"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_zero_edge_features"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+[[branch]]
+family = "ca_only"
+id = "ca_permuted_output_weights"
+stage = "P3"
+fixture = "1ubq.pdb"
+mutant = "ca_permuted_output_weights"
+[branch.vehicle]
+kind = "sidecar"
+slug = "ca_only_parity"
+
+# ==============================================================================
+# Phase 2: ThermoMPNN / ThermoMPNN-D Parity Vehicle
+# ==============================================================================
+
+[[branch]]
+family = "thermo"
+id = "reversed_hidden"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "reversed_hidden"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
+
+[[branch]]
+family = "thermo"
+id = "omit_seq_subtraction"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "omit_seq_subtraction"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
+
+[[branch]]
+family = "thermo"
+id = "zero_edge_features"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "zero_edge_features"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
+
+[[branch]]
+family = "thermo"
+id = "permuted_output_weights"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "permuted_output_weights"
+[branch.vehicle]
+kind = "sidecar"
+slug = "thermo_mpnn_parity"
