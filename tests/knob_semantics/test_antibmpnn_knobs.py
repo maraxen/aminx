@@ -6,7 +6,7 @@ tests drive aminx's real ``sample`` / ``score`` on the real ``antibmpnn_v_48_000
 check what each upstream flag MEANS, not that a dataclass stores a value. The only AntiBMPNN-specific
 upstream logic is ``helper_scripts/parsing_design_result.py`` (descriptor scoring of a design segment).
 
-Numerical parity with the real upstream is NOT claimed here; that is ``scripts/parity/antibmpnn_parity_v2.py``.
+Numerical parity with the real upstream is NOT claimed here; that is ``scripts/parity/antibmpnn_parity_v3.py``.
 The earlier revision of this file tested ``cdr_scheme`` / ``heavy_chain_id`` / ``light_chain_id`` /
 ``cdr_bias_weight`` and a ``checkpoint_id`` option, none of which exists upstream (rg 261104 over the
 AntiBMPNN repository); those options were removed.

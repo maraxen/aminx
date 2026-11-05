@@ -47,10 +47,10 @@ THERMO_SLUGS = ("thermo_mpnn_parity",)
 TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
-  "antibmpnn_parity_v2",
+  "antibmpnn_parity_v3",
   "caliby_parity_v2",
 )
-# Vehicles that run standalone with ``--synthetic``. antibmpnn_parity_v2 / caliby_parity_v2 grade against sealed
+# Vehicles that run standalone with ``--synthetic``. antibmpnn_parity_v3 / caliby_parity_v2 grade against sealed
 # upstream dumps (``--oracle-dir`` etc.) and run only on titanix under bth; the static closure tests cover them.
 SYNTHETIC_RUNNABLE_SLUGS = ("tier1_variants_parity", "ca_only_parity")
 # A path component of the form ``/potts`` marks Potts-family code. caliby's own ``potts.py`` is its Potts
