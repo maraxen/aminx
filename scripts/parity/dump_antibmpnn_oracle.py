@@ -326,6 +326,21 @@ def main() -> None:
   for name in args.checkpoints.split(","):
     run_checkpoint(pu, root, name, feats, dump)
 
+  # Upstream ``ProteinMPNN.conditional_probs`` (protein_mpnn_utils.py:1292), the code behind
+  # ``--conditional_probs_only`` (Running_AntiBMPNN_run.py:271-282): p(s_i | rest of sequence, backbone), and with
+  # ``backbone_only`` p(s_i | backbone). Primary checkpoint, float32, every position designed ("knobs" config).
+  ckpt0 = torch.load(root / "antibmpnn_model_weights" / f"{PRIMARY}.pt", map_location="cpu", weights_only=False)
+  model0 = build_model(pu, ckpt0, double=False)
+  fk = feats["knobs"]
+  gen = torch.Generator().manual_seed(SEED + 7)
+  randn_c = torch.randn(fk["chain_M"].shape, generator=gen, dtype=torch.float32)
+  with torch.no_grad():
+    for tag, bb_only in (("full", False), ("backbone_only", True)):
+      dump[f"condprobs/{tag}"] = model0.conditional_probs(
+        fk["X"], fk["S"], fk["mask"], fk["chain_M"] * fk["chain_M_pos"], fk["residue_idx"], fk["chain_encoding_all"], randn_c, bb_only
+      ).numpy()
+  dump["condprobs/randn"] = randn_c.numpy()
+
   # End-to-end CLI run (real Running_AntiBMPNN_run.py main), only numpy.random.randint pinned.
   cli_dir = out / "cli_run"
   cli = _run_real_cli(root, out, cli_dir)
