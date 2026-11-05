@@ -329,6 +329,9 @@ dev = [
     "dm-tree>=0.1.8",
     # scipy.stats.pearsonr used in soluble/membrane parity tests.
     "scipy>=1.12.0",
+    # tests/parity/test_parity_report_artifacts.py renders figures. matplotlib used to
+    # arrive transitively (via jax-md/pymatgen) and dropped out with the proxide 0.2.0 lock.
+    "matplotlib",
 ]
 
 [tool.setuptools.package-data]
