@@ -1,0 +1,65 @@
+# Pre-registration v2 for the Caliby parity vehicle (P4 review fixes, 261104). Governs scripts/parity/caliby_parity_v2.py.
+# scripts/parity/caliby_parity.bth.toml (registered before run c79e9ba7) is NOT edited and NOT re-run; this
+# file supersedes it for any quoted mutant count.
+#
+# Changes against v1, from the P4 review: (1) a dump stem absent from caliby_oracle_dumps.sha256.json is a hard
+# error instead of self-trusting the dump's manifest; (2) a mutant is tripped only by a FINITE over-band diff,
+# NaN/inf/shape-mismatch stages and exceptions are recorded separately (n_crashed) and never count as a trip;
+# (3) four mutants reintroduce the shared-model fixes (virtual CB written into atom slot 4; Potts scale folded
+# into ONE factor so J scales as scale not scale^2; J_right read as [state, factor] and transposed;
+# k_neighbors_potts truncated 48 -> 32); (4) two packer-arm mutants (sigma scaled by 1.05; self-conditioning
+# input dropped) and two trunk mutants also graded on the packer arm (neighbors_farthest, slot4_virtual_cb_written).
+#
+# Power note, checked before registering: exp(log_scale) in the checkpoints is 0.0981 (caliby), 0.0914
+# (soluble_caliby_v1), 0.0599 (caliby_distill), so scale vs scale^2 differs by ~10x in J: the scale mutant has power.
+# The J_right mutant is a row permutation of W_J_right (equivalent to the pre-fix reshape-and-transpose).
+# k_neighbors_potts_truncated has power only because 1ubq has 76 residues so all 48 graph neighbors exist.
+#
+# Pre-run disclosure: the seven new/changed mutants were executed in development on titanix and their stage
+# diffs seen (all tripped; k_neighbors_potts_truncated first crashed on a static-field tree_at bug, now fixed);
+# the ten v1 mutants and all seven clean arms were seen in the v1 dev runs. Bands are the family-parity bands
+# (f64 1e-7, f32 1e-4; s7 and s0 coordinates 1e-4) and were not tuned. Not compared (unchanged): the Potts DLMC
+# sampler (#3121) and the packer Euler sampler with self-conditioning (TBD-CALIBY-3).
+#
+# Wall-time estimate: 7 clean arms ~2 min, 16 mutants (32 mutant arm-runs, ~15-20 s each) ~10-15 min on titanix CPU
+# (measured 261104 dev: 1 clean arm + 7 mutants = 103 s).
+
+[experiment]
+hypothesis = "aminx Caliby matches the sealed upstream dumps on all seven (checkpoint, dtype) arms within 1e-7 (float64) / 1e-4 (float32), and each of sixteen aminx-side code or weight mutants, including those that reintroduce the shared-model fixes and four that are graded on the caliby_packer_010 arm, produces a finite over-band diff on at least one stage, with no mutant arm crashing."
+stage_name = "validation"
+
+[reproduction]
+reproduces_paper = "doi:10.1101/2025.09.30.679633"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "clean == 'pass' AND weight_source == 'upstream_checkpoint' AND n_arms == 7 AND n_clean_arms_in_band == 7 AND n_listed == 16 AND n_failed == n_listed AND n_crashed == 0 AND n_packer_arm_mutants == 4 AND n_packer_arm_tripped == 4"
+decision = "Treat the exercised Caliby stages as reproducing upstream, with the shared-model fixes and the packer arm guarded by negative controls; sampler loops remain open under #3121 and TBD-CALIBY-3."
+reasoning = "Every clean arm is in band against sealed upstream dumps, every mutant tripped on a finite over-band stage, none crashed, and the packer arm detected all four mutants run on it."
+is_residual = false
+
+[outcomes.fail]
+condition = "clean != 'pass' OR weight_source != 'upstream_checkpoint' OR n_arms != 7 OR n_clean_arms_in_band != 7 OR n_listed != 16 OR n_failed != n_listed OR n_crashed != 0 OR n_packer_arm_mutants != 4 OR n_packer_arm_tripped != 4"
+decision = "Block promotion; read clean_summary.out_of_band for the first stage that left its band, and mutants/mutant_detail for survivors or crashes."
+reasoning = "A clean arm is out of band, a mutant survived or crashed (the diff cannot see that perturbation), or the packer arm missed a mutant."
+is_residual = true
+
+[result_schema]
+clean = "str"
+n_arms = "int"
+n_clean_arms_in_band = "int"
+n_listed = "int"
+n_failed = "int"
+n_crashed = "int"
+n_packer_arm_mutants = "int"
+n_packer_arm_tripped = "int"
+weight_source = "str"
+oracle_dump_sha256 = "dict"
+clean_summary = "dict"
+clean_stages = "dict"
+mutants = "dict"
+mutant_detail = "dict"
+not_compared = "list"
