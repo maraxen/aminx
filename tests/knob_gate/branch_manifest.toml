@@ -1590,7 +1590,7 @@ fixture = "1ubq.pdb"
 mutant = "sigma_min_old_default"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1600,7 +1600,7 @@ fixture = "1ubq.pdb"
 mutant = "cosine_unmask_schedule"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1610,7 +1610,7 @@ fixture = "1ubq.pdb"
 mutant = "rank_decoding_order"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1620,7 +1620,7 @@ fixture = "1ubq.pdb"
 mutant = "selfcond_off"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1630,7 +1630,7 @@ fixture = "1ubq.pdb"
 mutant = "step_scale_one"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1640,7 +1640,7 @@ fixture = "1ubq.pdb"
 mutant = "conf_bins_0_8"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1650,7 +1650,7 @@ fixture = "1ubq.pdb"
 mutant = "ghost_atoms_to_origin"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1660,7 +1660,7 @@ fixture = "1ubq.pdb"
 mutant = "chain_embedding_off"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
 
 [[branch]]
 family = "fampnn"
@@ -1670,4 +1670,4 @@ fixture = "1ubq.pdb"
 mutant = "categorical_reversed_cdf"
 [branch.vehicle]
 kind = "sidecar"
-slug = "fampnn_parity"
+slug = "fampnn_parity_v2"
