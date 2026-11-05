@@ -20,7 +20,7 @@ dependencies = [
     "equinox>=0.13.2",
     "zstandard>=0.21.0",
     "msgpack-numpy>=0.4.8",
-    "proxide>=0.1.0a17",
+    "proxide>=0.2.0",
     "typer>=0.12.0",
     "huggingface-hub>=0.23.0",
     "xtrax[io,export]==0.4.1b5",
