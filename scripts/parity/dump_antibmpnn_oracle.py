@@ -20,6 +20,10 @@ Injection points (all stochastic steps are driven by arrays stored in the dump):
   float64. No upstream source line is edited. ``all_probs`` (:1130) is float32 upstream, so sampler
   probabilities are graded at the float32 band only.
 
+v2 (261104_p4-review-fixes): the decoding-order ``randn`` is drawn ONCE in explicit float32 and the order is
+computed once in float32, then fed to both the f32 and f64 passes (v1 drew it under the float64 default dtype in
+the f64 pass, so f64 and f32 used different orders and cross-precision logit comparisons were invalid).
+
 The end-to-end CLI is also executed once (``Running_AntiBMPNN_run.py`` ``main`` with only
 ``numpy.random.randint`` pinned, because the script ignores ``--seed``: lines 26-30 draw a random
 seed) to produce a real ``.fa``; ``dump_antibmpnn_descriptors_oracle.py`` consumes that file.
@@ -205,14 +209,21 @@ def run_checkpoint(pu: Any, root: Path, name: str, feats: dict[str, dict[str, An
       dt = torch.float64 if double else torch.float32
       for cfg_name, cfg in CONFIGS.items():
         f = feats[cfg_name]
+        # ONE float32 draw per config, shared by both precisions. The v1 dump drew ``torch.randn`` here
+        # under ``set_default_dtype(float64)`` in the f64 pass, so the f64 decoding order differed from
+        # f32's (order_tf differed at 120/121 positions) and every cross-precision logit comparison was
+        # invalid. dtype is explicit so the default-dtype context cannot change the draw.
         gen = torch.Generator().manual_seed(SEED)
-        randn1 = torch.randn(f["chain_M"].shape, generator=gen)
-        randn2 = torch.randn(f["chain_M"].shape, generator=gen)
+        randn1 = torch.randn(f["chain_M"].shape, generator=gen, dtype=torch.float32)
+        randn2 = torch.randn(f["chain_M"].shape, generator=gen, dtype=torch.float32)
         noise_rng = np.random.default_rng(SEED + 2)
         noise = noise_rng.gumbel(size=(f["X"].shape[1], 21))
         pre = f"{name}/{precision}/{cfg_name}"
         X, S, mask = f["X"].to(dt), f["S"], f["mask"].to(dt)
         chain_m = (f["chain_M"] * f["chain_M_pos"]).to(dt)
+        # The decoding order is computed ONCE, in float32 (protein_mpnn_utils.py:1082 formula), and fed to
+        # BOTH precisions through ``use_input_decoding_order``; a float64 argsort could break a near-tie.
+        order_f32 = torch.argsort((f["chain_M"] * f["chain_M_pos"] * f["mask"] + 0.0001) * torch.abs(randn1))
         with torch.no_grad():
           # forward stages: mirror protein_mpnn_utils.py:1061-1069 using the model's own modules
           E, E_idx = model.features(X, mask, f["residue_idx"], f["chain_encoding_all"])
@@ -223,13 +234,16 @@ def run_checkpoint(pu: Any, root: Path, name: str, feats: dict[str, dict[str, An
           mask_attend = mask.unsqueeze(-1) * mask_attend
           for layer in model.encoder_layers:
             h_V, h_E = layer(h_V, h_E, E_idx, mask, mask_attend)
-          log_probs = model(X, S, mask, chain_m, f["residue_idx"], f["chain_encoding_all"], randn1.to(dt))
-          order1 = torch.argsort((chain_m * mask + 0.0001) * torch.abs(randn1.to(dt)))
-          log_probs_order = model(
+          log_probs = model(
             X, S, mask, chain_m, f["residue_idx"], f["chain_encoding_all"], randn1.to(dt),
-            use_input_decoding_order=True, decoding_order=order1,
+            use_input_decoding_order=True, decoding_order=order_f32,
           )
-          assert torch.equal(log_probs, log_probs_order), "decoding-order recomputation disagrees with upstream forward"
+          # the upstream forward's own internal order in this precision (informational, see order_internal_equal)
+          log_probs_internal = model(X, S, mask, chain_m, f["residue_idx"], f["chain_encoding_all"], randn1.to(dt))
+          order_internal = torch.argsort((chain_m * mask + 0.0001) * torch.abs(randn1.to(dt)))
+        dump[f"{pre}/order_internal_equal"] = np.asarray(bool(torch.equal(order_internal, order_f32)))
+        dump[f"{pre}/log_probs_internal_order"] = log_probs_internal.numpy()
+        order1 = order_f32
         dump[f"{pre}/E_idx"] = E_idx.numpy()
         dump[f"{pre}/h_V_enc"] = h_V.numpy()
         dump[f"{pre}/order_tf"] = order1.numpy()
