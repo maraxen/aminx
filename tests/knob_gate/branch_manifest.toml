@@ -1546,7 +1546,7 @@ slug = "caliby_parity_v2"
 # Phase 4 fix (261104_p4-review-fixes): AntiBMPNN v2. Nine perturbations, each must push its designated stage above
 # 1e-3 against the sealed real-upstream dump. Seven are CODE-level (aminx behaviour perturbed); zero_edge_embedding and
 # swap_checkpoint_noise are WEIGHT-level controls (they edit loaded parameters and show the comparison is sensitive to
-# the weights, not that aminx code is exercised). Vehicle: scripts/parity/antibmpnn_parity_v2.py (supersedes
+# the weights, not that aminx code is exercised). Vehicle: scripts/parity/antibmpnn_parity_v3.py (v2 + finiteness rule; supersedes antibmpnn_parity_v2.py,
 # antibmpnn_parity.py). EMPTY ledger shard until a real wave.
 # ==============================================================================
 
@@ -1558,7 +1558,7 @@ fixture = "HuJ3"
 mutant = "reversed_ar_mask"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1568,7 +1568,7 @@ fixture = "HuJ3"
 mutant = "offset_shift"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1578,7 +1578,7 @@ fixture = "HuJ3"
 mutant = "entry_ar_mask_transposed"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1588,7 +1588,7 @@ fixture = "HuJ3"
 mutant = "omit_penalty_dropped"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1598,7 +1598,7 @@ fixture = "HuJ3"
 mutant = "lehninger_pka_shifted"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1608,7 +1608,7 @@ fixture = "HuJ3"
 mutant = "barley_tables_swapped"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1618,7 +1618,7 @@ fixture = "HuJ3"
 mutant = "parser_wrong_atom_order"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1628,7 +1628,7 @@ fixture = "HuJ3"
 mutant = "zero_edge_embedding"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 [[branch]]
 family = "antibmpnn"
@@ -1638,7 +1638,7 @@ fixture = "HuJ3"
 mutant = "swap_checkpoint_noise"
 [branch.vehicle]
 kind = "sidecar"
-slug = "antibmpnn_parity_v2"
+slug = "antibmpnn_parity_v3"
 
 # ==============================================================================
 # Phase 4: FAMPNN parity vehicle (redo 261104; sealed upstream oracle, real weights)
