@@ -56,6 +56,11 @@ SYNTHETIC_RUNNABLE_SLUGS = ("tier1_variants_parity", "ca_only_parity")
 # A path component of the form ``/potts`` marks Potts-family code. caliby's own ``potts.py`` is its Potts
 # decoder head, not Potts-MPNN code, so the family's directory is exempt.
 _OWN_POTTS_HEAD = "/families/caliby/"
+
+
+def _is_own_potts_head(slug: str, path: str) -> bool:
+  """The exemption belongs to the caliby row alone; any other row reaching caliby code is still a leak."""
+  return slug == "caliby_parity" and _OWN_POTTS_HEAD in path
 FAMPNN_SLUGS = ("fampnn_parity",)
 ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS)
 
@@ -270,7 +275,7 @@ def test_potts_rows_do_not_depend_on_laser_code(slug: str) -> None:
 @pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
 def test_tier1_tier2_rows_do_not_depend_on_potts_code(slug: str) -> None:
   closure = _real(slug)
-  potts_hits = [f for f in closure.files if "/potts" in f and _OWN_POTTS_HEAD not in f]
+  potts_hits = [f for f in closure.files if "/potts" in f and not _is_own_potts_head(slug, f)]
   assert not potts_hits, f"a Tier 1/2 row ({slug}) reaches Potts code"
   assert not [f for f in closure.files if "/laser" in f], f"a Tier 1/2 row ({slug}) reaches LASEr code"
 
@@ -506,7 +511,7 @@ def test_protonpotts_row_reaches_its_family_and_not_laser(slug: str) -> None:
     assert needed in closure.files, needed
 
 
-@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS])
+@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS])
 def test_other_families_do_not_depend_on_protonpotts_code(slug: str) -> None:
   closure = _real(slug)
   assert not [f for f in closure.files if "protonpotts" in f], "a Potts/LASEr row reaches ProtonPotts code"
@@ -618,7 +623,7 @@ def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> Non
   assert out_loaded.exists(), f"Closure hook did not record loaded files for {slug}"
   data = json.loads(out_loaded.read_text(encoding="utf-8"))
   loaded = data.get("loaded", [])
-  assert not [f for f in loaded if "/potts" in f and _OWN_POTTS_HEAD not in f], (
+  assert not [f for f in loaded if "/potts" in f and not _is_own_potts_head(slug, f)], (
     f"Vehicle {slug} dynamically loaded potts code"
   )
   assert not [f for f in loaded if "/laser" in f], f"Vehicle {slug} dynamically loaded laser code"

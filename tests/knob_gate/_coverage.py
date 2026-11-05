@@ -51,6 +51,7 @@ _WEIGHT_PREFIXES = (
   "ca_only_",
   "antibmpnn_",
   "fampnn_",
+  "caliby_",
 )
 
 
