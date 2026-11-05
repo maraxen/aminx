@@ -3858,7 +3858,7 @@ ref = "caliby_run__ckpt_name_or_path"
 targets = ["checkpoint_id"]
 equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_caliby_knobs.py::test_knob_semantics_caliby_checkpoint_id"]
-note = "Upstream ckpt_name_or_path (eval/sampling/seq_des.yaml:6, weights.py:11-18 registry names, literal .ckpt path). aminx checkpoint_id takes the same eight names; a model_local_path ending .ckpt loads through convert_caliby_*_state_dict. The real caliby/soluble_caliby_v1/caliby_distill/caliby_packer_010 checkpoints load and match the sealed oracle (caliby_parity)."
+note = "Upstream ckpt_name_or_path (eval/sampling/seq_des.yaml:6, weights.py:11-18 registry names, literal .ckpt path). aminx checkpoint_id accepts the registered names (only caliby, soluble_caliby_v1, caliby_distill and caliby_packer_010 are registered in checkpoint_registry.json and graded); a model_local_path ending .ckpt loads through convert_caliby_*_state_dict. The real caliby/soluble_caliby_v1/caliby_distill/caliby_packer_010 checkpoints load and match the sealed oracle (caliby_parity)."
 
 [[row]]
 ref = "caliby_run__pos_constraint_csv"

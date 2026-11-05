@@ -392,7 +392,8 @@ class CalibyTokenFeatures(eqx.Module):
     # Replace masked/missing atoms with CA before virtual CB & RBF computation (atom_mpnn.py:424)
     xyz_ca_filled = jnp.where(mask23[..., None] > 0, xyz, xyz[:, 1:2, :])
 
-    # Upstream (caliby/model/seq_denoiser/denoisers/seq_design/atom_mpnn.py:174-200) never writes a
+    # Upstream (caliby/model/seq_denoiser/denoisers/seq_design/atom_mpnn.py: CA-fill at :196, version-1
+    # virtual CB inside _get_rbf_all at :278-303) never writes a
     # virtual CB into atom slot 4: the version-0 grid uses the CA-filled atoms as they are, and the
     # version-1 path adds a virtual CB computed from the CA-filled N, CA, C only as the fifth
     # backbone atom of the 5x5 block. Slot 4 of the backbone-sidechain block stays the CA-filled atom.
