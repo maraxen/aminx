@@ -231,6 +231,10 @@ OBSERVATIONS: dict[str, Verdict] = {
   "chain_id": SpecOnly(
     reason="selects which chains are parsed; JSON-decoded at cli.py:1701",
   ),
+  "decoding_order_seed": SpecOnly(
+    reason="a plain int that must survive the manifest round trip; read at kernel_dispatch.py (_with_sample_order) "
+    "and multistate_poe.py (sample_states_fused) to draw the decoding order from the seed alone",
+  ),
   "multi_state_strategy": SpecOnly(
     reason="selects stage_set.logit_transform via make_stage_set, plan.py:797",
   ),
