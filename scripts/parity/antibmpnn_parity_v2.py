@@ -261,7 +261,7 @@ def _entry_logp(pdb: Path, checkpoint_id: str, seq: str, ar: Any, length: int) -
   return np.asarray(jax.nn.log_softmax(jnp.asarray(logits), axis=-1))
 
 
-def _stage_entry(d: Any, root: Path, ckpts: tuple[str, ...]) -> dict[str, Any]:  # noqa: ANN401
+def _stage_entry(d: Any, root: Path, ckpts: tuple[str, ...], *, with_cond: bool = True) -> dict[str, Any]:  # noqa: ANN401
   """``runner.score`` on the published weights vs the dump: teacher-forced (all given ckpts) and conditional_probs."""
   pdb = root / "inputs" / "HuJ3" / "HuJ3.pdb"
   seq = "".join(ALPHABET[int(i)] for i in d["feat/cdr5/S"][0])
@@ -276,7 +276,7 @@ def _stage_entry(d: Any, root: Path, ckpts: tuple[str, ...]) -> dict[str, Any]: 
       "ckpt": name, "stage": "entry_tf", "gap_same": _maxabs(lp, d[f"{name}/f32/cdr5/log_probs_tf"][0]),
       "gap_f64": _maxabs(lp, d[f"{name}/f64/cdr5/log_probs_tf"][0]), "floor": _floors(d, name)["logits"],
     })
-  if PRIMARY in ckpts:
+  if PRIMARY in ckpts and with_cond:
     # --conditional_probs_only (Running_AntiBMPNN_run.py:271-282): upstream ProteinMPNN.conditional_probs
     floor = _floors(d, PRIMARY, "knobs")["logits"]
     # Upstream decodes each position LAST (protein_mpnn_utils.py:1330: order key (order_mask + 1e-4) * |randn|, order_mask
@@ -466,13 +466,17 @@ def _run_arm(args: argparse.Namespace) -> dict[str, Any]:
   metrics: dict[str, Any] = {}
   with x64(False):
     metrics["f32"] = _stage_forward(d, root, ckpts, jnp.float32, "f32")
-    metrics["entry"] = _stage_entry(d, root, ckpts)
+    # the 14 conditional_probs score() calls run in the clean arm and in the entry mutant only (wall time)
+    metrics["entry"] = _stage_entry(d, root, ckpts, with_cond=clean or args.arm == "entry_ar_mask_transposed")
     metrics["sampler"], metrics["sampler_token_mismatch"] = _stage_sampler(d, root, jnp.float32)
     metrics["descriptors"] = _stage_descriptors(dd)
   if clean:
     with x64(True):
       metrics["f64"] = _stage_forward(d, root, ckpts, jnp.float64, "f64")
   metrics["parse"] = _stage_parse(d, root)
+  import aminx
+
+  metrics["aminx_file"] = str(Path(aminx.__file__).resolve())  # which tree was graded
   metrics["seconds"] = time.time() - t0
   return metrics
 
@@ -585,6 +589,7 @@ def _parent(args: argparse.Namespace) -> dict[str, Any]:
       for m in mutants
     },
     "arm_seconds": {a: v.get("seconds") for a, v in measured.items()},
+    "aminx_file": {a: v.get("aminx_file") for a, v in measured.items()},
   }
   log.info("summary %s", json.dumps({k: v for k, v in summary.items() if k != "decomposition"}, default=str))
   return summary

@@ -17,6 +17,10 @@
 #    at j moves the aminx logits AT j (2-hop leakage through later layers), so aminx's default full-context score is not
 #    upstream's conditional_probs estimand (which decodes the probed position last). The entry stage therefore feeds
 #    runner.score a per-position ar_mask (probed position last, built from the dump's stored randn) for conditional_probs.
+#  * The conditional_probs cells (entry_cond_full over 13 probed positions, entry_cond_backbone over all 121) compare aminx
+#    float32 with the upstream float32 (the dump has no float64 conditional_probs; gap_f64 is set equal to gap_same) and use
+#    the knobs-config teacher-forced float32-vs-float64 floor of checkpoint 000 as the proxy floor, so for those two cells
+#    the rule is "within max(3 x proxy floor, 2e-5)", not strictly the float64-truth rule of the other cells.
 #  * The float32 rule below is derived from the floor, not from any aminx value: a tolerance scaled by the
 #    measured upstream f32-vs-f64 gap for that (checkpoint, stage), because two independent float32
 #    implementations each sit about one floor from the truth. The multipliers (3 pass, 10 marginal) and absolute
@@ -25,8 +29,10 @@
 #    checkpoint 000 (floor 2.8e-4); the sampler-probability and descriptor bands stay at the brief's flat 1e-4.
 #
 # WALL TIME (estimate, titanix CPU, JAX_PLATFORMS=cpu, OMP_NUM_THREADS=4): the v1 clean arm took ~46 s and each v1
-# mutant arm 20-26 s; v2 adds the runner.score entry stage (6 score() calls, one compile each) so ~90 s clean and
-# ~35 s per mutant arm, ~6-8 min whole run. Each arm is its own interpreter with its own 3600 s timeout; nothing is long
+# mutant arm 20-26 s; v2 adds the runner.score entry stage: 4 teacher-forced calls + 14 conditional_probs calls in the
+# clean arm (a score() call costs several seconds; the narrow knob test suite, ~40 score/sample calls, took ~9 min), so
+# the clean arm is estimated at 5-10 min, each mutant arm 1-2 min (the 14 conditional_probs calls run only in the
+# entry mutant), whole run 20-30 min. Each arm is its own interpreter with its own 3600 s timeout; nothing is long
 # enough to need preemption-safe resume (inputs are sha256-pinned, so a rerun cannot silently grade different bytes).
 
 [metadata]
@@ -135,4 +141,4 @@ antibmpnn_v_48_020 = "90b2554dc20e550acca8f4e6d864264638c2fad3798e2b55d8a489a144
 antibmpnn_v_48_030 = "5c155208f707cee0d6b7733f897c503cb379c6b8a31a4bc9ccf3e7f01aa04abf"
 
 [provenance]
-note = "Graded invocation on titanix: AMINX_WEIGHTS_DIR=<hub snapshot 5ff5cf16...> bth run -- <venv python> scripts/parity/antibmpnn_parity_v2.py --oracle-dir $ANTIBMPNN_ORACLE_DIR --antibmpnn-root /home/solab/repos/AntiBMPNN --controls-out $SC/antibmpnn_parity_v2/<git-sha8>/branch_controls.json (all nine mutants are the script default). Injection points: decoding order via the randn argument of ProteinMPNN.forward/sample (protein_mpnn_utils.py:1057,1104), now one float32 draw and one float32 argsort shared by both precisions through use_input_decoding_order; categorical draw via torch.multinomial at :1180 replaced by a Gumbel-max on stored noise; float64 via a torch.Tensor.float patch (upstream hard-codes .float() at :734,:1084,:1121; no source edit). Float64 sampler is not graded: upstream allocates all_probs as float32 (:1130). runner.sample is not compared bit-wise (it draws order and noise from jax.random with no injection hook)."
+note = "Graded invocation on titanix (cwd = a bundle clone of the pushed branch; PATH has $HOME/.local/bin; UV_PROJECT_ENVIRONMENT = the shared verify venv, read-only via --no-sync): AMINX_WEIGHTS_DIR=<hub snapshot 5ff5cf16...> bth run --project-slug aminx -- uv run --no-sync python scripts/parity/antibmpnn_parity_v2.py --oracle-dir $ANTIBMPNN_ORACLE_DIR --antibmpnn-root /home/solab/repos/AntiBMPNN --weights-dir $AMINX_WEIGHTS_DIR --mutants reversed_ar_mask,offset_shift,entry_ar_mask_transposed,omit_penalty_dropped,lehninger_pka_shifted,barley_tables_swapped,parser_wrong_atom_order,zero_edge_embedding,swap_checkpoint_noise --controls-out $SC/antibmpnn_parity_v2/<git-sha8>/branch_controls.json. The summary records which aminx file was graded (aminx_file). Injection points: decoding order via the randn argument of ProteinMPNN.forward/sample (protein_mpnn_utils.py:1057,1104), now one float32 draw and one float32 argsort shared by both precisions through use_input_decoding_order; categorical draw via torch.multinomial at :1180 replaced by a Gumbel-max on stored noise; float64 via a torch.Tensor.float patch (upstream hard-codes .float() at :734,:1084,:1121; no source edit). Float64 sampler is not graded: upstream allocates all_probs as float32 (:1130). runner.sample is not compared bit-wise (it draws order and noise from jax.random with no injection hook)."
