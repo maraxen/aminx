@@ -141,14 +141,15 @@ def install_variant(variant: str, tabs: dict[str, np.ndarray]) -> None:
   sidechain_diffusion.timestep_frequency_table = lambda half, max_period=10000.0: np.asarray(ts)[:half]  # noqa: ARG005
 
 
-def stage_report(o: fp.Oracle, model: Any, tags_edm: tuple[str, ...], tags_sample: tuple[str, ...]) -> list[dict[str, Any]]:  # noqa: ANN401
+def stage_report(o: fp.Oracle, model: Any, tags_edm: tuple[str, ...], tags_sample: tuple[str, ...], only_sample: bool = False) -> list[dict[str, Any]]:  # noqa: ANN401
   led = fp.Ledger({})
   pdbs_unused = None
   _ = pdbs_unused
   for fx in fp.FIXTURES:
-    fp.stage_enc(led, o, model, CK, fx)
-    fp.stage_scn1(led, o, model, CK, fx)
-    fp.stage_edm(led, o, model, CK, fx, tags=tags_edm)
+    if not only_sample:
+      fp.stage_enc(led, o, model, CK, fx)
+      fp.stage_scn1(led, o, model, CK, fx)
+      fp.stage_edm(led, o, model, CK, fx, tags=tags_edm)
     fp.stage_sample(led, o, model, CK, fx, tags=tags_sample)
   return led.rows
 
@@ -161,7 +162,7 @@ def summarise(rows: list[dict[str, Any]]) -> dict[str, Any]:
       continue
     parts = r["key"].split("/")
     fx = next((p for p in parts if p in fp.FIXTURES), "?")
-    name = f"{fx}/{r['stage']}/{parts[-1]}"
+    name = "/".join(parts[1:]) if fx in parts else f"?/{r['stage']}/{parts[-1]}"
     w[name] = max(w.get(name, 0.0), r["dev"])
   return w
 
@@ -174,6 +175,8 @@ def main() -> int:
   ap.add_argument("--fampnn-root", default="/home/solab/repos/fampnn")
   ap.add_argument("--out", type=Path, required=True)
   ap.add_argument("--quick", action="store_true", help="only s50 edm and the D_churn_hot sample config")
+  ap.add_argument("--only-sample", action="store_true", help="skip enc/scn1/edm (already shown to agree to ~1e-13 with matching tables)")
+  ap.add_argument("--oracles", default="sealed_f64,f64tab")
   args = ap.parse_args()
   logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)
   sealed, tabdir = Path(args.sealed_dir), Path(args.f64tab_dir)
@@ -194,10 +197,12 @@ def main() -> int:
     tags_e = ("s50",) if args.quick else fp.EDM_TAGS
     tags_s = ("D_churn_hot",) if args.quick else fp.SAMPLE_TAGS
     for name, d in (("sealed_f64", sealed), ("f64tab", tabdir)):
+      if name not in args.oracles.split(","):
+        continue
       jax.clear_caches()
       o = fp.Oracle(d, "f64")
       LOG.info("variant=%s oracle=%s", args.variant, name)
-      rows = stage_report(o, model, tags_e, tags_s)
+      rows = stage_report(o, model, tags_e, tags_s, args.only_sample)
       res[f"vs_{name}"] = summarise(rows)
   args.out.parent.mkdir(parents=True, exist_ok=True)
   args.out.write_text(json.dumps(res, indent=1, sort_keys=True))
