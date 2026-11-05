@@ -17,6 +17,12 @@ are exact in both arms. Negative controls are aminx-side code perturbations; one
 control works) when its targeted stage leaves the float64 band by more than 1e-4 or flips a discrete
 value.
 
+Superseded: the registered v1 run (``fampnn_parity.bth.toml``, recorded FAIL) is NOT reproducible from this file.
+It graded before the float32 ``local_to_global_scn`` frame fix (f8dcb58c) and before non-finite values and shape
+mismatches were counted separately, so the same code now gives different numbers and a stricter clean verdict.
+The v1 sidecar and its recorded FAIL stand unedited. Current vehicle: ``fampnn_parity_v3.py`` (sidecar
+``fampnn_parity_v3.bth.toml``); v2 is ``fampnn_parity_v2.py`` and was graded before the counters existed.
+
 Run on titanix. Required env: ``AMINX_FAMPNN_ORACLE_DIR`` (holds ``f32/`` and ``f64/``),
 ``AMINX_FAMPNN_ROOT`` (upstream clone; default ``~/repos/fampnn``).
 """
@@ -172,24 +178,31 @@ class Ledger:
     return max(F32_BAND_FLOOR, F32_FLOOR_MULT * self.floors.get(key, 0.0))
 
   def cont(self, arm: str, stage: str, key: str, ours: Any, ref: np.ndarray) -> float:  # noqa: ANN401
+    """Record one continuous diff. Non-finite and shape-mismatched values get their own row kinds.
+
+    They are counted separately (``_n_kind``), fail a clean arm, and never count as a mutant trip, which needs a
+    FINITE over-band diff or a discrete flip.
+    """
     a = np.asarray(ours, dtype=np.float64)
     b = np.asarray(ref, dtype=np.float64)
+    band = self.band(arm, stage, key)
     if a.shape != b.shape:
-      self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": float("inf"), "band": self.band(arm, stage, key), "kind": "shape"})
-      return float("inf")
+      self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": float("nan"), "band": band, "kind": "shape"})
+      return float("nan")
+    if a.size and not (np.all(np.isfinite(a)) and np.all(np.isfinite(b))):
+      self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": float("nan"), "band": band, "kind": "nonfinite"})
+      return float("nan")
     dev = float(np.max(np.abs(a - b))) if a.size else 0.0
-    if not np.isfinite(dev):
-      dev = float("inf")
-    self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": dev, "band": self.band(arm, stage, key), "kind": "cont"})
+    self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": dev, "band": band, "kind": "cont"})
     return dev
 
   def disc(self, arm: str, stage: str, key: str, ours: Any, ref: np.ndarray) -> int:  # noqa: ANN401
     a = np.asarray(ours)
     b = np.asarray(ref)
     if a.shape != b.shape:
-      n = max(a.size, b.size, 1)
-    else:
-      n = int(np.sum(a != b))
+      self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": 0.0, "band": 0.0, "kind": "shape"})
+      return 0
+    n = int(np.sum(a != b))
     self.rows.append({"arm": arm, "stage": stage, "key": key, "dev": float(n), "band": 0.0, "kind": "disc"})
     return n
 
@@ -201,6 +214,11 @@ def _worst(rows: list[dict[str, Any]], arm: str, stage: str) -> float:
 
 def _n_over(rows: list[dict[str, Any]], arm: str) -> int:
   return sum(1 for r in rows if r["arm"] == arm and r["kind"] == "cont" and not r["dev"] <= r["band"])
+
+
+def _n_kind(rows: list[dict[str, Any]], arm: str | None, kind: str) -> int:
+  """Rows of ``kind`` (``nonfinite`` or ``shape``) for one arm, or for every arm when ``arm`` is None."""
+  return sum(1 for r in rows if (arm is None or r["arm"] == arm) and r["kind"] == kind)
 
 
 def _n_disc(rows: list[dict[str, Any]], arm: str) -> int:
@@ -543,25 +561,34 @@ _MUTANT_STAGES: dict[str, tuple[str, ...]] = {
 
 
 def run_mutant(name: str, o64: Oracle, models64: dict[str, Any]) -> tuple[str, dict[str, float]]:
-  """Run the targeted stages with the perturbation applied; "failed" means the control tripped."""
+  """Run the targeted stages with the perturbation applied.
+
+  ``failed`` (the control tripped) needs a FINITE continuous diff above MUTANT_TRIP or a discrete flip. Non-finite
+  values and shape mismatches are counted in the detail and never trip; an exception is ``crashed``.
+  """
   led = Ledger({})
   stages = _MUTANT_STAGES[name]
   ck, fx = "fampnn_0_3", "1ubq"
-  with _mutant_ctx(name):
-    if "enc" in stages:
-      stage_enc(led, o64, models64[ck], ck, "1ubq_AB", states=("half", "full"), flat_chain=(name == "chain_embedding_off"))
-    if "scn1" in stages:
-      stage_scn1(led, o64, models64[ck], ck, fx)
-    if "edm" in stages:
-      stage_edm(led, o64, models64[ck], ck, fx, tags=("s50",))
-    if "sample" in stages:
-      # the categorical draw is only exercised where the distribution is not peaked: T = 1.0 is config D
-      tag = "D_churn_hot" if name == "categorical_reversed_cdf" else "A_default"
-      stage_sample(led, o64, models64[ck], ck, fx, tags=(tag,))
+  try:
+    with _mutant_ctx(name):
+      if "enc" in stages:
+        stage_enc(led, o64, models64[ck], ck, "1ubq_AB", states=("half", "full"), flat_chain=(name == "chain_embedding_off"))
+      if "scn1" in stages:
+        stage_scn1(led, o64, models64[ck], ck, fx)
+      if "edm" in stages:
+        stage_edm(led, o64, models64[ck], ck, fx, tags=("s50",))
+      if "sample" in stages:
+        # the categorical draw is only exercised where the distribution is not peaked: T = 1.0 is config D
+        tag = "D_churn_hot" if name == "categorical_reversed_cdf" else "A_default"
+        stage_sample(led, o64, models64[ck], ck, fx, tags=(tag,))
+  except Exception:  # noqa: BLE001 - a crash is a recorded outcome, never a trip
+    LOG.exception("mutant %s crashed", name)
+    return "crashed", {"max_abs_diff": float("nan"), "discrete_mismatches": 0.0, "n_nonfinite": 0.0, "n_shape_mismatch": 0.0, "crashed": 1.0}
   dev = max([r["dev"] for r in led.rows if r["kind"] == "cont"], default=0.0)
   nd = int(sum(r["dev"] for r in led.rows if r["kind"] == "disc"))
+  nnf, nsh = _n_kind(led.rows, None, "nonfinite"), _n_kind(led.rows, None, "shape")
   status = "failed" if (dev > MUTANT_TRIP or nd > 0) else "passed"
-  return status, {"max_abs_diff": dev, "discrete_mismatches": float(nd)}
+  return status, {"max_abs_diff": dev, "discrete_mismatches": float(nd), "n_nonfinite": float(nnf), "n_shape_mismatch": float(nsh), "crashed": 0.0}
 
 
 # ---------------------------------------------------------------------------------------------
@@ -706,6 +733,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
   disc64, disc32 = _n_disc(rows, "f64"), _n_disc(rows, "f32")
   id_over, id_disc = _n_over(rows, "id64"), _n_disc(rows, "id64")
   id_cont = [r["dev"] for r in rows if r["arm"] == "id64" and r["kind"] == "cont"]
+  nonfinite = {arm: _n_kind(rows, arm, "nonfinite") for arm in ("f64", "f32", "id64")}
+  shape_bad = {arm: _n_kind(rows, arm, "shape") for arm in ("f64", "f32", "id64")}
+  held_nonfinite = sum(1 for r in rows if HELDOUT in r["key"] and r["kind"] == "nonfinite")
+  held_shape = sum(1 for r in rows if HELDOUT in r["key"] and r["kind"] == "shape")
+  n_crashed = sum(1 for s_ in mutants.values() if s_ == "crashed")
   f32_ratio = max(
     (r["dev"] / r["band"] for r in rows if r["arm"] == "f32" and r["kind"] == "cont" and r["band"] > 0),
     default=0.0,
@@ -722,6 +754,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     o32.sealed and o64.sealed and weights_ok and fixture_ok and leaf_worst == 0.0 and tabs_ok
     and f64_over == 0 and f32_over == 0 and disc64 == 0 and disc32 == 0
     and id_over == 0 and id_disc == 0 and (not floor_rule or len(id_cont) > 0)
+    and sum(nonfinite.values()) == 0 and sum(shape_bad.values()) == 0
   )  # fmt: skip
   n_failed = sum(1 for s in mutants.values() if s == "failed")
   result: dict[str, Any] = {
@@ -760,6 +793,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     "identity_discrete_mismatches": id_disc,
     "identity_worst_max_abs": max(id_cont, default=float("nan")),
     "heldout_identity_n_over_band": held_id_over,
+    "n_crashed": n_crashed,
+    "n_nonfinite_f64": nonfinite["f64"],
+    "n_nonfinite_f32": nonfinite["f32"],
+    "n_nonfinite_id64": nonfinite["id64"],
+    "n_shape_mismatch_f64": shape_bad["f64"],
+    "n_shape_mismatch_f32": shape_bad["f32"],
+    "n_shape_mismatch_id64": shape_bad["id64"],
+    "heldout_n_nonfinite": held_nonfinite,
+    "heldout_n_shape_mismatch": held_shape,
+    "mutants_n_nonfinite": int(sum(d["n_nonfinite"] for d in mutant_dev.values())),
+    "mutants_n_shape_mismatch": int(sum(d["n_shape_mismatch"] for d in mutant_dev.values())),
   }
   if loop_bands is not None:
     for (ck, stage), v in sorted(loop_bands.items()):
