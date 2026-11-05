@@ -121,7 +121,8 @@ def test_knob_semantics_conditional_probs_only() -> None:
   native = _native_tokens()
   full = _logp()
   assert full.shape == (_L, 21)
-  # (1) each row is a normalised log-distribution (log-softmax of the returned logits)
+  # (1) score() returns RAW logits (not log-probs); their log-softmax is a normalised distribution per position.
+  # This only guards shape / finiteness; checks (2)-(4) carry the semantics.
   np.testing.assert_allclose(np.exp(full).sum(axis=-1), 1.0, atol=1e-9)
   assert np.all(np.isfinite(full))
   # (2) the returned logits are the ones the NLL is made of: score == -mean_i log p(native_i | rest)

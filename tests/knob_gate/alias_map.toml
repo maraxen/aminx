@@ -4100,7 +4100,7 @@ ref = "antibmpnn_run__conditional_probs_only"
 targets = ["return_logits"]
 equivalence = "semantic"
 parity_test_ids = ["tests/knob_semantics/test_antibmpnn_knobs.py::test_knob_semantics_conditional_probs_only"]
-note = "Running_AntiBMPNN_run.py:425, :271-282. log p(s_i | rest of sequence, backbone) = aminx score(return_logits=True) full-context logits."
+note = "Running_AntiBMPNN_run.py:425, :271-282 -> ProteinMPNN.conditional_probs (protein_mpnn_utils.py:1292), which decodes each probed position LAST. aminx score(return_logits=True) with ar_mask=None is NOT that estimand (verified 261104: all other positions see s_i, so s_i leaks back into row i through later layers; changing s_j moves row j). The faithful aminx form is a per-position ar_mask (probed position last), scored through score(ar_mask=..., return_logits=True); the knob test and antibmpnn_parity_v2 entry_cond_full use it. The default full-context score is a different estimand (spec ar_mask docstring says as much)."
 
 [[row]]
 ref = "antibmpnn_run__backbone_noise"
