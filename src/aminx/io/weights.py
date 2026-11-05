@@ -516,6 +516,11 @@ def load_model(
     model_version=model_version,
   )
 
+  if checkpoint_id and ("frustra" in str(checkpoint_id).lower() or "megascale" in str(checkpoint_id).lower()):
+    from aminx.families.frustra_mpnn.driver import FrustraMPNNDriver  # noqa: PLC0415
+
+    return FrustraMPNNDriver().load_model(checkpoint_id, local_path=local_path, key=key)
+
   if not checkpoint_id.endswith(".zst") and not local_path:
     checkpoint_id = f"{checkpoint_id}.eqx.zst"
 

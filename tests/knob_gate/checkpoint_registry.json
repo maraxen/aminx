@@ -111,6 +111,12 @@
       "sha256": "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa",
       "family": "frustrampnn",
       "upstream": "FrustraMPNN"
+    },
+    {
+      "artifact_path": "frustrampnn_1ubq_oracle.npz",
+      "sha256": "f5bb26a532775942affabbf9add649874c71806fac17de16e895957c9f9908a3",
+      "family": "frustrampnn",
+      "upstream": "FrustraMPNN"
     }
   ]
 }

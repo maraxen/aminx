@@ -1,0 +1,62 @@
+{
+  "target_pdb": "1ubq",
+  "pdb_path": "tests/data/1ubq.pdb",
+  "upstream_commit": "3a03cdc300bfe24c4bb70e60207118532bc73b3b",
+  "checkpoint_sha256": "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa",
+  "oracle_npz_sha256": "f5bb26a532775942affabbf9add649874c71806fac17de16e895957c9f9908a3",
+  "seed": 42,
+  "num_samples": 10,
+  "sequence_length": 76,
+  "array_shapes": {
+    "features": [
+      76,
+      48,
+      128
+    ],
+    "encoder_out": [
+      76,
+      128
+    ],
+    "decoder_hidden": [
+      3,
+      76,
+      128
+    ],
+    "lin_input": [
+      76,
+      512
+    ],
+    "light_attention_out": [
+      76,
+      512
+    ],
+    "both_out": [
+      76,
+      21
+    ],
+    "frustration_scores": [
+      76,
+      21
+    ],
+    "sampled_sequences": [
+      10,
+      76
+    ]
+  },
+  "array_dtypes": {
+    "features": "float32",
+    "encoder_out": "float32",
+    "decoder_hidden": "float32",
+    "lin_input": "float32",
+    "light_attention_out": "float32",
+    "both_out": "float32",
+    "frustration_scores": "float32",
+    "sampled_sequences": "int32"
+  },
+  "stochastic_controls": {
+    "augment_eps": 0.0,
+    "decoding_order_injected": true,
+    "inverse_cdf_multinomial_injected": true,
+    "loud_traps_installed": true
+  }
+}

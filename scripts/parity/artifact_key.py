@@ -55,5 +55,6 @@ def stable_artifact_key(path: str | Path) -> str:
       # rindex: a path may legitimately contain the marker twice (a nested
       # checkout, a copy under a scratch dir); the LAST one is the real root.
       index = len(parts) - 1 - parts[::-1].index(marker)
-      return "/".join(parts[index:])
+      root = "FrustraMPNN" if marker in ("FrustraMPNN", "frustraMPNN") else parts[index]
+      return "/".join((root, *parts[index + 1 :]))
   return resolved.name
