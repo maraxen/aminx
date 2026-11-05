@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import hashlib
 import json
 import logging
@@ -51,6 +52,7 @@ for _p in (_REPO_ROOT / "src", _REPO_ROOT / "scripts" / "parity"):
 
 from artifact_key import stable_artifact_key  # noqa: E402
 from fampnn_fixtures import make_split_ab_pdb  # noqa: E402
+from fampnn_table_variants import installed as _tables_installed  # noqa: E402
 
 from aminx.families.fampnn import sampler  # noqa: E402
 from aminx.families.fampnn.constants import (  # noqa: E402
@@ -81,6 +83,11 @@ PINNED_WEIGHTS_SHA256 = {
   "fampnn_0_3": "8969b3f1f3c941178076c7800952595a18b56fd3828d15bb993d3ef537938a05",
   "fampnn_0_3_cath": "81112a9b8d436d9baf5233a3603bac911c75b9782ced59dae5a2726316802218",
 }
+# v2 (band rule "floor"): the diagnostic oracle whose two float32 trig tables are float64 (dump_fampnn_oracle_f64tables.py)
+# and the upstream torch float32 table values captured in the same process (diag_tables.npz, canonical content digest).
+PINNED_F64TAB_CONTENT_SHA256 = "2f4c6304c1d263e60a05de2ba78f02ab8b8e7257b6e9b6687fa1fee5bba02b92"
+PINNED_F64TAB_FILE_SHA256 = "d5ac0d3f50bb14597ca3fc7d2300c36be300eddc28f8e6a0b2ecafc04c73d72c"
+PINNED_DIAG_TABLES_CONTENT_SHA256 = "1b1de8934225ff510ccde053c03481f858d5d768803bba2bd892773a31ce3465"
 CKPTS = tuple(PINNED_WEIGHTS_SHA256)
 SAMPLER_CKPTS = ("fampnn_0_3", "fampnn_0_3_cath")
 FIXTURES = ("1ubq", "1ubq_AB", "3e1r")
@@ -90,7 +97,8 @@ EDM_TAGS = ("s50", "s12_sc1", "s12_churn")
 SAMPLE_TAGS = ("A_default", "B_fixed", "C_seqonly_argmax", "D_churn_hot")
 
 F64_BAND = 1.0e-7
-F64_BAND_LOOP = 2.0e-6  # edm and sample stages: see the sidecar [data].bands derivation
+F64_BAND_LOOP = 2.0e-6  # edm and sample stages, band rule "v1": see the sidecar [data].bands derivation
+IDENTITY_BAND = 1.0e-9  # band rule "floor", identity arm: aminx fed upstream's own torch float32 tables
 LOOP_STAGES = ("edm", "sample")
 F32_BAND_FLOOR = 1.0e-4
 F32_FLOOR_MULT = 10.0
@@ -140,15 +148,27 @@ def _cast(model: Any, dtype: Any) -> Any:  # noqa: ANN401
 
 
 class Ledger:
-  """Collects (arm, stage, name) -> deviation, with the arm's band."""
+  """Collects (arm, stage, name) -> deviation, with the arm's band.
 
-  def __init__(self, floors: dict[str, float]) -> None:
+  Arms: ``f64`` (aminx as shipped, float64), ``f32`` (production dtype) and, under band rule ``floor``,
+  ``id64`` (float64 with upstream's own torch float32 tables installed). ``loop_bands`` maps
+  ``(checkpoint, stage)`` to the float64 band of that loop stage under rule ``floor`` (None under rule ``v1``).
+  """
+
+  def __init__(self, floors: dict[str, float], loop_bands: dict[tuple[str, str], float] | None = None) -> None:
     self.floors = floors
+    self.loop_bands = loop_bands
     self.rows: list[dict[str, Any]] = []
 
   def band(self, arm: str, stage: str, key: str) -> float:
+    if arm == "id64":
+      return IDENTITY_BAND
     if arm == "f64":
-      return F64_BAND_LOOP if stage in LOOP_STAGES else F64_BAND
+      if stage in LOOP_STAGES:
+        if self.loop_bands is not None:
+          return self.loop_bands[(key.split("/")[0], stage)]
+        return F64_BAND_LOOP
+      return F64_BAND
     return max(F32_BAND_FLOOR, F32_FLOOR_MULT * self.floors.get(key, 0.0))
 
   def cont(self, arm: str, stage: str, key: str, ours: Any, ref: np.ndarray) -> float:  # noqa: ANN401
@@ -193,7 +213,7 @@ def _n_disc(rows: list[dict[str, Any]], arm: str) -> int:
 class Oracle:
   """One sealed dump (``f32`` or ``f64``) plus its manifest."""
 
-  def __init__(self, directory: Path, arm: str) -> None:
+  def __init__(self, directory: Path, arm: str, pinned: tuple[str, str] | None = None) -> None:
     self.arm = arm
     npz = directory / arm / f"fampnn_oracle_{arm}.npz"
     man = json.loads((directory / arm / f"fampnn_oracle_{arm}.manifest.json").read_text())
@@ -202,12 +222,15 @@ class Oracle:
     self.d = {k: z[k] for k in z.files}
     self.content_sha256 = content_sha256(self.d)
     self.meta = man["meta"]
-    self.sealed = (
-      self.content_sha256 == PINNED_ORACLE_CONTENT_SHA256[arm]
-      and self.file_sha256 == PINNED_ORACLE_FILE_SHA256[arm]
-      and man["content_sha256"] == self.content_sha256
-    )
+    pin_content, pin_file = pinned or (PINNED_ORACLE_CONTENT_SHA256[arm], PINNED_ORACLE_FILE_SHA256[arm])
+    self.sealed = self.content_sha256 == pin_content and self.file_sha256 == pin_file and man["content_sha256"] == self.content_sha256
     self.dtype = jnp.float64 if arm == "f64" else jnp.float32
+
+  def relabel(self, arm: str) -> "Oracle":
+    """Shallow copy graded under another arm label (same arrays and dtype)."""
+    other = copy.copy(self)
+    other.arm = arm
+    return other
 
 
 def _floors(o32: Oracle, o64: Oracle) -> dict[str, float]:
@@ -216,6 +239,28 @@ def _floors(o32: Oracle, o64: Oracle) -> dict[str, float]:
     if a.dtype.kind != "f" or k not in o64.d:
       continue
     out[k] = float(np.max(np.abs(a.astype(np.float64) - o64.d[k].astype(np.float64)))) if a.size else 0.0
+  return out
+
+
+def loop_bands_from_tab_oracle(o64: Oracle, otab: Oracle) -> dict[tuple[str, str], float]:
+  """Band rule ``floor``: float64 band of each loop stage per checkpoint = the reference's own sensitivity.
+
+  ``otab`` is the same upstream run with its two float32 trig tables in float64, so ``max |o64 - otab|`` over the
+  continuous arrays of a (checkpoint, stage) is how far the real upstream moves when those tables change by
+  their float32 rounding. aminx's shipped tables (correctly rounded float32) are a different rounding of the same
+  tables, so aminx may deviate from the sealed oracle by that much and no more. Floor of ``F64_BAND`` applies.
+  """
+  out: dict[tuple[str, str], float] = {}
+  for ck in SAMPLER_CKPTS:
+    for stage in LOOP_STAGES:
+      worst = 0.0
+      for k, a in o64.d.items():
+        if not k.startswith(f"{ck}/") or f"/{stage}/" not in k or a.dtype.kind != "f" or k not in otab.d:
+          continue
+        if k.split("/")[-1].startswith("inj_"):
+          continue
+        worst = max(worst, float(np.max(np.abs(a.astype(np.float64) - otab.d[k].astype(np.float64)))) if a.size else 0.0)
+      out[(ck, stage)] = max(F64_BAND, worst)
   return out
 
 
@@ -575,7 +620,21 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
   odir = Path(args.oracle_dir)
   froot = Path(args.fampnn_root)
   o32, o64 = Oracle(odir, "f32"), Oracle(odir, "f64")
-  led = Ledger(_floors(o32, o64))
+  floor_rule = args.band_rule == "floor"
+  otab: Oracle | None = None
+  tabs: dict[str, np.ndarray] = {}
+  loop_bands: dict[tuple[str, str], float] | None = None
+  if floor_rule:
+    if not args.f64tab_dir:
+      msg = "band rule 'floor' needs --f64tab-dir / AMINX_FAMPNN_F64TAB_DIR"
+      raise SystemExit(msg)
+    tdir = Path(args.f64tab_dir)
+    otab = Oracle(tdir, "f64", pinned=(PINNED_F64TAB_CONTENT_SHA256, PINNED_F64TAB_FILE_SHA256))
+    tz = np.load(tdir / "f64" / "diag_tables.npz")
+    tabs = {k: tz[k] for k in tz.files}
+    loop_bands = loop_bands_from_tab_oracle(o64, otab)
+  tabs_ok = (not floor_rule) or (otab is not None and otab.sealed and content_sha256(tabs) == PINNED_DIAG_TABLES_CONTENT_SHA256)
+  led = Ledger(_floors(o32, o64), loop_bands)
 
   registry = {e["artifact_path"]: e["sha256"] for e in json.loads((_REPO_ROOT / "tests/knob_gate/checkpoint_registry.json").read_text())["entries"]}
   weights: dict[str, str] = {}
@@ -617,6 +676,22 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
         stage_edm(led, o, models[ck], ck, fx)
         stage_sample(led, o, models[ck], ck, fx)
 
+  if floor_rule:
+    # identity arm: aminx fed upstream's own torch float32 tables; everything else is the unchanged port
+    jax.clear_caches()
+    o_id = o64.relabel("id64")
+    with _tables_installed("torch_f32", tabs):
+      for fx in FIXTURES:
+        for ck in CKPTS:
+          LOG.info("arm=id64 %s %s enc/scn1", ck, fx)
+          stage_enc(led, o_id, models64[ck], ck, fx)
+          stage_scn1(led, o_id, models64[ck], ck, fx)
+        for ck in SAMPLER_CKPTS:
+          LOG.info("arm=id64 %s %s edm/sample", ck, fx)
+          stage_edm(led, o_id, models64[ck], ck, fx)
+          stage_sample(led, o_id, models64[ck], ck, fx)
+    jax.clear_caches()
+
   leaf_worst = leaf_provenance(raws["fampnn_0_3"], o32)
 
   mutant_list = [m.strip() for m in args.mutants.split(",") if m.strip()]
@@ -629,6 +704,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
   rows = led.rows
   f64_over, f32_over = _n_over(rows, "f64"), _n_over(rows, "f32")
   disc64, disc32 = _n_disc(rows, "f64"), _n_disc(rows, "f32")
+  id_over, id_disc = _n_over(rows, "id64"), _n_disc(rows, "id64")
+  id_cont = [r["dev"] for r in rows if r["arm"] == "id64" and r["kind"] == "cont"]
   f32_ratio = max(
     (r["dev"] / r["band"] for r in rows if r["arm"] == "f32" and r["kind"] == "cont" and r["band"] > 0),
     default=0.0,
@@ -636,13 +713,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
   held = [r for r in rows if HELDOUT in r["key"]]
   held_f64_over = sum(1 for r in held if r["arm"] == "f64" and r["kind"] == "cont" and not r["dev"] <= r["band"])
   held_f32_over = sum(1 for r in held if r["arm"] == "f32" and r["kind"] == "cont" and not r["dev"] <= r["band"])
+  held_id_over = sum(1 for r in held if r["arm"] == "id64" and r["kind"] == "cont" and not r["dev"] <= r["band"])
   held_disc = int(sum(r["dev"] for r in held if r["kind"] == "disc"))
   parse_dev = max((r["dev"] for r in rows if r["stage"] == "parse" and r["kind"] == "cont"), default=0.0)
   parse_disc = int(sum(r["dev"] for r in rows if r["stage"] == "parse" and r["kind"] == "disc"))
   fixed_disc = int(sum(r["dev"] for r in rows if r["stage"] == "fixed" and r["kind"] == "disc"))
   all_ok = (
-    o32.sealed and o64.sealed and weights_ok and fixture_ok and leaf_worst == 0.0
+    o32.sealed and o64.sealed and weights_ok and fixture_ok and leaf_worst == 0.0 and tabs_ok
     and f64_over == 0 and f32_over == 0 and disc64 == 0 and disc32 == 0
+    and id_over == 0 and id_disc == 0 and (not floor_rule or len(id_cont) > 0)
   )  # fmt: skip
   n_failed = sum(1 for s in mutants.values() if s == "failed")
   result: dict[str, Any] = {
@@ -673,7 +752,18 @@ def run(args: argparse.Namespace) -> dict[str, Any]:  # noqa: PLR0915
     "parse_discrete_mismatches": parse_disc,
     "fixed_pos_mismatches": fixed_disc,
     "wall_seconds": time.time() - t0,
+    "band_rule": args.band_rule,
+    "f64tab_sealed": int(otab is not None and otab.sealed),
+    "tables_sha_ok": int(tabs_ok),
+    "identity_n_checks": len(id_cont),
+    "identity_n_over_band": id_over,
+    "identity_discrete_mismatches": id_disc,
+    "identity_worst_max_abs": max(id_cont, default=float("nan")),
+    "heldout_identity_n_over_band": held_id_over,
   }
+  if loop_bands is not None:
+    for (ck, stage), v in sorted(loop_bands.items()):
+      result[f"band_f64_{stage}_{ck}"] = v
   for arm in ("f64", "f32"):
     for stage in ("consts", "enc", "scn1", "driver_score", "edm", "sample"):
       result[f"{stage}_{arm}_worst_max_abs"] = _worst(rows, arm, stage)
@@ -703,6 +793,8 @@ def main() -> int:
   ap.add_argument("--fampnn-root", default=os.environ.get("AMINX_FAMPNN_ROOT", str(Path.home() / "repos/fampnn")))
   ap.add_argument("--mutants", default=",".join(DEFAULT_MUTANTS), help="comma-separated negative controls")
   ap.add_argument("--controls-out", type=Path, default=None, help="branch_controls.json path")
+  ap.add_argument("--band-rule", choices=("v1", "floor"), default="v1", help="v1 = registered fampnn_parity.bth.toml bands; floor = v2 (identity arm + reference-floor loop bands)")
+  ap.add_argument("--f64tab-dir", default=os.environ.get("AMINX_FAMPNN_F64TAB_DIR"), help="float64-table diagnostic oracle (band rule floor)")
   ap.add_argument("--work-dir", type=Path, default=Path(os.environ.get("TMPDIR", "/tmp")) / "fampnn_parity")
   args = ap.parse_args()
   logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", force=True)
