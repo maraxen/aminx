@@ -61,7 +61,7 @@ _OWN_POTTS_HEAD = "/families/caliby/"
 def _is_own_potts_head(slug: str, path: str) -> bool:
   """The exemption belongs to the caliby row alone; any other row reaching caliby code is still a leak."""
   return slug == "caliby_parity_v2" and _OWN_POTTS_HEAD in path
-FAMPNN_SLUGS = ("fampnn_parity", "fampnn_parity_v2")
+FAMPNN_SLUGS = ("fampnn_parity", "fampnn_parity_v2", "fampnn_parity_v3")
 ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS)
 
 

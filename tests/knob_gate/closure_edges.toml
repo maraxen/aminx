@@ -214,3 +214,14 @@ dynamic_ok = [
   "src/aminx/io/weights.py",
 ]
 data = ["tests/data/1ubq.pdb", "tests/knob_gate/checkpoint_registry.json"]
+
+# v3 vehicle (fampnn_parity_v3.py wraps fampnn_parity.py with --band-rule floor and the non-finite/shape/crash
+# accounting). Branch rows point here; the v1 and v2 slugs stay as the closures of their recorded runs.
+[slug.fampnn_parity_v3]
+soft = ["aminx.families.fampnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb", "tests/knob_gate/checkpoint_registry.json"]
