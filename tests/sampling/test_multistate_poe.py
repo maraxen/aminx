@@ -304,6 +304,46 @@ class TestSampleMultistatePoeBead:
         sample_multistate_poe_bead(spec, jax.random.PRNGKey(0), n_samples=1)
       assert seen["seed"] == expected
 
+  def test_fixed_position_context_reaches_the_fused_sampler(self):
+    """The bead hands the spec's ``fixed_position_context`` to ``sample_states_fused``.
+
+    Dropping it would honour the mode on single-state rows and silently ignore it on fused rows.
+    """
+    inputs = [f"{REPO_TESTS_DATA}/1ubq.pdb", f"{REPO_TESTS_DATA}/1mbn.pdb"]
+    synthetic_model = eqx.tree_inference(
+      Aminx(
+        node_features=32,
+        edge_features=32,
+        hidden_features=32,
+        num_encoder_layers=1,
+        num_decoder_layers=1,
+        k_neighbors=8,
+        dropout_rate=0.0,
+        key=jax.random.PRNGKey(3),
+      ),
+      value=True,
+    )
+    seen: dict[str, object] = {}
+
+    def _spy(*args, **kwargs):
+      seen["mode"] = kwargs.get("fixed_position_context", "ABSENT")
+      return jnp.zeros((1, 4), jnp.int32), jnp.zeros((1, 4, 21), jnp.float32)
+
+    for mode in ("random_order", "canonical_order", "mutual_context"):
+      spec = SamplingSpecification(
+        inputs=inputs,
+        batch_size=len(inputs),
+        multi_state_strategy="product",
+        fixed_position_context=mode,
+      )
+      seen.clear()
+      with (
+        patch("aminx.host.prep.load_model", return_value=synthetic_model),
+        patch("aminx.sampling.multistate_poe.sample_states_fused", _spy),
+      ):
+        sample_multistate_poe_bead(spec, jax.random.PRNGKey(0), n_samples=1)
+      assert seen["mode"] == mode
+
   def test_real_state_position_map_through_full_pipeline_changes_output(self):
     """The core claim this module exists for, proven through the FULL real pipeline --
     not just a hand-built synthetic bundle (see TestSampleStatesFused's version of this

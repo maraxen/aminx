@@ -403,6 +403,7 @@ def _sample_batch(  # noqa: PLR0915
       decoding_order_key(sample_key, spec.run_spec.sampling.decoding_order_seed),
       custom_order_fn,
       order_num_groups,
+      fixed_context=spec.run_spec.sampling.fixed_position_context,
     )
 
   def _bundle_kwargs(structure_idx: Any) -> dict[str, Any]:  # noqa: ANN401

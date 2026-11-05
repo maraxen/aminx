@@ -183,12 +183,20 @@ class RunSpecification:
       decoding_order_seed: If set, every sample decodes in the order drawn from this seed alone
         (independent of the row hash and the sample key), so rows with the same seed share one
         decoding order. ``None`` (default) keeps the per-sample random order. Like
-        ``random_seed``, it is not part of ``manifest_row_hash`` and is not written to the
-        store's provenance attrs: campaign rows that differ only in this seed need distinct
-        output roots, and a resumed store is not checked against it. Honoured only by the
+        ``random_seed``, it is not part of ``manifest_row_hash`` (campaign rows that differ only
+        in this seed need distinct output roots, and a resumed store is not checked against it),
+        but it is recorded in the store's root attrs when set. Honoured only by the
         autoregressive runner path and ``sample_multistate_poe_bead``; it is ignored by
         ``model_family`` drivers (laser/fampnn/caliby/potts), ``sampling_strategy=
         "straight_through"``, scoring, and when ``wave`` is supplied. Range ``[0, 2**32)``.
+      fixed_position_context: How fixed positions are conditioned on each other when sampling.
+        ``"random_order"`` (default) is the reference ProteinMPNN/LigandMPNN behaviour: the
+        fixed block decodes in a random order. ``"canonical_order"`` decodes it in position
+        order (causal, in-distribution, deterministic given the fixed set). ``"mutual_context"``
+        lets every fixed position see every other fixed position (non-causal, out of
+        distribution) and removes the order dependence. Same support limits as
+        ``decoding_order_seed``; not part of ``manifest_row_hash``, but always recorded in the
+        store's root attrs (``fixed_position_context``) so a non-default mode is visible.
       conformational_states: Optional conformational states representation to use for coarse graining the inference.
       max_length: Maximum sequence length for padding/truncation (default is 512).
                   Set to None to disable padding. Controls memory usage - smaller values
@@ -249,6 +257,7 @@ class RunSpecification:
   altloc: Literal["first", "all"] = "first"
   decoding_order_fn: DecodingOrderFn | None = None
   decoding_order_seed: int | None = None
+  fixed_position_context: str = "random_order"
   conformational_states: ConformationalStates | None = None
   cache_path: str | Path | None = None
   output_dir: str | Path | None = None
@@ -375,6 +384,37 @@ class RunSpecification:
         raise ValueError(msg)
       if not isinstance(order_seed, int):
         object.__setattr__(self, "decoding_order_seed", int(order_seed))
+
+    if self.fixed_position_context not in ("random_order", "canonical_order", "mutual_context"):
+      msg = (
+        "fixed_position_context must be 'random_order', 'canonical_order' or 'mutual_context', "
+        f"got {self.fixed_position_context!r}"
+      )
+      raise ValueError(msg)
+
+    # A non-default mode on a path that cannot honour it would be recorded in the store while
+    # having no effect: refuse instead of silently ignoring it.
+    # decoding_order_fn is the exception for the seed: the seeded key IS forwarded to the custom
+    # function, so a seed is live there; only the mode is ignored.
+    if self.fixed_position_context != "random_order" or self.decoding_order_seed is not None:
+      bypass = []
+      fused_input = isinstance(self.inputs, (list, tuple)) and len(self.inputs) > 1
+      # The fused (multi-input) path never receives decoding_order_fn, so there a seed beside it
+      # would be recorded while the function is ignored; on the single-input path the seed is live.
+      if self.decoding_order_fn is not None and (
+        self.fixed_position_context != "random_order" or (self.decoding_order_seed is not None and fused_input)
+      ):
+        bypass.append("decoding_order_fn")
+      if getattr(self, "wave", None) is not None:
+        bypass.append("a supplied wave")
+      if getattr(self, "sampling_strategy", "temperature") == "straight_through":
+        bypass.append("sampling_strategy='straight_through'")
+      if bypass:
+        msg = (
+          f"fixed_position_context={self.fixed_position_context!r} / "
+          f"decoding_order_seed={self.decoding_order_seed!r} have no effect together with {', '.join(bypass)}."
+        )
+        raise ValueError(msg)
 
     # Handle backward compatibility: convert old-style noise params to noise list
     bundles = list(self.noise)  # Start with provided bundles
@@ -527,6 +567,19 @@ class RunSpecification:
       # caliby and fampnn ids (caliby, soluble_caliby*, caliby_packer_*, fampnn_*) are matched
       # through the pinned family table, so an unpinned "caliby_..." id does not route anywhere.
       object.__setattr__(self, "model_family", pinned_family)
+
+    # Driver-backed families decode through run_family_driver and never reach with_decoding_order,
+    # so the order controls would be recorded without effect. Checked here because the family is
+    # only final (derived from checkpoint_id) at this point.
+    if self.model_family in DRIVER_MODEL_FAMILIES and (
+      self.fixed_position_context != "random_order" or self.decoding_order_seed is not None
+    ):
+      msg = (
+        f"fixed_position_context={self.fixed_position_context!r} / decoding_order_seed="
+        f"{self.decoding_order_seed!r} have no effect with model_family={self.model_family!r} "
+        "(driver-backed families do not use the shared decoding-order path)."
+      )
+      raise ValueError(msg)
 
     derived_topology = (
       get_topology_for_checkpoint(self.checkpoint_id) if self.checkpoint_id is not None else None
