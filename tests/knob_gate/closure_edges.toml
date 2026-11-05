@@ -203,3 +203,14 @@ dynamic_ok = [
   "src/aminx/io/weights.py",
 ]
 data = ["tests/data/1ubq.pdb", "tests/knob_gate/checkpoint_registry.json"]
+
+# v2 vehicle (fampnn_parity_v2.py wraps fampnn_parity.py with --band-rule floor); supersedes the v1 slug above, whose
+# registered run recorded FAIL on one float64 loop check. Same closure: the wrapper adds no import beyond fampnn_parity.
+[slug.fampnn_parity_v2]
+soft = ["aminx.families.fampnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb", "tests/knob_gate/checkpoint_registry.json"]
