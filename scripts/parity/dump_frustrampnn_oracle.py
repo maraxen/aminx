@@ -20,9 +20,11 @@ Executes upstream FrustraMPNN reference model on tests/data/1ubq.pdb with:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import logging
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -95,17 +97,38 @@ def install_loud_traps() -> None:
   logger.info("[TRAP] Loud un-injected RNG traps installed.")
 
 
+@contextlib.contextmanager
+def float_as_double() -> Iterator[None]:
+  """Run unmodified upstream model in float64 without modifying source code."""
+  torch.set_default_dtype(torch.float64)
+  orig = torch.Tensor.float
+  torch.Tensor.float = lambda self: self.to(torch.float64)  # type: ignore[assignment]
+  try:
+    yield
+  finally:
+    torch.Tensor.float = orig
+    torch.set_default_dtype(torch.float32)
+
+
 def load_model(
   checkpoint_path: Path,
   trunk_checkpoint_path: Path,
   frustrampnn_repo_root: Path,
+  dtype: torch.dtype = torch.float32,
 ) -> Any:
   """Load upstream FrustraMPNN model and verify weight mapping."""
   sys.path.insert(0, str(frustrampnn_repo_root / "src"))
   from frustrampnn.model.transfer_model import TransferModel
 
+  thermompnn_dir = trunk_checkpoint_path.parent
+  if not (thermompnn_dir / "vanilla_model_weights").exists():
+    if (trunk_checkpoint_path.parent.parent / "vanilla_model_weights").exists():
+      thermompnn_dir = trunk_checkpoint_path.parent.parent
+    elif (frustrampnn_repo_root / "weights" / "vanilla_model_weights").exists():
+      thermompnn_dir = frustrampnn_repo_root / "weights"
+
   cfg = ConfigNode({
-    "platform": ConfigNode({"thermompnn_dir": str(trunk_checkpoint_path.parent.parent)}),
+    "platform": ConfigNode({"thermompnn_dir": str(thermompnn_dir)}),
     "model": ConfigNode({
       "hidden_dims": [64, 32],
       "subtract_mut": False,
@@ -120,12 +143,17 @@ def load_model(
     "decoding_order": "left-to-right",
   })
 
-  logger.info("Initializing TransferModel from upstream...")
+  logger.info("Initializing TransferModel from upstream (dtype=%s)...", dtype)
   model = TransferModel(cfg)
+  if dtype == torch.float64:
+    model = model.to(torch.float64)
 
   logger.info("Deserializing checkpoint: %s", checkpoint_path)
   ckpt = load_restricted_torch_checkpoint(checkpoint_path)
-  head_sd = {k.replace("model.", ""): v for k, v in ckpt["state_dict"].items()}
+  head_sd = {
+    k.replace("model.", ""): (v.to(torch.float64) if dtype == torch.float64 else v)
+    for k, v in ckpt["state_dict"].items()
+  }
   missing, unexpected = model.load_state_dict(head_sd, strict=False)
 
   logger.info("Loaded state dict: %d missing (trunk keys), %d unexpected keys.", len(missing), len(unexpected))
@@ -141,13 +169,14 @@ def load_model(
 
 
 def dump_oracle(
-  model: Any,
+  checkpoint_path: Path,
+  trunk_checkpoint_path: Path,
   pdb_path: Path,
-  out_dir: Path,
+  out_path: Path,
   frustrampnn_repo_root: Path,
   seed: int = DEFAULT_SEED,
 ) -> tuple[Path, str]:
-  """Execute reference forward pass and sequence sampling, dumping sealed NPZ and manifest."""
+  """Execute reference forward pass (f32 and f64) and sequence sampling, dumping sealed NPZ and manifest."""
   sys.path.insert(0, str(frustrampnn_repo_root / "src"))
   from frustrampnn.model.featurization import tied_featurize
   from frustrampnn.model.pdb_parsing import alt_parse_PDB
@@ -172,126 +201,144 @@ def dump_oracle(
   logger.info("Sequence length L = %d: %s", L, pdb[0]["seq"])
 
   # --- 1. Pre-draw stochastic tensors BEFORE installing loud traps ---
+  # Requirement B: Draw decoding-order randn once in float32 and reuse across precisions!
   rng = np.random.RandomState(seed)
-  # decoding_order randn: shape (N_samples, L) in float32
-  randn_draw = torch.from_numpy(rng.randn(N_SAMPLES, L).astype(np.float32))
-  # inverse-CDF uniforms: shape (L, N_samples, 1) in float64
+  randn_draw_f32 = torch.from_numpy(rng.randn(N_SAMPLES, L).astype(np.float32))
   uniforms_draw = torch.from_numpy(rng.uniform(0.0, 1.0, size=(L, N_SAMPLES, 1)).astype(np.float64))
 
-  # Install loud traps to ensure no unauthorized stochastic primitive executes
   install_loud_traps()
 
-  # --- 2. Teacher-forced forward pass ---
-  with torch.no_grad():
-    # 2.1 Features
-    E, E_idx = model.prot_mpnn.features(X, mask, residue_idx, chain_encoding_all)
-    h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]))
-    h_E = model.prot_mpnn.W_e(E)
+  payload: dict[str, np.ndarray] = {}
 
-    # 2.2 Encoder
-    mask_attend = gather_nodes(mask.unsqueeze(-1), E_idx).squeeze(-1)
-    mask_attend = mask.unsqueeze(-1) * mask_attend
-    for layer in model.prot_mpnn.encoder_layers:
-      h_V, h_E = layer(h_V, h_E, E_idx, mask, mask_attend)
-    encoder_out_t = h_V[0]  # (L, 128)
+  for precision in ("f32", "f64"):
+    double = precision == "f64"
+    dt = torch.float64 if double else torch.float32
+    ctx = float_as_double() if double else contextlib.nullcontext()
 
-    # 2.3 Decoder hidden layers
-    all_mpnn_hid, mpnn_embed, _ = model.prot_mpnn(
-      X, S, mask, chain_M, residue_idx, chain_encoding_all, None
-    )
-    # all_mpnn_hid is [layer2, layer1, layer0]
-    decoder_hidden_t = torch.stack([h[0] for h in all_mpnn_hid[:3]], dim=0)  # (3, L, 128)
+    logger.info("Executing upstream forward pass for precision: %s", precision)
+    with ctx, torch.no_grad():
+      model_p = load_model(checkpoint_path, trunk_checkpoint_path, frustrampnn_repo_root, dtype=dt)
 
-    # 2.4 Latent concatenation (384 + 128 = 512)
-    mpnn_hid = torch.cat(all_mpnn_hid[:3], -1)[0]  # (L, 384)
-    lin_input_t = torch.cat([mpnn_hid, mpnn_embed[0]], -1)  # (L, 512)
+      X_p = X.to(dt)
+      mask_p = mask.to(dt)
+      chain_M_p = chain_M.to(dt)
 
-    # 2.5 Per-residue LightAttention, both_out, frustration_out
-    la_outs = []
-    both_outs = []
-    frust_outs = []
-    for i in range(L):
-      res_in = lin_input_t[i].unsqueeze(-1).unsqueeze(0)  # (1, 512, 1)
-      res_la = model.light_attention_mpnn(res_in, mask)  # (512,)
-      la_outs.append(res_la)
-      res_both = model.both_out(res_la)  # (21,)
-      both_outs.append(res_both)
-      res_frust = model.frustration_out(res_both.unsqueeze(-1)).squeeze(-1)  # (21,)
-      frust_outs.append(res_frust)
+      # Features
+      E, E_idx = model_p.prot_mpnn.features(X_p, mask_p, residue_idx, chain_encoding_all)
+      h_V = torch.zeros((E.shape[0], E.shape[1], E.shape[-1]), dtype=dt)
+      h_E = model_p.prot_mpnn.W_e(E)
 
-    light_attention_out_t = torch.stack(la_outs, dim=0)  # (L, 512)
-    both_out_t = torch.stack(both_outs, dim=0)  # (L, 21)
-    frustration_scores_t = torch.stack(frust_outs, dim=0)  # (L, 21)
+      # Encoder
+      mask_attend = gather_nodes(mask_p.unsqueeze(-1), E_idx).squeeze(-1)
+      mask_attend = mask_p.unsqueeze(-1) * mask_attend
+      for layer in model_p.prot_mpnn.encoder_layers:
+        h_V, h_E = layer(h_V, h_E, E_idx, mask_p, mask_attend)
+      encoder_out_t = h_V[0]
 
-    # --- 3. Sequence Sampling with Injected Draws ---
-    X_rep = X.repeat(N_SAMPLES, 1, 1, 1)
-    S_rep = S.repeat(N_SAMPLES, 1)
-    mask_rep = mask.repeat(N_SAMPLES, 1)
-    chain_M_rep = chain_M.repeat(N_SAMPLES, 1)
-    chain_M_pos_rep = chain_M_pos.repeat(N_SAMPLES, 1)
-    chain_encoding_all_rep = chain_encoding_all.repeat(N_SAMPLES, 1)
-    residue_idx_rep = residue_idx.repeat(N_SAMPLES, 1)
-
-    step_counter = [0]
-    orig_multinomial = torch.multinomial
-
-    def shimmed_multinomial(probs: torch.Tensor, num_samples: int, replacement: bool = True, generator: Any = None) -> torch.Tensor:
-      del num_samples, replacement, generator
-      step = step_counter[0]
-      step_counter[0] += 1
-      u = uniforms_draw[step]  # (N_samples, 1)
-      probabilities = probs.detach().to(dtype=torch.float64)
-      cumulative = torch.cumsum(probabilities, dim=-1)
-      target = u * cumulative[..., -1:]
-      index = torch.searchsorted(cumulative, target, right=True)
-      vocab = probabilities.shape[-1]
-      positions = torch.arange(vocab, device=probabilities.device, dtype=torch.long)
-      positive = probabilities > 0
-      last_pos = torch.where(positive, positions, torch.zeros_like(positions)).amax(dim=-1, keepdim=True)
-      clamped = torch.minimum(index.to(dtype=torch.long), last_pos)
-      return torch.clamp(clamped, min=0, max=vocab - 1)
-
-    torch.multinomial = shimmed_multinomial
-    try:
-      sample_out = model.prot_mpnn.sample(
-        X_rep,
-        randn_draw,
-        S_rep,
-        chain_M_rep,
-        chain_encoding_all_rep,
-        residue_idx_rep,
-        mask=mask_rep,
-        temperature=0.1,
-        omit_AAs_np=np.zeros(21),
-        bias_AAs_np=np.zeros(21),
-        chain_M_pos=chain_M_pos_rep,
-        bias_by_res=torch.zeros(N_SAMPLES, L, 21),
+      # Decoder hidden layers
+      all_mpnn_hid, mpnn_embed, _ = model_p.prot_mpnn(
+        X_p, S, mask_p, chain_M_p, residue_idx, chain_encoding_all, None
       )
-    finally:
-      torch.multinomial = orig_multinomial
+      decoder_hidden_t = torch.stack([h[0] for h in all_mpnn_hid[:3]], dim=0)
 
-    sampled_sequences_t = sample_out["S"]  # (10, L)
+      # Latent concatenation
+      mpnn_hid = torch.cat(all_mpnn_hid[:3], -1)[0]
+      lin_input_t = torch.cat([mpnn_hid, mpnn_embed[0]], -1)
+
+      # Per-residue LightAttention, both_out, frustration_out
+      la_outs, both_outs, frust_outs = [], [], []
+      for i in range(L):
+        res_in = lin_input_t[i].unsqueeze(-1).unsqueeze(0)
+        res_la = model_p.light_attention_mpnn(res_in, mask_p)
+        la_outs.append(res_la)
+        res_both = model_p.both_out(res_la)
+        both_outs.append(res_both)
+        res_frust = model_p.frustration_out(res_both.unsqueeze(-1)).squeeze(-1)
+        frust_outs.append(res_frust)
+
+      light_attention_out_t = torch.stack(la_outs, dim=0)
+      both_out_t = torch.stack(both_outs, dim=0)
+      frustration_scores_t = torch.stack(frust_outs, dim=0)
+
+      prefix = "f64_" if double else ""
+      out_dtype = np.float64 if double else np.float32
+
+      payload[f"{prefix}features"] = E[0].detach().cpu().numpy().astype(out_dtype)
+      payload[f"{prefix}encoder_out"] = encoder_out_t.detach().cpu().numpy().astype(out_dtype)
+      payload[f"{prefix}decoder_hidden"] = decoder_hidden_t.detach().cpu().numpy().astype(out_dtype)
+      payload[f"{prefix}lin_input"] = lin_input_t.detach().cpu().numpy().astype(out_dtype)
+      payload[f"{prefix}light_attention_out"] = light_attention_out_t.detach().cpu().numpy().astype(out_dtype)
+      payload[f"{prefix}both_out"] = both_out_t.detach().cpu().numpy().astype(out_dtype)
+      payload[f"{prefix}frustration_scores"] = frustration_scores_t.detach().cpu().numpy().astype(out_dtype)
+
+      # Sequence sampling with injected draws executed on primary float32 pass
+      if not double:
+        X_rep = X.repeat(N_SAMPLES, 1, 1, 1)
+        S_rep = S.repeat(N_SAMPLES, 1)
+        mask_rep = mask.repeat(N_SAMPLES, 1)
+        chain_M_rep = chain_M.repeat(N_SAMPLES, 1)
+        chain_M_pos_rep = chain_M_pos.repeat(N_SAMPLES, 1)
+        chain_encoding_all_rep = chain_encoding_all.repeat(N_SAMPLES, 1)
+        residue_idx_rep = residue_idx.repeat(N_SAMPLES, 1)
+
+        step_counter = [0]
+        orig_multinomial = torch.multinomial
+
+        def shimmed_multinomial(
+          probs: torch.Tensor,
+          num_samples: int,
+          replacement: bool = True,
+          generator: Any = None,
+        ) -> torch.Tensor:
+          del num_samples, replacement, generator
+          step = step_counter[0]
+          step_counter[0] += 1
+          u = uniforms_draw[step]
+          probabilities = probs.detach().to(dtype=torch.float64)
+          cumulative = torch.cumsum(probabilities, dim=-1)
+          target = u * cumulative[..., -1:]
+          index = torch.searchsorted(cumulative, target, right=True)
+          vocab = probabilities.shape[-1]
+          positions = torch.arange(vocab, device=probabilities.device, dtype=torch.long)
+          positive = probabilities > 0
+          last_pos = torch.where(positive, positions, torch.zeros_like(positions)).amax(dim=-1, keepdim=True)
+          clamped = torch.minimum(index.to(dtype=torch.long), last_pos)
+          return torch.clamp(clamped, min=0, max=vocab - 1)
+
+        torch.multinomial = shimmed_multinomial
+        try:
+          sample_out = model_p.prot_mpnn.sample(
+            X_rep,
+            randn_draw_f32,
+            S_rep,
+            chain_M_rep,
+            chain_encoding_all_rep,
+            residue_idx_rep,
+            mask=mask_rep,
+            temperature=0.1,
+            omit_AAs_np=np.zeros(21),
+            bias_AAs_np=np.zeros(21),
+            chain_M_pos=chain_M_pos_rep,
+            bias_by_res=torch.zeros(N_SAMPLES, L, 21),
+          )
+        finally:
+          torch.multinomial = orig_multinomial
+
+        payload["sampled_sequences"] = sample_out["S"].detach().cpu().numpy().astype(np.int32)
 
   logger.info("Forward execution and sampling complete without tripping loud traps.")
-
-  # Convert tensors to exact numpy specifications
-  payload: dict[str, np.ndarray] = {
-    "features": E[0].detach().cpu().numpy().astype(np.float32),
-    "encoder_out": encoder_out_t.detach().cpu().numpy().astype(np.float32),
-    "decoder_hidden": decoder_hidden_t.detach().cpu().numpy().astype(np.float32),
-    "lin_input": lin_input_t.detach().cpu().numpy().astype(np.float32),
-    "light_attention_out": light_attention_out_t.detach().cpu().numpy().astype(np.float32),
-    "both_out": both_out_t.detach().cpu().numpy().astype(np.float32),
-    "frustration_scores": frustration_scores_t.detach().cpu().numpy().astype(np.float32),
-    "sampled_sequences": sampled_sequences_t.detach().cpu().numpy().astype(np.int32),
-  }
 
   for k, arr in payload.items():
     logger.info("  Array '%s': shape=%s, dtype=%s", k, arr.shape, arr.dtype)
 
-  out_dir.mkdir(parents=True, exist_ok=True)
-  npz_path = out_dir / "frustrampnn_1ubq_oracle.npz"
-  manifest_path = out_dir / "frustrampnn_1ubq_oracle.manifest.json"
+  if out_path.is_dir() or str(out_path).endswith("/"):
+    out_path.mkdir(parents=True, exist_ok=True)
+    npz_path = out_path / "frustrampnn_1ubq_oracle.npz"
+  else:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    npz_path = out_path
+
+  manifest_path = npz_path.parent / f"{npz_path.stem}.manifest.json"
 
   logger.info("Writing oracle archive: %s", npz_path)
   np.savez(npz_path, **payload)
@@ -314,6 +361,8 @@ def dump_oracle(
       "decoding_order_injected": True,
       "inverse_cdf_multinomial_injected": True,
       "loud_traps_installed": True,
+      "shared_f32_draws": True,
+      "dual_precision_dump": True,
     },
   }
 
@@ -328,19 +377,19 @@ def main() -> None:
   parser.add_argument(
     "--checkpoint",
     type=Path,
-    default=Path("/home/solab/repos/FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt"),
+    default=None,
     help="Path to checkpoint",
   )
   parser.add_argument(
     "--trunk-checkpoint",
     type=Path,
-    default=Path("/home/solab/repos/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt"),
+    default=None,
     help="Path to vanilla trunk checkpoint",
   )
   parser.add_argument(
     "--frustrampnn-repo-root",
     type=Path,
-    default=Path("/home/solab/repos/FrustraMPNN"),
+    default=None,
     help="Path to upstream FrustraMPNN repo clone",
   )
   parser.add_argument(
@@ -348,6 +397,12 @@ def main() -> None:
     type=Path,
     default=Path("tests/data/1ubq.pdb"),
     help="Path to target PDB structure",
+  )
+  parser.add_argument(
+    "--out",
+    type=Path,
+    default=None,
+    help="Path to output npz fixture or directory",
   )
   parser.add_argument(
     "--out-dir",
@@ -369,19 +424,68 @@ def main() -> None:
   args = parser.parse_args()
 
   logger.info("=" * 70)
-  logger.info("Starting FrustraMPNN Oracle Dumper")
+  logger.info("Starting FrustraMPNN Oracle Dumper (Dual-Precision)")
   logger.info("=" * 70)
 
-  model = load_model(args.checkpoint, args.trunk_checkpoint, args.frustrampnn_repo_root)
+  # Resolve paths
+  if args.frustrampnn_repo_root is None:
+    for candidate in [
+      Path("/home/marielle/repos/frustraMPNN"),
+      Path("/home/marielle/repos/FrustraMPNN"),
+      Path("/home/solab/repos/FrustraMPNN"),
+    ]:
+      if candidate.is_dir():
+        args.frustrampnn_repo_root = candidate
+        break
+    if args.frustrampnn_repo_root is None:
+      args.frustrampnn_repo_root = Path("/home/marielle/repos/frustraMPNN")
+
+  if args.checkpoint is None:
+    for candidate in [
+      Path("tests/data/fixtures/megascale_default_la-true_esm-False_split1.ckpt"),
+      args.frustrampnn_repo_root / "model_weights" / "megascale_default_la-true_esm-False_split1.ckpt",
+      Path("/home/solab/repos/FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt"),
+    ]:
+      if candidate.is_file():
+        args.checkpoint = candidate
+        break
+    if args.checkpoint is None:
+      args.checkpoint = Path("tests/data/fixtures/megascale_default_la-true_esm-False_split1.ckpt")
+
+  if args.trunk_checkpoint is None:
+    for candidate in [
+      args.frustrampnn_repo_root / "weights" / "vanilla_model_weights" / "v_48_020.pt",
+      Path("tests/data/fixtures/v_48_020.pt"),
+      Path("/home/solab/repos/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt"),
+    ]:
+      if candidate.is_file():
+        args.trunk_checkpoint = candidate
+        break
+    if args.trunk_checkpoint is None:
+      args.trunk_checkpoint = Path("tests/data/fixtures/v_48_020.pt")
+
+  out_path = args.out if args.out is not None else (args.out_dir / "frustrampnn_1ubq_oracle.npz")
 
   if args.verify_reproducibility:
     logger.info("[REPRO CHECK] Running Pass 1...")
-    p1, s1 = dump_oracle(model, args.pdb, args.out_dir, args.frustrampnn_repo_root, seed=args.seed)
+    p1, s1 = dump_oracle(
+      args.checkpoint,
+      args.trunk_checkpoint,
+      args.pdb,
+      out_path,
+      args.frustrampnn_repo_root,
+      seed=args.seed,
+    )
 
-    # Re-load model fresh for Pass 2 to verify zero state leakage
     logger.info("[REPRO CHECK] Running Pass 2...")
-    model2 = load_model(args.checkpoint, args.trunk_checkpoint, args.frustrampnn_repo_root)
-    p2, s2 = dump_oracle(model2, args.pdb, args.out_dir, args.frustrampnn_repo_root, seed=args.seed)
+    p2, s2 = dump_oracle(
+      args.checkpoint,
+      args.trunk_checkpoint,
+      args.pdb,
+      out_path,
+      args.frustrampnn_repo_root,
+      seed=args.seed,
+    )
 
     logger.info("Pass 1 SHA256: %s", s1)
     logger.info("Pass 2 SHA256: %s", s2)
@@ -390,7 +494,14 @@ def main() -> None:
       raise RuntimeError(msg)
     logger.info("[PASS] BIT-FOR-BIT REPRODUCIBILITY VERIFIED! Both passes produced SHA256 %s", s1)
   else:
-    dump_oracle(model, args.pdb, args.out_dir, args.frustrampnn_repo_root, seed=args.seed)
+    dump_oracle(
+      args.checkpoint,
+      args.trunk_checkpoint,
+      args.pdb,
+      out_path,
+      args.frustrampnn_repo_root,
+      seed=args.seed,
+    )
 
   logger.info("=" * 70)
   logger.info("ORACLE DUMP COMPLETED SUCCESSFULLY")

@@ -29,7 +29,7 @@ mutant_list = [
   "subtract_mut_inverted",
 ]
 oracle_stem = "frustrampnn_1ubq_oracle"
-oracle_sha256 = "f5bb26a532775942affabbf9add649874c71806fac17de16e895957c9f9908a3"
+oracle_sha256 = "c32a12926c2dfb1a4f74c138b5bc3414904a1c440e5cc1b039de655e91e468b7"
 
 [outcomes.pass]
 condition = "clean == 'pass' AND weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND f64_max_abs_diff < 1e-7 AND f32_max_abs_diff < 1e-4 AND n_listed == 4 AND n_failed == n_listed AND n_crashed == 0 AND neg_ctrl_min_diff > 1e-2"

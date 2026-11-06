@@ -640,6 +640,7 @@ _ALL_OUTPUT_KINDS = frozenset(
     "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
+    "frustration",
   },
 )
 _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
@@ -654,6 +655,7 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   "caliby": frozenset({"nll", "logits", "energy"}),
   "fampnn": frozenset({"nll", "logits"}),
   "thermompnn": frozenset({"ddg"}),
+  "frustrampnn": frozenset({"frustration"}),
 }
 
 
@@ -774,6 +776,7 @@ class ScoringSpecification(RunSpecification):
     "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
+    "frustration",
   ] = "nll"
   temperature: float = 1.0
   return_logits: bool = False

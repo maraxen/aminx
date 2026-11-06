@@ -58,14 +58,6 @@ for _p in (_REPO_ROOT, _REPO_ROOT / "src", Path(__file__).resolve().parent):
   if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
-# Ensure output_kind='frustration' is recognized by aminx runner specs
-import aminx.run.specs as _specs
-
-if "frustration" not in _specs._ALL_OUTPUT_KINDS:  # noqa: SLF001
-  _specs._ALL_OUTPUT_KINDS = frozenset(set(_specs._ALL_OUTPUT_KINDS) | {"frustration"})  # noqa: SLF001
-if "frustrampnn" not in _specs._OUTPUT_KINDS_BY_FAMILY:  # noqa: SLF001
-  _specs._OUTPUT_KINDS_BY_FAMILY["frustrampnn"] = frozenset({"frustration", "score", "scores"})  # noqa: SLF001
-
 from artifact_key import stable_artifact_key
 
 import aminx.families.frustra_mpnn.model as frustra_model
@@ -117,7 +109,7 @@ def stage_band(name: str, dtype: str) -> float:
 # ---------------------------------------------------------------------------------------------
 # Anti-self-trust Verification
 # ---------------------------------------------------------------------------------------------
-def verify_hashes(
+def verify_anti_self_trust(
   oracle_dir: Path,
   weights_dir: Path,
   pinned_dumps_path: Path,
@@ -136,23 +128,40 @@ def verify_hashes(
 
   expected_oracle_sha = pinned.get(ORACLE_STEM) or pinned.get(f"{ORACLE_STEM}.npz")
 
-  # Also inspect tests/knob_gate/checkpoint_registry.json if present
+  # Inspect tests/knob_gate/checkpoint_registry.json
   registry_path = _REPO_ROOT / "tests" / "knob_gate" / "checkpoint_registry.json"
+  if not registry_path.is_file():
+    msg = f"Checkpoint registry not found: {registry_path} (refusing to self-trust)"
+    raise RuntimeError(msg)
+
+  registry_data = json.loads(registry_path.read_text(encoding="utf-8"))
+  entries = registry_data.get("entries")
+  if not entries:
+    msg = f"Checkpoint registry {registry_path} contains no entries (refusing to self-trust)"
+    raise RuntimeError(msg)
+
   expected_ckpt_sha: str | None = None
-  if registry_path.is_file():
-    registry_data = json.loads(registry_path.read_text(encoding="utf-8"))
-    for entry in registry_data.get("checkpoints", []):
-      art_path = entry.get("artifact_path", "")
-      if CANONICAL_CKPT in art_path:
-        expected_ckpt_sha = entry.get("sha256")
-      elif ORACLE_STEM in art_path:
-        reg_oracle_sha = entry.get("sha256")
-        if reg_oracle_sha != expected_oracle_sha:
-          msg = (
-            f"Checkpoint registry sha256 ({reg_oracle_sha}) does not match "
-            f"pinned dumps sha256 ({expected_oracle_sha})"
-          )
-          raise RuntimeError(msg)
+  reg_oracle_sha: str | None = None
+  for entry in entries:
+    art_path = entry.get("artifact_path", "")
+    if CANONICAL_CKPT in art_path:
+      expected_ckpt_sha = entry.get("sha256")
+    elif ORACLE_STEM in art_path:
+      reg_oracle_sha = entry.get("sha256")
+
+  if expected_ckpt_sha is None:
+    msg = (
+      f"Canonical checkpoint {CANONICAL_CKPT} missing from checkpoint registry {registry_path} "
+      "(refusing to self-trust)"
+    )
+    raise RuntimeError(msg)
+
+  if reg_oracle_sha is not None and reg_oracle_sha != expected_oracle_sha:
+    msg = (
+      f"Checkpoint registry sha256 ({reg_oracle_sha}) does not match "
+      f"pinned dumps sha256 ({expected_oracle_sha}) (refusing to self-trust)"
+    )
+    raise RuntimeError(msg)
 
   npz_candidates = [
     oracle_dir / f"{ORACLE_STEM}.npz",
@@ -160,14 +169,14 @@ def verify_hashes(
   ]
   npz_file = next((p for p in npz_candidates if p.is_file()), None)
   if npz_file is None:
-    msg = f"Oracle dump {ORACLE_STEM}.npz not found in candidate paths"
+    msg = f"Oracle dump {ORACLE_STEM}.npz not found in candidate paths (refusing to self-trust)"
     raise RuntimeError(msg)
 
   oracle_sha = sha256_file(npz_file)
   if oracle_sha != expected_oracle_sha:
     msg = (
       f"Oracle dump SHA256 mismatch for {npz_file}: "
-      f"computed {oracle_sha} != pinned {expected_oracle_sha}"
+      f"computed {oracle_sha} != pinned {expected_oracle_sha} (refusing to self-trust)"
     )
     raise RuntimeError(msg)
 
@@ -177,14 +186,14 @@ def verify_hashes(
   ]
   ckpt_file = next((p for p in ckpt_candidates if p.is_file()), None)
   if ckpt_file is None:
-    msg = f"Checkpoint {CANONICAL_CKPT}.ckpt not found in candidate paths"
+    msg = f"Checkpoint {CANONICAL_CKPT}.ckpt not found in candidate paths (refusing to self-trust)"
     raise RuntimeError(msg)
 
   ckpt_sha = sha256_file(ckpt_file)
-  if expected_ckpt_sha is not None and ckpt_sha != expected_ckpt_sha:
+  if ckpt_sha != expected_ckpt_sha:
     msg = (
       f"Checkpoint SHA256 mismatch for {ckpt_file}: "
-      f"computed {ckpt_sha} != pinned {expected_ckpt_sha}"
+      f"computed {ckpt_sha} != pinned {expected_ckpt_sha} (refusing to self-trust)"
     )
     raise RuntimeError(msg)
 
@@ -234,16 +243,24 @@ def apply_mutant(
     w = model.both_out.layers[2].weight
     w_perm = jnp.roll(w, shift=1, axis=0)
     mutated_model = eqx.tree_at(lambda m: m.both_out.layers[2].weight, model, w_perm)
-    yield mutated_model
+    orig_load = FrustraMPNNDriver.load_model
+    FrustraMPNNDriver.load_model = lambda self, *args, **kwargs: mutated_model  # type: ignore[assignment]
+    try:
+      yield mutated_model
+    finally:
+      FrustraMPNNDriver.load_model = orig_load  # type: ignore[assignment]
 
   elif mutant == "subtract_mut_inverted":
     # 4. subtract_mut_inverted: Invert subtract_mut boolean (False -> True)
     orig_subtract_mut = model.subtract_mut
     object.__setattr__(model, "subtract_mut", not orig_subtract_mut)
+    orig_load = FrustraMPNNDriver.load_model
+    FrustraMPNNDriver.load_model = lambda self, *args, **kwargs: model  # type: ignore[assignment]
     try:
       yield model
     finally:
       object.__setattr__(model, "subtract_mut", orig_subtract_mut)
+      FrustraMPNNDriver.load_model = orig_load  # type: ignore[assignment]
 
   else:
     msg = f"Unknown mutant identifier: {mutant!r}"
@@ -259,6 +276,7 @@ def evaluate_stages(
   oracle: dict[str, np.ndarray],
   pdb_path: Path,
   dtype: str,
+  is_clean: bool = True,
 ) -> dict[str, float]:
   """Evaluate intermediate stages s0-s8 against sealed oracle dump."""
   target_dtype = jnp.float64 if dtype == "float64" else jnp.float32
@@ -277,6 +295,10 @@ def evaluate_stages(
     seq,
   )
 
+  if dtype == "float64" and stages.frustration_scores.dtype != jnp.float64:
+    msg = f"float64 arm produced unexpected dtype {stages.frustration_scores.dtype}"
+    raise ValueError(msg)
+
   out: dict[str, float] = {}
 
   # s0_prep: Structure prep invariants & feature checks
@@ -292,25 +314,26 @@ def evaluate_stages(
       raise ValueError(msg)
     out["s0_prep"] = 0.0
 
-  if dtype == "float32":
-    # float32 arm: direct numerical difference against sealed float32 oracle dump
-    out["s1_features"] = float(np.max(np.abs(np.asarray(stages.features) - oracle["features"])))
-    out["s2_encoder"] = float(
-      np.max(np.abs(np.asarray(stages.encoder_out) - oracle["encoder_out"])),
-    )
-    out["s3_decoder"] = float(
-      np.max(np.abs(np.asarray(stages.decoder_hidden) - oracle["decoder_hidden"])),
-    )
-    out["s4_latent"] = float(np.max(np.abs(np.asarray(stages.lin_input) - oracle["lin_input"])))
-    out["s5_attention"] = float(
-      np.max(np.abs(np.asarray(stages.light_attention_out) - oracle["light_attention_out"])),
-    )
-    out["s6_mlp_head"] = float(np.max(np.abs(np.asarray(stages.both_out) - oracle["both_out"])))
-    out["s7_frustration"] = float(
-      np.max(np.abs(np.asarray(stages.frustration_scores) - oracle["frustration_scores"])),
-    )
+  def _ref(name: str) -> np.ndarray:
+    if dtype == "float64" and f"f64_{name}" in oracle:
+      return oracle[f"f64_{name}"]
+    return oracle[name]
 
-    # s8_entry: Public runner.score integration
+  # Genuine stage-by-stage forward decomposition against sealed PyTorch oracle dump
+  out["s1_features"] = float(np.max(np.abs(np.asarray(stages.features) - _ref("features"))))
+  out["s2_encoder"] = float(np.max(np.abs(np.asarray(stages.encoder_out) - _ref("encoder_out"))))
+  out["s3_decoder"] = float(np.max(np.abs(np.asarray(stages.decoder_hidden) - _ref("decoder_hidden"))))
+  out["s4_latent"] = float(np.max(np.abs(np.asarray(stages.lin_input) - _ref("lin_input"))))
+  out["s5_attention"] = float(
+    np.max(np.abs(np.asarray(stages.light_attention_out) - _ref("light_attention_out"))),
+  )
+  out["s6_mlp_head"] = float(np.max(np.abs(np.asarray(stages.both_out) - _ref("both_out"))))
+  out["s7_frustration"] = float(
+    np.max(np.abs(np.asarray(stages.frustration_scores) - _ref("frustration_scores"))),
+  )
+
+  # s8_entry: Public runner.score integration (evaluated only on clean float32 arm)
+  if is_clean and dtype == "float32":
     runner_res = runner_score(
       inputs=str(pdb_path),
       model_family="frustrampnn",
@@ -318,77 +341,6 @@ def evaluate_stages(
     )
     runner_arr = np.asarray(runner_res["structures"]["0"]["arrays"]["frustration_scores"])
     out["s8_entry"] = float(np.max(np.abs(runner_arr - oracle["frustration_scores"])))
-
-  else:
-    # float64 arm: tolerance < 1e-7 evaluated via precision cast fidelity
-    # Verify stages executed cleanly in float64
-    if stages.frustration_scores.dtype != jnp.float64:
-      msg = f"float64 arm produced unexpected dtype {stages.frustration_scores.dtype}"
-      raise ValueError(msg)
-
-    # Precision cast fidelity across all stages against precision-cast reference
-    out["s1_features"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["features"], dtype=np.float64) - oracle["features"].astype(np.float64),
-        ),
-      ),
-    )
-    out["s2_encoder"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["encoder_out"], dtype=np.float64)
-          - oracle["encoder_out"].astype(np.float64),
-        ),
-      ),
-    )
-    out["s3_decoder"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["decoder_hidden"], dtype=np.float64)
-          - oracle["decoder_hidden"].astype(np.float64),
-        ),
-      ),
-    )
-    out["s4_latent"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["lin_input"], dtype=np.float64)
-          - oracle["lin_input"].astype(np.float64),
-        ),
-      ),
-    )
-    out["s5_attention"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["light_attention_out"], dtype=np.float64)
-          - oracle["light_attention_out"].astype(np.float64),
-        ),
-      ),
-    )
-    out["s6_mlp_head"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["both_out"], dtype=np.float64) - oracle["both_out"].astype(np.float64),
-        ),
-      ),
-    )
-    out["s7_frustration"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["frustration_scores"], dtype=np.float64)
-          - oracle["frustration_scores"].astype(np.float64),
-        ),
-      ),
-    )
-    out["s8_entry"] = float(
-      np.max(
-        np.abs(
-          np.asarray(oracle["frustration_scores"], dtype=np.float64)
-          - oracle["frustration_scores"].astype(np.float64),
-        ),
-      ),
-    )
 
   return out
 
@@ -503,7 +455,7 @@ def main() -> int:  # noqa: PLR0915
   log.info("Starting FrustraMPNN Parity Vehicle v2")
 
   # 1. Anti-self-trust Verification
-  oracle_sha, ckpt_sha, _pinned = verify_hashes(
+  oracle_sha, ckpt_sha, _pinned = verify_anti_self_trust(
     args.oracle_dir,
     args.weights_dir,
     args.pinned_dumps,
@@ -534,7 +486,7 @@ def main() -> int:  # noqa: PLR0915
       local_path=args.weights_dir / f"{CANONICAL_CKPT}.ckpt",
       dtype=dtype,
     )
-    stages = evaluate_stages(model, struct, oracle, pdb_path, dtype)
+    stages = evaluate_stages(model, struct, oracle, pdb_path, dtype, is_clean=True)
     clean_stages[arm] = stages
     clean_summary[arm] = summarize_arm(stages, dtype)
     log.info("Clean arm %s: %s", arm, clean_summary[arm])
@@ -557,7 +509,7 @@ def main() -> int:  # noqa: PLR0915
   for m in mutant_list:
     try:
       with apply_mutant(m, base_model) as mutated_model:
-        m_stages = evaluate_stages(mutated_model, struct, oracle, pdb_path, "float32")
+        m_stages = evaluate_stages(mutated_model, struct, oracle, pdb_path, "float32", is_clean=False)
         m_summary = summarize_arm(m_stages, "float32")
 
       over_finite = m_summary["n_over_band_finite"] > 0
