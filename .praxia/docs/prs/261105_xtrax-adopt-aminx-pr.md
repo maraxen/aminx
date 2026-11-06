@@ -4,198 +4,112 @@ task_id: "261105_xtrax-adopt-aminx"
 epic_id: 6497
 branch: "deps/xtrax-b7-261105"
 target_branch: "main"
-worktree: "/home/marielle/projects/aminx/.worktrees/261105_xtrax-adopt-aminx"
+pr: "https://github.com/maraxen/aminx/pull/270"
 specification: ".praxia/docs/specs/261105_aminx-xtrax-adoption-spec.md"
-author: "Worker M6 (teamwork_worker)"
-date: "2026-11-05"
-status: "ready_for_review"
+date: "2026-11-06"
+head: "2f9654a4"
+status: "draft_pr"
 ---
 
-# Pull Request: Adopt xtrax.pack and xtrax.eda with Backward-Compatible Shim
+# feat(pack,eda): adopt xtrax.pack and xtrax.eda in aminx
 
-## PR Title
-`feat(pack,eda): adopt xtrax pack and eda with backward-compatible shim`
+## Summary
 
-## PR Description & Summary
+This PR moves aminx to xtrax 0.4.1b7 and adopts two of its modules:
 
-### Overview
-This pull request transitions `aminx` onto `xtrax.pack` and `xtrax.eda` (pinned to `xtrax[pack,eda,export]>=0.4.1b7`, `zarr>=3.0.0`, `flax>=0.8.0`, and optional extra `onnx = ["xtrax[onnx]>=0.4.1b7"]`) while keeping the production reference runner `src/aminx/host/campaign.py` strictly frozen (0-byte diff against `origin/main`).
+- **`xtrax.pack`**, opt-in via `aminx campaign worker|run --pack`. A finished campaign row becomes one xtrax unit: a `unit.json` record plus `members.tar.zst` and `members.idx.json`, in place of a loose zarr tree. This targets the file-count cap on shared scratch.
+- **`xtrax.eda`** (`src/aminx/host/plan_eda.py`). Plan explanation, bucket analysis, panel rendering and export of plan artefacts, with sha256 verification of the export manifest.
 
-All new packaging, failure handling, refusal semantics, and dual-adapter resolution logic are mediated through a non-invasive shim module `src/aminx/host/pack_shim.py` and transparent CLI routing (`--pack / --no-pack`) in `src/aminx/cli.py`.
+`--no-pack`, the default, still runs the reference runner (`campaign.py: run_manifest_row` and `execute_manifest`) unchanged.
 
-### Key Capabilities & Architecture
+## Design
 
-1. **`xtrax.pack` Unit Packaging & Inode Cap Mitigation**:
-   - Replaces loose multi-file per-unit output trees with single compressed unit records (`unit.json`, schema `xtrax.unit/1`) backed by zstandard archives (`members.tar.zst` + `members.idx.json`).
-   - Mitigates shared HPC filesystem inode exhaustion bounds (`_MAX_HASHED_DIR_FILES = 5000`).
-   - Implements write-once record commitment via `write_aminx_unit` and atomic staging via `.partial.<attempt_id>` trees.
+### Pack runner (`src/aminx/host/pack_shim.py`)
+`run_packed_manifest_row` follows the reference runner's contract and changes only how a finished row is stored.
 
-2. **Full Backward Reader Compatibility (Zero On-Disk Migrations)**:
-   - Existing on-disk campaign units stamped with historical `campaign_done_marker_v3` (`<row_hash>.h5.done.json`) remain 100% readable without data rewriting.
-   - `resolve_unit_adapter(path)` dynamically resolves unmigrated loose markers to `AminxDoneMarkerAdapter` (`src/xtrax/run/unit_index_adapters.py:106-165`), emitting valid `CoreRecord` objects classified as `IndexReuse`.
-   - When a legacy unit is packed, `pack_aminx_unit` archives the legacy marker into `unit.json` `meta["legacy_done_marker"]`, renames the loose marker to `.done.json.packed`, and switches adapter resolution to `UnitJsonAdapter`.
+- **Locking:**
+  - takes the per-row lock through `_campaign_lock_context`, with a heartbeat;
+  - passes `--lock-backend`, `--lock-lease-seconds` and `--heartbeat-interval-seconds` through;
+  - refuses a distributed lock backend under `--pack`.
+- **Commit sequence:** the worker writes a `.partial.<attempt_id>` store. Before that store is renamed into place, the runner:
+  - refuses it if it holds no array node (R-U1);
+  - fsyncs it;
+  - takes its `zarr_content_digest`.
 
-3. **Strict Negative Refusal & Failure Controls**:
-   - **Bit-Flip Corruption Refusal**: `validate_aminx_unit` strictly checks `unit_content_digest` against committed `record["content_digest"]`, raising `ValueError: content digest mismatch` on post-commit bit alterations.
-   - **Empty Unit Refusal (`R-U1`)**: `aminx_unit_check` refuses empty stores or stores lacking genuine data array chunk files.
-   - **Loose File Collision Refusal (`R-U3`)**: `pack_aminx_unit` refuses pre-existing files named like pack artifacts or regenerated loose members beside archives.
-   - **Structured Failure Stamps (`R-U4`)**: `write_aminx_unit_failure` writes structured `unit.failed.json` with schema `"xtrax.unit_failure/1"` on uncaught errors.
+  It then commits the record through xtrax's write-once `write_unit_record`, collects the sink arrays, and packs with `pack_unit(check=aminx_unit_check)`. `aminx_unit_check` keeps xtrax's record and content-digest checks.
+- **Resume:**
+  - a valid packed unit is reused;
+  - a row finished by the reference runner (v3 done marker) is reused;
+  - a unit whose inputs changed is quarantined and recomputed (`InputDigestMismatchError`);
+  - a unit committed but not yet packed, or packed but not swept, is finished;
+  - existing output with neither a record nor a marker is refused, not deleted;
+  - pack corruption is a hard error, not a recompute.
+- **Failure:** an exception writes `<unit>.unit.failed.json` beside the unit, never inside it. The stamp is cleared on the next success.
+- **Legacy markers:** a `.done.json` beside a unit is copied into `meta.legacy_done_marker` when the record is written. It is renamed to `.done.json.packed` only after a successful pack, and only when the record holds identical content.
+- **Summary:** `execute_packed_manifest` returns the reference summary shape:
+  - counts every non-success status as failed;
+  - reports reused and recomputed counts;
+  - refuses an unknown `--row-hash`;
+  - reduces each row result to hash, status, output path and reuse, so `campaign run --pack` prints JSON.
 
-4. **`xtrax.eda` Plan Inspection & Checkpoint Manifest Cryptographic Verification**:
-   - Implements `src/aminx/host/plan_eda.py` providing `explain_aminx_plan` and `analyze_aminx_bucket` wrapping `xtrax.eda`.
-   - Enforces cryptographic sha256 checksum verification of checkpoint weights and companion manifests via `resolve_family_checkpoint(checkpoint_id, family=checkpoint_family)` prior to topological plan explanation.
+### Gates hook (`src/aminx/host/campaign.py`, one function)
+`_collect_manifest_gate_state` now recognises a packed row: an output directory containing `unit.json`. It reads that row's digest through `packed_unit_gate_digest`, which:
 
-5. **CLI Integration**:
-   - Added `--pack / --no-pack` options to `aminx campaign worker` and `aminx campaign run`.
-   - When `--pack` is supplied, commands route to `pack_shim.run_packed_manifest_row` and `pack_shim.execute_packed_manifest`.
-   - When `--no-pack` is supplied, commands route to the reference runner `campaign.py:run_manifest_row` and `campaign.py:execute_manifest`.
+- validates the unit;
+- checks `meta.manifest_row_hash`;
+- returns the `zarr_content_digest` recorded at commit.
 
-6. **Invariant C1 Preservation**:
-   - `src/aminx/host/campaign.py` remains strictly untouched (0-byte diff against `origin/main`).
+That is the same algorithm the done marker records. It excludes per-run provenance attrs (`created_at`, `run_id`, `git_*`), so determinism gates compare packed reruns correctly. All other gate logic is unchanged.
 
----
+### Adapter resolution
+`resolve_unit_adapter` returns xtrax's `UnitJsonAdapter` for a packed unit and `AminxDoneMarkerAdapter` for a legacy marker. A custom `record_name` raises `ValueError`, because neither adapter would find the record.
 
-## Changed Files & Deliverables Inventory
+### EDA (`src/aminx/host/plan_eda.py`)
+- **Checkpoint verification:** the checkpoint is resolved and verified through `resolve_family_checkpoint` before the plan is explained.
+- **Export manifest verification:** refuses several candidate manifests when it has to choose one itself, entries without sha256, and filenames that are not plain names. `export_and_verify` checks the `{prefix}_manifest.json` it wrote.
 
-| Path | Change Type | Purpose |
-| :--- | :--- | :--- |
-| `pyproject.toml` | Modified | Bump `xtrax` to `xtrax[pack,eda,export]>=0.4.1b7`, add direct dependencies `zarr>=3.0.0` and `flax>=0.8.0`, update optional `onnx = ["xtrax[onnx]>=0.4.1b7"]`. |
-| `uv.lock` | Modified | Resolved 299 packages without conflict, including `vl-convert-python` and `seaborn`. |
-| `src/aminx/cli.py` | Modified | Add `--pack / --no-pack` flags to `campaign worker` (line 1932) and `campaign run` (line 1999). |
-| `src/aminx/host/pack_shim.py` | Added | Non-invasive packaging shim, refusal checks (`R-U1`, `R-U3`, `R-U4`), dual reader adapter resolver. |
-| `src/aminx/host/plan_eda.py` | Added | EDA plan explanation and checkpoint integrity verification. |
-| `tests/host/test_pack_shim.py` | Added | 8 comprehensive tests: packing, member readback, backward compat, 3 negative refusal controls, AC-10 parity. |
-| `tests/host/test_plan_eda.py` | Added | 4 tests for plan explanation, bucket analysis, and checkpoint manifest checksum validation. |
+## Dependencies
+- `xtrax[io,pack,export]==0.4.1b7` (exact pin, as before).
+- The direct `flax` and `zarr` lines are removed; they come through xtrax.
+- New optional extra `eda = ["xtrax[eda]==0.4.1b7"]` for the plotting stack. CI installs it with `--extra eda`; the eda tests skip without it.
+- `onnx = ["xtrax[onnx]==0.4.1b7"]`.
+- `uv.lock` is regenerated.
 
----
+## Files
 
-## Invariant C1 Verification
+| Path | Change |
+| :--- | :--- |
+| `src/aminx/host/pack_shim.py` | New: pack runner, unit check, adapter resolver, failure stamp, gate digest |
+| `src/aminx/host/plan_eda.py` | New: xtrax.eda adapter with export-manifest verification |
+| `src/aminx/host/campaign.py` | Gates read packed rows (one function) |
+| `src/aminx/cli.py` | `--pack/--no-pack` on `campaign worker` and `campaign run`; lock options passed through |
+| `pyproject.toml`, `uv.lock`, `.github/workflows/ci.yml` | Pins, the `eda` extra, CI install |
+| `tests/host/test_pack_shim.py` | 15 unit-level tests, including tamper, edited-record, empty-store and fill-value controls |
+| `tests/host/test_pack_shim_runner.py` | 16 runner/CLI/gates tests: rerun, gates, provenance-invariant digest, quarantine, legacy reuse, lock contention, pack failure and resume, interrupted sweep, CLI JSON summary, refusals |
+| `tests/host/test_plan_eda.py` | 11 tests, including corrupted export, wrong prefix, missing sha256, path traversal |
+| `scripts/analysis/verify_xtrax_adoption.py` + `.bth.toml` | Pre-registered adoption check: round trips and negative controls |
 
-```bash
-git diff origin/main -- src/aminx/host/campaign.py
-# Output: (empty - 0 bytes)
-```
-Verified independently by Worker M5, Forensic Auditor M5, and Worker M6.
+## Verification
+- **Tests (titanix):** `tests/host` and `tests/cli` at `2f9654a4` gave **740 passed, 10 skipped, 0 failed**. The venv had the `cpu`, `dev`, `tests`, `eda` and `laser` extras.
+- **Bathos:**
+  - run `341c3456` recorded outcome **pass** at `2f9654a4` with the sidecar bound (`stage_name = "validation"`);
+  - run `e4e3cf5a` crashed on a missing import, since fixed in `7222fe8e`, and is kept in the catalog as a failed run.
+- **Review:** three rounds.
+  1. Self-review found 4 blocking defects, fixed in `a398ab30` and `c9021fb6`.
+  2. An independent reviewer confirmed 4 more, fixed in `6e266e32`:
+     - `campaign run --pack` crashed on non-JSON results;
+     - the gate digest included per-run provenance, so packed reruns never matched;
+     - a pack interrupted before its sweep was never finished;
+     - an unknown `--row-hash` was silently skipped.
+  3. The verdict was MERGE. Its two remaining low items were fixed in `2f9654a4`: digest before rename, and arrays holding only fill values.
 
----
+## Known limits
+- `--pack` supports only the `local_fs` lock backend; a distributed backend is refused.
+- Custom unit record names cannot be indexed, so the adapter resolver refuses them.
+- The bathos verify script covers the shim, eda and the negative controls, not the runner, CLI or gates. Those are covered by `tests/host/test_pack_shim_runner.py`.
+- `ty` is advisory in this repo. The remaining diagnostics in `pack_shim.py` are in code copied verbatim from the reference runner.
 
-## Empirical Verification Evidence
-
-### Automated Test Suite Execution
-```bash
-uv run pytest tests/host/test_pack_shim.py tests/host/test_plan_eda.py tests/host/test_campaign_done_marker.py
-```
-**Result**: `20 passed, 7 warnings in 16.69s` (100% pass rate).
-
-Test Breakdown:
-1. `tests/host/test_pack_shim.py`:
-   - `test_unit_creation_packing_and_member_readback`: PASS
-   - `test_reader_backward_compatibility_aminx_done_marker_adapter`: PASS
-   - `test_negative_control_bit_corruption_raises_value_error`: PASS
-   - `test_negative_control_loose_file_collision_refuses_pack`: PASS
-   - `test_negative_control_empty_unit_refusal`: PASS
-   - `test_quarantining_legacy_done_marker_upon_packing`: PASS
-   - `test_write_aminx_unit_failure_stamp`: PASS
-   - `test_ac10_manifest_slice_parity`: PASS
-2. `tests/host/test_plan_eda.py`:
-   - `test_explain_aminx_plan`: PASS
-   - `test_analyze_aminx_bucket`: PASS
-   - `test_verify_checkpoint_and_explain_plan`: PASS
-   - `test_verify_checkpoint_and_explain_plan_rejects_unknown_checkpoint`: PASS
-3. `tests/host/test_campaign_done_marker.py`:
-   - 8 existing regression and corruption tests: ALL PASS.
-
-### AC-10 Manifest Slice Parity Verification
-- Real PDB structure `tests/data/1ubq.pdb` executed through reference runner (`campaign.py`) and packed runner (`pack_shim.py`).
-- Produced exact numerical array equality:
-  - `structure_0/logits`: shape `(2, 1, 1, 512, 21)`, dtype `float32` (exact match via `np.testing.assert_array_equal`).
-  - `structure_0/sequences`: shape `(2, 1, 1, 512)`, dtype `int32` (exact match via `np.testing.assert_array_equal`).
-- Resume idempotency: both runners returned `status="already_done"` with 0 re-computations.
-
-### Code Style, Formatting & Static Checks
-```bash
-uv run ruff check --no-fix src/aminx/host/pack_shim.py src/aminx/host/plan_eda.py src/aminx/cli.py tests/host/test_pack_shim.py tests/host/test_plan_eda.py
-# All checks passed!
-
-uv run ruff format --check src/aminx/host/pack_shim.py src/aminx/host/plan_eda.py src/aminx/cli.py
-# 3 files already formatted
-```
-
----
-
-## Forensic Audit Summary
-
-Auditor: Forensic Auditor M5 (`teamwork_auditor`)  
-Audit Report: `.agents/teamwork/auditor_m5_gate/handoff.md`  
-Audit Verdict: **CLEAN** (all 10 checks C1–C10 passed).
-
----
-
-## Linked Debts & Traceability
-
-- **Closes Epic**: #6497 (`261105_xtrax-adopt-aminx`)
-- **Resolves xtrax Debts**:
-  - #3257: Consumer adoption of `xtrax.pack` in `aminx`
-  - #3143: Consumer adoption of `xtrax.eda` in `aminx`
-- **Re-scopes xtrax Debt**:
-  - #3142: Consumer adoption of `xtrax` campaign tooling (clarified scope to reflect aminx's frozen reference runner architecture)
-- **Supersedes aminx Debt**:
-  - #3147: Inode exhaustion and packaging for aminx campaign stores
-- **Addresses aminx Debts**:
-  - #2421, #2148, #2149, #2540, #2135, #2136, #2493, #2371, #2561, #2533, #2534, #2156, #2157
-- **Vendored Downstream Copies Inventory**:
-  - `asr`, `mpnn_ext`, and `hautespout` are documented and will not follow the pin bump.
-- **py2Dmol Classification**:
-  - Formally classified as **Built-in views** (remote py2Dmol script embedded in `site/app.js`, headless Python core).
-
----
-
-## Conventional Commit Details
-
-### Commit Message
-```
-feat(pack,eda): adopt xtrax pack and eda with backward-compatible shim
-
-- Bump xtrax to xtrax[pack,eda,export]>=0.4.1b7, add zarr>=3.0.0 and flax>=0.8.0
-- Implement src/aminx/host/pack_shim.py with write-once commitment, refusal controls,
-  and backward-compatible reader adapter resolution
-- Wire --pack / --no-pack CLI options in src/aminx/cli.py
-- Implement src/aminx/host/plan_eda.py with plan explanation and checkpoint integrity verification
-- Add comprehensive test suite with 3 negative refusal controls and AC-10 parity verification
-- Keep src/aminx/host/campaign.py strictly unmodified as frozen reference runner
-
-Closes Epic #6497.
-Resolves xtrax debts #3257, #3143.
-Re-scopes xtrax debt #3142.
-Supersedes aminx debt #3147.
-Addresses aminx debts #2421, #2148, #2149, #2540, #2135, #2136, #2493, #2371, #2561, #2533, #2534, #2156, #2157.
-```
-
-## Section 4: PR Opening & Push Status
-
-### Local Commit and Verification Status
-The deliverables for Epic #6497 are created and verified locally on branch `deps/xtrax-b7-261105` in the canonical worktree:
-- **Worktree**: `/home/marielle/projects/aminx/.worktrees/261105_xtrax-adopt-aminx`
-- **Branch**: `deps/xtrax-b7-261105`
-- **Verification**: 17/17 tests passing (`uv run pytest tests/host/test_pack_shim.py tests/host/test_plan_eda.py -vv`), 0 ruff lint errors, and 3 files verified formatted under `uv run ruff format --check`.
-- **Invariant C1**: `git diff origin/main -- src/aminx/host/campaign.py` is strictly 0 bytes.
-
-### Repository Owner Remote Push Instructions
-Because automated subagent sandboxes restrict outbound network traffic to remote hosts, repository owners can execute the following exact command line to push the branch to GitHub:
-
-```bash
-cd /home/marielle/projects/aminx/.worktrees/261105_xtrax-adopt-aminx
-git push origin deps/xtrax-b7-261105
-```
-
-### Pull Request Submission
-Once pushed, open the pull request against `main` via:
-- **Target URL**: https://github.com/maraxen/aminx/pull/new/deps/xtrax-b7-261105
-- Or via GitHub CLI:
-```bash
-gh pr create \
-  --base main \
-  --head deps/xtrax-b7-261105 \
-  --title "feat(pack,eda): adopt xtrax pack and eda with backward-compatible shim" \
-  --body-file "/home/marielle/projects/aminx/.praxia/docs/prs/261105_xtrax-adopt-aminx-pr.md"
-```
+## Related
+- Epic #6497 (`261105_xtrax-adopt-aminx`).
+- xtrax debts #3257 (adopt `xtrax.pack`) and #3143 (adopt `xtrax.eda`). #3142 (campaign tooling) is only partly addressed: the runner's packed storage and gates path, not the scheduler.
+- aminx debt #3147 (file-count pressure from campaign stores).
