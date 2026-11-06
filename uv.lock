@@ -94,7 +94,7 @@ dependencies = [
     { name = "proxide", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "xtrax", extra = ["export", "io"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "xtrax", extra = ["export", "io", "pack"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -142,6 +142,9 @@ docs = [
     { name = "sphinx-copybutton", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sphinx-design", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sphinxext-rediraffe", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+eda = [
+    { name = "xtrax", extra = ["eda"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 foldcomp = [
     { name = "foldcomp", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -247,11 +250,12 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'" },
     { name = "ty", marker = "extra == 'tests'" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["io", "export"], specifier = "==0.4.1b5" },
-    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b5" },
+    { name = "xtrax", extras = ["eda"], marker = "extra == 'eda'", specifier = "==0.4.1b7" },
+    { name = "xtrax", extras = ["io", "pack", "export"], specifier = "==0.4.1b7" },
+    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b7" },
     { name = "zstandard", specifier = ">=0.21.0" },
 ]
-provides-extras = ["agent", "laser", "benchmark", "docs", "tests", "onnx", "dev", "foldcomp", "cpu", "cuda12"]
+provides-extras = ["eda", "agent", "laser", "benchmark", "docs", "tests", "onnx", "dev", "foldcomp", "cpu", "cuda12"]
 
 [package.metadata.requires-dev]
 benchmark = [
@@ -3865,6 +3869,20 @@ wheels = [
 ]
 
 [[package]]
+name = "seaborn"
+version = "0.13.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/86/59/a451d7420a77ab0b98f7affa3a1d78a313d2f7281a57afb1a34bae8ab412/seaborn-0.13.2.tar.gz", hash = "sha256:93e60a40988f4d65e9f4885df477e2fdaff6b73a9ded434c1ab356dd57eefff7", size = 1457696, upload-time = "2024-01-25T13:21:52.551Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/83/11/00d3c3dfc25ad54e731d91449895a79e4bf2384dc3ac01809010ba88f6d5/seaborn-0.13.2-py3-none-any.whl", hash = "sha256:636f8336facf092165e27924f223d3c62ca560b1f2bb5dff7ab7fad265361987", size = 294914, upload-time = "2024-01-25T13:21:49.598Z" },
+]
+
+[[package]]
 name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4471,6 +4489,18 @@ wheels = [
 ]
 
 [[package]]
+name = "vl-convert-python"
+version = "1.9.0.post1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/93/89/36722344d1758ec2106f4e8eca980f173cfe8f8d0358c1b77cc5d2e035a4/vl_convert_python-1.9.0.post1.tar.gz", hash = "sha256:a5b06b3128037519001166f5341ec7831e19fbd7f3a5f78f73d557ac2d5859ef", size = 4663469, upload-time = "2026-01-21T00:09:55.61Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9f/59/e5862245972ff467d38b0eb5ad28154685e23ecabb47e14f2b6962da7b56/vl_convert_python-1.9.0.post1-cp37-abi3-macosx_10_12_x86_64.whl", hash = "sha256:43e9515f65bbcd317d1ef328787fd7bf0344c2fde9292eb7a0e64d5d3d29fccb", size = 30512930, upload-time = "2026-01-21T00:09:43.198Z" },
+    { url = "https://files.pythonhosted.org/packages/62/e6/e7d0b538c2f0daaf120901dc113bd5d5d1fa51a9532fa5ffd90234e8c69e/vl_convert_python-1.9.0.post1-cp37-abi3-macosx_11_0_arm64.whl", hash = "sha256:b0e7a3245f32addec7e7abeb1badf72b1513ed71ba1dba7aca853901217b3f4e", size = 29738742, upload-time = "2026-01-21T00:09:46.016Z" },
+    { url = "https://files.pythonhosted.org/packages/b8/e2/5645a1bc174c53ff8cd305ed76a4a76ba36e155302db20b42b7e78daeef8/vl_convert_python-1.9.0.post1-cp37-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e6ecfe4b7e2ea9e8c30fd6d6eaea3ef85475be1ad249407d9796dce4ecdb5b32", size = 33366278, upload-time = "2026-01-21T00:09:48.42Z" },
+    { url = "https://files.pythonhosted.org/packages/a0/18/88e02899b72fa8273ffb32bde12b0e5776ee0fd9fb29559a49c48ec4c5fa/vl_convert_python-1.9.0.post1-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:3c1558fa0055e88c465bd3d71760cde9fa2c94a95f776a0ef9178252fd820b1f", size = 33520215, upload-time = "2026-01-21T00:09:50.992Z" },
+]
+
+[[package]]
 name = "wadler-lindig"
 version = "0.1.7"
 source = { registry = "https://pypi.org/simple" }
@@ -4627,7 +4657,7 @@ wheels = [
 
 [[package]]
 name = "xtrax"
-version = "0.4.1b5"
+version = "0.4.1b7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -4637,12 +4667,19 @@ dependencies = [
     { name = "optax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "orbax-checkpoint", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/43/193dfe6932ec4f3d1c60fb8fc4a34eec5d6ee634dc05e179252f727f8fb1/xtrax-0.4.1b5.tar.gz", hash = "sha256:617686c3a49143224e6ce297fc5caa88e500643c940e97057144fb2e217f31b7", size = 3566929, upload-time = "2026-10-26T21:35:51.787Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/51/ad/d9650bb7b1e30f17b7c49ca3cbccf9ee08dda25b22fcbac846eb1b3bc3c3/xtrax-0.4.1b7.tar.gz", hash = "sha256:2784fc6c23928624fa1067753bcc2b80ffb02fd20d8f796023ae9e7a953f190c", size = 3900022, upload-time = "2026-11-04T19:20:41.554Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/e4/9b5ecf70d09846c3880419cc11278b4cd7a040cf468903c21f615f74b1fb/xtrax-0.4.1b5-py3-none-any.whl", hash = "sha256:8c8875e162d2ad76825794e1664b1ff3befe2555d80415013dc78acd12ba7918", size = 742890, upload-time = "2026-10-26T21:35:49.85Z" },
+    { url = "https://files.pythonhosted.org/packages/67/01/6513e7320401bdad3d4d3607d7482d596244e679018848c82c39826e6a50/xtrax-0.4.1b7-py3-none-any.whl", hash = "sha256:392820205f7d677ff18d99e5694b6ea00f3ec748a70d7e9c85eee6da7d8fc046", size = 818563, upload-time = "2026-11-04T19:20:39.787Z" },
 ]
 
 [package.optional-dependencies]
+eda = [
+    { name = "matplotlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pandas", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "pyarrow", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "seaborn", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "vl-convert-python", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
 export = [
     { name = "huggingface-hub", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "iree-base-compiler", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -4656,6 +4693,9 @@ onnx = [
     { name = "jax2onnx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "onnx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+pack = [
+    { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
 [[package]]
