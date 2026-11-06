@@ -3,7 +3,8 @@ title = "LigandMPNN arms of the state campaign sampled near-chance libraries"
 takeaway = "ProteinMPNN and SolubleMPNN recover about 40% of native residues; all four LigandMPNN arms recover 13%, barely above a shuffled native."
 question = "Does a knob-faceted library summary of a finished campaign reproduce a recorded analysis and expose problems in what was sampled?"
 refs = [
-  { kind = "run", id = "885f66c5", label = "library summary v2, outcome pass" },
+  { kind = "run", id = "6d38ebaf", label = "library summary v2 with each table registered, outcome pass" },
+  { kind = "run", id = "885f66c5", label = "first v2 run, same results, tables registered only as a folder" },
   { kind = "run", id = "64c6845b", label = "library summary v1, outcome fail (parser reordered chains)" },
   { kind = "run", id = "ca68e784", label = "residue tables built with the campaign's own parser" },
   { kind = "task", id = "261106_campaign-eda-respec", label = "library summary respec" },
@@ -14,7 +15,7 @@ refs = [
 "TEV" = "tobacco etch virus protease"
 
 [experiment]
-run_ref = "885f66c5"
+run_ref = "6d38ebaf"
 
 [toolchain]
 project = "review_toolchain"
