@@ -25,7 +25,10 @@ secondary view.
 
 Run on tev_design's state-distinguishability AR campaign (216 rows = 6 arms x 9 states x 4 seeds, 5
 temperatures stored inside each sink), read-only. Pre-registered run v1 recorded **fail** (bathos run
-`64c6845b`); its two causes are design requirements below.
+`64c6845b`); its two causes are design requirements below. v2 (`6d38ebaf`, pass; first v2 run
+`885f66c5` gave identical results) reads residue tables built with the campaign's own parser (`ca68e784`,
+aminx 0.1.0a19 + proxide 0.1.0a11 from tev_design's lock at `1f40e01a`) and scopes the shuffle control
+to the ProteinMPNN/SolubleMPNN arms. Review page built from `6d38ebaf` (six panels; exploratory).
 
 | Finding | Evidence | Requirement it creates |
 |---|---|---|
@@ -34,7 +37,7 @@ temperatures stored inside each sink), read-only. Pre-registered run v1 recorded
 | Sink token order differs from the parser's | parser `aatype` is AF2 order (`ARNDC...`), sinks are MPNN order (`ACDEF...`); unmapped recovery 0.14 vs 0.45 mapped | R2: alphabet is declared per array |
 | Padding is sampled and is not neutral | positions 448-511 of a 448-residue target: mean entropy 4.04 bits vs 2.3 on real residues | R2: real-residue mask; every statistic masks |
 | Index-based fixing misplaces pins across states | `catalytic_triad` fixed indices 38/73/143 land on S39/V74/D144 (1LVM) and K45/R80/Q150 (reac2 x4) | R4: integrity panels; R5: no index alignment across targets |
-| A whole arm can be degenerate | all four LigandMPNN arms: recovery 0.10-0.15, composition L 0.25 / A 0.17, entropy 3.4 bits vs 4.05 for ProteinMPNN | R4: degeneracy panel per arm |
+| A whole arm can be degenerate | all four LigandMPNN arms: recovery 0.13-0.14 vs 0.05-0.06 against shuffled native (margin 0.07-0.08; ProteinMPNN/SolubleMPNN 0.33-0.35), composition entropy 3.3-3.4 bits vs 4.0-4.1, per-residue NLL under their own logits about twice the other arms'. Produced by aminx 0.1.0a19, which predates the LigandMPNN backbone-O fix `82c4ea9b` (#2326) | R4: degeneracy panel per arm |
 | Some knobs live inside the sink | `temperature` is a list on every row and an array axis in the store; never a row-level facet | R3: two knob sources |
 
 ## 3. Requirements
@@ -114,7 +117,7 @@ Metric discovery reuses the `xtrax.eda.plugins` pattern (entry points, quarantin
 | track5 is unmerged and may change | verified 2026-11-06: not on `origin/main` |
 | aminx sinks hold `sequences`, `logits`, `fixed_mask`, `fixed_tokens`; score arrays only in scoring runs | verified for the prototype campaign; score arrays unverified in any finished campaign |
 | aminx can write a residue table into the sink at sampling time | unverified; needs an aminx change (sink writer) |
-| The LigandMPNN degeneracy is a defect of the producing build, not of the EDA | unverified; see the handoff for the campaign-era aminx build check |
+| The LigandMPNN degeneracy is a defect of the producing build, not of the EDA | partly verified: the producing build (aminx 0.1.0a19, 2026-07-19) predates fix `82c4ea9b` (2026-10-01); causation untested (needs a re-sample with a fixed build) |
 
 ## 6. Non-goals
 
@@ -136,4 +139,8 @@ Metric discovery reuses the `xtrax.eda.plugins` pattern (entry points, quarantin
 2. aminx: write the residue table into sampling sinks (R2); add the `SinkSchema` declaration.
 3. xtrax: implement `campaign_view` / `library_tables` against track5 once it merges; port the
    prototype's controls as tests.
-4. Prototype v2 (pre-registered, parser pinned to the campaign's version) feeds the first review page.
+4. Done: prototype v2 (`6d38ebaf`, pass) feeds the first review page. A per-residue track panel is
+   not on it yet (the table has no condition column the recipe's EDA block needs).
+5. Note for xtrax: the positive control shows the reader is faithful, not that the reproduced method
+   is sound. tev_design's JSD averages over all 512 indices, padding included, and across states whose
+   residue indices do not correspond.
