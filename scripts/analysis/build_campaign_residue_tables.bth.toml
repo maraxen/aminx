@@ -1,0 +1,29 @@
+[experiment]
+hypothesis = "In an environment pinned to the tev_design AR campaign's lock (aminx 0.1.0a19 wheel, proxide 0.1.0a11), aminx's parser yields one residue table for each of the campaign's 9 input structures, and the environment's installed versions equal the pinned ones."
+stage_name = "validation"
+novel = true
+task_id = "261106_campaign-eda-respec"
+# Why: run 64c6845b (prototype v1, outcome fail) re-parsed inputs with proxide 0.2.0, which orders
+# 1LVB's chains 214,214,10,10 instead of the campaign's 214,10,214,10, misaligning every residue
+# after index 214. Pins come from tev_design uv.lock at 1f40e01a.
+
+[outcomes.pass]
+condition = "parser_matches_campaign = true AND n_targets = 9"
+decision = "Use these residue tables as the native reference for prototype v2."
+reasoning = "The tables come from the same parser build that produced the campaign's residue order."
+is_residual = false
+
+[outcomes.fail]
+condition = "parser_matches_campaign = false OR n_targets <> 9"
+decision = "Do not use the tables; the environment is not the campaign's or a target failed to parse."
+reasoning = "A table from a different parser build can silently reorder residues."
+is_residual = true
+
+[result_schema]
+n_targets = "int"
+aminx_version = "str"
+proxide_version = "str"
+parser_matches_campaign = "bool"
+
+[outputs]
+roots = ["outputs/campaign_eda_prototype_v2/residue_tables"]
