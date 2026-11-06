@@ -1,0 +1,43 @@
+[experiment]
+hypothesis = "A knob-faceted library EDA built from a finished aminx campaign's manifest and per-row sinks (read-only) reproduces tev_design's recorded state-distinguishability statistics exactly from the same arrays (positive control), and its recovery metric falls to chance when the native sequence is shuffled while true recovery stays well above it (negative control), with padding and fixed positions excluded from every library statistic."
+stage_name = "validation"
+novel = true
+task_id = "261106_campaign-eda-respec"
+# Input: tev_design state-distinguishability AR campaign (216 rows: 6 arms x 9 states x 4 seeds;
+# 5 in-store temperatures). Prototype for the xtrax.eda respec.
+# Disclosed before registration (exploration on 2026-11-06, not graded):
+#  (1) parser aatype is AF2 order while sinks use MPNN order; recovery is computed after remapping.
+#  (2) ProteinMPNN recovery at T=0.1 was seen at 0.40-0.45 for three states, which informed the
+#      0.25 sensitivity floor.
+#  (3) The catalytic_triad fixed indices land on non-triad residues in some states (1LVM, reac2_*);
+#      this run records which states (fixed_pin_mismatch_states) descriptively, no outcome attached.
+# Library statistics are descriptive only: n=4 seeds per cell, no spike-in, no minimum detectable effect.
+
+[outcomes.pass]
+condition = "positive_control_ok = true AND negative_control_ok = true AND designable_mask_ok = true AND all_rows_ok = true"
+decision = "The prototype reads the campaign faithfully; use its tables for the review page and as the reference behaviour for the xtrax.eda campaign spec."
+reasoning = "Exact reproduction of an independent analysis from the same stores shows the reader and join are right; the shuffled-native control shows recovery measures sequence agreement, not composition; the mask check shows padding and fixed positions are excluded."
+is_residual = false
+
+[outcomes.fail]
+condition = "positive_control_ok = false OR negative_control_ok = false OR designable_mask_ok = false OR all_rows_ok = false"
+decision = "Do not use the tables; find which control failed in results.json before building on the prototype."
+reasoning = "At least one control or the row coverage check failed."
+is_residual = true
+
+[result_schema]
+rows_read = "int"
+rows_total = "int"
+all_rows_ok = "bool"
+positive_control_max_abs_diff = "float"
+positive_control_ok = "bool"
+negative_control_shuffled_recovery_max = "float"
+true_recovery_min = "float"
+negative_control_ok = "bool"
+designable_mask_ok = "bool"
+row_knobs_detected = "str"
+fixed_pin_mismatch_states = "str"
+n_fixed_pin_mismatch_states = "int"
+
+[outputs]
+roots = ["outputs/campaign_eda_prototype"]
