@@ -5,7 +5,7 @@ backbone O; its LigandMPNN arms recovered about 0.13 of native residues against 
 ProteinMPNN (aminx run 6d38ebaf). This re-samples the same structures, seeds and temperatures with
 the current build, LigandMPNN with no ligand or side-chain context (isolating the backbone feature
 path) against ProteinMPNN as the instrument control. No fixed positions; recovery is over every
-real residue (the runner's validity mask), native taken from the same parse the sampler uses.
+real residue (the first L positions in parser order), native taken from the same parser build.
 Task 261106_campaign-eda-respec.
 """
 
@@ -70,12 +70,13 @@ def main() -> int:  # noqa: PLR0915
         )
         res = sample(spec)
         seqs = np.asarray(res["sequences"])[0, :, 0]  # (N, T, Lpad)
-        mask = np.asarray(res["mask"])[0, :, 0].astype(bool)  # (N, T, Lpad)
         logits = np.asarray(res["logits"])[0, :, 0]  # (N, T, Lpad, 21)
-        real = mask[0, 0]
-        if int(real.sum()) != L:
-          raise ValueError(f"{state}: runner mask covers {int(real.sum())} residues, parser gives {L}")
-        idx = np.where(real)[0]
+        # The runner's "mask" marks batch padding only (ones up to the padded length; run 631b68db
+        # stopped on it), not real residues. Real residues are the first L positions in parser
+        # order; a misalignment would drop the ProteinMPNN control below its 0.30 gate.
+        if seqs.shape[-1] < L:
+          raise ValueError(f"{state}: sampled length {seqs.shape[-1]} < parser length {L}")
+        idx = np.arange(L)
         s = seqs[..., idx]  # (N, T, L)
         lg = logits[..., idx, :]
         shuffled = native.copy()
