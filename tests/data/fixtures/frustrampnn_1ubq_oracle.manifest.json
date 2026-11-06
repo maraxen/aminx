@@ -3,7 +3,7 @@
   "pdb_path": "tests/data/1ubq.pdb",
   "upstream_commit": "3a03cdc300bfe24c4bb70e60207118532bc73b3b",
   "checkpoint_sha256": "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa",
-  "oracle_npz_sha256": "f5bb26a532775942affabbf9add649874c71806fac17de16e895957c9f9908a3",
+  "oracle_npz_sha256": "c32a12926c2dfb1a4f74c138b5bc3414904a1c440e5cc1b039de655e91e468b7",
   "seed": 42,
   "num_samples": 10,
   "sequence_length": 76,

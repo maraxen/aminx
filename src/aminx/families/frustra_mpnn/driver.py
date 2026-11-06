@@ -9,6 +9,7 @@ Supports:
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, cast
@@ -39,7 +40,6 @@ from aminx.host.family_driver import (
   FamilyStages,
   SinkArraySpec,
 )
-from tests.parity.reference_utils import find_parity_repo_file
 
 log = logging.getLogger(__name__)
 
@@ -181,7 +181,6 @@ class FrustraMPNNDriver:
     "features",
     "encoder",
     "decoder",
-    "sample",
   )
   options_type = FrustraMPNNOptions
   mpnn_fallback_purposes: frozenset[str] = frozenset({"sample"})
@@ -358,15 +357,21 @@ class FrustraMPNNDriver:
       if p.is_file():
         ckpt_path = p
 
+    roots: list[Path] = []
+    raw = os.environ.get("AMINX_PARITY_REPOS", "")
+    if raw.strip():
+      for entry in raw.split(os.pathsep):
+        stripped = entry.strip()
+        if stripped:
+          roots.append(Path(stripped).expanduser())
+    default_root = Path.home() / "repos"
+    if default_root not in roots:
+      roots.append(default_root)
+
     if ckpt_path is None:
       name = checkpoint_id or DEFAULT_CHECKPOINT_ID
-      candidates = [
-        Path(f"tests/data/fixtures/{name}.ckpt"),
-        Path.home() / f"repos/FrustraMPNN/model_weights/{name}.ckpt",
-      ]
-      found = find_parity_repo_file(f"FrustraMPNN/model_weights/{name}.ckpt")
-      if found is not None:
-        candidates.insert(0, found)
+      candidates = [Path(f"tests/data/fixtures/{name}.ckpt")]
+      candidates.extend(root / f"FrustraMPNN/model_weights/{name}.ckpt" for root in roots)
       for c in candidates:
         if c.is_file():
           ckpt_path = c
@@ -377,20 +382,15 @@ class FrustraMPNNDriver:
       raise FileNotFoundError(msg)
 
     # Locate trunk v_48_020.pt
-    trunk_candidates = [
-      Path("tests/data/fixtures/v_48_020.pt"),
-      Path.home() / "repos/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt",
-      Path.home() / "repos/ProteinMPNN/ca_model_weights/v_48_020.pt",
-      Path.home() / "repos/ThermoMPNN/vanilla_model_weights/v_48_020.pt",
-    ]
-    for rel in (
-      "FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt",
-      "ProteinMPNN/ca_model_weights/v_48_020.pt",
-      "ThermoMPNN/vanilla_model_weights/v_48_020.pt",
-    ):
-      found_t = find_parity_repo_file(rel)
-      if found_t is not None:
-        trunk_candidates.insert(0, found_t)
+    trunk_candidates = [Path("tests/data/fixtures/v_48_020.pt")]
+    for root in roots:
+      trunk_candidates.extend(
+        [
+          root / "FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt",
+          root / "ProteinMPNN/ca_model_weights/v_48_020.pt",
+          root / "ThermoMPNN/vanilla_model_weights/v_48_020.pt",
+        ],
+      )
 
     trunk_path: Path | None = None
     for t in trunk_candidates:
@@ -513,14 +513,6 @@ class FrustraMPNNDriver:
     if purpose == "decoder":
       return {
         "decoder_hidden": SinkArraySpec(dims=("N_dec", "L_total", "D"), dtype="float32", attrs={}),
-      }
-    if purpose == "sample":
-      return {
-        "sampled_sequences": SinkArraySpec(
-          dims=("N_samples", "L_total"),
-          dtype="int32",
-          attrs={"alphabet": FRUSTRA_ALPHABET},
-        ),
       }
     msg = f"Unsupported FrustraMPNN purpose: {purpose!r}"
     raise ValueError(msg)

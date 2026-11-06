@@ -28,8 +28,6 @@ import numpy as np
 import pytest
 
 from aminx.families.frustra_mpnn import (
-  DEFAULT_CHECKPOINT_ID,
-  FRUSTRA_ALPHABET,
   FrustraMPNN,
   FrustraMPNNDriver,
   FrustraMPNNOptions,
@@ -40,7 +38,6 @@ from aminx.families.frustra_mpnn.convert import FRUSTRA_HEAD_SHAPES
 from aminx.host.family_driver import (
   DRIVER_BACKED_FAMILY_MODULES,
   FAMILY_DRIVERS,
-  FamilyDriver,
 )
 
 _FIXTURES_DIR = Path(__file__).resolve().parent.parent / "data" / "fixtures"
@@ -216,8 +213,9 @@ class TestFrustraMPNNDriverContract:
     ):
       assert hasattr(driver, attr), f"Driver missing protocol method {attr}"
 
-    for cap in ("score:frustration", "features", "encoder", "decoder", "sample"):
+    for cap in ("score:frustration", "features", "encoder", "decoder"):
       assert driver.handles(None, cap), f"Driver should handle capability {cap}"
+    assert not driver.handles(None, "sample")
 
   def test_driver_stages_and_result_schema(self) -> None:
     """Verify driver stages and schema generation."""
