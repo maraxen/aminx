@@ -275,3 +275,31 @@ class ThermoMPNNOptions:
       raise ValueError(msg)
     if self.dtype == "float16" and not self.allow_float16:
       raise ValueError(_FLOAT16_REFUSAL)
+
+
+@dataclass(frozen=True)
+class AntiBMPNNOptions:
+  """Options for AntiBMPNN antibody CDR design and descriptor calculation.
+
+  Attributes
+  ----------
+  checkpoint_id : str | None
+      AntiBMPNN checkpoint identifier.
+  cdr_scheme : str
+      CDR loop boundary scheme ('chothia' or 'imgt').
+  heavy_chain_id : str | int
+      Chain identifier for heavy chain.
+  light_chain_id : str | int
+      Chain identifier for light chain.
+  cdr_bias_weight : float
+      Multiplicative scaling factor for CDR log-odds logit bias.
+  compute_descriptors : bool
+      Whether to compute Barley volume/hydropathy descriptors and net charge.
+  """
+
+  checkpoint_id: str | None = None
+  cdr_scheme: str = "chothia"
+  heavy_chain_id: str | int = 0
+  light_chain_id: str | int = 1
+  cdr_bias_weight: float = 1.0
+  compute_descriptors: bool = True

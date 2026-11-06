@@ -1,0 +1,4 @@
+# Sidecar ledger shard for Caliby vehicle runs.
+# Owning task records [sidecar.caliby_parity] after the vehicle run on titanix.
+
+[sidecar]
