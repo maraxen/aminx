@@ -84,10 +84,23 @@ UNIT_FAILED_STAMP = "unit.failed.json"
 # the two algorithms hash different things, so a mixed packed/unpacked rerun must read as a mismatch.
 PACKED_GATE_DIGEST_PREFIX = "xtrax.pack:"
 
+
+class InputDigestMismatchError(UnitPackRefused):
+  """A committed unit was built from other inputs (R-U2).
+
+  A distinct type, not just the rule id: xtrax also raises ``UnitPackRefused("R-U2", ...)`` for
+  a sha256 mismatch inside a pack, which is corruption and must stay a hard error on resume.
+  """
+
+  def __init__(self, message: str) -> None:
+    super().__init__("R-U2", message)
+
+
 __all__ = [
   "PACKED_GATE_DIGEST_PREFIX",
   "UNIT_FAILED_STAMP",
   "CodecUnavailable",
+  "InputDigestMismatchError",
   "LockUnavailable",
   "UnitPackRefused",
   "aminx_unit_check",
@@ -311,8 +324,9 @@ def validate_aminx_unit(
   ValueError | TypeError
       Record missing, unreadable, not well formed (``record_problem``), or members that do not
       hash to ``content_digest``.
-  UnitPackRefused
-      R-U2 when ``expected_input_digest`` differs from the record's ``input_digest``.
+  InputDigestMismatchError
+      (a ``UnitPackRefused``, R-U2) when ``expected_input_digest`` differs from the record's
+      ``input_digest``. Pack corruption surfaces as another ``UnitPackRefused`` or ``OSError``.
   """
   unit_path = Path(unit_dir)
   record_path = unit_path / record_name
@@ -339,7 +353,7 @@ def validate_aminx_unit(
       f"Input digest mismatch in {unit_path}: "
       f"expected {expected_input_digest}, got {record.get('input_digest')}"
     )
-    raise UnitPackRefused("R-U2", msg)
+    raise InputDigestMismatchError(msg)
 
   observed = unit_content_digest(unit_path, record_name=record_name)
   expected = record.get("content_digest")
@@ -450,9 +464,7 @@ def _resolve_existing_unit(  # noqa: PLR0911
         expected_input_digest=input_hash,
         record_name=record_name,
       )
-    except UnitPackRefused as exc:
-      if exc.rid != "R-U2":
-        raise
+    except InputDigestMismatchError as exc:
       if not mutate:
         return None, reuse
       logger.warning("Recomputing manifest row %s: %s", manifest_hash, exc)
