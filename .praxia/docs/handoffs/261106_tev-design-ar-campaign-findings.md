@@ -24,8 +24,14 @@ conclusions; they are not fixed here. Filed as a doc because the praxia debt DB 
 
 LigandMPNN tokens skew to L (about 0.25) and A (about 0.17); per-residue NLL of samples under their own stored
 logits is about twice the other arms' (1.5-2.1 vs 0.77-1.03). aminx 0.1.0a19 (bumped 2026-07-19) predates
-`82c4ea9b` "read the backbone O atom by name in LigandMPNN features (#2326)" (2026-10-01). Plausible cause, not
-tested: re-sample one state with a fixed build and compare.
+`82c4ea9b` "read the backbone O atom by name in LigandMPNN features (#2326)" (2026-10-01).
+
+**Confirmed 2026-11-06** (aminx run `04d08bc3` on titanix, outcome pass, commit `5921270d`, aminx 0.4.0, pre-registered
+in `scripts/analysis/ligandmpnn_recovery_post_fix.bth.toml`): on current aminx, LigandMPNN with no context re-sampled
+on 1LVB, reac1_TS and reac2_TS (seeds 1001-1004, T=0.1) recovers 0.51 / 0.46 / 0.44 of native residues, against
+ProteinMPNN 0.47 / 0.42 / 0.41 in the same run; composition entropy 4.03 vs 4.01 bits; NLL 0.79 vs 0.76;
+shuffled-native recovery at most 0.084. The campaign's LigandMPNN arms (0.13) came from the pre-fix build. Every
+LigandMPNN output from an aminx build before `82c4ea9b` should be treated as defective and re-run where it matters.
 
 ## 2. The catalytic_triad pins land on the wrong residues in five of nine states
 
