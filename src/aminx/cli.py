@@ -2051,23 +2051,13 @@ def campaign_run(
   if pack:
     from aminx.host.pack_shim import execute_packed_manifest  # noqa: PLC0415
 
-    results = execute_packed_manifest(
+    pack_summary = execute_packed_manifest(
       manifest_path,
       row_hashes=tuple(row_hash) if row_hash else None,
       continue_on_error=continue_on_error,
       pack=True,
       **lock_kwargs,
     )
-    pack_summary = {
-      "schema_version": "campaign_execute_report_v1",
-      "manifest_path": str(Path(manifest_path).resolve()),
-      "selected_rows": len(results),
-      "successful_rows": sum(
-        1 for r in results if r.get("status") in ("completed", "already_done")
-      ),
-      "failed_rows": sum(1 for r in results if r.get("status") == "error"),
-      "row_results": results,
-    }
     _emit_json(pack_summary, str(summary_path) if summary_path else None)
     if pack_summary["failed_rows"] > 0:
       raise typer.Exit(code=1)

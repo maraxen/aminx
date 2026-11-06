@@ -8,6 +8,7 @@ stamps and `campaign gates` visibility.
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,7 @@ import numpy as np
 import pytest
 import zarr
 from typer.testing import CliRunner
-from xtrax.pack import CodecUnavailable, is_packed
+from xtrax.pack import CodecUnavailable, UnitPackRefused, is_packed, read_unit_member
 from xtrax.run import zarr_content_digest
 
 import aminx.host.pack_shim as shim
@@ -29,8 +30,10 @@ from aminx.host.campaign import (
   compute_unit_input_hash,
 )
 from aminx.host.pack_shim import (
-  PACKED_GATE_DIGEST_PREFIX,
+  GATE_DIGEST_META_KEY,
+  execute_packed_manifest,
   failure_stamp_path,
+  packed_unit_gate_digest,
   run_packed_manifest_row,
   validate_aminx_unit,
 )
@@ -72,9 +75,17 @@ def _spec(manifest_path: Path) -> dict[str, Any]:
   return json.loads(manifest_path.read_text(encoding="utf-8"))["rows"][0]["sampling_spec"]
 
 
-def _write_store(path: Path) -> None:
+def _write_store(path: Path, *, with_array: bool = True) -> None:
   root = zarr.open_group(str(path), mode="w")
-  root.create_array("sequences", data=np.arange(8, dtype=np.int32))
+  # Per-run provenance, as the real sink stamps it: identical data, different bytes each run.
+  root.attrs["created_at"] = uuid.uuid4().hex
+  root.attrs["run_id"] = uuid.uuid4().hex
+  if with_array:
+    root.create_array("sequences", data=np.arange(8, dtype=np.int32))
+
+
+class _NotJson:
+  """Stands in for the SamplingSpecification a real sample() result carries."""
 
 
 @pytest.fixture
@@ -84,8 +95,13 @@ def worker_calls(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
   def _fake_worker(_spec: object, partial_path: Path, *, is_multistate: bool) -> dict[str, Any]:
     del is_multistate
     calls.append(partial_path)
-    _write_store(partial_path)
-    return {"status": "completed"}
+    _write_store(partial_path, with_array=not getattr(_fake_worker, "empty", False))
+    # Like a real result: worker-internal paths and an object json cannot serialize.
+    return {
+      "status": "completed",
+      "output_zarr_path": str(partial_path),
+      "metadata": {"specification": _NotJson()},
+    }
 
   monkeypatch.setattr(shim, "_run_worker", _fake_worker)
   return calls
@@ -116,8 +132,103 @@ def test_gates_count_packed_rows(tmp_path: Path, worker_calls: list[Path]) -> No
   state = _collect_manifest_gate_state(manifest)
   assert state.completed_rows == 1
   assert state.metadata_issues == []
-  digest = state.digest_by_hash[ROW_HASH]
-  assert digest.startswith(PACKED_GATE_DIGEST_PREFIX)
+  record = json.loads((out / "unit.json").read_text(encoding="utf-8"))
+  assert state.digest_by_hash[ROW_HASH] == record["meta"][GATE_DIGEST_META_KEY]
+  assert len(worker_calls) == 1
+
+
+def test_gate_digest_ignores_per_run_provenance(tmp_path: Path, worker_calls: list[Path]) -> None:
+  """Two runs with identical data but different created_at/run_id must digest equal for gates."""
+  out_a = tmp_path / "a" / f"{ROW_HASH}.h5"
+  out_b = tmp_path / "b" / f"{ROW_HASH}.h5"
+  run_packed_manifest_row(_write_manifest(tmp_path, out_a, name="a.json"), row_hash=ROW_HASH)
+  run_packed_manifest_row(_write_manifest(tmp_path, out_b, name="b.json"), row_hash=ROW_HASH)
+
+  rec_a = json.loads((out_a / "unit.json").read_text(encoding="utf-8"))
+  rec_b = json.loads((out_b / "unit.json").read_text(encoding="utf-8"))
+  # The raw member digests differ (the provenance attrs differ) ...
+  assert rec_a["content_digest"] != rec_b["content_digest"]
+  # ... while the gate digest, like the reference marker's, does not.
+  assert packed_unit_gate_digest(out_a) == packed_unit_gate_digest(out_b)
+  assert len(worker_calls) == 2
+
+
+def test_gate_digest_refuses_a_unit_from_another_row(tmp_path: Path, worker_calls: list[Path]) -> None:
+  out = tmp_path / "campaign" / f"{ROW_HASH}.h5"
+  run_packed_manifest_row(_write_manifest(tmp_path, out), row_hash=ROW_HASH)
+  with pytest.raises(ValueError, match="manifest row"):
+    packed_unit_gate_digest(out, manifest_row_hash="some_other_row")
+  assert len(worker_calls) == 1
+
+
+def test_interrupted_sweep_is_finished_on_resume(tmp_path: Path, worker_calls: list[Path]) -> None:
+  """Loose copies left by a pack interrupted before its sweep are removed on the next run."""
+  out = tmp_path / "campaign" / f"{ROW_HASH}.h5"
+  manifest = _write_manifest(tmp_path, out)
+  run_packed_manifest_row(manifest, row_hash=ROW_HASH)
+  member = "sequences/zarr.json"
+  (out / member).parent.mkdir(parents=True, exist_ok=True)
+  (out / member).write_bytes(read_unit_member(out, member))
+
+  result = run_packed_manifest_row(manifest, row_hash=ROW_HASH)
+
+  assert result["status"] == "already_done"
+  assert not (out / member).exists()
+  assert is_packed(out)
+  assert len(worker_calls) == 1
+
+
+def test_empty_store_is_refused_before_it_becomes_the_unit(
+  tmp_path: Path, worker_calls: list[Path]
+) -> None:
+  out = tmp_path / "campaign" / f"{ROW_HASH}.h5"
+  manifest = _write_manifest(tmp_path, out)
+  shim._run_worker.empty = True  # type: ignore[attr-defined]
+
+  with pytest.raises(UnitPackRefused, match="R-U1"):
+    run_packed_manifest_row(manifest, row_hash=ROW_HASH)
+
+  assert not out.exists(), "a refused partial never becomes the unit"
+  assert failure_stamp_path(out).exists()
+  assert len(worker_calls) == 1
+
+
+def test_row_without_output_path_is_refused(tmp_path: Path, worker_calls: list[Path]) -> None:
+  manifest = _write_manifest(tmp_path, tmp_path / "x.h5")
+  payload = json.loads(manifest.read_text(encoding="utf-8"))
+  del payload["rows"][0]["sampling_spec"]["output_h5_path"]
+  manifest.write_text(json.dumps(payload), encoding="utf-8")
+  with pytest.raises(ValueError, match="output_h5_path"):
+    run_packed_manifest_row(manifest, row_hash=ROW_HASH)
+  assert worker_calls == []
+
+
+def test_unknown_row_hash_is_refused(tmp_path: Path, worker_calls: list[Path]) -> None:
+  manifest = _write_manifest(tmp_path, tmp_path / "campaign" / f"{ROW_HASH}.h5")
+  with pytest.raises(ValueError, match="not found"):
+    execute_packed_manifest(manifest, row_hashes=["no_such_row"])
+  assert worker_calls == []
+
+
+def test_cli_run_pack_emits_a_json_summary(tmp_path: Path, worker_calls: list[Path]) -> None:
+  """The real worker result holds non-JSON objects; the summary must still serialize."""
+  from aminx.cli import app
+
+  out = tmp_path / "campaign" / f"{ROW_HASH}.h5"
+  manifest = _write_manifest(tmp_path, out)
+  summary_path = tmp_path / "summary.json"
+  result = CliRunner().invoke(
+    app,
+    ["campaign", "run", "--manifest-path", str(manifest), "--pack", "--summary-path", str(summary_path)],
+  )
+  assert result.exit_code == 0, result.output
+  summary = json.loads(summary_path.read_text(encoding="utf-8"))
+  assert summary["successful_rows"] == 1
+  assert summary["failed_rows"] == 0
+  assert summary["recomputed_rows"] == 0
+  row = summary["row_results"][0]
+  assert set(row) == {"manifest_row_hash", "status", "output_h5_path", "reuse"}
+  assert row["output_h5_path"] == str(out)
   assert len(worker_calls) == 1
 
 

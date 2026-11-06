@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from xtrax.pack import (
+  PACK_FILE,
+  PACK_INDEX,
   UNIT_RECORD,
   CodecUnavailable,
   LockUnavailable,
@@ -41,7 +43,7 @@ from xtrax.pack import (
   unit_content_digest,
   write_unit_record,
 )
-from xtrax.run import fsync_directory, fsync_tree
+from xtrax.run import fsync_directory, fsync_tree, zarr_content_digest
 from xtrax.run.unit_index_adapters import AminxDoneMarkerAdapter, UnitJsonAdapter
 
 from aminx.host.campaign import (
@@ -61,7 +63,6 @@ from aminx.host.campaign import (
   _partial_output_path,
   _quarantine_output,
   _read_done_marker,
-  _row_output_path,
   _select_row,
   _validate_done_marker,
   compute_unit_input_hash,
@@ -80,9 +81,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 UNIT_FAILED_STAMP = "unit.failed.json"
-# Prefix that keeps a pack-record digest from ever comparing equal to a zarr_content_digest:
-# the two algorithms hash different things, so a mixed packed/unpacked rerun must read as a mismatch.
-PACKED_GATE_DIGEST_PREFIX = "xtrax.pack:"
+# Record meta key holding xtrax.run.zarr_content_digest of the store, taken at commit. It is the
+# same algorithm the reference runner's done marker records, so `campaign gates` compares packed
+# and unpacked rows on equal terms, and it skips per-run provenance attrs (created_at, run_id),
+# so a deterministic rerun digests equal. The raw member digest does not.
+GATE_DIGEST_META_KEY = "zarr_content_digest_sha256"
+# Pack artefacts that sit in the unit root while it is being packed; never array members.
+_PACK_ARTEFACT_NAMES = frozenset(
+  {PACK_FILE, PACK_INDEX, f"{PACK_FILE}.partial", f"{PACK_FILE}.lock"},
+)
 
 
 class InputDigestMismatchError(UnitPackRefused):
@@ -97,7 +104,7 @@ class InputDigestMismatchError(UnitPackRefused):
 
 
 __all__ = [
-  "PACKED_GATE_DIGEST_PREFIX",
+  "GATE_DIGEST_META_KEY",
   "UNIT_FAILED_STAMP",
   "CodecUnavailable",
   "InputDigestMismatchError",
@@ -144,10 +151,15 @@ def _require_nonempty_store(unit_path: Path) -> None:
   if not store_path.exists():
     msg = f"Unit store path missing in {unit_path}"
     raise UnitPackRefused("R-U1", msg)
+  # Metadata (*.json, .zgroup) and pack artefacts are not array data; without excluding the
+  # artefacts this check would pass vacuously while a pack is in progress.
   files = [
     p
     for p in store_path.rglob("*")
-    if p.is_file() and p.name not in (UNIT_RECORD, ".zgroup", "zarr.json", UNIT_FAILED_STAMP)
+    if p.is_file()
+    and p.name != ".zgroup"
+    and not p.name.endswith(".json")
+    and p.name not in _PACK_ARTEFACT_NAMES
   ]
   if not files:
     msg = f"Unit has no array member files in {unit_path} (R-U1 empty unit refusal)"
@@ -230,7 +242,9 @@ def write_aminx_unit(
   else:
     msg = "write_aminx_unit needs sampling_spec_payload or an explicit input_digest"
     raise ValueError(msg)
-  unit_meta["schema_bridge"] = "aminx_pack_shim_v2"
+  unit_meta["schema_bridge"] = "aminx_pack_shim_v3"
+  # Taken before the record exists, over the loose store; the record digest then covers it.
+  unit_meta[GATE_DIGEST_META_KEY] = zarr_content_digest(unit_path)
 
   legacy_marker = _legacy_marker_path(unit_path)
   if legacy_marker.exists() and "legacy_done_marker" not in unit_meta:
@@ -273,11 +287,13 @@ def pack_aminx_unit(
   """
   unit_path = Path(unit_dir)
   if is_packed(unit_path, record_name=record_name):
-    loose = collect_loose_members(unit_path, record_name=record_name)
-    if loose:
-      msg = (
-        f"{unit_path}: files named like pack artifacts present or regenerated loose files: {loose}"
-      )
+    # Loose copies of packed members are the leftovers of a pack interrupted before its sweep;
+    # pack_unit finishes the sweep (deleting only byte-identical copies). A loose file that is
+    # not a member at all was written after the pack and is refused.
+    loose = set(collect_loose_members(unit_path, record_name=record_name))
+    extra = sorted(loose - set(list_unit_members(unit_path, record_name=record_name)))
+    if extra:
+      msg = f"{unit_path}: loose files that are not members of the pack: {extra}"
       raise UnitPackRefused("R-U3", msg)
 
   packed_record = pack_unit(
@@ -363,22 +379,38 @@ def validate_aminx_unit(
   return record
 
 
-def packed_unit_gate_digest(unit_dir: Path | str) -> str | None:
+def packed_unit_gate_digest(
+  unit_dir: Path | str,
+  *,
+  manifest_row_hash: str | None = None,
+) -> str | None:
   """Gate digest for a unit committed with ``unit.json``; None when there is no unit record.
 
-  Used by ``campaign gates``. The value is namespaced with :data:`PACKED_GATE_DIGEST_PREFIX` so
-  it can never equal a ``zarr_content_digest`` taken from a ``.done.json`` marker.
+  Used by ``campaign gates``. Returns the record's :data:`GATE_DIGEST_META_KEY`, the same
+  ``zarr_content_digest`` a reference done marker carries. It is trusted because the record
+  verifies (its digest covers ``meta``) and the members still hash to ``content_digest``.
 
   Raises
   ------
   ValueError | TypeError
-      When the unit record exists but does not verify.
+      The record does not verify, lacks the gate digest, or names another manifest row.
   """
   unit_path = Path(unit_dir)
   if not (unit_path / UNIT_RECORD).exists():
     return None
   record = validate_aminx_unit(unit_path)
-  return f"{PACKED_GATE_DIGEST_PREFIX}{record['content_digest']}"
+  meta = record.get("meta") or {}
+  recorded_row = meta.get("manifest_row_hash")
+  if manifest_row_hash is not None and recorded_row not in (None, manifest_row_hash):
+    msg = (
+      f"Unit {unit_path} was committed for manifest row {recorded_row!r}, not {manifest_row_hash!r}"
+    )
+    raise ValueError(msg)
+  digest = meta.get(GATE_DIGEST_META_KEY)
+  if not isinstance(digest, str) or not digest:
+    msg = f"Unit record at {unit_path} has no {GATE_DIGEST_META_KEY}; it predates the gate digest"
+    raise ValueError(msg)
+  return digest
 
 
 def write_aminx_unit_failure(
@@ -427,7 +459,7 @@ def _packed_already_done(
       "decision": "reused",
       "reason": "unit_record_verified",
       "input_hash": input_hash,
-      "artifact_digest": f"{PACKED_GATE_DIGEST_PREFIX}{record.get('content_digest')}",
+      "artifact_digest": (record.get("meta") or {}).get(GATE_DIGEST_META_KEY),
       "committed_at": record.get("committed_at"),
     },
   }
@@ -478,10 +510,14 @@ def _resolve_existing_unit(  # noqa: PLR0911
           reason="input_hash_mismatch",
         ),
       }
-    if pack and not is_packed(unit_dir, record_name=record_name):
+    packed = is_packed(unit_dir, record_name=record_name)
+    unswept = packed and bool(collect_loose_members(unit_dir, record_name=record_name))
+    if (pack and not packed) or unswept:
+      # Not yet packed, or a pack interrupted before its sweep left loose copies behind.
       if not mutate:
         return None, reuse
       record = pack_aminx_unit(unit_dir, record_name=record_name, lock=pack_lock)
+      failure_stamp_path(unit_dir).unlink(missing_ok=True)
     return (
       _packed_already_done(
         record,
@@ -634,12 +670,10 @@ def run_packed_manifest_row(  # noqa: PLR0915
 
   manifest_hash = str(row["manifest_row_hash"])
   raw_output_path = sampling_spec_payload.get("output_h5_path")
-  if raw_output_path is not None:
-    unit_dir = Path(raw_output_path).resolve()
-  else:
-    base_dir = Path(payload.get("output_dir", "campaign_runs"))
-    campaign_id = str(payload.get("campaign_id", "default"))
-    unit_dir = Path(_row_output_path(base_dir, campaign_id, manifest_hash))
+  if raw_output_path is None:
+    msg = "Manifest row sampling_spec must include output_h5_path."
+    raise ValueError(msg)
+  unit_dir = Path(raw_output_path).resolve()
   unit_dir.parent.mkdir(parents=True, exist_ok=True)
 
   input_hash, _ = compute_unit_input_hash(sampling_spec_payload)
@@ -702,6 +736,9 @@ def run_packed_manifest_row(  # noqa: PLR0915
       if not partial_path.exists():
         msg = f"Worker did not produce expected partial output store: {partial_path}"
         raise RuntimeError(msg)  # noqa: TRY301
+      # Refuse an empty store while it is still the partial: after the rename a refusal would
+      # leave a unit with no record, which blocks the row.
+      _require_nonempty_store(partial_path)
       fsync_tree(partial_path)
       partial_path.replace(unit_dir)
       fsync_directory(unit_dir.parent)
@@ -719,7 +756,7 @@ def run_packed_manifest_row(  # noqa: PLR0915
         sink_arrays = _collect_sink_arrays(unit_dir, sample_result)
       if pack:
         record = pack_aminx_unit(unit_dir, record_name=record_name, lock=pack_lock)
-      reuse["artifact_digest"] = f"{PACKED_GATE_DIGEST_PREFIX}{record['content_digest']}"
+      reuse["artifact_digest"] = record["meta"][GATE_DIGEST_META_KEY]
     except Exception as exc:
       # After the record is committed the unit is valid (only the pack failed): the stamp still
       # goes beside it, and the next resume packs it.
@@ -755,6 +792,9 @@ def run_packed_manifest_row(  # noqa: PLR0915
   result_payload = (
     dict(sample_result) if isinstance(sample_result, dict) else {"sample_result": sample_result}
   )
+  # The worker's own paths name the partial store, which no longer exists.
+  for stale_key in ("output_path", "output_zarr_path"):
+    result_payload.pop(stale_key, None)
   result_payload.update(
     {
       "status": str(result_payload.get("status", "completed")),
@@ -786,26 +826,78 @@ def execute_packed_manifest(
   continue_on_error: bool = False,
   pack: bool = True,
   **kwargs: Any,  # noqa: ANN401
-) -> list[dict[str, Any]]:
-  """Executes manifest rows sequentially through :func:`run_packed_manifest_row`.
+) -> dict[str, Any]:
+  """Executes manifest rows sequentially; the summary has the shape of ``execute_manifest``'s.
 
-  ``kwargs`` (lock backend, lease, heartbeat, sink, record name, run id) pass through unchanged.
+  As in the reference: unknown ``row_hashes`` raise ``ValueError`` before any row runs, a status
+  other than completed/already_done counts as failed, and each row result keeps only
+  ``manifest_row_hash``, ``status``, ``output_h5_path`` and ``reuse`` (the full worker result
+  holds objects that are not JSON). ``kwargs`` (lock backend, lease, heartbeat, sink, record
+  name, run id) pass through to :func:`run_packed_manifest_row`.
   """
   rows = _manifest_rows(manifest_path)
   requested_hash_set = set(row_hashes or ())
+  available_hashes = {str(row["manifest_row_hash"]) for row in rows}
+  missing_hashes = sorted(requested_hash_set - available_hashes)
+  if missing_hashes:
+    msg = f"Requested manifest row hashes not found: {missing_hashes}"
+    raise ValueError(msg)
 
-  results: list[dict[str, Any]] = []
-  for idx, row in enumerate(rows):
+  success_statuses = {"ok", "completed", "already_done"}
+  row_results: list[dict[str, Any]] = []
+  successful_rows = 0
+  failed_rows = 0
+  selected = [
+    (idx, row)
+    for idx, row in enumerate(rows)
+    if not requested_hash_set or str(row["manifest_row_hash"]) in requested_hash_set
+  ]
+  for idx, row in selected:
     r_hash = str(row["manifest_row_hash"])
-    if requested_hash_set and r_hash not in requested_hash_set:
-      continue
     try:
-      results.append(run_packed_manifest_row(manifest_path, row_index=idx, pack=pack, **kwargs))
+      result = run_packed_manifest_row(manifest_path, row_index=idx, pack=pack, **kwargs)
     except Exception as exc:
-      results.append({"manifest_row_hash": r_hash, "status": "error", "error": str(exc)})
+      failed_rows += 1
+      row_results.append({"manifest_row_hash": r_hash, "status": "error", "error": str(exc)})
       if not continue_on_error:
-        raise
-  return results
+        msg = f"Execution failed for manifest row {r_hash}: {exc}"
+        raise RuntimeError(msg) from exc
+      continue
+    row_status = str(result.get("status", "completed"))
+    row_results.append(
+      {
+        "manifest_row_hash": r_hash,
+        "status": row_status,
+        "output_h5_path": result.get("output_h5_path"),
+        "reuse": result.get("reuse"),
+      },
+    )
+    if row_status in success_statuses:
+      successful_rows += 1
+    else:
+      failed_rows += 1
+
+  return {
+    "schema_version": "campaign_execute_report_v1",
+    "manifest_path": (
+      str(Path(manifest_path).resolve())
+      if isinstance(manifest_path, (str, Path))
+      else "<in-memory>"
+    ),
+    "selected_rows": len(selected),
+    "successful_rows": successful_rows,
+    "failed_rows": failed_rows,
+    "reused_rows": sum(
+      1 for r in row_results if (r.get("reuse") or {}).get("decision") == "reused"
+    ),
+    "recomputed_rows": sum(
+      1 for r in row_results if (r.get("reuse") or {}).get("decision") == "recomputed"
+    ),
+    # The packed path does not hoist model topology across rows, so it compiles nothing extra.
+    "hoisted_compiles": 0,
+    "packed": pack,
+    "row_results": row_results,
+  }
 
 
 def resolve_unit_adapter(

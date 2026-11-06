@@ -22,7 +22,6 @@ from xtrax.run import zarr_content_digest
 from xtrax.run.unit_index_adapters import AminxDoneMarkerAdapter, UnitJsonAdapter
 
 from aminx.host.pack_shim import (
-  PACKED_GATE_DIGEST_PREFIX,
   UNIT_FAILED_STAMP,
   aminx_unit_check,
   failure_stamp_path,

@@ -2492,13 +2492,14 @@ def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState
       continue
     output_h5_path = Path(output_value).resolve()
     # A row committed by `campaign run --pack` carries an xtrax unit record (unit.json) instead
-    # of a done marker. Its digest is namespaced, so it never equals a marker's zarr digest.
+    # of a done marker. Its gate digest is the zarr_content_digest taken at commit, the same
+    # algorithm a done marker records, so packed and unpacked reruns compare directly.
     if (output_h5_path / "unit.json").exists():
       # Deferred: pack_shim imports this module.
       from aminx.host.pack_shim import packed_unit_gate_digest  # noqa: PLC0415
 
       try:
-        row_digest = packed_unit_gate_digest(output_h5_path)
+        row_digest = packed_unit_gate_digest(output_h5_path, manifest_row_hash=manifest_hash)
       except (OSError, TypeError, ValueError) as exc:
         state.metadata_issues.append(f"Manifest row {manifest_hash}: {exc}")
         continue
