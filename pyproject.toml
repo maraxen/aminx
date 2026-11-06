@@ -377,3 +377,6 @@ proxide = { index = "pypi" }
 # alphex: PyPI (https://pypi.org/project/alphex/) -- no source override needed.
 # PyPI serves the CUDA-enabled wheel on Linux and CPU wheel on macOS — correct for both envs.
 torch = { index = "pypi" }
+
+[project.entry-points."xtrax.eda.domains"]
+aminx = "aminx.eda.plugin:AminxDomainPlugin"
