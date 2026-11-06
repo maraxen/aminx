@@ -1,0 +1,69 @@
+[metadata]
+title = "FrustraMPNN parity vehicle v2: sealed oracle forward & sampling parity, decomposition bands, and mutant controls"
+created = "261105"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "aminx FrustraMPNN (megascale_default_la-true_esm-False_split1.ckpt on tests/data/1ubq.pdb) reproduces the sealed upstream PyTorch oracle dump on all stages within 1e-7 in float64 and 1e-4 in float32, and each of four aminx-side negative control mutants trips with a finite over-band difference (> 1e-2) with zero crashes (n_crashed == 0)."
+stage_name = "validation"
+
+[reproduction]
+reproduces_paper = "RosettaCommons/frustraMPNN (Beining et al., 2026)"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail", "marginal"]
+
+[parameters]
+target_structure = "tests/data/1ubq.pdb"
+checkpoint = "megascale_default_la-true_esm-False_split1.ckpt"
+backbone_checkpoint = "v_48_020.pt"
+band_f64 = 1e-7
+band_f32 = 1e-4
+mutant_min_diff = 1e-2
+n_mutants = 4
+mutant_list = [
+  "reversed_hidden",
+  "permuted_output_weights",
+  "refinement_bypass",
+  "subtract_mut_inverted",
+]
+oracle_stem = "frustrampnn_1ubq_oracle"
+oracle_sha256 = "f5bb26a532775942affabbf9add649874c71806fac17de16e895957c9f9908a3"
+
+[outcomes.pass]
+condition = "clean == 'pass' AND weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND f64_max_abs_diff < 1e-7 AND f32_max_abs_diff < 1e-4 AND n_listed == 4 AND n_failed == n_listed AND n_crashed == 0 AND neg_ctrl_min_diff > 1e-2"
+decision = "Promote FrustraMPNN JAX port and converted weights; declare family parity certified."
+reasoning = "Every clean stage is within strict numerical bands (f64 < 1e-7, f32 < 1e-4) against sealed upstream oracle dumps, all 4 mutants trip with finite over-band differences (> 1e-2), zero mutants crash, and oracle SHA256 matches pin."
+is_residual = false
+
+[outcomes.marginal]
+condition = "weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND n_listed == 4 AND n_failed == n_listed AND n_crashed == 0 AND neg_ctrl_min_diff > 1e-2 AND f64_max_abs_diff < 1e-5 AND f32_max_abs_diff < 1e-3 AND (f64_max_abs_diff >= 1e-7 OR f32_max_abs_diff >= 1e-4)"
+decision = "Investigate numerical drift between PyTorch and JAX before promoting."
+reasoning = "Forward outputs are close to upstream PyTorch reference and all controls trip without crashing, but precision tolerances exceed strict parity targets."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND n_listed == 4 AND n_failed == n_listed AND n_crashed == 0 AND neg_ctrl_min_diff > 1e-2 AND f64_max_abs_diff < 1e-5 AND f32_max_abs_diff < 1e-3)"
+decision = "Block promotion; investigate stage failures in clean_summary or mutant survivors/crashes in mutant_detail."
+reasoning = "A clean stage is out of band, weights did not originate from upstream checkpoint, oracle SHA256 mismatch, a mutant survived or crashed, or mutant power was below 1e-2."
+is_residual = true
+
+[result_schema]
+clean = "str"
+weight_source = "str"
+oracle_verified = "int"
+f64_max_abs_diff = "float"
+f32_max_abs_diff = "float"
+n_arms = "int"
+n_clean_arms_in_band = "int"
+n_listed = "int"
+n_failed = "int"
+n_crashed = "int"
+neg_ctrl_min_diff = "float"
+oracle_dump_sha256 = "dict"
+clean_summary = "dict"
+clean_stages = "dict"
+mutants = "dict"
+mutant_detail = "dict"
+not_compared = "list"
