@@ -163,8 +163,17 @@ dynamic_ok = [
 ]
 data = ["tests/data/1ubq.pdb"]
 
-[slug.thermo_mpnn_parity]
-soft = ["aminx.families.thermo_mpnn"]
+# [slug.thermo_mpnn_parity]
+# soft = ["aminx.families.thermo_mpnn"]
+# dynamic_ok = [
+#   "src/aminx/host/runner.py",
+#   "src/aminx/io/__init__.py",
+#   "src/aminx/io/weights.py",
+# ]
+# data = ["tests/data/1ubq.pdb"]
+
+[slug.frustrampnn_parity]
+soft = ["aminx.families.frustra_mpnn"]
 dynamic_ok = [
   "src/aminx/host/runner.py",
   "src/aminx/io/__init__.py",

@@ -149,15 +149,24 @@ class _FrustraScoreStages:
     return {k: jnp.stack([r[k] for r in rows], axis=0) for k in rows[0]}
 
   def _format_output(self, stages: FrustraStageOutputs) -> dict[str, jax.Array]:
+    scores = stages.frustration_scores
+    if self._opts.positions is not None:
+      if isinstance(self._opts.positions, str):
+        pos_set = {int(p.strip()) for p in self._opts.positions.split(",") if p.strip()}
+      else:
+        pos_set = {int(p) for p in self._opts.positions}
+      mask = jnp.array([i in pos_set for i in range(scores.shape[0])], dtype=bool)[:, None]
+      scores = jnp.where(mask, scores, jnp.nan)
+
     if self._purpose in ("score:frustration", "score", "scores", "frustration"):
-      return {"frustration_scores": stages.frustration_scores}
+      return {"frustration_scores": scores}
     if self._purpose == "features":
       return {"features": stages.features}
     if self._purpose == "encoder":
       return {"encoder_out": stages.encoder_out}
     if self._purpose == "decoder":
       return {"decoder_hidden": stages.decoder_hidden}
-    return {"frustration_scores": stages.frustration_scores}
+    return {"frustration_scores": scores}
 
 
 class FrustraMPNNDriver:
@@ -185,8 +194,16 @@ class FrustraMPNNDriver:
   def prepare_structure(  # noqa: PLR0915
     self,
     pdb_path: str | Path | Mapping[str, Any],
+    chains: str | Sequence[str] | None = None,
   ) -> dict[str, Any]:
     """Parse structure path or feature dictionary into standard arrays."""
+    allowed_chains: set[str] | None = None
+    if chains is not None:
+      if isinstance(chains, str):
+        allowed_chains = {c.strip() for c in chains.split(",") if c.strip()}
+      else:
+        allowed_chains = {str(c).strip() for c in chains if str(c).strip()}
+
     if isinstance(pdb_path, Mapping):
       coords_arr = np.asarray(pdb_path["coords"], dtype=np.float32)
       if coords_arr.ndim == 3 and coords_arr.shape[1] == 37:
@@ -216,89 +233,97 @@ class FrustraMPNNDriver:
       }
 
     path = Path(pdb_path)
-    try:
-      from aminx.io.parsing import parse_structure  # noqa: PLC0415
+    if allowed_chains is None:
+      try:
+        from aminx.io.parsing import parse_structure  # noqa: PLC0415
 
-      prot = parse_structure(path)
-      coords37 = np.asarray(prot.coordinates, dtype=np.float32)
-      if coords37.ndim == 4:
-        coords37 = coords37[0]
-      coords4 = coords37[:, (0, 1, 2, 4), :] if coords37.shape[1] >= 5 else coords37[:, :4, :]
-      mask_arr = np.asarray(prot.mask, dtype=np.float32).reshape(-1)
-      res_idx = np.asarray(prot.residue_index, dtype=np.int32).reshape(-1)
-      chain_idx = np.asarray(prot.chain_index, dtype=np.int32).reshape(-1)
-      from aminx.utils.aa_convert import training_labels  # noqa: PLC0415
+        prot = parse_structure(path)
+        coords37 = np.asarray(prot.coordinates, dtype=np.float32)
+        if coords37.ndim == 4:
+          coords37 = coords37[0]
+        coords4 = coords37[:, (0, 1, 2, 4), :] if coords37.shape[1] >= 5 else coords37[:, :4, :]
+        mask_arr = np.asarray(prot.mask, dtype=np.float32).reshape(-1)
+        res_idx = np.asarray(prot.residue_index, dtype=np.int32).reshape(-1)
+        chain_idx = np.asarray(prot.chain_index, dtype=np.int32).reshape(-1)
+        from aminx.utils.aa_convert import training_labels  # noqa: PLC0415
 
-      seq_arr = np.asarray(training_labels(prot.aatype), dtype=np.int32).reshape(-1)
-      return {
-        "coords": coords4,
-        "mask": mask_arr,
-        "residue_index": res_idx,
-        "chain_index": chain_idx,
-        "sequence": seq_arr,
-        "structure_id": path.stem,
-        "length": int(coords4.shape[0]),
-      }
-    except Exception:  # noqa: BLE001
-      residues: dict[tuple[str, int], dict[str, Any]] = {}
-      chain_order: list[str] = []
-      if path.is_file():
-        with path.open("r", encoding="utf-8") as handle:
-          for line in handle:
-            if not line.startswith("ATOM  "):
-              continue
-            atom_name = line[12:16].strip()
-            if atom_name not in ("N", "CA", "C", "O"):
-              continue
-            alt_loc = line[16].strip()
-            if alt_loc not in ("", "A"):
-              continue
-            res_name = line[17:20].strip()
-            chain_id = line[21].strip() or "A"
-            res_seq = int(line[22:26].strip())
-            xyz = (
-              float(line[30:38].strip()),
-              float(line[38:46].strip()),
-              float(line[46:54].strip()),
-            )
-            if chain_id not in chain_order:
-              chain_order.append(chain_id)
-            key = (chain_id, res_seq)
-            if key not in residues:
-              residues[key] = {"res_name": res_name, "atoms": {}}
-            residues[key]["atoms"][atom_name] = xyz
-      keys = list(residues.keys())
-      num_res = len(keys)
-      if num_res == 0:
-        msg = f"No valid protein backbone residues found in {path}"
-        raise ValueError(msg)  # noqa: B904
-      coords4 = np.zeros((num_res, 4, 3), dtype=np.float32)
-      mask_arr = np.zeros((num_res,), dtype=np.float32)
-      res_idx = np.zeros((num_res,), dtype=np.int32)
-      chain_idx = np.zeros((num_res,), dtype=np.int32)
-      seq_arr = np.zeros((num_res,), dtype=np.int32)
-      for idx, (chain_id, res_seq) in enumerate(keys):
-        entry = residues[(chain_id, res_seq)]
-        atoms = entry["atoms"]
-        if all(a in atoms for a in ("N", "CA", "C", "O")):
-          coords4[idx, 0] = atoms["N"]
-          coords4[idx, 1] = atoms["CA"]
-          coords4[idx, 2] = atoms["C"]
-          coords4[idx, 3] = atoms["O"]
-          mask_arr[idx] = 1.0
-        res_idx[idx] = res_seq
-        chain_idx[idx] = chain_order.index(chain_id)
-        aa1 = _AA3_TO_1.get(entry["res_name"], "X")
-        seq_arr[idx] = FRUSTRA_ALPHABET.index(aa1)
-      return {
-        "coords": coords4,
-        "mask": mask_arr,
-        "residue_index": res_idx,
-        "chain_index": chain_idx,
-        "sequence": seq_arr,
-        "structure_id": path.stem,
-        "length": num_res,
-      }
+        seq_arr = np.asarray(training_labels(prot.aatype), dtype=np.int32).reshape(-1)
+        return {
+          "coords": coords4,
+          "mask": mask_arr,
+          "residue_index": res_idx,
+          "chain_index": chain_idx,
+          "sequence": seq_arr,
+          "structure_id": path.stem,
+          "length": int(coords4.shape[0]),
+        }
+      except Exception:  # noqa: BLE001, S110
+        pass
+
+    if not path.is_file():
+      msg = f"Structure path not found: {path}"
+      raise FileNotFoundError(msg)
+
+    residues: dict[tuple[str, int], dict[str, Any]] = {}
+    chain_order: list[str] = []
+    with path.open("r", encoding="utf-8") as handle:
+      for line in handle:
+        if not line.startswith("ATOM  "):
+          continue
+        atom_name = line[12:16].strip()
+        if atom_name not in ("N", "CA", "C", "O"):
+          continue
+        alt_loc = line[16].strip()
+        if alt_loc not in ("", "A"):
+          continue
+        res_name = line[17:20].strip()
+        chain_id = line[21].strip() or "A"
+        if allowed_chains is not None and chain_id not in allowed_chains:
+          continue
+        res_seq = int(line[22:26].strip())
+        xyz = (
+          float(line[30:38].strip()),
+          float(line[38:46].strip()),
+          float(line[46:54].strip()),
+        )
+        if chain_id not in chain_order:
+          chain_order.append(chain_id)
+        key = (chain_id, res_seq)
+        if key not in residues:
+          residues[key] = {"res_name": res_name, "atoms": {}}
+        residues[key]["atoms"][atom_name] = xyz
+    keys = list(residues.keys())
+    num_res = len(keys)
+    if num_res == 0:
+      msg = f"No valid protein backbone residues found in {path}"
+      raise ValueError(msg)
+    coords4 = np.zeros((num_res, 4, 3), dtype=np.float32)
+    mask_arr = np.zeros((num_res,), dtype=np.float32)
+    res_idx = np.zeros((num_res,), dtype=np.int32)
+    chain_idx = np.zeros((num_res,), dtype=np.int32)
+    seq_arr = np.zeros((num_res,), dtype=np.int32)
+    for idx, (chain_id, res_seq) in enumerate(keys):
+      entry = residues[(chain_id, res_seq)]
+      atoms = entry["atoms"]
+      if all(a in atoms for a in ("N", "CA", "C", "O")):
+        coords4[idx, 0] = atoms["N"]
+        coords4[idx, 1] = atoms["CA"]
+        coords4[idx, 2] = atoms["C"]
+        coords4[idx, 3] = atoms["O"]
+        mask_arr[idx] = 1.0
+      res_idx[idx] = res_seq
+      chain_idx[idx] = chain_order.index(chain_id)
+      aa1 = _AA3_TO_1.get(entry["res_name"], "X")
+      seq_arr[idx] = FRUSTRA_ALPHABET.index(aa1)
+    return {
+      "coords": coords4,
+      "mask": mask_arr,
+      "residue_index": res_idx,
+      "chain_index": chain_idx,
+      "sequence": seq_arr,
+      "structure_id": path.stem,
+      "length": num_res,
+    }
 
   def collate_batch(
     self,
@@ -334,15 +359,12 @@ class FrustraMPNNDriver:
         ckpt_path = p
 
     if ckpt_path is None:
-      # Search known locations
+      name = checkpoint_id or DEFAULT_CHECKPOINT_ID
       candidates = [
-        Path("tests/data/fixtures/megascale_default_la-true_esm-False_split1.ckpt"),
-        Path.home()
-        / "repos/FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt",
+        Path(f"tests/data/fixtures/{name}.ckpt"),
+        Path.home() / f"repos/FrustraMPNN/model_weights/{name}.ckpt",
       ]
-      found = find_parity_repo_file(
-        "FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt",
-      )
+      found = find_parity_repo_file(f"FrustraMPNN/model_weights/{name}.ckpt")
       if found is not None:
         candidates.insert(0, found)
       for c in candidates:
@@ -416,12 +438,14 @@ class FrustraMPNNDriver:
 
   def batches(self, spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
     """Yield FamilyBatch instances from spec inputs."""
+    opts = _options_for(spec)
+    chains = getattr(opts, "chains", None)
     raw_inputs = getattr(spec, "inputs", ())
     inputs_list = [raw_inputs] if isinstance(raw_inputs, (str, Path, Mapping)) else list(raw_inputs)
     pending: list[tuple[int, str]] = []
     for index, item in enumerate(inputs_list):
       try:
-        prepared = self.prepare_structure(item)
+        prepared = self.prepare_structure(item, chains=chains)
       except Exception as exc:  # noqa: BLE001
         pending.append((index, str(exc)))
         continue

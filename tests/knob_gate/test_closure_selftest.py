@@ -46,7 +46,14 @@ TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
 )
-ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS)
+FRUSTRA_SLUGS = ("frustrampnn_parity",)
+ALL_SLUGS = (
+  *LASER_SLUGS,
+  *POTTS_SLUGS,
+  *PROTON_SLUGS,
+  *TIER1_TIER2_SLUGS,
+  *FRUSTRA_SLUGS,
+)
 
 
 def _make_repo(tmp_path: Path, files: dict[str, str]) -> Path:

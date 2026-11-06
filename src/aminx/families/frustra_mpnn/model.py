@@ -14,12 +14,16 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int
 
-from aminx.families.potts_mpnn.features import _layer_norm, _linear, _rbf
 from aminx.model.features import ProteinFeatures, top_k
 from aminx.model.mpnn import Aminx
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 from aminx.utils.graph import compute_neighbor_offsets
-from aminx.utils.radial_basis import RADIAL_BASES, compute_radial_basis
+from aminx.utils.radial_basis import (
+  RADIAL_BASES,
+  RBF_SIGMA,
+  compute_radial_basis,
+  rbf_centers,
+)
 
 FRUSTRA_ALPHABET = "ACDEFGHIKLMNPQRSTVWYX"
 
@@ -74,6 +78,32 @@ def cast_floating[ModuleT: eqx.Module](model: ModuleT, dtype: jnp.dtype) -> Modu
     return leaf
 
   return cast("ModuleT", jax.tree.map(_cast, model))
+
+
+def _rbf(distance: Float[Array, "L K"]) -> Float[Array, "L K 16"]:
+  """Upstream ``_rbf``: 16 Gaussians on ``[2, 22]``."""
+  scaled = (distance[..., None] - rbf_centers(distance.dtype)) / RBF_SIGMA
+  return jnp.exp(-jnp.square(scaled))
+
+
+def _linear(layer: eqx.nn.Linear, x: Float[Array, "... I"]) -> Float[Array, "... O"]:
+  """Apply ``eqx.nn.Linear`` over trailing axis of ``x``."""
+  out = x @ layer.weight.T
+  if layer.bias is not None:
+    out = out + layer.bias
+  return out
+
+
+def _layer_norm(norm: eqx.nn.LayerNorm, x: Float[Array, "... H"]) -> Float[Array, "... H"]:
+  """Apply ``eqx.nn.LayerNorm`` over trailing axis, matching standard ops."""
+  mean = jnp.mean(x, axis=-1, keepdims=True)
+  variance = jnp.var(x, axis=-1, keepdims=True)
+  out = (x - mean) * jax.lax.rsqrt(variance + norm.eps)
+  if norm.weight is not None:
+    out = out * norm.weight
+  if norm.bias is not None:
+    out = out + norm.bias
+  return out
 
 
 def _linear_cast(
