@@ -1,0 +1,171 @@
+schema_version = 2
+title = "LigandMPNN arms of the state campaign sampled near-chance libraries"
+takeaway = "ProteinMPNN and SolubleMPNN recover about 40% of native residues; all four LigandMPNN arms recover 13%, barely above a shuffled native."
+question = "Does a knob-faceted library summary of a finished campaign reproduce a recorded analysis and expose problems in what was sampled?"
+refs = [
+  { kind = "run", id = "885f66c5", label = "library summary v2, outcome pass" },
+  { kind = "run", id = "64c6845b", label = "library summary v1, outcome fail (parser reordered chains)" },
+  { kind = "run", id = "ca68e784", label = "residue tables built with the campaign's own parser" },
+  { kind = "task", id = "261106_campaign-eda-respec", label = "library summary respec" },
+]
+
+[glossary]
+"NLL" = "negative log-likelihood of each sampled residue under the stored model logits"
+"TEV" = "tobacco etch virus protease"
+
+[experiment]
+run_ref = "885f66c5"
+
+[toolchain]
+project = "review_toolchain"
+group = "figures"
+lock_sha256 = "a5fea97501612a66e61abe08b04bc2bbb33bb9a795cec3110b493d9e058d3c7f"
+
+[[panel]]
+panel = "panel-1"
+heading = "Only ProteinMPNN and SolubleMPNN recover native residues well"
+component_id = "vegalite.grouped_distribution"
+table = "outputs/campaign_eda_prototype_v2/recovery_lowest_temperature.csv"
+caption = "Fraction of designable residues matching native at the lowest temperature, one point per state and seed. Padding and pinned residues excluded."
+
+[panel.payload]
+panel = "panel-1"
+title = "Native recovery by arm, lowest temperature"
+theme_colours = ["#0072b2"]
+group_field = "arm"
+unit_field = "state"
+value_field = "recovery"
+chart_type = "strip"
+uncertainty_intent = "show_full_distribution"
+error_semantics = "none"
+bin_count = 30
+axis_labels = ["Native recovery", "Arm"]
+
+[panel.eda]
+unit_columns = ["state"]
+condition_column = "arm"
+value_column = "recovery"
+expected_units = [["1LVB"], ["1LVM"], ["reac1_TS"], ["reac1_prod"], ["reac1_reac"], ["reac2_Int"], ["reac2_TS"], ["reac2_prod"], ["reac2_reac"]]
+
+[[panel]]
+panel = "panel-2"
+heading = "Recovery changes little between temperatures 0.1 and 0.5"
+component_id = "vegalite.sweep_grid"
+table = "outputs/campaign_eda_prototype_v2/library_grid.csv"
+caption = "Native recovery averaged over states and seeds, per arm and sampling temperature."
+
+[panel.payload]
+panel = "panel-2"
+title = "Native recovery, arm by temperature"
+theme_colours = ["#bdbdbd"]
+theme_schemes = ["viridis"]
+mode = "metric"
+x_field = "temperature"
+y_field = "arm"
+value_field = "recovery"
+scheme = "viridis"
+missing_colour = "#bdbdbd"
+axis_labels = ["Temperature", "Arm"]
+
+[panel.eda]
+unit_columns = ["arm"]
+condition_column = "temperature"
+value_column = "recovery"
+
+[[panel]]
+panel = "panel-3"
+heading = "LigandMPNN libraries are more diverse than the others at every temperature"
+component_id = "vegalite.sweep_grid"
+table = "outputs/campaign_eda_prototype_v2/library_grid.csv"
+caption = "Mean identity between sequences sampled in the same row, designable residues only. Higher means a less diverse library."
+
+[panel.payload]
+panel = "panel-3"
+title = "Within-library identity, arm by temperature"
+theme_colours = ["#bdbdbd"]
+theme_schemes = ["viridis"]
+mode = "metric"
+x_field = "temperature"
+y_field = "arm"
+value_field = "within_library_identity"
+scheme = "viridis"
+missing_colour = "#bdbdbd"
+axis_labels = ["Temperature", "Arm"]
+
+[panel.eda]
+unit_columns = ["arm"]
+condition_column = "temperature"
+value_column = "within_library_identity"
+
+[[panel]]
+panel = "panel-4"
+heading = "LigandMPNN samples are about twice as unlikely under their own logits"
+component_id = "vegalite.sweep_grid"
+table = "outputs/campaign_eda_prototype_v2/library_grid.csv"
+caption = "Per-residue NLL of each sampled sequence under the logits stored with it, derived here, not a score array."
+
+[panel.payload]
+panel = "panel-4"
+title = "Per-residue NLL of sampled sequences, arm by temperature"
+theme_colours = ["#bdbdbd"]
+theme_schemes = ["viridis"]
+mode = "metric"
+x_field = "temperature"
+y_field = "arm"
+value_field = "nll_per_residue"
+scheme = "viridis"
+missing_colour = "#bdbdbd"
+axis_labels = ["Temperature", "Arm"]
+
+[panel.eda]
+unit_columns = ["arm"]
+condition_column = "temperature"
+value_column = "nll_per_residue"
+
+[[panel]]
+panel = "panel-5"
+heading = "Pinned catalytic residues miss the native triad in five states"
+component_id = "vegalite.sweep_grid"
+table = "outputs/campaign_eda_prototype_v2/fixed_position_check.csv"
+caption = "1 where the native residue at a pinned index equals the pinned residue. 1LVB differs only because its crystal carries the C151A mutation."
+
+[panel.payload]
+panel = "panel-5"
+title = "Native residue equals the pin, by state"
+theme_colours = ["#bdbdbd"]
+theme_schemes = ["viridis"]
+mode = "metric"
+x_field = "state"
+y_field = "slot"
+value_field = "native_matches_pin"
+scheme = "viridis"
+missing_colour = "#bdbdbd"
+axis_labels = ["State", "Pinned position"]
+
+[panel.eda]
+unit_columns = ["state"]
+condition_column = "slot"
+value_column = "native_matches_pin"
+expected_units = [["1LVB"], ["1LVM"], ["reac1_TS"], ["reac1_prod"], ["reac1_reac"], ["reac2_Int"], ["reac2_TS"], ["reac2_prod"], ["reac2_reac"]]
+
+[[panel]]
+panel = "panel-6"
+heading = "All 216 campaign rows finished"
+component_id = "vegalite.sweep_grid"
+table = "outputs/campaign_eda_prototype_v2/completion.csv"
+caption = "Run telemetry: one cell per arm, state and seed, from the campaign's completion markers."
+
+[panel.payload]
+panel = "panel-6"
+title = "Campaign completion"
+theme_colours = ["#bdbdbd", "#e69f00", "#009e73", "#d55e00"]
+mode = "completion"
+unit_field = "unit"
+status_field = "status"
+state_colours = ["#bdbdbd", "#e69f00", "#009e73", "#d55e00"]
+axis_labels = ["Unit", "Status"]
+
+[panel.eda]
+unit_columns = ["unit"]
+condition_column = "status"
+value_column = "status"
