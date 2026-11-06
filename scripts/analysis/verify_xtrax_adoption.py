@@ -4,8 +4,12 @@
 Confirms:
 1. Standard record_name ("unit.json") unit write, pack, readback, and validation.
 2. Custom record_name unit write, pack, readback, and validation.
-3. Negative controls: bit corruption, duplicate record collision (R-U1), empty unit refusal, corrupted export artifact detection.
-4. EDA plan panel SVG rendering, Vega-Lite v5 spec generation, and manifest SHA-256 verification.
+3. Negative controls: bit corruption, duplicate record collision (R-U1), corrupted export artifact.
+4. Pack integrity: a unit packed beside a legacy .done.json keeps a verifiable record, and a
+   member or record edited after commit is refused at pack.
+5. EDA plan panel SVG rendering, Vega-Lite v5 spec generation, and manifest SHA-256 verification.
+
+Run from the repo with `uv run --extra eda` (the plotting stack is the optional `eda` extra).
 """
 
 from __future__ import annotations
@@ -14,44 +18,39 @@ import argparse
 import json
 import logging
 import os
-import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
+from typing import TypeVar
 
-# Ensure repo source and local dependency sites are discoverable
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-for _p in [
-  str(_REPO_ROOT / "src"),
-  "/tmp/pure_py_site",
-  "/tmp/prolix_py312_site",
-  "/tmp/jaxlint_ci312_env/lib/python3.12/site-packages",
-]:
-  if _p not in sys.path:
-    sys.path.insert(0, _p)
-
-import numpy as np  # noqa: E402
-import xtrax  # noqa: E402
-import zarr  # noqa: E402
-from xtrax.pack import (  # noqa: E402
+import numpy as np
+import xtrax
+import zarr
+from xtrax.pack import (
   UnitPackRefused,
   is_packed,
+  record_problem,
   unit_content_digest,
 )
-from xtrax.run.unit_index_adapters import UnitJsonAdapter  # noqa: E402
-from xtrax.tiling import AxisDecision, AxisSpec, BatchPlan, Bucket, ChunkedMap  # noqa: E402
+from xtrax.run.unit_index_adapters import UnitJsonAdapter
+from xtrax.tiling import AxisDecision, AxisSpec, BatchPlan, Bucket, ChunkedMap
 
-from aminx.host.pack_shim import (  # noqa: E402
+from aminx.host.pack_shim import (
   pack_aminx_unit,
   resolve_unit_adapter,
   validate_aminx_unit,
   write_aminx_unit,
 )
-from aminx.host.plan_eda import (  # noqa: E402
+from aminx.host.plan_eda import (
   export_and_verify_plan_artifacts,
   generate_aminx_plan_spec,
   render_aminx_plan_panels,
   verify_export_manifest_sha256,
 )
+
+T = TypeVar("T")
+# Identity for the synthetic units below; write_aminx_unit refuses to invent one.
+_DIGEST = "a" * 64
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 log = logging.getLogger("verify_xtrax_adoption")
@@ -91,7 +90,7 @@ def verify_pack_and_custom_records() -> tuple[bool, bool]:
     # 1. Standard record_name ("unit.json")
     unit_std = tmp_path / "unit_std"
     _make_sample_store(unit_std)
-    rec_std = write_aminx_unit(unit_std, run_id="run-std-1")
+    rec_std = write_aminx_unit(unit_std, input_digest=_DIGEST, run_id="run-std-1")
     assert (unit_std / "unit.json").exists()
     digest_std = unit_content_digest(unit_std)
     assert rec_std["content_digest"] == digest_std
@@ -105,7 +104,9 @@ def verify_pack_and_custom_records() -> tuple[bool, bool]:
     # 2. Custom record_name ("custom_rec.json")
     unit_cust = tmp_path / "unit_cust"
     _make_sample_store(unit_cust)
-    rec_cust = write_aminx_unit(unit_cust, run_id="run-cust-1", record_name="custom_rec.json")
+    rec_cust = write_aminx_unit(
+      unit_cust, input_digest=_DIGEST, run_id="run-cust-1", record_name="custom_rec.json"
+    )
     assert (unit_cust / "custom_rec.json").exists()
     assert not (unit_cust / "unit.json").exists()
     digest_cust = unit_content_digest(unit_cust, record_name="custom_rec.json")
@@ -115,8 +116,14 @@ def verify_pack_and_custom_records() -> tuple[bool, bool]:
     assert not is_packed(unit_cust, record_name="unit.json")
     val_cust = validate_aminx_unit(unit_cust, record_name="custom_rec.json")
     assert val_cust["content_digest"] == digest_cust
-    adapter_cust = resolve_unit_adapter(unit_cust, record_name="custom_rec.json")
-    assert isinstance(adapter_cust, UnitJsonAdapter)
+    # No xtrax adapter reads a custom record name; resolution must refuse, not mis-report.
+    try:
+      resolve_unit_adapter(unit_cust, record_name="custom_rec.json")
+    except ValueError:
+      pass
+    else:
+      msg = "resolve_unit_adapter accepted a custom record name"
+      raise AssertionError(msg)
 
     return True, True
 
@@ -129,10 +136,10 @@ def verify_negative_controls() -> bool:
     # Control A: duplicate record write refusal (R-U1)
     unit_a = tmp_path / "unit_a"
     _make_sample_store(unit_a)
-    write_aminx_unit(unit_a, run_id="run-a-1", record_name="dup.json")
+    write_aminx_unit(unit_a, input_digest=_DIGEST, run_id="run-a-1", record_name="dup.json")
     control_dup_raised = False
     try:
-      write_aminx_unit(unit_a, run_id="run-a-2", record_name="dup.json")
+      write_aminx_unit(unit_a, input_digest=_DIGEST, run_id="run-a-2", record_name="dup.json")
     except UnitPackRefused:
       control_dup_raised = True
     assert control_dup_raised, "Expected UnitPackRefused on duplicate record write"
@@ -140,7 +147,7 @@ def verify_negative_controls() -> bool:
     # Control B: bit corruption in packed archive causes validate_aminx_unit to raise
     unit_b = tmp_path / "unit_b"
     _make_sample_store(unit_b)
-    write_aminx_unit(unit_b, run_id="run-b-1")
+    write_aminx_unit(unit_b, input_digest=_DIGEST, run_id="run-b-1")
     pack_aminx_unit(unit_b)
     tar_path = unit_b / "members.tar.zst"
     raw_tar = bytearray(tar_path.read_bytes())
@@ -167,6 +174,60 @@ def verify_negative_controls() -> bool:
     assert control_tamper_raised, "Expected ValueError on tampered export artifact"
 
     return True
+
+
+def verify_pack_integrity_controls() -> tuple[bool, bool]:
+  """Controls for the review-round-1 defects.
+
+  Returns (legacy_quarantine_ok, tamper_refused_ok):
+  - a unit packed beside a legacy .done.json keeps a record that verifies and indexes as reuse;
+  - a member edited after commit, or a record edited after commit, is refused at pack.
+  """
+  with tempfile.TemporaryDirectory() as tmp_dir:
+    tmp_path = Path(tmp_dir)
+
+    unit_q = tmp_path / "row_q.h5"
+    _make_sample_store(unit_q)
+    marker = unit_q.with_name(f"{unit_q.name}.done.json")
+    marker.write_text(json.dumps({"schema_version": "campaign_done_marker_v3"}), encoding="utf-8")
+    write_aminx_unit(unit_q, input_digest=_DIGEST)
+    pack_aminx_unit(unit_q)
+    record = json.loads((unit_q / "unit.json").read_text(encoding="utf-8"))
+    verdict = UnitJsonAdapter().classify(tmp_path, unit_q.name, _DIGEST, verify=True)
+    legacy_quarantine_ok = (
+      record_problem(record) is None
+      and verdict.__class__.__name__ == "IndexReuse"
+      and not marker.exists()
+      and unit_q.with_name(f"{unit_q.name}.done.json.packed").exists()
+    )
+
+    unit_t = tmp_path / "unit_t"
+    _make_sample_store(unit_t)
+    write_aminx_unit(unit_t, input_digest=_DIGEST)
+    chunk = next(
+      p for p in unit_t.rglob("*") if p.is_file() and p.name not in ("unit.json", "zarr.json")
+    )
+    chunk.write_bytes(b"tampered")
+    member_refused = False
+    try:
+      pack_aminx_unit(unit_t)
+    except UnitPackRefused:
+      member_refused = True
+
+    unit_r = tmp_path / "unit_r"
+    _make_sample_store(unit_r)
+    write_aminx_unit(unit_r, input_digest=_DIGEST)
+    rec_path = unit_r / "unit.json"
+    rec = json.loads(rec_path.read_text(encoding="utf-8"))
+    rec["meta"]["late_edit"] = True
+    rec_path.write_text(json.dumps(rec), encoding="utf-8")
+    record_refused = False
+    try:
+      pack_aminx_unit(unit_r)
+    except UnitPackRefused:
+      record_refused = True
+
+    return legacy_quarantine_ok, member_refused and record_refused and not is_packed(unit_t)
 
 
 def verify_eda_rendering_and_manifest() -> tuple[bool, bool]:
@@ -202,6 +263,14 @@ def verify_eda_rendering_and_manifest() -> tuple[bool, bool]:
     return render_ok, manifest_ok
 
 
+def _guarded(check: Callable[[], T], failed: T) -> T:
+  try:
+    return check()
+  except (AssertionError, OSError, ValueError, TypeError) as exc:
+    log.exception("%s failed: %s", check.__name__, exc)
+    return failed
+
+
 def main() -> int:
   parser = argparse.ArgumentParser(description="Verify aminx xtrax adoption under Bathos")
   parser.add_argument(
@@ -213,10 +282,16 @@ def main() -> int:
   args = parser.parse_args()
 
   log.info("Running aminx xtrax pack & eda adoption verification...")
-  pack_ok, custom_record_ok = verify_pack_and_custom_records()
-  controls_ok = verify_negative_controls()
-  eda_render_svg_ok, eda_manifest_sha256_ok = verify_eda_rendering_and_manifest()
+  # Each check reports a boolean; a failed assertion is a False result, not a crash, so the
+  # sidecar's outcomes always evaluate.
+  pack_ok, custom_record_ok = _guarded(verify_pack_and_custom_records, (False, False))
+  negative_ok = _guarded(verify_negative_controls, False)
+  legacy_quarantine_ok, tamper_refused_ok = _guarded(verify_pack_integrity_controls, (False, False))
+  eda_render_svg_ok, eda_manifest_sha256_ok = _guarded(
+    verify_eda_rendering_and_manifest, (False, False)
+  )
   eda_ok = eda_render_svg_ok and eda_manifest_sha256_ok
+  controls_ok = negative_ok and legacy_quarantine_ok and tamper_refused_ok
 
   results = {
     "pack_ok": pack_ok,
@@ -225,7 +300,9 @@ def main() -> int:
     "custom_record_name_ok": custom_record_ok,
     "eda_render_svg_ok": eda_render_svg_ok,
     "eda_manifest_sha256_ok": eda_manifest_sha256_ok,
-    "negative_controls_ok": controls_ok,
+    "negative_controls_ok": negative_ok,
+    "legacy_quarantine_ok": legacy_quarantine_ok,
+    "tamper_refused_ok": tamper_refused_ok,
     "xtrax_version": getattr(xtrax, "__version__", "unknown"),
   }
 
@@ -240,8 +317,6 @@ def main() -> int:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(serialized, encoding="utf-8")
 
-  adjacent_path = Path(__file__).parent / f"{Path(__file__).stem}.bth-results.json"
-  adjacent_path.write_text(serialized, encoding="utf-8")
 
   log.info("Wrote results to %s: %s", out_path, results)
   print(json.dumps(results, indent=2))

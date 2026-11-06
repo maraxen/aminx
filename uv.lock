@@ -82,7 +82,6 @@ source = { editable = "." }
 dependencies = [
     { name = "array-record", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "equinox", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "flax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "grain", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "h5py", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "huggingface-hub", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -95,8 +94,7 @@ dependencies = [
     { name = "proxide", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "xtrax", extra = ["eda", "export", "pack"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "zarr", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "xtrax", extra = ["export", "io", "pack"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -144,6 +142,9 @@ docs = [
     { name = "sphinx-copybutton", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sphinx-design", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "sphinxext-rediraffe", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+eda = [
+    { name = "xtrax", extra = ["eda"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 foldcomp = [
     { name = "foldcomp", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
@@ -197,7 +198,6 @@ requires-dist = [
     { name = "cisternal", marker = "extra == 'agent'", specifier = ">=0.1.6,<0.2" },
     { name = "dm-tree", marker = "extra == 'tests'", specifier = ">=0.1.8" },
     { name = "equinox", specifier = ">=0.13.2" },
-    { name = "flax", specifier = ">=0.8.0" },
     { name = "foldcomp", marker = "extra == 'dev'" },
     { name = "foldcomp", marker = "extra == 'foldcomp'" },
     { name = "foldcomp", marker = "extra == 'tests'" },
@@ -249,12 +249,12 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'" },
     { name = "ty", marker = "extra == 'tests'" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = ">=0.4.1b7" },
-    { name = "xtrax", extras = ["pack", "eda", "export"], specifier = ">=0.4.1b7" },
-    { name = "zarr", specifier = ">=3.0.0" },
+    { name = "xtrax", extras = ["eda"], marker = "extra == 'eda'", specifier = "==0.4.1b7" },
+    { name = "xtrax", extras = ["io", "pack", "export"], specifier = "==0.4.1b7" },
+    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b7" },
     { name = "zstandard", specifier = ">=0.21.0" },
 ]
-provides-extras = ["agent", "laser", "benchmark", "docs", "tests", "onnx", "dev", "foldcomp", "cpu", "cuda12"]
+provides-extras = ["eda", "agent", "laser", "benchmark", "docs", "tests", "onnx", "dev", "foldcomp", "cpu", "cuda12"]
 
 [package.metadata.requires-dev]
 benchmark = [
@@ -4964,6 +4964,9 @@ export = [
     { name = "iree-base-compiler", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "iree-base-runtime", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "safetensors", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+io = [
+    { name = "zarr", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 onnx = [
     { name = "jax2onnx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },

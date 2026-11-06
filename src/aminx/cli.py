@@ -1947,17 +1947,6 @@ def campaign_worker(
   ] = None,
 ) -> None:
   """Execute one manifest row."""
-  if pack:
-    from aminx.host.pack_shim import run_packed_manifest_row  # noqa: PLC0415
-
-    run_packed_manifest_row(
-      manifest_path,
-      row_index=row_index,
-      row_hash=row_hash,
-      pack=True,
-    )
-    return
-
   from aminx.host.campaign import (  # noqa: PLC0415
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     DEFAULT_LOCK_LEASE_SECONDS,
@@ -1970,6 +1959,24 @@ def campaign_worker(
       "call run_manifest_row() directly with a DistributedLockBackend instance.",
       param_hint="--lock-backend",
     )
+
+  if pack:
+    from aminx.host.pack_shim import run_packed_manifest_row  # noqa: PLC0415
+
+    run_packed_manifest_row(
+      manifest_path,
+      row_index=row_index,
+      row_hash=row_hash,
+      pack=True,
+      lock_backend=lock_backend.value,
+      lock_lease_seconds=lock_lease_seconds
+      if lock_lease_seconds is not None
+      else DEFAULT_LOCK_LEASE_SECONDS,
+      heartbeat_interval_seconds=heartbeat_interval_seconds
+      if heartbeat_interval_seconds is not None
+      else DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    )
+    return
 
   run_manifest_row(
     manifest_path,
@@ -2018,35 +2025,6 @@ def campaign_run(
   ] = None,
 ) -> None:
   """Execute manifest rows sequentially."""
-  if pack:
-    from aminx.host.campaign import _emit_json  # noqa: PLC0415
-    from aminx.host.pack_shim import execute_packed_manifest  # noqa: PLC0415
-
-    results = execute_packed_manifest(
-      manifest_path,
-      row_hashes=tuple(row_hash) if row_hash else None,
-      continue_on_error=continue_on_error,
-      pack=True,
-    )
-    summary = {
-      "schema_version": "campaign_execute_report_v1",
-      "manifest_path": (
-        str(Path(manifest_path).resolve())
-        if isinstance(manifest_path, (str, Path))
-        else "<in-memory>"
-      ),
-      "selected_rows": len(results),
-      "successful_rows": sum(
-        1 for r in results if r.get("status") in ("completed", "already_done")
-      ),
-      "failed_rows": sum(1 for r in results if r.get("status") == "error"),
-      "row_results": results,
-    }
-    _emit_json(summary, str(summary_path) if summary_path else None)
-    if summary["failed_rows"] > 0:
-      raise typer.Exit(code=1)
-    return
-
   from aminx.host.campaign import (  # noqa: PLC0415
     DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
     DEFAULT_LOCK_LEASE_SECONDS,
@@ -2060,18 +2038,46 @@ def campaign_run(
       "call execute_manifest() directly with a DistributedLockBackend instance.",
       param_hint="--lock-backend",
     )
+  lock_kwargs = {
+    "lock_backend": lock_backend.value,
+    "lock_lease_seconds": lock_lease_seconds
+    if lock_lease_seconds is not None
+    else DEFAULT_LOCK_LEASE_SECONDS,
+    "heartbeat_interval_seconds": heartbeat_interval_seconds
+    if heartbeat_interval_seconds is not None
+    else DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+  }
+
+  if pack:
+    from aminx.host.pack_shim import execute_packed_manifest  # noqa: PLC0415
+
+    results = execute_packed_manifest(
+      manifest_path,
+      row_hashes=tuple(row_hash) if row_hash else None,
+      continue_on_error=continue_on_error,
+      pack=True,
+      **lock_kwargs,
+    )
+    pack_summary = {
+      "schema_version": "campaign_execute_report_v1",
+      "manifest_path": str(Path(manifest_path).resolve()),
+      "selected_rows": len(results),
+      "successful_rows": sum(
+        1 for r in results if r.get("status") in ("completed", "already_done")
+      ),
+      "failed_rows": sum(1 for r in results if r.get("status") == "error"),
+      "row_results": results,
+    }
+    _emit_json(pack_summary, str(summary_path) if summary_path else None)
+    if pack_summary["failed_rows"] > 0:
+      raise typer.Exit(code=1)
+    return
 
   summary = execute_manifest(
     manifest_path,
     row_hashes=tuple(row_hash) if row_hash else None,
     continue_on_error=continue_on_error,
-    lock_backend=lock_backend.value,
-    lock_lease_seconds=lock_lease_seconds
-    if lock_lease_seconds is not None
-    else DEFAULT_LOCK_LEASE_SECONDS,
-    heartbeat_interval_seconds=heartbeat_interval_seconds
-    if heartbeat_interval_seconds is not None
-    else DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    **lock_kwargs,
   )
   _emit_json(summary, str(summary_path) if summary_path else None)
   if summary["failed_rows"] > 0:

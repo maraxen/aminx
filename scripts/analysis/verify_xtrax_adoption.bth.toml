@@ -1,19 +1,19 @@
 [experiment]
-hypothesis = "Aminx pack shim binds xtrax.pack with complete roundtrip fidelity across standard and custom record_name, and xtrax.eda plan panel rendering and manifest sha256 verification function with positive and negative controls."
-stage_name = "confirmation"
-novel = false
+hypothesis = "After the review-round-1 fixes, the aminx pack shim round-trips units through xtrax.pack (standard record name; custom record names are refused by the adapter resolver), keeps xtrax's record and content-digest checks at pack time (a member or record edited after commit is refused), leaves a verifiable record when packing beside a legacy .done.json, and the xtrax.eda adapter renders panels and verifies its own export manifest, with each negative control refused."
+stage_name = "validation"
+novel = true
 task_id = "261105_xtrax-adopt-aminx"
 
 [outcomes.pass]
-condition = "pack_ok = true AND eda_ok = true AND controls_ok = true"
-decision = "Aminx xtrax pack and eda adoption is verified. Proceed with PR opening."
-reasoning = "All pack roundtrips, custom record_name handling, member byte-identical readback, eda panel rendering, and manifest sha256 verifications succeed, and all negative controls (empty unit, collision, bit corruption, tampered export) correctly reject."
+condition = "pack_ok = true AND custom_record_name_ok = true AND eda_ok = true AND negative_controls_ok = true AND legacy_quarantine_ok = true AND tamper_refused_ok = true AND controls_ok = true"
+decision = "Pack and eda adoption verified after the round-1 fixes; proceed to PR review."
+reasoning = "Round trips, eda rendering and manifest checks succeed; every negative control (duplicate record, corrupted pack, tampered export, member edited after commit, record edited after commit) is refused; a legacy-quarantined unit still verifies and indexes as reuse."
 is_residual = false
 
 [outcomes.fail]
-condition = "pack_ok = false OR eda_ok = false OR controls_ok = false"
-decision = "Adoption verification failed. Check result.json for failing component."
-reasoning = "Either pack roundtrip, eda rendering, manifest sha256 verification, or a negative control failed."
+condition = "pack_ok = false OR custom_record_name_ok = false OR eda_ok = false OR negative_controls_ok = false OR legacy_quarantine_ok = false OR tamper_refused_ok = false OR controls_ok = false"
+decision = "Adoption verification failed. Read the result JSON and the run log for the failing check."
+reasoning = "At least one round trip, eda check or negative control did not behave as registered."
 is_residual = true
 
 [result_schema]
@@ -24,4 +24,6 @@ custom_record_name_ok = "bool"
 eda_render_svg_ok = "bool"
 eda_manifest_sha256_ok = "bool"
 negative_controls_ok = "bool"
+legacy_quarantine_ok = "bool"
+tamper_refused_ok = "bool"
 xtrax_version = "str"

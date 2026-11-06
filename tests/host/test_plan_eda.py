@@ -4,8 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import json
+
 import pytest
 from xtrax.tiling import AxisDecision, AxisSpec, BatchPlan, Bucket, ChunkedMap
+
+# The plotting stack comes from the optional `eda` extra (CI installs it); skip the module
+# cleanly on a headless install instead of failing in render.
+pytest.importorskip("matplotlib")
+pytest.importorskip("vl_convert")
 
 from aminx.host.plan_eda import (
   analyze_aminx_bucket,
@@ -132,3 +139,42 @@ def test_negative_control_corrupted_export_artifact_raises(tmp_path: Path) -> No
 
   with pytest.raises(ValueError, match="Byte length mismatch|SHA-256 digest mismatch"):
     verify_export_manifest_sha256(tmp_path)
+
+
+def test_export_and_verify_checks_its_own_prefix(tmp_path: Path) -> None:
+  """Two exports in one directory: each verifies its own manifest, not the first that sorts."""
+  plan, _ = _sample_plan()
+  export_and_verify_plan_artifacts(plan, tmp_path, prefix="a_plan")
+  manifest_a = json.loads((tmp_path / "a_plan_manifest.json").read_text(encoding="utf-8"))
+  first_artifact = next(iter(manifest_a["artifacts"]))
+  (tmp_path / first_artifact).write_bytes(b"tampered a")
+
+  # Exporting prefix b must not trip over the tampered a export ...
+  export_and_verify_plan_artifacts(plan, tmp_path, prefix="b_plan")
+  # ... while a's own manifest still catches it.
+  with pytest.raises(ValueError, match="mismatch"):
+    verify_export_manifest_sha256(tmp_path, manifest_path=tmp_path / "a_plan_manifest.json")
+  # With two manifests present, auto-discovery refuses to guess.
+  with pytest.raises(ValueError, match="Several export manifests"):
+    verify_export_manifest_sha256(tmp_path)
+
+
+def test_manifest_entry_without_sha256_is_refused(tmp_path: Path) -> None:
+  (tmp_path / "artifact.json").write_text("{}", encoding="utf-8")
+  manifest = tmp_path / "x_manifest.json"
+  manifest.write_text(json.dumps({"artifacts": {"artifact.json": {"bytes": 2}}}), encoding="utf-8")
+  with pytest.raises(ValueError, match="no sha256"):
+    verify_export_manifest_sha256(tmp_path)
+
+
+def test_manifest_entry_outside_export_dir_is_refused(tmp_path: Path) -> None:
+  export_dir = tmp_path / "export"
+  export_dir.mkdir()
+  (tmp_path / "outside.json").write_text("{}", encoding="utf-8")
+  manifest = export_dir / "x_manifest.json"
+  manifest.write_text(
+    json.dumps({"artifacts": {"../outside.json": {"sha256": "0" * 64}}}),
+    encoding="utf-8",
+  )
+  with pytest.raises(ValueError, match="plain file name"):
+    verify_export_manifest_sha256(export_dir)

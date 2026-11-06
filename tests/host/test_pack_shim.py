@@ -10,24 +10,33 @@ import pytest
 import zarr
 
 from xtrax.pack import (
+  CodecUnavailable,
   UnitPackRefused,
   is_packed,
   list_unit_members,
   read_unit_member,
+  record_problem,
   unit_content_digest,
 )
 from xtrax.run import zarr_content_digest
 from xtrax.run.unit_index_adapters import AminxDoneMarkerAdapter, UnitJsonAdapter
 
 from aminx.host.pack_shim import (
+  PACKED_GATE_DIGEST_PREFIX,
   UNIT_FAILED_STAMP,
   aminx_unit_check,
+  failure_stamp_path,
   pack_aminx_unit,
+  packed_unit_gate_digest,
   resolve_unit_adapter,
   validate_aminx_unit,
   write_aminx_unit,
   write_aminx_unit_failure,
 )
+
+
+# Identity for units built outside a manifest row; write_aminx_unit refuses to invent one.
+_DIGEST = "a" * 64
 
 
 def _make_store(unit_dir: Path) -> Path:
@@ -45,6 +54,7 @@ def test_unit_creation_packing_and_member_readback(tmp_path: Path) -> None:
 
   record = write_aminx_unit(
     unit_dir,
+    input_digest=_DIGEST,
     run_id="run-test-1",
     meta={"experiment": "test_pack"},
   )
@@ -126,7 +136,7 @@ def test_negative_control_bit_corruption_raises_value_error(tmp_path: Path) -> N
   unit_dir = tmp_path / "unit_corrupted"
   _make_store(unit_dir)
 
-  record = write_aminx_unit(unit_dir, run_id="run-corrupt")
+  record = write_aminx_unit(unit_dir, input_digest=_DIGEST, run_id="run-corrupt")
   # Pre-corruption validation passes
   validate_aminx_unit(unit_dir)
 
@@ -145,13 +155,13 @@ def test_negative_control_loose_file_collision_refuses_pack(tmp_path: Path) -> N
   _make_store(artifact_dir)
   (artifact_dir / "members.tar.zst").write_bytes(b"pseudo archive")
   with pytest.raises(UnitPackRefused, match="R-U3"):
-    write_aminx_unit(artifact_dir)
+    write_aminx_unit(artifact_dir, input_digest=_DIGEST)
 
   # Part B: Regenerating loose files in an already packed unit
   unit_dir = tmp_path / "unit_collision"
   _make_store(unit_dir)
 
-  write_aminx_unit(unit_dir)
+  write_aminx_unit(unit_dir, input_digest=_DIGEST)
   pack_aminx_unit(unit_dir)
   assert is_packed(unit_dir)
 
@@ -174,11 +184,11 @@ def test_negative_control_empty_unit_refusal(tmp_path: Path) -> None:
 
   # write_aminx_unit refuses empty unit before committing
   with pytest.raises(UnitPackRefused, match="R-U1"):
-    write_aminx_unit(empty_dir)
+    write_aminx_unit(empty_dir, input_digest=_DIGEST)
 
 
 def test_quarantining_legacy_done_marker_upon_packing(tmp_path: Path) -> None:
-  """Test 4: Quarantining of legacy .done.json to .done.json.packed upon packing."""
+  """Test 4: legacy .done.json is archived at commit, renamed after a pack, record still verifies."""
   unit_dir = tmp_path / "row_456.h5"
   _make_store(unit_dir)
 
@@ -190,23 +200,92 @@ def test_quarantining_legacy_done_marker_upon_packing(tmp_path: Path) -> None:
   }
   legacy_marker.write_text(json.dumps(legacy_payload), encoding="utf-8")
 
-  write_aminx_unit(unit_dir, run_id="run-quarantine")
+  committed = write_aminx_unit(unit_dir, input_digest=_DIGEST, run_id="run-quarantine")
+  assert committed["meta"]["legacy_done_marker"] == legacy_payload
   assert legacy_marker.exists()
 
   pack_aminx_unit(unit_dir)
 
-  # Legacy marker should be quarantined with .packed extension
   assert not legacy_marker.exists()
   packed_marker = unit_dir.with_name(f"{unit_dir.name}.done.json.packed")
   assert packed_marker.exists()
 
-  # Legacy data should be archived inside unit.json meta
   record = json.loads((unit_dir / "unit.json").read_text(encoding="utf-8"))
-  assert record.get("meta", {}).get("legacy_done_marker") == legacy_payload
+  assert record["meta"]["legacy_done_marker"] == legacy_payload
+  # The record was never edited after commit, so its digest still verifies and readers accept it.
+  assert record_problem(record) is None
+  validate_aminx_unit(unit_dir, expected_input_digest=_DIGEST)
 
-  # Adapter resolution now yields UnitJsonAdapter
   adapter = resolve_unit_adapter(unit_dir)
   assert isinstance(adapter, UnitJsonAdapter)
+  verdict = adapter.classify(tmp_path, unit_dir.name, _DIGEST, verify=True)
+  assert verdict.__class__.__name__ == "IndexReuse"
+  assert [locator for locator, _ in adapter.find(tmp_path)] == [unit_dir.name]
+
+
+def test_failed_pack_leaves_legacy_marker_and_record_intact(
+  tmp_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A pack that fails must not rename the legacy marker or leave a record that fails to verify."""
+  import aminx.host.pack_shim as shim
+
+  unit_dir = tmp_path / "row_789.h5"
+  _make_store(unit_dir)
+  legacy_marker = unit_dir.with_name(f"{unit_dir.name}.done.json")
+  legacy_marker.write_text(json.dumps({"schema_version": "campaign_done_marker_v3"}), encoding="utf-8")
+  write_aminx_unit(unit_dir, input_digest=_DIGEST)
+
+  def _no_codec(*_args: object, **_kwargs: object) -> None:
+    msg = "no zstd"
+    raise CodecUnavailable(msg)
+
+  monkeypatch.setattr(shim, "pack_unit", _no_codec)
+  with pytest.raises(CodecUnavailable):
+    pack_aminx_unit(unit_dir)
+
+  assert legacy_marker.exists()
+  assert not is_packed(unit_dir)
+  validate_aminx_unit(unit_dir, expected_input_digest=_DIGEST)
+
+
+def test_negative_control_member_changed_after_commit_refuses_pack(tmp_path: Path) -> None:
+  """The pack check keeps xtrax's content-digest check: a member edited after commit is refused."""
+  unit_dir = tmp_path / "unit_tampered"
+  _make_store(unit_dir)
+  write_aminx_unit(unit_dir, input_digest=_DIGEST)
+
+  chunk = next(
+    p for p in unit_dir.rglob("*") if p.is_file() and p.name not in ("unit.json", "zarr.json")
+  )
+  chunk.write_bytes(b"tampered")
+
+  with pytest.raises(UnitPackRefused, match="content_digest"):
+    pack_aminx_unit(unit_dir)
+  assert not is_packed(unit_dir)
+
+
+def test_negative_control_edited_record_refuses_pack(tmp_path: Path) -> None:
+  """A record whose core was edited after commit no longer verifies and is refused at pack."""
+  unit_dir = tmp_path / "unit_edited_record"
+  _make_store(unit_dir)
+  write_aminx_unit(unit_dir, input_digest=_DIGEST)
+  record_path = unit_dir / "unit.json"
+  record = json.loads(record_path.read_text(encoding="utf-8"))
+  record["meta"]["late_edit"] = True
+  record_path.write_text(json.dumps(record), encoding="utf-8")
+
+  with pytest.raises(UnitPackRefused, match="record_digest"):
+    pack_aminx_unit(unit_dir)
+
+
+def test_write_aminx_unit_requires_identity(tmp_path: Path) -> None:
+  """Without a spec payload or an explicit input_digest there is no identity to record."""
+  unit_dir = tmp_path / "unit_no_identity"
+  _make_store(unit_dir)
+  with pytest.raises(ValueError, match="input_digest"):
+    write_aminx_unit(unit_dir)
+  assert not (unit_dir / "unit.json").exists()
 
 
 def test_write_aminx_unit_failure_stamp(tmp_path: Path) -> None:
@@ -221,7 +300,10 @@ def test_write_aminx_unit_failure_stamp(tmp_path: Path) -> None:
   )
 
   assert stamp_path.exists()
-  assert stamp_path.name == UNIT_FAILED_STAMP
+  # The stamp sits beside the unit: inside it, it would become a member of a committed unit.
+  assert stamp_path == failure_stamp_path(unit_dir)
+  assert stamp_path.name == f"{unit_dir.name}.{UNIT_FAILED_STAMP}"
+  assert not unit_dir.exists()
 
   data = json.loads(stamp_path.read_text(encoding="utf-8"))
   assert data["schema"] == "xtrax.unit_failure/1"
@@ -389,6 +471,7 @@ def test_custom_record_name_roundtrip(tmp_path: Path) -> None:
   # Write unit record under custom name
   record = write_aminx_unit(
     unit_dir,
+    input_digest=_DIGEST,
     run_id="run-custom-1",
     record_name=custom_record,
     meta={"custom": "field"},
@@ -405,6 +488,7 @@ def test_custom_record_name_roundtrip(tmp_path: Path) -> None:
   with pytest.raises(UnitPackRefused, match="already has a record"):
     write_aminx_unit(
       unit_dir,
+      input_digest=_DIGEST,
       run_id="run-custom-2",
       record_name=custom_record,
     )
@@ -442,8 +526,9 @@ def test_custom_record_name_roundtrip(tmp_path: Path) -> None:
   with pytest.raises(ValueError, match="Unit record missing"):
     validate_aminx_unit(unit_dir, record_name="unit.json")
 
-  # Adapter resolution with custom record_name
-  adapter = resolve_unit_adapter(unit_dir, record_name=custom_record)
-  assert isinstance(adapter, UnitJsonAdapter)
+  # No xtrax adapter reads a custom record name (UnitJsonAdapter reads only unit.json), so
+  # resolution refuses instead of returning an adapter that would report the unit missing.
+  with pytest.raises(ValueError, match="custom record name"):
+    resolve_unit_adapter(unit_dir, record_name=custom_record)
 
 

@@ -2454,7 +2454,7 @@ def _row_cell_key(row: dict[str, Any]) -> GateCellKey:
   )
 
 
-def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState:
+def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState:  # noqa: PLR0915
   payload = load_manifest(manifest_path)
   rows = payload["rows"]
   if not isinstance(rows, list):  # pragma: no cover - guarded by load_manifest
@@ -2491,25 +2491,38 @@ def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState
       )
       continue
     output_h5_path = Path(output_value).resolve()
-    done_marker = _read_done_marker(_done_marker_path(output_h5_path))
-    if done_marker is None:
-      state.metadata_issues.append(
-        f"Manifest row {manifest_hash} missing done marker for output {output_h5_path}.",
-      )
-      continue
-    try:
-      _validate_done_marker(
-        marker=done_marker,
-        marker_path=_done_marker_path(output_h5_path),
-        output_h5_path=output_h5_path,
-        manifest_row_hash=manifest_hash,
-      )
-    except (OSError, TypeError, ValueError, RuntimeError) as exc:
-      state.metadata_issues.append(str(exc))
-      continue
+    # A row committed by `campaign run --pack` carries an xtrax unit record (unit.json) instead
+    # of a done marker. Its digest is namespaced, so it never equals a marker's zarr digest.
+    if (output_h5_path / "unit.json").exists():
+      # Deferred: pack_shim imports this module.
+      from aminx.host.pack_shim import packed_unit_gate_digest  # noqa: PLC0415
+
+      try:
+        row_digest = packed_unit_gate_digest(output_h5_path)
+      except (OSError, TypeError, ValueError) as exc:
+        state.metadata_issues.append(f"Manifest row {manifest_hash}: {exc}")
+        continue
+    else:
+      done_marker = _read_done_marker(_done_marker_path(output_h5_path))
+      if done_marker is None:
+        state.metadata_issues.append(
+          f"Manifest row {manifest_hash} missing done marker for output {output_h5_path}.",
+        )
+        continue
+      try:
+        _validate_done_marker(
+          marker=done_marker,
+          marker_path=_done_marker_path(output_h5_path),
+          output_h5_path=output_h5_path,
+          manifest_row_hash=manifest_hash,
+        )
+      except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        state.metadata_issues.append(str(exc))
+        continue
+      row_digest = str(done_marker["content_digest_sha256"])
 
     state.completed_rows += 1
-    state.digest_by_hash[manifest_hash] = str(done_marker["content_digest_sha256"])
+    state.digest_by_hash[manifest_hash] = str(row_digest)
     cell_key = _row_cell_key(row)
     state.cell_to_hashes.setdefault(cell_key, set()).add(manifest_hash)
 

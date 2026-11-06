@@ -15,6 +15,7 @@ from xtrax.eda import (
   generate_vega_spec,
   render,
 )
+from xtrax.tiling import Bucket
 
 from aminx.io.weights import resolve_family_checkpoint
 
@@ -46,11 +47,11 @@ def explain_aminx_plan(plan: BatchPlan) -> dict[str, Any]:
       Dictionary containing explain_plan summary and per-bucket decision analyses.
   """
   stats = explain_plan(plan)
-  bucket_analyses: list[dict[str, Any]] = []
-  for d in getattr(plan, "decisions", []):
-    strategy_name = d.strategy.__class__.__name__ if hasattr(d, "strategy") else ""
-    if strategy_name == "Bucket":
-      bucket_analyses.append(analyze_bucket(d))
+  bucket_analyses: list[dict[str, Any]] = [
+    analyze_bucket(d)
+    for d in getattr(plan, "decisions", [])
+    if isinstance(getattr(d, "strategy", None), Bucket)
+  ]
 
   return {
     "plan_summary": stats,
@@ -108,7 +109,8 @@ def verify_export_manifest_sha256(
   export_dir : Path | str
       Directory containing exported plan artifacts.
   manifest_path : Path | str | None, default=None
-      Explicit path to manifest file. If None, auto-discovers `*_manifest.json`.
+      Explicit path to the manifest file. If None, the directory must hold exactly one
+      ``*_manifest.json``; several are refused rather than guessed between.
 
   Returns
   -------
@@ -120,7 +122,9 @@ def verify_export_manifest_sha256(
   FileNotFoundError
       If manifest or any declared artifact is missing.
   ValueError
-      If any artifact's byte count or SHA-256 digest mismatches the manifest.
+      If any artifact's byte count or SHA-256 digest mismatches the manifest, an entry has no
+      ``sha256``, a filename is not a plain name inside ``export_dir``, or the manifest is
+      ambiguous.
   """
   export_path = Path(export_dir)
   if manifest_path is None:
@@ -128,6 +132,10 @@ def verify_export_manifest_sha256(
     if not manifest_files:
       msg = f"No export manifest file found in {export_path}"
       raise FileNotFoundError(msg)
+    if len(manifest_files) > 1:
+      names = [m.name for m in manifest_files]
+      msg = f"Several export manifests in {export_path} ({names}); pass manifest_path"
+      raise ValueError(msg)
     m_path = manifest_files[0]
   else:
     m_path = Path(manifest_path)
@@ -143,6 +151,13 @@ def verify_export_manifest_sha256(
     raise ValueError(msg)
 
   for filename, info in artifacts.items():
+    if Path(filename).name != filename or filename in ("", ".", ".."):
+      msg = f"Manifest entry {filename!r} is not a plain file name inside {export_path}"
+      raise ValueError(msg)
+    expected_sha = info.get("sha256")
+    if not expected_sha:
+      msg = f"Manifest entry {filename!r} has no sha256 to verify"
+      raise ValueError(msg)
     artifact_file = export_path / filename
     if not artifact_file.exists():
       msg = f"Declared export artifact missing: {artifact_file}"
@@ -154,9 +169,8 @@ def verify_export_manifest_sha256(
       msg = f"Byte length mismatch for {filename}: expected {expected_bytes}, got {len(data)}"
       raise ValueError(msg)
 
-    expected_sha = info.get("sha256")
     observed_sha = hashlib.sha256(data).hexdigest()
-    if expected_sha is not None and observed_sha != expected_sha:
+    if observed_sha != expected_sha:
       msg = (
         f"SHA-256 digest mismatch for {filename}: expected {expected_sha}, observed {observed_sha}"
       )
@@ -174,5 +188,9 @@ def export_and_verify_plan_artifacts(
   """Exports byte-deterministic plan artifacts and cryptographically verifies them."""
   stats = extract_plan_stats(plan)
   manifest = export_plan_artifacts(stats, output_dir, prefix=prefix)
-  verify_export_manifest_sha256(output_dir)
+  # Verify this export's own manifest, not whichever *_manifest.json sorts first.
+  verify_export_manifest_sha256(
+    output_dir,
+    manifest_path=Path(output_dir) / f"{prefix}_manifest.json",
+  )
   return manifest
