@@ -42,11 +42,27 @@ POTTS_SLUGS = (
   "potts_ddg_megascale",
 )
 PROTON_SLUGS = ("protonpotts_parity",)
+# ThermoMPNN builds on potts_mpnn.features, so a Potts change stales its row (as for ProtonPotts); the reverse must not hold.
+THERMO_SLUGS = ("thermo_mpnn_parity",)
 TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
+  "antibmpnn_parity_v3",
+  "caliby_parity_v2",
 )
-ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *TIER1_TIER2_SLUGS)
+# Vehicles that run standalone with ``--synthetic``. antibmpnn_parity_v3 / caliby_parity_v2 grade against sealed
+# upstream dumps (``--oracle-dir`` etc.) and run only on titanix under bth; the static closure tests cover them.
+SYNTHETIC_RUNNABLE_SLUGS = ("tier1_variants_parity", "ca_only_parity")
+# A path component of the form ``/potts`` marks Potts-family code. caliby's own ``potts.py`` is its Potts
+# decoder head, not Potts-MPNN code, so the family's directory is exempt.
+_OWN_POTTS_HEAD = "/families/caliby/"
+
+
+def _is_own_potts_head(slug: str, path: str) -> bool:
+  """The exemption belongs to the caliby row alone; any other row reaching caliby code is still a leak."""
+  return slug == "caliby_parity_v2" and _OWN_POTTS_HEAD in path
+FAMPNN_SLUGS = ("fampnn_parity", "fampnn_parity_v2", "fampnn_parity_v3")
+ALL_SLUGS = (*LASER_SLUGS, *POTTS_SLUGS, *PROTON_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS)
 
 
 def _make_repo(tmp_path: Path, files: dict[str, str]) -> Path:
@@ -259,8 +275,25 @@ def test_potts_rows_do_not_depend_on_laser_code(slug: str) -> None:
 @pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
 def test_tier1_tier2_rows_do_not_depend_on_potts_code(slug: str) -> None:
   closure = _real(slug)
-  assert not [f for f in closure.files if "/potts" in f], f"a Tier 1/2 row ({slug}) reaches Potts code"
+  potts_hits = [f for f in closure.files if "/potts" in f and not _is_own_potts_head(slug, f)]
+  assert not potts_hits, f"a Tier 1/2 row ({slug}) reaches Potts code"
   assert not [f for f in closure.files if "/laser" in f], f"a Tier 1/2 row ({slug}) reaches LASEr code"
+
+
+@pytest.mark.parametrize("slug", THERMO_SLUGS)
+def test_thermo_row_reaches_its_family_and_potts_features_but_not_laser(slug: str) -> None:
+  closure = _real(slug)
+  assert any("/thermo_mpnn/" in f for f in closure.files)
+  assert any("potts_mpnn/features.py" in f for f in closure.files)
+  assert not [f for f in closure.files if "/laser" in f], f"a ThermoMPNN row ({slug}) reaches LASEr code"
+
+
+@pytest.mark.parametrize("slug", FAMPNN_SLUGS)
+def test_fampnn_rows_do_not_depend_on_other_family_code(slug: str) -> None:
+  closure = _real(slug)
+  assert not [f for f in closure.files if "/potts" in f], f"a FAMPNN row ({slug}) reaches Potts code"
+  assert not [f for f in closure.files if "/laser" in f], f"a FAMPNN row ({slug}) reaches LASEr code"
+  assert any("/fampnn/" in f for f in closure.files)
 
 
 def test_family_change_invalidates_only_its_own_rows() -> None:
@@ -269,7 +302,7 @@ def test_family_change_invalidates_only_its_own_rows() -> None:
   potts_change = ["src/aminx/families/potts_mpnn/decode.py"]
   laser_change = ["src/aminx/families/laser_mpnn/driver.py"]
   proton_change = ["src/aminx/families/protonpotts_mpnn/ph_descent.py"]
-  assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS]
+  assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS, *THERMO_SLUGS]
   assert [s for s in ALL_SLUGS if row_is_stale(laser_change, _real(s))] == list(LASER_SLUGS)
   assert [s for s in ALL_SLUGS if row_is_stale(proton_change, _real(s))] == list(PROTON_SLUGS)
 
@@ -478,7 +511,7 @@ def test_protonpotts_row_reaches_its_family_and_not_laser(slug: str) -> None:
     assert needed in closure.files, needed
 
 
-@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *TIER1_TIER2_SLUGS])
+@pytest.mark.parametrize("slug", [*LASER_SLUGS, *POTTS_SLUGS, *THERMO_SLUGS, *TIER1_TIER2_SLUGS, *FAMPNN_SLUGS])
 def test_other_families_do_not_depend_on_protonpotts_code(slug: str) -> None:
   closure = _real(slug)
   assert not [f for f in closure.files if "protonpotts" in f], "a Potts/LASEr row reaches ProtonPotts code"
@@ -557,7 +590,7 @@ def test_hook_is_silent_for_a_process_that_is_not_the_vehicle(tmp_path: Path) ->
   assert not out.exists()
 
 
-@pytest.mark.parametrize("slug", TIER1_TIER2_SLUGS)
+@pytest.mark.parametrize("slug", SYNTHETIC_RUNNABLE_SLUGS)
 def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> None:
   """Regression test: runtime execution must not load uncovered files or sibling families."""
   out_loaded = tmp_path / f"loaded_{slug}.json"
@@ -590,7 +623,9 @@ def test_tier1_tier2_runtime_closure_isolation(slug: str, tmp_path: Path) -> Non
   assert out_loaded.exists(), f"Closure hook did not record loaded files for {slug}"
   data = json.loads(out_loaded.read_text(encoding="utf-8"))
   loaded = data.get("loaded", [])
-  assert not [f for f in loaded if "/potts" in f], f"Vehicle {slug} dynamically loaded potts code"
+  assert not [f for f in loaded if "/potts" in f and not _is_own_potts_head(slug, f)], (
+    f"Vehicle {slug} dynamically loaded potts code"
+  )
   assert not [f for f in loaded if "/laser" in f], f"Vehicle {slug} dynamically loaded laser code"
   closure = _real(slug)
   uncovered = loaded_outside_closure(loaded, closure)

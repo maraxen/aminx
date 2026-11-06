@@ -138,6 +138,40 @@ def _is_packer_checkpoint(spec: Any) -> bool:  # noqa: ANN401
   return ckpt_id in CALIBY_PACKER_CHECKPOINTS or "packer" in path_name
 
 
+# Spec fields that constrain decoding but that no Caliby stage reads (verified by rg over
+# src/aminx/families/caliby: none of these names is referenced). Setting one would otherwise
+# return unconstrained output with no error, so ``load`` refuses the run instead.
+_UNSUPPORTED_CONSTRAINT_FIELDS: tuple[str, ...] = (
+  "fixed_positions",
+  "fixed_tokens",
+  "fixed_mask",
+  "bias",
+  "omit_aa",
+  "omit_aa_per_position",
+)
+
+
+def _is_set(value: Any) -> bool:  # noqa: ANN401
+  return value is not None and not (isinstance(value, (tuple, list, Mapping)) and len(value) == 0)
+
+
+def _reject_unsupported_constraints(spec: Any) -> None:  # noqa: ANN401
+  """Raise ``ValueError`` if ``spec`` sets a constraint field the Caliby driver would drop.
+
+  Raises
+  ------
+  ValueError
+    If any field in ``_UNSUPPORTED_CONSTRAINT_FIELDS`` is set to a non-empty value.
+  """
+  present = [name for name in _UNSUPPORTED_CONSTRAINT_FIELDS if _is_set(getattr(spec, name, None))]
+  if present:
+    msg = (
+      f"caliby does not apply {', '.join(present)}; the run would ignore them and return "
+      "unconstrained sequences. Unset these fields for caliby."
+    )
+    raise ValueError(msg)
+
+
 def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
   raw = getattr(spec, "inputs", ())
   if isinstance(raw, (str, Path)):
@@ -340,6 +374,13 @@ class _CalibyStages:
     dropout_key: jax.Array,
     seed: int,
   ) -> Mapping[str, jax.Array]:
+    """Draw sequences from the Potts parameters (NOT a Gibbs sampler).
+
+    Each sample is one random initial sequence drawn from the single-site fields alone, followed by
+    ONE parallel categorical draw at every position conditioned on that initial sequence. That is
+    not a Gibbs sweep (no sequential site updates, no convergence), so the draws are not distributed
+    as the Potts model ``exp(-E)/Z``. A real sampler is tracked as separate debt.
+    """
     num_samples = int(getattr(self._spec, "num_samples", 1) or 1)
     temps_raw = getattr(self._spec, "temperature", 0.01)
     temps = [float(temps_raw)] if isinstance(temps_raw, (int, float)) else [float(t) for t in temps_raw]
@@ -560,6 +601,7 @@ class CalibyDriver:
     eqx.Module
       Loaded ``CalibyModel`` or ``CalibySidechainMLP``.
     """
+    _reject_unsupported_constraints(spec)
     ckpt_id = _checkpoint_id(spec)
     local = getattr(spec, "model_local_path", None)
     if local is not None:

@@ -20,7 +20,7 @@ from aminx.families.fampnn.convert import (
   has_fampnn_confidence_head,
   normalize_fampnn_state_dict,
 )
-from aminx.families.fampnn.driver import FAMPNNDriver, FAMPNNPrepared, mar_sample
+from aminx.families.fampnn.driver import FAMPNNDriver, FAMPNNPrepared
 from aminx.families.fampnn.features import (
   FAMPNNPositionalEncodings,
   FAMPNNProteinFeatures,
@@ -55,8 +55,9 @@ from aminx.families.fampnn.sidechain_diffusion import (
   FAMPNNTimestepEmbedder,
   SidechainConfidenceModule,
   SidechainDiffusionModule,
-  edm_sample,
 )
+from aminx.families.fampnn.pdb import FampnnStructure, read_fampnn_pdb
+from aminx.families.fampnn.sampler import SamplerNoise, draw_sampler_noise, mar_sample_upstream
 
 __all__ = [
   "AMINX_ALPHABET",
@@ -96,12 +97,15 @@ __all__ = [
   "atom37_to_atom14",
   "backbone_coords_to_frames",
   "convert_fampnn_state_dict",
-  "edm_sample",
   "get_rotation_frames",
   "global_to_local_atom37",
   "has_fampnn_confidence_head",
   "local_to_global_atom37",
   "make_virtual_cb_fampnn",
-  "mar_sample",
+  "mar_sample_upstream",
+  "read_fampnn_pdb",
+  "FampnnStructure",
+  "SamplerNoise",
+  "draw_sampler_noise",
   "normalize_fampnn_state_dict",
 ]

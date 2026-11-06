@@ -165,9 +165,63 @@ data = ["tests/data/1ubq.pdb"]
 
 [slug.thermo_mpnn_parity]
 soft = ["aminx.families.thermo_mpnn"]
+# thermo_mpnn/model.py imports potts_mpnn.features (potts_edge_features), so the closure legitimately reaches the Potts
+# package and its driver's converter-by-path site (same declaration the Potts rows carry).
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
+data = ["tests/data/1ubq.pdb"]
+
+[slug.caliby_parity_v2]
+soft = ["aminx.families.caliby"]
 dynamic_ok = [
   "src/aminx/host/runner.py",
   "src/aminx/io/__init__.py",
   "src/aminx/io/weights.py",
 ]
-data = ["tests/data/1ubq.pdb"]
+data = ["tests/data/1ubq.pdb", "tests/port/reference/caliby/"]
+
+# AntiBMPNN v3 (261104_p4-final-review-fixes; v2 + finiteness rule). The vehicle reads sealed upstream dumps (outside the repo, sha256-pinned in the
+# sidecar [data]) and the HuJ3 fixture/checkpoints under the upstream clone. It drives aminx.host.runner.score (entry
+# stage, published weights via aminx.io.weights) but NOT any potts_mpnn module.
+[slug.antibmpnn_parity_v3]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+
+
+[slug.fampnn_parity]
+soft = ["aminx.families.fampnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb", "tests/knob_gate/checkpoint_registry.json"]
+
+# v2 vehicle (fampnn_parity_v2.py wraps fampnn_parity.py with --band-rule floor); supersedes the v1 slug above, whose
+# registered run recorded FAIL on one float64 loop check. Same closure: the wrapper adds no import beyond fampnn_parity.
+[slug.fampnn_parity_v2]
+soft = ["aminx.families.fampnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb", "tests/knob_gate/checkpoint_registry.json"]
+
+# v3 vehicle (fampnn_parity_v3.py wraps fampnn_parity.py with --band-rule floor and the non-finite/shape/crash
+# accounting). Branch rows point here; the v1 and v2 slugs stay as the closures of their recorded runs.
+[slug.fampnn_parity_v3]
+soft = ["aminx.families.fampnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb", "tests/knob_gate/checkpoint_registry.json"]

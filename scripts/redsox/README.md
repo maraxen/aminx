@@ -163,6 +163,18 @@ comparison of anything the gate does.
 
        ssh titanix 'cd ~/projects/aminx-sprint-git && bash scripts/redsox/launch_wave.sh 4'
 
+   Groups 5-7 are the P4 family-parity vehicles (CPU only, 4 threads each, no GPU check). They exist only on the P4
+   branch, so launch with `AMINX_WAVE_REF=<p4 branch>`. Each reads its titanix inputs from env vars and refuses
+   (`REFUSING: <VAR> is unset`) when one is missing:
+
+   | Group | Slugs | Required env |
+   | --- | --- | --- |
+   | 5 | `caliby_parity_v2`, `antibmpnn_parity_v3` | `AMINX_CALIBY_ORACLE_DIR`, `ANTIBMPNN_ORACLE_DIR`, `AMINX_WEIGHTS_DIR` (HF snapshot) |
+   | 6 | `fampnn_parity_v3` | `AMINX_FAMPNN_ORACLE_DIR`, `AMINX_FAMPNN_F64TAB_DIR` |
+   | 7 | `ca_only_parity`, `thermo_mpnn_parity`, `tier1_variants_parity` | none required (upstream `.pt` files under `$AMINX_PARITY_REPOS` or `~/repos`) |
+
+   Optional: `AMINX_CALIBY_WEIGHTS_DIR`, `AMINX_ANTIBMPNN_ROOT`, `AMINX_FAMPNN_ROOT`.
+
    The positive control is a separate, ungraded invocation:
 
        ssh titanix 'cd ~/projects/aminx-sprint-git && bash scripts/redsox/launch_wave.sh positive'

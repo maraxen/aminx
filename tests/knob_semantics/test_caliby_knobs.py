@@ -21,12 +21,16 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
+from types import SimpleNamespace
+
 from aminx.families.caliby.driver import (
   CalibyPrepared,
+  _CalibyStages,
   _checkpoint_id,
   _potts_21_in_aminx_order,
 )
 from aminx.families.caliby.model import CalibyModel
+from aminx.families.caliby.potts import aggregate_ensemble_potts_params, generate_gaussian_ensemble
 from aminx.families.caliby.sidechain_diffusion import (
   CalibySidechainMLP,
   edm_sidechain_sample,
@@ -126,48 +130,73 @@ def test_knob_semantics_caliby_checkpoint_id() -> None:
     _checkpoint_id(spec_conflict)
 
 
-def test_knob_semantics_ensemble_conformers() -> None:
-  """ensemble_conformers controls multi-conformer averaging of Potts fields."""
-  model = _toy_potts_model()
+def _sample(options: CalibyOptions, num_samples: int, temperature: float = 0.01) -> np.ndarray:
+  """Run the real ``_CalibyStages`` sample path on the toy model and return the sequences array."""
   prep = _toy_caliby_fixture(6)
+  spec = SimpleNamespace(
+    caliby=options, random_seed=3, num_samples=num_samples, temperature=temperature, sequences_to_score=None
+  )
+  stages = _CalibyStages(_toy_potts_model(), spec, "sample")
+  batch = SimpleNamespace(arrays={"prepared": (prep,)})
+  out = stages(batch, chunk_start=0, chunk_count=1, scalar_dropout=False, dropout_key=jax.random.PRNGKey(0))
+  return np.asarray(out["sequences"])
 
-  opt_single = CalibyOptions(ensemble_conformers=1, ensemble_noise_std=0.0)
-  h_single, j_single = _potts_21_in_aminx_order(model, prep, opt_single, seed=1)
 
-  opt_ens = CalibyOptions(ensemble_conformers=3, ensemble_noise_std=0.2)
-  h_ens, j_ens = _potts_21_in_aminx_order(model, prep, opt_ens, seed=1)
+def test_knob_semantics_num_samples() -> None:
+  """Upstream num_seqs_per_pdb (atom_mpnn_denoiser.py:227) draws N sequences; aminx num_samples is the N_samples axis."""
+  for n in (1, 3, 7):
+    seqs = _sample(CalibyOptions(), n)
+    assert seqs.shape == (1, n, 1, 6), seqs.shape  # (structures, N_samples, D_temp, L)
 
-  diff_h = jnp.max(jnp.abs(h_single - h_ens))
-  assert diff_h > 1e-4, f"ensemble_conformers failed to alter Potts fields (diff={diff_h})"
+
+def test_knob_semantics_ensemble_conformers() -> None:
+  """ensemble_conformers: C conformers, averaged Potts parameters (upstream _aggregate_potts_params, mean)."""
+  xyz = jnp.asarray(_toy_caliby_fixture(6).atom23_xyz)
+  mask = jnp.asarray(_toy_caliby_fixture(6).atom23_mask)
+  for c in (2, 5):
+    ens = generate_gaussian_ensemble(xyz, mask, num_conformers=c, noise_std=0.3, key=jax.random.PRNGKey(0))
+    assert ens.shape[0] == c
+    # Documented divergence (3242): conformer 0 is the unperturbed structure here; upstream
+    # noises every conformer (atom_mpnn_denoiser.py:571).
+    np.testing.assert_array_equal(np.asarray(ens[0]), np.asarray(xyz))
+    assert float(jnp.max(jnp.abs(ens[1:] - xyz[None]))) > 0.0
+  # Aggregation is the arithmetic mean over conformers, as upstream's use_mean=True.
+  h = jax.random.normal(jax.random.PRNGKey(1), (4, 6, 21))
+  j = jax.random.normal(jax.random.PRNGKey(2), (4, 6, 6, 21, 21))
+  h_m, j_m = aggregate_ensemble_potts_params(h, j)
+  np.testing.assert_allclose(np.asarray(h_m), np.asarray(h).mean(0), rtol=1e-6, atol=1e-6)
+  np.testing.assert_allclose(np.asarray(j_m), np.asarray(j).mean(0), rtol=1e-6, atol=1e-6)
+  # ensemble_conformers == 1 disables the ensemble path in the driver (single model call).
+  model, prep = _toy_potts_model(), _toy_caliby_fixture(6)
+  a = _potts_21_in_aminx_order(model, prep, CalibyOptions(ensemble_conformers=1, ensemble_noise_std=0.5), seed=1)
+  b = _potts_21_in_aminx_order(model, prep, CalibyOptions(), seed=1)
+  np.testing.assert_array_equal(np.asarray(a[0]), np.asarray(b[0]))
 
 
 def test_knob_semantics_ensemble_noise_std() -> None:
-  """ensemble_noise_std scales coordinate perturbation magnitude in ensemble."""
-  model = _toy_potts_model()
-  prep = _toy_caliby_fixture(6)
-
-  opt_low = CalibyOptions(ensemble_conformers=3, ensemble_noise_std=0.05)
-  h_low, _ = _potts_21_in_aminx_order(model, prep, opt_low, seed=2)
-
-  opt_high = CalibyOptions(ensemble_conformers=3, ensemble_noise_std=1.0)
-  h_high, _ = _potts_21_in_aminx_order(model, prep, opt_high, seed=2)
-
-  diff = jnp.max(jnp.abs(h_low - h_high))
-  assert diff > 1e-4, f"ensemble_noise_std failed to scale perturbation impact (diff={diff})"
+  """ensemble_noise_std is the std (Angstrom) of the coordinate noise; 0 disables (upstream :157)."""
+  n = 300
+  xyz = jnp.zeros((n, 23, 3), dtype=jnp.float32)
+  mask = jnp.ones((n, 23), dtype=jnp.float32)
+  for std in (0.1, 0.5, 2.0):
+    ens = generate_gaussian_ensemble(xyz, mask, num_conformers=2, noise_std=std, key=jax.random.PRNGKey(7))
+    emp = float(jnp.std(ens[1]))
+    assert abs(emp - std) < 0.05 * std, (std, emp)
+  masked = generate_gaussian_ensemble(xyz, mask.at[:, 5:].set(0.0), num_conformers=2, noise_std=1.0, key=jax.random.PRNGKey(7))
+  assert float(jnp.max(jnp.abs(masked[1][:, 5:]))) == 0.0, "absent atoms must stay unperturbed"
+  model, prep = _toy_potts_model(), _toy_caliby_fixture(6)
+  off = _potts_21_in_aminx_order(model, prep, CalibyOptions(ensemble_conformers=3, ensemble_noise_std=0.0), seed=1)
+  base = _potts_21_in_aminx_order(model, prep, CalibyOptions(), seed=1)
+  np.testing.assert_array_equal(np.asarray(off[0]), np.asarray(base[0]))
 
 
 def test_knob_semantics_omit_gap_penalty() -> None:
-  """omit_gap_penalty adds an additive penalty on the GAP token (index 20)."""
-  prep = _toy_caliby_fixture(6)
-  num_l = 6
-
-  # Verify penalty term directly
-  pen_zero = jax.nn.one_hot(jnp.full((num_l,), 20, dtype=jnp.int32), 21, dtype=jnp.float32) * 0.0
-  pen_large = jax.nn.one_hot(jnp.full((num_l,), 20, dtype=jnp.int32), 21, dtype=jnp.float32) * 1e6
-
-  assert float(pen_zero[:, 20].sum()) == 0.0
-  assert float(pen_large[:, 20].sum()) == 6e6
-  assert float(pen_large[:, :20].sum()) == 0.0, "penalty must only affect gap token (index 20)"
+  """omit_gap_penalty keeps the GAP state (index 20) out of sampled sequences; 0 lets it compete."""
+  seqs = _sample(CalibyOptions(omit_gap_penalty=1e6), 40, temperature=1.0)
+  assert (seqs == 20).sum() == 0
+  free = _sample(CalibyOptions(omit_gap_penalty=0.0), 40, temperature=1.0)
+  assert free.shape == seqs.shape
+  assert (free == 20).sum() > 0, "with no penalty and temperature 1 the gap state must be reachable"
 
 
 def test_knob_semantics_packer_num_steps() -> None:

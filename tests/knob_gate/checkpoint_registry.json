@@ -105,6 +105,142 @@
       "sha256": "b2c1a8f8cfd36c27fbda3758db2998aeec758f4d62acd5f8742860b73ed55804",
       "family": "thermompnn",
       "upstream": "ThermoMPNN-D"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/caliby.ckpt",
+      "sha256": "4a1c22c5f1c62c62a3aa9c1e6bec65e63a37faeccad5cd6b7d94536cedb1ee74",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/caliby_distill.ckpt",
+      "sha256": "c64dc940764b4e3d15a94b81d3f1406aa71df5f7b0a840c00b7adc0d331758da",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/soluble_caliby_v1.ckpt",
+      "sha256": "af08ccf22b59f222b7f4442bf8fa90efec363f6474794e6c22a40043b709af3a",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "caliby_weights/caliby/caliby_packer_010.ckpt",
+      "sha256": "1e437578ffb7a4e97fc41de38cc9862ad48cd6300e73611e1b1b1801c7027b99",
+      "family": "caliby",
+      "upstream": "caliby"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_000.pt",
+      "sha256": "7c14574f83156585c28a014079adf48bb71addb57122db54b61a83b2492ddf2c",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_010.pt",
+      "sha256": "58da25cfdbc9c801f77720beb034e7a87d16fdf669397cd11e1268dade853386",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_020.pt",
+      "sha256": "3c1fbfae7d10654fcf536c1edd808291949d7721e6d358c150070e2a74b10b9b",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_030.pt",
+      "sha256": "651298c90f5b166cea30a97a3378045cc65bfe152b5bb5c3128edca00c1b7eb1",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_040.pt",
+      "sha256": "af4b002d93de346e89ba2a8fb4606a47fb179c8dec9e9234a94eaaa5cc1ea7d2",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_050.pt",
+      "sha256": "a9a91c90a4aa70a6721d4db9bda3dd4e8ce41b93384d43044d92335d910feb17",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_060.pt",
+      "sha256": "8b1074f1b46062896b524f0c5c037eae77d6c9a950b0dc4e769834a2d25b6c11",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_070.pt",
+      "sha256": "b0482ec87ee83d79b15283dd1d2eef8675b11ccb7c83bd2b5c8ba2a08f0f2072",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_080.pt",
+      "sha256": "e08ede6918ceaf22ab88644a79fd29fc0c76f9a53933f2326b5479651c7a5faa",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_090.pt",
+      "sha256": "3c32d6c88e4842b7b8cfbddb9f7c923b1423a18237f00e0eae2070cb4dbcc6b6",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "AntiBMPNN/antibmpnn_model_weights/antibmpnn_100.pt",
+      "sha256": "d43ebf95f0229b8bca74ef320fbe14f3d2a7158710a22370211680c3dca189c9",
+      "family": "antibmpnn",
+      "upstream": "AntiBMPNN"
+    },
+    {
+      "artifact_path": "fampnn/weights/fampnn_0_0.pt",
+      "sha256": "afbdfda29e6f2a1bd340971bb226638afb1bf460cfbc29f115d3b5964622c006",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "fampnn/weights/fampnn_0_3.pt",
+      "sha256": "8969b3f1f3c941178076c7800952595a18b56fd3828d15bb993d3ef537938a05",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "fampnn/weights/fampnn_0_3_cath.pt",
+      "sha256": "81112a9b8d436d9baf5233a3603bac911c75b9782ced59dae5a2726316802218",
+      "family": "fampnn",
+      "upstream": "fampnn"
+    },
+    {
+      "artifact_path": "daef630d7ef35e862450cdc81ccdcd7ab94ecc99b36c006fe336dcd5483b2bae",
+      "sha256": "daef630d7ef35e862450cdc81ccdcd7ab94ecc99b36c006fe336dcd5483b2bae",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_000.eqx.zst (HF snapshot). Key is the HF blob name (== sha256): artifact_key.py has no marker for the snapshot, so antibmpnn_parity_v3.py records it bare."
+    },
+    {
+      "artifact_path": "d9c4f2343b18e854f2a4565ab7250fc9e2538b981e5538d55af1c4bc63c16414",
+      "sha256": "d9c4f2343b18e854f2a4565ab7250fc9e2538b981e5538d55af1c4bc63c16414",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_010.eqx.zst (HF snapshot). Key is the HF blob name (== sha256)."
+    },
+    {
+      "artifact_path": "90b2554dc20e550acca8f4e6d864264638c2fad3798e2b55d8a489a144fa0e58",
+      "sha256": "90b2554dc20e550acca8f4e6d864264638c2fad3798e2b55d8a489a144fa0e58",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_020.eqx.zst (HF snapshot). Key is the HF blob name (== sha256)."
+    },
+    {
+      "artifact_path": "5c155208f707cee0d6b7733f897c503cb379c6b8a31a4bc9ccf3e7f01aa04abf",
+      "sha256": "5c155208f707cee0d6b7733f897c503cb379c6b8a31a4bc9ccf3e7f01aa04abf",
+      "family": "antibmpnn",
+      "upstream": "aminx-published",
+      "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_030.eqx.zst (HF snapshot). Key is the HF blob name (== sha256)."
     }
   ]
 }

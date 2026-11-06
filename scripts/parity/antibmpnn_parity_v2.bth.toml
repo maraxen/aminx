@@ -1,0 +1,144 @@
+# AntiBMPNN parity vehicle v2 -- task 261104_p4-review-fixes. Supersedes scripts/parity/antibmpnn_parity.bth.toml
+# (v1; its [outcomes] are untouched and its record stays as-is).
+#
+# DISCLOSURE (read before the outcomes). Everything below this paragraph was committed BEFORE the first run of
+# antibmpnn_parity_v2.py, but it was NOT written blind:
+#  * The v1 vehicle was run before (clean arm and mutants, v1 dump), so the author had seen: f64 gaps ~1e-13,
+#    aminx-f32 vs upstream-f32 features 6.2e-5 / encoder 5.6e-5 / logits 1.68e-4 (checkpoint 000), sampler 3.3e-5,
+#    all 7 v1 mutants failing by >= 1.4 (sampler: token mismatch). Those are aminx-vs-upstream numbers.
+#  * A review found the v1 dump invalid for cross-precision comparison (randn drawn under the float64 default dtype;
+#    f64 and f32 orders differ at 120/121 positions). The v2 dump fixes that. Before this sidecar the author read
+#    only UPSTREAM-vs-UPSTREAM numbers from the v2 dump (the conditioning floor, no aminx involved): float32 vs
+#    float64 upstream at checkpoint 000 is features 2.3e-4, encoder node 7.7e-5, encoder edge 1.2e-4, logits 2.79e-4;
+#    at checkpoints 050/100 logits 3.5e-6..6e-6. One throwaway spike ran aminx runner.score at checkpoints 000 and 030
+#    on the cdr5 order and saw log-prob gaps vs the float64 upstream of 4.3e-4 and 6.4e-6 (plus 1.6e-4 and 8e-6 vs the
+#    float32 upstream); no other aminx-vs-v2-dump number had been seen when the rule below was fixed.
+#  * A knob-semantics test run (not against the dump) showed that under the default ar_mask=None, changing the residue
+#    at j moves the aminx logits AT j (2-hop leakage through later layers), so aminx's default full-context score is not
+#    upstream's conditional_probs estimand (which decodes the probed position last). The entry stage therefore feeds
+#    runner.score a per-position ar_mask (probed position last, built from the dump's stored randn) for conditional_probs.
+#  * The conditional_probs cells (entry_cond_full over 13 probed positions, entry_cond_backbone over all 121) compare aminx
+#    float32 with the upstream float32 (the dump has no float64 conditional_probs; gap_f64 is set equal to gap_same) and use
+#    the knobs-config teacher-forced float32-vs-float64 floor of checkpoint 000 as the proxy floor, so for those two cells
+#    the rule is "within max(3 x proxy floor, 2e-5)", not strictly the float64-truth rule of the other cells.
+#  * The float32 rule below is derived from the floor, not from any aminx value: a tolerance scaled by the
+#    measured upstream f32-vs-f64 gap for that (checkpoint, stage), because two independent float32
+#    implementations each sit about one floor from the truth. The multipliers (3 pass, 10 marginal) and absolute
+#    terms (2e-5 / 1e-4) were chosen as round numbers from that argument. The flat 1e-4 float32 band of the P4 brief
+#    is NOT used for the hand-composed or entry stages because it is below the upstream's own float32 noise at
+#    checkpoint 000 (floor 2.8e-4); the sampler-probability and descriptor bands stay at the brief's flat 1e-4.
+#
+# WALL TIME (estimate, titanix CPU, JAX_PLATFORMS=cpu, OMP_NUM_THREADS=4): the v1 clean arm took ~46 s and each v1
+# mutant arm 20-26 s; v2 adds the runner.score entry stage: 4 teacher-forced calls + 14 conditional_probs calls in the
+# clean arm (a score() call costs several seconds; the narrow knob test suite, ~40 score/sample calls, took ~9 min), so
+# the clean arm is estimated at 5-10 min, each mutant arm 1-2 min (the 14 conditional_probs calls run only in the
+# entry mutant), whole run 20-30 min. Each arm is its own interpreter with its own 3600 s timeout; nothing is long
+# enough to need preemption-safe resume (inputs are sha256-pinned, so a rerun cannot silently grade different bytes).
+
+[metadata]
+title = "AntiBMPNN parity v2: floor-scaled bands, real score() entry point, E_idx graded, labelled controls"
+created = "261104"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "aminx (JAX) matches the real AntiBMPNN upstream (protein_mpnn_utils.py + antibmpnn_{000..100}.pt on inputs/HuJ3/HuJ3.pdb, sealed v2 dump with one shared float32 decoding order): PDB parse exact (<1e-9); neighbour indices E_idx identical in float32 and float64; float64 edge features / encoder / teacher-forced log-probs within 1e-7 for all 11 checkpoints; float32 gaps to the float64 upstream within max(3 x floor, 2e-5) per (checkpoint, stage) where floor is the upstream's own float32-vs-float64 gap; the real entry point runner.score (ar_mask + return_logits, published antibmpnn_v_48_{000,010,020,030} weights) within the same rule for teacher-forced log-probs and for upstream conditional_probs (full-context and backbone-only, checkpoint 000); per-position sampling distribution within 1e-4 with zero Gumbel-token mismatches; descriptors (PD1, PD2, Lehninger charge) within 1e-4 of peptides 0.5.0 as called by parsing_design_result.py; and each of seven code-level aminx perturbations drives its designated stage above 1e-3 (two weight-level controls are also run and reported separately)."
+stage_name = "validation"
+novel = false
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail", "marginal"]
+
+[outcomes.pass]
+condition = "weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND max_abs_f64 < 1e-7 AND f32_pass_violations == 0 AND entry_pass_violations == 0 AND nbr_mismatch == 0 AND parse_max_abs < 1e-9 AND sampler_f32 < 1e-4 AND sampler_token_mismatch == 0 AND descriptors_max < 1e-4 AND n_checkpoints == 11 AND entry_n_cells == 6 AND n_code_level == 7 AND n_code_level_failed == n_code_level AND n_failed == n_listed"
+decision = "AntiBMPNN is at numerical parity with the real upstream through both the hand-composed forward and the runner.score entry point; record the sidecar in the AntiBMPNN ledger shard."
+reasoning = "Every float32 cell is within 3 x its conditioning floor of the float64 upstream (floor measured on the upstream itself), float64 is inside 1e-7, neighbour indices and sampler tokens agree exactly, and every code-level negative control leaves the pass region."
+is_residual = false
+
+[outcomes.marginal]
+condition = "weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND max_abs_f64 < 1e-5 AND f32_marginal_violations == 0 AND entry_marginal_violations == 0 AND nbr_mismatch == 0 AND parse_max_abs < 1e-9 AND sampler_f32 < 1e-3 AND sampler_token_mismatch == 0 AND descriptors_max < 1e-3 AND (max_abs_f64 >= 1e-7 OR f32_pass_violations > 0 OR entry_pass_violations > 0 OR sampler_f32 >= 1e-4 OR descriptors_max >= 1e-4) AND n_checkpoints == 11 AND entry_n_cells == 6 AND n_code_level == 7 AND n_code_level_failed == n_code_level AND n_failed == n_listed"
+decision = "Do not claim the tight band; report the cells above 3 x floor (decomposition.per_cell_*) and rely on the float64 result for algorithmic equality."
+reasoning = "The comparison is alive (negative controls trip, indices and tokens agree) but at least one float32 cell sits between 3 x floor and 10 x floor, or float64 is in [1e-7, 1e-5), or the sampler/descriptor gap is in [1e-4, 1e-3)."
+is_residual = false
+
+[outcomes.fail]
+condition = "NOT (weight_source == 'upstream_checkpoint' AND oracle_verified == 1 AND max_abs_f64 < 1e-5 AND f32_marginal_violations == 0 AND entry_marginal_violations == 0 AND nbr_mismatch == 0 AND parse_max_abs < 1e-9 AND sampler_f32 < 1e-3 AND sampler_token_mismatch == 0 AND descriptors_max < 1e-3 AND n_checkpoints == 11 AND entry_n_cells == 6 AND n_code_level == 7 AND n_code_level_failed == n_code_level AND n_failed == n_listed)"
+decision = "Block: a stage disagrees with the real upstream, an oracle or weight hash did not verify, an index mismatched, or a negative control did not trip."
+reasoning = "Anything outside the marginal envelope, a missing checkpoint or entry cell, a token or index mismatch, an unverified sealed input, or a surviving mutant falsifies the vehicle."
+is_residual = true
+
+[breakdown]
+waive = "One fixture (HuJ3 chain B, 121 residues) and one precision-pair per cell: the per-unit worst cases are already carried as decomposition.per_cell_f32 / per_cell_entry (checkpoint x stage, gap and floor); the gated scalars are maxima over those cells plus counts, not an aggregate that hides a per-unit tail."
+
+[result_schema]
+clean = "str"
+n_listed = "int"
+n_failed = "int"
+n_code_level = "int"
+n_code_level_failed = "int"
+oracle_verified = "int"
+weight_source = "str"
+n_checkpoints = "int"
+entry_n_cells = "int"
+max_abs_f64 = "float"
+f32_pass_violations = "int"
+f32_marginal_violations = "int"
+f32_worst_ratio = "float"
+entry_pass_violations = "int"
+entry_marginal_violations = "int"
+entry_worst_ratio = "float"
+entry_tf_max_abs_f64 = "float"
+nbr_mismatch = "int"
+parse_max_abs = "float"
+sampler_f32 = "float"
+sampler_token_mismatch = "int"
+descriptors_max = "float"
+descriptors_csv = "float"
+descriptors_direct = "float"
+descriptors_ph_sweep = "float"
+decomposition = "dict"
+mutant_values = "dict"
+arm_seconds = "dict"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[data]
+oracle_scripts = "scripts/parity/dump_antibmpnn_oracle.py (torch env, v2: shared float32 randn/order, conditional_probs dump) and scripts/parity/dump_antibmpnn_descriptors_oracle.py (pandas+peptides env, unchanged)"
+oracle_dump_sha256 = "fefe92af4ac3bef8da11f1604eca4289fa874d97daac44a4cbc4575a7b7c522d"
+descriptors_dump_sha256 = "a964f542a9cfb140027a6775e6e876ee0b4c3b8a36d904a6a45f87d661dd3a9f"
+oracle_location = "titanix /home/solab/scratch/p4fix-antibmpnn/oracle (ANTIBMPNN_ORACLE_DIR); not committed (~32 MB), regenerable with the two scripts, hashes pinned here. The v1 dump (sha cc242788fa67d2f2160fa341077743cf25c929b759e80c3dbc15b2af89c387d9) is kept untouched and is invalid for cross-precision logit comparison."
+upstream_repo = "https://github.com/zeysun/AntiBMPNN"
+upstream_commit = "7e6329ba3c317e7344c6b09add72dea2390af39a"
+protein_mpnn_utils_sha256 = "74c8f9b7553422a7a0bbd705874844ee103c8926c2c96f154a87e0b824071e1b"
+runner_sha256 = "ca85c210c83556f6c1de7df0ab9ccf9dd76d55265215a24c24a5d4180f150c2b"
+parsing_design_result_sha256 = "3181966d8d1e5b198d74a21c911c89b0af2efa02130cf6456c986e6ed317b252"
+peptides_version = "0.5.0"
+torch_version = "2.12.0+cu130"
+fixture = "inputs/HuJ3/HuJ3.pdb"
+fixture_sha256 = "92bcd6feefe750497199c70cf942fd1061baec85e639aac098d47daf70c641a1"
+hub_revision = "5ff5cf1643842ed8eb2d511d0281a5a0db14170e"
+bands = "f64 max|delta| < 1e-7 (marginal < 1e-5); f32 cell passes when |aminx_f32 - upstream_f64| <= max(3 x floor, 2e-5), marginal <= max(10 x floor, 1e-4), floor = max|upstream_f32 - upstream_f64| of that (checkpoint, stage); sampler probs < 1e-4 (marginal < 1e-3); descriptors < 1e-4 (marginal < 1e-3); mutant fails when its designated stage (aminx vs upstream, same precision) exceeds 1e-3"
+mutants = "code-level: reversed_ar_mask:logits, offset_shift:features, entry_ar_mask_transposed:entry, omit_penalty_dropped:sampler, lehninger_pka_shifted:descriptors, barley_tables_swapped:descriptors, parser_wrong_atom_order:parse. weight-level controls (reported, not counted as code checks): zero_edge_embedding:features, swap_checkpoint_noise:logits"
+
+[data.checkpoints]
+antibmpnn_000 = "7c14574f83156585c28a014079adf48bb71addb57122db54b61a83b2492ddf2c"
+antibmpnn_010 = "58da25cfdbc9c801f77720beb034e7a87d16fdf669397cd11e1268dade853386"
+antibmpnn_020 = "3c1fbfae7d10654fcf536c1edd808291949d7721e6d358c150070e2a74b10b9b"
+antibmpnn_030 = "651298c90f5b166cea30a97a3378045cc65bfe152b5bb5c3128edca00c1b7eb1"
+antibmpnn_040 = "af4b002d93de346e89ba2a8fb4606a47fb179c8dec9e9234a94eaaa5cc1ea7d2"
+antibmpnn_050 = "a9a91c90a4aa70a6721d4db9bda3dd4e8ce41b93384d43044d92335d910feb17"
+antibmpnn_060 = "8b1074f1b46062896b524f0c5c037eae77d6c9a950b0dc4e769834a2d25b6c11"
+antibmpnn_070 = "b0482ec87ee83d79b15283dd1d2eef8675b11ccb7c83bd2b5c8ba2a08f0f2072"
+antibmpnn_080 = "e08ede6918ceaf22ab88644a79fd29fc0c76f9a53933f2326b5479651c7a5faa"
+antibmpnn_090 = "3c32d6c88e4842b7b8cfbddb9f7c923b1423a18237f00e0eae2070cb4dbcc6b6"
+antibmpnn_100 = "d43ebf95f0229b8bca74ef320fbe14f3d2a7158710a22370211680c3dca189c9"
+
+[data.published]
+antibmpnn_v_48_000 = "daef630d7ef35e862450cdc81ccdcd7ab94ecc99b36c006fe336dcd5483b2bae"
+antibmpnn_v_48_010 = "d9c4f2343b18e854f2a4565ab7250fc9e2538b981e5538d55af1c4bc63c16414"
+antibmpnn_v_48_020 = "90b2554dc20e550acca8f4e6d864264638c2fad3798e2b55d8a489a144fa0e58"
+antibmpnn_v_48_030 = "5c155208f707cee0d6b7733f897c503cb379c6b8a31a4bc9ccf3e7f01aa04abf"
+
+[provenance]
+note = "Graded invocation on titanix (cwd = a bundle clone of the pushed branch; PATH has $HOME/.local/bin; UV_PROJECT_ENVIRONMENT = the shared verify venv, read-only via --no-sync): AMINX_WEIGHTS_DIR=<hub snapshot 5ff5cf16...> bth run --project-slug aminx -- uv run --no-sync python scripts/parity/antibmpnn_parity_v2.py --oracle-dir $ANTIBMPNN_ORACLE_DIR --antibmpnn-root /home/solab/repos/AntiBMPNN --weights-dir $AMINX_WEIGHTS_DIR --mutants reversed_ar_mask,offset_shift,entry_ar_mask_transposed,omit_penalty_dropped,lehninger_pka_shifted,barley_tables_swapped,parser_wrong_atom_order,zero_edge_embedding,swap_checkpoint_noise --controls-out $SC/antibmpnn_parity_v2/<git-sha8>/branch_controls.json. The summary records which aminx file was graded (aminx_file). Injection points: decoding order via the randn argument of ProteinMPNN.forward/sample (protein_mpnn_utils.py:1057,1104), now one float32 draw and one float32 argsort shared by both precisions through use_input_decoding_order; categorical draw via torch.multinomial at :1180 replaced by a Gumbel-max on stored noise; float64 via a torch.Tensor.float patch (upstream hard-codes .float() at :734,:1084,:1121; no source edit). Float64 sampler is not graded: upstream allocates all_probs as float32 (:1130). runner.sample is not compared bit-wise (it draws order and noise from jax.random with no injection hook)."

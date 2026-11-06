@@ -638,4 +638,147 @@ class ThermoModelKnobs:
   thermo_model__threshold: float = -0.5  # type=float; --threshold; v2_ssm.py:561-566
   thermo_model__distance: float = 5.0  # type=float; --distance (CA-CA cutoff); v2_ssm.py:567-572
   thermo_model__ss_penalty: bool = False  # store_true; --ss_penalty; v2_ssm.py:573-577
+
+@dataclass(frozen=True)
+class CalibyKnobs:
+  """Upstream Caliby (ProteinDesignLab/caliby @ 41d31560c3c73d7980d94f40f3c852b90bfab5c0) run knobs.
+
+  Re-derived 261104 from the upstream files, not from aminx. Sources: the packaged sampling config
+  caliby/configs/seq_des/inference.yaml (line numbers below), the Hydra run configs
+  caliby/configs/eval/sampling/seq_des.yaml, and the Python API caliby/api.py. The invented knobs of
+  the earlier attempt (mcmc_*, cooling_schedule, conformer_generator, af3_diffusion_steps) do not exist
+  in any of these files (rg over the whole repo, 261104). The packer's sigma schedule (s_min 0.01,
+  s_max 80, rho 7) is read from the checkpoint's own config (checkpoint cfg model.denoiser.interpolant)
+  and is not a run knob.
+  """
+
+  caliby_inference__batch_size: int = 4  # inference.yaml:4; subbatch size of compute_potts_params (atom_mpnn_denoiser.py:356)
+  caliby_inference__num_seqs_per_pdb: int = 1  # inference.yaml:5; sequences drawn per structure (atom_mpnn_denoiser.py:227)
+  caliby_inference__verbose: bool = True  # inference.yaml:6
+  caliby_inference__num_workers: int = 2  # inference.yaml:7; dataloader workers
+  caliby_inference__omit_aas: list[str] | None = None  # inference.yaml:10; globally banned residues, X always banned (atom_mpnn_denoiser.py:194-199)
+  caliby_inference__ensemble_ignore_res_idx_mismatch: bool = False  # inference.yaml:11; conformer-file ensembles (seq_des_utils.py:1025)
+  caliby_inference__gaussian_conformers_n_conformers: int = 0  # inference.yaml:15; atom_mpnn_denoiser.py:156-161
+  caliby_inference__gaussian_conformers_noise_std: float = 0.0  # inference.yaml:16; 0 disables (atom_mpnn_denoiser.py:157)
+  caliby_inference__potts_regularization: str = "LCP"  # inference.yaml:20; atom_mpnn_denoiser.py:216-222
+  caliby_inference__potts_sweeps: int = 500  # inference.yaml:21
+  caliby_inference__potts_proposal: str = "dlmc"  # inference.yaml:22
+  caliby_inference__potts_temperature: float = 0.01  # inference.yaml:23 (api.py:48 temperature)
+  caliby_inference__potts_rejection_step: bool = False  # inference.yaml:24
+  caliby_inference__potts_only_cond: bool = False  # inference.yaml:25; atom_mpnn_denoiser.py:168-176
+  caliby_inference__scn_packing_num_steps: int = 50  # inference.yaml:30; scn_diffusion_mlp.py:115
+  caliby_inference__scn_packing_step_scale: float = 1.5  # inference.yaml:31; scn_diffusion_mlp.py:116, edm_interpolant.py:150
+  caliby_run__seed: int = 0  # eval/sampling/seq_des.yaml:2; L.seed_everything (seq_des.py:22)
+  caliby_run__ckpt_name_or_path: str = "caliby"  # eval/sampling/seq_des.yaml:6; weights.py:11-18 registry or literal .ckpt path
+  caliby_run__pos_constraint_csv: str | None = None  # eval/sampling/seq_des.yaml:18; seq_des.py:45
+  caliby_run__run_self_consistency_eval: bool = False  # eval/sampling/seq_des.yaml:21; seq_des.py:66
+  caliby_api__use_primary_res_type: bool = True  # api.py:151 ensemble_sample
+  caliby_api__out_dir: str | None = None  # api.py:94 / eval/sampling/seq_des.yaml:7
+  caliby_ckpt__augment_eps: float = 0.3  # checkpoint cfg model.denoiser.augment_eps; atom_mpnn_denoiser.py:134-139, applied only in training mode
+# END MANUAL
+# MANUAL (not AST-derivable)
+# AntiBMPNN (zeysun/AntiBMPNN @ 7e6329ba3c317e7344c6b09add72dea2390af39a), re-derived 261104 from the argparse
+# blocks. Running_AntiBMPNN_run.py:405-452 is the ProteinMPNN flag set. There is NO cdr_scheme, heavy/light chain,
+# bias_weight, ANARCI or clustering flag anywhere in the repository (rg over *.py *.sh 261104: the only CDR text is a
+# function name, CDRH3_Comb, in helper_scripts/parsing_design_result.py).
+@dataclass(frozen=True)
+class AntiBMPNNRunKnobs:
+  """Running_AntiBMPNN_run.py argparse block (lines 407-452)."""
+
+  antibmpnn_run__suppress_print: int = 0  # type=int; --suppress_print; 0 for False, 1 for True; read at :49 (print_all); Running_AntiBMPNN_run.py:407
+  antibmpnn_run__ca_only: bool = False  # type=bool; --ca_only; store_true; selects CA-only parsing and model (:148, :167); no CA-only AntiBMPNN checkpoint exists; Running_AntiBMPNN_run.py:410
+  antibmpnn_run__path_to_model_weights: str = ""  # type=str; --path_to_model_weights; NEVER READ: checkpoint dir is hard-coded '../antibmpnn_model_weights' at :35; Running_AntiBMPNN_run.py:411
+  antibmpnn_run__model_name: str = "v_48_020"  # type=str; --model_name; checkpoint stem under ../antibmpnn_model_weights (:39); the shipped files are antibmpnn_000..100.pt so the default names no file; Running_AntiBMPNN_run.py:412
+  antibmpnn_run__use_soluble_model: bool = False  # type=bool; --use_soluble_model; store_true; NEVER READ in main(); Running_AntiBMPNN_run.py:413
+  antibmpnn_run__seed: int = 0  # type=int; --seed; NEVER READ: the seed is drawn at random at :26-30; Running_AntiBMPNN_run.py:416
+  antibmpnn_run__save_score: int = 0  # type=int; --save_score; 0/1; writes scores/<name>.npz (:390-391); Running_AntiBMPNN_run.py:418
+  antibmpnn_run__save_probs: int = 0  # type=int; --save_probs; 0/1; writes probs/<name>.npz (:392-396); Running_AntiBMPNN_run.py:419
+  antibmpnn_run__score_only: int = 0  # type=int; --score_only; 0/1; scores the input backbone-sequence pair under a random decoding order (:225-270); Running_AntiBMPNN_run.py:421
+  antibmpnn_run__path_to_fasta: str = ""  # type=str; --path_to_fasta; score FASTA sequences with --score_only (:227-240); Running_AntiBMPNN_run.py:422
+  antibmpnn_run__conditional_probs_only: int = 0  # type=int; --conditional_probs_only; 0/1; log p(s_i | rest of sequence and backbone) (:271-282); Running_AntiBMPNN_run.py:425
+  antibmpnn_run__conditional_probs_only_backbone: int = 0  # type=int; --conditional_probs_only_backbone; 0/1; log p(s_i | backbone) only (:278); Running_AntiBMPNN_run.py:426
+  antibmpnn_run__unconditional_probs_only: int = 0  # type=int; --unconditional_probs_only; 0/1; one forward pass, p(s_i | backbone) (:283-293); Running_AntiBMPNN_run.py:427
+  antibmpnn_run__backbone_noise: float = 0.0  # type=float; --backbone_noise; std of Gaussian noise added to backbone atoms: augment_eps (:167); Running_AntiBMPNN_run.py:429
+  antibmpnn_run__num_seq_per_target: int = 1  # type=int; --num_seq_per_target; sequences per target; NUM_BATCHES = num_seq_per_target // batch_size (:43); Running_AntiBMPNN_run.py:430
+  antibmpnn_run__batch_size: int = 1  # type=int; --batch_size; clones per batch (:44, :221); Running_AntiBMPNN_run.py:431
+  antibmpnn_run__max_length: int = 200000  # type=int; --max_length; proteins longer than this are dropped by StructureDatasetPDB (:149); Running_AntiBMPNN_run.py:432
+  antibmpnn_run__sampling_temp: str = "0.1"  # type=str; --sampling_temp; space-separated temperatures (:45); Running_AntiBMPNN_run.py:433
+  antibmpnn_run__out_folder: str | None = None  # type=str; --out_folder; output folder (:41); Running_AntiBMPNN_run.py:435
+  antibmpnn_run__pdb_path: str = ""  # type=str; --pdb_path; single PDB to design (:147); Running_AntiBMPNN_run.py:436
+  antibmpnn_run__pdb_path_chains: str = ""  # type=str; --pdb_path_chains; chains to design; the rest are fixed (:151-157); Running_AntiBMPNN_run.py:437
+  antibmpnn_run__jsonl_path: str | None = None  # type=str; --jsonl_path; pre-parsed structures (:159); Running_AntiBMPNN_run.py:438
+  antibmpnn_run__chain_id_jsonl: str = ""  # type=str; --chain_id_jsonl; designed / fixed chain dictionary (:52); Running_AntiBMPNN_run.py:439
+  antibmpnn_run__fixed_positions_jsonl: str = ""  # type=str; --fixed_positions_jsonl; fixed-position dictionary (:63); Running_AntiBMPNN_run.py:440
+  antibmpnn_run__omit_AAs: str = "X"  # type=str; --omit_AAs; type=list: a CLI value is split into letters and REPLACES the default 'X' omit (:46, :50); Running_AntiBMPNN_run.py:441
+  antibmpnn_run__bias_AA_jsonl: str = ""  # type=str; --bias_AA_jsonl; per-letter logit bias dictionary (:100, :141-145); Running_AntiBMPNN_run.py:442
+  antibmpnn_run__bias_by_res_jsonl: str = ""  # type=str; --bias_by_res_jsonl; per-position logit bias dictionary (:124); Running_AntiBMPNN_run.py:444
+  antibmpnn_run__omit_AA_jsonl: str = ""  # type=str; --omit_AA_jsonl; per-position omitted letters (:88); Running_AntiBMPNN_run.py:445
+  antibmpnn_run__pssm_jsonl: str = ""  # type=str; --pssm_jsonl; PSSM dictionary (:75); Running_AntiBMPNN_run.py:446
+  antibmpnn_run__pssm_multi: float = 0.0  # type=float; --pssm_multi; 0.0 ignores the PSSM, 1.0 ignores the model; Running_AntiBMPNN_run.py:447
+  antibmpnn_run__pssm_threshold: float = 0.0  # type=float; --pssm_threshold; restricts letters per position via pssm_log_odds (:223); Running_AntiBMPNN_run.py:448
+  antibmpnn_run__pssm_log_odds_flag: int = 0  # type=int; --pssm_log_odds_flag; 0/1; Running_AntiBMPNN_run.py:449
+  antibmpnn_run__pssm_bias_flag: int = 0  # type=int; --pssm_bias_flag; 0/1; Running_AntiBMPNN_run.py:450
+  antibmpnn_run__tied_positions_jsonl: str = ""  # type=str; --tied_positions_jsonl; tied-position dictionary (:112); selects tied_sample (:313); Running_AntiBMPNN_run.py:452
+
+
+@dataclass(frozen=True)
+class AntiBMPNNParseResultKnobs:
+  """helper_scripts/parsing_design_result.py argparse block (lines 89-91)."""
+
+  antibmpnn_parse__dir: str | None = None  # type=str; --dir directory of .fa files; parsing_design_result.py:89
+  antibmpnn_parse__start: int | None = None  # type=int; --start first residue, 1-based (seq[start-1:end], :8,:27-28); parsing_design_result.py:90
+  antibmpnn_parse__end: int | None = None  # type=int; --end last residue, inclusive; parsing_design_result.py:91
+
+
+FAMPNN_COMMIT = "aaf788b1502ad95d5c5a84455cfc53f2544f3b45"
+
+
+@dataclass(frozen=True)
+class FampnnKnobs:
+  """Upstream FAMPNN run knobs: the union of ``configs/{seq_design,pack,score}.yaml`` plus the one in-code argument.
+
+  Derived by reading ``~/repos/fampnn`` at ``FAMPNN_COMMIT`` (261104, replaces an earlier set that named
+  ``num_scn_steps``, ``num_seq_steps``, ``sigma_min``, ``sigma_max``, ``rho`` and ``pack_each_step``; none is a
+  config key, and the sigma range and rho are checkpoint ``model_cfg`` values, not run knobs). A key shared by
+  several configs is one field; its comment lists every config line. Lines are ``seq_design.yaml`` unless
+  prefixed. Defaults are the ``seq_design.yaml`` value; ``checkpoint_path`` differs per config
+  (pack.yaml:6 ``fampnn_0_0.pt``, score.yaml:6 ``fampnn_0_3_cath.pt``). Read by code (verified with ``rg 'cfg\\.'``
+  over ``fampnn/inference/``): every key below by at least one of seq_design.py, pack.py, score_multi.py and
+  score_all_muts.py; ``fixed_pos_verbose`` only as the ``verbose=`` print flag of ``get_override_masks``
+  (pack.py:109); ``scn_diffusion.timestep_schedule.num_steps`` and ``churn_cfg.num_steps`` are YAML
+  interpolations of ``scn_diffusion.num_steps`` and are not separate knobs here.
+  """
+
+  fampnn__seed: int = 0  # type=int; seq_design.yaml:2, pack.yaml:2, score.yaml:2; seed_everything sampling_utils.py:13-16
+  fampnn__batch_size: int = 16  # type=int; :3, pack.yaml:3, score.yaml:3
+  fampnn__checkpoint_path: str = "weights/fampnn_0_3.pt"  # type=str; :6, pack.yaml:6, score.yaml:6
+  fampnn__out_dir: str = "outputs/seq_design"  # type=str; :7, pack.yaml:7, score.yaml:7
+  fampnn__pdb_dir: str | None = None  # type=str; :10, pack.yaml:10
+  fampnn__pdb_key_list: object | None = None  # type=path; :11, pack.yaml:11
+  fampnn__pdb_path: str | None = None  # type=str; score.yaml:9
+  fampnn__mutations_path: str | None = None  # type=str; score.yaml:10 (read by score_multi.py -> scoring_utils.score_seq)
+  fampnn__num_seqs_per_pdb: int = 1  # type=int; :9
+  fampnn__num_samples_per_pdb: int = 1  # type=int; pack.yaml:9
+  fampnn__presort_by_length: bool = False  # type=bool; :12 (seq_design.py:79, ordering only)
+  fampnn__fixed_pos_csv: str | None = None  # type=path; :15, pack.yaml:12 (columns fixed_pos_seq, fixed_pos_scn; sampling_utils.py:92-190)
+  fampnn__fixed_pos_verbose: bool = True  # type=bool; :16, pack.yaml:13
+  fampnn__seq_only: bool = False  # type=bool; :19 (sd_model.py:247 scn_mlm_mask)
+  fampnn__temperature: float = 0.1  # type=float; :20 (fampnn_denoiser.py:112-129; 0 = argmax)
+  fampnn__repack_last: bool = True  # type=bool; :21 (sd_model.py:273)
+  fampnn__psce_threshold: float | None = 0.3  # type=float|null; :22 (sd_model.py:255)
+  fampnn__timestep_schedule__num_steps: int = 100  # type=int; :25
+  fampnn__timestep_schedule__mode: str = "linear"  # type=str; :26 (sampling_utils.py:75-100)
+  fampnn__timestep_schedule__t_start: float = 0.0  # type=float; :27
+  fampnn__timestep_schedule__t_end: float = 1.0  # type=float; :28
+  fampnn__scn_diffusion__num_steps: int = 50  # type=int; :32, pack.yaml:17, score.yaml:14
+  fampnn__scn_diffusion__timestep_schedule__mode: str = "linear"  # type=str; :35, pack.yaml:20, score.yaml:17
+  fampnn__scn_diffusion__timestep_schedule__t_start: float = 0.0  # type=float; :36, pack.yaml:21, score.yaml:18
+  fampnn__scn_diffusion__timestep_schedule__t_end: float = 1.0  # type=float; :37, pack.yaml:22, score.yaml:19
+  fampnn__scn_diffusion__step_scale: float = 1.5  # type=float; :38, pack.yaml:23, score.yaml:20 (edm_interpolant.py:179-180)
+  fampnn__scn_diffusion__churn_cfg__s_churn: float = 0.0  # type=float; :40, pack.yaml:25, score.yaml:22 (edm_interpolant.py:139-153)
+  fampnn__scn_diffusion__churn_cfg__s_noise: float = 1.0  # type=float; :41, pack.yaml:26, score.yaml:23
+  fampnn__scn_diffusion__churn_cfg__s_t_min: float = 0.01  # type=float; :42, pack.yaml:27, score.yaml:24
+  fampnn__scn_diffusion__churn_cfg__s_t_max: float = 50.0  # type=float; :43, pack.yaml:28, score.yaml:25
+  fampnn__restrict_pos_aatype: object | None = None  # in-code argument of SeqDenoiser.sample (sd_model.py:162); no config key
+
 # END MANUAL

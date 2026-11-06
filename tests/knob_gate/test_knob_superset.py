@@ -18,7 +18,15 @@ import pytest
 from knob_gate import reference_surfaces
 from knob_gate._outcomes import passed_nodeids
 
-from aminx.run.options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions, ThermoMPNNOptions
+from aminx.run.options import (
+  AntiBMPNNOptions,
+  CalibyOptions,
+  FAMPNNOptions,
+  LaserOptions,
+  PottsMPNNOptions,
+  ProtonPottsOptions,
+  ThermoMPNNOptions,
+)
 from aminx.run.specs import RunSpecification, SamplingSpecification, ScoringSpecification
 
 pytestmark = pytest.mark.redsox_gate
@@ -81,6 +89,9 @@ TGT = (
   LaserOptions,
   ProtonPottsOptions,
   ThermoMPNNOptions,
+  CalibyOptions,
+  AntiBMPNNOptions,
+  FAMPNNOptions,
 )
 TGT_F = {field.name for cls in TGT for field in fields(cls)}
 LIVE = [row for row in ROWS if row["equivalence"] != "exclusion"]
@@ -94,6 +105,9 @@ NEW_FIELDS = (
   | {field.name for field in fields(LaserOptions)}
   | {field.name for field in fields(ProtonPottsOptions)}
   | {field.name for field in fields(ThermoMPNNOptions)}
+  | {field.name for field in fields(CalibyOptions)}
+  | {field.name for field in fields(AntiBMPNNOptions)}
+  | {field.name for field in fields(FAMPNNOptions)}
   | {"omit_aa", "omit_aa_per_position", "output_kind"}
 )
 
