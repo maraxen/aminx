@@ -531,3 +531,21 @@ def test_custom_record_name_roundtrip(tmp_path: Path) -> None:
     resolve_unit_adapter(unit_dir, record_name=custom_record)
 
 
+
+
+def test_all_fill_value_array_is_not_an_empty_unit(tmp_path: Path) -> None:
+  """zarr writes no chunk for an all-fill-value array; such a store is still a real unit."""
+  unit_dir = tmp_path / "unit_zeros"
+  root = zarr.open_group(str(unit_dir), mode="a")
+  root.create_array(name="ddg", shape=(4,), dtype="float32", fill_value=0.0)[...] = 0.0
+  assert not [p for p in unit_dir.rglob("*") if p.is_file() and p.name != "zarr.json"]
+
+  write_aminx_unit(unit_dir, input_digest=_DIGEST)
+  validate_aminx_unit(unit_dir, expected_input_digest=_DIGEST)
+
+
+def test_group_without_arrays_is_an_empty_unit(tmp_path: Path) -> None:
+  unit_dir = tmp_path / "unit_group_only"
+  zarr.open_group(str(unit_dir), mode="a").attrs["created_at"] = "x"
+  with pytest.raises(UnitPackRefused, match="R-U1"):
+    write_aminx_unit(unit_dir, input_digest=_DIGEST)

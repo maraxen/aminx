@@ -145,24 +145,34 @@ def failure_stamp_path(unit_dir: Path | str) -> Path:
   return unit_path.with_name(f"{unit_path.name}.{UNIT_FAILED_STAMP}")
 
 
+def _is_array_node(meta_file: Path) -> bool:
+  """True for a zarr v3 ``zarr.json`` of an array node, or a zarr v2 ``.zarray``."""
+  if meta_file.name == ".zarray":
+    return True
+  try:
+    meta = json.loads(meta_file.read_text(encoding="utf-8"))
+  except (OSError, ValueError):
+    return False
+  return isinstance(meta, dict) and meta.get("node_type") == "array"
+
+
 def _require_nonempty_store(unit_path: Path) -> None:
-  """Refuse (R-U1) a unit with no array member files."""
+  """Refuse (R-U1) a store that holds no array.
+
+  Arrays are counted by their metadata, not by chunk files: zarr does not write a chunk whose
+  values all equal the fill value, so an all-zeros array legitimately has no chunk files.
+  """
   store_path = unit_path / "store.zarr" if (unit_path / "store.zarr").exists() else unit_path
   if not store_path.exists():
     msg = f"Unit store path missing in {unit_path}"
     raise UnitPackRefused("R-U1", msg)
-  # Metadata (*.json, .zgroup) and pack artefacts are not array data; without excluding the
-  # artefacts this check would pass vacuously while a pack is in progress.
-  files = [
-    p
+  has_array = any(
+    _is_array_node(p)
     for p in store_path.rglob("*")
-    if p.is_file()
-    and p.name != ".zgroup"
-    and not p.name.endswith(".json")
-    and p.name not in _PACK_ARTEFACT_NAMES
-  ]
-  if not files:
-    msg = f"Unit has no array member files in {unit_path} (R-U1 empty unit refusal)"
+    if p.is_file() and p.name in ("zarr.json", ".zarray") and p.name not in _PACK_ARTEFACT_NAMES
+  )
+  if not has_array:
+    msg = f"Unit has no array in {unit_path} (R-U1 empty unit refusal)"
     raise UnitPackRefused("R-U1", msg)
 
 
@@ -207,6 +217,7 @@ def write_aminx_unit(
   run_id: str | None = None,
   record_name: str = UNIT_RECORD,
   meta: dict[str, Any] | None = None,
+  gate_digest: str | None = None,
 ) -> dict[str, Any]:
   """Computes unit identity and commits the unit record via ``write_unit_record``.
 
@@ -244,7 +255,10 @@ def write_aminx_unit(
     raise ValueError(msg)
   unit_meta["schema_bridge"] = "aminx_pack_shim_v3"
   # Taken before the record exists, over the loose store; the record digest then covers it.
-  unit_meta[GATE_DIGEST_META_KEY] = zarr_content_digest(unit_path)
+  # A runner may pass it in, taken over the same bytes while they were still the partial.
+  unit_meta[GATE_DIGEST_META_KEY] = (
+    gate_digest if gate_digest is not None else zarr_content_digest(unit_path)
+  )
 
   legacy_marker = _legacy_marker_path(unit_path)
   if legacy_marker.exists() and "legacy_done_marker" not in unit_meta:
@@ -740,6 +754,9 @@ def run_packed_manifest_row(  # noqa: PLR0915
       # leave a unit with no record, which blocks the row.
       _require_nonempty_store(partial_path)
       fsync_tree(partial_path)
+      # Digest the partial before the rename, as the reference runner does, so the unit is
+      # visible without a record for as short a time as possible.
+      partial_gate_digest = zarr_content_digest(partial_path)
       partial_path.replace(unit_dir)
       fsync_directory(unit_dir.parent)
 
@@ -749,6 +766,7 @@ def run_packed_manifest_row(  # noqa: PLR0915
         run_id=run_id or "prod_run",
         record_name=record_name,
         meta={"attempt_id": attempt_id, "manifest_row_hash": manifest_hash},
+        gate_digest=partial_gate_digest,
       )
       record_committed = True
       if unified_sink is not None or sink_root is not None:
