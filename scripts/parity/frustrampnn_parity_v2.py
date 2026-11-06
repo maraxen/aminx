@@ -58,7 +58,6 @@ for _p in (_REPO_ROOT, _REPO_ROOT / "src", Path(__file__).resolve().parent):
   if str(_p) not in sys.path:
     sys.path.insert(0, str(_p))
 
-from artifact_key import stable_artifact_key
 
 import aminx.families.frustra_mpnn.model as frustra_model
 from aminx.families.frustra_mpnn.driver import FrustraMPNNDriver
@@ -113,7 +112,7 @@ def verify_anti_self_trust(
   oracle_dir: Path,
   weights_dir: Path,
   pinned_dumps_path: Path,
-) -> tuple[str, str, dict[str, str]]:
+) -> tuple[str, str, Path, dict[str, str]]:
   """Fail-loud anti-self-trust verification of oracle dump and weights against external pins."""
   if not pinned_dumps_path.is_file():
     msg = f"Pinned dumps file not found: {pinned_dumps_path} (refusing to self-trust)"
@@ -156,7 +155,14 @@ def verify_anti_self_trust(
     )
     raise RuntimeError(msg)
 
-  if reg_oracle_sha is not None and reg_oracle_sha != expected_oracle_sha:
+  if reg_oracle_sha is None:
+    msg = (
+      f"Oracle dump {ORACLE_STEM} missing from checkpoint registry {registry_path} "
+      "(refusing to self-trust)"
+    )
+    raise RuntimeError(msg)
+
+  if reg_oracle_sha != expected_oracle_sha:
     msg = (
       f"Checkpoint registry sha256 ({reg_oracle_sha}) does not match "
       f"pinned dumps sha256 ({expected_oracle_sha}) (refusing to self-trust)"
@@ -182,8 +188,20 @@ def verify_anti_self_trust(
 
   ckpt_candidates = [
     weights_dir / f"{CANONICAL_CKPT}.ckpt",
+    weights_dir / "FrustraMPNN" / "model_weights" / f"{CANONICAL_CKPT}.ckpt",
     _REPO_ROOT / "tests" / "data" / "fixtures" / f"{CANONICAL_CKPT}.ckpt",
+    _REPO_ROOT / "outputs" / "FrustraMPNN" / "model_weights" / f"{CANONICAL_CKPT}.ckpt",
+    Path.home() / "repos" / "FrustraMPNN" / "model_weights" / f"{CANONICAL_CKPT}.ckpt",
+    Path("/tmp/repos/frustraMPNN/model_weights") / f"{CANONICAL_CKPT}.ckpt",
   ]
+  for env_var in ("AMINX_PARITY_REPOS", "AMINX_FRUSTRAMPNN_ROOT"):
+    if env_val := os.environ.get(env_var):
+      cand_dir = Path(env_val)
+      ckpt_candidates.extend([
+        cand_dir / "FrustraMPNN" / "model_weights" / f"{CANONICAL_CKPT}.ckpt",
+        cand_dir / "model_weights" / f"{CANONICAL_CKPT}.ckpt",
+        cand_dir / f"{CANONICAL_CKPT}.ckpt",
+      ])
   ckpt_file = next((p for p in ckpt_candidates if p.is_file()), None)
   if ckpt_file is None:
     msg = f"Checkpoint {CANONICAL_CKPT}.ckpt not found in candidate paths (refusing to self-trust)"
@@ -197,7 +215,7 @@ def verify_anti_self_trust(
     )
     raise RuntimeError(msg)
 
-  return oracle_sha, ckpt_sha, pinned
+  return oracle_sha, ckpt_sha, ckpt_file, pinned
 
 
 # ---------------------------------------------------------------------------------------------
@@ -243,24 +261,16 @@ def apply_mutant(
     w = model.both_out.layers[2].weight
     w_perm = jnp.roll(w, shift=1, axis=0)
     mutated_model = eqx.tree_at(lambda m: m.both_out.layers[2].weight, model, w_perm)
-    orig_load = FrustraMPNNDriver.load_model
-    FrustraMPNNDriver.load_model = lambda self, *args, **kwargs: mutated_model  # type: ignore[assignment]
-    try:
-      yield mutated_model
-    finally:
-      FrustraMPNNDriver.load_model = orig_load  # type: ignore[assignment]
+    yield mutated_model
 
   elif mutant == "subtract_mut_inverted":
     # 4. subtract_mut_inverted: Invert subtract_mut boolean (False -> True)
     orig_subtract_mut = model.subtract_mut
     object.__setattr__(model, "subtract_mut", not orig_subtract_mut)
-    orig_load = FrustraMPNNDriver.load_model
-    FrustraMPNNDriver.load_model = lambda self, *args, **kwargs: model  # type: ignore[assignment]
     try:
       yield model
     finally:
       object.__setattr__(model, "subtract_mut", orig_subtract_mut)
-      FrustraMPNNDriver.load_model = orig_load  # type: ignore[assignment]
 
   else:
     msg = f"Unknown mutant identifier: {mutant!r}"
@@ -301,23 +311,13 @@ def evaluate_stages(
 
   out: dict[str, float] = {}
 
-  # s0_prep: Structure prep invariants & feature checks
-  if "feat/X" in oracle:
-    out["s0_prep"] = float(np.max(np.abs(struct["coords"] - oracle["feat/X"])))
-  else:
-    l_oracle = int(oracle["features"].shape[0])
-    if struct["coords"].shape != (l_oracle, 4, 3):
-      msg = f"Shape mismatch at s0_prep: {struct['coords'].shape} != {(l_oracle, 4, 3)}"
-      raise ValueError(msg)
-    if not np.all(struct["mask"] == 1.0):
-      msg = "Mask error at s0_prep: expected all 1.0"
-      raise ValueError(msg)
-    out["s0_prep"] = 0.0
-
   def _ref(name: str) -> np.ndarray:
     if dtype == "float64" and f"f64_{name}" in oracle:
       return oracle[f"f64_{name}"]
     return oracle[name]
+
+  # s0_prep: Structure prep invariants & feature checks against upstream featurizer X
+  out["s0_prep"] = float(np.max(np.abs(struct["coords"] - _ref("feat/X"))))
 
   # Genuine stage-by-stage forward decomposition against sealed PyTorch oracle dump
   out["s1_features"] = float(np.max(np.abs(np.asarray(stages.features) - _ref("features"))))
@@ -388,7 +388,7 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument(
     "--pinned-dumps",
     type=Path,
-    default=Path(__file__).with_name("frustrampnn_oracle_dumps.sha256.json"),
+    default=_REPO_ROOT / "tests" / "knob_gate" / "frustrampnn_oracle_dumps.sha256.json",
     help="Path to pinned sha256 JSON file.",
   )
   parser.add_argument(
@@ -415,35 +415,6 @@ def parse_args() -> argparse.Namespace:
     default=None,
     help="Destination path for branch_controls.json.",
   )
-  parser.add_argument(
-    "--arm",
-    type=str,
-    default=None,
-    help="Specific arm or mutant for isolated execution.",
-  )
-  parser.add_argument(
-    "--payload-out",
-    type=Path,
-    default=None,
-    help="Destination path for isolated arm payload.",
-  )
-  parser.add_argument(
-    "--work-dir",
-    type=Path,
-    default=None,
-    help="Working directory for scratch/cache.",
-  )
-  parser.add_argument(
-    "--arm-timeout",
-    type=float,
-    default=1800.0,
-    help="Per-arm execution timeout in seconds.",
-  )
-  parser.add_argument(
-    "--synthetic",
-    action="store_true",
-    help="Run synthetic harness check (never promotes).",
-  )
   return parser.parse_args()
 
 
@@ -455,7 +426,7 @@ def main() -> int:  # noqa: PLR0915
   log.info("Starting FrustraMPNN Parity Vehicle v2")
 
   # 1. Anti-self-trust Verification
-  oracle_sha, ckpt_sha, _pinned = verify_anti_self_trust(
+  oracle_sha, ckpt_sha, ckpt_file, _pinned = verify_anti_self_trust(
     args.oracle_dir,
     args.weights_dir,
     args.pinned_dumps,
@@ -483,7 +454,7 @@ def main() -> int:  # noqa: PLR0915
     dtype = arm
     model = driver.load_model(
       CANONICAL_CKPT,
-      local_path=args.weights_dir / f"{CANONICAL_CKPT}.ckpt",
+      local_path=ckpt_file,
       dtype=dtype,
     )
     stages = evaluate_stages(model, struct, oracle, pdb_path, dtype, is_clean=True)
@@ -499,7 +470,7 @@ def main() -> int:  # noqa: PLR0915
   # 3. Execute Mutants (on primary float32 model)
   base_model = driver.load_model(
     CANONICAL_CKPT,
-    local_path=args.weights_dir / f"{CANONICAL_CKPT}.ckpt",
+    local_path=ckpt_file,
     dtype="float32",
   )
 
@@ -544,6 +515,23 @@ def main() -> int:  # noqa: PLR0915
   n_crashed = sum(1 for m in mutants.values() if m["crashed"])
   neg_ctrl_min_diff = min(min_over_band_diffs) if min_over_band_diffs else 0.0
 
+  # Compute decomposition justification (upstream float32 vs float64 floor)
+  stage_key_map = {
+    "s0_prep": "feat/X",
+    "s1_features": "features",
+    "s2_encoder": "encoder_out",
+    "s3_decoder": "decoder_hidden",
+    "s4_latent": "lin_input",
+    "s5_attention": "light_attention_out",
+    "s6_mlp_head": "both_out",
+    "s7_frustration": "frustration_scores",
+  }
+  floor_up_f32_vs_f64 = {
+    stage: float(np.max(np.abs(oracle[k] - oracle[f"f64_{k}"])))
+    for stage, k in stage_key_map.items()
+    if k in oracle and f"f64_{k}" in oracle
+  }
+
   # 4. Construct Final Results Payload Matching [result_schema]
   result = {
     "clean": "pass" if clean_ok else "fail",
@@ -560,6 +548,10 @@ def main() -> int:  # noqa: PLR0915
     "oracle_dump_sha256": {ORACLE_STEM: oracle_sha},
     "clean_summary": clean_summary,
     "clean_stages": clean_stages,
+    "decomposition": {
+      "floor_up_f32_vs_f64": floor_up_f32_vs_f64,
+      "max_upstream_floor": max(floor_up_f32_vs_f64.values(), default=0.0),
+    },
     "mutants": {m: v["status"] for m, v in mutants.items()},
     "mutant_detail": mutants,
     "not_compared": [
@@ -589,7 +581,9 @@ def main() -> int:  # noqa: PLR0915
     controls_data = {
       "clean": clean_result["clean"],
       "mutants": clean_result["mutants"],
-      "weights": {stable_artifact_key(args.weights_dir / f"{CANONICAL_CKPT}.ckpt"): ckpt_sha},
+      "weights": {
+        "FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt": ckpt_sha,
+      },
     }
     args.controls_out.write_text(
       json.dumps(controls_data, indent=2, sort_keys=True) + "\n",

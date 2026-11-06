@@ -20,7 +20,7 @@ build/
 .DS_Store
 .coverage
 *.pt
-!tests/data/fixtures/v_48_020.pt
+*.ckpt
 *.csv
 
 # Local proxide development folder (installed via git dependency)

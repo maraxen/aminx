@@ -663,6 +663,7 @@ class FrustraModelKnobs:
   frustra_model__lightattn: bool = True  # type=bool; cfg.model.lightattn; src/frustrampnn/model/transfer_model.py:101
   frustra_model__decoding_order: str = "left-to-right"  # type=str; cfg.decoding_order; src/frustrampnn/model/transfer_model.py:104
   frustra_model__add_esm_embeddings: bool = False  # type=bool; cfg.training.add_esm_embeddings; src/frustrampnn/model/transfer_model.py:111
+  frustra_model__hidden_dims: tuple[int, ...] = (64, 32)  # type=tuple; cfg.model.hidden_dims; src/frustrampnn/model/transfer_model.py:98
   frustra_model__freeze_weights: bool = True  # type=bool; cfg.model.freeze_weights; src/frustrampnn/model/model_utils.py:123
   frustra_model__load_pretrained: bool = True  # type=bool; cfg.model.load_pretrained; src/frustrampnn/model/model_utils.py:120
 # END MANUAL

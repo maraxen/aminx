@@ -3825,12 +3825,20 @@ parity_test_ids = []
 note = "UNIMPLEMENTED in aminx; tracked by debt #3222. Upstream ESM-2 co-embedding option (esm-False in target weights)."
 
 [[row]]
+ref = "frustra_model__hidden_dims"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "Fixed by pretrained model weights MLP layer dimensions (512 -> 64 -> 32 -> 21); not a runtime knob."
+
+[[row]]
 ref = "frustra_model__freeze_weights"
 targets = []
 equivalence = "exclusion"
 reason = "training_only"
 parity_test_ids = []
-note = "Upstream cfg.model.freeze_weights (src/frustrampnn/model/model_utils.py:107); training freeze flag."
+note = "Upstream cfg.model.freeze_weights (src/frustrampnn/model/model_utils.py:122); training freeze flag."
 
 [[row]]
 ref = "frustra_model__load_pretrained"
@@ -3838,7 +3846,7 @@ targets = []
 equivalence = "exclusion"
 reason = "training_only"
 parity_test_ids = []
-note = "Upstream cfg.model.load_pretrained (src/frustrampnn/model/model_utils.py:104); training loader flag."
+note = "Upstream cfg.model.load_pretrained (src/frustrampnn/model/model_utils.py:119); training loader flag."
 
 [[row]]
 ref = "__aminx_only__frustra_dtype"

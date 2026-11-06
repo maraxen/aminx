@@ -24,6 +24,7 @@ import contextlib
 import hashlib
 import json
 import logging
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -263,6 +264,7 @@ def dump_oracle(
       prefix = "f64_" if double else ""
       out_dtype = np.float64 if double else np.float32
 
+      payload[f"{prefix}feat/X"] = X_p[0].detach().cpu().numpy().astype(out_dtype)
       payload[f"{prefix}features"] = E[0].detach().cpu().numpy().astype(out_dtype)
       payload[f"{prefix}encoder_out"] = encoder_out_t.detach().cpu().numpy().astype(out_dtype)
       payload[f"{prefix}decoder_hidden"] = decoder_hidden_t.detach().cpu().numpy().astype(out_dtype)
@@ -427,13 +429,32 @@ def main() -> None:
   logger.info("Starting FrustraMPNN Oracle Dumper (Dual-Precision)")
   logger.info("=" * 70)
 
-  # Resolve paths
+  # Resolve candidate parity roots
+  roots: list[Path] = []
+  raw = os.environ.get("AMINX_PARITY_REPOS", "")
+  if raw.strip():
+    for entry in raw.split(os.pathsep):
+      stripped = entry.strip()
+      if stripped:
+        roots.append(Path(stripped).expanduser())
+  for default_root in [Path.home() / "repos", Path("/tmp/repos"), Path("/tmp")]:
+    if default_root not in roots:
+      roots.append(default_root)
+
   if args.frustrampnn_repo_root is None:
-    for candidate in [
+    repo_candidates = [
+      Path("/tmp/repos/frustraMPNN"),
+      Path("/tmp/frustraMPNN"),
       Path("/home/marielle/repos/frustraMPNN"),
       Path("/home/marielle/repos/FrustraMPNN"),
       Path("/home/solab/repos/FrustraMPNN"),
-    ]:
+    ]
+    env_repo = os.environ.get("AMINX_FRUSTRAMPNN_ROOT", "").strip()
+    if env_repo:
+      repo_candidates.insert(0, Path(env_repo))
+    for r in roots:
+      repo_candidates.extend([r / "frustraMPNN", r / "FrustraMPNN"])
+    for candidate in repo_candidates:
       if candidate.is_dir():
         args.frustrampnn_repo_root = candidate
         break
@@ -441,28 +462,42 @@ def main() -> None:
       args.frustrampnn_repo_root = Path("/home/marielle/repos/frustraMPNN")
 
   if args.checkpoint is None:
-    for candidate in [
+    ckpt_candidates = [
+      Path("outputs/FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt"),
       Path("tests/data/fixtures/megascale_default_la-true_esm-False_split1.ckpt"),
       args.frustrampnn_repo_root / "model_weights" / "megascale_default_la-true_esm-False_split1.ckpt",
       Path("/home/solab/repos/FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt"),
-    ]:
+    ]
+    for r in roots:
+      ckpt_candidates.append(r / "FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt")
+    for candidate in ckpt_candidates:
       if candidate.is_file():
         args.checkpoint = candidate
         break
     if args.checkpoint is None:
-      args.checkpoint = Path("tests/data/fixtures/megascale_default_la-true_esm-False_split1.ckpt")
+      args.checkpoint = Path("outputs/FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt")
 
   if args.trunk_checkpoint is None:
-    for candidate in [
-      args.frustrampnn_repo_root / "weights" / "vanilla_model_weights" / "v_48_020.pt",
+    trunk_candidates = [
+      Path("outputs/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt"),
       Path("tests/data/fixtures/v_48_020.pt"),
+      args.frustrampnn_repo_root / "weights" / "vanilla_model_weights" / "v_48_020.pt",
       Path("/home/solab/repos/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt"),
-    ]:
+    ]
+    for r in roots:
+      trunk_candidates.extend(
+        [
+          r / "FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt",
+          r / "ProteinMPNN/ca_model_weights/v_48_020.pt",
+          r / "ThermoMPNN/vanilla_model_weights/v_48_020.pt",
+        ],
+      )
+    for candidate in trunk_candidates:
       if candidate.is_file():
         args.trunk_checkpoint = candidate
         break
     if args.trunk_checkpoint is None:
-      args.trunk_checkpoint = Path("tests/data/fixtures/v_48_020.pt")
+      args.trunk_checkpoint = Path("outputs/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt")
 
   out_path = args.out if args.out is not None else (args.out_dir / "frustrampnn_1ubq_oracle.npz")
 

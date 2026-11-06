@@ -801,8 +801,6 @@ class ScoringSpecification(RunSpecification):
   ar_mask: ArrayLike | None = None
   return_loss_xy: bool = False
   ligand_cutoff_for_score: float = 8.0
-  frustrampnn: FrustraMPNNOptions | None = None
-  """FrustraMPNN knobs. ``None`` means the family defaults; set only for ``frustrampnn``."""
 
   def __post_init__(self) -> None:
     """Post-initialization processing."""

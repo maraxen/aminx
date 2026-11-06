@@ -302,7 +302,11 @@ class FrustraMPNNOptions:
   dtype: Literal["float32", "float64"] = "float32"
 
   def __post_init__(self) -> None:
-    """Validate configuration parameters."""
+    """Validate and normalize configuration parameters."""
     if self.dtype not in ("float32", "float64"):
       msg = f"Unknown FrustraMPNN dtype {self.dtype!r}. Use 'float32' or 'float64'."
       raise ValueError(msg)
+    if isinstance(self.chains, list):
+      object.__setattr__(self, "chains", tuple(self.chains))
+    if isinstance(self.positions, list):
+      object.__setattr__(self, "positions", tuple(self.positions))

@@ -40,21 +40,58 @@ from aminx.host.family_driver import (
   FAMILY_DRIVERS,
 )
 
+from tests.parity.reference_utils import find_parity_repo_file
+
 _FIXTURES_DIR = Path(__file__).resolve().parent.parent / "data" / "fixtures"
 _UBQ_PDB = Path(__file__).resolve().parent.parent / "data" / "1ubq.pdb"
 _ORACLE_NPZ = _FIXTURES_DIR / "frustrampnn_1ubq_oracle.npz"
-_HEAD_CKPT = _FIXTURES_DIR / "megascale_default_la-true_esm-False_split1.ckpt"
-_TRUNK_PT = _FIXTURES_DIR / "v_48_020.pt"
+
+
+def _resolve_head_ckpt() -> Path | None:
+  p = find_parity_repo_file("FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt")
+  if p is not None and p.is_file():
+    return p
+  for cand in [
+    _FIXTURES_DIR.parent.parent.parent / "outputs" / "FrustraMPNN" / "model_weights" / "megascale_default_la-true_esm-False_split1.ckpt",
+    Path("outputs/FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt"),
+    _FIXTURES_DIR / "megascale_default_la-true_esm-False_split1.ckpt",
+  ]:
+    if cand.is_file():
+      return cand
+  return None
+
+
+def _resolve_trunk_pt() -> Path | None:
+  for rel in [
+    "FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt",
+    "ProteinMPNN/ca_model_weights/v_48_020.pt",
+    "ThermoMPNN/vanilla_model_weights/v_48_020.pt",
+  ]:
+    p = find_parity_repo_file(rel)
+    if p is not None and p.is_file():
+      return p
+  for cand in [
+    _FIXTURES_DIR.parent.parent.parent / "outputs" / "FrustraMPNN" / "weights" / "vanilla_model_weights" / "v_48_020.pt",
+    Path("outputs/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt"),
+    _FIXTURES_DIR / "v_48_020.pt",
+  ]:
+    if cand.is_file():
+      return cand
+  return None
+
+
+_HEAD_CKPT = _resolve_head_ckpt()
+_TRUNK_PT = _resolve_trunk_pt()
 
 
 def _require_fixtures() -> None:
   """Skip test if local fixtures are missing."""
   if not _ORACLE_NPZ.is_file():
     pytest.skip(f"Sealed oracle fixture {_ORACLE_NPZ} not found")
-  if not _HEAD_CKPT.is_file():
-    pytest.skip(f"Head checkpoint fixture {_HEAD_CKPT} not found")
-  if not _TRUNK_PT.is_file():
-    pytest.skip(f"Trunk weights fixture {_TRUNK_PT} not found")
+  if _HEAD_CKPT is None or not _HEAD_CKPT.is_file():
+    pytest.skip("Head checkpoint fixture (megascale_default_la-true_esm-False_split1.ckpt) not found")
+  if _TRUNK_PT is None or not _TRUNK_PT.is_file():
+    pytest.skip("Trunk weights fixture (v_48_020.pt) not found")
   if not _UBQ_PDB.is_file():
     pytest.skip(f"Ubiquitin PDB {_UBQ_PDB} not found")
 

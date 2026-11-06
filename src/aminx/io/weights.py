@@ -142,7 +142,11 @@ def _resolve_checkpoint_id(
     checkpoint_id = None
     version_was_positional = True
 
-  if model_weights and model_version and (model_weights, str(model_version)) in UNPUBLISHED_CHECKPOINTS:
+  if (
+    model_weights
+    and model_version
+    and (model_weights, str(model_version)) in UNPUBLISHED_CHECKPOINTS
+  ):
     raise ValueError(UNPUBLISHED_CHECKPOINTS[(model_weights, str(model_version))])
 
   if not checkpoint_id:
@@ -439,7 +443,8 @@ def load_weights(
 
     initialized_leaves = [initialize_param(p, k) for p, k in zip(param_leaves, keys, strict=True)]
     new_params = jax.tree_util.tree_unflatten(
-      jax.tree_util.tree_structure(params), initialized_leaves,
+      jax.tree_util.tree_structure(params),
+      initialized_leaves,
     )
     return eqx.combine(new_params, static)
 
@@ -515,11 +520,6 @@ def load_model(
     model_weights=model_weights,
     model_version=model_version,
   )
-
-  if checkpoint_id and ("frustra" in str(checkpoint_id).lower() or "megascale" in str(checkpoint_id).lower()):
-    from aminx.families.frustra_mpnn.driver import FrustraMPNNDriver  # noqa: PLC0415
-
-    return FrustraMPNNDriver().load_model(checkpoint_id, local_path=local_path, key=key)
 
   if not checkpoint_id.endswith(".zst") and not local_path:
     checkpoint_id = f"{checkpoint_id}.eqx.zst"
@@ -697,7 +697,9 @@ def resolve_family_checkpoint(checkpoint_id: str, *, family: str | None = None) 
   source, path = _verified_family_file(entry.filename, entry.sha256, "artifact")
   if entry.manifest_filename is not None or entry.manifest_sha256 is not None:
     if entry.manifest_filename is None or entry.manifest_sha256 is None:
-      msg = f"checkpoint {checkpoint_id!r} has incomplete manifest metadata in {FAMILY_TABLE_RESOURCE}"
+      msg = (
+        f"checkpoint {checkpoint_id!r} has incomplete manifest metadata in {FAMILY_TABLE_RESOURCE}"
+      )
       raise ValueError(msg)
     _, manifest = _verified_family_file(entry.manifest_filename, entry.manifest_sha256, "manifest")
     if manifest.parent != path.parent:

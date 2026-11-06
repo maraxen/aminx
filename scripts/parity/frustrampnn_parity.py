@@ -13,6 +13,7 @@ _DIR = Path(__file__).resolve().parent
 if str(_DIR) not in sys.path:
   sys.path.insert(0, str(_DIR))
 
+import artifact_key  # noqa: F401
 from frustrampnn_parity_v2 import main
 
 if __name__ == "__main__":

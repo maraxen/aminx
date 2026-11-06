@@ -46,12 +46,14 @@ TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
 )
+THERMO_SLUGS = ("thermo_mpnn_parity",)
 FRUSTRA_SLUGS = ("frustrampnn_parity",)
 ALL_SLUGS = (
   *LASER_SLUGS,
   *POTTS_SLUGS,
   *PROTON_SLUGS,
   *TIER1_TIER2_SLUGS,
+  *THERMO_SLUGS,
   *FRUSTRA_SLUGS,
 )
 
@@ -276,7 +278,11 @@ def test_family_change_invalidates_only_its_own_rows() -> None:
   potts_change = ["src/aminx/families/potts_mpnn/decode.py"]
   laser_change = ["src/aminx/families/laser_mpnn/driver.py"]
   proton_change = ["src/aminx/families/protonpotts_mpnn/ph_descent.py"]
-  assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [*POTTS_SLUGS, *PROTON_SLUGS]
+  assert [s for s in ALL_SLUGS if row_is_stale(potts_change, _real(s))] == [
+    *POTTS_SLUGS,
+    *PROTON_SLUGS,
+    *THERMO_SLUGS,
+  ]
   assert [s for s in ALL_SLUGS if row_is_stale(laser_change, _real(s))] == list(LASER_SLUGS)
   assert [s for s in ALL_SLUGS if row_is_stale(proton_change, _real(s))] == list(PROTON_SLUGS)
 

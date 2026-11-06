@@ -370,8 +370,9 @@ class FrustraMPNNDriver:
 
     if ckpt_path is None:
       name = checkpoint_id or DEFAULT_CHECKPOINT_ID
-      candidates = [Path(f"tests/data/fixtures/{name}.ckpt")]
-      candidates.extend(root / f"FrustraMPNN/model_weights/{name}.ckpt" for root in roots)
+      candidates = [root / f"FrustraMPNN/model_weights/{name}.ckpt" for root in roots]
+      candidates.append(Path(f"outputs/FrustraMPNN/model_weights/{name}.ckpt"))
+      candidates.append(Path(f"tests/data/fixtures/{name}.ckpt"))
       for c in candidates:
         if c.is_file():
           ckpt_path = c
@@ -382,7 +383,10 @@ class FrustraMPNNDriver:
       raise FileNotFoundError(msg)
 
     # Locate trunk v_48_020.pt
-    trunk_candidates = [Path("tests/data/fixtures/v_48_020.pt")]
+    trunk_candidates = [
+      Path("outputs/FrustraMPNN/weights/vanilla_model_weights/v_48_020.pt"),
+      Path("tests/data/fixtures/v_48_020.pt"),
+    ]
     for root in roots:
       trunk_candidates.extend(
         [
