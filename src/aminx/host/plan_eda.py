@@ -157,7 +157,9 @@ def verify_export_manifest_sha256(
     expected_sha = info.get("sha256")
     observed_sha = hashlib.sha256(data).hexdigest()
     if expected_sha is not None and observed_sha != expected_sha:
-      msg = f"SHA-256 digest mismatch for {filename}: expected {expected_sha}, observed {observed_sha}"
+      msg = (
+        f"SHA-256 digest mismatch for {filename}: expected {expected_sha}, observed {observed_sha}"
+      )
       raise ValueError(msg)
 
   return manifest
