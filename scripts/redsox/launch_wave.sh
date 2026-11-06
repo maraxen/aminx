@@ -152,6 +152,10 @@ read -ra WAVE_GPUS <<< "${AMINX_WAVE_GPUS:-2 3}"
 # Groups 5-7 (P4 vehicles) are CPU only (see CPU_PINNED), so the GPU availability check does not apply to them.
 NEEDS_GPU=1
 case "$GROUP" in 5|6|7) NEEDS_GPU=0 ;; esac
+if [ "$WAVE_BACKEND" != "gpu" ] && [ "$WAVE_BACKEND" != "cpu" ]; then
+  echo "REFUSING: AMINX_WAVE_BACKEND must be gpu or cpu, got $WAVE_BACKEND" >&2
+  exit 2
+fi
 if [ "$WAVE_BACKEND" = "gpu" ] && [ "$NEEDS_GPU" = "1" ]; then
   for g in "${WAVE_GPUS[@]}"; do
     used=$(nvidia-smi --id="$g" --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null || echo missing)
@@ -161,9 +165,6 @@ if [ "$WAVE_BACKEND" = "gpu" ] && [ "$NEEDS_GPU" = "1" ]; then
       exit 1
     fi
   done
-elif [ "$WAVE_BACKEND" != "cpu" ]; then
-  echo "REFUSING: AMINX_WAVE_BACKEND must be gpu or cpu, got $WAVE_BACKEND" >&2
-  exit 2
 fi
 if [ "$WAVE_BACKEND" = "gpu" ] && [ "$NEEDS_GPU" = "1" ]; then echo "backend: gpu (GPUs ${WAVE_GPUS[*]})"; else echo "backend: cpu"; fi
 
