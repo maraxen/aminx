@@ -263,7 +263,23 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         self.assertEqual(cond_res.mode, "incremental")
         self.assertIn("tests/sampling/test_eqx_module_hash.py", cond_res.implicated_tests)
 
-        # 6. Port wave target TOML and reference oracle select only the corresponding port wave test
+        # 6. FrustraMPNN driver change selects FrustraMPNN tests + family driver seam test, and excludes Potts / LASEr / EBM tests
+        frustra_res = selector.select_tests(
+            ["src/aminx/families/frustra_mpnn/driver.py"],
+            repo=_REPO_ROOT,
+            config=self.config,
+            closures=self.closures,
+        )
+        self.assertEqual(frustra_res.mode, "incremental")
+        self.assertIn("tests/families/test_frustrampnn.py", frustra_res.implicated_tests)
+        self.assertIn("tests/knob_semantics/test_frustrampnn_knobs.py", frustra_res.implicated_tests)
+        self.assertIn("tests/host/test_family_driver_seam.py", frustra_res.implicated_tests)
+        self.assertNotIn("tests/potts/test_runner_smoke.py", frustra_res.implicated_tests)
+        self.assertNotIn("tests/families/laser_mpnn/test_driver.py", frustra_res.implicated_tests)
+        self.assertNotIn("tests/ebm/test_model.py", frustra_res.implicated_tests)
+        self.assertLess(len(frustra_res.selected_tests), 40)
+
+        # 7. Port wave target TOML and reference oracle select only the corresponding port wave test
         port_res = selector.select_tests(
             ["tests/port/targets/laser_encoder.toml", "tests/port/reference/laser_encoder/algo.py"],
             repo=_REPO_ROOT,

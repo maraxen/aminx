@@ -11,6 +11,7 @@ from dataclasses import dataclass
 POTTSMPNN_COMMIT = "0cb0a58874e373d664114f1735deab77614e4ab5"
 LASERMPNN_COMMIT = "e70f2c6d765416f7e29d51bfd6d4e08496438878"
 PROTONPOTTSMPNN_COMMIT = "09682abfa7d20e0abcdeea0490b7a4b1c190aee3"
+FRUSTRAMPNN_COMMIT = "3a03cdc300bfe24c4bb70e60207118532bc73b3b"
 EXTRACTOR_SHA256 = "dcfd2039e7de0e65dac53d189ba8e085669b38353f115836c0a062a442c2359d"
 
 @dataclass(frozen=True)
@@ -638,4 +639,31 @@ class ThermoModelKnobs:
   thermo_model__threshold: float = -0.5  # type=float; --threshold; v2_ssm.py:561-566
   thermo_model__distance: float = 5.0  # type=float; --distance (CA-CA cutoff); v2_ssm.py:567-572
   thermo_model__ss_penalty: bool = False  # store_true; --ss_penalty; v2_ssm.py:573-577
+
+
+@dataclass(frozen=True)
+class FrustraModelKnobs:
+  """Upstream FrustraMPNN CLI flags and model configuration knobs.
+
+  Derived from Click CLI definitions in src/frustrampnn/cli/main.py:42-90
+  and transfer learning model configuration in src/frustrampnn/model/transfer_model.py:98-111
+  and model_utils.py:120-125.
+  """
+
+  frustra_cli__pdb: str = ""  # type=str; --pdb; src/frustrampnn/cli/main.py:42-48
+  frustra_cli__checkpoint: str = ""  # type=str; --checkpoint; src/frustrampnn/cli/main.py:49-55
+  frustra_cli__output: str = "frustration_predictions.csv"  # type=str; --output; src/frustrampnn/cli/main.py:56-62
+  frustra_cli__chains: str | None = None  # type=str; --chains; src/frustrampnn/cli/main.py:63-67
+  frustra_cli__positions: str | None = None  # type=str; --positions; src/frustrampnn/cli/main.py:68-72
+  frustra_cli__device: str | None = None  # type=str; --device; src/frustrampnn/cli/main.py:73-78
+  frustra_cli__config: str | None = None  # type=str; --config; src/frustrampnn/cli/main.py:79-84
+  frustra_cli__quiet: bool = False  # type=bool; --quiet; src/frustrampnn/cli/main.py:85-90
+  frustra_model__subtract_mut: bool = False  # type=bool; cfg.model.subtract_mut; src/frustrampnn/model/transfer_model.py:99
+  frustra_model__num_final_layers: int = 3  # type=int; cfg.model.num_final_layers; src/frustrampnn/model/transfer_model.py:100
+  frustra_model__lightattn: bool = True  # type=bool; cfg.model.lightattn; src/frustrampnn/model/transfer_model.py:101
+  frustra_model__decoding_order: str = "left-to-right"  # type=str; cfg.decoding_order; src/frustrampnn/model/transfer_model.py:104
+  frustra_model__add_esm_embeddings: bool = False  # type=bool; cfg.training.add_esm_embeddings; src/frustrampnn/model/transfer_model.py:111
+  frustra_model__hidden_dims: tuple[int, ...] = (64, 32)  # type=tuple; cfg.model.hidden_dims; src/frustrampnn/model/transfer_model.py:98
+  frustra_model__freeze_weights: bool = True  # type=bool; cfg.model.freeze_weights; src/frustrampnn/model/model_utils.py:123
+  frustra_model__load_pretrained: bool = True  # type=bool; cfg.model.load_pretrained; src/frustrampnn/model/model_utils.py:120
 # END MANUAL

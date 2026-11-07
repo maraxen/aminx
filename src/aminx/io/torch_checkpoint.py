@@ -46,8 +46,13 @@ TORCH_CHECKPOINT_ALLOWED_GLOBALS: frozenset[tuple[str, str]] = frozenset(
   | {("torch", name) for name in _TORCH_STORAGE_TYPES},
 )
 
-# omegaconf/hydra config objects are replaced by the inert ``_DummyCfg`` below.
-TORCH_CHECKPOINT_STUB_PREFIXES: tuple[str, ...] = ("omegaconf", "hydra")
+# omegaconf/hydra config and Lightning framework objects are replaced by the inert ``_DummyCfg``.
+TORCH_CHECKPOINT_STUB_PREFIXES: tuple[str, ...] = (
+  "omegaconf",
+  "hydra",
+  "pytorch_lightning",
+  "lightning_fabric",
+)
 
 
 class _DummyCfg:

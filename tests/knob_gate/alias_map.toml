@@ -3719,3 +3719,139 @@ targets = ["allow_float16"]
 equivalence = "aminx_extension"
 parity_test_ids = ["tests/knob_semantics/test_thermo_mpnn_knobs.py::test_knob_semantics_allow_float16"]
 note = "aminx-only: explicit bypass required for dtype='float16' (ValueError without it). Inert for float32. No upstream analogue."
+
+# ==============================================================================
+# FrustraMPNN Knob Surface (Task 261105_frustrampnn)
+# ==============================================================================
+
+[[row]]
+ref = "frustra_cli__pdb"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream --pdb specifies input structure path (src/frustrampnn/cli/main.py:44); in aminx handled by DesignSpec.structure."
+
+[[row]]
+ref = "frustra_cli__checkpoint"
+targets = ["checkpoint_id"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_frustrampnn_knobs.py::test_knob_semantics_checkpoint_id"]
+note = "Upstream --checkpoint specifies model weights (src/frustrampnn/cli/main.py:51); maps to FrustraMPNNOptions.checkpoint_id."
+
+[[row]]
+ref = "frustra_cli__output"
+targets = []
+equivalence = "exclusion"
+reason = "io_only"
+parity_test_ids = []
+note = "Upstream --output specifies CSV file destination (src/frustrampnn/cli/main.py:58); handled by aminx host sinks."
+
+[[row]]
+ref = "frustra_cli__chains"
+targets = ["chains"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_frustrampnn_knobs.py::test_knob_semantics_chains"]
+note = "Upstream --chains specifies target chains (src/frustrampnn/cli/main.py:65); maps to FrustraMPNNOptions.chains."
+
+[[row]]
+ref = "frustra_cli__positions"
+targets = ["positions"]
+equivalence = "semantic"
+parity_test_ids = ["tests/knob_semantics/test_frustrampnn_knobs.py::test_knob_semantics_positions"]
+note = "Upstream --positions restricts analysis positions (src/frustrampnn/cli/main.py:70); maps to FrustraMPNNOptions.positions."
+
+[[row]]
+ref = "frustra_cli__device"
+targets = []
+equivalence = "exclusion"
+reason = "device"
+parity_test_ids = []
+note = "Upstream --device selects CPU/CUDA device (src/frustrampnn/cli/main.py:75); JAX handles devices via jax.devices."
+
+[[row]]
+ref = "frustra_cli__config"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "Upstream --config provides YAML for old checkpoints (src/frustrampnn/cli/main.py:81); embedded in modern .ckpt."
+
+[[row]]
+ref = "frustra_cli__quiet"
+targets = []
+equivalence = "exclusion"
+reason = "visualization"
+parity_test_ids = []
+note = "Upstream --quiet suppresses tqdm progress bar (src/frustrampnn/cli/main.py:87)."
+
+[[row]]
+ref = "frustra_model__subtract_mut"
+targets = ["subtract_mut"]
+equivalence = "identical"
+parity_test_ids = ["tests/knob_semantics/test_frustrampnn_knobs.py::test_knob_semantics_subtract_mut"]
+note = "Upstream cfg.model.subtract_mut (src/frustrampnn/model/transfer_model.py:99); default False."
+
+[[row]]
+ref = "frustra_model__num_final_layers"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "Upstream cfg.model.num_final_layers=3 (src/frustrampnn/model/transfer_model.py:100); architectural constant for weights."
+
+[[row]]
+ref = "frustra_model__lightattn"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "Upstream cfg.model.lightattn=True (src/frustrampnn/model/transfer_model.py:101); architectural constant for weights."
+
+[[row]]
+ref = "frustra_model__decoding_order"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "Upstream cfg.decoding_order='left-to-right' (src/frustrampnn/model/transfer_model.py:104); constant for scoring."
+
+[[row]]
+ref = "frustra_model__add_esm_embeddings"
+targets = []
+equivalence = "exclusion"
+reason = "deferred:3222"
+parity_test_ids = []
+note = "UNIMPLEMENTED in aminx; tracked by debt #3222. Upstream ESM-2 co-embedding option (esm-False in target weights)."
+
+[[row]]
+ref = "frustra_model__hidden_dims"
+targets = []
+equivalence = "exclusion"
+reason = "checkpoint_derived"
+parity_test_ids = []
+note = "Fixed by pretrained model weights MLP layer dimensions (512 -> 64 -> 32 -> 21); not a runtime knob."
+
+[[row]]
+ref = "frustra_model__freeze_weights"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Upstream cfg.model.freeze_weights (src/frustrampnn/model/model_utils.py:122); training freeze flag."
+
+[[row]]
+ref = "frustra_model__load_pretrained"
+targets = []
+equivalence = "exclusion"
+reason = "training_only"
+parity_test_ids = []
+note = "Upstream cfg.model.load_pretrained (src/frustrampnn/model/model_utils.py:119); training loader flag."
+
+[[row]]
+ref = "__aminx_only__frustra_dtype"
+upstream = false
+targets = ["dtype"]
+equivalence = "aminx_extension"
+parity_test_ids = ["tests/knob_semantics/test_frustrampnn_knobs.py::test_knob_semantics_dtype"]
+note = "aminx-only: floating point execution precision ('float32' default, 'float64')."

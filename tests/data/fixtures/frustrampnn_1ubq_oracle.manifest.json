@@ -1,0 +1,113 @@
+{
+  "target_pdb": "1ubq",
+  "pdb_path": "tests/data/1ubq.pdb",
+  "upstream_commit": "3a03cdc300bfe24c4bb70e60207118532bc73b3b",
+  "checkpoint_sha256": "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa",
+  "oracle_npz_sha256": "ded4dbb6f47229d54d9bf1d65239c56069f68bdcdf37e1cd55b6d85cc69f34dc",
+  "seed": 42,
+  "num_samples": 10,
+  "sequence_length": 76,
+  "array_shapes": {
+    "feat/X": [
+      76,
+      4,
+      3
+    ],
+    "features": [
+      76,
+      48,
+      128
+    ],
+    "encoder_out": [
+      76,
+      128
+    ],
+    "decoder_hidden": [
+      3,
+      76,
+      128
+    ],
+    "lin_input": [
+      76,
+      512
+    ],
+    "light_attention_out": [
+      76,
+      512
+    ],
+    "both_out": [
+      76,
+      21
+    ],
+    "frustration_scores": [
+      76,
+      21
+    ],
+    "sampled_sequences": [
+      10,
+      76
+    ],
+    "f64_feat/X": [
+      76,
+      4,
+      3
+    ],
+    "f64_features": [
+      76,
+      48,
+      128
+    ],
+    "f64_encoder_out": [
+      76,
+      128
+    ],
+    "f64_decoder_hidden": [
+      3,
+      76,
+      128
+    ],
+    "f64_lin_input": [
+      76,
+      512
+    ],
+    "f64_light_attention_out": [
+      76,
+      512
+    ],
+    "f64_both_out": [
+      76,
+      21
+    ],
+    "f64_frustration_scores": [
+      76,
+      21
+    ]
+  },
+  "array_dtypes": {
+    "feat/X": "float32",
+    "features": "float32",
+    "encoder_out": "float32",
+    "decoder_hidden": "float32",
+    "lin_input": "float32",
+    "light_attention_out": "float32",
+    "both_out": "float32",
+    "frustration_scores": "float32",
+    "sampled_sequences": "int32",
+    "f64_feat/X": "float64",
+    "f64_features": "float64",
+    "f64_encoder_out": "float64",
+    "f64_decoder_hidden": "float64",
+    "f64_lin_input": "float64",
+    "f64_light_attention_out": "float64",
+    "f64_both_out": "float64",
+    "f64_frustration_scores": "float64"
+  },
+  "stochastic_controls": {
+    "augment_eps": 0.0,
+    "decoding_order_injected": true,
+    "inverse_cdf_multinomial_injected": true,
+    "loud_traps_installed": true,
+    "shared_f32_draws": true,
+    "dual_precision_dump": true
+  }
+}

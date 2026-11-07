@@ -20,6 +20,7 @@ build/
 .DS_Store
 .coverage
 *.pt
+*.ckpt
 *.csv
 
 # Local proxide development folder (installed via git dependency)
