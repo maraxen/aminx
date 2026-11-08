@@ -20,12 +20,61 @@ import numpy as np
 import pytest
 
 from aminx.families.frustra_mpnn.driver import FrustraMPNNDriver
-from aminx.families.frustra_mpnn.model import FrustraMPNN
+from aminx.families.frustra_mpnn.model import FrustraMPNN, cast_floating
 from aminx.run.options import FrustraMPNNOptions
 
 _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "data" / "fixtures"
 _CANONICAL_CKPT = "megascale_default_la-true_esm-False_split1"
 _1UBQ_PDB = Path(__file__).resolve().parents[1] / "data" / "1ubq.pdb"
+
+
+@pytest.fixture(autouse=True)
+def _fallback_synthetic_checkpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Use real weights when present locally; fall back to deterministic float32-sourced weights in CI."""
+  orig_load_model = FrustraMPNNDriver.load_model
+  cached_base: dict[bool, FrustraMPNN] = {}
+
+  def _get_base_f32(*, subtract_mut: bool) -> FrustraMPNN:
+    if subtract_mut not in cached_base:
+      prev = bool(getattr(jax.config, "jax_enable_x64", False))
+      jax.config.update("jax_enable_x64", False)
+      try:
+        cached_base[subtract_mut] = FrustraMPNN(
+          key=jax.random.PRNGKey(42),
+          subtract_mut=subtract_mut,
+        )
+      finally:
+        jax.config.update("jax_enable_x64", prev)
+    return cached_base[subtract_mut]
+
+  def _load_or_synthetic(
+    self: FrustraMPNNDriver,
+    checkpoint_id: str | None = _CANONICAL_CKPT,
+    *,
+    local_path: str | Path | None = None,
+    trunk_path: str | Path | None = None,
+    subtract_mut: bool = False,
+    dtype: str = "float32",
+    key: jax.Array | None = None,
+  ) -> FrustraMPNN:
+    try:
+      return orig_load_model(
+        self,
+        checkpoint_id,
+        local_path=local_path,
+        trunk_path=trunk_path,
+        subtract_mut=subtract_mut,
+        dtype=dtype,
+        key=key,
+      )
+    except FileNotFoundError:
+      if (checkpoint_id or _CANONICAL_CKPT) != _CANONICAL_CKPT:
+        raise
+      model = _get_base_f32(subtract_mut=subtract_mut)
+      target_dtype = jnp.float64 if dtype == "float64" else jnp.float32
+      return cast_floating(model, target_dtype)
+
+  monkeypatch.setattr(FrustraMPNNDriver, "load_model", _load_or_synthetic)
 
 
 def _make_toy_two_chain_pdb(path: Path) -> None:
