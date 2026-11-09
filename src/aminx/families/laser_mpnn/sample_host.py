@@ -443,7 +443,7 @@ class SampleStages:
     ]
     return {key: np.stack([row[key] for row in per_level], axis=1) for key in per_level[0]}
 
-  def _one_level(
+  def _one_level(  # noqa: PLR0915
     self,
     item: _Sampled,
     chunk_start: int,

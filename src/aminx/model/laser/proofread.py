@@ -265,7 +265,7 @@ def _grids(grid: jax.Array | tuple[jax.Array, ...]) -> tuple[jax.Array, ...]:
   return (grid,)
 
 
-def _dense_slots(
+def _dense_slots(  # noqa: PLR0915
   edge: np.ndarray,
   value: jax.Array,
   neighbours: jax.Array | tuple[jax.Array, ...],
@@ -980,8 +980,8 @@ def pregenerate_production_masks(
     stream = zlib.crc32(path.encode("utf-8")) & 0x7FFFFFFF
     calls = jnp.arange(count, dtype=jnp.int32)
     path_key = jax.random.fold_in(dropout_key, stream)
-    keys = jax.vmap(lambda c: jax.random.fold_in(path_key, c))(calls)
-    masks = jax.vmap(lambda k: jax.random.bernoulli(k, 1.0 - drop_p, shape=shape))(keys)
+    keys = jax.vmap(lambda c, pk=path_key: jax.random.fold_in(pk, c))(calls)
+    masks = jax.vmap(lambda k, s=shape: jax.random.bernoulli(k, 1.0 - drop_p, shape=s))(keys)
     step_masks[path] = masks
   return step_masks
 
