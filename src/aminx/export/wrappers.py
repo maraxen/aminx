@@ -356,8 +356,8 @@ def p07_bundle(
   at step ``t``).
   """
   wave = wave_from_decoding_order(decoding_order, tie_group_map)
-  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
-  return build_inference_bundle(
+  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
+  bundle, config = build_inference_bundle(
     coords=coords,
     mask=mask,
     residue_index=residue_index,
@@ -372,6 +372,15 @@ def p07_bundle(
     inference=True,
     wave=wave,
   )
+  # Export boundary: the in-memory contract is int8, but the exported graph (ONNX/StableHLO for
+  # ORT-web) keeps the float32 mask it has always carried, so integer ops on the mask never
+  # reach a backend that may not implement them.
+  bundle = eqx.tree_at(
+    lambda b: b.conditioning.ar_mask,
+    bundle,
+    bundle.conditioning.ar_mask.astype(jnp.float32),
+  )
+  return bundle, config
 
 
 def make_p07_sample(

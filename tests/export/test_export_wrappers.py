@@ -863,8 +863,34 @@ class TestP07BundleArMaskPinning:
           ),
         )
 
+  @pytest.mark.parametrize("dtype", [jnp.float32, jnp.int32, jnp.bool_])
+  def test_builder_normalises_a_caller_supplied_ar_mask_to_int8(self, dtype: jnp.dtype) -> None:
+    length = 5
+    order = jnp.arange(length, dtype=jnp.int32)
+    tie = jnp.zeros(length, dtype=jnp.int32)
+    coords, mask, residue_index, chain_index, _, bias, fixed_mask, fixed_tokens, temperature, _ = (
+      self._dummy_inputs(length, order, tie)
+    )
+    caller_mask = full_context_ar_mask(length).astype(dtype)
+    bundle, _ = build_inference_bundle(
+      coords=coords,
+      mask=mask,
+      residue_index=residue_index,
+      chain_index=chain_index,
+      ar_mask=caller_mask,
+      bias=bias,
+      fixed_mask=fixed_mask,
+      fixed_tokens=fixed_tokens,
+      tie_group_map=tie,
+      temperature=temperature,
+      mode="sample_autoregressive",
+      inference=True,
+    )
+    assert bundle.conditioning.ar_mask.dtype == jnp.int8
+    assert bundle.conditioning.ar_mask.shape == (1, length, length)
+
   def test_p07_bundle_exported_ar_mask_dtype_contract(self) -> None:
-    """Pin the AR mask contract: mask helpers return int8; exported p07_bundle ar_mask is float32."""
+    """Pin the AR mask contract: mask helpers return int8; exported p07_bundle ar_mask stays float32 on purpose (export boundary)."""
     length = 6
     order = jnp.arange(length, dtype=jnp.int32)
     tie = jnp.zeros(length, dtype=jnp.int32)

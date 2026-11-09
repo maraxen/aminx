@@ -284,9 +284,7 @@ def build_inference_bundle(
       # tie_group_map directly -- unlike `wave` (which stays untied/empty()
       # for jit-safety above), this is correct for tied positions: positions
       # sharing a tie group always see each other regardless of order.
-      ar_mask_2d = generate_ar_mask(
-        jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0]
-      )
+      ar_mask_2d = generate_ar_mask(jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0])
       ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
     else:
       # wave was either built host-side above (from_tie_groups/from_colors) or
@@ -297,6 +295,10 @@ def build_inference_bundle(
       ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
   elif ar_mask.ndim == 2:
     ar_mask = jnp.broadcast_to(ar_mask[None, ...], (num_states, seq_len, seq_len))
+  if ar_mask is not None and ar_mask.dtype != jnp.int8:
+    # A caller-supplied mask (float32, int32, bool) is 0/1 by contract; normalise it so every
+    # bundle this builder returns satisfies ConditioningBundle.ar_mask: Int8.
+    ar_mask = ar_mask.astype(jnp.int8)
 
   # Handle sequence: can be token indices or already one-hot
   if sequence is not None:
