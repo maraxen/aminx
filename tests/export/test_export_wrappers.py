@@ -39,7 +39,12 @@ from aminx.io.weights import get_topology_for_checkpoint, load_model
 from aminx.model import Aminx
 from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors, top_k
-from aminx.utils.autoregression import generate_wave_ar_mask
+from aminx.utils.autoregression import (
+  ar_mask_from_decoding_order,
+  full_context_ar_mask,
+  generate_ar_mask,
+  generate_wave_ar_mask,
+)
 from scripts.browser_validation._lattice import cubic_lattice_ca
 
 # --------------------------------------------------------------------------------------
@@ -857,3 +862,98 @@ class TestP07BundleArMaskPinning:
             f"ties={np.asarray(tie_group_map).tolist()}"
           ),
         )
+
+  @pytest.mark.parametrize("dtype", [jnp.float32, jnp.int32, jnp.bool_])
+  def test_builder_normalises_a_caller_supplied_ar_mask_to_int8(self, dtype: jnp.dtype) -> None:
+    length = 5
+    order = jnp.arange(length, dtype=jnp.int32)
+    tie = jnp.zeros(length, dtype=jnp.int32)
+    coords, mask, residue_index, chain_index, _, bias, fixed_mask, fixed_tokens, temperature, _ = (
+      self._dummy_inputs(length, order, tie)
+    )
+    caller_mask = full_context_ar_mask(length).astype(dtype)
+    bundle, _ = build_inference_bundle(
+      coords=coords,
+      mask=mask,
+      residue_index=residue_index,
+      chain_index=chain_index,
+      ar_mask=caller_mask,
+      bias=bias,
+      fixed_mask=fixed_mask,
+      fixed_tokens=fixed_tokens,
+      tie_group_map=tie,
+      temperature=temperature,
+      mode="sample_autoregressive",
+      inference=True,
+    )
+    assert bundle.conditioning.ar_mask.dtype == jnp.int8
+    assert bundle.conditioning.ar_mask.shape == (1, length, length)
+
+  def test_builder_reads_a_caller_mask_as_nonzero_means_visible(self) -> None:
+    length = 4
+    order = jnp.arange(length, dtype=jnp.int32)
+    tie = jnp.zeros(length, dtype=jnp.int32)
+    coords, mask, residue_index, chain_index, _, bias, fixed_mask, fixed_tokens, temperature, _ = (
+      self._dummy_inputs(length, order, tie)
+    )
+    soft = jnp.full((length, length), 0.5, dtype=jnp.float32).at[0, 0].set(0.0)
+    bundle, _ = build_inference_bundle(
+      coords=coords, mask=mask, residue_index=residue_index, chain_index=chain_index,
+      ar_mask=soft, bias=bias, fixed_mask=fixed_mask, fixed_tokens=fixed_tokens,
+      tie_group_map=tie, temperature=temperature, mode="sample_autoregressive", inference=True,
+    )  # fmt: skip
+    got = bundle.conditioning.ar_mask[0]
+    assert got.dtype == jnp.int8
+    assert int(got[0, 0]) == 0
+    assert int(got.sum()) == length * length - 1  # 0.5 is visible, not truncated to 0
+
+  def test_helper_dtype_argument_changes_dtype_not_values(self) -> None:
+    order = jnp.array([2, 0, 3, 1], dtype=jnp.int32)
+    tie = jnp.arange(4, dtype=jnp.int32)
+    as_int8 = ar_mask_from_decoding_order(order, tie_group_map=tie)
+    as_f32 = ar_mask_from_decoding_order(order, tie_group_map=tie, dtype=jnp.float32)
+    assert as_int8.dtype == jnp.int8
+    assert as_f32.dtype == jnp.float32
+    assert bool(jnp.all(as_int8.astype(jnp.float32) == as_f32))
+    # The other two builder-path helpers honour the dtype argument too.
+    assert full_context_ar_mask(4).dtype == jnp.int8
+    assert full_context_ar_mask(4, dtype=jnp.float32).dtype == jnp.float32
+    assert generate_ar_mask(order).dtype == jnp.int8
+    assert generate_ar_mask(order, dtype=jnp.float32).dtype == jnp.float32
+    # Every spelling of one dtype yields that dtype (and one static jit cache key).
+    import numpy as np
+
+    for spelling in (jnp.float32, np.float32, np.dtype("float32"), "float32"):
+      assert ar_mask_from_decoding_order(order, tie_group_map=tie, dtype=spelling).dtype == jnp.float32
+      assert generate_ar_mask(order, dtype=spelling).dtype == jnp.float32
+
+  def test_exported_p07_graph_carries_no_int8_mask_ops(self) -> None:
+    length = 6
+    order = jnp.arange(length, dtype=jnp.int32)
+    tie = jnp.zeros(length, dtype=jnp.int32)
+    args = self._dummy_inputs(length, order, tie)
+
+    def f(decoding_order: jax.Array, tie_group_map: jax.Array) -> jax.Array:
+      a = list(args)
+      a[4], a[9] = decoding_order, tie_group_map
+      bundle, _ = p07_bundle(*a)
+      return bundle.conditioning.ar_mask
+
+    jaxpr = str(jax.make_jaxpr(f)(order, tie))
+    assert "i8[" not in jaxpr
+    assert "u8[" not in jaxpr
+
+  def test_p07_bundle_exported_ar_mask_dtype_contract(self) -> None:
+    """Pin the AR mask contract: mask helpers return int8; exported p07_bundle ar_mask stays float32 on purpose (export boundary)."""
+    length = 6
+    order = jnp.arange(length, dtype=jnp.int32)
+    tie = jnp.zeros(length, dtype=jnp.int32)
+    bundle, _ = p07_bundle(*self._dummy_inputs(length, order, tie))
+    assert bundle.conditioning.ar_mask.dtype == jnp.float32
+
+    wave = bundle.wave
+    assert generate_ar_mask(order).dtype == jnp.int8
+    assert generate_ar_mask(order, tie_group_map=tie).dtype == jnp.int8
+    assert ar_mask_from_decoding_order(order, tie_group_map=tie).dtype == jnp.int8
+    assert generate_wave_ar_mask(wave, tie).dtype == jnp.int8
+    assert full_context_ar_mask(length).dtype == jnp.int8

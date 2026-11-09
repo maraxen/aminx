@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import TYPE_CHECKING
 
 import equinox as eqx
 import jax
@@ -31,6 +32,9 @@ from aminx.utils.autoregression import (
   generate_wave_ar_mask,
 )
 from aminx.utils.decoding_order import DecodingOrderFn, random_design_order
+
+if TYPE_CHECKING:
+  from jax.typing import DTypeLike
 
 
 class ConditioningLengthError(ValueError):
@@ -105,6 +109,7 @@ def build_inference_bundle(
   schedule_key: jax.Array | None = None,
   schedule_k_neighbors: int = 48,
   wave: WaveScheduleBundle | None = None,
+  ar_mask_dtype: DTypeLike = jnp.int8,
 ) -> tuple[InferenceBundle, InferenceConfig]:
   """Single entry point for bundle construction from raw arrays.
 
@@ -118,6 +123,10 @@ def build_inference_bundle(
   autoregressive visibility mask is derived from this schedule via
   `generate_wave_ar_mask` (positions in earlier waves are visible; positions in
   the same wave but different tie groups are not).
+
+  `ar_mask_dtype` is the dtype of the returned ``ConditioningBundle.ar_mask`` (default
+  ``int8``). Only the export wrappers override it (``float32``, so the exported graph carries
+  no integer mask ops). A caller-supplied `ar_mask` is read as "nonzero == visible".
 
   `wave` overrides `schedule` entirely with a caller-supplied `WaveScheduleBundle`
   (e.g. a custom decoding order built via `WaveScheduleBundle.from_tie_groups`
@@ -279,24 +288,31 @@ def build_inference_bundle(
       # `1.0 - jnp.eye`: this construct is the one the codebase has repeatedly got wrong
       # (see full_context_ar_mask's docstring for the running list), and a second inline
       # copy is how the definitions drift apart.
-      ar_mask = full_context_ar_mask(seq_len).astype(jnp.float32)
+      ar_mask = full_context_ar_mask(seq_len, dtype=ar_mask_dtype)
       ar_mask = jnp.broadcast_to(ar_mask[None, ...], (num_states, seq_len, seq_len))
     elif schedule == "fixed_n_to_c" and not wave_explicitly_supplied:
       # generate_ar_mask is pure-jnp (jit/vmap-safe) and tie-group-aware via
       # tie_group_map directly -- unlike `wave` (which stays untied/empty()
       # for jit-safety above), this is correct for tied positions: positions
       # sharing a tie group always see each other regardless of order.
-      ar_mask_2d = generate_ar_mask(jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0])
-      ar_mask = jnp.broadcast_to(ar_mask_2d.astype(jnp.float32)[None, ...], (num_states, seq_len, seq_len))
+      ar_mask_2d = generate_ar_mask(
+        jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0], dtype=ar_mask_dtype,
+      )
+      ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
     else:
       # wave was either built host-side above (from_tie_groups/from_colors) or
       # explicitly supplied by the caller -- both live in tie_group_map's id
       # space, so generate_wave_ar_mask is correct here (unlike for the
       # empty()-schedule branch above).
-      ar_mask_2d = generate_wave_ar_mask(wave, tie_group_map[0])
+      ar_mask_2d = generate_wave_ar_mask(wave, tie_group_map[0], dtype=ar_mask_dtype)
       ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
   elif ar_mask.ndim == 2:
     ar_mask = jnp.broadcast_to(ar_mask[None, ...], (num_states, seq_len, seq_len))
+  if ar_mask.dtype != ar_mask_dtype:
+    # Normalise so every bundle this builder returns carries ``ar_mask_dtype`` (int8 by default,
+    # the ConditioningBundle contract). A caller-supplied mask is read as "nonzero == visible",
+    # so a soft or out-of-range value is never silently truncated or wrapped to 0.
+    ar_mask = (ar_mask != 0).astype(ar_mask_dtype)
 
   # Handle sequence: can be token indices or already one-hot
   if sequence is not None:
@@ -467,7 +483,7 @@ def with_decoding_order(
   else:
     order, _ = decoding_order_fn(key, seq_len, tie if num_groups is not None else None, num_groups)
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(order), tie)
-  mask = generate_wave_ar_mask(wave, tie).astype(cond.ar_mask.dtype)
+  mask = generate_wave_ar_mask(wave, tie, dtype=cond.ar_mask.dtype)
   if fixed_context != "mutual_context":
     # The mask is this wave's own mask, so the incremental decoder's wave/mask consistency
     # precondition holds by construction. Recording it statically keeps `incremental="auto"`
