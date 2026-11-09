@@ -141,7 +141,7 @@ def resolve_tie_groups(
   return tie_group_map
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("dtype",))
 def generate_ar_mask(
   decoding_order: DecodingOrder,
   *,
