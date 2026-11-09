@@ -17,7 +17,7 @@ status: "draft_pr"
 
 Implements FrustraMPNN (`RosettaCommons/frustraMPNN` pinned at commit `3a03cdc300bfe24c4bb70e60207118532bc73b3b`) in `aminx` (`maraxen/aminx`) to the repository's strict family-parity standard on isolated branch `wt/261105-frustrampnn` (debt `#3222`).
 
-This PR completes the full adversarial code review cycle, concurrent-`main` merge-order analysis, defect remediation, independent forensic audit, de-tracking of large weight binaries, elimination of facade branches, RedSox closure isolation, and certified 15/15 `[PASS]` wave verification under Bathos run `067db19b-4e47-4267-b1f3-003e79645e4e`.
+This PR completes the full adversarial code review cycle, concurrent-`main` merge-order analysis, defect remediation, independent forensic audit, de-tracking of large weight binaries, elimination of facade branches, RedSox closure isolation, and certified 15/15 `[PASS]` wave verification under Bathos run `a7979816-ae10-413d-9ed7-c7c358247ef6`.
 
 **PR Status**: DRAFT (Awaiting final confirmation gate before landing on `main`).
 
@@ -64,10 +64,10 @@ A parallel adversarial swarm of 5 read-only reviewers audited the entire impleme
   - `wt/261105-frustrampnn` (PR #271) already incorporates `gh/main` (`86042c0e`) via merge commit `7f49f01a`.
   - Running `git merge-tree --write-tree gh/main HEAD` confirms 0 conflicts and identical trees (`5da5105b4ebe177d32e06d6b35670fcb6334f96b`).
 - **Closure Protection**:
-  - Graded Bathos run `067db19b-4e47-4267-b1f3-003e79645e4e` is anchored at commit `3a462ee4`.
+  - Graded Bathos run `a7979816-ae10-413d-9ed7-c7c358247ef6` is anchored at commit `4f4ff00a`.
   - `frustrampnn_parity`'s import closure comprises 133 files, crucially including `scripts/parity/artifact_key.py` and `src/aminx/run/options.py`.
   - Sibling PR #269 (`gh/wt/261104-p4-integrate`) modifies both `scripts/parity/artifact_key.py` and `src/aminx/run/options.py`.
-  - If PR #269 merges into `main` first, rebasing PR #271 would introduce diffs in `artifact_key.py` and `options.py` between the graded anchor (`3a462ee4`) and HEAD.
+  - If PR #269 merges into `main` first, rebasing PR #271 would introduce diffs in `artifact_key.py` and `options.py` between the graded anchor (`4f4ff00a`) and HEAD.
   - In `scripts/redsox/verify_wave.py`, `row_is_stale` would trigger `[FAIL] no path in the row's closure since`, unnecessarily invalidating the graded parity run.
   - Therefore, **PR #271 should land first on `main`**. PR #269 can subsequently rebase and resolve shared surface additions cleanly.
 
@@ -102,28 +102,28 @@ An independent forensic audit conducted at HEAD (`8d2b306c`) certified the imple
 
 ## Graded Bathos Run & RedSox Wave Verification
 
-- **Authoritative Graded Run**: `067db19b-4e47-4267-b1f3-003e79645e4e`
+- **Authoritative Graded Run**: `a7979816-ae10-413d-9ed7-c7c358247ef6`
   - Status: `completed`
   - Outcome: `pass`
   - Git Dirty: `false`
-  - Git Hash: `3a462ee4d6890c440f52d5fe9a808814e521e9f8`
+  - Git Hash: `4f4ff00ab10ed7841cdbc536fcf6399d80e3b70f`
   - Sidecar Mode: `declared`
   - Sidecar SHA-256: `6e20fe9c4db4c191095323e36c932bd8e1770878fbe5988026f12bb03c63e045`
 - **Catalog Artifact**:
-  - Exported cool-tier Parquet: `/tmp/bth_home/.bth/catalog/runs/aminx/run_067db19b-4e47-4267-b1f3-003e79645e4e.parquet` (15,360 bytes).
+  - Exported cool-tier Parquet: `/tmp/bth_home/.bth/catalog/runs/aminx/run_a7979816-ae10-413d-9ed7-c7c358247ef6.parquet` (22,101 bytes).
 - **Wave Verification Output (`verify_wave.py`)**:
   ```
-  === frustrampnn_parity  run 067db19b-4e47-4267-b1f3-003e79645e4e
+  === frustrampnn_parity  run a7979816-ae10-413d-9ed7-c7c358247ef6
       [PASS] status == completed                'completed'
       [PASS] outcome == pass                    'pass'
       [PASS] git_dirty is False                 False
-      [PASS] git_hash present                   3a462ee4d689
+      [PASS] git_hash present                   4f4ff00ab10e
       [PASS] ancestor of HEAD                   
       [PASS] no path in the row's closure since 
       [PASS] sidecar_sha256 matches             
       [PASS] --mutants == manifest rows         
       [PASS] output path well-formed            
-      [PASS] loaded files inside closure        113 loaded
+      [PASS] loaded files inside closure        115 loaded
       [PASS] controls clean == pass             'pass'
       [PASS] controls mutants == rows           
       [PASS] every control failed               
@@ -163,6 +163,8 @@ All local verification gates pass cleanly:
 - `3a462ee4`: Assigned `pack_shim` and `plan_eda` symbols to stage `"P28"` in `browser_validation_paths.json` (anchor commit for graded Bathos run `067db19b`).
 - `3d9d62a8`: Recorded post-merge verified Bathos run UUID `067db19b` in ledger comment (`tests/knob_gate/ledgers/frustrampnn.toml`).
 - `8d2b306c`: Pointed `FrustraMPNNOptions` line reference in `tests/host/knob_observations.py:306` to `src/aminx/run/options.py:281` (outside vehicle closure; zero impact on wave gradeability).
+- `81fe8428`: Updated PR #271 documentation and ledger comment.
+- `4f4ff00a`: Clean merge of `gh/main` (`28b7d1f8`), deduplicated `browser_validation_paths.json`, and executed fresh graded Bathos run `a7979816-ae10-413d-9ed7-c7c358247ef6` with certified 15/15 `[PASS]` wave verification.
 
 ---
 
