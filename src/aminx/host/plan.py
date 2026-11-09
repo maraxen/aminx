@@ -188,24 +188,34 @@ class AxisNames:
 
 # Conservative per-residue activation footprint (float32 bytes) for one innermost
 # (structure, noise, temperature, sample) combination in the sampling dispatch built
-# by host/kernel_dispatch.py's _sample_batch. Two live tensors dominate:
-#   - the EncoderOutput held for the noise/temp loop (aminx.types.encodings.EncoderOutput:
-#     node_features (L, D), edge_features (L, K, D)) -- same shape family as, and reusing
-#     the same conservative D=128/K=32/D_edge=48 constants already established by
-#     aminx.sampling.conditional_logits._plan_axis_strategy's callers for this exact type
-#     (see batched_encode_fn's `activation_bytes = seq_len * (128 + 32 * 48) * 4`), not a
-#     fresh guess;
-#   - the per-sample decode output (res.logits, shape (L, 21)) -- same convention as
-#     conditional_logits.py's batched_decode_fn (`seq_len * 21 * 4`).
-# estimate_memory_theoretical's single flat product (see aminx.tiling.planner) does not
-# distinguish "computed once per noise/temp" from "computed once per sample" -- summing
-# both into one per-element constant is the conservative choice given that architecture,
-# not an attempt to model exact live-tensor accounting.
+# by host/kernel_dispatch.py's _sample_batch.
+#
+# The analytic part counts the tensors the decoder visibly holds per residue: the node
+# features (L, H), the per-edge message tensor (L, K, 3H) (the concatenation of edge,
+# node-i and node-j features that every message-passing layer builds) and the decode
+# output (L, 21). The constants are ProteinMPNN v_48's (K = 48 neighbours, H = 128), the
+# widest model family here, NOT the K = 32 / width-48 values this block used before.
+#
+# aminx #274: the analytic part alone is 3-4x too small, because the sample vmap keeps
+# several of those edge tensors alive at once (encoder and decoder layers, plus the wave
+# loop's carry). _SAMPLING_LIVE_TENSOR_FACTOR is that empirical factor, fitted to the
+# measured peak device memory of one production single-state MS-L row (TITAN RTX, L = 256
+# padded, ProteinMPNN v_48): width 20 -> 2254 MiB, 64 -> 8654 MiB, 128 -> 16846 MiB, 256 ->
+# RESOURCE_EXHAUSTED, i.e. 128-145 MiB per sample. With the planner's default
+# activation_multiplier (2.5) the estimate at L = 256 is ~163 MiB per sample, about 1.12x
+# the highest measured slope (the 20 -> 64 one). The old estimate was ~4.1 MiB per sample
+# (15-35x low), so a full vmap was chosen at 20, 128 and 1024 samples alike.
+#
+# LIMITS: calibrated at ONE shape (L = 256) on one GPU stack, and scaled linearly in L.
+# It has not been re-measured at other lengths or model families. If a row still OOMs
+# after planning, the estimate is too low for that shape: raise the factor (or pass a larger
+# activation_multiplier); lowering either only makes the planner vmap wider rows.
 _SAMPLING_NODE_FEATURE_DIM = 128
-_SAMPLING_EDGE_NEIGHBORS = 32
-_SAMPLING_EDGE_FEATURE_DIM = 48
+_SAMPLING_EDGE_NEIGHBORS = 48
+_SAMPLING_EDGE_FEATURE_DIM = 3 * 128  # per-edge message width: concat(edge, node_i, node_j)
 _SAMPLING_DECODE_VOCAB = 21
 _SAMPLING_BYTES_PER_ELEMENT = 4  # float32
+_SAMPLING_LIVE_TENSOR_FACTOR = 3.6  # empirical, see the calibration note above
 
 
 def _sampling_activation_bytes_per_element(seq_len: int) -> float:
@@ -228,7 +238,7 @@ def _sampling_activation_bytes_per_element(seq_len: int) -> float:
     + _SAMPLING_EDGE_NEIGHBORS * _SAMPLING_EDGE_FEATURE_DIM
     + _SAMPLING_DECODE_VOCAB
   )
-  return seq_len * per_residue_elements * _SAMPLING_BYTES_PER_ELEMENT
+  return seq_len * per_residue_elements * _SAMPLING_BYTES_PER_ELEMENT * _SAMPLING_LIVE_TENSOR_FACTOR
 
 
 def make_sampling_planner(
