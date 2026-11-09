@@ -167,7 +167,10 @@ def make_optimize_sequence_fn(
       # SECOND positional parameter is `chain_idx`, not `tie_group_map`, so a tie map would
       # restrict every position to seeing only earlier members of its own tie group (debt
       # #1982). Before Defect 9 its untied branch also read a RANK array.
-      ar_masks = jax.vmap(ar_mask_from_decoding_order, in_axes=(0, None))(
+      ar_masks = jax.vmap(
+        lambda order, ties: ar_mask_from_decoding_order(order, ties, dtype=bundle.conditioning.ar_mask.dtype),
+        in_axes=(0, None),
+      )(
         decoding_orders, tie_group_map[0] if tie_group_map is not None else None,
       )
 

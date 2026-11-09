@@ -160,6 +160,7 @@ def build_callables(bucket: int) -> dict[str, tuple[Callable[[], Any] | None, st
   if protein_model is not None:
     try:
       bundle, config = build_inference_bundle(
+        ar_mask_dtype=jnp.float32,  # export path: no int8 ops in the traced graph
         coords=coords,
         mask=mask,
         residue_index=residue_index,
@@ -175,6 +176,7 @@ def build_callables(bucket: int) -> dict[str, tuple[Callable[[], Any] | None, st
 
     try:
       bundle, config = build_inference_bundle(
+        ar_mask_dtype=jnp.float32,  # export path: no int8 ops in the traced graph
         coords=coords,
         mask=mask,
         residue_index=residue_index,
@@ -220,6 +222,7 @@ def build_callables(bucket: int) -> dict[str, tuple[Callable[[], Any] | None, st
       host_order = jnp.arange(bucket)
       wave = WaveScheduleBundle.from_tie_groups(jnp.arange(bucket), host_order)
       bundle, config = build_inference_bundle(
+        ar_mask_dtype=jnp.float32,  # export path: no int8 ops in the traced graph
         coords=coords,
         mask=mask,
         residue_index=residue_index,
@@ -258,6 +261,7 @@ def build_callables(bucket: int) -> dict[str, tuple[Callable[[], Any] | None, st
     lig_types = jnp.zeros((bucket, n_atoms), dtype=jnp.int32)
     lig_mask = jnp.ones((bucket, n_atoms))
     bundle, config = build_inference_bundle(
+      ar_mask_dtype=jnp.float32,  # export path: no int8 ops in the traced graph
       coords=coords,
       mask=mask,
       residue_index=residue_index,
