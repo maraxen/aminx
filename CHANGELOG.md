@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The sample-axis memory planner now chunks wide sample rows instead of running them out of device memory (#274). Its per-sample activation estimate was about 4.1 MiB at L=256 against a measured 128-145 MiB (15-35x low), so a full vmap was chosen at 20, 128 and 1024 samples alike; the device budget itself already honoured `XLA_PYTHON_CLIENT_MEM_FRACTION`. The estimate now uses ProteinMPNN v_48's dimensions and a documented empirical live-tensor factor (about 163 MiB per sample at L=256), and a demoted sample axis is widened from xtrax's minimum tile of 1 to the largest tile that fits the budget (35 at a 5.63 GiB budget, 100 at 15.95 GiB). Production MS-L cell on a TITAN RTX, stock 0.5.0 vs this change: 128- and 256-wide rows now complete at the production 0.30 memory fraction where stock fails with `RESOURCE_EXHAUSTED`; all 12 compared rows are bit-identical, and the 20-sample production row keeps its full vmap (slowdown 0.92, noise). The factor is fitted at one shape (L=256) on one GPU stack and scales linearly in L; other lengths and model families are unmeasured.
+
 ## 0.5.0 (2026-11-09)
 
 ### Added
