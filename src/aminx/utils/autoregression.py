@@ -285,7 +285,7 @@ def generate_wave_ar_mask(
   # measured. Only the diagonal is removed: same-wave/same-group mutual
   # visibility (and the same-wave/different-group invisibility that gives this schedule
   # its Jacobi independence) are both preserved exactly.
-  return mask * (1 - jnp.eye(seq_len, dtype=dtype))
+  return mask * (~jnp.eye(seq_len, dtype=bool)).astype(dtype)
 
 
 def ar_mask_from_decoding_order(
@@ -357,7 +357,7 @@ def decoding_order_from_wave(
   return jnp.asarray(order, dtype=jnp.int32)
 
 
-def full_context_ar_mask(seq_len: int, dtype: jnp.dtype = jnp.int8) -> AutoRegressiveMask:
+def full_context_ar_mask(seq_len: int, dtype: DTypeLike = jnp.int8) -> AutoRegressiveMask:
   """Every position sees every other position's sequence, but not its own: ``1 - I``.
 
   ``ar_mask[i, j] == 1`` means position ``i`` SEES position ``j``'s sequence. The decoder
@@ -406,4 +406,4 @@ def full_context_ar_mask(seq_len: int, dtype: jnp.dtype = jnp.int8) -> AutoRegre
   Returns:
     ``(seq_len, seq_len)`` int8 mask, ones off the diagonal and zeros on it.
   """
-  return jnp.ones((seq_len, seq_len), dtype=dtype) - jnp.eye(seq_len, dtype=dtype)
+  return (~jnp.eye(seq_len, dtype=bool)).astype(dtype)

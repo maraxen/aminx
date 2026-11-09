@@ -916,8 +916,6 @@ class TestP07BundleArMaskPinning:
     assert as_f32.dtype == jnp.float32
     assert bool(jnp.all(as_int8.astype(jnp.float32) == as_f32))
     # The other two builder-path helpers honour the dtype argument too.
-    from aminx.utils.autoregression import full_context_ar_mask, generate_ar_mask
-
     assert full_context_ar_mask(4).dtype == jnp.int8
     assert full_context_ar_mask(4, dtype=jnp.float32).dtype == jnp.float32
     assert generate_ar_mask(order).dtype == jnp.int8

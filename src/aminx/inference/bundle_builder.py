@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -29,6 +31,9 @@ from aminx.utils.autoregression import (
   generate_wave_ar_mask,
 )
 from aminx.utils.decoding_order import DecodingOrderFn, random_design_order
+
+if TYPE_CHECKING:
+  from jax.typing import DTypeLike
 
 
 class ConditioningLengthError(ValueError):
@@ -103,7 +108,7 @@ def build_inference_bundle(
   schedule_key: jax.Array | None = None,
   schedule_k_neighbors: int = 48,
   wave: WaveScheduleBundle | None = None,
-  ar_mask_dtype: jnp.dtype = jnp.int8,
+  ar_mask_dtype: DTypeLike = jnp.int8,
 ) -> tuple[InferenceBundle, InferenceConfig]:
   """Single entry point for bundle construction from raw arrays.
 

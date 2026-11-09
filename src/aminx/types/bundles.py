@@ -10,7 +10,7 @@ from __future__ import annotations
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Bool, Float, Int, Int8
+from jaxtyping import Array, Bool, Float, Float32, Int, Int8
 
 
 class GeometryBundle(eqx.Module):
@@ -139,7 +139,7 @@ class ConditioningBundle(eqx.Module):
   state_position_map: Int[Array, "S L"]
   state_weights: Float[Array, "S"]
   sequence_oh: Float[Array, "L V"]  # zeros for unconditional/AR
-  ar_mask: Int8[Array, "S L L"]  # full 1s for purely conditional
+  ar_mask: Int8[Array, "S L L"] | Float32[Array, "S L L"]  # int8; float32 only for export bundles
   temperature: Float[Array, ""] = eqx.field(default_factory=lambda: jnp.array(1.0))
 
 

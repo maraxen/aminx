@@ -42,10 +42,11 @@ from aminx.tiling.strategy import Vmap
 from aminx.types.bundles import EncoderOutput, WaveScheduleBundle
 from aminx.utils.autoregression import ar_mask_from_decoding_order
 
-# Exported graphs keep a float32 AR mask (ORT-web); built float32 from the start so the graph has no int8 ops.
-_EXPORT_AR_MASK_DTYPE = jnp.float32
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 from aminx.utils.radial_basis import compute_radial_basis
+
+# Exported graphs keep a float32 AR mask (ORT-web); built float32 from the start so the graph has no int8 ops.
+_EXPORT_AR_MASK_DTYPE = jnp.float32
 
 if TYPE_CHECKING:
   # Type-only: aminx.types.stages / aminx.inference.decode.unconditional are exempt from
