@@ -163,7 +163,6 @@ def _native_p04_log_probs(
   from aminx.inference.logits import make_stage_set
 
   bundle, config = build_inference_bundle(
-
     ar_mask_dtype=jnp.float32,  # export path: no int8 ops in the traced graph
     coords=jnp.asarray(x4),
     mask=jnp.asarray(mask),
