@@ -282,14 +282,16 @@ def build_inference_bundle(
       # `1.0 - jnp.eye`: this construct is the one the codebase has repeatedly got wrong
       # (see full_context_ar_mask's docstring for the running list), and a second inline
       # copy is how the definitions drift apart.
-      ar_mask = full_context_ar_mask(seq_len)
+      ar_mask = full_context_ar_mask(seq_len, dtype=ar_mask_dtype)
       ar_mask = jnp.broadcast_to(ar_mask[None, ...], (num_states, seq_len, seq_len))
     elif schedule == "fixed_n_to_c" and not wave_explicitly_supplied:
       # generate_ar_mask is pure-jnp (jit/vmap-safe) and tie-group-aware via
       # tie_group_map directly -- unlike `wave` (which stays untied/empty()
       # for jit-safety above), this is correct for tied positions: positions
       # sharing a tie group always see each other regardless of order.
-      ar_mask_2d = generate_ar_mask(jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0])
+      ar_mask_2d = generate_ar_mask(
+        jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0], dtype=ar_mask_dtype,
+      )
       ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
     else:
       # wave was either built host-side above (from_tie_groups/from_colors) or

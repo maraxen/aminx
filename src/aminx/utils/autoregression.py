@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from functools import partial
-
 from collections import defaultdict
+from functools import partial
 from typing import TYPE_CHECKING
 
 import jax
@@ -12,6 +11,8 @@ import jax.numpy as jnp
 
 if TYPE_CHECKING:
   from collections.abc import Sequence
+
+  from jax.typing import DTypeLike
 
   from aminx.run.specs import RunSpecification
   from aminx.types.arrays import AutoRegressiveMask, DecodingOrder
@@ -147,6 +148,7 @@ def generate_ar_mask(
   chain_idx: jnp.ndarray | None = None,
   tie_group_map: jnp.ndarray | None = None,
   num_groups: int | None = None,
+  dtype: DTypeLike = jnp.int8,
 ) -> AutoRegressiveMask:
   """Get the self-excluding autoregressive mask for the given decoding order.
 
@@ -173,6 +175,8 @@ def generate_ar_mask(
       visible and decode together.
   num_groups : int | None
       Legacy parameter retained for signature compatibility. Unused.
+  dtype : dtype, optional
+      Mask dtype (default ``int8``); the export wrappers pass ``float32``.
 
   Returns
   -------
@@ -182,7 +186,7 @@ def generate_ar_mask(
       agree on this int8 contract.
   """
   del num_groups
-  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
+  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map, dtype=dtype)
   if chain_idx is not None:
     same_chain = (chain_idx[:, None] == chain_idx[None, :]).astype(ar_mask.dtype)
     ar_mask = ar_mask * same_chain
@@ -232,7 +236,7 @@ def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -
 def generate_wave_ar_mask(
   wave: WaveScheduleBundle,
   tie_group_map: jnp.ndarray,
-  dtype: jnp.dtype = jnp.int8,
+  dtype: DTypeLike = jnp.int8,
 ) -> AutoRegressiveMask:
   """Get the autoregressive mask for a `WaveScheduleBundle` (wave-color scheduling, W0.3+).
 
@@ -287,7 +291,7 @@ def generate_wave_ar_mask(
 def ar_mask_from_decoding_order(
   decoding_order: DecodingOrder,
   tie_group_map: jnp.ndarray | None = None,
-  dtype: jnp.dtype = jnp.int8,
+  dtype: DTypeLike = jnp.int8,
 ) -> AutoRegressiveMask:
   """Causal, self-excluding mask for an ORDER array (``decoding_order[t]`` = position at step t).
 
@@ -353,7 +357,7 @@ def decoding_order_from_wave(
   return jnp.asarray(order, dtype=jnp.int32)
 
 
-def full_context_ar_mask(seq_len: int) -> AutoRegressiveMask:
+def full_context_ar_mask(seq_len: int, dtype: jnp.dtype = jnp.int8) -> AutoRegressiveMask:
   """Every position sees every other position's sequence, but not its own: ``1 - I``.
 
   ``ar_mask[i, j] == 1`` means position ``i`` SEES position ``j``'s sequence. The decoder
@@ -402,4 +406,4 @@ def full_context_ar_mask(seq_len: int) -> AutoRegressiveMask:
   Returns:
     ``(seq_len, seq_len)`` int8 mask, ones off the diagonal and zeros on it.
   """
-  return jnp.ones((seq_len, seq_len), dtype=jnp.int8) - jnp.eye(seq_len, dtype=jnp.int8)
+  return jnp.ones((seq_len, seq_len), dtype=dtype) - jnp.eye(seq_len, dtype=dtype)
