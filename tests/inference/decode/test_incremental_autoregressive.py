@@ -409,10 +409,11 @@ def test_mutual_context_under_sample_vmap_matches_full_recompute(model) -> None:
   """mutual_context's mask is not the wave's: `auto` must keep the full recompute (exact)."""
   fixed_mask = jnp.zeros((L_DEFAULT,)).at[jnp.array([2, 9, 15])].set(1.0)
   kw = {"fixed_mask": fixed_mask, "fixed_tokens": jnp.zeros((L_DEFAULT,), dtype=jnp.int32)}
-  _assert_same(
-    _run_sample_vmapped(model, "off", "mutual_context", kw),
-    _run_sample_vmapped(model, "auto", "mutual_context", kw),
-  )
+  full = _run_sample_vmapped(model, "off", "mutual_context", kw)
+  _assert_same(full, _run_sample_vmapped(model, "auto", "mutual_context", kw))
+  # Negative control: the cached path is NOT exact here, so the fallback is load-bearing.
+  forced = _run_sample_vmapped(model, "force", "mutual_context", kw)
+  assert not np.allclose(np.asarray(forced.logits), np.asarray(full.logits), atol=LOGIT_ATOL)
 
 
 def test_non_identity_frame_under_sample_vmap_falls_back(model) -> None:
