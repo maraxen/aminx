@@ -5,7 +5,21 @@
 ### Changed
 
 - Autoregressive (AR) mask dtype narrowed to `int8` across all mask helpers (`generate_ar_mask`, `ar_mask_from_decoding_order`, `generate_wave_ar_mask`, `full_context_ar_mask`), `ConditioningBundle.ar_mask`, and the `AutoRegressiveMask` type alias (1 byte per element vs 4 bytes for float32/int32). The `p04`/`p07` export wrappers keep `float32`; scripts under `scripts/` that call `build_inference_bundle` (browser-validation, benchmarks) were not changed and now get an `int8` mask unless they pass `ar_mask_dtype` (the export-oriented `export_safety_census.py` and `layer_b_ort_calibrate.py` now pass `float32`); their own `layer_a_*` helpers still build int32 masks. A grep of `scripts/` found no matrix product, sum or elementwise product of a bundle's `ar_mask`, so the int8 wraparound caveat does not apply to them. A user-supplied `ScoringSpecification.ar_mask` is validated on its own dtype (a float64 mask that was only approximately 0/1, e.g. 0.9999999999, is now rejected instead of rounding through float32) and stored as `int8` whatever its input dtype (float32, int, bool), and is padded as `int8` by `runner.score`. `build_inference_bundle` casts a caller-supplied `ar_mask` to `int8` (nonzero means visible) unless `ar_mask_dtype` says otherwise; `generate_wave_ar_mask` and `ar_mask_from_decoding_order` take a `dtype` argument. Public helper return dtypes change: `generate_ar_mask` int32 to int8 and `generate_wave_ar_mask` / `ar_mask_from_decoding_order` float32 to int8. Callers that do int8 arithmetic on the returned mask (`mask @ mask`, `mask + mask`, elementwise products of two masks) must cast first, because it wraps silently past 127; `jnp.sum` and `jnp.cumsum` upcast and are not affected. The exported `p04`/`p07` graphs keep a float32 mask, built as float32 from the start (`ar_mask_dtype=jnp.float32`).
-- `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself.
+
+## 0.5.0 (2026-11-09)
+
+### Added
+
+- `incremental="auto"` now takes the cached decode whenever its preconditions hold under the per-sample decoding-order vmap (#273, fixes #272). `with_decoding_order` marks its wave `mask_consistent` (a new static `WaveScheduleBundle` field, default `False`) for every `fixed_context` except `mutual_context`. With the flag set, the decoder decides slab fit from the tie map, so the exactness predicate stays unbatched and the `lax.cond` stays a real branch instead of a select that ran both bodies. Production MS-L rows: 260/260 bit-identical, single-state rows 7.99-8.29x faster. Non-identity `state_position_map`, tie groups larger than the slab, `mutual_context` and caller-supplied masks keep the full-recompute fallback.
+- `decoding_order_seed` on `SamplingSpecification` / `SamplingConfig` (#265): draws every sample's decoding order from that seed alone. `None` (default) is bit-identical to before.
+- `fixed_position_context` (`"random_order"` default and bit-identical, `"canonical_order"`, `"mutual_context"`) on the runner and fused paths (#266), recorded in every store's root attrs. Neither control is part of `manifest_row_hash`.
+- Packed per-row unit storage (`aminx.host.pack_shim`, on `xtrax.pack`) and planner EDA (`aminx.host.plan_eda`, optional `eda` extra) (#270).
+- `ligand_cutoff_for_score` wired into `score()`, with membrane labels and multi-order averaging as library helpers (#256); ThermoMPNN adoption without the stock dependency (#258); Tier 1/2 parity vehicles and hard-failure guards (#260); a sharded knob-gate ledger with `--family` flags (#254).
+
+### Changed
+
+- xtrax is pinned to `0.4.1b7` (was `0.4.1b5`) and gains the `pack` extra. proxide `>=0.2.0` (was `>=0.1.0a17`). cisternal `>=0.1.6` for the `agent` extra.
+- `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself. The return dtype is unchanged (int32).
 - `generate_ar_mask`'s `chain_idx`, `tie_group_map` and `num_groups` are keyword-only. A tie map passed as the second positional argument used to bind to `chain_idx` silently; passing these positionally now raises `TypeError`.
 
 ## 0.4.0 (2026-10-29)

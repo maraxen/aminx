@@ -831,14 +831,23 @@ class AutoregressiveDecode(eqx.Module):
       if self.incremental == "force":
         final_seq, logits_stack = run_incremental()
       else:
-        consistent = ~jnp.any(reads & (wave_nbr > wave_row))
         identity_frame = jnp.all(
           cond.state_position_map == jnp.arange(L, dtype=cond.state_position_map.dtype)[None, :],
         )
-        fits_slab = jnp.all((wave_start[1:] - wave_start[:-1]) <= slab)
-        can_increment = consistent & identity_frame & fits_slab
-        # The predicate depends on the bundle only, so under vmap over keys it stays a real
-        # branch (only one path runs).
+        if wave.mask_consistent:
+          # The ar_mask was generated from this wave (`with_decoding_order`), so consistency
+          # holds by construction, and each wave covers exactly one tie group (G = P = 1), so the
+          # slab fits iff the largest tie group does. Both now read only the tie map and the
+          # state_position_map, which do not depend on the per-sample decoding order: under the
+          # sampling vmap over keys the predicate stays unbatched and `lax.cond` stays a real
+          # branch. Computing them from the per-sample wave and mask (below) batched the
+          # predicate, which lowers the cond to a select that runs BOTH bodies (aminx #272).
+          group_sizes = jnp.zeros((L,), jnp.int32).at[cond.tie_group_map[0]].add(1)
+          can_increment = identity_frame & (jnp.max(group_sizes) <= slab)
+        else:
+          consistent = ~jnp.any(reads & (wave_nbr > wave_row))
+          fits_slab = jnp.all((wave_start[1:] - wave_start[:-1]) <= slab)
+          can_increment = consistent & identity_frame & fits_slab
         final_seq, logits_stack = jax.lax.cond(can_increment, run_incremental, run_full)
 
     # 4. Per-position logits: each position takes its group's slot at the group's first
