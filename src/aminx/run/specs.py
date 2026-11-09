@@ -672,7 +672,7 @@ def _validate_output_kind(output_kind: str, model_family: str | None) -> None:
     raise ValueError(msg)
 
 def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
-  """Check a user-supplied scoring ``ar_mask`` and return it as a float32 ``(L, L)`` array.
+  """Check a user-supplied scoring ``ar_mask`` and return it as an int8 ``(L, L)`` array.
 
   Refuses what has silently produced wrong numbers before: a non-square or non-2D mask, a
   non-binary one, and a nonzero diagonal. A residue that sees its own token is handed the
@@ -695,7 +695,7 @@ def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
       "(e.g. aminx.utils.autoregression.ar_mask_from_decoding_order)."
     )
     raise ValueError(msg)
-  return mask
+  return mask.astype(np.int8)
 
 
 
