@@ -226,6 +226,24 @@
   "src/aminx/host/output_sinks.py::take_staging_sequences_logits": {
     "internal": "streaming output-sink plumbing for host runner, covered through P26"
   },
+  "src/aminx/host/pack_shim.py::InputDigestMismatchError": "P28",
+  "src/aminx/host/pack_shim.py::aminx_unit_check": "P28",
+  "src/aminx/host/pack_shim.py::execute_packed_manifest": "P28",
+  "src/aminx/host/pack_shim.py::failure_stamp_path": "P28",
+  "src/aminx/host/pack_shim.py::pack_aminx_unit": "P28",
+  "src/aminx/host/pack_shim.py::packed_unit_gate_digest": "P28",
+  "src/aminx/host/pack_shim.py::resolve_unit_adapter": "P28",
+  "src/aminx/host/pack_shim.py::run_packed_manifest_row": "P28",
+  "src/aminx/host/pack_shim.py::validate_aminx_unit": "P28",
+  "src/aminx/host/pack_shim.py::write_aminx_unit": "P28",
+  "src/aminx/host/pack_shim.py::write_aminx_unit_failure": "P28",
+  "src/aminx/host/plan_eda.py::analyze_aminx_bucket": "P28",
+  "src/aminx/host/plan_eda.py::explain_aminx_plan": "P28",
+  "src/aminx/host/plan_eda.py::export_and_verify_plan_artifacts": "P28",
+  "src/aminx/host/plan_eda.py::generate_aminx_plan_spec": "P28",
+  "src/aminx/host/plan_eda.py::render_aminx_plan_panels": "P28",
+  "src/aminx/host/plan_eda.py::verify_checkpoint_and_explain_plan": "P28",
+  "src/aminx/host/plan_eda.py::verify_export_manifest_sha256": "P28",
   "src/aminx/host/plan.py::AxisNames": {
     "internal": "batch/tiling plan construction for host runner dispatch, covered through P26/P27"
   },
