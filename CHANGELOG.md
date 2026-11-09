@@ -1,9 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 (2026-11-09)
+
+### Added
+
+- `incremental="auto"` now takes the cached decode whenever its preconditions hold under the per-sample decoding-order vmap (#273, fixes #272). `with_decoding_order` marks its wave `mask_consistent` (a new static `WaveScheduleBundle` field, default `False`) for every `fixed_context` except `mutual_context`. With the flag set, the decoder decides slab fit from the tie map, so the exactness predicate stays unbatched and the `lax.cond` stays a real branch instead of a select that ran both bodies. Production MS-L rows: 260/260 bit-identical, single-state rows 7.99-8.29x faster. Non-identity `state_position_map`, tie groups larger than the slab, `mutual_context` and caller-supplied masks keep the full-recompute fallback.
+- `decoding_order_seed` on `SamplingSpecification` / `SamplingConfig` (#265): draws every sample's decoding order from that seed alone. `None` (default) is bit-identical to before.
+- `fixed_position_context` (`"random_order"` default and bit-identical, `"canonical_order"`, `"mutual_context"`) on the runner and fused paths (#266), recorded in every store's root attrs. Neither control is part of `manifest_row_hash`.
+- Packed per-row unit storage (`aminx.host.pack_shim`, on `xtrax.pack`) and planner EDA (`aminx.host.plan_eda`, optional `eda` extra) (#270).
+- `ligand_cutoff_for_score` wired into `score()`, with membrane labels and multi-order averaging as library helpers (#256); ThermoMPNN adoption without the stock dependency (#258); Tier 1/2 parity vehicles and hard-failure guards (#260); a sharded knob-gate ledger with `--family` flags (#254).
 
 ### Changed
 
+- xtrax is pinned to `0.4.1b7` (was `0.4.1b5`) and gains the `pack` extra. proxide `>=0.2.0` (was `>=0.1.0a17`). cisternal `>=0.1.6` for the `agent` extra.
 - `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself. The return dtype is unchanged (int32).
 - `generate_ar_mask`'s `chain_idx`, `tie_group_map` and `num_groups` are keyword-only. A tie map passed as the second positional argument used to bind to `chain_idx` silently; passing these positionally now raises `TypeError`.
 
