@@ -46,11 +46,11 @@ def spec():
     return SamplingSpecification(inputs="test.pdb", model_family="proteinmpnn")
 
 
-def _plan(spec, n_samples, budget_bytes, seq_len=SEQ_LEN):
+def _plan(spec, n_samples, budget_bytes, seq_len=SEQ_LEN, **planner_kwargs):
     original = plan_module.resolve_memory_budget_bytes
     plan_module.resolve_memory_budget_bytes = lambda headroom=0.8: budget_bytes
     try:
-        return make_sampling_planner(spec, n_samples_override=n_samples, seq_len=seq_len)
+        return make_sampling_planner(spec, n_samples_override=n_samples, seq_len=seq_len, **planner_kwargs)
     finally:
         plan_module.resolve_memory_budget_bytes = original
 
@@ -82,7 +82,7 @@ def test_128_samples_within_mem_fraction_030_budget_is_chunked_not_full_vmap(spe
     decision = decision_for(_plan(spec, 128, BUDGET_MEM_FRACTION_030), AxisNames.N_SAMPLES)
     assert type(decision.strategy).__name__ == "ChunkedMap"
     tile = _tile(decision)
-    assert 1 <= tile < 128
+    assert 1 < tile < 128  # > 1: the widening, not xtrax's minimum tile
     assert tile * MEASURED_PER_SAMPLE_BYTES <= BUDGET_MEM_FRACTION_030, (
         f"tile {tile} x {MEASURED_PER_SAMPLE_BYTES / MIB:.1f} MiB exceeds the {BUDGET_MEM_FRACTION_030 / GIB:.2f} GiB budget"
     )
@@ -100,6 +100,7 @@ def test_mem_fraction_085_vmaps_64_but_chunks_128(spec):
     assert type(decision_for(_plan(spec, 64, BUDGET_MEM_FRACTION_085), AxisNames.N_SAMPLES).strategy).__name__ == "Vmap"
     wide = decision_for(_plan(spec, 128, BUDGET_MEM_FRACTION_085), AxisNames.N_SAMPLES)
     assert type(wide.strategy).__name__ == "ChunkedMap"
+    assert 1 < _tile(wide)
     assert _tile(wide) * MEASURED_PER_SAMPLE_BYTES <= BUDGET_MEM_FRACTION_085
 
 
@@ -133,3 +134,53 @@ def test_very_wide_rows_never_plan_a_tile_beyond_the_measured_budget(spec, n_sam
     decision = decision_for(_plan(spec, n_samples, budget), AxisNames.N_SAMPLES)
     assert type(decision.strategy).__name__ == "ChunkedMap"
     assert _tile(decision) * MEASURED_PER_SAMPLE_BYTES <= budget
+
+
+def test_widening_agrees_with_the_planner_on_the_budget_boundary():
+    """The widening uses the planner's own integer-truncated comparison (review finding F2, agy, PR #280).
+
+    seq_len=101 with multiplier 1.0 gives 27024206.4 B per sample; a 54048412 B budget fits exactly two samples under the
+    planner's int() truncation (int(54048412.8) == 54048412). At 3 samples the planner demotes, and the widened tile must be 2,
+    not 1 (a float comparison would reject 54048412.8 <= 54048412).
+    """
+    spec = SamplingSpecification(inputs="test.pdb", model_family="proteinmpnn")
+    two = decision_for(_plan(spec, 2, 54048412, seq_len=101, activation_multiplier=1.0), AxisNames.N_SAMPLES)
+    assert type(two.strategy).__name__ == "Vmap"
+    three = decision_for(_plan(spec, 3, 54048412, seq_len=101, activation_multiplier=1.0), AxisNames.N_SAMPLES)
+    assert type(three.strategy).__name__ == "ChunkedMap"
+    assert _tile(three) == 2
+
+
+def test_sample_axis_demoted_by_another_axis_is_restored_to_vmap_when_it_fits():
+    """A sample axis the greedy demotion chunked only because other axes also needed demoting must return to Vmap.
+
+    Review finding F1 (agy, PR #280): with 36 temperatures the planner demotes N_SAMPLES (20) first, then N_TEMPERATURES; the
+    widening used to cap the sample tile at cardinality - 1 = 19, a remainder-peeling tile. With the temperature axis at tile 1,
+    20 samples fit the 5.63 GiB budget, so the sample axis must be a full Vmap.
+    """
+    spec = SamplingSpecification(inputs="test.pdb", model_family="proteinmpnn", temperature=[0.1] * 36)
+    decision = decision_for(_plan(spec, 20, 6045166469), AxisNames.N_SAMPLES)
+    assert type(decision.strategy).__name__ == "Vmap"
+
+
+def test_placeholder_path_without_seq_len_is_not_widened():
+    """Review finding (Cursor, PR #280): with seq_len=None the 1-byte placeholder estimate must not drive a tile.
+
+    Before, a 50M-sample plan with the placeholder widened from tile 1 to ~48.7M, a number with no relation to any real cost.
+    """
+    spec = SamplingSpecification(inputs="test.pdb", model_family="ligandmpnn")
+    plan = make_sampling_planner(spec, n_samples_override=50_000_000, param_bytes=1e9, activation_multiplier=50.0)
+    decision = decision_for(plan, AxisNames.N_SAMPLES)
+    assert type(decision.strategy).__name__ == "ChunkedMap"
+    assert _tile(decision) == 1
+
+
+def test_sample_axis_stays_vmap_when_only_a_later_noise_axis_is_demoted():
+    """Review finding (Cursor, PR #280): 8 samples with 20 noise levels at a 1.71e9 B budget.
+
+    The greedy demotion chunks the noise axis, and a full 8-sample Vmap (with noises at tile 1) fits the joint estimate, so the
+    sample axis must be a Vmap, not ChunkedMap(7).
+    """
+    spec = SamplingSpecification(inputs="test.pdb", model_family="proteinmpnn", backbone_noise=[0.0] * 20)
+    decision = decision_for(_plan(spec, 8, 1712424960), AxisNames.N_SAMPLES)
+    assert type(decision.strategy).__name__ == "Vmap"

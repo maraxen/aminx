@@ -17,7 +17,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, ChunkedMap, MemoryBudget
+from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, ChunkedMap, MemoryBudget, Vmap
 from xtrax.tiling import BudgetInfeasibleError as _XtraxBudgetInfeasibleError
 
 from aminx.tiling.axes import N_NOISES, N_SAMPLES, N_STRUCTURES, N_TEMPERATURES
@@ -160,8 +160,8 @@ def _widen_chunked_axis_tile(
   gives up nearly all of the parallelism (aminx #274: the first calibration fix peaked at 460 MiB where
   ~5 GiB was available). The Vmap-vs-chunk decision is kept; only the tile is widened, by a binary search
   over ``estimate_fn`` (a chunked axis contributes its tile to the memory product, so the estimate is
-  non-decreasing in the tile). The tile never reaches the full cardinality: that case is a Vmap, and the
-  planner already decided it does not fit.
+  non-decreasing in the tile). A tile that reaches the full cardinality becomes a Vmap again: that happens
+  only when the greedy demotion chunked this axis because *other* axes also needed demoting.
   """
   decisions = list(plan.decisions)
   idx = next((i for i, d in enumerate(decisions) if d.spec.name == axis_name), None)
@@ -182,9 +182,11 @@ def _widen_chunked_axis_tile(
   def _fits(tile: int) -> bool:
     trial = list(decisions)
     trial[idx] = _with_tile(tile)
-    return estimate_fn(trial) <= budget_bytes
+    # int() matches _plan_with_joint_budget's own truncated comparison, so the two agree on the budget boundary.
+    return int(estimate_fn(trial)) <= budget_bytes
 
-  low, high = max(1, current.batch_size), max(1, current.spec.cardinality - 1)
+  cardinality = current.spec.cardinality
+  low, high = max(1, current.batch_size), max(1, cardinality)
   if high <= low or not _fits(low):
     return plan
   while low < high:
@@ -193,6 +195,16 @@ def _widen_chunked_axis_tile(
       low = mid
     else:
       high = mid - 1
+  if low >= cardinality:
+    # The greedy demotion chunked this axis only because other axes also needed demoting; with them at their own tiles the
+    # whole axis fits, so it returns to a full Vmap instead of a remainder-peeling tile just below the cardinality.
+    decisions[idx] = AxisDecision(
+      spec=current.spec,
+      batch_size=current.spec.default_batch_size,
+      reasoning=f"{current.reasoning} | restored to Vmap: the whole axis fits the joint budget (aminx #274)",
+      strategy=Vmap(),
+    )
+    return BatchPlan(decisions=tuple(decisions))
   if low == current.batch_size:
     return plan
   decisions[idx] = _with_tile(low)
@@ -385,6 +397,10 @@ def make_sampling_planner(
     carry_specs=getattr(spec, "carry_specs", None) or [],
     dedup_specs=getattr(spec, "dedup_specs", None) or [],
   )
+  if seq_len is None:
+    # The 1.0 placeholder is dimensionless, so a tile derived from it is meaningless (a 50M-sample row would widen to a tile of
+    # ~48M); keep the planner's own decision on that backward-compatibility path.
+    return plan
   return _widen_chunked_axis_tile(plan, N_SAMPLES.name, budget_bytes=budget_bytes, estimate_fn=estimate_fn)
 
 
