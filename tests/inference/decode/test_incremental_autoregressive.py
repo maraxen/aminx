@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 from xtrax.profiling.loop_scaling import extent_scaling_report, loop_bodies
 
-from aminx.inference.bundle_builder import build_inference_bundle
+from aminx.inference.bundle_builder import build_inference_bundle, with_decoding_order
 from aminx.inference.decode.factory import make_decode_fn
 from aminx.inference.decode.mode import AutoregressiveConfig, AutoregressiveMode
 from aminx.inference.encode import make_encode_fn
@@ -295,3 +295,139 @@ def test_full_recompute_wave_body_work_grows_with_length(model) -> None:
   """Negative control: the guard above must be able to see O(L) per-wave work."""
   rows, _ = _decode_scaling(model, "off")
   assert _quadratic_loops(rows), "full recompute was not flagged; the guard cannot fail"
+
+
+# --------------------------------------------------------------------------------------
+# Sampling path: one decoding order per sample, vmapped over sample keys (aminx #272)
+# --------------------------------------------------------------------------------------
+#
+# Production sampling draws a fresh order per sample (`kernel_dispatch._with_sample_order` ->
+# `with_decoding_order`) and maps the decode over sample keys. The bundle's wave and ar_mask
+# are then batched over samples. Before #272 the `auto` exactness predicate was computed from
+# them, so it was batched too; `lax.cond` with a batched predicate lowers to a select that runs
+# BOTH bodies, i.e. `auto` always paid the O(L^2 k) full recompute even when the cached path
+# was exact. These tests pin the sampling-path shape: `auto` under the sample vmap must keep
+# only the incremental body, stay exact, and still fall back when the frame is not the identity.
+
+N_SAMPLE_KEYS = 3
+
+
+def _sample_vmapped_fn(model, incremental: str, fixed_context: str = "random_order"):
+  """fn(keys, enc, bundle, config): decode once per key, each with its own drawn order."""
+  decode_fn = make_decode_fn(
+    model=model,
+    mode=AutoregressiveMode(),
+    strategy=Vmap(),
+    autoregressive_config=AutoregressiveConfig(incremental=incremental),
+  )
+
+  def fn(keys, enc, bundle, config):
+    def one(k):
+      b = with_decoding_order(bundle, k, fixed_context=fixed_context)
+      return decode_fn(k, enc, b, config, make_stage_set())
+
+    return jax.vmap(one)(keys)
+
+  return fn
+
+
+def _sample_vmapped_args(model, length: int, bundle_kw: dict | None = None):
+  bundle, config = _bundle(length=length, temperature=1.0, **(bundle_kw or {}))
+  enc = make_encode_fn(model, use_rolling_state=False)(bundle, jax.random.PRNGKey(0), config)
+  keys = jax.random.split(jax.random.PRNGKey(7), N_SAMPLE_KEYS)
+  return keys, enc, bundle, config
+
+
+def _run_sample_vmapped(model, incremental: str, fixed_context: str = "random_order", bundle_kw=None):
+  fn = _sample_vmapped_fn(model, incremental, fixed_context)
+  return eqx.filter_jit(fn)(*_sample_vmapped_args(model, L_DEFAULT, bundle_kw))
+
+
+def _unconditional_quadratic_loops(rows) -> list[str]:
+  """O(L^2) loops that are NOT inside a `lax.cond` branch, i.e. that always execute.
+
+  `auto` keeps the full recompute as a fallback branch, so the O(L^2) body is always present in
+  the program; what #272 broke is that it ran unconditionally: a batched predicate lowers the
+  cond to a select, which inlines both bodies at the cond's parent. Inside a real cond the
+  fallback body sits under a `cond[i]` path component and runs only when the predicate is false.
+  """
+  return [s for s in _quadratic_loops(rows) if "cond[" not in s.split(" ", 1)[0]]
+
+
+@pytest.mark.parametrize("fixed_context", ["random_order", "canonical_order"])
+def test_auto_under_sample_vmap_keeps_only_the_incremental_body(model, fixed_context) -> None:
+  """Regression for #272: under the per-sample order vmap the full recompute must be a real
+  fallback branch, never an unconditional (select-inlined) body."""
+  fn = _sample_vmapped_fn(model, "auto", fixed_context)
+  fixed_mask = jnp.zeros((2 * GUARD_EXTENT,)).at[jnp.array([1, 4])].set(1.0)
+
+  def make_args(length: int):
+    kw = {"fixed_mask": fixed_mask[:length], "fixed_tokens": jnp.zeros((length,), dtype=jnp.int32)}
+    return _sample_vmapped_args(model, length, kw)
+
+  report = extent_scaling_report(fn, make_args, GUARD_EXTENT)
+  small = loop_bodies(fn, *make_args(GUARD_EXTENT))
+  large = loop_bodies(fn, *make_args(2 * GUARD_EXTENT))
+  rows = [(f, s.trip_count, g.trip_count) for f, s, g in zip(report.findings, small, large, strict=True)]
+  assert any(_trips_scale(s, g) for _, s, g in rows), "no length-scaling loop -- guard vacuous"
+  assert not _unconditional_quadratic_loops(rows), _unconditional_quadratic_loops(rows)
+  assert _quadratic_loops(rows), "the full-recompute fallback branch disappeared"
+
+
+def test_off_under_sample_vmap_is_flagged(model) -> None:
+  """Negative control for the test above: the same harness must see full recompute."""
+  fn = _sample_vmapped_fn(model, "off")
+
+  def make_args(length: int):
+    return _sample_vmapped_args(model, length)
+
+  report = extent_scaling_report(fn, make_args, GUARD_EXTENT)
+  small = loop_bodies(fn, *make_args(GUARD_EXTENT))
+  large = loop_bodies(fn, *make_args(2 * GUARD_EXTENT))
+  rows = [(f, s.trip_count, g.trip_count) for f, s, g in zip(report.findings, small, large, strict=True)]
+  assert _unconditional_quadratic_loops(rows), "unconditional full recompute was not flagged"
+
+
+@pytest.mark.parametrize("fixed_context", ["random_order", "canonical_order"])
+def test_auto_under_sample_vmap_matches_full_recompute(model, fixed_context) -> None:
+  fixed_mask = jnp.zeros((L_DEFAULT,)).at[jnp.array([2, 9, 15])].set(1.0)
+  fixed_tokens = jnp.zeros((L_DEFAULT,), dtype=jnp.int32).at[jnp.array([2, 9, 15])].set(jnp.array([3, 8, 12]))
+  kw = {"fixed_mask": fixed_mask, "fixed_tokens": fixed_tokens}
+  _assert_same(
+    _run_sample_vmapped(model, "off", fixed_context, kw),
+    _run_sample_vmapped(model, "auto", fixed_context, kw),
+  )
+
+
+def test_tied_groups_under_sample_vmap_match_full_recompute(model) -> None:
+  """Tie groups larger than the slab must still fall back (or decode exactly) under the vmap."""
+  kw = {"tie_group_map": _tie_map(L_DEFAULT)}
+  _assert_same(_run_sample_vmapped(model, "off", bundle_kw=kw), _run_sample_vmapped(model, "auto", bundle_kw=kw))
+
+
+def test_mutual_context_under_sample_vmap_matches_full_recompute(model) -> None:
+  """mutual_context's mask is not the wave's: `auto` must keep the full recompute (exact)."""
+  fixed_mask = jnp.zeros((L_DEFAULT,)).at[jnp.array([2, 9, 15])].set(1.0)
+  kw = {"fixed_mask": fixed_mask, "fixed_tokens": jnp.zeros((L_DEFAULT,), dtype=jnp.int32)}
+  _assert_same(
+    _run_sample_vmapped(model, "off", "mutual_context", kw),
+    _run_sample_vmapped(model, "auto", "mutual_context", kw),
+  )
+
+
+def test_non_identity_frame_under_sample_vmap_falls_back(model) -> None:
+  """A non-identity state_position_map breaks the cache's premise: `auto` == `off`.
+
+  Negative control: `force` on the same input differs, so the fallback is load-bearing.
+  """
+  bundle, config = _bundle(n_states=2, temperature=1.0)
+  spm = bundle.conditioning.state_position_map
+  spm = spm.at[1, L_DEFAULT - 3 :].set(-1)  # state 1 has a gap at the tail (as a mismatched substrate residue)
+  bundle = eqx.tree_at(lambda b: b.conditioning.state_position_map, bundle, spm)
+  enc = make_encode_fn(model, use_rolling_state=False)(bundle, jax.random.PRNGKey(0), config)
+  keys = jax.random.split(jax.random.PRNGKey(7), N_SAMPLE_KEYS)
+  run = lambda inc: eqx.filter_jit(_sample_vmapped_fn(model, inc))(keys, enc, bundle, config)  # noqa: E731
+  full = run("off")
+  _assert_same(full, run("auto"))
+  forced = run("force")
+  assert not np.allclose(np.asarray(forced.logits), np.asarray(full.logits), atol=LOGIT_ATOL)
