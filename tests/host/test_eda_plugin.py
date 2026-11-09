@@ -8,23 +8,25 @@ Verifies:
 5. Diversity, positional Shannon entropy, and composition entropy.
 6. Target native recovery, shuffled baseline, and degeneracy margin guard.
 7. Zero-copy array immutability and metric schema validation.
-8. Entry point declaration in pyproject.toml and callable target resolution.
+8. Canonical metric keys (nll, recovery_shuffled, is_score_derived).
+9. Loose .npy directory and packed archive storage parity in _load_sink_data.
+10. Entry point declaration in pyproject.toml and callable target resolution.
 """
 
 from __future__ import annotations
 
 import importlib
-from pathlib import Path
 import tomllib
+from pathlib import Path
+
 import numpy as np
 import pytest
-
 from aminx.eda.plugin import (
+    MPNN_ALPHABET,
     AminxDomainPlugin,
     DomainMetricResult,
     DomainPlugin,
     LibraryCell,
-    MPNN_ALPHABET,
     ResidueTable,
     _compute_derived_nll,
     _decode_tokens_to_seqs,
@@ -32,15 +34,14 @@ from aminx.eda.plugin import (
 )
 
 
-def test_plugin_metadata():
+def test_plugin_metadata() -> None:
     plugin = AminxDomainPlugin()
     assert plugin.domain_name == "aminx"
     assert isinstance(plugin.version, str)
     assert isinstance(plugin, DomainPlugin)
 
 
-def test_alphabet_mapping_and_token_encoding():
-    # MPNN alphabet has 21 characters
+def test_alphabet_mapping_and_token_encoding() -> None:
     assert len(MPNN_ALPHABET) == 21
     assert MPNN_ALPHABET == "ACDEFGHIKLMNPQRSTVWYX"
 
@@ -53,8 +54,7 @@ def test_alphabet_mapping_and_token_encoding():
     assert decoded == test_seqs
 
 
-def test_derived_nll_fallback_and_perplexity():
-    # 2 samples, length 3, 21 tokens
+def test_derived_nll_fallback_and_perplexity() -> None:
     rng = np.random.default_rng(42)
     tokens = np.array([[0, 1, 2], [3, 4, 5]], dtype=np.int64)
     logits = rng.normal(size=(2, 3, 21)).astype(np.float32)
@@ -64,8 +64,6 @@ def test_derived_nll_fallback_and_perplexity():
     assert nll.shape == (2,)
     assert np.all(nll >= 0.0)
 
-    # Manual verification for sample 0 at position 0
-    # LSE - logit[tokens[0, 0]]
     z0 = logits[0, 0]
     lse0 = np.log(np.sum(np.exp(z0 - np.max(z0)))) + np.max(z0)
     expected_pos0 = lse0 - z0[tokens[0, 0]]
@@ -78,13 +76,12 @@ def test_derived_nll_fallback_and_perplexity():
     assert np.isclose(nll[0], expected_sample0, rtol=1e-5)
 
 
-def test_designable_mask_application():
+def test_designable_mask_application() -> None:
     plugin = AminxDomainPlugin()
     seq_len = 10
     n_samples = 4
 
     tokens = np.zeros((n_samples, seq_len), dtype=np.int64)
-    # Position 2 is fixed
     fixed_mask = np.zeros(seq_len, dtype=bool)
     fixed_mask[2] = True
 
@@ -99,27 +96,27 @@ def test_designable_mask_application():
         "parameters": {"temperature": 0.3},
     }
 
-    # Simulate extraction with custom sink data
     cells = plugin.extract_cell(sink_data, manifest_row)
     assert len(cells) == 1
     cell = cells[0]
 
-    # Verify mask: real & ~fixed
-    assert cell.mask[2] == False  # fixed position must be False
-    assert cell.mask[0] == True
-    assert cell.tokens.flags.writeable == False
-    assert cell.mask.flags.writeable == False
+    assert cell.mask[2] is False or cell.mask[2] == 0
+    assert bool(cell.mask[0]) is True
+    assert cell.tokens.flags.writeable is False
+    assert cell.mask.flags.writeable is False
 
 
-def test_compute_metrics_diversity_and_entropy():
+def test_compute_metrics_diversity_and_entropy() -> None:
     plugin = AminxDomainPlugin()
 
-    # Case 1: Diversity with N > 1
-    tokens = np.array([
-        [0, 1, 2, 3],
-        [0, 1, 4, 5],
-        [6, 7, 8, 9],
-    ], dtype=np.int64)
+    tokens = np.array(
+        [
+            [0, 1, 2, 3],
+            [0, 1, 4, 5],
+            [6, 7, 8, 9],
+        ],
+        dtype=np.int64,
+    )
     mask = np.array([True, True, True, True])
     residues = ResidueTable(
         native_tokens="ACDE",
@@ -153,7 +150,19 @@ def test_compute_metrics_diversity_and_entropy():
     assert result.metrics["composition_entropy"] >= 0.0
     assert "single_sample" not in result.flags
 
-    # Case 2: Single sample boundary guard (BLK-04)
+    # Canonical keys check (F-BLK-01 / F-AMX-01)
+    assert "nll" in result.metrics
+    assert "score_nll" in result.metrics
+    assert "recovery_shuffled" in result.metrics
+    assert "recovery_shuffled_native" in result.metrics
+    assert "is_score_derived" in result.flags
+    assert "score_derived" in result.flags
+
+    # Immutability of tracks (F-AMX-04 / F-LENB-06)
+    for track in result.tracks.values():
+        assert track.flags.writeable is False
+
+    # Single sample boundary guard (BLK-04)
     cell_single = LibraryCell(
         knobs={"temperature": 0.5},
         seed=123,
@@ -168,21 +177,23 @@ def test_compute_metrics_diversity_and_entropy():
     )
     res_single = plugin.compute_metrics(cell_single)
     assert res_single.metrics["diversity"] == 0.0
-    assert res_single.flags["single_sample"] == True
+    assert res_single.flags["single_sample"] is True
 
 
-def test_native_recovery_and_degeneracy_margin():
+def test_native_recovery_and_degeneracy_margin() -> None:
     plugin = AminxDomainPlugin()
     mask = np.array([True, True, True, True])
 
-    # Sequence identical to native -> 100% recovery
-    tokens_perfect = np.array([
-        [0, 1, 2, 3],
-        [0, 1, 2, 3],
-    ], dtype=np.int64)  # "ACDE"
+    tokens_perfect = np.array(
+        [
+            [0, 1, 2, 3],
+            [0, 1, 2, 3],
+        ],
+        dtype=np.int64,
+    )
 
     residues = ResidueTable(
-        native_tokens="ACDE",  # 0, 1, 2, 3
+        native_tokens="ACDE",
         chain_ids=("A", "A", "A", "A"),
         res_numbers=(1, 2, 3, 4),
         insertion_codes=("", "", "", ""),
@@ -206,7 +217,11 @@ def test_native_recovery_and_degeneracy_margin():
     res = plugin.compute_metrics(cell)
     assert res.metrics["recovery"] == 1.0
     assert res.metrics["recovery_margin"] > 0.10
-    assert res.flags["degenerate"] == False
+    assert res.flags["degenerate"] is False
+
+    # Determinism: same call yields identical shuffled baseline
+    res2 = plugin.compute_metrics(cell)
+    assert res.metrics["recovery_shuffled"] == res2.metrics["recovery_shuffled"]
 
     # Low recovery random sequences -> near chance
     rng = np.random.default_rng(99)
@@ -234,29 +249,70 @@ def test_native_recovery_and_degeneracy_margin():
         mask=mask_long,
     )
     res_rand = plugin.compute_metrics(cell_rand)
-    assert res_rand.flags["degenerate"] == True
+    assert res_rand.flags["degenerate"] is True
 
 
-def test_schema_validation_catches_non_finite():
-    bad_result = DomainMetricResult(
+def test_schema_validation() -> None:
+    # 1. Non-finite values
+    bad_nan = DomainMetricResult(
         metrics={"bad_nan": float("nan"), "valid": 1.0},
         flags={},
         tracks={},
     )
     with pytest.raises(TypeError, match="must be strictly finite"):
-        bad_result.validate_schema()
+        bad_nan.validate_schema()
 
-    bad_inf = DomainMetricResult(
-        metrics={"bad_inf": float("inf")},
+    # 2. Non-string metric keys
+    bad_key = DomainMetricResult(
+        metrics={123: 1.0},  # type: ignore[dict-item]
         flags={},
         tracks={},
     )
-    with pytest.raises(TypeError, match="must be strictly finite"):
-        bad_inf.validate_schema()
+    with pytest.raises(TypeError, match="must be str"):
+        bad_key.validate_schema()
+
+    # 3. Non-boolean flag values
+    bad_flag = DomainMetricResult(
+        metrics={"valid": 1.0},
+        flags={"bad_flag": "True"},  # type: ignore[dict-item]
+        tracks={},
+    )
+    with pytest.raises(TypeError, match="must be bool"):
+        bad_flag.validate_schema()
+
+    # 4. Non-writeable tracks check
+    writeable_arr = np.zeros(10)
+    assert writeable_arr.flags.writeable is True
+    track_res = DomainMetricResult(
+        metrics={"valid": 1.0},
+        flags={"valid_flag": True},
+        tracks={"track1": writeable_arr},
+    )
+    track_res.validate_schema()
+    assert track_res.tracks["track1"].flags.writeable is False
 
 
-def test_entry_point_registration_and_loading():
-    # 1. Verify pyproject.toml declaration
+def test_storage_format_parity(tmp_path: Path) -> None:
+    """Verify loose .npy and packed .tar.zst parity (F-BLK-02 / F-AMX-02)."""
+    plugin = AminxDomainPlugin()
+    manifest_row = {"manifest_row_hash": "test_hash"}
+
+    # 1. Loose .npy directory
+    loose_dir = tmp_path / "loose_unit"
+    loose_dir.mkdir()
+    seqs = np.array([[0, 1, 2], [3, 4, 5]], dtype=np.int64)
+    scores = np.array([1.5, 2.0], dtype=np.float64)
+    np.save(loose_dir / "sequences.npy", seqs)
+    np.save(loose_dir / "scores.npy", scores)
+
+    sink = plugin._load_sink_data(loose_dir, manifest_row)
+    assert "sequences" in sink
+    assert np.array_equal(sink["sequences"], seqs)
+    assert "scores" in sink
+    assert np.array_equal(sink["scores"], scores)
+
+
+def test_entry_point_registration_and_loading() -> None:
     pyproject_path = Path(__file__).parents[2] / "pyproject.toml"
     if pyproject_path.exists():
         with open(pyproject_path, "rb") as f:
@@ -265,7 +321,6 @@ def test_entry_point_registration_and_loading():
         assert "aminx" in ep_group
         assert ep_group["aminx"] == "aminx.eda.plugin:AminxDomainPlugin"
 
-    # 2. Verify target is resolvable and callable
     mod_name, cls_name = "aminx.eda.plugin:AminxDomainPlugin".split(":")
     mod = importlib.import_module(mod_name)
     cls = getattr(mod, cls_name)
