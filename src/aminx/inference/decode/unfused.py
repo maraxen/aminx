@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 import jax.numpy as jnp
-from jaxtyping import Array, Float, Int8, PRNGKeyArray
+from jaxtyping import Array, Float, Float32, Int8, PRNGKeyArray
 from xtrax.tiling import MapIterator
 
 from aminx.inference.decode._kernel import _decode_one_step, _project_logits
@@ -24,7 +24,7 @@ def decode_states_unfused(
   model: Any,
   encodings: EncoderOutput,
   sequence_oh: Float[Array, "L V"],
-  ar_mask: Int8[Array, "S L L"],
+  ar_mask: Int8[Array, "S L L"] | Float32[Array, "S L L"],
   key: PRNGKeyArray,
   config: InferenceConfig,
   state_iterator: MapIterator,

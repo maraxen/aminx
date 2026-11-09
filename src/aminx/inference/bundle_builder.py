@@ -482,7 +482,7 @@ def with_decoding_order(
   else:
     order, _ = decoding_order_fn(key, seq_len, tie if num_groups is not None else None, num_groups)
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(order), tie)
-  mask = generate_wave_ar_mask(wave, tie).astype(cond.ar_mask.dtype)
+  mask = generate_wave_ar_mask(wave, tie, dtype=cond.ar_mask.dtype)
   if fixed_context == "mutual_context":
     # Position-level, not group-level: a fixed position's token is pre-written into the decode
     # carry, whereas a non-fixed member of a partly fixed tie group is undrawn until its wave runs.
