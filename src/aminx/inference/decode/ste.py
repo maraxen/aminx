@@ -391,6 +391,7 @@ class STEDecode(eqx.Module):
     final_ar_mask = ar_mask_from_decoding_order(
       final_decoding_order,
       tie_group_map[0] if tie_group_map is not None else None,
+      dtype=bundle.conditioning.ar_mask.dtype,
     )
 
     # Broadcast to all states

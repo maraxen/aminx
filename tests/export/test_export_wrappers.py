@@ -920,6 +920,12 @@ class TestP07BundleArMaskPinning:
     assert full_context_ar_mask(4, dtype=jnp.float32).dtype == jnp.float32
     assert generate_ar_mask(order).dtype == jnp.int8
     assert generate_ar_mask(order, dtype=jnp.float32).dtype == jnp.float32
+    # Every spelling of one dtype yields that dtype (and one static jit cache key).
+    import numpy as np
+
+    for spelling in (jnp.float32, np.float32, np.dtype("float32"), "float32"):
+      assert ar_mask_from_decoding_order(order, tie_group_map=tie, dtype=spelling).dtype == jnp.float32
+      assert generate_ar_mask(order, dtype=spelling).dtype == jnp.float32
 
   def test_exported_p07_graph_carries_no_int8_mask_ops(self) -> None:
     length = 6

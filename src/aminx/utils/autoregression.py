@@ -142,7 +142,7 @@ def resolve_tie_groups(
 
 
 @partial(jax.jit, static_argnames=("dtype",))
-def generate_ar_mask(
+def _generate_ar_mask_jit(
   decoding_order: DecodingOrder,
   *,
   chain_idx: jnp.ndarray | None = None,
@@ -193,6 +193,28 @@ def generate_ar_mask(
   return ar_mask
 
 
+def generate_ar_mask(
+  decoding_order: DecodingOrder,
+  *,
+  chain_idx: jnp.ndarray | None = None,
+  tie_group_map: jnp.ndarray | None = None,
+  num_groups: int | None = None,
+  dtype: DTypeLike = jnp.int8,
+) -> AutoRegressiveMask:
+  # Canonicalise the dtype spelling (jnp.float32 / np.float32 / 'float32' / np.dtype) so each
+  # logical dtype is one static jit cache key.
+  return _generate_ar_mask_jit(
+    decoding_order,
+    chain_idx=chain_idx,
+    tie_group_map=tie_group_map,
+    num_groups=num_groups,
+    dtype=jnp.dtype(dtype),
+  )
+
+
+generate_ar_mask.__doc__ = _generate_ar_mask_jit.__doc__
+
+
 def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -> jnp.ndarray:
   """(L,) index of the wave each position decodes in -- the one rule every consumer shares.
 
@@ -233,7 +255,7 @@ def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -
 
 
 @partial(jax.jit, static_argnames=("dtype",))
-def generate_wave_ar_mask(
+def _generate_wave_ar_mask_jit(
   wave: WaveScheduleBundle,
   tie_group_map: jnp.ndarray,
   dtype: DTypeLike = jnp.int8,
@@ -286,6 +308,18 @@ def generate_wave_ar_mask(
   # visibility (and the same-wave/different-group invisibility that gives this schedule
   # its Jacobi independence) are both preserved exactly.
   return mask * (~jnp.eye(seq_len, dtype=bool)).astype(dtype)
+
+
+def generate_wave_ar_mask(
+  wave: WaveScheduleBundle,
+  tie_group_map: jnp.ndarray,
+  dtype: DTypeLike = jnp.int8,
+) -> AutoRegressiveMask:
+  # Canonicalise the dtype spelling so each logical dtype is one static jit cache key.
+  return _generate_wave_ar_mask_jit(wave, tie_group_map, dtype=jnp.dtype(dtype))
+
+
+generate_wave_ar_mask.__doc__ = _generate_wave_ar_mask_jit.__doc__
 
 
 def ar_mask_from_decoding_order(

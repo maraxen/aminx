@@ -292,7 +292,9 @@ def make_optimize_sequence_fn(
       final_key, num_residues, tie_group_map[0] if tie_group_map is not None else None, num_groups,
     )
     final_ar_mask = ar_mask_from_decoding_order(
-      final_decoding_order, tie_group_map[0] if tie_group_map is not None else None,
+      final_decoding_order,
+      tie_group_map[0] if tie_group_map is not None else None,
+      dtype=bundle.conditioning.ar_mask.dtype,
     )
 
     ar_mask_stack = jnp.broadcast_to(
