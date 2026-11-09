@@ -7,6 +7,7 @@ Also includes InferencePlan and related components for unified inference dispatc
 from __future__ import annotations
 
 import dataclasses
+import functools
 import logging
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -143,6 +144,59 @@ def _plan_with_joint_budget(
   decision_by_name.update(fixed_heterogeneous)
   ordered_decisions = tuple(decision_by_name[ax.name] for ax in axes)
   return BatchPlan(decisions=ordered_decisions)
+
+
+def _widen_chunked_axis_tile(
+  plan: BatchPlan,
+  axis_name: str,
+  *,
+  budget_bytes: int,
+  estimate_fn: Callable[[Sequence[AxisDecision]], float],
+) -> BatchPlan:
+  """Raise a demoted axis's tile from the planner's minimum to the largest tile that fits the budget.
+
+  xtrax's joint-budget demotion turns a Vmap axis that does not fit into a ChunkedMap on the axis's
+  default tile (1), so a wide row would run one element at a time: memory-safe and bit-exact, but it
+  gives up nearly all of the parallelism (aminx #274: the first calibration fix peaked at 460 MiB where
+  ~5 GiB was available). The Vmap-vs-chunk decision is kept; only the tile is widened, by a binary search
+  over ``estimate_fn`` (a chunked axis contributes its tile to the memory product, so the estimate is
+  non-decreasing in the tile). The tile never reaches the full cardinality: that case is a Vmap, and the
+  planner already decided it does not fit.
+  """
+  decisions = list(plan.decisions)
+  idx = next((i for i, d in enumerate(decisions) if d.spec.name == axis_name), None)
+  if idx is None:
+    return plan
+  current = decisions[idx]
+  if type(current.strategy).__name__ != "ChunkedMap":
+    return plan
+
+  def _with_tile(tile: int) -> AxisDecision:
+    return AxisDecision(
+      spec=current.spec,
+      batch_size=tile,
+      reasoning=f"{current.reasoning} | tile widened to the largest that fits the joint budget (aminx #274)",
+      strategy=ChunkedMap(batch_size=tile),
+    )
+
+  def _fits(tile: int) -> bool:
+    trial = list(decisions)
+    trial[idx] = _with_tile(tile)
+    return estimate_fn(trial) <= budget_bytes
+
+  low, high = max(1, current.batch_size), max(1, current.spec.cardinality - 1)
+  if high <= low or not _fits(low):
+    return plan
+  while low < high:
+    mid = (low + high + 1) // 2
+    if _fits(mid):
+      low = mid
+    else:
+      high = mid - 1
+  if low == current.batch_size:
+    return plan
+  decisions[idx] = _with_tile(low)
+  return BatchPlan(decisions=tuple(decisions))
 
 
 def decision_for(plan: BatchPlan, name: str) -> AxisDecision:
@@ -318,13 +372,20 @@ def make_sampling_planner(
     dataclasses.replace(N_NOISES, cardinality=max(1, len(getattr(spec, "backbone_noise", [0.0])))),
   ]
   base_shape_bytes = 1.0 if seq_len is None else _sampling_activation_bytes_per_element(seq_len)
-  return _plan_with_joint_budget(
+  estimate_fn = functools.partial(
+    estimate_memory_theoretical,
+    base_shape_bytes=base_shape_bytes,
+    activation_multiplier=activation_multiplier,
+  )
+
+  plan = _plan_with_joint_budget(
     axes,
     budget_bytes=budget_bytes,
-    estimate_fn=lambda ds: estimate_memory_theoretical(ds, base_shape_bytes, activation_multiplier),
+    estimate_fn=estimate_fn,
     carry_specs=getattr(spec, "carry_specs", None) or [],
     dedup_specs=getattr(spec, "dedup_specs", None) or [],
   )
+  return _widen_chunked_axis_tile(plan, N_SAMPLES.name, budget_bytes=budget_bytes, estimate_fn=estimate_fn)
 
 
 def _legacy_batch_size(decision: AxisDecision) -> int:

@@ -103,6 +103,29 @@ def test_mem_fraction_085_vmaps_64_but_chunks_128(spec):
     assert _tile(wide) * MEASURED_PER_SAMPLE_BYTES <= BUDGET_MEM_FRACTION_085
 
 
+@pytest.mark.parametrize("n_samples", [64, 128, 256, 1024])
+@pytest.mark.parametrize("budget", [BUDGET_MEM_FRACTION_030, BUDGET_MEM_FRACTION_085])
+def test_chunked_tile_is_the_largest_that_fits_not_one(spec, n_samples, budget):
+    """A chunked sample axis must use the LARGEST tile the budget allows, not the planner's minimum tile of 1.
+
+    xtrax's joint-budget demotion lands a demoted axis on its default tile (1), which runs a wide row one sample at a time:
+    safe and bit-exact, but it discards almost all of the parallelism (the first #274 fix measured a 460 MiB peak at width
+    128, 256 and 128-at-0.85, against ~5 GiB available). The tile must be floor(budget / per-sample estimate), capped below
+    the row width.
+    """
+    multiplier = inspect.signature(make_sampling_planner).parameters["activation_multiplier"].default
+    per_sample = _sampling_activation_bytes_per_element(SEQ_LEN) * multiplier
+    expected_fit = int(int(budget) // per_sample)
+    decision = decision_for(_plan(spec, n_samples, budget), AxisNames.N_SAMPLES)
+    if expected_fit >= n_samples:
+        assert type(decision.strategy).__name__ == "Vmap"
+        return
+    assert type(decision.strategy).__name__ == "ChunkedMap"
+    tile = _tile(decision)
+    assert tile == expected_fit, f"tile {tile}, expected the largest fitting tile {expected_fit}"
+    assert tile > 1
+
+
 @pytest.mark.parametrize("n_samples", [256, 1024])
 @pytest.mark.parametrize("budget", [BUDGET_MEM_FRACTION_030, BUDGET_MEM_FRACTION_085])
 def test_very_wide_rows_never_plan_a_tile_beyond_the_measured_budget(spec, n_samples, budget):
