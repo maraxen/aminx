@@ -41,7 +41,6 @@ from aminx.model.features import select_neighbors
 from aminx.tiling.strategy import Vmap
 from aminx.types.bundles import EncoderOutput, WaveScheduleBundle
 from aminx.utils.autoregression import ar_mask_from_decoding_order
-
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 from aminx.utils.radial_basis import compute_radial_basis
 
