@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -466,6 +468,12 @@ def with_decoding_order(
     order, _ = decoding_order_fn(key, seq_len, tie if num_groups is not None else None, num_groups)
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(order), tie)
   mask = generate_wave_ar_mask(wave, tie).astype(cond.ar_mask.dtype)
+  if fixed_context != "mutual_context":
+    # The mask is this wave's own mask, so the incremental decoder's wave/mask consistency
+    # precondition holds by construction. Recording it statically keeps `incremental="auto"`
+    # from recomputing it from per-sample (batched) arrays, which turned its `lax.cond` into a
+    # select that ran the full recompute too (aminx #272). mutual_context edits the mask below.
+    wave = dataclasses.replace(wave, mask_consistent=True)
   if fixed_context == "mutual_context":
     # Position-level, not group-level: a fixed position's token is pre-written into the decode
     # carry, whereas a non-fixed member of a partly fixed tie group is undrawn until its wave runs.

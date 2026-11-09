@@ -195,6 +195,13 @@ class WaveScheduleBundle(eqx.Module):
       Validity mask for groups (True = group has content).
   position_valid : Bool[Array, "W G P"]
       Validity mask for positions within groups (True = position is real).
+  mask_consistent : bool
+      Static. True only when the conditioning ``ar_mask`` was generated from THIS schedule
+      (``generate_wave_ar_mask(wave, tie_group_map)``, as ``with_decoding_order`` does for every
+      ``fixed_context`` except ``"mutual_context"``). The incremental decoder then knows its
+      wave/mask consistency precondition holds by construction and does not recompute it from
+      the (per-sample, hence batched) wave and mask -- see aminx #272. Default False: any
+      schedule paired with a caller-supplied mask is checked on device as before.
 
   References
   ----------
@@ -208,6 +215,7 @@ class WaveScheduleBundle(eqx.Module):
   group_positions: Int[Array, "W G P"]
   group_valid: Bool[Array, "W G"]
   position_valid: Bool[Array, "W G P"]
+  mask_consistent: bool = eqx.field(static=True, default=False)
 
   @staticmethod
   def from_tie_groups(
