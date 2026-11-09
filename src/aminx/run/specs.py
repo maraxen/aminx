@@ -681,14 +681,15 @@ def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
   """
   import numpy as np  # noqa: PLC0415
 
-  mask = np.asarray(ar_mask, dtype=np.float32)
+  # Validated on the caller's own dtype: a float32 round trip would misjudge large integers.
+  mask = np.asarray(ar_mask)
   if mask.ndim != 2 or mask.shape[0] != mask.shape[1]:
     msg = f"ScoringSpecification.ar_mask must be a square (L, L) array, got shape {mask.shape}."
     raise ValueError(msg)
-  if not np.all((mask == 0.0) | (mask == 1.0)):
+  if not np.all((mask == 0) | (mask == 1)):
     msg = "ScoringSpecification.ar_mask must be binary (0/1): ar_mask[i, j] == 1 iff i sees j."
     raise ValueError(msg)
-  if np.any(np.diagonal(mask) != 0.0):
+  if np.any(np.diagonal(mask) != 0):
     msg = (
       "ScoringSpecification.ar_mask must have a zero diagonal: a position that sees its own "
       "token is scored on the answer it was given. Use a self-excluding mask "

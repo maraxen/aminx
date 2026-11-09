@@ -285,6 +285,7 @@ def make_p04_unconditional(
       chain_index=chain_index,
       mode="score_unconditional",
       inference=True,
+      ar_mask_dtype=jnp.float32,
     )
     logits = decode_fn(_NO_KEY, enc, bundle, config, stage_set)
     return (
@@ -356,8 +357,10 @@ def p07_bundle(
   at step ``t``).
   """
   wave = wave_from_decoding_order(decoding_order, tie_group_map)
-  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
-  bundle, config = build_inference_bundle(
+  # Export boundary: the exported graph keeps a float32 mask (ORT-web), built float32 from the
+  # start so no int8 convert/sub/mul ops enter the graph. In-memory bundles are int8.
+  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map, dtype=jnp.float32)
+  return build_inference_bundle(
     coords=coords,
     mask=mask,
     residue_index=residue_index,
@@ -371,16 +374,8 @@ def p07_bundle(
     mode="sample_autoregressive",
     inference=True,
     wave=wave,
+    ar_mask_dtype=jnp.float32,
   )
-  # Export boundary: the in-memory contract is int8, but the exported graph (ONNX/StableHLO for
-  # ORT-web) keeps the float32 mask it has always carried, so integer ops on the mask never
-  # reach a backend that may not implement them.
-  bundle = eqx.tree_at(
-    lambda b: b.conditioning.ar_mask,
-    bundle,
-    bundle.conditioning.ar_mask.astype(jnp.float32),
-  )
-  return bundle, config
 
 
 def make_p07_sample(

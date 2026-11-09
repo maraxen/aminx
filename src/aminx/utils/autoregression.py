@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
@@ -181,7 +183,6 @@ def generate_ar_mask(
   """
   del num_groups
   ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map)
-  ar_mask = ar_mask.astype(jnp.int8)
   if chain_idx is not None:
     same_chain = (chain_idx[:, None] == chain_idx[None, :]).astype(ar_mask.dtype)
     ar_mask = ar_mask * same_chain
@@ -227,10 +228,11 @@ def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -
   return group_wave_index[tie_group_map]
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("dtype",))
 def generate_wave_ar_mask(
   wave: WaveScheduleBundle,
   tie_group_map: jnp.ndarray,
+  dtype: jnp.dtype = jnp.int8,
 ) -> AutoRegressiveMask:
   """Get the autoregressive mask for a `WaveScheduleBundle` (wave-color scheduling, W0.3+).
 
@@ -254,11 +256,14 @@ def generate_wave_ar_mask(
   tie_group_map : Int[Array, "L"]
       Tie group id per position (state-0 convention, matching the rest of the
       AR decode kernel).
+  dtype : dtype, optional
+      Mask dtype, static under ``jit``. Defaults to ``int8``; the export wrappers pass
+      ``float32`` so the exported graph carries no integer mask ops.
 
   Returns
   -------
   AutoRegressiveMask
-      (L, L) **int8** mask; 1 where position i can see position j's decoded sequence.
+      (L, L) mask (``int8`` by default); 1 where position i can see position j's decoded sequence.
 
   """
   seq_len = tie_group_map.shape[0]
@@ -268,7 +273,7 @@ def generate_wave_ar_mask(
   earlier_wave = position_wave_index[:, None] > position_wave_index[None, :]
   same_group = tie_group_map[:, None] == tie_group_map[None, :]
 
-  mask = (earlier_wave | (same_wave & same_group)).astype(jnp.int8)
+  mask = (earlier_wave | (same_wave & same_group)).astype(dtype)
   # Self-exclusion, matching :func:`generate_ar_mask` and both reference implementations.
   # `same_wave & same_group` is trivially true on the diagonal, so without this every
   # position read its own slot -- see the "WHY THIS EXISTS" section of the module docstring in
@@ -276,12 +281,13 @@ def generate_wave_ar_mask(
   # measured. Only the diagonal is removed: same-wave/same-group mutual
   # visibility (and the same-wave/different-group invisibility that gives this schedule
   # its Jacobi independence) are both preserved exactly.
-  return mask * (1 - jnp.eye(seq_len, dtype=jnp.int8))
+  return mask * (1 - jnp.eye(seq_len, dtype=dtype))
 
 
 def ar_mask_from_decoding_order(
   decoding_order: DecodingOrder,
   tie_group_map: jnp.ndarray | None = None,
+  dtype: jnp.dtype = jnp.int8,
 ) -> AutoRegressiveMask:
   """Causal, self-excluding mask for an ORDER array (``decoding_order[t]`` = position at step t).
 
@@ -295,9 +301,11 @@ def ar_mask_from_decoding_order(
     decoding_order: (L,) ORDER array.
     tie_group_map: Optional (L,) tie group id per position. Tied positions are mutually
       visible and decode at their earliest member's step, as in :func:`generate_ar_mask`.
+    dtype: Mask dtype (default ``int8``). The export wrappers pass ``float32`` so the exported
+      graph carries no integer mask ops.
 
   Returns:
-    (L, L) int8 mask; ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
+    (L, L) mask (``int8`` by default); ``mask[i, j] == 1`` iff position ``i`` sees position ``j``.
   """
   # Lazy import kept as a precaution. A static walk of explicit imports from aminx.types.* finds
   # no path back to this module. The only path found runs through the package root:
@@ -308,7 +316,7 @@ def ar_mask_from_decoding_order(
   seq_len = decoding_order.shape[0]
   groups = jnp.arange(seq_len, dtype=jnp.int32) if tie_group_map is None else tie_group_map
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(decoding_order), tie_group_map)
-  return generate_wave_ar_mask(wave, groups)
+  return generate_wave_ar_mask(wave, groups, dtype=dtype)
 
 
 def decoding_order_from_wave(

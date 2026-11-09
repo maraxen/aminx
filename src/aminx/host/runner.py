@@ -883,7 +883,7 @@ def _pad_scoring_ar_mask(
       f"{struct_len}."
     )
     raise ValueError(msg)
-  return jnp.pad(jnp.asarray(ar_mask, dtype=jnp.int8), ((0, struct_len - mask_len),) * 2)
+  return jnp.pad(jnp.asarray(ar_mask), ((0, struct_len - mask_len),) * 2)
 
 
 def score(  # noqa: PLR0915

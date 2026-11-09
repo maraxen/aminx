@@ -103,6 +103,7 @@ def build_inference_bundle(
   schedule_key: jax.Array | None = None,
   schedule_k_neighbors: int = 48,
   wave: WaveScheduleBundle | None = None,
+  ar_mask_dtype: jnp.dtype = jnp.int8,
 ) -> tuple[InferenceBundle, InferenceConfig]:
   """Single entry point for bundle construction from raw arrays.
 
@@ -116,6 +117,10 @@ def build_inference_bundle(
   autoregressive visibility mask is derived from this schedule via
   `generate_wave_ar_mask` (positions in earlier waves are visible; positions in
   the same wave but different tie groups are not).
+
+  `ar_mask_dtype` is the dtype of the returned ``ConditioningBundle.ar_mask`` (default
+  ``int8``). Only the export wrappers override it (``float32``, so the exported graph carries
+  no integer mask ops). A caller-supplied `ar_mask` is read as "nonzero == visible".
 
   `wave` overrides `schedule` entirely with a caller-supplied `WaveScheduleBundle`
   (e.g. a custom decoding order built via `WaveScheduleBundle.from_tie_groups`
@@ -291,14 +296,15 @@ def build_inference_bundle(
       # explicitly supplied by the caller -- both live in tie_group_map's id
       # space, so generate_wave_ar_mask is correct here (unlike for the
       # empty()-schedule branch above).
-      ar_mask_2d = generate_wave_ar_mask(wave, tie_group_map[0])
+      ar_mask_2d = generate_wave_ar_mask(wave, tie_group_map[0], dtype=ar_mask_dtype)
       ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
   elif ar_mask.ndim == 2:
     ar_mask = jnp.broadcast_to(ar_mask[None, ...], (num_states, seq_len, seq_len))
-  if ar_mask is not None and ar_mask.dtype != jnp.int8:
-    # A caller-supplied mask (float32, int32, bool) is 0/1 by contract; normalise it so every
-    # bundle this builder returns satisfies ConditioningBundle.ar_mask: Int8.
-    ar_mask = ar_mask.astype(jnp.int8)
+  if ar_mask.dtype != ar_mask_dtype:
+    # Normalise so every bundle this builder returns carries ``ar_mask_dtype`` (int8 by default,
+    # the ConditioningBundle contract). A caller-supplied mask is read as "nonzero == visible",
+    # so a soft or out-of-range value is never silently truncated or wrapped to 0.
+    ar_mask = (ar_mask != 0).astype(ar_mask_dtype)
 
   # Handle sequence: can be token indices or already one-hot
   if sequence is not None:
