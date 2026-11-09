@@ -146,7 +146,7 @@ jobs:
           # --extra laser brings ProDy, which families/laser_mpnn/featurize.py imports. Without it
           # every tests/port/test_laser_*.py and tests/knob_semantics/test_laser_*.py module fails at
           # COLLECTION, so the LASEr waves were never actually executed here (aminx #165 CI).
-          uv sync --extra cpu --extra dev --extra tests --extra onnx --extra agent --extra laser
+          uv sync --extra cpu --extra dev --extra tests --extra onnx --extra agent --extra laser --extra eda
 
           # The ONNX parity tests skip (rather than error) when the toolchain is absent, so a broken install
           # would quietly turn them into skips. Fail the job instead (aminx debt #2392).

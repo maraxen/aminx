@@ -23,7 +23,7 @@ dependencies = [
     "proxide>=0.2.0",
     "typer>=0.12.0",
     "huggingface-hub>=0.23.0",
-    "xtrax[io,export]==0.4.1b5",
+    "xtrax[io,pack,export]==0.4.1b7",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -43,6 +43,11 @@ repository = "https://github.com/maraxen/Aminx.git"
 documentation = "https://aminx.readthedocs.io"
 
 [project.optional-dependencies]
+# Plan EDA (src/aminx/host/plan_eda.py): matplotlib, pandas, pyarrow, seaborn and vl-convert.
+# Optional so the headless sampling install does not carry a plotting stack.
+eda = [
+    "xtrax[eda]==0.4.1b7",
+]
 agent = [
     "cisternal>=0.1.6,<0.2",
 ]
@@ -86,7 +91,7 @@ tests = [
 # tests/parity/test_layer_b_ort_*.py, test_onnx_audit.py, test_p07_sample_export.py) skip with a message
 # when it is absent, and CI installs it so they RUN there (aminx debt #2392).
 onnx = [
-    "xtrax[onnx]==0.4.1b5",
+    "xtrax[onnx]==0.4.1b7",
 ]
 dev = [
   "ruff",
