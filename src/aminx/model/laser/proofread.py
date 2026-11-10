@@ -265,7 +265,7 @@ def _grids(grid: jax.Array | tuple[jax.Array, ...]) -> tuple[jax.Array, ...]:
   return (grid,)
 
 
-def _dense_slots(
+def _dense_slots(  # noqa: PLR0915
   edge: np.ndarray,
   value: jax.Array,
   neighbours: jax.Array | tuple[jax.Array, ...],
@@ -274,7 +274,7 @@ def _dense_slots(
   path: str,
   call: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-  """Map each ``(source, sink, block)`` column onto one free dense slot."""
+  """Map each ``(source, sink, block)`` column onto one free dense slot (vectorized)."""
   identity = np.asarray(edge)
   if identity.ndim != 2 or int(identity.shape[0]) != 3:
     msg = f"{path} call {call}: edge identity shape {identity.shape} is not (3, E)"
@@ -293,30 +293,72 @@ def _dense_slots(
   if sum(widths) != int(value.shape[1]):
     msg = f"{path} call {call}: neighbour width {sum(widths)} != value slots {int(value.shape[1])}"
     raise RuntimeError(msg)
-  offsets = np.cumsum([0, *widths[:-1]]).astype(np.int64, copy=False) if widths else np.zeros((0,))
-  slots = np.empty((int(source.shape[0]),), dtype=np.int64)
-  used = [np.zeros(grid.shape, dtype=bool) for grid in neigh_np]
-  for index in range(int(source.shape[0])):
-    which = int(block[index])
-    row = int(sink[index])
-    if which < 0 or which >= len(neigh_np):
-      msg = f"{path} call {call}: edge {index} block {which} outside {len(neigh_np)} grids"
+  offsets = (
+    np.cumsum([0, *widths[:-1]]).astype(np.int64, copy=False)
+    if widths
+    else np.zeros((0,), dtype=np.int64)
+  )
+  n_edges = int(source.shape[0])
+  if n_edges == 0:
+    return sink, np.empty((0,), dtype=np.int64)
+
+  # Validate block bounds
+  bad_blocks = (block < 0) | (block >= len(neigh_np))
+  if np.any(bad_blocks):
+    bad = int(np.flatnonzero(bad_blocks)[0])
+    msg = f"{path} call {call}: edge {bad} block {int(block[bad])} outside {len(neigh_np)} grids"
+    raise RuntimeError(msg)
+
+  slots = np.empty((n_edges,), dtype=np.int64)
+
+  for b, (neigh, valid_m) in enumerate(zip(neigh_np, valid_np, strict=True)):
+    b_mask = (block == b)
+    if not np.any(b_mask):
+      continue
+    b_indices = np.flatnonzero(b_mask)
+    b_src = source[b_indices]
+    b_dst = sink[b_indices]
+    n_b = len(b_indices)
+
+    n_nodes = int(neigh.shape[0])
+    bad_sinks = (b_dst < 0) | (b_dst >= n_nodes)
+    if np.any(bad_sinks):
+      bad_rel = int(np.flatnonzero(bad_sinks)[0])
+      bad_idx = int(b_indices[bad_rel])
+      msg = f"{path} call {call}: edge {bad_idx} sink {int(sink[bad_idx])} outside {n_nodes} nodes"
       raise RuntimeError(msg)
-    n_nodes = int(neigh_np[which].shape[0])
-    if row < 0 or row >= n_nodes:
-      msg = f"{path} call {call}: edge {index} sink {row} outside {n_nodes} nodes"
-      raise RuntimeError(msg)
-    free = valid_np[which][row] & ~used[which][row]
-    hits = np.flatnonzero(free & (neigh_np[which][row] == int(source[index])))
-    if int(hits.size) == 0:
+
+    # Compute occurrence rank of identical (sink, source) pairs in this block
+    order = np.lexsort((b_src, b_dst))
+    sorted_dst = b_dst[order]
+    sorted_src = b_src[order]
+
+    diffs = np.empty(n_b, dtype=bool)
+    diffs[0] = True
+    np.logical_or(sorted_dst[1:] != sorted_dst[:-1], sorted_src[1:] != sorted_src[:-1], out=diffs[1:])
+    group_starts = np.maximum.accumulate(np.where(diffs, np.arange(n_b), 0))
+    occ = np.empty(n_b, dtype=np.int64)
+    occ[order] = np.arange(n_b) - group_starts
+
+    cand = neigh[b_dst]
+    cand_valid = valid_m[b_dst]
+    matches = (cand == b_src[:, None]) & cand_valid
+    cum_matches = np.cumsum(matches, axis=1) - 1
+    target_match = matches & (cum_matches == occ[:, None])
+
+    has_slot = np.any(target_match, axis=1)
+    if not np.all(has_slot):
+      bad = int(np.flatnonzero(~has_slot)[0])
+      bad_idx = int(b_indices[bad])
       msg = (
-        f"{path} call {call}: edge {index} source {int(source[index])} "
-        f"sink {row} block {which} has no dense slot"
+        f"{path} call {call}: edge {bad_idx} source {int(source[bad_idx])} "
+        f"sink {int(sink[bad_idx])} block {b} has no dense slot"
       )
       raise RuntimeError(msg)
-    choice = int(hits[0])
-    used[which][row, choice] = True
-    slots[index] = int(offsets[which]) + choice
+
+    choice = np.argmax(target_match, axis=1)
+    slots[b_indices] = int(offsets[b]) + choice
+
   return sink, slots
 
 
@@ -921,6 +963,27 @@ def proofread_dropout(
       _PLAN.reset(token)
   finally:
     _remove_patches()
+
+
+def pregenerate_production_masks(
+  dropout_key: jax.Array,
+  paths_and_shapes: Mapping[str, tuple[tuple[int, ...], int]],
+  drop_p: float = _DROPOUT_P,
+) -> dict[str, jax.Array]:
+  """Pre-generate all N step masks for each path in a single vectorized vmap.
+
+  Matches bit-for-bit the draws that ``_Plan._draw`` produces sequentially
+  for each call index on each path stream.
+  """
+  step_masks: dict[str, jax.Array] = {}
+  for path, (shape, count) in paths_and_shapes.items():
+    stream = zlib.crc32(path.encode("utf-8")) & 0x7FFFFFFF
+    calls = jnp.arange(count, dtype=jnp.int32)
+    path_key = jax.random.fold_in(dropout_key, stream)
+    keys = jax.vmap(lambda c, pk=path_key: jax.random.fold_in(pk, c))(calls)
+    masks = jax.vmap(lambda k, s=shape: jax.random.bernoulli(k, 1.0 - drop_p, shape=s))(keys)
+    step_masks[path] = masks
+  return step_masks
 
 
 def softmax_rows(logits: np.ndarray) -> np.ndarray:

@@ -829,6 +829,93 @@ def _scan_residues(
   return sequence, final.sequence_logits, final.chi_degrees, final.chi_logits, final.node_scalars
 
 
+@eqx.filter_jit
+def _vmap_scan_residues(
+  joint: LaserJointDecode,
+  decoder: LaserDecoder,
+  ligand_scalars: Float[Array, "a h"],
+  pr_edges: Float[Array, "l kp e"],
+  pr_neighbours: Int[Array, "l kp"],
+  pr_mask: Bool[Array, "l kp"],
+  lp_edges: Float[Array, "l kl e"],
+  lp_neighbours: Int[Array, "l kl"],
+  lp_mask: Bool[Array, "l kl"],
+  batch_decoding_order: Int[Array, "b l"],
+  input_sequence: Int[Array, " l"],
+  input_chi: Float[Array, "l 4"],
+  chain_mask: Bool[Array, " l"],
+  first_shell: Bool[Array, " l"],
+  budget_mask: Bool[Array, " l"],
+  charged_mask: Bool[Array, " l"],
+  disabled: Bool[Array, " 21"],
+  bias: Float[Array, "l 21"],
+  batch_uniforms: Float[Array, "b draws"],
+  node_scalars: Float[Array, "4 l h"],
+  node_vectors: Float[Array, "4 l v 3"],
+  *,
+  sequence_temperature: float | None,
+  chi_temperature: float | None,
+  fs_sequence_temp: float | None,
+  seq_min_p: float,
+  chi_min_p: float,
+  ala_budget: int,
+  gly_budget: int,
+  ignore_chain_mask_zeros: bool,
+  repack_all: bool,
+) -> tuple[
+  Int[Array, "b l"],
+  Float[Array, "b l 21"],
+  Float[Array, "b l 4"],
+  Float[Array, "b l 4 72"],
+  Float[Array, "b 4 l h"],
+]:
+  """Vectorized scan across a batch of sample orders and uniform streams."""
+  def scan_one(
+    order: Int[Array, " l"],
+    uniforms: Float[Array, " draws"],
+  ) -> tuple[
+    Int[Array, " l"],
+    Float[Array, "l 21"],
+    Float[Array, "l 4"],
+    Float[Array, "l 4 72"],
+    Float[Array, "4 l h"],
+  ]:
+    return _scan_residues(
+      joint,
+      decoder,
+      ligand_scalars,
+      pr_edges,
+      pr_neighbours,
+      pr_mask,
+      lp_edges,
+      lp_neighbours,
+      lp_mask,
+      order,
+      input_sequence,
+      input_chi,
+      chain_mask,
+      first_shell,
+      budget_mask,
+      charged_mask,
+      disabled,
+      bias,
+      uniforms,
+      node_scalars,
+      node_vectors,
+      sequence_temperature=sequence_temperature,
+      chi_temperature=chi_temperature,
+      fs_sequence_temp=fs_sequence_temp,
+      seq_min_p=seq_min_p,
+      chi_min_p=chi_min_p,
+      ala_budget=ala_budget,
+      gly_budget=gly_budget,
+      ignore_chain_mask_zeros=ignore_chain_mask_zeros,
+      repack_all=repack_all,
+    )
+
+  return jax.vmap(scan_one)(batch_decoding_order, batch_uniforms)
+
+
 @dataclass(frozen=True, slots=True)
 class JointDecodeResult:
   """One full pass of ``sample``: sequence, χ, and the decoder rows the scan kept."""
