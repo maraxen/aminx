@@ -17,7 +17,7 @@ status: "draft_pr"
 
 Implements FrustraMPNN (`RosettaCommons/frustraMPNN` pinned at commit `3a03cdc300bfe24c4bb70e60207118532bc73b3b`) in `aminx` (`maraxen/aminx`) to the repository's strict family-parity standard on isolated branch `wt/261105-frustrampnn` (debt `#3222`).
 
-This PR completes the full adversarial code review cycle, concurrent-`main` merge-order analysis, defect remediation, independent forensic audit, de-tracking of large weight binaries, elimination of facade branches, RedSox closure isolation, and certified 15/15 `[PASS]` wave verification under Bathos run `29fae936-de0e-4ebf-89eb-72612e24a144`.
+This PR completes the full adversarial code review cycle, concurrent-`main` merge-order analysis, defect remediation, independent forensic audit, de-tracking of large weight binaries, elimination of facade branches, RedSox closure isolation, and certified 15/15 `[PASS]` wave verification under Bathos run `b728b709-fd1c-4aa5-a647-5d444314c37e`.
 
 **PR Status**: DRAFT (Awaiting final confirmation gate before landing on `main`).
 
@@ -102,22 +102,22 @@ An independent forensic audit conducted at HEAD (`8d2b306c`) certified the imple
 
 ## Graded Bathos Run & RedSox Wave Verification
 
-- **Authoritative Graded Run**: `29fae936-de0e-4ebf-89eb-72612e24a144`
+- **Authoritative Graded Run**: `b728b709-fd1c-4aa5-a647-5d444314c37e`
   - Status: `completed`
   - Outcome: `pass`
   - Git Dirty: `false`
-  - Git Hash: `a23bcd55`
+  - Git Hash: `eb12dd2c`
   - Sidecar Mode: `declared`
   - Sidecar SHA-256: `6e20fe9c4db4c191095323e36c932bd8e1770878fbe5988026f12bb03c63e045`
 - **Catalog Artifact**:
-  - Exported cool-tier Parquet: `/tmp/bth_home/.bth/catalog/runs/aminx/run_29fae936-de0e-4ebf-89eb-72612e24a144.parquet`.
+  - Exported cool-tier Parquet: `/tmp/bth_home/.bth/catalog/runs/aminx/run_b728b709-fd1c-4aa5-a647-5d444314c37e.parquet`.
 - **Wave Verification Output (`verify_wave.py`)**:
   ```
-  === frustrampnn_parity  run 29fae936-de0e-4ebf-89eb-72612e24a144
+  === frustrampnn_parity  run b728b709-fd1c-4aa5-a647-5d444314c37e
       [PASS] status == completed                'completed'
       [PASS] outcome == pass                    'pass'
       [PASS] git_dirty is False                 False
-      [PASS] git_hash present                   a23bcd55
+      [PASS] git_hash present                   eb12dd2c
       [PASS] ancestor of HEAD                   
       [PASS] no path in the row's closure since 
       [PASS] sidecar_sha256 matches             
