@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import equinox as eqx
 import jax
 import jax.experimental
 import jax.numpy as jnp
@@ -110,6 +111,42 @@ def _spec_sample_rung(
     has_stage_sinks=has_sinks,
     quiet=quiet,
   )
+
+
+@eqx.filter_jit
+def _chunked_sample_decode(decode, enc, bundle, config, sample_keys, order_cfg, *, tile):
+  """Decode every sample key in chunks of ``tile`` under ONE cached jit executable (aminx #282).
+
+  The sample axis used to run as an eager ``lax.map`` over a closure rebuilt for every row, so jax
+  compiled a fresh ``jit(scan)`` per row (~6 s each at 128 samples). Here the per-row data -- the
+  decode module, encoding, bundle, config and keys -- are arguments, and only ``tile`` and the
+  decoding-order settings are static, so rows of one shape reuse the same executable.
+
+  ``order_cfg`` is ``(skip_order, seed, order_fn, num_groups, fixed_context)``: non-array leaves,
+  hence static under ``filter_jit``.
+  """
+  skip_order, seed, order_fn, num_groups, fixed_context = order_cfg
+
+  def _one(k):
+    b = (
+      bundle
+      if skip_order
+      else with_decoding_order(
+        bundle, decoding_order_key(k, seed), order_fn, num_groups, fixed_context=fixed_context,
+      )
+    )
+    res = decode(enc, b, k, config)
+    return res.sequence, res.logits
+
+  return _safe_map(_one, sample_keys, batch_size=tile)
+
+
+def _chunk_tile(strategy) -> int | None:
+  """The chunk size of a SafeMap/ChunkedMap strategy, or None for any other strategy."""
+  if type(strategy).__name__ not in ("SafeMap", "ChunkedMap"):
+    return None
+  tile = getattr(strategy, "tile", None)
+  return strategy.batch_size if tile is None else tile
 
 
 def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
@@ -482,6 +519,20 @@ def _sample_batch(  # noqa: PLR0915
         res = plan.decode(enc, _with_sample_order(bundle, k), k, config)
         return res.sequence, res.logits
 
+      chunk_tile = _chunk_tile(sample_decision.strategy)
+      if chunk_tile is not None:
+        # Chunked sample axis: one cached executable across rows (aminx #282), not an eager
+        # lax.map over a per-row closure.
+        order_cfg = (
+          custom_wave is not None,
+          spec.run_spec.sampling.decoding_order_seed,
+          custom_order_fn,
+          order_num_groups,
+          spec.run_spec.sampling.fixed_position_context,
+        )
+        return _chunked_sample_decode(
+          plan.decode, enc, bundle, config, key_samples, order_cfg, tile=chunk_tile,
+        )
       return _dispatch_axis(sample_decision.strategy, _run_one_sample, key_samples)
 
     def _unified_dispatch_structure(s_idx):
