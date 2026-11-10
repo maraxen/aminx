@@ -159,6 +159,7 @@ soft = [
   "aminx.families.caliby",
   "aminx.families.fampnn",
   "aminx.families.thermo_mpnn",
+  "aminx.families.frustra_mpnn",
 ]
 
 [module."tests/host/test_model_family_validation.py"]
@@ -170,6 +171,7 @@ soft = [
   "aminx.families.caliby",
   "aminx.families.fampnn",
   "aminx.families.thermo_mpnn",
+  "aminx.families.frustra_mpnn",
 ]
 
 [module."tests/io/test_family_weights.py"]

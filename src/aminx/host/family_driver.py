@@ -37,6 +37,7 @@ ModelFamily = Literal[
   "caliby",
   "fampnn",
   "thermompnn",
+  "frustrampnn",
 ]
 # Driver-backed families need a registered FamilyDriver, imported on first use from the
 # module named here. A missing driver is an error, never a fallback to the stock path.
@@ -47,6 +48,7 @@ DRIVER_BACKED_FAMILY_MODULES: dict[str, str] = {
   "caliby": "aminx.families.caliby",
   "fampnn": "aminx.families.fampnn",
   "thermompnn": "aminx.families.thermo_mpnn",
+  "frustrampnn": "aminx.families.frustra_mpnn",
 }
 # Every declared family that is not driver-backed runs on the stock MPNN path.
 STOCK_MODEL_FAMILIES: tuple[str, ...] = tuple(

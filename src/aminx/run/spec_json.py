@@ -23,6 +23,7 @@ from xtrax.config import classify_schema_version
 from aminx.run.options import (
   CalibyOptions,
   FAMPNNOptions,
+  FrustraMPNNOptions,
   LaserOptions,
   PottsMPNNOptions,
   ProtonPottsOptions,
@@ -43,6 +44,7 @@ _OPTIONS_FIELDS: dict[str, type[Any]] = {
   "caliby": CalibyOptions,
   "fampnn": FAMPNNOptions,
   "thermompnn": ThermoMPNNOptions,
+  "frustrampnn": FrustraMPNNOptions,
 }
 
 _SPEC_CLASS_BY_NAME: dict[str, type[RunSpecification]] = {
@@ -432,11 +434,7 @@ def run_specification_from_json_dict(data: Mapping[str, Any]) -> RunSpecificatio
   # Decode that one value as 42 so a reload reproduces the original run. schema_version 1
   # keeps 0.
   recorded_seed = kwargs.get("random_seed")
-  if (
-    "schema_version" not in data
-    and recorded_seed == 0
-    and not isinstance(recorded_seed, bool)
-  ):
+  if "schema_version" not in data and recorded_seed == 0 and not isinstance(recorded_seed, bool):
     warnings.warn(
       "Pre-schema spec recorded random_seed 0 but ran with seed 42; "
       "decoding as 42 to reproduce the original run.",
