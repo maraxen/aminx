@@ -17,7 +17,7 @@ status: "draft_pr"
 
 Implements FrustraMPNN (`RosettaCommons/frustraMPNN` pinned at commit `3a03cdc300bfe24c4bb70e60207118532bc73b3b`) in `aminx` (`maraxen/aminx`) to the repository's strict family-parity standard on isolated branch `wt/261105-frustrampnn` (debt `#3222`).
 
-This PR completes the full adversarial code review cycle, concurrent-`main` merge-order analysis, defect remediation, independent forensic audit, de-tracking of large weight binaries, elimination of facade branches, RedSox closure isolation, and certified 15/15 `[PASS]` wave verification under Bathos run `c5fed673-9186-49db-a867-d67f7fa83606`.
+This PR completes the full adversarial code review cycle, concurrent-`main` merge-order analysis, defect remediation, independent forensic audit, de-tracking of large weight binaries, elimination of facade branches, RedSox closure isolation, and certified 15/15 `[PASS]` wave verification under Bathos run `ff8e60e1-9aa9-495e-a849-83453a3e9c05`.
 
 **PR Status**: DRAFT (Awaiting final confirmation gate before landing on `main`).
 
@@ -102,22 +102,22 @@ An independent forensic audit conducted at HEAD (`8d2b306c`) certified the imple
 
 ## Graded Bathos Run & RedSox Wave Verification
 
-- **Authoritative Graded Run**: `c5fed673-9186-49db-a867-d67f7fa83606`
+- **Authoritative Graded Run**: `ff8e60e1-9aa9-495e-a849-83453a3e9c05`
   - Status: `completed`
   - Outcome: `pass`
   - Git Dirty: `false`
-  - Git Hash: `b2cd02ee9b4ca9118a30d84ce9973eea52a9ef1d`
+  - Git Hash: `0f678ba3`
   - Sidecar Mode: `declared`
   - Sidecar SHA-256: `6e20fe9c4db4c191095323e36c932bd8e1770878fbe5988026f12bb03c63e045`
 - **Catalog Artifact**:
-  - Exported cool-tier Parquet: `/tmp/bth_home/.bth/catalog/runs/aminx/run_c5fed673-9186-49db-a867-d67f7fa83606.parquet`.
+  - Exported cool-tier Parquet: `/tmp/bth_home/.bth/catalog/runs/aminx/run_ff8e60e1-9aa9-495e-a849-83453a3e9c05.parquet`.
 - **Wave Verification Output (`verify_wave.py`)**:
   ```
-  === frustrampnn_parity  run c5fed673-9186-49db-a867-d67f7fa83606
+  === frustrampnn_parity  run ff8e60e1-9aa9-495e-a849-83453a3e9c05
       [PASS] status == completed                'completed'
       [PASS] outcome == pass                    'pass'
       [PASS] git_dirty is False                 False
-      [PASS] git_hash present                   b2cd02ee9b4c
+      [PASS] git_hash present                   0f678ba3
       [PASS] ancestor of HEAD                   
       [PASS] no path in the row's closure since 
       [PASS] sidecar_sha256 matches             

@@ -1,7 +1,7 @@
 # Sharded ledger for FrustraMPNN.
-# Graded bth run completed: c5fed673-9186-49db-a867-d67f7fa83606
+# Graded bth run completed: ff8e60e1-9aa9-495e-a849-83453a3e9c05
 # Per Requirement G, the [sidecar] table below is kept empty on the feature branch.
 
 [sidecar]
 # [sidecar.frustrampnn_parity]
-# bth_run_id = "c5fed673-9186-49db-a867-d67f7fa83606"
+# bth_run_id = "ff8e60e1-9aa9-495e-a849-83453a3e9c05"
