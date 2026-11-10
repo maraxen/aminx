@@ -15,7 +15,6 @@ Verifies:
 
 from __future__ import annotations
 
-import importlib
 import tomllib
 from pathlib import Path
 
@@ -315,15 +314,12 @@ def test_storage_format_parity(tmp_path: Path) -> None:
 def test_entry_point_registration_and_loading() -> None:
     pyproject_path = Path(__file__).parents[2] / "pyproject.toml"
     if pyproject_path.exists():
-        with open(pyproject_path, "rb") as f:
+        with pyproject_path.open("rb") as f:
             cfg = tomllib.load(f)
         ep_group = cfg.get("project", {}).get("entry-points", {}).get("xtrax.eda.domains", {})
         assert "aminx" in ep_group
         assert ep_group["aminx"] == "aminx.eda.plugin:AminxDomainPlugin"
 
-    mod_name, cls_name = "aminx.eda.plugin:AminxDomainPlugin".split(":")
-    mod = importlib.import_module(mod_name)
-    cls = getattr(mod, cls_name)
-    inst = cls()
+    inst = AminxDomainPlugin()
     assert isinstance(inst, DomainPlugin)
     assert inst.domain_name == "aminx"
