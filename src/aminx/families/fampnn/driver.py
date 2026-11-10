@@ -29,11 +29,11 @@ from aminx.families.fampnn.constants import (
 from aminx.families.fampnn.convert import convert_fampnn_state_dict
 from aminx.families.fampnn.model import FAMPNNModel
 from aminx.families.fampnn.sidechain_diffusion import edm_sample
-from aminx.families.potts_mpnn.featurize import PottsInputError, parse_pdb_upstream
 from aminx.host.bucketing import bucket_ladder
 from aminx.host.family_driver import FAMILY_DRIVERS, FamilyBatch, FamilyStages, SinkArraySpec
 from aminx.host.prep import _resolve_driver_checkpoint
 from aminx.io.torch_checkpoint import load_restricted_torch_checkpoint
+from aminx.io.upstream_pdb import PottsInputError, parse_pdb_upstream
 from aminx.run.options import FAMPNNOptions
 
 _HANDLED: frozenset[str] = frozenset({

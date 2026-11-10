@@ -1,0 +1,31 @@
+[experiment]
+hypothesis = "JAX Caliby stages L1 (atom23 frames and rigid_from_3_points geometry), L2 (Potts parameters slicing and alphabet permutation), and L3 (Potts energy with gap penalty and injected EDM noise) achieve parity within 1e-4 in float32, and all negative controls (reverse_coordinate_frame, unpermuted_alphabet, zero_gap_penalty) fail decisively (> 1e-2)."
+stage_name = "validation"
+
+[reproduction]
+reproduces_paper = "doi:10.1101/2024.10.15.618520"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[requires.waiver]
+reason = "Caliby parity verification vehicle against upstream PyTorch checkpoints"
+
+[outcomes.pass]
+condition = "clean == 'pass' AND mutants.reverse_coordinate_frame == 'failed' AND mutants.unpermuted_alphabet == 'failed' AND mutants.zero_gap_penalty == 'failed'"
+decision = "Promote Caliby JAX port and knob coverage."
+reasoning = "Clean run passes all graded stages L1/L2/L3, and all three negative control mutants trip."
+is_residual = false
+
+[outcomes.fail]
+condition = "clean != 'pass' OR mutants.reverse_coordinate_frame != 'failed' OR mutants.unpermuted_alphabet != 'failed' OR mutants.zero_gap_penalty != 'failed'"
+decision = "Block promotion and debug Caliby feature, Potts head, or EDM packer implementation."
+reasoning = "Parity delta exceeds tolerance or negative controls failed to trip."
+is_residual = true
+
+[result_schema]
+family = "str"
+clean = "str"
+mutants = "dict"
+weights = "dict"
