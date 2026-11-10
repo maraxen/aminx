@@ -44,6 +44,9 @@ from aminx.utils.autoregression import ar_mask_from_decoding_order
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 from aminx.utils.radial_basis import compute_radial_basis
 
+# Exported graphs keep a float32 AR mask (ORT-web); built float32 from the start so the graph has no int8 ops.
+_EXPORT_AR_MASK_DTYPE = jnp.float32
+
 if TYPE_CHECKING:
   # Type-only: aminx.types.stages / aminx.inference.decode.unconditional are exempt from
   # the PottsModel-parallel banned-api rule (ADR 260605_potts-parallel-not-stageset) at
@@ -285,6 +288,7 @@ def make_p04_unconditional(
       chain_index=chain_index,
       mode="score_unconditional",
       inference=True,
+      ar_mask_dtype=_EXPORT_AR_MASK_DTYPE,
     )
     logits = decode_fn(_NO_KEY, enc, bundle, config, stage_set)
     return (
@@ -356,7 +360,11 @@ def p07_bundle(
   at step ``t``).
   """
   wave = wave_from_decoding_order(decoding_order, tie_group_map)
-  ar_mask = ar_mask_from_decoding_order(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
+  # Export boundary: the exported graph keeps a float32 mask (ORT-web), built float32 from the
+  # start so no int8 convert/sub/mul ops enter the graph. In-memory bundles are int8.
+  ar_mask = ar_mask_from_decoding_order(
+    decoding_order, tie_group_map=tie_group_map, dtype=_EXPORT_AR_MASK_DTYPE
+  )
   return build_inference_bundle(
     coords=coords,
     mask=mask,
@@ -371,6 +379,7 @@ def p07_bundle(
     mode="sample_autoregressive",
     inference=True,
     wave=wave,
+    ar_mask_dtype=_EXPORT_AR_MASK_DTYPE,
   )
 
 

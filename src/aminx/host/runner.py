@@ -856,7 +856,7 @@ def _over_noise_levels(
 
 
 def _pad_scoring_ar_mask(
-  ar_mask: Any,  # noqa: ANN401 -- the validated (L, L) float32 ndarray from ScoringSpecification
+  ar_mask: Any,  # noqa: ANN401 -- the validated (L, L) int8 ndarray from ScoringSpecification
   sequence_indices: list[jax.Array],
   struct_len: int,
 ) -> jax.Array:
@@ -883,7 +883,7 @@ def _pad_scoring_ar_mask(
       f"{struct_len}."
     )
     raise ValueError(msg)
-  return jnp.pad(jnp.asarray(ar_mask, dtype=jnp.float32), ((0, struct_len - mask_len),) * 2)
+  return jnp.pad(jnp.asarray(ar_mask), ((0, struct_len - mask_len),) * 2)
 
 
 def score(  # noqa: PLR0915

@@ -159,7 +159,9 @@ def make_sample_sequences(
         inference=True,
       )
       if wave_schedule is not None:
-        wave_mask = generate_wave_ar_mask(wave_schedule, bundle.conditioning.tie_group_map[0])
+        wave_mask = generate_wave_ar_mask(
+          wave_schedule, bundle.conditioning.tie_group_map[0], dtype=bundle.conditioning.ar_mask.dtype
+        )
         wave_mask = jnp.broadcast_to(wave_mask[None, ...], (S, L, L))
         bundle = eqx.tree_at(
           lambda b: (b.wave, b.conditioning.ar_mask),
