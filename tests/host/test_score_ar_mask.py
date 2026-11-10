@@ -94,6 +94,26 @@ def test_valid_ar_mask_is_kept_and_defaults_to_none() -> None:
   np.testing.assert_array_equal(spec.ar_mask, mask)
 
 
+@pytest.mark.parametrize("dtype", [np.float32, np.float64, np.int32, np.int64, np.bool_])
+def test_user_ar_mask_is_stored_as_int8_whatever_the_input_dtype(dtype: type) -> None:
+  mask = np.asarray(full_context_ar_mask(3)).astype(dtype)
+  spec = ScoringSpecification(inputs=[_PLACEHOLDER_PDB], sequences_to_score=["AAA"], ar_mask=mask)
+  assert spec.ar_mask.dtype == np.int8
+  np.testing.assert_array_equal(spec.ar_mask, np.asarray(full_context_ar_mask(3)))
+
+
+def test_padded_scoring_ar_mask_is_int8_with_invisible_padding() -> None:
+  from aminx.host.runner import _pad_scoring_ar_mask  # noqa: PLC0415
+
+  mask = np.asarray(full_context_ar_mask(3)).astype(np.int8)
+  padded = _pad_scoring_ar_mask(mask, [jnp.zeros(3, dtype=jnp.int32)], 5)
+  assert padded.dtype == jnp.int8
+  assert padded.shape == (5, 5)
+  np.testing.assert_array_equal(np.asarray(padded)[:3, :3], mask)
+  assert int(np.asarray(padded)[3:].sum()) == 0
+  assert int(np.asarray(padded)[:, 3:].sum()) == 0
+
+
 def test_ar_mask_survives_a_json_round_trip() -> None:
   mask = _causal_mask(np.array([2, 0, 1]))
   spec = ScoringSpecification(inputs=[_PLACEHOLDER_PDB], sequences_to_score=["AAA"], ar_mask=mask)

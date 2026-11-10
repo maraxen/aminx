@@ -204,7 +204,7 @@ class TestARMaskWithTies:
     mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
 
     chex.assert_shape(mask, (5, 5))
-    chex.assert_type(mask, int)
+    chex.assert_type(mask, jnp.int8)
 
   def test_ar_mask_no_position_attends_to_itself(self):
     """No position may read its own slot -- inverted 2026-08-27.

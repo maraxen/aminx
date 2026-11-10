@@ -715,7 +715,7 @@ class AutoregressiveDecode(eqx.Module):
       valid_nbr = (
         jnp.take_along_axis(enc.mask, nbr_all.reshape(S, -1), axis=1).reshape(nbr_all.shape) > 0.5
       )
-      reads = valid_row[..., None] & valid_nbr & (ar_neighbors > 0.5)
+      reads = valid_row[..., None] & valid_nbr & (ar_neighbors != 0)
       wave_row = decode_wave[None, :, None]
       wave_nbr = decode_wave[nbr_all]
       # Same-wave visibility (tie groups): the wave's cache rows must be recomputed after

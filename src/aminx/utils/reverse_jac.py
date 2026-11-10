@@ -16,6 +16,7 @@ from aminx.sampling.conditional_logits import (
   make_encoding_conditional_logits_split_fn,
 )
 from aminx.scoring.score import _nll_from_logits
+from aminx.types.arrays import AutoRegressiveMask
 from aminx.types.protocols import ModelProtocol
 
 
@@ -36,7 +37,7 @@ def make_reverse_jacobian_score_fn(model: ModelProtocol) -> tuple[Callable, Call
   def compute_grad_score(
     encoding: tuple,
     one_hot_sequence: Float[Array, "L 21"],
-    ar_mask: Float[Array, "L L"],
+    ar_mask: AutoRegressiveMask,
   ) -> Float[Array, "L 21"]:
     """Compute ∂score/∂one_hot for a given sequence encoding."""
     # Extract the mask from the encoding tuple (4th element)
