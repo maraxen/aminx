@@ -21,6 +21,15 @@ from aminx.io.weights import HF_REPO_ID, HF_REVISION
 pytestmark = pytest.mark.requires_weights
 
 
+#: Checkpoints present on the Hub default branch that the pinned HF_REVISION deliberately omits.
+#: Each entry needs a reason; the matching note sits next to HF_REVISION in ``aminx.io.weights``.
+#: The 0.5.2 release is a bug-fix release and does not move the weights pin, so a checkpoint that
+#: reached the Hub after the 5ff5cf16 pin is not part of it.
+DELIBERATELY_NOT_PINNED: frozenset[str] = frozenset({
+  "megascale_default_la-true_esm-False_split1.eqx.zst",  # added to the Hub after the 5ff5cf16 pin
+})
+
+
 def _packaged_checkpoint_names() -> set[str]:
   """Every ``*.eqx.zst`` shipped in the source tree -- the set a consumer may ask for."""
   root = files("aminx.model_params")
@@ -106,7 +115,7 @@ def test_pin_is_not_behind_the_default_branch_in_content() -> None:
   """
   at_pin = _repo_files_at(HF_REVISION)
   at_main = _repo_files_at("main")
-  behind = sorted(at_main - at_pin)
+  behind = sorted(at_main - at_pin - DELIBERATELY_NOT_PINNED)
 
   assert not behind, (
     f"the pinned revision omits {len(behind)} checkpoint(s) present on the default branch: "
