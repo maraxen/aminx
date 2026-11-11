@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A chunked sample axis no longer recompiles on every row (#282). `_dispatch_axis` ran a `ChunkedMap` sample axis as an eager `lax.map` over a closure rebuilt for each row, so jax compiled a fresh `jit(scan)` per row (about 5.8 s of XLA compilation per 128-wide row on a TITAN RTX, most of a ~7.8 s row). The chunked sample axis in the unified single-state path now runs through one module-level `filter_jit` function (`_chunked_sample_decode`) whose per-row data are arguments, so rows of the same shape reuse one executable. Graded by a pre-registered gate on a TITAN RTX (production MS-L cell family, main vs this change): 26 of 26 compared rows are bit-identical, the compile slope falls from 1.0 to 0 per added row, 8 rows of 128 run 5.66x faster (7.6 s to 1.3 s per row), the 20-sample row is unchanged (0.92), and peak device memory is at most 1.06x main (about 260 MiB more at the wide 0.30 cells). A review found that a Python-int `decoding_order_seed` was still a static `filter_jit` argument, so rows differing only in seed each compiled their own executable; the seed is now passed as an int32 array (`None` and seeds outside int32 range stay static; the traced seed gives the same PRNG key, so tokens are unchanged). A second pre-registered gate with a distinct seed on every row (8 rows of 128, main vs this change) found 16 of 16 rows bit-identical, compile slope 0 against 1.0 on main, 5.48x faster, and peak memory at most 1.06x main. Only the unified single-state path (no encoding fusion) is changed; the fused path and the legacy path still use the eager map and are untested. One GPU model and one shape (L=256, ProteinMPNN v_48).
+
 ## 0.5.1 (2026-11-10)
 
 ### Changed
