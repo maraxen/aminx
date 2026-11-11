@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.5.2 (2026-11-11)
+
+### Added
+
+- FrustraMPNN model support (#271).
+- An aminx domain plugin for xtrax campaign EDA (#277).
 
 ### Changed
 
