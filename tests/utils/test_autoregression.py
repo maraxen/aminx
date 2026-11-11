@@ -115,7 +115,7 @@ def test_generate_ar_mask(decoding_order, expected_mask):
         AssertionError: If the output does not match the expected value.
 
     """
-    mask = generate_ar_mask(decoding_order)
+    mask = generate_ar_mask(order=decoding_order)
     chex.assert_trees_all_equal(mask, expected_mask)
     chex.assert_shape(mask, (len(decoding_order), len(decoding_order)))
     chex.assert_type(mask, jnp.int8)
@@ -127,7 +127,7 @@ def test_generate_wave_ar_mask_matches_generate_ar_mask_for_g1_schedules():
   decoding_order = jnp.array([6, 0, 1, 4, 2, 7, 3, 5], dtype=jnp.int32)
   wave = WaveScheduleBundle.from_tie_groups(tie_group_map, decoding_order)
   new_mask = generate_wave_ar_mask(wave, tie_group_map)
-  old_mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map)
+  old_mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map)
   chex.assert_trees_all_equal(new_mask, old_mask)
 
 
@@ -216,7 +216,7 @@ def test_generate_ar_mask_traces_no_sort() -> None:
   tie_group_map = jnp.array([0, 0, 2, 3, 3, 5, 6, 7], dtype=jnp.int32)
 
   jaxpr = jax.make_jaxpr(
-    lambda order, ties: generate_ar_mask(order, tie_group_map=ties),
+    lambda order, ties: generate_ar_mask(order=order, tie_group_map=ties),
   )(decoding_order, tie_group_map)
 
   eqns = list(_walk_eqns(jaxpr.jaxpr))
@@ -260,11 +260,11 @@ def test_generate_ar_mask_matches_brute_force_for_random_orders(length: int) -> 
   rng = np.random.default_rng(7 + length)
   for _ in range(6):
     order = rng.permutation(length).astype(np.int32)
-    untied = np.asarray(generate_ar_mask(jnp.asarray(order)))
+    untied = np.asarray(generate_ar_mask(order=jnp.asarray(order)))
     np.testing.assert_array_equal(untied, _brute_force_mask(order, np.arange(length)))
 
     tie = rng.integers(0, 3, size=length).astype(np.int32)
-    tied = np.asarray(generate_ar_mask(jnp.asarray(order), tie_group_map=jnp.asarray(tie)))
+    tied = np.asarray(generate_ar_mask(order=jnp.asarray(order), tie_group_map=jnp.asarray(tie)))
     np.testing.assert_array_equal(tied, _brute_force_mask(order, tie))
 
 
@@ -273,10 +273,10 @@ def test_generate_ar_mask_equals_ar_mask_from_decoding_order() -> None:
   order = jnp.asarray([3, 1, 0, 2, 4], dtype=jnp.int32)
   ties = jnp.asarray([0, 1, 0, 2, 2], dtype=jnp.int32)
   np.testing.assert_array_equal(
-    np.asarray(generate_ar_mask(order)), np.asarray(ar_mask_from_decoding_order(order))
+    np.asarray(generate_ar_mask(order=order)), np.asarray(ar_mask_from_decoding_order(order))
   )
   np.testing.assert_array_equal(
-    np.asarray(generate_ar_mask(order, tie_group_map=ties)),
+    np.asarray(generate_ar_mask(order=order, tie_group_map=ties)),
     np.asarray(ar_mask_from_decoding_order(order, ties)),
   )
 
@@ -287,8 +287,8 @@ def test_all_mask_helpers_return_int8() -> None:
   tie = jnp.array([0, 1, 0], dtype=jnp.int32)
   wave = WaveScheduleBundle.from_decoding_order(order, tie)
 
-  assert generate_ar_mask(order).dtype == jnp.int8
-  assert generate_ar_mask(order, tie_group_map=tie).dtype == jnp.int8
+  assert generate_ar_mask(order=order).dtype == jnp.int8
+  assert generate_ar_mask(order=order, tie_group_map=tie).dtype == jnp.int8
   assert ar_mask_from_decoding_order(order, tie_group_map=tie).dtype == jnp.int8
   assert generate_wave_ar_mask(wave, tie).dtype == jnp.int8
   assert full_context_ar_mask(3).dtype == jnp.int8

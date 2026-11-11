@@ -338,7 +338,7 @@ class TestAutoregression(chex.TestCase):
         decoding_order = jnp.array([0, 2, 1, 3, 4])
 
         ar_mask_fn = self.variant(generate_ar_mask)
-        mask = ar_mask_fn(decoding_order)
+        mask = ar_mask_fn(order=decoding_order)
 
         # Verify shape
         chex.assert_shape(mask, (5, 5))
@@ -361,7 +361,7 @@ class TestAutoregression(chex.TestCase):
         tie_group_map = jnp.array([0, 1, 0, 1])
 
         ar_mask_fn = self.variant(generate_ar_mask)
-        mask = ar_mask_fn(decoding_order, tie_group_map=tie_group_map)
+        mask = ar_mask_fn(order=decoding_order, tie_group_map=tie_group_map)
 
         chex.assert_shape(mask, (4, 4))
         # Diagonal must be all 0 on the tied branch too (see the untied case above for
@@ -378,7 +378,7 @@ class TestAutoregression(chex.TestCase):
         chain_idx = jnp.array([0, 0, 1, 1, 1])
 
         ar_mask_fn = self.variant(generate_ar_mask)
-        mask = ar_mask_fn(decoding_order, chain_idx=chain_idx)
+        mask = ar_mask_fn(order=decoding_order, chain_idx=chain_idx)
 
         chex.assert_shape(mask, (5, 5))
         # Cross-chain entries should be 0
