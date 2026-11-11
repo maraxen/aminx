@@ -193,18 +193,38 @@ def _generate_ar_mask_jit(
   return ar_mask
 
 
+_ORDER_ONLY_MESSAGE = (
+  "generate_ar_mask takes the decoding ORDER as the keyword-only argument `order`: "
+  "generate_ar_mask(order=order_array, ...). `order[t]` is the position decoded at step t. "
+  "A RANK array (`rank[i]` = step at which position i decodes, i.e. argsort(order)) is a different "
+  "permutation and gives the mask of the inverse order; it cannot be detected from its values, so "
+  "this function no longer accepts the order positionally or as `decoding_order=`. Invert a rank "
+  "array first (`jnp.argsort(rank)`), then pass it as `order=`."
+)
+
+
 def generate_ar_mask(
-  decoding_order: DecodingOrder,
-  *,
+  *args: object,
+  order: DecodingOrder | None = None,
   chain_idx: jnp.ndarray | None = None,
   tie_group_map: jnp.ndarray | None = None,
   num_groups: int | None = None,
   dtype: DTypeLike = jnp.int8,
+  **unexpected: object,
 ) -> AutoRegressiveMask:
+  # `order` is keyword-only on purpose: an ORDER array and a RANK array are both permutations of
+  # 0..L-1, so a positional call cannot be told apart by value. Forcing every caller to name the
+  # argument is what makes a rank-array caller fail loudly instead of silently getting the inverse mask.
+  if args or "decoding_order" in unexpected:
+    raise TypeError(_ORDER_ONLY_MESSAGE)
+  if unexpected:
+    raise TypeError(f"generate_ar_mask got unexpected keyword arguments: {sorted(unexpected)}")
+  if order is None:
+    raise TypeError("generate_ar_mask missing required keyword-only argument `order`. " + _ORDER_ONLY_MESSAGE)
   # Canonicalise the dtype spelling (jnp.float32 / np.float32 / 'float32' / np.dtype) so each
   # logical dtype is one static jit cache key.
   return _generate_ar_mask_jit(
-    decoding_order,
+    order,
     chain_idx=chain_idx,
     tie_group_map=tie_group_map,
     num_groups=num_groups,
@@ -212,7 +232,10 @@ def generate_ar_mask(
   )
 
 
-generate_ar_mask.__doc__ = _generate_ar_mask_jit.__doc__
+generate_ar_mask.__doc__ = (_generate_ar_mask_jit.__doc__ or "").replace(
+  "decoding_order : DecodingOrder\n      (L,) ORDER array: position decoded at each step.",
+  "order : DecodingOrder\n      Keyword-only. (L,) ORDER array: position decoded at each step.",
+)
 
 
 def _position_wave_index(wave: WaveScheduleBundle, tie_group_map: jnp.ndarray) -> jnp.ndarray:

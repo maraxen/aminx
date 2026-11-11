@@ -212,7 +212,7 @@ def test_auto_falls_back_on_inconsistent_ar_mask(model) -> None:
   same input differs -- proves the precondition is load-bearing, not vacuous.
   """
   other = jax.random.permutation(jax.random.PRNGKey(99), L_DEFAULT)
-  inconsistent = generate_ar_mask(other)
+  inconsistent = generate_ar_mask(order=other)
   bundle, config = _bundle(wave=_random_wave(L_DEFAULT), ar_mask=inconsistent, temperature=1.0)
   full = _decode(model, bundle, config, incremental="off")
   _assert_same(full, _decode(model, bundle, config, incremental="auto"))

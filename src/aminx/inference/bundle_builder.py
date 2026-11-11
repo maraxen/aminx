@@ -296,7 +296,7 @@ def build_inference_bundle(
       # for jit-safety above), this is correct for tied positions: positions
       # sharing a tie group always see each other regardless of order.
       ar_mask_2d = generate_ar_mask(
-        jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0], dtype=ar_mask_dtype,
+        order=jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0], dtype=ar_mask_dtype,
       )
       ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
     else:
