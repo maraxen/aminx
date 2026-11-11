@@ -12,17 +12,24 @@ import json
 from pathlib import Path
 
 import pytest
-from xtrax.campaign.lease import (
-    FileLock,
-    LeaseLostError,
-    LockUnavailableError,
-)
-from xtrax.campaign.marker import (
-    CampaignDoneMarker,
-    compute_content_digest,
-    validate_unit_done,
-)
-from xtrax.campaign.manifest import ManifestRow, ResourceRequirements
+
+try:
+    from xtrax.campaign.lease import (
+        FileLock,
+        LeaseLostError,
+        LockUnavailableError,
+    )
+    from xtrax.campaign.manifest import ManifestRow, ResourceRequirements
+    from xtrax.campaign.marker import (
+        CampaignDoneMarker,
+        compute_content_digest,
+        validate_unit_done,
+    )
+except ModuleNotFoundError:
+    pytest.skip(
+        "xtrax.campaign is not yet available in the pinned PyPI xtrax wheel",
+        allow_module_level=True,
+    )
 
 
 def test_stale_worker_commit_refused(tmp_path: Path) -> None:
