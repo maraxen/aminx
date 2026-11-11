@@ -102,7 +102,7 @@ class TestARMaskWithTies:
   def test_ar_mask_without_ties_baseline(self):
     """Test AR mask generation without ties (baseline)."""
     decoding_order = jnp.array([0, 1, 2])
-    mask = generate_ar_mask(decoding_order, tie_group_map=None)
+    mask = generate_ar_mask(order=decoding_order, tie_group_map=None)
 
     # Strictly lower-triangular: causal AND self-excluding (was [[1,0,0],[1,1,0],[1,1,1]]).
     expected = jnp.array([[0, 0, 0], [1, 0, 0], [1, 1, 0]])
@@ -116,7 +116,7 @@ class TestARMaskWithTies:
     tie_group_map = jnp.array([0, 1, 0, 2, 3])
     num_groups = int(tie_group_map.max()) + 1
 
-    mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
+    mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
 
     # Positions 0 and 2 should be able to attend to each other
     # since they're in the same group (group 0)
@@ -144,7 +144,7 @@ class TestARMaskWithTies:
     tie_group_map = jnp.array([0, 0, 1, 1])  # Two pairs
     num_groups = int(tie_group_map.max()) + 1
 
-    mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
+    mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
 
     # Within group 0 (positions 0, 1): should attend to each other
     assert mask[0, 1] == 1
@@ -180,7 +180,7 @@ class TestARMaskWithTies:
     chain_idx = jnp.array([0, 0, 1, 1])  # Two chains
 
     mask = generate_ar_mask(
-      decoding_order, chain_idx=chain_idx, tie_group_map=tie_group_map, num_groups=num_groups,
+      order=decoding_order, chain_idx=chain_idx, tie_group_map=tie_group_map, num_groups=num_groups,
     )
 
     # Within same chain and same group: should attend to the PARTNER, not to self
@@ -201,7 +201,7 @@ class TestARMaskWithTies:
     tie_group_map = jnp.array([0, 1, 0, 2, 1])
     num_groups = int(tie_group_map.max()) + 1
 
-    mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
+    mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
 
     chex.assert_shape(mask, (5, 5))
     chex.assert_type(mask, jnp.int8)
@@ -220,7 +220,7 @@ class TestARMaskWithTies:
     tie_group_map = jnp.array([0, 1, 0, 2])
     num_groups = int(tie_group_map.max()) + 1
 
-    mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
+    mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
 
     assert jnp.all(jnp.diag(mask) == 0)
     # Non-degeneracy: an all-zero mask would also pass the line above while removing
@@ -260,7 +260,7 @@ def test_integration_tied_decoding_and_mask():
   order, _ = random_decoding_order(key, num_residues, tie_group_map, num_groups)
 
   # Generate AR mask
-  mask = generate_ar_mask(order, tie_group_map=tie_group_map, num_groups=num_groups)
+  mask = generate_ar_mask(order=order, tie_group_map=tie_group_map, num_groups=num_groups)
 
   # Verify basic properties
   assert mask.shape == (num_residues, num_residues)

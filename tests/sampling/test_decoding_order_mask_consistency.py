@@ -45,29 +45,52 @@ def test_rotated_order_is_not_its_own_rank():
 def test_mask_from_order_matches_generate_ar_mask_untied():
   order = _rotated_order(L)
   ours = np.asarray(ar_mask_from_decoding_order(order))
-  ref = np.asarray(generate_ar_mask(order))
+  ref = np.asarray(generate_ar_mask(order=order))
   np.testing.assert_array_equal(ours, ref)
 
 
-def test_passing_a_rank_array_to_generate_ar_mask_gives_the_inverse_order_mask():
-  """The hazard, pinned: generate_ar_mask takes an ORDER array, so a RANK array is misread.
+def test_a_rank_array_named_as_order_is_still_misread_by_design():
+  """The residual hazard, pinned: naming a RANK array as ``order=`` is the caller's explicit statement.
 
   ``argsort(order)`` is the rank array of ``order``. Handed to generate_ar_mask it is read as
   an order, so the mask is the one for the inverse permutation. Nothing raises: both are
-  permutations of 0..L-1. A caller holding a rank array must invert it first.
+  permutations of 0..L-1. A caller holding a rank array must invert it first. What changed is
+  that a caller can no longer reach this by accident: see the two tests below.
   """
   order = _rotated_order(L)
   rank = jnp.argsort(order).astype(jnp.int32)
-  misread = np.asarray(generate_ar_mask(rank))
+  misread = np.asarray(generate_ar_mask(order=rank))
   np.testing.assert_array_equal(misread, np.asarray(ar_mask_from_decoding_order(rank)))
   assert not np.array_equal(misread, np.asarray(ar_mask_from_decoding_order(order)))
+
+
+def test_positional_order_raises_instead_of_silently_misreading_a_rank():
+  """The old call form ``generate_ar_mask(array)`` is refused loudly, with the order/rank contract in the message."""
+  order = _rotated_order(L)
+  rank = jnp.argsort(order).astype(jnp.int32)
+  for array in (order, rank):
+    with pytest.raises(TypeError, match="RANK array"):
+      generate_ar_mask(array)
+    with pytest.raises(TypeError, match="RANK array"):
+      generate_ar_mask(array, tie_group_map=jnp.zeros(L, dtype=jnp.int32))
+
+
+def test_decoding_order_keyword_raises_and_order_is_required():
+  """The old keyword ``decoding_order=`` and a missing ``order`` are refused; unknown keywords are named."""
+  order = _rotated_order(L)
+  with pytest.raises(TypeError, match="keyword-only argument `order`"):
+    generate_ar_mask(decoding_order=order)
+  with pytest.raises(TypeError, match="missing required keyword-only argument `order`"):
+    generate_ar_mask()
+  with pytest.raises(TypeError, match="unexpected keyword arguments"):
+    generate_ar_mask(order=order, nonsense=1)
 
 
 def test_mask_from_order_matches_generate_ar_mask_tied():
   tie_group_map = jnp.array([0, 0, 1, 2, 3, 3, 4], dtype=jnp.int32)
   order = jnp.array([6, 0, 1, 4, 2, 5, 3], dtype=jnp.int32)
   ours = np.asarray(ar_mask_from_decoding_order(order, tie_group_map))
-  ref = np.asarray(generate_ar_mask(order, tie_group_map=tie_group_map))
+  ref = np.asarray(generate_ar_mask(order=order, tie_group_map=tie_group_map))
   np.testing.assert_array_equal(ours, ref)
 
 
@@ -87,7 +110,7 @@ def test_tie_map_is_not_treated_as_chain_index():
   assert ours[6].sum() == 6  # noqa: PLR2004
   # Passed explicitly as chain_idx: generate_ar_mask's chain_idx is keyword-only, so the
   # positional form no longer binds here at all; this pins what the misbinding would do.
-  trap = np.asarray(generate_ar_mask(order, chain_idx=tie_group_map))
+  trap = np.asarray(generate_ar_mask(order=order, chain_idx=tie_group_map))
   assert trap[6].sum() == 0, "premise: the positional call hides other groups entirely"
 
 

@@ -372,7 +372,7 @@ class TestTiedAutoregressiveSampling:
     )
 
     # Generate AR mask
-    ar_mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
+    ar_mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map, num_groups=num_groups)
 
     # Verify mask shape
     chex.assert_shape(ar_mask, (n_residues, n_residues))

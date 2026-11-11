@@ -329,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # ar_mask is (L, L) and CONSTANT for a whole sample; build it from a decoding order.
     decoding_order = jnp.arange(length, dtype=jnp.int32)
-    ar_mask = np.asarray(generate_ar_mask(decoding_order), dtype=np.float32)
+    ar_mask = np.asarray(generate_ar_mask(order=decoding_order), dtype=np.float32)
     rng = np.random.default_rng(1)
     tokens = rng.integers(0, 21, size=length)
     sequence_oh = np.eye(21, dtype=np.float32)[tokens]

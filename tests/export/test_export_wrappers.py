@@ -918,14 +918,14 @@ class TestP07BundleArMaskPinning:
     # The other two builder-path helpers honour the dtype argument too.
     assert full_context_ar_mask(4).dtype == jnp.int8
     assert full_context_ar_mask(4, dtype=jnp.float32).dtype == jnp.float32
-    assert generate_ar_mask(order).dtype == jnp.int8
-    assert generate_ar_mask(order, dtype=jnp.float32).dtype == jnp.float32
+    assert generate_ar_mask(order=order).dtype == jnp.int8
+    assert generate_ar_mask(order=order, dtype=jnp.float32).dtype == jnp.float32
     # Every spelling of one dtype yields that dtype (and one static jit cache key).
     import numpy as np
 
     for spelling in (jnp.float32, np.float32, np.dtype("float32"), "float32"):
       assert ar_mask_from_decoding_order(order, tie_group_map=tie, dtype=spelling).dtype == jnp.float32
-      assert generate_ar_mask(order, dtype=spelling).dtype == jnp.float32
+      assert generate_ar_mask(order=order, dtype=spelling).dtype == jnp.float32
 
   def test_exported_p07_graph_carries_no_int8_mask_ops(self) -> None:
     length = 6
@@ -952,8 +952,8 @@ class TestP07BundleArMaskPinning:
     assert bundle.conditioning.ar_mask.dtype == jnp.float32
 
     wave = bundle.wave
-    assert generate_ar_mask(order).dtype == jnp.int8
-    assert generate_ar_mask(order, tie_group_map=tie).dtype == jnp.int8
+    assert generate_ar_mask(order=order).dtype == jnp.int8
+    assert generate_ar_mask(order=order, tie_group_map=tie).dtype == jnp.int8
     assert ar_mask_from_decoding_order(order, tie_group_map=tie).dtype == jnp.int8
     assert generate_wave_ar_mask(wave, tie).dtype == jnp.int8
     assert full_context_ar_mask(length).dtype == jnp.int8

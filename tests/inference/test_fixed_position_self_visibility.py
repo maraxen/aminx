@@ -73,14 +73,14 @@ def _order(seed: int | None = None) -> jnp.ndarray:
 @pytest.mark.parametrize("seed", [None, 0, 1, 2, 3, 4])
 def test_generate_ar_mask_is_self_excluding_under_every_order(seed):
   """A permutation must never reintroduce the diagonal."""
-  m = np.asarray(generate_ar_mask(_order(seed)))
+  m = np.asarray(generate_ar_mask(order=_order(seed)))
   assert int(np.diag(m).sum()) == 0, f"diagonal set under order seed={seed}: {np.diag(m)}"
 
 
 def test_generate_ar_mask_tied_branch_is_self_excluding():
   """The tied branch takes a different code path and must also self-exclude."""
   tie = jnp.asarray([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2], dtype=jnp.int32)
-  m = np.asarray(generate_ar_mask(_order(), tie_group_map=tie))
+  m = np.asarray(generate_ar_mask(order=_order(), tie_group_map=tie))
   assert int(np.diag(m).sum()) == 0
 
 
@@ -113,7 +113,7 @@ def test_masks_remain_non_degenerate_and_causal():
   That is a separate and worse defect class this project has already hit, so a diagonal
   assertion alone is not sufficient evidence of correctness.
   """
-  m = np.asarray(generate_ar_mask(_order()))
+  m = np.asarray(generate_ar_mask(order=_order()))
   assert m.sum() > 0, "mask is all-zero -- that removes all context"
   assert np.array_equal(m, np.tril(np.ones((L, L), dtype=m.dtype), k=-1)), (
     "under the identity decoding order the mask must be strictly lower-triangular"
@@ -131,7 +131,7 @@ def test_tie_visibility_is_preserved_and_not_silently_narrowed():
   along unnoticed.
   """
   tie = jnp.asarray([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2], dtype=jnp.int32)
-  m = np.asarray(generate_ar_mask(_order(), tie_group_map=tie))
+  m = np.asarray(generate_ar_mask(order=_order(), tie_group_map=tie))
   assert m[0, 1] == 1 and m[1, 0] == 1, "same-tie-group mutual visibility was removed"
 
 
@@ -166,7 +166,7 @@ def test_matches_colabdesign_bit_for_bit_on_the_untied_path():
   for seed in (0, 1, 2, 3, 4):
     order = np.random.default_rng(seed).permutation(L)
     theirs = np.asarray(cd_utils.get_ar_mask(jnp.asarray(order, dtype=jnp.int32))).astype(int)
-    ours = np.asarray(generate_ar_mask(jnp.asarray(order, dtype=jnp.int32))).astype(int)
+    ours = np.asarray(generate_ar_mask(order=jnp.asarray(order, dtype=jnp.int32))).astype(int)
     assert np.array_equal(ours, theirs), (
       f"diverges from ColabDesign at order seed={seed}; "
       f"differing cells: {np.argwhere(ours != theirs).tolist()[:10]}"
@@ -182,7 +182,7 @@ def test_generate_ar_mask_consumes_an_order_array():
   # order[t] = position decoded at step t.
   # Position 2 decodes at step 0, pos 0 at step 1, pos 3 at step 2, pos 1 at step 3.
   order = jnp.asarray([2, 0, 3, 1], dtype=jnp.int32)
-  m = np.asarray(generate_ar_mask(order)).astype(int)
+  m = np.asarray(generate_ar_mask(order=order)).astype(int)
   # Position 0 (step 1) must see position 2 (step 0) and nothing later.
   assert m[0, 2] == 1, "position decoded at step 1 cannot see the step-0 position"
   assert m[0, 1] == 0, "position decoded at step 1 sees a step-3 position"

@@ -104,7 +104,7 @@ def _build_graph_w() -> Callable:
 
   def graph_w(decoding_order: Any, tie_group_map: Any) -> tuple[Any, ...]:
     wave = wave_from_decoding_order(decoding_order, tie_group_map)
-    ar_mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
+    ar_mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
     return (
       wave.group_ids,
       wave.group_positions,
