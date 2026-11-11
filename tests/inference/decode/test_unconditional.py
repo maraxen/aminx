@@ -18,7 +18,8 @@ from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.decode.unconditional import UnconditionalDecode
 from aminx.inference.logits import make_stage_set
 from aminx.model import Aminx
-from aminx.tiling.iterator import VmapIterator, SafeMapIterator
+from aminx.tiling.iterator import VmapIterator
+from xtrax.tiling import ChunkedMapIterator
 from aminx.types.configs import InferenceConfig
 from aminx.types.bundles import (
     ConditioningBundle,
@@ -182,7 +183,7 @@ def test_unconditional_parity(num_states: int, iterator_type: str):
     if iterator_type == "vmap":
         iterator = VmapIterator()
     else:
-        iterator = SafeMapIterator(tile=2)
+        iterator = ChunkedMapIterator(tile=2)
 
     unconditional_decode = UnconditionalDecode(
         model=model,

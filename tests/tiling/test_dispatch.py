@@ -11,7 +11,7 @@ import pytest
 from aminx.host.plan import PlanTopologyError
 from aminx.tiling.dispatch import DispatchRejected, make_axis_dispatch
 from aminx.tiling.errors import TilingError
-from aminx.tiling.strategy import SafeMap, Scan, Vmap
+from aminx.tiling.strategy import ChunkedMap, Scan, Vmap
 
 
 class TestMakeAxisDispatchHappyPath:
@@ -24,12 +24,12 @@ class TestMakeAxisDispatchHappyPath:
         # Verify it's the right type by checking the class name.
         assert type(result).__name__ == "VmapIterator"
 
-    def test_safemap_dispatch_returns_safemap_iterator(self) -> None:
-        """make_axis_dispatch(SafeMap(tile=4)) returns a SafeMapIterator with tile=4."""
-        result = make_axis_dispatch(SafeMap(tile=4))
+    def test_chunked_map_dispatch_returns_chunked_map_iterator(self) -> None:
+        """make_axis_dispatch(ChunkedMap(batch_size=4)) returns a ChunkedMapIterator with tile=4."""
+        result = make_axis_dispatch(ChunkedMap(batch_size=4))
         assert result is not None
-        assert type(result).__name__ == "SafeMapIterator"
-        # SafeMapIterator has a static tile field.
+        assert type(result).__name__ == "ChunkedMapIterator"
+        # ChunkedMapIterator has a static tile field.
         assert result.tile == 4
 
 

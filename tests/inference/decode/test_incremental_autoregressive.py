@@ -26,9 +26,9 @@ from aminx.inference.decode.mode import AutoregressiveConfig, AutoregressiveMode
 from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
 from aminx.model.mpnn import Aminx
-from aminx.tiling.strategy import SafeMap, Vmap
 from aminx.types.bundles import WaveScheduleBundle
 from aminx.utils.autoregression import generate_ar_mask
+from xtrax.tiling import ChunkedMap, Vmap
 
 L_DEFAULT = 24
 LOGIT_ATOL = 1e-5
@@ -200,8 +200,8 @@ def test_single_decoder_layer_under_safemap_matches_full_recompute() -> None:
   )
   bundle, config = _bundle(n_states=2, wave=_random_wave(L_DEFAULT), temperature=1.0)
   _assert_same(
-    _decode(m, bundle, config, incremental="off", strategy=SafeMap(tile=1)),
-    _decode(m, bundle, config, incremental="force", strategy=SafeMap(tile=1)),
+    _decode(m, bundle, config, incremental="off", strategy=ChunkedMap(batch_size=1)),
+    _decode(m, bundle, config, incremental="force", strategy=ChunkedMap(batch_size=1)),
   )
 
 

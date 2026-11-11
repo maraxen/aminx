@@ -18,7 +18,8 @@ from aminx.inference.decode.conditional import ConditionalDecode
 from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
 from aminx.model import Aminx
-from aminx.tiling.iterator import VmapIterator, SafeMapIterator
+from aminx.tiling.iterator import VmapIterator
+from xtrax.tiling import ChunkedMapIterator
 from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 
@@ -85,13 +86,13 @@ def _build_synthetic_fixture(
 
 
 @pytest.mark.parametrize("num_states", [1, 4, 8])
-@pytest.mark.parametrize("iterator_factory", [VmapIterator, SafeMapIterator])
+@pytest.mark.parametrize("iterator_factory", [VmapIterator, ChunkedMapIterator])
 def test_conditional_decode_produces_valid_logits(
     num_states: int,
     iterator_factory,
 ) -> None:
     """ConditionalDecode produces valid logits for various S and iterator types."""
-    if iterator_factory == SafeMapIterator:
+    if iterator_factory == ChunkedMapIterator:
         iterator = iterator_factory(tile=2)
     else:
         iterator = iterator_factory()

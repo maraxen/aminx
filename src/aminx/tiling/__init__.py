@@ -2,8 +2,8 @@
 
 from aminx.tiling.strategy import (
   AxisStrategy,
+  ChunkedMap,
   DedupGather,
-  SafeMap,
   Scan,
   Vmap,
 )
@@ -11,10 +11,10 @@ from aminx.types.tiling_protocols import DedupFn, GatherFn, ScanTransition
 
 __all__ = [
   "AxisStrategy",
+  "ChunkedMap",
   "DedupFn",
   "DedupGather",
   "GatherFn",
-  "SafeMap",
   "Scan",
   "ScanTransition",
   "Vmap",

@@ -29,9 +29,6 @@ import equinox as eqx
 import jax
 import jax.lax
 
-from aminx.tiling._deprecation import warn_deprecated
-from aminx.utils.safe_map import safe_map
-
 
 @runtime_checkable
 class MapIterator(Protocol):
@@ -123,53 +120,6 @@ class VmapIterator(eqx.Module):
     return jax.vmap(fn, in_axes=in_axes)(xs)
 
 
-class SafeMapIterator(eqx.Module):
-  """Iterate via safe_map with tile chunking — memory-bounded, stateless.
-
-  Elements are processed in tiles to avoid memory exhaustion and XLA
-  loop construct issues. No carry state; elements are independent.
-
-  .. deprecated::
-     Get the chunked iterator from xtrax:
-     ``xtrax.tiling.make_axis_dispatch(xtrax.tiling.ChunkedMap(batch_size=...))``.
-     aminx debt #2371; aminx's own class will be removed.
-  """
-
-  tile: int = eqx.field(static=True)
-
-  def __post_init__(self) -> None:
-    """Warn (attributed to the caller) that this class is deprecated."""
-    warn_deprecated(
-      "aminx.tiling.iterator.SafeMapIterator",
-      "xtrax.tiling.make_axis_dispatch(xtrax.tiling.ChunkedMap(batch_size=<tile>))",
-    )
-
-  def __call__(
-    self,
-    fn: Any,
-    xs: Any,
-    *,
-    in_axes: Any = 0,
-  ) -> Any:
-    """Apply fn using safe_map with tiling.
-
-    Args:
-        fn: Callable to apply per-element.
-        xs: Input pytree.
-        in_axes: Axis specification (default 0; safe_map always uses axis 0).
-
-    Returns:
-        Output after safe_map over the first axis.
-
-    """
-    # Note: safe_map always iterates over axis 0; in_axes parameter is
-    # accepted for protocol compatibility.
-    if in_axes != 0:
-      msg = "SafeMapIterator currently only supports in_axes=0"
-      raise NotImplementedError(msg)
-    return safe_map(fn, xs, batch_size=self.tile)
-
-
 class JaxScanIterator(eqx.Module):
   """Iterate via jax.lax.scan — carry-bearing, sequential.
 
@@ -195,7 +145,6 @@ class JaxScanIterator(eqx.Module):
 __all__ = [
   "JaxScanIterator",
   "MapIterator",
-  "SafeMapIterator",
   "ScanIterator",
   "VmapIterator",
 ]

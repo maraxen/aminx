@@ -81,7 +81,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import lax
 from jaxtyping import Array, Bool, Float, Int
-from xtrax.tiling import AxisSpec
+from xtrax.tiling import AxisSpec, ChunkedMap
 
 from aminx.families.potts_mpnn.etab import potts_energy
 from aminx.families.protonpotts_mpnn.ph_potentials import (
@@ -96,7 +96,6 @@ from aminx.families.protonpotts_mpnn.vocab import (
 )
 from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
 from aminx.tiling.planner import plan_axis_strategy
-from aminx.tiling.strategy import SafeMap
 
 if TYPE_CHECKING:
   from aminx.families.protonpotts_mpnn.ph_config import PHDesignConfig
@@ -708,10 +707,10 @@ def block_zscales(
     activation_bytes_per_element=_block_activation_bytes(vocab, n_block, dtype),
   )
   blocks_in, valid_in = block_safe_all, block_valid
-  if isinstance(strategy, SafeMap) and n_blocks % strategy.tile:
-    # xtrax's SafeMap needs the axis to be an exact multiple of the tile (aminx backlog #4159), so pad with
+  if isinstance(strategy, ChunkedMap) and n_blocks % strategy.batch_size:
+    # xtrax's ChunkedMap needs the axis to be an exact multiple of the batch_size (aminx backlog #4159), so pad with
     # copies of block 0 and drop the extras below. They never reach _pool.
-    pad = strategy.tile - (n_blocks % strategy.tile)
+    pad = strategy.batch_size - (n_blocks % strategy.batch_size)
     blocks_in = jnp.concatenate([blocks_in, jnp.broadcast_to(blocks_in[:1], (pad, *blocks_in.shape[1:]))])
     valid_in = jnp.concatenate([valid_in, jnp.broadcast_to(valid_in[:1], (pad, *valid_in.shape[1:]))])
   iterator = make_axis_dispatch_via_xtrax(strategy, axis=_PH_BLOCKS.name)

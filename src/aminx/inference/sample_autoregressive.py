@@ -161,9 +161,10 @@ def decode_sampling(
   gumbel_noise: Float[Array, "L 21"] | None = None,
 ) -> SampleResult:
   """Autoregressive decode of an existing encoder output (see ``encode_for_sampling``)."""
+  from xtrax.tiling import Vmap
+
   from aminx.inference.decode.factory import make_decode_fn
   from aminx.inference.decode.mode import AutoregressiveConfig, AutoregressiveMode
-  from aminx.tiling.strategy import Vmap
 
   decode_fn = make_decode_fn(
     model=model,

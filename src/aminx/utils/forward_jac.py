@@ -36,12 +36,12 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
+from xtrax.tiling import ChunkedMap
 
 from aminx.sampling.conditional_logits import make_encoding_conditional_logits_split_fn
 from aminx.tiling.axes import N_JACOBIAN_PAIRS
 from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
 from aminx.tiling.planner import plan_axis_strategy
-from aminx.tiling.strategy import SafeMap
 from aminx.types.arrays import CategoricalJacobian
 from aminx.utils.autoregression import full_context_ar_mask
 
@@ -182,8 +182,8 @@ def make_categorical_jacobian_fn(
     # the extras off. Padded entries repeat tangent 0: wasted work on at most tile-1
     # tangents, never a wrong value.
     tangent_indices = jnp.arange(n_tangents, dtype=jnp.int32)
-    if isinstance(strategy, SafeMap) and n_tangents % strategy.tile:
-      pad = strategy.tile - (n_tangents % strategy.tile)
+    if isinstance(strategy, ChunkedMap) and n_tangents % strategy.batch_size:
+      pad = strategy.batch_size - (n_tangents % strategy.batch_size)
       tangent_indices = jnp.concatenate(
         [tangent_indices, jnp.zeros((pad,), dtype=jnp.int32)],
       )

@@ -404,25 +404,18 @@ def make_sampling_planner(
   return _widen_chunked_axis_tile(plan, N_SAMPLES.name, budget_bytes=budget_bytes, estimate_fn=estimate_fn)
 
 
-def _legacy_batch_size(decision: AxisDecision) -> int:
-  """Translate an AxisDecision to aminx.utils.safe_map's calling convention.
+def _legacy_batch_size(decision: AxisDecision) -> int | None:
+  """Translate an AxisDecision to xtrax.transforms.chunked_map's calling convention.
 
-  safe_map treats batch_size=0 (or None) as "no chunking, run everything at
-  once" -- the Vmap-equivalent -- and any positive value as "chunk into
-  groups of that size." aminx's retired local BatchPlanner always set
-  batch_size=0 for Vmap decisions to match; xtrax's BatchPlanner never does
-  (Vmap decisions carry batch_size=spec.default_batch_size, e.g. 1). Feeding
-  that straight to safe_map would silently turn a parallel Vmap axis into a
-  fully serial per-element loop for aminx's legacy (use_unified_driver=False)
-  dispatch path in host/kernel_dispatch.py, which is not dead code (a real,
-  still-tested CLI flag) -- EPIC #1541 T-PLANNER.2 finding, 2026-07-06.
+  chunked_map treats batch_size=None as "no chunking, run everything at once" --
+  the Vmap-equivalent -- and any positive value as "chunk into groups of that size."
   """
   if type(decision.strategy).__name__ == "Vmap":
-    return 0
-  return decision.batch_size
+    return None
+  return decision.batch_size or None
 
 
-def extract_batch_sizes(plan: BatchPlan) -> tuple[int, int, int, int]:
+def extract_batch_sizes(plan: BatchPlan) -> tuple[int | None, int | None, int | None, int | None]:
   """Extract batch sizes for all sampling axes from a BatchPlan.
 
   Parameters
@@ -432,9 +425,9 @@ def extract_batch_sizes(plan: BatchPlan) -> tuple[int, int, int, int]:
 
   Returns
   -------
-  tuple[int, int, int, int]
+  tuple[int | None, int | None, int | None, int | None]
       Tuple of (structures_bs, samples_bs, temps_bs, noises_bs), in
-      aminx.utils.safe_map's convention (0 means Vmap/no-chunking) --
+      xtrax.transforms.chunked_map's convention (None means Vmap/no-chunking) --
       see _legacy_batch_size.
 
   """
@@ -1103,10 +1096,11 @@ def make_inference_plan(
      https://doi.org/10.1038/s41592-025-02626-1
 
   """
+  from xtrax.tiling import Vmap
+
   from aminx.inference.decode.factory import make_decode_fn
   from aminx.inference.encode import make_encode_fn
   from aminx.inference.logits import make_stage_set
-  from aminx.tiling.strategy import Vmap
 
   sampling_config = spec.run_spec.sampling
 

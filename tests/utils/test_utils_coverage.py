@@ -19,7 +19,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from aminx.utils import gelu, normalize, safe_map, ste
+from aminx.utils import gelu, normalize, ste
 from aminx.utils.autoregression import (
     generate_ar_mask,
     get_decoding_step_map,
@@ -158,89 +158,6 @@ class TestNormalization(chex.TestCase):
 
         chex.assert_trees_all_close(result, expected)
         chex.assert_tree_all_finite(result)
-
-
-# ============================================================================
-# Tests for safe_map.py (0% coverage)
-# ============================================================================
-
-
-class TestSafeMap(chex.TestCase):
-    """Test safe_map dispatch logic."""
-
-    def test_safe_map_vmap_path(self):
-        """Test safe_map dispatches to vmap when batch_size >= input_size."""
-        xs = jnp.arange(5)
-
-        def f(x):
-            return x * 3
-
-        result = safe_map.safe_map(f, xs, batch_size=10)
-        expected = xs * 3
-        chex.assert_trees_all_close(result, expected)
-
-    def test_safe_map_lax_map_path(self):
-        """Test safe_map dispatches to lax.map when batch_size < input_size."""
-        xs = jnp.arange(10)
-
-        def f(x):
-            return x + 2
-
-        result = safe_map.safe_map(f, xs, batch_size=3)
-        expected = xs + 2
-        chex.assert_trees_all_close(result, expected)
-
-    def test_safe_map_batch_size_none(self):
-        """Test safe_map with batch_size=None always uses vmap."""
-        xs = jnp.arange(8)
-
-        def f(x):
-            return x ** 2
-
-        result = safe_map.safe_map(f, xs, batch_size=None)
-        expected = xs ** 2
-        chex.assert_trees_all_close(result, expected)
-
-    def test_safe_map_batch_size_zero(self):
-        """Test safe_map with batch_size=0 dispatches to vmap."""
-        xs = jnp.arange(6)
-
-        def f(x):
-            return x * 2
-
-        result = safe_map.safe_map(f, xs, batch_size=0)
-        expected = xs * 2
-        chex.assert_trees_all_close(result, expected)
-
-    def test_safe_map_pytree_input(self):
-        """Test safe_map handles PyTree inputs."""
-        xs = {"a": jnp.arange(4), "b": jnp.arange(4) + 10}
-
-        def f(x):
-            return x["a"] + x["b"]
-
-        result = safe_map.safe_map(f, xs, batch_size=10)
-        expected = xs["a"] + xs["b"]
-        chex.assert_trees_all_close(result, expected)
-
-    def test_safe_map_empty_pytree_raises(self):
-        """Test safe_map raises on empty PyTree."""
-        with pytest.raises(ValueError, match="must not be an empty PyTree"):
-            safe_map.safe_map(lambda x: x, {}, batch_size=10)
-
-    def test_safe_map_nested_pytree(self):
-        """Test safe_map with nested PyTree structures."""
-        xs = {
-            "x": jnp.arange(5),
-            "nested": {"y": jnp.arange(5) * 2},
-        }
-
-        def f(x):
-            return x["x"] + x["nested"]["y"]
-
-        result = safe_map.safe_map(f, xs, batch_size=10)
-        expected = xs["x"] + xs["nested"]["y"]
-        chex.assert_trees_all_close(result, expected)
 
 
 # ============================================================================

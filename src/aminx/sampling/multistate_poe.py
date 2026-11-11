@@ -46,9 +46,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from xtrax.run import ZarrStagingSink, derive_sink_spec
-from xtrax.tiling import BatchPlanner
-from xtrax.tiling import ChunkedMap as _XtraxChunkedMap
-from xtrax.tiling import Vmap as _XtraxVmap
+from xtrax.tiling import BatchPlanner, ChunkedMap, Vmap
 from xtrax.tiling.estimators import lowered_memory_estimate
 
 from aminx.host._sampling_grid_lineage import (
@@ -95,7 +93,6 @@ from aminx.run.spec import mpnn_temperatures
 from aminx.sampling.conditional_logits import _plan_axis_strategy
 from aminx.tiling.axes import N_SAMPLES, N_STATES
 from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
-from aminx.tiling.strategy import SafeMap, Vmap
 
 if TYPE_CHECKING:
   from jaxtyping import Array, Float, Int, PRNGKeyArray
@@ -223,19 +220,11 @@ def sample_states_fused(
   # #942). This is what previously never happened at all (kernel() hardcoded
   # Vmap unconditionally, bypassing BatchPlanner for this axis entirely).
   state_spec = dataclasses.replace(N_STATES, cardinality=num_states)
-  xtrax_state_strategy = BatchPlanner().plan([state_spec]).decisions[0].strategy
-  # BatchPlanner is xtrax-native; translate back to aminx's own AxisStrategy
-  # union before handing it to aminx call sites (make_axis_dispatch_via_xtrax
-  # expects aminx-native instances -- mirrors _plan_axis_strategy's identical
-  # translation for the samples axis below).
-  if isinstance(xtrax_state_strategy, _XtraxChunkedMap):
-    state_strategy = SafeMap(tile=xtrax_state_strategy.batch_size)
-  elif isinstance(xtrax_state_strategy, _XtraxVmap):
-    state_strategy = Vmap()
-  else:
+  state_strategy = BatchPlanner().plan([state_spec]).decisions[0].strategy
+  if not isinstance(state_strategy, (ChunkedMap, Vmap)):
     msg = (
       "sample_states_fused: unexpected BatchPlanner state-axis decision "
-      f"{type(xtrax_state_strategy)}"
+      f"{type(state_strategy)}"
     )
     raise TypeError(msg)
 

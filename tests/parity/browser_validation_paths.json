@@ -709,9 +709,6 @@
   "src/aminx/scoring/multi_order.py::score_multi_order_average": {
     "internal": "host-side multi-order score averaging helper (clause score_only_multi_order_average, debt #3214); not exported to the browser bundle and not on any P-ID code path"
   },
-  "src/aminx/tiling/_deprecation.py::warn_deprecated": {
-    "internal": "caller-attributed DeprecationWarning helper for aminx's deprecated tiling types (debt #2371); no browser surface"
-  },
   "src/aminx/tiling/bucketing.py::BucketAssignment": "P27",
   "src/aminx/tiling/bucketing.py::BucketingConfig": "P27",
   "src/aminx/tiling/bucketing.py::group_by_bucket": "P27",
@@ -734,9 +731,6 @@
   "src/aminx/tiling/iterator.py::MapIterator": {
     "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
   },
-  "src/aminx/tiling/iterator.py::SafeMapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
   "src/aminx/tiling/iterator.py::ScanIterator": {
     "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
   },
@@ -754,15 +748,6 @@
     "internal": "memory/axis strategy planning shared across P-IDs, no dedicated P-ID"
   },
   "src/aminx/tiling/strategy.py::DedupGather": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::SafeMap": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::Scan": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::Vmap": {
     "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
   },
   "src/aminx/host/pack_shim.py::InputDigestMismatchError": {

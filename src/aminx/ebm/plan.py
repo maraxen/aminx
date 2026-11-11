@@ -59,11 +59,10 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
+from xtrax import chunked_map, safe_scan
 from xtrax.tiling import AxisDecision, AxisSpec, BatchPlanner, ChunkedMap, Scan, Vmap
 
 from aminx.ebm.contracts import Energy
-from aminx.utils.safe_map import safe_map
-from aminx.utils.safe_scan import safe_scan
 
 if TYPE_CHECKING:
   from collections.abc import Callable
@@ -197,14 +196,14 @@ def dispatch_axis[T, U](
   if isinstance(strategy, Vmap):
     return jax.vmap(body)(xs)
   if isinstance(strategy, ChunkedMap):
-    return safe_map(body, xs, batch_size=strategy.batch_size)
+    return chunked_map(body, xs, batch_size=strategy.batch_size)
   if isinstance(strategy, Scan):
 
     def _scan_body(carry: object, x: T) -> tuple[object, U]:
       return carry, body(x)
 
     init = strategy.init if strategy.init is not None else jnp.array(0)
-    _, ys = safe_scan(_scan_body, xs, init=init)
+    _, ys = safe_scan(_scan_body, init, xs)
     return ys
   msg = (
     f"aminx.ebm.plan.dispatch_axis: unsupported strategy {type(strategy).__name__} "

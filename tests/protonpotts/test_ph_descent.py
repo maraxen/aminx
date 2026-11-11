@@ -285,7 +285,7 @@ def test_block_zscales_matches_enumeration():
 def test_block_zscales_is_the_same_under_every_xtrax_strategy(monkeypatch):
   """The block axis goes through xtrax, so the planner may pick one vmap or tiles of it, with padding for a ragged tail."""
   from aminx.families.protonpotts_mpnn import ph_descent  # noqa: PLC0415
-  from aminx.tiling.strategy import SafeMap, Vmap  # noqa: PLC0415
+  from xtrax.tiling import ChunkedMap, Vmap  # noqa: PLC0415
 
   p = _problem(3, block_size=2)
   n_blocks = p.blocks.shape[0]
@@ -314,8 +314,8 @@ def test_block_zscales_is_the_same_under_every_xtrax_strategy(monkeypatch):
 
   planned = np.asarray(block_zscales(*args))  # whatever the planner chooses on this host
   vmapped = zscales_under(Vmap())
-  ragged = zscales_under(SafeMap(tile=ragged_tile))
-  exact = zscales_under(SafeMap(tile=n_blocks))
+  ragged = zscales_under(ChunkedMap(batch_size=ragged_tile))
+  exact = zscales_under(ChunkedMap(batch_size=n_blocks))
   assert not np.allclose(vmapped[:2], 1.0), "degenerate fixture: the z-scales would not discriminate"
   np.testing.assert_allclose(ragged, vmapped, rtol=1e-5, atol=0.0)
   np.testing.assert_allclose(exact, vmapped, rtol=1e-5, atol=0.0)

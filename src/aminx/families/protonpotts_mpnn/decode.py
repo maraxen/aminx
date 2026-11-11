@@ -33,7 +33,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
-from xtrax.tiling import AxisSpec
+from xtrax.tiling import AxisSpec, ChunkedMap
 
 from aminx.families.potts_mpnn.decode import (
   categorical_draw,
@@ -46,7 +46,6 @@ from aminx.families.potts_mpnn.decode import (
 from aminx.families.protonpotts_mpnn.vocab import PROTONPOTTS_V6
 from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
 from aminx.tiling.planner import plan_axis_strategy
-from aminx.tiling.strategy import SafeMap
 
 if TYPE_CHECKING:
   from aminx.model.decoder import Decoder, DecoderLayer
@@ -265,10 +264,10 @@ def sample_rows(
     activation_bytes_per_element=_row_activation_bytes(h_v, bias.shape[-1], len(decoder.layers)),
   )
   args = [uniforms, per_row] if forced_tokens is None else [uniforms, per_row, forced_tokens]
-  if isinstance(strategy, SafeMap) and n_rows % strategy.tile:
-    # xtrax's SafeMap needs the axis to be an exact multiple of the tile (aminx backlog #4159): pad with copies of row 0
+  if isinstance(strategy, ChunkedMap) and n_rows % strategy.batch_size:
+    # xtrax's ChunkedMap needs the axis to be an exact multiple of the batch_size (aminx backlog #4159): pad with copies of row 0
     # and drop the extras below. They never reach the caller.
-    pad = strategy.tile - (n_rows % strategy.tile)
+    pad = strategy.batch_size - (n_rows % strategy.batch_size)
     args = [_pad_rows(a, pad) for a in args]
   iterator = make_axis_dispatch_via_xtrax(strategy, axis=_SAMPLE_ROWS.name)
   out = iterator(call, tuple(args))
