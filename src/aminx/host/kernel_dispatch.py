@@ -122,8 +122,10 @@ def _chunked_sample_decode(decode, enc, bundle, config, sample_keys, order_cfg, 
   decode module, encoding, bundle, config and keys -- are arguments, and only ``tile`` and the
   decoding-order settings are static, so rows of one shape reuse the same executable.
 
-  ``order_cfg`` is ``(skip_order, seed, order_fn, num_groups, fixed_context)``: non-array leaves,
-  hence static under ``filter_jit``.
+  ``order_cfg`` is ``(skip_order, seed, order_fn, num_groups, fixed_context)``. The non-array leaves
+  (``skip_order``, ``order_fn``, ``num_groups``, ``fixed_context``) are static under ``filter_jit``.
+  ``seed`` must be ``None`` or a JAX array, so that rows with different decoding-order seeds share
+  one executable instead of compiling one per seed (see ``_order_seed_leaf``).
   """
   skip_order, seed, order_fn, num_groups, fixed_context = order_cfg
 
@@ -139,6 +141,18 @@ def _chunked_sample_decode(decode, enc, bundle, config, sample_keys, order_cfg, 
     return res.sequence, res.logits
 
   return _safe_map(_one, sample_keys, batch_size=tile)
+
+
+def _order_seed_leaf(seed):
+  """Make a decoding-order seed a traced leaf: ``None`` stays ``None``, an int becomes an int32 array.
+
+  A Python int is a static ``filter_jit`` argument, so each distinct seed would compile its own
+  executable. ``jax.random.PRNGKey`` accepts a traced integer and yields the same key as for the
+  equal Python int, so the tokens are unchanged. Seeds outside the int32 range stay static.
+  """
+  if seed is None or not (0 <= int(seed) < 2**31):
+    return seed
+  return jnp.asarray(seed, dtype=jnp.int32)
 
 
 def _chunk_tile(strategy) -> int | None:
@@ -525,7 +539,7 @@ def _sample_batch(  # noqa: PLR0915
         # lax.map over a per-row closure.
         order_cfg = (
           custom_wave is not None,
-          spec.run_spec.sampling.decoding_order_seed,
+          _order_seed_leaf(spec.run_spec.sampling.decoding_order_seed),
           custom_order_fn,
           order_num_groups,
           spec.run_spec.sampling.fixed_position_context,

@@ -133,3 +133,82 @@ def test_dispatch_axis_still_serves_a_chunked_strategy():
   """The generic dispatcher still handles a chunked strategy for the paths that keep using it."""
   out = _dispatch_axis(_XtraxChunked(), lambda x: x + 1, jnp.arange(70))
   np.testing.assert_array_equal(np.asarray(out), np.arange(70) + 1)
+
+
+def _patch_order_helpers(monkeypatch):
+  """Replace the order helpers with stand-ins that make the seed visible in the decoded tokens."""
+  import aminx.host.kernel_dispatch as kd
+
+  def fake_key(k, seed):  # noqa: ARG001
+    """Stand-in order key: the seed itself as an int32 scalar (0 when there is none)."""
+    return jnp.int32(0) if seed is None else jnp.asarray(seed, dtype=jnp.int32)
+
+  def fake_with_order(bundle, order_key, order_fn, num_groups, fixed_context="random_order"):  # noqa: ARG001
+    """Stand-in order application: add the order key to the bundle."""
+    return bundle + order_key.astype(bundle.dtype)
+
+  monkeypatch.setattr(kd, "decoding_order_key", fake_key)
+  monkeypatch.setattr(kd, "with_decoding_order", fake_with_order)
+
+
+def test_order_branch_applies_the_seed(monkeypatch):
+  """skip_order=False runs the order helpers: the seed reaches the decoded tokens (the default path)."""
+  _patch_order_helpers(monkeypatch)
+  enc, bundle, keys = _inputs(70, 1.0)
+  decode = _StubDecode(scale=jnp.float32(2.0))
+  seq, _ = _chunked_sample_decode(
+    decode, enc, bundle, None, keys, (False, jnp.int32(5), None, None, "none"), tile=35,
+  )
+  np.testing.assert_array_equal(np.asarray(seq), np.full((70, 4), 1 * 2 + 1 + 5, dtype=np.int32))
+
+
+def test_different_order_seeds_share_one_executable(monkeypatch):
+  """Rows that differ only in decoding-order seed reuse one compiled executable (agy review F1)."""
+  from aminx.host.kernel_dispatch import _order_seed_leaf
+
+  _patch_order_helpers(monkeypatch)
+  TRACES["count"] = 0
+  enc, bundle, keys = _inputs(66, 1.0)  # 66 = 2 x 33: no remainder, so one compile traces once
+  decode = _StubDecode(scale=jnp.float32(2.0))
+  outs = []
+  for seed in (0, 1, 2, 3):
+    cfg = (False, _order_seed_leaf(seed), None, None, "none")
+    # tile=33 is used by no other test, so the first call here must compile (count 1, not a hit).
+    outs.append(np.asarray(_chunked_sample_decode(decode, enc, bundle, None, keys, cfg, tile=33)[0]))
+  assert TRACES["count"] == 1, f"retraced per seed: {TRACES['count']}"
+  for seed, seq in zip((0, 1, 2, 3), outs, strict=True):
+    np.testing.assert_array_equal(seq, np.full((66, 4), 3 + seed, dtype=np.int32))
+
+
+def test_negative_control_static_python_seed_retraces_per_seed(monkeypatch):
+  """A raw Python int seed is a static argument and traces once per seed, so the counter can fire."""
+  _patch_order_helpers(monkeypatch)
+  TRACES["count"] = 0
+  enc, bundle, keys = _inputs(70, 1.0)
+  decode = _StubDecode(scale=jnp.float32(2.0))
+  for seed in (0, 1, 2):
+    _chunked_sample_decode(decode, enc, bundle, None, keys, (False, seed, None, None, "none"), tile=35)
+  assert TRACES["count"] == 3, f"expected a trace per static seed: {TRACES['count']}"
+
+
+def test_traced_order_seed_gives_the_same_key_as_the_int():
+  """The real PRNGKey of a traced int32 seed equals that of the Python int, so tokens are unchanged."""
+  from aminx.host.kernel_dispatch import _order_seed_leaf
+  from aminx.inference.bundle_builder import decoding_order_key
+
+  sample_key = jax.random.key(7)
+  traced = jax.jit(lambda s: decoding_order_key(sample_key, s))
+  for seed in (0, 1, 4679, 2**31 - 1):
+    want = jax.random.key_data(decoding_order_key(sample_key, seed))
+    got = jax.random.key_data(traced(_order_seed_leaf(seed)))
+    np.testing.assert_array_equal(np.asarray(got), np.asarray(want))
+
+
+def test_order_seed_leaf_passes_through_none_and_out_of_range():
+  """None and out-of-int32-range seeds are left as they are (static), everything else becomes an array."""
+  from aminx.host.kernel_dispatch import _order_seed_leaf
+
+  assert _order_seed_leaf(None) is None
+  assert _order_seed_leaf(2**31) == 2**31
+  assert _order_seed_leaf(-1) == -1
+  assert isinstance(_order_seed_leaf(3), jax.Array)
