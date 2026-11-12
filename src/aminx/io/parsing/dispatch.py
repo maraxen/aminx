@@ -19,6 +19,12 @@ from typing import Any
 from proxide import OutputSpec
 from proxide.core.containers import Protein
 
+# How proxide types a modified residue that is chemically a standard one (MSE, selenomethionine).
+# proxide >= 0.2.0 defaults to ``"parent_residue"`` (MSE -> MET). The reference LigandMPNN parser
+# tokenises MSE as X, and aminx promises token parity with it, so every aminx parse path asks for
+# ``"unknown"`` (the unknown residue index). Needs proxide with ``OutputSpec.modified_residue_typing``.
+MODIFIED_RESIDUE_TYPING = "unknown"
+
 
 def _output_spec(k_neighbors: int, kwargs: dict[str, Any]) -> OutputSpec:
   """Build the aminx OutputSpec: RBF on, Atom37-compatible, optional physics/solvent flags."""
@@ -32,6 +38,7 @@ def _output_spec(k_neighbors: int, kwargs: dict[str, Any]) -> OutputSpec:
     "compute_vdw": compute_vdw,
     "compute_electrostatics": compute_estat,
     "parameterize_md": compute_vdw or compute_estat,
+    "modified_residue_typing": MODIFIED_RESIDUE_TYPING,
   }
   for key in ("remove_solvent", "add_hydrogens", "force_field"):
     if key in kwargs:

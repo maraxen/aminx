@@ -21,6 +21,7 @@ import jax
 from proxide.ops.dataset import create_protein_dataset
 
 from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, FAMILY_DRIVERS, validate_model_family
+from aminx.io.parsing.dispatch import MODIFIED_RESIDUE_TYPING
 from aminx.io.weights import family_checkpoints, load_model, resolve_family_checkpoint
 from aminx.run.resources import proxide_dataset_resource_kwargs
 
@@ -144,6 +145,8 @@ def prep_protein_stream_and_model(
     "model": spec.model,
     "altloc": spec.altloc,
     "topology": spec.topology,
+    # Token parity with the reference parser (MSE -> X); see MODIFIED_RESIDUE_TYPING.
+    "modified_residue_typing": MODIFIED_RESIDUE_TYPING,
   }
   ram_mb, workers, buf = proxide_dataset_resource_kwargs(spec, context="inference")
   protein_iterator = create_protein_dataset(
