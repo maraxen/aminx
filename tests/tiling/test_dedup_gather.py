@@ -18,6 +18,23 @@ from aminx.tiling.strategy import DedupGather
 from xtrax.tiling.dedup import get_k_bucket  # noqa: TID251 -- submodule-only, not re-exported from xtrax.tiling's public __init__
 
 
+def _make_dedup_gather(
+    *,
+    unique_indices: np.ndarray,
+    index_map: np.ndarray,
+    k: int,
+    k_bucket: int,
+) -> DedupGather:
+    return DedupGather(
+        unique_indices=unique_indices,
+        index_map=index_map,
+        k=k,
+        k_bucket=k_bucket,
+        dedup_fn=lambda xs, idx: jax.tree.map(lambda x: x[idx], xs),
+        gather_fn=lambda ys, idx: jax.tree.map(lambda y: y[idx], ys),
+    )
+
+
 def test_dedup_gather_bit_identical() -> None:
     """DedupGather with K=2 uniques in N=4 elements produces bit-identical output to naive map.
 
@@ -30,7 +47,7 @@ def test_dedup_gather_bit_identical() -> None:
     k = 2
     k_bucket = get_k_bucket(k)  # expected 2
 
-    strategy = DedupGather(
+    strategy = _make_dedup_gather(
         unique_indices=unique_indices,
         index_map=index_map,
         k=k,
@@ -77,7 +94,7 @@ def test_dedup_gather_k_not_n_lax_map() -> None:
         unique_indices, (0, k_bucket - k), mode="edge"
     )
 
-    strategy = DedupGather(
+    strategy = _make_dedup_gather(
         unique_indices=unique_indices_padded,
         index_map=index_map,
         k=k,
@@ -121,7 +138,7 @@ def test_dedup_gather_jit_compiles() -> None:
     k = 2
     k_bucket = get_k_bucket(k)
 
-    strategy = DedupGather(
+    strategy = _make_dedup_gather(
         unique_indices=unique_indices,
         index_map=index_map,
         k=k,
@@ -160,7 +177,7 @@ def test_dedup_gather_output_shape() -> None:
     k = 2
     k_bucket = get_k_bucket(k)
 
-    strategy = DedupGather(
+    strategy = _make_dedup_gather(
         unique_indices=unique_indices,
         index_map=index_map,
         k=k,

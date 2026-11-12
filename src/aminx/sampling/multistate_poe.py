@@ -46,9 +46,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from xtrax.run import ZarrStagingSink, derive_sink_spec
-from xtrax.tiling import BatchPlanner
-from xtrax.tiling import ChunkedMap as _XtraxChunkedMap
-from xtrax.tiling import Vmap as _XtraxVmap
+from xtrax.tiling import BatchPlanner, ChunkedMap, Vmap
 from xtrax.tiling.estimators import lowered_memory_estimate
 
 from aminx.host._sampling_grid_lineage import (
@@ -92,10 +90,9 @@ from aminx.io.sink_provenance import (
   resolve_aminx_version,
 )
 from aminx.run.spec import mpnn_temperatures
-from aminx.sampling.conditional_logits import _plan_axis_strategy
 from aminx.tiling.axes import N_SAMPLES, N_STATES
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
-from aminx.tiling.strategy import SafeMap, Vmap
+from aminx.tiling.dispatch import make_axis_dispatch
+from aminx.tiling.planner import plan_axis_strategy
 
 if TYPE_CHECKING:
   from jaxtyping import Array, Float, Int, PRNGKeyArray
@@ -123,15 +120,15 @@ def sample_states_fused(
   """Draw n_samples independent samples from an already-built, already-fused bundle.
 
   Dispatches the sample-key axis via the same composable_jax idiom every other axis in this
-  package uses -- `_plan_axis_strategy` (`aminx.sampling.conditional_logits`) resolves a real
+  package uses -- `plan_axis_strategy` (`aminx.tiling.planner`) resolves a real
   `xtrax.tiling.BatchPlanner` decision (Vmap when `n_samples` fits the device memory budget,
-  SafeMap-chunked otherwise) against the existing `N_SAMPLES` `AxisSpec`
-  (`aminx.tiling.axes`), then `make_axis_dispatch_via_xtrax` turns that decision into a typed
+  ChunkedMap otherwise) against the existing `N_SAMPLES` `AxisSpec`
+  (`aminx.tiling.axes`), then `make_axis_dispatch` turns that decision into a typed
   iterator -- exactly how `make_batched_conditional_logits_split_fn` dispatches
   `N_REPLICATES`/`N_CANDIDATES` (`conditional_logits.py:390-397,421-427`). Deliberately not a
   bare `jax.vmap`: a fixed `jax.vmap` over an unbounded `n_samples` would attempt every sample
   in one shot regardless of the device's actual memory, exactly the failure mode
-  `_plan_axis_strategy`'s `BatchPlanner`/`MemoryBudget` exists to prevent for large campaign-
+  `plan_axis_strategy`'s `BatchPlanner`/`MemoryBudget` exists to prevent for large campaign-
   scale sample counts (thousands of samples per bead).
 
   The per-sample memory estimate feeding that decision (`activation_bytes_per_element`) is
@@ -223,19 +220,11 @@ def sample_states_fused(
   # #942). This is what previously never happened at all (kernel() hardcoded
   # Vmap unconditionally, bypassing BatchPlanner for this axis entirely).
   state_spec = dataclasses.replace(N_STATES, cardinality=num_states)
-  xtrax_state_strategy = BatchPlanner().plan([state_spec]).decisions[0].strategy
-  # BatchPlanner is xtrax-native; translate back to aminx's own AxisStrategy
-  # union before handing it to aminx call sites (make_axis_dispatch_via_xtrax
-  # expects aminx-native instances -- mirrors _plan_axis_strategy's identical
-  # translation for the samples axis below).
-  if isinstance(xtrax_state_strategy, _XtraxChunkedMap):
-    state_strategy = SafeMap(tile=xtrax_state_strategy.batch_size)
-  elif isinstance(xtrax_state_strategy, _XtraxVmap):
-    state_strategy = Vmap()
-  else:
+  state_strategy = BatchPlanner().plan([state_spec]).decisions[0].strategy
+  if not isinstance(state_strategy, (ChunkedMap, Vmap)):
     msg = (
       "sample_states_fused: unexpected BatchPlanner state-axis decision "
-      f"{type(xtrax_state_strategy)}"
+      f"{type(state_strategy)}"
     )
     raise TypeError(msg)
 
@@ -268,13 +257,13 @@ def sample_states_fused(
   # xtrax already provides the primitive to close -- lowered_memory_estimate
   # had zero call sites anywhere in aminx before this).
   activation_bytes = lowered_memory_estimate(_one_sample, sample_keys[0])
-  strategy = _plan_axis_strategy(
+  strategy = plan_axis_strategy(
     N_SAMPLES,
     n_samples,
     sample_batch_size,
     activation_bytes_per_element=activation_bytes,
   )
-  iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_SAMPLES.name)
+  iterator = make_axis_dispatch(strategy, axis=N_SAMPLES.name)
 
   sequences, logits = iterator(_one_sample, sample_keys)
   return sequences, logits

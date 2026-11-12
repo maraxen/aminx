@@ -5,10 +5,9 @@ import pytest
 
 from aminx.host.plan import PlanTopologyError, _validate_plan_topology
 from aminx.tiling.axes import N_NOISES, N_SAMPLES, N_STRUCTURES, N_TEMPERATURES
-from aminx.tiling.strategy import SafeMap, Scan, Vmap
 from aminx.types.boundaries import AxisBoundary
 from aminx.types.stages import StageSet
-from xtrax.tiling import AxisDecision, BatchPlan
+from xtrax.tiling import AxisDecision, BatchPlan, ChunkedMap, Scan, Vmap
 
 
 def _make_plan(decisions):
@@ -22,8 +21,8 @@ def _vmap_decision(axis):
     return AxisDecision(spec=axis, batch_size=0, reasoning="test", strategy=Vmap())
 
 
-def _safemap_decision(axis, tile=1):
-    return AxisDecision(spec=axis, batch_size=tile, reasoning="test", strategy=SafeMap(tile=tile))
+def _chunked_map_decision(axis, batch_size=1):
+    return AxisDecision(spec=axis, batch_size=batch_size, reasoning="test", strategy=ChunkedMap(batch_size=batch_size))
 
 
 def _scan_decision(axis):
@@ -93,14 +92,14 @@ def test_validator_allows_ordered_sink_on_scan_axis():
     _validate_plan_topology(plan, stage_set)  # must not raise
 
 
-def test_validator_allows_ordered_sink_on_safemap_axis():
+def test_validator_allows_ordered_sink_on_chunked_map_axis():
     class OrderedSink:
         ordered = True
 
         def __call__(self, x) -> None:
             pass
 
-    plan = _make_plan([_safemap_decision(N_NOISES)])
+    plan = _make_plan([_chunked_map_decision(N_NOISES)])
     stage_set = StageSet(
         axis_boundaries={"n_noises": AxisBoundary(sink=OrderedSink())}
     )
@@ -126,7 +125,7 @@ def test_validator_rejects_scan_on_heterogeneous_axis():
 
 def test_validator_passes_for_default_plan():
     plan = _make_plan([
-        _safemap_decision(N_STRUCTURES),
+        _chunked_map_decision(N_STRUCTURES),
         _vmap_decision(N_NOISES),
         _vmap_decision(N_TEMPERATURES),
         _vmap_decision(N_SAMPLES),

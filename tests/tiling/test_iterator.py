@@ -3,7 +3,7 @@
 
 Covers:
 - Protocol conformance via isinstance(concrete, RuntimeCheckableProtocol)
-- Numerical equivalence: Vmap, SafeMap, JaxScan
+- Numerical equivalence: Vmap, ChunkedMap, JaxScan
 - Type distinctness (oracle REC-1): switching iterator type triggers re-JIT
 """
 from __future__ import annotations
@@ -11,13 +11,12 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import pytest
-
-from aminx.tiling.iterator import (
+from xtrax.tiling import (
+    ChunkedMapIterator,
+    JaxScanIterator,
     MapIterator,
     ScanIterator,
     VmapIterator,
-    SafeMapIterator,
-    JaxScanIterator,
 )
 
 
@@ -32,9 +31,9 @@ def test_vmap_iterator_is_map_iterator():
     assert isinstance(it, MapIterator)
 
 
-def test_safe_map_iterator_is_map_iterator():
-    """SafeMapIterator satisfies MapIterator protocol."""
-    it = SafeMapIterator(tile=2)
+def test_chunked_map_iterator_is_map_iterator():
+    """ChunkedMapIterator satisfies MapIterator protocol."""
+    it = ChunkedMapIterator(tile=2)
     assert isinstance(it, MapIterator)
 
 
@@ -69,9 +68,9 @@ def test_vmap_iterator_with_in_axes():
     assert jnp.allclose(result, expected)
 
 
-def test_safe_map_iterator_numerical_equivalence():
-    """SafeMapIterator correctly applies a function across elements."""
-    it = SafeMapIterator(tile=2)
+def test_chunked_map_iterator_numerical_equivalence():
+    """ChunkedMapIterator correctly applies a function across elements."""
+    it = ChunkedMapIterator(tile=2)
     fn = lambda x: x * 2
     xs = jnp.arange(4)
     result = it(fn, xs)
@@ -79,18 +78,18 @@ def test_safe_map_iterator_numerical_equivalence():
     assert jnp.allclose(result, expected)
 
 
-def test_safe_map_iterator_respects_tile():
-    """SafeMapIterator uses tile parameter for chunking."""
-    it = SafeMapIterator(tile=2)
+def test_chunked_map_iterator_respects_tile():
+    """ChunkedMapIterator uses tile parameter for chunking."""
+    it = ChunkedMapIterator(tile=2)
     assert it.tile == 2
     # Verify it can be called with different tile sizes
-    it_large = SafeMapIterator(tile=10)
+    it_large = ChunkedMapIterator(tile=10)
     assert it_large.tile == 10
 
 
-def test_safe_map_iterator_with_in_axes():
-    """SafeMapIterator respects in_axes argument."""
-    it = SafeMapIterator(tile=2)
+def test_chunked_map_iterator_with_in_axes():
+    """ChunkedMapIterator respects in_axes argument."""
+    it = ChunkedMapIterator(tile=2)
     fn = lambda x: x * 2
     xs = jnp.arange(4)
     result = it(fn, xs, in_axes=0)
@@ -110,11 +109,6 @@ def test_jax_scan_iterator_numerical_equivalence():
     init = jnp.array(0)
     xs = jnp.arange(4)
     final_carry, ys = it(fn, init, xs)
-    # After processing [0,1,2,3]:
-    # carry=0, x=0 -> (0, 0)
-    # carry=0, x=1 -> (1, 1)
-    # carry=1, x=2 -> (3, 3)
-    # carry=3, x=3 -> (6, 6)
     assert final_carry == jnp.array(6)
     assert jnp.allclose(ys, jnp.array([0, 1, 3, 6]))
 
@@ -122,7 +116,6 @@ def test_jax_scan_iterator_numerical_equivalence():
 def test_jax_scan_iterator_with_complex_carry():
     """JaxScanIterator handles structured carry correctly."""
     it = JaxScanIterator()
-    # Carry is a tuple (sum, product)
     def fn(carry, x):
         s, p = carry
         return (s + x, p * x), (s + x, p * x)
@@ -131,10 +124,6 @@ def test_jax_scan_iterator_with_complex_carry():
     xs = jnp.array([1, 2, 3])
     final_carry, ys = it(fn, init, xs)
 
-    # After processing [1, 2, 3]:
-    # (0, 1), 1 -> (1, 1), (1, 1)
-    # (1, 1), 2 -> (3, 2), (3, 2)
-    # (3, 2), 3 -> (6, 6), (6, 6)
     expected_carry_sum = jnp.array(6)
     expected_carry_prod = jnp.array(6)
     assert final_carry[0] == expected_carry_sum
@@ -146,22 +135,14 @@ def test_jax_scan_iterator_with_complex_carry():
 # ============================================================================
 
 
-def test_vmap_vs_safe_map_different_types():
-    """Different iterator types are distinct (per oracle REC-1).
-
-    Oracle REC-1: Switching iterator strategy changes the compiled type,
-    which forces JAX to re-JIT the composed mode class. This test documents
-    that VmapIterator and SafeMapIterator are different types with different
-    semantics, even though they both satisfy MapIterator protocol.
-    """
+def test_vmap_vs_chunked_map_different_types():
+    """Different iterator types are distinct (per oracle REC-1)."""
     it_vmap = VmapIterator()
-    it_safe = SafeMapIterator(tile=4)
+    it_chunked = ChunkedMapIterator(tile=4)
 
-    # Different types
-    assert type(it_vmap) != type(it_safe)
-    # Both satisfy MapIterator protocol
+    assert type(it_vmap) != type(it_chunked)
     assert isinstance(it_vmap, MapIterator)
-    assert isinstance(it_safe, MapIterator)
+    assert isinstance(it_chunked, MapIterator)
 
 
 def test_vmap_vs_jax_scan_different_types():
@@ -169,25 +150,19 @@ def test_vmap_vs_jax_scan_different_types():
     it_map = VmapIterator()
     it_scan = JaxScanIterator()
 
-    # Different concrete types
     assert type(it_map) != type(it_scan)
-    # Both satisfy their respective protocols
     assert isinstance(it_map, MapIterator)
     assert isinstance(it_scan, ScanIterator)
 
 
 def test_treedef_invariant_re_jit_on_strategy_switch():
-    """REC-1: switching iterator strategy must change PyTree structure → re-JIT.
-
-    This is the JIT-cache invariant: a function jitted over a closure containing
-    VmapIterator must re-compile when called with SafeMapIterator instead.
-    """
+    """REC-1: switching iterator strategy must change PyTree structure → re-JIT."""
     vmap_struct = jax.tree_util.tree_structure(VmapIterator())
-    safemap_struct = jax.tree_util.tree_structure(SafeMapIterator(tile=4))
+    chunked_struct = jax.tree_util.tree_structure(ChunkedMapIterator(tile=4))
     jaxscan_struct = jax.tree_util.tree_structure(JaxScanIterator())
-    assert vmap_struct != safemap_struct
+    assert vmap_struct != chunked_struct
     assert vmap_struct != jaxscan_struct
-    assert safemap_struct != jaxscan_struct
+    assert chunked_struct != jaxscan_struct
 
 
 # ============================================================================
@@ -197,15 +172,15 @@ def test_treedef_invariant_re_jit_on_strategy_switch():
 
 def test_iterator_equality_by_value():
     """Iterators with same parameters are equal."""
-    it1 = SafeMapIterator(tile=4)
-    it2 = SafeMapIterator(tile=4)
+    it1 = ChunkedMapIterator(tile=4)
+    it2 = ChunkedMapIterator(tile=4)
     assert it1 == it2
 
 
 def test_iterator_inequality_different_params():
     """Iterators with different parameters are not equal."""
-    it1 = SafeMapIterator(tile=2)
-    it2 = SafeMapIterator(tile=4)
+    it1 = ChunkedMapIterator(tile=2)
+    it2 = ChunkedMapIterator(tile=4)
     assert it1 != it2
 
 

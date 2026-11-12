@@ -15,9 +15,17 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from aminx.host.kernel_dispatch import _chunk_tile, _chunked_sample_decode, _dispatch_axis
+from aminx.host.kernel_dispatch import (
+  _chunk_batch_size,
+  _chunked_sample_decode,
+  _dispatch_axis,
+)
+from aminx.tiling.strategy import ChunkedMap, Vmap
 
 TRACES = {"count": 0}
+# xtrax.transforms.chunked_map traces twice per compilation: once during
+# jax.eval_shape (zero-size output check) and once during jax.lax.map.
+TRACES_PER_COMPILE = 2
 ORDER_CFG = (True, 0, None, None, "none")  # skip_order=True: the bundle is used as is
 
 
@@ -64,8 +72,8 @@ def test_chunked_decode_traces_once_across_fresh_modules_and_rows():
   for row in range(3):
     enc, bundle, keys = _inputs(70, float(row + 1))
     decode = _StubDecode(scale=jnp.float32(2.0))  # a NEW module object every row
-    outs.append(_chunked_sample_decode(decode, enc, bundle, None, keys, ORDER_CFG, tile=35))
-  assert TRACES["count"] == 1, f"retraced across rows: {TRACES['count']}"
+    outs.append(_chunked_sample_decode(decode, enc, bundle, None, keys, ORDER_CFG, batch_size=35))
+  assert TRACES["count"] == TRACES_PER_COMPILE, f"retraced across rows: {TRACES['count']}"
   for row, (seq, _logits) in enumerate(outs):
     assert seq.shape == (70, 4)
     np.testing.assert_array_equal(np.asarray(seq), np.full((70, 4), (row + 1) * 2 + 1, dtype=np.int32))
@@ -86,52 +94,27 @@ def test_negative_control_eager_closure_map_retraces_every_row():
   assert TRACES["count"] >= 3, f"the counter did not fire per row: {TRACES['count']}"
 
 
-def test_different_tile_is_a_different_executable_and_still_correct():
-  """A different tile compiles separately but gives the same tokens."""
+def test_different_batch_size_is_a_different_executable_and_still_correct():
+  """A different batch size compiles separately but gives the same tokens."""
   TRACES["count"] = 0
   enc, bundle, keys = _inputs(60, 1.0)
   decode = _StubDecode(scale=jnp.float32(2.0))
-  a, _ = _chunked_sample_decode(decode, enc, bundle, None, keys, ORDER_CFG, tile=20)
-  b, _ = _chunked_sample_decode(decode, enc, bundle, None, keys, ORDER_CFG, tile=30)
-  assert TRACES["count"] == 2
+  a, _ = _chunked_sample_decode(decode, enc, bundle, None, keys, ORDER_CFG, batch_size=20)
+  b, _ = _chunked_sample_decode(decode, enc, bundle, None, keys, ORDER_CFG, batch_size=30)
+  assert TRACES["count"] == 2 * TRACES_PER_COMPILE
   np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
 
 
-class _XtraxChunked:
-  """xtrax spelling of a chunked strategy: the tile is ``batch_size``."""
-
-  batch_size = 35
-
-
-_XtraxChunked.__name__ = "ChunkedMap"
-
-
-class _AminxSafeMap:
-  """aminx spelling of a chunked strategy: the tile is ``tile``."""
-
-  tile = 7
-
-
-_AminxSafeMap.__name__ = "SafeMap"
-
-
-class _Vmap:
-  """A non-chunked strategy."""
-
-
-_Vmap.__name__ = "Vmap"
-
-
-def test_chunk_tile_reads_both_strategy_spellings():
-  """``_chunk_tile`` reads xtrax's batch_size and aminx's tile, and returns None for Vmap."""
-  assert _chunk_tile(_XtraxChunked()) == 35
-  assert _chunk_tile(_AminxSafeMap()) == 7
-  assert _chunk_tile(_Vmap()) is None
+def test_chunk_batch_size_reads_strategy_and_returns_none_for_vmap():
+  """``_chunk_batch_size`` reads ChunkedMap.batch_size, normalizing 0 and Vmap to None."""
+  assert _chunk_batch_size(ChunkedMap(batch_size=35)) == 35
+  assert _chunk_batch_size(ChunkedMap(batch_size=0)) is None
+  assert _chunk_batch_size(Vmap()) is None
 
 
 def test_dispatch_axis_still_serves_a_chunked_strategy():
   """The generic dispatcher still handles a chunked strategy for the paths that keep using it."""
-  out = _dispatch_axis(_XtraxChunked(), lambda x: x + 1, jnp.arange(70))
+  out = _dispatch_axis(ChunkedMap(batch_size=35), lambda x: x + 1, jnp.arange(70))
   np.testing.assert_array_equal(np.asarray(out), np.arange(70) + 1)
 
 
@@ -157,7 +140,7 @@ def test_order_branch_applies_the_seed(monkeypatch):
   enc, bundle, keys = _inputs(70, 1.0)
   decode = _StubDecode(scale=jnp.float32(2.0))
   seq, _ = _chunked_sample_decode(
-    decode, enc, bundle, None, keys, (False, jnp.int32(5), None, None, "none"), tile=35,
+    decode, enc, bundle, None, keys, (False, jnp.int32(5), None, None, "none"), batch_size=35,
   )
   np.testing.assert_array_equal(np.asarray(seq), np.full((70, 4), 1 * 2 + 1 + 5, dtype=np.int32))
 
@@ -173,9 +156,9 @@ def test_different_order_seeds_share_one_executable(monkeypatch):
   outs = []
   for seed in (0, 1, 2, 3):
     cfg = (False, _order_seed_leaf(seed), None, None, "none")
-    # tile=33 is used by no other test, so the first call here must compile (count 1, not a hit).
-    outs.append(np.asarray(_chunked_sample_decode(decode, enc, bundle, None, keys, cfg, tile=33)[0]))
-  assert TRACES["count"] == 1, f"retraced per seed: {TRACES['count']}"
+    # batch_size=33 is used by no other test, so the first call here must compile (count 1, not a hit).
+    outs.append(np.asarray(_chunked_sample_decode(decode, enc, bundle, None, keys, cfg, batch_size=33)[0]))
+  assert TRACES["count"] == TRACES_PER_COMPILE, f"retraced per seed: {TRACES['count']}"
   for seed, seq in zip((0, 1, 2, 3), outs, strict=True):
     np.testing.assert_array_equal(seq, np.full((66, 4), 3 + seed, dtype=np.int32))
 
@@ -187,8 +170,8 @@ def test_negative_control_static_python_seed_retraces_per_seed(monkeypatch):
   enc, bundle, keys = _inputs(70, 1.0)
   decode = _StubDecode(scale=jnp.float32(2.0))
   for seed in (0, 1, 2):
-    _chunked_sample_decode(decode, enc, bundle, None, keys, (False, seed, None, None, "none"), tile=35)
-  assert TRACES["count"] == 3, f"expected a trace per static seed: {TRACES['count']}"
+    _chunked_sample_decode(decode, enc, bundle, None, keys, (False, seed, None, None, "none"), batch_size=35)
+  assert TRACES["count"] == 3 * TRACES_PER_COMPILE, f"expected a trace per static seed: {TRACES['count']}"
 
 
 def test_traced_order_seed_gives_the_same_key_as_the_int():

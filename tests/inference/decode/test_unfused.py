@@ -17,11 +17,11 @@ from aminx.inference.decode.conditional import ConditionalDecode
 from aminx.inference.decode.unfused import decode_states_unfused
 from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
-from aminx.tiling.iterator import SafeMapIterator, VmapIterator
+from xtrax.tiling import ChunkedMapIterator, VmapIterator
 from tests.inference.decode.test_conditional import _build_synthetic_fixture
 
 
-@pytest.mark.parametrize("iterator_factory", [VmapIterator, SafeMapIterator])
+@pytest.mark.parametrize("iterator_factory", [VmapIterator, ChunkedMapIterator])
 def test_decode_states_unfused_matches_conditional_decode_at_s1(iterator_factory) -> None:
   """S=1: fusion is a no-op, so decode_states_unfused must equal ConditionalDecode's output.
 
@@ -29,7 +29,7 @@ def test_decode_states_unfused_matches_conditional_decode_at_s1(iterator_factory
   path back to the existing, trusted ConditionalDecode path rather than trusting a
   from-scratch reimplementation on its own.
   """
-  iterator = iterator_factory(tile=1) if iterator_factory is SafeMapIterator else iterator_factory()
+  iterator = iterator_factory(tile=1) if iterator_factory is ChunkedMapIterator else iterator_factory()
 
   model, _, _, _, _, sequence_oh, bundle, config = _build_synthetic_fixture(
     num_states=1, seed=42,
@@ -63,10 +63,10 @@ def test_decode_states_unfused_matches_conditional_decode_at_s1(iterator_factory
 
 
 @pytest.mark.parametrize("num_states", [1, 4, 8])
-@pytest.mark.parametrize("iterator_factory", [VmapIterator, SafeMapIterator])
+@pytest.mark.parametrize("iterator_factory", [VmapIterator, ChunkedMapIterator])
 def test_decode_states_unfused_shape_dtype(num_states: int, iterator_factory) -> None:
   """Sanity: valid (S, L, 21) float32 output across state counts and iterator strategies."""
-  iterator = iterator_factory(tile=2) if iterator_factory is SafeMapIterator else iterator_factory()
+  iterator = iterator_factory(tile=2) if iterator_factory is ChunkedMapIterator else iterator_factory()
 
   model, _, _, _, _, sequence_oh, bundle, config = _build_synthetic_fixture(
     num_states=num_states, seed=42,

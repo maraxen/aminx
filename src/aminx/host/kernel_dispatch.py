@@ -8,6 +8,7 @@ import equinox as eqx
 import jax
 import jax.experimental
 import jax.numpy as jnp
+from xtrax.transforms import chunked_map
 
 from aminx.host._sampling_grid_lineage import _base_sampling_key, _resolve_grid_lineage
 from aminx.host._sampling_helper import (
@@ -40,8 +41,8 @@ from aminx.inference.bundle_builder import (
 )
 from aminx.run.spec import mpnn_temperatures
 from aminx.run.specs import SamplingSpecification
+from aminx.tiling.strategy import ChunkedMap, DedupGather, Scan, Vmap
 from aminx.utils.aa_convert import MPNN_ALPHABET
-from aminx.utils.safe_map import safe_map as _safe_map
 
 if TYPE_CHECKING:
   from collections.abc import Sequence
@@ -114,12 +115,12 @@ def _spec_sample_rung(
 
 
 @eqx.filter_jit
-def _chunked_sample_decode(decode, enc, bundle, config, sample_keys, order_cfg, *, tile):
-  """Decode every sample key in chunks of ``tile`` under ONE cached jit executable (aminx #282).
+def _chunked_sample_decode(decode, enc, bundle, config, sample_keys, order_cfg, *, batch_size: int):
+  """Decode every sample key in chunks of ``batch_size`` under ONE cached jit executable (aminx #282).
 
   The sample axis used to run as an eager ``lax.map`` over a closure rebuilt for every row, so jax
   compiled a fresh ``jit(scan)`` per row (~6 s each at 128 samples). Here the per-row data -- the
-  decode module, encoding, bundle, config and keys -- are arguments, and only ``tile`` and the
+  decode module, encoding, bundle, config and keys -- are arguments, and only ``batch_size`` and the
   decoding-order settings are static, so rows of one shape reuse the same executable.
 
   ``order_cfg`` is ``(skip_order, seed, order_fn, num_groups, fixed_context)``. The non-array leaves
@@ -140,7 +141,7 @@ def _chunked_sample_decode(decode, enc, bundle, config, sample_keys, order_cfg, 
     res = decode(enc, b, k, config)
     return res.sequence, res.logits
 
-  return _safe_map(_one, sample_keys, batch_size=tile)
+  return chunked_map(_one, sample_keys, batch_size=batch_size)
 
 
 def _order_seed_leaf(seed):
@@ -155,25 +156,19 @@ def _order_seed_leaf(seed):
   return jnp.asarray(seed, dtype=jnp.int32)
 
 
-def _chunk_tile(strategy) -> int | None:
-  """The chunk size of a SafeMap/ChunkedMap strategy, or None for any other strategy."""
-  if type(strategy).__name__ not in ("SafeMap", "ChunkedMap"):
-    return None
-  tile = getattr(strategy, "tile", None)
-  return strategy.batch_size if tile is None else tile
+def _chunk_batch_size(strategy: Any) -> int | None:
+  """The chunk size of a ChunkedMap strategy, or None for any other strategy (or batch_size=0)."""
+  if isinstance(strategy, ChunkedMap):
+    return strategy.batch_size or None
+  return None
 
 
-def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
+def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int | None = None):
   """Dispatch iteration over an axis using the declared AxisStrategy.
 
   Args:
-      strategy: AxisStrategy from BatchPlanner — Vmap, SafeMap, Scan, or DedupGather.
-          May be aminx-native (aminx.tiling.strategy) or xtrax-native
-          (xtrax.tiling.strategy) -- since EPIC #1541 T-PLANNER.2/4, plans built
-          via host/plan.py's _plan_with_joint_budget construct xtrax-native
-          strategies. Dispatched by type(strategy).__name__ rather than
-          isinstance against one specific class, so either origin works.
-      body: Function to apply at each element. For Vmap/SafeMap: body(x) -> y.
+      strategy: AxisStrategy from BatchPlanner — Vmap, ChunkedMap, Scan, or DedupGather.
+      body: Function to apply at each element. For Vmap/ChunkedMap: body(x) -> y.
             For Scan: called as body(x) -> y; carry is threaded around it.
             For DedupGather: body(x) -> y; run on K unique elements then scatter to N.
       xs: Input array or pytree to map over (leading axis = the mapped axis).
@@ -185,26 +180,11 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
       Stacked results, same leading shape as xs.
 
   """
-  from aminx.utils.safe_scan import safe_scan
-
-  strategy_name = type(strategy).__name__
-
-  if strategy_name == "Vmap":
-    # Via safe_map, not a bare jax.vmap: it never compiles a vmapped chunk of size 1, which
-    # miscompiles silently on one XLA GPU stack (aminx #2391; see aminx.utils.safe_map).
-    return _safe_map(body, xs, batch_size=None)
-  if strategy_name in ("SafeMap", "ChunkedMap"):
-    # aminx.tiling.strategy.SafeMap uses .tile; xtrax's chunked strategy uses
-    # .batch_size for the same tile-size concept (EPIC #1541 T-PLANNER.4
-    # finding, 2026-07-06). xtrax 0.4.0a11 renamed it SafeMap -> ChunkedMap
-    # (xtrax #3644), and its deprecated SafeMap alias IS ChunkedMap, so an
-    # xtrax plan now always reports "ChunkedMap". Matching only "SafeMap" would
-    # drop to the unchunked fallback below.
-    tile = getattr(strategy, "tile", None)
-    if tile is None:
-      tile = strategy.batch_size
-    return _safe_map(body, xs, batch_size=tile)
-  if strategy_name == "Scan":
+  if isinstance(strategy, Vmap):
+    return chunked_map(body, xs, batch_size=None)
+  if isinstance(strategy, ChunkedMap):
+    return chunked_map(body, xs, batch_size=strategy.batch_size or None)
+  if isinstance(strategy, Scan):
     # Wrap body to be scan-compatible: body is (x -> y), transition threads carry.
     # For default case (init=None, no real carry), this is a carry-passthrough.
     init = strategy.init if strategy.init is not None else jnp.array(0)
@@ -227,16 +207,16 @@ def _dispatch_axis(strategy, body, xs, *, batch_size_fallback: int = 0):
       y = body(x)
       return carry, y  # carry-passthrough: carry is not updated
 
-    _, ys = safe_scan(scan_body, xs, init=init)
+    _, ys = jax.lax.scan(scan_body, init, xs)
     return ys
-  if strategy_name == "DedupGather":
+  if isinstance(strategy, DedupGather):
     unique_idx = jnp.asarray(strategy.unique_indices, dtype=jnp.int32)  # (K_bucket,)
     index_map = jnp.asarray(strategy.index_map, dtype=jnp.int32)  # (N,)
     xs_unique = strategy.dedup_fn(xs, unique_idx)  # in-trace gather
-    ys_unique = _safe_map(body, xs_unique, batch_size=None)  # K_bucket runs
+    ys_unique = chunked_map(body, xs_unique, batch_size=None)  # K_bucket runs
     return strategy.gather_fn(ys_unique, index_map)  # in-trace scatter
-  # Fallback: treat as safe_map with batch_size_fallback
-  return _safe_map(body, xs, batch_size=batch_size_fallback)
+  # Fallback: treat as chunked_map with batch_size_fallback
+  return chunked_map(body, xs, batch_size=batch_size_fallback or None)
 
 
 # (build_inference_bundle kwarg, key in the _prepare_ligand_context dict). The context
@@ -533,8 +513,8 @@ def _sample_batch(  # noqa: PLR0915
         res = plan.decode(enc, _with_sample_order(bundle, k), k, config)
         return res.sequence, res.logits
 
-      chunk_tile = _chunk_tile(sample_decision.strategy)
-      if chunk_tile is not None:
+      chunk_bs = _chunk_batch_size(sample_decision.strategy)
+      if chunk_bs is not None:
         # Chunked sample axis: one cached executable across rows (aminx #282), not an eager
         # lax.map over a per-row closure.
         order_cfg = (
@@ -545,7 +525,7 @@ def _sample_batch(  # noqa: PLR0915
           spec.run_spec.sampling.fixed_position_context,
         )
         return _chunked_sample_decode(
-          plan.decode, enc, bundle, config, key_samples, order_cfg, tile=chunk_tile,
+          plan.decode, enc, bundle, config, key_samples, order_cfg, batch_size=chunk_bs,
         )
       return _dispatch_axis(sample_decision.strategy, _run_one_sample, key_samples)
 
@@ -620,8 +600,8 @@ def _sample_batch(  # noqa: PLR0915
 
         return _dispatch_axis(temp_decision.strategy, _dispatch_temp, temperatures)
 
-      # Map decode over K fused encodings (use _safe_map for this axis as it has no AxisDecision)
-      stacked_sequences, stacked_logits = _safe_map(
+      # Map decode over K fused encodings (use chunked_map for this axis as it has no AxisDecision)
+      stacked_sequences, stacked_logits = chunked_map(
         _call_decode_one_enc,
         fused_enc,
         batch_size=None,
@@ -664,19 +644,19 @@ def _sample_batch(  # noqa: PLR0915
         res = plan.decode(enc, _with_sample_order(bundle, k), k, config)
         return res.sequence, res.logits
 
-      return _safe_map(_run_one_sample, key_samples, batch_size=samples_bs)
+      return chunked_map(_run_one_sample, key_samples, batch_size=samples_bs)
 
     def _dispatch_structure(s_idx):
       def _dispatch_noise(n_val):
         def _dispatch_temp(t_val):
           return _call_kernel(sample_keys, s_idx, n_val, t_val)
 
-        return _safe_map(_dispatch_temp, temperatures, batch_size=temps_bs)
+        return chunked_map(_dispatch_temp, temperatures, batch_size=temps_bs)
 
-      return _safe_map(_dispatch_noise, noises, batch_size=noises_bs)
+      return chunked_map(_dispatch_noise, noises, batch_size=noises_bs)
 
     # shape: (B, D, T, N, L) and (B, D, T, N, L, 21)
-    sampled_sequences, sampled_logits = _safe_map(
+    sampled_sequences, sampled_logits = chunked_map(
       _dispatch_structure,
       jnp.arange(batch_size),
       batch_size=structures_bs,
@@ -720,7 +700,7 @@ def _sample_batch(  # noqa: PLR0915
           _sink(enc, jnp.int32(batch_idx), structure_idx, noise_idx)
         return enc
 
-      stacked_enc = _safe_map(encode_at_noise, (noises, noise_indices), batch_size=noises_bs)
+      stacked_enc = chunked_map(encode_at_noise, (noises, noise_indices), batch_size=noises_bs)
 
       # Step 2: fuse D encoded outputs → K
       fused_enc = plan.stage_set.encoding_fusion(stacked_enc)
@@ -737,12 +717,12 @@ def _sample_batch(  # noqa: PLR0915
             res = plan.decode(enc_k, _with_sample_order(decode_bundle, k), k, t_config)
             return res.sequence, res.logits
 
-          return _safe_map(_run_one_sample, sample_keys, batch_size=samples_bs)
+          return chunked_map(_run_one_sample, sample_keys, batch_size=samples_bs)
 
-        return _safe_map(_dispatch_temp, temperatures, batch_size=temps_bs)
+        return chunked_map(_dispatch_temp, temperatures, batch_size=temps_bs)
 
       # Map decode over K fused encodings
-      stacked_sequences, stacked_logits = _safe_map(
+      stacked_sequences, stacked_logits = chunked_map(
         _call_decode_one_enc,
         fused_enc,
         batch_size=None,
@@ -759,7 +739,7 @@ def _sample_batch(  # noqa: PLR0915
       return stacked_sequences, stacked_logits
 
     # shape: (B, K, T, N, L) and (B, K, T, N, L, 21) [before decoding_fusion]
-    sampled_sequences, sampled_logits = _safe_map(
+    sampled_sequences, sampled_logits = chunked_map(
       _call_structure_fused,
       jnp.arange(batch_size),
       batch_size=structures_bs,

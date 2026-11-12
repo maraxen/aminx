@@ -28,6 +28,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int, PRNGKeyArray
+from xtrax.tiling import Vmap
 
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.decode.factory import make_decode_fn  # noqa: TID251
@@ -38,7 +39,6 @@ from aminx.inference.decode.mode import (  # noqa: TID251
 from aminx.io.weights import get_topology_for_checkpoint
 from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors
-from aminx.tiling.strategy import Vmap
 from aminx.types.bundles import EncoderOutput, WaveScheduleBundle
 from aminx.utils.autoregression import ar_mask_from_decoding_order
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance

@@ -1,10 +1,5 @@
-"""_dispatch_axis dispatches on type(strategy).__name__, so xtrax 0.4.0a11's rename of
-SafeMap to ChunkedMap (xtrax #3644) must not drop xtrax plans to the unchunked fallback.
-
-xtrax's deprecated ``SafeMap`` alias IS ``ChunkedMap``, so every xtrax plan now reports
-the name "ChunkedMap". Matching only "SafeMap" sent it to the fallback branch, which
-calls ``_safe_map(..., batch_size=batch_size_fallback)`` (default 0 = no chunking) --
-silently losing the memory bound with no error and no warning.
+"""_dispatch_axis dispatches via isinstance(strategy, ChunkedMap), forwarding
+strategy.batch_size (normalizing batch_size=0 to None) to chunked_map.
 """
 
 import jax.numpy as jnp
@@ -12,11 +7,10 @@ import pytest
 from xtrax.tiling import ChunkedMap
 
 from aminx.host import kernel_dispatch
-from aminx.tiling.strategy import SafeMap as AminxSafeMap
 
 
 class _Unrecognised:
-    """A strategy whose name matches no branch: exercises the fallback path."""
+    """A strategy matching no AxisStrategy branch: exercises the fallback path."""
 
     batch_size = 3
 
@@ -29,21 +23,21 @@ def seen_batch_sizes(monkeypatch):
         seen.append(batch_size)
         return xs
 
-    monkeypatch.setattr(kernel_dispatch, "_safe_map", _spy)
+    monkeypatch.setattr(kernel_dispatch, "chunked_map", _spy)
     return seen
 
 
-@pytest.mark.parametrize(
-    "strategy",
-    [ChunkedMap(batch_size=3), AminxSafeMap(tile=3)],
-    ids=["xtrax-ChunkedMap", "aminx-SafeMap"],
-)
-def test_chunked_strategies_keep_their_tile(strategy, seen_batch_sizes):
-    kernel_dispatch._dispatch_axis(strategy, lambda x: x, jnp.zeros((6,)))
+def test_chunked_strategies_keep_their_tile(seen_batch_sizes):
+    kernel_dispatch._dispatch_axis(ChunkedMap(batch_size=3), lambda x: x, jnp.zeros((6,)))
     assert seen_batch_sizes == [3]
+
+
+def test_chunked_map_zero_batch_size_normalizes_to_none(seen_batch_sizes):
+    kernel_dispatch._dispatch_axis(ChunkedMap(batch_size=0), lambda x: x, jnp.zeros((6,)))
+    assert seen_batch_sizes == [None]
 
 
 def test_unrecognised_name_takes_the_unchunked_fallback(seen_batch_sizes):
     """Control: the fallback really does lose the tile, so the test above can fail."""
     kernel_dispatch._dispatch_axis(_Unrecognised(), lambda x: x, jnp.zeros((6,)))
-    assert seen_batch_sizes == [0]
+    assert seen_batch_sizes == [None]

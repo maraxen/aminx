@@ -119,13 +119,13 @@ def _plan_aminx(cardinality: int, default_batch_size: int, data_width: int = DAT
     directly rather than through any planner call.
     """
     del data_width  # no longer used; kept for call-site compatibility
-    from aminx.tiling.strategy import SafeMap as AminxSafeMap
+    from aminx.tiling.strategy import ChunkedMap as AminxChunkedMap
     from aminx.tiling.strategy import Vmap as AminxVmap
 
     if cardinality <= default_batch_size:
         strategy = AminxVmap()
     else:
-        strategy = AminxSafeMap(tile=default_batch_size)
+        strategy = AminxChunkedMap(batch_size=default_batch_size)
 
     return SimpleNamespace(strategy=strategy)
 
@@ -152,16 +152,10 @@ def _dispatch_aminx_legacy(strategy, axis: str = "batch"):
 
 
 def _dispatch_via_adapter(strategy, axis: str = "batch"):
-    """T2.4's migration-ready adapter -- what production would use post-flip.
+    """Direct xtrax.tiling.make_axis_dispatch comparison path."""
+    from xtrax.tiling import make_axis_dispatch as xtrax_make_axis_dispatch
 
-    Takes the SAME aminx-native strategy object as _dispatch_aminx_legacy, not
-    an independently-xtrax-native-planned one -- this is the apples-to-apples
-    "does swapping only the dispatch call change behavior" comparison T2.GATE
-    actually needs, distinct from the planner-decision-parity check above.
-    """
-    from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
-
-    return make_axis_dispatch_via_xtrax(strategy, axis=axis)
+    return xtrax_make_axis_dispatch(strategy, axis=axis, heterogeneous_axes={"state"})
 
 
 def _time_iterator(

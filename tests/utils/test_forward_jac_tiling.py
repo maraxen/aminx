@@ -174,7 +174,7 @@ def test_axis_order_is_output_pair_first():
   )
 
 
-def test_planner_demotes_to_safemap_when_the_axis_is_large():
+def test_planner_demotes_to_chunked_map_when_the_axis_is_large():
   """A big tangent axis must not stay on Vmap: that is the whole point of the tiling.
 
   Exercises `plan_axis_strategy` directly rather than through a real Jacobian, so the
@@ -182,7 +182,7 @@ def test_planner_demotes_to_safemap_when_the_axis_is_large():
   """
   from aminx.tiling.axes import N_JACOBIAN_PAIRS
   from aminx.tiling.planner import plan_axis_strategy
-  from aminx.tiling.strategy import SafeMap, Vmap
+  from xtrax.tiling import ChunkedMap, Vmap
 
   small = plan_axis_strategy(
     N_JACOBIAN_PAIRS, 16, None, activation_bytes_per_element=1024.0,
@@ -193,7 +193,7 @@ def test_planner_demotes_to_safemap_when_the_axis_is_large():
   huge = plan_axis_strategy(
     N_JACOBIAN_PAIRS, 242 * NUM_TOKENS, None, activation_bytes_per_element=35e6,
   )
-  assert isinstance(huge, SafeMap), (
+  assert isinstance(huge, ChunkedMap), (
     "a 242-residue tangent axis at ~35 MB/tangent stayed on Vmap -- the memory budget is "
     "not being consulted, and this is exactly the configuration predicted to OOM"
   )
@@ -203,10 +203,10 @@ def test_explicit_tile_overrides_the_planner():
   """`tangent_batch_size` must actually take effect -- it was a dead knob before this."""
   from aminx.tiling.axes import N_JACOBIAN_PAIRS
   from aminx.tiling.planner import plan_axis_strategy
-  from aminx.tiling.strategy import SafeMap
+  from xtrax.tiling import ChunkedMap
 
   strategy = plan_axis_strategy(
     N_JACOBIAN_PAIRS, 16, 4, activation_bytes_per_element=1.0,
   )
-  assert isinstance(strategy, SafeMap)
-  assert strategy.tile == 4
+  assert isinstance(strategy, ChunkedMap)
+  assert strategy.batch_size == 4

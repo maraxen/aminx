@@ -15,13 +15,12 @@ from typing import Any, cast
 import jax
 import numpy as np
 from xtrax.run import ZarrStagingSink, derive_sink_spec
-from xtrax.tiling import AxisSpec
+from xtrax.tiling import AxisSpec, ChunkedMap
 
 from aminx.host._sampling_helper import _canonical_structure_ids_for_spec
 from aminx.host.family_driver import ALPHABET, FamilyBatch, FamilyDriver, SinkArraySpec
 from aminx.host.plan import resolve_chunk_size, resolve_target_samples  # noqa: TID251
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
-from aminx.tiling.strategy import SafeMap
+from aminx.tiling.dispatch import make_axis_dispatch
 
 _PROOFREAD_PURPOSES = frozenset(
   {
@@ -91,7 +90,7 @@ def _bind_declared_axes(axes: list[AxisSpec]) -> None:
   """Bind each declared axis through xtrax. Drivers must not vmap these."""
   for axis in axes:
     tile = axis.default_batch_size if axis.default_batch_size > 0 else 1
-    make_axis_dispatch_via_xtrax(SafeMap(tile=tile), axis=axis.name)
+    make_axis_dispatch(ChunkedMap(batch_size=tile), axis=axis.name)
 
 
 def _structure_id(structure_ids: list[str], index: int) -> str:

@@ -1138,9 +1138,9 @@ def score(  # noqa: PLR0915
       noise_levels=noise_levels,
     )
 
-  from aminx.sampling.conditional_logits import _plan_axis_strategy  # noqa: PLC0415
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
-  from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax  # noqa: PLC0415
+  from aminx.tiling.dispatch import make_axis_dispatch  # noqa: PLC0415
+  from aminx.tiling.planner import plan_axis_strategy  # noqa: PLC0415
 
   all_scores, all_logits = [], None
   if spec.return_logits:
@@ -1305,13 +1305,13 @@ def score(  # noqa: PLR0915
       # bundles and runs an R3 check on concrete values), so it cannot be lowered for a real
       # estimate. See #147.
       activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
-    strategy = _plan_axis_strategy(
+    strategy = plan_axis_strategy(
       N_CANDIDATES,
       n_candidates,
       None,
       activation_bytes_per_element=activation_bytes,
     )
-    candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
+    candidate_iterator = make_axis_dispatch(strategy, axis=N_CANDIDATES.name)
 
     def _score_structure(
       struct_coords: jax.Array,
@@ -1593,18 +1593,18 @@ def _score_fused_multistate(  # noqa: PLR0915  # not length-bucketed in S8 v1
   # the same N_CANDIDATES primitive make_batched_conditional_logits_split_fn's
   # batched_decode_fn already uses for an analogous "many candidates, one structure
   # ensemble" dispatch.
-  from aminx.sampling.conditional_logits import _plan_axis_strategy  # noqa: PLC0415
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
-  from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax  # noqa: PLC0415
+  from aminx.tiling.dispatch import make_axis_dispatch  # noqa: PLC0415
+  from aminx.tiling.planner import plan_axis_strategy  # noqa: PLC0415
 
   activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
-  strategy = _plan_axis_strategy(
+  strategy = plan_axis_strategy(
     N_CANDIDATES,
     n_candidates,
     None,
     activation_bytes_per_element=activation_bytes,
   )
-  candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
+  candidate_iterator = make_axis_dispatch(strategy, axis=N_CANDIDATES.name)
 
   if spec.average_node_features and len(noise_levels) > 1:
     # Hoisted R3 check (#2517): eager, on concrete arrays, outside the candidate vmap.

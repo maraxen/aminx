@@ -709,9 +709,6 @@
   "src/aminx/scoring/multi_order.py::score_multi_order_average": {
     "internal": "host-side multi-order score averaging helper (clause score_only_multi_order_average, debt #3214); not exported to the browser bundle and not on any P-ID code path"
   },
-  "src/aminx/tiling/_deprecation.py::warn_deprecated": {
-    "internal": "caller-attributed DeprecationWarning helper for aminx's deprecated tiling types (debt #2371); no browser surface"
-  },
   "src/aminx/tiling/bucketing.py::BucketAssignment": "P27",
   "src/aminx/tiling/bucketing.py::BucketingConfig": "P27",
   "src/aminx/tiling/bucketing.py::group_by_bucket": "P27",
@@ -722,26 +719,8 @@
   "src/aminx/tiling/dispatch.py::make_axis_dispatch": {
     "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
   },
-  "src/aminx/tiling/dispatch.py::make_axis_dispatch_via_xtrax": {
-    "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
-  },
   "src/aminx/tiling/errors.py::TilingError": {
     "internal": "shared tiling error type, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::JaxScanIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::MapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::SafeMapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::ScanIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::VmapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
   },
   "src/aminx/tiling/memory_budget.py::clear_memory_budget_cache": "P26",
   "src/aminx/tiling/memory_budget.py::memory_budget_source": "P26",
@@ -752,18 +731,6 @@
   },
   "src/aminx/tiling/planner.py::plan_axis_strategy": {
     "internal": "memory/axis strategy planning shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::DedupGather": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::SafeMap": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::Scan": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::Vmap": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
   },
   "src/aminx/host/pack_shim.py::InputDigestMismatchError": {
     "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
