@@ -26,8 +26,25 @@ from proxide.core.containers import Protein
 MODIFIED_RESIDUE_TYPING = "unknown"
 
 
+def require_modified_residue_typing_support() -> None:
+  """Raise unless the installed proxide can honour ``MODIFIED_RESIDUE_TYPING``.
+
+  proxide 0.2.0 has no ``OutputSpec.modified_residue_typing``, and its ``load_rust`` (the path
+  ``create_protein_dataset(parse_kwargs=...)`` ends in) silently drops keywords it does not read.
+  Without this check the runner would keep tokenising MSE as M on such a proxide and report nothing.
+  """
+  if not hasattr(OutputSpec(), "modified_residue_typing"):
+    msg = (
+      "the installed proxide has no OutputSpec.modified_residue_typing, so selenomethionine "
+      f"(MSE) cannot be tokenised as X for parity with the reference parser (requested "
+      f"{MODIFIED_RESIDUE_TYPING!r}); install a proxide that provides it (> 0.2.0)"
+    )
+    raise RuntimeError(msg)
+
+
 def _output_spec(k_neighbors: int, kwargs: dict[str, Any]) -> OutputSpec:
   """Build the aminx OutputSpec: RBF on, Atom37-compatible, optional physics/solvent flags."""
+  require_modified_residue_typing_support()
   compute_physics = kwargs.get("compute_physics", False)
   compute_vdw = kwargs.get("compute_vdw", compute_physics)
   compute_estat = kwargs.get("compute_electrostatics", compute_physics)

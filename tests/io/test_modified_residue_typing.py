@@ -81,3 +81,57 @@ def test_unknown_typing_survives_hydrogen_addition(tmp_path, add_hydrogens):
   protein = parse_structure(_write_pdb(tmp_path / "mse.pdb"), add_hydrogens=add_hydrogens)
   mpnn_tokens = np.asarray(af_to_mpnn(np.asarray(protein.aatype)))
   assert int(mpnn_tokens[1]) == _X_TOKEN
+
+
+# --- the runner path (host/prep.py -> proxide create_protein_dataset), which the tests above do
+# --- not reach: proxide 0.2.0's load_rust drops keywords it does not read, so without a guard the
+# --- runner would keep tokenising MSE as M on an old proxide and say nothing.
+
+
+def _runner_spec():
+  from types import SimpleNamespace
+
+  return SimpleNamespace(chain_id=None, model=None, altloc=None, topology=None)
+
+
+def test_runner_parse_kwargs_request_unknown_typing():
+  from aminx.host.prep import _proxide_parse_kwargs
+
+  kwargs = _proxide_parse_kwargs(_runner_spec())
+  assert kwargs["modified_residue_typing"] == MODIFIED_RESIDUE_TYPING == "unknown"
+
+
+def test_runner_dataset_path_tokenises_mse_as_x(tmp_path):
+  """The real create_protein_dataset call the runner makes, with the kwargs it builds."""
+  from proxide.ops.dataset import create_protein_dataset
+
+  from aminx.host.prep import _proxide_parse_kwargs
+
+  dataset = create_protein_dataset(
+    [str(_write_pdb(tmp_path / "mse.pdb"))],
+    batch_size=1,
+    parse_kwargs=_proxide_parse_kwargs(_runner_spec()),
+    max_length=8,
+    use_electrostatics=False,
+    use_vdw=False,
+  )
+  batch = next(iter(dataset))
+  mpnn_tokens = np.asarray(af_to_mpnn(np.asarray(batch.aatype)))[0]
+  assert int(mpnn_tokens[1]) == _X_TOKEN, f"MSE should be X on the runner path, got {int(mpnn_tokens[1])}"
+
+
+class _OutputSpecWithoutTheOption:
+  """Stands in for proxide 0.2.0's OutputSpec, which has no modified_residue_typing."""
+
+
+def test_guard_refuses_a_proxide_that_cannot_honour_the_option(monkeypatch):
+  import aminx.io.parsing.dispatch as dispatch
+  from aminx.host.prep import _proxide_parse_kwargs
+
+  monkeypatch.setattr(dispatch, "OutputSpec", _OutputSpecWithoutTheOption)
+  with pytest.raises(RuntimeError, match="modified_residue_typing"):
+    dispatch.require_modified_residue_typing_support()
+  with pytest.raises(RuntimeError, match="modified_residue_typing"):
+    dispatch._output_spec(48, {})  # noqa: SLF001
+  with pytest.raises(RuntimeError, match="modified_residue_typing"):
+    _proxide_parse_kwargs(_runner_spec())
