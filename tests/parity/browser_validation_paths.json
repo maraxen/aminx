@@ -719,23 +719,8 @@
   "src/aminx/tiling/dispatch.py::make_axis_dispatch": {
     "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
   },
-  "src/aminx/tiling/dispatch.py::make_axis_dispatch_via_xtrax": {
-    "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
-  },
   "src/aminx/tiling/errors.py::TilingError": {
     "internal": "shared tiling error type, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::JaxScanIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::MapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::ScanIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::VmapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
   },
   "src/aminx/tiling/memory_budget.py::clear_memory_budget_cache": "P26",
   "src/aminx/tiling/memory_budget.py::memory_budget_source": "P26",
@@ -746,9 +731,6 @@
   },
   "src/aminx/tiling/planner.py::plan_axis_strategy": {
     "internal": "memory/axis strategy planning shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/strategy.py::DedupGather": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
   },
   "src/aminx/host/pack_shim.py::InputDigestMismatchError": {
     "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."

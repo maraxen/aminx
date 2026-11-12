@@ -51,10 +51,25 @@ def test_scan_transition_protocol_conformance():
     assert isinstance(my_transition, ScanTransition)
 
 
+def _dedup_fn(xs, unique_indices):
+    return xs[unique_indices]
+
+
+def _gather_fn(ys_unique, index_map):
+    return ys_unique[index_map]
+
+
 def test_dedup_gather_stores_fields():
     unique_indices = np.array([0, 1], dtype=np.int32)
     index_map = np.array([0, 1, 0, 1], dtype=np.int32)
-    dg = DedupGather(unique_indices=unique_indices, index_map=index_map, k=2, k_bucket=2)
+    dg = DedupGather(
+        unique_indices=unique_indices,
+        index_map=index_map,
+        k=2,
+        k_bucket=2,
+        dedup_fn=_dedup_fn,
+        gather_fn=_gather_fn,
+    )
     assert dg.k == 2
     assert dg.k_bucket == 2
     assert np.array_equal(dg.unique_indices, unique_indices)
@@ -64,6 +79,37 @@ def test_dedup_gather_stores_fields():
 def test_dedup_gather_in_union():
     unique_indices = np.array([0], dtype=np.int32)
     index_map = np.array([0, 0], dtype=np.int32)
-    dg = DedupGather(unique_indices=unique_indices, index_map=index_map, k=1, k_bucket=1)
+    dg = DedupGather(
+        unique_indices=unique_indices,
+        index_map=index_map,
+        k=1,
+        k_bucket=1,
+        dedup_fn=_dedup_fn,
+        gather_fn=_gather_fn,
+    )
     assert isinstance(dg, DedupGather)
     assert isinstance(dg, (Vmap, ChunkedMap, Scan, DedupGather))
+
+
+def test_batch_planner_dedup_gather_satisfies_axis_strategy():
+    """BatchPlanner(dedup_specs=[...]) emits the exact DedupGather class in AxisStrategy."""
+    from xtrax.tiling import AxisSpec, BatchPlanner
+    from xtrax.tiling.dedup import DedupSpec  # noqa: TID251
+
+    spec = AxisSpec(
+        name="n_structures",
+        cardinality=4,
+        default_batch_size=1,
+        heterogeneous=True,
+        dedup_eligible=True,
+    )
+    dedup = DedupSpec(
+        axis_name="n_structures",
+        unique_indices=np.array([0, 1], dtype=np.int32),
+        index_map=np.array([0, 1, 0, 1], dtype=np.int32),
+        k=2,
+    )
+    plan = BatchPlanner(dedup_specs=[dedup]).plan([spec])
+    strategy = plan.decisions[0].strategy
+    assert isinstance(strategy, DedupGather)
+    assert isinstance(strategy, AxisStrategy)

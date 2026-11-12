@@ -168,7 +168,7 @@ def _widen_chunked_axis_tile(
   if idx is None:
     return plan
   current = decisions[idx]
-  if type(current.strategy).__name__ != "ChunkedMap":
+  if not isinstance(current.strategy, ChunkedMap):
     return plan
 
   def _with_tile(tile: int) -> AxisDecision:
@@ -410,7 +410,7 @@ def _legacy_batch_size(decision: AxisDecision) -> int | None:
   chunked_map treats batch_size=None as "no chunking, run everything at once" --
   the Vmap-equivalent -- and any positive value as "chunk into groups of that size."
   """
-  if type(decision.strategy).__name__ == "Vmap":
+  if isinstance(decision.strategy, Vmap):
     return None
   return decision.batch_size or None
 

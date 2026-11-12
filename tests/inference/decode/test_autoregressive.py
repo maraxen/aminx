@@ -28,9 +28,7 @@ from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
 from aminx.inference.schedule_selector import build_wave_schedule_per_sample
 from aminx.model import Aminx
-from aminx.tiling.iterator import JaxScanIterator, VmapIterator
-from xtrax.tiling import ChunkedMapIterator
-from xtrax.tiling import CarryShape
+from xtrax.tiling import CarryShape, ChunkedMapIterator, JaxScanIterator, VmapIterator
 from aminx.types.bundles import InferenceBundle, WaveScheduleBundle
 from aminx.types.configs import InferenceConfig
 from aminx.utils.autoregression import generate_wave_ar_mask

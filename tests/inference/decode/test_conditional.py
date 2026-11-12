@@ -18,8 +18,7 @@ from aminx.inference.decode.conditional import ConditionalDecode
 from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
 from aminx.model import Aminx
-from aminx.tiling.iterator import VmapIterator
-from xtrax.tiling import ChunkedMapIterator
+from xtrax.tiling import ChunkedMapIterator, VmapIterator
 from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 
@@ -122,9 +121,34 @@ def test_conditional_decode_produces_valid_logits(
         stage_set=stage_set,
     )
 
-    # Verify shape and dtype
+    # Verify shape, dtype, and finiteness
     assert logits.shape == (enc.neighbor_indices.shape[1], 21), f"Expected (L, 21), got {logits.shape}"
     assert logits.dtype == jnp.float32
+    assert jnp.all(jnp.isfinite(logits))
+
+
+@pytest.mark.parametrize("num_states", [1, 3, 4, 5])
+def test_conditional_decode_chunked_map_matches_vmap_numerically(num_states: int) -> None:
+    """ChunkedMapIterator(tile=2) produces numerically identical logits to VmapIterator (divisible + ragged S)."""
+    model, _, _, _, _, _, bundle, config = _build_synthetic_fixture(
+        num_states=num_states, seed=42
+    )
+    k_enc, k_dec = jax.random.split(jax.random.PRNGKey(0))
+    encode_fn = make_encode_fn(model, use_rolling_state=False)
+    enc = encode_fn(bundle, k_enc, config)
+    stage_set = make_stage_set(
+        strategy="arithmetic_mean",
+        state_weights=bundle.conditioning.state_weights,
+    )
+
+    vmap_logits = ConditionalDecode(model=model, state_iterator=VmapIterator())(
+        key=k_dec, enc=enc, bundle=bundle, config=config, stage_set=stage_set,
+    )
+    chunked_logits = ConditionalDecode(model=model, state_iterator=ChunkedMapIterator(tile=2))(
+        key=k_dec, enc=enc, bundle=bundle, config=config, stage_set=stage_set,
+    )
+    assert jnp.all(jnp.isfinite(vmap_logits))
+    assert jnp.allclose(chunked_logits, vmap_logits, rtol=1e-5, atol=1e-5)
 
 
 def test_conditional_decode_state_position_map_changes_fused_output() -> None:

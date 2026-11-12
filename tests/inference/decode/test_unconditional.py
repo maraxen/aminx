@@ -18,8 +18,7 @@ from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.decode.unconditional import UnconditionalDecode
 from aminx.inference.logits import make_stage_set
 from aminx.model import Aminx
-from aminx.tiling.iterator import VmapIterator
-from xtrax.tiling import ChunkedMapIterator
+from xtrax.tiling import ChunkedMapIterator, VmapIterator
 from aminx.types.configs import InferenceConfig
 from aminx.types.bundles import (
     ConditioningBundle,

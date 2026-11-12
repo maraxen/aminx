@@ -14,10 +14,10 @@ output was never the problem.
 
 So the tangent axis is planned and dispatched through xtrax
 (:func:`aminx.tiling.planner.plan_axis_strategy` +
-:func:`aminx.tiling.dispatch.make_axis_dispatch_via_xtrax`), exactly as the candidate
+:func:`aminx.tiling.dispatch.make_axis_dispatch`), exactly as the candidate
 axis is in ``sampling/mbr_consensus.py`` and the replicate/candidate axes are in
 ``sampling/conditional_logits.py``. Small proteins keep the full-parallel ``Vmap`` path;
-larger ones are auto-demoted to ``SafeMap`` against the device memory budget. Per the
+larger ones are auto-demoted to ``ChunkedMap`` against the device memory budget. Per the
 standing project rule (``using-xtrax`` skill, ``feedback_xtrax_composable_primitives``
 memory), the chunking is **never** a hand-rolled ``jax.vmap``/``lax.map`` here.
 
@@ -36,11 +36,10 @@ from __future__ import annotations
 
 import jax
 import jax.numpy as jnp
-from xtrax.tiling import ChunkedMap
 
 from aminx.sampling.conditional_logits import make_encoding_conditional_logits_split_fn
 from aminx.tiling.axes import N_JACOBIAN_PAIRS
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
+from aminx.tiling.dispatch import make_axis_dispatch
 from aminx.tiling.planner import plan_axis_strategy
 from aminx.types.arrays import CategoricalJacobian
 from aminx.utils.autoregression import full_context_ar_mask
@@ -173,22 +172,10 @@ def make_categorical_jacobian_fn(
       tangent_batch_size,
       activation_bytes_per_element=_activation_bytes_per_tangent(model, seq_len),
     )
-    iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_JACOBIAN_PAIRS.name)
+    iterator = make_axis_dispatch(strategy, axis=N_JACOBIAN_PAIRS.name)
 
-    # xtrax's SafeMap requires the iterated cardinality to be an exact multiple of the
-    # tile -- a short final chunk RAISES rather than being handled (backlog #4159: the
-    # using-xtrax skill documents this as tolerable, and it is not). Real tangent counts
-    # are arbitrary (L=242 -> 5082 = 2*3*7*11*11), so pad the iterated indices up and slice
-    # the extras off. Padded entries repeat tangent 0: wasted work on at most tile-1
-    # tangents, never a wrong value.
     tangent_indices = jnp.arange(n_tangents, dtype=jnp.int32)
-    if isinstance(strategy, ChunkedMap) and n_tangents % strategy.batch_size:
-      pad = strategy.batch_size - (n_tangents % strategy.batch_size)
-      tangent_indices = jnp.concatenate(
-        [tangent_indices, jnp.zeros((pad,), dtype=jnp.int32)],
-      )
-
-    stacked = iterator(jvp_for_tangent, tangent_indices)[:n_tangents]
+    stacked = iterator(jvp_for_tangent, tangent_indices)
 
     # stacked[t, i, a] with t = j * 21 + b, i.e. axes (j, b, i, a) after the reshape.
     # The Jacobian contract is (i, a, j, b), so move the output pair in front.

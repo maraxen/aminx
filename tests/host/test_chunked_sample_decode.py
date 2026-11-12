@@ -20,6 +20,7 @@ from aminx.host.kernel_dispatch import (
   _chunked_sample_decode,
   _dispatch_axis,
 )
+from aminx.tiling.strategy import ChunkedMap, Vmap
 
 TRACES = {"count": 0}
 # xtrax.transforms.chunked_map traces twice per compilation: once during
@@ -104,31 +105,16 @@ def test_different_batch_size_is_a_different_executable_and_still_correct():
   np.testing.assert_array_equal(np.asarray(a), np.asarray(b))
 
 
-class _XtraxChunked:
-  """xtrax spelling of a chunked strategy: the tile is ``batch_size``."""
-
-  batch_size = 35
-
-
-_XtraxChunked.__name__ = "ChunkedMap"
-
-
-class _Vmap:
-  """A non-chunked strategy."""
-
-
-_Vmap.__name__ = "Vmap"
-
-
 def test_chunk_batch_size_reads_strategy_and_returns_none_for_vmap():
-  """``_chunk_batch_size`` reads xtrax's batch_size, and returns None for Vmap."""
-  assert _chunk_batch_size(_XtraxChunked()) == 35
-  assert _chunk_batch_size(_Vmap()) is None
+  """``_chunk_batch_size`` reads ChunkedMap.batch_size, normalizing 0 and Vmap to None."""
+  assert _chunk_batch_size(ChunkedMap(batch_size=35)) == 35
+  assert _chunk_batch_size(ChunkedMap(batch_size=0)) is None
+  assert _chunk_batch_size(Vmap()) is None
 
 
 def test_dispatch_axis_still_serves_a_chunked_strategy():
   """The generic dispatcher still handles a chunked strategy for the paths that keep using it."""
-  out = _dispatch_axis(_XtraxChunked(), lambda x: x + 1, jnp.arange(70))
+  out = _dispatch_axis(ChunkedMap(batch_size=35), lambda x: x + 1, jnp.arange(70))
   np.testing.assert_array_equal(np.asarray(out), np.arange(70) + 1)
 
 

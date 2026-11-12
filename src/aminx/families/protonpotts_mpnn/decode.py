@@ -33,7 +33,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Bool, Float, Int
-from xtrax.tiling import AxisSpec, ChunkedMap
+from xtrax.tiling import AxisSpec
 
 from aminx.families.potts_mpnn.decode import (
   categorical_draw,
@@ -44,7 +44,7 @@ from aminx.families.potts_mpnn.decode import (
   update_row,
 )
 from aminx.families.protonpotts_mpnn.vocab import PROTONPOTTS_V6
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
+from aminx.tiling.dispatch import make_axis_dispatch
 from aminx.tiling.planner import plan_axis_strategy
 
 if TYPE_CHECKING:
@@ -211,10 +211,6 @@ def _row_activation_bytes(h_v: Array, vocab: int, n_layers: int) -> float:
   return float(elements * jnp.dtype(h_v.dtype).itemsize)
 
 
-def _pad_rows(array: Array, pad: int) -> Array:
-  return jnp.concatenate([array, jnp.broadcast_to(array[:1], (pad, *array.shape[1:]))])
-
-
 def sample_rows(
   decoder: ProtonPottsARDecode,
   h_v: Float[Array, "L H"],
@@ -263,15 +259,9 @@ def sample_rows(
     _SAMPLE_ROWS, n_rows, None,
     activation_bytes_per_element=_row_activation_bytes(h_v, bias.shape[-1], len(decoder.layers)),
   )
-  args = [uniforms, per_row] if forced_tokens is None else [uniforms, per_row, forced_tokens]
-  if isinstance(strategy, ChunkedMap) and n_rows % strategy.batch_size:
-    # xtrax's ChunkedMap needs the axis to be an exact multiple of the batch_size (aminx backlog #4159): pad with copies of row 0
-    # and drop the extras below. They never reach the caller.
-    pad = strategy.batch_size - (n_rows % strategy.batch_size)
-    args = [_pad_rows(a, pad) for a in args]
-  iterator = make_axis_dispatch_via_xtrax(strategy, axis=_SAMPLE_ROWS.name)
-  out = iterator(call, tuple(args))
-  return DecodeResult(*(field[:n_rows] for field in out))
+  args = (uniforms, per_row) if forced_tokens is None else (uniforms, per_row, forced_tokens)
+  iterator = make_axis_dispatch(strategy, axis=_SAMPLE_ROWS.name)
+  return iterator(call, args)
 
 
 def teacher_forcing_mask(

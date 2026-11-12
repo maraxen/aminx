@@ -17,8 +17,7 @@ from aminx.inference.decode.conditional import ConditionalDecode
 from aminx.inference.decode.unfused import decode_states_unfused
 from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
-from aminx.tiling.iterator import VmapIterator
-from xtrax.tiling import ChunkedMapIterator
+from xtrax.tiling import ChunkedMapIterator, VmapIterator
 from tests.inference.decode.test_conditional import _build_synthetic_fixture
 
 

@@ -15,7 +15,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from xtrax.tiling import CarryShape
+from xtrax.tiling import CarryShape, JaxScanIterator, VmapIterator
 
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.decode import autoregressive as ar_module
@@ -25,7 +25,6 @@ from aminx.inference.decode.mode import AutoregressiveConfig, AutoregressiveMode
 from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
 from aminx.model import Aminx
-from aminx.tiling.iterator import JaxScanIterator, VmapIterator
 from aminx.tiling.strategy import Vmap
 
 pytest.importorskip("xtrax.intent")

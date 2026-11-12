@@ -81,7 +81,7 @@ import jax.numpy as jnp
 import numpy as np
 from jax import lax
 from jaxtyping import Array, Bool, Float, Int
-from xtrax.tiling import AxisSpec, ChunkedMap
+from xtrax.tiling import AxisSpec
 
 from aminx.families.potts_mpnn.etab import potts_energy
 from aminx.families.protonpotts_mpnn.ph_potentials import (
@@ -94,7 +94,7 @@ from aminx.families.protonpotts_mpnn.vocab import (
   canonical_letter,
   token_index,
 )
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
+from aminx.tiling.dispatch import make_axis_dispatch
 from aminx.tiling.planner import plan_axis_strategy
 
 if TYPE_CHECKING:
@@ -706,15 +706,8 @@ def block_zscales(
     None,
     activation_bytes_per_element=_block_activation_bytes(vocab, n_block, dtype),
   )
-  blocks_in, valid_in = block_safe_all, block_valid
-  if isinstance(strategy, ChunkedMap) and n_blocks % strategy.batch_size:
-    # xtrax's ChunkedMap needs the axis to be an exact multiple of the batch_size (aminx backlog #4159), so pad with
-    # copies of block 0 and drop the extras below. They never reach _pool.
-    pad = strategy.batch_size - (n_blocks % strategy.batch_size)
-    blocks_in = jnp.concatenate([blocks_in, jnp.broadcast_to(blocks_in[:1], (pad, *blocks_in.shape[1:]))])
-    valid_in = jnp.concatenate([valid_in, jnp.broadcast_to(valid_in[:1], (pad, *valid_in.shape[1:]))])
-  iterator = make_axis_dispatch_via_xtrax(strategy, axis=_PH_BLOCKS.name)
-  outs = [out[:n_blocks] for out in iterator(per_block, (blocks_in, valid_in))]
+  iterator = make_axis_dispatch(strategy, axis=_PH_BLOCKS.name)
+  outs = iterator(per_block, (block_safe_all, block_valid))
   sd_h = _pool(outs[0], outs[1], dtype)
   sd_s = _pool(outs[2], outs[3], dtype)
   sd_g = _pool(outs[4], outs[5], dtype) if glob_masks is not None else jnp.asarray(1.0, dtype=dtype)

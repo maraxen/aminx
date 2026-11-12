@@ -27,7 +27,7 @@ def estimate_memory_theoretical(
   only their decided tile size (d.batch_size) -- one tile is live at a
   time.
 
-  Checks type(d.strategy).__name__ == "Vmap" rather than d.batch_size == 0:
+  Checks isinstance(d.strategy, Vmap) rather than d.batch_size == 0:
   xtrax.tiling.BatchPlanner's joint-budget mode sets batch_size=spec.default_batch_size
   even for Vmap decisions, never 0.
 
@@ -35,7 +35,7 @@ def estimate_memory_theoretical(
   """
   product = 1
   for d in decisions:
-    if type(d.strategy).__name__ == "Vmap":
+    if isinstance(d.strategy, Vmap):
       product *= d.spec.cardinality
     else:
       product *= d.batch_size

@@ -6,7 +6,6 @@ This file provides tests for:
 - autoregression.py (38%, fills gaps in lines 62-141)
 - gelu.py (0%)
 - normalize.py (0%)
-- safe_map.py (0%)
 - decoding_order.py (77%, fills gaps)
 - coordinates.py (82%, fills gaps)
 - entropy.py (0%)

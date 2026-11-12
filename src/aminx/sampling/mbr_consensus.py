@@ -25,9 +25,9 @@ from xtrax.tiling import VmapIterator
 
 from aminx.inference.decode.unfused import decode_states_unfused
 from aminx.inference.score_conditional import encode as score_conditional_encode
-from aminx.sampling.conditional_logits import _plan_axis_strategy
 from aminx.tiling.axes import N_CANDIDATES
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
+from aminx.tiling.dispatch import make_axis_dispatch
+from aminx.tiling.planner import plan_axis_strategy
 from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 
@@ -210,13 +210,13 @@ def mbr_rerank(
   # Candidate axis: xtrax BatchPlanner-driven Vmap/SafeMap dispatch, exactly the pattern
   # batched_decode_fn already uses for N_CANDIDATES (conditional_logits.py:412-437).
   activation_bytes = seq_len * 21 * 4  # (L, 21) float32 logits per candidate, per state
-  strategy = _plan_axis_strategy(
+  strategy = plan_axis_strategy(
     N_CANDIDATES,
     n_candidates,
     candidate_batch_size,
     activation_bytes_per_element=activation_bytes,
   )
-  candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
+  candidate_iterator = make_axis_dispatch(strategy, axis=N_CANDIDATES.name)
   state_iterator = VmapIterator()  # states are pre-padded uniform-shape; no reason to SafeMap
 
   def _decode_one_candidate(seq_oh: Float[Array, "L V"]) -> Float[Array, "S L V"]:

@@ -11,9 +11,8 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import pytest
-from xtrax.tiling import ChunkedMapIterator
-
-from aminx.tiling.iterator import (
+from xtrax.tiling import (
+    ChunkedMapIterator,
     JaxScanIterator,
     MapIterator,
     ScanIterator,

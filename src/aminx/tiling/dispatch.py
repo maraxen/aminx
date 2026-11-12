@@ -26,7 +26,7 @@ _DISPATCH_HETEROGENEOUS_AXES = frozenset({"state"})
 
 
 def make_axis_dispatch(strategy: AxisStrategy, *, axis: str = "state") -> object:
-  """Dispatch an AxisStrategy to a typed iterator.
+  """Dispatch an AxisStrategy to a typed iterator via xtrax.tiling.make_axis_dispatch.
 
   Parameters
   ----------
@@ -45,20 +45,9 @@ def make_axis_dispatch(strategy: AxisStrategy, *, axis: str = "state") -> object
   DispatchRejected
       If strategy is Scan and axis is heterogeneous (e.g., axis="state"),
       or if strategy is DedupGather (which is handled by _dispatch_axis,
-      not by make_axis_dispatch).
-  """
-  return make_axis_dispatch_via_xtrax(strategy, axis=axis)
-
-
-def make_axis_dispatch_via_xtrax(strategy: AxisStrategy, *, axis: str = "state") -> object:
-  """Axis dispatch backed directly by xtrax.tiling.make_axis_dispatch.
-
-  Raises
-  ------
-  DispatchRejected
-      Same conditions as make_axis_dispatch (Scan on a heterogeneous axis,
-      or DedupGather). Always aminx's own DispatchRejected (a TilingError
-      subclass) -- xtrax's DispatchRejected is caught and translated at this boundary.
+      not by make_axis_dispatch). Always aminx's own DispatchRejected (a
+      TilingError subclass) -- xtrax's DispatchRejected is caught and
+      translated at this boundary.
   """
   from xtrax.tiling import DispatchRejected as _XtraxDispatchRejected
   from xtrax.tiling import make_axis_dispatch as _xtrax_make_axis_dispatch
@@ -83,4 +72,4 @@ def make_axis_dispatch_via_xtrax(strategy: AxisStrategy, *, axis: str = "state")
     raise DispatchRejected(str(exc)) from exc
 
 
-__all__ = ["DispatchRejected", "make_axis_dispatch", "make_axis_dispatch_via_xtrax"]
+__all__ = ["DispatchRejected", "make_axis_dispatch"]
