@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.3 (2026-11-13)
+
+### Changed
+
+- **Breaking (import paths):** the tiling vocabulary now comes straight from `xtrax.tiling` (#287). `aminx.tiling.SafeMap`, `aminx.tiling.iterator.SafeMapIterator`, `aminx.utils.safe_map.safe_map`, `aminx.utils.safe_scan.safe_scan` and the deprecation shim `aminx.tiling._deprecation` are removed. Use `aminx.tiling.ChunkedMap(batch_size=...)` (re-exported from `xtrax.tiling`), `xtrax.transforms.chunked_map` and `xtrax.safe_scan`. `plan_axis_strategy` and `make_axis_dispatch` now return and delegate to the `xtrax.tiling` types directly. Callers that imported the removed names fail with `ImportError`; there is no behaviour change for code that already used `ChunkedMap`, `Vmap`, `Scan` or `DedupGather`.
+- **Behaviour:** every aminx structure-parse path (`host/prep.py`) now asks proxide for `modified_residue_typing="unknown"`, so selenomethionine (MSE) is tokenised `X` instead of `M` (#288). Scores and samples for any structure containing MSE change with this release. Training loaders (`training/trainer.py`) are unchanged and still type MSE as `M`, so inference now sees `X` where training saw `M`.
+- Requires `proxide>=0.2.1` (was `>=0.2.0`) for the `OutputSpec(modified_residue_typing=...)` option. With an older proxide, the parse path refuses to run (`require_modified_residue_typing_support`) instead of silently dropping the typing.
+- Pins `xtrax[...]==0.4.1b8` (was `0.4.1b7`) in the base, `eda` and `onnx` extras (#287).
+
+### Fixed
+
+- The LigandMPNN Heavy Parity gate failed because selenomethionine was typed `M` where the reference LigandMPNN parser gives `X` (#288). It passes with the typing above (verified on the branch, run 43456465602).
+
+### Tests
+
+- `xtrax.campaign` lease-fencing and pack-verification suite added (#284). Seven deprecation and parity-shim test files for the removed tiling names were retired with #287 (browser-validation inventory 191 to 186).
+
 ## 0.5.2 (2026-11-11)
 
 ### Added
