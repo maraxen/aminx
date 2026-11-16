@@ -11,6 +11,7 @@ import hashlib
 import json
 import re
 import subprocess
+import sys
 import tomllib
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
