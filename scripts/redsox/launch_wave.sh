@@ -13,7 +13,7 @@
 #   1-4  Potts / LASEr / ProtonPotts (GPU-assigned, see backend_env)
 #   5    caliby_parity_v2 + antibmpnn_parity_v3   (P4, CPU only)
 #   6    fampnn_parity_v3                          (P4, CPU only)
-#   7    ca_only_parity + thermo_mpnn_parity + tier1_variants_parity + frustrampnn_parity (CPU only)
+#   7    ca_only_parity_v2 + thermo_mpnn_parity + tier1_variants_parity + frustrampnn_parity (CPU only)
 # Groups 5-7 need titanix inputs that this script cannot verify; slug_extras()
 # reads them from env vars and exits with REFUSING: if one is unset. P4 slugs
 # only exist on the P4 branch, so set AMINX_WAVE_REF to it (default is main).
@@ -94,7 +94,7 @@ declare -A MUT=(
   [caliby_parity_v2]="rbf_range_shrunk,virtual_cb_sign_flipped,neighbors_farthest,neighbor_gather_off_by_one,gap_embedding_row_swapped,masked_atoms_not_ca_filled,potts_unsymmetrized,alphabet_unpermuted,energy_pair_term_doubled,ensemble_sum_not_mean,slot4_virtual_cb_written,potts_scale_single_factor,potts_j_right_transposed_read,k_neighbors_potts_truncated,packer_sigma_scaled,packer_selfcond_dropped"
   [antibmpnn_parity_v3]="reversed_ar_mask,offset_shift,entry_ar_mask_transposed,omit_penalty_dropped,lehninger_pka_shifted,barley_tables_swapped,parser_wrong_atom_order,zero_edge_embedding,swap_checkpoint_noise"
   [fampnn_parity_v3]="sigma_min_old_default,cosine_unmask_schedule,rank_decoding_order,selfcond_off,step_scale_one,conf_bins_0_8,ghost_atoms_to_origin,chain_embedding_off,categorical_reversed_cdf"
-  [ca_only_parity]="ca_quaternion_sign_flip,ca_rbf_block_swap,ca_zero_edge_features,ca_permuted_output_weights"
+  [ca_only_parity_v2]="ca_quaternion_sign_flip,ca_rbf_block_swap,ca_zero_edge_features,ca_permuted_output_weights"
   [thermo_mpnn_parity]="reversed_hidden,omit_seq_subtraction,zero_edge_features,permuted_output_weights"
   [frustrampnn_parity]="reversed_hidden,permuted_output_weights,refinement_bypass,subtract_mut_inverted"
   [tier1_variants_parity]="tier1_reversed_hidden,tier1_zero_edge_features,tier1_permuted_output_weights,tier1_shifted_decoding_order,tier1_linear_offsets_on_cyclic"
@@ -176,7 +176,7 @@ if [ "$WAVE_BACKEND" = "gpu" ] && [ "$NEEDS_GPU" = "1" ]; then echo "backend: gp
 # P4 vehicles (261105): all six were developed and band-measured on titanix CPU (fampnn_parity_v3 and
 # antibmpnn_parity_v3 set/force JAX_PLATFORMS=cpu; the caliby_parity_v2 sidecar estimates are titanix CPU). GPU would
 # change the f32 numbers the bands were measured on (the protonpotts lesson above), so they are pinned to CPU.
-CPU_PINNED=(caliby_parity_v2 antibmpnn_parity_v3 fampnn_parity_v3 ca_only_parity thermo_mpnn_parity tier1_variants_parity frustrampnn_parity)
+CPU_PINNED=(caliby_parity_v2 antibmpnn_parity_v3 fampnn_parity_v3 ca_only_parity_v2 thermo_mpnn_parity tier1_variants_parity frustrampnn_parity)
 
 backend_env () {
   local v=$1
@@ -244,7 +244,7 @@ slug_extras () {
       if [ -n "${AMINX_FAMPNN_ROOT:-}" ]; then XARGS+=(--fampnn-root "$AMINX_FAMPNN_ROOT"); fi
       XENV=(OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 PYTHONDONTWRITEBYTECODE=1)
       ;;
-    ca_only_parity|thermo_mpnn_parity|tier1_variants_parity)
+    ca_only_parity_v2|thermo_mpnn_parity|tier1_variants_parity)
       # Upstream .pt checkpoints are found under $AMINX_PARITY_REPOS (os.pathsep list) then ~/repos by
       # tests/parity/reference_utils.find_parity_repo_file; a missing one is a hard failure inside the vehicle,
       # and no --synthetic is passed (a synthetic run cannot grade pass). --out is redirected off the repo-relative default.
@@ -328,7 +328,7 @@ case "$GROUP" in
     SLUGS=(fampnn_parity_v3) ;;
   7)
     # P4, CPU only. The three small suites (4-5 mutants each, a handful of checkpoints), 4 threads each.
-    SLUGS=(ca_only_parity thermo_mpnn_parity tier1_variants_parity frustrampnn_parity) ;;
+    SLUGS=(ca_only_parity_v2 thermo_mpnn_parity tier1_variants_parity frustrampnn_parity) ;;
   positive)
     if [ "$ONLY_STALE" = "1" ] && ! grep -qx laser_proofread_parity <<<"$STALE"; then
       echo "laser_proofread_parity is fresh: its positive control is not needed"
@@ -410,7 +410,7 @@ check_coverage laser_proofread_parity laser_proofread_unconditional_parity \
                potts_ar_refine_exact potts_ar_decode potts_energy_parity \
                laser_score_parity potts_ddg_megascale protonpotts_parity \
                caliby_parity_v2 antibmpnn_parity_v3 fampnn_parity_v3 \
-               ca_only_parity thermo_mpnn_parity tier1_variants_parity frustrampnn_parity
+               ca_only_parity_v2 thermo_mpnn_parity tier1_variants_parity frustrampnn_parity
 
 if [ "$ONLY_STALE" = "1" ]; then
   KEEP=()

@@ -171,7 +171,7 @@ comparison of anything the gate does.
    | --- | --- | --- |
    | 5 | `caliby_parity_v2`, `antibmpnn_parity_v3` | `AMINX_CALIBY_ORACLE_DIR`, `ANTIBMPNN_ORACLE_DIR`, `AMINX_WEIGHTS_DIR` (HF snapshot) |
    | 6 | `fampnn_parity_v3` | `AMINX_FAMPNN_ORACLE_DIR`, `AMINX_FAMPNN_F64TAB_DIR` |
-   | 7 | `ca_only_parity`, `thermo_mpnn_parity`, `tier1_variants_parity` | none required (upstream `.pt` files under `$AMINX_PARITY_REPOS` or `~/repos`) |
+   | 7 | `ca_only_parity_v2`, `thermo_mpnn_parity`, `tier1_variants_parity` | none required (upstream `.pt` files under `$AMINX_PARITY_REPOS` or `~/repos`) |
 
    Optional: `AMINX_CALIBY_WEIGHTS_DIR`, `AMINX_ANTIBMPNN_ROOT`, `AMINX_FAMPNN_ROOT`.
 

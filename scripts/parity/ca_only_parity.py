@@ -50,6 +50,7 @@ from tests.parity.test_mpnn_variants_tier1_tier2 import (  # noqa: E402
   _UBQ_PDB,
   _cast_floating,
   _jax_teacher_forced_forward,
+  _load_upstream_protein_mpnn_module,
   _parse_pdb_backbone,
   _torch_teacher_forced_forward,
   _x64_mode,
@@ -131,12 +132,119 @@ def _make_synthetic_ca_state_dict(seed: int = 42) -> dict[str, torch.Tensor]:
   return sd
 
 
+# Two neighbor slots whose D_adjust agree to within this are a tie: upstream ``topk`` and ``jax.lax.top_k`` are free to
+# order them either way (the masked residue's D_adjust equals the row's D_max, which the farthest valid neighbor also
+# carries). Not a numerical band: it only classifies which slot swaps are tie-order swaps.
+_TIE_TOL = 1e-4
+
+
+def _jax_ca_neighbor_idx(model: Aminx, coords: np.ndarray, mask: np.ndarray, ridx: np.ndarray, cidx: np.ndarray, dtype: Any) -> np.ndarray:
+  _, idx, _, _ = model.features(
+    jax.random.PRNGKey(0),
+    jnp.asarray(coords, dtype=dtype),
+    jnp.asarray(mask, dtype=dtype),
+    jnp.asarray(ridx, dtype=jnp.int32),
+    jnp.asarray(cidx, dtype=jnp.int32),
+    backbone_noise=jnp.asarray(0.0, dtype=dtype),
+  )
+  return np.asarray(idx)
+
+
+def _torch_ca_neighbor_idx(
+  pt_path: Path, coords: np.ndarray, mask: np.ndarray, ridx: np.ndarray, cidx: np.ndarray, dtype: torch.dtype
+) -> np.ndarray:
+  """Upstream CA-only ``ProteinFeatures`` neighbor indices (same dtype patches as ``_torch_teacher_forced_forward``)."""
+  pmpnn = _load_upstream_protein_mpnn_module()
+  ckpt = torch.load(str(pt_path), map_location="cpu", weights_only=False)
+  state_dict = ckpt["model_state_dict"] if "model_state_dict" in ckpt else ckpt
+  model = pmpnn.ProteinMPNN(
+    num_letters=21, node_features=128, edge_features=128, hidden_dim=128,
+    num_encoder_layers=3, num_decoder_layers=3, k_neighbors=int(ckpt.get("num_edges", 48)),
+    augment_eps=0.0, dropout=0.0, ca_only=True,
+  )
+  model.load_state_dict(state_dict)
+  model = model.to(dtype=dtype).eval()
+  emb = model.features.embeddings
+
+  def _fwd(offset: torch.Tensor, mask_chains: torch.Tensor) -> torch.Tensor:
+    d = torch.clip(offset + emb.max_relative_feature, 0, 2 * emb.max_relative_feature) * mask_chains + (
+      1 - mask_chains
+    ) * (2 * emb.max_relative_feature + 1)
+    onehot = torch.nn.functional.one_hot(d, 2 * emb.max_relative_feature + 2)
+    return emb.linear(onehot.to(dtype=emb.linear.weight.dtype))
+
+  emb.forward = _fwd  # type: ignore[method-assign]
+  prev = torch.get_default_dtype()
+  torch.set_default_dtype(dtype)
+  try:
+    with torch.no_grad():
+      _, idx = model.features(
+        torch.tensor(coords[None, :, 1, :], dtype=dtype),
+        torch.tensor(mask[None, ...], dtype=dtype),
+        torch.tensor(ridx[None, ...], dtype=torch.long),
+        torch.tensor(cidx[None, ...], dtype=torch.long),
+      )
+  finally:
+    torch.set_default_dtype(prev)
+  return idx[0].cpu().numpy()
+
+
+def _ca_d_adjust(coords: np.ndarray, mask: np.ndarray) -> np.ndarray:
+  """Upstream CA-only ``_dist``: ``D = mask2d * sqrt(|dCa|^2 + 1e-6)``; ``D_adjust = D + (1 - mask2d) * D_max``."""
+  ca = np.asarray(coords[:, 1, :], dtype=np.float64)
+  dist = np.sqrt(((ca[:, None, :] - ca[None, :, :]) ** 2).sum(-1) + 1e-6)
+  m2 = mask[:, None] * mask[None, :]
+  d = m2 * dist
+  return d + (1.0 - m2) * d.max(-1, keepdims=True)
+
+
+def _canonical_edge_diff(
+  j_e: np.ndarray,
+  pt_e: np.ndarray,
+  j_idx: np.ndarray,
+  t_idx: np.ndarray,
+  d_adjust: np.ndarray,
+  valid: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, int, int]:
+  """Edge tensors reordered by neighbor index so slot order cannot matter, plus the neighbor-selection check.
+
+  Returns ``(j_e_canon, pt_e_canon, set_mismatch_rows, untied_slot_mismatches)``. A set mismatch is a row whose two
+  neighbor sets differ; an untied slot mismatch is a slot holding different neighbors whose D_adjust differ by more than
+  ``_TIE_TOL``. Both must be 0, so canonicalising cannot hide a real neighbor-selection difference.
+  """
+  set_bad = int(sum(set(j_idx[r].tolist()) != set(t_idx[r].tolist()) for r in range(j_idx.shape[0]) if valid[r]))
+  untied = 0
+  for r in range(j_idx.shape[0]):
+    if not valid[r]:
+      continue
+    for s in np.where(j_idx[r] != t_idx[r])[0]:
+      if abs(d_adjust[r, j_idx[r, s]] - d_adjust[r, t_idx[r, s]]) > _TIE_TOL:
+        untied += 1
+  oj = np.argsort(j_idx, axis=1)
+  ot = np.argsort(t_idx, axis=1)
+  return (
+    np.take_along_axis(j_e, oj[..., None], axis=1),
+    np.take_along_axis(pt_e, ot[..., None], axis=1),
+    set_bad,
+    untied,
+  )
+
+
 def run_ca_only_parity_suite(
   *,
   synthetic: bool = False,
   work_dir: Path | None = None,
+  canonical_edges: bool = False,
 ) -> dict[str, Any]:
-  """Execute parity comparisons and negative controls for CA-Only ProteinMPNN."""
+  """Execute parity comparisons and negative controls for CA-Only ProteinMPNN.
+
+  ``canonical_edges`` (the v2 vehicle) compares the edge tensor after reordering each row by neighbor index. The v1
+  slot-by-slot comparison is order-dependent: the masked residue ties the farthest valid neighbor at D_max, and
+  torch ``topk`` and ``jax.lax.top_k`` order that tie differently, so v1 reports ~40 on edges that are equal up to a
+  slot swap (nodes and log-probs agree to ~1e-15). v2 additionally reports the neighbor-selection check.
+  """
+  set_mismatch_total = 0
+  untied_mismatch_total = 0
   ckpt_paths: dict[str, Path] = {}
   ckpt_hashes: dict[str, str] = {}
 
@@ -220,6 +328,15 @@ def run_ca_only_parity_suite(
         ca_only=True,
         dtype=torch.float64,
       )
+      j_e = np.asarray(j_e)
+      if canonical_edges:
+        j_idx = _jax_ca_neighbor_idx(jax_model_f64, coords_broken, mask_with_gap, residue_index, chain_index, jnp.float64)
+        t_idx = _torch_ca_neighbor_idx(pt_path, coords_broken, mask_with_gap, residue_index, chain_index, torch.float64)
+        j_e, pt_e, n_set, n_untied = _canonical_edge_diff(
+          j_e, pt_e, j_idx, t_idx, _ca_d_adjust(coords_broken, mask_with_gap), valid
+        )
+        set_mismatch_total += n_set
+        untied_mismatch_total += n_untied
       f64_diff = max(
         float(np.max(np.abs(np.asarray(j_e)[valid] - pt_e[valid]))),
         float(np.max(np.abs(np.asarray(j_v)[valid] - pt_v[valid]))),
@@ -249,6 +366,15 @@ def run_ca_only_parity_suite(
         ca_only=True,
         dtype=torch.float32,
       )
+      j_e32 = np.asarray(j_e32)
+      if canonical_edges:
+        j_idx32 = _jax_ca_neighbor_idx(jax_model_f32, coords_broken, mask_with_gap, residue_index, chain_index, jnp.float32)
+        t_idx32 = _torch_ca_neighbor_idx(pt_path, coords_broken, mask_with_gap, residue_index, chain_index, torch.float32)
+        j_e32, pt_e32, n_set, n_untied = _canonical_edge_diff(
+          j_e32, pt_e32, j_idx32, t_idx32, _ca_d_adjust(coords_broken, mask_with_gap), valid
+        )
+        set_mismatch_total += n_set
+        untied_mismatch_total += n_untied
       diff_e = np.abs(np.asarray(j_e32)[valid] - pt_e32[valid])
       diff_lp = np.abs(np.asarray(j_lp32)[valid] - pt_lp32[valid])
       q999 = max(float(np.quantile(diff_e, 0.999)), float(np.quantile(diff_lp, 0.999)))
@@ -398,6 +524,10 @@ def run_ca_only_parity_suite(
     "_statuses": statuses,
     "_weights": ckpt_hashes,
   }
+  if canonical_edges:
+    result["edge_comparison"] = "canonical_neighbor_order"
+    result["neighbor_set_mismatch_rows"] = set_mismatch_total
+    result["untied_slot_mismatches"] = untied_mismatch_total
   return result
 
 
@@ -433,10 +563,18 @@ def main() -> None:
     default=None,
     help="Working directory for scratch/cache.",
   )
+  parser.add_argument(
+    "--canonical-edges",
+    action="store_true",
+    default=False,
+    help="Compare edge tensors after reordering by neighbor index (v2 vehicle); adds the neighbor-selection check.",
+  )
   args = parser.parse_args()
 
   try:
-    result = run_ca_only_parity_suite(synthetic=args.synthetic, work_dir=args.work_dir)
+    result = run_ca_only_parity_suite(
+      synthetic=args.synthetic, work_dir=args.work_dir, canonical_edges=args.canonical_edges
+    )
   except FileNotFoundError as exc:
     print(f"HARD FAILURE: {exc}", file=sys.stderr)
     raise SystemExit(1) from exc

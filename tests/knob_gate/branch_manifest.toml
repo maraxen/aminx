@@ -1304,7 +1304,7 @@ fixture = "1ubq.pdb"
 mutant = "ca_quaternion_sign_flip"
 [branch.vehicle]
 kind = "sidecar"
-slug = "ca_only_parity"
+slug = "ca_only_parity_v2"
 
 [[branch]]
 family = "ca_only"
@@ -1314,7 +1314,7 @@ fixture = "1ubq.pdb"
 mutant = "ca_rbf_block_swap"
 [branch.vehicle]
 kind = "sidecar"
-slug = "ca_only_parity"
+slug = "ca_only_parity_v2"
 
 [[branch]]
 family = "ca_only"
@@ -1324,7 +1324,7 @@ fixture = "1ubq.pdb"
 mutant = "ca_zero_edge_features"
 [branch.vehicle]
 kind = "sidecar"
-slug = "ca_only_parity"
+slug = "ca_only_parity_v2"
 
 [[branch]]
 family = "ca_only"
@@ -1334,7 +1334,7 @@ fixture = "1ubq.pdb"
 mutant = "ca_permuted_output_weights"
 [branch.vehicle]
 kind = "sidecar"
-slug = "ca_only_parity"
+slug = "ca_only_parity_v2"
 
 # ==============================================================================
 # Phase 2: ThermoMPNN / ThermoMPNN-D Parity Vehicle

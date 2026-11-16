@@ -163,6 +163,16 @@ dynamic_ok = [
 ]
 data = ["tests/data/1ubq.pdb"]
 
+# v2 vehicle (ca_only_parity_v2.py wraps ca_only_parity.py with --canonical-edges); branch rows point here, the v1 slug
+# stays as the closure of its recorded (FAIL) run. Same closure: the wrapper adds no import beyond ca_only_parity.
+[slug.ca_only_parity_v2]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+]
+data = ["tests/data/1ubq.pdb"]
+
 [slug.thermo_mpnn_parity]
 soft = ["aminx.families.thermo_mpnn"]
 # thermo_mpnn/model.py imports potts_mpnn.features (potts_edge_features), so the closure legitimately reaches the Potts
