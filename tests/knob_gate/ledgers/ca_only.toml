@@ -1,6 +1,9 @@
 # CA-only ProteinMPNN shard. EMPTY: no vehicle run has been recorded, so nothing here is graded.
 # Vehicle: scripts/parity/ca_only_parity.py (slug ca_only_parity); its four branch rows carry family = "ca_only".
-# Not yet run. A [sidecar.ca_only_parity] bth_run_id lands here only after a titanix run that passes the
+# Run 261116 at 365d174d: ae5f6e16-eccc-476e-af2f-2e527b31b472 recorded outcome FAIL, so nothing is recorded. Root cause (spike, not a port defect):
+# nodes and log-probs match upstream to ~1e-15 on all three checkpoints; the edge tensor differs only where the last two neighbor slots
+# swap (masked residue 28 ties the farthest valid neighbor at D_max; torch topk vs jax top_k tie order). Canonicalised edge diff 9.1e-14.
+# A vehicle that compares edges after neighbor canonicalisation needs a new pre-registered sidecar. A [sidecar.ca_only_parity] bth_run_id lands here only after a titanix run that passes the
 # step 1c conditions described in potts.toml.
 
 [sidecar]
