@@ -1,8 +1,12 @@
 # Sharded ledger for ThermoMPNN / ThermoMPNN-D.
-# Run 261116 at 365d174d (CPU): 0d1a8493-80c9-4c4f-b7a2-9891586bb3e0 recorded outcome FAIL on the float16 check only
-# (v1_f16_max_abs_diff 0.0278 > 1.5e-2; f32/f64 pass). Float16 stays an xfail (no allow_float16 bypass), so nothing is recorded.
-# Re-run at d06521ff: b5486e8d-2764-4d56-a20c-7a28f3168553, outcome FAIL, identical numbers (deterministic).
+# Vehicle: scripts/parity/thermo_mpnn_parity_v2.py (slug thermo_mpnn_parity_v2); the four thermo branch rows use it.
+# v1 (slug thermo_mpnn_parity, kept as the closure of its recorded runs) FAILED on the float16 band alone:
+#   0d1a8493-80c9-4c4f-b7a2-9891586bb3e0 (365d174d) and b5486e8d-2764-4d56-a20c-7a28f3168553 (d06521ff), identical numbers
+#   (v1_f16_max_abs_diff 0.0278 > 1.5e-2; f32 1.3e-5, f64 1e-14). Float16 stays an xfail (no allow_float16 bypass), so v1 records nothing.
+# v2 leaves the float16 band out of the verdict (bands otherwise unchanged) under a new pre-registered sidecar.
 
-[sidecar]
-# [sidecar.thermo_mpnn_parity]
-# bth_run_id = "<full-uuid>"  # Populated upon remote execution on titanix
+[sidecar.thermo_mpnn_parity_v2]
+# Recorded 261116 at bf843842 (P4 integration head; CPU-pinned), clean tree, outcome pass, 4/4 mutants tripped.
+# f64 7e-15 to 1e-14, f32 5.9e-6 to 1.3e-5, wt_self 0, order_invariance 0, neg_ctrl_min 0.52.
+# float16 is reported, not graded: float16_within_v1_band False (v1 0.0278, v2 0.0181, double 0.0078; Pearson r >= 0.99998).
+bth_run_id = "b1c8aa4c-f1ba-4e21-8b7a-e6059a402cad"
