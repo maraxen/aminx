@@ -392,8 +392,9 @@ stage_a = {
     "caliby_parity",
     "fampnn_parity",
     "thermo_mpnn_parity",
-    "tier1_variants_parity",
 }
+# tier1_variants_parity is deliberately NOT here: ab_mpnn / hyper_mpnn / cyclic_mpnn manifest rows use it, so it is a
+# live slug (stage_a once listed it, which made the check call a launched, manifest-backed slug "extra").
 slugs = slugs - stage_a
 missing = sorted(slugs - known)
 extra = sorted(known - slugs)
