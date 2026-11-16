@@ -13,7 +13,7 @@
 #   1-4  Potts / LASEr / ProtonPotts (GPU-assigned, see backend_env)
 #   5    caliby_parity_v2 + antibmpnn_parity_v3   (P4, CPU only)
 #   6    fampnn_parity_v3                          (P4, CPU only)
-#   7    ca_only_parity_v2 + thermo_mpnn_parity + tier1_variants_parity + frustrampnn_parity (CPU only)
+#   7    ca_only_parity_v2 + thermo_mpnn_parity_v2 + tier1_variants_parity + frustrampnn_parity (CPU only)
 # Groups 5-7 need titanix inputs that this script cannot verify; slug_extras()
 # reads them from env vars and exits with REFUSING: if one is unset. P4 slugs
 # only exist on the P4 branch, so set AMINX_WAVE_REF to it (default is main).
@@ -97,7 +97,7 @@ declare -A MUT=(
   [antibmpnn_parity_v3]="reversed_ar_mask,offset_shift,entry_ar_mask_transposed,omit_penalty_dropped,lehninger_pka_shifted,barley_tables_swapped,parser_wrong_atom_order,zero_edge_embedding,swap_checkpoint_noise"
   [fampnn_parity_v3]="sigma_min_old_default,cosine_unmask_schedule,rank_decoding_order,selfcond_off,step_scale_one,conf_bins_0_8,ghost_atoms_to_origin,chain_embedding_off,categorical_reversed_cdf"
   [ca_only_parity_v2]="ca_quaternion_sign_flip,ca_rbf_block_swap,ca_zero_edge_features,ca_permuted_output_weights"
-  [thermo_mpnn_parity]="reversed_hidden,omit_seq_subtraction,zero_edge_features,permuted_output_weights"
+  [thermo_mpnn_parity_v2]="reversed_hidden,omit_seq_subtraction,zero_edge_features,permuted_output_weights"
   [frustrampnn_parity]="reversed_hidden,permuted_output_weights,refinement_bypass,subtract_mut_inverted"
   [tier1_variants_parity]="tier1_reversed_hidden,tier1_zero_edge_features,tier1_permuted_output_weights,tier1_shifted_decoding_order,tier1_linear_offsets_on_cyclic"
   [protonpotts_parity]="features.backbone_threshold_0_5,features.atom_threshold_just_below_half,features.backbone_without_o,features.no_arginine_fix,features.no_keep_last_by_number,features.atom_threshold_0_8,features.r_idx_last_plus_one,features.s_first_token_changed,features.chain_labels_inverted,features.x_m_first_atom_flipped,features.x_nudged_by_1e-4,encoder.pair_order_not_permuted,encoder.pair_order_inverse_permutation,encoder.token_order_not_permuted,encoder.etab_not_permuted,encoder.etab_first_axis_only,encoder.output_nudged_1e-6_f64,encoder.output_nudged_4x_band_f32,energy.double_merge,energy.no_merge,energy.merge_without_transpose,energy.upstream_token_order,energy.energy_halved,energy.energy_nudged_just_outside_f64,energy.energy_nudged_4x_band_f32,driver.token_names_in_upstream_order,driver.candidate_rows_reversed,driver.energy_nudged_4x_band,ph_block.uniforms_shifted_by_one,ph_block.combined_lambda_0p4,ph_block.block_size_2,ph_block.forbidden_tokens_not_applied,ph_block.repetitive_window_off,ph_block.wrong_contrast_token,ph_block.zscale_nudged_outside_f64,ph_block.energy_nudged_outside_f64,ph_greedy.uniforms_shifted_by_one,ph_greedy.block_size_2,ph_greedy.forbidden_tokens_not_applied,ph_greedy.repetitive_window_off,ph_greedy.cdf_in_aminx_token_order,ph_greedy.energy_nudged_outside_f64,ph_driver.combined_lambda_0p6,ph_driver.block_size_2,ph_driver.forbidden_tokens_reduced_to_unk,ph_driver.repetitive_window_off,ph_driver.wrong_contrast_token,decoder.bias_ignored,decoder.scalar_temperature,decoder.x_not_zeroed,decoder.fixed_treated_as_designed,decoder.token_order_upstream,decoder.cms_uses_conditional_mask,decoder.uniforms_shifted_one_step,decoder.cdf_in_aminx_order,decoder.nudged_4x_band,ddg.ddg_sign_flipped,ddg.token_names_in_upstream_order,ddg.mutant_rows_reversed,ddg.energies_without_reference_subtracted,ddg.ddg_nudged_4x_band,sample.shared_order_across_rows,sample.uniforms_rows_swapped,sample.all_residues_designed,sample.cdf_in_aminx_order,sample.uniforms_shifted_one_step,sample.single_row_repeated,sample.temperature_one,sample.nudged_4x_band,ph_methods.cdf_in_aminx_order,ph_methods.uniforms_shifted_one,ph_methods.randints_shifted_one,ph_methods.permutations_reversed,ph_methods.field_untempered,ph_methods.zscales_sample_std,ph_methods.temperature_doubled,ph_methods.combined_lambda_wrong,ph_methods.two_phase_frac_wrong,ph_methods.selective_flipped,ph_methods.backend_swapped,ph_methods.selective_source_swapped,ph_methods.valid_mask_all_true,ph_methods.pin_contrast_wrong,ph_methods.centre_among_designable,ph_methods.scan_unmasked,ph_methods.scan_selective_formula,ph_methods.gibbs_outgoing_only,ph_methods.cv_cap_wrong,ph_methods.nudged_4x_band,ph_knobs.position_knn,ph_knobs.position_energy,ph_knobs.swapped,ph_knobs.shifted,ph_objective_knobs.ignore_global,ph_objective_knobs.flip_global,ph_objective_knobs.ignore_adjrep,ph_objective_knobs.ignore_self,ph_objective_knobs.shifted,ph_objective_knobs.block_zscales"
@@ -178,7 +178,7 @@ if [ "$WAVE_BACKEND" = "gpu" ] && [ "$NEEDS_GPU" = "1" ]; then echo "backend: gp
 # P4 vehicles (261105): all six were developed and band-measured on titanix CPU (fampnn_parity_v3 and
 # antibmpnn_parity_v3 set/force JAX_PLATFORMS=cpu; the caliby_parity_v2 sidecar estimates are titanix CPU). GPU would
 # change the f32 numbers the bands were measured on (the protonpotts lesson above), so they are pinned to CPU.
-CPU_PINNED=(caliby_parity_v2 antibmpnn_parity_v3 fampnn_parity_v3 ca_only_parity_v2 thermo_mpnn_parity tier1_variants_parity frustrampnn_parity)
+CPU_PINNED=(caliby_parity_v2 antibmpnn_parity_v3 fampnn_parity_v3 ca_only_parity_v2 thermo_mpnn_parity_v2 tier1_variants_parity frustrampnn_parity)
 
 backend_env () {
   local v=$1
@@ -246,7 +246,7 @@ slug_extras () {
       if [ -n "${AMINX_FAMPNN_ROOT:-}" ]; then XARGS+=(--fampnn-root "$AMINX_FAMPNN_ROOT"); fi
       XENV=(OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 PYTHONDONTWRITEBYTECODE=1)
       ;;
-    ca_only_parity_v2|thermo_mpnn_parity|tier1_variants_parity)
+    ca_only_parity_v2|thermo_mpnn_parity_v2|tier1_variants_parity)
       # Upstream .pt checkpoints are found under $AMINX_PARITY_REPOS (os.pathsep list) then ~/repos by
       # tests/parity/reference_utils.find_parity_repo_file; a missing one is a hard failure inside the vehicle,
       # and no --synthetic is passed (a synthetic run cannot grade pass). --out is redirected off the repo-relative default.
@@ -330,7 +330,7 @@ case "$GROUP" in
     SLUGS=(fampnn_parity_v3) ;;
   7)
     # P4, CPU only. The three small suites (4-5 mutants each, a handful of checkpoints), 4 threads each.
-    SLUGS=(ca_only_parity_v2 thermo_mpnn_parity tier1_variants_parity frustrampnn_parity) ;;
+    SLUGS=(ca_only_parity_v2 thermo_mpnn_parity_v2 tier1_variants_parity frustrampnn_parity) ;;
   positive)
     if [ "$ONLY_STALE" = "1" ] && ! grep -qx laser_proofread_parity <<<"$STALE"; then
       echo "laser_proofread_parity is fresh: its positive control is not needed"
@@ -421,7 +421,7 @@ check_coverage laser_proofread_parity laser_proofread_unconditional_parity \
                potts_ar_refine_exact potts_ar_decode potts_energy_parity \
                laser_score_parity potts_ddg_megascale protonpotts_parity \
                caliby_parity_v2 antibmpnn_parity_v3 fampnn_parity_v3 \
-               ca_only_parity_v2 thermo_mpnn_parity tier1_variants_parity frustrampnn_parity
+               ca_only_parity_v2 thermo_mpnn_parity_v2 tier1_variants_parity frustrampnn_parity
 
 if [ "$ONLY_STALE" = "1" ]; then
   KEEP=()

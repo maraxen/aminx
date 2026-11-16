@@ -185,6 +185,17 @@ dynamic_ok = [
 ]
 data = ["tests/data/1ubq.pdb"]
 
+# v2: float16 reported, not graded. Same closure as v1 (the wrapper only adds a flag); v1 stays as the closure of its runs.
+[slug.thermo_mpnn_parity_v2]
+soft = ["aminx.families.thermo_mpnn"]
+dynamic_ok = [
+  "src/aminx/host/runner.py",
+  "src/aminx/io/__init__.py",
+  "src/aminx/io/weights.py",
+  "src/aminx/families/potts_mpnn/driver.py",
+]
+data = ["tests/data/1ubq.pdb"]
+
 [slug.caliby_parity_v2]
 soft = ["aminx.families.caliby"]
 dynamic_ok = [

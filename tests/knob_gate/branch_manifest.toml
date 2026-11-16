@@ -1348,7 +1348,7 @@ fixture = "1ubq.pdb"
 mutant = "reversed_hidden"
 [branch.vehicle]
 kind = "sidecar"
-slug = "thermo_mpnn_parity"
+slug = "thermo_mpnn_parity_v2"
 
 [[branch]]
 family = "thermo"
@@ -1358,7 +1358,7 @@ fixture = "1ubq.pdb"
 mutant = "omit_seq_subtraction"
 [branch.vehicle]
 kind = "sidecar"
-slug = "thermo_mpnn_parity"
+slug = "thermo_mpnn_parity_v2"
 
 [[branch]]
 family = "thermo"
@@ -1368,7 +1368,7 @@ fixture = "1ubq.pdb"
 mutant = "zero_edge_features"
 [branch.vehicle]
 kind = "sidecar"
-slug = "thermo_mpnn_parity"
+slug = "thermo_mpnn_parity_v2"
 
 [[branch]]
 family = "thermo"
@@ -1378,7 +1378,7 @@ fixture = "1ubq.pdb"
 mutant = "permuted_output_weights"
 [branch.vehicle]
 kind = "sidecar"
-slug = "thermo_mpnn_parity"
+slug = "thermo_mpnn_parity_v2"
 
 [[branch]]
 family = "caliby"

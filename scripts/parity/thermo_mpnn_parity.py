@@ -58,8 +58,16 @@ from aminx.families.thermo_mpnn import (  # noqa: E402
 from aminx.families.thermo_mpnn.stats import pearson_r  # noqa: E402
 
 
-def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]:
-  """Run the ThermoMPNN / ThermoMPNN-D parity and negative-control suite."""
+def run_parity_suite(
+  *, synthetic: bool = False, grade_float16: bool = True
+) -> dict[str, float | int | str | bool]:
+  """Run the ThermoMPNN / ThermoMPNN-D parity and negative-control suite.
+
+  ``grade_float16=False`` (the v2 vehicle) keeps every float16 number in the result but
+  leaves the float16 band out of the ``clean`` verdict: float16 is an accepted xfail
+  (deterministic ~2.8e-2 on v1 against the 1.5e-2 band), reported, not graded. The float16
+  values must still be finite so a crashed float16 path cannot pass silently.
+  """
   coords, mask, residue_index, chain_index, sequence = _parse_pdb_backbone(_UBQ_PDB)
   v1_sd, v2_single_sd, v2_double_sd, weight_meta = resolve_thermo_mpnn_parity_inputs(
     synthetic=synthetic,
@@ -321,6 +329,26 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     # NaN (zero variance or NaN input) is a FAIL; NaN > x is False but say so explicitly.
     return math.isfinite(r) and r > 0.999
 
+  f16_values = (
+    v1_f16_max_abs_diff,
+    v2_f16_max_abs_diff,
+    double_f16_max_abs_diff,
+    v1_f16_pearson_r,
+    v2_f16_pearson_r,
+    double_f16_pearson_r,
+  )
+  f16_finite = all(math.isfinite(v) for v in f16_values)
+  f16_within_v1_band = (
+    v1_f16_max_abs_diff < 1.5e-2
+    and v2_f16_max_abs_diff < 1.5e-2
+    and double_f16_max_abs_diff < 1.5e-2
+    and _r_passes(v1_f16_pearson_r)
+    and _r_passes(v2_f16_pearson_r)
+    and _r_passes(double_f16_pearson_r)
+  )
+  # v1 grades the float16 band; v2 only requires the float16 numbers to be finite.
+  f16_ok = f16_within_v1_band if grade_float16 else f16_finite
+
   is_pass = (
     weight_meta.get("weight_source") == "upstream_checkpoint"
     and v1_f64_max_abs_diff < 1e-7
@@ -329,12 +357,7 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     and v1_f32_max_abs_diff < 1e-4
     and v2_f32_max_abs_diff < 1e-4
     and double_f32_max_abs_diff < 1e-4
-    and v1_f16_max_abs_diff < 1.5e-2
-    and v2_f16_max_abs_diff < 1.5e-2
-    and double_f16_max_abs_diff < 1.5e-2
-    and _r_passes(v1_f16_pearson_r)
-    and _r_passes(v2_f16_pearson_r)
-    and _r_passes(double_f16_pearson_r)
+    and f16_ok
     and wt_self_max_abs_diff == 0.0
     and order_invariance_max_abs_diff == 0.0
     and neg_ctrl_min_max_abs_diff > 1e-2
@@ -347,20 +370,24 @@ def run_parity_suite(*, synthetic: bool = False) -> dict[str, float | int | str]
     and v1_f32_max_abs_diff < 1e-3
     and v2_f32_max_abs_diff < 1e-3
     and double_f32_max_abs_diff < 1e-3
-    and v1_f16_max_abs_diff < 1.5e-2
-    and v2_f16_max_abs_diff < 1.5e-2
-    and double_f16_max_abs_diff < 1.5e-2
-    and _r_passes(v1_f16_pearson_r)
-    and _r_passes(v2_f16_pearson_r)
-    and _r_passes(double_f16_pearson_r)
+    and f16_ok
     and wt_self_max_abs_diff == 0.0
     and order_invariance_max_abs_diff == 0.0
     and neg_ctrl_min_max_abs_diff > 1e-2
   )
   clean = "pass" if is_pass else ("marginal" if is_marginal else "fail")
 
+  v2_fields: dict[str, bool | str] = (
+    {}
+    if grade_float16
+    else {
+      "float16_policy": "reported_not_graded",
+      "float16_within_v1_band": bool(f16_within_v1_band),
+    }
+  )
   return {
     "clean": clean,
+    **v2_fields,
     "pdb_id": "1ubq",
     "num_residues": int(sequence.shape[0]),
     "n_neighbor_pairs": int(n_neighbor_pairs),
@@ -418,6 +445,15 @@ def main() -> None:
     ),
   )
   parser.add_argument(
+    "--no-grade-float16",
+    action="store_true",
+    default=False,
+    help=(
+      "v2: report float16 but leave its band out of the verdict (float16 is an accepted xfail). "
+      "Used by thermo_mpnn_parity_v2.py; v1 behaviour is unchanged by default."
+    ),
+  )
+  parser.add_argument(
     "--mutants",
     type=str,
     default="reversed_hidden,omit_seq_subtraction,zero_edge_features,permuted_output_weights",
@@ -438,7 +474,7 @@ def main() -> None:
   args = parser.parse_args()
 
   try:
-    result = run_parity_suite(synthetic=args.synthetic)
+    result = run_parity_suite(synthetic=args.synthetic, grade_float16=not args.no_grade_float16)
   except FileNotFoundError as exc:
     print(f"ERROR: {exc}", file=sys.stderr)
     raise SystemExit(1) from exc

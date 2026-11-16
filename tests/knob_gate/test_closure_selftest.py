@@ -43,7 +43,7 @@ POTTS_SLUGS = (
 )
 PROTON_SLUGS = ("protonpotts_parity",)
 # ThermoMPNN builds on potts_mpnn.features, so a Potts change stales its row (as for ProtonPotts); the reverse must not hold.
-THERMO_SLUGS = ("thermo_mpnn_parity",)
+THERMO_SLUGS = ("thermo_mpnn_parity_v2",)
 TIER1_TIER2_SLUGS = (
   "tier1_variants_parity",
   "ca_only_parity",
