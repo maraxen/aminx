@@ -27,7 +27,7 @@ from aminx.inference.decode.mode import (
 from aminx.inference.decode.ste import STEDecode
 from aminx.inference.decode.unconditional import UnconditionalDecode
 from aminx.tiling.dispatch import DispatchRejected
-from aminx.tiling.strategy import SafeMap, Scan, Vmap
+from aminx.tiling.strategy import ChunkedMap, Scan, Vmap
 
 
 class DummyModel:
@@ -51,10 +51,10 @@ class TestMakeDecodeFnConditional:
         assert result.model is model
 
     def test_conditional_with_safemap(self):
-        """(ConditionalMode(), SafeMap(tile=4)) → ConditionalDecode with SafeMapIterator(tile=4)."""
+        """(ConditionalMode(), ChunkedMap(batch_size=4)) → ConditionalDecode with ChunkedMapIterator(tile=4)."""
         model = DummyModel()
         mode = ConditionalMode()
-        strategy = SafeMap(tile=4)
+        strategy = ChunkedMap(batch_size=4)
 
         result = make_decode_fn(model, mode, strategy)
 
@@ -80,10 +80,10 @@ class TestMakeDecodeFnUnconditional:
         assert result.model is model
 
     def test_unconditional_with_safemap(self):
-        """(UnconditionalMode(), SafeMap(tile=2)) → UnconditionalDecode with SafeMapIterator(tile=2)."""
+        """(UnconditionalMode(), ChunkedMap(batch_size=2)) → UnconditionalDecode with ChunkedMapIterator(tile=2)."""
         model = DummyModel()
         mode = UnconditionalMode()
-        strategy = SafeMap(tile=2)
+        strategy = ChunkedMap(batch_size=2)
 
         result = make_decode_fn(model, mode, strategy)
 
@@ -115,10 +115,10 @@ class TestMakeDecodeFnAutoregressive:
         assert result.model is model
 
     def test_autoregressive_with_safemap(self):
-        """AutoregressiveMode with SafeMap(tile=4)."""
+        """AutoregressiveMode with ChunkedMap(batch_size=4)."""
         model = DummyModel()
         mode = AutoregressiveMode()
-        strategy = SafeMap(tile=4)
+        strategy = ChunkedMap(batch_size=4)
 
         result = make_decode_fn(model, mode, strategy)
 
@@ -147,10 +147,10 @@ class TestMakeDecodeFnSTE:
         assert type(result.inner.state_iterator).__name__ == "VmapIterator"
 
     def test_ste_with_conditional_inner_safemap(self):
-        """STEMode with SafeMap inner strategy."""
+        """STEMode with ChunkedMap inner strategy."""
         model = DummyModel()
         mode = STEMode(inner_mode=ConditionalMode(), iterations=100)
-        strategy = SafeMap(tile=3)
+        strategy = ChunkedMap(batch_size=3)
 
         result = make_decode_fn(model, mode, strategy)
 

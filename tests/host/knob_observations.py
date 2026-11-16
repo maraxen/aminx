@@ -231,6 +231,14 @@ OBSERVATIONS: dict[str, Verdict] = {
   "chain_id": SpecOnly(
     reason="selects which chains are parsed; JSON-decoded at cli.py:1701",
   ),
+  "decoding_order_seed": SpecOnly(
+    reason="a plain int that must survive the manifest round trip; read at kernel_dispatch.py (_with_sample_order) "
+    "and multistate_poe.py (sample_states_fused) to draw the decoding order from the seed alone",
+  ),
+  "fixed_position_context": SpecOnly(
+    reason="a plain str read at kernel_dispatch.py (_with_sample_order) and multistate_poe.py "
+    "(sample_states_fused) to choose how the fixed block is ordered/masked in with_decoding_order",
+  ),
   "multi_state_strategy": SpecOnly(
     reason="selects stage_set.logit_transform via make_stage_set, plan.py:797",
   ),
@@ -290,6 +298,12 @@ OBSERVATIONS: dict[str, Verdict] = {
   ),
   "thermompnn": NotApplicable(
     reason="ThermoMPNNOptions (run/options.py:221) apply only to model_family thermompnn; a campaign "
+    "row reaches that family only through a backend arm (host/campaign.py:1442), and "
+    "refuse_driver_family (host/family_driver.py:187) still refuses it on a row with no arm "
+    "(host/campaign.py:276)",
+  ),
+  "frustrampnn": NotApplicable(
+    reason="FrustraMPNNOptions (run/options.py:281) apply only to model_family frustrampnn; a campaign "
     "row reaches that family only through a backend arm (host/campaign.py:1442), and "
     "refuse_driver_family (host/family_driver.py:187) still refuses it on a row with no arm "
     "(host/campaign.py:276)",

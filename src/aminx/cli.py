@@ -1915,7 +1915,8 @@ def campaign_plan(
     output_root=output_root,
     fixed_arms=parse_fixed_arms(fixed_arm),
     state_weight_profiles=parse_state_weight_profiles(
-      state_weight_profiles, state_weight_profile,
+      state_weight_profiles,
+      state_weight_profile,
     ),
   )
 
@@ -1928,6 +1929,10 @@ def campaign_worker(
   ] = ...,  # ty: ignore[invalid-parameter-default]
   row_index: Annotated[int | None, _OPT("--row-index", help="Row index to execute")] = None,
   row_hash: Annotated[str | None, _OPT("--row-hash", help="Row hash to execute")] = None,
+  pack: Annotated[
+    bool,
+    _OPT("--pack/--no-pack", help="Use xtrax.pack unit packaging"),
+  ] = False,
   lock_backend: Annotated[
     LockBackend,
     _OPT("--lock-backend", help="Lock backend: local_fs or distributed"),
@@ -1955,6 +1960,24 @@ def campaign_worker(
       param_hint="--lock-backend",
     )
 
+  if pack:
+    from aminx.host.pack_shim import run_packed_manifest_row  # noqa: PLC0415
+
+    run_packed_manifest_row(
+      manifest_path,
+      row_index=row_index,
+      row_hash=row_hash,
+      pack=True,
+      lock_backend=lock_backend.value,
+      lock_lease_seconds=lock_lease_seconds
+      if lock_lease_seconds is not None
+      else DEFAULT_LOCK_LEASE_SECONDS,
+      heartbeat_interval_seconds=heartbeat_interval_seconds
+      if heartbeat_interval_seconds is not None
+      else DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    )
+    return
+
   run_manifest_row(
     manifest_path,
     row_index=row_index,
@@ -1979,6 +2002,10 @@ def campaign_run(
   continue_on_error: Annotated[
     bool,
     _OPT("--continue-on-error", help="Continue executing rows after a failure"),
+  ] = False,
+  pack: Annotated[
+    bool,
+    _OPT("--pack/--no-pack", help="Use xtrax.pack unit packaging"),
   ] = False,
   summary_path: Annotated[
     Path | None,
@@ -2011,18 +2038,36 @@ def campaign_run(
       "call execute_manifest() directly with a DistributedLockBackend instance.",
       param_hint="--lock-backend",
     )
+  lock_kwargs = {
+    "lock_backend": lock_backend.value,
+    "lock_lease_seconds": lock_lease_seconds
+    if lock_lease_seconds is not None
+    else DEFAULT_LOCK_LEASE_SECONDS,
+    "heartbeat_interval_seconds": heartbeat_interval_seconds
+    if heartbeat_interval_seconds is not None
+    else DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+  }
+
+  if pack:
+    from aminx.host.pack_shim import execute_packed_manifest  # noqa: PLC0415
+
+    pack_summary = execute_packed_manifest(
+      manifest_path,
+      row_hashes=tuple(row_hash) if row_hash else None,
+      continue_on_error=continue_on_error,
+      pack=True,
+      **lock_kwargs,
+    )
+    _emit_json(pack_summary, str(summary_path) if summary_path else None)
+    if pack_summary["failed_rows"] > 0:
+      raise typer.Exit(code=1)
+    return
 
   summary = execute_manifest(
     manifest_path,
     row_hashes=tuple(row_hash) if row_hash else None,
     continue_on_error=continue_on_error,
-    lock_backend=lock_backend.value,
-    lock_lease_seconds=lock_lease_seconds
-    if lock_lease_seconds is not None
-    else DEFAULT_LOCK_LEASE_SECONDS,
-    heartbeat_interval_seconds=heartbeat_interval_seconds
-    if heartbeat_interval_seconds is not None
-    else DEFAULT_HEARTBEAT_INTERVAL_SECONDS,
+    **lock_kwargs,
   )
   _emit_json(summary, str(summary_path) if summary_path else None)
   if summary["failed_rows"] > 0:
@@ -2201,7 +2246,8 @@ def campaign_ramp_plan(
     samples_chunk_size=samples_chunk_size,
     fixed_arms=parse_fixed_arms(fixed_arm),
     state_weight_profiles=parse_state_weight_profiles(
-      state_weight_profiles, state_weight_profile,
+      state_weight_profiles,
+      state_weight_profile,
     ),
   )
   _emit_json(plan_payload, str(plan_path) if plan_path else None)

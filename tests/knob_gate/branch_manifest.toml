@@ -1733,3 +1733,47 @@ mutant = "categorical_reversed_cdf"
 [branch.vehicle]
 kind = "sidecar"
 slug = "fampnn_parity_v3"
+
+# ==============================================================================
+# Phase 2 / Task 261105: FrustraMPNN Parity Vehicle
+# ==============================================================================
+
+[[branch]]
+family = "frustrampnn"
+id = "reversed_hidden"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "reversed_hidden"
+[branch.vehicle]
+kind = "sidecar"
+slug = "frustrampnn_parity"
+
+[[branch]]
+family = "frustrampnn"
+id = "permuted_output_weights"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "permuted_output_weights"
+[branch.vehicle]
+kind = "sidecar"
+slug = "frustrampnn_parity"
+
+[[branch]]
+family = "frustrampnn"
+id = "refinement_bypass"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "refinement_bypass"
+[branch.vehicle]
+kind = "sidecar"
+slug = "frustrampnn_parity"
+
+[[branch]]
+family = "frustrampnn"
+id = "subtract_mut_inverted"
+stage = "P2"
+fixture = "1ubq.pdb"
+mutant = "subtract_mut_inverted"
+[branch.vehicle]
+kind = "sidecar"
+slug = "frustrampnn_parity"

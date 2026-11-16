@@ -21,6 +21,10 @@ import jax
 from proxide.ops.dataset import create_protein_dataset
 
 from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, FAMILY_DRIVERS, validate_model_family
+from aminx.io.parsing.dispatch import (
+  MODIFIED_RESIDUE_TYPING,
+  require_modified_residue_typing_support,
+)
 from aminx.io.weights import family_checkpoints, load_model, resolve_family_checkpoint
 from aminx.run.resources import proxide_dataset_resource_kwargs
 
@@ -45,6 +49,22 @@ def _requires_sha256(model_family: str | None, checkpoint_name: str) -> bool:
 
 def _loader_inputs(inputs: Sequence[str | StringIO] | str | StringIO) -> Sequence[str | StringIO]:
   return (inputs,) if not isinstance(inputs, Sequence) else inputs  # type: ignore[invalid-return-type]
+
+
+def _proxide_parse_kwargs(spec: Specs) -> dict[str, object]:
+  """Keyword arguments aminx hands proxide's ``create_protein_dataset`` for parsing.
+
+  Includes ``modified_residue_typing`` (MSE -> X, token parity with the reference parser) and
+  refuses to run on a proxide that would silently drop it.
+  """
+  require_modified_residue_typing_support()
+  return {
+    "chain_id": spec.chain_id,
+    "model": spec.model,
+    "altloc": spec.altloc,
+    "topology": spec.topology,
+    "modified_residue_typing": MODIFIED_RESIDUE_TYPING,
+  }
 
 
 def _artifact_path_for_registry_entry(registry_path: Path, artifact_path: str) -> Path:
@@ -139,12 +159,7 @@ def prep_protein_stream_and_model(
     ``model_weights`` + ``model_version`` as in :func:`load_model`.
 
   """
-  parse_kwargs = {
-    "chain_id": spec.chain_id,
-    "model": spec.model,
-    "altloc": spec.altloc,
-    "topology": spec.topology,
-  }
+  parse_kwargs = _proxide_parse_kwargs(spec)
   ram_mb, workers, buf = proxide_dataset_resource_kwargs(spec, context="inference")
   protein_iterator = create_protein_dataset(
     _loader_inputs(spec.inputs),

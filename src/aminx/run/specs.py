@@ -34,6 +34,7 @@ if TYPE_CHECKING:
   from .options import (
     CalibyOptions,
     FAMPNNOptions,
+    FrustraMPNNOptions,
     LaserOptions,
     PottsMPNNOptions,
     ProtonPottsOptions,
@@ -180,6 +181,23 @@ class RunSpecification:
       model: An optional model ID to use (default is None).
       altloc: The alternate location to use (default is "first").
       decoding_order_fn: An optional function to generate the decoding order (default is None).
+      decoding_order_seed: If set, every sample decodes in the order drawn from this seed alone
+        (independent of the row hash and the sample key), so rows with the same seed share one
+        decoding order. ``None`` (default) keeps the per-sample random order. Like
+        ``random_seed``, it is not part of ``manifest_row_hash`` (campaign rows that differ only
+        in this seed need distinct output roots, and a resumed store is not checked against it),
+        but it is recorded in the store's root attrs when set. Honoured only by the
+        autoregressive runner path and ``sample_multistate_poe_bead``; it is ignored by
+        ``model_family`` drivers (laser/fampnn/caliby/potts), ``sampling_strategy=
+        "straight_through"``, scoring, and when ``wave`` is supplied. Range ``[0, 2**32)``.
+      fixed_position_context: How fixed positions are conditioned on each other when sampling.
+        ``"random_order"`` (default) is the reference ProteinMPNN/LigandMPNN behaviour: the
+        fixed block decodes in a random order. ``"canonical_order"`` decodes it in position
+        order (causal, in-distribution, deterministic given the fixed set). ``"mutual_context"``
+        lets every fixed position see every other fixed position (non-causal, out of
+        distribution) and removes the order dependence. Same support limits as
+        ``decoding_order_seed``; not part of ``manifest_row_hash``, but always recorded in the
+        store's root attrs (``fixed_position_context``) so a non-default mode is visible.
       conformational_states: Optional conformational states representation to use for coarse graining the inference.
       max_length: Maximum sequence length for padding/truncation (default is 512).
                   Set to None to disable padding. Controls memory usage - smaller values
@@ -239,6 +257,8 @@ class RunSpecification:
   model: int | None = None
   altloc: Literal["first", "all"] = "first"
   decoding_order_fn: DecodingOrderFn | None = None
+  decoding_order_seed: int | None = None
+  fixed_position_context: str = "random_order"
   conformational_states: ConformationalStates | None = None
   cache_path: str | Path | None = None
   output_dir: str | Path | None = None
@@ -317,6 +337,8 @@ class RunSpecification:
   """FAMPNN knobs. ``None`` means the family defaults; set only for ``fampnn``."""
   thermompnn: ThermoMPNNOptions | None = None
   """ThermoMPNN knobs. ``None`` means the family defaults; set only for ``thermompnn``."""
+  frustrampnn: FrustraMPNNOptions | None = None
+  """FrustraMPNN knobs. ``None`` means the family defaults; set only for ``frustrampnn``."""
 
   run_spec: RunSpec = field(init=False, repr=False)
   _run_spec_synced: bool = field(init=False, default=False)
@@ -352,6 +374,51 @@ class RunSpecification:
     elif not isinstance(seed, int):
       # numpy integers (e.g. a derived np.int64 seed) are accepted and normalised.
       object.__setattr__(self, "random_seed", int(seed))
+
+    # ``None`` means "per-sample random order"; 0 is a real order seed.
+    order_seed = self.decoding_order_seed
+    if order_seed is not None:
+      if isinstance(order_seed, bool) or not isinstance(order_seed, numbers.Integral):
+        msg = f"decoding_order_seed must be an int or None, got {type(order_seed).__name__}"
+        raise TypeError(msg)
+      if not 0 <= order_seed < 2**32:
+        # jax.random.PRNGKey takes a 32-bit seed; larger values overflow or wrap depending on jax_enable_x64.
+        msg = f"decoding_order_seed must be in [0, 2**32), got {order_seed}"
+        raise ValueError(msg)
+      if not isinstance(order_seed, int):
+        object.__setattr__(self, "decoding_order_seed", int(order_seed))
+
+    if self.fixed_position_context not in ("random_order", "canonical_order", "mutual_context"):
+      msg = (
+        "fixed_position_context must be 'random_order', 'canonical_order' or 'mutual_context', "
+        f"got {self.fixed_position_context!r}"
+      )
+      raise ValueError(msg)
+
+    # A non-default mode on a path that cannot honour it would be recorded in the store while
+    # having no effect: refuse instead of silently ignoring it.
+    # decoding_order_fn is the exception for the seed: the seeded key IS forwarded to the custom
+    # function, so a seed is live there; only the mode is ignored.
+    if self.fixed_position_context != "random_order" or self.decoding_order_seed is not None:
+      bypass = []
+      fused_input = isinstance(self.inputs, (list, tuple)) and len(self.inputs) > 1
+      # The fused (multi-input) path never receives decoding_order_fn, so there a seed beside it
+      # would be recorded while the function is ignored; on the single-input path the seed is live.
+      if self.decoding_order_fn is not None and (
+        self.fixed_position_context != "random_order"
+        or (self.decoding_order_seed is not None and fused_input)
+      ):
+        bypass.append("decoding_order_fn")
+      if getattr(self, "wave", None) is not None:
+        bypass.append("a supplied wave")
+      if getattr(self, "sampling_strategy", "temperature") == "straight_through":
+        bypass.append("sampling_strategy='straight_through'")
+      if bypass:
+        msg = (
+          f"fixed_position_context={self.fixed_position_context!r} / "
+          f"decoding_order_seed={self.decoding_order_seed!r} have no effect together with {', '.join(bypass)}."
+        )
+        raise ValueError(msg)
 
     # Handle backward compatibility: convert old-style noise params to noise list
     bundles = list(self.noise)  # Start with provided bundles
@@ -505,6 +572,19 @@ class RunSpecification:
       # through the pinned family table, so an unpinned "caliby_..." id does not route anywhere.
       object.__setattr__(self, "model_family", pinned_family)
 
+    # Driver-backed families decode through run_family_driver and never reach with_decoding_order,
+    # so the order controls would be recorded without effect. Checked here because the family is
+    # only final (derived from checkpoint_id) at this point.
+    if self.model_family in DRIVER_MODEL_FAMILIES and (
+      self.fixed_position_context != "random_order" or self.decoding_order_seed is not None
+    ):
+      msg = (
+        f"fixed_position_context={self.fixed_position_context!r} / decoding_order_seed="
+        f"{self.decoding_order_seed!r} have no effect with model_family={self.model_family!r} "
+        "(driver-backed families do not use the shared decoding-order path)."
+      )
+      raise ValueError(msg)
+
     derived_topology = (
       get_topology_for_checkpoint(self.checkpoint_id) if self.checkpoint_id is not None else None
     )
@@ -564,6 +644,7 @@ _ALL_OUTPUT_KINDS = frozenset(
     "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
+    "frustration",
   },
 )
 _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
@@ -578,6 +659,7 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   "caliby": frozenset({"nll", "logits", "energy"}),
   "fampnn": frozenset({"nll", "logits"}),
   "thermompnn": frozenset({"ddg"}),
+  "frustrampnn": frozenset({"frustration"}),
 }
 
 
@@ -595,8 +677,9 @@ def _validate_output_kind(output_kind: str, model_family: str | None) -> None:
     )
     raise ValueError(msg)
 
+
 def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
-  """Check a user-supplied scoring ``ar_mask`` and return it as a float32 ``(L, L)`` array.
+  """Check a user-supplied scoring ``ar_mask`` and return it as an int8 ``(L, L)`` array.
 
   Refuses what has silently produced wrong numbers before: a non-square or non-2D mask, a
   non-binary one, and a nonzero diagonal. A residue that sees its own token is handed the
@@ -605,26 +688,27 @@ def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
   """
   import numpy as np  # noqa: PLC0415
 
-  mask = np.asarray(ar_mask, dtype=np.float32)
+  # Validated on the caller's own dtype: a float32 round trip would misjudge large integers.
+  mask = np.asarray(ar_mask)
   if mask.ndim != 2 or mask.shape[0] != mask.shape[1]:
     msg = f"ScoringSpecification.ar_mask must be a square (L, L) array, got shape {mask.shape}."
     raise ValueError(msg)
-  if not np.all((mask == 0.0) | (mask == 1.0)):
+  if not np.all((mask == 0) | (mask == 1)):
     msg = "ScoringSpecification.ar_mask must be binary (0/1): ar_mask[i, j] == 1 iff i sees j."
     raise ValueError(msg)
-  if np.any(np.diagonal(mask) != 0.0):
+  if np.any(np.diagonal(mask) != 0):
     msg = (
       "ScoringSpecification.ar_mask must have a zero diagonal: a position that sees its own "
       "token is scored on the answer it was given. Use a self-excluding mask "
       "(e.g. aminx.utils.autoregression.ar_mask_from_decoding_order)."
     )
     raise ValueError(msg)
-  return mask
-
+  return mask.astype(np.int8)
 
 
 def _resolve_output_paths(spec: RunSpecification) -> None:
   """Normalize and synchronize output_path, output_zarr_path, and output_h5_path."""
+
   def _norm(val: Any) -> Any:
     return Path(val) if isinstance(val, (str, Path)) else val
 
@@ -698,6 +782,7 @@ class ScoringSpecification(RunSpecification):
     "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
+    "frustration",
   ] = "nll"
   temperature: float = 1.0
   return_logits: bool = False

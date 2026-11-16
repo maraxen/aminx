@@ -143,7 +143,7 @@ def test_multistate_poe_campaign_row_grid_mode_persists_bias_array() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _grid_spec(output_dir: Path, bias: np.ndarray | None = None) -> SamplingSpecification:
+def _grid_spec(output_dir: Path, bias: np.ndarray | None = None, **extra: object) -> SamplingSpecification:
   """The shared grid-mode spec for the tests below."""
   return SamplingSpecification(
     inputs=[],
@@ -156,6 +156,7 @@ def _grid_spec(output_dir: Path, bias: np.ndarray | None = None) -> SamplingSpec
     return_logits=bias is not None,
     bias=bias,
     output_h5_path=str(output_dir),
+    **extra,
   )
 
 
@@ -292,7 +293,7 @@ def _fake_bead(
   )
 
 
-def _poe_spec(output_dir: Path, bias: np.ndarray | None = None) -> SamplingSpecification:
+def _poe_spec(output_dir: Path, bias: np.ndarray | None = None, **extra: object) -> SamplingSpecification:
   return SamplingSpecification(
     inputs=["state_a.pdb", "state_b.pdb"],
     batch_size=2,
@@ -306,6 +307,7 @@ def _poe_spec(output_dir: Path, bias: np.ndarray | None = None) -> SamplingSpeci
     bias=bias,
     output_h5_path=str(output_dir),
     multi_state_strategy="product",
+    **extra,
   )
 
 
@@ -394,3 +396,43 @@ def test_poe_writer_refuses_to_stage_ar_bias_semantics_for_non_ar_strategy() -> 
       f"guard rejected the strategy only AFTER {len(bead_calls)} sampling call(s) -- it must "
       "be hoisted above the noise/temperature loop so no AR compute is wasted."
     )
+
+
+def test_streaming_store_records_fixed_position_context_and_order_seed() -> None:
+  """Both order knobs are readable back from a store written by the real runner staging code.
+
+  The default mode is recorded too (so a non-default row is never mistaken for it), and the
+  seed attr exists only when a seed was set.
+  """
+  with tempfile.TemporaryDirectory() as tmpdir:
+    default_dir = Path(tmpdir) / "default"
+    _sample_streaming(_grid_spec(default_dir), [], None, _fail_if_sampled)
+    default_root = zarr.open_group(str(default_dir), mode="r")
+    assert default_root.attrs["fixed_position_context"] == "random_order"
+    assert "decoding_order_seed" not in default_root.attrs
+
+    custom_dir = Path(tmpdir) / "custom"
+    spec = _grid_spec(custom_dir, fixed_position_context="canonical_order", decoding_order_seed=0)
+    _sample_streaming(spec, [], None, _fail_if_sampled)
+    custom_root = zarr.open_group(str(custom_dir), mode="r")
+    assert custom_root.attrs["fixed_position_context"] == "canonical_order"
+    assert custom_root.attrs["decoding_order_seed"] == 0  # 0 is a real seed, not "unset"
+
+
+def test_poe_store_records_fixed_position_context_and_order_seed() -> None:
+  """Same read-back through the fused writer, which stages its root attrs separately."""
+  with tempfile.TemporaryDirectory() as tmpdir:
+    default_dir = Path(tmpdir) / "default"
+    with patch.object(multistate_poe, "sample_multistate_poe_bead", _fake_bead):
+      multistate_poe.sample_multistate_poe_campaign_row(_poe_spec(default_dir))
+    default_root = zarr.open_group(str(default_dir), mode="r")
+    assert default_root.attrs["fixed_position_context"] == "random_order"
+    assert "decoding_order_seed" not in default_root.attrs
+
+    custom_dir = Path(tmpdir) / "custom"
+    spec = _poe_spec(custom_dir, fixed_position_context="mutual_context", decoding_order_seed=5)
+    with patch.object(multistate_poe, "sample_multistate_poe_bead", _fake_bead):
+      multistate_poe.sample_multistate_poe_campaign_row(spec)
+    custom_root = zarr.open_group(str(custom_dir), mode="r")
+    assert custom_root.attrs["fixed_position_context"] == "mutual_context"
+    assert custom_root.attrs["decoding_order_seed"] == 5

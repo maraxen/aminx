@@ -52,6 +52,7 @@ _WEIGHT_PREFIXES = (
   "antibmpnn_",
   "fampnn_",
   "caliby_",
+  "frustrampnn_",
 )
 
 

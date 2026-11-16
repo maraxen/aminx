@@ -241,6 +241,18 @@
       "family": "antibmpnn",
       "upstream": "aminx-published",
       "note": "Published aminx-converted AntiBMPNN weights antibmpnn_v_48_030.eqx.zst (HF snapshot). Key is the HF blob name (== sha256)."
+    },
+    {
+      "artifact_path": "FrustraMPNN/model_weights/megascale_default_la-true_esm-False_split1.ckpt",
+      "sha256": "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa",
+      "family": "frustrampnn",
+      "upstream": "FrustraMPNN"
+    },
+    {
+      "artifact_path": "frustrampnn_1ubq_oracle.npz",
+      "sha256": "ded4dbb6f47229d54d9bf1d65239c56069f68bdcdf37e1cd55b6d85cc69f34dc",
+      "family": "frustrampnn",
+      "upstream": "FrustraMPNN"
     }
   ]
 }

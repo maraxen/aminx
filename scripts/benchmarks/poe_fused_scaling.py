@@ -119,7 +119,7 @@ def _run_planned(model, bundle, config, stage_set, key, n_samples, recorder):
   """The shipped path, with the planner's decisions recorded (trace-time side effects)."""
   from aminx.sampling import multistate_poe as poe
 
-  real_plan, real_est = poe._plan_axis_strategy, poe.lowered_memory_estimate
+  real_plan, real_est = poe.plan_axis_strategy, poe.lowered_memory_estimate
 
   def plan(axis, n, batch_size, *, activation_bytes_per_element):
     strategy = real_plan(axis, n, batch_size, activation_bytes_per_element=activation_bytes_per_element)
@@ -134,11 +134,11 @@ def _run_planned(model, bundle, config, stage_set, key, n_samples, recorder):
     recorder["lowered_memory_estimate_bytes"] = int(value)
     return value
 
-  poe._plan_axis_strategy, poe.lowered_memory_estimate = plan, est
+  poe.plan_axis_strategy, poe.lowered_memory_estimate = plan, est
   try:
     return poe.sample_states_fused(model, bundle, config, stage_set, key, n_samples)
   finally:
-    poe._plan_axis_strategy, poe.lowered_memory_estimate = real_plan, real_est
+    poe.plan_axis_strategy, poe.lowered_memory_estimate = real_plan, real_est
 
 
 def _run_forced_vmap(model, bundle, config, stage_set, key, n_samples):

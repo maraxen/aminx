@@ -111,11 +111,12 @@ def random_decoding_order(
   return jnp.asarray(decoding_order, dtype=jnp.int32), next_key
 
 
-@jax.jit
+@partial(jax.jit, static_argnames=("fixed_order",))
 def random_design_order(
   prng_key: PRNGKeyArray,
   tie_group_map: jnp.ndarray,
   fixed_mask: jnp.ndarray | None = None,
+  fixed_order: str = "random",
 ) -> DecodingOrder:
   """The default sampling order: fixed positions first, then a uniform random order of groups.
 
@@ -134,10 +135,18 @@ def random_design_order(
     tie_group_map: (L,) tie group id per position, ids in ``[0, L)``. Use ``arange(L)`` for
       untied.
     fixed_mask: Optional (L,) mask, > 0.5 where the token is fixed.
+    fixed_order: ``"random"`` (default, the reference behaviour) orders the fixed groups among
+      themselves by the same random draw as the designed ones. ``"index"`` orders them by
+      their first position instead, so the fixed block's internal order is a deterministic
+      function of the fixed set and does not depend on ``prng_key``. Designed groups are
+      unaffected.
 
   Returns:
     (L,) int32 ORDER array (``order[t]`` = position decoded at step ``t``).
   """
+  if fixed_order not in ("random", "index"):
+    msg = f"fixed_order must be 'random' or 'index', got {fixed_order!r}"
+    raise ValueError(msg)
   seq_len = tie_group_map.shape[0]
   tie = jnp.asarray(tie_group_map, dtype=jnp.int32)
   group_score = jax.random.uniform(prng_key, (seq_len,))
@@ -148,6 +157,10 @@ def random_design_order(
     group_fixed = jnp.zeros((seq_len,), dtype=jnp.int32).at[tie].max(fixed)
   designable = 1 - group_fixed[tie]
   positions = jnp.arange(seq_len, dtype=jnp.int32)
+  if fixed_order == "index":
+    # Fixed groups sort by their first position (a deterministic score); designed groups keep the draw.
+    first_position = jnp.full((seq_len,), seq_len, dtype=jnp.int32).at[tie].min(positions)
+    group_score = jnp.where(group_fixed > 0, first_position.astype(group_score.dtype), group_score)
   # Three explicit keys (designable, group score, position) give a strict total order, so the
   # result does not depend on sort stability (IREE's sort is not stable).
   *_, order = jax.lax.sort(

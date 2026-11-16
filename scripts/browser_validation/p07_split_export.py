@@ -182,7 +182,7 @@ def _build_graphs(length: int) -> tuple[dict[str, Callable], dict[str, Any]]:
 
   def graph_w(decoding_order: Any, tie_group_map: Any) -> tuple[Any, ...]:
     wave = wave_from_decoding_order(decoding_order, tie_group_map)
-    ar_mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
+    ar_mask = generate_ar_mask(order=decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
 
     # group_first_rank / pos_first_rank, transcribed from autoregressive.py:445-462,813.
     n_waves, g_per_wave = wave.group_ids.shape

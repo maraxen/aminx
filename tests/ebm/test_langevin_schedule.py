@@ -455,3 +455,21 @@ class TestJitVmapCompatibility:
 
     assert vmapped.shape == (3, N, 3)
     assert jnp.all(jnp.isfinite(vmapped))
+
+
+def test_empty_noise_schedule_raises_value_error() -> None:
+  """An empty noise_schedule raises ValueError rather than silently returning initial coords."""
+  model = _make_small_model(jax.random.PRNGKey(50))
+  coords = jnp.ones((N, 3), dtype=jnp.float32)
+  with pytest.raises(ValueError, match="noise_schedule must be non-empty"):
+    run_annealing_schedule(
+      (model,),
+      (),
+      coords,
+      AATYPE,
+      MASK,
+      jnp.zeros((0,), dtype=jnp.float32),
+      2,
+      0.01,
+      jax.random.PRNGKey(51),
+    )

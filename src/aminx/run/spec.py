@@ -197,6 +197,8 @@ class SamplingConfig(eqx.Module):
   multi_state_sharpness: float | None = eqx.field(static=True, default=1.0)
   use_rolling_state: bool = eqx.field(static=True, default=False)
   decoding_order_fn: Any = eqx.field(static=True, default=None)
+  decoding_order_seed: int | None = eqx.field(static=True, default=None)
+  fixed_position_context: str = eqx.field(static=True, default="random_order")
   tie_group_map: Any = None
   state_position_map: Any = None
   state_weights: Any = None
@@ -708,6 +710,8 @@ def build_run_spec(spec: object) -> RunSpec:
     multi_state_sharpness=_coerce_sharpness(getattr(spec, "multi_state_sharpness", 1.0)),
     use_rolling_state=bool(getattr(spec, "use_rolling_state", False)),
     decoding_order_fn=getattr(spec, "decoding_order_fn", None),
+    decoding_order_seed=getattr(spec, "decoding_order_seed", None),
+    fixed_position_context=getattr(spec, "fixed_position_context", "random_order"),
     tie_group_map=getattr(spec, "tie_group_map", None),
     state_position_map=getattr(spec, "state_position_map", None),
     state_weights=getattr(spec, "state_weights", None),

@@ -109,7 +109,7 @@ def test_conditional_decode_no_static_array_warning():
     CURRENTLY FAILS: model: Any = eqx.field(static=True) in ConditionalDecode.
     """
     from aminx.inference.decode.conditional import ConditionalDecode
-    from aminx.tiling.iterator import VmapIterator
+    from xtrax.tiling import VmapIterator
 
     model = _make_small_model()
 
@@ -197,7 +197,7 @@ def test_conditional_decode_model_weights_are_dynamic():
     CURRENTLY FAILS: model is static.
     """
     from aminx.inference.decode.conditional import ConditionalDecode
-    from aminx.tiling.iterator import VmapIterator
+    from xtrax.tiling import VmapIterator
 
     model = _make_small_model()
     decode = ConditionalDecode(

@@ -30,7 +30,7 @@ from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.logits import make_stage_set
 from aminx.inference.score_conditional import kernel as score_conditional
 from aminx.tiling.axes import N_CANDIDATES, N_REPLICATES
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
+from aminx.tiling.dispatch import make_axis_dispatch
 from aminx.tiling.planner import plan_axis_strategy
 from aminx.types.arrays import (
   AlphaCarbonMask,
@@ -288,13 +288,6 @@ def make_encoding_conditional_logits_split_fn(
   return encode_fn, decode_fn
 
 
-# Promoted to aminx.tiling.planner.plan_axis_strategy (2026-08-12) once it had a third
-# consumer -- this module, mbr_consensus (which imported the private name across modules),
-# and the categorical Jacobian. Kept as an alias so those imports and their tests keep
-# working unchanged; the implementation is byte-identical, only relocated.
-_plan_axis_strategy = plan_axis_strategy
-
-
 def make_batched_conditional_logits_split_fn(
   model: ModelProtocol,
   *,
@@ -349,13 +342,13 @@ def make_batched_conditional_logits_split_fn(
     seq_len = structure_coordinates.shape[0]
     # Conservative per-replicate activation estimate (node + edge features, float32).
     activation_bytes = seq_len * (128 + 32 * 48) * 4
-    strategy = _plan_axis_strategy(
+    strategy = plan_axis_strategy(
       N_REPLICATES,
       n_replicates,
       replicate_batch_size,
       activation_bytes_per_element=activation_bytes,
     )
-    iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_REPLICATES.name)
+    iterator = make_axis_dispatch(strategy, axis=N_REPLICATES.name)
 
     def _encode_one(key: PRNGKeyArray) -> EncoderOutput:
       return encode_fn(
@@ -385,13 +378,13 @@ def make_batched_conditional_logits_split_fn(
     n_candidates = candidate_sequences.shape[0]
     seq_len = candidate_sequences.shape[1]
     activation_bytes = seq_len * 21 * 4  # (L, 21) float32 logits per candidate
-    strategy = _plan_axis_strategy(
+    strategy = plan_axis_strategy(
       N_CANDIDATES,
       n_candidates,
       candidate_batch_size,
       activation_bytes_per_element=activation_bytes,
     )
-    iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
+    iterator = make_axis_dispatch(strategy, axis=N_CANDIDATES.name)
 
     def _decode_over_candidates(enc: EncoderOutput) -> Logits:
       def _decode_one(seq: ProteinSequence) -> Logits:

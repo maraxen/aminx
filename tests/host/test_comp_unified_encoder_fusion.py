@@ -354,7 +354,7 @@ def test_sample_batch_path_a_noise_dim(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map_path_a
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map_path_a
     )
 
     spec = _make_spec(backbone_noise=[0.0, 0.1])
@@ -398,7 +398,7 @@ def test_sample_batch_path_b_noise_dim_1(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map_path_b
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map_path_b
     )
 
     spec = _make_spec(backbone_noise=[0.0, 0.1])
@@ -448,7 +448,7 @@ def test_sample_batch_path_b_populates_streaming_tensor_sink(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map_path_b
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map_path_b
     )
 
     spec = _make_spec(backbone_noise=[0.0, 0.1])
@@ -493,7 +493,7 @@ def test_encoder_sink_no_op_when_none(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map
     )
 
     spec = _make_spec()
@@ -623,7 +623,7 @@ def test_encoding_fusion_arbitrary_k(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map_identity
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map_identity
     )
 
     spec = _make_spec(backbone_noise=[0.0, 0.1, 0.2])

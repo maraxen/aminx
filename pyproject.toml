@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aminx"
-version = "0.4.0"
+version = "0.5.3"
 description = "Aminx: A functional interface for ProteinMPNN"
 requires-python = ">=3.13"
 dependencies = [
@@ -20,10 +20,10 @@ dependencies = [
     "equinox>=0.13.2",
     "zstandard>=0.21.0",
     "msgpack-numpy>=0.4.8",
-    "proxide>=0.1.0a17",
+    "proxide>=0.2.1",
     "typer>=0.12.0",
     "huggingface-hub>=0.23.0",
-    "xtrax[io,export]==0.4.1b5",
+    "xtrax[io,pack,export]==0.4.1b8",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -43,6 +43,11 @@ repository = "https://github.com/maraxen/Aminx.git"
 documentation = "https://aminx.readthedocs.io"
 
 [project.optional-dependencies]
+# Plan EDA (src/aminx/host/plan_eda.py): matplotlib, pandas, pyarrow, seaborn and vl-convert.
+# Optional so the headless sampling install does not carry a plotting stack.
+eda = [
+    "xtrax[eda]==0.4.1b8",
+]
 agent = [
     "cisternal>=0.1.6,<0.2",
 ]
@@ -86,7 +91,7 @@ tests = [
 # tests/parity/test_layer_b_ort_*.py, test_onnx_audit.py, test_p07_sample_export.py) skip with a message
 # when it is absent, and CI installs it so they RUN there (aminx debt #2392).
 onnx = [
-    "xtrax[onnx]==0.4.1b5",
+    "xtrax[onnx]==0.4.1b8",
 ]
 dev = [
   "ruff",
@@ -329,6 +334,9 @@ dev = [
     "dm-tree>=0.1.8",
     # scipy.stats.pearsonr used in soluble/membrane parity tests.
     "scipy>=1.12.0",
+    # tests/parity/test_parity_report_artifacts.py renders figures. matplotlib used to
+    # arrive transitively (via jax-md/pymatgen) and dropped out with the proxide 0.2.0 lock.
+    "matplotlib",
 ]
 
 [tool.setuptools.package-data]
@@ -369,3 +377,6 @@ proxide = { index = "pypi" }
 # alphex: PyPI (https://pypi.org/project/alphex/) -- no source override needed.
 # PyPI serves the CUDA-enabled wheel on Linux and CPU wheel on macOS — correct for both envs.
 torch = { index = "pypi" }
+
+[project.entry-points."xtrax.eda.domains"]
+aminx = "aminx.eda.plugin:AminxDomainPlugin"

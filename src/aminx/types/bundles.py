@@ -10,7 +10,7 @@ from __future__ import annotations
 import equinox as eqx
 import jax.numpy as jnp
 import numpy as np
-from jaxtyping import Array, Bool, Float, Int
+from jaxtyping import Array, Bool, Float, Float32, Int, Int8
 
 
 class GeometryBundle(eqx.Module):
@@ -117,8 +117,8 @@ class ConditioningBundle(eqx.Module):
   sequence_oh : Float[Array, "L V"]
       One-hot encoded input sequence for conditional decoding.
       All zeros for unconditional or autoregressive-only modes.
-  ar_mask : Float[Array, "S L L"]
-      Autoregressive attention mask. 1.0 = visible, 0.0 = masked.
+  ar_mask : Int8[Array, "S L L"]
+      Autoregressive attention mask (int8). 1 = visible, 0 = masked.
       All-ones for purely conditional (non-AR) scoring.
   temperature : Float[Array, ""]
       Sampling temperature (scalar). Default 1.0 = no temperature scaling.
@@ -139,7 +139,7 @@ class ConditioningBundle(eqx.Module):
   state_position_map: Int[Array, "S L"]
   state_weights: Float[Array, "S"]
   sequence_oh: Float[Array, "L V"]  # zeros for unconditional/AR
-  ar_mask: Float[Array, "S L L"]  # full 1s for purely conditional
+  ar_mask: Int8[Array, "S L L"] | Float32[Array, "S L L"]  # int8; float32 only for export bundles
   temperature: Float[Array, ""] = eqx.field(default_factory=lambda: jnp.array(1.0))
 
 
@@ -195,6 +195,13 @@ class WaveScheduleBundle(eqx.Module):
       Validity mask for groups (True = group has content).
   position_valid : Bool[Array, "W G P"]
       Validity mask for positions within groups (True = position is real).
+  mask_consistent : bool
+      Static. True only when the conditioning ``ar_mask`` was generated from THIS schedule
+      (``generate_wave_ar_mask(wave, tie_group_map)``, as ``with_decoding_order`` does for every
+      ``fixed_context`` except ``"mutual_context"``). The incremental decoder then knows its
+      wave/mask consistency precondition holds by construction and does not recompute it from
+      the (per-sample, hence batched) wave and mask -- see aminx #272. Default False: any
+      schedule paired with a caller-supplied mask is checked on device as before.
 
   References
   ----------
@@ -208,6 +215,7 @@ class WaveScheduleBundle(eqx.Module):
   group_positions: Int[Array, "W G P"]
   group_valid: Bool[Array, "W G"]
   position_valid: Bool[Array, "W G P"]
+  mask_consistent: bool = eqx.field(static=True, default=False)
 
   @staticmethod
   def from_tie_groups(

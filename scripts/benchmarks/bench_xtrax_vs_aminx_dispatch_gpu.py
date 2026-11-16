@@ -134,8 +134,9 @@ def run_case(num_states: int, seq_len: int, n_warmup: int, n_timed: int) -> dict
     from aminx.inference.decode.conditional import ConditionalDecode
     from aminx.inference.encode import make_encode_fn
     from aminx.inference.logits import make_stage_set
-    from aminx.tiling.dispatch import make_axis_dispatch, make_axis_dispatch_via_xtrax
+    from aminx.tiling.dispatch import make_axis_dispatch
     from xtrax.tiling import AxisSpec
+    from xtrax.tiling import make_axis_dispatch as xtrax_make_axis_dispatch
 
     model, bundle, config = _build_fixture(num_states, seq_len)
 
@@ -170,18 +171,7 @@ def run_case(num_states: int, seq_len: int, n_warmup: int, n_timed: int) -> dict
     )
     xtrax_decision = plan.decisions[0]
     strategy_name = type(xtrax_decision.strategy).__name__
-
-    # make_axis_dispatch / make_axis_dispatch_via_xtrax both take an
-    # aminx-native AxisStrategy by contract (the latter translates it to
-    # xtrax internally via _strategy_to_xtrax) -- reconstruct one from the
-    # real planner's Vmap-vs-SafeMap decision above (EPIC #1541 made that
-    # decision xtrax-native; this benchmark still needs aminx-native input).
-    from aminx.tiling.strategy import SafeMap as AminxSafeMap
-    from aminx.tiling.strategy import Vmap as AminxVmap
-
-    decision_strategy = (
-        AminxVmap() if strategy_name == "Vmap" else AminxSafeMap(tile=xtrax_decision.batch_size)
-    )
+    decision_strategy = xtrax_decision.strategy
 
     def _make_counter():
         counter = {"n": 0}
@@ -218,7 +208,11 @@ def run_case(num_states: int, seq_len: int, n_warmup: int, n_timed: int) -> dict
         return times, counter["n"]
 
     legacy_times, legacy_recompiles = _time_path(make_axis_dispatch)
-    adapter_times, adapter_recompiles = _time_path(make_axis_dispatch_via_xtrax)
+    adapter_times, adapter_recompiles = _time_path(
+        lambda s, *, axis="state": xtrax_make_axis_dispatch(
+            s, axis=axis, heterogeneous_axes={"state"},
+        )
+    )
 
     legacy_mean = float(np.mean(legacy_times))
     legacy_stderr = float(np.std(legacy_times, ddof=1) / np.sqrt(len(legacy_times)))
@@ -279,7 +273,8 @@ def main() -> None:
 
     if args.dry_run:
         from aminx.inference.decode.conditional import ConditionalDecode  # noqa: F401
-        from aminx.tiling.dispatch import make_axis_dispatch, make_axis_dispatch_via_xtrax  # noqa: F401
+        from aminx.tiling.dispatch import make_axis_dispatch  # noqa: F401
+        from aminx.tiling.strategy import ChunkedMap, Vmap  # noqa: F401
 
         print(json.dumps({"dry_run": "ok", "device": str(jax.devices())}))
         sys.exit(0)
