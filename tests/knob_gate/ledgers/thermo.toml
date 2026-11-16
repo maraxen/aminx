@@ -1,6 +1,7 @@
 # Sharded ledger for ThermoMPNN / ThermoMPNN-D.
 # Run 261116 at 365d174d (CPU): 0d1a8493-80c9-4c4f-b7a2-9891586bb3e0 recorded outcome FAIL on the float16 check only
 # (v1_f16_max_abs_diff 0.0278 > 1.5e-2; f32/f64 pass). Float16 stays an xfail (no allow_float16 bypass), so nothing is recorded.
+# Re-run at d06521ff: b5486e8d-2764-4d56-a20c-7a28f3168553, outcome FAIL, identical numbers (deterministic).
 
 [sidecar]
 # [sidecar.thermo_mpnn_parity]
