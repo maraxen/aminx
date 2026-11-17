@@ -40,3 +40,13 @@
 {"event":"debt_resolved","id":"2583","ts":"2026-10-08T13:19:14Z","id_source":"response"}
 {"event":"debt_updated","id":"2584","ts":"2026-10-08T13:19:28Z","id_source":"response"}
 {"event":"debt_resolved","id":"2584","ts":"2026-10-08T13:19:28Z","id_source":"response"}
+{"event":"debt_added","id":"3266","ts":"2026-11-05T00:47:06Z","id_source":"response"}
+{"event":"debt_added","id":"3270","ts":"2026-11-05T07:48:09Z","id_source":"response"}
+{"event":"debt_added","id":"3271","ts":"2026-11-05T07:48:10Z","id_source":"response"}
+{"event":"debt_added","id":"3287","ts":"2026-11-05T16:45:23Z","id_source":"response"}
+{"event":"debt_added","id":"3288","ts":"2026-11-05T21:19:38Z","id_source":"response"}
+{"event":"debt_added","id":"3399","ts":"2026-11-16T16:58:51Z","id_source":"response"}
+{"event":"debt_added","id":"3400","ts":"2026-11-16T16:58:53Z","id_source":"response"}
+{"event":"debt_added","id":"3401","ts":"2026-11-16T16:58:55Z","id_source":"response"}
+{"event":"debt_resolved","id":"3399","ts":"2026-11-16T17:34:23Z","id_source":"response"}
+{"event":"debt_resolved","id":"3400","ts":"2026-11-16T17:34:23Z","id_source":"response"}

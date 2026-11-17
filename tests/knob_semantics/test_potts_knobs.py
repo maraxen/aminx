@@ -29,7 +29,8 @@ import jax.numpy as jnp
 from aminx.families.potts_mpnn.decode import PottsARDecode, floor_temperature
 from aminx.families.potts_mpnn.refine import BindingTables, PottsRefine
 from aminx.model.decoder import DecoderLayer
-from aminx.families.potts_mpnn.featurize import _AA_N_1, _BACKBONE, _parse_biounits
+from aminx.families.potts_mpnn.featurize import _AA_N_1, _BACKBONE
+from aminx.io.upstream_pdb import _parse_biounits
 
 _GAP_CHAR = _AA_N_1[20]
 
