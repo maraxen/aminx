@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aminx"
-version = "0.4.0"
+version = "0.5.3"
 description = "Aminx: A functional interface for ProteinMPNN"
 requires-python = ">=3.13"
 dependencies = [
@@ -20,10 +20,10 @@ dependencies = [
     "equinox>=0.13.2",
     "zstandard>=0.21.0",
     "msgpack-numpy>=0.4.8",
-    "proxide>=0.2.0",
+    "proxide>=0.2.1",
     "typer>=0.12.0",
     "huggingface-hub>=0.23.0",
-    "xtrax[io,pack,export]==0.4.1b7",
+    "xtrax[io,pack,export]==0.4.1b8",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -46,7 +46,7 @@ documentation = "https://aminx.readthedocs.io"
 # Plan EDA (src/aminx/host/plan_eda.py): matplotlib, pandas, pyarrow, seaborn and vl-convert.
 # Optional so the headless sampling install does not carry a plotting stack.
 eda = [
-    "xtrax[eda]==0.4.1b7",
+    "xtrax[eda]==0.4.1b8",
 ]
 agent = [
     "cisternal>=0.1.6,<0.2",
@@ -91,7 +91,7 @@ tests = [
 # tests/parity/test_layer_b_ort_*.py, test_onnx_audit.py, test_p07_sample_export.py) skip with a message
 # when it is absent, and CI installs it so they RUN there (aminx debt #2392).
 onnx = [
-    "xtrax[onnx]==0.4.1b7",
+    "xtrax[onnx]==0.4.1b8",
 ]
 dev = [
   "ruff",
@@ -137,8 +137,10 @@ fix = true
 indent-width = 2
 force-exclude = true
 exclude = [
+    ".agents",
     ".venv",
     "venv",
+    "worktrees",
     "build",
     "dist",
     "__pycache__",
@@ -377,3 +379,6 @@ proxide = { index = "pypi" }
 # alphex: PyPI (https://pypi.org/project/alphex/) -- no source override needed.
 # PyPI serves the CUDA-enabled wheel on Linux and CPU wheel on macOS — correct for both envs.
 torch = { index = "pypi" }
+
+[project.entry-points."xtrax.eda.domains"]
+aminx = "aminx.eda.plugin:AminxDomainPlugin"

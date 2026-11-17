@@ -162,7 +162,7 @@ class TestSampleStatesFused:
     a different test) and the mock genuinely observes the call.
     """
     from aminx.sampling import multistate_poe as poe_mod
-    from aminx.tiling.strategy import SafeMap
+    from xtrax.tiling import ChunkedMap
 
     num_states, num_residues, n_samples = 4, 6, 2
     model, bundle, config = _build_synthetic_bundle(
@@ -180,21 +180,21 @@ class TestSampleStatesFused:
     assert mock_kernel.call_count >= 1
     for call in mock_kernel.call_args_list:
       state_strategy = call.kwargs["state_strategy"]
-      assert isinstance(state_strategy, SafeMap), (
-        f"num_states={num_states} > N_STATES.default_batch_size=1 must resolve to SafeMap "
+      assert isinstance(state_strategy, ChunkedMap), (
+        f"num_states={num_states} > N_STATES.default_batch_size=1 must resolve to ChunkedMap "
         f"(the axis's own canonical template default), got {type(state_strategy).__name__} "
         "-- state axis is not going through BatchPlanner"
       )
-      assert state_strategy.tile == 1
+      assert state_strategy.batch_size == 1
 
   def test_single_state_still_passes_an_explicit_resolved_strategy(self):
     """num_states=1 <= N_STATES.default_batch_size=1 -> Vmap is the correct (and harmless,
-    since cardinality=1 makes Vmap/SafeMap equivalent) BatchPlanner decision; must still be
+    since cardinality=1 makes Vmap/ChunkedMap equivalent) BatchPlanner decision; must still be
     an explicitly resolved strategy passed through, not silently relying on kernel()'s own
     Vmap default (which would mask a regression if N_STATES' default_batch_size ever changes).
     """
     from aminx.sampling import multistate_poe as poe_mod
-    from aminx.tiling.strategy import Vmap
+    from xtrax.tiling import Vmap
 
     model, bundle, config = _build_synthetic_bundle(num_states=1, num_residues=9, seed=32)
     stage_set = make_stage_set(strategy="product", state_weights=bundle.conditioning.state_weights)

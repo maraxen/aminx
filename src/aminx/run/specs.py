@@ -34,6 +34,7 @@ if TYPE_CHECKING:
   from .options import (
     CalibyOptions,
     FAMPNNOptions,
+    FrustraMPNNOptions,
     LaserOptions,
     PottsMPNNOptions,
     ProtonPottsOptions,
@@ -336,6 +337,8 @@ class RunSpecification:
   """FAMPNN knobs. ``None`` means the family defaults; set only for ``fampnn``."""
   thermompnn: ThermoMPNNOptions | None = None
   """ThermoMPNN knobs. ``None`` means the family defaults; set only for ``thermompnn``."""
+  frustrampnn: FrustraMPNNOptions | None = None
+  """FrustraMPNN knobs. ``None`` means the family defaults; set only for ``frustrampnn``."""
 
   run_spec: RunSpec = field(init=False, repr=False)
   _run_spec_synced: bool = field(init=False, default=False)
@@ -402,7 +405,8 @@ class RunSpecification:
       # The fused (multi-input) path never receives decoding_order_fn, so there a seed beside it
       # would be recorded while the function is ignored; on the single-input path the seed is live.
       if self.decoding_order_fn is not None and (
-        self.fixed_position_context != "random_order" or (self.decoding_order_seed is not None and fused_input)
+        self.fixed_position_context != "random_order"
+        or (self.decoding_order_seed is not None and fused_input)
       ):
         bypass.append("decoding_order_fn")
       if getattr(self, "wave", None) is not None:
@@ -640,6 +644,7 @@ _ALL_OUTPUT_KINDS = frozenset(
     "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
+    "frustration",
   },
 )
 _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
@@ -654,6 +659,7 @@ _OUTPUT_KINDS_BY_FAMILY: dict[str, frozenset[str]] = {
   "caliby": frozenset({"nll", "logits", "energy"}),
   "fampnn": frozenset({"nll", "logits"}),
   "thermompnn": frozenset({"ddg"}),
+  "frustrampnn": frozenset({"frustration"}),
 }
 
 
@@ -671,8 +677,9 @@ def _validate_output_kind(output_kind: str, model_family: str | None) -> None:
     )
     raise ValueError(msg)
 
+
 def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
-  """Check a user-supplied scoring ``ar_mask`` and return it as a float32 ``(L, L)`` array.
+  """Check a user-supplied scoring ``ar_mask`` and return it as an int8 ``(L, L)`` array.
 
   Refuses what has silently produced wrong numbers before: a non-square or non-2D mask, a
   non-binary one, and a nonzero diagonal. A residue that sees its own token is handed the
@@ -681,26 +688,27 @@ def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
   """
   import numpy as np  # noqa: PLC0415
 
-  mask = np.asarray(ar_mask, dtype=np.float32)
+  # Validated on the caller's own dtype: a float32 round trip would misjudge large integers.
+  mask = np.asarray(ar_mask)
   if mask.ndim != 2 or mask.shape[0] != mask.shape[1]:
     msg = f"ScoringSpecification.ar_mask must be a square (L, L) array, got shape {mask.shape}."
     raise ValueError(msg)
-  if not np.all((mask == 0.0) | (mask == 1.0)):
+  if not np.all((mask == 0) | (mask == 1)):
     msg = "ScoringSpecification.ar_mask must be binary (0/1): ar_mask[i, j] == 1 iff i sees j."
     raise ValueError(msg)
-  if np.any(np.diagonal(mask) != 0.0):
+  if np.any(np.diagonal(mask) != 0):
     msg = (
       "ScoringSpecification.ar_mask must have a zero diagonal: a position that sees its own "
       "token is scored on the answer it was given. Use a self-excluding mask "
       "(e.g. aminx.utils.autoregression.ar_mask_from_decoding_order)."
     )
     raise ValueError(msg)
-  return mask
-
+  return mask.astype(np.int8)
 
 
 def _resolve_output_paths(spec: RunSpecification) -> None:
   """Normalize and synchronize output_path, output_zarr_path, and output_h5_path."""
+
   def _norm(val: Any) -> Any:
     return Path(val) if isinstance(val, (str, Path)) else val
 
@@ -774,6 +782,7 @@ class ScoringSpecification(RunSpecification):
     "selectivity",
     "proofread_unconditional",
     "proofread_conditional",
+    "frustration",
   ] = "nll"
   temperature: float = 1.0
   return_logits: bool = False

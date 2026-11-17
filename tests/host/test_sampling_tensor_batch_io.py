@@ -251,7 +251,7 @@ def test_emit_structure_batch_io_gate_in_sample_batch(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map
     )
 
     # Patch helper functions to avoid ligand/control prep failures
@@ -361,7 +361,7 @@ def test_sample_batch_does_not_raise_without_active_sink(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map
     )
 
     # Patch helper functions to avoid ligand/control prep failures
@@ -448,7 +448,7 @@ def test_sample_batch_stages_when_sink_active(monkeypatch):
         )
 
     monkeypatch.setattr(
-        "aminx.host.kernel_dispatch._safe_map", _mock_safe_map
+        "aminx.host.kernel_dispatch.chunked_map", _mock_safe_map
     )
 
     # Patch helper functions to avoid ligand/control prep failures

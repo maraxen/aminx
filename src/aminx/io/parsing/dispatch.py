@@ -19,9 +19,32 @@ from typing import Any
 from proxide import OutputSpec
 from proxide.core.containers import Protein
 
+# How proxide types a modified residue that is chemically a standard one (MSE, selenomethionine).
+# proxide >= 0.2.0 defaults to ``"parent_residue"`` (MSE -> MET). The reference LigandMPNN parser
+# tokenises MSE as X, and aminx promises token parity with it, so every aminx parse path asks for
+# ``"unknown"`` (the unknown residue index). Needs proxide with ``OutputSpec.modified_residue_typing``.
+MODIFIED_RESIDUE_TYPING = "unknown"
+
+
+def require_modified_residue_typing_support() -> None:
+  """Raise unless the installed proxide can honour ``MODIFIED_RESIDUE_TYPING``.
+
+  proxide 0.2.0 has no ``OutputSpec.modified_residue_typing``, and its ``load_rust`` (the path
+  ``create_protein_dataset(parse_kwargs=...)`` ends in) silently drops keywords it does not read.
+  Without this check the runner would keep tokenising MSE as M on such a proxide and report nothing.
+  """
+  if not hasattr(OutputSpec(), "modified_residue_typing"):
+    msg = (
+      "the installed proxide has no OutputSpec.modified_residue_typing, so selenomethionine "
+      f"(MSE) cannot be tokenised as X for parity with the reference parser (requested "
+      f"{MODIFIED_RESIDUE_TYPING!r}); install a proxide that provides it (> 0.2.0)"
+    )
+    raise RuntimeError(msg)
+
 
 def _output_spec(k_neighbors: int, kwargs: dict[str, Any]) -> OutputSpec:
   """Build the aminx OutputSpec: RBF on, Atom37-compatible, optional physics/solvent flags."""
+  require_modified_residue_typing_support()
   compute_physics = kwargs.get("compute_physics", False)
   compute_vdw = kwargs.get("compute_vdw", compute_physics)
   compute_estat = kwargs.get("compute_electrostatics", compute_physics)
@@ -32,6 +55,7 @@ def _output_spec(k_neighbors: int, kwargs: dict[str, Any]) -> OutputSpec:
     "compute_vdw": compute_vdw,
     "compute_electrostatics": compute_estat,
     "parameterize_md": compute_vdw or compute_estat,
+    "modified_residue_typing": MODIFIED_RESIDUE_TYPING,
   }
   for key in ("remove_solvent", "add_hydrogens", "force_field"):
     if key in kwargs:

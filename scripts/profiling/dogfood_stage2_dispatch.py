@@ -141,9 +141,7 @@ def run_case(
     from aminx.inference.decode.conditional import ConditionalDecode
     from aminx.inference.encode import make_encode_fn
     from aminx.inference.logits import make_stage_set
-    from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
-    from aminx.tiling.strategy import SafeMap as AminxSafeMap
-    from aminx.tiling.strategy import Vmap as AminxVmap
+    from aminx.tiling.dispatch import make_axis_dispatch
     from xtrax.tiling import AxisSpec
 
     model, bundle, config = _build_fixture(num_states, seq_len)
@@ -176,11 +174,9 @@ def run_case(
     )
     decision = plan.decisions[0]
     strategy_name = type(decision.strategy).__name__
-    decision_strategy = (
-        AminxVmap() if strategy_name == "Vmap" else AminxSafeMap(tile=decision.batch_size)
-    )
+    decision_strategy = decision.strategy
 
-    iterator = make_axis_dispatch_via_xtrax(decision_strategy, axis="state")
+    iterator = make_axis_dispatch(decision_strategy, axis="state")
 
     def _decode(key):
         # Both scopes live INSIDE the jitted region: the compiled HLO text
@@ -246,7 +242,7 @@ def run_case(
         },
         config={
             "kernel": "aminx.ConditionalDecode",
-            "dispatch": "make_axis_dispatch_via_xtrax",
+            "dispatch": "make_axis_dispatch",
             "strategy": strategy_name,
             "num_states": str(num_states),
             "seq_len": str(seq_len),

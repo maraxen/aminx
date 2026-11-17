@@ -637,6 +637,8 @@ class FAMPNNModel(eqx.Module):
   scn_diffusion: SidechainDiffusionModule
   scn_confidence: SidechainConfidenceModule | None = None
   W_out: eqx.nn.Linear | None = None
+  conf_min_bin: float = eqx.field(static=True, default=0.0)
+  conf_max_bin: float = eqx.field(static=True, default=4.0)
 
   def __init__(
     self,
@@ -654,6 +656,12 @@ class FAMPNNModel(eqx.Module):
     has_f_embedder: bool = False,
     conf_num_bins: int = 64,
     conf_has_upstream_heads: bool = False,
+    scn_sigma_data: float = 1.0,
+    edm_s_min: float = 0.01,
+    edm_s_max: float = 80.0,
+    edm_rho: float = 7.0,
+    conf_min_bin: float = 0.0,
+    conf_max_bin: float = 4.0,
     key: jax.Array | None = None,
   ) -> None:
     """Initialize ``FAMPNNModel``.
@@ -686,6 +694,12 @@ class FAMPNNModel(eqx.Module):
       Parameter ``conf_num_bins``.
     conf_has_upstream_heads : bool
       Parameter ``conf_has_upstream_heads``.
+    scn_sigma_data, edm_s_min, edm_s_max, edm_rho : float
+      EDM constants of the sidechain diffusion head: ``sigma_data`` is the checkpoint's ``scn_std`` buffer,
+      the rest come from the ``interpolant`` block of its ``model_cfg`` (0.64, 0.01, 80, 7 in the released
+      checkpoints).
+    conf_min_bin, conf_max_bin : float
+      ``sce_bins`` range of the confidence head (0 to 4 in the released checkpoints).
     key : jax.Array | None
       Parameter ``key``.
 
@@ -714,8 +728,14 @@ class FAMPNNModel(eqx.Module):
       depth=scn_depth,
       cond_dim=hidden_dim,
       has_f_embedder=has_f_embedder,
+      sigma_data=scn_sigma_data,
+      edm_s_min=edm_s_min,
+      edm_s_max=edm_s_max,
+      edm_rho=edm_rho,
       key=keys[3],
     )
+    self.conf_min_bin = conf_min_bin
+    self.conf_max_bin = conf_max_bin
     if has_confidence:
       c_enc_keys = jax.random.split(keys[4], 3)
       c_dec_keys = jax.random.split(keys[5], 3)

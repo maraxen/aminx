@@ -302,6 +302,12 @@ OBSERVATIONS: dict[str, Verdict] = {
     "refuse_driver_family (host/family_driver.py:187) still refuses it on a row with no arm "
     "(host/campaign.py:276)",
   ),
+  "frustrampnn": NotApplicable(
+    reason="FrustraMPNNOptions (run/options.py:281) apply only to model_family frustrampnn; a campaign "
+    "row reaches that family only through a backend arm (host/campaign.py:1442), and "
+    "refuse_driver_family (host/family_driver.py:187) still refuses it on a row with no arm "
+    "(host/campaign.py:276)",
+  ),
 
   # --- PlannerDerived: planner-derived per-row variables --------------------------------
   "random_seed": PlannerDerived(

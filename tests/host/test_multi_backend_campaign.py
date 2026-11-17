@@ -166,6 +166,7 @@ def test_multi_backend_manifest(
 
   # Verify execute_manifest dispatches thermompnn row via score() and writes to UnifiedCampaignSink
   import aminx.families.thermo_mpnn.convert as thermo_convert_mod
+  from aminx.families.thermo_mpnn.model import ThermoMPNN
   from aminx.host.campaign import execute_manifest
   from aminx.io.campaign_sink import CampaignSinkInspector
 
@@ -173,6 +174,10 @@ def test_multi_backend_manifest(
     thermo_convert_mod,
     "load_weights",
     lambda checkpoint_id="thermo_mpnn_v1_default", local_path=None, skeleton=None: skeleton,
+  )
+  monkeypatch.setattr(
+    "aminx.families.thermo_mpnn.driver.load_thermo_mpnn_checkpoint",
+    lambda *args, **kwargs: ThermoMPNN(key=jax.random.PRNGKey(0)),
   )
   sink_dir = tmp_path / "campaign_sink.zarr"
   executor = HoistedTopologyExecutor()

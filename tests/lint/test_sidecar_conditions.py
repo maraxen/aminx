@@ -109,7 +109,7 @@ def scan_repo(root: Path = _REPO) -> tuple[list[tuple[str, str, str, str]], list
     offenders: list[tuple[str, str, str, str]] = []
     unparseable: list[tuple[str, str]] = []
     for path in sorted(root.rglob("*.bth.toml")):
-        if ".git" in path.parts:
+        if any(part in path.parts for part in (".git", ".claude", "worktrees", ".worktrees", ".venv", ".agents")):
             continue
         rel = str(path.relative_to(root))
         try:

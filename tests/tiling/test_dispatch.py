@@ -11,7 +11,7 @@ import pytest
 from aminx.host.plan import PlanTopologyError
 from aminx.tiling.dispatch import DispatchRejected, make_axis_dispatch
 from aminx.tiling.errors import TilingError
-from aminx.tiling.strategy import SafeMap, Scan, Vmap
+from aminx.tiling.strategy import ChunkedMap, Scan, Vmap
 
 
 class TestMakeAxisDispatchHappyPath:
@@ -24,13 +24,24 @@ class TestMakeAxisDispatchHappyPath:
         # Verify it's the right type by checking the class name.
         assert type(result).__name__ == "VmapIterator"
 
-    def test_safemap_dispatch_returns_safemap_iterator(self) -> None:
-        """make_axis_dispatch(SafeMap(tile=4)) returns a SafeMapIterator with tile=4."""
-        result = make_axis_dispatch(SafeMap(tile=4))
+    def test_chunked_map_dispatch_returns_chunked_map_iterator(self) -> None:
+        """make_axis_dispatch(ChunkedMap(batch_size=4)) returns a ChunkedMapIterator with tile=4."""
+        result = make_axis_dispatch(ChunkedMap(batch_size=4))
         assert result is not None
-        assert type(result).__name__ == "SafeMapIterator"
-        # SafeMapIterator has a static tile field.
+        assert type(result).__name__ == "ChunkedMapIterator"
+        # ChunkedMapIterator has a static tile field.
         assert result.tile == 4
+
+    def test_scan_on_homogeneous_axis_returns_jax_scan_iterator(self) -> None:
+        """make_axis_dispatch(Scan(...), axis='wave') returns a JaxScanIterator."""
+        import jax.numpy as jnp
+
+        scan_strategy = Scan(init=jnp.int32(0), transition=lambda c, x: (c + x, c + x))
+        result = make_axis_dispatch(scan_strategy, axis="wave")
+        assert type(result).__name__ == "JaxScanIterator"
+        final_carry, ys = result(scan_strategy.transition, scan_strategy.init, jnp.array([1, 2, 3]))
+        assert int(final_carry) == 6
+        assert list(map(int, ys)) == [1, 3, 6]
 
 
 class TestMakeAxisDispatchRejectPath:
@@ -74,6 +85,8 @@ class TestMakeAxisDispatchRejectPath:
             index_map=np.array([0, 1, 0, 1], dtype=np.int32),
             k=2,
             k_bucket=2,
+            dedup_fn=lambda xs, idx: xs[idx],
+            gather_fn=lambda ys, idx: ys[idx],
         )
         with pytest.raises(DispatchRejected):
             make_axis_dispatch(dg)

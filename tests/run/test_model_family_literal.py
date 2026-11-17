@@ -39,6 +39,7 @@ def test_model_family_literal_includes_driver_families() -> None:
         "caliby",
         "fampnn",
         "thermompnn",
+        "frustrampnn",
     }
 
 
@@ -92,6 +93,7 @@ def test_portable_json_v2_refuses_driver_families() -> None:
         ("protonpottsmpnn", "protonpottsmpnn_v6_30"),
         ("lasermpnn", "lasermpnn_0p1A_nothing_heldout"),
         ("ligandmpnn", "ligandmpnn_v_32_020"),
+        ("frustrampnn", "megascale_default_la-true_esm-False_split1"),
     ):
         spec = SamplingSpecification(
             inputs="x.pdb",

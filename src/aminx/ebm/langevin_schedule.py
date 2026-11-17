@@ -198,7 +198,6 @@ from xtrax.tiling import CarrySpec
 
 from aminx.ebm.diffusion import DEFAULT_COORDINATE_SCALING
 from aminx.ebm.langevin import DEFAULT_EFFECTIVE_TEMP_SCALING, run_langevin_equilibration
-from aminx.utils.safe_scan import safe_scan
 
 if TYPE_CHECKING:
   from jaxtyping import Array, Float, Int, PRNGKeyArray
@@ -352,7 +351,7 @@ def run_annealing_schedule(
   vocabulary the design authority names, and the same object type
   ``aminx.host.plan``/``aminx.run.specs`` declare carry-bearing axes with
   elsewhere in this repo) and executes it directly via
-  ``aminx.utils.safe_scan.safe_scan`` -- provably identical to what
+  ``jax.lax.scan`` -- provably identical to what
   ``BatchPlanner.plan()`` would have produced.
 
   PRNG discipline: ``key`` is split exactly once per scanned level
@@ -400,15 +399,18 @@ def run_annealing_schedule(
       Final coordinates after the full schedule, ``(N, 3)``.
 
   Raises:
-      ValueError: If ``len(thresholds) != len(models) - 1``, or if
-        ``n_steps_per_level`` is given as an array whose length does not
-        match ``noise_schedule``.
+      ValueError: If ``len(thresholds) != len(models) - 1``, if
+        ``noise_schedule`` is empty, or if ``n_steps_per_level`` is given as
+        an array whose length does not match ``noise_schedule``.
 
   """
   _validate_model_threshold_counts(len(models), len(thresholds))
 
   noise_schedule_arr = jnp.asarray(noise_schedule)
   n_levels = noise_schedule_arr.shape[0]
+  if n_levels == 0:
+    msg = "run_annealing_schedule: noise_schedule must be non-empty."
+    raise ValueError(msg)
 
   if isinstance(n_steps_per_level, int):
     n_steps_arr = jnp.full((n_levels,), n_steps_per_level, dtype=jnp.int32)
@@ -456,7 +458,7 @@ def run_annealing_schedule(
     transition=_round_transition,
   )
   xs = (noise_schedule_arr, n_steps_arr)
-  (final_coords, _final_key), _ys = safe_scan(carry_spec.transition, xs, init=carry_spec.init)
+  (final_coords, _final_key), _ys = jax.lax.scan(carry_spec.transition, carry_spec.init, xs)
   return final_coords
 
 

@@ -32,8 +32,15 @@ from aminx.families.laser_mpnn.featurize import (
 )
 from aminx.host.family_driver import FamilyBatch, SinkArraySpec
 from aminx.host.omit_aa_bias import compile_omit_aa_bias, omit_aa_is_active
-from aminx.model.laser.graphs import GraphStructure
-from aminx.model.laser.joint_decode import chi_position_mask, decode_order
+from aminx.model.laser.encoders import encode_structure
+from aminx.model.laser.graphs import GraphStructure, pack_edges, scatter_edge_values
+from aminx.model.laser.joint_decode import (
+  _disabled_mask,
+  _sampling,
+  _vmap_scan_residues,
+  chi_position_mask,
+  decode_order,
+)
 from aminx.model.laser.tied import tied_decode
 from aminx.run.options import LaserOptions
 
@@ -436,7 +443,200 @@ class SampleStages:
     ]
     return {key: np.stack([row[key] for row in per_level], axis=1) for key in per_level[0]}
 
-  def _one_level(
+  def _one_level(  # noqa: PLR0915
+    self,
+    item: _Sampled,
+    chunk_start: int,
+    chunk_count: int,
+    dropout_key: jax.Array,
+  ) -> dict[str, np.ndarray]:
+    if item.tied is not None:
+      return self._one_level_tied(item, chunk_start, chunk_count, dropout_key)
+    temperatures = _temperatures(self._spec)
+    n_temp = len(temperatures)
+    n_samples = chunk_count * n_temp
+    if n_samples == 0:
+      return {}
+
+    features = item.features
+    options = self._options
+    model = self._model
+    structure = _graph(model)
+
+    # 1. Hoist structure encoding and edge packing ONCE for this level:
+    encoded = encode_structure(
+      model.encoder,
+      features.backbone_coords,
+      features.ligand_coords,
+      features.ligand_atomic_numbers,
+      features.ligand_subbatch_indices,
+      np.asarray(model.period_index),
+      np.asarray(model.group_index),
+      structure,
+      protein_loop=True,
+    )
+    n_res = int(encoded.prot_scalars.shape[0])
+    packed_pr = pack_edges(n_res, encoded.pr_pr_idx)
+    packed_lp = pack_edges(n_res, encoded.lig_pr_idx)
+    pr_edges = scatter_edge_values(n_res, packed_pr, encoded.pr_pr_eattr)
+    lp_edges = scatter_edge_values(n_res, packed_lp, encoded.lig_pr_eattr)
+
+    dtype = encoded.prot_scalars.dtype
+    scalars = np.asarray(encoded.prot_scalars)
+    vectors = np.asarray(encoded.prot_vectors)
+    node_s = np.zeros((4, *scalars.shape), dtype=scalars.dtype)
+    node_v = np.zeros((4, *vectors.shape), dtype=vectors.dtype)
+    node_s[0] = scalars
+    node_v[0] = vectors
+
+    mask = np.asarray(item.chain_mask, dtype=bool)
+    if options.repack_only:
+      mask = np.ones((n_res,), dtype=bool)
+    effective_repack = bool(options.repack_all or options.repack_only)
+
+    budget_mask = _budget(features, options)
+    charged_mask = _charged(features, options)
+    region = (
+      np.zeros((n_res,), dtype=bool)
+      if budget_mask is None
+      else np.asarray(budget_mask, dtype=bool)
+    )
+    charged = (
+      np.zeros((n_res,), dtype=bool)
+      if charged_mask is None
+      else np.asarray(charged_mask, dtype=bool)
+    )
+    bias = _logit_bias(self._spec, item.chain_mask)
+    logit_bias = (
+      np.zeros((n_res, 21), dtype=dtype)
+      if bias is None
+      else np.asarray(bias, dtype=dtype)
+    )
+    disabled = _disabled_mask(tuple(options.disabled_residues))
+
+    # Pre-convert shared tensors to JAX arrays once:
+    j_lig_scalars = jnp.asarray(encoded.lig_scalars)
+    j_pr_edges = jnp.asarray(pr_edges)
+    j_pr_neighbours = jnp.asarray(packed_pr.neighbours)
+    j_pr_mask = jnp.asarray(packed_pr.mask)
+    j_lp_edges = jnp.asarray(lp_edges)
+    j_lp_neighbours = jnp.asarray(packed_lp.neighbours)
+    j_lp_mask = jnp.asarray(packed_lp.mask)
+    j_input_sequence = jnp.asarray(features.sequence_indices, dtype=jnp.int32)
+    j_input_chi = jnp.asarray(features.chi_angles, dtype=dtype)
+    j_chain_mask = jnp.asarray(mask)
+    j_first_shell = jnp.asarray(features.first_shell_ligand_contact_mask)
+    j_budget_mask = jnp.asarray(region)
+    j_charged_mask = jnp.asarray(charged)
+    j_disabled = jnp.asarray(disabled)
+    j_bias = jnp.asarray(logit_bias)
+    j_node_s = jnp.asarray(node_s)
+    j_node_v = jnp.asarray(node_v)
+
+    sequence: list[np.ndarray] = [None] * n_samples  # type: ignore[list-item]
+    seq_log_prob: list[np.ndarray] = [None] * n_samples  # type: ignore[list-item]
+    chi_deg: list[np.ndarray] = [None] * n_samples  # type: ignore[list-item]
+    chi_mask: list[np.ndarray] = [None] * n_samples  # type: ignore[list-item]
+    coords: list[np.ndarray] | None = (
+      [None] * n_samples if _include_coords(options) else None  # type: ignore[list-item]
+    )
+
+    # Process per temperature group across chunk_count samples:
+    for temp_index, temperature in enumerate(temperatures):
+      orders_list: list[np.ndarray] = []
+      draws_list: list[np.ndarray] = []
+      for offset in range(chunk_count):
+        flat = (chunk_start + offset) * n_temp + temp_index
+        key = jax.random.fold_in(dropout_key, flat)
+        order, uniforms, _chi_u = _order_and_uniforms(
+          self._spec,
+          item.chain_mask,
+          np.asarray(features.extra_atom_contact_mask),
+          key,
+          tied=False,
+        )
+        draws = np.asarray(uniforms, dtype=np.float64)
+        if draws.ndim == 2:
+          draws = draws[0]
+        if _sampling(temperature, options.chi_temp, options.fs_sequence_temp):
+          need = n_res * _DRAWS_PER_STEP
+          if int(draws.shape[0]) < need:
+            draws = np.pad(draws, (0, need - int(draws.shape[0])))
+        else:
+          draws = np.asarray(draws if draws.shape[0] else np.zeros((1,), dtype=np.float64))
+        orders_list.append(order)
+        draws_list.append(draws)
+
+      orders_batch = jnp.stack([jnp.asarray(o, dtype=jnp.int32) for o in orders_list])
+      draws_batch = jnp.stack([jnp.asarray(d) for d in draws_list])
+
+      b_seq, b_logits, b_chi_deg, _b_chi_logits, _b_node = _vmap_scan_residues(
+        self._joint,
+        model.decoder,
+        j_lig_scalars,
+        j_pr_edges,
+        j_pr_neighbours,
+        j_pr_mask,
+        j_lp_edges,
+        j_lp_neighbours,
+        j_lp_mask,
+        orders_batch,
+        j_input_sequence,
+        j_input_chi,
+        j_chain_mask,
+        j_first_shell,
+        j_budget_mask,
+        j_charged_mask,
+        j_disabled,
+        j_bias,
+        draws_batch,
+        j_node_s,
+        j_node_v,
+        sequence_temperature=temperature,
+        chi_temperature=options.chi_temp,
+        fs_sequence_temp=options.fs_sequence_temp,
+        seq_min_p=float(options.seq_min_p),
+        chi_min_p=float(options.chi_min_p),
+        ala_budget=int(options.ala_budget),
+        gly_budget=int(options.gly_budget),
+        ignore_chain_mask_zeros=bool(options.ignore_chain_mask_zeros),
+        repack_all=effective_repack,
+      )
+
+      b_seq_np = np.asarray(b_seq)
+      b_logits_np = np.asarray(b_logits)
+      b_chi_deg_np = np.asarray(b_chi_deg, dtype=np.float32)
+
+      for offset in range(chunk_count):
+        idx = offset * n_temp + temp_index
+        laser_index = b_seq_np[offset]
+        sequence[idx] = _canonical_sequence(laser_index)
+        seq_log_prob[idx] = _token_prob(b_logits_np[offset], laser_index)
+        chi_deg[idx] = b_chi_deg_np[offset]
+        chi_mask[idx] = np.asarray(chi_position_mask(laser_index))
+        if coords is not None:
+          coords[idx] = _coords(
+            model,
+            features.backbone_coords,
+            b_chi_deg_np[offset],
+            laser_index,
+          )
+
+    produced: dict[str, np.ndarray] = {
+      "sequence": np.stack(sequence),
+      "seq_log_prob": np.stack(seq_log_prob),
+      "chi_deg": np.stack(chi_deg),
+      "chi_mask": np.stack(chi_mask),
+    }
+    if coords is not None:
+      produced["sidechain_coords"] = np.stack(coords)
+    if self._options.output_fasta or self._options.output_fasta_only:
+      produced["fasta"] = produced["sequence"]
+    if self._options.output_fasta_only:
+      return {"fasta": produced["fasta"]}
+    return produced
+
+  def _one_level_tied(
     self,
     item: _Sampled,
     chunk_start: int,

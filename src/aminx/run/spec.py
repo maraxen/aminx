@@ -513,7 +513,7 @@ def _compute_deterministic_run_id(spec: object) -> str:
     if val is not None:
       serialized = _serialize_for_run_id(val)
       if serialized is not None:
-        hasher.update(f"{field_name}={serialized}\x00".encode("utf-8"))
+        hasher.update(f"{field_name}={serialized}\x00".encode())
   all_keys: set[str] = set()
   if is_dataclass(spec):
     all_keys.update(f.name for f in fields(spec))
@@ -527,7 +527,7 @@ def _compute_deterministic_run_id(spec: object) -> str:
       continue
     serialized = _serialize_for_run_id(v)
     if serialized is not None:
-      hasher.update(f"{k}={serialized}\x00".encode("utf-8"))
+      hasher.update(f"{k}={serialized}\x00".encode())
   digest = hasher.hexdigest()
   return f"run-{digest[:16]}"
 

@@ -59,11 +59,10 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float
+from xtrax import chunked_map
 from xtrax.tiling import AxisDecision, AxisSpec, BatchPlanner, ChunkedMap, Scan, Vmap
 
 from aminx.ebm.contracts import Energy
-from aminx.utils.safe_map import safe_map
-from aminx.utils.safe_scan import safe_scan
 
 if TYPE_CHECKING:
   from collections.abc import Callable
@@ -159,7 +158,7 @@ def dispatch_axis[T, U](
   *pattern* (dispatch by ``isinstance`` against the sealed xtrax
   ``AxisStrategy`` union, not a logit-typed helper), per the module
   docstring's isolation rationale. Like ``_dispatch_axis``, this calls
-  ``jax.vmap``/``safe_map``/``safe_scan`` directly rather than going through
+  ``jax.vmap``/``chunked_map``/``jax.lax.scan`` directly rather than going through
   ``xtrax.tiling.make_axis_dispatch``'s iterator objects -- ``make_axis_
   dispatch`` returns a bare ``object`` in xtrax's own type stubs (the concrete
   iterator classes are resolved by a lazy import at call time), which
@@ -167,7 +166,7 @@ def dispatch_axis[T, U](
   function's own signature meaningfully typed.
 
   ``strategy`` is deliberately typed as plain ``object``, not the narrower
-  ``Vmap | SafeMap | Scan``: ``AxisDecision.strategy``'s declared type is
+  ``Vmap | ChunkedMap | Scan``: ``AxisDecision.strategy``'s declared type is
   xtrax's full sealed ``AxisStrategy`` union (which also includes
   ``DedupGather``/``Bucket`` -- neither importable from the public
   ``xtrax.tiling`` surface this file is restricted to), so a narrower
@@ -176,7 +175,7 @@ def dispatch_axis[T, U](
   narrowing; anything outside E4's scope falls through to the ``TypeError``.
 
   Args:
-      strategy: An xtrax ``Vmap``/``SafeMap``/``Scan`` instance, as returned
+      strategy: An xtrax ``Vmap``/``ChunkedMap``/``Scan`` instance, as returned
           by ``plan_axis(...).strategy``.
       body: Per-element function, ``body(x) -> y``. For ``Scan`` this is
           wrapped as a carry-passthrough transition (no real carry threading
@@ -197,18 +196,18 @@ def dispatch_axis[T, U](
   if isinstance(strategy, Vmap):
     return jax.vmap(body)(xs)
   if isinstance(strategy, ChunkedMap):
-    return safe_map(body, xs, batch_size=strategy.batch_size)
+    return chunked_map(body, xs, batch_size=strategy.batch_size or None)
   if isinstance(strategy, Scan):
 
     def _scan_body(carry: object, x: T) -> tuple[object, U]:
       return carry, body(x)
 
     init = strategy.init if strategy.init is not None else jnp.array(0)
-    _, ys = safe_scan(_scan_body, xs, init=init)
+    _, ys = jax.lax.scan(_scan_body, init, xs)
     return ys
   msg = (
     f"aminx.ebm.plan.dispatch_axis: unsupported strategy {type(strategy).__name__} "
-    "for E4's wiring scope (Vmap/SafeMap/Scan only)."
+    "for E4's wiring scope (Vmap/ChunkedMap/Scan only)."
   )
   raise TypeError(msg)
 

@@ -582,6 +582,9 @@
   "src/aminx/model/laser/proofread.py::focus_rows": {
     "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
   },
+  "src/aminx/model/laser/proofread.py::pregenerate_production_masks": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
   "src/aminx/model/laser/proofread.py::proofread_dropout": {
     "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
   },
@@ -709,9 +712,6 @@
   "src/aminx/scoring/multi_order.py::score_multi_order_average": {
     "internal": "host-side multi-order score averaging helper (clause score_only_multi_order_average, debt #3214); not exported to the browser bundle and not on any P-ID code path"
   },
-  "src/aminx/tiling/_deprecation.py::warn_deprecated": {
-    "internal": "caller-attributed DeprecationWarning helper for aminx's deprecated tiling types (debt #2371); no browser surface"
-  },
   "src/aminx/tiling/bucketing.py::BucketAssignment": "P27",
   "src/aminx/tiling/bucketing.py::BucketingConfig": "P27",
   "src/aminx/tiling/bucketing.py::group_by_bucket": "P27",
@@ -722,26 +722,8 @@
   "src/aminx/tiling/dispatch.py::make_axis_dispatch": {
     "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
   },
-  "src/aminx/tiling/dispatch.py::make_axis_dispatch_via_xtrax": {
-    "internal": "axis dispatch strategy selection shared across P-IDs, no dedicated P-ID"
-  },
   "src/aminx/tiling/errors.py::TilingError": {
     "internal": "shared tiling error type, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::JaxScanIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::MapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::SafeMapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::ScanIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
-  },
-  "src/aminx/tiling/iterator.py::VmapIterator": {
-    "internal": "tiling iterator strategies (Map/Scan/Vmap/SafeMap/JaxScan) shared across P-IDs, no dedicated P-ID"
   },
   "src/aminx/tiling/memory_budget.py::clear_memory_budget_cache": "P26",
   "src/aminx/tiling/memory_budget.py::memory_budget_source": "P26",
@@ -753,16 +735,58 @@
   "src/aminx/tiling/planner.py::plan_axis_strategy": {
     "internal": "memory/axis strategy planning shared across P-IDs, no dedicated P-ID"
   },
-  "src/aminx/tiling/strategy.py::DedupGather": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  "src/aminx/host/pack_shim.py::InputDigestMismatchError": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
   },
-  "src/aminx/tiling/strategy.py::SafeMap": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  "src/aminx/host/pack_shim.py::aminx_unit_check": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
   },
-  "src/aminx/tiling/strategy.py::Scan": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  "src/aminx/host/pack_shim.py::execute_packed_manifest": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
   },
-  "src/aminx/tiling/strategy.py::Vmap": {
-    "internal": "tiling strategy marker types (Vmap/SafeMap/Scan/DedupGather), no dedicated P-ID"
+  "src/aminx/host/pack_shim.py::failure_stamp_path": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/pack_shim.py::pack_aminx_unit": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/pack_shim.py::packed_unit_gate_digest": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/pack_shim.py::resolve_unit_adapter": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/pack_shim.py::run_packed_manifest_row": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/pack_shim.py::validate_aminx_unit": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/pack_shim.py::write_aminx_unit": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/pack_shim.py::write_aminx_unit_failure": {
+    "internal": "Server-side packed-unit storage (xtrax.pack adoption, #270): packs, validates and stamps one campaign row's output directory into a seekable archive on a shared filesystem. The browser writes no campaign rows and has no packed storage; covered by tests/host/test_pack_shim.py, test_pack_shim_runner.py and test_packer_integration.py."
+  },
+  "src/aminx/host/plan_eda.py::analyze_aminx_bucket": {
+    "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
+  },
+  "src/aminx/host/plan_eda.py::explain_aminx_plan": {
+    "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
+  },
+  "src/aminx/host/plan_eda.py::export_and_verify_plan_artifacts": {
+    "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
+  },
+  "src/aminx/host/plan_eda.py::generate_aminx_plan_spec": {
+    "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
+  },
+  "src/aminx/host/plan_eda.py::render_aminx_plan_panels": {
+    "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
+  },
+  "src/aminx/host/plan_eda.py::verify_checkpoint_and_explain_plan": {
+    "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
+  },
+  "src/aminx/host/plan_eda.py::verify_export_manifest_sha256": {
+    "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
   }
 }
