@@ -124,3 +124,26 @@ node_modules/
 .praxia/telemetry.jsonl
 .praxia/telemetry.jsonl.lock
 .praxia/subagent_outputs/
+# More praxia runtime logs that otherwise show up as untracked after every session.
+.praxia/hook_fires-*.jsonl
+.praxia/search_calls-*.jsonl
+.praxia/admission_log.jsonl
+.praxia/agent_results.jsonl
+.praxia/dispatch_runs.jsonl
+.praxia/dispatches.jsonl
+.praxia/dispatch_cache.jsonl.lock
+.praxia/hook_input_debug.jsonl
+.praxia/offline_journal.jsonl
+.praxia/offline_journal.jsonl.lock
+.praxia/session_log.jsonl
+.praxia/worktree_registry.json
+.praxia/loop/
+
+# Local secrets and scratch that must never be staged by a stray `git add -A`.
+.env
+.env.*
+!.env.example
+.agents/teamwork/
+# Stray git worktree checkouts and git bundles made while moving work between machines.
+worktrees/
+*.bundle

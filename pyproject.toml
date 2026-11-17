@@ -89,8 +89,10 @@ fix = true
 indent-width = 2
 force-exclude = true
 exclude = [
+    ".agents",
     ".venv",
     "venv",
+    "worktrees",
     "build",
     "dist",
     "__pycache__",

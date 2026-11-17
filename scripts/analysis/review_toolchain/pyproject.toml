@@ -1,0 +1,20 @@
+# Figure toolchain for maraxiom review pages built from scripts/analysis recipes
+# (task 261106_campaign-eda-respec). Declared in a recipe's [toolchain]; the build syncs the
+# `figures` group into its own environment under the review root and never installs this project.
+[project]
+name = "aminx-review-toolchain"
+version = "0.1.0"
+requires-python = ">=3.12,<3.14"
+dependencies = []
+
+[dependency-groups]
+figures = [
+    "altair==6.3.0",
+    "jsonschema==4.26.0",
+    "pandas==3.1.0",
+    "pyarrow>=14",
+    "vl-convert-python==1.9.0.post1",
+]
+
+[tool.uv]
+package = false

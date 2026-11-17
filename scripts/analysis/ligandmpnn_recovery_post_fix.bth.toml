@@ -1,0 +1,58 @@
+[experiment]
+hypothesis = "On current aminx (after the LigandMPNN backbone-O fix 82c4ea9b, #2326), LigandMPNN sampled without ligand or side-chain context on the tev_design structures 1LVB, reac1_TS and reac2_TS (seeds 1001-1004, 4 samples each, T=0.1) recovers native residues at a level comparable to ProteinMPNN (mean per state >= 0.30), unlike the near-chance ~0.13 of the 260717 campaign run on aminx 0.1.0a19; ProteinMPNN in the same run is the instrument control (>= 0.30 per state)."
+stage_name = "validation"
+novel = true
+task_id = "261106_campaign-eda-respec"
+# Prior: aminx run 6d38ebaf (campaign stores, aminx 0.1.0a19): LigandMPNN arms 0.13-0.14, ProteinMPNN
+# 0.41, SolubleMPNN 0.39. Published LigandMPNN recovery near ligands is 50-78% (Nature Methods 2025);
+# away from ligands it should not fall far below ProteinMPNN. 0.30 sits between the broken (~0.13)
+# and healthy (~0.40) regimes. Composition entropy and per-residue NLL are recorded, not graded.
+
+[provenance]
+track_packages = ["aminx", "proxide"]
+
+[outcomes.pass]
+condition = "proteinmpnn_recovery_min_state >= 0.30 AND ligandmpnn_recovery_min_state >= 0.30"
+decision = "The fixed build samples sane LigandMPNN libraries; treat pre-82c4ea9b LigandMPNN campaign outputs as defective and re-run what matters."
+reasoning = "With the instrument control healthy, LigandMPNN recovery in the healthy regime on every state attributes the 0.13 to the old build."
+is_residual = false
+
+[outcomes.defect_persists]
+condition = "proteinmpnn_recovery_min_state >= 0.30 AND ligandmpnn_recovery_min_state < 0.20"
+decision = "LigandMPNN is still broken on current aminx; open a defect before anyone re-runs campaigns."
+reasoning = "The control is healthy and LigandMPNN stays near chance, so the fix did not cover this path."
+is_residual = false
+
+[outcomes.instrument_fail]
+condition = "proteinmpnn_recovery_min_state < 0.30"
+decision = "Do not interpret LigandMPNN; the ProteinMPNN control or the recovery measurement is broken."
+reasoning = "A control below the healthy regime means the pipeline, not the model, is in question."
+is_residual = false
+
+[outcomes.marginal]
+condition = "proteinmpnn_recovery_min_state >= 0.30 AND ligandmpnn_recovery_min_state >= 0.20 AND ligandmpnn_recovery_min_state < 0.30"
+decision = "Partly recovered; compare per state and look for a second defect before concluding."
+reasoning = "LigandMPNN is between the broken and healthy regimes."
+is_residual = true
+
+[breakdown]
+waive = "Three states only; every per-state mean is emitted in per_state_ligandmpnn / per_state_proteinmpnn and per seed in recovery_by_seed.csv, so the gating minimums are fully broken down there."
+
+[result_schema]
+ligandmpnn_recovery_min_state = "float"
+ligandmpnn_recovery_mean = "float"
+proteinmpnn_recovery_min_state = "float"
+proteinmpnn_recovery_mean = "float"
+ligandmpnn_composition_entropy_mean = "float"
+proteinmpnn_composition_entropy_mean = "float"
+ligandmpnn_nll_mean = "float"
+proteinmpnn_nll_mean = "float"
+shuffled_recovery_max = "float"
+aminx_version = "str"
+proxide_version = "str"
+n_rows = "int"
+per_state_ligandmpnn = "str"
+per_state_proteinmpnn = "str"
+
+[outputs]
+roots = ["outputs/ligandmpnn_recovery_post_fix"]
