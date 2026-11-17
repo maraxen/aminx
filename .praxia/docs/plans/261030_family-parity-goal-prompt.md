@@ -2,9 +2,11 @@
 title: Goal prompt for MPNN family parity coverage and the stock-MPNN fix
 description: Paste-ready goal prompt for a continuous orchestrated run that executes spec 261030_family-redsox-parity-coverage.
 task_id: 261030_family-parity-coverage
-status: active
+status: superseded
 created: 261030
 ---
+
+> **Status note (2026-11-17, added when rescued from a stale branch; audited against main `ea2a1482`).** **Executed and superseded.** Every phase this prompt lists (ledger sharding, the Thermo shard, the FAMPNN/Caliby/AntiBMPNN vehicles, the Tier 1/2 ledger) was carried out and merged in #269. It points at spec section 6 as settled, but that spec is itself stale (see its banner). Kept as a record only; do not paste it as a new goal.
 
 # Goal prompt
 

@@ -2,9 +2,11 @@
 title: "Redsox and bathos parity coverage for the remaining MPNN families, and the stock-MPNN parity fix"
 description: "Scope for extending the redsox knob gate and bathos parity vehicles to ThermoMPNN, FAMPNN, Caliby and the Tier 1/2 variants, why the ledger wave is slow, and the stock ProteinMPNN/LigandMPNN fix order."
 task_id: 261030_mpnn-parity-scope
-status: draft
+status: superseded
 created: 261030
 ---
+
+> **Status note (2026-11-17, added when rescued from a stale branch; audited against main `ea2a1482`).** **This spec is largely superseded by #269 and was written as a pre-work snapshot (main `ef8810c2`, 2026-10-30). Do not use its section 1 table or defect table as current state.** Since then: ledgers are sharded per family (`tests/knob_gate/ledgers/{thermo,fampnn,caliby,antibmpnn,ab_mpnn,ca_only,cyclic_mpnn,hyper_mpnn,frustrampnn,...}.toml`, each with recorded runs); `run_gate.py` has `--family`; `reference_surfaces.py` covers Caliby, Thermo, AntiBMPNN and FrustraMPNN; vehicles exist (`thermo_mpnn_parity_v2`, `caliby_parity_v2`, `fampnn_parity_v3`, `antibmpnn_parity_v3`, `tier1_variants_parity`); `generate_ar_mask` now takes a keyword-only `order=` and raises `TypeError` on the rank/order ambiguity (defect 9 is fixed); `scoring/ligand_cutoff.py` and its tests exist. Defects 7 and 8 were not re-checked. Line numbers have drifted (`ThermoMPNNOptions` is near `options.py:257`, `HF_REVISION` at `weights.py:56`, `generate_ar_mask` at `autoregression.py:206`). Treat the rest as the historical rationale.
 
 # Redsox and bathos parity coverage, remaining families, and the stock-MPNN fix
 

@@ -5,6 +5,8 @@ status: draft
 task_id: 260929_potts-laser-xtrax-compose
 date: '261006'
 ---
+
+> **Status note (2026-11-17, added when rescued from a stale branch; audited against main `ea2a1482`).** The main finding still holds (the fail-open `_manifest_sha` returning `None` is still in `tests/port/reference/laser_{layers,encoder,order}/`). Stale: `_SCOPED_PREFIXES` in `_coverage.py` is now at lines 30-36, and the claim that this invalidates every ledger row was overtaken by per-row closure staleness (261008). The dump hashes, titanix paths and "0 drifted" live outside git and were not re-verified.
 # LASEr oracle seal is weaker than the Potts one, and the pin lives outside git
 
 Found 261006 while checking which spec gates are enforced by something rather

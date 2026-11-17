@@ -7,6 +7,8 @@ date: '261007'
 sprint: ''
 backlog_ids: ''
 ---
+
+> **Status note (2026-11-17, added when rescued from a stale branch; audited against main `ea2a1482`).** Still a proposal; nothing named `FeatureSpec` exists in `src/`. Pinned to commit `67d7bfcc`, so line numbers have drifted (for example `features.py:294` is now near `:403`, `packer.py:385` near `:395`). The count of hard-coded `25` literals is out of date: there is now a fifth, in `families/fampnn/features.py:495`.
 # The featurizer is four forks and a filename regex
 
 Prompted by the user asking, 2026-10-07: *"how can we make our featurizer more robust and

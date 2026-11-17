@@ -5,6 +5,8 @@ status: proposed
 task_id: 260929_potts-laser-xtrax-compose
 date: '261007'
 ---
+
+> **Status note (2026-11-17, added when rescued from a stale branch; audited against main `ea2a1482`).** A point-in-time result record. The pilot run id matches `laser_sample_dist_confirm.py` and its sidecar. The shard run ids, durations, per-structure deltas and hashes are not in any committed ledger and were not re-verified.
 # LASEr distributional confirm: both cells pass, and the control fired on both
 
 Spec B5/B7. The confirmatory run that `261005_laser-confirm-run-readiness.md` cleared for
