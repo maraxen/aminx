@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Requires `jax>=0.11.2,<0.12` and `jaxlib>=0.11.2,<0.12` (the lock already resolved to 0.11.2). The `cpu` and `cuda12` extras are declared mutually exclusive.
+- **Breaking (install extras):** the `tests`, `docs`, `benchmark` and `dev` extras are gone from the published package metadata. They are now PEP 735 dependency groups, installed with `uv sync --group test` (or `lint`, `docs`, `benchmark`, `dev`). `pip install aminx[tests]` and `aminx[dev]` no longer work; use `pip install --group` (pip 25.1+) or `uv`.
+- New `ebm` extra for the ProteinEBM dependencies (`orbax-checkpoint`, `einops`, `scipy`, `biopython`). A venv that runs the EBM tests needs `--extra ebm`.
+
 ## 0.5.3 (2026-11-13)
 
 ### Changed

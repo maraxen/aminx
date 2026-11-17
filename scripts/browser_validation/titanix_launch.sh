@@ -237,7 +237,7 @@ if [ -n "$(git status --porcelain)" ]; then
   echo "titanix_launch.sh (remote): worktree dirty after LFS materialization" >&2
   exit 1
 fi
-extras=(--extra dev --extra benchmark)
+extras=(--group dev --group benchmark)
 [ "$GPU" != "none" ] && extras+=(--extra cuda12)
 /home/solab/.local/bin/uv sync --frozen "${extras[@]}"
 REMOTE

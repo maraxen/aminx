@@ -101,7 +101,7 @@ export BTH_BIN="$TX_BTH"
 # T11g: BV_CPU (set by --cpu) takes precedence over BV_GPU even if both were somehow set
 # (titanix_launch.sh already refuses that combination) -- no cuda12 extra under --cpu, since
 # the knobs gate's JAX side runs on CPU and the extra is pointless weight for a CPU run.
-UV_EXTRAS=(--extra dev --extra benchmark)
+UV_EXTRAS=(--group dev --group benchmark)
 if [ -n "${BV_GPU:-}" ] && [ -z "${BV_CPU:-}" ]; then
   export CUDA_VISIBLE_DEVICES="$BV_GPU"
   export JAX_PLATFORMS="cuda"
