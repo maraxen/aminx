@@ -1,4 +1,10 @@
-"""EDA plan inspection, panel rendering, and manifest verification adapter for aminx."""
+"""Run telemetry: batch-plan inspection, panel rendering and manifest verification for aminx.
+
+This explains how a run is batched (strategy, cardinality, buckets, memory). It says nothing about
+what a campaign sampled. Statistics of sampled libraries faceted by campaign knobs are specified in
+``.praxia/docs/specs/261106_campaign-library-eda-respec.md``; these plan panels become that view's
+telemetry tab.
+"""
 
 from __future__ import annotations
 
