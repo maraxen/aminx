@@ -306,7 +306,6 @@ FAMILY_EVIDENCE: dict[str, tuple[tuple[str, str, str], ...]] = {
       "aatype_pred = categorical_inverse_cdf(scaled_probs, categorical_u)",
     ),
   ),
-  ),
   "model/laser/joint_decode.py::_draw": (
     ("model/laser/joint_decode.py", "_run_joint_step", "jnp.where(sampling & inputs.disabled, floor, logits)"),
     ("model/laser/joint_decode.py", "decode_residue", 'disabled_residues: tuple[str, ...] = ("X",)'),
