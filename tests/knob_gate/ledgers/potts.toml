@@ -81,32 +81,30 @@
 # previously looked like a missing record.
 
 [sidecar.potts_ar_decode]
-# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row 5ee5d1cb (43a7a3bd, CPU) stays on record.
-bth_run_id = "6e42fb85-9f82-4cd9-bd37-1a576478f81f"
+# REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
+# completed, outcome pass, git_dirty false, 3.8 min. verify_wave.py with the nine explicit full ids: would grade all 16 slugs, 268 PASS, 0 FAIL.
+# Previous row 6e42fb85-9f82-4cd9-bd37-1a576478f81f (31ded6de) stays on record.
+bth_run_id = "139e880f-7936-4709-9fac-3becbc559573"
 
 [sidecar.potts_energy_parity]
-# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row e4bdf56f (43a7a3bd, CPU) stays on record.
-bth_run_id = "7d222cc5-b8e8-4ae2-8409-d94de98300a6"
+# REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
+# completed, outcome pass, git_dirty false, 1.8 min. verify_wave.py with the nine explicit full ids: would grade all 16 slugs, 268 PASS, 0 FAIL.
+# Previous row 7d222cc5-b8e8-4ae2-8409-d94de98300a6 (31ded6de) stays on record.
+bth_run_id = "b986f5ac-45ae-43cc-82d8-abbcb6f2ee50"
 
 [sidecar.potts_ar_refine_exact]
-# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row fa569be0 (43a7a3bd, CPU) stays on record.
-bth_run_id = "54f00c93-59c5-490f-b036-672fc91a612a"
+# REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
+# completed, outcome pass, git_dirty false, 69.9 min (pre-#278 max 169 min; the time is mostly the CPU PyTorch oracle, GPU idle).
+# verify_wave.py with the nine explicit full ids: would grade all 16 slugs, 268 PASS, 0 FAIL.
+# Previous row 54f00c93-59c5-490f-b036-672fc91a612a (31ded6de) stays on record.
+bth_run_id = "20fc950f-6397-4678-b8ce-2d1361149f33"
 
 [sidecar.potts_ddg_megascale]
-# REWRITTEN 261013 at 31ded6de (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Ran with JAX on GPU (AMINX_WAVE_BACKEND=gpu); previous row 0ae1cf5f (43a7a3bd, CPU) stays on record.
-bth_run_id = "0a76c73f-e162-4536-a597-5ed893e7edf1"
+# REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
+# completed, outcome pass, git_dirty false, 20.4 min (232 units, none reused). verify_wave.py with the nine explicit full ids:
+# would grade all 16 slugs, 268 PASS, 0 FAIL.
+# Previous row 0a76c73f-e162-4536-a597-5ed893e7edf1 (31ded6de) stays on record.
+bth_run_id = "c9e3e148-3e97-4092-aed1-51608e1aebfe"
 
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.

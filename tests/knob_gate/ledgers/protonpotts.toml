@@ -4,11 +4,11 @@
 [sidecar]
 
 [sidecar.protonpotts_parity]
-# REWRITTEN 261013 at 78ed94d0 (R6 re-wave on GPUs 2/3 after the #216 merge; protonpotts f32 bands re-measured, see [sidecar.protonpotts_parity]).
-# Cool-tier record: completed, outcome pass, git_dirty false. verify_wave.py with all nine full ids at 78ed94d0:
-# would grade ALL NINE, 135/135 conditions PASS, would NOT grade (none).
-# Run on GPU 2 at 78ed94d0 (13 waves, 99 controls all 'failed', nothing reused, tree clean). The first GPU run e2a185de at
-# 31ded6de FAILED the f32 minimum bands and stays on record; the bands were then widened to the measured CPU+GPU floor
-# (ph_block 5e-5, ph_methods 4e-4), disclosed in the three sidecars. The CPU fallback 66b3099c at ab6897a0 also passed.
-# Previous row f3c82564 (43a7a3bd) stays on record.
-bth_run_id = "818c1dc7-ddc7-4bf8-aba2-076810ddb914"
+# REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278).
+# Run on GPU 1 (AMINX_WAVE_GPUS=1): status completed, outcome pass, git_dirty false, exit_code 0, 26.8 min
+# (pre-#278 max 77.5 min). verify_wave.py with explicit full ids for the nine wave rows: would grade all 16 slugs,
+# 268 PASS, 0 FAIL, would NOT grade (none).
+# Previous row 818c1dc7-ddc7-4bf8-aba2-076810ddb914 (78ed94d0) stays on record, as do e2a185de (31ded6de, failed the
+# f32 minimum bands before they were widened to the measured floor), 66b3099c (CPU fallback, ab6897a0, pass) and
+# 3be5cee2-5362-4ad3-9a10-625001312056 (pass, 2026-11-03).
+bth_run_id = "7ba210c2-067c-43ba-98be-c355b905fb10"
