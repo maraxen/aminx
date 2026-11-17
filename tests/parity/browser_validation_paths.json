@@ -582,6 +582,9 @@
   "src/aminx/model/laser/proofread.py::focus_rows": {
     "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
   },
+  "src/aminx/model/laser/proofread.py::pregenerate_production_masks": {
+    "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
+  },
   "src/aminx/model/laser/proofread.py::proofread_dropout": {
     "internal": "LASErMPNN family internals (PottsMPNN/LASErMPNN sprint, task 260929_potts-laser-xtrax-compose). The browser inference path is ProteinMPNN sampling only, so no P-ID exercises this module; it is covered by the tests/port parity tiers and the laser_* redsox gate slugs instead."
   },
