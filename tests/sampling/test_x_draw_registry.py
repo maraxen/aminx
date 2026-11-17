@@ -260,13 +260,14 @@ REGISTRY: dict[str, tuple[str, str]] = {
     "(debt #3121/#3122). Vectorisation: the item, temperature and sample loops (driver.py "
     "~327-345) are Python loops, which the vectorize rule treats as a defect. Not fixed here.",
   ),
-  "families/fampnn/driver.py::mar_sample._mar_step": (
+  "families/fampnn/sampler.py::categorical_inverse_cdf": (
     "family_excluded",
-    "FAMPNN MAR unmasking: categorical over the first 20 logits only, which drops X at index 20 "
-    "of FAMPNN_ALPHABET ARNDCQEGHILKMFPSTWYVX. Runs inside a fori_loop (allowlisted). Caller-side "
-    "defects, not fixed here: the per-sample key comes from fold_in(seed + idx*100 + t_idx) "
-    "(driver.py:528), which collides at 100+ temperatures (same as caliby, debt #3121/#3122), and "
-    "the samples and temperatures are a Python loop calling mar_sample (driver.py:526-535).",
+    "FAMPNN inverse-CDF categorical draw (the shared primitive of mar_sample_upstream). X (index 20 of "
+    "FAMPNN_ALPHABET ARNDCQEGHILKMFPSTWYVX) is excluded upstream of the draw: mask_logits_and_scale "
+    "sets the X logit to -1e9 before the temperature division, and denoiser_call draws from those "
+    "scaled probabilities. Uniforms are pre-drawn per MAR step from a single key (sampler.py "
+    "NoiseBundle), so the old per-sample fold_in(seed + idx*100 + t_idx) collision at 100+ "
+    "temperatures no longer applies to this path.",
   ),
 }
 
@@ -292,12 +293,17 @@ FAMILY_EVIDENCE: dict[str, tuple[tuple[str, str, str], ...]] = {
     ("families/protonpotts_mpnn/ph_export.py", "make_visit.visit", "ph_descent.block_objective("),
     ("families/protonpotts_mpnn/ph_descent.py", "_allowed_tokens", "member & valid_tokens[None, :]"),
   ),
-  "families/fampnn/driver.py::mar_sample._mar_step": (
-    ("families/fampnn/driver.py", "mar_sample._mar_step", "logits_20 = fwd_out.logits_fampnn[:, :20] / t_eff"),
+  "families/fampnn/sampler.py::categorical_inverse_cdf": (
+    ("families/fampnn/sampler.py", "mask_logits_and_scale", "logits = logits.at[..., X_TOKEN].set(_X_LOGIT)"),
     (
-      "families/fampnn/driver.py",
-      "mar_sample._mar_step",
-      "sampled_aa = jax.random.categorical(k_cat, logits_20, axis=-1)",
+      "families/fampnn/sampler.py",
+      "denoiser_call",
+      "logits_x, scaled_probs = mask_logits_and_scale(fwd.logits_fampnn.astype(dtype), temperature)",
+    ),
+    (
+      "families/fampnn/sampler.py",
+      "denoiser_call",
+      "aatype_pred = categorical_inverse_cdf(scaled_probs, categorical_u)",
     ),
   ),
   "model/laser/joint_decode.py::_draw": (

@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
+import sys
 import tomllib
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
@@ -49,6 +51,9 @@ _WEIGHT_PREFIXES = (
   "thermo_",
   "tier1_",
   "ca_only_",
+  "antibmpnn_",
+  "fampnn_",
+  "caliby_",
   "frustrampnn_",
 )
 
@@ -96,13 +101,60 @@ def default_catalog_dir() -> Path:
   return Path.home() / ".bth" / "catalog"
 
 
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def _resolve_run_via_bth_sql(run_id: str) -> CoolRun | None:
+  """Log-mode catalogs (bathos >= 0.15) write no cool-tier parquet; the run row lives in index.db.
+
+  Reads exactly the ``_RUN_FIELDS`` columns through ``bth sql`` (no duckdb import: the venv does not carry
+  it). Any failure or shape mismatch is ``None``, the same answer as a missing fragment.
+  """
+  if not _UUID_RE.fullmatch(run_id):
+    return None
+  sql = (
+    f"select {', '.join(_RUN_FIELDS)} from runs where id = '{run_id}' "  # noqa: S608 -- id validated above
+    "and project_slug = 'aminx'"
+  )
+  try:
+    proc = subprocess.run(
+      ["bth", "sql", sql, "--catalog-dir", str(default_catalog_dir()), "--allow-hidden"],
+      capture_output=True,
+      text=True,
+      timeout=120,
+      check=False,
+    )
+    rows = json.loads(proc.stdout).get("rows") if proc.returncode == 0 else None
+  except (OSError, subprocess.SubprocessError, ValueError):
+    return None
+  if not isinstance(rows, list) or len(rows) != 1 or len(rows[0]) != len(_RUN_FIELDS):
+    return None
+  values = dict(zip(_RUN_FIELDS, rows[0], strict=True))
+  try:
+    argv = json.loads(values["argv"]) if isinstance(values["argv"], str) else values["argv"]
+    output_paths = json.loads(values["output_paths"]) if isinstance(values["output_paths"], str) else values["output_paths"]
+  except ValueError:
+    return None
+  if not isinstance(argv, list) or not isinstance(output_paths, list):
+    return None
+  return CoolRun(
+    status=str(values["status"]),
+    outcome=str(values["outcome"]),
+    git_dirty=bool(values["git_dirty"]),
+    git_hash=str(values["git_hash"]),
+    sidecar_sha256=str(values["sidecar_sha256"]),
+    argv=[str(part) for part in argv],
+    output_paths=[str(part) for part in output_paths],
+  )
+
+
 def default_resolve_run(run_id: str) -> CoolRun | None:
-  """Read the cool-tier fragment ``<catalog>/runs/aminx/run_<id>.parquet``."""
+  """Read the cool-tier fragment ``<catalog>/runs/aminx/run_<id>.parquet``, else the log-mode run row."""
   import pyarrow.parquet as pq
 
   path = default_catalog_dir() / "runs" / "aminx" / f"run_{run_id}.parquet"
   if not path.is_file():
-    return None
+    return _resolve_run_via_bth_sql(run_id)
   table = pq.read_table(path)
   if table.num_rows < 1:
     return None

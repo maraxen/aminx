@@ -500,7 +500,7 @@ def _as_float(value: NDArray[np.generic], dtype: _FloatDtype) -> NDArray[np.floa
 
 
 def _geometry() -> dict[str, NDArray[np.generic]]:
-  with np.load(_GEOMETRY) as blob:
+  with np.load(_GEOMETRY, allow_pickle=True) as blob:
     return {key: blob[key] for key in blob.files}
 
 

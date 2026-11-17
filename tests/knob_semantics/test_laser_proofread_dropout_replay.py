@@ -22,6 +22,7 @@ from aminx.model.laser.proofread import (
     _Plan,
     _fit_keep,
     conditional_focus_probs,
+    pregenerate_production_masks,
     proofread_dropout,
 )
 
@@ -508,3 +509,26 @@ def test_reconcile_discounts_drawn_calls_but_still_catches_a_short_catalog() -> 
   short.take(path, jnp.ones((4, 8)))
   with pytest.raises(RuntimeError, match="reconciliation failed"):
     short.reconcile()
+
+
+def test_pregenerate_production_masks_matches_sequential_plan_draw() -> None:
+  """Batched vmap mask generation must match sequential _Plan._draw bit for bit."""
+  key = jax.random.PRNGKey(12345)
+  paths = {
+    "protein_decoder_layers.0.hetgat": ((8, 16), 10),
+    "chi_prediction_layers.1": ((12,), 5),
+  }
+  batched = pregenerate_production_masks(key, paths, drop_p=0.1)
+  for path, (shape, count) in paths.items():
+    plan = _Plan(
+      scalar=True,
+      vector=False,
+      masks=None,
+      drop_p=0.1,
+      dropout_key=key,
+    )
+    like = jnp.zeros(shape)
+    for c in range(count):
+      expected = plan._draw(path, c, like)
+      assert jnp.array_equal(batched[path][c], expected)
+

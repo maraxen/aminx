@@ -19,6 +19,9 @@ from knob_gate import reference_surfaces
 from knob_gate._outcomes import passed_nodeids
 
 from aminx.run.options import (
+  AntiBMPNNOptions,
+  CalibyOptions,
+  FAMPNNOptions,
   FrustraMPNNOptions,
   LaserOptions,
   PottsMPNNOptions,
@@ -87,6 +90,9 @@ TGT = (
   LaserOptions,
   ProtonPottsOptions,
   ThermoMPNNOptions,
+  CalibyOptions,
+  AntiBMPNNOptions,
+  FAMPNNOptions,
   FrustraMPNNOptions,
 )
 TGT_F = {field.name for cls in TGT for field in fields(cls)}
@@ -101,6 +107,9 @@ NEW_FIELDS = (
   | {field.name for field in fields(LaserOptions)}
   | {field.name for field in fields(ProtonPottsOptions)}
   | {field.name for field in fields(ThermoMPNNOptions)}
+  | {field.name for field in fields(CalibyOptions)}
+  | {field.name for field in fields(AntiBMPNNOptions)}
+  | {field.name for field in fields(FAMPNNOptions)}
   | {field.name for field in fields(FrustraMPNNOptions)}
   | {"omit_aa", "omit_aa_per_position", "output_kind"}
 )

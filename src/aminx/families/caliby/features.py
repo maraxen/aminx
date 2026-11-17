@@ -392,13 +392,12 @@ class CalibyTokenFeatures(eqx.Module):
     # Replace masked/missing atoms with CA before virtual CB & RBF computation (atom_mpnn.py:424)
     xyz_ca_filled = jnp.where(mask23[..., None] > 0, xyz, xyz[:, 1:2, :])
 
-    # Populate virtual CB at index 4 where CB is missing (e.g., Glycine or backbone-only)
+    # Upstream (caliby/model/seq_denoiser/denoisers/seq_design/atom_mpnn.py: CA-fill at :196, version-1
+    # virtual CB inside _get_rbf_all at :278-303) never writes a
+    # virtual CB into atom slot 4: the version-0 grid uses the CA-filled atoms as they are, and the
+    # version-1 path adds a virtual CB computed from the CA-filled N, CA, C only as the fifth
+    # backbone atom of the 5x5 block. Slot 4 of the backbone-sidechain block stays the CA-filled atom.
     cb_virtual = make_virtual_cb(xyz_ca_filled[:, 0, :], xyz_ca_filled[:, 1, :], xyz_ca_filled[:, 2, :])
-    has_bb = (mask23[:, 0] > 0) & (mask23[:, 1] > 0) & (mask23[:, 2] > 0) & (~lig_bool)
-    use_virtual_cb = has_bb & (mask23[:, 4] <= 0)
-    cb_coords = jnp.where(use_virtual_cb[:, None], cb_virtual, xyz_ca_filled[:, 4, :])
-
-    xyz_with_cb = jnp.concatenate([xyz_ca_filled[:, :4, :], cb_coords[:, None, :], xyz_ca_filled[:, 5:, :]], axis=1)
 
     e_positional = self.embeddings(
       residue_idx=residue_idx,
@@ -414,8 +413,8 @@ class CalibyTokenFeatures(eqx.Module):
 
     if self.model_version == 0:
       # Vectorized 5D broadcast over all 23 x 23 atom pairs: (L, K, 23, 23, 3)
-      xyz_i = xyz_with_cb[:, None, :, None, :]
-      xyz_j = xyz_with_cb[e_idx][:, :, None, :, :]
+      xyz_i = xyz_ca_filled[:, None, :, None, :]
+      xyz_j = xyz_ca_filled[e_idx][:, :, None, :, :]
       diff_all = xyz_i - xyz_j
       dist_all = jnp.sqrt(jnp.sum(diff_all * diff_all, axis=-1) + 1e-6)
       rbf_all = compute_rbf_grid(dist_all, d_count=self.num_rbf)
@@ -424,15 +423,15 @@ class CalibyTokenFeatures(eqx.Module):
     else:
       # model_version == 1:
       # 1. 5x5 backbone-to-backbone RBFs (N, CA, C, O, CB) -> 25 * 16 = 400 channels
-      bb5_xyz = xyz_with_cb[:, _BB5_IDXS, :]
+      bb5_xyz = jnp.concatenate([xyz_ca_filled[:, :4, :], cb_virtual[:, None, :]], axis=1)
       bb_diff = bb5_xyz[:, None, :, None, :] - bb5_xyz[e_idx][:, :, None, :, :]
       bb_dist = jnp.sqrt(jnp.sum(bb_diff * bb_diff, axis=-1) + 1e-6)
       rbf_bb = compute_rbf_grid(bb_dist, d_count=self.num_rbf)
       rbf_bb_flat = rbf_bb.reshape(num_tokens, num_k, 5 * 5 * self.num_rbf)
 
       # 2. 4x10 protein-backbone (N, CA, C, O) to sidechain/ligand slots 4..13 RBFs -> 40 * 16 = 640 channels
-      bb4_xyz = xyz_with_cb[:, :4, :]
-      sc10_xyz = xyz_with_cb[:, 4:14, :]
+      bb4_xyz = xyz_ca_filled[:, :4, :]
+      sc10_xyz = xyz_ca_filled[:, 4:14, :]
       sc_diff = bb4_xyz[:, None, :, None, :] - sc10_xyz[e_idx][:, :, None, :, :]
       sc_dist = jnp.sqrt(jnp.sum(sc_diff * sc_diff, axis=-1) + 1e-6)
       rbf_sc = compute_rbf_grid(sc_dist, d_count=self.num_rbf)

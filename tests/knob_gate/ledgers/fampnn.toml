@@ -1,0 +1,10 @@
+# Sidecar ledger shard for FAMPNN vehicle runs.
+# Owning task records [sidecar.fampnn_parity_v3] after the vehicle run on titanix.
+
+[sidecar]
+
+[sidecar.fampnn_parity_v3]
+# Recorded 261116 at 365d174d (P4 integration head after the origin/main 0.5.3 merge; CPU-pinned, JAX_PLATFORMS=cpu).
+# Cool-tier row is absent (bathos log mode); the run resolves through bth sql (see test_resolve_run_log_mode.py).
+# verify_wave.py at 7717cc3e: every step 1c condition PASS.
+bth_run_id = "8210a68f-c7be-475e-bdce-c897d5b94e58"

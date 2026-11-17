@@ -1,0 +1,10 @@
+# Sidecar ledger shard for Caliby vehicle runs.
+# Owning task records [sidecar.caliby_parity_v2] after the vehicle run on titanix.
+
+[sidecar]
+
+[sidecar.caliby_parity_v2]
+# Recorded 261116 at 365d174d (P4 integration head after the origin/main 0.5.3 merge; CPU-pinned, JAX_PLATFORMS=cpu).
+# Cool-tier row is absent (bathos log mode); the run resolves through bth sql (see test_resolve_run_log_mode.py).
+# verify_wave.py at 7717cc3e: every step 1c condition PASS.
+bth_run_id = "3f42635a-18a9-4bd3-aa6b-f2b037936258"

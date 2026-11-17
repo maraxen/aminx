@@ -32,6 +32,7 @@ than re-deriving arithmetic that could drift.
 
 from __future__ import annotations
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -43,15 +44,21 @@ _SEQ = jnp.asarray(np.asarray([1, 2], dtype=np.int32))
 
 # Complex and unbound tables differ, or `base - unbound` is zero and every
 # comparison below collapses.
-_ETAB = jnp.asarray(np.arange(_L * 1 * _A * _A, dtype=np.float64).reshape(_L, 1, _A, _A))
-_UNBOUND = jnp.asarray(
-  (np.arange(_L * 1 * _A * _A, dtype=np.float64).reshape(1, _L, 1, _A, _A) * 0.25) + 3.0,
-)
+def _etab() -> jax.Array:
+  # Built per call, not at import: another module can enable x64 while pytest collects, and the
+  # conftest leak guard then resets the flag, which left these float64 against float32 internals.
+  return jnp.asarray(np.arange(_L * 1 * _A * _A, dtype=np.float64).reshape(_L, 1, _A, _A))
+
+
+def _unbound() -> jax.Array:
+  return jnp.asarray(
+    (np.arange(_L * 1 * _A * _A, dtype=np.float64).reshape(1, _L, 1, _A, _A) * 0.25) + 3.0,
+  )
 
 
 def _tables(inter: list[bool]) -> BindingTables:
   return BindingTables(
-    etab=_UNBOUND,
+    etab=_unbound(),
     e_idx=jnp.zeros((1, _L, 1), dtype=jnp.int32),
     pad_valid=jnp.ones((1, _L), dtype=jnp.bool_),
     complex_index=jnp.arange(_L, dtype=jnp.int32)[None, :],
@@ -66,7 +73,7 @@ def _vector(position: int, tables: BindingTables, *, binding: str, tied: bool) -
     _energy_vector(
       _SEQ,
       jnp.asarray(position, dtype=jnp.int32),
-      _ETAB,
+      _etab(),
       jnp.zeros((_L, 1), dtype=jnp.int32),
       jnp.ones((_L,), dtype=jnp.bool_),
       tables,

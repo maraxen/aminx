@@ -9,6 +9,7 @@ from pathlib import Path
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 
 from aminx.families.caliby import (
   AMINX21_ALPHABET,
@@ -597,6 +598,16 @@ def _extract_raw_caliby_packer_sd(packer: CalibySidechainMLP) -> dict[str, np.nd
   return raw
 
 
+@pytest.mark.skip(
+  reason=(
+    "Retired 2026-11-17: this test grades aminx against a hand-written PyTorch replica of the Caliby "
+    "Potts head and encoder, and that replica carries the three defects fixed in 90e6a5c9 (J scale on "
+    "one factor, transposed right factor, k_neighbors_potts 30) plus the pre-fix slot-4 virtual CB. "
+    "Authority is now the sealed upstream dump graded by scripts/parity/caliby_parity_v2.py "
+    "(redsox slug caliby_parity_v2, whose negative controls are exactly those defects). Do not loosen "
+    "the 1e-6 band to make this pass."
+  )
+)
 def test_caliby_live_pytorch_vs_jax_graded_parity() -> None:
   """Verify live PyTorch-vs-JAX graded parity (f64 < 1e-6, f32 < 1e-4) and negative control via raw_sd."""
   import contextlib

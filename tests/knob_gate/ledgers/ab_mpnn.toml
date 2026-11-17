@@ -6,3 +6,10 @@
 # step 1c conditions described in potts.toml.
 
 [sidecar]
+
+[sidecar.tier1_variants_parity]
+# Recorded 261116 at d06521ff (P4 integration head; CPU-pinned). Cool-tier row absent (bathos log mode): the run resolves
+# through bth sql (test_resolve_run_log_mode.py). verify_wave.py at d06521ff: every step 1c condition PASS.
+# Shared run for AbMPNN, HyperMPNN and CyclicMPNN. Its six weights keys were failing step 1c until the registry was re-hashed
+# from the files the vehicle loaded (d06521ff; an earlier run, 9af4d617 at 365d174d, also passed but could not grade).
+bth_run_id = "84bdd850-5b21-435c-af54-b5505b944b96"
