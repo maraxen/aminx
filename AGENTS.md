@@ -4,11 +4,11 @@
 
 | Action | Command |
 | :--- | :--- |
-| **Type Check** | `uv run ty check` |
-| **Lint** | `uv run ruff check .` |
-| **Format** | `uv run ruff format .` |
-| **Tests** | `uv run pytest` |
-| **JAX advisory** | `uv run jaxlint check src --no-doc` (optional; not a CI gate) |
+| **Type Check** | `uv run --group lint ty check` |
+| **Lint** | `uv run --group lint ruff check .` |
+| **Format** | `uv run --group lint ruff format .` |
+| **Tests** | `uv run --group test pytest` |
+| **JAX advisory** | `uv run --group lint jaxlint check src --no-doc` (optional; not a CI gate) |
 
 ## Tech Stack
 

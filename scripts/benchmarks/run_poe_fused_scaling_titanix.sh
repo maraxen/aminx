@@ -2,7 +2,7 @@
 # Run the #2158 PoE scaling cells on a SHARED titanix GPU, one process per cell.
 #
 # Pre-registered: scripts/benchmarks/poe_fused_scaling.bth.toml.  Usage (from the repo root on
-# titanix, after `uv sync --frozen --extra cuda12 --extra dev` into this tree's .venv):
+# titanix, after `uv sync --frozen --extra cuda12 --group dev` into this tree's .venv):
 #
 #   bash scripts/benchmarks/run_poe_fused_scaling_titanix.sh <out-dir> <code-commit> [--smoke]
 #

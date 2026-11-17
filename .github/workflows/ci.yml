@@ -142,11 +142,11 @@ jobs:
             xla-${{ runner.os }}-py3.13-
       - name: Install dependencies and run tests
         run: |
-          # --extra dev brings ast-grep-cli (`sg` binary for lint gates; pyproject.toml:113).
+          # --group lint brings ast-grep-cli (`sg` binary for lint gates).
           # --extra laser brings ProDy, which families/laser_mpnn/featurize.py imports. Without it
           # every tests/port/test_laser_*.py and tests/knob_semantics/test_laser_*.py module fails at
           # COLLECTION, so the LASEr waves were never actually executed here (aminx #165 CI).
-          uv sync --extra cpu --extra dev --extra tests --extra onnx --extra agent --extra laser --extra eda
+          uv sync --extra cpu --group test --group lint --extra onnx --extra agent --extra laser --extra eda --extra ebm
 
           # The ONNX parity tests skip (rather than error) when the toolchain is absent, so a broken install
           # would quietly turn them into skips. Fail the job instead (aminx debt #2392).

@@ -8,7 +8,8 @@ version = "0.5.3"
 description = "Aminx: A functional interface for ProteinMPNN"
 requires-python = ">=3.13"
 dependencies = [
-    "jax>=0.4.35",
+    "jax>=0.11.2,<0.12",
+    "jaxlib>=0.11.2,<0.12",
     "jaxtyping>=0.2.30",
     "joblib>=1.4",
     "psutil>=5.9",
@@ -55,36 +56,11 @@ agent = [
 laser = [
     "prody>=2.6.1",
 ]
-benchmark = [
-    "torch>=2.12.0",
-    "prody>=2.6.1",
-]
-docs = [
-    "sphinx",
-    "sphinx-autodoc-typehints",
-    "sphinx-autobuild",
-    "myst-parser",
-    "sphinx-copybutton",
-    "sphinx-design",
-    "sphinxext-rediraffe",
-    "sphinx-book-theme",
-    "myst-nb",
-]
-tests = [
-    "pytest",
-    "pytest-cov",
-    "pytest-timeout>=2.3.1",
-    "pyarrow>=18",
-    "chex",
-    "ty",
-    "foldcomp",
-    "pytest-xdist",
-    "mdtraj",
-    "beartype>=0.18.0",
-    # Heavy parity packer path (`find_spec("Bio")`); reference `sc_utils` / PDB IO.
+ebm = [
+    "orbax-checkpoint>=0.11.17",
+    "einops",
+    "scipy>=1.12.0",
     "biopython>=1.83",
-    # Reference LigandMPNN `sc_utils` does `import tree` (DeepMind `dm-tree`).
-    "dm-tree>=0.1.8",
 ]
 # The ONNX export/parity toolchain (onnx, onnxruntime, jax2onnx). Declared through xtrax so its pins and the
 # reason for them live in one place. Tests that need it (tests/export/test_layer_b_ort_parity.py,
@@ -93,42 +69,18 @@ tests = [
 onnx = [
     "xtrax[onnx]==0.4.1b8",
 ]
-dev = [
-  "ruff",
-  "ty",
-  # Optional JAX static checks (PyPI). Not a merge gate — run locally when debugging perf/JIT.
-  "jaxlint>=0.1.0a1",
-  "sphinx",
-  "sphinx-autodoc-typehints",
-  "sphinx-autobuild",
-  "myst-parser",
-  "sphinx-copybutton",
-  "sphinx-design",
-  "sphinxext-rediraffe",
-  "sphinx-book-theme",
-  "myst-nb",
-  "pytest",
-  "pytest-cov",
-  "chex",
-  "foldcomp",
-  "mdtraj",
-  # Provides the `sg` binary. tests/lint/test_potts_import_boundary.py and
-  # tests/lint/test_rs6b_flat_field_gate.py SKIP without it, so six of the
-  # sixteen lint tests silently pass by not running when it is absent.
-  "ast-grep-cli>=0.45",
-]
 foldcomp = [
     "foldcomp",
 ]
 cpu = [
-    "jax[cpu]>=0.4.35",
+    "jax[cpu]>=0.11.2,<0.12",
 ]
 cuda12 = [
     # No jax-cuda12-plugin wheels exist for darwin; gate to linux so the
     # universal lockfile (which must resolve for both platforms per
     # [tool.uv.environments] below) doesn't fail project-wide when this
     # extra is invoked.
-    "jax[cuda12]>=0.4.35; sys_platform == 'linux'",
+    "jax[cuda12]>=0.11.2,<0.12; sys_platform == 'linux'",
 ]
 
 [tool.ruff]
@@ -315,20 +267,21 @@ required-sections = ["Parameters", "Returns"]
 "scripts/**" = ["JD001", "JD002", "JD004", "JD005"]
 
 [dependency-groups]
-benchmark = [
-    "colabdesign @ git+https://github.com/sokrypton/ColabDesign.git@e31a56fe1d9b4de25c8697f3a28b75892941cc72",
-    "prody>=2.6.1",
-]
-dev = [
-    # Phase 0 alphabet conformance (decision D4). DEV GROUP ONLY -- nothing under src/
+test = [
+    # Phase 0 alphabet conformance (decision D4). DEV/TEST GROUP ONLY -- nothing under src/
     # imports this, so no runtime dependency edge is created.
     # See tests/test_alphabet_conformance.py.
     "alphex>=0.1.0a1",
     "torch>=2.12.0",
     "pytest>=8.0.0",
+    "pytest-cov",
     "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.5.0",
     "pyarrow>=18",
+    "chex",
+    "foldcomp",
+    "mdtraj",
+    "beartype>=0.18.0",
     # Heavy parity: packer test requires Bio (sc_utils PDB IO) and dm-tree (sc_utils import tree).
     "biopython>=1.83",
     "dm-tree>=0.1.8",
@@ -337,6 +290,39 @@ dev = [
     # tests/parity/test_parity_report_artifacts.py renders figures. matplotlib used to
     # arrive transitively (via jax-md/pymatgen) and dropped out with the proxide 0.2.0 lock.
     "matplotlib",
+    # EBM tests require orbax-checkpoint and einops.
+    "orbax-checkpoint>=0.11.17",
+    "einops",
+]
+lint = [
+    "ruff",
+    "ty",
+    # Optional JAX static checks (PyPI). Not a merge gate — run locally when debugging perf/JIT.
+    "jaxlint>=0.1.0a1",
+    # Provides the `sg` binary. tests/lint/test_potts_import_boundary.py and
+    # tests/lint/test_rs6b_flat_field_gate.py SKIP without it.
+    "ast-grep-cli>=0.45",
+]
+docs = [
+    "sphinx",
+    "sphinx-autodoc-typehints",
+    "sphinx-autobuild",
+    "myst-parser",
+    "sphinx-copybutton",
+    "sphinx-design",
+    "sphinxext-rediraffe",
+    "sphinx-book-theme",
+    "myst-nb",
+]
+benchmark = [
+    "torch>=2.12.0",
+    "prody>=2.6.1",
+    "colabdesign @ git+https://github.com/sokrypton/ColabDesign.git@e31a56fe1d9b4de25c8697f3a28b75892941cc72",
+]
+dev = [
+    { include-group = "test" },
+    { include-group = "lint" },
+    { include-group = "docs" },
 ]
 
 [tool.setuptools.package-data]
@@ -350,6 +336,9 @@ aminx = ["py.typed", "agent_plugin.json", "families/laser_mpnn/ideal_geometry.np
 aminx = ["model_params/*.eqx.zst"]
 
 [tool.uv]
+conflicts = [
+    [{ extra = "cpu" }, { extra = "cuda12" }],
+]
 # Only resolve for platforms we actually target (including WSL which reports as linux)
 environments = [
     "sys_platform == 'darwin' and python_version >= '3.13'",
