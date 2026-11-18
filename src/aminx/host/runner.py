@@ -996,6 +996,14 @@ def score(  # noqa: PLR0915
             computation never used (debt #1717); it is kept, as ``None``, so callers that
             index it get an explicit "not applicable" rather than a KeyError or noise.
 
+  Notes
+  -----
+  Batch composition (#3487). A sequence's scores and logits never depend on the CONTENT of the
+  other sequences in the call (bitwise, at a fixed number of sequences), but can differ by float
+  reassociation between calls with different numbers of sequences, because the candidate axis
+  is vmapped. The bound is ``aminx.scoring.score.SCORE_BATCH_COMPOSITION_ATOL``; compare scores
+  across batch compositions with that tolerance, not bitwise.
+
   Raises
   ------
   NotImplementedError
