@@ -843,6 +843,24 @@ def _model_signature(model: Any) -> Hashable:  # noqa: ANN401
   return (str(jax.tree.structure(arrays)), str(jax.tree.structure(static)), leaves)
 
 
+# Largest (mask, sequence) tile scored at once by ScoreSplitFns.score_pairs (#3485). The planner's
+# per-pair estimate lowers ONE candidate, and the batched program outgrows it at large tiles: on a
+# 24 GiB TITAN RTX at L=512 the device-sized budget planned 186-pair tiles (~15 GB estimated) and
+# the call ran out of memory asking for 11 GiB more, while 6-, 12- and 24-pair tiles peaked at
+# 0.58, 1.06 and 1.79 GiB and took the same ~16 s for 448 pairs. Throughput is flat past a few
+# dozen pairs, so the tile is capped here.
+_MAX_PAIR_TILE = 32
+
+
+def _pair_tile(strategy: Any, n_pairs: int) -> int | None:  # noqa: ANN401
+  """Tile size for the pair map: the planner's, capped at ``_MAX_PAIR_TILE``; ``None`` = one vmap."""
+  from xtrax.tiling import Vmap  # noqa: PLC0415
+
+  planned = n_pairs if isinstance(strategy, Vmap) else int(strategy.batch_size)
+  tile = max(1, min(planned, _MAX_PAIR_TILE))
+  return None if tile >= n_pairs else tile
+
+
 def _score_noise_levels(spec: Any) -> tuple[float, ...]:  # noqa: ANN401
   """The spec's backbone-noise levels as floats; ``(0.0,)`` when none are set."""
   return tuple(float(level) for level in (spec.backbone_noise or (0.0,)))
@@ -1180,7 +1198,6 @@ def score(  # noqa: PLR0915
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
   from aminx.tiling.dispatch import make_axis_dispatch  # noqa: PLC0415
   from aminx.tiling.planner import plan_axis_strategy  # noqa: PLC0415
-  from xtrax.tiling import Vmap  # noqa: PLC0415
 
   all_scores, all_logits = [], None
   if spec.return_logits:
@@ -1377,7 +1394,7 @@ def score(  # noqa: PLR0915
       _stacked_sequences: jax.Array = score_sequences,
       _ar_mask: jax.Array | None = batch_ar_mask,
       _ar_masks: jax.Array | None = batch_ar_masks,
-      _pair_chunk: int | None = None if isinstance(strategy, Vmap) else int(strategy.batch_size),
+      _pair_chunk: int | None = _pair_tile(strategy, n_masks * n_candidates),
     ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
       ligand_kwargs = (
         {}

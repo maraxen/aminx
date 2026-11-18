@@ -43,3 +43,14 @@ def test_axis_that_fits_stays_vmapped() -> None:
 def test_override_still_wins() -> None:
   strategy = plan_axis_strategy(N_CANDIDATES, 448, 5, activation_bytes_per_element=_PER_PAIR)
   assert strategy == ChunkedMap(batch_size=5)
+
+
+def test_pair_tile_is_capped() -> None:
+  """The score_pairs tile never exceeds _MAX_PAIR_TILE, whatever the planner allows (#3485)."""
+  from aminx.host.runner import _MAX_PAIR_TILE, _pair_tile  # noqa: PLC0415
+
+  assert _pair_tile(Vmap(), 7) is None
+  assert _pair_tile(Vmap(), 448) == _MAX_PAIR_TILE
+  assert _pair_tile(ChunkedMap(batch_size=186), 448) == _MAX_PAIR_TILE
+  assert _pair_tile(ChunkedMap(batch_size=6), 448) == 6
+  assert _pair_tile(ChunkedMap(batch_size=40), 20) is None
