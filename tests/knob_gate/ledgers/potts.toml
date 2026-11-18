@@ -84,27 +84,31 @@
 # REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
 # completed, outcome pass, git_dirty false, 3.8 min. verify_wave.py with the nine explicit full ids: would grade all 16 slugs, 268 PASS, 0 FAIL.
 # Previous row 6e42fb85-9f82-4cd9-bd37-1a576478f81f (31ded6de) stays on record.
-bth_run_id = "139e880f-7936-4709-9fac-3becbc559573"
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run 139e880f stays on record.
+bth_run_id = "ee7182b9-e96b-4c4f-89ef-59697bb81dd8"
 
 [sidecar.potts_energy_parity]
 # REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
 # completed, outcome pass, git_dirty false, 1.8 min. verify_wave.py with the nine explicit full ids: would grade all 16 slugs, 268 PASS, 0 FAIL.
 # Previous row 7d222cc5-b8e8-4ae2-8409-d94de98300a6 (31ded6de) stays on record.
-bth_run_id = "b986f5ac-45ae-43cc-82d8-abbcb6f2ee50"
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run b986f5ac stays on record.
+bth_run_id = "f9742384-8176-4237-b390-b742b1b59fa1"
 
 [sidecar.potts_ar_refine_exact]
 # REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
 # completed, outcome pass, git_dirty false, 69.9 min (pre-#278 max 169 min; the time is mostly the CPU PyTorch oracle, GPU idle).
 # verify_wave.py with the nine explicit full ids: would grade all 16 slugs, 268 PASS, 0 FAIL.
 # Previous row 54f00c93-59c5-490f-b036-672fc91a612a (31ded6de) stays on record.
-bth_run_id = "20fc950f-6397-4678-b8ce-2d1361149f33"
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run 20fc950f stays on record.
+bth_run_id = "80f7acec-a136-4ae3-a0b7-fe75b4407c31"
 
 [sidecar.potts_ddg_megascale]
 # REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278; GPU 1, clean tree).
 # completed, outcome pass, git_dirty false, 20.4 min (232 units, none reused). verify_wave.py with the nine explicit full ids:
 # would grade all 16 slugs, 268 PASS, 0 FAIL.
 # Previous row 0a76c73f-e162-4536-a597-5ed893e7edf1 (31ded6de) stays on record.
-bth_run_id = "c9e3e148-3e97-4092-aed1-51608e1aebfe"
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run c9e3e148 stays on record.
+bth_run_id = "ccd60cbd-0d24-4459-8686-f1a6d7bb6fbf"
 
 # NOT YET LISTED: nothing. All seven manifest vehicle slugs now carry a verified
 # row, so check_branch_coverage should leave instrument_invalid.
