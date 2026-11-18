@@ -155,9 +155,14 @@ def validate_mpnn_sequences(sequences: Sequence[str]) -> int:
   return lengths.pop()
 
 
-def load_and_validate_masks(path: str | Path, designable_mask: Sequence[int], length: int) -> np.ndarray:
+def load_and_validate_masks(
+  path: str | Path, designable_mask: Sequence[int], length: int
+) -> np.ndarray:
   """Load the ``(K, L, L)`` stack and apply ScoringSpecification's mask + designable checks."""
-  from aminx.run.specs import _validated_designable_mask, _validated_scoring_ar_masks  # noqa: PLC0415
+  from aminx.run.specs import (  # noqa: PLC0415
+    _validated_designable_mask,
+    _validated_scoring_ar_masks,
+  )
 
   masks = _validated_scoring_ar_masks(np.load(Path(path), allow_pickle=False))
   if masks.shape[-1] != length:
@@ -186,8 +191,11 @@ def build_score_conditionals_row(
   config_hash: str = "unknown",
 ) -> dict[str, Any]:
   """Validate one unit and build its manifest row (hash, gate fields, ``unit_spec`` payload)."""
-  from aminx.host.campaign import _row_output_path  # noqa: PLC0415 -- campaign imports this module lazily
   from xtrax.run import canonical_json_bytes  # noqa: PLC0415
+
+  from aminx.host.campaign import (
+    _row_output_path,  # noqa: PLC0415 -- campaign imports this module lazily
+  )
 
   length = validate_mpnn_sequences(unit.sequences)
   masks = load_and_validate_masks(unit.ar_masks_path, unit.designable_mask, length)
@@ -221,8 +229,10 @@ def build_score_conditionals_row(
 
   masks_sha = _sha256(unit.ar_masks_path)
   ligand_sha = None if unit.ligand_context_path is None else _sha256(unit.ligand_context_path)
-  chain = None if unit.chain_id is None else (
-    [unit.chain_id] if isinstance(unit.chain_id, str) else [str(c) for c in unit.chain_id]
+  chain = (
+    None
+    if unit.chain_id is None
+    else ([unit.chain_id] if isinstance(unit.chain_id, str) else [str(c) for c in unit.chain_id])
   )
   hash_payload = {
     "schema_version": SCORE_CONDITIONALS_ROW_SCHEMA_VERSION,
@@ -253,7 +263,9 @@ def build_score_conditionals_row(
     "ar_masks_sha256": masks_sha,
     "designable_mask": [int(v) for v in unit.designable_mask],
     "fixed_position_context": unit.fixed_position_context,
-    "ligand_context_path": None if unit.ligand_context_path is None else str(unit.ligand_context_path),
+    "ligand_context_path": None
+    if unit.ligand_context_path is None
+    else str(unit.ligand_context_path),
     "ligand_context_sha256": ligand_sha,
     "random_seed": int(unit.random_seed),
     "max_length": int(unit.max_length),
@@ -371,7 +383,9 @@ def scoring_spec_for_unit(payload: Mapping[str, Any], masks: np.ndarray) -> Any:
   )
 
 
-def execute_score_conditionals_unit(payload: Mapping[str, Any], partial_path: Path) -> dict[str, Any]:
+def execute_score_conditionals_unit(
+  payload: Mapping[str, Any], partial_path: Path
+) -> dict[str, Any]:
   """Score one unit and write its store at ``partial_path``; the caller commits it."""
   from aminx.host.runner import score  # noqa: PLC0415
   from aminx.io.sink_provenance import resolve_aminx_version  # noqa: PLC0415
@@ -388,7 +402,9 @@ def execute_score_conditionals_unit(payload: Mapping[str, Any], partial_path: Pa
     )
     raise ValueError(msg)
   masks = load_and_validate_masks(payload["ar_masks_path"], payload["designable_mask"], length)
-  if logits_bytes(masks.shape[0], len(payload["sequences"]), length) > int(payload["logits_memory_budget_mb"]) * (1 << 20):
+  if logits_bytes(masks.shape[0], len(payload["sequences"]), length) > int(
+    payload["logits_memory_budget_mb"]
+  ) * (1 << 20):
     msg = "score_conditionals: unit exceeds logits_memory_budget_mb."
     raise ValueError(msg)
   result = score(scoring_spec_for_unit(payload, masks))
