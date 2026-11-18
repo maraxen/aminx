@@ -14,11 +14,10 @@ import pytest
 from xtrax.tiling import ChunkedMap, Vmap
 
 from aminx.tiling.axes import N_CANDIDATES
-from aminx.tiling.memory_budget import MEMORY_BUDGET_ENV
+from aminx.tiling.memory_budget import MEMORY_BUDGET_ENV, resolve_memory_budget_bytes
 from aminx.tiling.planner import plan_axis_strategy
 
 _BUDGET = 4 * 1024**3
-_HEADROOM = 0.8
 _PER_PAIR = 164_539_236  # the measured per-pair activation estimate at L=512
 
 
@@ -32,7 +31,9 @@ def test_over_budget_axis_gets_a_real_tile(cardinality: int) -> None:
   strategy = plan_axis_strategy(N_CANDIDATES, cardinality, None, activation_bytes_per_element=_PER_PAIR)
   assert isinstance(strategy, ChunkedMap)
   assert strategy.batch_size >= 1
-  assert strategy.batch_size * _PER_PAIR <= _BUDGET * _HEADROOM
+  # The same budget the planner resolves (an explicit env budget is used as given).
+  assert strategy.batch_size * _PER_PAIR <= resolve_memory_budget_bytes(headroom=0.8)
+  assert (strategy.batch_size + 1) * _PER_PAIR > resolve_memory_budget_bytes(headroom=0.8)
 
 
 def test_axis_that_fits_stays_vmapped() -> None:
