@@ -1,0 +1,82 @@
+[metadata]
+title = "Is a score's dependence on batch composition float reassociation or a cross-row leak? (debt #3487)"
+created = "261118"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """The ~3e-6 nat change tev_design saw when scoring a sequence alone vs in a batch is float \
+reassociation, not a cross-row dependence. On the runner's own score kernels (fidelity-checked bitwise \
+against runner.score), for 1ubq and 1mbn, proteinmpnn_v_48_020: (a) at fixed batch size C the target row \
+is BITWISE identical whatever the partners contain or how long they are (X-padded); (b) duplicate rows \
+agree bitwise; (c) the target's per-position max |delta logit| vs C=1 is <= 1e-4 over C in {2,4,8,32}, \
+full-context and causal masks, and does not grow with C (largest per-C max / smallest nonzero <= 4). \
+An exploratory CPU smoke on 1ubq (not cited) put the first differing tensor at the w_out projection. \
+Each configuration (CPU/GPU x default/highest matmul precision, plus float64) is one run graded by this \
+sidecar."""
+stage_name = "validation"
+novel = true
+
+[controls]
+# Instrument controls, checked first: the planted 1e-6 cross-row leak must register in the content
+# metric; layer capture must not change the logits; the kernel composition must equal runner.score
+# bitwise. If any fails, nothing else in the record can be read.
+positive_outcome = ["reassociation_bounded"]
+negative_outcome = ["instrument_blind", "leak", "reassociation_large", "fail"]
+
+[outcomes.instrument_blind]
+condition = "planted_detected = false OR capture_nonperturbing = false OR kernel_matches_runner = false"
+decision = "Do not interpret: an instrument control failed."
+reasoning = "Without a detected planted leak, 'content invariant' is vacuous; a perturbing capture or a non-faithful kernel path measures the wrong program."
+is_residual = false
+
+[outcomes.leak]
+condition = "content_invariant = false OR dup_rows_equal = false"
+decision = "Cross-row dependence: a correctness bug at any magnitude. Find and fix the op; do not document a bound."
+reasoning = "At fixed shapes reassociation cannot depend on partner content, so any content dependence is a leak."
+is_residual = false
+
+[outcomes.reassociation_bounded]
+condition = "content_invariant = true AND dup_rows_equal = true AND max_abs_dlogit_vs_alone <= 1e-4 AND max_causal_c2 <= 1e-4 AND growth_ratio <= 4.0"
+decision = "Document the bound in the score docstring and export it as a consumer equivalence floor."
+reasoning = "Content-invariant, bounded and flat in C: the batched program only reorders float sums."
+is_residual = false
+
+[outcomes.reassociation_large]
+condition = "content_invariant = true AND dup_rows_equal = true AND (max_abs_dlogit_vs_alone > 1e-4 OR max_causal_c2 > 1e-4 OR growth_ratio > 4.0)"
+decision = "No leak, but the batch dependence is too large or grows with C on this configuration; report it and do not export the bound for it."
+reasoning = "E.g. TF32 matmuls on GPU at default precision."
+is_residual = false
+
+[outcomes.fail]
+condition = "true"
+decision = "Unclassified; inspect the record."
+reasoning = "Residual."
+is_residual = true
+
+[breakdown]
+waive = "The verdict is a worst-case bound by design: the exported constant must cover every position, structure and batch size, so the maximum is the estimand. The per-structure and per-C maxima, the p50/p99 position quantiles and the fraction of bit-exact positions are emitted alongside it in the output JSON."
+
+[result_schema]
+content_invariant = "bool"
+content_dev_max = "float"
+planted_detected = "bool"
+planted_dev_min = "float"
+dup_rows_equal = "bool"
+kernel_matches_runner = "bool"
+capture_nonperturbing = "bool"
+max_abs_dlogit_vs_alone = "float"
+p50_pos_dlogit = "float"
+p99_pos_dlogit = "float"
+frac_positions_exact = "float"
+max_causal_c2 = "float"
+growth_ratio = "float"
+first_divergent_tensor = "str"
+first_divergent_op = "str"
+backend = "str"
+device_kind = "str"
+matmul_precision = "str"
+x64 = "bool"
+git_hash = "str"
+
+[provenance]
+track_packages = ["aminx", "jax", "jaxlib"]
