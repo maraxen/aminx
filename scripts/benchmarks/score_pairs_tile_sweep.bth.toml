@@ -1,0 +1,38 @@
+[metadata]
+title = "score_pairs tile size vs GPU peak memory and warm wall time: evidence for _MAX_PAIR_TILE=32"
+created = "261118"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On the titanix TITAN RTX (24 GiB), one 448-pair unit (K=64 x N=7, L=224, 3pgk at the 512 rung) scored with the pair tile forced to 6, 12, 24 and 32 (each in its own process) completes at every tile, peaks below 8 GiB at tile 32, and has a warm wall time at tile 32 within 1.5x of the fastest tile (throughput flat past a few dozen pairs). With the cap lifted, the device-sized budget's tile either runs out of memory or peaks at more than 3x the tile-32 peak. An untracked exploratory inspection (budgets 0.5/1/2 GB, and the uncapped default OOMing) motivated this; it is re-measured here because the constant cites it."
+stage_name = "validation"
+novel = true
+
+[outcomes.pass]
+condition = "all_capped_ok = true AND peak_gib_tile32 < 8.0 AND warm_ratio_tile32_vs_best <= 1.5 AND (uncapped_status = 'oom' OR uncapped_peak_gib > 3.0 * peak_gib_tile32)"
+decision = "Keep _MAX_PAIR_TILE = 32 and cite this run."
+reasoning = "Cap is safe, costs no throughput, and the uncapped plan is unsafe."
+is_residual = false
+
+[outcomes.cap_too_small]
+condition = "all_capped_ok = true AND warm_ratio_tile32_vs_best > 1.5"
+decision = "Raise or re-derive the cap: a smaller tile is materially faster than 32 is not expected, and a larger one might be."
+reasoning = "Throughput not flat."
+is_residual = false
+
+[outcomes.fail]
+condition = "true"
+decision = "Cap not supported as stated; revisit."
+reasoning = "Residual."
+is_residual = true
+
+[result_schema]
+all_capped_ok = "bool"
+peak_gib_tile32 = "float"
+warm_s_tile32 = "float"
+warm_s_min_capped = "float"
+warm_ratio_tile32_vs_best = "float"
+uncapped_status = "str"
+uncapped_peak_gib = "float"
+device_kind = "str"
+git_hash = "str"
