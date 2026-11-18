@@ -246,16 +246,24 @@ def test_ar_mask_and_ar_masks_are_exclusive() -> None:
     _spec(sequences_to_score=[_UBIQUITIN], ar_mask=m[0], ar_masks=m)
 
 
-def test_batched_masks_equal_looped_masks() -> None:
+@pytest.mark.parametrize("checkpoint", [_CHECKPOINT, "solublempnn_v_48_020"])
+def test_batched_masks_equal_looped_masks(checkpoint: str) -> None:
   """(K, L, L) in one call == one call per mask (#3485), within the #3487 bound."""
   masks = _masks(3)
   seqs = [_UBIQUITIN, _with_token(_UBIQUITIN, 5, "A")]
-  batched = score(_spec(sequences_to_score=seqs, ar_masks=masks))
+
+  def _ck(**kw: Any) -> ScoringSpecification:
+    return ScoringSpecification(
+      inputs=[_STRUCTURE], checkpoint_id=checkpoint, max_length=_MAX_LENGTH, return_logits=True,
+      backbone_noise=0.0, **kw,
+    )
+
+  batched = score(_ck(sequences_to_score=seqs, ar_masks=masks))
   logits = np.asarray(batched["logits"])
   assert logits.shape[:3] == (1, 3, 2)
   assert np.asarray(batched["scores"]).shape == (1, 3, 2)
   for k in range(3):
-    looped = np.asarray(score(_spec(sequences_to_score=seqs, ar_mask=masks[k]))["logits"])
+    looped = np.asarray(score(_ck(sequences_to_score=seqs, ar_mask=masks[k]))["logits"])
     np.testing.assert_allclose(logits[0, k, :, :_L], looped[0, :, :_L], rtol=0, atol=_BATCH_ATOL)
 
 
@@ -312,6 +320,31 @@ def test_row_runs_resumes_and_passes_the_gates(tmp_path: Path) -> None:
   assert state.completed_rows == 1
   assert not state.metadata_issues
   assert not state.runtime_issues
+
+
+def test_execute_manifest_runs_task_rows(tmp_path: Path) -> None:
+  """The entry point the docs give consumers: execute_manifest over a mixed-condition manifest."""
+  from aminx.host.campaign import execute_manifest  # noqa: PLC0415
+
+  masks_path = _write_masks(tmp_path / "shared.npy", _masks(2))
+  rows = _plan(
+    tmp_path,
+    _unit(tmp_path, ar_masks_path=masks_path),
+    _unit(tmp_path, label="P1p_W", ar_masks_path=masks_path,
+          sequences=[_with_token(s, _P1_PRIME, "W") for s in (_UBIQUITIN, _with_token(_UBIQUITIN, 5, "A"))]),
+  )
+  manifest = tmp_path / "manifest.json"
+  write_manifest(manifest, rows, metadata={"campaign_id": "sc"})
+  summary = execute_manifest(manifest)
+  assert summary["selected_rows"] == 2
+  assert summary["successful_rows"] == 2
+  assert summary["failed_rows"] == 0
+  for row in rows:
+    store = read_score_conditionals_store(row["output_h5_path"])
+    assert store["logits"].shape == (2, 2, _L, 21)
+  again = execute_manifest(manifest)
+  assert again["reused_rows"] == 2, again
+  assert again["recomputed_rows"] == 0
 
 
 def test_packed_runner_refuses_task_rows(tmp_path: Path) -> None:

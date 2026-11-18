@@ -844,11 +844,10 @@ def _model_signature(model: Any) -> Hashable:  # noqa: ANN401
 
 
 # Largest (mask, sequence) tile scored at once by ScoreSplitFns.score_pairs (#3485). The planner's
-# per-pair estimate lowers ONE candidate, and the batched program outgrows it at large tiles: on a
-# 24 GiB TITAN RTX at L=512 the device-sized budget planned 186-pair tiles (~15 GB estimated) and
-# the call ran out of memory asking for 11 GiB more, while 6-, 12- and 24-pair tiles peaked at
-# 0.58, 1.06 and 1.79 GiB and took the same ~16 s for 448 pairs. Throughput is flat past a few
-# dozen pairs, so the tile is capped here.
+# per-pair estimate lowers ONE candidate, and the batched program outgrows it at large tiles. On a
+# 24 GiB TITAN RTX, 448 pairs at the 512 rung (pre-registered sweep, bathos run 6162354f): tiles
+# 6/12/24/32 peaked at 0.58/1.06/1.79/2.57 GiB with warm walls 1.19/1.18/1.15/1.27 s, while the
+# uncapped device-sized plan ran out of memory (13.2 GiB in use). Throughput is flat, so cap it.
 _MAX_PAIR_TILE = 32
 
 
