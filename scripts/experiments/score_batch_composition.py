@@ -76,8 +76,9 @@ def main() -> None:  # noqa: PLR0915
 
   import jax  # noqa: PLC0415
 
-  if args.x64:
-    jax.config.update("jax_enable_x64", True)
+  # x64 is switched on only AFTER each model load: equinox builds the deserialisation skeleton in
+  # the default float dtype, so loading under x64 refuses the float32 checkpoint. The loaded
+  # model and the structure arrays are then cast to float64 explicitly (_to_float).
   if args.matmul_precision != "default":
     jax.config.update("jax_default_matmul_precision", args.matmul_precision)
 
@@ -122,8 +123,11 @@ def main() -> None:  # noqa: PLR0915
       length_bucketing=False,
       return_logits=True,
     )
+    jax.config.update("jax_enable_x64", False)
     iterator, model = prep_protein_stream_and_model(spec)
     batch = next(iter(iterator))
+    if args.x64:
+      jax.config.update("jax_enable_x64", True)
     coords, mask = _to_float(batch.coordinates), _to_float(batch.mask)
     residue_index, chain_index = batch.residue_index, batch.chain_index
     model = _to_float(model)
