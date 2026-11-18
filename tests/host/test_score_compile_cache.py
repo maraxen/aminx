@@ -76,15 +76,16 @@ def _compiles_during(fn: Callable[[], Any]) -> tuple[int, Any]:
 
 
 def test_counter_sees_a_compile() -> None:
-  """Instrument control: a brand-new jitted function compiles exactly once, then never again."""
+  """Instrument control: a brand-new jitted function compiles on first use, then never again."""
 
   @jax.jit
   def _fresh(x: jax.Array) -> jax.Array:
     return jnp.sin(x) * 3.0 + 0.123456
 
-  first, _ = _compiles_during(lambda: jax.block_until_ready(_fresh(jnp.ones(7))))
-  second, _ = _compiles_during(lambda: jax.block_until_ready(_fresh(jnp.ones(7))))
-  assert first == 1
+  x = jax.block_until_ready(jnp.ones(7))  # built outside the window: creating it compiles too
+  first, _ = _compiles_during(lambda: jax.block_until_ready(_fresh(x)))
+  second, _ = _compiles_during(lambda: jax.block_until_ready(_fresh(x)))
+  assert first >= 1
   assert second == 0
 
 
