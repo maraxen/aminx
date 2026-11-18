@@ -380,3 +380,34 @@ def test_ligand_context_reaches_the_row(tmp_path: Path) -> None:
   b = read_score_conditionals_store(_run(tmp_path, rows, 1)["output_h5_path"])
   assert a["attrs"]["ligand_context_sha256"] is not None
   assert np.abs(a["logits"] - b["logits"]).max() > _MOVED
+
+
+# --- chunked pairs: one cached program, no per-call recompile -------------------------------------
+
+
+def test_chunked_pairs_reuse_the_executable_and_match_vmapped(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Forced into tiles by a tiny budget: zero compiles on the warm call; same logits as vmapped.
+
+  The pair map used to be a lax.map around a per-call closure, which recompiled on every call
+  (2.7-3.1 s per call at K=64, C=7, L=512 on GPU) once the planner chose to chunk.
+  """
+  import jax  # noqa: PLC0415
+
+  from aminx.tiling.memory_budget import MEMORY_BUDGET_ENV  # noqa: PLC0415
+
+  compiles = [0]
+
+  def _on(event: str, _d: float, **_k: object) -> None:
+    if event == "/jax/core/compile/backend_compile_duration":
+      compiles[0] += 1
+
+  jax.monitoring.register_event_duration_secs_listener(_on)
+  seqs = [_UBIQUITIN, _with_token(_UBIQUITIN, 5, "A")]
+  vmapped = np.asarray(score(_spec(sequences_to_score=seqs, ar_masks=_masks(3, seed=5)))["logits"])
+
+  monkeypatch.setenv(MEMORY_BUDGET_ENV, "1")  # one pair per tile
+  chunked = np.asarray(score(_spec(sequences_to_score=seqs, ar_masks=_masks(3, seed=5)))["logits"])
+  np.testing.assert_allclose(chunked[..., :_L, :], vmapped[..., :_L, :], rtol=0, atol=_BATCH_ATOL)
+  before = compiles[0]
+  score(_spec(sequences_to_score=seqs, ar_masks=_masks(3, seed=6)))
+  assert compiles[0] == before, f"warm chunked call compiled {compiles[0] - before} executables"

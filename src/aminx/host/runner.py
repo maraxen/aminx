@@ -1180,6 +1180,7 @@ def score(  # noqa: PLR0915
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
   from aminx.tiling.dispatch import make_axis_dispatch  # noqa: PLC0415
   from aminx.tiling.planner import plan_axis_strategy  # noqa: PLC0415
+  from xtrax.tiling import Vmap  # noqa: PLC0415
 
   all_scores, all_logits = [], None
   if spec.return_logits:
@@ -1376,6 +1377,7 @@ def score(  # noqa: PLR0915
       _stacked_sequences: jax.Array = score_sequences,
       _ar_mask: jax.Array | None = batch_ar_mask,
       _ar_masks: jax.Array | None = batch_ar_masks,
+      _pair_chunk: int | None = None if isinstance(strategy, Vmap) else int(strategy.batch_size),
     ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
       ligand_kwargs = (
         {}
@@ -1426,29 +1428,21 @@ def score(  # noqa: PLR0915
               {"key": struct_keys, "seq": _stacked_sequences},
             )
 
-          # (mask, sequence) pairs, mask-major: pair p is mask p // C on sequence p % C. Masks and
-          # sequences are gathered by index inside the map, so K copies of either are never
-          # materialised. The key is the sequence's own; scoring does not depend on it.
-          n_seq = _stacked_sequences.shape[0]
-          pairs = jnp.arange(_ar_masks.shape[0] * n_seq)
-
-          def _score_one_pair(
-            item: dict[str, jax.Array],
-          ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
-            k, n = item["pair"] // n_seq, item["pair"] % n_seq
-            return split_fns.score_candidate(
-              struct_keys[n],
-              jax.nn.one_hot(_stacked_sequences[n], 21),
-              encoding,
-              struct_coords,
-              struct_mask,
-              struct_residue_index,
-              struct_chain_index,
-              multi_state_strategy=spec.multi_state_strategy,
-              ar_mask=_ar_masks[k],
-            )
-
-          return _candidate_iterator(_score_one_pair, {"pair": pairs})
+          # All K x C (mask, sequence) pairs in one jitted program (#3485): see
+          # scoring.score._score_pairs_kernel. The planner's tile size is passed through, so a
+          # large K x C becomes a chunked lax.map inside the same cached executable.
+          return split_fns.score_pairs(
+            struct_keys,
+            _stacked_sequences,
+            _ar_masks,
+            encoding,
+            struct_coords,
+            struct_mask,
+            struct_residue_index,
+            struct_chain_index,
+            multi_state_strategy=spec.multi_state_strategy,
+            chunk_size=_pair_chunk,
+          )
 
         out = _over_noise_levels(_run_level, noise_levels, struct_noise_key)
         if _ar_masks is None:

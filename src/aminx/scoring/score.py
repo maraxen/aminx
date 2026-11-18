@@ -226,6 +226,7 @@ class ScoreSplitFns(NamedTuple):
 
   encode_structure: Callable[..., EncoderOutput]
   score_candidate: Callable[..., tuple[jax.Array, jax.Array, jax.Array]]
+  score_pairs: Callable[..., tuple[jax.Array, jax.Array, jax.Array]]
 
 
 def make_score_split_fns(
@@ -331,7 +332,40 @@ def make_score_split_fns(
       ar_mask,
     )
 
-  return ScoreSplitFns(encode_structure, score_candidate)
+  def score_pairs(
+    prng_keys: jax.Array,
+    sequences: jax.Array,
+    ar_masks: jax.Array,
+    enc: EncoderOutput,
+    structure_coordinates: jax.Array,
+    mask: jax.Array,
+    residue_index: jax.Array,
+    chain_index: jax.Array,
+    multi_state_strategy: Literal[
+      "arithmetic_mean",
+      "geometric_mean",
+      "product",
+    ] = "arithmetic_mean",
+    multi_state_temperature: float = 1.0,
+    chunk_size: int | None = None,
+  ) -> tuple[jax.Array, jax.Array, jax.Array]:
+    return _score_pairs_kernel(
+      model,
+      decoding_order_fn,
+      prng_keys,
+      sequences,
+      ar_masks,
+      enc,
+      structure_coordinates,
+      mask,
+      residue_index,
+      chain_index,
+      multi_state_strategy,
+      _traced_scalar(multi_state_temperature),
+      None if chunk_size is None else int(chunk_size),
+    )
+
+  return ScoreSplitFns(encode_structure, score_candidate, score_pairs)
 
 
 def _traced_scalar(value: float | jax.Array) -> jax.Array:
@@ -380,6 +414,58 @@ def _encode_structure_kernel(
   else:
     k_enc = noise_key
   return score_conditional.encode(model, k_enc, bundle, config)
+
+
+@eqx.filter_jit
+def _score_pairs_kernel(
+  model: ModelProtocol,
+  decoding_order_fn: DecodingOrderFn,
+  prng_keys: jax.Array,
+  sequences: jax.Array,
+  ar_masks: jax.Array,
+  enc: EncoderOutput,
+  structure_coordinates: jax.Array,
+  mask: jax.Array,
+  residue_index: jax.Array,
+  chain_index: jax.Array,
+  multi_state_strategy: Literal["arithmetic_mean", "geometric_mean", "product"],
+  multi_state_temperature: jax.Array,
+  chunk_size: int | None,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+  """Score every (mask, sequence) pair against one encoding in ONE program (#3485).
+
+  ``sequences`` is ``(C, L)`` token ids, ``ar_masks`` is ``(K, L, L)`` and ``prng_keys`` is
+  ``(C, 2)``. Pair ``p`` is mask ``p // C`` on sequence ``p % C`` (mask-major), gathered by index
+  inside the map so K copies of either are never materialised. The pairs are mapped with xtrax
+  ``chunked_map``: a vmap when ``chunk_size`` is ``None``, else a ``lax.map`` over tiles of
+  ``chunk_size`` (the candidate-axis planner's choice). Module level and jitted, with the tile
+  size static, so a second call with the same shapes reuses the executable; a ``lax.map`` built
+  around a per-call closure recompiled on every call (2.7-3.1 s at K=64, C=7, L=512 on GPU).
+
+  Returns ``(nll, logits, decoding_order)`` with a leading ``K * C`` pair axis.
+  """
+  from xtrax.transforms.map import chunked_map  # noqa: PLC0415
+
+  n_seq = sequences.shape[0]
+
+  def _one(pair: jax.Array) -> tuple[jax.Array, jax.Array, jax.Array]:
+    k, n = pair // n_seq, pair % n_seq
+    return _score_candidate_kernel(
+      model,
+      decoding_order_fn,
+      prng_keys[n],
+      jax.nn.one_hot(sequences[n], 21),
+      enc,
+      structure_coordinates,
+      mask,
+      residue_index,
+      chain_index,
+      multi_state_strategy,
+      multi_state_temperature,
+      ar_masks[k],
+    )
+
+  return chunked_map(_one, jnp.arange(ar_masks.shape[0] * n_seq), batch_size=chunk_size)
 
 
 @eqx.filter_jit
