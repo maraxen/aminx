@@ -788,5 +788,17 @@
   },
   "src/aminx/host/plan_eda.py::verify_export_manifest_sha256": {
     "internal": "Server-side planner EDA (xtrax.eda adoption, #270): explains a host BatchPlan and exports/verifies its panel artifacts for review. The browser has no batch planner; covered by tests/host/test_plan_eda.py."
-  }
+  },
+  "src/aminx/host/campaign_score.py::ScoreConditionalsUnit": "P28",
+  "src/aminx/host/campaign_score.py::build_score_conditionals_row": "P28",
+  "src/aminx/host/campaign_score.py::execute_score_conditionals_unit": "P28",
+  "src/aminx/host/campaign_score.py::load_and_validate_masks": "P28",
+  "src/aminx/host/campaign_score.py::logits_bytes": "P28",
+  "src/aminx/host/campaign_score.py::model_family_for_checkpoint": "P28",
+  "src/aminx/host/campaign_score.py::plan_score_conditionals_manifest": "P28",
+  "src/aminx/host/campaign_score.py::read_score_conditionals_store": "P28",
+  "src/aminx/host/campaign_score.py::scoring_spec_for_unit": "P28",
+  "src/aminx/host/campaign_score.py::task_input_files": "P28",
+  "src/aminx/host/campaign_score.py::validate_mpnn_sequences": "P28",
+  "src/aminx/host/campaign_score.py::write_score_conditionals_store": "P28"
 }

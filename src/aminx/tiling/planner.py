@@ -81,7 +81,7 @@ def plan_axis_strategy(
   if isinstance(xtrax_strategy, ChunkedMap) and xtrax_strategy.batch_size <= 0:
     # BatchPlanner falls back to ChunkedMap with the axis template's default_batch_size, which is
     # 0 for the candidate axis; a 0-size tile estimates to 0 bytes, so the "plan" always fits and
-    # then runs the whole axis at once. Measured: 448 (mask, sequence) pairs at ~165 MB each
+    # then runs the whole axis at once. Measured: 448 (mask, sequence) pairs at the 512 rung
     # asked a 24 GiB GPU for 21 GiB and OOMed (bathos run 78f04b0b). Size the tile from the same
     # budget the planner was given instead.
     per_tile = max(1, int(budget.bytes // max(1, int(activation_bytes_per_element))))
