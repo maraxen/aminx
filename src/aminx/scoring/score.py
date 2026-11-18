@@ -34,10 +34,13 @@ Measured (pre-registered, ``scripts/experiments/score_batch_composition.py``, 1u
 proteinmpnn_v_48_020, batch sizes 2-32, partner content and padding varied, full-context and
 causal masks): on CPU the first tensor that differs is the ``w_out`` logit projection (every
 decoder activation is bitwise identical), and both lowerings are within ~1.3e-6 of the float64
-result; on GPU it starts in a decoder layer's dense block. Per-position max |delta logit|
-was at most ~3e-6 in float32 on CPU and GPU, at default and highest matmul precision, flat in
-batch size; in float64 it falls to ~1e-15. This constant is that maximum with a margin of a few
-times; NLLs (masked means of log-softmax) move by no more. Use it as the tolerance when comparing
+result; on GPU (TITAN RTX) it starts inside the first decoder layer's MLPs. Per-position max
+|delta logit| was at most 3.8e-6 in float32 on CPU and GPU, at default and highest matmul
+precision, flat in batch size (largest per-C max / smallest nonzero <= 1.33 in float32); in
+float64 it falls to <= 7.1e-15. bathos runs 7e50cce9, 7370b5bb, 1b3b6bf4 (CPU f32 default,
+f32 highest, f64) and b6abe75f, 5f6958e3, 655d3eee (GPU), all graded reassociation_bounded.
+This constant is the float32 maximum with a ~2.6x margin; NLLs (masked means of log-softmax)
+move by no more. Use it as the tolerance when comparing
 scores of one sequence across different batch compositions; a larger difference is not
 reassociation.
 """
