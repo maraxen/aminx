@@ -6,6 +6,7 @@ from typing import Literal, NamedTuple, cast
 
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 from jaxtyping import PRNGKeyArray
 
 from aminx.inference import score_conditional
@@ -261,12 +262,20 @@ def make_score_split_fns(
     inference: Use ``eqx.nn.inference_mode`` when True.
 
   Returns:
-    A :class:`ScoreSplitFns` of two jitted functions.
+    A :class:`ScoreSplitFns` of two functions that call process-wide jitted kernels with
+    ``model`` bound, so repeated factory calls share one compile per shape (#3484).
   """
   if inference and isinstance(model, eqx.Module):
     model = eqx.nn.inference_mode(model, value=True)
 
-  @jax.jit
+  # The two halves are thin wrappers that bind ``model`` into the MODULE-LEVEL jitted kernels
+  # below (debt #3484). They used to be ``jax.jit`` closures defined here, over ``model``: every
+  # call of this factory made two new jitted functions with empty caches, and ``runner.score``
+  # calls it once per ``score()`` call (and reloads the model each time), so every score() call
+  # recompiled both kernels -- about 1 s of a 2.5 s warm call at L=76 (run b25cbd4e). Taking the
+  # model as an ARGUMENT keys the jit cache on its structure and array shapes, not its identity,
+  # so a freshly loaded checkpoint of the same architecture reuses the compiled executables.
+
   def encode_structure(
     structure_coordinates: jax.Array,
     mask: jax.Array,
@@ -278,29 +287,19 @@ def make_score_split_fns(
     backbone_noise: float | jax.Array = 0.0,
     noise_key: jax.Array | None = None,
   ) -> EncoderOutput:
-    # Sequence / AR mask are left at their defaults: the encoder reads only geometry, ligand
-    # and backbone_noise, never the conditioning bundle.
-    bundle, config = build_inference_bundle(
-      coords=structure_coordinates,
-      mask=mask,
-      residue_index=residue_index,
-      chain_index=chain_index,
-      backbone_noise=backbone_noise,
-      ligand_coords=ligand_coords,
-      ligand_atom_types=ligand_atom_types,
-      ligand_mask=ligand_mask,
-      mode="score_conditional",
-      inference=True,
+    return _encode_structure_kernel(
+      model,
+      structure_coordinates,
+      mask,
+      residue_index,
+      chain_index,
+      ligand_coords,
+      ligand_atom_types,
+      ligand_mask,
+      _traced_scalar(backbone_noise),
+      noise_key,
     )
-    # The key only feeds backbone-noise injection. With no noise_key (noise off) keep the
-    # historical constant key so the noise-free encoding is bit-identical to before.
-    if noise_key is None:
-      k_enc, _ = score_conditional.split_keys(jax.random.PRNGKey(0))
-    else:
-      k_enc = noise_key
-    return score_conditional.encode(model, k_enc, bundle, config)
 
-  @partial(jax.jit, static_argnames=("multi_state_strategy",))
   def score_candidate(
     prng_key: jax.Array,
     sequence: jax.Array,
@@ -317,33 +316,113 @@ def make_score_split_fns(
     multi_state_temperature: float = 1.0,
     ar_mask: jax.Array | None = None,
   ) -> tuple[jax.Array, jax.Array, jax.Array]:
-    L = sequence.shape[0]
-    # Same key path as score_sequence: the order draw advances the key, then the kernel's split.
-    decoding_order, prng_key = decoding_order_fn(prng_key, L, None, None)
-    # ``ar_mask=None`` keeps the full-context default, so a caller that passes nothing traces the
-    # exact program it always did. A supplied (L, L) mask replaces it -- see ScoringSpecification.
-    bundle, config = build_inference_bundle(
-      coords=structure_coordinates,
-      mask=mask,
-      residue_index=residue_index,
-      chain_index=chain_index,
-      sequence=sequence,
-      backbone_noise=0.0,
-      ar_mask=full_context_ar_mask(L) if ar_mask is None else ar_mask,
-      mode="score_conditional",
-      inference=True,
+    return _score_candidate_kernel(
+      model,
+      decoding_order_fn,
+      prng_key,
+      sequence,
+      enc,
+      structure_coordinates,
+      mask,
+      residue_index,
+      chain_index,
+      multi_state_strategy,
+      _traced_scalar(multi_state_temperature),
+      ar_mask,
     )
-    stage_set = make_stage_set(
-      strategy=multi_state_strategy,
-      strategy_temperature=multi_state_temperature,
-      state_weights=None,
-    )
-    _, k_dec = score_conditional.split_keys(prng_key)
-    logits = score_conditional.score_from_encoding(model, k_dec, enc, bundle, config, stage_set)
-    nll = _nll_from_logits(logits, sequence, mask)
-    return nll, logits, decoding_order
 
   return ScoreSplitFns(encode_structure, score_candidate)
+
+
+def _traced_scalar(value: float | jax.Array) -> jax.Array:
+  """A Python float as a float32 array, so ``eqx.filter_jit`` traces it instead of keying on it.
+
+  ``jax.jit`` traced Python scalars; ``filter_jit`` treats every non-array as static, which would
+  compile once per distinct noise level or temperature. Arrays and tracers pass through.
+  """
+  if isinstance(value, jax.Array):  # tracers are jax.Array instances too
+    return value
+  return jnp.asarray(value, dtype=jnp.float32)
+
+
+@eqx.filter_jit
+def _encode_structure_kernel(
+  model: ModelProtocol,
+  structure_coordinates: jax.Array,
+  mask: jax.Array,
+  residue_index: jax.Array,
+  chain_index: jax.Array,
+  ligand_coords: jax.Array | None,
+  ligand_atom_types: jax.Array | None,
+  ligand_mask: jax.Array | None,
+  backbone_noise: jax.Array,
+  noise_key: jax.Array | None,
+) -> EncoderOutput:
+  """Encode one structure (see :func:`make_score_split_fns`). Jitted once per process per shape."""
+  # Sequence / AR mask are left at their defaults: the encoder reads only geometry, ligand
+  # and backbone_noise, never the conditioning bundle.
+  bundle, config = build_inference_bundle(
+    coords=structure_coordinates,
+    mask=mask,
+    residue_index=residue_index,
+    chain_index=chain_index,
+    backbone_noise=backbone_noise,
+    ligand_coords=ligand_coords,
+    ligand_atom_types=ligand_atom_types,
+    ligand_mask=ligand_mask,
+    mode="score_conditional",
+    inference=True,
+  )
+  # The key only feeds backbone-noise injection. With no noise_key (noise off) keep the
+  # historical constant key so the noise-free encoding is bit-identical to before.
+  if noise_key is None:
+    k_enc, _ = score_conditional.split_keys(jax.random.PRNGKey(0))
+  else:
+    k_enc = noise_key
+  return score_conditional.encode(model, k_enc, bundle, config)
+
+
+@eqx.filter_jit
+def _score_candidate_kernel(
+  model: ModelProtocol,
+  decoding_order_fn: DecodingOrderFn,
+  prng_key: jax.Array,
+  sequence: jax.Array,
+  enc: EncoderOutput,
+  structure_coordinates: jax.Array,
+  mask: jax.Array,
+  residue_index: jax.Array,
+  chain_index: jax.Array,
+  multi_state_strategy: Literal["arithmetic_mean", "geometric_mean", "product"],
+  multi_state_temperature: jax.Array,
+  ar_mask: jax.Array | None,
+) -> tuple[jax.Array, jax.Array, jax.Array]:
+  """Decode + NLL for one candidate (see :func:`make_score_split_fns`). Jitted once per shape."""
+  L = sequence.shape[0]
+  # Same key path as score_sequence: the order draw advances the key, then the kernel's split.
+  decoding_order, prng_key = decoding_order_fn(prng_key, L, None, None)
+  # ``ar_mask=None`` keeps the full-context default, so a caller that passes nothing traces the
+  # exact program it always did. A supplied (L, L) mask replaces it -- see ScoringSpecification.
+  bundle, config = build_inference_bundle(
+    coords=structure_coordinates,
+    mask=mask,
+    residue_index=residue_index,
+    chain_index=chain_index,
+    sequence=sequence,
+    backbone_noise=0.0,
+    ar_mask=full_context_ar_mask(L) if ar_mask is None else ar_mask,
+    mode="score_conditional",
+    inference=True,
+  )
+  stage_set = make_stage_set(
+    strategy=multi_state_strategy,
+    strategy_temperature=multi_state_temperature,
+    state_weights=None,
+  )
+  _, k_dec = score_conditional.split_keys(prng_key)
+  logits = score_conditional.score_from_encoding(model, k_dec, enc, bundle, config, stage_set)
+  nll = _nll_from_logits(logits, sequence, mask)
+  return nll, logits, decoding_order
 
 
 def score(

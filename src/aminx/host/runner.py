@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import sys
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -735,7 +735,7 @@ def _candidate_activation_bytes(
   sample_sequence: jax.Array,
   *,
   batch_size: int,
-  estimate_cache: dict[Any, int],
+  model_signature: Hashable,
 ) -> int:
   """Live bytes one candidate holds once the encode is hoisted, for the candidate-axis planner.
 
@@ -793,13 +793,17 @@ def _candidate_activation_bytes(
     )
 
   args = (sample_key, sample_sequence, encoding, coords, mask, residue_index, chain_index)
-  # Lowering is a full XLA compile, so memoise per shape signature: a long structure stream
-  # with identical (padded) shapes must not recompile once per batch.
+  # Lowering is a full XLA compile, so memoise per (architecture, shape signature) for the whole
+  # PROCESS: a long structure stream with identical (padded) shapes must not recompile once per
+  # batch, and repeated score() calls must not recompile once per call (#3484 -- this lowering was
+  # ~1 s of every warm call while the cache lived only for one call). ``model_signature`` names
+  # the architecture, because the estimate depends on hidden sizes, not only on input shapes.
   cache_key = (
+    model_signature,
     multi_state_strategy,
     tuple((tuple(leaf.shape), str(leaf.dtype)) for leaf in jax.tree.leaves(args)),
   )
-  per_structure = estimate_cache.get(cache_key)
+  per_structure = _ACTIVATION_ESTIMATE_CACHE.get(cache_key)
   if per_structure is None:
     try:
       per_structure = lowered_memory_estimate(_one_candidate, *args)
@@ -811,8 +815,29 @@ def _candidate_activation_bytes(
       per_structure = sum(
         int(leaf.size) * leaf.dtype.itemsize for leaf in jax.tree.leaves(encoding)
       ) + int(coords.shape[0]) * 21 * 4
-    estimate_cache[cache_key] = per_structure
+    if len(_ACTIVATION_ESTIMATE_CACHE) >= _ACTIVATION_ESTIMATE_CACHE_MAX:
+      _ACTIVATION_ESTIMATE_CACHE.pop(next(iter(_ACTIVATION_ESTIMATE_CACHE)))
+    _ACTIVATION_ESTIMATE_CACHE[cache_key] = per_structure
   return int(per_structure) * batch_size
+
+
+# Process-wide memo for _candidate_activation_bytes (#3484). Small and FIFO-bounded: one entry per
+# (architecture, strategy, padded shape) actually scored.
+_ACTIVATION_ESTIMATE_CACHE: dict[Hashable, int] = {}
+_ACTIVATION_ESTIMATE_CACHE_MAX = 64
+
+
+def _model_signature(model: Any) -> Hashable:  # noqa: ANN401
+  """Architecture identity of a model: its pytree structure plus every array leaf's shape/dtype.
+
+  Two loads of one checkpoint share it (so the activation estimate is reused across score()
+  calls); checkpoints with different hidden sizes or layer counts do not.
+  """
+  import equinox as eqx  # noqa: PLC0415 -- lazy, as elsewhere in this module (import isolation)
+
+  arrays, static = eqx.partition(model, eqx.is_array)
+  leaves = tuple((tuple(leaf.shape), str(leaf.dtype)) for leaf in jax.tree.leaves(arrays))
+  return (str(jax.tree.structure(arrays)), str(jax.tree.structure(static)), leaves)
 
 
 def _score_noise_levels(spec: Any) -> tuple[float, ...]:  # noqa: ANN401
@@ -1150,7 +1175,7 @@ def score(  # noqa: PLR0915
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
   structure_offset = 0
-  activation_estimates: dict[Any, int] = {}
+  model_signature = _model_signature(model) if split_fns is not None else None
 
   # Prepare random key
   prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed)
@@ -1297,7 +1322,7 @@ def score(  # noqa: PLR0915
         batch_keys[0, 0],
         score_sequences[0],
         batch_size=batch_size,
-        estimate_cache=activation_estimates,
+        model_signature=model_signature,
       )
     else:
       # Output logits only. Known to undercount: the averaged path re-encodes inside the mapped
