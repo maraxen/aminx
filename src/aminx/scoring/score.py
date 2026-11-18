@@ -21,6 +21,27 @@ _DEFAULT_DECODING_ORDER_FN = cast("DecodingOrderFn", random_decoding_order)
 
 SCORE_EPS = 1e-8
 
+SCORE_BATCH_COMPOSITION_ATOL = 1e-5
+"""Equivalence floor, in logit units (nats), for one sequence scored alone vs in a batch (#3487).
+
+A sequence's logits do not depend on WHAT else is in its batch: at a fixed batch size they are
+bitwise identical whatever the partners contain or how long they are (X-padded), and duplicate
+rows agree bitwise. They can depend on HOW MANY candidates are batched, because the candidate
+axis is a ``jax.vmap`` (a direct call when there is one candidate), and XLA lowers the batched
+program's matmuls differently from the unbatched one. That is float reassociation, not a leak.
+
+Measured (pre-registered, ``scripts/experiments/score_batch_composition.py``, 1ubq + 1mbn,
+proteinmpnn_v_48_020, batch sizes 2-32, partner content and padding varied, full-context and
+causal masks): on CPU the first tensor that differs is the ``w_out`` logit projection (every
+decoder activation is bitwise identical), and both lowerings are within ~1.3e-6 of the float64
+result; on GPU it starts in a decoder layer's dense block. Per-position max |delta logit|
+was at most ~3e-6 in float32 on CPU and GPU, at default and highest matmul precision, flat in
+batch size; in float64 it falls to ~1e-15. This constant is that maximum with a margin of a few
+times; NLLs (masked means of log-softmax) move by no more. Use it as the tolerance when comparing
+scores of one sequence across different batch compositions; a larger difference is not
+reassociation.
+"""
+
 
 def _residue_mask_for_scoring(mask: jax.Array) -> jax.Array:
   """Return per-residue mask (L,) for masked-average NLL scoring."""
