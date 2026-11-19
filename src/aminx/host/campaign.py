@@ -63,7 +63,9 @@ ADOPT_LEGACY_REPORT_SCHEMA_VERSION = "campaign_adopt_legacy_report_v1"
 # change). It is part of every unit's input hash, so a bump invalidates stamps written before it instead of letting a
 # resumed campaign mix outputs from two numerics (aminx #2421).
 # S8 length bucketing changes seeded sample outputs, so stamps from epoch 1 are not reused.
-SAMPLING_NUMERICS_EPOCH = 2
+# Epoch 3 (#3510, 0.5.5): LigandMPNN ligand atom-axis padding and score_conditionals N padding change
+# outputs by float reassociation, so a campaign resumed across 0.5.4 -> 0.5.5 recomputes.
+SAMPLING_NUMERICS_EPOCH = 3
 _MAX_HASHED_DIR_FILES = 5000
 MANIFEST_ROW_SCHEMA_VERSION = "campaign_manifest_row_v1"
 MANIFEST_SCHEMA_VERSION = "campaign_manifest_v1"
@@ -2001,11 +2003,11 @@ def run_manifest_row(  # noqa: PLR0915
     # Count this unit's backend compiles with xtrax's counter (#3510); closed as soon as the
     # executor returns, and in ``finally`` on failure.
     compile_scope = ExitStack()
-    compile_stats = compile_scope.enter_context(count_backend_compiles())
     is_multistate_poe_row = sampling_spec is not None and (
       isinstance(sampling_spec.inputs, (list, tuple)) and len(sampling_spec.inputs) > 1
     )
     try:
+      compile_stats = compile_scope.enter_context(count_backend_compiles())
       if row_task == SCORE_CONDITIONALS_TASK:
         # Teacher-forced conditional logits under K explicit masks (#3486); writes its own store
         # at partial_path, committed below exactly as a sampling store is.
@@ -2172,6 +2174,10 @@ def execute_manifest(
   reuse check, and ``row_results`` is reported in manifest order. With ``continue_on_error=False``
   the row that stops the run is the first failure in execution order, which can differ from the
   first failing row in manifest order. ``group_by_shape_class=False`` restores manifest order.
+
+  Grouping acts within one call's row selection. A job array that shards rows by index or hash
+  compiles every class present in each shard; shard by ``row_compile_key`` to compile each class
+  in one task.
 
   Parameters
   ----------

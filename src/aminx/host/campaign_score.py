@@ -404,13 +404,32 @@ def _ligand_atom_count(path: str) -> int:
   return max(counts)
 
 
+def sequence_bucket(n_sequences: int, *, k: int, length: int, budget_mb: int) -> int:
+  """The padded sequence count a unit runs with (#3510).
+
+  The :func:`sequence_count_rung` rung, unless padding to it would exceed the unit's
+  ``logits_memory_budget_mb``. Then the unit runs unpadded, so every unit planning accepts
+  (planning checks the real N, as in 0.5.4) also executes, at the cost of its own compile.
+  """
+  rung = sequence_count_rung(n_sequences)
+  if logits_bytes(k, rung, length) > int(budget_mb) * (1 << 20):
+    return n_sequences
+  return rung
+
+
 def score_compile_key(payload: Mapping[str, Any]) -> tuple[Any, ...]:
   """The compile shape class of a score_conditionals unit, from headers only (#3510).
 
   ``(task, model_family, checkpoint_id, residue_rung, K, N_bucket, ligand_atom_rung)``: units
-  sharing a key reuse one set of compiled kernels in a process. Residue and ligand counts go
-  through the same ladder functions execution uses, so the key cannot drift from the shapes
-  actually compiled. Reads the mask ``.npy`` header and the ligand npz; never parses a structure.
+  sharing a key reuse one set of compiled kernels in a process. Reads the mask ``.npy`` header
+  and the ligand npz; never parses a structure.
+
+  The key is an approximation of the compiled shapes, used for ordering and telemetry only; a
+  mismatch costs extra compiles, never wrong results. The N bucket and the ligand rung use the
+  functions execution uses. Two known approximations (deferred in PR #300's review): the residue
+  rung is taken from the valid-residue count L, while execution uses the last valid index + 1, so
+  a structure with an internal gap can execute on a larger rung; and the ligand rung uses the
+  largest ``Y_m`` atom count in the npz, while execution pads the gathered structure's own M.
   """
   masks = np.load(str(payload["ar_masks_path"]), mmap_mode="r", allow_pickle=False)
   k, length = int(masks.shape[0]), int(masks.shape[-1])
@@ -425,7 +444,9 @@ def score_compile_key(payload: Mapping[str, Any]) -> tuple[Any, ...]:
     str(payload["checkpoint_id"]),
     residue_rung,
     k,
-    sequence_count_rung(len(payload["sequences"])),
+    sequence_bucket(
+      len(payload["sequences"]), k=k, length=length, budget_mb=int(payload["logits_memory_budget_mb"]),
+    ),
     ligand_rung,
   )
 
@@ -481,10 +502,16 @@ def execute_score_conditionals_unit(
   # N bucketing (#3510): pad the sequence axis to a ladder rung with copies of row 0, so units
   # with different N share compiled kernels. The copies are scored and dropped before the store
   # is written. Rows are scored independently; the only effect on real rows is the float
-  # reassociation bounded by SCORE_BATCH_COMPOSITION_ATOL (#3487). The budget below is checked
-  # against the padded N, which is what is computed.
+  # reassociation bounded by SCORE_BATCH_COMPOSITION_ATOL (#3487). A unit whose padded N would
+  # exceed its logits budget runs unpadded (``sequence_bucket``), so planning and execution accept
+  # the same units.
   n_sequences = len(payload["sequences"])
-  n_bucket = sequence_count_rung(n_sequences)
+  n_bucket = sequence_bucket(
+    n_sequences,
+    k=int(masks.shape[0]),
+    length=length,
+    budget_mb=int(payload["logits_memory_budget_mb"]),
+  )
   padding = [payload["sequences"][0]] * (n_bucket - n_sequences)
   padded_sequences = [*payload["sequences"], *padding]
   if logits_bytes(masks.shape[0], n_bucket, length) > int(
@@ -569,8 +596,9 @@ def read_score_conditionals_store(path: str | Path) -> dict[str, Any]:
   import zarr  # noqa: PLC0415
 
   group = zarr.open_group(str(path), mode="r")
-  return {
-    "logits": np.asarray(group["logits"][...]),
-    "nll": np.asarray(group["nll"][...]),
-    "attrs": dict(group.attrs),
-  }
+  logits = np.asarray(group["logits"][...])
+  attrs = dict(group.attrs)
+  # Stores written before 0.5.5 carry no N-bucket attrs; they were never padded.
+  attrs.setdefault("n_sequences", int(logits.shape[1]))
+  attrs.setdefault("n_sequences_bucket", int(logits.shape[1]))
+  return {"logits": logits, "nll": np.asarray(group["nll"][...]), "attrs": attrs}

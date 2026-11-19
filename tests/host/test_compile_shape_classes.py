@@ -144,7 +144,7 @@ def test_ladders() -> None:
   assert [ligand_atom_rung(m) for m in (0, 1, 8, 16, 17, 25, 33, 1024, 1025)] == [
     16, 16, 16, 16, 32, 32, 64, 1024, 2048,
   ]
-  assert [sequence_count_rung(n) for n in (1, 2, 3, 5, 17, 25, 600)] == [1, 2, 4, 8, 24, 32, 1024]
+  assert [sequence_count_rung(n) for n in (1, 2, 3, 5, 17, 25, 513, 600)] == [1, 2, 4, 8, 24, 32, 640, 640]
   with pytest.raises(ValueError, match="non-negative"):
     ligand_atom_rung(-1)
 
@@ -240,12 +240,40 @@ def test_resume_is_unaffected_by_grouping(tmp_path: Path) -> None:
   assert attrs["n_sequences_bucket"] == 4
 
 
+def test_padding_never_pushes_a_unit_over_its_budget(tmp_path: Path) -> None:
+  """K=4, N=33 fits 1 MB unpadded (132 rows) but not at the N=48 rung (192 rows): plan accepts it,
+  and execution runs it unpadded instead of failing after taking the lock (PR #300 review)."""
+  masks_path = str(tmp_path / "m4.npy")
+  np.save(masks_path, _masks(4))
+  unit = _unit(tmp_path, ar_masks_path=masks_path, sequences=_mutants(33), logits_memory_budget_mb=1)
+  rows = _plan(tmp_path, unit)
+  assert row_compile_key(rows[0])[5] == 33
+  report = execute_manifest(_manifest(tmp_path, rows))
+  assert report["successful_rows"] == 1, report
+  attrs = read_score_conditionals_store(rows[0]["output_h5_path"])["attrs"]
+  assert attrs["n_sequences"] == 33
+  assert attrs["n_sequences_bucket"] == 33
+  # Control: with room for the rung, the same N pads to 48.
+  roomy = _plan(tmp_path / "roomy", _unit(tmp_path, label="roomy", ar_masks_path=masks_path,
+                                         sequences=_mutants(33), logits_memory_budget_mb=2))
+  assert row_compile_key(roomy[0])[5] == 48
+
+
 # --- numerics ---------------------------------------------------------------------------------------
 
 
-def test_sequence_padding_leaves_real_rows_unchanged(tmp_path: Path) -> None:
+_FAMILIES = [
+  pytest.param(_CHECKPOINT, False, id="proteinmpnn"),
+  pytest.param("solublempnn_v_48_020", False, id="solublempnn", marks=[pytest.mark.slow, pytest.mark.requires_weights]),
+  pytest.param(_LIGAND_CHECKPOINT, True, id="ligandmpnn", marks=[pytest.mark.slow, pytest.mark.requires_weights]),
+]
+
+
+@pytest.mark.parametrize(("checkpoint", "with_ligand"), _FAMILIES)
+def test_sequence_padding_leaves_real_rows_unchanged(tmp_path: Path, checkpoint: str, with_ligand: bool) -> None:
   sequences = _mutants(3)  # bucket 4: one padded copy
-  rows = _plan(tmp_path, _unit(tmp_path, sequences=sequences))
+  lig = _ligand_npz(tmp_path / "lig.npz", 20) if with_ligand else None
+  rows = _plan(tmp_path, _unit(tmp_path, sequences=sequences, checkpoint_id=checkpoint, ligand_context_path=lig))
   execute_manifest(_manifest(tmp_path, rows))
   store = read_score_conditionals_store(rows[0]["output_h5_path"])
   assert store["logits"].shape == (2, 3, _L, 21)
@@ -253,8 +281,9 @@ def test_sequence_padding_leaves_real_rows_unchanged(tmp_path: Path) -> None:
   assert store["attrs"]["sequences"] == sequences
   direct = score(
     ScoringSpecification(
-      inputs=[_STRUCTURE], checkpoint_id=_CHECKPOINT, sequences_to_score=sequences, ar_masks=_masks(2),
+      inputs=[_STRUCTURE], checkpoint_id=checkpoint, sequences_to_score=sequences, ar_masks=_masks(2),
       designable_mask=_designable(), return_logits=True, backbone_noise=0.0, max_length=_MAX_LENGTH,
+      ligand_context_path=lig, ligand_conditioning=bool(lig),
     ),
   )
   np.testing.assert_allclose(
@@ -282,7 +311,7 @@ def _assert_same_score(a: dict[str, Any], b: dict[str, Any], *, loss_xy: bool = 
 
 @pytest.mark.slow
 @pytest.mark.requires_weights
-@pytest.mark.parametrize("n_atoms", [8, 27])  # below and above atom_context_num=25
+@pytest.mark.parametrize("n_atoms", [8, 20, 27])  # k_y changes for 8 and 20 (< 25), not for 27
 def test_ligand_atom_padding_carries_no_weight(
   tmp_path: Path, monkeypatch: pytest.MonkeyPatch, n_atoms: int,
 ) -> None:
@@ -298,6 +327,32 @@ def test_ligand_atom_padding_carries_no_weight(
   # Instrument control: a real (mask-1) atom change does move the logits.
   moved = _ligand_score(_ligand_npz(tmp_path / "moved.npz", n_atoms, seed=1))
   assert np.abs(np.asarray(moved["logits"]) - np.asarray(unpadded["logits"])).max() > 1e-3
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+def test_sample_path_ligand_padding_is_inert(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  """The sample path goes through the same padding (kernel_dispatch -> _prepare_ligand_context)."""
+  from aminx.host.runner import sample  # noqa: PLC0415
+  from aminx.run.specs import SamplingSpecification  # noqa: PLC0415
+
+  lig = _ligand_npz(tmp_path / "lig.npz", 8)
+
+  def run() -> dict[str, Any]:
+    return sample(
+      SamplingSpecification(
+        inputs=[_STRUCTURE], checkpoint_id=_LIGAND_CHECKPOINT, ligand_context_path=lig, num_samples=4,
+        temperature=0.1, random_seed=0, max_length=_MAX_LENGTH, return_logits=True,
+      ),
+    )
+
+  padded = run()
+  monkeypatch.setattr(_sampling_helper, "ligand_atom_rung", lambda m: m)
+  unpadded = run()
+  np.testing.assert_array_equal(np.asarray(padded["sequences"]), np.asarray(unpadded["sequences"]))
+  np.testing.assert_allclose(
+    np.asarray(padded["logits"]), np.asarray(unpadded["logits"]), atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0,
+  )
 
 
 # --- regression: one compile per shape class, zero within it -----------------------------------------
@@ -345,5 +400,11 @@ def test_one_compile_per_shape_class(tmp_path: Path, monkeypatch: pytest.MonkeyP
   monkeypatch.setattr(_sampling_helper, "ligand_atom_rung", lambda m: m)
   control = _class_rows(tmp_path / "control", atoms=(19, 23, 40))
   control_report = execute_manifest(_manifest(tmp_path / "control", control))
-  marker = json.loads(Path(control[2]["output_h5_path"] + ".done.json").read_text())
-  assert marker["compile_telemetry"]["backend_compiles"] > 0, control_report["shape_classes"]
+  def compiles(index: int) -> int:
+    marker = json.loads(Path(control[index]["output_h5_path"] + ".done.json").read_text())
+    return int(marker["compile_telemetry"]["backend_compiles"])
+
+  # The counter separates "new shape" from "anything": M=23 after M=19 compiles, and M=19 again
+  # (row 3, same N bucket as row 0) does not.
+  assert compiles(2) > 0, control_report["shape_classes"]
+  assert compiles(3) == 0, control_report["shape_classes"]

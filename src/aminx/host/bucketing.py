@@ -400,16 +400,19 @@ SEQUENCE_COUNT_LADDER: tuple[int, ...] = (
 )
 
 
-def _ladder_rung(value: int, ladder: tuple[int, ...]) -> int:
-  """Smallest rung >= ``value``; past the ladder, round up to a multiple of its last rung."""
+def _ladder_rung(value: int, ladder: tuple[int, ...], overflow_step: int | None = None) -> int:
+  """Smallest rung >= ``value``; past the ladder, round up to a multiple of ``overflow_step``.
+
+  ``overflow_step`` defaults to the last rung.
+  """
   if value < 0:
     msg = f"ladder value must be non-negative, got {value}"
     raise ValueError(msg)
   for rung in ladder:
     if value <= rung:
       return rung
-  top = ladder[-1]
-  return -(-value // top) * top
+  step = ladder[-1] if overflow_step is None else overflow_step
+  return -(-value // step) * step
 
 
 def ligand_atom_rung(n_atoms: int) -> int:
@@ -441,10 +444,11 @@ def sequence_count_rung(n_sequences: int) -> int:
   Returns
   -------
   int
-    The smallest :data:`SEQUENCE_COUNT_LADDER` rung covering ``n_sequences``.
+    The smallest :data:`SEQUENCE_COUNT_LADDER` rung covering ``n_sequences``; past the ladder,
+    the next multiple of 128 (at most 25% padding there).
 
   """
-  return _ladder_rung(n_sequences, SEQUENCE_COUNT_LADDER)
+  return _ladder_rung(n_sequences, SEQUENCE_COUNT_LADDER, overflow_step=128)
 
 
 def pad_ligand_atom_axis(
