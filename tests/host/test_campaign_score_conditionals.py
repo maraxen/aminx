@@ -444,3 +444,41 @@ def test_chunked_pairs_reuse_the_executable_and_match_vmapped(monkeypatch: pytes
   before = compiles[0]
   score(_spec(sequences_to_score=seqs, ar_masks=_masks(3, seed=6)))
   assert compiles[0] == before, f"warm chunked call compiled {compiles[0] - before} executables"
+
+
+# --- audit 261118 remediations ---------------------------------------------------------------------
+
+
+def test_masks_must_cover_exactly_the_structure_residues() -> None:
+  """A 70-residue sequence and mask on a 76-residue structure is refused, not padded with X."""
+  short = _UBIQUITIN[:70]
+  masks = np.stack([np.tril(np.ones((70, 70), np.int8), -1) + np.triu(np.ones((70, 70), np.int8), 1)] * 2)
+  with pytest.raises(ValueError, match="exactly L residues after chain selection"):
+    score(_spec(sequences_to_score=[short], ar_masks=masks))
+
+
+def test_row_and_payload_task_must_agree(tmp_path: Path) -> None:
+  from aminx.host.campaign import validate_manifest_rows  # noqa: PLC0415
+
+  (row,) = _plan(tmp_path, _unit(tmp_path))
+  row["unit_spec"] = dict(row["unit_spec"], task="something_else")
+  with pytest.raises(ValueError, match="must agree"):
+    validate_manifest_rows([row])
+
+
+def test_task_files_are_hashed_in_full_not_by_size_and_mtime(tmp_path: Path) -> None:
+  """A same-size, same-mtime replacement of a >64 KiB mask file still changes the input hash."""
+  import os  # noqa: PLC0415
+
+  big = np.repeat(_masks(1), 20, axis=0)  # 20 x 76 x 76 int8 = ~115 KiB
+  path = _write_masks(tmp_path / "big.npy", big)
+  (row,) = _plan(tmp_path, _unit(tmp_path, ar_masks_path=path))
+  before = compute_unit_input_hash(row["unit_spec"])[0]
+  stat = os.stat(path)
+  flipped = big.copy()
+  flipped[0, 5, :] = big[1, 5, :] if not np.array_equal(big[0, 5], big[1, 5]) else 1 - big[0, 5]
+  flipped[0, 5, 5] = 0
+  np.save(path, flipped)
+  os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+  assert os.stat(path).st_size == stat.st_size
+  assert compute_unit_input_hash(row["unit_spec"])[0] != before

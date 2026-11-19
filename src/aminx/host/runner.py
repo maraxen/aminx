@@ -1281,6 +1281,19 @@ def score(  # noqa: PLR0915
     )
     # ar_masks (#3485): K masks, each padded like ar_mask. The candidate axis below becomes the
     # K x C (mask, sequence) pairs, so every pair is scored against the one encoding in one map.
+    if spec.ar_masks is not None:
+      # Audit 261118 (#3486): with ar_masks the masks' L must be the structure's own residue
+      # count after chain selection. A longer structure would score its extra residues against X
+      # padding (inside the NLL denominator); a shorter one would silently drop trailing letters.
+      mask_len = int(np.asarray(spec.ar_masks).shape[-1])
+      valid = [int(v) for v in np.asarray(batched_ensemble.mask).reshape(batch_size, -1).sum(axis=1)]
+      if any(v != mask_len for v in valid):
+        msg = (
+          f"score runner: ar_masks cover {mask_len} positions but the structure batch starting at "
+          f"{batch_structure_ids[0]} has {valid} valid residues; with ar_masks every structure "
+          "must have exactly L residues after chain selection (check chain_id)."
+        )
+        raise ValueError(msg)
     batch_ar_masks = (
       None
       if spec.ar_masks is None

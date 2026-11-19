@@ -434,6 +434,13 @@ def validate_manifest_rows(rows: list[dict[str, Any]]) -> None:
       if str(fixed_policy).strip() != _NO_ARM:
         msg = f"Row {row_hash} (task={row.get('task')!r}) fixes nothing; its fixed_policy must be {_NO_ARM!r}."
         raise ValueError(msg)
+      if unit_payload.get("task") != row.get("task"):
+        # compute_unit_input_hash keys the task-file hashing on the PAYLOAD's task.
+        msg = (
+          f"Row {row_hash}: task {row.get('task')!r} but unit_spec task {unit_payload.get('task')!r}; "
+          "they must agree or the unit's file bytes would not enter its input hash."
+        )
+        raise ValueError(msg)
       continue
     # A row that names an arm must CARRY that arm's mask. Checks the row against itself --
     # unlike the deleted `required_fixed_policies` arm, which checked the planner's output

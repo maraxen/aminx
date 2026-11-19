@@ -352,12 +352,24 @@ def plan_score_conditionals_manifest(
 
 
 def task_input_files(payload: Mapping[str, Any]) -> dict[str, Any]:
-  """Files whose BYTES determine a score_conditionals unit, for ``compute_unit_input_hash``."""
-  from aminx.host.campaign import _hash_input_entry  # noqa: PLC0415
+  """Files whose BYTES determine a score_conditionals unit, for ``compute_unit_input_hash``.
 
-  files: dict[str, Any] = {"ar_masks": _hash_input_entry(str(payload["ar_masks_path"]))}
+  Always a full sha256 of the current bytes (a few MB at most), never the size+mtime-keyed cache
+  used for large ``inputs``: a same-size, same-mtime replacement must not be resumed as done.
+  """
+
+  def _entry(path: str) -> dict[str, Any]:
+    try:
+      return {"value": path, "kind": "file", "sha256": _sha256(path)}
+    except OSError as exc:
+      from aminx.host.campaign import InputHashUnavailableError  # noqa: PLC0415
+
+      msg = f"cannot read {path!r} to hash it: {exc}"
+      raise InputHashUnavailableError(msg) from exc
+
+  files: dict[str, Any] = {"ar_masks": _entry(str(payload["ar_masks_path"]))}
   if payload.get("ligand_context_path"):
-    files["ligand_context"] = _hash_input_entry(str(payload["ligand_context_path"]))
+    files["ligand_context"] = _entry(str(payload["ligand_context_path"]))
   return files
 
 
@@ -408,6 +420,13 @@ def execute_score_conditionals_unit(
     msg = "score_conditionals: unit exceeds logits_memory_budget_mb."
     raise ValueError(msg)
   result = score(scoring_spec_for_unit(payload, masks))
+  n_structures = int(np.asarray(result["scores"]).shape[0])
+  if n_structures != 1:
+    msg = (
+      f"score_conditionals: {payload['inputs']} yielded {n_structures} structures (models or "
+      "frames); a unit scores exactly one. Split the file or select one model."
+    )
+    raise ValueError(msg)
   logits = np.asarray(result["logits"])[0][..., :length, :].astype(np.float32)  # (K, N, L, 21)
   nll = np.asarray(result["scores"])[0].astype(np.float32)  # (K, N)
   structure_ids = result["metadata"].get("structure_ids") or ["structure_0"]
@@ -431,6 +450,9 @@ def execute_score_conditionals_unit(
       "ligand_context_sha256": payload.get("ligand_context_sha256"),
       "random_seed": int(payload["random_seed"]),
       "axes": {"logits": ["mask", "sequence", "position", "token"], "nll": ["mask", "sequence"]},
+      # nll is score()'s masked mean over EVERY valid position (fixed and designable alike);
+      # per-position or designable-only quantities come from ``logits``.
+      "nll_definition": "mean over all valid structure positions of -log p(s_i); designable_mask not applied",
       "aminx_version": resolve_aminx_version() or "unknown",
     },
   )
