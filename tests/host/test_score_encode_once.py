@@ -262,15 +262,20 @@ def test_candidate_activation_estimate_covers_the_encoding_not_just_the_logits()
   )
   encoding_bytes = sum(int(x.size) * x.dtype.itemsize for x in jax.tree.leaves(encoding))
 
-  cache: dict[Any, int] = {}
+  from aminx.host.runner import _ACTIVATION_ESTIMATE_CACHE, _model_signature
+
+  signature = _model_signature(model)
   args = (
     split, "arithmetic_mean", ensemble, (None, None, None),
     jax.random.PRNGKey(0), jnp.zeros((struct_len,), dtype=jnp.int32),
   )
-  one = _candidate_activation_bytes(*args, batch_size=1, estimate_cache=cache)
+  _ACTIVATION_ESTIMATE_CACHE.clear()
+  one = _candidate_activation_bytes(*args, batch_size=1, model_signature=signature)
   assert one >= encoding_bytes
   assert one > struct_len * 21 * 4
-  assert len(cache) == 1
+  # Memoised process-wide per (architecture, strategy, shapes) since #3484.
+  assert len(_ACTIVATION_ESTIMATE_CACHE) == 1
   # The structure axis is vmapped outside the candidate axis: the figure scales with it.
-  assert _candidate_activation_bytes(*args, batch_size=3, estimate_cache=cache) == 3 * one
-  assert len(cache) == 1, "second call with identical shapes must hit the memo"
+  assert _candidate_activation_bytes(*args, batch_size=3, model_signature=signature) == 3 * one
+  assert len(_ACTIVATION_ESTIMATE_CACHE) == 1
+  assert len(_ACTIVATION_ESTIMATE_CACHE) == 1, "second call with identical shapes must hit the memo"
