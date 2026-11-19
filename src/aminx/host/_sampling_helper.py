@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from aminx.host.bucketing import ligand_atom_rung, pad_ligand_atom_axis
+from aminx.host.bucketing import _is_tracer, ligand_atom_rung, pad_ligand_atom_axis
 from aminx.run.specs import SamplingSpecification
 from aminx.utils.data_structures import Protein
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
@@ -309,6 +309,21 @@ def _prepare_ligand_context(
     Y_m = file_Y_m
 
   real_ligand = Y is not None and Y_t is not None and Y_m is not None
+  # Ligand atom-axis bucketing (#3510): pad M at the END with mask-0 atoms to a ladder rung, so
+  # every ligand whose atom count falls in one rung shares compiled kernels. Masked atoms carry no
+  # weight (LigandMPNN masks ligand messages before a fixed-scale sum, and the top-k ranks masked
+  # atoms last); end-padding also leaves the packer's ``[:, :atom_context_num]`` slice unchanged.
+  # Same knob as residue trimming; the placeholder (no-ligand) context is never padded. Padding
+  # runs on the HOST (numpy), before any device op, so no eager op ever sees the raw M and
+  # compiles per raw atom count.
+  if (
+    real_ligand
+    and bool(getattr(spec, "length_bucketing", False))
+    and not any(_is_tracer(a) for a in (Y, Y_t, Y_m))
+  ):
+    Y, Y_t, Y_m = pad_ligand_atom_axis(
+      np.asarray(Y), np.asarray(Y_t), np.asarray(Y_m), ligand_atom_rung(int(np.shape(Y_m)[-1])),
+    )
   if Y is None or Y_t is None or Y_m is None:
     if spec.ligand_conditioning:
       msg = (
@@ -344,13 +359,6 @@ def _prepare_ligand_context(
     dtype=jnp.float32,
     name="Y_m",
   )
-  # Ligand atom-axis bucketing (#3510): pad M at the END with mask-0 atoms to a ladder rung, so
-  # every ligand whose atom count falls in one rung shares compiled kernels. Masked atoms carry no
-  # weight (LigandMPNN masks ligand messages before a fixed-scale sum, and the top-k ranks masked
-  # atoms last); end-padding also leaves the packer's ``[:, :atom_context_num]`` slice unchanged.
-  # Same knob as residue trimming; the placeholder (no-ligand) context is never padded.
-  if real_ligand and bool(getattr(spec, "length_bucketing", False)):
-    Y, Y_t, Y_m = pad_ligand_atom_axis(Y, Y_t, Y_m, ligand_atom_rung(int(Y_m.shape[-1])))
 
   if not spec.sidechain_conditioning:
     return {
