@@ -126,7 +126,9 @@ def _load_ligand_context_file(
   *,
   canonical_structure_ids: Sequence[str] | None,
   batch_structure_ids: Sequence[str] | None,
-) -> tuple[jax.Array, jax.Array, jax.Array]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+  # Host (numpy) arrays: converting here, at the file's raw atom count, would compile a device
+  # conversion per raw shape; _prepare_ligand_context pads first, then converts (#3510).
   with np.load(ligand_context_path, allow_pickle=False) as npz_data:
     canonical_ids = (
       list(canonical_structure_ids)
@@ -206,9 +208,9 @@ def _load_ligand_context_file(
         for structure_id in selected_ids
       ]
       return (
-        jnp.asarray(np.stack(y_items, axis=0)),
-        jnp.asarray(np.stack(y_t_items, axis=0)),
-        jnp.asarray(np.stack(y_m_items, axis=0)),
+        np.stack(y_items, axis=0),
+        np.stack(y_t_items, axis=0),
+        np.stack(y_m_items, axis=0),
       )
 
     missing = [key for key in (*LIGAND_CONTEXT_KEYS, "structure_ids") if key not in npz_data]
@@ -239,9 +241,9 @@ def _load_ligand_context_file(
       dtype=np.int32,
     )
     return (
-      jnp.asarray(np.asarray(npz_data["Y"])[gather_indices]),
-      jnp.asarray(np.asarray(npz_data["Y_t"])[gather_indices]),
-      jnp.asarray(np.asarray(npz_data["Y_m"])[gather_indices]),
+      np.asarray(npz_data["Y"])[gather_indices],
+      np.asarray(npz_data["Y_t"])[gather_indices],
+      np.asarray(npz_data["Y_m"])[gather_indices],
     )
 
 
