@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.4 (2026-11-18)
+## 0.5.4 (2026-11-19)
 
 ### Added
 
@@ -10,8 +10,10 @@
 
 ### Fixed
 
+- **The 0.5.3 wheel shipped LASErMPNN's `ideal_geometry.npz` as a Git LFS pointer** (debt #3500): the release build checked out without LFS, so `runner.sample(model_family="lasermpnn")` could not build coordinates from an installed wheel. The release workflow now fetches LFS objects and refuses to publish a wheel whose packaged data files are pointers or unreadable (`scripts/release/check_wheel_data.py`); `tests/test_package_data.py` checks the same in CI.
 - **`runner.score` recompiled on every call** (#3484): the encode/score kernels were `jax.jit` closures rebuilt per call over a freshly loaded model, and the candidate activation estimate was re-lowered per call. They are now module-level `eqx.filter_jit` kernels keyed on architecture and shapes, with a process-wide estimate memo. Warm identical-shape calls: 3 backend compiles and 2.5 s, now 0 compiles and 0.24 s (1ubq, CPU; bathos runs b25cbd4e and 6f034f38).
-- **Candidate-axis tiling ran the whole axis at once** once it exceeded the memory budget: xtrax's planner fell back to `ChunkedMap(batch_size=0)` (the axis's default), which estimates to 0 bytes. `plan_axis_strategy` now sizes the tile from the budget. A 448-pair scoring call had asked a 24 GiB GPU for 21 GiB.
+- **Over-budget tiles on the new `ar_masks` path are sized from the memory budget.** xtrax's planner falls back to `ChunkedMap(batch_size=0)` (the axis's default), which estimates to 0 bytes and then runs the whole axis at once; a 448-pair scoring call had asked a 24 GiB GPU for 21 GiB. `plan_axis_strategy(size_unsized_tiles=True)` sizes the tile instead, and the pair tile is capped at 32 (pre-registered sweep, run 6162354f). The option is off by default, so every existing caller keeps its 0.5.3 dispatch and float reduction order (legacy callers tracked as debt #3501).
+- Review and audit hardening of the new path: `score()` refuses `ar_masks` when a family driver would handle the spec; `ar_masks` requires the structure's valid residue count to equal the masks' L; a `score_conditionals` unit refuses multi-structure inputs and checkpoints other than ProteinMPNN / SolubleMPNN / LigandMPNN; mask and ligand bytes are always fully hashed; row and payload `task` must agree; score rows hand their logits to the unified sink.
 - **Batch-composition dependence characterised** (#3487): a sequence's logits are bitwise independent of the CONTENT of its batch and differ across batch SIZES only by float reassociation in the vmapped matmuls (at most 3.8e-6 in float32 on CPU and GPU, flat in batch size, ~1e-15 in float64; six pre-registered runs). Documented in `score()`; compare across batch compositions with `SCORE_BATCH_COMPOSITION_ATOL`.
 
 ### Changed
