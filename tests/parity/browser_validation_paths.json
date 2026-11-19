@@ -805,5 +805,6 @@
   "src/aminx/host/campaign_score.py::task_input_files": "P28",
   "src/aminx/host/campaign_score.py::validate_mpnn_sequences": "P28",
   "src/aminx/host/campaign_score.py::write_score_conditionals_store": "P28",
-  "src/aminx/host/campaign_score.py::score_compile_key": "P28"
+  "src/aminx/host/campaign_score.py::score_compile_key": "P28",
+  "src/aminx/host/campaign_score.py::sequence_bucket": "P28"
 }
