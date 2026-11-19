@@ -510,7 +510,9 @@ def test_family_driver_refuses_ar_masks_in_score(monkeypatch: pytest.MonkeyPatch
     score(_spec(sequences_to_score=[_UBIQUITIN], ar_masks=_masks(2)))
 
 
-@pytest.mark.parametrize("checkpoint", ["lasermpnn_v1", "ligandmpnn_sc_v_32_002_16", "caliby"])
+@pytest.mark.parametrize(
+  "checkpoint", ["ca_v_48_020", "ligandmpnn_sc_v_32_002_16", "global_label_membrane_mpnn_v_48_020"],
+)
 def test_unsupported_checkpoints_are_refused_at_plan_time(tmp_path: Path, checkpoint: str) -> None:
   with pytest.raises(ValueError, match="not supported"):
     _plan(tmp_path, _unit(tmp_path, checkpoint_id=checkpoint))
