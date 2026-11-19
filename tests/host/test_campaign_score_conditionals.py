@@ -482,3 +482,41 @@ def test_task_files_are_hashed_in_full_not_by_size_and_mtime(tmp_path: Path) -> 
   os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns))
   assert os.stat(path).st_size == stat.st_size
   assert compute_unit_input_hash(row["unit_spec"])[0] != before
+
+
+# --- code review 261118 remediations ---------------------------------------------------------------
+
+
+class _StubFamilyDriver:
+  """A driver that claims every scoring purpose; it must never run for ar_masks."""
+
+  name = "stub_family"
+  mpnn_fallback_purposes: frozenset[str] = frozenset()
+
+  def handles(self, spec: object, purpose: str) -> bool:
+    del spec, purpose
+    return True
+
+
+def test_family_driver_refuses_ar_masks_in_score(monkeypatch: pytest.MonkeyPatch) -> None:
+  import aminx.host.runner as runner  # noqa: PLC0415
+
+  def _must_not_run(*_a: object, **_k: object) -> None:
+    pytest.fail("the family driver ran although ar_masks was set")
+
+  monkeypatch.setattr(runner, "_family_driver_for", lambda spec: _StubFamilyDriver())
+  monkeypatch.setattr(runner, "run_family_driver", _must_not_run)
+  with pytest.raises(NotImplementedError, match="does not support ar_masks"):
+    score(_spec(sequences_to_score=[_UBIQUITIN], ar_masks=_masks(2)))
+
+
+@pytest.mark.parametrize("checkpoint", ["lasermpnn_v1", "ligandmpnn_sc_v_32_002_16", "caliby"])
+def test_unsupported_checkpoints_are_refused_at_plan_time(tmp_path: Path, checkpoint: str) -> None:
+  with pytest.raises(ValueError, match="not supported"):
+    _plan(tmp_path, _unit(tmp_path, checkpoint_id=checkpoint))
+
+
+def test_unit_result_carries_logits_for_the_sink(tmp_path: Path) -> None:
+  rows = _plan(tmp_path, _unit(tmp_path))
+  result = _run(tmp_path, rows)
+  assert np.asarray(result["logits"]).shape == (3, 2, _L, 21)

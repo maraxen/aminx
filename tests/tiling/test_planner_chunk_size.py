@@ -28,12 +28,20 @@ def _budget(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.parametrize("cardinality", [30, 64, 448])
 def test_over_budget_axis_gets_a_real_tile(cardinality: int) -> None:
-  strategy = plan_axis_strategy(N_CANDIDATES, cardinality, None, activation_bytes_per_element=_PER_PAIR)
+  strategy = plan_axis_strategy(
+    N_CANDIDATES, cardinality, None, activation_bytes_per_element=_PER_PAIR, size_unsized_tiles=True,
+  )
   assert isinstance(strategy, ChunkedMap)
   assert strategy.batch_size >= 1
   # The same budget the planner resolves (an explicit env budget is used as given).
   assert strategy.batch_size * _PER_PAIR <= resolve_memory_budget_bytes(headroom=0.8)
   assert (strategy.batch_size + 1) * _PER_PAIR > resolve_memory_budget_bytes(headroom=0.8)
+
+
+def test_default_keeps_the_legacy_dispatch() -> None:
+  """Existing callers are unchanged: without the opt-in the 0-size fallback is returned as before."""
+  strategy = plan_axis_strategy(N_CANDIDATES, 448, None, activation_bytes_per_element=_PER_PAIR)
+  assert strategy == ChunkedMap(batch_size=0)
 
 
 def test_axis_that_fits_stays_vmapped() -> None:

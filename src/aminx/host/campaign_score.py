@@ -49,7 +49,8 @@ from typing import Any
 
 import numpy as np
 
-SCORE_CONDITIONALS_TASK = "score_conditionals"
+from aminx.host.campaign import SCORE_CONDITIONALS_TASK
+
 SCORE_CONDITIONALS_SCHEMA_VERSION = "score_conditionals_v1"
 SCORE_CONDITIONALS_ROW_SCHEMA_VERSION = "score_conditionals_row_v1"
 MASK_SEMANTICS = "ar_masks[k, i, j] == 1 iff position i SEES position j; diagonal 0"
@@ -114,9 +115,28 @@ def _sha256(path: str | Path) -> str:
   return digest.hexdigest()
 
 
+_SUPPORTED_CHECKPOINT_PREFIXES = {
+  "proteinmpnn_v_": "proteinmpnn",
+  "solublempnn_v_": "proteinmpnn",
+  "ligandmpnn_v_": "ligandmpnn",
+}
+
+
 def model_family_for_checkpoint(checkpoint_id: str) -> str:
-  """``ligandmpnn`` for LigandMPNN weights, else ``proteinmpnn`` (ProteinMPNN, SolubleMPNN)."""
-  return "ligandmpnn" if checkpoint_id.startswith("ligandmpnn") else "proteinmpnn"
+  """Model family for a checkpoint this row kind supports; anything else is refused.
+
+  The ar_masks split-score path serves ProteinMPNN, SolubleMPNN and LigandMPNN weights. Family
+  drivers (LASEr, Potts, Caliby, ...) would score under their own visibility rule, and other MPNN
+  variants (side-chain, membrane, CA) are not validated here, so they are refused at plan time.
+  """
+  for prefix, family in _SUPPORTED_CHECKPOINT_PREFIXES.items():
+    if checkpoint_id.startswith(prefix):
+      return family
+  msg = (
+    f"score_conditionals: checkpoint {checkpoint_id!r} is not supported; use a "
+    f"{'/'.join(p.rstrip('_v') + '*' for p in _SUPPORTED_CHECKPOINT_PREFIXES)} checkpoint."
+  )
+  raise ValueError(msg)
 
 
 def validate_mpnn_sequences(sequences: Sequence[str]) -> int:
@@ -456,7 +476,8 @@ def execute_score_conditionals_unit(
       "aminx_version": resolve_aminx_version() or "unknown",
     },
   )
-  return {"status": "completed", "logits_shape": list(logits.shape), "nll": nll}
+  # Both arrays: campaign._collect_sink_arrays forwards ndarray values to the unified sink.
+  return {"status": "completed", "logits_shape": list(logits.shape), "logits": logits, "nll": nll}
 
 
 def write_score_conditionals_store(

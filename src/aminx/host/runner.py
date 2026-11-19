@@ -370,9 +370,6 @@ def sample(
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)
-    if d.handles(spec, purpose) and getattr(spec, "ar_masks", None) is not None:
-      msg = f"{d.name} does not support ar_masks; it would score under its own visibility rule."
-      raise NotImplementedError(msg)
     if d.handles(spec, purpose):
       return run_family_driver(d, spec, purpose)
     if purpose not in d.mpnn_fallback_purposes:
@@ -900,6 +897,17 @@ def _over_noise_levels(
   return jax.tree.map(lambda leaf: jnp.moveaxis(leaf, 0, 1), out)
 
 
+def _pad_scoring_ar_masks(
+  ar_masks: Any,  # noqa: ANN401 -- the validated (K, L, L) int8 stack from ScoringSpecification
+  sequence_indices: list[jax.Array],
+  struct_len: int,
+) -> jax.Array:
+  """Pad a ``(K, L, L)`` mask stack to the structure length in one call (checks as below, once)."""
+  first = _pad_scoring_ar_mask(ar_masks[0], sequence_indices, struct_len)  # length checks
+  pad = int(first.shape[0]) - int(ar_masks.shape[-1])
+  return jnp.pad(jnp.asarray(ar_masks), ((0, 0), (0, pad), (0, pad)))
+
+
 def _pad_scoring_ar_mask(
   ar_mask: Any,  # noqa: ANN401 -- the validated (L, L) int8 ndarray from ScoringSpecification
   sequence_indices: list[jax.Array],
@@ -1011,6 +1019,11 @@ def score(  # noqa: PLR0915
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)
+    if d.handles(spec, purpose) and spec.ar_masks is not None:
+      # A family driver scores under its own visibility rule and has no K axis: it would return
+      # (S, C) scores for a caller who asked for K mask-conditioned ones (review 261118).
+      msg = f"score runner: {d.name} does not support ar_masks; it would score under its own visibility rule."
+      raise NotImplementedError(msg)
     if d.handles(spec, purpose):
       # Family drivers return before the per-structure loop, and none of them computes
       # loss_xy / mask_xy / ligand_confidence. Refuse rather than return scores without them.
@@ -1297,9 +1310,7 @@ def score(  # noqa: PLR0915
     batch_ar_masks = (
       None
       if spec.ar_masks is None
-      else jnp.stack(
-        [_pad_scoring_ar_mask(m, sequence_indices_list, struct_len) for m in spec.ar_masks],
-      )
+      else _pad_scoring_ar_masks(spec.ar_masks, sequence_indices_list, struct_len)
     )
 
     # Pre-derive one key per (structure, candidate) pair via the SAME sequential
@@ -1391,6 +1402,9 @@ def score(  # noqa: PLR0915
       n_masks * n_candidates,
       None,
       activation_bytes_per_element=activation_bytes,
+      # Budget-sized tiles only on the new ar_masks path: every pre-existing caller keeps its
+      # 0.5.3 dispatch (and float reduction order) exactly; see plan_axis_strategy.
+      size_unsized_tiles=batch_ar_masks is not None,
     )
     candidate_iterator = make_axis_dispatch(strategy, axis=N_CANDIDATES.name)
 

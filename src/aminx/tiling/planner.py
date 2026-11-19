@@ -49,6 +49,7 @@ def plan_axis_strategy(
   *,
   activation_bytes_per_element: float,
   headroom: float = 0.80,
+  size_unsized_tiles: bool = False,
 ) -> AxisStrategy:
   """Resolve a Vmap/ChunkedMap strategy for one axis via xtrax's BatchPlanner.
 
@@ -59,6 +60,10 @@ def plan_axis_strategy(
     batch_size_override: Fixed ChunkedMap batch_size. Bypasses the planner when > 0.
     activation_bytes_per_element: Live bytes one element of this axis holds.
     headroom: Fraction of the device limit the plan may occupy.
+    size_unsized_tiles: When BatchPlanner returns ``ChunkedMap(batch_size=0)`` (it falls back to
+      the axis template's ``default_batch_size``), size the tile from the budget instead. Off by
+      default so existing callers keep their dispatch and float reduction order; opt in on new
+      paths. Without it a 0-size tile runs the whole axis at once.
 
   Returns:
     A :class:`Vmap` or :class:`ChunkedMap` strategy.
@@ -78,7 +83,7 @@ def plan_axis_strategy(
   )
   plan = BatchPlanner(budget=budget).plan([axis])
   xtrax_strategy = plan.decisions[0].strategy
-  if isinstance(xtrax_strategy, ChunkedMap) and xtrax_strategy.batch_size <= 0:
+  if size_unsized_tiles and isinstance(xtrax_strategy, ChunkedMap) and xtrax_strategy.batch_size <= 0:
     # BatchPlanner falls back to ChunkedMap with the axis template's default_batch_size, which is
     # 0 for the candidate axis; a 0-size tile estimates to 0 bytes, so the "plan" always fits and
     # then runs the whole axis at once. Measured: 448 (mask, sequence) pairs at the 512 rung

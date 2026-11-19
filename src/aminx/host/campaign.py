@@ -519,7 +519,7 @@ class ManifestGateState:
 # Row kinds (#3486). A row without ``task`` is a sampling row (``sampling_spec`` payload), exactly
 # as before; its hashes and dispatch are untouched. Other kinds carry a ``unit_spec`` payload and
 # are executed by their own handler, under the same lock / done-marker / input-hash semantics.
-SCORE_CONDITIONALS_TASK = "score_conditionals"
+SCORE_CONDITIONALS_TASK = "score_conditionals"  # campaign_score.SCORE_CONDITIONALS_TASK is this object
 _ROW_TASKS = frozenset({SCORE_CONDITIONALS_TASK})
 
 
@@ -2553,7 +2553,11 @@ def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState
     if not manifest_hash:
       state.metadata_issues.append("Manifest row missing manifest_row_hash.")
       continue
-    sampling_spec_payload = _row_unit_payload(row)
+    try:
+      sampling_spec_payload = _row_unit_payload(row)
+    except ValueError as exc:  # unknown task: report the row, keep evaluating the rest
+      state.metadata_issues.append(f"Manifest row {manifest_hash}: {exc}")
+      continue
     if not isinstance(sampling_spec_payload, dict):
       state.metadata_issues.append(
         f"Manifest row {manifest_hash} is missing its sampling_spec/unit_spec payload.",
