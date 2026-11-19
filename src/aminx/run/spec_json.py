@@ -391,6 +391,8 @@ def _coerce_field_value(_cls: type[Any], field_name: str, value: Any) -> Any:
     "fixed_mask",
     "fixed_tokens",
     "ar_mask",
+    "ar_masks",
+    "designable_mask",
     "state_weights",
     "combine_weights",
   }:

@@ -677,6 +677,12 @@ def run_packed_manifest_row(  # noqa: PLR0915
   )
   rows = _manifest_rows(manifest_path)
   row = _select_row(rows, row_index=row_index, row_hash=row_hash)
+  if row.get("task") is not None:
+    msg = (
+      f"campaign run --pack does not support task={row.get('task')!r} rows yet; run them with "
+      "run_manifest_row / execute_manifest (unpacked), which owns their executor."
+    )
+    raise NotImplementedError(msg)
   sampling_spec_payload = row.get("sampling_spec")
   if not isinstance(sampling_spec_payload, dict):
     msg = "Manifest row must include a 'sampling_spec' object."

@@ -426,6 +426,22 @@ def validate_manifest_rows(rows: list[dict[str, Any]]) -> None:
     if state_weight_profile is None or not str(state_weight_profile).strip():
       msg = f"Row {row_hash} has empty or missing state_weight_profile"
       raise ValueError(msg)
+    if _row_task(row) is not None:
+      unit_payload = _row_unit_payload(row)
+      if not isinstance(unit_payload, dict) or not unit_payload.get("output_h5_path"):
+        msg = f"Row {row_hash} (task={row.get('task')!r}) must carry a unit_spec with output_h5_path."
+        raise ValueError(msg)
+      if str(fixed_policy).strip() != _NO_ARM:
+        msg = f"Row {row_hash} (task={row.get('task')!r}) fixes nothing; its fixed_policy must be {_NO_ARM!r}."
+        raise ValueError(msg)
+      if unit_payload.get("task") != row.get("task"):
+        # compute_unit_input_hash keys the task-file hashing on the PAYLOAD's task.
+        msg = (
+          f"Row {row_hash}: task {row.get('task')!r} but unit_spec task {unit_payload.get('task')!r}; "
+          "they must agree or the unit's file bytes would not enter its input hash."
+        )
+        raise ValueError(msg)
+      continue
     # A row that names an arm must CARRY that arm's mask. Checks the row against itself --
     # unlike the deleted `required_fixed_policies` arm, which checked the planner's output
     # against the planner's own input and therefore could never fail.
@@ -498,6 +514,29 @@ class ManifestGateState:
   metadata_issues: list[str]
   checkpoint_issues: list[str]
   runtime_issues: list[str]
+
+
+# Row kinds (#3486). A row without ``task`` is a sampling row (``sampling_spec`` payload), exactly
+# as before; its hashes and dispatch are untouched. Other kinds carry a ``unit_spec`` payload and
+# are executed by their own handler, under the same lock / done-marker / input-hash semantics.
+SCORE_CONDITIONALS_TASK = "score_conditionals"  # campaign_score.SCORE_CONDITIONALS_TASK is this object
+_ROW_TASKS = frozenset({SCORE_CONDITIONALS_TASK})
+
+
+def _row_task(row: Mapping[str, Any]) -> str | None:
+  """The row's ``task``, or ``None`` for a sampling row. Unknown tasks are refused."""
+  task = row.get("task")
+  if task is None:
+    return None
+  if task not in _ROW_TASKS:
+    msg = f"Manifest row {row.get('manifest_row_hash')!r} has unknown task {task!r}; known: {sorted(_ROW_TASKS)}."
+    raise ValueError(msg)
+  return str(task)
+
+
+def _row_unit_payload(row: Mapping[str, Any]) -> Any:  # noqa: ANN401
+  """The row's unit payload: ``unit_spec`` for task rows, ``sampling_spec`` for sampling rows."""
+  return row.get("unit_spec") if _row_task(row) is not None else row.get("sampling_spec")
 
 
 def _normalize_inputs(inputs: Any) -> list[str]:  # noqa: ANN401
@@ -931,6 +970,12 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
       "numerics_epoch": SAMPLING_NUMERICS_EPOCH,
     },
   }
+  # Task rows (#3486): files named in the payload whose BYTES determine the output (the mask
+  # stack, the ligand context). Added only for task payloads, so sampling-row hashes are unchanged.
+  if sampling_spec_payload.get("task") == SCORE_CONDITIONALS_TASK:
+    from aminx.host.campaign_score import task_input_files  # noqa: PLC0415
+
+    components["task_files"] = task_input_files(sampling_spec_payload)
   # Only seed 0. Adding the key for any other seed would change that unit's hash.
   recorded_seed = sampling_spec_payload.get("random_seed")
   if recorded_seed == 0 and not isinstance(recorded_seed, bool):
@@ -1769,14 +1814,16 @@ def run_manifest_row(  # noqa: PLR0915
   rows = _manifest_rows(manifest_path)
 
   row = _select_row(rows, row_index=row_index, row_hash=row_hash)
-  sampling_spec_payload = row.get("sampling_spec")
+  row_task = _row_task(row)
+  payload_key = "sampling_spec" if row_task is None else "unit_spec"
+  sampling_spec_payload = _row_unit_payload(row)
   if not isinstance(sampling_spec_payload, dict):
-    msg = "Manifest row must include a 'sampling_spec' object."
+    msg = f"Manifest row must include a '{payload_key}' object."
     raise TypeError(msg)
 
   raw_output_path = sampling_spec_payload.get("output_h5_path")
   if raw_output_path is None:
-    msg = "Manifest row sampling_spec must include output_h5_path."
+    msg = f"Manifest row {payload_key} must include output_h5_path."
     raise ValueError(msg)
   output_h5_path = Path(raw_output_path).resolve()
   output_h5_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1883,25 +1930,36 @@ def run_manifest_row(  # noqa: PLR0915
       )
       raise RuntimeError(msg)
 
-    worker_payload = dict(sampling_spec_payload)
-    worker_payload["output_path"] = str(partial_path)
-    worker_payload["output_zarr_path"] = str(partial_path)
-    worker_payload["output_h5_path"] = str(partial_path)
-    worker_payload = migrate_removed_spec_keys(worker_payload)
-    worker_payload = {
-      key: _coerce_field_value(SamplingSpecification, key, value)
-      for key, value in worker_payload.items()
-    }
-    sampling_spec = SamplingSpecification(**worker_payload)
-    is_multi_backend_arm = "backend_arm_id" in row
-    if not is_multi_backend_arm:
-      refuse_driver_family(sampling_spec, surface="campaign")
+    sampling_spec: SamplingSpecification | None = None
+    if row_task is None:
+      worker_payload = dict(sampling_spec_payload)
+      worker_payload["output_path"] = str(partial_path)
+      worker_payload["output_zarr_path"] = str(partial_path)
+      worker_payload["output_h5_path"] = str(partial_path)
+      worker_payload = migrate_removed_spec_keys(worker_payload)
+      worker_payload = {
+        key: _coerce_field_value(SamplingSpecification, key, value)
+        for key, value in worker_payload.items()
+      }
+      sampling_spec = SamplingSpecification(**worker_payload)
+      is_multi_backend_arm = "backend_arm_id" in row
+      if not is_multi_backend_arm:
+        refuse_driver_family(sampling_spec, surface="campaign")
 
-    is_multistate_poe_row = (
+    is_multistate_poe_row = sampling_spec is not None and (
       isinstance(sampling_spec.inputs, (list, tuple)) and len(sampling_spec.inputs) > 1
     )
     try:
-      if sampling_spec.model_family == "thermompnn":
+      if row_task == SCORE_CONDITIONALS_TASK:
+        # Teacher-forced conditional logits under K explicit masks (#3486); writes its own store
+        # at partial_path, committed below exactly as a sampling store is.
+        from aminx.host.campaign_score import execute_score_conditionals_unit  # noqa: PLC0415
+
+        sample_result = execute_score_conditionals_unit(sampling_spec_payload, partial_path)
+      elif sampling_spec is None:  # pragma: no cover - _row_task refuses unknown tasks
+        msg = f"no executor for task {row_task!r}"
+        raise RuntimeError(msg)
+      elif sampling_spec.model_family == "thermompnn":
         score_spec = ScoringSpecification(
           inputs=sampling_spec.inputs,
           model_family="thermompnn",
@@ -1960,12 +2018,18 @@ def run_manifest_row(  # noqa: PLR0915
       campaign_id=str(row.get("campaign_id") or payload.get("campaign_id") or "campaign"),
     )
   if active_sink is not None:
-    arm_id = str(row.get("backend_arm_id") or sampling_spec.model_family or "default")
+    sink_family = (
+      sampling_spec.model_family if sampling_spec is not None else sampling_spec_payload.get("model_family")
+    )
+    sink_checkpoint = (
+      sampling_spec.checkpoint_id if sampling_spec is not None else sampling_spec_payload.get("checkpoint_id")
+    )
+    arm_id = str(row.get("backend_arm_id") or row.get("label") or sink_family or "default")
     sink_arrays = _collect_sink_arrays(output_h5_path, sample_result)
     active_sink.write_arm_results(
       arm_id=arm_id,
-      model_family=str(sampling_spec.model_family or "proteinmpnn"),
-      checkpoint_id=str(sampling_spec.checkpoint_id or ""),
+      model_family=str(sink_family or "proteinmpnn"),
+      checkpoint_id=str(sink_checkpoint or ""),
       manifest_row_hash=manifest_hash,
       records=[
         {
@@ -2176,7 +2240,7 @@ def adopt_legacy_done_markers(
       continue
     entry: dict[str, Any] = {"manifest_row_hash": row_hash, "adopted": False}
     entries.append(entry)
-    spec_payload = row.get("sampling_spec")
+    spec_payload = _row_unit_payload(row)
     raw_output = spec_payload.get("output_h5_path") if isinstance(spec_payload, dict) else None
     if raw_output is None:
       entry["skipped"] = "no_output_path"
@@ -2443,6 +2507,17 @@ def evaluate_scale_ramp_reports(report_paths: Sequence[str | Path]) -> dict[str,
 
 
 def _row_cell_key(row: dict[str, Any]) -> GateCellKey:
+  if _row_task(row) is not None:
+    # A task row's cell is its condition: task, label, checkpoint and ligand on/off.
+    return (
+      str(row["task"]),
+      str(row.get("label", "")),
+      str(row.get("checkpoint_id", "")),
+      (),
+      (),
+      bool(row.get("ligand_conditioning")),
+      False,
+    )
   return (
     str(row["fixed_policy"]),
     str(row["state_weight_profile"]),
@@ -2478,10 +2553,14 @@ def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState
     if not manifest_hash:
       state.metadata_issues.append("Manifest row missing manifest_row_hash.")
       continue
-    sampling_spec_payload = row.get("sampling_spec")
+    try:
+      sampling_spec_payload = _row_unit_payload(row)
+    except ValueError as exc:  # unknown task: report the row, keep evaluating the rest
+      state.metadata_issues.append(f"Manifest row {manifest_hash}: {exc}")
+      continue
     if not isinstance(sampling_spec_payload, dict):
       state.metadata_issues.append(
-        f"Manifest row {manifest_hash} is missing sampling_spec payload.",
+        f"Manifest row {manifest_hash} is missing its sampling_spec/unit_spec payload.",
       )
       continue
     output_value = sampling_spec_payload.get("output_h5_path")

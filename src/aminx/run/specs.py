@@ -706,6 +706,57 @@ def _validated_scoring_ar_mask(ar_mask: ArrayLike) -> Any:
   return mask.astype(np.int8)
 
 
+def _validated_scoring_ar_masks(ar_masks: ArrayLike) -> Any:
+  """Check a ``(K, L, L)`` stack of scoring masks; return it as int8.
+
+  Each mask gets :func:`_validated_scoring_ar_mask`'s checks. A mask with NO visible entry at all
+  is refused as well: it scores every position with no sequence context, which is what a zeroed
+  mask silently did in a consumer before (tev_design).
+  """
+  import numpy as np  # noqa: PLC0415
+
+  masks = np.asarray(ar_masks)
+  if masks.ndim != 3 or masks.shape[1] != masks.shape[2] or masks.shape[0] == 0:
+    msg = f"ScoringSpecification.ar_masks must be a non-empty (K, L, L) stack, got shape {masks.shape}."
+    raise ValueError(msg)
+  out = np.stack([_validated_scoring_ar_mask(m) for m in masks])
+  empty = [k for k in range(out.shape[0]) if not out[k].any()]
+  if empty:
+    msg = (
+      f"ScoringSpecification.ar_masks: mask(s) {empty} are all zero, which scores every "
+      "position with no sequence context. Build the masks with the context you mean."
+    )
+    raise ValueError(msg)
+  return out
+
+
+def _validated_designable_mask(designable_mask: ArrayLike, masks: Any) -> Any:  # noqa: ANN401
+  """Check a ``(L,)`` 0/1 designable vector, and that no designable row of any mask is empty."""
+  import numpy as np  # noqa: PLC0415
+
+  design = np.asarray(designable_mask)
+  if design.ndim != 1 or not np.all((design == 0) | (design == 1)):
+    msg = f"ScoringSpecification.designable_mask must be a 1-D 0/1 vector, got shape {design.shape}."
+    raise ValueError(msg)
+  if masks is not None:
+    if masks.shape[-1] != design.shape[0]:
+      msg = (
+        f"ScoringSpecification.designable_mask has {design.shape[0]} positions but the "
+        f"ar_mask(s) cover {masks.shape[-1]}."
+      )
+      raise ValueError(msg)
+    empty_rows = (masks.sum(-1) == 0) & (design[None, :] == 1)
+    if empty_rows.any():
+      k, i = (int(v) for v in np.argwhere(empty_rows)[0])
+      msg = (
+        f"ScoringSpecification: designable position {i} has an all-zero row in mask {k} "
+        f"({int(empty_rows.sum())} such (mask, position) pairs): it would be scored with no "
+        "sequence context. Each designable row must see at least one position."
+      )
+      raise ValueError(msg)
+  return design.astype(np.int8)
+
+
 def _resolve_output_paths(spec: RunSpecification) -> None:
   """Normalize and synchronize output_path, output_zarr_path, and output_h5_path."""
 
@@ -770,6 +821,17 @@ class ScoringSpecification(RunSpecification):
           normalised joint. Must be binary with a zero diagonal. Every sequence scored must
           have exactly ``L`` residues. Supported on the plain per-structure path only;
           ``average_node_features`` and ``state_position_map`` raise.
+      ar_masks: Optional ``(K, L, L)`` stack of visibility masks, each with ``ar_mask``'s
+          semantics, scored in ONE call (#3485): every sequence is scored under every mask,
+          against one encoding, with the K x C (mask, sequence) pairs mapped by the planned
+          candidate dispatch (vmap, or chunked ``lax.map`` when memory needs it) -- never a
+          Python loop. ``score()`` then returns ``scores`` of shape ``(S, K, C)`` and ``logits``
+          of shape ``(S, K, C, L, 21)``. Mutually exclusive with ``ar_mask``. A mask whose
+          every row is zero is refused (it silently removes all sequence context).
+      designable_mask: Optional ``(L,)`` 0/1 vector naming the positions being designed.
+          With ``ar_mask`` / ``ar_masks``, a designable position whose mask row is all zero is
+          refused: it would be scored with no sequence context at all, which is never what a
+          design screen means and has happened by accident before.
 
   """
 
@@ -800,6 +862,8 @@ class ScoringSpecification(RunSpecification):
   ligand_conditioning: bool = False
   ligand_context_path: str | Path | None = None
   ar_mask: ArrayLike | None = None
+  ar_masks: ArrayLike | None = None
+  designable_mask: ArrayLike | None = None
   return_loss_xy: bool = False
   ligand_cutoff_for_score: float = 8.0
 
@@ -817,8 +881,24 @@ class ScoringSpecification(RunSpecification):
     _resolve_output_paths(self)
     if self.ligand_context_path and isinstance(self.ligand_context_path, str):
       object.__setattr__(self, "ligand_context_path", Path(self.ligand_context_path))
+    if self.ar_mask is not None and self.ar_masks is not None:
+      msg = "ScoringSpecification: set ar_mask (one (L, L) mask) or ar_masks (a (K, L, L) stack), not both."
+      raise ValueError(msg)
     if self.ar_mask is not None:
       object.__setattr__(self, "ar_mask", _validated_scoring_ar_mask(self.ar_mask))
+    if self.ar_masks is not None:
+      object.__setattr__(self, "ar_masks", _validated_scoring_ar_masks(self.ar_masks))
+    if self.designable_mask is not None:
+      object.__setattr__(
+        self,
+        "designable_mask",
+        _validated_designable_mask(
+          self.designable_mask,
+          self.ar_masks if self.ar_masks is not None else (
+            None if self.ar_mask is None else self.ar_mask[None]
+          ),
+        ),
+      )
     self._sync_run_spec()
 
 
