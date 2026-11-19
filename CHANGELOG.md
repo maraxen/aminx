@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased
+## 0.5.4 (2026-11-19)
+
+### Added
+
+- **Campaign row kind `task="score_conditionals"`** (#3486): teacher-forced, mask-conditioned per-position logits for a fixed structure and sequences under K explicit visibility masks, run through `aminx.host.campaign` with the same lock, done-marker, input-hash and quarantine semantics as sampling rows. Plan with `aminx.host.campaign_score.plan_score_conditionals_manifest([ScoreConditionalsUnit(...)], ...)`, run with `run_manifest_row` / `execute_manifest`, read with `read_score_conditionals_store` (`logits` `(K, N, L, 21)`, `nll` `(K, N)`). Sequences must be MPNN-alphabet letters (token ids are refused); masks come from a `(K, L, L)` `.npy` whose bytes, and the ligand context's, enter the unit input hash. The logits budget is enforced at plan time. Sampling and ThermoMPNN rows hash exactly as before (golden-tested). `campaign run --pack` refuses task rows for now.
+- **Batched decoding masks** (#3485): `ScoringSpecification.ar_masks` `(K, L, L)` scores every sequence under every mask against one encoding in one jitted program (`ScoreSplitFns.score_pairs`): a vmap, or a chunked `lax.map` when the planner tiles it. `score()` returns `scores` `(S, K, C)` and `logits` `(S, K, C, L, 21)`. New `ScoringSpecification.designable_mask` refuses an all-zero mask row at a designable position; an all-zero mask is refused outright.
+- `aminx.scoring.score.SCORE_BATCH_COMPOSITION_ATOL` (`1e-5`): the equivalence floor for one sequence scored alone vs in a batch (#3487).
+
+### Fixed
+
+- **The 0.5.3 wheel shipped LASErMPNN's `ideal_geometry.npz` as a Git LFS pointer** (debt #3500): the release build checked out without LFS, so `runner.sample(model_family="lasermpnn")` could not build coordinates from an installed wheel. The release workflow now fetches LFS objects and refuses to publish a wheel whose packaged data files are pointers or unreadable (`scripts/release/check_wheel_data.py`); `tests/test_package_data.py` checks the same in CI.
+- **`runner.score` recompiled on every call** (#3484): the encode/score kernels were `jax.jit` closures rebuilt per call over a freshly loaded model, and the candidate activation estimate was re-lowered per call. They are now module-level `eqx.filter_jit` kernels keyed on architecture and shapes, with a process-wide estimate memo. Warm identical-shape calls: 3 backend compiles and 2.5 s, now 0 compiles and 0.24 s (1ubq, CPU; bathos runs b25cbd4e and 6f034f38).
+- **Over-budget tiles on the new `ar_masks` path are sized from the memory budget.** xtrax's planner falls back to `ChunkedMap(batch_size=0)` (the axis's default), which estimates to 0 bytes and then runs the whole axis at once; a 448-pair scoring call had asked a 24 GiB GPU for 21 GiB. `plan_axis_strategy(size_unsized_tiles=True)` sizes the tile instead, and the pair tile is capped at 32 (pre-registered sweep, run 6162354f). The option is off by default, so every existing caller keeps its 0.5.3 dispatch and float reduction order (legacy callers tracked as debt #3501).
+- Review and audit hardening of the new path: `score()` refuses `ar_masks` when a family driver would handle the spec; `ar_masks` requires the structure's valid residue count to equal the masks' L; a `score_conditionals` unit refuses multi-structure inputs and checkpoints other than ProteinMPNN / SolubleMPNN / LigandMPNN; mask and ligand bytes are always fully hashed; row and payload `task` must agree; score rows hand their logits to the unified sink.
+- **Batch-composition dependence characterised** (#3487): a sequence's logits are bitwise independent of the CONTENT of its batch and differ across batch SIZES only by float reassociation in the vmapped matmuls (at most 3.8e-6 in float32 on CPU and GPU, flat in batch size, ~1e-15 in float64; six pre-registered runs). Documented in `score()`; compare across batch compositions with `SCORE_BATCH_COMPOSITION_ATOL`.
 
 ### Changed
 
