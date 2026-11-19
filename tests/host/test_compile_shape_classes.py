@@ -123,10 +123,14 @@ def _ligand_npz(path: Path, n_atoms: int, *, n_masked: int = 0, seed: int = 0) -
   (structure_id,) = _canonical_structure_ids_for_spec(
     ScoringSpecification(inputs=[_STRUCTURE], sequences_to_score=[_UBIQUITIN], max_length=_MAX_LENGTH),
   )
-  rng = np.random.default_rng(seed)
+  # Real atoms come from their own stream, so adding masked atoms never moves a real atom. The
+  # masked atoms sit as close as the real ones and are oxygens: unmasked, they would matter.
+  real = np.random.default_rng(seed).normal(scale=6.0, size=(_MAX_LENGTH, n_atoms, 3))
+  planted = np.random.default_rng(seed + 1000).normal(scale=6.0, size=(_MAX_LENGTH, n_masked, 3))
   total = n_atoms + n_masked
-  y = rng.normal(scale=6.0, size=(_MAX_LENGTH, total, 3)).astype(np.float32)
+  y = np.concatenate([real, planted], axis=1).astype(np.float32)
   y_t = np.full((_MAX_LENGTH, total), 6, dtype=np.int32)
+  y_t[:, n_atoms:] = 8
   y_m = np.zeros((_MAX_LENGTH, total), dtype=np.float32)
   y_m[:, :n_atoms] = 1.0
   np.savez(path, **{f"{structure_id}::Y": y, f"{structure_id}::Y_t": y_t, f"{structure_id}::Y_m": y_m})
@@ -299,13 +303,13 @@ def test_ligand_atom_padding_carries_no_weight(
 # --- regression: one compile per shape class, zero within it -----------------------------------------
 
 
-def _class_rows(root: Path) -> list[dict[str, Any]]:
+def _class_rows(root: Path, atoms: tuple[int, int, int] = (20, 27, 40)) -> list[dict[str, Any]]:
   root.mkdir(parents=True, exist_ok=True)
   masks_path = str(root / "masks.npy")
   np.save(masks_path, _masks(2, seed=3))
-  lig20 = _ligand_npz(root / "lig20.npz", 20)
-  lig27 = _ligand_npz(root / "lig27.npz", 27, seed=1)
-  lig40 = _ligand_npz(root / "lig40.npz", 40, seed=2)
+  lig20 = _ligand_npz(root / "lig_a.npz", atoms[0])
+  lig27 = _ligand_npz(root / "lig_b.npz", atoms[1], seed=1)
+  lig40 = _ligand_npz(root / "lig_c.npz", atoms[2], seed=2)
 
   def unit(label: str, lig: str, n: int) -> ScoreConditionalsUnit:
     return _unit(
@@ -335,10 +339,11 @@ def test_one_compile_per_shape_class(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert marker["compile_telemetry"]["backend_compiles"] == 0
     assert marker["compile_telemetry"]["first_unit_of_class_in_process"] is False
 
-  # Positive control: the same rows with the ligand ladder off recompile inside "class A" (M=20 vs
-  # M=27 are different shapes now), so the zero above is the ladder's doing, not a blind counter.
+  # Positive control: the same layout with the ligand ladder off recompiles inside "class A", so the
+  # zero above is the ladder's doing, not a blind counter. The encode kernel depends on M, so the
+  # atom counts here (19, 23) are ones no other test in this file compiles unpadded.
   monkeypatch.setattr(_sampling_helper, "ligand_atom_rung", lambda m: m)
-  control = _class_rows(tmp_path / "control")
+  control = _class_rows(tmp_path / "control", atoms=(19, 23, 40))
   control_report = execute_manifest(_manifest(tmp_path / "control", control))
   marker = json.loads(Path(control[2]["output_h5_path"] + ".done.json").read_text())
   assert marker["compile_telemetry"]["backend_compiles"] > 0, control_report["shape_classes"]
