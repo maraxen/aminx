@@ -13,6 +13,9 @@ What this file pins:
   the padded atoms have nonzero coordinates and real atom types;
 * N padding is dropped from the store, the original N is recorded, and real rows are unchanged
   within the same bound;
+* no cross-row leak on the ar_masks pair kernel (#3525): at fixed N, swapping the padding rows'
+  content leaves the real rows bitwise equal, for all three families; a planted sub-bound leak
+  in ``_score_pairs_kernel`` must be caught;
 * ``execute_manifest`` runs rows grouped by shape class but reports in manifest order, and done
   markers and resume are unaffected;
 * regression: after the first unit of a class, units in that class compile zero times. A positive
@@ -24,6 +27,7 @@ task_id: 261119_aminx-3510-compile-shape-classes
 
 from __future__ import annotations
 
+import importlib
 import json
 from pathlib import Path
 from typing import Any
@@ -290,6 +294,72 @@ def test_sequence_padding_leaves_real_rows_unchanged(tmp_path: Path, checkpoint:
     store["logits"], np.asarray(direct["logits"])[0][..., :_L, :], atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0,
   )
   np.testing.assert_allclose(store["nll"], np.asarray(direct["scores"])[0], atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0)
+
+
+# Cross-row control for N padding (#3525). The check above compares N=3 with N=4, so a leak smaller
+# than the bound passes it, and a row-0 copy as the padding row cannot reveal a leak that ignores
+# duplicates. #3487's content-invariance test plants its leak in the candidate iterator, which the
+# ar_masks path never calls: score_conditionals scores (mask, sequence) pairs in
+# ``_score_pairs_kernel``. So, at fixed N=4 (equal shapes, one executable), the padding row is
+# either the production row-0 copy or a far sequence, and the real rows must be bitwise equal.
+_FAR = "G" * (_L - 10) + _UBIQUITIN[_PEPTIDE]
+_PLANT = 1e-6
+
+
+def _pairs_score(checkpoint: str, sequences: list[str], lig: str | None) -> dict[str, np.ndarray]:
+  out = score(
+    ScoringSpecification(
+      inputs=[_STRUCTURE], checkpoint_id=checkpoint, sequences_to_score=sequences, ar_masks=_masks(2),
+      designable_mask=_designable(), return_logits=True, backbone_noise=0.0, max_length=_MAX_LENGTH,
+      ligand_context_path=lig, ligand_conditioning=bool(lig),
+    ),
+  )
+  return {"logits": np.asarray(out["logits"])[0][..., :_L, :], "nll": np.asarray(out["scores"])[0]}
+
+
+def _cross_row_report(checkpoint: str, lig: str | None, n_real: int) -> dict[str, float]:
+  """Real-row deviation when only the padding rows' content changes, and the plant's own effect."""
+  real = _mutants(n_real)
+  n_pad = sequence_count_rung(n_real) - n_real
+  copy = _pairs_score(checkpoint, [*real, *[real[0]] * n_pad], lig)
+  far = _pairs_score(checkpoint, [*real, *[_FAR] * n_pad], lig)
+  return {
+    "instrument": float(np.abs(far["logits"][:, n_real:] - copy["logits"][:, n_real:]).max()),
+    "real_rows": float(
+      max(
+        np.abs(far["logits"][:, :n_real] - copy["logits"][:, :n_real]).max(),
+        np.abs(far["nll"][:, :n_real] - copy["nll"][:, :n_real]).max(),
+      ),
+    ),
+  }
+
+
+@pytest.mark.parametrize(("checkpoint", "with_ligand"), _FAMILIES)
+def test_padding_row_content_does_not_reach_real_rows(tmp_path: Path, checkpoint: str, with_ligand: bool) -> None:
+  lig = _ligand_npz(tmp_path / "lig.npz", 20) if with_ligand else None
+  report = _cross_row_report(checkpoint, lig, 3)
+  assert report["instrument"] > 1e-3, f"the far padding row did not change its own logits: {report}"
+  assert report["real_rows"] == 0.0, f"padding-row content reached the real rows: {report}"
+
+
+def test_planted_cross_row_leak_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Positive control: a leak under the bound passes N=3 vs N=4 but must fail the fixed-N check."""
+  # import_module, not ``import aminx.scoring.score as``: the package re-exports a ``score``
+  # function that shadows the submodule attribute.
+  score_module = importlib.import_module("aminx.scoring.score")
+  real_kernel = score_module._score_pairs_kernel  # noqa: SLF001
+
+  def leaky_kernel(*args: Any, **kwargs: Any) -> tuple[Any, Any, Any]:  # noqa: ANN401
+    nll, logits, order = real_kernel(*args, **kwargs)
+    return nll + _PLANT * nll.mean(), logits + _PLANT * logits.mean(0, keepdims=True), order
+
+  monkeypatch.setattr(score_module, "_score_pairs_kernel", leaky_kernel)
+  # N=5 -> 8 (three padding rows): a shape no other test here compiles, and a larger rung jump.
+  report = _cross_row_report(_CHECKPOINT, None, 5)
+  assert report["instrument"] > 1e-3, report
+  assert 0.0 < report["real_rows"] <= SCORE_BATCH_COMPOSITION_ATOL, (
+    f"the planted leak should sit under the bound and still be caught: {report}"
+  )
 
 
 def _ligand_score(lig: str, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
