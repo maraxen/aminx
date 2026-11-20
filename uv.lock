@@ -81,7 +81,7 @@ wheels = [
 
 [[package]]
 name = "aminx"
-version = "0.5.4"
+version = "0.5.5"
 source = { editable = "." }
 dependencies = [
     { name = "array-record", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
