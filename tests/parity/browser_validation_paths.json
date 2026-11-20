@@ -123,6 +123,9 @@
   "src/aminx/host/bucketing.py::sample_rung": "P26",
   "src/aminx/host/bucketing.py::score_rung": "P26",
   "src/aminx/host/bucketing.py::trim_residue_axis": "P26",
+  "src/aminx/host/bucketing.py::ligand_atom_rung": "P26",
+  "src/aminx/host/bucketing.py::pad_ligand_atom_axis": "P26",
+  "src/aminx/host/bucketing.py::sequence_count_rung": "P26",
   "src/aminx/host/campaign.py::InputHashMismatchError": "P28",
   "src/aminx/host/campaign.py::InputHashUnavailableError": "P28",
   "src/aminx/host/campaign.py::LegacyV2DoneMarkerError": "P28",
@@ -169,6 +172,7 @@
   "src/aminx/host/campaign.py::normalize_backend_arm": {
     "internal": "Multi-backend campaign planning: normalizes a backend arm spelling into BackendArmSpec. The browser runs a single ProteinMPNN model and has no campaign planner; covered by tests/host/test_multi_backend_campaign.py."
   },
+  "src/aminx/host/campaign.py::row_compile_key": "P28",
   "src/aminx/host/plan.py::HoistedTopologyExecutor": {
     "internal": "Server-side XLA compile cache keyed by TopologyKey so several checkpoints share one executable. The browser exports one ONNX graph per checkpoint and has no JIT cache; covered by tests/host/test_multi_backend_campaign.py."
   },
@@ -800,5 +804,7 @@
   "src/aminx/host/campaign_score.py::scoring_spec_for_unit": "P28",
   "src/aminx/host/campaign_score.py::task_input_files": "P28",
   "src/aminx/host/campaign_score.py::validate_mpnn_sequences": "P28",
-  "src/aminx/host/campaign_score.py::write_score_conditionals_store": "P28"
+  "src/aminx/host/campaign_score.py::write_score_conditionals_store": "P28",
+  "src/aminx/host/campaign_score.py::score_compile_key": "P28",
+  "src/aminx/host/campaign_score.py::sequence_bucket": "P28"
 }

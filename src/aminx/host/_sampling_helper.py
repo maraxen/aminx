@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from aminx.host.bucketing import _is_tracer, ligand_atom_rung, pad_ligand_atom_axis
 from aminx.run.specs import SamplingSpecification
 from aminx.utils.data_structures import Protein
 from aminx.utils.decoding_order import DecodingOrderFn, random_decoding_order
@@ -125,7 +126,9 @@ def _load_ligand_context_file(
   *,
   canonical_structure_ids: Sequence[str] | None,
   batch_structure_ids: Sequence[str] | None,
-) -> tuple[jax.Array, jax.Array, jax.Array]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+  # Host (numpy) arrays: converting here, at the file's raw atom count, would compile a device
+  # conversion per raw shape; _prepare_ligand_context pads first, then converts (#3510).
   with np.load(ligand_context_path, allow_pickle=False) as npz_data:
     canonical_ids = (
       list(canonical_structure_ids)
@@ -205,9 +208,9 @@ def _load_ligand_context_file(
         for structure_id in selected_ids
       ]
       return (
-        jnp.asarray(np.stack(y_items, axis=0)),
-        jnp.asarray(np.stack(y_t_items, axis=0)),
-        jnp.asarray(np.stack(y_m_items, axis=0)),
+        np.stack(y_items, axis=0),
+        np.stack(y_t_items, axis=0),
+        np.stack(y_m_items, axis=0),
       )
 
     missing = [key for key in (*LIGAND_CONTEXT_KEYS, "structure_ids") if key not in npz_data]
@@ -238,9 +241,9 @@ def _load_ligand_context_file(
       dtype=np.int32,
     )
     return (
-      jnp.asarray(np.asarray(npz_data["Y"])[gather_indices]),
-      jnp.asarray(np.asarray(npz_data["Y_t"])[gather_indices]),
-      jnp.asarray(np.asarray(npz_data["Y_m"])[gather_indices]),
+      np.asarray(npz_data["Y"])[gather_indices],
+      np.asarray(npz_data["Y_t"])[gather_indices],
+      np.asarray(npz_data["Y_m"])[gather_indices],
     )
 
 
@@ -307,6 +310,22 @@ def _prepare_ligand_context(
     Y_t = file_Y_t
     Y_m = file_Y_m
 
+  real_ligand = Y is not None and Y_t is not None and Y_m is not None
+  # Ligand atom-axis bucketing (#3510): pad M at the END with mask-0 atoms to a ladder rung, so
+  # every ligand whose atom count falls in one rung shares compiled kernels. Masked atoms carry no
+  # weight (LigandMPNN masks ligand messages before a fixed-scale sum, and the top-k ranks masked
+  # atoms last); end-padding also leaves the packer's ``[:, :atom_context_num]`` slice unchanged.
+  # Same knob as residue trimming; the placeholder (no-ligand) context is never padded. Padding
+  # runs on the HOST (numpy), before any device op, so no eager op ever sees the raw M and
+  # compiles per raw atom count.
+  if (
+    real_ligand
+    and bool(getattr(spec, "length_bucketing", False))
+    and not any(_is_tracer(a) for a in (Y, Y_t, Y_m))
+  ):
+    Y, Y_t, Y_m = pad_ligand_atom_axis(
+      np.asarray(Y), np.asarray(Y_t), np.asarray(Y_m), ligand_atom_rung(int(np.shape(Y_m)[-1])),
+    )
   if Y is None or Y_t is None or Y_m is None:
     if spec.ligand_conditioning:
       msg = (

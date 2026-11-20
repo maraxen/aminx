@@ -57,15 +57,17 @@ _BATCH_ATOL = 1e-5
 _MOVED = 1e-3
 
 # Golden hashes for EXISTING row kinds, computed on origin/main 86a41a03 with the planner calls in
-# _golden_rows(). A change here re-keys every live campaign's resume.
+# _golden_rows(). A change here re-keys every live campaign's resume. The row hashes are unchanged
+# since 86a41a03; the input hashes were re-pinned for SAMPLING_NUMERICS_EPOCH 3 (#3510, 0.5.5),
+# a deliberate re-key so a resumed campaign never mixes 0.5.4 and 0.5.5 numerics.
 _GOLDEN = {
   "sampling": (
     "927736fd2bbbff7d8e0b7084b0b8260ccadc2ead571db99117c49e31af0b1adf",
-    "a9ea7c530fdcd71c2d3a6747dcc05050d87240b4700824df49ec0fc3ef844067",
+    "e37dcca241ff6335b4b5338e3c89ec848fbe65a2ee4bb448d501966c1cb1ae17",
   ),
   "thermompnn": (
     "56de24863539070943ac73a492b394bc267774af99938b1f98cc3aad30ca3c57",
-    "0ee80ba114a502a7fd35cc63524c0356b092e4441db14f00fce3ad5b10712a2c",
+    "0b3b7065dcde380717f5a97329ff59091429e96f204024c96beb75902021d205",
   ),
 }
 

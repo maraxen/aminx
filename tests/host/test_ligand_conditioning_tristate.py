@@ -75,6 +75,14 @@ def _batch_with_ligand() -> tuple[SimpleNamespace, dict[str, np.ndarray]]:
   return protein, tensors
 
 
+def _assert_ligand(y: Any, expected: np.ndarray) -> None:  # noqa: ANN401
+  """The real atoms, then (#3510) only zero end-padding up to the ligand atom rung."""
+  y = np.asarray(y)
+  n_atoms = expected.shape[1]
+  np.testing.assert_array_equal(y[:, :n_atoms], expected)
+  assert not y[:, n_atoms:].any()
+
+
 def _is_placeholder(ctx: dict[str, Any]) -> bool:
   return not np.any(np.asarray(ctx["Y_m"])) and not np.any(np.asarray(ctx["Y"]))
 
@@ -107,13 +115,13 @@ def test_unset_keeps_legacy_behaviour_file_is_used(tmp_path: Path) -> None:
   """Back-compat: None (every caller that never set the field) still uses what is present."""
   path, tensors = _ligand_file(tmp_path)
   ctx = _prepare(_spec(ligand_context_path=path))
-  np.testing.assert_array_equal(np.asarray(ctx["Y"])[0], tensors["Y"])
+  _assert_ligand(np.asarray(ctx["Y"])[0], tensors["Y"])
 
 
 def test_unset_keeps_legacy_behaviour_batch_tensors_are_used() -> None:
   protein, tensors = _batch_with_ligand()
   ctx = _prepare(_spec(), protein)
-  np.testing.assert_array_equal(np.asarray(ctx["Y"])[0], tensors["Y"])
+  _assert_ligand(np.asarray(ctx["Y"])[0], tensors["Y"])
 
 
 def test_unset_without_tensors_is_the_zero_placeholder() -> None:
@@ -123,7 +131,7 @@ def test_unset_without_tensors_is_the_zero_placeholder() -> None:
 def test_true_uses_the_file_and_still_raises_when_nothing_is_present(tmp_path: Path) -> None:
   path, tensors = _ligand_file(tmp_path)
   ctx = _prepare(_spec(ligand_conditioning=True, ligand_context_path=path))
-  np.testing.assert_array_equal(np.asarray(ctx["Y"])[0], tensors["Y"])
+  _assert_ligand(np.asarray(ctx["Y"])[0], tensors["Y"])
   with pytest.raises(ValueError, match="ligand_conditioning=True requires ligand context"):
     _prepare(_spec(ligand_conditioning=True))
 
@@ -165,7 +173,7 @@ def test_campaign_false_row_is_a_real_ablation_end_to_end(tmp_path: Path) -> Non
     by_flag[bool(worker.ligand_conditioning)] = _prepare(worker)
     assert row["ligand_conditioning"] == bool(worker.ligand_conditioning)
   assert _is_placeholder(by_flag[False])
-  np.testing.assert_array_equal(np.asarray(by_flag[True]["Y"])[0], tensors["Y"])
+  _assert_ligand(np.asarray(by_flag[True]["Y"])[0], tensors["Y"])
 
 
 def _emit(*extra: str) -> dict[str, Any]:

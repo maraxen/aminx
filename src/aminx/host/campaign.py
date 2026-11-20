@@ -14,7 +14,7 @@ import threading
 import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, fields, replace
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from xtrax.profiling import count_backend_compiles
 from xtrax.run import (
   canonical_json_bytes,
   fsync_directory,
@@ -47,6 +48,7 @@ from aminx.run.spec_json import _coerce_field_value, migrate_removed_spec_keys
 from aminx.run.specs import SamplingSpecification, ScoringSpecification
 from aminx.runtime import configure_multiprocessing
 from aminx.sampling.multistate_poe import sample_multistate_poe_campaign_row
+from aminx.utils.compile_telemetry import jax_compilation_cache_setting
 
 if TYPE_CHECKING:
   from aminx.types.host_protocols import DistributedLockBackend
@@ -61,7 +63,9 @@ ADOPT_LEGACY_REPORT_SCHEMA_VERSION = "campaign_adopt_legacy_report_v1"
 # change). It is part of every unit's input hash, so a bump invalidates stamps written before it instead of letting a
 # resumed campaign mix outputs from two numerics (aminx #2421).
 # S8 length bucketing changes seeded sample outputs, so stamps from epoch 1 are not reused.
-SAMPLING_NUMERICS_EPOCH = 2
+# Epoch 3 (#3510, 0.5.5): LigandMPNN ligand atom-axis padding and score_conditionals N padding change
+# outputs by float reassociation, so a campaign resumed across 0.5.4 -> 0.5.5 recomputes.
+SAMPLING_NUMERICS_EPOCH = 3
 _MAX_HASHED_DIR_FILES = 5000
 MANIFEST_ROW_SCHEMA_VERSION = "campaign_manifest_row_v1"
 MANIFEST_SCHEMA_VERSION = "campaign_manifest_v1"
@@ -537,6 +541,48 @@ def _row_task(row: Mapping[str, Any]) -> str | None:
 def _row_unit_payload(row: Mapping[str, Any]) -> Any:  # noqa: ANN401
   """The row's unit payload: ``unit_spec`` for task rows, ``sampling_spec`` for sampling rows."""
   return row.get("unit_spec") if _row_task(row) is not None else row.get("sampling_spec")
+
+
+# Shape classes this process has already executed a unit of (#3510); see ``row_compile_key``.
+_SEEN_SHAPE_CLASSES: set[str] = set()
+COMPILE_TELEMETRY_SCHEMA_VERSION = "campaign_compile_telemetry_v1"
+
+
+def row_compile_key(row: Mapping[str, Any]) -> tuple[Any, ...] | None:
+  """The compile shape class of a manifest row, or ``None`` when it cannot be determined (#3510).
+
+  Rows sharing a key reuse one set of compiled kernels within a process. ``score_conditionals``
+  rows get the exact key (architecture, residue rung, K, N bucket, ligand atom rung) from file
+  headers (``campaign_score.score_compile_key``). Sampling rows get a coarse model-level key
+  ``("sampling", model_family, checkpoint_id, n_inputs, max_length)``: it groups rows of one
+  model, but a sampling class may still compile more than once.
+
+  Never raises: a row whose key cannot be read (missing file, bad header) returns ``None`` and
+  keeps its manifest position, so the real error surfaces inside ``run_manifest_row`` under its
+  lock and quarantine semantics.
+  """
+  try:
+    task = _row_task(row)
+    payload = _row_unit_payload(row)
+    if not isinstance(payload, Mapping):
+      return None
+    if task == SCORE_CONDITIONALS_TASK:
+      from aminx.host.campaign_score import score_compile_key  # noqa: PLC0415
+
+      return score_compile_key(payload)
+    return (
+      "sampling",
+      str(payload.get("model_family")),
+      str(payload.get("checkpoint_id")),
+      len(_normalize_inputs(payload.get("inputs") or [])),
+      payload.get("max_length"),
+    )
+  except Exception:  # noqa: BLE001 -- ordering only; run_manifest_row reports the real error
+    return None
+
+
+def _shape_class_label(key: tuple[Any, ...] | None) -> str | None:
+  return None if key is None else json.dumps([str(part) for part in key])
 
 
 def _normalize_inputs(inputs: Any) -> list[str]:  # noqa: ANN401
@@ -1069,6 +1115,7 @@ def _write_done_marker(
   input_hash_components: dict[str, Any] | None = None,
   adopted_from: dict[str, Any] | None = None,
   completed_at_unix_s: float | None = None,
+  compile_telemetry: dict[str, Any] | None = None,
 ) -> None:
   marker_payload: dict[str, Any] = {
     "schema_version": DONE_MARKER_SCHEMA_VERSION,
@@ -1085,6 +1132,10 @@ def _write_done_marker(
     marker_payload["input_hash_components"] = input_hash_components
     marker_payload["digest_algo"] = f"xtrax.run.zarr_content_digest@{producer['xtrax']}"
     marker_payload["producer"] = producer
+  if compile_telemetry is not None:
+    # Optional v3 field (#3510). Never part of any digest: compile counts differ between
+    # otherwise identical runs.
+    marker_payload["compile_telemetry"] = compile_telemetry
   if adopted_from is not None:
     marker_payload["adopted_from_v2"] = True
     marker_payload["adopted_from"] = adopted_from
@@ -1834,6 +1885,7 @@ def run_manifest_row(  # noqa: PLR0915
   # Everything that determines this unit's output, hashed up front: reuse is only valid if it matches the stamp.
   input_hash, input_hash_components = compute_unit_input_hash(sampling_spec_payload)
   reuse: dict[str, Any] = {"decision": "computed", "reason": "no_prior_artifact", "input_hash": input_hash}
+  compile_telemetry: dict[str, Any] | None = None
 
   existing_marker = _read_done_marker(done_marker_path)
   marker_needs_replacement = False
@@ -1946,10 +1998,16 @@ def run_manifest_row(  # noqa: PLR0915
       if not is_multi_backend_arm:
         refuse_driver_family(sampling_spec, surface="campaign")
 
+    shape_class = _shape_class_label(row_compile_key(row))
+    first_of_class = shape_class is None or shape_class not in _SEEN_SHAPE_CLASSES
+    # Count this unit's backend compiles with xtrax's counter (#3510); closed as soon as the
+    # executor returns, and in ``finally`` on failure.
+    compile_scope = ExitStack()
     is_multistate_poe_row = sampling_spec is not None and (
       isinstance(sampling_spec.inputs, (list, tuple)) and len(sampling_spec.inputs) > 1
     )
     try:
+      compile_stats = compile_scope.enter_context(count_backend_compiles())
       if row_task == SCORE_CONDITIONALS_TASK:
         # Teacher-forced conditional logits under K explicit masks (#3486); writes its own store
         # at partial_path, committed below exactly as a sampling store is.
@@ -1983,6 +2041,16 @@ def run_manifest_row(  # noqa: PLR0915
         sample_result = sample_multistate_poe_campaign_row(sampling_spec)
       else:
         sample_result = sample(sampling_spec)
+      compile_scope.close()
+      compile_telemetry = {
+        "schema_version": COMPILE_TELEMETRY_SCHEMA_VERSION,
+        "shape_class": shape_class,
+        "backend_compiles": int(compile_stats.count),
+        "backend_compile_seconds": float(compile_stats.seconds),
+        "shape_classes_seen_before_in_process": len(_SEEN_SHAPE_CLASSES),
+        "first_unit_of_class_in_process": first_of_class,
+        "jax_compilation_cache": jax_compilation_cache_setting(),
+      }
       if heartbeat_errors:
         msg = (
           f"Lock heartbeat failed while executing manifest row {manifest_hash}: "
@@ -2005,9 +2073,13 @@ def run_manifest_row(  # noqa: PLR0915
         lock_backend=lock_backend,
         input_hash=input_hash,
         input_hash_components=input_hash_components,
+        compile_telemetry=compile_telemetry,
       )
       reuse["artifact_digest"] = content_digest_sha256
+      if shape_class is not None:
+        _SEEN_SHAPE_CLASSES.add(shape_class)
     finally:
+      compile_scope.close()
       if partial_path.exists():
         shutil.rmtree(partial_path)
 
@@ -2054,6 +2126,7 @@ def run_manifest_row(  # noqa: PLR0915
       "lock_backend": lock_backend,
       "input_hash": input_hash,
       "reuse": reuse,
+      "compile_telemetry": compile_telemetry,
     },
   )
   return result_payload
@@ -2091,8 +2164,20 @@ def execute_manifest(
   unified_sink: UnifiedCampaignSink | None = None,
   sink_root: str | Path | None = None,
   hoisted_executor: HoistedTopologyExecutor | None = None,
+  group_by_shape_class: bool = True,
 ) -> dict[str, Any]:
   """Execute all (or selected) manifest rows and return a structured summary.
+
+  Rows run grouped by compile shape class (``row_compile_key``), classes in order of first
+  appearance and rows in manifest order within a class, so each class compiles once per process
+  (#3510). Ordering changes nothing else: each row keeps its own lock, done marker and input-hash
+  reuse check, and ``row_results`` is reported in manifest order. With ``continue_on_error=False``
+  the row that stops the run is the first failure in execution order, which can differ from the
+  first failing row in manifest order. ``group_by_shape_class=False`` restores manifest order.
+
+  Grouping acts within one call's row selection. A job array that shards rows by index or hash
+  compiles every class present in each shard; shard by ``row_compile_key`` to compile each class
+  in one task.
 
   Parameters
   ----------
@@ -2116,11 +2201,14 @@ def execute_manifest(
     Optional directory root for a ``UnifiedCampaignSink``.
   hoisted_executor : HoistedTopologyExecutor | None, optional
     Optional ``HoistedTopologyExecutor`` for weight hoisting across same-topology checkpoints.
+  group_by_shape_class : bool, optional
+    Execute rows grouped by compile shape class. Default True.
 
   Returns
   -------
   dict[str, Any]
-    Result of ``execute_manifest``.
+    Result of ``execute_manifest``. ``shape_classes`` summarizes compiles per class: the first
+    unit's backend compiles and the total over later units (0 when the class is warm).
   """
   rows = _manifest_rows(manifest_path)
   requested_hashes = tuple(row_hashes or ())
@@ -2149,11 +2237,28 @@ def execute_manifest(
       campaign_id=cid,
     )
   success_statuses = {"ok", "completed", "already_done"}
-  row_results: list[dict[str, Any]] = []
+  results_by_index: dict[int, dict[str, Any]] = {}
   successful_rows = 0
   failed_rows = 0
 
-  for row in selected_rows:
+  keyed = [
+    (index, row, _shape_class_label(row_compile_key(row))) for index, row in enumerate(selected_rows)
+  ]
+  if group_by_shape_class:
+    class_order: dict[str, int] = {}
+    for index, _row, label in keyed:
+      class_order.setdefault(label if label is not None else f"__unkeyed_{index}", index)
+    execution_order = sorted(
+      keyed,
+      key=lambda item: (
+        class_order[item[2] if item[2] is not None else f"__unkeyed_{item[0]}"],
+        item[0],
+      ),
+    )
+  else:
+    execution_order = keyed
+
+  for index, row, shape_class in execution_order:
     row_hash = str(row["manifest_row_hash"])
     try:
       result = run_manifest_row(
@@ -2167,31 +2272,33 @@ def execute_manifest(
         hoisted_executor=active_executor,
       )
       row_status = str(result.get("status", "completed"))
-      row_results.append(
-        {
-          "manifest_row_hash": row_hash,
-          "status": row_status,
-          "output_h5_path": result.get("output_h5_path"),
-          "reuse": result.get("reuse"),
-        },
-      )
+      results_by_index[index] = {
+        "manifest_row_hash": row_hash,
+        "status": row_status,
+        "output_h5_path": result.get("output_h5_path"),
+        "reuse": result.get("reuse"),
+        "shape_class": shape_class,
+        "execution_position": len(results_by_index),
+        "compile_telemetry": result.get("compile_telemetry"),
+      }
       if row_status in success_statuses:
         successful_rows += 1
       else:
         failed_rows += 1
     except Exception as exc:
       failed_rows += 1
-      row_results.append(
-        {
-          "manifest_row_hash": row_hash,
-          "status": "error",
-          "error": str(exc),
-        },
-      )
+      results_by_index[index] = {
+        "manifest_row_hash": row_hash,
+        "status": "error",
+        "error": str(exc),
+        "shape_class": shape_class,
+        "execution_position": len(results_by_index),
+      }
       if not continue_on_error:
         msg = f"Execution failed for manifest row {row_hash}: {exc}"
         raise RuntimeError(msg) from exc
 
+  row_results = [results_by_index[index] for index in sorted(results_by_index)]
   return {
     "schema_version": "campaign_execute_report_v1",
     "manifest_path": (
@@ -2205,8 +2312,35 @@ def execute_manifest(
     "reused_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "reused"),
     "recomputed_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "recomputed"),
     "hoisted_compiles": active_executor.total_compiles(),
+    "shape_classes": _summarize_shape_classes(row_results),
     "row_results": row_results,
   }
+
+
+def _summarize_shape_classes(row_results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+  """Per shape class: rows computed, first computed unit's compiles, compiles over later units."""
+  summary: dict[str, dict[str, Any]] = {}
+  for result in sorted(row_results, key=lambda r: r.get("execution_position", 0)):
+    telemetry = result.get("compile_telemetry")
+    label = result.get("shape_class")
+    if label is None or not isinstance(telemetry, Mapping):
+      continue
+    entry = summary.setdefault(
+      str(label),
+      {
+        "shape_class": label,
+        "computed_rows": 0,
+        "first_unit_compiles": None,
+        "later_unit_compiles": 0,
+      },
+    )
+    compiles = int(telemetry.get("backend_compiles", 0))
+    if entry["computed_rows"] == 0:
+      entry["first_unit_compiles"] = compiles
+    else:
+      entry["later_unit_compiles"] += compiles
+    entry["computed_rows"] += 1
+  return list(summary.values())
 
 
 def adopt_legacy_done_markers(

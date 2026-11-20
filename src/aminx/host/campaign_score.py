@@ -49,6 +49,7 @@ from typing import Any
 
 import numpy as np
 
+from aminx.host.bucketing import ligand_atom_rung, rung_for, sequence_count_rung
 from aminx.host.campaign import SCORE_CONDITIONALS_TASK
 
 SCORE_CONDITIONALS_SCHEMA_VERSION = "score_conditionals_v1"
@@ -393,8 +394,72 @@ def task_input_files(payload: Mapping[str, Any]) -> dict[str, Any]:
   return files
 
 
-def scoring_spec_for_unit(payload: Mapping[str, Any], masks: np.ndarray) -> Any:  # noqa: ANN401
-  """The ScoringSpecification a worker runs for this unit."""
+def _ligand_atom_count(path: str) -> int:
+  """Largest ligand atom-axis length (``Y_m``'s last axis) in a ligand context npz."""
+  with np.load(path, allow_pickle=False) as npz:
+    counts = [int(npz[key].shape[-1]) for key in npz.files if key == "Y_m" or key.endswith("Y_m")]
+  if not counts:
+    msg = f"{path}: no Y_m array"
+    raise ValueError(msg)
+  return max(counts)
+
+
+def sequence_bucket(n_sequences: int, *, k: int, length: int, budget_mb: int) -> int:
+  """The padded sequence count a unit runs with (#3510).
+
+  The :func:`sequence_count_rung` rung, unless padding to it would exceed the unit's
+  ``logits_memory_budget_mb``. Then the unit runs unpadded, so every unit planning accepts
+  (planning checks the real N, as in 0.5.4) also executes, at the cost of its own compile.
+  """
+  rung = sequence_count_rung(n_sequences)
+  if logits_bytes(k, rung, length) > int(budget_mb) * (1 << 20):
+    return n_sequences
+  return rung
+
+
+def score_compile_key(payload: Mapping[str, Any]) -> tuple[Any, ...]:
+  """The compile shape class of a score_conditionals unit, from headers only (#3510).
+
+  ``(task, model_family, checkpoint_id, residue_rung, K, N_bucket, ligand_atom_rung)``: units
+  sharing a key reuse one set of compiled kernels in a process. Reads the mask ``.npy`` header
+  and the ligand npz; never parses a structure.
+
+  The key is an approximation of the compiled shapes, used for ordering and telemetry only; a
+  mismatch costs extra compiles, never wrong results. The N bucket and the ligand rung use the
+  functions execution uses. Two known approximations (deferred in PR #300's review): the residue
+  rung is taken from the valid-residue count L, while execution uses the last valid index + 1, so
+  a structure with an internal gap can execute on a larger rung; and the ligand rung uses the
+  largest ``Y_m`` atom count in the npz, while execution pads the gathered structure's own M.
+  """
+  masks = np.load(str(payload["ar_masks_path"]), mmap_mode="r", allow_pickle=False)
+  k, length = int(masks.shape[0]), int(masks.shape[-1])
+  max_length = payload.get("max_length")
+  rung = rung_for(length, None if max_length is None else int(max_length), enabled=True)
+  residue_rung = rung if rung is not None else max_length
+  ligand = payload.get("ligand_context_path")
+  ligand_rung = ligand_atom_rung(_ligand_atom_count(str(ligand))) if ligand else 0
+  return (
+    SCORE_CONDITIONALS_TASK,
+    str(payload["model_family"]),
+    str(payload["checkpoint_id"]),
+    residue_rung,
+    k,
+    sequence_bucket(
+      len(payload["sequences"]), k=k, length=length, budget_mb=int(payload["logits_memory_budget_mb"]),
+    ),
+    ligand_rung,
+  )
+
+
+def scoring_spec_for_unit(
+  payload: Mapping[str, Any],
+  masks: np.ndarray,
+  sequences: Sequence[str] | None = None,
+) -> Any:  # noqa: ANN401
+  """The ScoringSpecification a worker runs for this unit.
+
+  ``sequences`` overrides the payload's list (the N-bucket padded list, #3510).
+  """
   from aminx.run.specs import ScoringSpecification  # noqa: PLC0415
 
   ligand = payload.get("ligand_context_path")
@@ -403,7 +468,7 @@ def scoring_spec_for_unit(payload: Mapping[str, Any], masks: np.ndarray) -> Any:
     chain_id=payload.get("chain_id"),
     checkpoint_id=str(payload["checkpoint_id"]),
     model_family=str(payload["model_family"]),
-    sequences_to_score=list(payload["sequences"]),
+    sequences_to_score=list(payload["sequences"] if sequences is None else sequences),
     ar_masks=masks,
     designable_mask=np.asarray(payload["designable_mask"], np.int8),
     ligand_context_path=ligand,
@@ -434,12 +499,27 @@ def execute_score_conditionals_unit(
     )
     raise ValueError(msg)
   masks = load_and_validate_masks(payload["ar_masks_path"], payload["designable_mask"], length)
-  if logits_bytes(masks.shape[0], len(payload["sequences"]), length) > int(
+  # N bucketing (#3510): pad the sequence axis to a ladder rung with copies of row 0, so units
+  # with different N share compiled kernels. The copies are scored and dropped before the store
+  # is written. Rows are scored independently; the only effect on real rows is the float
+  # reassociation bounded by SCORE_BATCH_COMPOSITION_ATOL (#3487). A unit whose padded N would
+  # exceed its logits budget runs unpadded (``sequence_bucket``), so planning and execution accept
+  # the same units.
+  n_sequences = len(payload["sequences"])
+  n_bucket = sequence_bucket(
+    n_sequences,
+    k=int(masks.shape[0]),
+    length=length,
+    budget_mb=int(payload["logits_memory_budget_mb"]),
+  )
+  padding = [payload["sequences"][0]] * (n_bucket - n_sequences)
+  padded_sequences = [*payload["sequences"], *padding]
+  if logits_bytes(masks.shape[0], n_bucket, length) > int(
     payload["logits_memory_budget_mb"]
   ) * (1 << 20):
     msg = "score_conditionals: unit exceeds logits_memory_budget_mb."
     raise ValueError(msg)
-  result = score(scoring_spec_for_unit(payload, masks))
+  result = score(scoring_spec_for_unit(payload, masks, padded_sequences))
   n_structures = int(np.asarray(result["scores"]).shape[0])
   if n_structures != 1:
     msg = (
@@ -447,8 +527,8 @@ def execute_score_conditionals_unit(
       "frames); a unit scores exactly one. Split the file or select one model."
     )
     raise ValueError(msg)
-  logits = np.asarray(result["logits"])[0][..., :length, :].astype(np.float32)  # (K, N, L, 21)
-  nll = np.asarray(result["scores"])[0].astype(np.float32)  # (K, N)
+  logits = np.asarray(result["logits"])[0][:, :n_sequences, :length, :].astype(np.float32)  # (K, N, L, 21)
+  nll = np.asarray(result["scores"])[0][:, :n_sequences].astype(np.float32)  # (K, N)
   structure_ids = result["metadata"].get("structure_ids") or ["structure_0"]
   write_score_conditionals_store(
     partial_path,
@@ -469,6 +549,8 @@ def execute_score_conditionals_unit(
       "fixed_position_context": payload.get("fixed_position_context"),
       "ligand_context_sha256": payload.get("ligand_context_sha256"),
       "random_seed": int(payload["random_seed"]),
+      "n_sequences": n_sequences,
+      "n_sequences_bucket": n_bucket,
       "axes": {"logits": ["mask", "sequence", "position", "token"], "nll": ["mask", "sequence"]},
       # nll is score()'s masked mean over EVERY valid position (fixed and designable alike);
       # per-position or designable-only quantities come from ``logits``.
@@ -477,7 +559,14 @@ def execute_score_conditionals_unit(
     },
   )
   # Both arrays: campaign._collect_sink_arrays forwards ndarray values to the unified sink.
-  return {"status": "completed", "logits_shape": list(logits.shape), "logits": logits, "nll": nll}
+  return {
+    "status": "completed",
+    "logits_shape": list(logits.shape),
+    "logits": logits,
+    "nll": nll,
+    "n_sequences": n_sequences,
+    "n_sequences_bucket": n_bucket,
+  }
 
 
 def write_score_conditionals_store(
@@ -507,8 +596,9 @@ def read_score_conditionals_store(path: str | Path) -> dict[str, Any]:
   import zarr  # noqa: PLC0415
 
   group = zarr.open_group(str(path), mode="r")
-  return {
-    "logits": np.asarray(group["logits"][...]),
-    "nll": np.asarray(group["nll"][...]),
-    "attrs": dict(group.attrs),
-  }
+  logits = np.asarray(group["logits"][...])
+  attrs = dict(group.attrs)
+  # Stores written before 0.5.5 carry no N-bucket attrs; they were never padded.
+  attrs.setdefault("n_sequences", int(logits.shape[1]))
+  attrs.setdefault("n_sequences_bucket", int(logits.shape[1]))
+  return {"logits": logits, "nll": np.asarray(group["nll"][...]), "attrs": attrs}
