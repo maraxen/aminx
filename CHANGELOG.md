@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.5.5 (2026-11-20)
+
+### Fixed
+
+- **Campaign units recompiled for every new LigandMPNN ligand atom count and every new sequences-per-unit count** (#3510). A screen of about 1,500 `score_conditionals` units paid a compile for each new value of either.
+  - **Ligand atoms (score and sample paths).** The atom axis M is padded at the end with mask-0 atoms to `aminx.host.bucketing.LIGAND_ATOM_LADDER` (16 to 1024). Padding is done on the host in numpy, and the ligand npz loader returns host arrays, so no eager device op ever sees the raw atom count.
+  - **Sequences per unit.** `score_conditionals` pads N to `SEQUENCE_COUNT_LADDER` with copies of row 0 and drops the copies from the store. It pads only when the padded logits still fit the unit's `logits_memory_budget_mb` (`campaign_score.sequence_bucket`). Stores record `n_sequences` and `n_sequences_bucket`.
+  - **Numerics.** Padded atoms carry no weight, and real rows are unchanged within `SCORE_BATCH_COMPOSITION_ATOL`. Pre-registered runs on CPU and GPU, across ProteinMPNN, SolubleMPNN and LigandMPNN, were all within the bound, with a maximum delta of 4.1e-6.
+
+### Added
+
+- `execute_manifest(..., group_by_shape_class=True)` runs rows grouped by compile shape class (`campaign.row_compile_key`, `campaign_score.score_compile_key`), keeping first-appearance order. Results are still reported in manifest order. Done markers, locks and resume are unchanged.
+  - The return value gains a `shape_classes` summary.
+  - Pass `group_by_shape_class=False` for strict manifest order.
+  - Array-sharded runs keep the grouping only if they shard by `row_compile_key`.
+- **Compile telemetry.** Done markers and row results carry an optional `compile_telemetry` block (`campaign_compile_telemetry_v1`), which never enters stores or input hashes. It records:
+  - the row's shape class and backend compile count and seconds, measured with `xtrax.profiling.count_backend_compiles`;
+  - whether the unit was the first of its class in the process;
+  - the JAX compilation-cache setting.
+- New helpers: `aminx.host.bucketing.ligand_atom_rung`, `pad_ligand_atom_axis`, `sequence_count_rung`.
+
+### Changed
+
+- **Resume recomputes once.** `SAMPLING_NUMERICS_EPOCH` goes from 2 to 3, so a campaign started on 0.5.4 or earlier recomputes its units when resumed on 0.5.5, because padding changes outputs by float reassociation. Manifest-row hashes are unchanged.
+- `read_score_conditionals_store` fills in `n_sequences` and `n_sequences_bucket` for stores written before 0.5.5.
+
+### Tests
+
+- Shape-class regression: in a fresh process, a class compiles once and later units of the same class compile zero times. A positive control shows the counter does see recompiles.
+- Cross-row leak control on the `ar_masks` pair kernel (#3525). At a fixed N, changing only the padding rows' content leaves the real rows bitwise equal for all three families, and a planted sub-bound leak is caught.
+
 ## 0.5.4 (2026-11-19)
 
 ### Added
