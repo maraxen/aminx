@@ -106,3 +106,16 @@ class TestPrepCacheFailLoud:
 
     with pytest.raises(JaxCacheDirError):
       _run_prep_mocked(spec)
+
+  def test_file_like_cache_path_is_not_used_as_cache_dir(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """A cache_path with a suffix is an output-file hint, never a compilation cache directory."""
+    jax.config.update("jax_compilation_cache_dir", str(tmp_path / "preset"))
+    store = tmp_path / "out" / "store.h5"
+    spec = SamplingSpecification(inputs="dummy.pdb", cache_path=store)
+
+    _run_prep_mocked(spec)
+
+    assert jax.config.jax_compilation_cache_dir == str(tmp_path / "preset")
+    assert not store.exists()

@@ -497,9 +497,24 @@ def _hide_host_xtrax_jax_cache_config(tmp_path_factory, monkeypatch):
   the CI compile cache still applies. Tests that need a user config write one under their own
   ``XDG_CONFIG_HOME``.
   """
+  import jax  # noqa: PLC0415
+  from xtrax import jax_cache  # noqa: PLC0415
+
   monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.getbasetemp() / "empty_xdg_config"))
   for name in [n for n in os.environ if n.startswith("XTRAX_JAX_CACHE")]:
     monkeypatch.delenv(name, raising=False)
+  saved_dir = jax.config.jax_compilation_cache_dir
+  saved_applied = jax_cache._applied
+  yield
+  # A test that ran an entry point in process re-pointed JAX's process-global flag (in CI, to
+  # $JAX_COMPILATION_CACHE_DIR/jaxlib-<ver>). Restore it only when it changed, so tests that leave
+  # it alone keep CI's live cache object.
+  if jax.config.jax_compilation_cache_dir != saved_dir or jax_cache._applied is not saved_applied:
+    from jax._src import compilation_cache  # noqa: PLC0415
+
+    compilation_cache.reset_cache()
+    jax.config.update("jax_compilation_cache_dir", saved_dir)
+    jax_cache._applied = saved_applied
 
 
 @pytest.fixture

@@ -26,10 +26,13 @@ def test_namespaced_dir_reported_with_explicit_source(tmp_path: Path) -> None:
 
 
 def test_disabled_cache_reports_no_dir(tmp_path: Path) -> None:
+  # A sentinel flag makes this fail if configure(path="none") stops clearing it.
+  jax.config.update("jax_compilation_cache_dir", str(tmp_path / "sentinel"))
   jax_cache.configure(path="none")
 
   record = jax_compilation_cache_setting()
 
+  assert jax.config.jax_compilation_cache_dir is None
   assert record["enabled"] is False
   assert record["dir"] is None
 
