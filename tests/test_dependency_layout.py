@@ -88,7 +88,7 @@ def test_jax_pins_bound() -> None:
 
 
 def test_cpu_cuda12_conflict_and_xtrax_pin() -> None:
-  """Assert uv declares cpu vs cuda12 conflict and xtrax remains pinned at 0.4.1b8."""
+  """Assert uv declares cpu vs cuda12 conflict and xtrax remains pinned at 0.4.1b9."""
   data = load_pyproject()
   conflicts = data.get("tool", {}).get("uv", {}).get("conflicts", [])
   expected_pair = [{"extra": "cpu"}, {"extra": "cuda12"}]
@@ -97,4 +97,4 @@ def test_cpu_cuda12_conflict_and_xtrax_pin() -> None:
   ), f"Missing cpu vs cuda12 conflict declaration in [tool.uv].conflicts: {conflicts}"
 
   runtime_deps = data.get("project", {}).get("dependencies", [])
-  assert "xtrax[io,pack,export]==0.4.1b8" in runtime_deps
+  assert "xtrax[io,pack,export]==0.4.1b9" in runtime_deps

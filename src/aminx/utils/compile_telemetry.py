@@ -14,9 +14,10 @@ from typing import Any
 def jax_compilation_cache_setting() -> dict[str, Any]:
   """The persistent compilation cache setting in effect, as JAX reports it.
 
-  aminx does not configure the cache. TODO(xtrax debt #3511): once
-  ``xtrax.jax_cache.configure`` ships, call it at the runner/campaign entry points and record the
-  ``CacheSetting(dir, source, enabled)`` it returns here instead of reading ``jax.config``.
+  The directory is read from the live ``jax.config`` flag, which ``xtrax.jax_cache.configure``
+  sets at each entry point. ``source`` is xtrax's record of the layer that chose it when that
+  record still matches the live flag; otherwise the flag was changed outside xtrax and the
+  source says so.
 
   Returns
   -------
@@ -25,10 +26,15 @@ def jax_compilation_cache_setting() -> dict[str, Any]:
 
   """
   import jax  # noqa: PLC0415  -- keep importing this module free of jax
+  from xtrax import jax_cache  # noqa: PLC0415
 
-  cache_dir = getattr(jax.config, "jax_compilation_cache_dir", None)
-  return {
-    "enabled": bool(cache_dir),
-    "dir": str(cache_dir) if cache_dir else None,
-    "source": "jax.config (not configured by aminx; pending xtrax debt #3511)",
-  }
+  live = getattr(jax.config, "jax_compilation_cache_dir", None)
+  live_dir = str(live) if live else None
+
+  applied = jax_cache.current()
+  applied_dir = str(applied.dir) if applied is not None and applied.dir else None
+  if applied is not None and applied_dir == live_dir:
+    source = applied.source
+  else:
+    source = "jax.config (not set by xtrax jax_cache)"
+  return {"enabled": bool(live_dir), "dir": live_dir, "source": source}

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from xtrax import jax_cache
 from xtrax.profiling import count_backend_compiles
 from xtrax.run import (
   canonical_json_bytes,
@@ -3326,6 +3327,7 @@ def main(argv: list[str] | None = None) -> int:
     Result of ``main``.
   """
   configure_multiprocessing()
+  jax_cache.configure()
   parser = argparse.ArgumentParser(description="Campaign planner/worker runner.")
   subparsers = parser.add_subparsers(dest="command", required=True)
   _add_plan_parser(subparsers)

@@ -64,6 +64,9 @@ def main() -> None:
   import cisternal  # noqa: PLC0415
 
   cisternal.init()
+  from xtrax import jax_cache  # noqa: PLC0415
+
+  jax_cache.configure()
   build_server().run()
 
 

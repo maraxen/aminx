@@ -482,3 +482,68 @@ def pytest_sessionfinish(session: object, exitstatus: object) -> None:  # noqa: 
   )
   for nodeid in _X64_LEAKS:
     print(f"  {nodeid}")  # noqa: T201
+
+
+@pytest.fixture(autouse=True)
+def _hide_host_xtrax_jax_cache_config(tmp_path_factory, monkeypatch):
+  """Keep every test, and every subprocess it starts, off the host's user config (debt #3527).
+
+  Entry points (``aminx.cli.main``, ``aminx.host.campaign.main``, ``aminx.agent.mcp.main``) call
+  ``xtrax.jax_cache.configure()``, which reads ``${XDG_CONFIG_HOME:-~/.config}/xtrax/config.toml``.
+  Without this, a test that runs one of them, in process or as a subprocess that copies
+  ``os.environ``, would create and write the developer's cache directory and leak the JAX flag.
+  ``XDG_CONFIG_HOME`` points at an empty directory for the whole session (CI has no user config, so
+  this changes nothing there); ``HOME`` and CI's ``JAX_COMPILATION_CACHE_DIR`` are left alone, so
+  the CI compile cache still applies. Tests that need a user config write one under their own
+  ``XDG_CONFIG_HOME``.
+  """
+  import jax  # noqa: PLC0415
+  from xtrax import jax_cache  # noqa: PLC0415
+
+  monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.getbasetemp() / "empty_xdg_config"))
+  for name in [n for n in os.environ if n.startswith("XTRAX_JAX_CACHE")]:
+    monkeypatch.delenv(name, raising=False)
+  saved_dir = jax.config.jax_compilation_cache_dir
+  saved_applied = jax_cache._applied
+  yield
+  # A test that ran an entry point in process re-pointed JAX's process-global flag (in CI, to
+  # $JAX_COMPILATION_CACHE_DIR/jaxlib-<ver>). Restore it only when it changed, so tests that leave
+  # it alone keep CI's live cache object.
+  if jax.config.jax_compilation_cache_dir != saved_dir or jax_cache._applied is not saved_applied:
+    from jax._src import compilation_cache  # noqa: PLC0415
+
+    compilation_cache.reset_cache()
+    jax.config.update("jax_compilation_cache_dir", saved_dir)
+    jax_cache._applied = saved_applied
+
+
+@pytest.fixture
+def jax_cache_isolated(tmp_path_factory, monkeypatch):
+  """Isolate xtrax.jax_cache and JAX's cache flag for one test module (debt #3527).
+
+  Opt in per module with ``pytestmark = pytest.mark.usefixtures("jax_cache_isolated")``; it is
+  not autouse, so the CI compile-cache setting (ci.yml) still applies to the rest of the suite.
+
+  Points HOME and XDG_CONFIG_HOME at an empty directory so a host ``~/.config/xtrax/config.toml``
+  is invisible, drops the xtrax and JAX cache variables, and clears JAX's flag (JAX read the
+  environment at import, so unsetting the variable alone does not clear it). The working directory
+  is left alone; tests that need an empty cwd ask for it.
+  """
+  import jax  # noqa: PLC0415
+  from jax._src import compilation_cache  # noqa: PLC0415
+  from xtrax import jax_cache  # noqa: PLC0415
+
+  home = tmp_path_factory.mktemp("jax_cache_home")
+  monkeypatch.setenv("HOME", str(home))
+  monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+  for name in ("XTRAX_JAX_CACHE", "XTRAX_JAX_CACHE_DIR", "JAX_COMPILATION_CACHE_DIR"):
+    monkeypatch.delenv(name, raising=False)
+  saved_dir = jax.config.jax_compilation_cache_dir
+  # Reset first: a cache object a compile already started (CI sets JAX_COMPILATION_CACHE_DIR)
+  # keeps writing to its directory after the flag is cleared.
+  compilation_cache.reset_cache()
+  jax.config.update("jax_compilation_cache_dir", None)
+  monkeypatch.setattr(jax_cache, "_applied", None)
+  yield
+  compilation_cache.reset_cache()
+  jax.config.update("jax_compilation_cache_dir", saved_dir)

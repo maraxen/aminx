@@ -17,8 +17,8 @@ if TYPE_CHECKING:
   from aminx.types.arrays import Model
 
 import equinox as eqx
-import jax
 from proxide.ops.dataset import create_protein_dataset
+from xtrax import jax_cache
 
 from aminx.host.family_driver import DRIVER_MODEL_FAMILIES, FAMILY_DRIVERS, validate_model_family
 from aminx.io.parsing.dispatch import (
@@ -188,8 +188,13 @@ def prep_protein_stream_and_model(
   elif reg_path := _resolve_local_checkpoint_from_registry(spec):
     local_ckpt = reg_path
 
-  if spec.run_spec.io.cache_path is not None:
-    jax.config.update("jax_compilation_cache_dir", str(spec.run_spec.io.cache_path))
+  # ``cache_path`` doubles as an output-root hint: a value with a suffix (``out/store.h5``) names an
+  # output file whose parent is the output root (``aminx.run.spec._infer_output_dir``). Only a
+  # directory-like value is a compilation cache directory; a file-like one keeps the entry point's
+  # setting instead of becoming ``store.h5/jaxlib-<ver>/`` and blocking the output file.
+  cache_path = spec.run_spec.io.cache_path
+  if cache_path is not None and not Path(cache_path).suffix:
+    jax_cache.configure(path=cache_path)
 
   # These three MUST reach load_model, not just the dataset. They change how the model is
   # BUILT, not merely what it is fed:
