@@ -22,7 +22,9 @@ _ALLOWLIST = Path(__file__).with_name("sidecar_conditions_allowlist.toml")
 # bathos outcome conditions are DuckDB SQL fragments, so the grammar is the
 # SQL subset actually used: boolean/SQL keywords, comparisons, arithmetic,
 # IN lists, and a fixed set of scalar functions called as name(...).
-_KEYWORDS = frozenset({"AND", "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE"})
+# DISTINCT and FROM are here only for the null-safe comparison `x IS NOT DISTINCT FROM 'v'`,
+# which the revived LASEr batching and prereg-audit sidecars use for their refusal outcomes.
+_KEYWORDS = frozenset({"AND", "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE", "DISTINCT", "FROM"})
 _FUNCTIONS = frozenset({"min", "max", "count", "abs", "sum", "avg", "len", "round", "starts_with"})
 
 _TOKEN_RE = re.compile(

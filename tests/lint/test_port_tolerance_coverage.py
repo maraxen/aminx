@@ -58,7 +58,6 @@ _PRECISIONS = ("f64", "f32")
 #: Being on this list is a claim someone can dispute; being absent from every
 #: list is impossible, which is the point of the whole file.
 _PROSE: dict[tuple[str, str], str] = {
-  ("declayer_f64", "f32"): "f64-only wave; there is no f32 tier to band",
   ("potts_energy", "f32"): "r15 condition bound |err| <= 1e-5*sum|terms|, not an envelope",
   ("pottsmpnn_full", "f32"): "prose form 'log-prob atol=1e-4'; see _KNOWN_UNREPORTED",
 }

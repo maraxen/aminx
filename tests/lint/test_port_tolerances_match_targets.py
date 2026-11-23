@@ -51,6 +51,7 @@ _TARGETS = _PORT / "targets"
 #: a regression, and a wave arriving should be recorded here so the set stays a
 #: true statement about what is checked rather than a stale lower bound.
 _EXPECTED_COVERED = frozenset({
+  "declayer_f64",
   "laser_decode_step",
   "laser_encoder",
   "laser_layers",
