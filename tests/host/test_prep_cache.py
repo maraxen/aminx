@@ -53,9 +53,16 @@ class TestPrepCacheConfig:
     assert jax.config.jax_compilation_cache_dir == str(expected)
     assert expected.is_dir()
 
-  def test_cache_path_none_does_not_update_jax_config(self) -> None:
-    """When cache_path is None, jax_compilation_cache_dir should not be modified."""
-    # Store original config value
+  def test_cache_path_none_does_not_update_jax_config(
+    self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+  ) -> None:
+    """When cache_path is None, prep leaves the cache to the entry point.
+
+    A distinct preset flag plus an xtrax env directory make this fail if prep called
+    ``jax_cache.configure()`` anyway.
+    """
+    jax.config.update("jax_compilation_cache_dir", str(tmp_path / "preset"))
+    monkeypatch.setenv("XTRAX_JAX_CACHE_DIR", str(tmp_path / "env_cache"))
     original_cache_dir = jax.config.jax_compilation_cache_dir
 
     spec = SamplingSpecification(
