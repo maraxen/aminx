@@ -77,13 +77,19 @@ def _git(repo: Path, *args: str) -> tuple[int, str]:
 
 
 def earliest_runs(bth: str, project: str) -> list[dict[str, Any]]:
-  """(sidecar_path, earliest run, that run's git_hash) straight from the catalog."""
+  """One row PER RUN (sidecar_path, timestamp, git_hash, outcome), n = 1 each.
+
+  v2: v1 aggregated in SQL with min(timestamp) / arg_min(..., timestamp), but
+  `runs.timestamp` is VARCHAR and the catalog mixes offsets (measured 261123:
+  310 rows '+00:00', 160 rows '-07:00'-style), so those were STRING minima and
+  could pick a later run as the earliest within ONE catalog. Rows are now
+  reduced in Python by reduce_earliest, which compares parsed UTC instants --
+  the same path the self-test checks against mixed offsets.
+  """
   sql = (
-    "SELECT sidecar_path, min(timestamp) AS first_run, "
-    "arg_min(git_hash, timestamp) AS first_git, "
-    "arg_min(outcome, timestamp) AS first_outcome, count(*) AS n FROM runs "
+    "SELECT sidecar_path, timestamp, git_hash, outcome FROM runs "
     "WHERE sidecar_path IS NOT NULL AND git_hash IS NOT NULL "
-    f"AND project_slug = '{project}' GROUP BY sidecar_path ORDER BY first_run"
+    f"AND project_slug = '{project}'"
   )
   code, out = _run([bth, "sql", sql])
   if code != 0 or not out:
@@ -94,7 +100,7 @@ def earliest_runs(bth: str, project: str) -> list[dict[str, Any]]:
     return []
   return [
     {"sidecar_path": r[0], "first_run": r[1], "first_git": r[2],
-     "first_outcome": r[3], "n": r[4]}
+     "first_outcome": r[3], "n": 1}
     for r in payload.get("rows", [])
     if r and r[0]
   ]
