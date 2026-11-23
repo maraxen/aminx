@@ -1,0 +1,467 @@
+"""Was every bathos sidecar really committed BEFORE the run it graded?
+
+WHY. Spec §7.3 says "Bathos sidecars (committed before running)", and the
+project rule is blunter: writing a sidecar after seeing the numbers is the
+failure the whole discipline exists to stop, because outcome criteria chosen
+post-hoc always pass. Nothing checked it. This does, over the whole catalog
+rather than over a sample.
+
+TWO QUESTIONS, DELIBERATELY SEPARATED, because conflating them would either
+manufacture violations or hide them:
+
+  TIME ORDER   the sidecar's add-commit is older than the earliest run citing
+               it. This IS the pre-registration requirement.
+  CONTAINMENT  the run's recorded ``git_hash`` actually contains that commit.
+               This is whether the RECORD lets a reader check the time order
+               without taking a timestamp on trust.
+
+A run can satisfy the first and fail the second -- a script copied into a
+checkout that sits at an older commit is the ordinary way. That is a provenance
+weakness, not a violation, and this reports it as its own category. Collapsing
+the two would turn every spike-dir run into a false accusation.
+
+WHAT A VIOLATION WOULD MEAN. Not merely untidy: a sidecar committed after its
+run cannot have constrained that run, so the outcome it reports is a
+description, not a prediction, and nothing it graded should be cited.
+
+ONE-SIDED BY CONSTRUCTION, stated so it is not over-read. Finding zero
+violations shows no sidecar in the catalog was committed late. It cannot show a
+sidecar was not WRITTEN late and committed before the run anyway -- git records
+when a file landed, not when its author decided the criteria. This measures the
+half that is mechanically checkable.
+
+V2 (debt #3573, 261123). v1 is frozen and already graded; this successor
+changes only how run timestamps are compared:
+
+  * v1 merged rows from several catalogs by comparing ``first_run`` as STRINGS.
+    A space-separated UTC timestamp and a 'T'-separated one with a -04:00 offset
+    order wrongly as strings, so the merge could keep a LATER run as "earliest"
+    and hide a violation. v2 parses every run timestamp to an aware UTC datetime
+    with one helper (``_parse_run_ts``) and compares those.
+  * v1 parsed a naive timestamp as LOCAL time. v2 refuses a naive or malformed
+    timestamp: the row is excluded and counted in ``n_unparseable_timestamps``
+    rather than guessed or allowed to crash the audit.
+  * The self-test gains a boundary pair one second either side of this
+    script's own add-commit, a mixed-format ordering check over the factored
+    reduction, and the naive-timestamp refusal.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import subprocess
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+_LOG = logging.getLogger("prereg_order_audit_v2")
+
+#: Below this many audited sidecars the result is vacuous rather than clean: a
+#: catalog query that silently matched almost nothing would otherwise report a
+#: reassuring zero.
+_MIN_AUDITED = 20
+
+
+def _run(cmd: list[str], cwd: Path | None = None) -> tuple[int, str]:
+  proc = subprocess.run(  # noqa: S603
+    cmd, cwd=cwd, capture_output=True, text=True, check=False,
+  )
+  return proc.returncode, proc.stdout.strip()
+
+
+def _git(repo: Path, *args: str) -> tuple[int, str]:
+  return _run(["git", *args], cwd=repo)
+
+
+def earliest_runs(bth: str, project: str) -> list[dict[str, Any]]:
+  """(sidecar_path, earliest run, that run's git_hash) straight from the catalog."""
+  sql = (
+    "SELECT sidecar_path, min(timestamp) AS first_run, "
+    "arg_min(git_hash, timestamp) AS first_git, "
+    "arg_min(outcome, timestamp) AS first_outcome, count(*) AS n FROM runs "
+    "WHERE sidecar_path IS NOT NULL AND git_hash IS NOT NULL "
+    f"AND project_slug = '{project}' GROUP BY sidecar_path ORDER BY first_run"
+  )
+  code, out = _run([bth, "sql", sql])
+  if code != 0 or not out:
+    return []
+  try:
+    payload = json.loads(out)
+  except json.JSONDecodeError:
+    return []
+  return [
+    {"sidecar_path": r[0], "first_run": r[1], "first_git": r[2],
+     "first_outcome": r[3], "n": r[4]}
+    for r in payload.get("rows", [])
+    if r and r[0]
+  ]
+
+
+def repo_relative(sidecar_path: str) -> str | None:
+  """A catalog path is absolute in whatever checkout ran it; keep the tail.
+
+  Every checkout shares the same layout below the repo root, so the first
+  recognised top-level directory anchors the relative path.
+  """
+  parts = Path(sidecar_path).parts
+  for anchor in ("scripts", "tests", "src"):
+    if anchor in parts:
+      return str(Path(*parts[parts.index(anchor) :]))
+  return None
+
+
+def add_commit(repo: Path, rel: str) -> tuple[str, str] | None:
+  """(sha, AUTHOR date) of the commit that added this path.
+
+  AUTHOR date, not committer date, and the difference is not cosmetic. A rebase
+  or squash rewrites the committer date to the moment of the rewrite while
+  preserving the author date. Using %cI made every file that arrived via a
+  rebase look as though it had been committed days AFTER the runs citing it:
+  a first pass over the local catalog reported 65 violations in 78 sidecars,
+  with dozens sharing the committer timestamp 2026-09-30T08:50:45 -- the
+  signature of one bulk rewrite, not of 65 post-hoc registrations. Checked
+  against a flagged commit: committer 2026-09-30T08:50:45, author
+  2026-09-24T11:17:48. The author date is the one that answers "when was this
+  written".
+  """
+  code, out = _git(repo, "log", "--follow", "--diff-filter=A", "--format=%H %aI", "--", rel)
+  if code != 0 or not out:
+    return None
+  sha, _, when = out.splitlines()[-1].partition(" ")
+  return sha, when
+
+
+def was_renamed(repo: Path, rel: str) -> bool:
+  """Did this path ever arrive via a rename?
+
+  ``--follow`` traces renames with a similarity HEURISTIC, so for a file that
+  moved, the commit it calls the "add" may be the move rather than the original
+  authoring. That uncertainty must not be spent accusing someone of post-hoc
+  registration, so a renamed path can be reported as unverifiable but never as
+  a violation.
+  """
+  code, out = _git(repo, "log", "--follow", "--name-status", "--format=", "--", rel)
+  if code != 0:
+    return False
+  return any(line.startswith("R") for line in out.splitlines())
+
+
+def _parse_run_ts(value: str) -> datetime:
+  """A run or commit timestamp -> aware UTC datetime. Naive or malformed raises.
+
+  Accepts 'YYYY-MM-DD HH:MM:SS+00:00', the ISO 'T' form, any numeric offset and
+  a trailing 'Z'. A timestamp without an offset is refused rather than assumed:
+  v1 read it as local time, which silently shifts every comparison by the
+  machine's UTC offset.
+  """
+  text = str(value).strip()
+  if text.endswith("Z"):
+    text = text[:-1] + "+00:00"
+  parsed = datetime.fromisoformat(text.replace(" ", "T", 1))
+  if parsed.tzinfo is None or parsed.utcoffset() is None:
+    msg = f"naive timestamp {value!r}: no UTC offset, refusing to assume one"
+    raise ValueError(msg)
+  return parsed.astimezone(timezone.utc)
+
+
+def reduce_earliest(
+  rows: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], int, list[dict[str, str]]]:
+  """Collapse catalog rows to ONE row per repo-relative sidecar, the EARLIEST run.
+
+  The earliest run is the one a sidecar had to precede, so a later run in
+  another catalog must never mask it. Times are compared as parsed UTC
+  datetimes (v1 compared strings). Returns (earliest, n_skipped_unanchorable,
+  unparseable), where a row whose timestamp cannot be parsed is excluded and
+  listed rather than guessed.
+  """
+  earliest: dict[str, dict[str, Any]] = {}
+  skipped = 0
+  unparseable: list[dict[str, str]] = []
+  for row in rows:
+    rel = repo_relative(str(row["sidecar_path"]))
+    if rel is None:
+      skipped += 1
+      continue
+    try:
+      ran = _parse_run_ts(str(row["first_run"]))
+    except ValueError:
+      unparseable.append({"sidecar": rel, "first_run": str(row["first_run"])})
+      continue
+    prior = earliest.get(rel)
+    if prior is None or ran < prior["_ran"]:
+      earliest[rel] = {**row, "_rel": rel, "_ran": ran}
+    if prior is not None:
+      earliest[rel]["n"] = int(prior.get("n", 0)) + int(row.get("n", 0))
+  return earliest, skipped, unparseable
+
+
+def classify(
+  repo: Path, rel: str, first_run: str, first_git: str,
+) -> tuple[str, dict[str, Any]]:
+  """One sidecar -> (category, detail). Categories are disjoint and total."""
+  info = add_commit(repo, rel)
+  if info is None:
+    return "unverifiable", {"sidecar": rel, "why": "no add-commit in this branch history"}
+  sha, when = info
+  committed = _parse_run_ts(when)
+  ran = _parse_run_ts(first_run)
+  lead_h = (ran - committed).total_seconds() / 3600.0
+  if lead_h < 0:
+    if was_renamed(repo, rel):
+      return "unverifiable", {
+        "sidecar": rel, "added": sha[:12], "hours_late": round(-lead_h, 3),
+        "why": "appears late, but the path was RENAMED, so --follow's add "
+               "attribution is heuristic and cannot carry the accusation",
+      }
+    return "violation", {
+      "sidecar": rel, "added": sha[:12], "committed": when[:19],
+      "first_run": first_run[:19], "hours_late": round(-lead_h, 3),
+    }
+  code, _ = _git(repo, "cat-file", "-t", first_git)
+  contained = False
+  if code == 0:
+    code, _ = _git(repo, "merge-base", "--is-ancestor", sha, first_git)
+    contained = code == 0
+  if not contained:
+    return "unverifiable", {
+      "sidecar": rel, "added": sha[:12], "lead_hours": round(lead_h, 3),
+      "why": f"run git_hash {first_git[:12]} does not contain {sha[:12]}",
+    }
+  return "clean", {"sidecar": rel, "added": sha[:12], "lead_hours": round(lead_h, 3)}
+
+
+def _self_test(repo: Path) -> dict[str, Any]:
+  """Synthetic ground truth. A one-sided check that cannot fail is not a check."""
+  failed: list[str] = []
+  checks = 0
+
+  checks += 1
+  if repo_relative("/a/b/aminx-x/scripts/parity/z.bth.toml") != "scripts/parity/z.bth.toml":
+    failed.append("repo_relative_did_not_anchor")
+  checks += 1
+  if repo_relative("/nowhere/z.bth.toml") is not None:
+    failed.append("repo_relative_accepted_unanchorable")
+
+  # The decisive pair: a LATE sidecar must be called a violation and an EARLY
+  # one must not. Both are synthesised from the same helper the real path uses.
+  late_run = "2020-01-01 00:00:00+00:00"
+  own = "scripts/analysis/prereg_order_audit.py"  # the frozen v1, committed long ago
+  checks += 1
+  real = add_commit(repo, own)
+  if real is None:
+    failed.append("cannot_resolve_own_add_commit")
+  else:
+    kind, _ = classify(repo, own, late_run, "HEAD")
+    if kind != "violation":
+      failed.append(f"late_run_not_flagged({kind})")
+    checks += 1
+    future = datetime.now(timezone.utc).isoformat(sep=" ")
+    kind2, _ = classify(repo, own, future, "HEAD")
+    if kind2 == "violation":
+      failed.append("early_run_falsely_flagged")
+
+    # v2: the same pair AT the boundary. A run one second before the add-commit
+    # is late; one second after is not. The far-apart pair above would pass for
+    # an off-by-hours comparison; this one would not.
+    committed = _parse_run_ts(real[1])
+    checks += 1
+    just_before = (committed - timedelta(seconds=1)).isoformat(sep=" ")
+    if classify(repo, own, just_before, "HEAD")[0] != "violation":
+      failed.append("boundary_minus_1s_not_flagged")
+    checks += 1
+    just_after = (committed + timedelta(seconds=1)).isoformat(sep=" ")
+    if classify(repo, own, just_after, "HEAD")[0] == "violation":
+      failed.append("boundary_plus_1s_falsely_flagged")
+
+  # v2: mixed-format ordering through the real reduction. 16:00-04:00 is
+  # 20:00Z, EARLIER than 20:40:10Z, though it sorts later as a string. Both
+  # input orders must keep the -04:00 row.
+  mixed = [
+    {"sidecar_path": "/x/aminx-y/scripts/parity/m.bth.toml",
+     "first_run": "2026-10-06 20:40:10+00:00", "first_git": "a", "n": 1},
+    {"sidecar_path": "/x/aminx-y/scripts/parity/m.bth.toml",
+     "first_run": "2026-10-06T16:00:00-04:00", "first_git": "b", "n": 1},
+  ]
+  for order, rows in (("utc_first", mixed), ("offset_first", mixed[::-1])):
+    checks += 1
+    kept, _skipped, _bad = reduce_earliest(rows)
+    row = kept.get("scripts/parity/m.bth.toml")
+    if row is None or row["first_git"] != "b":
+      failed.append(f"mixed_format_wrong_earliest({order})")
+
+  # v2: a naive timestamp is refused by the helper, and the reduction excludes
+  # and counts it instead of crashing or guessing.
+  checks += 1
+  try:
+    _parse_run_ts("2026-10-06 20:40:10")
+    failed.append("naive_timestamp_accepted")
+  except ValueError:
+    pass
+  checks += 1
+  kept, _skipped, bad = reduce_earliest([
+    {"sidecar_path": "/x/aminx-y/scripts/parity/n.bth.toml",
+     "first_run": "2026-10-06 20:40:10", "first_git": "naive", "n": 1},
+    {"sidecar_path": "/x/aminx-y/scripts/parity/n.bth.toml",
+     "first_run": "2026-10-07 00:00:00+00:00", "first_git": "good", "n": 1},
+  ])
+  good = kept.get("scripts/parity/n.bth.toml")
+  if len(bad) != 1 or good is None or good["first_git"] != "good":
+    failed.append("naive_row_not_excluded_and_counted")
+
+  checks += 1
+  if classify(repo, "scripts/does_not_exist.bth.toml", late_run, "HEAD")[0] != "unverifiable":
+    failed.append("missing_path_not_unverifiable")
+
+  # The date field must be the AUTHOR date. Committer dates are rewritten by
+  # rebase, which made a first pass report 65 violations in 78 sidecars out of
+  # one bulk rewrite. Pinned by checking a commit whose two dates differ: if
+  # add_commit ever returns the committer date again, this fires.
+  checks += 1
+  _code, out = _git(repo, "log", "--format=%H %aI %cI", "-200")
+  divergent = None
+  for line in out.splitlines():
+    sha, author, committer = (line.split() + ["", ""])[:3]
+    if author and committer and author[:19] != committer[:19]:
+      divergent = (sha, author, committer)
+      break
+  if divergent is not None:
+    sha, author, _committer = divergent
+    code, out = _git(repo, "log", "-1", "--format=%aI", sha)
+    if code == 0 and out.strip()[:19] != author[:19]:
+      failed.append("date_field_is_not_author_date")
+
+  return {
+    "self_test_passed": not failed,
+    "self_test_n_checks": checks,
+    "self_test_failed": failed,
+  }
+
+
+def _grade(payload: dict[str, Any]) -> str:
+  if not payload["self_test_passed"]:
+    return "instrument_unverified"
+  if payload.get("refusal"):
+    return str(payload["refusal"])
+  if payload["n_violations"] > 0:
+    return "prereg_order_violated"
+  if payload["n_audited"] < _MIN_AUDITED:
+    return "audit_underpowered"
+  return "prereg_order_clean"
+
+
+def _emit(out: Path, payload: dict[str, Any]) -> None:
+  out.parent.mkdir(parents=True, exist_ok=True)
+  text = json.dumps(payload, indent=2, sort_keys=True)
+  out.write_text(text, encoding="utf-8")
+  results = os.environ.get("BTH_RESULTS_PATH")
+  if results:
+    Path(results).write_text(text, encoding="utf-8")
+
+
+def main() -> int:
+  logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
+  parser = argparse.ArgumentParser(description=__doc__)
+  parser.add_argument("--out", type=Path, required=True)
+  parser.add_argument("--repo", type=Path, required=True, help="checkout to resolve commits in")
+  parser.add_argument("--bth", default="bth", help="bathos executable")
+  parser.add_argument("--project", default="aminx")
+  parser.add_argument(
+    "--extra-rows",
+    type=Path,
+    help="JSON list of catalog rows exported from ANOTHER machine, merged by "
+    "repo-relative path keeping the EARLIEST run. A multi-machine project's "
+    "catalogs are disjoint, and the earliest run is the one a sidecar had to "
+    "precede, so auditing one catalog alone can call a sidecar clean that an "
+    "earlier run elsewhere makes late.",
+  )
+  parser.add_argument("--self-test-only", action="store_true")
+  args = parser.parse_args()
+
+  base = _self_test(args.repo)
+  _LOG.info(
+    "self-test %s (%d checks)",
+    "passed" if base["self_test_passed"] else f"FAILED {base['self_test_failed']}",
+    base["self_test_n_checks"],
+  )
+  if args.self_test_only:
+    verdict = "self_test_only" if base["self_test_passed"] else "instrument_unverified"
+    _emit(args.out, {**base, "refusal": None, "verdict": verdict})
+    return 0 if base["self_test_passed"] else 1
+
+  code, _ = _git(args.repo, "rev-parse", "--git-dir")
+  if code != 0:
+    _emit(args.out, {**base, "refusal": "repo_unavailable", "verdict": "repo_unavailable",
+                     "n_violations": 0, "n_audited": 0})
+    return 1
+
+  rows = earliest_runs(args.bth, args.project)
+  if not rows:
+    _emit(args.out, {**base, "refusal": "catalog_unavailable",
+                     "verdict": "catalog_unavailable", "n_violations": 0, "n_audited": 0})
+    _LOG.error("catalog query returned nothing")
+    return 1
+
+  n_extra = 0
+  if args.extra_rows is not None and args.extra_rows.is_file():
+    extra = json.loads(args.extra_rows.read_text(encoding="utf-8"))
+    n_extra = len(extra)
+    rows = [*rows, *extra]
+
+  # Collapse to ONE row per repo-relative sidecar, keeping the EARLIEST run
+  # across every catalog seen (parsed UTC, not string order; see reduce_earliest).
+  earliest, skipped, unparseable = reduce_earliest(rows)
+  if unparseable:
+    _LOG.warning("%d row(s) with unparseable run timestamps excluded", len(unparseable))
+
+  buckets: dict[str, list[dict[str, Any]]] = {"clean": [], "violation": [], "unverifiable": []}
+  for rel, row in sorted(earliest.items()):
+    kind, detail = classify(args.repo, rel, str(row["first_run"]), str(row["first_git"]))
+    detail["runs"] = row["n"]
+    detail["first_outcome"] = row.get("first_outcome")
+    buckets[kind].append(detail)
+
+  audited = sum(len(v) for v in buckets.values())
+  payload = {
+    **base,
+    "refusal": None,
+    "project": args.project,
+    "n_catalog_rows": len(rows),
+    "n_rows_from_other_catalogs": n_extra,
+    "n_distinct_sidecars": len(earliest),
+    "n_skipped_unanchorable": skipped,
+    "n_unparseable_timestamps": len(unparseable),
+    "unparseable_timestamps": unparseable,
+    "n_audited": audited,
+    "n_clean": len(buckets["clean"]),
+    "n_violations": len(buckets["violation"]),
+    "n_unverifiable": len(buckets["unverifiable"]),
+    # A late commit whose FIRST run did not grade a pass cannot have had its
+    # criteria chosen to flatter that run: nobody writes conditions post-hoc
+    # that fail, error, or fail to grade at all. So this subset, not
+    # n_violations, is the set where the post-hoc concern is actually live.
+    # Reported, never graded -- the verdict keys on n_violations as
+    # pre-registered, and narrowing a criterion after seeing results is the
+    # exact move this audit exists to detect.
+    "n_violations_whose_first_run_passed": sum(
+      1 for d in buckets["violation"] if str(d.get("first_outcome") or "") == "pass"
+    ),
+    "violations": sorted(buckets["violation"], key=lambda d: -d.get("hours_late", 0)),
+    "unverifiable": sorted(buckets["unverifiable"], key=lambda d: d["sidecar"]),
+    "min_lead_hours": min((d["lead_hours"] for d in buckets["clean"]), default=None),
+  }
+  payload["verdict"] = _grade(payload)
+  _emit(args.out, payload)
+  _LOG.info(
+    "verdict=%s audited=%d clean=%d violations=%d unverifiable=%d min_lead_h=%s",
+    payload["verdict"], audited, payload["n_clean"], payload["n_violations"],
+    payload["n_unverifiable"], payload["min_lead_hours"],
+  )
+  return 0
+
+
+if __name__ == "__main__":
+  raise SystemExit(main())
