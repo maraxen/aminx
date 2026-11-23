@@ -13,6 +13,11 @@ from port.selftest.kernel import retrace_per_call, sign_flipped_kernel
 
 pytestmark = pytest.mark.port_wave("port_selftest")
 
+#: The band each tier applies, stated once so tests/lint/test_port_tolerance_coverage.py and
+#: test_port_tolerances_match_targets.py can check it against targets/port_selftest.toml.
+_RTOL = {"f64": 1e-10, "f32": 1e-5}
+_ATOL = {"f64": 1e-12, "f32": 1e-6}
+
 
 def _host_input() -> np.ndarray:
   return np.arange(4, dtype=np.float64)
@@ -32,7 +37,7 @@ def test_tier_2_sign_flipped_kernel_fails(oracle: object) -> None:
   reference = np.asarray(oracle.reference_output())  # type: ignore[attr-defined]
   flipped = np.asarray(sign_flipped_kernel(_host_input()))
   with pytest.raises(AssertionError):
-    np.testing.assert_allclose(flipped, reference, rtol=1e-10, atol=1e-12)
+    np.testing.assert_allclose(flipped, reference, rtol=_RTOL["f64"], atol=_ATOL["f64"])
 
 
 @pytest.mark.tier_3
@@ -41,7 +46,7 @@ def test_tier_3_sign_flipped_kernel_fails_f32(oracle: object) -> None:
   reference = np.asarray(oracle.reference_output(), dtype=np.float32)  # type: ignore[attr-defined]
   flipped = np.asarray(sign_flipped_kernel(_host_input().astype(np.float32)))
   with pytest.raises(AssertionError):
-    np.testing.assert_allclose(flipped, reference, rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(flipped, reference, rtol=_RTOL["f32"], atol=_ATOL["f32"])
 
 
 @pytest.mark.tier_5
