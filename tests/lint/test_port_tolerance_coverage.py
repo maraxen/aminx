@@ -273,8 +273,63 @@ def _modules() -> dict[str, Path]:
   for path in sorted(_PORT.rglob("test_*.py")):
     wave = _wave_of(ast.parse(path.read_text(encoding="utf-8")))
     if wave is not None:
+      if wave in out:
+        # Two modules claiming one wave would make every check here pick one silently.
+        raise ValueError(f"port_wave({wave!r}) is declared by both {out[wave]} and {path}")
       out[wave] = path
   return out
+
+
+def _stated_components(policy: str) -> set[str]:
+  """The components a policy string names EXPLICITLY. ``declared_band`` fills the rest with 0.0."""
+  text = policy.strip()
+  if text == "exact":
+    return {"rtol", "atol"}
+  return {part.partition("=")[0].strip() for part in text.split(",") if "=" in part}
+
+
+def band_mismatches(policy: str, applied: dict[str, float]) -> list[str]:
+  """Every way the reported ``policy`` claims a band the module does not apply.
+
+  A component the policy STATES must be applied with that value, including an
+  explicit ``rtol=0``. A component ``declared_band`` only filled in as 0.0 is
+  allowed to be absent from the module.
+  """
+  declared = declared_band(policy)
+  if declared is None:
+    return []
+  stated = _stated_components(policy)
+  problems = []
+  for component, value in declared.items():
+    if component not in applied:
+      if component in stated:
+        problems.append(f"{component}: target reports {value!r}, test applies no {component} at all")
+    elif applied[component] != value:
+      problems.append(f"{component}: target reports {value!r}, test applies {applied[component]!r}")
+  return problems
+
+
+def test_band_mismatches_controls() -> None:
+  """Synthetic controls for band_mismatches: each arm must be able to fire, and must not over-fire."""
+  # Agreement, and an implicitly filled rtol the module never applies: no problem.
+  assert band_mismatches("rtol=1e-5,atol=1e-6", {"rtol": 1e-5, "atol": 1e-6}) == []
+  assert band_mismatches("atol=1e-7", {"atol": 1e-7}) == []
+  # Value disagreement fires.
+  assert band_mismatches("rtol=1e-5,atol=1e-6", {"rtol": 1e-4, "atol": 1e-6}) == [
+    "rtol: target reports 1e-05, test applies 0.0001"
+  ]
+  # A stated nonzero component the module never applies fires.
+  assert band_mismatches("rtol=1e-5,atol=1e-6", {"rtol": 1e-5}) == [
+    "atol: target reports 1e-06, test applies no atol at all"
+  ]
+  # An EXPLICIT zero is still a claim, so it fires when absent.
+  assert band_mismatches("rtol=0,atol=1e-7", {"atol": 1e-7}) == [
+    "rtol: target reports 0.0, test applies no rtol at all"
+  ]
+  # "exact" states both components.
+  assert band_mismatches("exact", {"atol": 0.0}) == ["rtol: target reports 0.0, test applies no rtol at all"]
+  # Prose is not this function's job.
+  assert band_mismatches("f64-only", {"rtol": 1.0}) == []
 
 
 def test_policy_reader_handles_every_form() -> None:
@@ -397,24 +452,11 @@ def test_reported_band_is_the_applied_band(wave: str) -> None:
   for precision in _PRECISIONS:
     if (wave, precision) in _PROSE or (wave, precision) in _KNOWN_UNREPORTED:
       continue
-    declared = declared_band(str(parity[f"tolerance_policy_{precision}"]))
+    policy = str(parity[f"tolerance_policy_{precision}"])
     applied = bands.get(precision)
-    if declared is None or not applied:
+    if declared_band(policy) is None or not applied:
       continue  # accounted for by test_every_target_is_accounted_for
-    for component, value in declared.items():
-      if component not in applied:
-        # declared_band() fills an unstated rtol/atol with 0.0, so only a NONZERO
-        # reported component that the module never applies is a false claim.
-        if value != 0.0:
-          problems.append(
-            f"{precision} {component}: target reports {value!r}, test applies no "
-            f"{component} at all"
-          )
-      elif applied[component] != value:
-        problems.append(
-          f"{precision} {component}: target reports {value!r}, test applies "
-          f"{applied[component]!r}"
-        )
+    problems += [f"{precision} {p}" for p in band_mismatches(policy, applied)]
   assert not problems, (
     f"targets/{wave}.toml -- the verdict it emits would claim a band it did not "
     f"apply:\n  " + "\n  ".join(problems)
