@@ -57,6 +57,7 @@ _EXPECTED_COVERED = frozenset({
   "laser_layers",
   "laser_rotamers",
   "laser_score",
+  "port_selftest",
 })
 
 #: Every module constant that can carry a band. Order is irrelevant; membership
@@ -210,7 +211,7 @@ def test_mismatch_detector_fires() -> None:
 
 def _covered() -> list[tuple[str, Path, dict[str, dict[str, float]]]]:
   rows = []
-  for path in sorted(_PORT.glob("test_*.py")):
+  for path in sorted(_PORT.rglob("test_*.py")):
     wave, consts = _module_facts(path)
     if wave is None or not consts:
       continue
