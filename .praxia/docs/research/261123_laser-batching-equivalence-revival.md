@@ -17,6 +17,9 @@ and this PR brings them back unchanged.
 
 ## Provenance check
 
+Source for this section: bathos catalog queries on 2026-11-23 (`runs` table: `git_hash`, `git_dirty`,
+`script_sha256`, `sidecar_sha256`, `outcome`, `output_paths`). None of it comes from commit messages.
+
 All runs used commit 2eb50edb with a dirty tree. 2eb50edb is reachable from tag
 `archive/wt/260929-laser-confirm`. For each run, the catalog's recorded `script_sha256` and `sidecar_sha256` equal
 the sha256 of the file committed here, so these are the exact bytes that ran:
@@ -52,7 +55,25 @@ Superseded attempts:
 - The equivalence results cover the LASEr checkpoint and fixtures as of 2026-10-07. A sampler change since then
   could invalidate them. Re-run before relying on batching for a new campaign.
 - The lint tests revived alongside these scripts are `test_laser_fixture_manifest.py`, `test_port_tolerance_coverage.py`
-  and the hardened `test_port_tolerances_match_targets.py`. They encode the `tests/port/targets` wave set of 2026-10-07.
-  CI on this PR decides whether that set needs updating.
-- `test_sidecar_structure.py` was deliberately not revived, because its registry of known-bad sidecars is stale.
+  and the hardened `test_port_tolerances_match_targets.py`. They were updated in this PR to the current
+  `tests/port/targets`: `declayer_f64` is now banded, and `port_selftest` is found under `tests/port/selftest/`.
+  The revival also tightened them: a pinned fixture count, recursive module discovery, and missing-component
+  mismatches.
+- `test_sidecar_structure.py` was deliberately not revived, because its registry of known-bad sidecars dates
+  from 2026-10-06. That is a judgement made at revival time, not something the branch recorded.
+
+## Known limitations of the revived scripts (left byte-identical on purpose)
+
+The Cursor review of #302 found these. Fixing any of them changes bytes the cited runs graded, so each fix needs a
+re-run under a new sidecar version. Until then the runs above stand as recorded, with these caveats:
+
+- **`prereg_order_audit.py`: the date self-test is hollow.** It compares `git log --format=%aI` with itself and
+  never calls `add_commit`, so it cannot detect `add_commit` regressing to committer dates. The audit itself is
+  unaffected: `add_commit` does read `%aI`. Only the guard around it is vacuous.
+- **`prereg_order_audit.py`: the earliest-run merge sorts timestamps as strings.** A space-separated timestamp
+  sorts before an earlier `T`-separated one. That matters only if catalogs mix the two formats, which was not
+  checked for run bb4da3c6.
+- **`laser_batch_equivalence.py`: `first_batch_independent` is recorded but never graded**, and the chi1 script
+  drops it. A sampler that returned identical copies within a batch could still grade `batched_equivalent`. The
+  module header also says `mean_tv_chi1` is graded, but only `mean_tv` is.
 

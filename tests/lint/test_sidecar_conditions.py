@@ -22,9 +22,10 @@ _ALLOWLIST = Path(__file__).with_name("sidecar_conditions_allowlist.toml")
 # bathos outcome conditions are DuckDB SQL fragments, so the grammar is the
 # SQL subset actually used: boolean/SQL keywords, comparisons, arithmetic,
 # IN lists, and a fixed set of scalar functions called as name(...).
-# DISTINCT and FROM are here only for the null-safe comparison `x IS NOT DISTINCT FROM 'v'`,
-# which the revived LASEr batching and prereg-audit sidecars use for their refusal outcomes.
-_KEYWORDS = frozenset({"AND", "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE", "DISTINCT", "FROM"})
+# DISTINCT and FROM are deliberately NOT free keywords: they are accepted only inside the
+# null-safe comparison phrase `IS [NOT] DISTINCT FROM` (see _in_distinct_phrase), so a stray
+# bare FROM or DISTINCT is still flagged.
+_KEYWORDS = frozenset({"AND", "OR", "NOT", "IN", "IS", "NULL", "TRUE", "FALSE"})
 _FUNCTIONS = frozenset({"min", "max", "count", "abs", "sum", "avg", "len", "round", "starts_with"})
 
 _TOKEN_RE = re.compile(
@@ -60,6 +61,24 @@ def _next_is_open(tokens: list[tuple[str, str]], i: int) -> bool:
     return i + 1 < len(tokens) and tokens[i + 1] == ("punct", "(")
 
 
+def _upper_ident(tokens: list[tuple[str, str]], i: int) -> str | None:
+    if 0 <= i < len(tokens) and tokens[i][0] == "ident":
+        return tokens[i][1].upper()
+    return None
+
+
+def _in_distinct_phrase(tokens: list[tuple[str, str]], i: int) -> bool:
+    """True when token i is the DISTINCT or FROM of `IS [NOT] DISTINCT FROM`."""
+    word = _upper_ident(tokens, i)
+    if word == "DISTINCT":
+        before = _upper_ident(tokens, i - 1)
+        well_preceded = before == "IS" or (before == "NOT" and _upper_ident(tokens, i - 2) == "IS")
+        return well_preceded and _upper_ident(tokens, i + 1) == "FROM"
+    if word == "FROM":
+        return _upper_ident(tokens, i - 1) == "DISTINCT" and _in_distinct_phrase(tokens, i - 1)
+    return False
+
+
 def condition_offenders(condition: str, schema_keys: set[str]) -> list[str]:
     """Return the reasons a condition is not machine-evaluable (empty = ok)."""
     try:
@@ -77,6 +96,8 @@ def condition_offenders(condition: str, schema_keys: set[str]) -> list[str]:
                 problems.append("unbalanced closing bracket")
                 break
         elif kind == "ident" and text.upper() in _KEYWORDS:
+            continue
+        elif kind == "ident" and _in_distinct_phrase(tokens, i):
             continue
         elif kind == "ident" and text.lower() in _FUNCTIONS and _next_is_open(tokens, i):
             continue
@@ -156,6 +177,23 @@ def test_unknown_identifier_fails() -> None:
     sidecar = {"result_schema": {"a": "bool"}, "outcomes": {"x": {"condition": "a AND b"}}}
     assert [r for _, _, r in sidecar_offenders(sidecar)] == [
         "bare identifier 'b' is not a result_schema key"
+    ]
+
+
+def test_is_not_distinct_from_phrase_passes() -> None:
+    keys = {"ok", "refusal"}
+    assert condition_offenders("ok AND refusal IS NOT DISTINCT FROM 'x'", keys) == []
+    assert condition_offenders("refusal IS DISTINCT FROM 'x'", keys) == []
+
+
+def test_distinct_or_from_outside_the_phrase_fails() -> None:
+    """Negative control: the phrase allowance must not make FROM/DISTINCT free words."""
+    keys = {"ok", "refusal"}
+    assert condition_offenders("ok AND FROM", keys) == ["bare identifier 'FROM' is not a result_schema key"]
+    assert condition_offenders("DISTINCT ok", keys) == ["bare identifier 'DISTINCT' is not a result_schema key"]
+    assert condition_offenders("refusal NOT DISTINCT FROM 'x'", keys) == [
+        "bare identifier 'DISTINCT' is not a result_schema key",
+        "bare identifier 'FROM' is not a result_schema key",
     ]
 
 

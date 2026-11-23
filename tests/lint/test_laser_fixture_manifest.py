@@ -211,3 +211,20 @@ def test_the_checkers_actually_refuse(tmp_path: Path) -> None:
   assert provenance_problems({**sound, "zenodo_record_ids": ["999"]})
   assert provenance_problems({**sound, "split_file": "  "})
   assert provenance_problems({**sound, "split_fallback": "no"})
+
+
+#: The laser_score_parity set is exactly 20 complexes (module docstring). Without a
+#: pinned count, deleting a fixture from disk AND from the manifest together passes
+#: every check above, because each one only compares the two against each other
+#: (Cursor review of #302).
+_EXPECTED_FIXTURE_COUNT = 20
+
+
+def test_fixture_set_size_is_pinned() -> None:
+  manifest = _load()
+  on_disk = sorted(p.name for p in _FIXTURES.glob("*.pdb"))
+  assert len(manifest["files"]) == _EXPECTED_FIXTURE_COUNT, (
+    f"manifest [files] lists {len(manifest['files'])} fixtures, expected {_EXPECTED_FIXTURE_COUNT}"
+  )
+  assert len(manifest["ordered_ids"]) == _EXPECTED_FIXTURE_COUNT
+  assert len(on_disk) == _EXPECTED_FIXTURE_COUNT, f"{len(on_disk)} .pdb fixtures on disk"

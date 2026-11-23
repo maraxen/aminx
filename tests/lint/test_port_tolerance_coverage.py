@@ -90,9 +90,10 @@ _EXACT_BY_CONSTRUCTION: dict[str, str] = {
 #:
 #: So membership is declared AND verified: an entry here must really have no
 #: module, and a wave missing a module without an entry is now a failure.
-_NO_TEST_MODULE: dict[str, str] = {
-  "port_selftest": "the suite's own self-test target; no tests/port module declares it",
-}
+#: Empty today. port_selftest used to be listed here, but tests/port/selftest/test_kernel.py does
+#: declare port_wave("port_selftest"); the entry only survived because _modules() did not
+#: recurse into subdirectories (Cursor review of #302).
+_NO_TEST_MODULE: dict[str, str] = {}
 
 #: Waves whose APPLIED band is real but whose REPORTED policy does not state it
 #: fully. This is the #2445 defect, pinned so it cannot grow silently. Asserted
@@ -267,7 +268,9 @@ def declared_band(policy: str) -> dict[str, float] | None:
 
 def _modules() -> dict[str, Path]:
   out: dict[str, Path] = {}
-  for path in sorted(_PORT.glob("test_*.py")):
+  # rglob, not glob: a wave may live in a subpackage (tests/port/selftest/), and a
+  # top-level-only scan silently exempted it from every check in this file.
+  for path in sorted(_PORT.rglob("test_*.py")):
     wave = _wave_of(ast.parse(path.read_text(encoding="utf-8")))
     if wave is not None:
       out[wave] = path
@@ -399,7 +402,15 @@ def test_reported_band_is_the_applied_band(wave: str) -> None:
     if declared is None or not applied:
       continue  # accounted for by test_every_target_is_accounted_for
     for component, value in declared.items():
-      if component in applied and applied[component] != value:
+      if component not in applied:
+        # declared_band() fills an unstated rtol/atol with 0.0, so only a NONZERO
+        # reported component that the module never applies is a false claim.
+        if value != 0.0:
+          problems.append(
+            f"{precision} {component}: target reports {value!r}, test applies no "
+            f"{component} at all"
+          )
+      elif applied[component] != value:
         problems.append(
           f"{precision} {component}: target reports {value!r}, test applies "
           f"{applied[component]!r}"
