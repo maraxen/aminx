@@ -233,9 +233,9 @@ requires-dist = [
     { name = "psutil", specifier = ">=5.9" },
     { name = "scipy", marker = "extra == 'ebm'", specifier = ">=1.12.0" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["eda"], marker = "extra == 'eda'", specifier = "==0.4.1b8" },
-    { name = "xtrax", extras = ["io", "pack", "export"], specifier = "==0.4.1b8" },
-    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b8" },
+    { name = "xtrax", extras = ["eda"], marker = "extra == 'eda'", specifier = "==0.4.1b9" },
+    { name = "xtrax", extras = ["io", "pack", "export"], specifier = "==0.4.1b9" },
+    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b9" },
     { name = "zstandard", specifier = ">=0.21.0" },
 ]
 provides-extras = ["eda", "agent", "laser", "ebm", "onnx", "foldcomp", "cpu", "cuda12"]
@@ -4707,7 +4707,7 @@ wheels = [
 
 [[package]]
 name = "xtrax"
-version = "0.4.1b8"
+version = "0.4.1b9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jax", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
@@ -4715,9 +4715,9 @@ dependencies = [
     { name = "jaxtyping", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/8a/33/51429763688a359abcff4dc133c9afff433c0d591f207fb6aec55f7e12ca/xtrax-0.4.1b8.tar.gz", hash = "sha256:1104ef1735e7f69ad2c6e38a82534dc05d2aa0770fac45835b9f4ca083ee38f4", size = 4403237, upload-time = "2026-11-11T18:58:05.718Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/1c/94a77e42d1f0b3ca5dd11362fc0a5426de083af12dd56095721fe6cad3ca/xtrax-0.4.1b9.tar.gz", hash = "sha256:242d7401dbf78d277c25e8ae823451937836423c4f8c4062e003e46701daccc1", size = 4554599, upload-time = "2026-11-20T21:30:12.37Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7d/c7/a56cd3af34fafeda8326a8e17143248748a0b9958227ebf0b3d2fe04380b/xtrax-0.4.1b8-py3-none-any.whl", hash = "sha256:469b371c61abd214d738f5fec1be18bc99509d54223f0497a5dcbd3b5f65182a", size = 938415, upload-time = "2026-11-11T18:58:03.031Z" },
+    { url = "https://files.pythonhosted.org/packages/63/e0/c69cb3f8b5eb8e7e48316260a9aac0ae8ef4131d25af4ddc8621ac3410e0/xtrax-0.4.1b9-py3-none-any.whl", hash = "sha256:67bcdbb5807f2bcc971e352da83b42573b4f63fdfac26f2fcdd76dd544e0049d", size = 984761, upload-time = "2026-11-20T21:30:10.669Z" },
 ]
 
 [package.optional-dependencies]

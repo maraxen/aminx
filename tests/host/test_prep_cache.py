@@ -2,14 +2,32 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import jax
 import pytest
 
+from xtrax.jax_cache import JaxCacheConfigError, JaxCacheDirError
+
 from aminx.host.prep import prep_protein_stream_and_model
 from aminx.run.specs import SamplingSpecification
+
+
+def _run_prep_mocked(spec: SamplingSpecification) -> None:
+  """Run prep with the dataset and model loader mocked; re-raise xtrax cache errors."""
+  with patch("aminx.host.prep.create_protein_dataset") as mock_dataset, \
+       patch("aminx.host.prep.load_model") as mock_load_model:
+    mock_dataset.return_value = MagicMock()
+    mock_load_model.return_value = MagicMock()
+    try:
+      prep_protein_stream_and_model(spec)
+    except (JaxCacheDirError, JaxCacheConfigError):
+      raise
+    except Exception:
+      # Mock-induced failures after the cache is configured are expected and ignored.
+      pass
 
 
 class TestPrepCacheConfig:
@@ -25,20 +43,12 @@ class TestPrepCacheConfig:
       cache_path=cache_dir,
     )
 
-    with patch("aminx.host.prep.create_protein_dataset") as mock_dataset, \
-         patch("aminx.host.prep.load_model") as mock_load_model:
-      mock_dataset.return_value = MagicMock()
-      mock_load_model.return_value = MagicMock()
+    _run_prep_mocked(spec)
 
-      try:
-        prep_protein_stream_and_model(spec)
-      except Exception:
-        # We expect exceptions due to mocking, but cache config should have been set
-        pass
-
-      # Verify that jax.config was updated with the cache path
-      cache_config = jax.config.jax_compilation_cache_dir
-      assert str(cache_dir) == cache_config
+    # xtrax namespaces the directory as <dir>/jaxlib-<ver>
+    expected = cache_dir / f"jaxlib-{importlib.metadata.version('jaxlib')}"
+    assert jax.config.jax_compilation_cache_dir == str(expected)
+    assert expected.is_dir()
 
   def test_cache_path_none_does_not_update_jax_config(self) -> None:
     """When cache_path is None, jax_compilation_cache_dir should not be modified."""
@@ -50,20 +60,11 @@ class TestPrepCacheConfig:
       cache_path=None,
     )
 
-    with patch("aminx.host.prep.create_protein_dataset") as mock_dataset, \
-         patch("aminx.host.prep.load_model") as mock_load_model:
-      mock_dataset.return_value = MagicMock()
-      mock_load_model.return_value = MagicMock()
+    _run_prep_mocked(spec)
 
-      try:
-        prep_protein_stream_and_model(spec)
-      except Exception:
-        # Expected due to mocking
-        pass
-
-      # Verify that jax.config was not changed
-      cache_config = jax.config.jax_compilation_cache_dir
-      assert cache_config == original_cache_dir
+    # Verify that jax.config was not changed
+    cache_config = jax.config.jax_compilation_cache_dir
+    assert cache_config == original_cache_dir
 
   def test_cache_path_converts_string_to_path(self, tmp_path: Path) -> None:
     """When cache_path is a string, it should be converted to Path and used."""
@@ -78,16 +79,20 @@ class TestPrepCacheConfig:
     # Verify that cache_path was converted to Path in __post_init__
     assert isinstance(spec.cache_path, Path)
 
-    with patch("aminx.host.prep.create_protein_dataset") as mock_dataset, \
-         patch("aminx.host.prep.load_model") as mock_load_model:
-      mock_dataset.return_value = MagicMock()
-      mock_load_model.return_value = MagicMock()
+    _run_prep_mocked(spec)
 
-      try:
-        prep_protein_stream_and_model(spec)
-      except Exception:
-        pass
+    # Verify jax.config was set to the namespaced directory under the converted Path
+    cache_config = jax.config.jax_compilation_cache_dir
+    assert cache_config == str(cache_dir / f"jaxlib-{importlib.metadata.version('jaxlib')}")
 
-      # Verify jax.config was set with the Path converted to string
-      cache_config = jax.config.jax_compilation_cache_dir
-      assert cache_config == str(cache_dir)
+
+class TestPrepCacheFailLoud:
+  """xtrax cache errors reach the caller instead of being swallowed (debt #3527)."""
+
+  def test_unwritable_cache_dir_raises(self, tmp_path: Path) -> None:
+    blocker = tmp_path / "not_a_dir"
+    blocker.write_text("x", encoding="utf-8")
+    spec = SamplingSpecification(inputs="dummy.pdb", cache_path=blocker)
+
+    with pytest.raises(JaxCacheDirError):
+      _run_prep_mocked(spec)

@@ -482,3 +482,29 @@ def pytest_sessionfinish(session: object, exitstatus: object) -> None:  # noqa: 
   )
   for nodeid in _X64_LEAKS:
     print(f"  {nodeid}")  # noqa: T201
+
+
+@pytest.fixture(autouse=True)
+def _isolate_jax_cache(tmp_path_factory, monkeypatch):
+  """Keep xtrax.jax_cache and JAX's cache flag from leaking into or out of a test (debt #3527).
+
+  Points HOME and XDG_CONFIG_HOME at an empty directory so a host ``~/.config/xtrax/config.toml``
+  is invisible, drops the xtrax and JAX cache variables, and clears JAX's flag (JAX read the
+  environment at import, so unsetting the variable alone does not clear it). The working directory
+  is left alone; tests that need an empty cwd ask for it.
+  """
+  import jax  # noqa: PLC0415
+  from jax._src import compilation_cache  # noqa: PLC0415
+  from xtrax import jax_cache  # noqa: PLC0415
+
+  home = tmp_path_factory.mktemp("jax_cache_home")
+  monkeypatch.setenv("HOME", str(home))
+  monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+  for name in ("XTRAX_JAX_CACHE", "XTRAX_JAX_CACHE_DIR", "JAX_COMPILATION_CACHE_DIR"):
+    monkeypatch.delenv(name, raising=False)
+  saved_dir = jax.config.jax_compilation_cache_dir
+  jax.config.update("jax_compilation_cache_dir", None)
+  monkeypatch.setattr(jax_cache, "_applied", None)
+  yield
+  compilation_cache.reset_cache()
+  jax.config.update("jax_compilation_cache_dir", saved_dir)

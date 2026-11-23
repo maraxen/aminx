@@ -2285,8 +2285,11 @@ app.add_typer(potts_app, name="potts")
 
 def main() -> None:
   """Console script entrypoint."""
+  from xtrax import jax_cache  # noqa: PLC0415
+
   from aminx.agent.telemetry import run_cli  # noqa: PLC0415
 
+  jax_cache.configure()
   run_cli(app)
 
 
