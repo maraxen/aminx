@@ -1,7 +1,7 @@
 ---
 title: 'LASEr PDB output: the spec understates upstream''s output pipeline'
 description: 'Decision request: upstream LASEr writes PDBs through backbone N-H imputation, titratable-H cleanup with a geometric H-bond detector, and probability B-factors -- none of which the spec names; choose minimal writer vs full parity port'
-status: proposed
+status: accepted
 task_id: 260929_potts-laser-xtrax-compose
 date: '261004'
 supersedes: ''
@@ -9,7 +9,8 @@ backlog_ids: ''
 ---
 # LASEr PDB output: the spec understates upstream's output pipeline
 
-**Status: needs the user's decision.** Nothing has been built for it.
+**Status: decided 2026-11-23. Option C, with the writer living in proxide** (see "Decision" at the end).
+Nothing has been built yet.
 
 ## Where things stand
 
@@ -66,3 +67,27 @@ pre-registered wave rather than being folded into this sprint at the end.
 Related open decisions: `261003_laser-score-tier3-f32-design.md`,
 `261004_sample-dist-pilot-fixtures-and-low-t.md`.
 
+
+## Decision (2026-11-23, user)
+
+**C, with one change: the full-atom PDB writer and its configurability belong in proxide, not aminx.**
+
+- **Writer: proxide debt #3583.** A configurable writer: per-residue or per-atom B-factors and occupancy, input
+  residue identifiers (chain, resnum, icode), optional HETATM ligand atoms, hydrogens, correct atom-name columns, and a
+  loud failure on missing data. proxide's current `write_pdb` (`src/proxide/io/writing.py:87-160`) has none of these:
+  it hard-codes B-factor 0.00, writes no HETATM, no insertion codes, and silently falls back to CA/UNK.
+- **Source to port, not reinvent:** aminx local tag `archive/wt/260929-laser-rotamers-wave`, commit `095a49e0`.
+  Its `src/aminx/io/laser_pdb.py` (314 lines, with ligand HETATM, per-residue B-factors and upstream atom names) and
+  `tests/io/test_laser_pdb.py` move to proxide. Do not merge that commit into aminx.
+- **B-factor: the sampled token's probability per residue**, as upstream LASErMPNN does. The aminx LASEr sample path
+  passes it to the proxide writer. This removes one of A's documented divergences.
+- **aminx side (debt #3565):** once #3583 lands, add a thin call from the LASEr sample path, honouring
+  `output_fasta` / `output_fasta_only`, into the proxide writer. Document the remaining divergences: no backbone N-H,
+  no titratable-H cleanup.
+- **B (the parity port of steps 2-3 plus a new oracle wave) stays a follow-up epic in aminx**, pre-registered
+  separately. It is about hydrogen placement, not writing.
+
+### Where things stand, updated
+
+Commits `2f803547` (non-rotatable hydrogen placement, `families/laser_mpnn/featurize.py:795 build_rotamers`) and
+`54216d92` (the LaserDriver `sample` purpose) are now on main; the "Where things stand" section above predates their merge.
