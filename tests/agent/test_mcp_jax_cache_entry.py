@@ -6,6 +6,9 @@ import pytest
 from xtrax import jax_cache
 
 
+pytestmark = pytest.mark.usefixtures("jax_cache_isolated")
+
+
 def test_main_configures_jax_cache_before_server_run(monkeypatch: pytest.MonkeyPatch) -> None:
   cisternal = pytest.importorskip("cisternal")
   pytest.importorskip("fastmcp")

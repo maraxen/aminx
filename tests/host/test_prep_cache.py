@@ -15,6 +15,9 @@ from aminx.host.prep import prep_protein_stream_and_model
 from aminx.run.specs import SamplingSpecification
 
 
+pytestmark = pytest.mark.usefixtures("jax_cache_isolated")
+
+
 def _run_prep_mocked(spec: SamplingSpecification) -> None:
   """Run prep with the dataset and model loader mocked; re-raise xtrax cache errors."""
   with patch("aminx.host.prep.create_protein_dataset") as mock_dataset, \

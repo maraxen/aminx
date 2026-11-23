@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 import jax
 from xtrax import jax_cache
 
 from aminx.utils.compile_telemetry import jax_compilation_cache_setting
+
+
+pytestmark = pytest.mark.usefixtures("jax_cache_isolated")
 
 
 def test_namespaced_dir_reported_with_explicit_source(tmp_path: Path) -> None:

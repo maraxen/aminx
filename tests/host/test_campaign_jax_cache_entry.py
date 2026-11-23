@@ -8,6 +8,9 @@ from xtrax import jax_cache
 import aminx.host.campaign as campaign
 
 
+pytestmark = pytest.mark.usefixtures("jax_cache_isolated")
+
+
 def test_main_configures_jax_cache_before_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
   events: list[str] = []
   monkeypatch.setattr(jax_cache, "configure", lambda *a, **k: events.append("configure"))

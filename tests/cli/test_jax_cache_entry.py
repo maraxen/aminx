@@ -15,6 +15,9 @@ import aminx.agent.telemetry as telemetry
 import aminx.cli as cli
 
 
+pytestmark = pytest.mark.usefixtures("jax_cache_isolated")
+
+
 @pytest.fixture
 def events(monkeypatch: pytest.MonkeyPatch) -> list[str]:
   """Record calls to ``configure`` and the stubbed app dispatch, in order."""

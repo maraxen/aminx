@@ -484,9 +484,12 @@ def pytest_sessionfinish(session: object, exitstatus: object) -> None:  # noqa: 
     print(f"  {nodeid}")  # noqa: T201
 
 
-@pytest.fixture(autouse=True)
-def _isolate_jax_cache(tmp_path_factory, monkeypatch):
-  """Keep xtrax.jax_cache and JAX's cache flag from leaking into or out of a test (debt #3527).
+@pytest.fixture
+def jax_cache_isolated(tmp_path_factory, monkeypatch):
+  """Isolate xtrax.jax_cache and JAX's cache flag for one test module (debt #3527).
+
+  Opt in per module with ``pytestmark = pytest.mark.usefixtures("jax_cache_isolated")``; it is
+  not autouse, so the CI compile-cache setting (ci.yml) still applies to the rest of the suite.
 
   Points HOME and XDG_CONFIG_HOME at an empty directory so a host ``~/.config/xtrax/config.toml``
   is invisible, drops the xtrax and JAX cache variables, and clears JAX's flag (JAX read the
