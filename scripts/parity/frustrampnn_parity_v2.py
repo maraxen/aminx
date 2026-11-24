@@ -66,7 +66,6 @@ from aminx.families.frustra_mpnn.model import (
   FrustraStageOutputs,
   LightAttention1D,
 )
-from aminx.host.runner import score as runner_score
 
 log = logging.getLogger("frustrampnn_parity")
 
@@ -287,6 +286,8 @@ def evaluate_stages(
   pdb_path: Path,
   dtype: str,
   is_clean: bool = True,
+  run_runner_entry: bool = True,
+  captured_outputs: dict[str, np.ndarray] | None = None,
 ) -> dict[str, float]:
   """Evaluate intermediate stages s0-s8 against sealed oracle dump."""
   target_dtype = jnp.float64 if dtype == "float64" else jnp.float32
@@ -308,6 +309,10 @@ def evaluate_stages(
   if dtype == "float64" and stages.frustration_scores.dtype != jnp.float64:
     msg = f"float64 arm produced unexpected dtype {stages.frustration_scores.dtype}"
     raise ValueError(msg)
+
+  if captured_outputs is not None:
+    captured_outputs["both_out"] = np.asarray(stages.both_out)
+    captured_outputs["frustration_scores"] = np.asarray(stages.frustration_scores)
 
   out: dict[str, float] = {}
 
@@ -333,7 +338,9 @@ def evaluate_stages(
   )
 
   # s8_entry: Public runner.score integration (evaluated only on clean float32 arm)
-  if is_clean and dtype == "float32":
+  if is_clean and dtype == "float32" and run_runner_entry:
+    from aminx.host.runner import score as runner_score
+
     runner_res = runner_score(
       inputs=str(pdb_path),
       model_family="frustrampnn",
@@ -415,7 +422,131 @@ def parse_args() -> argparse.Namespace:
     default=None,
     help="Destination path for branch_controls.json.",
   )
+  parser.add_argument(
+    "--eqx-weights",
+    type=Path,
+    default=None,
+    help="Optional path to converted .eqx.zst weights verified against pinned manifest.",
+  )
+  parser.add_argument(
+    "--parity-store",
+    type=Path,
+    default=None,
+    help="Optional bathos parity store directory for emitting cell_evidence.v1 bundles.",
+  )
+  parser.add_argument(
+    "--parity-record",
+    type=Path,
+    default=None,
+    help="Optional *.parity.bth.toml declaration paired with --parity-store.",
+  )
+  parser.add_argument(
+    "--run-id",
+    type=str,
+    default="wp36a-frustrampnn-run",
+    help="Run identifier recorded into cell_evidence.v1 manifests.",
+  )
   return parser.parse_args()
+
+
+def _load_eqx_weights(eqx_path: Path, pinned_ckpt_sha: str, dtype: str) -> tuple[FrustraMPNN, str]:
+  """Load pinned Equinox .eqx.zst weights verified against sibling manifest and registry SHA."""
+  import io
+
+  import zstandard as zstd
+
+  if not eqx_path.is_file():
+    msg = f"Equinox weights archive not found: {eqx_path}"
+    raise RuntimeError(msg)
+  man_path = eqx_path.with_name(eqx_path.name.removesuffix(".eqx.zst") + ".manifest.json")
+  if not man_path.is_file():
+    msg = f"Manifest missing for {eqx_path}: expected {man_path}"
+    raise RuntimeError(msg)
+  manifest = json.loads(man_path.read_text(encoding="utf-8"))
+  if manifest.get("source_sha256") != pinned_ckpt_sha:
+    msg = (
+      f"Equinox manifest source_sha256 {manifest.get('source_sha256')} != "
+      f"registry pinned {pinned_ckpt_sha}"
+    )
+    raise RuntimeError(msg)
+  art_sha = sha256_file(eqx_path)
+  if art_sha != manifest.get("artifact_sha256"):
+    msg = f"Equinox archive SHA mismatch: {art_sha} != {manifest.get('artifact_sha256')}"
+    raise RuntimeError(msg)
+  raw = zstd.ZstdDecompressor().decompress(eqx_path.read_bytes())
+  skel_f32 = frustra_model.cast_floating(FrustraMPNN(key=jax.random.PRNGKey(0)), jnp.float32)
+  loaded = eqx.tree_deserialise_leaves(io.BytesIO(raw), skel_f32)
+  target_dt = jnp.float64 if dtype == "float64" else jnp.float32
+  return frustra_model.cast_floating(loaded, target_dt), art_sha
+
+
+def _emit_ring0_cell_evidence(
+  *,
+  parity_store: Path,
+  parity_record: Path,
+  run_id: str,
+  oracle_npz_path: Path,
+  pinned_dumps_path: Path,
+  pdb_path: Path,
+  clean_outputs: dict[str, dict[str, np.ndarray]],
+) -> None:
+  """Emit WP49 `cell_evidence.v1` manifests and ingest sealed dump into `parity_store`."""
+  import tomllib
+
+  bathos_src = Path(__file__).resolve().parent.parent.parent.parent / "bathos" / "src"
+  if bathos_src.is_dir() and str(bathos_src) not in sys.path:
+    sys.path.insert(0, str(bathos_src))
+
+  from bathos.parity.evidence import write_cell_evidence
+  from bathos.parity.schema import compute_cell_id
+  from bathos.parity.sealed_dump import ingest_sealed_dump, verify_pinned_dump
+  from bathos.parity.store import ParityStore
+
+  dump_rec = verify_pinned_dump(oracle_npz_path, pinned_dumps_path, ORACLE_STEM)
+  store = ParityStore(parity_store)
+  ingest_sealed_dump(
+    oracle_npz_path,
+    expected_sha256=dump_rec.dump_sha256,
+    store=store,
+    stem=ORACLE_STEM,
+  )
+
+  decl = tomllib.loads(parity_record.read_text(encoding="utf-8"))
+  record_id = str(decl["parity"]["record_id"])
+  pdb_sha = sha256_file(pdb_path)
+
+  for cell in decl["cell_plan"]:
+    comp_id = str(cell["component_id"])
+    use_id = str(cell["use_id"])
+    ks = cell["knob_setting"]
+    av = cell["axis_value"]
+    dt = str(cell["data_tier"])
+    pairing = str(cell["pairing"])
+    cid = compute_cell_id(comp_id, use_id, ks, av, dt, pairing)
+
+    arm_dtype = str(ks["dtype"])
+    output_key = str(av["output"])
+    arr = clean_outputs[arm_dtype][output_key]
+    ref_key = f"f64_{output_key}" if arm_dtype == "float64" else output_key
+
+    manifest_sha, _manifest = write_cell_evidence(
+      store=store,
+      record_id=record_id,
+      cell_id=cid,
+      run_id=run_id,
+      ours_arrays={output_key: arr},
+      reference_dump_sha256=dump_rec.dump_sha256,
+      reference_dump_keys={output_key: ref_key},
+      input_sha256={"ours": [pdb_sha], "reference": [pdb_sha]},
+      adapter={"name": "aminx.frustrampnn_parity_v2", "version": "2.0.0"},
+    )
+    log.info(
+      "Emitted cell_evidence.v1 for cell=%s (%s %s) manifest_sha=%s",
+      cid,
+      arm_dtype,
+      output_key,
+      manifest_sha[:12],
+    )
 
 
 def main() -> int:  # noqa: PLR0915
@@ -426,16 +557,29 @@ def main() -> int:  # noqa: PLR0915
   log.info("Starting FrustraMPNN Parity Vehicle v2")
 
   # 1. Anti-self-trust Verification
-  oracle_sha, ckpt_sha, ckpt_file, _pinned = verify_anti_self_trust(
-    args.oracle_dir,
-    args.weights_dir,
-    args.pinned_dumps,
-  )
+  if args.eqx_weights is not None:
+    pinned = json.loads(args.pinned_dumps.read_text(encoding="utf-8"))
+    oracle_sha = str(pinned.get(ORACLE_STEM) or pinned.get(f"{ORACLE_STEM}.npz"))
+    reg = json.loads((_REPO_ROOT / "tests" / "knob_gate" / "checkpoint_registry.json").read_text(encoding="utf-8"))
+    expected_ckpt_sha = next(
+      e["sha256"] for e in reg["entries"] if CANONICAL_CKPT in e.get("artifact_path", "")
+    )
+    ckpt_file = None
+    _base, ckpt_sha = _load_eqx_weights(args.eqx_weights, expected_ckpt_sha, "float32")
+  else:
+    oracle_sha, ckpt_sha, ckpt_file, _pinned = verify_anti_self_trust(
+      args.oracle_dir,
+      args.weights_dir,
+      args.pinned_dumps,
+    )
   log.info("Anti-self-trust checks passed: oracle SHA=%s", oracle_sha)
 
   oracle_npz_path = args.oracle_dir / f"{ORACLE_STEM}.npz"
   if not oracle_npz_path.is_file():
     oracle_npz_path = _REPO_ROOT / "tests" / "data" / "fixtures" / f"{ORACLE_STEM}.npz"
+  if sha256_file(oracle_npz_path) != oracle_sha:
+    msg = f"Oracle dump SHA256 mismatch for {oracle_npz_path}"
+    raise RuntimeError(msg)
   with np.load(oracle_npz_path) as z:
     oracle = {k: z[k] for k in z.files}
 
@@ -446,18 +590,32 @@ def main() -> int:  # noqa: PLR0915
   wanted_arms = [a.strip() for a in args.arms.split(",") if a.strip()]
   mutant_list = [m.strip() for m in args.mutants.split(",") if m.strip()]
 
+  def _load_arm(dtype_str: str) -> FrustraMPNN:
+    if args.eqx_weights is not None:
+      m_loaded, _ = _load_eqx_weights(args.eqx_weights, expected_ckpt_sha, dtype_str)
+      return m_loaded
+    return driver.load_model(CANONICAL_CKPT, local_path=ckpt_file, dtype=dtype_str)
+
   # 2. Execute Clean Arms
   clean_stages: dict[str, dict[str, float]] = {}
   clean_summary: dict[str, dict[str, Any]] = {}
+  clean_outputs: dict[str, dict[str, np.ndarray]] = {}
 
   for arm in wanted_arms:
     dtype = arm
-    model = driver.load_model(
-      CANONICAL_CKPT,
-      local_path=ckpt_file,
-      dtype=dtype,
+    model = _load_arm(dtype)
+    arm_out: dict[str, np.ndarray] = {}
+    stages = evaluate_stages(
+      model,
+      struct,
+      oracle,
+      pdb_path,
+      dtype,
+      is_clean=True,
+      run_runner_entry=(args.eqx_weights is None),
+      captured_outputs=arm_out,
     )
-    stages = evaluate_stages(model, struct, oracle, pdb_path, dtype, is_clean=True)
+    clean_outputs[dtype] = arm_out
     clean_stages[arm] = stages
     clean_summary[arm] = summarize_arm(stages, dtype)
     log.info("Clean arm %s: %s", arm, clean_summary[arm])
@@ -468,11 +626,7 @@ def main() -> int:  # noqa: PLR0915
   clean_ok = all(s["in_band"] for s in clean_summary.values())
 
   # 3. Execute Mutants (on primary float32 model)
-  base_model = driver.load_model(
-    CANONICAL_CKPT,
-    local_path=ckpt_file,
-    dtype="float32",
-  )
+  base_model = _load_arm("float32")
 
   mutants: dict[str, Any] = {}
   min_over_band_diffs: list[float] = []
@@ -599,6 +753,20 @@ def main() -> int:  # noqa: PLR0915
       encoding="utf-8",
     )
     log.info("Wrote BTH results payload to %s", bth_results)
+
+  if args.parity_store is not None:
+    if args.parity_record is None:
+      msg = "--parity-record is required when --parity-store is set"
+      raise RuntimeError(msg)
+    _emit_ring0_cell_evidence(
+      parity_store=args.parity_store,
+      parity_record=args.parity_record,
+      run_id=args.run_id,
+      oracle_npz_path=oracle_npz_path,
+      pinned_dumps_path=args.pinned_dumps,
+      pdb_path=pdb_path,
+      clean_outputs=clean_outputs,
+    )
 
   log.info(
     "Vehicle execution complete: clean=%s, f64=%.2e, f32=%.2e, failed=%d/%d, crashed=%d",
