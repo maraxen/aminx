@@ -143,6 +143,19 @@ class LaserOptions:
   strict_load: bool = True
   output_fasta: bool = False
   output_fasta_only: bool = False
+  pdb_output_dir: str | None = None
+  pdb_provenance: Literal["none", "sidecar"] = "none"
+
+  def __post_init__(self) -> None:
+    if self.pdb_output_dir is not None and self.output_fasta_only:
+      msg = (
+        "pdb_output_dir cannot be set when output_fasta_only is True; "
+        "FASTA-only sampling does not build coordinates"
+      )
+      raise ValueError(msg)
+    if self.pdb_provenance not in ("none", "sidecar"):
+      msg = f"pdb_provenance must be 'none' or 'sidecar', got {self.pdb_provenance!r}"
+      raise ValueError(msg)
 
 
 @dataclass(frozen=True)

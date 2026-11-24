@@ -91,7 +91,9 @@ def _check_layout(
     msg = f"sequence {sequence.shape} and probability {probability.shape} must both be ({length},)"
     raise ValueError(msg)
   if int(np.asarray(features.pdb_resnums).shape[0]) != length:
-    msg = f"pdb identity length {len(features.pdb_chain_ids)} does not match sequence length {length}"
+    msg = (
+      f"pdb identity length {len(features.pdb_chain_ids)} does not match sequence length {length}"
+    )
     raise ValueError(msg)
   if width == MAX_PROTONATED_ATOMS:
     return _PROTONATED_NAMES
