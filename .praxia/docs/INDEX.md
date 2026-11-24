@@ -1,13 +1,10 @@
-# 261124-laser-pdb-sink Internal Docs
-
-Superseded and archived docs: [HISTORY.md](HISTORY.md).
+# 261008_potts-integration Internal Docs
 
 ## Daily
 - [261005_overnight-decisions](daily/261005_overnight-decisions.md) — What landed overnight with its verified evidence, the four open decisions each priced, and the corrections made to earlier claims
 - [260929_overnight-decisions](daily/260929_overnight-decisions.md) — Decisions taken without a human gate during the 260929 overnight autonomous loop, with enough context to backtrack each one.
 
 ## Handoffs
-- [261106_tev-design-ar-campaign-findings](handoffs/261106_tev-design-ar-campaign-findings.md) — tev_design AR state campaign: three data findings from the library EDA prototype
 - [261006_a1-laser-score-option3-envelope](handoffs/261006_a1-laser-score-option3-envelope.md) — Exact scope, anchors, measured band and acceptance criteria for the only gate-clearing item, so the decision becomes one dispatch
 - [261006_xtrax-track-b-brief](handoffs/261006_xtrax-track-b-brief.md) — A ready-to-run brief for an xtrax session. It fixes the skill gaps filed as xtrax debt
 - [260930_advisor-message-final](handoffs/260930_advisor-message-final.md) — The Slack message handed to the advisor for v0.2.0a3, with the claim-to-run-id mapping behind every figure it quotes.
@@ -27,18 +24,6 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 - [260522_comp-new-sink-unify](plans/260522_comp-new-sink-unify.md) — COMP-NEW: unify result-sink topology; streaming_tensor_sink_session for non-streaming path
 
 ## Specs
-- [261124_laser-pdb-sink](specs/261124_laser-pdb-sink.md) — Spec for an opt-in per-sample PDB sink on the LASErMPNN sample path: identity plumbing into LaserFeatures, a pure Full-protein builder, a SampleStages hook honouring output_fasta_only, tests, and the proxide>=0.3.0 pin bump
-- [261106_campaign-library-eda-respec](specs/261106_campaign-library-eda-respec.md) — Respec: xtrax.eda for campaign libraries (knob-faceted sink statistics)
-- [261105_aminx-pack-eda-architecture](specs/261105_aminx-pack-eda-architecture.md) — Architecture Specification: aminx xtrax Pack & EDA Adoption
-- [261105_aminx-xtrax-adoption-spec](specs/261105_aminx-xtrax-adoption-spec.md) — P3 Adoption Specification: aminx xtrax Pack & EDA Migration
-- [261105_frustrampnn-family-port-spec](specs/261105_frustrampnn-family-port-spec.md) — Authoritative technical specification for the pure-JAX Equinox port and family-parity verification of RosettaCommons/frustraMPNN (Beining et al., 2026) in aminx (Task 261105_frustrampnn)
-- [261027_antibmpnn-cyclic-offset-tier5-docs-spec](specs/261027_antibmpnn-cyclic-offset-tier5-docs-spec.md) — Convert and register AntiBMPNN checkpoints, add pure-JAX CDR region masking, frequency logit_transform, and physicochemical descriptor helpers, add cyclic sequence offset wrapping to compute_neighbor_offsets/ProteinFeatures/Aminx, and document the Tier 1-5 inverse folding taxonomy.
-- [261027_caliby-family-port-spec](specs/261027_caliby-family-port-spec.md) — Corrects the #5595 TRW marginal-calibration misattribution of Caliby and specifies the JAX/Equinox port of ProteinDesignLab/caliby (Shuai, Sidhu, & Huang, bioRxiv 2025.09.30.679633) as src/aminx/families/caliby/
-- [261027_fampnn-family-port-spec](specs/261027_fampnn-family-port-spec.md) — Pure-JAX Equinox port of richardshuai/fampnn (FAEncoder + GVPEncoder + SidechainDiffusionModule + SidechainConfidenceModule + MAR/EDM joint samplers) under FAMPNNDriver (#3073)
-- [261027_multi-backend-campaign-sinks-spec](specs/261027_multi-backend-campaign-sinks-spec.md) — Multi-Backend Campaign Arms, Topology-Grouped Dynamic Weight Hoisting, and Unified Campaign Sinks
-- [261026_incremental-ci-test-selection](specs/261026_incremental-ci-test-selection.md) — Select only diff-implicated pytest modules plus a 20-file always-run guard set on pull_request CI runs, with fail-open soundness, XLA compilation caching, and concurrency/timeout hardening
-- [261026_mpnn-variant-weights-scope-spec](specs/261026_mpnn-variant-weights-scope-spec.md) — Scope and Specification for Supporting AbMPNN, ThermoMPNN, and Other MPNN Variant Weights
-- [261020_hoisted-sampler](specs/261020_hoisted-sampler.md) — sample_sequences re-encodes per PRNG key under vmap (false dependence via the noise key split); add make_hoisted_sampler on xtrax make_hoisted, retire the ignored precomputed_* kwargs, encode once per structure in runner.inspect
 - [261011_noise-level-axis](specs/261011_noise-level-axis.md) — Every family honours a multi-level backbone_noise sweep in both sample and score, with one shared key scheme; replaces the
 - [261007_potts-onnx-export-scope](specs/261007_potts-onnx-export-scope.md) — Scope, phase plan and acceleration levers for shipping Potts-family ONNX exports, reusing the ProteinMPNN split-export process
 - [261007_protonpottsmpnn-support](specs/261007_protonpottsmpnn-support.md) — V1 scope (inference + design) for porting ProtonPottsMPNN into aminx, with the atomworks featurization re-scoped as a front end rather than a feature algebra, and a decision rule for when tensor-level parity is required versus whole-pipeline agreement
@@ -84,8 +69,6 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 ## Actuation Surfaces
 
 ## Audits
-- [261105_xtrax-adopt-aminx-p4-review-audit](audits/261105_xtrax-adopt-aminx-p4-review-audit.md) — P4 Review Audit: aminx xtrax Pack & EDA Adoption Specification Convergence
-- [261105_xtrax-adopt-aminx-p7-code-review](audits/261105_xtrax-adopt-aminx-p7-code-review.md) — P7 Code Review Audit: aminx xtrax Pack & EDA Implementation
 - [261007_aminx-xtrax-separation-audit](audits/261007_aminx-xtrax-separation-audit.md) — Deep audit (4 domain auditors, spot-verified) of where aminx still owns generic run, IO, execution, config and training contracts that xtrax should own, where xtrax holds aminx-specific logic, and the debts and sprint shape to fix it.
 - [261006_xtrax-usage-audit](audits/261006_xtrax-usage-audit.md) — Static inventory of all 619 public xtrax symbols against aminx (bathos da99c566, pass) plus per-capability verdicts. Includes duplicates to replace, gaps worth adopting, things that don't apply, and the native hook for runner length bucketing.
 - [260929_potts-laser-spec-adversarial-log](audits/260929_potts-laser-spec-adversarial-log.md) — Sequential challenger→defender rounds for specs/260929_pottsmpnn-lasermpnn-xtrax-composition.md until convergence
@@ -96,7 +79,6 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 - [260716_proteinebm-parity-report](audits/260716_proteinebm-parity-report.md) — Reviews what "parity" means for the merged ProteinEBM epic: throughput parity is real+strong (11–92× vs PyTorch); numerical port parity (E3.5) freshly re-confirmed today across 20 synthetic trials (cosine similarity ≥0.999999998); real-world validation (E7 LplA, 101 real mutants) gives Spearman 0.402 (p=3.1e-5); the paper's own headline Spearman targets (0.838 decoy, 0.686 ΔΔG) remain **not measured** by deliberate scope decision. `tests/ebm/` freshly re-run: 261 passed, 4 skipped, 0 failed.
 
 ## Research
-- [261123_laser-batching-equivalence-revival](research/261123_laser-batching-equivalence-revival.md) — Records the 261007 LASEr batching-equivalence (sequence + chi1) and prereg-order audit runs whose scripts were stranded on wt/260929-laser-confirm; what the catalog does and does not hold.
 - [261003_spec-named-tests-triage](research/261003_spec-named-tests-triage.md) — Triage of every test name the potts/laser spec cites but that does not exist, into genuinely-missing, covered-under-another-name, blocked, and false-positive
 - [261003_z1-gate-blocker-anatomy](research/261003_z1-gate-blocker-anatomy.md) — The redsox step-2 knob blocker reduces to 3 fields of decision debt and 0 of test debt; every other condition of test_parity_ids_passed is measured empty
 - [261001_ecosystem-hub-recon-brief](research/261001_ecosystem-hub-recon-brief.md) — Verified facts, user decisions and open questions shared by the six 261001 ecosystem specs (spec unification, EBM extraction, molxmpnn rename, xtrax contract, aminx hub, pipeline editor).
@@ -117,7 +99,6 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 - [261014_redistribution-of-pottsmpnn-lasermpnn-and-protonpottsmpnn-weights-on-hugging-face](decisions/261014_redistribution-of-pottsmpnn-lasermpnn-and-protonpottsmpnn-weights-on-hugging-face.md) — Upstream licence findings (all MIT), the evidence-backed checkpoint set, open items and the redistribution decision for the 0.2.1 hub weights
 - [261008_per-row-closure-staleness](decisions/261008_per-row-closure-staleness.md) — Ledger rows go stale only when a changed path is in that row's import closure, not on any scoped-prefix change; fail-safe rules, declared edges, and a run-time loaded-files check.
 - [261008_protonpottsmpnn-v1-scope](decisions/261008_protonpottsmpnn-v1-scope.md) — What ProtonPottsMPNN V1 ships (score:energy/ddg/selectivity and pH design on the Potts energy), what is refused and tracked as debt, and the choices that put it in the ledger as one combined vehicle.
-- [261007_featurizer-robustness-and-the-proxide-boundary](decisions/261007_featurizer-robustness-and-the-proxide-boundary.md) — What the aminx featurizer actually hardcodes (with file:line), a FeatureSpec design that derives every width from the weights instead of a literal, and the aminx/proxide split — proxide owns the mechanism, aminx owns the convention
 - [261005_tiling-plan-discarded-stage2-2371](decisions/261005_tiling-plan-discarded-stage2-2371.md) — Measured evidence that BatchPlanner says Vmap+Bucket for the sample axes while execution is a Python loop, plus the T2.GATE blocker on deleting aminx's duplicate strategy types
 - [261004_laser-pdb-output-scope](decisions/261004_laser-pdb-output-scope.md) — Decision request: upstream LASEr writes PDBs through backbone N-H imputation, titratable-H cleanup with a geometric H-bond detector, and probability B-factors -- none of which the spec names; choose minimal writer vs full parity port
 - [261004_sample-dist-pilot-fixtures-and-low-t](decisions/261004_sample-dist-pilot-fixtures-and-low-t.md) — Decision request before the Potts sample_dist pilot runs: spec names no pssm or tied fixture, and the T=0.1 near-margin control looks unworkable (as with ProteinMPNN 260929)
@@ -126,6 +107,8 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 - [260713_no-real-multistate-sampling-path-exists](decisions/260713_no-real-multistate-sampling-path-exists.md) — **MVP implemented 2026-07-13**: no campaign-reachable path ever built a genuine `num_states>1` bundle for AR sampling — every necklace "PoE" row was 4 independent unfused single-state decodes. Related silent-corruption bug fixed in PR #100 (merged). New `aminx.sampling.multistate_poe` module (branch `feat-poe-stacked-bundle-sampling`) ships genuine cross-state fusion, confirmed end-to-end against real reference PDBs; the general xtrax-composable dispatch-axis version remains real tech debt — see debt #589.
 - [260709_n-states-heterogeneous-flag-unenforced](decisions/260709_n-states-heterogeneous-flag-unenforced.md) — **Open, deferred**: `N_STATES.heterogeneous=True` is unwired from the real encode path and currently unenforceable (bundle can't hold ragged states at all); zero blast radius today, decision needed (relabel vs. implement) is out of scope for PR #92.
 - [260706_bucketing-pad-stay-local-epic-1541-p3-scope-closed](decisions/260706_bucketing-pad-stay-local-epic-1541-p3-scope-closed.md) — **Accepted 2026-07-06**: EPIC #1541 P3 scoping closed — `bucketing.py`/`pad.py` stay local (planner companion / pure domain logic). `aminx.tiling` will NOT be fully deletable as originally envisioned; recommends updating backlog #1483 accordingly.
+- [260706_carryspec-dedupspec-stay-local-carryshape-migrates](decisions/260706_carryspec-dedupspec-stay-local-carryshape-migrates.md) — **Superseded in part** (2026-07-06, same day) — `CarrySpec`/`DedupSpec` unblocked by the planner migration spec; `CarryShape` portion (migrated) still stands.
+- [260706_planner-stays-on-aminx-tiling-by-design](decisions/260706_planner-stays-on-aminx-tiling-by-design.md) — **Superseded** (2026-07-06, same day) — the algorithmic gap this recorded is closed by xtrax 0.4.0a1's joint-budget mode; see the planner-migration spec.
 - [260702_wave-color-commits-retroactive-attribution](decisions/260702_wave-color-commits-retroactive-attribution.md) — **Accepted 2026-07-02**: retroactively attributes 5 wave-color commits (54d6d84, 0be59ef, 4060e9d, 0670197, 1cec556) to mpnn_ext Epic WAVE (#2871); kept in place, no revert. Backlog #2954 tracks the enforcement lint that should have caught this.
 - [260630_runtimebundle-inputresolver-compose-not-subclass](decisions/260630_runtimebundle-inputresolver-compose-not-subclass.md) — **Accepted 2026-06-30**: aminx's planned RuntimeBundle (#1910) must compose, not subclass, xtrax.run.resolver.RuntimeBundle (frozen-vs-non-frozen dataclass conflict); InputResolver implemented via functools.singledispatch per xtrax's own prescribed pattern. Zero upstream xtrax changes needed.
 - [260612_proteinfeatures-shared-vs-local](decisions/260612_proteinfeatures-shared-vs-local.md) — **Accepted 2026-06-12**: Confirms Option A complete — aminx.potts imports from aminx.model.features; no vendor copy in potts tree. Supersedes adr/260605.
@@ -136,8 +119,6 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 ## Preregistration
 
 ## Reference
-- [261007_laser-distributional-confirm-result](reference/261007_laser-distributional-confirm-result.md) — The sharded LASErMPNN confirmatory run completed on titanix GPUs 2 and 3 and graded pass by record on min_p0@1.0 and min_p0@0.3, with the CTRL_m negative control failing on sequence in both shards
-- [261006_laser-oracle-seal-asymmetry](reference/261006_laser-oracle-seal-asymmetry.md) — Three seal mechanisms guard the port oracles with materially different strength; the LASEr one fails open and its pin is not in version control
 - [261005_laser-confirm-run-readiness](reference/261005_laser-confirm-run-readiness.md) — The resume machinery for the ~60 h LASEr distributional run is correct and already proven by tonight's Potts run; its cache key includes the script hash, so the driver must be frozen before launch
 - [261005_using-aminx-skill-family-update](reference/261005_using-aminx-skill-family-update.md) — Exact anchored edits to add PottsMPNN/LASErMPNN to the user's global using-aminx skill, including one stale line that is now wrong rather than merely incomplete
 - [261002_using-aminx-driver-families](reference/261002_using-aminx-driver-families.md) — The PottsMPNN/LASErMPNN section for the using-aminx skill, plus the frontmatter edits, staged here because ~/.claude/skills is sandbox-write-protected
@@ -158,8 +139,6 @@ Superseded and archived docs: [HISTORY.md](HISTORY.md).
 - [260512_docs-superpowers-status](archive/260512_docs-superpowers-status.md) — docs/superpowers/ skill outputs
 - [260410_parity-validation-legacy](archive/260410_parity-validation-legacy.md) — Legacy parity validation docs
 - [260124_proxide-integration-docs](archive/260124_proxide-integration-docs.md) — Proxide integration docs
-
-## Residue cards
 
 ## Misc
 - [260604_release-notes-v0.1.0a1](misc/260604_release-notes-v0.1.0a1.md) — Release notes for v0.1.0a1 alpha
