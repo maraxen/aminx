@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import tomllib
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import equinox as eqx
@@ -197,6 +199,132 @@ def test_round_trip_through_proxide(tmp_path: Path) -> None:
   assert sum(row["record"] == "HETATM" for row in rows) == int(features.ligand_coords.shape[0])
 
 
+def _guard_features(tmp_path: Path):
+  """One alanine plus one real ligand atom, the inputs the builder guards read."""
+  lines = [
+    _atom(1, "N", "ALA", "A", 1, 0.0, 0.0, 0.0, element="N"),
+    _atom(2, "CA", "ALA", "A", 1, 1.5, 0.0, 0.0, element="C"),
+    _atom(3, "C", "ALA", "A", 1, 2.5, 1.0, 0.0, element="C"),
+    _atom(4, "O", "ALA", "A", 1, 2.2, 2.2, 0.0, element="O"),
+    _atom(5, "CB", "ALA", "A", 1, 1.5, -1.4, 0.5, element="C"),
+    _atom(6, "C1", "LIG", "B", 1, 12.0, 0.0, 0.0, element="C", het=True),
+  ]
+  path = tmp_path / "guard.pdb"
+  path.write_text("\n".join(lines) + "\n")
+  return featurize(path)
+
+
+def _ala_sample() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+  index = np.array([LASER_ALPHABET.index("A")], dtype=np.int64)
+  coords = _coords_for("A", protonated=False)
+  probability = np.array([0.5], dtype=np.float32)
+  return index, coords, probability
+
+
+def test_builder_rejects_pdb_resnums_length_mismatch(tmp_path: Path) -> None:
+  """``pdb_resnums`` length is the field checked; a matching length is written."""
+  from aminx.families.laser_mpnn.pdb_sink import build_full_protein
+
+  features = _guard_features(tmp_path)
+  index, coords, probability = _ala_sample()
+  built = build_full_protein(features, index, coords, probability)
+  counts = np.isfinite(coords).all(-1).sum(1)
+  assert np.asarray(built.atom_res_index).tolist()[: int(counts.sum())] == np.repeat(
+    features.pdb_resnums,
+    counts,
+  ).tolist()
+
+  short = replace(features, pdb_resnums=np.zeros((0,), dtype=np.int64))
+  with pytest.raises(ValueError, match=r"pdb_resnums length 0 does not match sequence length 1"):
+    build_full_protein(short, index, coords, probability)
+
+
+def test_builder_rejects_placed_atom_without_a_name(tmp_path: Path) -> None:
+  """A finite coordinate in an unnamed slot raises; a NaN in that slot is dropped."""
+  from aminx.families.laser_mpnn.pdb_sink import build_full_protein
+
+  features = _guard_features(tmp_path)
+  index, coords, probability = _ala_sample()
+  named = len(residue_atom_names("A", protonated=False))
+  assert named < coords.shape[1]
+  kept = build_full_protein(features, index, coords, probability)
+  assert len(kept.atom_names) == named + int((~features.ligand_synthetic).sum())
+
+  placed = np.array(coords, copy=True)
+  placed[0, named] = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+  assert bool(np.isfinite(placed[0, named]).all())
+  with pytest.raises(ValueError, match="a placed atom has no dataset name"):
+    build_full_protein(features, index, placed, probability)
+
+
+def test_builder_rejects_ligand_synthetic_length_mismatch(tmp_path: Path) -> None:
+  """A real ligand is written; a synthetic mask of the wrong length raises."""
+  from aminx.families.laser_mpnn.pdb_sink import build_full_protein
+
+  features = _guard_features(tmp_path)
+  index, coords, probability = _ala_sample()
+  assert features.ligand_coords.shape[0] == features.ligand_synthetic.shape[0] > 0
+  built = build_full_protein(features, index, coords, probability)
+  assert int(np.asarray(built.hetero).sum()) == int(features.ligand_coords.shape[0])
+
+  empty = replace(features, ligand_synthetic=np.zeros((0,), dtype=np.bool_))
+  with pytest.raises(ValueError, match="ligand_synthetic does not match ligand_coords"):
+    build_full_protein(empty, index, coords, probability)
+
+
+def test_builder_rejects_ligand_atom_missing_its_name(tmp_path: Path) -> None:
+  """A named real ligand atom is written; a blank name raises."""
+  from aminx.families.laser_mpnn.pdb_sink import build_full_protein
+
+  features = _guard_features(tmp_path)
+  index, coords, probability = _ala_sample()
+  assert features.ligand_atom_names[0] != ""
+  assert not bool(features.ligand_synthetic[0])
+  built = build_full_protein(features, index, coords, probability)
+  assert features.ligand_atom_names[0] in [str(name) for name in built.atom_names]
+
+  blank = replace(features, ligand_atom_names=("",))
+  with pytest.raises(ValueError, match="a ligand atom is missing its name or element"):
+    build_full_protein(blank, index, coords, probability)
+
+
+def test_builder_omits_synthetic_methyl_caps(tmp_path: Path) -> None:
+  """ncAA methyl caps are in the features and absent from the built protein."""
+  from aminx.families.laser_mpnn.pdb_sink import build_full_protein
+
+  lines = [
+    _atom(1, "N", "ALA", "A", 1, 0.0, 0.0, 0.0, element="N"),
+    _atom(2, "CA", "ALA", "A", 1, 1.5, 0.0, 0.0, element="C"),
+    _atom(3, "C", "ALA", "A", 1, 2.5, 1.0, 0.0, element="C"),
+    _atom(4, "O", "ALA", "A", 1, 2.2, 2.2, 0.0, element="O"),
+    _atom(5, "CB", "ALA", "A", 1, 1.5, -1.4, 0.5, element="C"),
+    _atom(6, "N", "UNK", "B", 4, 20.0, 0.0, 0.0, element="N"),
+    _atom(7, "CA", "UNK", "B", 4, 21.5, 0.0, 0.0, element="C"),
+    _atom(8, "C", "UNK", "B", 4, 22.5, 1.0, 0.0, element="C"),
+    _atom(9, "O", "UNK", "B", 4, 22.2, 2.2, 0.0, element="O"),
+    _atom(10, "CB", "UNK", "B", 4, 21.5, -1.4, 0.5, element="C"),
+  ]
+  path = tmp_path / "ncaa.pdb"
+  path.write_text("\n".join(lines) + "\n")
+  features = featurize(path, noncanonical_aa_ligand=True)
+  real_names = {"N", "CA", "C", "O", "CB"}
+  caps = [
+    str(name)
+    for name, flag in zip(features.ligand_atom_names, features.ligand_synthetic, strict=True)
+    if flag
+  ]
+  assert caps
+  assert set(caps).isdisjoint(real_names)
+  index, coords, probability = _ala_sample()
+  built = build_full_protein(features, index, coords, probability)
+  written = [str(name) for name in built.atom_names]
+  assert set(caps).isdisjoint(written)
+  hetero = [name for name, flag in zip(written, built.hetero, strict=True) if flag]
+  assert real_names <= set(hetero)
+  real = int((~np.asarray(features.ligand_synthetic)).sum())
+  assert len(written) == int(np.isfinite(coords).all(-1).sum()) + real
+
+
 from aminx.families.laser_mpnn.driver import LASErMPNN, LaserDriver  # noqa: E402
 from aminx.host.family_driver import FAMILY_DRIVERS  # noqa: E402
 from aminx.host.runner import sample  # noqa: E402
@@ -316,6 +444,7 @@ def test_pdb_dir_writes_global_rows_and_default_writes_nothing(
   registered: LaserDriver,
   tmp_path: Path,
   model_path: Path,
+  monkeypatch: pytest.MonkeyPatch,
 ) -> None:
   """Two samples and two temperatures write four row-indexed PDBs; the default writes none."""
   del registered
@@ -328,11 +457,15 @@ def test_pdb_dir_writes_global_rows_and_default_writes_nothing(
   assert len(set(_b_factors(out / names[0]))) > 1
   assert result["structures"]["0"]["arrays"]["sequence"].shape[0] == 4
 
+  def _refuse_write(*_args: object, **_kwargs: object) -> None:
+    msg = "pdb sink ran with pdb_output_dir unset"
+    raise RuntimeError(msg)
+
+  monkeypatch.setattr("aminx.families.laser_mpnn.pdb_sink.write_sample_pdb", _refuse_write)
   bare = tmp_path / "bare"
   bare.mkdir()
   sample(_spec(pdb, model_path, output_dir=str(bare)))
   assert list(bare.glob("**/*.pdb")) == []
-  assert not (tmp_path / "pdbs_absent").exists()
 
 
 def test_fasta_only_rejects_pdb_dir_and_fasta_composes(
@@ -420,7 +553,7 @@ def test_provenance_sidecar_follows_the_option(
   tmp_path: Path,
   model_path: Path,
 ) -> None:
-  """``sidecar`` writes ``<file>.pdb.prov.toml``; ``none`` does not."""
+  """``sidecar`` records the written PDB path; ``none`` writes no sidecar."""
   del registered
   pdb = tmp_path / "complex.pdb"
   _alanine_chain(pdb, 2)
@@ -439,7 +572,11 @@ def test_provenance_sidecar_follows_the_option(
     return out / "complex_n00000.pdb"
 
   with_side = _run("sidecar", "side")
-  assert Path(str(with_side) + ".prov.toml").is_file()
+  sidecar = Path(str(with_side) + ".prov.toml")
+  assert sidecar.is_file()
+  assert with_side.is_file()
+  recorded = tomllib.loads(sidecar.read_text())["provenance"]["output_path"]
+  assert recorded == str(with_side.resolve())
   without = _run("none", "plain")
   assert not Path(str(without) + ".prov.toml").exists()
 
@@ -450,7 +587,7 @@ def test_over_limit_is_skipped_and_disabled_sink_ignores_the_cap(
   model_path: Path,
   monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-  """A structure over the PDB atom cap is skipped; the cap is unread when the sink is off."""
+  """Over the patched cap the input is skipped; under the real cap the PDB is written."""
   del registered
   pdb = tmp_path / "five.pdb"
   _alanine_chain(pdb, 5)
@@ -469,11 +606,19 @@ def test_over_limit_is_skipped_and_disabled_sink_ignores_the_cap(
   assert skipped["structures"] == {}
 
   monkeypatch.undo()
+  kept_dir = tmp_path / "kept"
   kept = sample(
-    _spec(pdb, model_path, num_samples=1, temperature=(0.2,)),
+    _spec(
+      pdb,
+      model_path,
+      num_samples=1,
+      temperature=(0.2,),
+      laser=LaserOptions(pdb_output_dir=str(kept_dir)),
+    ),
   )
   assert kept["structures"]["0"]["arrays"]["sequence"].shape[1] == 5
   assert kept["skipped_inputs"] == []
+  assert (kept_dir / "five_n00000.pdb").is_file()
 
   monkeypatch.setattr("aminx.families.laser_mpnn.pdb_sink._MAX_PDB_ATOMS", 100)
   untouched = sample(_spec(pdb, model_path, num_samples=1, temperature=(0.2,)))
