@@ -261,6 +261,13 @@ Only if the owner wants one implementation: show helper-based flagged-loop list 
 
 ## 6. Open questions for the owner
 
+**Owner decisions 2026-11-24 (AskUserQuestion).** Q3: Criterion B threshold 3.0 now, tighten only after
+Task 0 measures L=256 on titanix. Q4: guard the `Scan` dispatch branch. Q5: defer Potts, ProtonPotts and
+Langevin, one debt item each. Q1, Q6, Q7 take their recommendations by default. **Q2 (scoring estimand, D6)
+is OPEN:** the owner asked for a check of ADRs and upstream implementations plus an Opus consult before the
+score_pairs guard is fixed. Tasks touching score_pairs wait on that verdict; the rest may proceed. The
+orchestrator verified the two STE `fori_loop` citations (`optimize_ste.py:256`, `decode/ste.py:373`).
+
 1. Should the AR test file stay untouched (Task 7 skipped)? Recommended: yes, leave it; two implementations
    agree by construction on one shared threshold constant, and the existing file is the reviewed reference.
 2. Is one decoder pass per (mask, sequence) pair the intended scoring estimand (D6)? Recommended: yes; guard
