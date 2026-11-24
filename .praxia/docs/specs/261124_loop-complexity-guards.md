@@ -264,8 +264,17 @@ Only if the owner wants one implementation: show helper-based flagged-loop list 
 **Owner decisions 2026-11-24 (AskUserQuestion).** Q3: Criterion B threshold 3.0 now, tighten only after
 Task 0 measures L=256 on titanix. Q4: guard the `Scan` dispatch branch. Q5: defer Potts, ProtonPotts and
 Langevin, one debt item each. Q1, Q6, Q7 take their recommendations by default. **Q2 (scoring estimand, D6)
-is OPEN:** the owner asked for a check of ADRs and upstream implementations plus an Opus consult before the
-score_pairs guard is fixed. Tasks touching score_pairs wait on that verdict; the rest may proceed. The
+RESOLVED by Opus consult (dsp_dcee0f69049e9fe3), as the owner asked:** `per_pair_decode_intended`. No ADR covers this,
+so A15 closes on code evidence. The 0.5.4 score_conditionals output is per-mask logits `(K,N,L,21)`, compared
+position by position and not averaged over orders (`campaign_score.py:1-9`). The decode is teacher-forced and gated by `ar_mask`
+(`autoregression.py:418-425`), so it cannot be shared across pairs. The encoder is already shared: the orchestrator
+verified that `host/runner.py:1450-1459` encodes once per structure and noise level, outside the pair map. Upstream: the
+local ProteinMPNN fork decodes per (sequence, order). Upstream LigandMPNN was NOT verified. D6's guard becomes:
+(a) Criterion A run separately over K (C fixed) and over C (K fixed), each with its own whole-body fold mutant;
+(b) Criterion B over L, ratio < 3.0;
+(c) a new guard asserting that no encoder runs inside the split-path pair map, with a must-fire mutant that calls
+the encoder per pair. (a) and (b) cannot see a per-pair re-encode. Exempt the averaged path, which re-encodes by design (#147).
+Side finding, filed as a separate debt: `score.py:513` returns a `decoding_order` that was never used for scoring. The
 orchestrator verified the two STE `fori_loop` citations (`optimize_ste.py:256`, `decode/ste.py:373`).
 
 1. Should the AR test file stay untouched (Task 7 skipped)? Recommended: yes, leave it; two implementations
