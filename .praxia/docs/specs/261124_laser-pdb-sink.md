@@ -317,6 +317,12 @@ line naming option C and this spec (edit by hand only the frontmatter and the st
 
 Each has a recommended answer; the spec is written to the recommendation.
 
+**Resolved 2026-11-24.** The owner chose the recommended answer on Q1, Q4, Q6 and Q10 (via AskUserQuestion).
+Q2, Q3, Q5, Q7, Q8 and Q9 take their recommended answers by default (low-stakes; the owner may override before
+T3/T4 start). The orchestrator spot-checked three citations against the code: `sample_host.py:415`, `run/options.py:124`
+(the spec's `options.py:124` is this file), and proxide `writing.py:662` (bytes built before `open`, so no temp-rename).
+Before T4, the implementer must read upstream's B-factor rule (Q6) to fill in the divergence note.
+
 - **Q1 Flag shape.** `pdb_output_dir` (set = on, `None` = off) vs a boolean plus a derived directory.
   Recommended: `pdb_output_dir`, one knob, no hidden default path; relative paths resolve against
   `io.output_dir`.
