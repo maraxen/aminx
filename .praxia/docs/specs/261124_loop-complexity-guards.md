@@ -207,6 +207,14 @@ for the first time. Run with `bth`. Outcome: the numbers of D5 (or revised ones)
 record shows `outcome` evaluated; no outcome fails (a failing outcome changes the threshold in D2 via a
 `changed:` ledger edit, not by editing the test). Scope ~200 LOC.
 
+**Task 0 result (2026-11-24).** Pre-registered at c80685ea; bathos run `2eba6723` (stage `exploration`, so the
+recorded outcome is `observed`), tentative outcome **`pass`**. Every D2/D5 bound held. A clean: 1.000. B clean:
+2.010-2.023. A mutants: tiling 1.79/1.88, seam 1.81/1.90, Scan 1.96/1.98 (first measurement), score K/C and encode S
+about 2.0. B mutants: STE 4.00/4.03, optimize_ste 4.02/4.04 (first measurement). Q2 re-encode mutant: K-ratio 1.000
+and inflation 2.008, so criterion A is blind to it and guard (c) is required. Thresholds stay as specified (no
+`changed:` edit). Results: `outputs/spikes/loop_complexity_probe/result.json` (gitignored), with the full table in the
+run record.
+
 ### Task 1: Shared helper
 Create `tests/helpers/loop_scaling.py` and `tests/helpers/aminx_small.py` (D1, D4) plus
 `tests/helpers/test_loop_scaling_helpers.py`: unit tests on toy jaxprs (a scan with O(1) body: ratio 1.0; a scan
