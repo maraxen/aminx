@@ -454,7 +454,10 @@ def main() -> int:
     parser.error(f"--out {args.out} is outside the declared [outputs] root {_OUT_ROOT}")
   args.out.parent.mkdir(parents=True, exist_ok=True)
 
-  base = _self_test()
+  # Every column an [outcomes] condition references must be present on every emitted
+  # payload, refusals included: bathos binds only emitted keys, so a missing one is a
+  # DuckDB binder error and the run grades 'error' instead of its refusal outcome.
+  base = {**_self_test(), "control_fired": False, "within_floor": False}
   _LOG.info(
     "self-test %s (%d checks) floor<=%.4f same=%.4f different=%.4f",
     "passed" if base["self_test_passed"] else f"FAILED {base['self_test_failed']}",

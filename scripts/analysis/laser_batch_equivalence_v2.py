@@ -66,7 +66,7 @@ if str(_PARITY_DIR) not in sys.path:
 
 import sample_dist_stats as stats  # noqa: E402
 
-_LOG = logging.getLogger("laser_batch_equivalence")
+_LOG = logging.getLogger("laser_batch_equivalence_v2")
 
 #: Amino-acid alphabet size the confirm grades sequence TV over.
 _ALPHABET = 21
@@ -381,15 +381,21 @@ def _sample_batched(
   # The within-batch independence control again, on THIS run's own draws: a
   # batch whose copies were not sampled independently would carry one design's
   # worth of information while counting as `copies`.
-  first = seqs[0]
-  unique_in_first = len({tuple(int(v) for v in row) for row in first})
+  # Checked on EVERY batch (each holds `len(batch)` designs), not only the first.
+  unique_per_batch = [len({tuple(int(v) for v in row) for row in batch}) for batch in seqs]
   info = {
     "n_calls": n_calls,
     "elapsed_s": round(elapsed, 2),
     "per_design_s": round(elapsed / max(len(seq), 1), 4),
-    "unique_in_first_batch": unique_in_first,
+    "unique_in_first_batch": unique_per_batch[0],
     "copies": args.copies,
-    "first_batch_independent": unique_in_first == args.copies,
+    "first_batch_independent": unique_per_batch[0] == args.copies,
+    "all_batches_independent": all(
+      u == len(batch) for u, batch in zip(unique_per_batch, seqs, strict=True)
+    ),
+    "n_dependent_batches": sum(
+      u != len(batch) for u, batch in zip(unique_per_batch, seqs, strict=True)
+    ),
   }
   return seq, chi, info
 
@@ -446,6 +452,10 @@ def main() -> int:
     **self_test,
     "script_sha256": hashlib.sha256(Path(__file__).resolve().read_bytes()).hexdigest(),
     "refusal": None,
+    # Every column an [outcomes] condition references must be present on every
+    # emitted payload, refusals included: bathos binds only emitted keys, so a
+    # missing one is a DuckDB binder error and the run grades 'error'.
+    "batch_independent": False,
     "control_fired": False,
     "within_floor": False,
   }
@@ -510,11 +520,11 @@ def main() -> int:
     "n_gpu": int(len(gpu_seq)),
     "gpu": gpu_info,
     "control": ctrl_info,
-    # v2: graded. Every batched draw's first batch must hold `copies` distinct
-    # designs. With copies == 1 a batch holds one design, which is trivially
-    # distinct (unique_in_first == 1 == copies), so the check passes as it should.
+    # v2: graded. Every batch of every batched draw must hold distinct designs.
+    # With copies == 1 a batch holds one design, which is trivially distinct, so
+    # the check passes as it should.
     "batch_independent": bool(
-      gpu_info["first_batch_independent"] and ctrl_info["first_batch_independent"]
+      gpu_info["all_batches_independent"] and ctrl_info["all_batches_independent"]
     ),
     "group_size": half,
     "floor_median": round(_median(floor), 6),
