@@ -29,6 +29,18 @@ repo = "https://github.com/maraxen/Aminx.git"
 licence = "MIT"
 third_party = false
 
+[implementation.weights]
+artifact_path = "data/weights/frustrampnn/megascale_default_la-true_esm-False_split1.eqx.zst"
+artifact_sha256 = "c615c554a77fd0ea569ce342ca5d2679896f8b5cf603ad7997c6bedeed8582eb"
+manifest_path = "data/weights/frustrampnn/megascale_default_la-true_esm-False_split1.manifest.json"
+attested_source_checkpoint = "megascale_default_la-true_esm-False_split1.ckpt"
+attested_source_checkpoint_sha256 = "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa"
+source_checkpoint_status = "attested_only_source_deleted"
+provenance_note = "attested by conversion manifest only (not re-derived; original .ckpt resided on deleted worktree aminx/worktrees/261105-frustrampnn/ and no longer exists locally)"
+conversion_script = "src/aminx/families/frustra_mpnn/convert.py"
+conversion_script_sha256 = "591f85db479809485f2548fd0c25c6fcf6bc508ad03a87ced17459acd6cea170"
+conversion_command = "aminx.families.frustra_mpnn.convert.load_frustra_mpnn_checkpoint(checkpoint_path='megascale_default_la-true_esm-False_split1.ckpt', trunk_checkpoint_path='v_48_020.pt', subtract_mut=False, dtype='float32') -> eqx.tree_serialise_leaves + zstandard"
+
 [[reference]]
 id = "frustrampnn-1ubq"
 role = "comparator"
@@ -77,6 +89,7 @@ data_tier = "toy"
 pairing = "fixture"
 pooling_rule = "all_runs"
 tolerance_id = "f32-owner"
+reference_members = { frustration_scores = "frustration_scores" }
 
 [[cell_plan]]
 use_id = "score-frustration"
@@ -87,6 +100,7 @@ data_tier = "toy"
 pairing = "fixture"
 pooling_rule = "all_runs"
 tolerance_id = "f32-owner"
+reference_members = { both_out = "both_out" }
 
 [[cell_plan]]
 use_id = "score-frustration"
@@ -97,6 +111,7 @@ data_tier = "toy"
 pairing = "fixture"
 pooling_rule = "all_runs"
 tolerance_id = "f64-owner"
+reference_members = { frustration_scores = "f64_frustration_scores" }
 
 [[cell_plan]]
 use_id = "score-frustration"
@@ -107,6 +122,7 @@ data_tier = "toy"
 pairing = "fixture"
 pooling_rule = "all_runs"
 tolerance_id = "f64-owner"
+reference_members = { both_out = "f64_both_out" }
 
 [[waiver]]
 cell_selector = "knob:frustra_cli__checkpoint"

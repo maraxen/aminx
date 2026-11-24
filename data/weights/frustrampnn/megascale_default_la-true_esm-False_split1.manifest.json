@@ -1,0 +1,13 @@
+{
+  "artifact_sha256": "c615c554a77fd0ea569ce342ca5d2679896f8b5cf603ad7997c6bedeed8582eb",
+  "checkpoint_id": "megascale_default_la-true_esm-False_split1",
+  "family": "frustrampnn",
+  "sha256": "fac8b74b3ae946a29f07f8945fcc557dc56a30ef5f31cd68cf662c4a3eb3e9fb",
+  "source_file": "megascale_default_la-true_esm-False_split1.ckpt",
+  "source_sha256": "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa",
+  "subtract_mut": false,
+  "trunk_file": "v_48_020.pt",
+  "trunk_sha256": "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd",
+  "upstream_commit": "3a03cdc300bfe24c4bb70e60207118532bc73b3b",
+  "zst_sha256": "c615c554a77fd0ea569ce342ca5d2679896f8b5cf603ad7997c6bedeed8582eb"
+}

@@ -374,6 +374,19 @@ def summarize_arm(arm: dict[str, float], dtype: str) -> dict[str, Any]:
   }
 
 
+def _default_run_id() -> str:
+  """Resolve default run ID from BTH_RUN_ID, BTH_RESULTS_PATH, or static fallback."""
+  if env_id := os.environ.get("BTH_RUN_ID"):
+    return env_id
+  if bth_results := os.environ.get("BTH_RESULTS_PATH"):
+    name = Path(bth_results).name
+    if name.endswith(".bth-results.json"):
+      stem = name.removesuffix(".bth-results.json")
+      if stem:
+        return stem
+  return "wp36a-frustrampnn-run"
+
+
 # ---------------------------------------------------------------------------------------------
 # Main CLI Driver
 # ---------------------------------------------------------------------------------------------
@@ -443,10 +456,84 @@ def parse_args() -> argparse.Namespace:
   parser.add_argument(
     "--run-id",
     type=str,
-    default="wp36a-frustrampnn-run",
+    default=_default_run_id(),
     help="Run identifier recorded into cell_evidence.v1 manifests.",
   )
   return parser.parse_args()
+
+
+def _verify_weights_provenance(parity_record: Path, eqx_weights: Path | None) -> Path:
+  """Enforce WP36a Revision 9 [implementation.weights] provenance before running or writing evidence."""
+  import tomllib
+
+  if not parity_record.is_file():
+    msg = f"Parity declaration not found: {parity_record}"
+    raise RuntimeError(msg)
+
+  decl = tomllib.loads(parity_record.read_text(encoding="utf-8"))
+  impl = decl.get("implementation")
+  weights_cfg = impl.get("weights") if isinstance(impl, dict) else None
+  if not isinstance(weights_cfg, dict):
+    msg = f"{parity_record}: missing [implementation.weights] provenance table"
+    raise RuntimeError(msg)
+
+  required_fields = (
+    "artifact_path",
+    "artifact_sha256",
+    "attested_source_checkpoint_sha256",
+    "conversion_script",
+    "conversion_script_sha256",
+    "conversion_command",
+  )
+  for field in required_fields:
+    val = weights_cfg.get(field)
+    if not isinstance(val, str) or not val.strip():
+      msg = f"{parity_record}: [implementation.weights].{field} must be a non-empty string"
+      raise RuntimeError(msg)
+
+  resolved_eqx = eqx_weights if eqx_weights is not None else (_REPO_ROOT / weights_cfg["artifact_path"])
+  if not resolved_eqx.is_file():
+    msg = f"Converted weights archive not found: {resolved_eqx}"
+    raise RuntimeError(msg)
+  actual_eqx_sha = sha256_file(resolved_eqx)
+  if actual_eqx_sha != weights_cfg["artifact_sha256"]:
+    msg = (
+      f"Weights artifact SHA-256 mismatch for {resolved_eqx}: "
+      f"computed {actual_eqx_sha} != declared {weights_cfg['artifact_sha256']}"
+    )
+    raise RuntimeError(msg)
+
+  man_path = resolved_eqx.with_name(resolved_eqx.name.removesuffix(".eqx.zst") + ".manifest.json")
+  if not man_path.is_file():
+    msg = f"Conversion manifest missing for {resolved_eqx}: expected {man_path}"
+    raise RuntimeError(msg)
+  manifest = json.loads(man_path.read_text(encoding="utf-8"))
+  if manifest.get("artifact_sha256") != weights_cfg["artifact_sha256"]:
+    msg = (
+      f"Manifest artifact_sha256 mismatch in {man_path}: "
+      f"{manifest.get('artifact_sha256')} != {weights_cfg['artifact_sha256']}"
+    )
+    raise RuntimeError(msg)
+  if manifest.get("source_sha256") != weights_cfg["attested_source_checkpoint_sha256"]:
+    msg = (
+      f"Manifest source_sha256 mismatch in {man_path}: "
+      f"{manifest.get('source_sha256')} != {weights_cfg['attested_source_checkpoint_sha256']}"
+    )
+    raise RuntimeError(msg)
+
+  conv_script = _REPO_ROOT / weights_cfg["conversion_script"]
+  if not conv_script.is_file():
+    msg = f"Conversion script not found: {conv_script}"
+    raise RuntimeError(msg)
+  actual_conv_sha = sha256_file(conv_script)
+  if actual_conv_sha != weights_cfg["conversion_script_sha256"]:
+    msg = (
+      f"Conversion script SHA-256 mismatch for {conv_script}: "
+      f"computed {actual_conv_sha} != declared {weights_cfg['conversion_script_sha256']}"
+    )
+    raise RuntimeError(msg)
+
+  return resolved_eqx
 
 
 def _load_eqx_weights(eqx_path: Path, pinned_ckpt_sha: str, dtype: str) -> tuple[FrustraMPNN, str]:
@@ -482,7 +569,7 @@ def _load_eqx_weights(eqx_path: Path, pinned_ckpt_sha: str, dtype: str) -> tuple
 
 def _emit_ring0_cell_evidence(
   *,
-  parity_store: Path,
+  parity_store: Path | None,
   parity_record: Path,
   run_id: str,
   oracle_npz_path: Path,
@@ -500,10 +587,13 @@ def _emit_ring0_cell_evidence(
   from bathos.parity.evidence import write_cell_evidence
   from bathos.parity.schema import compute_cell_id
   from bathos.parity.sealed_dump import ingest_sealed_dump, verify_pinned_dump
-  from bathos.parity.store import ParityStore
+  from bathos.parity.store import require_parity_store
 
   dump_rec = verify_pinned_dump(oracle_npz_path, pinned_dumps_path, ORACLE_STEM)
-  store = ParityStore(parity_store)
+  store, _store_res = require_parity_store(
+    explicit=parity_store,
+    start_dir=parity_record.resolve().parent,
+  )
   ingest_sealed_dump(
     oracle_npz_path,
     expected_sha256=dump_rec.dump_sha256,
@@ -526,17 +616,21 @@ def _emit_ring0_cell_evidence(
 
     arm_dtype = str(ks["dtype"])
     output_key = str(av["output"])
-    arr = clean_outputs[arm_dtype][output_key]
-    ref_key = f"f64_{output_key}" if arm_dtype == "float64" else output_key
+    ref_members_raw = cell.get("reference_members")
+    if not isinstance(ref_members_raw, dict) or not ref_members_raw:
+      msg = f"cell_plan entry {cid} missing non-empty reference_members"
+      raise RuntimeError(msg)
+    reference_dump_keys = {str(k): str(v) for k, v in ref_members_raw.items()}
+    ours_arrays = {k: clean_outputs[arm_dtype][k] for k in reference_dump_keys}
 
     manifest_sha, _manifest = write_cell_evidence(
       store=store,
       record_id=record_id,
       cell_id=cid,
       run_id=run_id,
-      ours_arrays={output_key: arr},
+      ours_arrays=ours_arrays,
       reference_dump_sha256=dump_rec.dump_sha256,
-      reference_dump_keys={output_key: ref_key},
+      reference_dump_keys=reference_dump_keys,
       input_sha256={"ours": [pdb_sha], "reference": [pdb_sha]},
       adapter={"name": "aminx.frustrampnn_parity_v2", "version": "2.0.0"},
     )
@@ -556,8 +650,13 @@ def main() -> int:  # noqa: PLR0915
 
   log.info("Starting FrustraMPNN Parity Vehicle v2")
 
+  effective_eqx_weights: Path | None = args.eqx_weights
+  if args.parity_record is not None:
+    effective_eqx_weights = _verify_weights_provenance(args.parity_record, args.eqx_weights)
+    log.info("Weights provenance verified against %s", args.parity_record)
+
   # 1. Anti-self-trust Verification
-  if args.eqx_weights is not None:
+  if effective_eqx_weights is not None:
     pinned = json.loads(args.pinned_dumps.read_text(encoding="utf-8"))
     oracle_sha = str(pinned.get(ORACLE_STEM) or pinned.get(f"{ORACLE_STEM}.npz"))
     reg = json.loads((_REPO_ROOT / "tests" / "knob_gate" / "checkpoint_registry.json").read_text(encoding="utf-8"))
@@ -565,7 +664,7 @@ def main() -> int:  # noqa: PLR0915
       e["sha256"] for e in reg["entries"] if CANONICAL_CKPT in e.get("artifact_path", "")
     )
     ckpt_file = None
-    _base, ckpt_sha = _load_eqx_weights(args.eqx_weights, expected_ckpt_sha, "float32")
+    _base, ckpt_sha = _load_eqx_weights(effective_eqx_weights, expected_ckpt_sha, "float32")
   else:
     oracle_sha, ckpt_sha, ckpt_file, _pinned = verify_anti_self_trust(
       args.oracle_dir,
@@ -591,8 +690,8 @@ def main() -> int:  # noqa: PLR0915
   mutant_list = [m.strip() for m in args.mutants.split(",") if m.strip()]
 
   def _load_arm(dtype_str: str) -> FrustraMPNN:
-    if args.eqx_weights is not None:
-      m_loaded, _ = _load_eqx_weights(args.eqx_weights, expected_ckpt_sha, dtype_str)
+    if effective_eqx_weights is not None:
+      m_loaded, _ = _load_eqx_weights(effective_eqx_weights, expected_ckpt_sha, dtype_str)
       return m_loaded
     return driver.load_model(CANONICAL_CKPT, local_path=ckpt_file, dtype=dtype_str)
 
@@ -612,7 +711,7 @@ def main() -> int:  # noqa: PLR0915
       pdb_path,
       dtype,
       is_clean=True,
-      run_runner_entry=(args.eqx_weights is None),
+      run_runner_entry=(effective_eqx_weights is None),
       captured_outputs=arm_out,
     )
     clean_outputs[dtype] = arm_out
@@ -754,7 +853,7 @@ def main() -> int:  # noqa: PLR0915
     )
     log.info("Wrote BTH results payload to %s", bth_results)
 
-  if args.parity_store is not None:
+  if args.parity_store is not None or args.parity_record is not None:
     if args.parity_record is None:
       msg = "--parity-record is required when --parity-store is set"
       raise RuntimeError(msg)
