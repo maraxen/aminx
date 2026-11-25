@@ -224,6 +224,32 @@ def _hydrogen_extended(letter: str) -> tuple[str, ...]:
   return _ATOM_ORDER[letter] + _NONROTATABLE_H[letter]
 
 
+def residue_atom_names(letter: str, *, protonated: bool) -> tuple[str, ...]:
+  """Upstream atom names for one residue, heavy or protonated layout.
+
+  Heavy names are ``dataset_atom_order``. Protonated names are
+  ``hydrogen_extended_dataset_atom_order``. ``X`` uses alanine's non-rotatable
+  hydrogens, matching the layout ``build_rotamers`` pads.
+  """
+  if letter not in _ATOM_ORDER:
+    msg = f"unknown LASEr residue {letter!r}"
+    raise ValueError(msg)
+  if protonated:
+    return _hydrogen_extended(letter)
+  return _ATOM_ORDER[letter]
+
+
+def canonical_resname(letter: str) -> str:
+  """Three-letter name of one LASEr letter. ``X`` is ``UNK``, histidine is ``HIS``."""
+  if letter == "X":
+    return "UNK"
+  for name, short in _LONG_TO_SHORT.items():
+    if short == letter:
+      return name
+  msg = f"unknown LASEr residue {letter!r}"
+  raise ValueError(msg)
+
+
 def _build_hydrogen_tables() -> tuple[NDArray[np.int64], NDArray[np.int64]]:
   """Triad and hydrogen indices, including the glycine row reused for ``X``."""
   n_triads = max(len(triads) for triads in _HYDROGEN_ALIGNMENT.values())
@@ -484,6 +510,15 @@ class LaserFeatures:
   ligand_elements: tuple[str, ...]
   exposed_mask: Bool[np.ndarray, " L"]
   budget_residue_mask: Bool[np.ndarray, " L"]
+  pdb_chain_ids: tuple[str, ...]
+  pdb_resnums: Int[np.ndarray, " L"]
+  pdb_icodes: tuple[str, ...]
+  ligand_atom_names: tuple[str, ...]
+  ligand_res_names: tuple[str, ...]
+  ligand_chain_ids: tuple[str, ...]
+  ligand_resnums: Int[np.ndarray, " A"]
+  ligand_icodes: tuple[str, ...]
+  ligand_synthetic: Bool[np.ndarray, " A"]
 
 
 # Working precision for the protein path. float32 stays the default so the f32 tiers
@@ -1231,15 +1266,76 @@ class _LigandSink:
     self.z: list[NDArray[np.int64]] = []
     self.sub: list[NDArray[np.int64]] = []
     self.elements: list[str] = []
+    self.names: list[str] = []
+    self.resnames: list[str] = []
+    self.chains: list[str] = []
+    self.resnums: list[int] = []
+    self.icodes: list[str] = []
+    self.synthetic: list[bool] = []
     self._next = 0
 
-  def push(self, coords: NDArray[np.floating], elements: list[str]) -> None:
+  def push(
+    self,
+    coords: NDArray[np.floating],
+    elements: list[str],
+    names: list[str],
+    *,
+    resname: str,
+    chain: str,
+    resnum: int,
+    icode: str,
+    synthetic: bool,
+  ) -> None:
     block = _as_f64(coords)
+    count = int(block.shape[0])
+    if len(elements) != count or len(names) != count:
+      msg = (
+        f"ligand atom identity length {len(names)}/{len(elements)} "
+        f"does not match {count} coordinates"
+      )
+      raise LaserInputError(msg)
     self.xyz.append(block)
     self.z.append(_atomic_numbers(elements))
-    self.sub.append(np.full((block.shape[0],), self._next, dtype=np.int64))
+    self.sub.append(np.full((count,), self._next, dtype=np.int64))
     self.elements.extend(elements)
+    self.names.extend(names)
+    self.resnames.extend([resname] * count)
+    self.chains.extend([chain] * count)
+    self.resnums.extend([resnum] * count)
+    self.icodes.extend([icode] * count)
+    self.synthetic.extend([synthetic] * count)
     self._next += 1
+
+  def identity(
+    self,
+    *,
+    ignore: bool,
+  ) -> tuple[
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[str, ...],
+    NDArray[np.int64],
+    tuple[str, ...],
+    NDArray[np.bool_],
+  ]:
+    """Per-atom ligand identity, empty when the ligand is dropped."""
+    if ignore or not self.xyz:
+      return (
+        (),
+        (),
+        (),
+        np.zeros((0,), dtype=np.int64),
+        (),
+        np.zeros((0,), dtype=bool),
+      )
+    return (
+      tuple(self.names),
+      tuple(self.resnames),
+      tuple(self.chains),
+      np.asarray(self.resnums, dtype=np.int64),
+      tuple(self.icodes),
+      np.asarray(self.synthetic, dtype=bool),
+    )
 
 
 def _require_binary_bfactors(view: pr.HierView) -> None:
@@ -1279,20 +1375,51 @@ def _append_protein(
   exposure_probe.append(np.asarray(probe, dtype=np.float64))
 
 
+def _residue_identity(chain: pr.Chain, residue: pr.Residue) -> tuple[str, int, str, str]:
+  return (
+    str(chain.getChid()).strip(),
+    int(residue.getResnum()),
+    str(residue.getIcode()).strip(),
+    str(residue.getResname()),
+  )
+
+
 def _push_ncaa_ligand(
+  chain: pr.Chain,
   residue: pr.Residue,
   coords: NDArray[np.float64],
   angles: NDArray[np.floating],
   sink: _LigandSink,
 ) -> None:
+  chain_id, resnum, icode, resname = _residue_identity(chain, residue)
+  atom_names = [str(name) for name in residue.getNames()]
+  sink.push(
+    residue.getCoords(),
+    _elements(residue),
+    atom_names,
+    resname=resname,
+    chain=chain_id,
+    resnum=resnum,
+    icode=icode,
+    synthetic=False,
+  )
   cap, cap_z = _methyl_caps(angles, coords, _X)
-  sink.push(residue.getCoords(), _elements(residue))
   names = _cap_names(cap_z)
   keep = np.array([name != "H0" for name in names])
   if "H" not in set(residue.getNames()):
     keep = np.ones(cap.shape[0], dtype=bool)
+  kept_names = [name for name, flag in zip(names, keep, strict=True) if flag]
   kept = [element for element, flag in zip(_elements_from_z(cap_z), keep, strict=True) if flag]
-  sink.push(cap[keep], kept)
+  sink.push(
+    cap[keep],
+    kept,
+    kept_names,
+    resname=resname,
+    chain=chain_id,
+    resnum=resnum,
+    icode=icode,
+    synthetic=True,
+  )
 
 
 def _ligand_arrays(
@@ -1356,6 +1483,7 @@ def featurize(
   chains: list[int] = []
   fixed: list[bool] = []
   resindex: list[int] = []
+  chain_ids, pdb_resnums, icodes = [], [], []
   crystal_bb: list[NDArray[np.float64]] = []
   exposure_probe: list[NDArray[np.float64]] = []
   sink = _LigandSink()
@@ -1369,17 +1497,36 @@ def featurize(
         int(residue.getResnum()),
         str(residue.getIcode()),
       )
+      chain_id, resnum, icode, _resname = _residue_identity(chain, residue)
       if resname == "HOH":
         if use_water:
-          sink.push(residue.getCoords(), _elements(residue))
+          sink.push(
+            residue.getCoords(),
+            _elements(residue),
+            [str(name) for name in residue.getNames()],
+            resname=resname,
+            chain=chain_id,
+            resnum=resnum,
+            icode=icode,
+            synthetic=False,
+          )
         continue
       if not _is_amino(residue):
-        sink.push(residue.getCoords(), _elements(residue))
+        sink.push(
+          residue.getCoords(),
+          _elements(residue),
+          [str(name) for name in residue.getNames()],
+          resname=resname,
+          chain=chain_id,
+          resnum=resnum,
+          icode=icode,
+          synthetic=False,
+        )
         continue
       coords = _residue_coords(residue, letter)
       angles = _phi_psi(gly[key], dtype)
       if noncanonical_aa_ligand and letter == "X":
-        _push_ncaa_ligand(residue, coords, angles, sink)
+        _push_ncaa_ligand(chain, residue, coords, angles, sink)
         continue
       if np.isnan(coords[:3]).any():
         continue
@@ -1398,6 +1545,9 @@ def featurize(
         crystal_bb,
         exposure_probe,
       )
+      chain_ids.append(chain_id)
+      pdb_resnums.append(resnum)
+      icodes.append(icode)
   if not sequence:
     msg = f"no protein residues in {pdb_path}"
     raise LaserInputError(msg)
@@ -1409,6 +1559,9 @@ def featurize(
     chains,
     fixed,
     resindex,
+    chain_ids,
+    pdb_resnums,
+    icodes,
     crystal_bb,
     exposure_probe,
     sink,
@@ -1428,6 +1581,9 @@ def _assemble(
   chains: list[int],
   fixed: list[bool],
   resindex: list[int],
+  chain_ids: list[str],
+  pdb_resnums: list[int],
+  icodes: list[str],
   crystal_bb: list[NDArray[np.float64]],
   exposure_probe: list[NDArray[np.float64]],
   sink: _LigandSink,
@@ -1452,6 +1608,14 @@ def _assemble(
     ignore=ignore_ligand,
     dtype=dtype,
   )
+  (
+    ligand_atom_names,
+    ligand_res_names,
+    ligand_chain_ids,
+    ligand_resnums,
+    ligand_icodes,
+    ligand_synthetic,
+  ) = sink.identity(ignore=ignore_ligand)
   fa = build_rotamers(backbone, chi, seq, dtype)
   shell = first_shell_contact_mask(
     fa,
@@ -1498,6 +1662,15 @@ def _assemble(
     ligand_elements=elements,
     exposed_mask=exposed,
     budget_residue_mask=np.isin(ss, np.array(["H", "E"])) & exposed,
+    pdb_chain_ids=tuple(chain_ids),
+    pdb_resnums=np.asarray(pdb_resnums, dtype=np.int64),
+    pdb_icodes=tuple(icodes),
+    ligand_atom_names=ligand_atom_names,
+    ligand_res_names=ligand_res_names,
+    ligand_chain_ids=ligand_chain_ids,
+    ligand_resnums=ligand_resnums,
+    ligand_icodes=ligand_icodes,
+    ligand_synthetic=ligand_synthetic,
   )
 
 

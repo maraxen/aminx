@@ -15,8 +15,10 @@ import jax.numpy as jnp
 import numpy as np
 from xtrax.tiling import AxisSpec, BatchPlanner
 
+from aminx.families.laser_mpnn import pdb_sink
 from aminx.families.laser_mpnn.driver import (
   CANONICAL_OF_LASER,
+  LASER_OF_CANONICAL,
   backbone_noise_levels,
   budget_mask_for,
   decoding_order,
@@ -25,11 +27,13 @@ from aminx.families.laser_mpnn.driver import (
   noised_features,
 )
 from aminx.families.laser_mpnn.featurize import (
+  MAX_PROTONATED_ATOMS,
   LaserFeatures,
   LaserInputError,
   build_rotamers,
   featurize,
 )
+from aminx.host._sampling_helper import _canonical_structure_id
 from aminx.host.family_driver import FamilyBatch, SinkArraySpec
 from aminx.host.omit_aa_bias import compile_omit_aa_bias, omit_aa_is_active
 from aminx.model.laser.encoders import encode_structure
@@ -68,6 +72,56 @@ def _options(spec: Any) -> LaserOptions:  # noqa: ANN401
   if options is None:
     return LaserOptions()
   return cast("LaserOptions", options)
+
+
+def _pdb_limit_reason(options: LaserOptions, features: LaserFeatures) -> str | None:
+  """Skip reason when the conservative atom bound cannot fit in a PDB, else ``None``.
+
+  The limit constant is read only when a PDB directory is set, so a disabled
+  sink never consults it.
+  """
+  if options.pdb_output_dir is None:
+    return None
+  bound = int(features.sequence_indices.shape[0]) * (MAX_PROTONATED_ATOMS + 1)
+  bound += int(features.ligand_coords.shape[0])
+  if bound > pdb_sink._MAX_PDB_ATOMS:  # noqa: SLF001
+    return f"pdb_sink: {bound} atoms exceed the PDB limit"
+  return None
+
+
+def _resolve_pdb_dir(spec: Any, options: LaserOptions) -> Path | None:  # noqa: ANN401
+  raw = options.pdb_output_dir
+  if raw is None:
+    return None
+  path = Path(raw)
+  if path.is_absolute():
+    return path
+  output_dir = spec.run_spec.io.output_dir
+  base = Path.cwd() if output_dir is None else Path(output_dir)
+  return base / path
+
+
+def _pdb_structure_ids(spec: Any) -> tuple[str, ...]:  # noqa: ANN401
+  """Stems, with ``_s<input>`` on repeats, unique against every name this run emits.
+
+  A stem that occurs once keeps its name. A repeated stem ``foo`` at index 0
+  becomes ``foo_s0``. That collides with an input whose own stem is ``foo_s0``,
+  so a taken name gains ``_s1``, ``_s2``, ... until it is unused.
+  """
+  stems = [_canonical_structure_id(item, index) for index, item in enumerate(_inputs(spec))]
+  repeated = {stem for stem in stems if stems.count(stem) > 1}
+  used: set[str] = set()
+  emitted: list[str] = []
+  for index, stem in enumerate(stems):
+    base = f"{stem}_s{index}" if stem in repeated else stem
+    candidate = base
+    bump = 1
+    while candidate in used:
+      candidate = f"{base}_s{bump}"
+      bump += 1
+    used.add(candidate)
+    emitted.append(candidate)
+  return tuple(emitted)
 
 
 def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401
@@ -153,7 +207,11 @@ def _tied_partner(
     return None
   try:
     partner = _featurize_one(
-      Path(options.tied_second_input), spec, options, noise_fold=1, level=level,
+      Path(options.tied_second_input),
+      spec,
+      options,
+      noise_fold=1,
+      level=level,
     )
   except LaserInputError as exc:
     msg = f"tied_second_input: {exc}"
@@ -192,6 +250,10 @@ def sample_batches(spec: Any) -> Iterator[FamilyBatch]:  # noqa: ANN401
     sampled = per_level[0]
     if len(per_level) > 1:
       sampled = sampled._replace(variants=tuple(per_level))
+    limit_reason = _pdb_limit_reason(options, sampled.features)
+    if limit_reason is not None:
+      pending.append((index, limit_reason))
+      continue
     yield FamilyBatch(
       input_indices=(index,),
       arrays={"sampled": (sampled,)},
@@ -411,6 +473,8 @@ class SampleStages:
     self._spec = spec
     self._options = _options(spec)
     self._joint = load_joint_decode(spec)
+    self._pdb_dir = _resolve_pdb_dir(spec, self._options)
+    self._pdb_ids = _pdb_structure_ids(spec)
 
   def __call__(
     self,
@@ -425,8 +489,83 @@ class SampleStages:
     rows = [
       self._one(item, chunk_start, chunk_count, dropout_key) for item in batch.arrays["sampled"]
     ]
+    if self._pdb_dir is not None:
+      self._emit_pdbs(batch, rows, chunk_start)
     keys = rows[0].keys()
     return {key: jnp.stack([row[key] for row in rows]) for key in keys}
+
+  def _emit_pdbs(
+    self,
+    batch: FamilyBatch,
+    rows: list[dict[str, np.ndarray]],
+    chunk_start: int,
+  ) -> None:
+    """Write one PDB per design. Reads ``rows`` and leaves them unchanged."""
+    n_temp = max(len(_temperatures(self._spec)), 1)
+    laser_of = np.asarray(LASER_OF_CANONICAL)
+    for index, item in enumerate(batch.arrays["sampled"]):
+      produced = rows[index]
+      structure_id = self._pdb_ids[int(batch.input_indices[index])]
+      sequence = np.asarray(produced["sequence"])
+      coords = np.asarray(produced["sidechain_coords"])
+      probability = np.asarray(produced["seq_log_prob"], dtype=np.float32)
+      if sequence.ndim == 2:
+        self._emit_level(
+          item.features,
+          sequence,
+          coords,
+          probability,
+          structure_id=structure_id,
+          chunk_start=chunk_start,
+          n_temp=n_temp,
+          level=None,
+          laser_of=laser_of,
+        )
+        continue
+      if sequence.ndim != 3:
+        msg = f"sampled sequence ndim {sequence.ndim} is not 2 or 3"
+        raise ValueError(msg)
+      for level in range(sequence.shape[1]):
+        self._emit_level(
+          item.variants[level].features,
+          sequence[:, level],
+          coords[:, level],
+          probability[:, level],
+          structure_id=structure_id,
+          chunk_start=chunk_start,
+          n_temp=n_temp,
+          level=level,
+          laser_of=laser_of,
+        )
+
+  def _emit_level(
+    self,
+    features: LaserFeatures,
+    sequence: np.ndarray,
+    coords: np.ndarray,
+    probability: np.ndarray,
+    *,
+    structure_id: str,
+    chunk_start: int,
+    n_temp: int,
+    level: int | None,
+    laser_of: np.ndarray,
+  ) -> None:
+    directory = self._pdb_dir
+    if directory is None:
+      return
+    for local in range(sequence.shape[0]):
+      row = chunk_start * n_temp + local
+      suffix = f"_n{row:05d}.pdb" if level is None else f"_n{row:05d}_d{level:02d}.pdb"
+      pdb_sink.write_sample_pdb(
+        features,
+        laser_of[sequence[local]],
+        coords[local],
+        probability[local],
+        directory / f"{structure_id}{suffix}",
+        structure_id=structure_id,
+        provenance=self._options.pdb_provenance,
+      )
 
   def _one(
     self,
@@ -497,9 +636,7 @@ class SampleStages:
     budget_mask = _budget(features, options)
     charged_mask = _charged(features, options)
     region = (
-      np.zeros((n_res,), dtype=bool)
-      if budget_mask is None
-      else np.asarray(budget_mask, dtype=bool)
+      np.zeros((n_res,), dtype=bool) if budget_mask is None else np.asarray(budget_mask, dtype=bool)
     )
     charged = (
       np.zeros((n_res,), dtype=bool)
@@ -508,9 +645,7 @@ class SampleStages:
     )
     bias = _logit_bias(self._spec, item.chain_mask)
     logit_bias = (
-      np.zeros((n_res, 21), dtype=dtype)
-      if bias is None
-      else np.asarray(bias, dtype=dtype)
+      np.zeros((n_res, 21), dtype=dtype) if bias is None else np.asarray(bias, dtype=dtype)
     )
     disabled = _disabled_mask(tuple(options.disabled_residues))
 
