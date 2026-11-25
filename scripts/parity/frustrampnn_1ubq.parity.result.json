@@ -31,9 +31,9 @@
         "output": "frustration_scores",
         "target": "1ubq"
       },
-      "cell_evidence_sha256": "4a2a670c46266f88d19b20678826cabfdfd30c907476455ea2316699a1065691",
+      "cell_evidence_sha256": "7867a1033d9a6ce7d827a8c98a2877031419533822864c37878beb935d13e21a",
       "cell_evidence_sha256s": [
-        "4a2a670c46266f88d19b20678826cabfdfd30c907476455ea2316699a1065691"
+        "7867a1033d9a6ce7d827a8c98a2877031419533822864c37878beb935d13e21a"
       ],
       "cell_id": "16d7d7b2b9d2d716",
       "component_id": "model",
@@ -41,7 +41,7 @@
       "declared_kind": "within_tolerance",
       "evidence_level": "self_reported",
       "evidence_run_ids": [
-        "c3d20274-7b75-46b7-8783-024e8153cec5"
+        "077c3eeb-8488-4cdb-8cd7-a06a210a509e"
       ],
       "exploratory": false,
       "fallback_from": null,
@@ -89,9 +89,9 @@
       "run_verdicts": [
         {
           "flags": [],
-          "manifest_sha256": "4a2a670c46266f88d19b20678826cabfdfd30c907476455ea2316699a1065691",
+          "manifest_sha256": "7867a1033d9a6ce7d827a8c98a2877031419533822864c37878beb935d13e21a",
           "max_abs_diff": 1.2323475573339238e-14,
-          "run_id": "c3d20274-7b75-46b7-8783-024e8153cec5",
+          "run_id": "077c3eeb-8488-4cdb-8cd7-a06a210a509e",
           "verdict": "pass"
         }
       ],
@@ -107,9 +107,9 @@
         "output": "frustration_scores",
         "target": "1ubq"
       },
-      "cell_evidence_sha256": "7a2d46d0a53d57d5f2d892d3fbe77cfc6e570fea585a7e92c366ad50e062b38c",
+      "cell_evidence_sha256": "65df24d7e1ef3645aa4399e50faadbf234c6a921c393707acaf64c9448bfbad3",
       "cell_evidence_sha256s": [
-        "7a2d46d0a53d57d5f2d892d3fbe77cfc6e570fea585a7e92c366ad50e062b38c"
+        "65df24d7e1ef3645aa4399e50faadbf234c6a921c393707acaf64c9448bfbad3"
       ],
       "cell_id": "3a39f46587187ae1",
       "component_id": "model",
@@ -117,7 +117,7 @@
       "declared_kind": "within_tolerance",
       "evidence_level": "self_reported",
       "evidence_run_ids": [
-        "c3d20274-7b75-46b7-8783-024e8153cec5"
+        "077c3eeb-8488-4cdb-8cd7-a06a210a509e"
       ],
       "exploratory": false,
       "fallback_from": null,
@@ -165,9 +165,9 @@
       "run_verdicts": [
         {
           "flags": [],
-          "manifest_sha256": "7a2d46d0a53d57d5f2d892d3fbe77cfc6e570fea585a7e92c366ad50e062b38c",
+          "manifest_sha256": "65df24d7e1ef3645aa4399e50faadbf234c6a921c393707acaf64c9448bfbad3",
           "max_abs_diff": 2.3484230041503906e-05,
-          "run_id": "c3d20274-7b75-46b7-8783-024e8153cec5",
+          "run_id": "077c3eeb-8488-4cdb-8cd7-a06a210a509e",
           "verdict": "pass"
         }
       ],
@@ -183,9 +183,9 @@
         "output": "both_out",
         "target": "1ubq"
       },
-      "cell_evidence_sha256": "b323a215748107ef61c813a47ecfac5df6ce218ab9b82a423b875c12ac2a1a5b",
+      "cell_evidence_sha256": "e92919e17ae0a5ae22c3d9c576865761606fde0a3aee407410151124ad9993f7",
       "cell_evidence_sha256s": [
-        "b323a215748107ef61c813a47ecfac5df6ce218ab9b82a423b875c12ac2a1a5b"
+        "e92919e17ae0a5ae22c3d9c576865761606fde0a3aee407410151124ad9993f7"
       ],
       "cell_id": "f5227d7b8435f840",
       "component_id": "model",
@@ -193,7 +193,7 @@
       "declared_kind": "within_tolerance",
       "evidence_level": "self_reported",
       "evidence_run_ids": [
-        "c3d20274-7b75-46b7-8783-024e8153cec5"
+        "077c3eeb-8488-4cdb-8cd7-a06a210a509e"
       ],
       "exploratory": false,
       "fallback_from": null,
@@ -241,9 +241,9 @@
       "run_verdicts": [
         {
           "flags": [],
-          "manifest_sha256": "b323a215748107ef61c813a47ecfac5df6ce218ab9b82a423b875c12ac2a1a5b",
+          "manifest_sha256": "e92919e17ae0a5ae22c3d9c576865761606fde0a3aee407410151124ad9993f7",
           "max_abs_diff": 1.8540724511240114e-14,
-          "run_id": "c3d20274-7b75-46b7-8783-024e8153cec5",
+          "run_id": "077c3eeb-8488-4cdb-8cd7-a06a210a509e",
           "verdict": "pass"
         }
       ],
@@ -259,9 +259,9 @@
         "output": "both_out",
         "target": "1ubq"
       },
-      "cell_evidence_sha256": "f80fd76ccbbd188b2ef6869f06335d08cfadf3eb26dcbd881e70e711a622188c",
+      "cell_evidence_sha256": "eedb51fe5aa5523f04b45d7c0dae7425714eaf8b0ed55263c7ac7b61e0986a1f",
       "cell_evidence_sha256s": [
-        "f80fd76ccbbd188b2ef6869f06335d08cfadf3eb26dcbd881e70e711a622188c"
+        "eedb51fe5aa5523f04b45d7c0dae7425714eaf8b0ed55263c7ac7b61e0986a1f"
       ],
       "cell_id": "fdbf988fcc815298",
       "component_id": "model",
@@ -269,7 +269,7 @@
       "declared_kind": "within_tolerance",
       "evidence_level": "self_reported",
       "evidence_run_ids": [
-        "c3d20274-7b75-46b7-8783-024e8153cec5"
+        "077c3eeb-8488-4cdb-8cd7-a06a210a509e"
       ],
       "exploratory": false,
       "fallback_from": null,
@@ -317,9 +317,9 @@
       "run_verdicts": [
         {
           "flags": [],
-          "manifest_sha256": "f80fd76ccbbd188b2ef6869f06335d08cfadf3eb26dcbd881e70e711a622188c",
+          "manifest_sha256": "eedb51fe5aa5523f04b45d7c0dae7425714eaf8b0ed55263c7ac7b61e0986a1f",
           "max_abs_diff": 3.504753112792969e-05,
-          "run_id": "c3d20274-7b75-46b7-8783-024e8153cec5",
+          "run_id": "077c3eeb-8488-4cdb-8cd7-a06a210a509e",
           "verdict": "pass"
         }
       ],
@@ -408,11 +408,11 @@
   "dual_display_result": null,
   "evidence_runs": [
     {
-      "declaration_blob_sha256": "6b2f801facc89a7530532a2ead65db830f043060a0374a2da01916be7c06fd29",
+      "declaration_blob_sha256": "f38b6390073a0fb4675406ca5f19fc0bdaed3377b3ed22874b7035a8be1072b3",
       "env_blob_sha256": null,
       "is_hidden": false,
       "outcome": "pass",
-      "run_id": "c3d20274-7b75-46b7-8783-024e8153cec5",
+      "run_id": "077c3eeb-8488-4cdb-8cd7-a06a210a509e",
       "status": "completed",
       "validity_state": "current"
     }
@@ -524,7 +524,7 @@
     }
   ],
   "grade_inputs": {
-    "as_of": "2026-11-25T03:19:10.612260+00:00",
+    "as_of": "2026-11-25T17:50:31.995958+00:00",
     "cell_runs": {},
     "comparison_backend": {
       "distribution": "bathos",
@@ -569,7 +569,7 @@
       "path": "/home/marielle/projects/aminx/.bth/parity"
     },
     "target_revisions": {
-      "implementation": "114410de94574112c296cecc8f5eca0ee7db9275",
+      "implementation": "afcd5a1ad7abcb491835b363fbc1ff496a601d80",
       "reference": {
         "id": "frustrampnn-1ubq",
         "identity": {
@@ -590,7 +590,7 @@
   },
   "prior_records_on_pair": 0,
   "record_id": "aminx-frustrampnn-score-v1",
-  "record_sha256": "6b2f801facc89a7530532a2ead65db830f043060a0374a2da01916be7c06fd29",
+  "record_sha256": "f38b6390073a0fb4675406ca5f19fc0bdaed3377b3ed22874b7035a8be1072b3",
   "results_seen": true,
   "schema_version": "parity_result.v1",
   "standard_version": "1.0.0",
