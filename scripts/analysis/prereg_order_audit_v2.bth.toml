@@ -1,0 +1,109 @@
+# prereg_order_audit v2 -- task 261123_laser-script-fixes, aminx debt #3573. Supersedes
+# prereg_order_audit.bth.toml (v1; its [outcomes], script and run records stay untouched).
+# [outcomes] are copied from v1 verbatim; only the timestamp handling and the self-test changed.
+
+[metadata]
+title = "Was every bathos sidecar committed before the run it graded?"
+created = "261123"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Spec §7.3 requires sidecars to be committed before running, and the project rule states the reason: outcome criteria chosen after seeing the numbers always pass, so a sidecar written post-hoc is not a weaker pre-registration but none at all. Nothing has ever checked this. Every bathos run records the git_hash it ran at, and git records the commit that added each sidecar, so the ordering is mechanically decidable for the whole catalog rather than for a sample. If the discipline held, no sidecar's add-commit is newer than the earliest run citing it."
+
+stage_name = "validation"
+novel = true
+
+[outcomes.prereg_order_clean]
+condition = "self_test_passed AND refusal IS NULL AND n_violations = 0 AND n_audited >= 20"
+decision = "Record that the pre-registration ordering held across the audited catalog: no sidecar was committed after a run that cites it. This supports citing the sprint's graded outcomes as predictions rather than descriptions. It does NOT certify the unverifiable bucket, which is reported separately and whose provenance weakness stands."
+reasoning = "A violation is mechanically decidable and none was found, over a population large enough that the query cannot have silently matched almost nothing. That is the strongest statement git can support."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND n_violations = 0 AND n_audited >= 20)"
+
+[outcomes.prereg_order_violated]
+condition = "self_test_passed AND refusal IS NULL AND n_violations > 0"
+decision = "Report each entry individually -- sidecar, add-commit, earliest run, hours late -- never aggregated into a count, and treat every outcome such a sidecar graded as UNCITED until re-run under a sidecar committed beforehand. State it as what it is: a breach of 'committed before running' as written, which git can settle, and NOT as proof the criteria were chosen with the numbers in view, which git cannot. A single violation is a finding, not a rounding error."
+reasoning = "A sidecar committed after its run cannot have constrained that run, so its criteria were chosen with the numbers in view. The resulting outcome describes what happened rather than predicting it, which is precisely the failure the rule exists to prevent."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND n_violations > 0)"
+
+[outcomes.audit_underpowered]
+condition = "self_test_passed AND refusal IS NULL AND n_violations = 0 AND n_audited < 20"
+decision = "Report NO conclusion about the discipline. Zero violations out of too few sidecars is a statement about the query, not about the project. Investigate why the catalog returned so little before re-running."
+reasoning = "An audit that matched almost nothing returns a reassuring zero for the same reason a broken one does. The floor is what separates 'checked and clean' from 'checked nothing'."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS NOT NULL OR n_violations > 0 OR n_audited >= 20"
+
+[outcomes.catalog_unavailable]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'catalog_unavailable'"
+decision = "No conclusion. Re-run where the bathos catalog resolves; check `bth compact` first, since the warm index lags the cool tier."
+reasoning = "An empty catalog and a clean catalog are indistinguishable in the count alone, so the empty case must refuse rather than report zero violations."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'catalog_unavailable'"
+
+[outcomes.repo_unavailable]
+condition = "self_test_passed AND refusal IS NOT DISTINCT FROM 'repo_unavailable'"
+decision = "No conclusion. Re-run against a real checkout; --repo must point at one."
+reasoning = "Without a repository there are no add-commits to compare against, so every sidecar would be unverifiable and the audit would report zero violations for the wrong reason."
+is_residual = true
+adversarial_check = "NOT self_test_passed OR refusal IS DISTINCT FROM 'repo_unavailable'"
+
+[outcomes.instrument_unverified]
+condition = "NOT self_test_passed"
+decision = "Discard every number from this run. Fix the instrument and re-run."
+reasoning = "The decisive pair runs before any catalog row is read: a deliberately LATE run against a real sidecar must be classified a violation, and an early one against the same sidecar must not. A one-sided audit that can only report 'clean' would report it for a broken project too."
+is_residual = true
+adversarial_check = "self_test_passed"
+
+[result_schema]
+verdict = "str"
+refusal = "str"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+project = "str"
+n_catalog_rows = "int"
+n_skipped_unanchorable = "int"
+n_unparseable_timestamps = "int"
+unparseable_timestamps = "list"
+n_audited = "int"
+n_clean = "int"
+n_violations = "int"
+n_violations_whose_first_run_passed = "int"
+n_rows_from_other_catalogs = "int"
+n_distinct_sidecars = "int"
+n_unverifiable = "int"
+violations = "list"
+unverifiable = "list"
+min_lead_hours = "float"
+
+[data]
+population = "Every run in the bathos catalog for the project that records BOTH a sidecar_path and a git_hash, reduced to one row per sidecar: its earliest run and that run's git_hash. The earliest run is the one the pre-registration had to precede; later runs against the same sidecar cannot change the ordering question."
+multi_catalog_union = "A project spread over several machines has DISJOINT bathos catalogs, and the earliest run is the one a sidecar had to precede, so auditing one catalog alone can call a sidecar clean that an earlier run elsewhere makes late. Found by the two populations disagreeing: scripts/parity/e2e_run_api_parity.bth.toml read CLEAN against the titanix catalog (117.7 h lead) and LATE against the local one (22.8 h), because the local catalog holds an earlier run titanix's does not. --extra-rows merges rows exported from another machine, collapsing to one row per repo-relative sidecar at the EARLIEST run seen anywhere. Measured over the union: clean 5 -> 29 and unverifiable 63 -> 38 as containment resolves, while n_violations stays at 10 and the list is identical -- the finding is stable across catalogs, and the merge demonstrably changes coverage without changing the verdict."
+ordering_test = "The commit that ADDED the sidecar (git log --follow --diff-filter=A, oldest entry) must be no newer than that earliest run's timestamp."
+containment_test = "That add-commit must also be an ancestor of the run's recorded git_hash. This is reported SEPARATELY and is not a violation."
+why_the_two_are_separated = "A script copied into a checkout sitting at an older commit satisfies the ordering but fails containment -- the ordinary spike-directory workflow does exactly this. Collapsing the two would turn every such run into a false accusation of post-hoc registration, which is a serious charge. Keeping them apart also means the clean verdict never silently absorbs a provenance weakness."
+what_a_violation_means = "Not untidiness. A sidecar committed after its run cannot have constrained it, so its criteria were chosen with the numbers in view and the outcome it reports is a description, not a prediction. Nothing it graded should be cited until re-run."
+date_field = "AUTHOR date (%aI), never committer date (%cI). A rebase or squash rewrites the committer date to the moment of the rewrite while preserving the author date, so %cI reports when a file ENTERED THIS BRANCH, not when it was written. Measured: a first pass using %cI reported 65 violations in 78 sidecars, dozens of them sharing the committer timestamp 2026-09-30T08:50:45 -- one bulk rewrite, not 65 post-hoc registrations. The same population under %aI gives 10 candidates. A self-test check pins the field so it cannot regress."
+confounders_resolved_261007 = "Both confounders that previously blocked claiming a violation are now settled. (1) RUN TIMESTAMP SEMANTICS: `timestamp` is the run's START, verified against a still-running job rather than inferred -- the in-flight confirm records timestamp 2026-10-06 20:40:10+00:00 with status 'running' and duration_s 0.0, and titanix (UTC-0400) shows that job starting at 16:40 local. So the comparison is against the start, which is the strict and correct reference: a sidecar committed after the run began did not constrain it. (2) RENAMES: --follow attributes an add by similarity heuristic, so a moved file could look late. A path whose history contains any R entry is now reported as unverifiable and can never be reported as a violation. Applied to the measured population it changed nothing -- none of the candidates had been renamed -- which is the useful kind of null: the guard is in place and the candidates do not depend on it."
+exculpatory_evidence_the_catalog_supplies = "For each violation the report carries the FIRST run's outcome, because it bears directly on the thing lateness is feared for. Criteria chosen after seeing the numbers are chosen to PASS; nobody writes conditions post-hoc that grade their own run 'fail', 'error', 'marginal', 'untraceable', or that fail to grade at all. So a late commit whose first run did not pass cannot have had its criteria fitted to that run, whatever git says about the commit date. n_violations_whose_first_run_passed isolates the subset where the concern is actually live. Measured over the union: 10 violations, of which 2 first ran to 'pass' -- the other 8 graded unknown (3), error (2), marginal, untraceable and fail. The clearest case is scripts/parity/e2e_run_api_parity.bth.toml, committed 22.8 h after a first run that graded FAIL (0f282f6a) and that the catalog shows being fixed and re-run to pass (55ce2877): the sidecar demonstrably constrained that run by refusing it."
+why_this_is_reported_and_not_graded = "The verdict keys on n_violations exactly as pre-registered. Narrowing it to n_violations_whose_first_run_passed after seeing the results would be choosing a criterion with the numbers in view -- the precise move this audit exists to detect, and it would be absurd to commit it here. The subset informs the DECISION, which already says to report each entry individually rather than as a count."
+what_git_still_cannot_settle = "Whether a sidecar was WRITTEN before its run and merely committed afterwards. Git records when a file landed, not when its author fixed the criteria. A violation here is therefore a breach of the rule AS WRITTEN ('committed before running'), which is what makes the requirement checkable at all; it is not by itself proof that the criteria were chosen with the numbers in view. Report it as the former and do not silently upgrade it to the latter."
+asymmetry_that_makes_the_clean_verdict_safe = "Both the committer-date defect and the two open confounders bias in the SAME direction: toward reporting a sidecar as later than it was. A clean verdict is therefore robust to all three -- if a pessimistic measure finds nothing late, nothing is late. This is why a prior hand probe over the 32 sprint sidecars, run with committer dates, can still be relied on for its zero."
+one_sidedness = "Finding zero violations shows no sidecar was COMMITTED late. It cannot show none was WRITTEN late and committed just before the run: git records when a file landed, not when its author decided the criteria. The mechanically checkable half is the half this measures, and the limit is stated rather than left for a reader to notice."
+anchoring = "Catalog sidecar paths are absolute inside whichever checkout ran them, and the sprint used many (aminx-sprint-git, aminx-b7i-git, aminx-cw-261006, spike dirs). Paths are reduced to repo-relative form at the first recognised top-level directory; anything that cannot be anchored is counted in n_skipped_unanchorable rather than silently dropped."
+instrument_self_test = "Twelve checks before any catalog row is read. From v1: path anchoring accepts a real layout and refuses an unanchorable one; the decisive far-apart pair (a LATE run against the frozen v1 script's real add-commit is a violation, a run dated now is not); a path with no add-commit is unverifiable; the author-date pin. New in v2: the same pair AT the boundary, one second before and one second after the add-commit, which a comparison shifted by any whole hour fails; the earliest-run reduction keeps the earlier of a space-separated UTC row and a T-separated -04:00 row in BOTH input orders; a naive timestamp is refused by the parser; and a naive catalog row is excluded and counted rather than crashing or guessed. Each new check was confirmed to FIRE against a mutant reintroducing the v1 behaviour (string compare, naive-as-local, shifted comparison) before this sidecar was committed."
+timestamp_ordering = "v1 merged rows from several catalogs by comparing first_run as STRINGS (prereg_order_audit.py:311). A space-separated UTC timestamp and a T-separated one with a negative offset order wrongly as strings: 2026-10-06T16:00:00-04:00 (20:00Z) sorts after 2026-10-06 20:40:10+00:00. The merge could therefore keep a LATER run as the earliest and hide a violation; v1 ALSO took the within-catalog earliest run with SQL min(timestamp) / arg_min(..., timestamp), and runs.timestamp is VARCHAR: measured read-only on 261123 before any v2 run, the aminx catalog holds 310 rows with +00:00 and 160 with negative offsets (-07:00 style), so those were string minima too. v2 fetches one row per run and reduces every row, local and --extra-rows alike, through the same parsed-UTC reduce_earliest. n_catalog_rows therefore counts RUNS in v2 (v1 counted sidecars); it is reported, never graded. v1 also parsed a naive timestamp as local time. v2 parses every run and commit timestamp to aware UTC with one helper, refuses naive or malformed ones, excludes such rows and reports them in n_unparseable_timestamps / unparseable_timestamps. Outcomes are unchanged: an excluded row can only shrink n_audited, which the existing audit_underpowered floor already guards."
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true, doc = "aminx commit SHA" }
+
+[provenance]
+v2_changes = "Debt #3573. (1) Run timestamps compared as parsed aware UTC datetimes, not strings, both in the within-catalog earliest-run selection (v1 used SQL min()/arg_min() over a VARCHAR column holding mixed offsets) and in the cross-catalog merge; one row per run is fetched and reduced by reduce_earliest. n_catalog_rows now counts runs, not sidecars. (2) Naive or malformed timestamps are refused instead of read as local time; such catalog rows are excluded and counted (n_unparseable_timestamps, unparseable_timestamps added to [result_schema]). (3) Self-test grows from 6 to 12 checks: boundary pair at +/-1 s, mixed-format ordering in both orders, naive refusal, naive-row exclusion. [outcomes] copied verbatim from v1; thresholds unchanged."
+note = "Prompted by an ungraded probe that audited 32 sprint sidecars by hand and found 0 violations, 27 fully verifiable and 5 ordering-ok-but-not-contained. That probe produced an ANSWER, not a finding; its numbers are not cited here. This is the tracked instrument for the same question over the whole catalog. Lives in scripts/analysis/, outside _SCOPED_PREFIXES (verified at tests/knob_gate/_coverage.py:21-28), so it costs the frozen ledger nothing. NOT a redsox vehicle; no manifest row."
+invocation = "bth run --project-slug aminx -- <python> scripts/analysis/prereg_order_audit_v2.py --repo <checkout> --bth <bth path> --out <json>"
+self_reference = "This audit is itself pre-registered, and its own sidecar is committed before it is first run -- which the audit will then check along with every other."
+
+[resume]
+unit = "none -- one catalog query plus two git calls per sidecar; seconds"
+max_attempts = 2
