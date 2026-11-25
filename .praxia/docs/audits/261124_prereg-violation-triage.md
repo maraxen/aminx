@@ -60,17 +60,26 @@ follow-up inspection of commit dates. That inspection is not part of the graded 
   `wt/e2e-parity-confirm` and `wt/e2e-parity-gpu`:
   - Version `22931213` was committed in `3a31203b` at 2026-10-01T00:19Z. Runs `0f282f6a`
     (03:07Z, fail) and `55ce2877` (06:28Z, pass) graded against it after that commit.
-  - The criteria were then revised in a commit: `outcomes.marginal` and
-    `result_schema.provenance` changed in `b10dee7a`, at 15:59Z.
-  - Run `239505fd` (16:52Z, fail) ran at exactly that commit.
+  - The criteria were then revised in three branch commits. `outcomes.marginal` changed once, in
+    `fc62afec` at 14:51Z, which added `single_code_commit = true`. `result_schema.provenance`
+    changed in `fc62afec`, `75cd5d26` and `b10dee7a` (15:59Z). The squash's bytes are identical to
+    `b10dee7a`'s.
+  - Run `239505fd` (16:52Z, fail) graded against `b10dee7a`'s bytes.
 
-  So every run was pre-registered on its branch. The two early results belong to the superseded
-  criteria. The citable result is a run under the committed criteria; the latest is `fce94f47`,
-  pass, 2026-11-18.
-- **`verify_done_markers`.** The first run (`878bde95`) graded against a schema without the
-  `negative_control_mode` field and recorded `error`, so no graded number existed. The field was
-  added, and the re-run `6588d9e9` passed against the exact bytes committed about 4 h later.
-  That is commit lag after an error run.
+  So every run was pre-registered on its branch. The `marginal` condition was tightened after
+  the early fail and pass had been seen; those two results belong to the superseded criteria and
+  are not citable under the committed ones. The citable result is a run under the committed
+  criteria; the latest is `fce94f47`, pass, 2026-11-18.
+- **`verify_done_markers`.** Both runs were pre-registered on a branch, so this is the same
+  squash false positive as `e2e_run_api_parity`:
+  - `efb62998` committed the first version at 2026-10-02T14:15:44Z; run `878bde95` graded
+    against those bytes 7 s later. Its schema lacked the `negative_control_mode` field, so it
+    recorded `error` with no graded number.
+  - `b5a81948` added the field at 14:17:45Z; the re-run `6588d9e9` passed 17 s later against
+    exactly those bytes.
+  - The audit's add commit is the squash onto main (`f97072ac`, 15:22Z), with the same blob.
+
+  Only `result_schema` changed, and only after an error run.
 
 ## Limits
 
@@ -81,13 +90,20 @@ follow-up inspection of commit dates. That inspection is not part of the graded 
   registration, as `e2e_run_api_parity` shows. The audit (`prereg_order_audit_v2`) would give
   fewer false positives if it also checked the run's recorded sidecar hash against branch
   versions.
+- "Clean run after commit?" counts a post-commit run of any outcome, including `error` and
+  `unknown` (`prereg_violation_triage.py:182`). The table lists each such run's outcome; read
+  that column, not the yes/no, before calling a sidecar's result citable.
+- Criteria comparison covers whole `[outcomes]` and `[result_schema]` tables, so an edit to only
+  an outcome's `decision` or `reasoning` text counts as "differ". This can only over-flag. The
+  two flagged sidecars here changed conditions or schema fields, not just text.
 
 ## Follow-up
 
 - The procedural fix stands: commit the sidecar before `bth run`, on whatever branch is current.
 - Outcomes recorded before commit with no clean run afterwards: `poe_fused_scaling` (pass),
   `lpla_biasing_check` (pass), `thermo_mpnn_parity` (pass, later superseded by `_v2`),
-  `collect_synthetic_parity_evidence`, `verify_done_markers` (pass). By this triage their
-  criteria are unchanged, so they need no correction. Under the audit's strict rule they remain
-  pre-commit results.
+  `collect_synthetic_parity_evidence`. By this triage their criteria are unchanged, so they
+  need no correction. Under the audit's strict rule they remain pre-commit results.
+  `verify_done_markers` (pass) is not in this list: its passing run was graded against bytes
+  already committed on its branch.
 
