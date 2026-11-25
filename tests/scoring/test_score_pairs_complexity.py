@@ -389,8 +389,9 @@ def test_score_pairs_direct_submodule_reencode_must_fire(monkeypatch: pytest.Mon
   _SENTINEL["direct"] = 0
   fn, make_args = per_extent(lambda n: _trace(n, mode="k"))
   args = make_args(5)
-  assert _SENTINEL["direct"] > 0
   # One mark from features and one from the encoder. Either wrapper missing stays below 2.
   assert count_primitive_in_loops(fn, args, ENCODER_MARK) >= 2
+  # Tracing is lazy: the mutant runs inside the count above, not in make_args.
+  assert _SENTINEL["direct"] > 0
   with pytest.raises(AssertionError, match=ENCODER_MARK):
     assert_no_primitive_in_loops(fn, args, ENCODER_MARK)

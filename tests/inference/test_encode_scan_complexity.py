@@ -5,11 +5,11 @@ state. Per-iteration work must be independent of S (criterion A) and at most
 linear in L (criterion B). Work is a jaxpr proxy, not wall time.
 
 The must-fire mutant re-runs the whole model ``S`` times inside each state and
-keeps copy 0. Folding only ``model.encoder`` left the S work ratio at 1.001 on
-this 64-d network, because the feature stage dominates the proxy, so criterion
-A accepts it. That fold is guarded separately: an encoder mark's output numel
-inside the scan is constant on the clean path and tracks S when only the
-encoder is folded.
+keeps copy 0. A second mutant folds only ``model.encoder``. On the guard model
+(L=24) criterion A already rejects it (work ratio ~1.92 in CI). It is also
+guarded by a second measure that does not depend on the encoder's share of the
+proxy: an encoder mark's output numel inside the scan is constant on the clean
+path and tracks S when the encoder is folded.
 """
 
 from __future__ import annotations
@@ -199,7 +199,7 @@ def _mark_numel(*, mutant: bool | str, extents: tuple[int, ...]) -> list[int]:
 
 
 def test_encode_scan_encoder_only_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Folding only the encoder keeps the S work ratio under A; the mark numel does not."""
+  """Folding only the encoder must fire on criterion A and on the mark numel."""
   _mark_encoder(monkeypatch)
   extents = (2, 4, 8)
   _SENTINEL["encoder_fold"] = 0
@@ -208,9 +208,8 @@ def test_encode_scan_encoder_only_fold_must_fire(monkeypatch: pytest.MonkeyPatch
   assert _SENTINEL["encoder_fold"] > 0
   clean_row = pick_trips_scaling(clean, expected_trips=extents)
   mutant_row = pick_trips_scaling(mutant, expected_trips=extents)
-  # Feature work dominates, so criterion A still passes. The guard below is what fires.
   assert max(work_ratios(clean_row)) < A_THRESHOLD
-  assert max(work_ratios(mutant_row)) < A_THRESHOLD
+  assert min(work_ratios(mutant_row)) >= A_THRESHOLD
   clean_counts = _mark_numel(mutant=False, extents=extents)
   mutant_counts = _mark_numel(mutant="encoder", extents=extents)
   assert_mark_numel_independent(clean_counts)
