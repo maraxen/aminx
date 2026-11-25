@@ -1,0 +1,12 @@
+{
+  "d_ddg_double_max_abs_diff": 0.05168735980987549,
+  "d_ddg_double_pearson_r": 0.9999623632237293,
+  "d_ddg_max_abs_diff": 0.030294418334960938,
+  "d_ddg_pearson_r": 0.9999620595449601,
+  "d_n_pairs": 96,
+  "n_residues": 76,
+  "pdb_id": "1ubq",
+  "v1_ddg_max_abs_diff": 0.048019468784332275,
+  "v1_ddg_pearson_r": 0.9999552584648527,
+  "weight_source": "upstream_checkpoint"
+}

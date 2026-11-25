@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 import jax
 import jax.numpy as jnp
+import pytest
 
 from aminx.host.plan import InferencePlan
 from aminx.run.specs import SamplingSpecification
@@ -121,9 +122,9 @@ def _run_sample_batch_capturing_bundle_kwargs(
 
     # The bundles here are MagicMocks, so the per-sample random decoding order cannot run
     # for real; record that it was requested instead.
-    def _spy_with_decoding_order(bundle, key, decoding_order_fn=None, num_groups=None):
+    def _spy_with_decoding_order(bundle, key, decoding_order_fn=None, num_groups=None, fixed_context="random_order"):
         if order_calls is not None:
-            order_calls.append({"bundle": bundle, "key": key, "fn": decoding_order_fn})
+            order_calls.append({"bundle": bundle, "key": key, "fn": decoding_order_fn, "fixed_context": fixed_context})
         return bundle
 
     monkeypatch.setattr(
@@ -216,6 +217,48 @@ def test_state_position_map_broadcasts_across_batch(monkeypatch):
     assert len(calls) >= 2
     for call in calls:
         assert jnp.array_equal(call["state_position_map"], _STATE_POSITION_MAP)
+
+
+def test_decoding_order_seed_draws_every_samples_order_from_the_seed(monkeypatch):
+    """A set ``decoding_order_seed`` replaces the sample-key-derived order key on the runner path.
+
+    The key handed to with_decoding_order must be the seed's key whatever the sample key is, so two
+    rows carrying the same seed decode in one shared order. Unset, the key stays sample-derived
+    (covered by test_every_sample_decodes_with_its_own_random_order).
+    """
+    from aminx.inference.bundle_builder import decoding_order_key
+
+    spec = SamplingSpecification(
+        inputs=["/tmp/test.pdb"], checkpoint_id="ckpt_001", decoding_order_seed=9,
+    )
+    order_calls: list = []
+    _run_sample_batch_capturing_bundle_kwargs(monkeypatch, spec, order_calls=order_calls)
+
+    assert order_calls
+    expected = jax.random.key_data(decoding_order_key(jax.random.key(123), 9))
+    for call in order_calls:
+        assert jnp.array_equal(jax.random.key_data(call["key"]), expected)
+        # and it is NOT the key derived from the (stubbed) sample key
+        assert not jnp.array_equal(
+            jax.random.key_data(call["key"]),
+            jax.random.key_data(decoding_order_key(jax.random.key(0))),
+        )
+
+
+def test_fixed_position_context_reaches_with_decoding_order(monkeypatch):
+    """The spec's ``fixed_position_context`` is forwarded to with_decoding_order; the default is the reference mode."""
+    for mode, spec_kwargs in (("canonical_order", {"fixed_position_context": "canonical_order"}), ("random_order", {})):
+        spec = SamplingSpecification(inputs=["/tmp/test.pdb"], checkpoint_id="ckpt_001", **spec_kwargs)
+        order_calls: list = []
+        _run_sample_batch_capturing_bundle_kwargs(monkeypatch, spec, order_calls=order_calls)
+        assert order_calls
+        assert {call["fixed_context"] for call in order_calls} == {mode}
+
+
+def test_fixed_position_context_rejects_unknown_modes():
+    """Validation is at the spec so a typo fails before any sampling."""
+    with pytest.raises(ValueError, match="fixed_position_context"):
+        SamplingSpecification(inputs=["/tmp/test.pdb"], checkpoint_id="ckpt_001", fixed_position_context="bogus")
 
 
 def test_every_sample_decodes_with_its_own_random_order(monkeypatch):

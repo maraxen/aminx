@@ -129,6 +129,50 @@ def normalize_fampnn_state_dict(
   return out
 
 
+# Released-checkpoint values (``model_cfg`` of fampnn_0_0 / fampnn_0_3 / fampnn_0_3_cath, read 261104):
+# interpolant s_min=0.01, s_max=80, rho=7; confidence sce_bins min=0, max=4, n=33; scn_std buffer 0.64.
+_RELEASE_EDM: dict[str, float] = {"s_min": 0.01, "s_max": 80.0, "rho": 7.0}
+_RELEASE_CONF_BINS: tuple[float, float] = (0.0, 4.0)
+
+
+def _model_cfg_value(raw: Mapping[str, Any], path: tuple[str, ...]) -> float | None:
+  """Read ``model_cfg[path...]`` from a loaded checkpoint, or ``None`` when absent/unresolvable."""
+  node: Any = raw.get("model_cfg") if isinstance(raw, Mapping) else None
+  try:
+    for part in path:
+      node = node[part]
+  except (KeyError, TypeError, AttributeError, IndexError):
+    return None
+  except Exception:  # noqa: BLE001 (omegaconf resolution errors)
+    return None
+  try:
+    return float(node)
+  except (TypeError, ValueError):
+    return None
+
+
+def fampnn_edm_constants(
+  raw_state_dict: Mapping[str, Any],
+  sd: Mapping[str, np.ndarray],
+) -> dict[str, float]:
+  """EDM schedule and confidence-bin constants of a checkpoint (``model_cfg`` first, released values otherwise)."""
+  base = ("denoiser", "scn_diffusion_module")
+  edm = {
+    key: _model_cfg_value(raw_state_dict, (*base, "interpolant", key)) for key in ("s_min", "s_max", "rho")
+  }
+  sce = tuple(
+    _model_cfg_value(raw_state_dict, (*base, "confidence_module", "sce_bins", key)) for key in ("min_bin", "max_bin")
+  )
+  return {
+    "sigma_data": float(sd["scn_std"]) if "scn_std" in sd else 1.0,
+    "s_min": edm["s_min"] if edm["s_min"] is not None else _RELEASE_EDM["s_min"],
+    "s_max": edm["s_max"] if edm["s_max"] is not None else _RELEASE_EDM["s_max"],
+    "rho": edm["rho"] if edm["rho"] is not None else _RELEASE_EDM["rho"],
+    "conf_min_bin": sce[0] if sce[0] is not None else _RELEASE_CONF_BINS[0],
+    "conf_max_bin": sce[1] if sce[1] is not None else _RELEASE_CONF_BINS[1],
+  }
+
+
 def has_fampnn_confidence_head(sd: Mapping[str, np.ndarray]) -> bool:
   """Return ``True`` if ``sd`` contains ``scn_confidence`` parameters.
 
@@ -386,6 +430,7 @@ def convert_fampnn_state_dict(  # noqa: PLR0915
     int(sd["scn_confidence.mlp.2.weight"].shape[0]) // 33 if conf_has_upstream else 64
   )
 
+  edm_const = fampnn_edm_constants(raw_state_dict, sd)
   model = FAMPNNModel(
     has_confidence=has_conf,
     num_encoder_layers=max(num_enc, 3) if num_enc > 0 else 5,
@@ -399,6 +444,12 @@ def convert_fampnn_state_dict(  # noqa: PLR0915
     has_f_embedder=has_f_emb,
     conf_num_bins=conf_num_bins,
     conf_has_upstream_heads=conf_has_upstream,
+    scn_sigma_data=edm_const["sigma_data"],
+    edm_s_min=edm_const["s_min"],
+    edm_s_max=edm_const["s_max"],
+    edm_rho=edm_const["rho"],
+    conf_min_bin=edm_const["conf_min_bin"],
+    conf_max_bin=edm_const["conf_max_bin"],
     key=key,
   )
 
@@ -605,6 +656,12 @@ def convert_fampnn_checkpoint(
     "conf_has_upstream_heads": (
       model.scn_confidence.mlp_2 is not None if model.scn_confidence is not None else False
     ),
+    "scn_sigma_data": model.scn_diffusion.sigma_data,
+    "edm_s_min": model.scn_diffusion.edm_s_min,
+    "edm_s_max": model.scn_diffusion.edm_s_max,
+    "edm_rho": model.scn_diffusion.edm_rho,
+    "conf_min_bin": model.conf_min_bin,
+    "conf_max_bin": model.conf_max_bin,
     "num_tensors": len(sd),
     "output_sha256": output_sha256,
   }

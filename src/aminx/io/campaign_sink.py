@@ -281,7 +281,8 @@ class UnifiedCampaignSink:
           arr_dir = staging_row / name
           arr_dir.mkdir(parents=True, exist_ok=True)
           zarray_meta = {
-            "chunks": list(np_arr.shape) if np_arr.ndim > 0 else [1],
+            # Zarr v2 requires positive chunk sizes; a zero-size axis gets chunk 1 and no chunk file.
+            "chunks": [max(int(d), 1) for d in np_arr.shape] if np_arr.ndim > 0 else [1],
             "compressor": None,
             "dtype": np_arr.dtype.str,
             "fill_value": 0,
@@ -293,8 +294,9 @@ class UnifiedCampaignSink:
           (arr_dir / ".zarray").write_text(
             json.dumps(zarray_meta, indent=2, sort_keys=True) + "\n", encoding="utf-8",
           )
-          chunk_key = ".".join("0" for _ in range(max(np_arr.ndim, 1)))
-          (arr_dir / chunk_key).write_bytes(np_arr.tobytes(order="C"))
+          if np_arr.size > 0:
+            chunk_key = ".".join("0" for _ in range(max(np_arr.ndim, 1)))
+            (arr_dir / chunk_key).write_bytes(np_arr.tobytes(order="C"))
 
       # Atomic replace of only the target_row subgroup
       backup_row = arm_dir / f".backup_{manifest_row_hash}_{uuid.uuid4().hex}"

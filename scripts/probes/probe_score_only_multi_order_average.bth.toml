@@ -1,0 +1,36 @@
+[experiment]
+hypothesis = "Multi-order causal permutation score averaging is strictly causal: changing the token decoded at step t leaves every position decoded at or before step t unchanged (single-order check), while changing the first-decoded token does change later positions (sensitivity control); the sampler's fixed-first order places fixed positions first. Probability normalization and Jensen's inequality hold by construction and are not criteria."
+stage_name = "validation"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "status == 'PASS' AND shapes_valid AND causal_invariant_holds AND sensitivity_control_passed AND fixed_first_order_valid"
+decision = "Promote score_only_multi_order_average implementation as a library helper (not wired into a run path; debt #3214)."
+reasoning = "Shapes, the causal-mask invariant, its sensitivity control and fixed-first ordering hold."
+is_residual = false
+
+[outcomes.fail]
+condition = "status != 'PASS' OR NOT shapes_valid OR NOT causal_invariant_holds OR NOT sensitivity_control_passed OR NOT fixed_first_order_valid"
+decision = "Reject score_only_multi_order_average implementation."
+reasoning = "Multi-order scoring failed the causal invariant, its sensitivity control, or fixed-first ordering."
+is_residual = true
+
+[result_schema]
+probe_name = "str"
+clause = "str"
+status = "str"
+praxia_debt_id = "int"
+praxia_debt_slug = "str"
+num_orders = "int"
+ensemble_nll = "float"
+mean_sample_nll = "float"
+shapes_valid = "bool"
+causal_invariant_holds = "bool"
+causal_max_diff = "float"
+sensitivity_control_passed = "bool"
+sensitivity_diff = "float"
+fixed_first_order_valid = "bool"
+multi_order_has_fixed_param = "bool"

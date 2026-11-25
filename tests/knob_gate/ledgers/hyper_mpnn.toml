@@ -1,0 +1,14 @@
+# HyperMPNN shard. EMPTY and has NO branch rows: HyperMPNN checkpoints are exercised by the shared vehicle
+# scripts/parity/tier1_variants_parity.py (slug tier1_variants_parity), but its mutants are attributed to the
+# ab_mpnn and cyclic_mpnn families, so a --family hyper_mpnn read covers zero rows.
+# Not yet run. Either add hyper_mpnn-tagged rows or record the shared run id here after the titanix run.
+
+[sidecar]
+
+[sidecar.tier1_variants_parity]
+# Recorded 261116 at d06521ff (P4 integration head; CPU-pinned). Cool-tier row absent (bathos log mode): the run resolves
+# through bth sql (test_resolve_run_log_mode.py). verify_wave.py at d06521ff: every step 1c condition PASS.
+# Shared run for AbMPNN, HyperMPNN and CyclicMPNN. Its six weights keys were failing step 1c until the registry was re-hashed
+# from the files the vehicle loaded (d06521ff; an earlier run, 9af4d617 at 365d174d, also passed but could not grade).
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run 84bdd850 stays on record.
+bth_run_id = "ec6ba6ec-0d6d-4faf-bf46-86809b2509a5"

@@ -338,6 +338,20 @@ class TestExtractBatchSizes:
         for bs in result:
             assert isinstance(bs, int)
 
+    def test_extract_batch_sizes_vmap_and_zero_translate_to_none(self):
+        """Vmap strategies and batch_size=0 translate to None for chunked_map."""
+        from aminx.tiling.strategy import ChunkedMap, Vmap
+        from xtrax.tiling import AxisDecision, AxisSpec, BatchPlan
+
+        decisions = (
+            AxisDecision(spec=AxisSpec(name=AxisNames.N_STRUCTURES, cardinality=2, default_batch_size=1), batch_size=2, reasoning="vmap", strategy=Vmap()),
+            AxisDecision(spec=AxisSpec(name=AxisNames.N_SAMPLES, cardinality=16, default_batch_size=1), batch_size=0, reasoning="zero", strategy=ChunkedMap(batch_size=0)),
+            AxisDecision(spec=AxisSpec(name=AxisNames.N_TEMPERATURES, cardinality=4, default_batch_size=1), batch_size=2, reasoning="chunk", strategy=ChunkedMap(batch_size=2)),
+            AxisDecision(spec=AxisSpec(name=AxisNames.N_NOISES, cardinality=1, default_batch_size=1), batch_size=1, reasoning="vmap1", strategy=Vmap()),
+        )
+        plan = BatchPlan(decisions=decisions)
+        assert extract_batch_sizes(plan) == (None, None, 2, None)
+
 
 class TestAxisNames:
     """Test suite for AxisNames class."""

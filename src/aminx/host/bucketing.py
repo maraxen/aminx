@@ -389,3 +389,92 @@ def repad_residue_axis(arr: Any, padded_len: int, axis: int, *, fill: float = 0)
   import jax.numpy as jnp  # noqa: PLC0415
 
   return jnp.pad(arr, pad_width, constant_values=fill)
+
+
+# Ligand atom-axis ladder (#3510). LigandMPNN reads the M nearest ligand atoms per residue
+# (``atom_context_num``, 25 for ``ligandmpnn_v_32_020_25``), so most contexts land on 16 or 32.
+LIGAND_ATOM_LADDER: tuple[int, ...] = (16, 32, 64, 128, 256, 512, 1024)
+# Sequences-per-unit ladder for score_conditionals (#3510): ~1.5x steps bound padding waste.
+SEQUENCE_COUNT_LADDER: tuple[int, ...] = (
+  1, 2, 4, 8, 16, 24, 32, 48, 64, 96, 128, 192, 256, 384, 512,
+)
+
+
+def _ladder_rung(value: int, ladder: tuple[int, ...], overflow_step: int | None = None) -> int:
+  """Smallest rung >= ``value``; past the ladder, round up to a multiple of ``overflow_step``.
+
+  ``overflow_step`` defaults to the last rung.
+  """
+  if value < 0:
+    msg = f"ladder value must be non-negative, got {value}"
+    raise ValueError(msg)
+  for rung in ladder:
+    if value <= rung:
+      return rung
+  step = ladder[-1] if overflow_step is None else overflow_step
+  return -(-value // step) * step
+
+
+def ligand_atom_rung(n_atoms: int) -> int:
+  """Padded ligand atom count for ``n_atoms`` atoms per residue.
+
+  Parameters
+  ----------
+  n_atoms : int
+    Atom-axis length ``M`` of ``Y_m`` (``(B, L, M)``).
+
+  Returns
+  -------
+  int
+    The smallest :data:`LIGAND_ATOM_LADDER` rung covering ``n_atoms``; past the ladder, the
+    next multiple of its last rung.
+
+  """
+  return _ladder_rung(n_atoms, LIGAND_ATOM_LADDER)
+
+
+def sequence_count_rung(n_sequences: int) -> int:
+  """Padded sequences-per-unit for a score_conditionals unit of ``n_sequences``.
+
+  Parameters
+  ----------
+  n_sequences : int
+    Number of sequences the unit scores.
+
+  Returns
+  -------
+  int
+    The smallest :data:`SEQUENCE_COUNT_LADDER` rung covering ``n_sequences``; past the ladder,
+    the next multiple of 128 (at most 25% padding there).
+
+  """
+  return _ladder_rung(n_sequences, SEQUENCE_COUNT_LADDER, overflow_step=128)
+
+
+def pad_ligand_atom_axis(
+  y: Any,  # noqa: ANN401
+  y_t: Any,  # noqa: ANN401
+  y_m: Any,  # noqa: ANN401
+  n_atoms: int,
+) -> tuple[Any, Any, Any]:
+  """Pad ligand tensors' atom axis at the end to ``n_atoms`` with masked (zero) atoms.
+
+  Parameters
+  ----------
+  y, y_t, y_m : array_like
+    Ligand coordinates ``(..., M, 3)``, atom types ``(..., M)`` and mask ``(..., M)``.
+  n_atoms : int
+    Target atom count, ``>= M``.
+
+  Returns
+  -------
+  tuple
+    ``(y, y_t, y_m)`` padded with zero coordinates, type 0 and mask 0. Unchanged when the atom
+    axis is already ``n_atoms``.
+
+  """
+  return (
+    repad_residue_axis(y, n_atoms, -2),
+    repad_residue_axis(y_t, n_atoms, -1),
+    repad_residue_axis(y_m, n_atoms, -1),
+  )

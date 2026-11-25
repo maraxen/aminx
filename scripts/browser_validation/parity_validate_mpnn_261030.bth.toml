@@ -1,0 +1,107 @@
+# PROVENANCE (added 2026-11-02, after the recorded run; read before citing the verdict)
+# - This file first enters git in 8f3bb3fc, committed 2026-10-30 14:32:55 -0700. The recorded run
+#   output (outputs/browser_validation/parity_validate_mpnn_261030.json) was written 14:29:34 and its
+#   run HEAD (git_hash) is ef8810c2, where this file does not exist. The commit therefore post-dates
+#   the run.
+# - The working-tree mtime of this file was 14:17:14 (last write), before the output. That is
+#   file-system evidence only, and it gives no start time for the run. Checked on 2026-11-02 with
+#   `bth sql` against the user catalog (~/.bth/catalog): no run row has sidecar_path containing
+#   parity_validate_mpnn_261030, and none has sidecar_sha256 15d3f4da... (the sha of this file as
+#   committed in 8f3bb3fc). The only validate-script runs there are from 2026-09-26 against other
+#   sidecars. The output's prereg_sha256 is the sha of layer_a/preregistered_params.json, not of this
+#   file, so the output is not bound to this sidecar's bytes.
+# - Verdict for the recorded run: NOT pre-registered. Cite it as post-hoc-amended. The recorded run
+#   grades as `fail` (parity_grade=FAIL, prereq_status=missing) under the outcomes below, and that
+#   outcome was derived by hand from the output, not evaluated by bth.
+#
+# AMENDMENT (2026-11-02, after the recorded run): added [outcomes.partial_ambiguity_discount]. Before
+# it, the outcome set did not cover every reachable cell. The one reachable cell it missed is
+# parity_grade='PARITY', prereq_status='ok', ambiguity_load='non_load_bearing', n_invariant_skipped=0,
+# n_invariant_tests>=8, which bth would record as 'unknown'. Its label follows this sidecar's own
+# reasoning: [outcomes.pass] excludes any ambiguity discount, and [outcomes.partial] treats a non-none
+# ambiguity load as a cap. It is NOT a pass-direction outcome and is not in controls.positive_outcome.
+# The recorded run is not in this cell, so the amendment does not change its verdict.
+#
+# REACHABILITY (checked 2026-11-02 against the aminx script and bathos@84be544e, where compute_grade
+# is identical to the local checkout): parity_validate_mpnn.py determine_prereq_status maps
+# exact+sampling pass to prereq 'ok' at rung R1; exact partial_headroom with sampling pass to
+# 'headroom' at rung R2; anything else to 'missing' or 'failed' (grade forced FAIL, no compute_grade
+# call). bathos compute_grade caps the grade at PARTIAL when reproduction_rung is R2/R3/R4 and when
+# ambiguity_load is 'load_bearing'. So the grade reaching the outcomes is:
+#   - prereq 'missing'/'failed': FAIL -> [outcomes.fail] (residual).
+#   - prereq 'ok': PARITY (ambiguity none -> pass; non_load_bearing -> partial_ambiguity_discount),
+#     PARTIAL -> [outcomes.partial], FAIL -> fail.
+#   - prereq 'headroom': PARTIAL -> [outcomes.partial], FAIL -> fail.
+# Not reachable, so not in the outcome set: PARITY with prereq 'headroom' (R2 caps at PARTIAL), and
+# PARITY with ambiguity 'load_bearing' (caps at PARTIAL). Any other outcome label is a defect, not a
+# cell to add.
+
+[metadata]
+title = "Literature-parity graded verdict: aminx MPNN paths vs LigandMPNN@26ec57ac"
+created = "261030"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "aminx's in-scope MPNN paths implement dauparas/LigandMPNN@26ec57ac (Mode A) at cap-lattice grade PARITY or PARTIAL, with both layer-(a) validate prerequisites pass (R1) or exact partial_headroom (R2), and orchestrator-re-derived invariant tests passing with zero skips."
+stage_name = "validation"
+claim_discriminates = ["H_lit_parity", "H_null_misspec"]
+claim_isolates = ["C_reference_parity"]
+
+[reproduction]
+reproduces_paper = "dauparas/LigandMPNN@26ec57ac976ade5379920dbd43c7f97a91cf82de; doi:10.1126/science.add2187"
+# no requires_pass_stem: it matches outcome='pass' only (prereg.py:302-336) and is enforced only by
+# `bth submit`; the prerequisite mapping lives inside the script (O1).
+
+[controls]
+positive_outcome = ["pass", "partial"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "parity_grade = 'PARITY' AND prereq_status = 'ok' AND ambiguity_load = 'none' AND n_invariant_skipped = 0 AND n_invariant_tests >= 8"
+decision = "Every in-scope path matches at full cap-lattice PARITY, both validate prerequisites pass at rung R1, zero ambiguity load, and the invariant suite passed with zero skips."
+reasoning = "This is the strictest reachable outcome: PARITY requires clause_parity_pct == 1.0, adversarial_survived, invariant_pass, rung R0/R1, and ambiguity_load != 'load_bearing' -- all five ceilings at their best value, at the strongest reproduction rung, with no ambiguity discount."
+is_residual = false
+
+[outcomes.partial]
+condition = "parity_grade = 'PARTIAL' AND prereq_status IN ('ok', 'headroom') AND n_invariant_skipped = 0 AND n_invariant_tests >= 8"
+decision = "The claim holds at PARTIAL: at least one cap-lattice ceiling (clause parity < 1.0, reproduction rung R2, or ambiguity load) capped the grade below PARITY, but no ceiling forced FAIL, and both prerequisites are at least R2/headroom."
+reasoning = "PARTIAL is the spec's documented EXPECTED global grade (R19): the exact-validate rung R2 (partial_headroom) and/or a non-none ambiguity load cap the grade without any dimension hitting its FAIL floor (invariant_pass, clause_parity_pct >= 0.5, adversarial_survived)."
+is_residual = false
+
+# Added 2026-11-02, after the recorded run (see PROVENANCE and AMENDMENT at the top of this file).
+# Covers the reachable cell PARITY + prereq 'ok' + ambiguity 'non_load_bearing' (see REACHABILITY at the
+# top of this file for the full cell enumeration). Not a pass-direction outcome: it is not in
+# controls.positive_outcome.
+[outcomes.partial_ambiguity_discount]
+condition = "parity_grade = 'PARITY' AND prereq_status = 'ok' AND ambiguity_load = 'non_load_bearing' AND n_invariant_skipped = 0 AND n_invariant_tests >= 8"
+decision = "The claim holds at PARTIAL class: every cap-lattice ceiling is at PARITY, but the ambiguity load is non_load_bearing, which is an ambiguity discount. Both prerequisites are ok, the invariant suite passed with zero skips and at least 8 tests. Not a full PARITY statement."
+reasoning = "Amendment of 2026-11-02, made after the recorded run. The sidecar's own [outcomes.pass] reasoning excludes any ambiguity discount ('with no ambiguity discount'), and [outcomes.partial] lists a non-none ambiguity load as a cap that keeps the grade below PARITY. This cell fits neither pass (ambiguity must be 'none') nor partial (grade must be 'PARTIAL'), so it is labelled by that text, not by what any run shows. Not pre-registered: cite any verdict that uses it as post-hoc-amended."
+is_residual = false
+
+[outcomes.fail]
+condition = "parity_grade = 'FAIL' OR prereq_status NOT IN ('ok', 'headroom') OR n_invariant_skipped > 0 OR n_invariant_tests < 8"
+decision = "No parity statement is permitted: either a cap-lattice FAIL floor was hit, the layer-(a) validate prerequisites did not clear the O1 mapping (missing or failed), or the re-derived invariant suite skipped a test or ran fewer than 8."
+reasoning = "Residual catch-all matching the script's own `prereq_status not in ('ok', 'headroom')` branch (forced parity_grade='FAIL' without calling compute_grade), any genuine cap-lattice FAIL ceiling (invariant_pass=false, clause_parity_pct < 0.5, or a confirmed core-severity defect), and the zero-skips/>=8-tests floor on the orchestrator-owned invariant suite."
+is_residual = true
+
+[result_schema]
+parity_grade = "str"
+prereq_status = "str"        # ok | headroom | failed | missing
+exact_validate_outcome = "str"
+sampling_validate_outcome = "str"
+clause_parity_pct = "float"
+invariant_pass = "bool"
+n_invariant_tests = "int"
+n_invariant_skipped = "int"
+adversarial_survived = "bool"
+reproduction_rung = "str"
+ambiguity_load = "str"       # enum none | non_load_bearing | load_bearing (parity.py:31)
+n_ambiguous = "int"
+git_hash = "str"
+git_clean = "bool"
+prereg_sha256 = "str"
+
+[dependencies]
+aminx_version = { type = "git_sha", required = true }
+jax_version = { type = "string", required = true }
+torch_version = { type = "string", required = true }

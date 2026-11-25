@@ -6,9 +6,7 @@ Verifies that the rs6b-host-flat-field-ban YAML rule:
       files are present.
 """
 
-import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -18,14 +16,17 @@ _RULE_PATH = ".ast-grep/rules/rs6b-host-flat-field-ban.yml"
 _REPO_ROOT = Path(__file__).parent.parent.parent
 
 
-def run_ast_grep_rule(rule_path: str, scan_path: str | None = None) -> tuple[bool, str]:
+def run_ast_grep_rule(
+    rule_path: str, scan_path: str | None = None, cwd: Path = _REPO_ROOT
+) -> tuple[bool, str]:
     """Run an ast-grep rule and return (success, output).
 
     Mirrors the helper in tests/test_xtrax_boundary_lint.py.
 
     Args:
-        rule_path: Path to the rule YAML, relative to repo root.
+        rule_path: Path to the rule YAML, relative to repo root (or absolute).
         scan_path: Optional explicit path to scan; overrides files: in the rule.
+        cwd: Directory the scan runs from. The rule's files: globs resolve against it.
 
     Returns:
         (True, "") if rule passes (0 violations)
@@ -42,7 +43,7 @@ def run_ast_grep_rule(rule_path: str, scan_path: str | None = None) -> tuple[boo
             cmd,
             capture_output=True,
             text=True,
-            cwd=str(_REPO_ROOT),
+            cwd=str(cwd),
         )
         return result.returncode == 0, result.stderr
     except FileNotFoundError:
@@ -51,13 +52,26 @@ def run_ast_grep_rule(rule_path: str, scan_path: str | None = None) -> tuple[boo
         )
 
 
-def test_rs6b_gate_fires_on_planted_violation() -> None:
+def _scan_probe(tmp_path: Path, stem: str, code: str) -> tuple[bool, str]:
+    """Scan one planted probe with the real rule, outside the repo tree.
+
+    The probe goes under tmp_path/src/aminx/host/ and sg runs from tmp_path, so the rule's
+    'files: src/aminx/host/**/*.py' glob and its prep.py ignore still apply, while no file is
+    written into the shared src/ tree. Parallel xdist workers that glob src/ therefore never see
+    a probe (the earlier race with tests/lint/test_options_plumbing.py).
+    """
+    host_dir = tmp_path / "src" / "aminx" / "host"
+    host_dir.mkdir(parents=True)
+    (host_dir / f"probe_{stem}.py").write_text(code, encoding="utf-8")
+    return run_ast_grep_rule(str(_REPO_ROOT / _RULE_PATH), cwd=tmp_path)
+
+
+def test_rs6b_gate_fires_on_planted_violation(tmp_path: Path) -> None:
     """Assert the rule FIRES when src/aminx/host/ contains a sampling-exclusive flat read.
 
-    Plants a temporary file directly inside src/aminx/host/ so the rule's
+    Plants a probe under a tmp_path mirror of src/aminx/host/ so the rule's
     'files: src/aminx/host/**/*.py' glob matches it, then asserts the rule
-    reports at least one violation.  The file is removed in the finally block
-    regardless of test outcome.
+    reports at least one violation.
     """
     violation_code = """\
 def sample(spec):
@@ -65,23 +79,7 @@ def sample(spec):
     n = spec.num_samples
     return n
 """
-    host_dir = _REPO_ROOT / "src" / "aminx" / "host"
-    probe_path: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=str(host_dir),
-            suffix="_rs6b_gate_probe.py",
-            mode="w",
-            delete=False,
-        ) as f:
-            f.write(violation_code)
-            probe_path = f.name
-
-        success, output = run_ast_grep_rule(_RULE_PATH)
-
-    finally:
-        if probe_path and os.path.exists(probe_path):
-            os.unlink(probe_path)
+    success, output = _scan_probe(tmp_path, "rs6b_gate_probe", violation_code)
 
     assert not success, (
         f"Rule should have fired on spec.num_samples in planted violation, but passed.\n"
@@ -89,29 +87,14 @@ def sample(spec):
     )
 
 
-def test_rs6b_gate_fires_on_omit_aa_planted_violation() -> None:
+def test_rs6b_gate_fires_on_omit_aa_planted_violation(tmp_path: Path) -> None:
     """Assert the rule FIRES on a planted flat read of omit_aa."""
     violation_code = """\
 def sample(spec):
     omitted = spec.omit_aa
     return omitted
 """
-    host_dir = _REPO_ROOT / "src" / "aminx" / "host"
-    probe_path: str | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=str(host_dir),
-            suffix="_rs6b_omit_aa_probe.py",
-            mode="w",
-            delete=False,
-        ) as f:
-            f.write(violation_code)
-            probe_path = f.name
-
-        success, output = run_ast_grep_rule(_RULE_PATH)
-    finally:
-        if probe_path and os.path.exists(probe_path):
-            os.unlink(probe_path)
+    success, output = _scan_probe(tmp_path, "rs6b_omit_aa_probe", violation_code)
 
     assert not success, (
         f"Rule should have fired on spec.omit_aa in planted violation, but passed.\n"

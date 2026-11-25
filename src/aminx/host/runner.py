@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import sys
 import warnings
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -735,7 +735,7 @@ def _candidate_activation_bytes(
   sample_sequence: jax.Array,
   *,
   batch_size: int,
-  estimate_cache: dict[Any, int],
+  model_signature: Hashable,
 ) -> int:
   """Live bytes one candidate holds once the encode is hoisted, for the candidate-axis planner.
 
@@ -793,13 +793,17 @@ def _candidate_activation_bytes(
     )
 
   args = (sample_key, sample_sequence, encoding, coords, mask, residue_index, chain_index)
-  # Lowering is a full XLA compile, so memoise per shape signature: a long structure stream
-  # with identical (padded) shapes must not recompile once per batch.
+  # Lowering is a full XLA compile, so memoise per (architecture, shape signature) for the whole
+  # PROCESS: a long structure stream with identical (padded) shapes must not recompile once per
+  # batch, and repeated score() calls must not recompile once per call (#3484 -- this lowering was
+  # ~1 s of every warm call while the cache lived only for one call). ``model_signature`` names
+  # the architecture, because the estimate depends on hidden sizes, not only on input shapes.
   cache_key = (
+    model_signature,
     multi_state_strategy,
     tuple((tuple(leaf.shape), str(leaf.dtype)) for leaf in jax.tree.leaves(args)),
   )
-  per_structure = estimate_cache.get(cache_key)
+  per_structure = _ACTIVATION_ESTIMATE_CACHE.get(cache_key)
   if per_structure is None:
     try:
       per_structure = lowered_memory_estimate(_one_candidate, *args)
@@ -811,8 +815,46 @@ def _candidate_activation_bytes(
       per_structure = sum(
         int(leaf.size) * leaf.dtype.itemsize for leaf in jax.tree.leaves(encoding)
       ) + int(coords.shape[0]) * 21 * 4
-    estimate_cache[cache_key] = per_structure
+    if len(_ACTIVATION_ESTIMATE_CACHE) >= _ACTIVATION_ESTIMATE_CACHE_MAX:
+      _ACTIVATION_ESTIMATE_CACHE.pop(next(iter(_ACTIVATION_ESTIMATE_CACHE)))
+    _ACTIVATION_ESTIMATE_CACHE[cache_key] = per_structure
   return int(per_structure) * batch_size
+
+
+# Process-wide memo for _candidate_activation_bytes (#3484). Small and FIFO-bounded: one entry per
+# (architecture, strategy, padded shape) actually scored.
+_ACTIVATION_ESTIMATE_CACHE: dict[Hashable, int] = {}
+_ACTIVATION_ESTIMATE_CACHE_MAX = 64
+
+
+def _model_signature(model: Any) -> Hashable:  # noqa: ANN401
+  """Architecture identity of a model: its pytree structure plus every array leaf's shape/dtype.
+
+  Two loads of one checkpoint share it (so the activation estimate is reused across score()
+  calls); checkpoints with different hidden sizes or layer counts do not.
+  """
+  import equinox as eqx  # noqa: PLC0415 -- lazy, as elsewhere in this module (import isolation)
+
+  arrays, static = eqx.partition(model, eqx.is_array)
+  leaves = tuple((tuple(leaf.shape), str(leaf.dtype)) for leaf in jax.tree.leaves(arrays))
+  return (str(jax.tree.structure(arrays)), str(jax.tree.structure(static)), leaves)
+
+
+# Largest (mask, sequence) tile scored at once by ScoreSplitFns.score_pairs (#3485). The planner's
+# per-pair estimate lowers ONE candidate, and the batched program outgrows it at large tiles. On a
+# 24 GiB TITAN RTX, 448 pairs at the 512 rung (pre-registered sweep, bathos run 6162354f): tiles
+# 6/12/24/32 peaked at 0.58/1.06/1.79/2.57 GiB with warm walls 1.19/1.18/1.15/1.27 s, while the
+# uncapped device-sized plan ran out of memory (13.2 GiB in use). Throughput is flat, so cap it.
+_MAX_PAIR_TILE = 32
+
+
+def _pair_tile(strategy: Any, n_pairs: int) -> int | None:  # noqa: ANN401
+  """Tile size for the pair map: the planner's, capped at ``_MAX_PAIR_TILE``; ``None`` = one vmap."""
+  from xtrax.tiling import Vmap  # noqa: PLC0415
+
+  planned = n_pairs if isinstance(strategy, Vmap) else int(strategy.batch_size)
+  tile = max(1, min(planned, _MAX_PAIR_TILE))
+  return None if tile >= n_pairs else tile
 
 
 def _score_noise_levels(spec: Any) -> tuple[float, ...]:  # noqa: ANN401
@@ -855,8 +897,19 @@ def _over_noise_levels(
   return jax.tree.map(lambda leaf: jnp.moveaxis(leaf, 0, 1), out)
 
 
+def _pad_scoring_ar_masks(
+  ar_masks: Any,  # noqa: ANN401 -- the validated (K, L, L) int8 stack from ScoringSpecification
+  sequence_indices: list[jax.Array],
+  struct_len: int,
+) -> jax.Array:
+  """Pad a ``(K, L, L)`` mask stack to the structure length in one call (checks as below, once)."""
+  first = _pad_scoring_ar_mask(ar_masks[0], sequence_indices, struct_len)  # length checks
+  pad = int(first.shape[0]) - int(ar_masks.shape[-1])
+  return jnp.pad(jnp.asarray(ar_masks), ((0, 0), (0, pad), (0, pad)))
+
+
 def _pad_scoring_ar_mask(
-  ar_mask: Any,  # noqa: ANN401 -- the validated (L, L) float32 ndarray from ScoringSpecification
+  ar_mask: Any,  # noqa: ANN401 -- the validated (L, L) int8 ndarray from ScoringSpecification
   sequence_indices: list[jax.Array],
   struct_len: int,
 ) -> jax.Array:
@@ -883,7 +936,7 @@ def _pad_scoring_ar_mask(
       f"{struct_len}."
     )
     raise ValueError(msg)
-  return jnp.pad(jnp.asarray(ar_mask, dtype=jnp.float32), ((0, struct_len - mask_len),) * 2)
+  return jnp.pad(jnp.asarray(ar_mask), ((0, struct_len - mask_len),) * 2)
 
 
 def score(  # noqa: PLR0915
@@ -917,6 +970,8 @@ def score(  # noqa: PLR0915
             (``state_position_map``) has one fused "structure": (1, C) / (1, C, D). With
             ``average_node_features=True`` the levels are fused (D -> 1), so there is never a
             noise axis.
+            With ``spec.ar_masks`` (a (K, L, L) stack) every sequence is scored under every mask
+            in one call: (num_structures, K, num_sequences), plus the trailing noise axis.
         mask : jax.Array
             Structure validity mask (1 for valid, 0 for padding). Shape: (num_structures,).
         schema_version : str
@@ -930,12 +985,31 @@ def score(  # noqa: PLR0915
         logits : jax.Array, optional
             Per-position logits if return_logits=True. Shape: (num_structures, num_sequences, L, 21),
             with the same trailing-D axis position as scores: (S, C, D, L, 21) for D >= 2.
+            With ``spec.ar_masks``: (S, K, C, L, 21) (mask axis before the sequence axis).
+        loss_xy : jax.Array, optional
+            Auxiliary ligand-proximal negative log-likelihood if return_loss_xy=True. Shape:
+            (num_structures, num_sequences), or (num_structures, num_sequences, D) with the
+            same trailing noise axis as ``scores``. Not supported with state_position_map.
+        ligand_confidence : jax.Array, optional
+            Auxiliary ligand-proximal confidence (exp(-loss_xy)) if return_loss_xy=True, with
+            the same shape as ``loss_xy``.
+        mask_xy : jax.Array, optional
+            Per-residue mask (1.0 within ``ligand_cutoff_for_score`` of a valid ligand atom),
+            shape (num_structures, L). It depends only on the structure.
         decoding_orders : None, optional
             Present (and always ``None``) if return_decoding_orders=True. Every score()
             path is full-context teacher forcing (``1 - I`` mask, no waves), so there is no
             decoding order to report. This key used to carry a random permutation that the
             computation never used (debt #1717); it is kept, as ``None``, so callers that
             index it get an explicit "not applicable" rather than a KeyError or noise.
+
+  Notes
+  -----
+  Batch composition (#3487). A sequence's scores and logits never depend on the CONTENT of the
+  other sequences in the call (bitwise, at a fixed number of sequences), but can differ by float
+  reassociation between calls with different numbers of sequences, because the candidate axis
+  is vmapped. The bound is ``aminx.scoring.score.SCORE_BATCH_COMPOSITION_ATOL``; compare scores
+  across batch compositions with that tolerance, not bitwise.
 
   Raises
   ------
@@ -953,7 +1027,21 @@ def score(  # noqa: PLR0915
     if getattr(spec, "decoding_order_fn", None) is not None:
       msg = f"{d.name} does not support decoding_order_fn"
       raise ValueError(msg)
+    if d.handles(spec, purpose) and spec.ar_masks is not None:
+      # A family driver scores under its own visibility rule and has no K axis: it would return
+      # (S, C) scores for a caller who asked for K mask-conditioned ones (review 261118).
+      msg = f"score runner: {d.name} does not support ar_masks; it would score under its own visibility rule."
+      raise NotImplementedError(msg)
     if d.handles(spec, purpose):
+      # Family drivers return before the per-structure loop, and none of them computes
+      # loss_xy / mask_xy / ligand_confidence. Refuse rather than return scores without them.
+      if spec.return_loss_xy:
+        msg = (
+          f"score runner: return_loss_xy=True is not implemented for the {d.name} driver "
+          f"(purpose {purpose!r}); the ligand-proximal loss would be silently dropped. "
+          "Set return_loss_xy=False, or score with the stock MPNN path."
+        )
+        raise NotImplementedError(msg)
       return run_family_driver(d, spec, purpose)
     if purpose not in d.mpnn_fallback_purposes:
       msg = f"{d.name} does not support {purpose} in v1"
@@ -985,7 +1073,15 @@ def score(  # noqa: PLR0915
   # only (the encode-once split scorer). The averaged-feature and fused multi-state scorers build
   # their own bundles and would drop it, so refuse them rather than score under the default mask
   # while the caller believes they scored under theirs.
-  if spec.ar_mask is not None and (spec.average_node_features or spec.state_position_map is not None):
+  if spec.ar_masks is not None and spec.return_loss_xy:
+    msg = (
+      "score runner: return_loss_xy=True is not implemented with ar_masks (a (K, L, L) stack); "
+      "the ligand-proximal loss is defined per sequence, not per (mask, sequence) pair."
+    )
+    raise NotImplementedError(msg)
+  if (spec.ar_mask is not None or spec.ar_masks is not None) and (
+    spec.average_node_features or spec.state_position_map is not None
+  ):
     msg = (
       "score runner: spec.ar_mask is only supported on the plain per-structure scoring path; "
       "average_node_features=True and state_position_map would silently score under the default "
@@ -1012,6 +1108,35 @@ def score(  # noqa: PLR0915
       "it would be silently dropped there. Score per structure, or omit the ligand fields."
     )
     raise NotImplementedError(msg)
+
+  # return_loss_xy is computed in the per-structure loop only. The fused multi-state path returns
+  # before that loop, so it would drop loss_xy, mask_xy and ligand_confidence without a word.
+  if spec.return_loss_xy and spec.state_position_map is not None:
+    msg = (
+      "score runner: return_loss_xy=True is not implemented for the fused multi-state path "
+      "(state_position_map); the ligand-proximal loss would be silently dropped there. Score per "
+      "structure, or set return_loss_xy=False."
+    )
+    raise NotImplementedError(msg)
+  if spec.return_loss_xy:
+    # Lazy: keeps the runner's module-level import closure narrow (guarded by
+    # tests/test_import_isolation.py); evaluate_ligand_cutoff_candidates below closes over it.
+    from aminx.scoring.ligand_cutoff import (  # noqa: PLC0415
+      evaluate_ligand_cutoff_candidates,
+      validate_ligand_cutoff,
+    )
+
+    validate_ligand_cutoff(spec.ligand_cutoff_for_score)
+    if not ligand_requested:
+      # Without a ligand there is no proximal set: the old path fed (None, None, None) to the
+      # kernel and returned loss_xy=0 and ligand_confidence=1 -- a perfect-looking score for a
+      # quantity that was never computed. Refuse instead of fabricating it.
+      msg = (
+        "score runner: return_loss_xy=True needs a ligand context (set ligand_conditioning=True "
+        "and/or ligand_context_path); without one the ligand-proximal loss is undefined and "
+        "would be reported as loss_xy=0, ligand_confidence=1."
+      )
+      raise ValueError(msg)
 
   if ligand_requested and spec.model_family != "ligandmpnn":
     msg = (
@@ -1090,18 +1215,19 @@ def score(  # noqa: PLR0915
       noise_levels=noise_levels,
     )
 
-  from aminx.sampling.conditional_logits import _plan_axis_strategy  # noqa: PLC0415
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
-  from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax  # noqa: PLC0415
+  from aminx.tiling.dispatch import make_axis_dispatch  # noqa: PLC0415
+  from aminx.tiling.planner import plan_axis_strategy  # noqa: PLC0415
 
   all_scores, all_logits = [], None
   if spec.return_logits:
     all_logits = []
+  all_loss_xy, all_conf_xy, all_mask_xy = [], [], []
 
   canonical_structure_ids = _canonical_structure_ids_for_spec(spec)
   resolved_structure_ids: list[str] = []
   structure_offset = 0
-  activation_estimates: dict[Any, int] = {}
+  model_signature = _model_signature(model) if split_fns is not None else None
 
   # Prepare random key
   prng_key = jax.random.PRNGKey(spec.run_spec.sampling.random_seed)
@@ -1174,6 +1300,26 @@ def score(  # noqa: PLR0915
       if spec.ar_mask is None
       else _pad_scoring_ar_mask(spec.ar_mask, sequence_indices_list, struct_len)
     )
+    # ar_masks (#3485): K masks, each padded like ar_mask. The candidate axis below becomes the
+    # K x C (mask, sequence) pairs, so every pair is scored against the one encoding in one map.
+    if spec.ar_masks is not None:
+      # Audit 261118 (#3486): with ar_masks the masks' L must be the structure's own residue
+      # count after chain selection. A longer structure would score its extra residues against X
+      # padding (inside the NLL denominator); a shorter one would silently drop trailing letters.
+      mask_len = int(np.asarray(spec.ar_masks).shape[-1])
+      valid = [int(v) for v in np.asarray(batched_ensemble.mask).reshape(batch_size, -1).sum(axis=1)]
+      if any(v != mask_len for v in valid):
+        msg = (
+          f"score runner: ar_masks cover {mask_len} positions but the structure batch starting at "
+          f"{batch_structure_ids[0]} has {valid} valid residues; with ar_masks every structure "
+          "must have exactly L residues after chain selection (check chain_id)."
+        )
+        raise ValueError(msg)
+    batch_ar_masks = (
+      None
+      if spec.ar_masks is None
+      else _pad_scoring_ar_masks(spec.ar_masks, sequence_indices_list, struct_len)
+    )
 
     # Pre-derive one key per (structure, candidate) pair via the SAME sequential
     # jax.random.split chain the pre-refactor loop used (struct outer, candidate
@@ -1232,6 +1378,8 @@ def score(  # noqa: PLR0915
       score_ligand = tuple(trim_residue_axis(part, rung, 1) for part in score_ligand)
       if batch_ar_mask is not None:
         batch_ar_mask = batch_ar_mask[:rung, :rung]
+      if batch_ar_masks is not None:
+        batch_ar_masks = batch_ar_masks[:, :rung, :rung]
 
     if split_fns is not None:
       # The noise-level axis is vmapped, so its activations coexist: scale by D.
@@ -1248,7 +1396,7 @@ def score(  # noqa: PLR0915
         batch_keys[0, 0],
         score_sequences[0],
         batch_size=batch_size,
-        estimate_cache=activation_estimates,
+        model_signature=model_signature,
       )
     else:
       # Output logits only. Known to undercount: the averaged path re-encodes inside the mapped
@@ -1256,13 +1404,17 @@ def score(  # noqa: PLR0915
       # bundles and runs an R3 check on concrete values), so it cannot be lowered for a real
       # estimate. See #147.
       activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
-    strategy = _plan_axis_strategy(
+    n_masks = 1 if batch_ar_masks is None else int(batch_ar_masks.shape[0])
+    strategy = plan_axis_strategy(
       N_CANDIDATES,
-      n_candidates,
+      n_masks * n_candidates,
       None,
       activation_bytes_per_element=activation_bytes,
+      # Budget-sized tiles only on the new ar_masks path: every pre-existing caller keeps its
+      # 0.5.3 dispatch (and float reduction order) exactly; see plan_axis_strategy.
+      size_unsized_tiles=batch_ar_masks is not None,
     )
-    candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
+    candidate_iterator = make_axis_dispatch(strategy, axis=N_CANDIDATES.name)
 
     def _score_structure(
       struct_coords: jax.Array,
@@ -1275,6 +1427,8 @@ def score(  # noqa: PLR0915
       _candidate_iterator: Any = candidate_iterator,  # noqa: ANN401
       _stacked_sequences: jax.Array = score_sequences,
       _ar_mask: jax.Array | None = batch_ar_mask,
+      _ar_masks: jax.Array | None = batch_ar_masks,
+      _pair_chunk: int | None = _pair_tile(strategy, n_masks * n_candidates),
     ) -> tuple[jax.Array, jax.Array, jax.Array | None]:
       ligand_kwargs = (
         {}
@@ -1319,12 +1473,34 @@ def score(  # noqa: PLR0915
               ar_mask=_ar_mask,
             )
 
-          return _candidate_iterator(
-            _score_one_candidate,
-            {"key": struct_keys, "seq": _stacked_sequences},
+          if _ar_masks is None:
+            return _candidate_iterator(
+              _score_one_candidate,
+              {"key": struct_keys, "seq": _stacked_sequences},
+            )
+
+          # All K x C (mask, sequence) pairs in one jitted program (#3485): see
+          # scoring.score._score_pairs_kernel. The planner's tile size is passed through, so a
+          # large K x C becomes a chunked lax.map inside the same cached executable.
+          return split_fns.score_pairs(
+            struct_keys,
+            _stacked_sequences,
+            _ar_masks,
+            encoding,
+            struct_coords,
+            struct_mask,
+            struct_residue_index,
+            struct_chain_index,
+            multi_state_strategy=spec.multi_state_strategy,
+            chunk_size=_pair_chunk,
           )
 
-        return _over_noise_levels(_run_level, noise_levels, struct_noise_key)
+        out = _over_noise_levels(_run_level, noise_levels, struct_noise_key)
+        if _ar_masks is None:
+          return out
+        # (K * C, ...) -> (K, C, ...); a noise axis, when present, stays after them.
+        k_masks, c_seq = _ar_masks.shape[0], _stacked_sequences.shape[0]
+        return jax.tree.map(lambda leaf: leaf.reshape(k_masks, c_seq, *leaf.shape[1:]), out)
 
       # Averaged-feature path: it fuses the noise levels itself (D -> 1) from spec.backbone_noise,
       # so it takes no noise key and has no noise axis.
@@ -1373,6 +1549,37 @@ def score(  # noqa: PLR0915
     if rung is not None:
       batch_logits = repad_residue_axis(batch_logits, struct_len, -2)
 
+    if spec.return_loss_xy:
+      y_c, _, y_m = batch_ligand
+      cutoff = spec.ligand_cutoff_for_score
+
+      def _calc_struct_loss_xy(
+        coords: jax.Array,
+        res_mask: jax.Array,
+        logits_struct: jax.Array,
+        yc: jax.Array | None,
+        ym: jax.Array | None,
+        *,
+        _seqs: jax.Array = stacked_sequences,
+        _cutoff: float = cutoff,
+      ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        # Production path: the same per-candidate evaluation the unit tests exercise. The
+        # mask depends only on the structure, so every candidate row is identical.
+        # chain_mask (reference run.py:434-439 multiplies it into the combined mask) is left
+        # at None: score() refuses every fixed position above, so the designable-chain mask
+        # is all-ones here and the library default is exactly equivalent.
+        scores = evaluate_ligand_cutoff_candidates(
+          coords, _seqs, logits_struct, res_mask, yc, ym, cutoff=_cutoff,
+        )
+        return scores.loss_xy, scores.ligand_confidence, scores.mask_xy[0]
+
+      b_loss_xy, b_conf, b_mask_xy = jax.vmap(_calc_struct_loss_xy)(
+        batched_ensemble.coordinates, batched_ensemble.mask, batch_logits, y_c, y_m,
+      )
+      all_loss_xy.append(b_loss_xy)
+      all_conf_xy.append(b_conf)
+      all_mask_xy.append(b_mask_xy)
+
     all_scores.append(batch_scores)
     if spec.run_spec.sampling.return_logits and all_logits is not None:
       all_logits.append(batch_logits)
@@ -1396,6 +1603,14 @@ def score(  # noqa: PLR0915
       "noise_levels": noise_levels,
     },
   }
+
+  if spec.return_loss_xy and all_loss_xy:
+    # Carry the noise axis exactly as ``scores`` does: loss_xy and ligand_confidence are
+    # (S, C) for one noise level and (S, C, D) for D >= 2. mask_xy depends only on the
+    # structure, so it is (S, L).
+    results["loss_xy"] = jnp.concatenate(all_loss_xy, axis=0)
+    results["ligand_confidence"] = jnp.concatenate(all_conf_xy, axis=0)
+    results["mask_xy"] = jnp.concatenate(all_mask_xy, axis=0)
 
   if spec.run_spec.sampling.return_logits and all_logits is not None:
     # Shape: (num_structures, num_sequences, L, 21), or (S, C, D, L, 21) with D >= 2 levels.
@@ -1505,18 +1720,18 @@ def _score_fused_multistate(  # noqa: PLR0915  # not length-bucketed in S8 v1
   # the same N_CANDIDATES primitive make_batched_conditional_logits_split_fn's
   # batched_decode_fn already uses for an analogous "many candidates, one structure
   # ensemble" dispatch.
-  from aminx.sampling.conditional_logits import _plan_axis_strategy  # noqa: PLC0415
   from aminx.tiling.axes import N_CANDIDATES  # noqa: PLC0415
-  from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax  # noqa: PLC0415
+  from aminx.tiling.dispatch import make_axis_dispatch  # noqa: PLC0415
+  from aminx.tiling.planner import plan_axis_strategy  # noqa: PLC0415
 
   activation_bytes = struct_len * 21 * 4  # (L, 21) float32 logits per candidate
-  strategy = _plan_axis_strategy(
+  strategy = plan_axis_strategy(
     N_CANDIDATES,
     n_candidates,
     None,
     activation_bytes_per_element=activation_bytes,
   )
-  candidate_iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_CANDIDATES.name)
+  candidate_iterator = make_axis_dispatch(strategy, axis=N_CANDIDATES.name)
 
   if spec.average_node_features and len(noise_levels) > 1:
     # Hoisted R3 check (#2517): eager, on concrete arrays, outside the candidate vmap.

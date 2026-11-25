@@ -11,8 +11,9 @@ statistic. It does not run any test or experiment.
 ## Inputs
 
 - `--catalog DIR`: bathos run records, one `run_<uuid>.parquet` per run.
-- `--repo DIR`: repo root (default: nearest `pyproject.toml` above the script). Reads
-  `tests/knob_gate/sidecar_ledger.toml`, `tests/knob_gate/branch_manifest.toml`,
+- `--repo DIR`: repo root (default: nearest `pyproject.toml` above the script). Reads every
+  shard in `tests/knob_gate/ledgers/` (merged, via the shared `_ledger.py` rule),
+  `tests/knob_gate/branch_manifest.toml`,
   `tests/knob_gate/alias_map.toml`, and `scripts/parity/*.bth.toml`.
 - `--stale-rows-json FILE`: optional JSON list of stale slugs. Without it, `stale` is null.
 - `--controls-root DIR`: where each vehicle run wrote its per-control statuses,

@@ -14,6 +14,7 @@ from aminx.families.thermo_mpnn.driver import (
   V2_DOUBLE_ENSEMBLE_IDS,
   V2_SINGLE_ENSEMBLE_IDS,
   ThermoMPNNDriver,
+  ThermoMPNNEnsemble,
   get_driver,
 )
 from aminx.families.thermo_mpnn.model import (
@@ -34,6 +35,7 @@ __all__ = [
   "ThermoMPNN",
   "ThermoMPNNDouble",
   "ThermoMPNNDriver",
+  "ThermoMPNNEnsemble",
   "ThermoTrunkOutput",
   "cast_floating",
   "convert_thermo_mpnn_double_state_dict",

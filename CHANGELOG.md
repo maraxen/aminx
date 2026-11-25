@@ -1,5 +1,116 @@
 # Changelog
 
+## 0.5.5 (2026-11-20)
+
+### Fixed
+
+- **Campaign units recompiled for every new LigandMPNN ligand atom count and every new sequences-per-unit count** (#3510). A screen of about 1,500 `score_conditionals` units paid a compile for each new value of either.
+  - **Ligand atoms (score and sample paths).** The atom axis M is padded at the end with mask-0 atoms to `aminx.host.bucketing.LIGAND_ATOM_LADDER` (16 to 1024). Padding is done on the host in numpy, and the ligand npz loader returns host arrays, so no eager device op ever sees the raw atom count.
+  - **Sequences per unit.** `score_conditionals` pads N to `SEQUENCE_COUNT_LADDER` with copies of row 0 and drops the copies from the store. It pads only when the padded logits still fit the unit's `logits_memory_budget_mb` (`campaign_score.sequence_bucket`). Stores record `n_sequences` and `n_sequences_bucket`.
+  - **Numerics.** Padded atoms carry no weight, and real rows are unchanged within `SCORE_BATCH_COMPOSITION_ATOL`. Pre-registered runs on CPU and GPU, across ProteinMPNN, SolubleMPNN and LigandMPNN, were all within the bound, with a maximum delta of 4.1e-6.
+
+### Added
+
+- `execute_manifest(..., group_by_shape_class=True)` runs rows grouped by compile shape class (`campaign.row_compile_key`, `campaign_score.score_compile_key`), keeping first-appearance order. Results are still reported in manifest order. Done markers, locks and resume are unchanged.
+  - The return value gains a `shape_classes` summary.
+  - Pass `group_by_shape_class=False` for strict manifest order.
+  - Array-sharded runs keep the grouping only if they shard by `row_compile_key`.
+- **Compile telemetry.** Done markers and row results carry an optional `compile_telemetry` block (`campaign_compile_telemetry_v1`), which never enters stores or input hashes. It records:
+  - the row's shape class and backend compile count and seconds, measured with `xtrax.profiling.count_backend_compiles`;
+  - whether the unit was the first of its class in the process;
+  - the JAX compilation-cache setting.
+- New helpers: `aminx.host.bucketing.ligand_atom_rung`, `pad_ligand_atom_axis`, `sequence_count_rung`.
+
+### Changed
+
+- **Resume recomputes once.** `SAMPLING_NUMERICS_EPOCH` goes from 2 to 3, so a campaign started on 0.5.4 or earlier recomputes its units when resumed on 0.5.5, because padding changes outputs by float reassociation. Manifest-row hashes are unchanged.
+- `read_score_conditionals_store` fills in `n_sequences` and `n_sequences_bucket` for stores written before 0.5.5.
+
+### Tests
+
+- Shape-class regression: in a fresh process, a class compiles once and later units of the same class compile zero times. A positive control shows the counter does see recompiles.
+- Cross-row leak control on the `ar_masks` pair kernel (#3525). At a fixed N, changing only the padding rows' content leaves the real rows bitwise equal for all three families, and a planted sub-bound leak is caught.
+
+## 0.5.4 (2026-11-19)
+
+### Added
+
+- **Campaign row kind `task="score_conditionals"`** (#3486): teacher-forced, mask-conditioned per-position logits for a fixed structure and sequences under K explicit visibility masks, run through `aminx.host.campaign` with the same lock, done-marker, input-hash and quarantine semantics as sampling rows. Plan with `aminx.host.campaign_score.plan_score_conditionals_manifest([ScoreConditionalsUnit(...)], ...)`, run with `run_manifest_row` / `execute_manifest`, read with `read_score_conditionals_store` (`logits` `(K, N, L, 21)`, `nll` `(K, N)`). Sequences must be MPNN-alphabet letters (token ids are refused); masks come from a `(K, L, L)` `.npy` whose bytes, and the ligand context's, enter the unit input hash. The logits budget is enforced at plan time. Sampling and ThermoMPNN rows hash exactly as before (golden-tested). `campaign run --pack` refuses task rows for now.
+- **Batched decoding masks** (#3485): `ScoringSpecification.ar_masks` `(K, L, L)` scores every sequence under every mask against one encoding in one jitted program (`ScoreSplitFns.score_pairs`): a vmap, or a chunked `lax.map` when the planner tiles it. `score()` returns `scores` `(S, K, C)` and `logits` `(S, K, C, L, 21)`. New `ScoringSpecification.designable_mask` refuses an all-zero mask row at a designable position; an all-zero mask is refused outright.
+- `aminx.scoring.score.SCORE_BATCH_COMPOSITION_ATOL` (`1e-5`): the equivalence floor for one sequence scored alone vs in a batch (#3487).
+
+### Fixed
+
+- **The 0.5.3 wheel shipped LASErMPNN's `ideal_geometry.npz` as a Git LFS pointer** (debt #3500): the release build checked out without LFS, so `runner.sample(model_family="lasermpnn")` could not build coordinates from an installed wheel. The release workflow now fetches LFS objects and refuses to publish a wheel whose packaged data files are pointers or unreadable (`scripts/release/check_wheel_data.py`); `tests/test_package_data.py` checks the same in CI.
+- **`runner.score` recompiled on every call** (#3484): the encode/score kernels were `jax.jit` closures rebuilt per call over a freshly loaded model, and the candidate activation estimate was re-lowered per call. They are now module-level `eqx.filter_jit` kernels keyed on architecture and shapes, with a process-wide estimate memo. Warm identical-shape calls: 3 backend compiles and 2.5 s, now 0 compiles and 0.24 s (1ubq, CPU; bathos runs b25cbd4e and 6f034f38).
+- **Over-budget tiles on the new `ar_masks` path are sized from the memory budget.** xtrax's planner falls back to `ChunkedMap(batch_size=0)` (the axis's default), which estimates to 0 bytes and then runs the whole axis at once; a 448-pair scoring call had asked a 24 GiB GPU for 21 GiB. `plan_axis_strategy(size_unsized_tiles=True)` sizes the tile instead, and the pair tile is capped at 32 (pre-registered sweep, run 6162354f). The option is off by default, so every existing caller keeps its 0.5.3 dispatch and float reduction order (legacy callers tracked as debt #3501).
+- Review and audit hardening of the new path: `score()` refuses `ar_masks` when a family driver would handle the spec; `ar_masks` requires the structure's valid residue count to equal the masks' L; a `score_conditionals` unit refuses multi-structure inputs and checkpoints other than ProteinMPNN / SolubleMPNN / LigandMPNN; mask and ligand bytes are always fully hashed; row and payload `task` must agree; score rows hand their logits to the unified sink.
+- **Batch-composition dependence characterised** (#3487): a sequence's logits are bitwise independent of the CONTENT of its batch and differ across batch SIZES only by float reassociation in the vmapped matmuls (at most 3.8e-6 in float32 on CPU and GPU, flat in batch size, ~1e-15 in float64; six pre-registered runs). Documented in `score()`; compare across batch compositions with `SCORE_BATCH_COMPOSITION_ATOL`.
+
+### Changed
+
+- Requires `jax>=0.11.2,<0.12` and `jaxlib>=0.11.2,<0.12` (the lock already resolved to 0.11.2). The `cpu` and `cuda12` extras are declared mutually exclusive.
+- **Breaking (install extras):** the `tests`, `docs`, `benchmark` and `dev` extras are gone from the published package metadata. They are now PEP 735 dependency groups, installed with `uv sync --group test` (or `lint`, `docs`, `benchmark`, `dev`). `pip install aminx[tests]` and `aminx[dev]` no longer work; use `pip install --group` (pip 25.1+) or `uv`.
+- New `ebm` extra for the ProteinEBM dependencies (`orbax-checkpoint`, `einops`, `scipy`, `biopython`). A venv that runs the EBM tests needs `--extra ebm`.
+
+## 0.5.3 (2026-11-13)
+
+### Changed
+
+- **Breaking (import paths):** the tiling vocabulary now comes straight from `xtrax.tiling` (#287). `aminx.tiling.SafeMap`, `aminx.tiling.iterator.SafeMapIterator`, `aminx.utils.safe_map.safe_map`, `aminx.utils.safe_scan.safe_scan` and the deprecation shim `aminx.tiling._deprecation` are removed. Use `aminx.tiling.ChunkedMap(batch_size=...)` (re-exported from `xtrax.tiling`), `xtrax.transforms.chunked_map` and `xtrax.safe_scan`. `plan_axis_strategy` and `make_axis_dispatch` now return and delegate to the `xtrax.tiling` types directly. Callers that imported the removed names fail with `ImportError`; there is no behaviour change for code that already used `ChunkedMap`, `Vmap`, `Scan` or `DedupGather`.
+- **Behaviour:** every aminx structure-parse path (`host/prep.py`) now asks proxide for `modified_residue_typing="unknown"`, so selenomethionine (MSE) is tokenised `X` instead of `M` (#288). Scores and samples for any structure containing MSE change with this release. Training loaders (`training/trainer.py`) are unchanged and still type MSE as `M`, so inference now sees `X` where training saw `M`.
+- Requires `proxide>=0.2.1` (was `>=0.2.0`) for the `OutputSpec(modified_residue_typing=...)` option. With an older proxide, the parse path refuses to run (`require_modified_residue_typing_support`) instead of silently dropping the typing.
+- Pins `xtrax[...]==0.4.1b8` (was `0.4.1b7`) in the base, `eda` and `onnx` extras (#287).
+
+### Fixed
+
+- The LigandMPNN Heavy Parity gate failed because selenomethionine was typed `M` where the reference LigandMPNN parser gives `X` (#288). It passes with the typing above (verified on the branch, run 43456465602).
+
+### Tests
+
+- `xtrax.campaign` lease-fencing and pack-verification suite added (#284). Seven deprecation and parity-shim test files for the removed tiling names were retired with #287 (browser-validation inventory 191 to 186).
+
+## 0.5.2 (2026-11-11)
+
+### Added
+
+- FrustraMPNN model support (#271).
+- An aminx domain plugin for xtrax campaign EDA (#277).
+
+### Changed
+
+- **Breaking:** `generate_ar_mask` takes the decoding order as the keyword-only argument `order` (`generate_ar_mask(order=order_array, ...)`). Calling it positionally or with the old `decoding_order=` keyword now raises `TypeError` with the order/rank contract in the message. Since 0.5.0 the function reads its argument as an ORDER array (`order[t]` = position decoded at step `t`), not a RANK array, and a caller still passing a rank array (`argsort(order)`) silently got the mask of the inverse order, because an order and a rank are both permutations of `0..L-1` and cannot be told apart by value. Making every caller name the argument turns that silent misread into a loud failure at the call site. Invert a rank array first (`jnp.argsort(rank)`) and pass it as `order=`. A rank array passed as `order=` is still read as an order, by design.
+
+### Fixed
+
+- A chunked sample axis no longer recompiles on every row (#282). `_dispatch_axis` ran a `ChunkedMap` sample axis as an eager `lax.map` over a closure rebuilt for each row, so jax compiled a fresh `jit(scan)` per row (about 5.8 s of XLA compilation per 128-wide row on a TITAN RTX, most of a ~7.8 s row). The chunked sample axis in the unified single-state path now runs through one module-level `filter_jit` function (`_chunked_sample_decode`) whose per-row data are arguments, so rows of the same shape reuse one executable. Graded by a pre-registered gate on a TITAN RTX (production MS-L cell family, main vs this change): 26 of 26 compared rows are bit-identical, the compile slope falls from 1.0 to 0 per added row, 8 rows of 128 run 5.66x faster (7.6 s to 1.3 s per row), the 20-sample row is unchanged (0.92), and peak device memory is at most 1.06x main (about 260 MiB more at the wide 0.30 cells). A review found that a Python-int `decoding_order_seed` was still a static `filter_jit` argument, so rows differing only in seed each compiled their own executable; the seed is now passed as an int32 array (`None` and seeds outside int32 range stay static; the traced seed gives the same PRNG key, so tokens are unchanged). A second pre-registered gate with a distinct seed on every row (8 rows of 128, main vs this change) found 16 of 16 rows bit-identical, compile slope 0 against 1.0 on main, 5.48x faster, and peak memory at most 1.06x main. Only the unified single-state path (no encoding fusion) is changed; the fused path and the legacy path still use the eager map and are untested. One GPU model and one shape (L=256, ProteinMPNN v_48).
+
+## 0.5.1 (2026-11-10)
+
+### Changed
+
+- Autoregressive (AR) mask dtype narrowed to `int8` across all mask helpers (`generate_ar_mask`, `ar_mask_from_decoding_order`, `generate_wave_ar_mask`, `full_context_ar_mask`), `ConditioningBundle.ar_mask`, and the `AutoRegressiveMask` type alias (1 byte per element vs 4 bytes for float32/int32). The `p04`/`p07` export wrappers keep `float32`; scripts under `scripts/` that call `build_inference_bundle` (browser-validation, benchmarks) were not changed and now get an `int8` mask unless they pass `ar_mask_dtype` (the export-oriented `export_safety_census.py` and `layer_b_ort_calibrate.py` now pass `float32`); their own `layer_a_*` helpers still build int32 masks. A grep of `scripts/` found no matrix product, sum or elementwise product of a bundle's `ar_mask`, so the int8 wraparound caveat does not apply to them. A user-supplied `ScoringSpecification.ar_mask` is validated on its own dtype (a float64 mask that was only approximately 0/1, e.g. 0.9999999999, is now rejected instead of rounding through float32) and stored as `int8` whatever its input dtype (float32, int, bool), and is padded as `int8` by `runner.score`. `build_inference_bundle` casts a caller-supplied `ar_mask` to `int8` (nonzero means visible) unless `ar_mask_dtype` says otherwise; `generate_wave_ar_mask` and `ar_mask_from_decoding_order` take a `dtype` argument. Public helper return dtypes change: `generate_ar_mask` int32 to int8 and `generate_wave_ar_mask` / `ar_mask_from_decoding_order` float32 to int8. Callers that do int8 arithmetic on the returned mask (`mask @ mask`, `mask + mask`, elementwise products of two masks) must cast first, because it wraps silently past 127; `jnp.sum` and `jnp.cumsum` upcast and are not affected. The exported `p04`/`p07` graphs keep a float32 mask, built as float32 from the start (`ar_mask_dtype=jnp.float32`).
+
+### Fixed
+
+- The sample-axis memory planner now chunks wide sample rows instead of running them out of device memory (#274). Its per-sample activation estimate was about 4.1 MiB at L=256 against a measured 128-145 MiB (15-35x low), so a full vmap was chosen at 20, 128 and 1024 samples alike; the device budget itself already honoured `XLA_PYTHON_CLIENT_MEM_FRACTION`. The estimate now uses ProteinMPNN v_48's dimensions and a documented empirical live-tensor factor (about 163 MiB per sample at L=256), and a demoted sample axis is widened from xtrax's minimum tile of 1 to the largest tile that fits the budget (35 at a 5.63 GiB budget, 100 at 15.95 GiB). Production MS-L cell on a TITAN RTX, stock 0.5.0 vs this change: 128- and 256-wide rows now complete at the production 0.30 memory fraction where stock fails with `RESOURCE_EXHAUSTED`; all 12 compared rows are bit-identical, and the 20-sample production row keeps its full vmap (slowdown 0.92, noise). The factor is fitted at one shape (L=256) on one GPU stack and scales linearly in L; other lengths and model families are unmeasured.
+
+## 0.5.0 (2026-11-09)
+
+### Added
+
+- `incremental="auto"` now takes the cached decode whenever its preconditions hold under the per-sample decoding-order vmap (#273, fixes #272). `with_decoding_order` marks its wave `mask_consistent` (a new static `WaveScheduleBundle` field, default `False`) for every `fixed_context` except `mutual_context`. With the flag set, the decoder decides slab fit from the tie map, so the exactness predicate stays unbatched and the `lax.cond` stays a real branch instead of a select that ran both bodies. Production MS-L rows: 260/260 bit-identical, single-state rows 7.99-8.29x faster. Non-identity `state_position_map`, tie groups larger than the slab, `mutual_context` and caller-supplied masks keep the full-recompute fallback.
+- `decoding_order_seed` on `SamplingSpecification` / `SamplingConfig` (#265): draws every sample's decoding order from that seed alone. `None` (default) is bit-identical to before.
+- `fixed_position_context` (`"random_order"` default and bit-identical, `"canonical_order"`, `"mutual_context"`) on the runner and fused paths (#266), recorded in every store's root attrs. Neither control is part of `manifest_row_hash`.
+- Packed per-row unit storage (`aminx.host.pack_shim`, on `xtrax.pack`) and planner EDA (`aminx.host.plan_eda`, optional `eda` extra) (#270).
+- `ligand_cutoff_for_score` wired into `score()`, with membrane labels and multi-order averaging as library helpers (#256); ThermoMPNN adoption without the stock dependency (#258); Tier 1/2 parity vehicles and hard-failure guards (#260); a sharded knob-gate ledger with `--family` flags (#254).
+
+### Changed
+
+- xtrax is pinned to `0.4.1b7` (was `0.4.1b5`) and gains the `pack` extra. proxide `>=0.2.0` (was `>=0.1.0a17`). cisternal `>=0.1.6` for the `agent` extra.
+- `generate_ar_mask` (`aminx.utils.autoregression`) reads its `decoding_order` argument as an ORDER array on the untied path too, not a RANK array. Callers that passed a rank array (`argsort(order)`) now get the mask of the inverse order, without an error. Pass the order itself. The return dtype is unchanged (int32).
+- `generate_ar_mask`'s `chain_idx`, `tie_group_map` and `num_groups` are keyword-only. A tie map passed as the second positional argument used to bind to `chain_idx` silently; passing these positionally now raises `TypeError`.
+
 ## 0.4.0 (2026-10-29)
 
 ### Changed

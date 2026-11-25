@@ -170,7 +170,7 @@ def _jax_teacher_forced_forward(
   sequence: jax.Array,
   decoding_order: jax.Array,
   *,
-  use_potts_ca_dist: bool = True,
+  use_potts_ca_dist: bool = False,
 ) -> tuple[jax.Array, jax.Array, jax.Array]:
   """Run feature extraction + encoder + teacher-forced conditional decoder in JAX.
 

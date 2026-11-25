@@ -22,7 +22,7 @@ from aminx.inference.decode.ste import STEDecode
 from aminx.inference.logits import make_stage_set
 from aminx.inference.optimize_ste import make_optimize_sequence_fn
 from aminx.model import Aminx
-from aminx.tiling.iterator import VmapIterator
+from xtrax.tiling import VmapIterator
 from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 from aminx.types.stages import StageSet

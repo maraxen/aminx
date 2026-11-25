@@ -3,8 +3,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "ci"))
+import pytest
 
+_REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPO / "scripts" / "ci"))
+
+import select_affected_tests  # noqa: E402
 import shard_tests  # noqa: E402
 
 
@@ -43,3 +47,35 @@ def test_cli_writes_targets(tmp_path: Path) -> None:
     rc = shard_tests.main(["--index", "0", "--total", "1", "--root", str(tmp_path / "t"), "--write-pytest-args", str(out)])
     assert rc == 0
     assert len(out.read_text().splitlines()) == 2
+
+
+def test_empty_shard_exits_zero_with_empty_file(tmp_path: Path) -> None:
+    _make_tree(tmp_path / "t", {"test_a.py": 5, "test_b.py": 5})
+    out = tmp_path / "targets.txt"
+    # Two files across four shards: shards 2 and 3 are necessarily empty.
+    rc = shard_tests.main(["--index", "3", "--total", "4", "--root", str(tmp_path / "t"), "--write-pytest-args", str(out)])
+    assert rc == 0
+    assert out.read_text() == ""
+
+
+def test_zero_discovered_files_fails_loudly(tmp_path: Path) -> None:
+    (tmp_path / "t").mkdir()
+    out = tmp_path / "targets.txt"
+    rc = shard_tests.main(["--index", "0", "--total", "1", "--root", str(tmp_path / "t"), "--write-pytest-args", str(out)])
+    assert rc == shard_tests._EXIT_NO_FILES
+    assert not out.exists()
+
+
+def test_relative_root_resolves_against_repo_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "targets.txt"
+    rc = shard_tests.main(["--index", "0", "--total", "1", "--root", "tests/ci", "--write-pytest-args", str(out)])
+    assert rc == 0
+    lines = out.read_text().splitlines()
+    assert lines and all(Path(line).is_relative_to(_REPO / "tests" / "ci") for line in lines)
+
+
+def test_discovery_agrees_with_affected_test_selector() -> None:
+    sharded = {p.relative_to(_REPO).as_posix() for p in shard_tests.discover(_REPO / "tests")}
+    selected = set(select_affected_tests.discover_test_files(_REPO))
+    assert sharded == selected

@@ -27,7 +27,6 @@ import argparse
 import logging
 import subprocess
 import sys
-import tomllib
 from pathlib import Path
 
 logger = logging.getLogger("stale_rows")
@@ -44,27 +43,25 @@ def _repo() -> Path:
 REPO = _repo()
 sys.path.insert(0, str(REPO / "tests" / "knob_gate"))
 
-from _closure import row_is_stale  # noqa: E402
-from _coverage import (  # noqa: E402
+from _closure import row_is_stale
+from _coverage import (
   _touches_scoped,
   default_changed_paths,
   default_closure_for,
   default_is_ancestor,
   default_resolve_run,
 )
-
-
-def _manifest_slugs() -> list[str]:
-  path = REPO / "tests" / "knob_gate" / "branch_manifest.toml"
-  rows = tomllib.loads(path.read_text(encoding="utf-8")).get("branch", [])
-  slugs = {r["vehicle"]["slug"] for r in rows if r.get("vehicle", {}).get("kind") == "sidecar"}
-  return sorted(slugs)
-
-
-def _ledger_ids() -> dict[str, str]:
-  path = REPO / "tests" / "knob_gate" / "sidecar_ledger.toml"
-  table = tomllib.loads(path.read_text(encoding="utf-8")).get("sidecar", {})
-  return {slug: body["bth_run_id"] for slug, body in table.items() if "bth_run_id" in body}
+from _ledger import (
+  ALL,
+  LEDGERS_DIRNAME,
+  MANIFEST_NAME,
+  LedgerError,
+  known_families,
+  ledger_ids,
+  load_manifest_rows,
+  rows_for_family,
+  sidecar_slugs,
+)
 
 
 def _diff_names(base: str, head: str) -> list[str]:
@@ -89,7 +86,7 @@ def assess(
   if run_commit:
     changed = _diff_names(run_commit, head)
     closure = default_closure_for(slug)
-    hits = [p for p in changed if row_is_stale([p], closure)]
+    hits = [p for p in changed if row_is_stale([p], closure, repo=REPO, git_hash=run_commit, head=head)]
     why = "closure unsound or unavailable: global rule" if closure is None or not closure.sound else ""
     return {
       "slug": slug,
@@ -115,7 +112,7 @@ def assess(
     }
   changed = default_changed_paths(git_hash)
   closure = default_closure_for(slug)
-  hits = [p for p in changed if row_is_stale([p], closure)]
+  hits = [p for p in changed if row_is_stale([p], closure, repo=REPO, git_hash=str(git_hash))]
   why = "closure unsound or unavailable: global rule" if closure is None or not closure.sound else ""
   return {
     "slug": slug,
@@ -130,15 +127,34 @@ def assess(
 def main(argv: list[str] | None = None) -> int:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument("--slugs", action="store_true", help="print only the stale slugs")
+  parser.add_argument("--family", default=None, help="filter rows to a specific family (e.g. 'potts')")
   parser.add_argument("--run-commit", help="what-if: assume every row was recorded at this commit")
   parser.add_argument("--head", default="HEAD", help="what-if: diff against this ref")
   args = parser.parse_args(argv)
   logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-  ids = _ledger_ids()
+  knob_gate = REPO / "tests" / "knob_gate"
+  try:
+    manifest = load_manifest_rows(knob_gate / MANIFEST_NAME)
+    valid = known_families(knob_gate / LEDGERS_DIRNAME, manifest)
+    # An unknown name used to select no rows and print nothing with exit 0, which reads as "all fresh".
+    if args.family is not None and args.family != ALL and args.family not in valid:
+      logger.error(
+        "REFUSING: unknown --family %r; valid families: %s (or %s)",
+        args.family, ", ".join(valid), ALL,
+      )
+      return 2
+    ids = ledger_ids(knob_gate / LEDGERS_DIRNAME, args.family)
+    scoped = rows_for_family(manifest, args.family)
+  except LedgerError as exc:
+    logger.info("REFUSING: %s", exc)
+    return 2
+  # Every scoped manifest slug is assessed, including one with no ledger id: that row reports
+  # "no ledger run id" and is STALE, instead of disappearing from the table.
+  slugs = sorted(sidecar_slugs(scoped))
   results = [
     assess(slug, ids.get(slug), run_commit=args.run_commit, head=args.head)
-    for slug in _manifest_slugs()
+    for slug in slugs
   ]
 
   if args.slugs:

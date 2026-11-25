@@ -198,3 +198,91 @@ def test_ignore_ligand_clears_the_shell(tmp_path: Path) -> None:
   assert present.ligand_coords.shape[0] == 1
   assert ignored.ligand_coords.shape == (0, 3)
   assert not ignored.first_shell_ligand_contact_mask.any()
+
+
+_BACKBONE = (("N", "N"), ("CA", "C"), ("C", "C"), ("O", "O"))
+_STRESS_PDB = Path(__file__).resolve().parents[2] / "data" / "fampnn_parser_stress.pdb"
+
+
+def test_identity_skips_residue_missing_ca(tmp_path: Path) -> None:
+  """A residue without CA is absent from the protein rows; a complete chain keeps every resnum."""
+  ala = (*_BACKBONE, ("CB", "C"))
+  broken = _write(
+    tmp_path,
+    [
+      *_residue(1, "ALA", "A", 1, 0.0, atoms=ala),
+      *_residue(6, "ALA", "A", 2, 10.0, atoms=(("N", "N"), ("C", "C"), ("O", "O"))),
+      *_residue(9, "GLY", "A", 3, 20.0),
+    ],
+  )
+  skipped = featurize(broken)
+  assert int(skipped.sequence_indices.shape[0]) == 2
+  assert skipped.pdb_resnums.tolist() == [1, 3]
+  assert len(skipped.pdb_chain_ids) == 2
+  assert len(skipped.pdb_icodes) == 2
+  complete = tmp_path / "complete.pdb"
+  complete.write_text(
+    "\n".join(
+      [
+        *_residue(1, "ALA", "A", 1, 0.0, atoms=ala),
+        *_residue(6, "ALA", "A", 2, 10.0, atoms=ala),
+        *_residue(11, "GLY", "A", 3, 20.0),
+      ],
+    )
+    + "\n",
+  )
+  kept = featurize(complete)
+  assert kept.pdb_resnums.tolist() == [1, 2, 3]
+
+
+def test_insertion_codes_from_stress_pdb() -> None:
+  """Stress-file insertion codes survive, one identity entry per protein row."""
+  features = featurize(_STRESS_PDB)
+  length = int(features.sequence_indices.shape[0])
+  assert set(features.pdb_icodes) >= {"", "A", "B"}
+  assert len(features.pdb_chain_ids) == length
+  assert len(features.pdb_resnums) == length
+  assert len(features.pdb_icodes) == length
+
+
+def test_ligand_identity_matches_prody_and_drops_caps(tmp_path: Path) -> None:
+  """Ligand atom names match ProDy; caps are marked synthetic; ignore_ligand clears them."""
+  import prody as pr
+
+  features = featurize(_STRESS_PDB)
+  parsed = pr.parsePDB(str(_STRESS_PDB))
+  expected: list[str] = []
+  for chain in parsed.getHierView():
+    for residue in chain:
+      if str(residue.getResname()) == "HOH":
+        continue
+      names = {str(name) for name in residue.getNames()}
+      if all(atom in names for atom in ("N", "CA", "C", "O")):
+        continue
+      expected.extend(str(name) for name in residue.getNames())
+  assert len(features.ligand_atom_names) == features.ligand_coords.shape[0]
+  assert len(features.ligand_atom_names) == len(features.ligand_elements)
+  assert list(features.ligand_atom_names) == expected
+
+  ignored = featurize(_STRESS_PDB, ignore_ligand=True)
+  assert ignored.ligand_atom_names == ()
+  assert ignored.ligand_res_names == ()
+  assert ignored.ligand_chain_ids == ()
+  assert ignored.ligand_icodes == ()
+  assert ignored.ligand_elements == ()
+  assert ignored.ligand_resnums.shape == (0,)
+  assert ignored.ligand_synthetic.shape == (0,)
+
+  ncaa = _write(
+    tmp_path,
+    [
+      *_residue(1, "ALA", "A", 1, 0.0, atoms=(*_BACKBONE, ("CB", "C"))),
+      *_residue(6, "UNK", "B", 4, 20.0, atoms=(*_BACKBONE, ("CB", "C"))),
+    ],
+  )
+  ligand = featurize(ncaa, noncanonical_aa_ligand=True)
+  assert ligand.ligand_synthetic.shape == (ligand.ligand_coords.shape[0],)
+  assert ligand.ligand_synthetic.any()
+  assert not ligand.ligand_synthetic.all()
+  real = ~ligand.ligand_synthetic
+  assert set(np.asarray(ligand.ligand_atom_names)[real]) >= {"N", "CA", "C", "O", "CB"}

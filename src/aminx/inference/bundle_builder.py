@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
+from typing import TYPE_CHECKING
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -29,6 +32,9 @@ from aminx.utils.autoregression import (
   generate_wave_ar_mask,
 )
 from aminx.utils.decoding_order import DecodingOrderFn, random_design_order
+
+if TYPE_CHECKING:
+  from jax.typing import DTypeLike
 
 
 class ConditioningLengthError(ValueError):
@@ -103,6 +109,7 @@ def build_inference_bundle(
   schedule_key: jax.Array | None = None,
   schedule_k_neighbors: int = 48,
   wave: WaveScheduleBundle | None = None,
+  ar_mask_dtype: DTypeLike = jnp.int8,
 ) -> tuple[InferenceBundle, InferenceConfig]:
   """Single entry point for bundle construction from raw arrays.
 
@@ -116,6 +123,10 @@ def build_inference_bundle(
   autoregressive visibility mask is derived from this schedule via
   `generate_wave_ar_mask` (positions in earlier waves are visible; positions in
   the same wave but different tie groups are not).
+
+  `ar_mask_dtype` is the dtype of the returned ``ConditioningBundle.ar_mask`` (default
+  ``int8``). Only the export wrappers override it (``float32``, so the exported graph carries
+  no integer mask ops). A caller-supplied `ar_mask` is read as "nonzero == visible".
 
   `wave` overrides `schedule` entirely with a caller-supplied `WaveScheduleBundle`
   (e.g. a custom decoding order built via `WaveScheduleBundle.from_tie_groups`
@@ -277,24 +288,31 @@ def build_inference_bundle(
       # `1.0 - jnp.eye`: this construct is the one the codebase has repeatedly got wrong
       # (see full_context_ar_mask's docstring for the running list), and a second inline
       # copy is how the definitions drift apart.
-      ar_mask = full_context_ar_mask(seq_len).astype(jnp.float32)
+      ar_mask = full_context_ar_mask(seq_len, dtype=ar_mask_dtype)
       ar_mask = jnp.broadcast_to(ar_mask[None, ...], (num_states, seq_len, seq_len))
     elif schedule == "fixed_n_to_c" and not wave_explicitly_supplied:
       # generate_ar_mask is pure-jnp (jit/vmap-safe) and tie-group-aware via
       # tie_group_map directly -- unlike `wave` (which stays untied/empty()
       # for jit-safety above), this is correct for tied positions: positions
       # sharing a tie group always see each other regardless of order.
-      ar_mask_2d = generate_ar_mask(jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0])
-      ar_mask = jnp.broadcast_to(ar_mask_2d.astype(jnp.float32)[None, ...], (num_states, seq_len, seq_len))
+      ar_mask_2d = generate_ar_mask(
+        order=jnp.arange(seq_len, dtype=jnp.int32), tie_group_map=tie_group_map[0], dtype=ar_mask_dtype,
+      )
+      ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
     else:
       # wave was either built host-side above (from_tie_groups/from_colors) or
       # explicitly supplied by the caller -- both live in tie_group_map's id
       # space, so generate_wave_ar_mask is correct here (unlike for the
       # empty()-schedule branch above).
-      ar_mask_2d = generate_wave_ar_mask(wave, tie_group_map[0])
+      ar_mask_2d = generate_wave_ar_mask(wave, tie_group_map[0], dtype=ar_mask_dtype)
       ar_mask = jnp.broadcast_to(ar_mask_2d[None, ...], (num_states, seq_len, seq_len))
   elif ar_mask.ndim == 2:
     ar_mask = jnp.broadcast_to(ar_mask[None, ...], (num_states, seq_len, seq_len))
+  if ar_mask.dtype != ar_mask_dtype:
+    # Normalise so every bundle this builder returns carries ``ar_mask_dtype`` (int8 by default,
+    # the ConditioningBundle contract). A caller-supplied mask is read as "nonzero == visible",
+    # so a soft or out-of-range value is never silently truncated or wrapped to 0.
+    ar_mask = (ar_mask != 0).astype(ar_mask_dtype)
 
   # Handle sequence: can be token indices or already one-hot
   if sequence is not None:
@@ -381,9 +399,35 @@ def build_inference_bundle(
 DECODING_ORDER_KEY_SALT = 0x0DEC0DE
 
 
-def decoding_order_key(sample_key: jax.Array) -> jax.Array:
-  """The key a sample's random decoding order is drawn from (derived, not split)."""
-  return jax.random.fold_in(sample_key, DECODING_ORDER_KEY_SALT)
+FIXED_CONTEXT_MODES = ("random_order", "canonical_order", "mutual_context")
+
+
+def decoding_order_key(sample_key: jax.Array, order_seed: int | None = None) -> jax.Array:
+  """The key a sample's random decoding order is drawn from (derived, not split).
+
+  By default the order key is derived from the sample key, so it differs between rows (the
+  sample key folds in the row's manifest hash) and between samples. That makes the order a
+  nuisance variable that two rows can never share: the logits of an autoregressive MPNN at a
+  position depend on the order of the *other* positions even when all of them are fixed,
+  because each neighbour's hidden state is conditioned on its own predecessors only.
+
+  When ``order_seed`` is given the key is drawn from that seed alone, ignoring ``sample_key``:
+  every sample of every row carrying the same ``order_seed`` decodes in the same order. That is
+  the pairing control for comparing arms (single vs fused, or fused at different ``k``): run
+  the arms at the same ``order_seed``, and K different seeds give K matched replicates.
+
+  Cost: with a seed all samples of a row share ONE order, so draws are conditional on that
+  order instead of marginalised over orders. Use it for paired comparisons, not as a
+  production default.
+
+  Args:
+    sample_key: The per-sample decode key.
+    order_seed: ``None`` (default) keeps the key derived from ``sample_key``. An int draws the
+      key from the seed only.
+  """
+  if order_seed is None:
+    return jax.random.fold_in(sample_key, DECODING_ORDER_KEY_SALT)
+  return jax.random.fold_in(jax.random.PRNGKey(order_seed), DECODING_ORDER_KEY_SALT)
 
 
 def with_decoding_order(
@@ -391,6 +435,7 @@ def with_decoding_order(
   key: jax.Array,
   decoding_order_fn: DecodingOrderFn | None = None,
   num_groups: int | None = None,
+  fixed_context: str = "random_order",
 ) -> InferenceBundle:
   """Set a bundle's wave schedule AND ar_mask from one freshly drawn decoding order.
 
@@ -406,19 +451,50 @@ def with_decoding_order(
       the ``DecodingOrderFn`` signature overrides it; it receives the tie map only when
       ``num_groups`` is given, as ``random_decoding_order`` requires.
     num_groups: Number of tie groups, forwarded to ``decoding_order_fn``.
+    fixed_context: How positions whose token is fixed are conditioned on EACH OTHER. In an
+      autoregressive MPNN a position's logits depend on the order of the other positions even
+      when every one of them is fixed, because each neighbour's hidden state is conditioned on
+      its own predecessors only. ``"random_order"`` (default; the reference ProteinMPNN /
+      LigandMPNN behaviour) decodes the fixed block in a random order, so that order is a
+      nuisance variable. ``"canonical_order"`` decodes it in position order: a valid causal
+      order, in-distribution, deterministic given the fixed set. ``"mutual_context"`` makes
+      every fixed position see every other fixed position (a non-causal block that no
+      training mask produced, so it is out of distribution) and removes the order dependence
+      entirely. Only ``decoding_order_fn=None`` is supported for the last two. Because the mask
+      then disagrees with the sequential wave schedule, the incremental decoder's exactness
+      check fails and ``incremental="auto"`` silently falls back to full recompute (correct,
+      slower); ``incremental="force"`` is NOT supported with ``mutual_context``.
 
   Returns:
     The bundle with ``wave`` and ``conditioning.ar_mask`` replaced.
   """
+  if fixed_context not in FIXED_CONTEXT_MODES:
+    msg = f"fixed_context must be one of {FIXED_CONTEXT_MODES}, got {fixed_context!r}"
+    raise ValueError(msg)
+  if fixed_context != "random_order" and decoding_order_fn is not None:
+    msg = f"fixed_context={fixed_context!r} requires the default decoding order (decoding_order_fn=None)"
+    raise ValueError(msg)
   cond = bundle.conditioning
   tie = cond.tie_group_map[0]
   seq_len = tie.shape[0]
   if decoding_order_fn is None:
     fixed = cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask
-    order = random_design_order(key, tie, fixed)
+    order = random_design_order(key, tie, fixed, "index" if fixed_context == "canonical_order" else "random")
   else:
     order, _ = decoding_order_fn(key, seq_len, tie if num_groups is not None else None, num_groups)
   wave = WaveScheduleBundle.from_decoding_order(jnp.asarray(order), tie)
-  mask = generate_wave_ar_mask(wave, tie).astype(cond.ar_mask.dtype)
+  mask = generate_wave_ar_mask(wave, tie, dtype=cond.ar_mask.dtype)
+  if fixed_context != "mutual_context":
+    # The mask is this wave's own mask, so the incremental decoder's wave/mask consistency
+    # precondition holds by construction. Recording it statically keeps `incremental="auto"`
+    # from recomputing it from per-sample (batched) arrays, which turned its `lax.cond` into a
+    # select that ran the full recompute too (aminx #272). mutual_context edits the mask below.
+    wave = dataclasses.replace(wave, mask_consistent=True)
+  if fixed_context == "mutual_context":
+    # Position-level, not group-level: a fixed position's token is pre-written into the decode
+    # carry, whereas a non-fixed member of a partly fixed tie group is undrawn until its wave runs.
+    fixed_pos = (cond.fixed_mask[0] if cond.fixed_mask.ndim == 2 else cond.fixed_mask) > 0.5
+    fixed_block = fixed_pos[:, None] & fixed_pos[None, :] & ~jnp.eye(seq_len, dtype=bool)
+    mask = jnp.maximum(mask, fixed_block.astype(mask.dtype))
   mask = jnp.broadcast_to(mask[None, ...], cond.ar_mask.shape)
   return eqx.tree_at(lambda b: (b.wave, b.conditioning.ar_mask), bundle, (wave, mask))

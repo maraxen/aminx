@@ -30,7 +30,12 @@ import tomllib
 from dataclasses import fields
 from pathlib import Path
 
-from aminx.run.options import LaserOptions, PottsMPNNOptions, ProtonPottsOptions
+from aminx.run.options import (
+    LaserOptions,
+    PottsMPNNOptions,
+    ProtonPottsOptions,
+    ThermoMPNNOptions,
+)
 
 _REPO = Path(__file__).resolve().parents[2]
 _SRC = _REPO / "src" / "aminx"
@@ -40,6 +45,7 @@ _CLASSES = {
     "LaserOptions": LaserOptions,
     "PottsMPNNOptions": PottsMPNNOptions,
     "ProtonPottsOptions": ProtonPottsOptions,
+    "ThermoMPNNOptions": ThermoMPNNOptions,
 }
 
 
@@ -49,7 +55,7 @@ _CLASSES = {
 #: so ``self._options`` matches via ``_options`` and ``spec.laser`` via ``laser``.
 #: Adding a carrier is a deliberate edit; a read through some other variable shows
 #: up as a false "inert", which fails loudly rather than passing silently.
-_CARRIERS = frozenset({"options", "_options", "opts", "laser", "potts_mpnn", "protonpotts"})
+_CARRIERS = frozenset({"options", "_options", "opts", "laser", "potts_mpnn", "protonpotts", "thermompnn"})
 
 
 def _carrier(node: ast.expr) -> bool:

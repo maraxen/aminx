@@ -7,7 +7,7 @@ existing suite passed throughout because it exercises the *averaged* branch, whi
 ``score_conditional`` default.
 
 DEFECT 1 -- the AR mask included the diagonal. ``scoring/score.py`` built its mask with
-``generate_ar_mask(decoding_order)``, whose untied branch is ``(row >= col)`` -- non-strict --
+``generate_ar_mask(decoding_order)``, whose untied branch was ``(row >= col)`` -- non-strict --
 so ``ar_mask[i, i] == 1`` under every permutation. Since a residue is always among its own
 KNN neighbours, the decoder gated that residue's TRUE one-hot into its own node update.
 Measured on 1LVB chain A: +0.036243 nats (paired over 8 seeds, sd 0.002482, t = 41.3),
@@ -77,7 +77,7 @@ def test_generate_ar_mask_is_self_excluding_under_every_permutation() -> None:
   key = jax.random.PRNGKey(0)
   for i in range(5):
     order = jax.random.permutation(jax.random.fold_in(key, i), 8)
-    mask = np.asarray(generate_ar_mask(order))
+    mask = np.asarray(generate_ar_mask(order=order))
     assert np.all(np.diag(mask) == 0), (
       "generate_ar_mask must be self-excluding; if this ever changes back, revisit every "
       "teacher-forced caller"
@@ -109,13 +109,13 @@ def test_score_path_default_mask_is_order_free_and_self_excluding() -> None:
   # 2026-08-27 the difference is CAUSALITY, not the diagonal. Both masks are now
   # self-excluding; only `full_context_ar_mask` is order-free and non-causal, which is
   # exactly why the score path must keep using it.
-  causal = np.asarray(generate_ar_mask(order_a))
+  causal = np.asarray(generate_ar_mask(order=order_a))
   assert not np.array_equal(causal, mask_a)
   assert np.all(np.diag(causal) == 0), "the causal mask is self-excluding too now"
   assert np.all(np.diag(mask_a) == 0)
   # The causal mask IS order-dependent; the score path's default is not. This is the
   # property that made the score key-dependent at backbone_noise=0.
-  causal_b = np.asarray(generate_ar_mask(order_b))
+  causal_b = np.asarray(generate_ar_mask(order=order_b))
   assert not np.array_equal(causal, causal_b), (
     "generate_ar_mask must remain order-dependent -- if it stopped being so, this test no "
     "longer demonstrates why the score path needs an order-free default"

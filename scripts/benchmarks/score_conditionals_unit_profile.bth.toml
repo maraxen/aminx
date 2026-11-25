@@ -1,0 +1,38 @@
+[metadata]
+title = "One score_conditionals unit at production shapes: K=64 masks x N=7 sequences, L=224"
+created = "261118"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "On 3pgk (415 residues, so the runner works at the 512 rung: a conservative upper bound on production's 224-residue structure at a ~256 rung), runner.score with ar_masks of shape (64, 224, 224) and 7 sequences (448 mask-sequence pairs, one encoding, one call) returns logits (1, 64, 7, L, 21), completes without exhausting memory, and a second call with the same shapes and different masks triggers zero backend compiles. Warm wall time per pair is below 50 ms on the titanix GPU (TITAN RTX) and below 500 ms on titanix CPU; these numbers are the per-unit budget tev_design plans its screen with."
+stage_name = "validation"
+novel = true
+
+[outcomes.pass]
+condition = "logits_shape_ok = true AND compiles_call2 = 0 AND ((backend = 'gpu' AND ms_per_pair_warm < 50.0) OR (backend = 'cpu' AND ms_per_pair_warm < 500.0))"
+decision = "Publish the per-unit wall estimate to tev_design."
+reasoning = "Shape contract, zero warm recompiles, and a per-pair cost a 8-12 condition screen can afford."
+is_residual = false
+
+[outcomes.slow]
+condition = "logits_shape_ok = true AND compiles_call2 = 0"
+decision = "Correct but slower than budgeted: report the measured cost; consider chunking K across rows."
+reasoning = "Shape and compile contract hold; only the speed target missed."
+is_residual = false
+
+[outcomes.fail]
+condition = "true"
+decision = "Shape or compile contract broken; investigate."
+reasoning = "Residual."
+is_residual = true
+
+[result_schema]
+wall_s_call1 = "float"
+wall_s_call2 = "float"
+compiles_call1 = "int"
+compiles_call2 = "int"
+ms_per_pair_warm = "float"
+logits_shape_ok = "bool"
+backend = "str"
+device_kind = "str"
+git_hash = "str"

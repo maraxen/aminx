@@ -143,6 +143,19 @@ class LaserOptions:
   strict_load: bool = True
   output_fasta: bool = False
   output_fasta_only: bool = False
+  pdb_output_dir: str | None = None
+  pdb_provenance: Literal["none", "sidecar"] = "none"
+
+  def __post_init__(self) -> None:
+    if self.pdb_output_dir is not None and self.output_fasta_only:
+      msg = (
+        "pdb_output_dir cannot be set when output_fasta_only is True; "
+        "FASTA-only sampling does not build coordinates"
+      )
+      raise ValueError(msg)
+    if self.pdb_provenance not in ("none", "sidecar"):
+      msg = f"pdb_provenance must be 'none' or 'sidecar', got {self.pdb_provenance!r}"
+      raise ValueError(msg)
 
 
 @dataclass(frozen=True)
@@ -183,38 +196,74 @@ class CalibyOptions:
 class FAMPNNOptions:
   """Options for Full-Atom MPNN (FAMPNN) family execution.
 
+  Every field mirrors a key of the upstream run configs (``~/repos/fampnn/configs/seq_design.yaml``;
+  ``pack.yaml`` and ``score.yaml`` share the ``scn_diffusion`` block); the line cited is
+  ``seq_design.yaml``. ``temperature`` and the number of samples live on the sampling spec
+  (``SamplingSpecification.temperature``, ``num_samples``), not here.
+
   Attributes
   ----------
   checkpoint_id : str | None
       FAMPNN checkpoint identifier. ``None`` defers to ``RunSpecification.checkpoint_id``, then to
-      ``fampnn_0_3``; when both are set they must agree.
+      ``fampnn_0_3``; when both are set they must agree. aminx-only (upstream takes ``checkpoint_path``).
   num_seq_steps : int
-      Number of masked autoregressive (MAR) sequence refinement steps.
+      ``timestep_schedule.num_steps`` (:25): masked-autoregressive sequence steps.
+  seq_timestep_mode : str
+      ``timestep_schedule.mode`` (:26): ``linear`` | ``square`` | ``cubic`` | ``sqrt`` | ``cbrt`` | ``cosine``.
+  seq_t_start, seq_t_end : float
+      ``timestep_schedule.t_start`` / ``t_end`` (:27-28).
   num_scn_steps : int
-      Number of EDM sidechain coordinate diffusion steps per MAR step.
-  sigma_min : float
-      Minimum noise level for Karras EDM schedule.
-  sigma_max : float
-      Maximum noise level for Karras EDM schedule.
-  rho : float
-      Schedule curvature exponent for Karras EDM schedule.
-  s_churn : float
-      Stochastic churn parameter for Karras EDM schedule.
+      ``scn_diffusion.num_steps`` (:32): EDM sidechain steps per denoiser call.
+  scn_timestep_mode : str
+      ``scn_diffusion.timestep_schedule.mode`` (:35).
+  scn_t_start, scn_t_end : float
+      ``scn_diffusion.timestep_schedule.t_start`` / ``t_end`` (:36-37).
   step_scale : float
-      Velocity step scaling factor during EDM sampling.
-  pack_each_step : bool
-      Whether to diffuse sidechain coordinates at every MAR sequence step.
+      ``scn_diffusion.step_scale`` (:38): multiplies the Euler drift.
+  s_churn, s_noise, s_t_min, s_t_max : float
+      ``scn_diffusion.churn_cfg`` (:40-43): Karras stochastic churn. ``s_t_min`` / ``s_t_max`` are in
+      units of the checkpoint's ``sigma_data``; churn is off when ``s_churn == 0``.
+  seq_only : bool
+      ``seq_only`` (:19): reveal the sequence but not sidechains during design.
+  repack_last : bool
+      ``repack_last`` (:21): one final sidechain pack for the finished sequence.
+  psce_threshold : float | None
+      ``psce_threshold`` (:22): re-mask sidechains whose mean predicted sidechain error is above this;
+      ``None`` keeps all.
+  fixed_pos_seq, fixed_pos_scn : str
+      The two columns of upstream's ``fixed_pos_csv`` (:14-15) in its ``"A1-100,B5"`` syntax: positions
+      whose sequence (resp. sidechains) are held fixed to the input structure. aminx takes them as strings
+      applying to every input; upstream picks a row per PDB name.
   """
 
   checkpoint_id: str | None = None
-  num_seq_steps: int = 8
-  num_scn_steps: int = 18
-  sigma_min: float = 0.002
-  sigma_max: float = 80.0
-  rho: float = 7.0
-  s_churn: float = 0.0
+  num_seq_steps: int = 100
+  seq_timestep_mode: str = "linear"
+  seq_t_start: float = 0.0
+  seq_t_end: float = 1.0
+  num_scn_steps: int = 50
+  scn_timestep_mode: str = "linear"
+  scn_t_start: float = 0.0
+  scn_t_end: float = 1.0
   step_scale: float = 1.5
-  pack_each_step: bool = True
+  s_churn: float = 0.0
+  s_noise: float = 1.0
+  s_t_min: float = 0.01
+  s_t_max: float = 50.0
+  seq_only: bool = False
+  repack_last: bool = True
+  psce_threshold: float | None = 0.3
+  fixed_pos_seq: str = ""
+  fixed_pos_scn: str = ""
+
+
+_FLOAT16_REFUSAL: str = (
+  "ThermoMPNN dtype='float16' fails the parity band and is refused unless you pass "
+  "allow_float16=True (ThermoMPNNOptions.allow_float16, or the allow_float16 argument of "
+  "ThermoMPNNDriver.score; spec files: thermompnn.allow_float16 = true). Evidence: v1 run "
+  "f12f3209 missed the 1.5e-2 band with 0.048; v2 run 18c1d29c ho1 d_ddg max-abs 0.3995 vs "
+  "tolerance 0.1499."
+)
 
 
 @dataclass(frozen=True)
@@ -223,9 +272,10 @@ class ThermoMPNNOptions:
 
   Attributes
   ----------
-  checkpoint_id : str
+  checkpoint_id : str | None
       Checkpoint or ensemble identifier (e.g. ``"thermo_mpnn_v1_default"``,
-      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``).
+      ``"thermo_mpnn_v2_ensemble"``, ``"thermo_mpnn_d_ensemble"``). ``None`` defers to
+      ``spec.checkpoint_id``, then to ``"thermo_mpnn_v1_default"``.
   mode : Literal["single", "double"]
       Single-mutant SSM (``"single"``) or double-mutant epistatic (``"double"``) mode.
   distance_threshold : float
@@ -233,14 +283,104 @@ class ThermoMPNNOptions:
   batch_size : int
       Pair batch chunk size for ThermoMPNN-D double-mutant scoring.
   dtype : Literal["float32", "float16"]
-      Floating-point precision for trunk and head evaluation.
+      Floating-point precision for trunk and head evaluation. ``"float32"`` is the default.
+      ``"float16"`` is not validated for ThermoMPNN (see the driver module docstring): the
+      float16 parity gate failed on a 496-residue structure, and the error was observed to grow
+      with system size (mechanism not established). Float16 is for screening or ranking only,
+      and selecting it requires ``allow_float16=True``.
+  allow_float16 : bool
+      Explicit bypass for ``dtype="float16"``. Float16 fails the ThermoMPNN parity band (v1 run
+      f12f3209 missed 1.5e-2 with 0.048; v2 run 18c1d29c ho1 d_ddg 0.3995 vs 0.1499), so
+      ``dtype="float16"`` raises ``ValueError`` unless this is ``True``. A bypassed call still
+      emits a ``UserWarning``. Has no effect with ``dtype="float32"``.
   ensemble : bool
       Whether to average across all 3 v2 ensemble members when using v2/D.
   """
 
-  checkpoint_id: str = "thermo_mpnn_v1_default"
+  checkpoint_id: str | None = None
   mode: Literal["single", "double"] = "single"
   distance_threshold: float = 5.0
   batch_size: int = 10000
-  dtype: Literal["float32", "float16"] = "float16"
+  dtype: Literal["float32", "float16"] = "float32"
   ensemble: bool = True
+  allow_float16: bool = False
+
+  def __post_init__(self) -> None:
+    """Reject unknown ``mode`` or ``dtype`` values at construction time."""
+    if self.mode not in ("single", "double"):
+      msg = f"Unknown ThermoMPNN mode {self.mode!r}. Use 'single' or 'double'."
+      raise ValueError(msg)
+    if self.dtype not in ("float32", "float16"):
+      msg = f"Unknown ThermoMPNN dtype {self.dtype!r}. Use 'float32' or 'float16'."
+      raise ValueError(msg)
+    if self.dtype == "float16" and not self.allow_float16:
+      raise ValueError(_FLOAT16_REFUSAL)
+
+
+@dataclass(frozen=True)
+class AntiBMPNNOptions:
+  """Options for AntiBMPNN design post-processing (descriptor scoring of a designed segment).
+
+  AntiBMPNN's sampling CLI (``Running_AntiBMPNN_run.py``) is the ProteinMPNN flag set and needs no
+  family options: the model is a ProteinMPNN-architecture checkpoint selected through
+  ``RunSpecification.checkpoint_id`` (``antibmpnn_v_48_000`` ...). The only AntiBMPNN-specific
+  logic upstream is ``helper_scripts/parsing_design_result.py``, which slices each design at
+  ``--start``/``--end`` (1-based, inclusive: ``seq[start-1:end]``, lines 8, 27-28) and reports the
+  ``peptides`` PD1/PD2 means and the Lehninger net charge at pH 7.4 (lines 49, 53).
+
+  Earlier revisions carried ``cdr_scheme``, ``heavy_chain_id``, ``light_chain_id``,
+  ``cdr_bias_weight``, ``checkpoint_id`` and ``compute_descriptors``. None has an upstream
+  counterpart (no CDR scheme, chain role or bias weight exists in the AntiBMPNN repository) and none
+  was read by any code path, so they were removed rather than relabelled.
+
+  Both fields default to ``None`` (whole sequence); upstream declares NO default for ``--start`` /
+  ``--end`` (parsing_design_result.py:90-91) and crashes on ``start_r -= 1`` (:8) when ``--start`` is
+  omitted, so the defaults are aminx's, not upstream's.
+
+  Attributes
+  ----------
+  descriptor_start : int | None
+      First residue of the scored segment, 1-based inclusive (upstream ``--start``). ``None``
+      scores from the first residue.
+  descriptor_end : int | None
+      Last residue of the scored segment, 1-based inclusive (upstream ``--end``). ``None``
+      scores to the last residue.
+  """
+
+  descriptor_start: int | None = None
+  descriptor_end: int | None = None
+
+
+@dataclass(frozen=True)
+class FrustraMPNNOptions:
+  """Options for FrustraMPNN local energetic frustration index scoring.
+
+  Attributes
+  ----------
+  checkpoint_id : str | None
+      Checkpoint identifier (default: "megascale_default_la-true_esm-False_split1").
+  chains : str | tuple[str, ...] | None
+      Target chains to evaluate (e.g. "A" or ("A", "B")). None evaluates all chains.
+  positions : str | tuple[int, ...] | None
+      Target residue positions (e.g. "1,2,3" or (1, 2, 3)). None evaluates all positions.
+  subtract_mut : bool
+      Whether to subtract the wild-type residue prediction score (default: False).
+  dtype : Literal["float32", "float64"]
+      Floating-point compute precision: "float32" (default) or "float64".
+  """
+
+  checkpoint_id: str | None = "megascale_default_la-true_esm-False_split1"
+  chains: str | tuple[str, ...] | None = None
+  positions: str | tuple[int, ...] | None = None
+  subtract_mut: bool = False
+  dtype: Literal["float32", "float64"] = "float32"
+
+  def __post_init__(self) -> None:
+    """Validate and normalize configuration parameters."""
+    if self.dtype not in ("float32", "float64"):
+      msg = f"Unknown FrustraMPNN dtype {self.dtype!r}. Use 'float32' or 'float64'."
+      raise ValueError(msg)
+    if isinstance(self.chains, list):
+      object.__setattr__(self, "chains", tuple(self.chains))
+    if isinstance(self.positions, list):
+      object.__setattr__(self, "positions", tuple(self.positions))

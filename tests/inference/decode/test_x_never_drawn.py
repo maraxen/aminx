@@ -15,14 +15,13 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
-from xtrax.tiling import CarryShape
+from xtrax.tiling import CarryShape, JaxScanIterator, VmapIterator
 
 from aminx.inference.decode.autoregressive import AutoregressiveDecode
 from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
 from aminx.inference.sample_autoregressive import SampleResult
 from aminx.model import Aminx
-from aminx.tiling.iterator import JaxScanIterator, VmapIterator
 from aminx.types.bundles import InferenceBundle
 from aminx.types.configs import InferenceConfig
 from aminx.types.stages import StageSet

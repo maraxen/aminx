@@ -27,7 +27,22 @@ from pathlib import Path
 # Vendored upstream repository directory names, as cloned under ~/repos. The key
 # is anchored at whichever of these appears in the path; anything else is keyed
 # by basename, which is the honest fallback for a file we do not place.
-_UPSTREAM_ROOTS: tuple[str, ...] = ("LASErMPNN", "PottsMPNN", "ProtonPottsMPNN")
+_UPSTREAM_ROOTS: tuple[str, ...] = (
+  "LASErMPNN",
+  "PottsMPNN",
+  "ProtonPottsMPNN",
+  "ThermoMPNN",
+  "ThermoMPNN-D",
+  "AbMPNN",
+  "AntiBMPNN",
+  "HyperMPNN",
+  "CyclicMPNN",
+  "ProteinMPNN",
+  "caliby_weights",
+  "fampnn",
+  "FrustraMPNN",
+  "frustraMPNN",
+)
 
 
 def stable_artifact_key(path: str | Path) -> str:
@@ -43,5 +58,6 @@ def stable_artifact_key(path: str | Path) -> str:
       # rindex: a path may legitimately contain the marker twice (a nested
       # checkout, a copy under a scratch dir); the LAST one is the real root.
       index = len(parts) - 1 - parts[::-1].index(marker)
-      return "/".join(parts[index:])
+      root = "FrustraMPNN" if marker in ("FrustraMPNN", "frustraMPNN") else parts[index]
+      return "/".join((root, *parts[index + 1 :]))
   return resolved.name

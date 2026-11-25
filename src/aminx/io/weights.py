@@ -47,6 +47,12 @@ HF_REPO_ID = "maraxen/aminx"
 # 5ff5cf16 (2026-10-27) only ADDED files: the 4 AntiBMPNN checkpoints
 # (antibmpnn_v_48_{000,010,020,030}.eqx.zst), 8 Caliby checkpoints + manifests,
 # 3 FAMPNN checkpoints + manifests, and 7 ThermoMPNN manifests.
+#
+# DELIBERATELY NOT MOVED for 0.5.2 (2026-11-11): the Hub default branch has since gained
+# ``megascale_default_la-true_esm-False_split1.eqx.zst``, which this pin omits. 0.5.2 is a bug-fix
+# release and does not change which weights load; the file is listed in
+# ``DELIBERATELY_NOT_PINNED`` in tests/io/test_pinned_revision_coverage.py. Re-pin when a release
+# is meant to carry it.
 HF_REVISION = "5ff5cf1643842ed8eb2d511d0281a5a0db14170e"
 
 #: Env var naming a directory that is AUTHORITATIVE for weights when set. A missing file there
@@ -142,7 +148,11 @@ def _resolve_checkpoint_id(
     checkpoint_id = None
     version_was_positional = True
 
-  if model_weights and model_version and (model_weights, str(model_version)) in UNPUBLISHED_CHECKPOINTS:
+  if (
+    model_weights
+    and model_version
+    and (model_weights, str(model_version)) in UNPUBLISHED_CHECKPOINTS
+  ):
     raise ValueError(UNPUBLISHED_CHECKPOINTS[(model_weights, str(model_version))])
 
   if not checkpoint_id:
@@ -439,7 +449,8 @@ def load_weights(
 
     initialized_leaves = [initialize_param(p, k) for p, k in zip(param_leaves, keys, strict=True)]
     new_params = jax.tree_util.tree_unflatten(
-      jax.tree_util.tree_structure(params), initialized_leaves,
+      jax.tree_util.tree_structure(params),
+      initialized_leaves,
     )
     return eqx.combine(new_params, static)
 
@@ -692,7 +703,9 @@ def resolve_family_checkpoint(checkpoint_id: str, *, family: str | None = None) 
   source, path = _verified_family_file(entry.filename, entry.sha256, "artifact")
   if entry.manifest_filename is not None or entry.manifest_sha256 is not None:
     if entry.manifest_filename is None or entry.manifest_sha256 is None:
-      msg = f"checkpoint {checkpoint_id!r} has incomplete manifest metadata in {FAMILY_TABLE_RESOURCE}"
+      msg = (
+        f"checkpoint {checkpoint_id!r} has incomplete manifest metadata in {FAMILY_TABLE_RESOURCE}"
+      )
       raise ValueError(msg)
     _, manifest = _verified_family_file(entry.manifest_filename, entry.manifest_sha256, "manifest")
     if manifest.parent != path.parent:

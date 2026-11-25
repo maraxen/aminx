@@ -1,0 +1,15 @@
+# ProtonPottsMPNN sidecar run ids. A family-scoped read of 'protonpotts' reads this shard and nothing else
+# (tests/knob_gate/_ledger.py). Entries moved byte-for-byte from ledgers/potts.toml; run ids unchanged.
+
+[sidecar]
+
+[sidecar.protonpotts_parity]
+# REWRITTEN 261117 at 7fd55619 (full redsox gate wave on the P4 integration head after origin/main 0.5.3 and #278).
+# Run on GPU 1 (AMINX_WAVE_GPUS=1): status completed, outcome pass, git_dirty false, exit_code 0, 26.8 min
+# (pre-#278 max 77.5 min). verify_wave.py with explicit full ids for the nine wave rows: would grade all 16 slugs,
+# 268 PASS, 0 FAIL, would NOT grade (none).
+# Previous row 818c1dc7-ddc7-4bf8-aba2-076810ddb914 (78ed94d0) stays on record, as do e2a185de (31ded6de, failed the
+# f32 minimum bands before they were widened to the measured floor), 66b3099c (CPU fallback, ab6897a0, pass) and
+# 3be5cee2-5362-4ad3-9a10-625001312056 (pass, 2026-11-03).
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run 7ba210c2 stays on record.
+bth_run_id = "91a96aee-88b3-4f6b-aa83-42ba3b7563f7"

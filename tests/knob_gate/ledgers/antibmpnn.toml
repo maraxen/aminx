@@ -1,0 +1,11 @@
+# Sidecar ledger shard for AntiBMPNN vehicle runs.
+# Owning task records [sidecar.antibmpnn_parity_v3] after the vehicle run on titanix.
+
+[sidecar]
+
+[sidecar.antibmpnn_parity_v3]
+# Recorded 261116 at 365d174d (P4 integration head after the origin/main 0.5.3 merge; CPU-pinned, JAX_PLATFORMS=cpu).
+# Cool-tier row is absent (bathos log mode); the run resolves through bth sql (see test_resolve_run_log_mode.py).
+# verify_wave.py at 7717cc3e: every step 1c condition PASS.
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run 6342beb9 stays on record.
+bth_run_id = "5c796694-febf-491d-9170-1ee913586477"

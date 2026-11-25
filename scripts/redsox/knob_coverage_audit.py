@@ -146,7 +146,7 @@ def _expected_prefix(row: dict[str, Any]) -> str:
 
 
 def _func(nodeid: str) -> str:
-  return nodeid.split("::")[-1]
+  return nodeid.rsplit("::", maxsplit=1)[-1]
 
 
 @dataclass(frozen=True)

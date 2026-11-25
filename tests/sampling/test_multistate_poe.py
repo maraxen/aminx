@@ -162,7 +162,7 @@ class TestSampleStatesFused:
     a different test) and the mock genuinely observes the call.
     """
     from aminx.sampling import multistate_poe as poe_mod
-    from aminx.tiling.strategy import SafeMap
+    from xtrax.tiling import ChunkedMap
 
     num_states, num_residues, n_samples = 4, 6, 2
     model, bundle, config = _build_synthetic_bundle(
@@ -180,21 +180,21 @@ class TestSampleStatesFused:
     assert mock_kernel.call_count >= 1
     for call in mock_kernel.call_args_list:
       state_strategy = call.kwargs["state_strategy"]
-      assert isinstance(state_strategy, SafeMap), (
-        f"num_states={num_states} > N_STATES.default_batch_size=1 must resolve to SafeMap "
+      assert isinstance(state_strategy, ChunkedMap), (
+        f"num_states={num_states} > N_STATES.default_batch_size=1 must resolve to ChunkedMap "
         f"(the axis's own canonical template default), got {type(state_strategy).__name__} "
         "-- state axis is not going through BatchPlanner"
       )
-      assert state_strategy.tile == 1
+      assert state_strategy.batch_size == 1
 
   def test_single_state_still_passes_an_explicit_resolved_strategy(self):
     """num_states=1 <= N_STATES.default_batch_size=1 -> Vmap is the correct (and harmless,
-    since cardinality=1 makes Vmap/SafeMap equivalent) BatchPlanner decision; must still be
+    since cardinality=1 makes Vmap/ChunkedMap equivalent) BatchPlanner decision; must still be
     an explicitly resolved strategy passed through, not silently relying on kernel()'s own
     Vmap default (which would mask a regression if N_STATES' default_batch_size ever changes).
     """
     from aminx.sampling import multistate_poe as poe_mod
-    from aminx.tiling.strategy import Vmap
+    from xtrax.tiling import Vmap
 
     model, bundle, config = _build_synthetic_bundle(num_states=1, num_residues=9, seed=32)
     stage_set = make_stage_set(strategy="product", state_weights=bundle.conditioning.state_weights)
@@ -261,6 +261,88 @@ class TestSampleMultistatePoeBead:
     assert logits.shape[-1] == 21
     assert sequences.dtype == jnp.int32
     assert bool(jnp.all(jnp.isfinite(logits)))
+
+  def test_decoding_order_seed_reaches_the_fused_sampler(self):
+    """The bead hands the spec's ``decoding_order_seed`` to ``sample_states_fused`` (None when unset).
+
+    Without this wiring a seed set on a campaign row would be silently dropped on the fused path
+    while the single-state path honoured it, which is exactly the unpaired comparison the knob exists
+    to remove. The sampler is spied; structure loading and bundle building are real.
+    """
+    inputs = [f"{REPO_TESTS_DATA}/1ubq.pdb", f"{REPO_TESTS_DATA}/1mbn.pdb"]
+    synthetic_model = eqx.tree_inference(
+      Aminx(
+        node_features=32,
+        edge_features=32,
+        hidden_features=32,
+        num_encoder_layers=1,
+        num_decoder_layers=1,
+        k_neighbors=8,
+        dropout_rate=0.0,
+        key=jax.random.PRNGKey(3),
+      ),
+      value=True,
+    )
+    seen: dict[str, object] = {}
+
+    def _spy(*args, **kwargs):
+      seen["seed"] = kwargs.get("decoding_order_seed", "ABSENT")
+      return jnp.zeros((1, 4), jnp.int32), jnp.zeros((1, 4, 21), jnp.float32)
+
+    for order_seed, expected in ((None, None), (4, 4), (0, 0)):
+      spec = SamplingSpecification(
+        inputs=inputs,
+        batch_size=len(inputs),
+        multi_state_strategy="product",
+        decoding_order_seed=order_seed,
+      )
+      seen.clear()
+      with (
+        patch("aminx.host.prep.load_model", return_value=synthetic_model),
+        patch("aminx.sampling.multistate_poe.sample_states_fused", _spy),
+      ):
+        sample_multistate_poe_bead(spec, jax.random.PRNGKey(0), n_samples=1)
+      assert seen["seed"] == expected
+
+  def test_fixed_position_context_reaches_the_fused_sampler(self):
+    """The bead hands the spec's ``fixed_position_context`` to ``sample_states_fused``.
+
+    Dropping it would honour the mode on single-state rows and silently ignore it on fused rows.
+    """
+    inputs = [f"{REPO_TESTS_DATA}/1ubq.pdb", f"{REPO_TESTS_DATA}/1mbn.pdb"]
+    synthetic_model = eqx.tree_inference(
+      Aminx(
+        node_features=32,
+        edge_features=32,
+        hidden_features=32,
+        num_encoder_layers=1,
+        num_decoder_layers=1,
+        k_neighbors=8,
+        dropout_rate=0.0,
+        key=jax.random.PRNGKey(3),
+      ),
+      value=True,
+    )
+    seen: dict[str, object] = {}
+
+    def _spy(*args, **kwargs):
+      seen["mode"] = kwargs.get("fixed_position_context", "ABSENT")
+      return jnp.zeros((1, 4), jnp.int32), jnp.zeros((1, 4, 21), jnp.float32)
+
+    for mode in ("random_order", "canonical_order", "mutual_context"):
+      spec = SamplingSpecification(
+        inputs=inputs,
+        batch_size=len(inputs),
+        multi_state_strategy="product",
+        fixed_position_context=mode,
+      )
+      seen.clear()
+      with (
+        patch("aminx.host.prep.load_model", return_value=synthetic_model),
+        patch("aminx.sampling.multistate_poe.sample_states_fused", _spy),
+      ):
+        sample_multistate_poe_bead(spec, jax.random.PRNGKey(0), n_samples=1)
+      assert seen["mode"] == mode
 
   def test_real_state_position_map_through_full_pipeline_changes_output(self):
     """The core claim this module exists for, proven through the FULL real pipeline --

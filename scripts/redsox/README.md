@@ -1,7 +1,7 @@
 # Z1 runbook — closing the redsox gate
 
 The gate grades `tests/knob_gate/branch_manifest.toml` against the gate's
-outcomes and `tests/knob_gate/sidecar_ledger.toml`. Every sidecar-backed row
+outcomes and the family's ledger shard, `tests/knob_gate/ledgers/<family>.toml`. Every sidecar-backed row
 needs a bathos run that satisfies all **14** step-1c conditions
 (`tests/knob_gate/_coverage.py:287-340`).
 
@@ -162,6 +162,18 @@ comparison of anything the gate does.
    `~/scratch/v6_state.npz`); the launcher exports both:
 
        ssh titanix 'cd ~/projects/aminx-sprint-git && bash scripts/redsox/launch_wave.sh 4'
+
+   Groups 5-7 are the P4 family-parity vehicles (CPU only, 4 threads each, no GPU check). They exist only on the P4
+   branch, so launch with `AMINX_WAVE_REF=<p4 branch>`. Each reads its titanix inputs from env vars and refuses
+   (`REFUSING: <VAR> is unset`) when one is missing:
+
+   | Group | Slugs | Required env |
+   | --- | --- | --- |
+   | 5 | `caliby_parity_v2`, `antibmpnn_parity_v3` | `AMINX_CALIBY_ORACLE_DIR`, `ANTIBMPNN_ORACLE_DIR`, `AMINX_WEIGHTS_DIR` (HF snapshot) |
+   | 6 | `fampnn_parity_v3` | `AMINX_FAMPNN_ORACLE_DIR`, `AMINX_FAMPNN_F64TAB_DIR` |
+   | 7 | `ca_only_parity_v2`, `thermo_mpnn_parity_v2`, `tier1_variants_parity` | none required (upstream `.pt` files under `$AMINX_PARITY_REPOS` or `~/repos`) |
+
+   Optional: `AMINX_CALIBY_WEIGHTS_DIR`, `AMINX_ANTIBMPNN_ROOT`, `AMINX_FAMPNN_ROOT`.
 
    The positive control is a separate, ungraded invocation:
 
@@ -395,7 +407,7 @@ Consequence: **`laser_score_parity`'s only passing run is ineligible.**
 `f11f2bf1` is an ancestor of `6cb81d49` ("key oracle weights by a stable
 identifier, not an absolute path"), so it predates the fix. Its run id must NOT
 be written to the ledger as "already passed" — group 2 re-runs it. The stale
-`laser_decode_e2e` id already sitting in `sidecar_ledger.toml` is ineligible for
+`laser_decode_e2e` id already sitting in `ledgers/laser.toml` is ineligible for
 the same two reasons and must be replaced, not kept.
 
 All six vehicles do route weights through `stable_artifact_key`, directly or via

@@ -17,7 +17,7 @@ import pytest
 
 import aminx.families.fampnn.driver as driver_mod
 from aminx.families.fampnn.constants import FAMPNN_TO_AMINX_ARR
-from aminx.families.fampnn.driver import FAMPNNDriver, mar_sample
+from aminx.families.fampnn.driver import FAMPNNDriver
 from aminx.run.options import FAMPNNOptions
 
 
@@ -222,29 +222,3 @@ class _FakeFAMPNN:
       h_e=zeros,
       e_idx=zeros,
     )
-
-
-def test_mar_sample_returns_logits_for_the_returned_sequence(monkeypatch: pytest.MonkeyPatch) -> None:
-  """The returned logits must describe the returned sequence, not the state before the last step.
-
-  With two steps the cosine schedule unmasks every designable position on the last step, so the
-  loop's own last forward pass saw a fully masked tail. Its argmax would not match the output.
-  """
-  monkeypatch.setattr(driver_mod, "edm_sample", lambda model, xyz, *args, **kwargs: xyz)  # noqa: ARG005
-  length = 6
-  seq_aminx, logits_aminx, _, _ = mar_sample(
-    _FakeFAMPNN(),
-    jnp.zeros((length, 37, 3), dtype=jnp.float32),
-    jnp.zeros((length, 37), dtype=jnp.float32),
-    jnp.zeros((length,), dtype=jnp.int32),
-    jnp.zeros((length,), dtype=jnp.float32),
-    jnp.ones((length,), dtype=jnp.float32),
-    jnp.arange(1, length + 1, dtype=jnp.int32),
-    jnp.zeros((length,), dtype=jnp.int32),
-    num_seq_steps=2,
-    temperature=1.0,
-    pack_each_step=False,
-    key=jax.random.PRNGKey(0),
-  )
-
-  np.testing.assert_array_equal(np.asarray(jnp.argmax(logits_aminx, axis=-1)), np.asarray(seq_aminx))

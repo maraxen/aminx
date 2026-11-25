@@ -1,0 +1,30 @@
+[experiment]
+hypothesis = "Membrane residue specification parser correctly parses input strings and sets, membrane label construction exactly reproduces the reference formula 2*buried*(1-interface) + 1*interface*(1-buried) including the quirk where both flags set evaluate to 0, global labels broadcast correctly, and physics_features are valid (L, 3) one-hot vectors."
+stage_name = "validation"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "status == 'PASS' AND parser_passed AND formula_passed AND quirk_both_zero AND global_passed AND shape_valid AND one_hot_valid"
+decision = "Promote membrane_label_construction implementation."
+reasoning = "All membrane residue parsing, label assignment, quirk reproduction, and one-hot physics feature invariants hold."
+is_residual = false
+
+[outcomes.fail]
+condition = "status != 'PASS' OR NOT parser_passed OR NOT formula_passed OR NOT quirk_both_zero OR NOT global_passed OR NOT shape_valid OR NOT one_hot_valid"
+decision = "Reject membrane_label_construction implementation."
+reasoning = "One or more membrane invariants failed."
+is_residual = true
+
+[result_schema]
+probe_name = "str"
+clause = "str"
+status = "str"
+parser_passed = "bool"
+formula_passed = "bool"
+quirk_both_zero = "bool"
+global_passed = "bool"
+shape_valid = "bool"
+one_hot_valid = "bool"

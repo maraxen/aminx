@@ -1,0 +1,17 @@
+# CA-only ProteinMPNN shard.
+# Vehicle: scripts/parity/ca_only_parity_v2.py (slug ca_only_parity_v2); its four branch rows carry family = "ca_only".
+# v1 (slug ca_only_parity, kept as the closure of its recorded run) FAILED at 365d174d.
+# Run 261116 at 365d174d: ae5f6e16-eff8-4757-b595-2e22554b5e03 recorded outcome FAIL, so nothing is recorded. Root cause (spike, not a port defect):
+# nodes and log-probs match upstream to ~1e-15 on all three checkpoints; the edge tensor differs only where the last two neighbor slots
+# swap (masked residue 28 ties the farthest valid neighbor at D_max; torch topk vs jax top_k tie order). Canonicalised edge diff 9.1e-14.
+# v2 compares edges after neighbor canonicalisation (bands unchanged; adds the neighbor-selection check) under a new pre-registered sidecar.
+
+[sidecar]
+
+[sidecar.ca_only_parity_v2]
+# Recorded 261116 at d06521ff (P4 integration head; CPU-pinned). Cool-tier row absent (bathos log mode): the run resolves
+# through bth sql (test_resolve_run_log_mode.py). verify_wave.py at d06521ff: every step 1c condition PASS.
+# outcome pass: f64 3.5e-13, f32 q999 3.1e-5, f32 max 1.8e-4, neighbor_set_mismatch_rows 0, untied_slot_mismatches 0,
+# 4/4 mutants tripped at 3.5 to 5.8.
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run 98d3d5d0 stays on record.
+bth_run_id = "96d81334-dae5-4bbc-9a43-3d3c7fca800e"

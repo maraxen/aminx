@@ -1,0 +1,45 @@
+[metadata]
+title = "runner.score recompiles on every identical-shape call (debt #3484)"
+created = "261118"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "Three runner.score calls in one process, with identical shapes (1ubq, L=76 padded to 512, proteinmpnn_v_48_020, one sequence, causal ar_mask, return_logits) and only the ar_mask values changing: on unmodified origin/main 86a41a03 the 2nd and 3rd calls each trigger >= 1 backend compile, because make_score_split_fns rebuilds its jax.jit closures per call. After the #3484 fix they trigger exactly 0, and call 2 is at least 5x faster than call 1. The same sidecar grades both: the baseline run is expected to record 'fail', the fixed run 'pass'."
+stage_name = "validation"
+novel = true
+
+[controls]
+# Instrument control: a cold process must compile on call 1. If the counter saw no compile there,
+# it cannot see compiles at all and a zero on calls 2-3 means nothing.
+positive_outcome = ["pass"]
+negative_outcome = ["instrument_blind", "fail"]
+
+[outcomes.instrument_blind]
+condition = "compiles_call1 = 0"
+decision = "Do not interpret: the compile counter saw nothing on a cold call."
+reasoning = "Checked first; a blind counter would make the zero-recompile result vacuous."
+is_residual = false
+
+[outcomes.pass]
+condition = "compiles_call1 > 0 AND compiles_call2 = 0 AND compiles_call3 = 0 AND wall_s_call1 >= 5.0 * wall_s_call2"
+decision = "#3484 fixed: identical-shape calls reuse compiled executables."
+reasoning = "Zero backend compiles on warm calls is the debt's acceptance criterion; the wall-time ratio shows the saving is real."
+is_residual = false
+
+[outcomes.fail]
+condition = "compiles_call2 > 0 OR compiles_call3 > 0 OR wall_s_call1 < 5.0 * wall_s_call2"
+decision = "Warm calls still compile (expected on the unmodified baseline)."
+reasoning = "Residual."
+is_residual = true
+
+[result_schema]
+compiles_call1 = "int"
+compiles_call2 = "int"
+compiles_call3 = "int"
+wall_s_call1 = "float"
+wall_s_call2 = "float"
+backend = "str"
+git_hash = "str"
+
+[provenance]
+track_packages = ["aminx", "jax"]

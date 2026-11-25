@@ -28,6 +28,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jaxtyping import Array, Float, Int, PRNGKeyArray
+from xtrax.tiling import Vmap
 
 from aminx.inference.bundle_builder import build_inference_bundle
 from aminx.inference.decode.factory import make_decode_fn  # noqa: TID251
@@ -38,11 +39,13 @@ from aminx.inference.decode.mode import (  # noqa: TID251
 from aminx.io.weights import get_topology_for_checkpoint
 from aminx.model.dropout import Dropout
 from aminx.model.features import select_neighbors
-from aminx.tiling.strategy import Vmap
 from aminx.types.bundles import EncoderOutput, WaveScheduleBundle
-from aminx.utils.autoregression import generate_ar_mask
+from aminx.utils.autoregression import ar_mask_from_decoding_order
 from aminx.utils.coordinates import compute_backbone_coordinates, compute_backbone_distance
 from aminx.utils.radial_basis import compute_radial_basis
+
+# Exported graphs keep a float32 AR mask (ORT-web); built float32 from the start so the graph has no int8 ops.
+_EXPORT_AR_MASK_DTYPE = jnp.float32
 
 if TYPE_CHECKING:
   # Type-only: aminx.types.stages / aminx.inference.decode.unconditional are exempt from
@@ -285,6 +288,7 @@ def make_p04_unconditional(
       chain_index=chain_index,
       mode="score_unconditional",
       inference=True,
+      ar_mask_dtype=_EXPORT_AR_MASK_DTYPE,
     )
     logits = decode_fn(_NO_KEY, enc, bundle, config, stage_set)
     return (
@@ -351,12 +355,16 @@ def p07_bundle(
 ) -> tuple[InferenceBundle, InferenceConfig]:
   """Bundle whose wave and ``ar_mask`` come from ``decoding_order`` and ``tie_group_map``.
 
-  Every sampling control is an argument. ``generate_ar_mask`` is called with the tie
-  map (ORDER-array convention: ``tie_group_map[decoding_order]``), which is what
-  identity ``arange(L)`` uses for "no ties".
+  Every sampling control is an argument. ``ar_mask_from_decoding_order`` is called with
+  the ORDER array and tie map (ORDER-array convention: ``order[t]`` = position decoded
+  at step ``t``).
   """
   wave = wave_from_decoding_order(decoding_order, tie_group_map)
-  ar_mask = generate_ar_mask(decoding_order, tie_group_map=tie_group_map).astype(jnp.float32)
+  # Export boundary: the exported graph keeps a float32 mask (ORT-web), built float32 from the
+  # start so no int8 convert/sub/mul ops enter the graph. In-memory bundles are int8.
+  ar_mask = ar_mask_from_decoding_order(
+    decoding_order, tie_group_map=tie_group_map, dtype=_EXPORT_AR_MASK_DTYPE
+  )
   return build_inference_bundle(
     coords=coords,
     mask=mask,
@@ -371,6 +379,7 @@ def p07_bundle(
     mode="sample_autoregressive",
     inference=True,
     wave=wave,
+    ar_mask_dtype=_EXPORT_AR_MASK_DTYPE,
   )
 
 

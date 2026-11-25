@@ -162,12 +162,15 @@ def make_optimize_sequence_fn(
         num_groups,
       )
 
-      # ar_masks will have shape (batch_size, L, L). This used to be
-      # `vmap(generate_ar_mask, in_axes=(0, None))(orders, tie_map)`, which was wrong twice:
-      # generate_ar_mask's untied branch reads a RANK array, and its SECOND positional
-      # parameter is `chain_idx`, not `tie_group_map` -- so a tie map restricted every
-      # position to seeing only earlier members of its own tie group (debt #1982).
-      ar_masks = jax.vmap(ar_mask_from_decoding_order, in_axes=(0, None))(
+      # ar_masks will have shape (batch_size, L, L). Do not replace this with
+      # `vmap(generate_ar_mask, in_axes=(0, None))(orders, tie_map)`: generate_ar_mask's
+      # SECOND positional parameter is `chain_idx`, not `tie_group_map`, so a tie map would
+      # restrict every position to seeing only earlier members of its own tie group (debt
+      # #1982). Before Defect 9 its untied branch also read a RANK array.
+      ar_masks = jax.vmap(
+        lambda order, ties: ar_mask_from_decoding_order(order, ties, dtype=bundle.conditioning.ar_mask.dtype),
+        in_axes=(0, None),
+      )(
         decoding_orders, tie_group_map[0] if tie_group_map is not None else None,
       )
 
@@ -292,7 +295,9 @@ def make_optimize_sequence_fn(
       final_key, num_residues, tie_group_map[0] if tie_group_map is not None else None, num_groups,
     )
     final_ar_mask = ar_mask_from_decoding_order(
-      final_decoding_order, tie_group_map[0] if tie_group_map is not None else None,
+      final_decoding_order,
+      tie_group_map[0] if tie_group_map is not None else None,
+      dtype=bundle.conditioning.ar_mask.dtype,
     )
 
     ar_mask_stack = jnp.broadcast_to(

@@ -541,7 +541,11 @@ class TestPrepareLigandContextRequiresRealTensors:
     assert ligand_context["Y"] is not None
     assert ligand_context["Y_t"] is not None
     assert ligand_context["Y_m"] is not None
-    assert ligand_context["Y"].shape == (batch_size, seq_len, atoms, 3)
-    np.testing.assert_array_equal(np.asarray(ligand_context["Y"][0]), tensors_a["Y"])
-    np.testing.assert_array_equal(np.asarray(ligand_context["Y_t"][0]), tensors_a["Y_t"])
-    np.testing.assert_array_equal(np.asarray(ligand_context["Y_m"][0]), tensors_a["Y_m"])
+    # #3510: the atom axis is end-padded with mask-0 atoms to the ligand atom rung.
+    from aminx.host.bucketing import ligand_atom_rung
+
+    assert ligand_context["Y"].shape == (batch_size, seq_len, ligand_atom_rung(atoms), 3)
+    np.testing.assert_array_equal(np.asarray(ligand_context["Y"][0])[:, :atoms], tensors_a["Y"])
+    np.testing.assert_array_equal(np.asarray(ligand_context["Y_t"][0])[:, :atoms], tensors_a["Y_t"])
+    np.testing.assert_array_equal(np.asarray(ligand_context["Y_m"][0])[:, :atoms], tensors_a["Y_m"])
+    assert not np.asarray(ligand_context["Y_m"][0])[:, atoms:].any()

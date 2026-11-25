@@ -8,7 +8,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # lfs: true -- without it the packaged ideal_geometry.npz is a Git LFS pointer, which is
+      # exactly what the 0.5.3 wheel shipped (debt #3500).
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Install uv
         run: |
@@ -17,6 +21,10 @@ jobs:
 
       - name: Build sdist and wheel
         run: uv build
+
+      # Refuse to publish a wheel whose packaged data files are LFS pointers or unreadable.
+      - name: Check packaged data files
+        run: uv run --no-project --with numpy python scripts/release/check_wheel_data.py dist/*.whl
 
       - name: Upload dist artifacts
         uses: actions/upload-artifact@v4

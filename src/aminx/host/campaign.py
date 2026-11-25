@@ -14,7 +14,7 @@ import threading
 import time
 import uuid
 from collections.abc import Generator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, fields, replace
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError
@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+from xtrax import jax_cache
+from xtrax.profiling import count_backend_compiles
 from xtrax.run import (
   canonical_json_bytes,
   fsync_directory,
@@ -47,6 +49,7 @@ from aminx.run.spec_json import _coerce_field_value, migrate_removed_spec_keys
 from aminx.run.specs import SamplingSpecification, ScoringSpecification
 from aminx.runtime import configure_multiprocessing
 from aminx.sampling.multistate_poe import sample_multistate_poe_campaign_row
+from aminx.utils.compile_telemetry import jax_compilation_cache_setting
 
 if TYPE_CHECKING:
   from aminx.types.host_protocols import DistributedLockBackend
@@ -61,7 +64,9 @@ ADOPT_LEGACY_REPORT_SCHEMA_VERSION = "campaign_adopt_legacy_report_v1"
 # change). It is part of every unit's input hash, so a bump invalidates stamps written before it instead of letting a
 # resumed campaign mix outputs from two numerics (aminx #2421).
 # S8 length bucketing changes seeded sample outputs, so stamps from epoch 1 are not reused.
-SAMPLING_NUMERICS_EPOCH = 2
+# Epoch 3 (#3510, 0.5.5): LigandMPNN ligand atom-axis padding and score_conditionals N padding change
+# outputs by float reassociation, so a campaign resumed across 0.5.4 -> 0.5.5 recomputes.
+SAMPLING_NUMERICS_EPOCH = 3
 _MAX_HASHED_DIR_FILES = 5000
 MANIFEST_ROW_SCHEMA_VERSION = "campaign_manifest_row_v1"
 MANIFEST_SCHEMA_VERSION = "campaign_manifest_v1"
@@ -426,6 +431,22 @@ def validate_manifest_rows(rows: list[dict[str, Any]]) -> None:
     if state_weight_profile is None or not str(state_weight_profile).strip():
       msg = f"Row {row_hash} has empty or missing state_weight_profile"
       raise ValueError(msg)
+    if _row_task(row) is not None:
+      unit_payload = _row_unit_payload(row)
+      if not isinstance(unit_payload, dict) or not unit_payload.get("output_h5_path"):
+        msg = f"Row {row_hash} (task={row.get('task')!r}) must carry a unit_spec with output_h5_path."
+        raise ValueError(msg)
+      if str(fixed_policy).strip() != _NO_ARM:
+        msg = f"Row {row_hash} (task={row.get('task')!r}) fixes nothing; its fixed_policy must be {_NO_ARM!r}."
+        raise ValueError(msg)
+      if unit_payload.get("task") != row.get("task"):
+        # compute_unit_input_hash keys the task-file hashing on the PAYLOAD's task.
+        msg = (
+          f"Row {row_hash}: task {row.get('task')!r} but unit_spec task {unit_payload.get('task')!r}; "
+          "they must agree or the unit's file bytes would not enter its input hash."
+        )
+        raise ValueError(msg)
+      continue
     # A row that names an arm must CARRY that arm's mask. Checks the row against itself --
     # unlike the deleted `required_fixed_policies` arm, which checked the planner's output
     # against the planner's own input and therefore could never fail.
@@ -498,6 +519,71 @@ class ManifestGateState:
   metadata_issues: list[str]
   checkpoint_issues: list[str]
   runtime_issues: list[str]
+
+
+# Row kinds (#3486). A row without ``task`` is a sampling row (``sampling_spec`` payload), exactly
+# as before; its hashes and dispatch are untouched. Other kinds carry a ``unit_spec`` payload and
+# are executed by their own handler, under the same lock / done-marker / input-hash semantics.
+SCORE_CONDITIONALS_TASK = "score_conditionals"  # campaign_score.SCORE_CONDITIONALS_TASK is this object
+_ROW_TASKS = frozenset({SCORE_CONDITIONALS_TASK})
+
+
+def _row_task(row: Mapping[str, Any]) -> str | None:
+  """The row's ``task``, or ``None`` for a sampling row. Unknown tasks are refused."""
+  task = row.get("task")
+  if task is None:
+    return None
+  if task not in _ROW_TASKS:
+    msg = f"Manifest row {row.get('manifest_row_hash')!r} has unknown task {task!r}; known: {sorted(_ROW_TASKS)}."
+    raise ValueError(msg)
+  return str(task)
+
+
+def _row_unit_payload(row: Mapping[str, Any]) -> Any:  # noqa: ANN401
+  """The row's unit payload: ``unit_spec`` for task rows, ``sampling_spec`` for sampling rows."""
+  return row.get("unit_spec") if _row_task(row) is not None else row.get("sampling_spec")
+
+
+# Shape classes this process has already executed a unit of (#3510); see ``row_compile_key``.
+_SEEN_SHAPE_CLASSES: set[str] = set()
+COMPILE_TELEMETRY_SCHEMA_VERSION = "campaign_compile_telemetry_v1"
+
+
+def row_compile_key(row: Mapping[str, Any]) -> tuple[Any, ...] | None:
+  """The compile shape class of a manifest row, or ``None`` when it cannot be determined (#3510).
+
+  Rows sharing a key reuse one set of compiled kernels within a process. ``score_conditionals``
+  rows get the exact key (architecture, residue rung, K, N bucket, ligand atom rung) from file
+  headers (``campaign_score.score_compile_key``). Sampling rows get a coarse model-level key
+  ``("sampling", model_family, checkpoint_id, n_inputs, max_length)``: it groups rows of one
+  model, but a sampling class may still compile more than once.
+
+  Never raises: a row whose key cannot be read (missing file, bad header) returns ``None`` and
+  keeps its manifest position, so the real error surfaces inside ``run_manifest_row`` under its
+  lock and quarantine semantics.
+  """
+  try:
+    task = _row_task(row)
+    payload = _row_unit_payload(row)
+    if not isinstance(payload, Mapping):
+      return None
+    if task == SCORE_CONDITIONALS_TASK:
+      from aminx.host.campaign_score import score_compile_key  # noqa: PLC0415
+
+      return score_compile_key(payload)
+    return (
+      "sampling",
+      str(payload.get("model_family")),
+      str(payload.get("checkpoint_id")),
+      len(_normalize_inputs(payload.get("inputs") or [])),
+      payload.get("max_length"),
+    )
+  except Exception:  # noqa: BLE001 -- ordering only; run_manifest_row reports the real error
+    return None
+
+
+def _shape_class_label(key: tuple[Any, ...] | None) -> str | None:
+  return None if key is None else json.dumps([str(part) for part in key])
 
 
 def _normalize_inputs(inputs: Any) -> list[str]:  # noqa: ANN401
@@ -931,6 +1017,12 @@ def compute_unit_input_hash(sampling_spec_payload: Mapping[str, Any]) -> tuple[s
       "numerics_epoch": SAMPLING_NUMERICS_EPOCH,
     },
   }
+  # Task rows (#3486): files named in the payload whose BYTES determine the output (the mask
+  # stack, the ligand context). Added only for task payloads, so sampling-row hashes are unchanged.
+  if sampling_spec_payload.get("task") == SCORE_CONDITIONALS_TASK:
+    from aminx.host.campaign_score import task_input_files  # noqa: PLC0415
+
+    components["task_files"] = task_input_files(sampling_spec_payload)
   # Only seed 0. Adding the key for any other seed would change that unit's hash.
   recorded_seed = sampling_spec_payload.get("random_seed")
   if recorded_seed == 0 and not isinstance(recorded_seed, bool):
@@ -1024,6 +1116,7 @@ def _write_done_marker(
   input_hash_components: dict[str, Any] | None = None,
   adopted_from: dict[str, Any] | None = None,
   completed_at_unix_s: float | None = None,
+  compile_telemetry: dict[str, Any] | None = None,
 ) -> None:
   marker_payload: dict[str, Any] = {
     "schema_version": DONE_MARKER_SCHEMA_VERSION,
@@ -1040,6 +1133,10 @@ def _write_done_marker(
     marker_payload["input_hash_components"] = input_hash_components
     marker_payload["digest_algo"] = f"xtrax.run.zarr_content_digest@{producer['xtrax']}"
     marker_payload["producer"] = producer
+  if compile_telemetry is not None:
+    # Optional v3 field (#3510). Never part of any digest: compile counts differ between
+    # otherwise identical runs.
+    marker_payload["compile_telemetry"] = compile_telemetry
   if adopted_from is not None:
     marker_payload["adopted_from_v2"] = True
     marker_payload["adopted_from"] = adopted_from
@@ -1769,14 +1866,16 @@ def run_manifest_row(  # noqa: PLR0915
   rows = _manifest_rows(manifest_path)
 
   row = _select_row(rows, row_index=row_index, row_hash=row_hash)
-  sampling_spec_payload = row.get("sampling_spec")
+  row_task = _row_task(row)
+  payload_key = "sampling_spec" if row_task is None else "unit_spec"
+  sampling_spec_payload = _row_unit_payload(row)
   if not isinstance(sampling_spec_payload, dict):
-    msg = "Manifest row must include a 'sampling_spec' object."
+    msg = f"Manifest row must include a '{payload_key}' object."
     raise TypeError(msg)
 
   raw_output_path = sampling_spec_payload.get("output_h5_path")
   if raw_output_path is None:
-    msg = "Manifest row sampling_spec must include output_h5_path."
+    msg = f"Manifest row {payload_key} must include output_h5_path."
     raise ValueError(msg)
   output_h5_path = Path(raw_output_path).resolve()
   output_h5_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1787,6 +1886,7 @@ def run_manifest_row(  # noqa: PLR0915
   # Everything that determines this unit's output, hashed up front: reuse is only valid if it matches the stamp.
   input_hash, input_hash_components = compute_unit_input_hash(sampling_spec_payload)
   reuse: dict[str, Any] = {"decision": "computed", "reason": "no_prior_artifact", "input_hash": input_hash}
+  compile_telemetry: dict[str, Any] | None = None
 
   existing_marker = _read_done_marker(done_marker_path)
   marker_needs_replacement = False
@@ -1883,25 +1983,42 @@ def run_manifest_row(  # noqa: PLR0915
       )
       raise RuntimeError(msg)
 
-    worker_payload = dict(sampling_spec_payload)
-    worker_payload["output_path"] = str(partial_path)
-    worker_payload["output_zarr_path"] = str(partial_path)
-    worker_payload["output_h5_path"] = str(partial_path)
-    worker_payload = migrate_removed_spec_keys(worker_payload)
-    worker_payload = {
-      key: _coerce_field_value(SamplingSpecification, key, value)
-      for key, value in worker_payload.items()
-    }
-    sampling_spec = SamplingSpecification(**worker_payload)
-    is_multi_backend_arm = "backend_arm_id" in row
-    if not is_multi_backend_arm:
-      refuse_driver_family(sampling_spec, surface="campaign")
+    sampling_spec: SamplingSpecification | None = None
+    if row_task is None:
+      worker_payload = dict(sampling_spec_payload)
+      worker_payload["output_path"] = str(partial_path)
+      worker_payload["output_zarr_path"] = str(partial_path)
+      worker_payload["output_h5_path"] = str(partial_path)
+      worker_payload = migrate_removed_spec_keys(worker_payload)
+      worker_payload = {
+        key: _coerce_field_value(SamplingSpecification, key, value)
+        for key, value in worker_payload.items()
+      }
+      sampling_spec = SamplingSpecification(**worker_payload)
+      is_multi_backend_arm = "backend_arm_id" in row
+      if not is_multi_backend_arm:
+        refuse_driver_family(sampling_spec, surface="campaign")
 
-    is_multistate_poe_row = (
+    shape_class = _shape_class_label(row_compile_key(row))
+    first_of_class = shape_class is None or shape_class not in _SEEN_SHAPE_CLASSES
+    # Count this unit's backend compiles with xtrax's counter (#3510); closed as soon as the
+    # executor returns, and in ``finally`` on failure.
+    compile_scope = ExitStack()
+    is_multistate_poe_row = sampling_spec is not None and (
       isinstance(sampling_spec.inputs, (list, tuple)) and len(sampling_spec.inputs) > 1
     )
     try:
-      if sampling_spec.model_family == "thermompnn":
+      compile_stats = compile_scope.enter_context(count_backend_compiles())
+      if row_task == SCORE_CONDITIONALS_TASK:
+        # Teacher-forced conditional logits under K explicit masks (#3486); writes its own store
+        # at partial_path, committed below exactly as a sampling store is.
+        from aminx.host.campaign_score import execute_score_conditionals_unit  # noqa: PLC0415
+
+        sample_result = execute_score_conditionals_unit(sampling_spec_payload, partial_path)
+      elif sampling_spec is None:  # pragma: no cover - _row_task refuses unknown tasks
+        msg = f"no executor for task {row_task!r}"
+        raise RuntimeError(msg)
+      elif sampling_spec.model_family == "thermompnn":
         score_spec = ScoringSpecification(
           inputs=sampling_spec.inputs,
           model_family="thermompnn",
@@ -1925,6 +2042,16 @@ def run_manifest_row(  # noqa: PLR0915
         sample_result = sample_multistate_poe_campaign_row(sampling_spec)
       else:
         sample_result = sample(sampling_spec)
+      compile_scope.close()
+      compile_telemetry = {
+        "schema_version": COMPILE_TELEMETRY_SCHEMA_VERSION,
+        "shape_class": shape_class,
+        "backend_compiles": int(compile_stats.count),
+        "backend_compile_seconds": float(compile_stats.seconds),
+        "shape_classes_seen_before_in_process": len(_SEEN_SHAPE_CLASSES),
+        "first_unit_of_class_in_process": first_of_class,
+        "jax_compilation_cache": jax_compilation_cache_setting(),
+      }
       if heartbeat_errors:
         msg = (
           f"Lock heartbeat failed while executing manifest row {manifest_hash}: "
@@ -1947,9 +2074,13 @@ def run_manifest_row(  # noqa: PLR0915
         lock_backend=lock_backend,
         input_hash=input_hash,
         input_hash_components=input_hash_components,
+        compile_telemetry=compile_telemetry,
       )
       reuse["artifact_digest"] = content_digest_sha256
+      if shape_class is not None:
+        _SEEN_SHAPE_CLASSES.add(shape_class)
     finally:
+      compile_scope.close()
       if partial_path.exists():
         shutil.rmtree(partial_path)
 
@@ -1960,12 +2091,18 @@ def run_manifest_row(  # noqa: PLR0915
       campaign_id=str(row.get("campaign_id") or payload.get("campaign_id") or "campaign"),
     )
   if active_sink is not None:
-    arm_id = str(row.get("backend_arm_id") or sampling_spec.model_family or "default")
+    sink_family = (
+      sampling_spec.model_family if sampling_spec is not None else sampling_spec_payload.get("model_family")
+    )
+    sink_checkpoint = (
+      sampling_spec.checkpoint_id if sampling_spec is not None else sampling_spec_payload.get("checkpoint_id")
+    )
+    arm_id = str(row.get("backend_arm_id") or row.get("label") or sink_family or "default")
     sink_arrays = _collect_sink_arrays(output_h5_path, sample_result)
     active_sink.write_arm_results(
       arm_id=arm_id,
-      model_family=str(sampling_spec.model_family or "proteinmpnn"),
-      checkpoint_id=str(sampling_spec.checkpoint_id or ""),
+      model_family=str(sink_family or "proteinmpnn"),
+      checkpoint_id=str(sink_checkpoint or ""),
       manifest_row_hash=manifest_hash,
       records=[
         {
@@ -1990,6 +2127,7 @@ def run_manifest_row(  # noqa: PLR0915
       "lock_backend": lock_backend,
       "input_hash": input_hash,
       "reuse": reuse,
+      "compile_telemetry": compile_telemetry,
     },
   )
   return result_payload
@@ -2027,8 +2165,20 @@ def execute_manifest(
   unified_sink: UnifiedCampaignSink | None = None,
   sink_root: str | Path | None = None,
   hoisted_executor: HoistedTopologyExecutor | None = None,
+  group_by_shape_class: bool = True,
 ) -> dict[str, Any]:
   """Execute all (or selected) manifest rows and return a structured summary.
+
+  Rows run grouped by compile shape class (``row_compile_key``), classes in order of first
+  appearance and rows in manifest order within a class, so each class compiles once per process
+  (#3510). Ordering changes nothing else: each row keeps its own lock, done marker and input-hash
+  reuse check, and ``row_results`` is reported in manifest order. With ``continue_on_error=False``
+  the row that stops the run is the first failure in execution order, which can differ from the
+  first failing row in manifest order. ``group_by_shape_class=False`` restores manifest order.
+
+  Grouping acts within one call's row selection. A job array that shards rows by index or hash
+  compiles every class present in each shard; shard by ``row_compile_key`` to compile each class
+  in one task.
 
   Parameters
   ----------
@@ -2052,11 +2202,14 @@ def execute_manifest(
     Optional directory root for a ``UnifiedCampaignSink``.
   hoisted_executor : HoistedTopologyExecutor | None, optional
     Optional ``HoistedTopologyExecutor`` for weight hoisting across same-topology checkpoints.
+  group_by_shape_class : bool, optional
+    Execute rows grouped by compile shape class. Default True.
 
   Returns
   -------
   dict[str, Any]
-    Result of ``execute_manifest``.
+    Result of ``execute_manifest``. ``shape_classes`` summarizes compiles per class: the first
+    unit's backend compiles and the total over later units (0 when the class is warm).
   """
   rows = _manifest_rows(manifest_path)
   requested_hashes = tuple(row_hashes or ())
@@ -2085,11 +2238,28 @@ def execute_manifest(
       campaign_id=cid,
     )
   success_statuses = {"ok", "completed", "already_done"}
-  row_results: list[dict[str, Any]] = []
+  results_by_index: dict[int, dict[str, Any]] = {}
   successful_rows = 0
   failed_rows = 0
 
-  for row in selected_rows:
+  keyed = [
+    (index, row, _shape_class_label(row_compile_key(row))) for index, row in enumerate(selected_rows)
+  ]
+  if group_by_shape_class:
+    class_order: dict[str, int] = {}
+    for index, _row, label in keyed:
+      class_order.setdefault(label if label is not None else f"__unkeyed_{index}", index)
+    execution_order = sorted(
+      keyed,
+      key=lambda item: (
+        class_order[item[2] if item[2] is not None else f"__unkeyed_{item[0]}"],
+        item[0],
+      ),
+    )
+  else:
+    execution_order = keyed
+
+  for index, row, shape_class in execution_order:
     row_hash = str(row["manifest_row_hash"])
     try:
       result = run_manifest_row(
@@ -2103,31 +2273,33 @@ def execute_manifest(
         hoisted_executor=active_executor,
       )
       row_status = str(result.get("status", "completed"))
-      row_results.append(
-        {
-          "manifest_row_hash": row_hash,
-          "status": row_status,
-          "output_h5_path": result.get("output_h5_path"),
-          "reuse": result.get("reuse"),
-        },
-      )
+      results_by_index[index] = {
+        "manifest_row_hash": row_hash,
+        "status": row_status,
+        "output_h5_path": result.get("output_h5_path"),
+        "reuse": result.get("reuse"),
+        "shape_class": shape_class,
+        "execution_position": len(results_by_index),
+        "compile_telemetry": result.get("compile_telemetry"),
+      }
       if row_status in success_statuses:
         successful_rows += 1
       else:
         failed_rows += 1
     except Exception as exc:
       failed_rows += 1
-      row_results.append(
-        {
-          "manifest_row_hash": row_hash,
-          "status": "error",
-          "error": str(exc),
-        },
-      )
+      results_by_index[index] = {
+        "manifest_row_hash": row_hash,
+        "status": "error",
+        "error": str(exc),
+        "shape_class": shape_class,
+        "execution_position": len(results_by_index),
+      }
       if not continue_on_error:
         msg = f"Execution failed for manifest row {row_hash}: {exc}"
         raise RuntimeError(msg) from exc
 
+  row_results = [results_by_index[index] for index in sorted(results_by_index)]
   return {
     "schema_version": "campaign_execute_report_v1",
     "manifest_path": (
@@ -2141,8 +2313,35 @@ def execute_manifest(
     "reused_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "reused"),
     "recomputed_rows": sum(1 for r in row_results if (r.get("reuse") or {}).get("decision") == "recomputed"),
     "hoisted_compiles": active_executor.total_compiles(),
+    "shape_classes": _summarize_shape_classes(row_results),
     "row_results": row_results,
   }
+
+
+def _summarize_shape_classes(row_results: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+  """Per shape class: rows computed, first computed unit's compiles, compiles over later units."""
+  summary: dict[str, dict[str, Any]] = {}
+  for result in sorted(row_results, key=lambda r: r.get("execution_position", 0)):
+    telemetry = result.get("compile_telemetry")
+    label = result.get("shape_class")
+    if label is None or not isinstance(telemetry, Mapping):
+      continue
+    entry = summary.setdefault(
+      str(label),
+      {
+        "shape_class": label,
+        "computed_rows": 0,
+        "first_unit_compiles": None,
+        "later_unit_compiles": 0,
+      },
+    )
+    compiles = int(telemetry.get("backend_compiles", 0))
+    if entry["computed_rows"] == 0:
+      entry["first_unit_compiles"] = compiles
+    else:
+      entry["later_unit_compiles"] += compiles
+    entry["computed_rows"] += 1
+  return list(summary.values())
 
 
 def adopt_legacy_done_markers(
@@ -2176,7 +2375,7 @@ def adopt_legacy_done_markers(
       continue
     entry: dict[str, Any] = {"manifest_row_hash": row_hash, "adopted": False}
     entries.append(entry)
-    spec_payload = row.get("sampling_spec")
+    spec_payload = _row_unit_payload(row)
     raw_output = spec_payload.get("output_h5_path") if isinstance(spec_payload, dict) else None
     if raw_output is None:
       entry["skipped"] = "no_output_path"
@@ -2443,6 +2642,17 @@ def evaluate_scale_ramp_reports(report_paths: Sequence[str | Path]) -> dict[str,
 
 
 def _row_cell_key(row: dict[str, Any]) -> GateCellKey:
+  if _row_task(row) is not None:
+    # A task row's cell is its condition: task, label, checkpoint and ligand on/off.
+    return (
+      str(row["task"]),
+      str(row.get("label", "")),
+      str(row.get("checkpoint_id", "")),
+      (),
+      (),
+      bool(row.get("ligand_conditioning")),
+      False,
+    )
   return (
     str(row["fixed_policy"]),
     str(row["state_weight_profile"]),
@@ -2454,7 +2664,7 @@ def _row_cell_key(row: dict[str, Any]) -> GateCellKey:
   )
 
 
-def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState:
+def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState:  # noqa: PLR0915
   payload = load_manifest(manifest_path)
   rows = payload["rows"]
   if not isinstance(rows, list):  # pragma: no cover - guarded by load_manifest
@@ -2478,10 +2688,14 @@ def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState
     if not manifest_hash:
       state.metadata_issues.append("Manifest row missing manifest_row_hash.")
       continue
-    sampling_spec_payload = row.get("sampling_spec")
+    try:
+      sampling_spec_payload = _row_unit_payload(row)
+    except ValueError as exc:  # unknown task: report the row, keep evaluating the rest
+      state.metadata_issues.append(f"Manifest row {manifest_hash}: {exc}")
+      continue
     if not isinstance(sampling_spec_payload, dict):
       state.metadata_issues.append(
-        f"Manifest row {manifest_hash} is missing sampling_spec payload.",
+        f"Manifest row {manifest_hash} is missing its sampling_spec/unit_spec payload.",
       )
       continue
     output_value = sampling_spec_payload.get("output_h5_path")
@@ -2491,25 +2705,39 @@ def _collect_manifest_gate_state(manifest_path: str | Path) -> ManifestGateState
       )
       continue
     output_h5_path = Path(output_value).resolve()
-    done_marker = _read_done_marker(_done_marker_path(output_h5_path))
-    if done_marker is None:
-      state.metadata_issues.append(
-        f"Manifest row {manifest_hash} missing done marker for output {output_h5_path}.",
-      )
-      continue
-    try:
-      _validate_done_marker(
-        marker=done_marker,
-        marker_path=_done_marker_path(output_h5_path),
-        output_h5_path=output_h5_path,
-        manifest_row_hash=manifest_hash,
-      )
-    except (OSError, TypeError, ValueError, RuntimeError) as exc:
-      state.metadata_issues.append(str(exc))
-      continue
+    # A row committed by `campaign run --pack` carries an xtrax unit record (unit.json) instead
+    # of a done marker. Its gate digest is the zarr_content_digest taken at commit, the same
+    # algorithm a done marker records, so packed and unpacked reruns compare directly.
+    if (output_h5_path / "unit.json").exists():
+      # Deferred: pack_shim imports this module.
+      from aminx.host.pack_shim import packed_unit_gate_digest  # noqa: PLC0415
+
+      try:
+        row_digest = packed_unit_gate_digest(output_h5_path, manifest_row_hash=manifest_hash)
+      except (OSError, TypeError, ValueError) as exc:
+        state.metadata_issues.append(f"Manifest row {manifest_hash}: {exc}")
+        continue
+    else:
+      done_marker = _read_done_marker(_done_marker_path(output_h5_path))
+      if done_marker is None:
+        state.metadata_issues.append(
+          f"Manifest row {manifest_hash} missing done marker for output {output_h5_path}.",
+        )
+        continue
+      try:
+        _validate_done_marker(
+          marker=done_marker,
+          marker_path=_done_marker_path(output_h5_path),
+          output_h5_path=output_h5_path,
+          manifest_row_hash=manifest_hash,
+        )
+      except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        state.metadata_issues.append(str(exc))
+        continue
+      row_digest = str(done_marker["content_digest_sha256"])
 
     state.completed_rows += 1
-    state.digest_by_hash[manifest_hash] = str(done_marker["content_digest_sha256"])
+    state.digest_by_hash[manifest_hash] = str(row_digest)
     cell_key = _row_cell_key(row)
     state.cell_to_hashes.setdefault(cell_key, set()).add(manifest_hash)
 
@@ -3099,6 +3327,7 @@ def main(argv: list[str] | None = None) -> int:
     Result of ``main``.
   """
   configure_multiprocessing()
+  jax_cache.configure()
   parser = argparse.ArgumentParser(description="Campaign planner/worker runner.")
   subparsers = parser.add_subparsers(dest="command", required=True)
   _add_plan_parser(subparsers)

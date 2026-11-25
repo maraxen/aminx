@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from aminx.host.schema_versions import CAMPAIGN_SINK_SCHEMA_VERSION, SCHEMA_VERSIONS
@@ -312,3 +314,28 @@ def test_campaign_sink_inspector(tmp_path: Path) -> None:
   summary_non_empty = inspector.summary(include_empty_arms=False)
   assert summary_non_empty.arms == ("populated_arm",)
 
+
+
+def test_campaign_sink_zero_size_array_has_positive_chunks(tmp_path: Path) -> None:
+  """A zero-size array gets positive Zarr chunk sizes and no chunk file."""
+  sink = UnifiedCampaignSink(tmp_path / "zero_size", campaign_id="camp_zero")
+  sink.write_arm_results(
+    arm_id="thermo",
+    model_family="thermompnn",
+    checkpoint_id="thermo_mpnn_d_ens1",
+    manifest_row_hash="hash_zero_1",
+    records=[],
+    arrays={"ddg_double": np.zeros((0, 21, 21), dtype=np.float32)},
+  )
+  metas = [
+    path
+    for path in (tmp_path / "zero_size").rglob(".zarray")
+    if "ddg_double" in path.parent.name
+  ]
+  assert metas, "expected a committed ddg_double array"
+  meta = json.loads(metas[0].read_text(encoding="utf-8"))
+  assert meta["shape"] == [0, 21, 21]
+  assert all(int(c) >= 1 for c in meta["chunks"])
+  assert not any(
+    child.name not in {".zarray", ".zattrs"} for child in metas[0].parent.iterdir()
+  )

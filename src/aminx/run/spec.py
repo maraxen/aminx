@@ -197,6 +197,8 @@ class SamplingConfig(eqx.Module):
   multi_state_sharpness: float | None = eqx.field(static=True, default=1.0)
   use_rolling_state: bool = eqx.field(static=True, default=False)
   decoding_order_fn: Any = eqx.field(static=True, default=None)
+  decoding_order_seed: int | None = eqx.field(static=True, default=None)
+  fixed_position_context: str = eqx.field(static=True, default="random_order")
   tie_group_map: Any = None
   state_position_map: Any = None
   state_weights: Any = None
@@ -511,7 +513,7 @@ def _compute_deterministic_run_id(spec: object) -> str:
     if val is not None:
       serialized = _serialize_for_run_id(val)
       if serialized is not None:
-        hasher.update(f"{field_name}={serialized}\x00".encode("utf-8"))
+        hasher.update(f"{field_name}={serialized}\x00".encode())
   all_keys: set[str] = set()
   if is_dataclass(spec):
     all_keys.update(f.name for f in fields(spec))
@@ -525,7 +527,7 @@ def _compute_deterministic_run_id(spec: object) -> str:
       continue
     serialized = _serialize_for_run_id(v)
     if serialized is not None:
-      hasher.update(f"{k}={serialized}\x00".encode("utf-8"))
+      hasher.update(f"{k}={serialized}\x00".encode())
   digest = hasher.hexdigest()
   return f"run-{digest[:16]}"
 
@@ -708,6 +710,8 @@ def build_run_spec(spec: object) -> RunSpec:
     multi_state_sharpness=_coerce_sharpness(getattr(spec, "multi_state_sharpness", 1.0)),
     use_rolling_state=bool(getattr(spec, "use_rolling_state", False)),
     decoding_order_fn=getattr(spec, "decoding_order_fn", None),
+    decoding_order_seed=getattr(spec, "decoding_order_seed", None),
+    fixed_position_context=getattr(spec, "fixed_position_context", "random_order"),
     tie_group_map=getattr(spec, "tie_group_map", None),
     state_position_map=getattr(spec, "state_position_map", None),
     state_weights=getattr(spec, "state_weights", None),

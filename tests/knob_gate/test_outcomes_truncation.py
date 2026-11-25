@@ -20,7 +20,6 @@ import json
 from pathlib import Path
 
 import pytest
-
 from knob_gate._outcomes import passed_nodeids
 
 _RECORD = {

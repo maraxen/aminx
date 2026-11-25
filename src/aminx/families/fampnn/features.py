@@ -7,11 +7,14 @@ Ports ``atom37_to_atom14``, ``atom14_to_atom37``, ``backbone_coords_to_frames``,
 
 from __future__ import annotations
 
+import functools
+import math
 from typing import cast
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 from jaxtyping import Array, Float, Int
 
 from aminx.families.fampnn.constants import (
@@ -33,6 +36,39 @@ _FAMPNN_BB25_DST_IDXS: jax.Array = jnp.array(
   [0, 1, 2, 3, 4, 1, 2, 3, 4, 2, 3, 4, 2, 3, 2, 0, 0, 0, 0, 1, 1, 1, 4, 4, 3],
   dtype=jnp.int32,
 )
+
+
+def f32_exp_table(x32: np.ndarray) -> np.ndarray:
+  """Correctly rounded float32 ``exp`` of float32 inputs (computed in float64, rounded once).
+
+  Upstream builds its sinusoidal frequency tables with float32 ``torch.exp``; XLA's and torch's float32
+  transcendental kernels each differ from the correctly rounded value by up to one ulp, in different
+  places. A host-side table removes that source of disagreement (and costs nothing under jit).
+  """
+  return np.exp(np.asarray(x32, dtype=np.float32).astype(np.float64)).astype(np.float32)
+
+
+@functools.lru_cache(maxsize=8)
+def timestep_frequency_table(half: int, max_period: float = 10000.0) -> np.ndarray:
+  """``TimestepEmbedder.timestep_embedding`` frequencies (``dit_utils.py:261``), float32, shape ``(half,)``."""
+  arange = np.arange(0, half, dtype=np.float32)
+  return f32_exp_table((np.float32(-math.log(max_period)) * arange) / np.float32(half))
+
+
+@functools.lru_cache(maxsize=32)
+def positional_embedding_table(num_res: int, num_embeddings: int = 16) -> np.ndarray:
+  """``positional_embeddings`` (``data.py:427-442``) for every offset ``-(L-1)..(L-1)``, float32 ``(2L-1, E)``.
+
+  Row ``d + L - 1`` holds ``[cos(d f), sin(d f)]`` with ``f = exp(arange(0, E, 2) * -(log(1e4) / E))`` and the
+  angle formed in float32 as upstream does (int64 offset times a float32 table).
+  """
+  freq = f32_exp_table(
+    np.arange(0, num_embeddings, 2, dtype=np.float32) * np.float32(-(math.log(10000.0) / num_embeddings)),
+  )
+  offsets = np.arange(-(num_res - 1), num_res, dtype=np.float32)
+  angles = offsets[:, None] * freq[None, :]
+  wide = angles.astype(np.float64)
+  return np.concatenate([np.cos(wide), np.sin(wide)], axis=-1).astype(np.float32)
 
 
 def _linear(layer: eqx.nn.Linear, x: Float[Array, "... I"]) -> Float[Array, "... O"]:

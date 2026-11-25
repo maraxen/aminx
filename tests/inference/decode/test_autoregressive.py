@@ -28,8 +28,7 @@ from aminx.inference.encode import make_encode_fn
 from aminx.inference.logits import make_stage_set
 from aminx.inference.schedule_selector import build_wave_schedule_per_sample
 from aminx.model import Aminx
-from aminx.tiling.iterator import VmapIterator, SafeMapIterator, JaxScanIterator
-from xtrax.tiling import CarryShape
+from xtrax.tiling import CarryShape, ChunkedMapIterator, JaxScanIterator, VmapIterator
 from aminx.types.bundles import InferenceBundle, WaveScheduleBundle
 from aminx.types.configs import InferenceConfig
 from aminx.utils.autoregression import generate_wave_ar_mask
@@ -455,10 +454,10 @@ def test_state_iterator_parity_vmap_vs_safemap():
         stage_set=stage_set,
     )
 
-    # AR decode with SafeMap
+    # AR decode with ChunkedMap
     ar_safemap = AutoregressiveDecode(
         model=model,
-        state_iterator=SafeMapIterator(tile=2),
+        state_iterator=ChunkedMapIterator(tile=2),
         wave_iterator=JaxScanIterator(),
         wave_carry=wave_carry,
     )

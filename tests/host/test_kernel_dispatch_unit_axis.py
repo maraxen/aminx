@@ -135,3 +135,32 @@ def test_unit_axis_holds_under_jit_and_nesting():
 
     out = jax.jit(lambda x: _dispatch_axis(Vmap(), inner, x))(xs)
     np.testing.assert_allclose(out, jax.vmap(jax.vmap(_outer_product))(xs), rtol=1e-6)
+
+
+def test_chunked_map_batch_size_1_emits_no_batched_dot():
+    """ChunkedMap(batch_size=1) must not emit a size-1 batched dot_general."""
+    from aminx.tiling.strategy import ChunkedMap
+
+    xs = jnp.arange(36, dtype=jnp.float32).reshape(3, 3, 4)
+    jaxpr = jax.make_jaxpr(lambda x: _dispatch_axis(ChunkedMap(batch_size=1), _outer_product, x))(xs)
+    assert _batched_dot_generals(jaxpr.jaxpr) == []
+    np.testing.assert_allclose(
+        _dispatch_axis(ChunkedMap(batch_size=1), _outer_product, xs),
+        jax.vmap(_outer_product)(xs),
+        rtol=1e-6,
+    )
+
+
+def test_chunked_map_ragged_unit_remainder_emits_no_size1_batched_dot():
+    """n=5, batch_size=2 peels a size-1 remainder without emitting a size-1 batched dot_general."""
+    from aminx.tiling.strategy import ChunkedMap
+
+    xs = jnp.arange(60, dtype=jnp.float32).reshape(5, 3, 4)
+    jaxpr = jax.make_jaxpr(lambda x: _dispatch_axis(ChunkedMap(batch_size=2), _outer_product, x))(xs)
+    lhs_shapes = _dot_lhs_shapes(jaxpr.jaxpr)
+    assert all(s[0] != 1 for s in lhs_shapes), f"Found size-1 leading dot operand: {lhs_shapes}"
+    np.testing.assert_allclose(
+        _dispatch_axis(ChunkedMap(batch_size=2), _outer_product, xs),
+        jax.vmap(_outer_product)(xs),
+        rtol=1e-6,
+    )

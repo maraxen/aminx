@@ -1,0 +1,31 @@
+[experiment]
+hypothesis = "Virtual C-beta calculation matches reference empirical coefficients within 1e-6, distance gating identifies residues within 8.0 A of valid ligand atoms, negative control correctly rejects fully-masked ligand arrays, and loss_XY auxiliary NLL is finite and equals ln(21) * 2 / (2 + 1e-8) on a two-residue uniform-logit case (abs error < 1e-5)."
+stage_name = "validation"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[outcomes.pass]
+condition = "status == 'PASS' AND cb_max_abs_diff < 1e-6 AND cutoff_gating_passed AND empty_control_passed AND loss_xy_valid"
+decision = "Promote ligand_cutoff_for_score implementation."
+reasoning = "All virtual C-beta coordinates, distance cutoffs, negative controls, and loss_XY outputs match reference specification."
+is_residual = false
+
+[outcomes.fail]
+condition = "status != 'PASS' OR cb_max_abs_diff >= 1e-6 OR NOT cutoff_gating_passed OR NOT empty_control_passed OR NOT loss_xy_valid"
+decision = "Reject ligand_cutoff_for_score implementation."
+reasoning = "One or more invariants failed to meet the reference specification."
+is_residual = true
+
+[result_schema]
+probe_name = "str"
+clause = "str"
+status = "str"
+cb_max_abs_diff = "float"
+cutoff_gating_passed = "bool"
+empty_control_passed = "bool"
+loss_xy_valid = "bool"
+loss_xy_value = "float"
+loss_xy_known_answer_error = "float"
+num_proximal_residues = "int"

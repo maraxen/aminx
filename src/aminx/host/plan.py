@@ -7,6 +7,7 @@ Also includes InferencePlan and related components for unified inference dispatc
 from __future__ import annotations
 
 import dataclasses
+import functools
 import logging
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -16,7 +17,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, ChunkedMap, MemoryBudget
+from xtrax.tiling import AxisDecision, BatchPlan, BatchPlanner, ChunkedMap, MemoryBudget, Vmap
 from xtrax.tiling import BudgetInfeasibleError as _XtraxBudgetInfeasibleError
 
 from aminx.tiling.axes import N_NOISES, N_SAMPLES, N_STRUCTURES, N_TEMPERATURES
@@ -145,6 +146,71 @@ def _plan_with_joint_budget(
   return BatchPlan(decisions=ordered_decisions)
 
 
+def _widen_chunked_axis_tile(
+  plan: BatchPlan,
+  axis_name: str,
+  *,
+  budget_bytes: int,
+  estimate_fn: Callable[[Sequence[AxisDecision]], float],
+) -> BatchPlan:
+  """Raise a demoted axis's tile from the planner's minimum to the largest tile that fits the budget.
+
+  xtrax's joint-budget demotion turns a Vmap axis that does not fit into a ChunkedMap on the axis's
+  default tile (1), so a wide row would run one element at a time: memory-safe and bit-exact, but it
+  gives up nearly all of the parallelism (aminx #274: the first calibration fix peaked at 460 MiB where
+  ~5 GiB was available). The Vmap-vs-chunk decision is kept; only the tile is widened, by a binary search
+  over ``estimate_fn`` (a chunked axis contributes its tile to the memory product, so the estimate is
+  non-decreasing in the tile). A tile that reaches the full cardinality becomes a Vmap again: that happens
+  only when the greedy demotion chunked this axis because *other* axes also needed demoting.
+  """
+  decisions = list(plan.decisions)
+  idx = next((i for i, d in enumerate(decisions) if d.spec.name == axis_name), None)
+  if idx is None:
+    return plan
+  current = decisions[idx]
+  if not isinstance(current.strategy, ChunkedMap):
+    return plan
+
+  def _with_tile(tile: int) -> AxisDecision:
+    return AxisDecision(
+      spec=current.spec,
+      batch_size=tile,
+      reasoning=f"{current.reasoning} | tile widened to the largest that fits the joint budget (aminx #274)",
+      strategy=ChunkedMap(batch_size=tile),
+    )
+
+  def _fits(tile: int) -> bool:
+    trial = list(decisions)
+    trial[idx] = _with_tile(tile)
+    # int() matches _plan_with_joint_budget's own truncated comparison, so the two agree on the budget boundary.
+    return int(estimate_fn(trial)) <= budget_bytes
+
+  cardinality = current.spec.cardinality
+  low, high = max(1, current.batch_size), max(1, cardinality)
+  if high <= low or not _fits(low):
+    return plan
+  while low < high:
+    mid = (low + high + 1) // 2
+    if _fits(mid):
+      low = mid
+    else:
+      high = mid - 1
+  if low >= cardinality:
+    # The greedy demotion chunked this axis only because other axes also needed demoting; with them at their own tiles the
+    # whole axis fits, so it returns to a full Vmap instead of a remainder-peeling tile just below the cardinality.
+    decisions[idx] = AxisDecision(
+      spec=current.spec,
+      batch_size=current.spec.default_batch_size,
+      reasoning=f"{current.reasoning} | restored to Vmap: the whole axis fits the joint budget (aminx #274)",
+      strategy=Vmap(),
+    )
+    return BatchPlan(decisions=tuple(decisions))
+  if low == current.batch_size:
+    return plan
+  decisions[idx] = _with_tile(low)
+  return BatchPlan(decisions=tuple(decisions))
+
+
 def decision_for(plan: BatchPlan, name: str) -> AxisDecision:
   """Look up the AxisDecision for a named axis in a BatchPlan.
 
@@ -188,24 +254,34 @@ class AxisNames:
 
 # Conservative per-residue activation footprint (float32 bytes) for one innermost
 # (structure, noise, temperature, sample) combination in the sampling dispatch built
-# by host/kernel_dispatch.py's _sample_batch. Two live tensors dominate:
-#   - the EncoderOutput held for the noise/temp loop (aminx.types.encodings.EncoderOutput:
-#     node_features (L, D), edge_features (L, K, D)) -- same shape family as, and reusing
-#     the same conservative D=128/K=32/D_edge=48 constants already established by
-#     aminx.sampling.conditional_logits._plan_axis_strategy's callers for this exact type
-#     (see batched_encode_fn's `activation_bytes = seq_len * (128 + 32 * 48) * 4`), not a
-#     fresh guess;
-#   - the per-sample decode output (res.logits, shape (L, 21)) -- same convention as
-#     conditional_logits.py's batched_decode_fn (`seq_len * 21 * 4`).
-# estimate_memory_theoretical's single flat product (see aminx.tiling.planner) does not
-# distinguish "computed once per noise/temp" from "computed once per sample" -- summing
-# both into one per-element constant is the conservative choice given that architecture,
-# not an attempt to model exact live-tensor accounting.
+# by host/kernel_dispatch.py's _sample_batch.
+#
+# The analytic part counts the tensors the decoder visibly holds per residue: the node
+# features (L, H), the per-edge message tensor (L, K, 3H) (the concatenation of edge,
+# node-i and node-j features that every message-passing layer builds) and the decode
+# output (L, 21). The constants are ProteinMPNN v_48's (K = 48 neighbours, H = 128), the
+# widest model family here, NOT the K = 32 / width-48 values this block used before.
+#
+# aminx #274: the analytic part alone is 3-4x too small, because the sample vmap keeps
+# several of those edge tensors alive at once (encoder and decoder layers, plus the wave
+# loop's carry). _SAMPLING_LIVE_TENSOR_FACTOR is that empirical factor, fitted to the
+# measured peak device memory of one production single-state MS-L row (TITAN RTX, L = 256
+# padded, ProteinMPNN v_48): width 20 -> 2254 MiB, 64 -> 8654 MiB, 128 -> 16846 MiB, 256 ->
+# RESOURCE_EXHAUSTED, i.e. 128-145 MiB per sample. With the planner's default
+# activation_multiplier (2.5) the estimate at L = 256 is ~163 MiB per sample, about 1.12x
+# the highest measured slope (the 20 -> 64 one). The old estimate was ~4.1 MiB per sample
+# (15-35x low), so a full vmap was chosen at 20, 128 and 1024 samples alike.
+#
+# LIMITS: calibrated at ONE shape (L = 256) on one GPU stack, and scaled linearly in L.
+# It has not been re-measured at other lengths or model families. If a row still OOMs
+# after planning, the estimate is too low for that shape: raise the factor (or pass a larger
+# activation_multiplier); lowering either only makes the planner vmap wider rows.
 _SAMPLING_NODE_FEATURE_DIM = 128
-_SAMPLING_EDGE_NEIGHBORS = 32
-_SAMPLING_EDGE_FEATURE_DIM = 48
+_SAMPLING_EDGE_NEIGHBORS = 48
+_SAMPLING_EDGE_FEATURE_DIM = 3 * 128  # per-edge message width: concat(edge, node_i, node_j)
 _SAMPLING_DECODE_VOCAB = 21
 _SAMPLING_BYTES_PER_ELEMENT = 4  # float32
+_SAMPLING_LIVE_TENSOR_FACTOR = 3.6  # empirical, see the calibration note above
 
 
 def _sampling_activation_bytes_per_element(seq_len: int) -> float:
@@ -228,7 +304,7 @@ def _sampling_activation_bytes_per_element(seq_len: int) -> float:
     + _SAMPLING_EDGE_NEIGHBORS * _SAMPLING_EDGE_FEATURE_DIM
     + _SAMPLING_DECODE_VOCAB
   )
-  return seq_len * per_residue_elements * _SAMPLING_BYTES_PER_ELEMENT
+  return seq_len * per_residue_elements * _SAMPLING_BYTES_PER_ELEMENT * _SAMPLING_LIVE_TENSOR_FACTOR
 
 
 def make_sampling_planner(
@@ -308,34 +384,38 @@ def make_sampling_planner(
     dataclasses.replace(N_NOISES, cardinality=max(1, len(getattr(spec, "backbone_noise", [0.0])))),
   ]
   base_shape_bytes = 1.0 if seq_len is None else _sampling_activation_bytes_per_element(seq_len)
-  return _plan_with_joint_budget(
+  estimate_fn = functools.partial(
+    estimate_memory_theoretical,
+    base_shape_bytes=base_shape_bytes,
+    activation_multiplier=activation_multiplier,
+  )
+
+  plan = _plan_with_joint_budget(
     axes,
     budget_bytes=budget_bytes,
-    estimate_fn=lambda ds: estimate_memory_theoretical(ds, base_shape_bytes, activation_multiplier),
+    estimate_fn=estimate_fn,
     carry_specs=getattr(spec, "carry_specs", None) or [],
     dedup_specs=getattr(spec, "dedup_specs", None) or [],
   )
+  if seq_len is None:
+    # The 1.0 placeholder is dimensionless, so a tile derived from it is meaningless (a 50M-sample row would widen to a tile of
+    # ~48M); keep the planner's own decision on that backward-compatibility path.
+    return plan
+  return _widen_chunked_axis_tile(plan, N_SAMPLES.name, budget_bytes=budget_bytes, estimate_fn=estimate_fn)
 
 
-def _legacy_batch_size(decision: AxisDecision) -> int:
-  """Translate an AxisDecision to aminx.utils.safe_map's calling convention.
+def _legacy_batch_size(decision: AxisDecision) -> int | None:
+  """Translate an AxisDecision to xtrax.transforms.chunked_map's calling convention.
 
-  safe_map treats batch_size=0 (or None) as "no chunking, run everything at
-  once" -- the Vmap-equivalent -- and any positive value as "chunk into
-  groups of that size." aminx's retired local BatchPlanner always set
-  batch_size=0 for Vmap decisions to match; xtrax's BatchPlanner never does
-  (Vmap decisions carry batch_size=spec.default_batch_size, e.g. 1). Feeding
-  that straight to safe_map would silently turn a parallel Vmap axis into a
-  fully serial per-element loop for aminx's legacy (use_unified_driver=False)
-  dispatch path in host/kernel_dispatch.py, which is not dead code (a real,
-  still-tested CLI flag) -- EPIC #1541 T-PLANNER.2 finding, 2026-07-06.
+  chunked_map treats batch_size=None as "no chunking, run everything at once" --
+  the Vmap-equivalent -- and any positive value as "chunk into groups of that size."
   """
-  if type(decision.strategy).__name__ == "Vmap":
-    return 0
-  return decision.batch_size
+  if isinstance(decision.strategy, Vmap):
+    return None
+  return decision.batch_size or None
 
 
-def extract_batch_sizes(plan: BatchPlan) -> tuple[int, int, int, int]:
+def extract_batch_sizes(plan: BatchPlan) -> tuple[int | None, int | None, int | None, int | None]:
   """Extract batch sizes for all sampling axes from a BatchPlan.
 
   Parameters
@@ -345,9 +425,9 @@ def extract_batch_sizes(plan: BatchPlan) -> tuple[int, int, int, int]:
 
   Returns
   -------
-  tuple[int, int, int, int]
+  tuple[int | None, int | None, int | None, int | None]
       Tuple of (structures_bs, samples_bs, temps_bs, noises_bs), in
-      aminx.utils.safe_map's convention (0 means Vmap/no-chunking) --
+      xtrax.transforms.chunked_map's convention (None means Vmap/no-chunking) --
       see _legacy_batch_size.
 
   """
@@ -1016,10 +1096,11 @@ def make_inference_plan(
      https://doi.org/10.1038/s41592-025-02626-1
 
   """
+  from xtrax.tiling import Vmap
+
   from aminx.inference.decode.factory import make_decode_fn
   from aminx.inference.encode import make_encode_fn
   from aminx.inference.logits import make_stage_set
-  from aminx.tiling.strategy import Vmap
 
   sampling_config = spec.run_spec.sampling
 

@@ -17,11 +17,10 @@ import shutil
 import tomllib
 from pathlib import Path
 
+import knob_gate._coverage as coverage_module
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-
-import knob_gate._coverage as coverage_module
 from knob_gate._closure import Closure
 from knob_gate._coverage import CoolRun, check_branch_coverage
 
@@ -85,7 +84,7 @@ def _write_cool_fragment(catalog: Path, run_id: str, run: CoolRun) -> None:
       "sidecar_sha256": pa.array([run["sidecar_sha256"]]),
       "argv": pa.array([run["argv"]], type=pa.list_(pa.string())),
       "output_paths": pa.array([run["output_paths"]], type=pa.list_(pa.string())),
-    }
+    },
   )
   pq.write_table(table, dest / f"run_{run_id}.parquet")
 

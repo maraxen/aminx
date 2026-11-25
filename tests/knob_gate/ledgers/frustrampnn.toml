@@ -1,0 +1,10 @@
+# Sharded ledger for FrustraMPNN.
+# Graded bth run completed: b728b709-fd1c-4aa5-a647-5d444314c37e
+# Superseded 261116: the integration branch records the 365d174d run below (b728b709 stays on record).
+
+[sidecar]
+[sidecar.frustrampnn_parity]
+# Recorded 261116 at 365d174d via scripts/redsox/launch_wave.sh group 7 (frustrampnn_parity.py forwards to the v2 vehicle, so the
+# run's sidecar_path is frustrampnn_parity_v2.bth.toml). verify_wave.py at 7717cc3e: every step 1c condition PASS.
+# Re-recorded 261117 at 2df36dac (main after #291/#292 edited scoped paths and re-staled every row) via the full launch_wave.sh wave; verify_wave.py: every step 1c condition PASS, clean tree. Previous run dee7d60a stays on record.
+bth_run_id = "ddabaa75-66de-402e-88d2-d7366a636c62"

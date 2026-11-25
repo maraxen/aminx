@@ -1,0 +1,480 @@
+"""Shape classes compile once per process (debt #3510).
+
+tev_design's design screen runs ~1,500 ``score_conditionals`` units. On 0.5.4:
+- every distinct LigandMPNN ligand atom count M recompiled the encode and score kernels (one
+  compile per substrate P1' residue in tev's smoke);
+- every distinct sequences-per-unit N did as well.
+
+What this file pins:
+
+* the ladders, and that the atom-axis padding is end-padding with mask 0;
+* padded ligand atoms carry no weight: padded == unpadded within SCORE_BATCH_COMPOSITION_ATOL for
+  logits, NLL and the ligand-proximal loss, below and above ``atom_context_num`` (25), even when
+  the padded atoms have nonzero coordinates and real atom types;
+* N padding is dropped from the store, the original N is recorded, and real rows are unchanged
+  within the same bound;
+* no cross-row leak on the ar_masks pair kernel (#3525): at fixed N, swapping the padding rows'
+  content leaves the real rows bitwise equal, for all three families; a planted sub-bound leak
+  in ``_score_pairs_kernel`` must be caught;
+* ``execute_manifest`` runs rows grouped by shape class but reports in manifest order, and done
+  markers and resume are unaffected;
+* regression: after the first unit of a class, units in that class compile zero times. A positive
+  control with the ligand ladder disabled shows that the counter sees the recompiles the ladder
+  removes.
+
+task_id: 261119_aminx-3510-compile-shape-classes
+"""
+
+from __future__ import annotations
+
+import importlib
+import json
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pytest
+
+import aminx.host.campaign as campaign
+from aminx.host import _sampling_helper
+from aminx.host.bucketing import (
+  ligand_atom_rung,
+  pad_ligand_atom_axis,
+  sequence_count_rung,
+)
+from aminx.host.campaign import execute_manifest, row_compile_key, write_manifest
+from aminx.host.campaign_score import (
+  ScoreConditionalsUnit,
+  plan_score_conditionals_manifest,
+  read_score_conditionals_store,
+)
+from aminx.host.runner import score
+from aminx.run.specs import ScoringSpecification
+from aminx.scoring.score import SCORE_BATCH_COMPOSITION_ATOL
+
+_STRUCTURE = "tests/data/1ubq.pdb"
+_CHECKPOINT = "proteinmpnn_v_48_020"
+_LIGAND_CHECKPOINT = "ligandmpnn_v_32_020_25"
+_UBIQUITIN = "MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG"
+_L = len(_UBIQUITIN)
+_MAX_LENGTH = 96
+_PEPTIDE = slice(_L - 10, _L)
+
+
+def _designable() -> np.ndarray:
+  design = np.ones(_L, np.int8)
+  design[_PEPTIDE] = 0
+  return design
+
+
+def _masks(k: int, seed: int = 0) -> np.ndarray:
+  """Random-order causal masks over the designable block; every row sees the peptide."""
+  design = _designable().astype(bool)
+  rng = np.random.default_rng(seed)
+  out = np.zeros((k, _L, _L), np.int8)
+  idx = np.flatnonzero(design)
+  for j in range(k):
+    order = np.full(_L, -1)
+    order[idx] = rng.permutation(idx.size)
+    see = (order[None, :] < order[:, None]) & design[:, None] & design[None, :]
+    see |= ~design[None, :]
+    see |= (~design[:, None]) & design[None, :]
+    np.fill_diagonal(see, False)
+    out[j] = see.astype(np.int8)
+  return out
+
+
+def _mutants(n: int) -> list[str]:
+  letters = "ACDEFGHIKLMNPQRSTVWY"
+  return [_UBIQUITIN[:5] + letters[i % 20] + _UBIQUITIN[6:] for i in range(n)]
+
+
+def _unit(tmp_path: Path, **overrides: Any) -> ScoreConditionalsUnit:  # noqa: ANN401
+  masks_path = overrides.pop("ar_masks_path", None)
+  if masks_path is None:
+    masks_path = str(tmp_path / "masks.npy")
+    np.save(masks_path, _masks(2))
+  fields: dict[str, Any] = {
+    "label": "centre",
+    "structure": _STRUCTURE,
+    "checkpoint_id": _CHECKPOINT,
+    "sequences": _mutants(2),
+    "ar_masks_path": masks_path,
+    "designable_mask": _designable().tolist(),
+    "logits_memory_budget_mb": 64,
+    "max_length": _MAX_LENGTH,
+  }
+  fields.update(overrides)
+  return ScoreConditionalsUnit(**fields)
+
+
+def _plan(root: Path, *units: ScoreConditionalsUnit) -> list[dict[str, Any]]:
+  return plan_score_conditionals_manifest(
+    list(units), campaign_id="sc", output_root=root / "out", git_sha="0" * 40, git_provenance_source="explicit",
+  )
+
+
+def _manifest(root: Path, rows: list[dict[str, Any]]) -> Path:
+  path = root / "manifest.json"
+  write_manifest(path, rows, metadata={"campaign_id": "sc"})
+  return path
+
+
+def _ligand_npz(path: Path, n_atoms: int, *, n_masked: int = 0, seed: int = 0) -> str:
+  """A ligand context of ``n_atoms`` real atoms, then ``n_masked`` mask-0 atoms with real-looking data."""
+  from aminx.host._sampling_helper import _canonical_structure_ids_for_spec  # noqa: PLC0415
+
+  (structure_id,) = _canonical_structure_ids_for_spec(
+    ScoringSpecification(inputs=[_STRUCTURE], sequences_to_score=[_UBIQUITIN], max_length=_MAX_LENGTH),
+  )
+  # Real atoms come from their own stream, so adding masked atoms never moves a real atom. The
+  # masked atoms sit as close as the real ones and are oxygens: unmasked, they would matter.
+  real = np.random.default_rng(seed).normal(scale=6.0, size=(_MAX_LENGTH, n_atoms, 3))
+  planted = np.random.default_rng(seed + 1000).normal(scale=6.0, size=(_MAX_LENGTH, n_masked, 3))
+  total = n_atoms + n_masked
+  y = np.concatenate([real, planted], axis=1).astype(np.float32)
+  y_t = np.full((_MAX_LENGTH, total), 6, dtype=np.int32)
+  y_t[:, n_atoms:] = 8
+  y_m = np.zeros((_MAX_LENGTH, total), dtype=np.float32)
+  y_m[:, :n_atoms] = 1.0
+  np.savez(path, **{f"{structure_id}::Y": y, f"{structure_id}::Y_t": y_t, f"{structure_id}::Y_m": y_m})
+  return str(path)
+
+
+# --- ladders and padding (no model) ----------------------------------------------------------------
+
+
+def test_ladders() -> None:
+  assert [ligand_atom_rung(m) for m in (0, 1, 8, 16, 17, 25, 33, 1024, 1025)] == [
+    16, 16, 16, 16, 32, 32, 64, 1024, 2048,
+  ]
+  assert [sequence_count_rung(n) for n in (1, 2, 3, 5, 17, 25, 513, 600)] == [1, 2, 4, 8, 24, 32, 640, 640]
+  with pytest.raises(ValueError, match="non-negative"):
+    ligand_atom_rung(-1)
+
+
+def test_ligand_padding_is_end_padding_with_mask_zero() -> None:
+  rng = np.random.default_rng(0)
+  y = rng.normal(size=(2, 5, 3, 3)).astype(np.float32)
+  y_t = np.ones((2, 5, 3), np.int32)
+  y_m = np.ones((2, 5, 3), np.float32)
+  py, pt, pm = pad_ligand_atom_axis(y, y_t, y_m, 16)
+  assert py.shape == (2, 5, 16, 3)
+  assert pt.shape == pm.shape == (2, 5, 16)
+  np.testing.assert_array_equal(py[:, :, :3], y)
+  np.testing.assert_array_equal(pt[:, :, :3], y_t)
+  np.testing.assert_array_equal(pm[:, :, :3], y_m)
+  assert not pm[:, :, 3:].any()
+  assert not py[:, :, 3:].any()
+
+
+# --- ordering, report and resume -------------------------------------------------------------------
+
+
+def test_row_compile_key_never_raises(tmp_path: Path) -> None:
+  rows = _plan(tmp_path, _unit(tmp_path))
+  broken = json.loads(json.dumps(rows[0]))
+  broken["unit_spec"]["ar_masks_path"] = str(tmp_path / "missing.npy")
+  assert row_compile_key(broken) is None
+  key = row_compile_key(rows[0])
+  assert key is not None
+  assert key[4:] == (2, 2, 0)  # K, N bucket, no ligand
+
+
+def test_execute_manifest_groups_by_class_and_reports_in_manifest_order(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  units = [
+    _unit(tmp_path, label="a1", sequences=_mutants(1)),
+    _unit(tmp_path, label="b3", sequences=_mutants(3)),
+    _unit(tmp_path, label="a1b", sequences=[_mutants(2)[1]]),
+    _unit(tmp_path, label="b4", sequences=_mutants(4)),
+  ]
+  rows = _plan(tmp_path, *units)
+  order: list[str] = []
+
+  def fake_run(_manifest: object, *, row_hash: str, **_kwargs: object) -> dict[str, Any]:
+    order.append(row_hash)
+    return {"status": "completed", "compile_telemetry": {"backend_compiles": 5 if len(order) in (1, 3) else 0}}
+
+  monkeypatch.setattr(campaign, "run_manifest_row", fake_run)
+  report = execute_manifest(rows)
+  hashes = [r["manifest_row_hash"] for r in rows]
+  assert order == [hashes[0], hashes[2], hashes[1], hashes[3]]
+  assert [r["manifest_row_hash"] for r in report["row_results"]] == hashes
+  summary = {entry["computed_rows"]: entry for entry in report["shape_classes"]}
+  assert len(report["shape_classes"]) == 2
+  assert all(e["first_unit_compiles"] == 5 and e["later_unit_compiles"] == 0 for e in summary.values())
+
+  order.clear()
+  execute_manifest(rows, group_by_shape_class=False)
+  assert order == hashes
+
+
+def test_resume_is_unaffected_by_grouping(tmp_path: Path) -> None:
+  units = [
+    _unit(tmp_path, label="n1", sequences=_mutants(1)),
+    _unit(tmp_path, label="n3", sequences=_mutants(3)),
+    _unit(tmp_path, label="n1b", sequences=[_mutants(2)[1]]),
+  ]
+  rows = _plan(tmp_path, *units)
+  manifest = _manifest(tmp_path, rows)
+  partial = execute_manifest(manifest, row_hashes=[rows[1]["manifest_row_hash"]])
+  assert partial["successful_rows"] == 1
+  marker_path = Path(rows[1]["output_h5_path"] + ".done.json")
+  before = json.loads(marker_path.read_text())
+
+  full = execute_manifest(manifest)
+  decisions = {r["manifest_row_hash"]: (r["reuse"] or {}).get("decision") for r in full["row_results"]}
+  assert decisions[rows[1]["manifest_row_hash"]] == "reused"
+  assert full["recomputed_rows"] == 0
+  assert full["successful_rows"] == len(rows)
+  after = json.loads(marker_path.read_text())
+  assert after["content_digest_sha256"] == before["content_digest_sha256"]
+
+  telemetry = before["compile_telemetry"]
+  assert telemetry["schema_version"] == "campaign_compile_telemetry_v1"
+  assert isinstance(telemetry["backend_compiles"], int)
+  assert telemetry["shape_class"] == json.dumps([str(p) for p in row_compile_key(rows[1])])
+  assert "enabled" in telemetry["jax_compilation_cache"]
+  # Telemetry never reaches the store (it would make identical runs digest differently).
+  attrs = read_score_conditionals_store(rows[1]["output_h5_path"])["attrs"]
+  assert "compile_telemetry" not in attrs
+  assert attrs["n_sequences"] == 3
+  assert attrs["n_sequences_bucket"] == 4
+
+
+def test_padding_never_pushes_a_unit_over_its_budget(tmp_path: Path) -> None:
+  """K=4, N=33 fits 1 MB unpadded (132 rows) but not at the N=48 rung (192 rows): plan accepts it,
+  and execution runs it unpadded instead of failing after taking the lock (PR #300 review)."""
+  masks_path = str(tmp_path / "m4.npy")
+  np.save(masks_path, _masks(4))
+  unit = _unit(tmp_path, ar_masks_path=masks_path, sequences=_mutants(33), logits_memory_budget_mb=1)
+  rows = _plan(tmp_path, unit)
+  assert row_compile_key(rows[0])[5] == 33
+  report = execute_manifest(_manifest(tmp_path, rows))
+  assert report["successful_rows"] == 1, report
+  attrs = read_score_conditionals_store(rows[0]["output_h5_path"])["attrs"]
+  assert attrs["n_sequences"] == 33
+  assert attrs["n_sequences_bucket"] == 33
+  # Control: with room for the rung, the same N pads to 48.
+  roomy = _plan(tmp_path / "roomy", _unit(tmp_path, label="roomy", ar_masks_path=masks_path,
+                                         sequences=_mutants(33), logits_memory_budget_mb=2))
+  assert row_compile_key(roomy[0])[5] == 48
+
+
+# --- numerics ---------------------------------------------------------------------------------------
+
+
+_FAMILIES = [
+  pytest.param(_CHECKPOINT, False, id="proteinmpnn"),
+  pytest.param("solublempnn_v_48_020", False, id="solublempnn", marks=[pytest.mark.slow, pytest.mark.requires_weights]),
+  pytest.param(_LIGAND_CHECKPOINT, True, id="ligandmpnn", marks=[pytest.mark.slow, pytest.mark.requires_weights]),
+]
+
+
+@pytest.mark.parametrize(("checkpoint", "with_ligand"), _FAMILIES)
+def test_sequence_padding_leaves_real_rows_unchanged(tmp_path: Path, checkpoint: str, with_ligand: bool) -> None:
+  sequences = _mutants(3)  # bucket 4: one padded copy
+  lig = _ligand_npz(tmp_path / "lig.npz", 20) if with_ligand else None
+  rows = _plan(tmp_path, _unit(tmp_path, sequences=sequences, checkpoint_id=checkpoint, ligand_context_path=lig))
+  execute_manifest(_manifest(tmp_path, rows))
+  store = read_score_conditionals_store(rows[0]["output_h5_path"])
+  assert store["logits"].shape == (2, 3, _L, 21)
+  assert store["nll"].shape == (2, 3)
+  assert store["attrs"]["sequences"] == sequences
+  direct = score(
+    ScoringSpecification(
+      inputs=[_STRUCTURE], checkpoint_id=checkpoint, sequences_to_score=sequences, ar_masks=_masks(2),
+      designable_mask=_designable(), return_logits=True, backbone_noise=0.0, max_length=_MAX_LENGTH,
+      ligand_context_path=lig, ligand_conditioning=bool(lig),
+    ),
+  )
+  np.testing.assert_allclose(
+    store["logits"], np.asarray(direct["logits"])[0][..., :_L, :], atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0,
+  )
+  np.testing.assert_allclose(store["nll"], np.asarray(direct["scores"])[0], atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0)
+
+
+# Cross-row control for N padding (#3525). The check above compares N=3 with N=4, so a leak smaller
+# than the bound passes it, and a row-0 copy as the padding row cannot reveal a leak that ignores
+# duplicates. #3487's content-invariance test plants its leak in the candidate iterator, which the
+# ar_masks path never calls: score_conditionals scores (mask, sequence) pairs in
+# ``_score_pairs_kernel``. So, at fixed N=4 (equal shapes, one executable), the padding row is
+# either the production row-0 copy or a far sequence, and the real rows must be bitwise equal.
+_FAR = "G" * (_L - 10) + _UBIQUITIN[_PEPTIDE]
+_PLANT = 1e-6
+
+
+def _pairs_score(checkpoint: str, sequences: list[str], lig: str | None) -> dict[str, np.ndarray]:
+  out = score(
+    ScoringSpecification(
+      inputs=[_STRUCTURE], checkpoint_id=checkpoint, sequences_to_score=sequences, ar_masks=_masks(2),
+      designable_mask=_designable(), return_logits=True, backbone_noise=0.0, max_length=_MAX_LENGTH,
+      ligand_context_path=lig, ligand_conditioning=bool(lig),
+    ),
+  )
+  return {"logits": np.asarray(out["logits"])[0][..., :_L, :], "nll": np.asarray(out["scores"])[0]}
+
+
+def _cross_row_report(checkpoint: str, lig: str | None, n_real: int) -> dict[str, float]:
+  """Real-row deviation when only the padding rows' content changes, and the plant's own effect."""
+  real = _mutants(n_real)
+  n_pad = sequence_count_rung(n_real) - n_real
+  copy = _pairs_score(checkpoint, [*real, *[real[0]] * n_pad], lig)
+  far = _pairs_score(checkpoint, [*real, *[_FAR] * n_pad], lig)
+  return {
+    "instrument": float(np.abs(far["logits"][:, n_real:] - copy["logits"][:, n_real:]).max()),
+    "real_rows": float(
+      max(
+        np.abs(far["logits"][:, :n_real] - copy["logits"][:, :n_real]).max(),
+        np.abs(far["nll"][:, :n_real] - copy["nll"][:, :n_real]).max(),
+      ),
+    ),
+  }
+
+
+@pytest.mark.parametrize(("checkpoint", "with_ligand"), _FAMILIES)
+def test_padding_row_content_does_not_reach_real_rows(tmp_path: Path, checkpoint: str, with_ligand: bool) -> None:
+  lig = _ligand_npz(tmp_path / "lig.npz", 20) if with_ligand else None
+  report = _cross_row_report(checkpoint, lig, 3)
+  assert report["instrument"] > 1e-3, f"the far padding row did not change its own logits: {report}"
+  assert report["real_rows"] == 0.0, f"padding-row content reached the real rows: {report}"
+
+
+def test_planted_cross_row_leak_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Positive control: a leak under the bound passes N=3 vs N=4 but must fail the fixed-N check."""
+  # import_module, not ``import aminx.scoring.score as``: the package re-exports a ``score``
+  # function that shadows the submodule attribute.
+  score_module = importlib.import_module("aminx.scoring.score")
+  real_kernel = score_module._score_pairs_kernel  # noqa: SLF001
+
+  def leaky_kernel(*args: Any, **kwargs: Any) -> tuple[Any, Any, Any]:  # noqa: ANN401
+    nll, logits, order = real_kernel(*args, **kwargs)
+    return nll + _PLANT * nll.mean(), logits + _PLANT * logits.mean(0, keepdims=True), order
+
+  monkeypatch.setattr(score_module, "_score_pairs_kernel", leaky_kernel)
+  # N=5 -> 8 (three padding rows): a shape no other test here compiles, and a larger rung jump.
+  report = _cross_row_report(_CHECKPOINT, None, 5)
+  assert report["instrument"] > 1e-3, report
+  assert 0.0 < report["real_rows"] <= SCORE_BATCH_COMPOSITION_ATOL, (
+    f"the planted leak should sit under the bound and still be caught: {report}"
+  )
+
+
+def _ligand_score(lig: str, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+  return score(
+    ScoringSpecification(
+      inputs=[_STRUCTURE], checkpoint_id=_LIGAND_CHECKPOINT, sequences_to_score=[_UBIQUITIN],
+      ligand_context_path=lig, return_logits=True, backbone_noise=0.0, max_length=_MAX_LENGTH, **kwargs,
+    ),
+  )
+
+
+def _assert_same_score(a: dict[str, Any], b: dict[str, Any], *, loss_xy: bool = False) -> None:
+  np.testing.assert_allclose(np.asarray(a["logits"]), np.asarray(b["logits"]), atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0)
+  np.testing.assert_allclose(np.asarray(a["scores"]), np.asarray(b["scores"]), atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0)
+  if loss_xy:
+    np.testing.assert_array_equal(np.asarray(a["mask_xy"]), np.asarray(b["mask_xy"]))
+    np.testing.assert_allclose(np.asarray(a["loss_xy"]), np.asarray(b["loss_xy"]), atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0)
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+@pytest.mark.parametrize("n_atoms", [8, 20, 27])  # k_y changes for 8 and 20 (< 25), not for 27
+def test_ligand_atom_padding_carries_no_weight(
+  tmp_path: Path, monkeypatch: pytest.MonkeyPatch, n_atoms: int,
+) -> None:
+  lig = _ligand_npz(tmp_path / "lig.npz", n_atoms)
+  padded = _ligand_score(lig, return_loss_xy=True)
+  # Same residue trimming, ligand ladder off: the unpadded reference.
+  monkeypatch.setattr(_sampling_helper, "ligand_atom_rung", lambda m: m)
+  unpadded = _ligand_score(lig, return_loss_xy=True)
+  _assert_same_score(padded, unpadded, loss_xy=True)
+  # Planted: mask-0 atoms with REAL coordinates and atom types, not zeros, still carry no weight.
+  planted = _ligand_score(_ligand_npz(tmp_path / "planted.npz", n_atoms, n_masked=9), return_loss_xy=True)
+  _assert_same_score(planted, unpadded, loss_xy=True)
+  # Instrument control: a real (mask-1) atom change does move the logits.
+  moved = _ligand_score(_ligand_npz(tmp_path / "moved.npz", n_atoms, seed=1))
+  assert np.abs(np.asarray(moved["logits"]) - np.asarray(unpadded["logits"])).max() > 1e-3
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+def test_sample_path_ligand_padding_is_inert(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  """The sample path goes through the same padding (kernel_dispatch -> _prepare_ligand_context)."""
+  from aminx.host.runner import sample  # noqa: PLC0415
+  from aminx.run.specs import SamplingSpecification  # noqa: PLC0415
+
+  lig = _ligand_npz(tmp_path / "lig.npz", 8)
+
+  def run() -> dict[str, Any]:
+    return sample(
+      SamplingSpecification(
+        inputs=[_STRUCTURE], checkpoint_id=_LIGAND_CHECKPOINT, ligand_context_path=lig, num_samples=4,
+        temperature=0.1, random_seed=0, max_length=_MAX_LENGTH, return_logits=True,
+      ),
+    )
+
+  padded = run()
+  monkeypatch.setattr(_sampling_helper, "ligand_atom_rung", lambda m: m)
+  unpadded = run()
+  np.testing.assert_array_equal(np.asarray(padded["sequences"]), np.asarray(unpadded["sequences"]))
+  np.testing.assert_allclose(
+    np.asarray(padded["logits"]), np.asarray(unpadded["logits"]), atol=SCORE_BATCH_COMPOSITION_ATOL, rtol=0,
+  )
+
+
+# --- regression: one compile per shape class, zero within it -----------------------------------------
+
+
+def _class_rows(root: Path, atoms: tuple[int, int, int] = (20, 27, 40)) -> list[dict[str, Any]]:
+  root.mkdir(parents=True, exist_ok=True)
+  masks_path = str(root / "masks.npy")
+  np.save(masks_path, _masks(2, seed=3))
+  lig20 = _ligand_npz(root / "lig_a.npz", atoms[0])
+  lig27 = _ligand_npz(root / "lig_b.npz", atoms[1], seed=1)
+  lig40 = _ligand_npz(root / "lig_c.npz", atoms[2], seed=2)
+
+  def unit(label: str, lig: str, n: int) -> ScoreConditionalsUnit:
+    return _unit(
+      root, label=label, checkpoint_id=_LIGAND_CHECKPOINT, ar_masks_path=masks_path, ligand_context_path=lig,
+      sequences=_mutants(n),
+    )
+
+  # Class A = (ligand rung 32, N bucket 4): rows 0, 2, 3. Class B = (ligand rung 64): row 1.
+  return _plan(root, unit("a20n3", lig20, 3), unit("b40n4", lig40, 4), unit("a27n4", lig27, 4), unit("a20n4", lig20, 4))
+
+
+@pytest.mark.slow
+@pytest.mark.requires_weights
+def test_one_compile_per_shape_class(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+  rows = _class_rows(tmp_path / "bucketed")
+  keys = [row_compile_key(r) for r in rows]
+  assert keys[0] == keys[2] == keys[3] != keys[1]
+  report = execute_manifest(_manifest(tmp_path / "bucketed", rows))
+  assert report["successful_rows"] == 4
+  hashes = [r["manifest_row_hash"] for r in rows]
+  executed = [r["manifest_row_hash"] for r in sorted(report["row_results"], key=lambda r: r["execution_position"])]
+  assert executed == [hashes[0], hashes[2], hashes[3], hashes[1]]
+  by_rows = {e["computed_rows"]: e for e in report["shape_classes"]}
+  assert by_rows[3]["later_unit_compiles"] == 0, report["shape_classes"]
+  for index in (2, 3):
+    marker = json.loads(Path(rows[index]["output_h5_path"] + ".done.json").read_text())
+    assert marker["compile_telemetry"]["backend_compiles"] == 0
+    assert marker["compile_telemetry"]["first_unit_of_class_in_process"] is False
+
+  # Positive control: the same layout with the ligand ladder off recompiles inside "class A", so the
+  # zero above is the ladder's doing, not a blind counter. The encode kernel depends on M, so the
+  # atom counts here (19, 23) are ones no other test in this file compiles unpadded.
+  monkeypatch.setattr(_sampling_helper, "ligand_atom_rung", lambda m: m)
+  control = _class_rows(tmp_path / "control", atoms=(19, 23, 40))
+  control_report = execute_manifest(_manifest(tmp_path / "control", control))
+  def compiles(index: int) -> int:
+    marker = json.loads(Path(control[index]["output_h5_path"] + ".done.json").read_text())
+    return int(marker["compile_telemetry"]["backend_compiles"])
+
+  # The counter separates "new shape" from "anything": M=23 after M=19 compiles, and M=19 again
+  # (row 3, same N bucket as row 0) does not.
+  assert compiles(2) > 0, control_report["shape_classes"]
+  assert compiles(3) == 0, control_report["shape_classes"]

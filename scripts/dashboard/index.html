@@ -126,7 +126,7 @@ function render(d) {
   ${(d.warnings || []).length ? `<p class="warnings">Extractor warnings: ${d.warnings.map(esc).join("; ")}</p>` : ""}
 
   <h2 id="ledger">Ledger</h2>
-  <p class="lede">One row per vehicle in <code>tests/knob_gate/sidecar_ledger.toml</code>. Each row is a pre-registered run graded by its sidecar. A row passes only when its clean comparison passes and every listed negative control makes its check fail.</p>
+  <p class="lede">One row per vehicle in <code>tests/knob_gate/ledgers/*.toml</code>. Each row is a pre-registered run graded by its sidecar. A row passes only when its clean comparison passes and every listed negative control makes its check fail.</p>
   <div class="panel" tabindex="0" role="region" aria-label="Ledger table, scrollable">
   <table>
     <thead><tr><th>Vehicle</th><th>Outcome</th><th>Controls detected</th><th>Commit</th><th>Ran</th><th>Duration</th><th>Pre-registration</th></tr></thead>

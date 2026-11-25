@@ -244,7 +244,7 @@ def _key(wave: str, oracle_dir: str, commit: str) -> str:
 
 
 def _commit(repo: Path) -> str:
-  proc = subprocess.run(  # noqa: S603
+  proc = subprocess.run(
     ["git", "rev-parse", "HEAD"],  # noqa: S607
     cwd=repo, capture_output=True, text=True, check=False,
   )

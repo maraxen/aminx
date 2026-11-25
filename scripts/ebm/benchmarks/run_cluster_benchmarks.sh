@@ -15,13 +15,13 @@
 # script also sets it explicitly (idempotent, safe) per ~/.claude/rules/CLUSTER.md
 # so the job is correct even if invoked under a different preset by mistake.
 #
-# CUDA extras: `torch` lives under the `benchmark` extra and jax's CUDA
-# plugin (bundling the matching libcudnn) lives under `cuda12` -- NEITHER is
+# CUDA extras: `torch` lives under the `benchmark` group, EBM runtime deps live under `ebm`,
+# and jax's CUDA plugin (bundling the matching libcudnn) lives under `cuda12` -- NEITHER is
 # in the base dependency set, so a bare `uv run` (which implicitly syncs only
-# the base set) silently drops both, even if a prior manual sync installed
+# the base set) silently drops them, even if a prior manual sync installed
 # them. `import torch` then fails with `ImportError: libcudnn.so.9: cannot
 # open shared object file` on GPU nodes (confirmed via a diagnostic job on
-# node4007). Explicit `uv sync --extra cuda12 --extra benchmark` fixes this.
+# node4007). Explicit `uv sync --extra cuda12 --extra ebm --group benchmark` fixes this.
 #
 # jax/jaxlib grad-path regression (decoy/ddg only): jaxlib 0.10.2's XLA:GPU
 # compiler crashes on `-jax.grad(energy)` (the `score_grad_ms` metric) on
@@ -68,8 +68,8 @@ SKIP_STEPS="${BENCHMARK_SKIP_STEPS:-}"
 
 mkdir -p "${OUT_DIR}"
 
-echo "=== uv sync --extra cuda12 --extra benchmark ==="
-uv sync --extra cuda12 --extra benchmark
+echo "=== uv sync --extra cuda12 --extra ebm --group benchmark ==="
+uv sync --extra cuda12 --extra ebm --group benchmark
 
 # Mandatory Blackwell/SM120 workaround (see CLUSTER.md; safe no-op elsewhere).
 _NODE="${SLURM_JOB_NODELIST:-$(hostname -s)}"
@@ -133,7 +133,7 @@ run_per_length_group() {
     echo "=== RUN (${script} ${group_name}) ==="
     set +e
     ( set -e
-      uv run "${JAX_GRAD_PATH_PIN[@]}" python "scripts/ebm/benchmarks/${script}" \
+      uv run --no-sync "${JAX_GRAD_PATH_PIN[@]}" python "scripts/ebm/benchmarks/${script}" \
         --checkpoint "${CHECKPOINT}" --reference-repo "${REFERENCE_REPO}" \
         --lengths "${group_lengths}" --batch-sizes ${group_batches} --n-repeats "${N_REPEATS}" "$@" \
         --out "${OUT_DIR}/${out_prefix}_${group_name}.json"
@@ -154,7 +154,7 @@ run_step decoy run_per_length_group decoy_benchmark.py decoy_benchmark_full \
 run_step ddg run_per_length_group ddg_benchmark.py ddg_benchmark_full \
   "${BATCH_SIZES_SMALL_L}" "${BATCH_SIZES_MED_L}" "${BATCH_SIZES_LARGE_L}"
 
-run_step biasing uv run python scripts/ebm/benchmarks/biasing_benchmark.py \
+run_step biasing uv run --no-sync python scripts/ebm/benchmarks/biasing_benchmark.py \
   --checkpoint "${CHECKPOINT}" --reference-repo "${REFERENCE_REPO}" \
   --lengths "${LENGTHS}" --n-repeats "${N_REPEATS}" \
   --out "${OUT_DIR}/biasing_benchmark_full.json"
@@ -174,12 +174,12 @@ run_step biasing uv run python scripts/ebm/benchmarks/biasing_benchmark.py \
 # the distribution reliably draws near-boundary real lengths regardless of sample size), so memory
 # scales ~linearly with n_structures alone: ~35GiB, a ~4x safety margin under the H200's capacity.
 # Override via BENCHMARK_HETEROGENEOUS_N=256 only if deliberately re-confirming the OOM itself.
-run_step heterogeneous uv run python scripts/ebm/benchmarks/heterogeneous_batch_benchmark.py \
+run_step heterogeneous uv run --no-sync python scripts/ebm/benchmarks/heterogeneous_batch_benchmark.py \
   --checkpoint "${CHECKPOINT}" --reference-repo "${REFERENCE_REPO}" \
   --n-structures "${BENCHMARK_HETEROGENEOUS_N:-64}" --n-repeats "${N_REPEATS}" \
   --out "${OUT_DIR}/heterogeneous_batch_benchmark_full.json"
 
-run_step annealing uv run python scripts/ebm/benchmarks/langevin_annealing_benchmark.py \
+run_step annealing uv run --no-sync python scripts/ebm/benchmarks/langevin_annealing_benchmark.py \
   --checkpoint "${CHECKPOINT}" --reference-repo "${REFERENCE_REPO}" \
   --lengths "${LENGTHS}" --n-repeats "${N_REPEATS}" \
   --out "${OUT_DIR}/langevin_annealing_benchmark_full.json"

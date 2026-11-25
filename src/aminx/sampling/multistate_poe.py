@@ -46,9 +46,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from xtrax.run import ZarrStagingSink, derive_sink_spec
-from xtrax.tiling import BatchPlanner
-from xtrax.tiling import ChunkedMap as _XtraxChunkedMap
-from xtrax.tiling import Vmap as _XtraxVmap
+from xtrax.tiling import BatchPlanner, ChunkedMap, Vmap
 from xtrax.tiling.estimators import lowered_memory_estimate
 
 from aminx.host._sampling_grid_lineage import (
@@ -92,10 +90,9 @@ from aminx.io.sink_provenance import (
   resolve_aminx_version,
 )
 from aminx.run.spec import mpnn_temperatures
-from aminx.sampling.conditional_logits import _plan_axis_strategy
 from aminx.tiling.axes import N_SAMPLES, N_STATES
-from aminx.tiling.dispatch import make_axis_dispatch_via_xtrax
-from aminx.tiling.strategy import SafeMap, Vmap
+from aminx.tiling.dispatch import make_axis_dispatch
+from aminx.tiling.planner import plan_axis_strategy
 
 if TYPE_CHECKING:
   from jaxtyping import Array, Float, Int, PRNGKeyArray
@@ -117,19 +114,21 @@ def sample_states_fused(
   n_samples: int,
   sample_batch_size: int | None = None,
   randomize_decoding_order: bool = True,  # noqa: FBT001, FBT002
+  decoding_order_seed: int | None = None,
+  fixed_position_context: str = "random_order",
 ) -> tuple[Int[Array, "n_samples L"], Float[Array, "n_samples L 21"]]:
   """Draw n_samples independent samples from an already-built, already-fused bundle.
 
   Dispatches the sample-key axis via the same composable_jax idiom every other axis in this
-  package uses -- `_plan_axis_strategy` (`aminx.sampling.conditional_logits`) resolves a real
+  package uses -- `plan_axis_strategy` (`aminx.tiling.planner`) resolves a real
   `xtrax.tiling.BatchPlanner` decision (Vmap when `n_samples` fits the device memory budget,
-  SafeMap-chunked otherwise) against the existing `N_SAMPLES` `AxisSpec`
-  (`aminx.tiling.axes`), then `make_axis_dispatch_via_xtrax` turns that decision into a typed
+  ChunkedMap otherwise) against the existing `N_SAMPLES` `AxisSpec`
+  (`aminx.tiling.axes`), then `make_axis_dispatch` turns that decision into a typed
   iterator -- exactly how `make_batched_conditional_logits_split_fn` dispatches
   `N_REPLICATES`/`N_CANDIDATES` (`conditional_logits.py:390-397,421-427`). Deliberately not a
   bare `jax.vmap`: a fixed `jax.vmap` over an unbounded `n_samples` would attempt every sample
   in one shot regardless of the device's actual memory, exactly the failure mode
-  `_plan_axis_strategy`'s `BatchPlanner`/`MemoryBudget` exists to prevent for large campaign-
+  `plan_axis_strategy`'s `BatchPlanner`/`MemoryBudget` exists to prevent for large campaign-
   scale sample counts (thousands of samples per bead).
 
   The per-sample memory estimate feeding that decision (`activation_bytes_per_element`) is
@@ -185,6 +184,16 @@ def sample_states_fused(
       Draw a fresh random decoding order per sample (fixed positions first, uniform over
       tie groups) -- the package-wide default. False decodes in the schedule already on
       `bundle` (N->C unless the caller built another).
+  decoding_order_seed : int | None, default None
+      None draws each sample's order from its own sample key (the default). An int draws
+      every sample's order from that seed alone, so all samples -- and any other row
+      carrying the same seed, fused or single-state -- decode in one shared order. This is
+      the pairing control: the logits at a position depend on the order of the other
+      positions even when all of them are fixed.
+
+  fixed_position_context : str, default "random_order"
+      How fixed positions are conditioned on each other: ``random_order`` (reference
+      behaviour), ``canonical_order`` or ``mutual_context``. See ``with_decoding_order``.
 
   Returns
   -------
@@ -193,6 +202,12 @@ def sample_states_fused(
       (n_samples, L, 21) float32.
 
   """
+  if not randomize_decoding_order and (fixed_position_context != "random_order" or decoding_order_seed is not None):
+    msg = (
+      "fixed_position_context / decoding_order_seed have no effect with randomize_decoding_order=False "
+      "(the bundle's own schedule is used); unset them or randomize the order."
+    )
+    raise ValueError(msg)
   sample_keys = jax.random.split(prng_key, n_samples)
   num_states = bundle.geometry.coords.shape[0]
 
@@ -205,19 +220,11 @@ def sample_states_fused(
   # #942). This is what previously never happened at all (kernel() hardcoded
   # Vmap unconditionally, bypassing BatchPlanner for this axis entirely).
   state_spec = dataclasses.replace(N_STATES, cardinality=num_states)
-  xtrax_state_strategy = BatchPlanner().plan([state_spec]).decisions[0].strategy
-  # BatchPlanner is xtrax-native; translate back to aminx's own AxisStrategy
-  # union before handing it to aminx call sites (make_axis_dispatch_via_xtrax
-  # expects aminx-native instances -- mirrors _plan_axis_strategy's identical
-  # translation for the samples axis below).
-  if isinstance(xtrax_state_strategy, _XtraxChunkedMap):
-    state_strategy = SafeMap(tile=xtrax_state_strategy.batch_size)
-  elif isinstance(xtrax_state_strategy, _XtraxVmap):
-    state_strategy = Vmap()
-  else:
+  state_strategy = BatchPlanner().plan([state_spec]).decisions[0].strategy
+  if not isinstance(state_strategy, (ChunkedMap, Vmap)):
     msg = (
       "sample_states_fused: unexpected BatchPlanner state-axis decision "
-      f"{type(xtrax_state_strategy)}"
+      f"{type(state_strategy)}"
     )
     raise TypeError(msg)
 
@@ -226,7 +233,11 @@ def sample_states_fused(
     # groups), keyed off -- not split from -- the sample key. randomize_decoding_order=False
     # keeps whatever schedule the caller built into `bundle`.
     sample_bundle = (
-      with_decoding_order(bundle, decoding_order_key(key)) if randomize_decoding_order else bundle
+      with_decoding_order(
+        bundle, decoding_order_key(key, decoding_order_seed), fixed_context=fixed_position_context
+      )
+      if randomize_decoding_order
+      else bundle
     )
     result = _sample_autoregressive_kernel(
       model, key, sample_bundle, config, stage_set, state_strategy=state_strategy,
@@ -246,13 +257,13 @@ def sample_states_fused(
   # xtrax already provides the primitive to close -- lowered_memory_estimate
   # had zero call sites anywhere in aminx before this).
   activation_bytes = lowered_memory_estimate(_one_sample, sample_keys[0])
-  strategy = _plan_axis_strategy(
+  strategy = plan_axis_strategy(
     N_SAMPLES,
     n_samples,
     sample_batch_size,
     activation_bytes_per_element=activation_bytes,
   )
-  iterator = make_axis_dispatch_via_xtrax(strategy, axis=N_SAMPLES.name)
+  iterator = make_axis_dispatch(strategy, axis=N_SAMPLES.name)
 
   sequences, logits = iterator(_one_sample, sample_keys)
   return sequences, logits
@@ -475,7 +486,16 @@ def sample_multistate_poe_bead(
     )
     raise NotImplementedError(msg)
 
-  return sample_states_fused(model, bundle, config, stage_set, prng_key, n_samples)
+  return sample_states_fused(
+    model,
+    bundle,
+    config,
+    stage_set,
+    prng_key,
+    n_samples,
+    decoding_order_seed=spec.run_spec.sampling.decoding_order_seed,
+    fixed_position_context=spec.run_spec.sampling.fixed_position_context,
+  )
 
 
 def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str, Any]:
@@ -703,6 +723,16 @@ def sample_multistate_poe_campaign_row(spec: SamplingSpecification) -> dict[str,
     # `schema_version` it can be added without moving any manifest row hash or output path.
     "sink_provenance_version": SINK_PROVENANCE_VERSION,
     "model_family": spec.model_family,
+    # Hash-free. How fixed positions are conditioned on each other ("random_order" is the
+    # reference ProteinMPNN/LigandMPNN behaviour; see with_decoding_order). Always recorded so a
+    # non-default mode can never be mistaken for the default in a stored row.
+    "fixed_position_context": spec.run_spec.sampling.fixed_position_context,
+    # Hash-free; present only when a shared order seed was set (absence = per-sample random order).
+    **(
+      {"decoding_order_seed": int(spec.run_spec.sampling.decoding_order_seed)}
+      if spec.run_spec.sampling.decoding_order_seed is not None
+      else {}
+    ),
     "ligand_conditioning": int(bool(spec.ligand_conditioning)),
     "ligand_conditioning_mode": ligand_conditioning_mode(spec.ligand_conditioning),
     "sidechain_conditioning": int(spec.sidechain_conditioning),

@@ -10,7 +10,7 @@ port itself, decoupling remap fidelity from any later ranking-metric result
 (design spec §9, EPIC risk register MAJOR-3).
 
 Requires (dev-only, not part of the aminx runtime dependency set):
-  * ``torch`` (``uv sync --group dev`` or ``--extra benchmark``).
+  * ``torch`` (``uv sync --group dev`` or ``--group benchmark``).
   * The ProteinEBM reference repo checked out locally (``--reference-repo``,
     default ``~/repos/ProteinEBM``) -- provides ``protein_ebm.model.ebm.
     ProteinEBM`` and ``protein_ebm.model.r3_diffuser.R3Diffuser``.

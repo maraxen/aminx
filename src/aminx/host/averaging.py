@@ -448,8 +448,9 @@ def _make_encoding_sampling_split_fn_legacy(
     if temperature is None:
       temperature = jnp.array(1.0, dtype=jnp.float32)
 
-    # `decoding_order` is an ORDER array. generate_ar_mask would read it as a RANK array, and
-    # its second positional parameter is chain_idx, not the tie map (debt #1982).
+    # `decoding_order` is an ORDER array, which ar_mask_from_decoding_order takes directly. Do
+    # not route this through generate_ar_mask positionally: its second positional parameter
+    # is chain_idx, not the tie map (debt #1982).
     autoregressive_mask = jnp.asarray(ar_mask_from_decoding_order(decoding_order, tie_group_map))
 
     # Dispatch based on sampling strategy

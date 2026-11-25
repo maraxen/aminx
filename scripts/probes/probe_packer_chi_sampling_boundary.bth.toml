@@ -1,0 +1,33 @@
+[experiment]
+hypothesis = "Packer chi sampling is formally waived under Praxia debt debt-packer-chi-sampling-engine (#3213) due to requirement of 3D NeRF Cartesian coordinate reconstruction and von Mises mixture recycling, with PackerResult mixture parameters verified to meet 4-angle 3-mixture shapes and concentration >= 0.1 floor."
+stage_name = "validation"
+
+[controls]
+positive_outcome = ["pass"]
+negative_outcome = ["fail"]
+
+[requires.waiver]
+reason = "Packer 3D Cartesian atom reconstruction engine and von Mises sampling loop waived under debt-packer-chi-sampling-engine"
+
+[outcomes.pass]
+condition = "status == 'PASS' AND waiver_status == 'WAIVED_UNDER_DEBT' AND praxia_debt_id == 3213 AND shapes_valid AND concentration_floor_valid AND boundary_documented"
+decision = "Record formal waiver under Praxia debt 3213 for packer_chi_sampling."
+reasoning = "Packer parameter output invariants hold, and Cartesian sampling boundary is properly documented and linked to filed technical debt."
+is_residual = false
+
+[outcomes.fail]
+condition = "status != 'PASS' OR waiver_status != 'WAIVED_UNDER_DEBT' OR praxia_debt_id != 3213 OR NOT shapes_valid OR NOT concentration_floor_valid OR NOT boundary_documented"
+decision = "Reject packer_chi_sampling waiver."
+reasoning = "Waiver or parameter validation failed."
+is_residual = true
+
+[result_schema]
+probe_name = "str"
+clause = "str"
+status = "str"
+waiver_status = "str"
+praxia_debt_id = "int"
+praxia_debt_slug = "str"
+shapes_valid = "bool"
+concentration_floor_valid = "bool"
+boundary_documented = "bool"

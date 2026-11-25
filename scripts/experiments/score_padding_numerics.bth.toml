@@ -1,0 +1,72 @@
+[metadata]
+title = "Do #3510's N and ligand-atom paddings stay within SCORE_BATCH_COMPOSITION_ATOL on the screen's families and devices? (PR #300 review, MAJOR 2)"
+created = "261119"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = """Padding the sequences-per-unit axis N (copies of row 0, dropped) and LigandMPNN's \
+ligand atom axis M (mask-0 atoms at the end) changes runner.score logits and NLL only by float \
+reassociation, within SCORE_BATCH_COMPOSITION_ATOL = 1e-5. Tested on 1ubq through runner.score \
+with K=2 explicit ar_masks for proteinmpnn_v_48_020, solublempnn_v_48_020 and \
+ligandmpnn_v_32_020_25 (with a 20-atom ligand), N 3 -> 4. M padding is tested at M = 8, 20, 27 \
+(k_y changes for 8 and 20). Planted mask-0 atoms at real coordinates with oxygen types carry no \
+weight. One run per backend (CPU, and GPU at default matmul precision) is graded by this sidecar."""
+stage_name = "validation"
+novel = true
+
+[controls]
+positive_outcome = ["within_bound"]
+negative_outcome = ["instrument_blind", "nondeterministic", "exceeds_bound", "fail"]
+
+[outcomes.instrument_blind]
+condition = "positive_control_delta <= 1e-3"
+decision = "Do not interpret: moving the real ligand atoms did not move the logits, so a zero M delta is vacuous."
+reasoning = "The positive control must fire before any padding delta can be read."
+is_residual = false
+
+[outcomes.nondeterministic]
+condition = "positive_control_delta > 1e-3 AND repeat_delta > 0"
+decision = "Repeat the identical call is not bitwise stable on this backend; padding deltas cannot be separated from run-to-run noise. Report and investigate before shipping."
+reasoning = "The negative control: an identical call must reproduce exactly."
+is_residual = false
+
+[outcomes.within_bound]
+condition = "positive_control_delta > 1e-3 AND repeat_delta = 0 AND max_abs_delta <= atol"
+decision = "Ship 0.5.5 with padding on by default; the #3487 bound covers these paths on this backend."
+reasoning = "Every family and padding is inside the exported equivalence floor."
+is_residual = false
+
+[outcomes.exceeds_bound]
+condition = "positive_control_delta > 1e-3 AND repeat_delta = 0 AND max_abs_delta > atol"
+decision = "Hold 0.5.5: either padding is a real effect on this backend or the bound is wrong for this path. Localise before release."
+reasoning = "A deterministic delta above the floor is not covered by the shipped claim."
+is_residual = false
+
+[outcomes.fail]
+condition = "true"
+decision = "Unclassified; inspect the record."
+reasoning = "Residual."
+is_residual = true
+
+[breakdown]
+waive = "The verdict is a worst-case bound by design: the shipped claim is that every family and padding stays within atol, so the maximum is the estimand. Per-family N deltas, per-M deltas and the planted delta are emitted alongside it."
+
+[result_schema]
+n_pad_proteinmpnn = "float"
+n_pad_solublempnn = "float"
+n_pad_ligandmpnn = "float"
+m_pad_8 = "float"
+m_pad_20 = "float"
+m_pad_27 = "float"
+planted_m8 = "float"
+repeat_delta = "float"
+positive_control_delta = "float"
+max_abs_delta = "float"
+atol = "float"
+backend = "str"
+device_kind = "str"
+matmul_precision = "str"
+git_hash = "str"
+
+[provenance]
+track_packages = ["aminx", "jax", "jaxlib"]
