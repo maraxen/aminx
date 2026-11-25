@@ -17,15 +17,22 @@ DECL_PATH = REPO_ROOT / "scripts" / "parity" / "frustrampnn_1ubq.parity.bth.toml
 
 
 def _load_vehicle_module():
+  import jax
+
   spec = importlib.util.spec_from_file_location("_frustrampnn_parity_v2_test", SCRIPT_PATH)
   assert spec is not None and spec.loader is not None
   mod = importlib.util.module_from_spec(spec)
   sys.modules[spec.name] = mod
+  saved_path = list(sys.path)
+  previous_x64 = jax.config.jax_enable_x64
   try:
     spec.loader.exec_module(mod)
   except Exception:
     sys.modules.pop(spec.name, None)
     raise
+  finally:
+    jax.config.update("jax_enable_x64", previous_x64)
+    sys.path[:] = saved_path
   return mod
 
 
@@ -67,12 +74,15 @@ def test_frustrampnn_hf_pin_downloads_exact_artifact_sha256(
 ) -> None:
   """Verify the file served at FRUSTRAMPNN_HF_REVISION hashes to declared artifact_sha256."""
   from huggingface_hub import hf_hub_download
+  import huggingface_hub.constants
 
   mod = _load_vehicle_module()
   decl = tomllib.loads(DECL_PATH.read_text(encoding="utf-8"))
   weights_cfg = decl["implementation"]["weights"]
 
-  monkeypatch.setenv("HF_HOME", str(tmp_path / "hf_home"))
+  monkeypatch.setattr(
+    huggingface_hub.constants, "HF_HUB_CACHE", str(tmp_path / "hf_hub_cache")
+  )
   dl_dir = tmp_path / "dl"
   eqx_p = Path(
     hf_hub_download(

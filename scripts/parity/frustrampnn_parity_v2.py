@@ -597,10 +597,6 @@ def _emit_ring0_cell_evidence(
   """Emit WP49 `cell_evidence.v1` manifests and ingest sealed dump into `parity_store`."""
   import tomllib
 
-  bathos_src = Path(__file__).resolve().parent.parent.parent.parent / "bathos" / "src"
-  if bathos_src.is_dir() and str(bathos_src) not in sys.path:
-    sys.path.insert(0, str(bathos_src))
-
   from bathos.parity.evidence import write_cell_evidence
   from bathos.parity.schema import compute_cell_id
   from bathos.parity.sealed_dump import ingest_sealed_dump, verify_pinned_dump
@@ -681,7 +677,12 @@ def main() -> int:  # noqa: PLR0915
       e["sha256"] for e in reg["entries"] if CANONICAL_CKPT in e.get("artifact_path", "")
     )
     ckpt_file = None
-    _base, ckpt_sha = _load_eqx_weights(effective_eqx_weights, expected_ckpt_sha, "float32")
+    _base, eqx_artifact_sha = _load_eqx_weights(
+      effective_eqx_weights, expected_ckpt_sha, "float32"
+    )
+    # controls-out keys the .ckpt path, so record the registry .ckpt digest.
+    ckpt_sha = expected_ckpt_sha
+    log.info("Equinox archive SHA-256 %s", eqx_artifact_sha)
   else:
     oracle_sha, ckpt_sha, ckpt_file, _pinned = verify_anti_self_trust(
       args.oracle_dir,
