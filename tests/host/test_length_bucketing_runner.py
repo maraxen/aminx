@@ -293,17 +293,11 @@ def test_g_controls_fixed_position_and_bias() -> None:
 
 @pytest.mark.slow
 @pytest.mark.requires_weights
-@pytest.mark.xfail(
-  raises=ValueError,
-  strict=True,
-  reason=(
-    "aminx debt #2508: proxide concatenate_proteins_for_inter_mode cannot concatenate "
-    "the 0-d source-path leaf, so runner inter mode fails before sampling. The inter "
-    "guard itself is covered in test_length_bucketing_helper.py."
-  ),
-)
 def test_g_controls_inter_is_not_trimmed() -> None:
   """Ties expressed as tied_positions auto/direct require pass_mode='inter'.
+
+  Was xfail for aminx debt #2508 (proxide inter-mode concat failed on the 0-d
+  source-path leaf); proxide 0.3.0 fixed it and the test XPASSed.
 
   ``inter`` disables length bucketing, so an inter run is not trimmed: it matches
   the same call with length_bucketing=False.
