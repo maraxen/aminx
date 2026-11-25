@@ -66,16 +66,53 @@ is_residual = false
 [outcomes.fail]
 condition = """
 NOT (
-  mode = 'self_test'
-  AND refused = false
-  AND self_test_o1_ratio > 0.8
-  AND self_test_o1_ratio < 1.2
-  AND self_test_fold_ratio >= 1.7
-  AND self_test_fold_ratio < 2.5
+  (
+    mode = 'self_test'
+    AND refused = false
+    AND self_test_o1_ratio > 0.8
+    AND self_test_o1_ratio < 1.2
+    AND self_test_fold_ratio >= 1.7
+    AND self_test_fold_ratio < 2.5
+  )
+  OR
+  (
+    mode = 'probe'
+    AND refused = false
+    AND sentinels_fired = true
+    AND self_test_o1_ratio > 0.8
+    AND self_test_o1_ratio < 1.2
+    AND self_test_fold_ratio >= 1.7
+    AND self_test_fold_ratio < 2.5
+    AND tiling_clean_r1 < 1.5 AND tiling_clean_r2 < 1.5
+    AND tiling_multi_clean_r1 < 1.5 AND tiling_multi_clean_r2 < 1.5
+    AND tiling_ragged_clean_r1 < 1.5 AND tiling_ragged_clean_r2 < 1.5
+    AND tiling_multi_ragged_clean_r1 < 1.5 AND tiling_multi_ragged_clean_r2 < 1.5
+    AND score_k_clean_r1 < 1.5 AND score_k_clean_r2 < 1.5
+    AND score_c_clean_r1 < 1.5 AND score_c_clean_r2 < 1.5
+    AND seam_clean_r1 < 1.5 AND seam_clean_r2 < 1.5
+    AND scan_clean_r1 < 1.5 AND scan_clean_r2 < 1.5
+    AND encode_s_clean_r1 < 1.5 AND encode_s_clean_r2 < 1.5
+    AND ste_untied_clean_r1 < 3.0 AND ste_untied_clean_r2 < 3.0
+    AND ste_tied_clean_r1 < 3.0 AND ste_tied_clean_r2 < 3.0
+    AND optimize_ste_clean_r1 < 3.0 AND optimize_ste_clean_r2 < 3.0
+    AND score_l_clean_r1 < 3.0 AND score_l_clean_r2 < 3.0
+    AND encode_l_clean_r1 < 3.0 AND encode_l_clean_r2 < 3.0
+    AND tiling_mut_r1 >= 1.7 AND tiling_mut_r2 >= 1.7
+    AND score_k_mut_r1 >= 1.7 AND score_k_mut_r2 >= 1.7
+    AND score_c_mut_r1 >= 1.7 AND score_c_mut_r2 >= 1.7
+    AND seam_mut_r1 >= 1.7 AND seam_mut_r2 >= 1.7
+    AND scan_mut_r1 >= 1.7 AND scan_mut_r2 >= 1.7
+    AND encode_s_mut_r1 >= 1.7 AND encode_s_mut_r2 >= 1.7
+    AND ste_untied_mut_r1 > 3.5 AND ste_untied_mut_r2 > 3.5
+    AND ste_tied_mut_r1 > 3.5 AND ste_tied_mut_r2 > 3.5
+    AND optimize_ste_mut_r1 > 3.5 AND optimize_ste_mut_r2 > 3.5
+    AND score_reencode_k_r1 < 1.5 AND score_reencode_k_r2 < 1.5
+    AND score_reencode_inflation > 1.05
+  )
 )
 """
 decision = "The probe missed a pre-registered bound, the instrument failed, or the run refused."
-reasoning = "Catch-all for a completed probe that misses D2/D5, a self-test whose controls miss their windows, and any refusal payload. Evaluated after instrument_self_test and pass."
+reasoning = "Catch-all for a completed probe that misses D2/D5, a self-test whose controls miss their windows, and any refusal payload. Evaluated after instrument_self_test and pass. The condition was made exclusive after review."
 source = "provisional:spec 261124 D2/D5 thresholds fixed before the graded probe run"
 is_residual = true
 

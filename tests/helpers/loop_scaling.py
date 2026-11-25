@@ -2,7 +2,10 @@
 
 ``loop_bodies`` only traces. Work is an explicit proxy (one matmul term plus
 output sizes), so these helpers compare ratios of the same loop across extents.
-They never execute the program and never measure ``while`` trip counts.
+They never execute the program. A ``while`` lowered from ``fori_loop`` reports
+its trip count when both bounds are static integer literals (including a
+``fori`` upper bound that is a traced argument closed over a literal); every
+other ``while`` stays ``None``.
 
 Criterion A: a loop that iterates once per element of an axis must do
 extent-independent work per iteration (ratio < 1.5). Loops whose trip count
@@ -14,6 +17,7 @@ Criterion B: a fixed-trip loop over an L-sized state must grow at most linearly
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -74,18 +78,330 @@ class LoopRow:
   work: list[int]
 
 
-def _rows_from_bodies(found: list[list[Any]], extents: Sequence[int]) -> list[LoopRow]:
+def _scalar_value(val: Any) -> int | bool | None:
+  """Python int or bool for a scalar literal. Arrays and tracers stay unknown."""
+  if isinstance(val, bool):
+    return val
+  if isinstance(val, int):
+    return val
+  if isinstance(val, jax.Array):
+    return None
+  dtype = getattr(val, "dtype", None)
+  if dtype is None or getattr(val, "ndim", 0) != 0:
+    return None
+  label = str(getattr(dtype, "name", dtype))
+  if label == "bool":
+    return bool(val)
+  if "int" in label:
+    return int(val)
+  return None
+
+
+def _atom_value(env: dict[int, int | bool], atom: Any) -> int | bool | None:
+  """Value of a jaxpr atom: a literal, or a var already folded into ``env``."""
+  if hasattr(atom, "val") and hasattr(atom, "aval"):
+    literal = _scalar_value(atom.val)
+    if literal is not None:
+      return literal
+  return env.get(id(atom))
+
+
+def _is_int(val: object) -> bool:
+  return isinstance(val, int) and not isinstance(val, bool)
+
+
+def _fold_scalar(
+  name: str, vals: list[int | bool | None], params: dict[str, Any]
+) -> int | bool | None:
+  """Fold one scalar integer or boolean eqn. Unknown or non-scalar inputs stay unknown."""
+  if not vals or any(val is None for val in vals):
+    return None
+  if name in {"add", "sub", "mul", "max", "min"} and _is_int(vals[0]) and _is_int(vals[1]):
+    left, right = int(vals[0]), int(vals[1])
+    if name == "add":
+      return left + right
+    if name == "sub":
+      return left - right
+    if name == "mul":
+      return left * right
+    if name == "max":
+      return max(left, right)
+    return min(left, right)
+  if name in {"div", "rem"} and _is_int(vals[0]) and _is_int(vals[1]):
+    left, right = int(vals[0]), int(vals[1])
+    if right == 0 or left < 0 or right < 0:
+      return None
+    return left // right if name == "div" else left % right
+  if name == "neg" and _is_int(vals[0]):
+    return -int(vals[0])
+  if name == "sign" and _is_int(vals[0]):
+    value = int(vals[0])
+    return (value > 0) - (value < 0)
+  if name in {"eq", "ne", "lt", "le", "gt", "ge"} and len(vals) == 2:
+    left, right = vals[0], vals[1]
+    same_int = _is_int(left) and _is_int(right)
+    same_bool = isinstance(left, bool) and isinstance(right, bool)
+    if not same_int and not same_bool:
+      return None
+    compared = int(left) if same_int else bool(left)
+    other = int(right) if same_int else bool(right)
+    return {
+      "eq": compared == other,
+      "ne": compared != other,
+      "lt": compared < other,
+      "le": compared <= other,
+      "gt": compared > other,
+      "ge": compared >= other,
+    }[name]
+  if name == "and" and len(vals) == 2:
+    if isinstance(vals[0], bool) and isinstance(vals[1], bool):
+      return bool(vals[0] and vals[1])
+    if _is_int(vals[0]) and _is_int(vals[1]):
+      return int(vals[0]) & int(vals[1])
+  if name == "or" and len(vals) == 2:
+    if isinstance(vals[0], bool) and isinstance(vals[1], bool):
+      return bool(vals[0] or vals[1])
+    if _is_int(vals[0]) and _is_int(vals[1]):
+      return int(vals[0]) | int(vals[1])
+  if name == "select_n" and isinstance(vals[0], bool) and len(vals) == 3:
+    return vals[2] if vals[0] else vals[1]
+  if name == "select_n" and _is_int(vals[0]):
+    index = int(vals[0])
+    cases = vals[1:]
+    if 0 <= index < len(cases):
+      return cases[index]
+  if name == "convert_element_type" and (isinstance(vals[0], bool) or _is_int(vals[0])):
+    dtype = params.get("new_dtype")
+    if dtype is None:
+      return None
+    try:
+      integer = bool(jnp.issubdtype(jnp.dtype(dtype), jnp.integer))
+    except (TypeError, ValueError):
+      return None
+    if integer:
+      return int(vals[0])
+  return None
+
+
+def _open_jaxpr(closed: Any) -> Any:
+  inner = getattr(closed, "jaxpr", None)
+  if inner is not None and inner is not closed and hasattr(inner, "eqns"):
+    return inner
+  return closed
+
+
+def _seed_call(eqn: Any, inner: Any, env: dict[int, int | bool]) -> dict[int, int | bool]:
+  """Bind a called jaxpr's invars to the scalar values of the call operands."""
+  closed = eqn.params.get("jaxpr", eqn.params.get("call_jaxpr"))
+  consts = list(getattr(closed, "consts", ()) or ())
+  const_vals = [_scalar_value(const) for const in consts]
+  arg_vals = [_atom_value(env, atom) for atom in eqn.invars]
+  if len(inner.invars) == len(arg_vals):
+    bound = arg_vals
+  elif len(inner.invars) == len(const_vals) + len(arg_vals):
+    bound = const_vals + arg_vals
+  else:
+    return {}
+  seeded: dict[int, int | bool] = {}
+  for var, val in zip(inner.invars, bound, strict=True):
+    if val is not None:
+      seeded[id(var)] = val
+  return seeded
+
+
+def _loop_body_jaxpr(eqn: Any) -> Any | None:
+  key = "body_jaxpr" if eqn.primitive.name == "while" else "jaxpr"
+  closed = eqn.params.get(key)
+  if closed is None:
+    return None
+  return _open_jaxpr(closed)
+
+
+def _seed_while_body(eqn: Any, body: Any, env: dict[int, int | bool]) -> dict[int, int | bool]:
+  n_cond = int(eqn.params["cond_nconsts"])
+  n_body = int(eqn.params["body_nconsts"])
+  seeded: dict[int, int | bool] = {}
+  for offset, var in enumerate(body.invars[:n_body]):
+    val = _atom_value(env, eqn.invars[n_cond + offset])
+    if val is not None:
+      seeded[id(var)] = val
+  return seeded
+
+
+def _carry_index(invars: Sequence[Any], atom: Any, n_const: int) -> int | None:
+  for index, var in enumerate(invars):
+    if var is atom and index >= n_const:
+      return index - n_const
+  return None
+
+
+def _literal_one(atom: Any) -> bool:
+  return hasattr(atom, "val") and hasattr(atom, "aval") and _scalar_value(atom.val) == 1
+
+
+def _body_is_unit_step(body: Any, n_body: int, index_carry: int, upper_carry: int) -> bool:
+  """``fori`` body: the index carry becomes ``index + 1`` and the upper carry is forwarded."""
+  if n_body + max(index_carry, upper_carry) >= len(body.invars):
+    return False
+  if max(index_carry, upper_carry) >= len(body.outvars):
+    return False
+  if body.outvars[upper_carry] is not body.invars[n_body + upper_carry]:
+    return False
+  index_in = body.invars[n_body + index_carry]
+  index_out = body.outvars[index_carry]
+  for eqn in body.eqns:
+    if not any(out is index_out for out in eqn.outvars):
+      continue
+    if eqn.primitive.name != "add" or len(eqn.invars) != 2:
+      return False
+    left, right = eqn.invars
+    return (left is index_in and _literal_one(right)) or (right is index_in and _literal_one(left))
+  return False
+
+
+def _static_fori_trip(eqn: Any, env: dict[int, int | bool]) -> int | None:
+  """Trip count of a ``fori_loop``-shaped ``while`` whose bounds are static integers.
+
+  ``fori_loop`` with a traced upper bound lowers to ``while`` whose cond is
+  ``index < upper`` and whose body is ``index + 1``, forwarding ``upper``.
+  ``upper - index`` is the trip count when both are non-negative integer
+  constants. Any other ``while`` stays unmeasured.
+  """
+  cond = _open_jaxpr(eqn.params["cond_jaxpr"])
+  body = _open_jaxpr(eqn.params["body_jaxpr"])
+  n_cond = int(eqn.params["cond_nconsts"])
+  n_body = int(eqn.params["body_nconsts"])
+  cond_env: dict[int, int | bool] = {}
+  for index, var in enumerate(cond.invars):
+    src = index if index < n_cond else index + n_body
+    if src >= len(eqn.invars):
+      return None
+    val = _atom_value(env, eqn.invars[src])
+    if val is not None:
+      cond_env[id(var)] = val
+  for ceqn in cond.eqns:
+    folded = _fold_scalar(
+      ceqn.primitive.name,
+      [_atom_value(cond_env, atom) for atom in ceqn.invars],
+      ceqn.params,
+    )
+    if folded is not None and len(ceqn.outvars) == 1:
+      cond_env[id(ceqn.outvars[0])] = folded
+  if len(cond.outvars) != 1:
+    return None
+  producer = next(
+    (ceqn for ceqn in cond.eqns if any(out is cond.outvars[0] for out in ceqn.outvars)),
+    None,
+  )
+  if producer is None or producer.primitive.name != "lt" or len(producer.invars) != 2:
+    return None
+  lhs, rhs = producer.invars
+  index_carry = _carry_index(cond.invars, lhs, n_cond)
+  upper_carry = _carry_index(cond.invars, rhs, n_cond)
+  if index_carry is None or upper_carry is None:
+    return None
+  if not _body_is_unit_step(body, n_body, index_carry, upper_carry):
+    return None
+  lower_src = n_cond + n_body + index_carry
+  upper_src = n_cond + n_body + upper_carry
+  if upper_src >= len(eqn.invars):
+    return None
+  lower = _atom_value(env, eqn.invars[lower_src])
+  upper = _atom_value(env, eqn.invars[upper_src])
+  if not _is_int(lower) or not _is_int(upper) or int(lower) < 0 or int(upper) < 0:
+    return None
+  return max(int(upper) - int(lower), 0)
+
+
+def _walk_static_trips(
+  jaxpr: Any,
+  path: str,
+  env: dict[int, int | bool],
+  found: dict[str, int],
+) -> list[int | bool | None]:
+  """Walk ``jaxpr`` with ``loop_bodies`` path strings, recording static ``fori`` trips."""
+  local = dict(env)
+  for idx, eqn in enumerate(jaxpr.eqns):
+    name = eqn.primitive.name
+    here = f"{path}/{idx}:{name}"
+    if name in {"scan", "while"}:
+      if name == "while":
+        trip = _static_fori_trip(eqn, local)
+        if trip is not None:
+          found[here] = trip
+      body = _loop_body_jaxpr(eqn)
+      if body is not None:
+        body_env = _seed_while_body(eqn, body, local) if name == "while" else {}
+        _walk_static_trips(body, here, body_env, found)
+      continue
+    subs = list(sub_jaxprs(eqn.params))
+    if subs:
+      returned: list[int | bool | None] | None = None
+      for sub_index, sub in enumerate(subs):
+        outs = _walk_static_trips(sub, f"{here}[{sub_index}]", _seed_call(eqn, sub, local), found)
+        if returned is None:
+          returned = outs
+      if len(subs) == 1 and returned is not None and len(returned) == len(eqn.outvars):
+        for var, val in zip(eqn.outvars, returned, strict=True):
+          if val is not None:
+            local[id(var)] = val
+      continue
+    folded = _fold_scalar(
+      name,
+      [_atom_value(local, atom) for atom in eqn.invars],
+      eqn.params,
+    )
+    if folded is not None and len(eqn.outvars) == 1:
+      local[id(eqn.outvars[0])] = folded
+  return [_atom_value(local, var) for var in jaxpr.outvars]
+
+
+def _static_fori_trips(fn: Callable[..., Any], args: tuple[Any, ...]) -> dict[str, int]:
+  """Static ``fori_loop`` trip counts keyed by the same path ``loop_bodies`` uses.
+
+  A second trace after ``loop_bodies`` hits ``make_jaxpr``'s cache. Scalar
+  integer arguments seed the root invars, so ``fori_loop(0, n)(3)`` reports 3
+  even when ``n`` is not a literal inside the jaxpr. Computed bounds
+  (``iterations * L``, tiling's chunk count) fold when every operand is a
+  static integer.
+  """
+  closed = jax.make_jaxpr(fn)(*args)
+  jaxpr = closed.jaxpr
+  flat, _ = jax.tree_util.tree_flatten(args)
+  env: dict[int, int | bool] = {}
+  if len(flat) == len(jaxpr.invars):
+    for var, leaf in zip(jaxpr.invars, flat, strict=True):
+      val = _scalar_value(leaf)
+      if val is not None:
+        env[id(var)] = val
+  found: dict[str, int] = {}
+  _walk_static_trips(jaxpr, "", env, found)
+  return found
+
+
+def _rows_from_bodies(
+  found: list[list[Any]],
+  extents: Sequence[int],
+  static_trips: Sequence[dict[str, int]] | None = None,
+) -> list[LoopRow]:
   paths = [[body.path for body in row] for row in found]
   if any(row != paths[0] for row in paths[1:]):
     msg = f"loop structure differs across extents {list(extents)}: {paths}"
     raise LoopStructureMismatchError(msg)
   rows: list[LoopRow] = []
   for index, body in enumerate(found[0]):
+    trips: list[int | None] = []
+    for extent_index, row in enumerate(found):
+      trip = row[index].trip_count
+      recovered = None if static_trips is None else static_trips[extent_index].get(row[index].path)
+      if trip is None and row[index].primitive == "while" and recovered is not None:
+        trip = recovered
+      trips.append(trip)
     rows.append(
       LoopRow(
         path=str(body.path),
         primitive=str(body.primitive),
-        trips=[row[index].trip_count for row in found],
+        trips=trips,
         work=[int(row[index].iteration_work) for row in found],
       )
     )
@@ -118,8 +434,13 @@ def loop_work_by_extent(
     msg = f"need at least two extents, got {list(extents)}"
     raise ValueError(msg)
   jax.clear_caches()
-  found = [loop_bodies(fn, *make_args(int(extent))) for extent in extents]
-  return _rows_from_bodies(found, extents)
+  found: list[list[Any]] = []
+  static_trips: list[dict[str, int]] = []
+  for extent in extents:
+    args = make_args(int(extent))
+    found.append(loop_bodies(fn, *args))
+    static_trips.append(_static_fori_trips(fn, args))
+  return _rows_from_bodies(found, extents, static_trips)
 
 
 def per_extent(
@@ -159,10 +480,12 @@ def measure_rows(
     raise ValueError(msg)
   jax.clear_caches()
   found: list[list[Any]] = []
+  static_trips: list[dict[str, int]] = []
   for extent in extents:
     fn, args = trace_at(int(extent))
     found.append(loop_bodies(fn, *args))
-  return _rows_from_bodies(found, extents)
+    static_trips.append(_static_fori_trips(fn, args))
+  return _rows_from_bodies(found, extents, static_trips)
 
 
 def work_ratios(row: LoopRow) -> list[float]:
@@ -387,10 +710,7 @@ def pick_fixed_scan_largest(rows: Sequence[LoopRow], *, expected_trips: Sequence
   heavier = [row for row in varying if row.work[0] >= best.work[0]]
   if heavier:
     detail = ", ".join(f"{row.path} trips={row.trips} work={row.work[0]}" for row in heavier)
-    msg = (
-      "refusing to substitute a smaller fixed scan for a loop whose trips changed: "
-      f"{detail}"
-    )
+    msg = f"refusing to substitute a smaller fixed scan for a loop whose trips changed: {detail}"
     raise LookupError(msg)
   return best
 
@@ -414,6 +734,33 @@ def _count_in_loops(jaxpr: Any, primitive: str) -> int:
     else:
       for sub in sub_jaxprs(eqn.params):
         total += _count_in_loops(sub, primitive)
+  return total
+
+
+def _aval_numel(aval: Any) -> int:
+  shape = getattr(aval, "shape", ())
+  return math.prod(int(dim) for dim in shape)
+
+
+def _numel_of_primitive(jaxpr: Any, primitive: str) -> int:
+  total = 0
+  for eqn in jaxpr.eqns:
+    if eqn.primitive.name == primitive:
+      total += sum(_aval_numel(var.aval) for var in eqn.outvars)
+    for sub in sub_jaxprs(eqn.params):
+      total += _numel_of_primitive(sub, primitive)
+  return total
+
+
+def _numel_in_loops(jaxpr: Any, primitive: str) -> int:
+  total = 0
+  for eqn in jaxpr.eqns:
+    if eqn.primitive.name in {"scan", "while"}:
+      for sub in sub_jaxprs(eqn.params):
+        total += _numel_of_primitive(sub, primitive)
+    else:
+      for sub in sub_jaxprs(eqn.params):
+        total += _numel_in_loops(sub, primitive)
   return total
 
 
@@ -444,6 +791,47 @@ def assert_no_primitive_in_loops(
   """Assert ``primitive`` does not run inside a loop body."""
   count = count_primitive_in_loops(fn, args, primitive)
   assert count == 0, f"primitive {primitive} ran inside a loop ({count} times)"
+
+
+def primitive_numel_in_loops(
+  fn: Callable[..., Any],
+  args: tuple[Any, ...],
+  primitive: str,
+) -> int:
+  """Total output elements of ``primitive`` inside any ``scan`` or ``while``.
+
+  A ``vmap`` over the marked call is one equation whose output shape includes
+  the batch axis, so the element count grows with that axis even though the
+  equation is not replicated. Marks outside every loop are ignored.
+
+  ``jax.clear_caches`` runs first so a jaxpr cached by an earlier test cannot
+  change this count.
+  """
+  jax.clear_caches()
+  closed = jax.make_jaxpr(fn)(*args)
+  return _numel_in_loops(closed.jaxpr, primitive)
+
+
+def assert_mark_numel_independent(
+  counts: Sequence[int],
+  *,
+  threshold: float = A_THRESHOLD,
+) -> None:
+  """Assert marked output volume inside loops does not grow across extents.
+
+  Criterion A on whole-loop work misses a fold whose tensor is small next to
+  the rest of the body. The mark's own output size is the measurement that
+  sees it. Zero at any extent is a violation: the mark never reached a loop.
+  """
+  if len(counts) < 2 or any(count <= 0 for count in counts):
+    msg = f"encoder mark numel inside loops is missing: {list(counts)}"
+    raise AssertionError(msg)
+  violations: list[str] = []
+  for small, large in zip(counts, counts[1:], strict=False):
+    ratio = large / small
+    if ratio >= threshold:
+      violations.append(f"mark numel ratio {ratio:.4f} >= {threshold} numel={list(counts)}")
+  assert not violations, "\n".join(violations)
 
 
 def fold_over(fn: Callable[..., Any], n: int, arg_index: int) -> Callable[..., Any]:

@@ -10,9 +10,12 @@ re-encodes by design and is not traced here.
 (b) Criterion B over L: the same loop's per-iteration work stays linear.
 (c) The encoder does not run inside the pair map. Criterion A is blind to a
     per-pair re-encode (the K ratio stays ~1 while the body inflates), so this
-    guard counts an encoder mark inside the scan. The must-fire mutant calls
-    ``_encode_structure_kernel`` (the encode ``score`` and the runner share)
-    once per pair.
+    guard counts an encoder mark inside the scan. The mark is on
+    ``Aminx.__call__``, ``Encoder.__call__`` and ``ProteinFeatures.__call__``,
+    so a direct ``model.encoder`` or ``model.features`` call is counted too.
+    One must-fire mutant calls ``_encode_structure_kernel`` per pair. Another
+    calls ``model.features`` and ``model.encoder`` directly and never
+    ``model()``.
 
 Work is a jaxpr proxy, not wall time. The score module is imported by
 ``importlib`` because the package re-exports a ``score`` function that shadows
@@ -29,6 +32,8 @@ import jax
 import jax.numpy as jnp
 import pytest
 
+from aminx.model.encoder import Encoder
+from aminx.model.features import ProteinFeatures
 from aminx.model.mpnn import Aminx
 from tests.helpers.aminx_small import make_ar_model, structure
 from tests.helpers.loop_scaling import (
@@ -50,16 +55,28 @@ from tests.helpers.loop_scaling import (
 )
 
 _MODEL = make_ar_model()
-_SENTINEL = {"score_k": 0, "score_c": 0, "reencode": 0}
+_SENTINEL = {"score_k": 0, "score_c": 0, "reencode": 0, "direct": 0}
 _SCORE_AXIS: dict[str, jax.Array] = {}
+
+
+def _mark_first_float(result: Any) -> Any:
+  """Add a zero multiple of ``ENCODER_MARK`` into the first floating leaf."""
+  flat, treedef = jax.tree_util.tree_flatten(result)
+  for index, leaf in enumerate(flat):
+    dtype = getattr(leaf, "dtype", None)
+    if dtype is not None and jnp.issubdtype(dtype, jnp.floating):
+      flat[index] = leaf + jnp.float32(0) * jnp.sum(mark_array(leaf))
+      break
+  return treedef.unflatten(flat)
 
 
 @pytest.fixture(autouse=True)
 def _mark_model_call(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Tag ``Aminx.__call__`` so a per-pair re-encode shows up inside the pair scan.
+  """Tag model, encoder and feature calls so a per-pair re-encode is visible.
 
-  The decoder reads ``model.decoder`` rather than ``model(...)``, so the mark
-  stays off the clean pair map. A wrapper module would hide ``.decoder``.
+  The decoder reads ``model.decoder`` rather than ``model(...)``,
+  ``model.encoder`` or ``model.features``, so the marks stay off the clean
+  pair map. A wrapper module would hide ``.decoder``.
   """
   original = Aminx.__call__
 
@@ -68,7 +85,15 @@ def _mark_model_call(monkeypatch: pytest.MonkeyPatch) -> None:
     scale = jnp.float32(0) * jnp.sum(mark_array(nodes))
     return nodes + scale, edges, neighbors
 
+  def marked_submodule(original_call: Callable[..., Any]) -> Callable[..., Any]:
+    def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:
+      return _mark_first_float(original_call(self, *args, **kwargs))
+
+    return wrapped
+
   monkeypatch.setattr(Aminx, "__call__", marked)
+  monkeypatch.setattr(Encoder, "__call__", marked_submodule(Encoder.__call__))
+  monkeypatch.setattr(ProteinFeatures, "__call__", marked_submodule(ProteinFeatures.__call__))
 
 
 def _inputs(length: int, n_masks: int, n_seq: int) -> tuple[Any, ...]:
@@ -270,7 +295,9 @@ def _assert_axis_mutant(
 def test_score_pairs_mask_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
   clean = _rows("k", (5, 10, 20))
   score_mod = importlib.import_module("aminx.scoring.score")
-  monkeypatch.setattr(score_mod, "_score_candidate_kernel", _mask_fold(score_mod._score_candidate_kernel))
+  monkeypatch.setattr(
+    score_mod, "_score_candidate_kernel", _mask_fold(score_mod._score_candidate_kernel)
+  )
   _SENTINEL["score_k"] = 0
   mutant = _rows("k", (5, 10, 20))
   _assert_axis_mutant(clean, mutant, "score_k", _pair_trips("k", (5, 10, 20)))
@@ -279,7 +306,9 @@ def test_score_pairs_mask_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_score_pairs_sequence_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
   clean = _rows("c", (5, 10, 20))
   score_mod = importlib.import_module("aminx.scoring.score")
-  monkeypatch.setattr(score_mod, "_score_candidate_kernel", _seq_fold(score_mod._score_candidate_kernel))
+  monkeypatch.setattr(
+    score_mod, "_score_candidate_kernel", _seq_fold(score_mod._score_candidate_kernel)
+  )
   _SENTINEL["score_c"] = 0
   mutant = _rows("c", (5, 10, 20))
   _assert_axis_mutant(clean, mutant, "score_c", _pair_trips("c", (5, 10, 20)))
@@ -297,7 +326,9 @@ def test_score_pairs_per_pair_reencode_must_fire(monkeypatch: pytest.MonkeyPatch
   """A is blind to this mutant; the encoder mark inside the pair scan is what fires."""
   clean = _rows("k", (5, 10, 20))
   score_mod = importlib.import_module("aminx.scoring.score")
-  monkeypatch.setattr(score_mod, "_score_candidate_kernel", _reencode(score_mod._score_candidate_kernel))
+  monkeypatch.setattr(
+    score_mod, "_score_candidate_kernel", _reencode(score_mod._score_candidate_kernel)
+  )
   _SENTINEL["reencode"] = 0
   mutant = _rows("k", (5, 10, 20))
   assert _SENTINEL["reencode"] > 0
@@ -309,5 +340,57 @@ def test_score_pairs_per_pair_reencode_must_fire(monkeypatch: pytest.MonkeyPatch
   fn, make_args = per_extent(lambda n: _trace(n, mode="k"))
   args = make_args(5)
   assert count_primitive_in_loops(fn, args, ENCODER_MARK) > 0
+  with pytest.raises(AssertionError, match=ENCODER_MARK):
+    assert_no_primitive_in_loops(fn, args, ENCODER_MARK)
+
+
+def _direct_submodules(real: Callable[..., Any]) -> Callable[..., Any]:
+  """Call ``model.features`` and ``model.encoder`` once per pair, never ``model()``."""
+
+  def bad(*args: Any) -> tuple[Any, Any, Any]:
+    _SENTINEL["direct"] += 1
+    model, coords, mask, residue_index, chain_index = args[0], args[5], args[6], args[7], args[8]
+    if getattr(coords, "ndim", 0) == 4:
+      coords = coords[0]
+      mask = mask[0]
+      residue_index = residue_index[0]
+      chain_index = chain_index[0]
+    edges, neighbor_indices, nodes, _key = model.features(
+      jax.random.PRNGKey(0),
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      jnp.asarray(0.0, dtype=jnp.float32),
+    )
+    enc_nodes, enc_edges = model.encoder(
+      edges,
+      neighbor_indices,
+      mask,
+      initial_node_features=nodes,
+      inference=True,
+    )
+    nll, logits, order = real(*args)
+    bump = jnp.float32(0) * (jnp.sum(enc_nodes) + jnp.sum(enc_edges))
+    return nll + bump, logits, order
+
+  return bad
+
+
+def test_score_pairs_direct_submodule_reencode_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
+  """``model.encoder`` / ``model.features`` bypass ``Aminx.__call__`` and must still be marked."""
+  fn, make_args = per_extent(lambda n: _trace(n, mode="k"))
+  args = make_args(5)
+  assert count_primitive_in_loops(fn, args, ENCODER_MARK) == 0
+  score_mod = importlib.import_module("aminx.scoring.score")
+  monkeypatch.setattr(
+    score_mod, "_score_candidate_kernel", _direct_submodules(score_mod._score_candidate_kernel)
+  )
+  _SENTINEL["direct"] = 0
+  fn, make_args = per_extent(lambda n: _trace(n, mode="k"))
+  args = make_args(5)
+  assert _SENTINEL["direct"] > 0
+  # One mark from features and one from the encoder. Either wrapper missing stays below 2.
+  assert count_primitive_in_loops(fn, args, ENCODER_MARK) >= 2
   with pytest.raises(AssertionError, match=ENCODER_MARK):
     assert_no_primitive_in_loops(fn, args, ENCODER_MARK)

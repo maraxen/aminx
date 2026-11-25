@@ -8,6 +8,11 @@ proxy, not wall time.
 The must-fire mutant re-runs the decode on L perturbed copies and keeps element
 0, the fold the graded probe measured (STE ratios about 4.0, optimize_ste about
 4.0). ``optimize_ste`` is patched with ``monkeypatch``, not ``try``/``finally``.
+
+``make_optimize_sequence_fn`` lowers ``fori_loop`` to a ``while`` because
+``iterations`` is a traced jit argument. The helper recovers that static trip
+count. A second mutant multiplies the upper bound by L; the recovered trips
+then scale with L and criterion B rejects them.
 """
 
 from __future__ import annotations
@@ -41,7 +46,7 @@ from tests.helpers.loop_scaling import (
 )
 
 _MODEL = make_guard_model()
-_SENTINEL = {"ste_untied": 0, "ste_tied": 0, "optimize_ste": 0}
+_SENTINEL = {"ste_untied": 0, "ste_tied": 0, "optimize_ste": 0, "optimize_trips": 0}
 _EXTENTS = (32, 64, 128)
 
 
@@ -78,7 +83,9 @@ class FoldConditional(eqx.Module):
   def model(self) -> Any:
     return self.inner.model
 
-  def __call__(self, key: jax.Array, enc: Any, bundle: Any, config: Any, stage_set: Any) -> jax.Array:
+  def __call__(
+    self, key: jax.Array, enc: Any, bundle: Any, config: Any, stage_set: Any
+  ) -> jax.Array:
     _SENTINEL[self.which] += 1
 
     def one(index: jax.Array) -> jax.Array:
@@ -95,7 +102,9 @@ class FoldConditional(eqx.Module):
     return logits[0] + jnp.float32(0) * jnp.sum(logits)
 
 
-def _trace_ste(extent: int, *, tied: bool, mutant: bool) -> tuple[Callable[..., Any], tuple[Any, ...]]:
+def _trace_ste(
+  extent: int, *, tied: bool, mutant: bool
+) -> tuple[Callable[..., Any], tuple[Any, ...]]:
   built, config = _ste_bundle(extent, tied=tied)
   inner: Any = ConditionalDecode(model=_MODEL, state_iterator=VmapIterator())
   if mutant:
@@ -181,7 +190,41 @@ def test_optimize_ste_work_is_at_most_linear() -> None:
   rows = measure_rows(lambda n: _trace_optimize(n, tied=False), _EXTENTS)
   row = pick_outermost_while(rows)
   assert row.primitive == "while"
+  # iterations=3 is a static bound even though fori_loop lowered to while.
+  assert row.trips == [3, 3, 3]
   _assert_clean(row)
+
+
+def test_optimize_ste_trip_count_must_not_scale_with_length(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Trips must stay at ``iterations``. Scaling the fori upper bound by L has to fail."""
+  import jax.lax as lax
+
+  scale = {"L": 0}
+  real = lax.fori_loop
+
+  def scaled(
+    lower: Any, upper: Any, body_fun: Any, init_val: Any, *args: Any, **kwargs: Any
+  ) -> Any:
+    if isinstance(upper, (int, np.integer)):
+      return real(lower, upper, body_fun, init_val, *args, **kwargs)
+    _SENTINEL["optimize_trips"] += 1
+    return real(lower, upper * scale["L"], body_fun, init_val, *args, **kwargs)
+
+  def trace(extent: int) -> tuple[Callable[..., Any], tuple[Any, ...]]:
+    scale["L"] = extent
+    return _trace_optimize(extent, tied=False)
+
+  monkeypatch.setattr(lax, "fori_loop", scaled)
+  _SENTINEL["optimize_trips"] = 0
+  mutant = measure_rows(trace, _EXTENTS)
+  assert _SENTINEL["optimize_trips"] > 0
+  row = pick_outermost_while(mutant)
+  # iterations=3, extents 32/64/128: the recovered upper bound is iterations * L.
+  assert row.trips == [3 * extent for extent in _EXTENTS]
+  with pytest.raises(AssertionError, match="trips must not depend on L"):
+    assert_work_at_most_linear([row])
 
 
 def test_optimize_ste_length_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
