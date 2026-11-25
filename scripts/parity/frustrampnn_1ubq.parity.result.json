@@ -85,6 +85,7 @@
       "pairing": "fixture",
       "pin_set": {},
       "pooling_rule": "all_runs",
+      "reference_source": "sealed_dump",
       "run_verdicts": [
         {
           "flags": [],
@@ -160,6 +161,7 @@
       "pairing": "fixture",
       "pin_set": {},
       "pooling_rule": "all_runs",
+      "reference_source": "sealed_dump",
       "run_verdicts": [
         {
           "flags": [],
@@ -235,6 +237,7 @@
       "pairing": "fixture",
       "pin_set": {},
       "pooling_rule": "all_runs",
+      "reference_source": "sealed_dump",
       "run_verdicts": [
         {
           "flags": [],
@@ -310,6 +313,7 @@
       "pairing": "fixture",
       "pin_set": {},
       "pooling_rule": "all_runs",
+      "reference_source": "sealed_dump",
       "run_verdicts": [
         {
           "flags": [],
@@ -520,7 +524,7 @@
     }
   ],
   "grade_inputs": {
-    "as_of": "2026-11-25T00:06:38.270209+00:00",
+    "as_of": "2026-11-25T03:19:10.612260+00:00",
     "cell_runs": {},
     "comparison_backend": {
       "distribution": "bathos",
