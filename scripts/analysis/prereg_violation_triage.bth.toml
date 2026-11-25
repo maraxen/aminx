@@ -1,0 +1,69 @@
+# prereg_violation_triage -- task 261124_prereg-violation-triage.
+# Follows run a5275269 (prereg_order_audit_v2: prereg_order_violated, 11 of 165 sidecars).
+# Committed BEFORE the triage runs. The audit settled "committed late"; this asks the question
+# git alone could not: did the criteria a pre-commit run graded against differ from the ones
+# that were committed?
+
+[metadata]
+title = "Were the 11 late-committed sidecars' criteria edited after their first runs?"
+created = "261124"
+schema_version = "0.3"
+
+[experiment]
+hypothesis = "bathos records sha256 of the sidecar's raw bytes on every run. Where those bytes survive in git -- as a committed version of the sidecar or inside the run's dirty-run snapshot commit -- the [outcomes] and [result_schema] a pre-commit run was graded against can be compared with the first committed version. A late commit whose criteria never changed is a process lapse (the file existed, uncommitted); a late commit whose criteria changed between a run and the commit is a post-hoc registration for that run. Prior: most of the 11 are commit lag, because 6 of 11 are under ~1.2 h late and 4 share one bulk commit; but nothing has checked."
+stage_name = "validation"
+novel = true
+
+[outcomes.criteria_edited_found]
+condition = "self_test_passed AND refusal IS NULL AND n_triaged = n_expected AND n_criteria_edited > 0"
+decision = "Name each sidecar whose pre-commit run graded against different criteria, with the outcome labels that changed and the run ids. Every outcome those runs recorded is post-hoc and stays UNCITED; check whether any doc, memory or claim cites them and correct it. A clean post-commit re-run (clean_rerun_after_commit) is the only thing that makes such a sidecar's outcome citable."
+reasoning = "Criteria that changed between a run and the commit cannot have constrained that run. This is the failure pre-registration exists to stop, now shown rather than merely possible."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND n_triaged = n_expected AND n_criteria_edited > 0)"
+
+[outcomes.all_late_commit_same_criteria]
+condition = "self_test_passed AND refusal IS NULL AND n_triaged = n_expected AND n_criteria_edited = 0 AND n_unrecoverable = 0 AND n_other = 0"
+decision = "Record the 11 as commit lag: each pre-commit run graded against the criteria that were later committed. The process breach stands (the files were not committed first) but no outcome was chosen with its numbers in view, as far as the recorded bytes show. Citations need no correction; the fix is procedural (commit before bth run)."
+reasoning = "A byte-level or parsed-criteria match between every pre-commit run and the first committed version is the strongest evidence git and the catalog together can give that the criteria pre-dated the runs."
+is_residual = false
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND n_triaged = n_expected AND n_criteria_edited = 0 AND n_unrecoverable = 0 AND n_other = 0)"
+
+[outcomes.partially_unrecoverable]
+condition = "self_test_passed AND refusal IS NULL AND n_triaged = n_expected AND n_criteria_edited = 0 AND (n_unrecoverable > 0 OR n_other > 0)"
+decision = "Report the recoverable sidecars as commit lag and the rest as UNDETERMINED -- not as clean. An undetermined sidecar's pre-commit outcomes stay uncited unless a clean post-commit re-run exists."
+reasoning = "Missing bytes are absence of evidence; treating them as 'same criteria' would launder exactly the cases the audit could not settle."
+is_residual = true
+adversarial_check = "NOT (self_test_passed AND refusal IS NULL AND n_triaged = n_expected AND n_criteria_edited = 0 AND (n_unrecoverable > 0 OR n_other > 0))"
+
+[outcomes.triage_invalid]
+condition = "NOT self_test_passed OR refusal IS NOT NULL OR n_triaged <> n_expected"
+decision = "Discard every number from this run. Fix the instrument or inputs and re-run."
+reasoning = "The self-test plants every class (must-fire: loosened criteria via snapshot; must-not-fire: identical bytes, reworded hypothesis; never-guess: unrecoverable and missing hash). A run that fails it, or that triaged a different set than the audit reported, says nothing."
+is_residual = true
+adversarial_check = "self_test_passed AND refusal IS NULL AND n_triaged = n_expected"
+
+[result_schema]
+refusal = "str"
+self_test_passed = "bool"
+self_test_n_checks = "int"
+self_test_failed = "list"
+audit_result_sha256 = "str"
+n_expected = "int"
+n_triaged = "int"
+n_local_rows = "int"
+n_rows = "int"
+n_criteria_edited = "int"
+n_late_commit_same_criteria = "int"
+n_unrecoverable = "int"
+n_other = "int"
+n_clean_rerun = "int"
+sidecars = "list"
+
+[data]
+inputs = [
+  "outputs/analysis/prereg_order_audit_v2/result.json (run a5275269, copied in; sha256 recorded in the result)",
+  "outputs/analysis/prereg_violation_triage/titanix_rows_261124.json (titanix catalog export: id, sidecar_path, timestamp, sidecar_sha256, outcome, git_hash)",
+  "local bathos catalog (queried by the script)",
+  "git history of /home/marielle/projects/aminx (all refs, plus dangling dirty-run snapshot commits)",
+]
+outputs = ["outputs/analysis/prereg_violation_triage/result.json"]
