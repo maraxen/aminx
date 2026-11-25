@@ -144,6 +144,10 @@ REGISTRY: dict[str, tuple[str, str]] = {
     "exempt",
     "searchsorted over chromatic wave boundaries; selects a schedule index, not a residue",
   ),
+  "families/laser_mpnn/pdb_sink.py::_as_protein": (
+    "exempt",
+    "searchsorted over np.unique chain ids; maps chain ids to chain_index, not a draw",
+  ),
   "utils/aa_convert.py::string_key_to_index": (
     "exempt",
     "searchsorted over sorted string keys; a lookup, not a draw",

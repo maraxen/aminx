@@ -1,7 +1,7 @@
 ---
 title: 'LASEr PDB output: the spec understates upstream''s output pipeline'
 description: 'Decision request: upstream LASEr writes PDBs through backbone N-H imputation, titratable-H cleanup with a geometric H-bond detector, and probability B-factors -- none of which the spec names; choose minimal writer vs full parity port'
-status: proposed
+status: accepted
 task_id: 260929_potts-laser-xtrax-compose
 date: '261004'
 supersedes: ''
@@ -9,7 +9,7 @@ backlog_ids: ''
 ---
 # LASEr PDB output: the spec understates upstream's output pipeline
 
-**Status: needs the user's decision.** Nothing has been built for it.
+**Status: accepted.** Option C, specified in `.praxia/docs/specs/261124_laser-pdb-sink.md`.
 
 ## Where things stand
 
