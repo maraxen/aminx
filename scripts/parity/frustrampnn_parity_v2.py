@@ -87,6 +87,10 @@ MUTANTS = (
 MUTANT_MIN_POWER = 1e-2
 CANONICAL_CKPT = "megascale_default_la-true_esm-False_split1"
 FRUSTRAMPNN_HF_REVISION = "3070f2dd4ec9e495ec225f09930996b7fef2f714"
+# bathos.parity is in no PyPI release (0.18.0 predates it) and bathos is not an aminx
+# dependency, so evidence emission runs against this pinned rev (the bathos#167 merge):
+#   uv run --no-sync --with "<BATHOS_PARITY_PIN>" python scripts/parity/frustrampnn_parity_v2.py ...
+BATHOS_PARITY_PIN = "bathos @ git+https://github.com/maraxen/bathos@7ccd450532d5a5f60fab3c17f15d8a3d6c7cfc69"
 ORACLE_STEM = "frustrampnn_1ubq_oracle"
 
 
@@ -596,6 +600,12 @@ def _emit_ring0_cell_evidence(
 ) -> None:
   """Emit WP49 `cell_evidence.v1` manifests and ingest sealed dump into `parity_store`."""
   import tomllib
+
+  try:
+    import bathos.parity.evidence  # noqa: F401
+  except ImportError as exc:
+    msg = f'bathos.parity is not importable; run with: uv run --no-sync --with "{BATHOS_PARITY_PIN}" python {__file__} ...'
+    raise RuntimeError(msg) from exc
 
   from bathos.parity.evidence import write_cell_evidence
   from bathos.parity.schema import compute_cell_id
