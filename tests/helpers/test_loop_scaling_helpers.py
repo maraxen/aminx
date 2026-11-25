@@ -15,6 +15,7 @@ from tests.helpers.loop_scaling import (
   A_THRESHOLD,
   B_THRESHOLD,
   ENCODER_MARK,
+  LoopRow,
   assert_no_primitive_in_loops,
   assert_work_at_most_linear,
   assert_work_independent,
@@ -24,6 +25,7 @@ from tests.helpers.loop_scaling import (
   mark_array,
   measure_rows,
   pick_fixed_scan_largest,
+  pick_trips_scaling,
   trips_scale,
   work_ratios,
 )
@@ -107,7 +109,7 @@ def test_fixed_trip_quadratic_fori_ratio_is_about_four() -> None:
     lambda n: (jnp.ones((n, 8), dtype=jnp.float32),),
     (16, 32, 64),
   )
-  row = pick_fixed_scan_largest(rows)
+  row = pick_fixed_scan_largest(rows, expected_trips=(4, 4, 4))
   assert row.trips == [4, 4, 4]
   ratios = work_ratios(row)
   assert all(ratio > B_THRESHOLD for ratio in ratios)
@@ -180,6 +182,45 @@ def test_marker_primitive_is_seen_only_inside_loops() -> None:
   assert count_primitive_in_loops(inside, (xs,), ENCODER_MARK) == 1
   with pytest.raises(AssertionError, match=ENCODER_MARK):
     assert_no_primitive_in_loops(inside, (xs,), ENCODER_MARK)
+
+
+def test_work_independent_checks_every_trip_scaling_loop() -> None:
+  """A clean outer loop must not hide a trip-scaling inner loop whose work grows."""
+  clean = LoopRow("outer", "scan", [2, 4, 8], [10, 10, 10])
+  dirty = LoopRow("inner", "scan", [2, 4, 8], [10, 20, 40])
+  assert_work_independent([clean])
+  with pytest.raises(AssertionError, match="inner"):
+    assert_work_independent([clean, dirty])
+
+
+def test_pick_trips_scaling_refuses_a_different_loop() -> None:
+  """Wrong counts, and a heavier loop that stopped scaling, both fail the pick."""
+  pair = LoopRow("pair", "scan", [5, 10, 20], [40, 40, 40])
+  nested = LoopRow("nested", "scan", [3, 3, 3], [5, 5, 5])
+  assert pick_trips_scaling([pair, nested], expected_trips=(5, 10, 20)).path == "pair"
+  with pytest.raises(LookupError, match="refusing to select a different loop"):
+    pick_trips_scaling([pair, nested], expected_trips=(2, 4, 8))
+
+  stopped = LoopRow("outer", "scan", [4, 4, 4], [100, 100, 100])
+  inner = LoopRow("inner", "scan", [8, 16, 32], [10, 20, 40])
+  with pytest.raises(LookupError, match="refusing to substitute"):
+    pick_trips_scaling([stopped, inner], expected_trips=(8, 16, 32))
+
+
+def test_pick_fixed_scan_refuses_a_loop_whose_trips_changed() -> None:
+  """A scaling scan with more work is not replaced by a smaller fixed scan."""
+  outer = LoopRow("outer", "scan", [3, 3, 3], [100, 90, 80])
+  scaling = LoopRow("inner", "scan", [32, 64, 128], [10, 20, 40])
+  picked = pick_fixed_scan_largest([outer, scaling], expected_trips=(3, 3, 3))
+  assert picked.path == "outer"
+  assert picked.trips == [3, 3, 3]
+
+  changed = LoopRow("outer", "scan", [3, 6, 12], [100, 200, 400])
+  smaller = LoopRow("inner", "scan", [3, 3, 3], [10, 10, 10])
+  with pytest.raises(LookupError, match="whose trips changed"):
+    pick_fixed_scan_largest([changed, smaller], expected_trips=(3, 3, 3))
+  with pytest.raises(LookupError, match="refusing to select a different loop"):
+    pick_fixed_scan_largest([outer, smaller], expected_trips=(2, 2, 2))
 
 
 def test_ar_fixture_copy_and_guard_model_shapes() -> None:

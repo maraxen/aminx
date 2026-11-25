@@ -6,7 +6,7 @@ chunk plumbing only; the real decoder is guarded by the AR, STE and score
 tests. Work is a jaxpr proxy, not wall time.
 
 The seam mutant wraps ``chunked_map`` so each chunk also runs ``f`` over every
-sample (three passes: one pass sat under the 1.7 margin on the graded probe).
+sample. The graded probe measured that three-pass mutant at 1.81 and 1.90.
 The Scan mutant closes over the whole ``xs``. Fresh extents per case keep a
 ``filter_jit`` cache from hiding the patched body. The patch uses
 ``monkeypatch``.
@@ -75,7 +75,7 @@ def _seam_fold(real: Callable[..., Any]) -> Callable[..., Any]:
 
   One pass leaves the N=16→32 ratio under the 1.7 margin, because the chunk's
   own work is still a large share of a 16-wide vmap. Three passes keep the same
-  whole-body shape and put both ratios above 1.7.
+  whole-body shape. The graded probe measured those two ratios at 1.81 and 1.90.
   """
 
   def bad(fn: Callable[..., Any], xs: Any, batch_size: int | None = None) -> Any:
@@ -115,26 +115,33 @@ def _trace_scan(extent: int, *, mutant: bool) -> tuple[Callable[..., Any], tuple
   return fn, (xs,)
 
 
-def _assert_clean(rows: list[LoopRow]) -> LoopRow:
-  row = pick_trips_scaling(rows)
+def _chunk_trips(extents: tuple[int, ...], batch_size: int) -> tuple[int, ...]:
+  """``lax.map`` trips: one per chunk. The seam uses ``batch_size=8``, so ``N / 8``."""
+  return tuple(extent // batch_size for extent in extents)
+
+
+def _assert_clean(rows: list[LoopRow], expected: tuple[int, ...]) -> LoopRow:
+  row = pick_trips_scaling(rows, expected_trips=expected)
   assert row.primitive == "scan"
-  assert_work_independent([row])
+  assert row.trips == list(expected)
+  assert_work_independent(rows)
   assert max(work_ratios(row)) < A_THRESHOLD
   return row
 
 
-def _assert_mutant(clean: LoopRow, mutant: LoopRow) -> None:
+def _assert_mutant(clean: LoopRow, mutant: LoopRow, mutant_rows: list[LoopRow]) -> None:
   clean_ratios = work_ratios(clean)
   mutant_ratios = work_ratios(mutant)
   assert max(clean_ratios) < A_THRESHOLD
   assert min(mutant_ratios) >= A_MUTANT_MIN
   assert min(mutant_ratios) > max(clean_ratios)
   with pytest.raises(AssertionError, match="work ratio"):
-    assert_work_independent([mutant])
+    assert_work_independent(mutant_rows)
 
 
 def test_chunked_sample_decode_work_is_independent_of_n() -> None:
-  _assert_clean(measure_rows(_trace_seam, (16, 32, 64)))
+  extents = (16, 32, 64)
+  _assert_clean(measure_rows(_trace_seam, extents), _chunk_trips(extents, 8))
 
 
 def test_chunked_sample_decode_full_xs_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -144,18 +151,30 @@ def test_chunked_sample_decode_full_xs_fold_must_fire(monkeypatch: pytest.Monkey
   _SENTINEL["seam"] = 0
   monkeypatch.setattr(dispatch_mod, "chunked_map", _seam_fold(dispatch_mod.chunked_map))
   # Fresh N: a same-shape filter_jit hit must not hide the patched body.
-  mutant = measure_rows(_trace_seam, (24, 48, 96))
+  mutant_extents = (24, 48, 96)
+  mutant = measure_rows(_trace_seam, mutant_extents)
   assert _SENTINEL["seam"] > 0
-  _assert_mutant(pick_trips_scaling(clean), pick_trips_scaling(mutant))
+  _assert_mutant(
+    pick_trips_scaling(clean, expected_trips=_chunk_trips((16, 32, 64), 8)),
+    pick_trips_scaling(mutant, expected_trips=_chunk_trips(mutant_extents, 8)),
+    mutant,
+  )
 
 
 def test_scan_dispatch_work_is_independent_of_n() -> None:
-  _assert_clean(measure_rows(lambda n: _trace_scan(n, mutant=False), (32, 64, 128)))
+  # Scan dispatch is one ``lax.scan`` step per sample. Probe trips=(32, 64, 128).
+  extents = (32, 64, 128)
+  _assert_clean(measure_rows(lambda n: _trace_scan(n, mutant=False), extents), extents)
 
 
 def test_scan_dispatch_full_xs_closure_must_fire() -> None:
   _SENTINEL["scan"] = 0
   clean = measure_rows(lambda n: _trace_scan(n, mutant=False), (32, 64, 128))
-  mutant = measure_rows(lambda n: _trace_scan(n, mutant=True), (48, 96, 192))
+  mutant_extents = (48, 96, 192)
+  mutant = measure_rows(lambda n: _trace_scan(n, mutant=True), mutant_extents)
   assert _SENTINEL["scan"] > 0
-  _assert_mutant(pick_trips_scaling(clean), pick_trips_scaling(mutant))
+  _assert_mutant(
+    pick_trips_scaling(clean, expected_trips=(32, 64, 128)),
+    pick_trips_scaling(mutant, expected_trips=mutant_extents),
+    mutant,
+  )

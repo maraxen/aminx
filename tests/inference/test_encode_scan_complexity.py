@@ -90,18 +90,22 @@ def _rows(*, length: int, n_states: int, mutant: bool, extents: tuple[int, ...])
 
 
 def test_encode_scan_work_is_independent_of_states() -> None:
-  rows = _rows(length=24, n_states=0, mutant=False, extents=(2, 4, 8))
-  row = pick_trips_scaling(rows)
+  extents = (2, 4, 8)
+  rows = _rows(length=24, n_states=0, mutant=False, extents=extents)
+  # One scan trip per conformational state. The probe logged trips=(2, 4, 8).
+  row = pick_trips_scaling(rows, expected_trips=extents)
   assert row.primitive == "scan"
-  assert_work_independent([row])
+  assert row.trips == list(extents)
+  assert_work_independent(rows)
   assert max(work_ratios(row)) < A_THRESHOLD
 
 
 def test_encode_scan_work_is_at_most_linear_in_length() -> None:
   rows = _rows(length=0, n_states=2, mutant=False, extents=(32, 64, 128))
-  row = pick_fixed_scan_largest(rows)
+  # S is held at 2, so the state scan's trip count stays 2 as L grows.
+  row = pick_fixed_scan_largest(rows, expected_trips=(2, 2, 2))
   assert row.primitive == "scan"
-  assert row.trips[0] == row.trips[1] == row.trips[2]
+  assert row.trips == [2, 2, 2]
   assert_work_at_most_linear([row])
   assert max(work_ratios(row)) < B_THRESHOLD
 
@@ -111,12 +115,13 @@ def test_encode_scan_state_fold_must_fire() -> None:
   clean = _rows(length=24, n_states=0, mutant=False, extents=(2, 4, 8))
   mutant = _rows(length=24, n_states=0, mutant=True, extents=(2, 4, 8))
   assert _SENTINEL["encode"] > 0
-  clean_row = pick_trips_scaling(clean)
-  mutant_row = pick_trips_scaling(mutant)
+  expected = (2, 4, 8)
+  clean_row = pick_trips_scaling(clean, expected_trips=expected)
+  mutant_row = pick_trips_scaling(mutant, expected_trips=expected)
   clean_ratios = work_ratios(clean_row)
   mutant_ratios = work_ratios(mutant_row)
   assert max(clean_ratios) < A_THRESHOLD
   assert min(mutant_ratios) >= A_MUTANT_MIN
   assert min(mutant_ratios) > max(clean_ratios)
   with pytest.raises(AssertionError, match="work ratio"):
-    assert_work_independent([mutant_row])
+    assert_work_independent(mutant)

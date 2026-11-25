@@ -11,7 +11,8 @@ re-encodes by design and is not traced here.
 (c) The encoder does not run inside the pair map. Criterion A is blind to a
     per-pair re-encode (the K ratio stays ~1 while the body inflates), so this
     guard counts an encoder mark inside the scan. The must-fire mutant calls
-    the model once per pair.
+    ``_encode_structure_kernel`` (the encode ``score`` and the runner share)
+    once per pair.
 
 Work is a jaxpr proxy, not wall time. The score module is imported by
 ``importlib`` because the package re-exports a ``score`` function that shadows
@@ -161,6 +162,15 @@ def _seq_fold(real: Callable[..., Any]) -> Callable[..., Any]:
 
 
 def _reencode(real: Callable[..., Any]) -> Callable[..., Any]:
+  """Call the real per-structure encode once inside each candidate.
+
+  ``_encode_structure_kernel`` is what ``encode_structure`` runs, and what
+  ``runner.score`` calls once outside the pair map. Invoking it per pair is the
+  regression guard (c) exists for. The kernel reaches ``Aminx.__call__``, so
+  the encoder mark lands inside the scan.
+  """
+  score_mod = importlib.import_module("aminx.scoring.score")
+
   def bad(*args: Any) -> tuple[Any, Any, Any]:
     _SENTINEL["reencode"] += 1
     model, coords, mask, residue_index, chain_index = args[0], args[5], args[6], args[7], args[8]
@@ -169,19 +179,54 @@ def _reencode(real: Callable[..., Any]) -> Callable[..., Any]:
       mask = mask[0]
       residue_index = residue_index[0]
       chain_index = chain_index[0]
-    node, edge, neigh = model(coords, mask, residue_index, chain_index, inference=True)
+    encoded = score_mod._encode_structure_kernel(
+      model,
+      coords,
+      mask,
+      residue_index,
+      chain_index,
+      None,
+      None,
+      None,
+      jnp.asarray(0.0, dtype=jnp.float32),
+      None,
+    )
     nll, logits, order = real(*args)
-    bump = jnp.float32(0) * (jnp.sum(node) + jnp.sum(edge) + jnp.sum(neigh.astype(jnp.float32)))
+    bump = jnp.float32(0) * (
+      jnp.sum(encoded.node_features)
+      + jnp.sum(encoded.edge_features)
+      + jnp.sum(encoded.neighbor_indices.astype(jnp.float32))
+    )
     return nll + bump, logits, order
 
   return bad
 
 
+def _pair_trips(mode: str, extents: tuple[int, ...]) -> tuple[int, ...]:
+  """Pair-map trips ``K * C / chunk_size`` with the axis the case holds fixed.
+
+  ``_trace`` uses ``chunk_size=2``. Over K, C is 2; over C, K is 2. Both
+  therefore reduce to one trip per extent, which is what the probe logged as
+  ``trips=(5, 10, 20)``.
+  """
+  chunk = 2
+  if mode == "k":
+    n_seq = 2
+    return tuple(extent * n_seq // chunk for extent in extents)
+  if mode == "c":
+    n_masks = 2
+    return tuple(n_masks * extent // chunk for extent in extents)
+  msg = f"pair trips are for K or C, got {mode}"
+  raise ValueError(msg)
+
+
 def _assert_pair_axis(mode: str, extents: tuple[int, ...]) -> LoopRow:
   rows = _rows(mode, extents)
-  row = pick_trips_scaling(rows)
+  expected = _pair_trips(mode, extents)
+  row = pick_trips_scaling(rows, expected_trips=expected)
   assert row.primitive == "scan"
-  assert_work_independent([row])
+  assert row.trips == list(expected)
+  assert_work_independent(rows)
   assert max(work_ratios(row)) < A_THRESHOLD
   return row
 
@@ -196,24 +241,30 @@ def test_score_pairs_work_independent_of_c() -> None:
 
 def test_score_pairs_work_at_most_linear_in_length() -> None:
   rows = _rows("l", (32, 64, 128))
-  row = pick_fixed_scan_largest(rows)
+  # K=2, C=2, chunk_size=2: the pair map stays at 2 trips while L grows.
+  row = pick_fixed_scan_largest(rows, expected_trips=(2, 2, 2))
   assert row.primitive == "scan"
-  assert row.trips[0] == row.trips[1] == row.trips[2]
+  assert row.trips == [2, 2, 2]
   assert_work_at_most_linear([row])
   assert max(work_ratios(row)) < B_THRESHOLD
 
 
-def _assert_axis_mutant(clean: list[LoopRow], mutant: list[LoopRow], sentinel: str) -> None:
+def _assert_axis_mutant(
+  clean: list[LoopRow],
+  mutant: list[LoopRow],
+  sentinel: str,
+  expected: tuple[int, ...],
+) -> None:
   assert _SENTINEL[sentinel] > 0
-  clean_row = pick_trips_scaling(clean)
-  mutant_row = pick_trips_scaling(mutant)
+  clean_row = pick_trips_scaling(clean, expected_trips=expected)
+  mutant_row = pick_trips_scaling(mutant, expected_trips=expected)
   clean_ratios = work_ratios(clean_row)
   mutant_ratios = work_ratios(mutant_row)
   assert max(clean_ratios) < A_THRESHOLD
   assert min(mutant_ratios) >= A_MUTANT_MIN
   assert min(mutant_ratios) > max(clean_ratios)
   with pytest.raises(AssertionError, match="work ratio"):
-    assert_work_independent([mutant_row])
+    assert_work_independent(mutant)
 
 
 def test_score_pairs_mask_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -222,7 +273,7 @@ def test_score_pairs_mask_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> Non
   monkeypatch.setattr(score_mod, "_score_candidate_kernel", _mask_fold(score_mod._score_candidate_kernel))
   _SENTINEL["score_k"] = 0
   mutant = _rows("k", (5, 10, 20))
-  _assert_axis_mutant(clean, mutant, "score_k")
+  _assert_axis_mutant(clean, mutant, "score_k", _pair_trips("k", (5, 10, 20)))
 
 
 def test_score_pairs_sequence_fold_must_fire(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -231,7 +282,7 @@ def test_score_pairs_sequence_fold_must_fire(monkeypatch: pytest.MonkeyPatch) ->
   monkeypatch.setattr(score_mod, "_score_candidate_kernel", _seq_fold(score_mod._score_candidate_kernel))
   _SENTINEL["score_c"] = 0
   mutant = _rows("c", (5, 10, 20))
-  _assert_axis_mutant(clean, mutant, "score_c")
+  _assert_axis_mutant(clean, mutant, "score_c", _pair_trips("c", (5, 10, 20)))
 
 
 def test_score_pairs_encoder_is_outside_the_pair_map() -> None:
@@ -250,8 +301,9 @@ def test_score_pairs_per_pair_reencode_must_fire(monkeypatch: pytest.MonkeyPatch
   _SENTINEL["reencode"] = 0
   mutant = _rows("k", (5, 10, 20))
   assert _SENTINEL["reencode"] > 0
-  clean_row = pick_trips_scaling(clean)
-  mutant_row = pick_trips_scaling(mutant)
+  expected = _pair_trips("k", (5, 10, 20))
+  clean_row = pick_trips_scaling(clean, expected_trips=expected)
+  mutant_row = pick_trips_scaling(mutant, expected_trips=expected)
   assert max(work_ratios(mutant_row)) < A_THRESHOLD
   assert mutant_row.work[0] / clean_row.work[0] >= A_MUTANT_MIN
   fn, make_args = per_extent(lambda n: _trace(n, mode="k"))

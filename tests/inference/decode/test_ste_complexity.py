@@ -157,9 +157,10 @@ def _assert_mutant(clean: LoopRow, mutant: LoopRow) -> None:
 @pytest.mark.parametrize("tied", [False, True])
 def test_ste_decode_work_is_at_most_linear(tied: bool) -> None:
   rows = measure_rows(lambda n: _trace_ste(n, tied=tied, mutant=False), _EXTENTS)
-  row = pick_fixed_scan_largest(rows)
+  # STEDecode(iterations=3): the graded probe records trips=(3, 3, 3).
+  row = pick_fixed_scan_largest(rows, expected_trips=(3, 3, 3))
   assert row.primitive == "scan"
-  assert row.trips[0] == row.trips[1] == row.trips[2]
+  assert row.trips == [3, 3, 3]
   _assert_clean(row)
 
 
@@ -170,7 +171,10 @@ def test_ste_decode_length_fold_must_fire(tied: bool) -> None:
   clean = measure_rows(lambda n: _trace_ste(n, tied=tied, mutant=False), _EXTENTS)
   mutant = measure_rows(lambda n: _trace_ste(n, tied=tied, mutant=True), _EXTENTS)
   assert _SENTINEL[which] > 0
-  _assert_mutant(pick_fixed_scan_largest(clean), pick_fixed_scan_largest(mutant))
+  _assert_mutant(
+    pick_fixed_scan_largest(clean, expected_trips=(3, 3, 3)),
+    pick_fixed_scan_largest(mutant, expected_trips=(3, 3, 3)),
+  )
 
 
 def test_optimize_ste_work_is_at_most_linear() -> None:

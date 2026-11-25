@@ -305,39 +305,92 @@ def pick_outermost_while(rows: Sequence[LoopRow]) -> LoopRow:
   raise LookupError(msg)
 
 
-def pick_trips_scaling(rows: Sequence[LoopRow]) -> LoopRow:
-  """Outermost loop whose static trip count at least doubles at each step."""
+def _expected_trip_list(expected_trips: Sequence[int]) -> list[int]:
+  return [int(trip) for trip in expected_trips]
+
+
+def pick_trips_scaling(rows: Sequence[LoopRow], *, expected_trips: Sequence[int]) -> LoopRow:
+  """Outermost static-doubling loop, which must have ``expected_trips``.
+
+  The guarded loop is named by its trip counts. Two substitutions are refused.
+  A loop that still doubles, but at the wrong counts, is not replaced by an
+  inner loop that happens to have ``expected_trips``. A heavier loop listed
+  earlier (it contains the candidate) whose trips no longer double is not
+  skipped in favour of that inner loop.
+  """
+  expected = _expected_trip_list(expected_trips)
+  chosen: LoopRow | None = None
   for row in rows:
     if any(trip is None or trip <= 0 for trip in row.trips):
       continue
-    if trips_scale(row.trips) and all(trip is not None for trip in row.trips):
-      # trips_scale treats None as scaling; this pick wants a static doubling,
-      # matching the probe's pick_trips_scaling.
-      ratios = [
-        large / small
-        for small, large in zip(row.trips, row.trips[1:], strict=False)
-        if small is not None and large is not None and small > 0
-      ]
-      if ratios and all(ratio >= TRIP_SCALING_RATIO for ratio in ratios):
-        return row
-  msg = f"no trip-scaling loop among {[row.trips for row in rows]}"
-  raise LookupError(msg)
+    if not trips_scale(row.trips):
+      continue
+    ratios = [
+      large / small
+      for small, large in zip(row.trips, row.trips[1:], strict=False)
+      if small is not None and large is not None and small > 0
+    ]
+    if ratios and all(ratio >= TRIP_SCALING_RATIO for ratio in ratios):
+      chosen = row
+      break
+  if chosen is None:
+    msg = f"no trip-scaling loop among {[row.trips for row in rows]}"
+    raise LookupError(msg)
+  if list(chosen.trips) != expected:
+    msg = (
+      f"outermost trip-scaling loop {chosen.path} has trips {chosen.trips}, "
+      f"not {expected}; refusing to select a different loop"
+    )
+    raise LookupError(msg)
+  for row in rows:
+    if row is chosen:
+      break
+    if row.primitive in {"scan", "while"} and row.work[0] > chosen.work[0]:
+      msg = (
+        f"refusing to substitute {chosen.path} for heavier loop {row.path} "
+        f"trips={row.trips} work={row.work[0]}"
+      )
+      raise LookupError(msg)
+  return chosen
 
 
-def pick_fixed_scan_largest(rows: Sequence[LoopRow]) -> LoopRow:
-  """Fixed-trip scan with the largest per-iteration work (the body that contains the rest)."""
+def pick_fixed_scan_largest(rows: Sequence[LoopRow], *, expected_trips: Sequence[int]) -> LoopRow:
+  """Largest fixed-trip scan, which must have ``expected_trips``.
+
+  Scans whose trip count changes across extents are not candidates. If one of
+  those has at least as much per-iteration work as the selected scan, the
+  intended loop changed shape and this raises instead of returning a smaller
+  fixed scan that still has constant trips.
+  """
+  expected = _expected_trip_list(expected_trips)
   best: LoopRow | None = None
   best_work = -1
+  varying: list[LoopRow] = []
   for row in rows:
     if row.primitive != "scan" or row.trips[0] is None:
       continue
     if any(trip != row.trips[0] for trip in row.trips):
+      varying.append(row)
       continue
     if row.work[0] > best_work:
       best = row
       best_work = row.work[0]
   if best is None:
     msg = "no fixed-trip scan"
+    raise LookupError(msg)
+  if list(best.trips) != expected:
+    msg = (
+      f"largest fixed scan {best.path} has trips {best.trips}, not {expected}; "
+      "refusing to select a different loop"
+    )
+    raise LookupError(msg)
+  heavier = [row for row in varying if row.work[0] >= best.work[0]]
+  if heavier:
+    detail = ", ".join(f"{row.path} trips={row.trips} work={row.work[0]}" for row in heavier)
+    msg = (
+      "refusing to substitute a smaller fixed scan for a loop whose trips changed: "
+      f"{detail}"
+    )
     raise LookupError(msg)
   return best
 
@@ -373,7 +426,11 @@ def count_primitive_in_loops(
 
   The walk enters ``pjit`` and ``cond`` so a marked call nested in the pair-map
   kernel is visible. Marks outside every loop are ignored.
+
+  ``jax.clear_caches`` runs first so a jaxpr cached by an earlier test cannot
+  change this count.
   """
+  jax.clear_caches()
   closed = jax.make_jaxpr(fn)(*args)
   jaxpr = closed.jaxpr
   return _count_in_loops(jaxpr, primitive)

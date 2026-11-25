@@ -85,7 +85,7 @@ def test_tiling_work_is_independent_of_length(multi: bool, extents: tuple[int, .
   rows = _rows(extents, multi=multi, mutant=False)
   row = pick_outermost_while(rows)
   assert row.primitive == "while"
-  assert_work_independent([row])
+  assert_work_independent(rows)
   assert max(work_ratios(row)) < A_THRESHOLD
 
 
@@ -103,4 +103,4 @@ def test_tiling_full_input_closure_must_fire() -> None:
   assert min(mutant_ratios) >= A_MUTANT_MIN
   assert min(mutant_ratios) > max(clean_ratios)
   with pytest.raises(AssertionError, match="work ratio"):
-    assert_work_independent([mutant_row])
+    assert_work_independent(mutant)
