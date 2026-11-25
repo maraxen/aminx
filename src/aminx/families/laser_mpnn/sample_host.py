@@ -102,9 +102,26 @@ def _resolve_pdb_dir(spec: Any, options: LaserOptions) -> Path | None:  # noqa: 
 
 
 def _pdb_structure_ids(spec: Any) -> tuple[str, ...]:  # noqa: ANN401
+  """Stems, with ``_s<input>`` on repeats, unique against every name this run emits.
+
+  A stem that occurs once keeps its name. A repeated stem ``foo`` at index 0
+  becomes ``foo_s0``. That collides with an input whose own stem is ``foo_s0``,
+  so a taken name gains ``_s1``, ``_s2``, ... until it is unused.
+  """
   stems = [_canonical_structure_id(item, index) for index, item in enumerate(_inputs(spec))]
   repeated = {stem for stem in stems if stems.count(stem) > 1}
-  return tuple(f"{stem}_s{index}" if stem in repeated else stem for index, stem in enumerate(stems))
+  used: set[str] = set()
+  emitted: list[str] = []
+  for index, stem in enumerate(stems):
+    base = f"{stem}_s{index}" if stem in repeated else stem
+    candidate = base
+    bump = 1
+    while candidate in used:
+      candidate = f"{base}_s{bump}"
+      bump += 1
+    used.add(candidate)
+    emitted.append(candidate)
+  return tuple(emitted)
 
 
 def _inputs(spec: Any) -> list[Any]:  # noqa: ANN401

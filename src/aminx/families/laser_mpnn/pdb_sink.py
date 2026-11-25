@@ -82,7 +82,7 @@ def _check_layout(
   sequence: np.ndarray,
   xyz: np.ndarray,
   probability: np.ndarray,
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
   if xyz.ndim != 3 or xyz.shape[-1] != 3:
     msg = f"coords must be (L, atom, 3), got {xyz.shape}"
     raise ValueError(msg)
@@ -94,10 +94,17 @@ def _check_layout(
   if resnums != length:
     msg = f"pdb_resnums length {resnums} does not match sequence length {length}"
     raise ValueError(msg)
+  # ``build_rotamers(..., add_nonrotatable_hydrogens=True)`` pads one NaN column
+  # past the protonated name table. Drop it. A finite value there is not an atom.
+  if width == MAX_PROTONATED_ATOMS + 1:
+    if bool(np.isfinite(xyz[:, -1, :]).any()):
+      msg = f"protonated width {width} sentinel column holds a finite coordinate"
+      raise ValueError(msg)
+    return _PROTONATED_NAMES, xyz[:, :-1]
   if width == MAX_PROTONATED_ATOMS:
-    return _PROTONATED_NAMES
+    return _PROTONATED_NAMES, xyz
   if width == MAX_ATOMS:
-    return _HEAVY_NAMES
+    return _HEAVY_NAMES, xyz
   msg = f"atom width {width} is neither heavy ({MAX_ATOMS}) nor protonated ({MAX_PROTONATED_ATOMS})"
   raise ValueError(msg)
 
@@ -204,7 +211,7 @@ def build_full_protein(
   sequence = np.asarray(laser_sequence, dtype=np.int64)
   xyz = np.asarray(coords)
   probability = np.asarray(token_prob, dtype=np.float32)
-  table = _check_layout(features, sequence, xyz, probability)
+  table, xyz = _check_layout(features, sequence, xyz, probability)
   rows = _protein_rows(features, sequence, xyz, probability, table)
   return _as_protein(_append_real_ligand(features, rows))
 

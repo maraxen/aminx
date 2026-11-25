@@ -635,3 +635,94 @@ def test_pdb_options_round_trip_through_spec_json() -> None:
   )
   loaded = run_specification_from_json(run_specification_to_json(spec))
   assert loaded.laser == spec.laser
+
+
+def _protonated_from_builder(tmp_path: Path):
+  """Features plus coordinates from the hydrogen builder.
+
+  The atom width is the array ``build_rotamers`` returns with
+  ``add_nonrotatable_hydrogens=True``, not a literal. Chain identity is
+  expanded to that length; the coordinates themselves are the builder output.
+  """
+  from aminx.families.laser_mpnn.featurize import build_rotamers
+
+  golden_path = Path(__file__).with_name("rotamer_heavy_golden.npz")
+  with np.load(golden_path) as golden:
+    sequence = np.asarray(golden["sequence"], dtype=np.int64)
+    coords = build_rotamers(
+      np.asarray(golden["backbone"], dtype=np.float32),
+      np.asarray(golden["chi"], dtype=np.float32),
+      sequence,
+      np.float32,
+      add_nonrotatable_hydrogens=True,
+    )
+  features = _guard_features(tmp_path)
+  length = int(sequence.shape[0])
+  features = replace(
+    features,
+    pdb_chain_ids=tuple("A" for _ in range(length)),
+    pdb_resnums=np.arange(1, length + 1, dtype=np.int64),
+    pdb_icodes=tuple(" " for _ in range(length)),
+  )
+  probability = np.full((length,), 0.5, dtype=np.float32)
+  return features, sequence, coords, probability
+
+
+def test_builder_writes_hydrogens_from_the_protonated_axis(tmp_path: Path) -> None:
+  """The hydrogen builder's padded axis writes hydrogen ATOM records."""
+  from aminx.families.laser_mpnn.pdb_sink import write_sample_pdb
+
+  features, sequence, coords, probability = _protonated_from_builder(tmp_path)
+  width = int(coords.shape[1])
+  assert coords.shape == (sequence.shape[0], width, 3)
+  assert width == MAX_PROTONATED_ATOMS + 1
+  assert width not in {MAX_ATOMS, MAX_PROTONATED_ATOMS}
+  assert not bool(np.isfinite(coords[:, -1, :]).any())
+  out = tmp_path / "protonated.pdb"
+  write_sample_pdb(
+    features,
+    sequence,
+    coords,
+    probability,
+    out,
+    structure_id="rot",
+    provenance="none",
+  )
+  rows = [_columns(line) for line in out.read_text().splitlines() if line.startswith("ATOM")]
+  written = {str(row["name"]) for row in rows}
+  hydrogens: set[str] = set()
+  for index in sequence:
+    letter = LASER_ALPHABET[int(index)]
+    heavy = set(residue_atom_names(letter, protonated=False))
+    protonated = set(residue_atom_names(letter, protonated=True))
+    hydrogens |= protonated - heavy
+  assert hydrogens
+  assert written & hydrogens
+  assert any(str(row["element"]) == "H" for row in rows)
+
+
+def test_finite_sentinel_column_raises(tmp_path: Path) -> None:
+  """A finite value in the hydrogen builder's trailing column is rejected."""
+  from aminx.families.laser_mpnn.pdb_sink import build_full_protein
+
+  features, sequence, coords, probability = _protonated_from_builder(tmp_path)
+  poisoned = np.array(coords, copy=True)
+  poisoned[0, -1, 0] = np.float32(1.0)
+  with pytest.raises(ValueError, match="sentinel column holds a finite coordinate"):
+    build_full_protein(features, sequence, poisoned, probability)
+
+
+def test_repeated_stem_suffix_does_not_clobber_another_input() -> None:
+  """``a/foo.pdb``, ``b/foo.pdb`` and ``c/foo_s0.pdb`` get three distinct stems."""
+  from types import SimpleNamespace
+
+  from aminx.families.laser_mpnn.sample_host import _pdb_structure_ids
+
+  collided = _pdb_structure_ids(
+    SimpleNamespace(inputs=("a/foo.pdb", "b/foo.pdb", "c/foo_s0.pdb")),
+  )
+  assert collided == ("foo_s0", "foo_s1", "foo_s0_s1")
+  plain = _pdb_structure_ids(SimpleNamespace(inputs=("a/bar.pdb", "b/baz.pdb")))
+  assert plain == ("bar", "baz")
+  repeated = _pdb_structure_ids(SimpleNamespace(inputs=("a/foo.pdb", "b/foo.pdb")))
+  assert repeated == ("foo_s0", "foo_s1")
