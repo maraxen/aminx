@@ -96,6 +96,7 @@ dependencies = [
     { name = "msgpack-numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
     { name = "optax", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
+    { name = "orbax-checkpoint", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
     { name = "proxide", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
     { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
@@ -227,16 +228,17 @@ requires-dist = [
     { name = "msgpack-numpy", specifier = ">=0.4.8" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "optax", specifier = ">=0.2" },
+    { name = "orbax-checkpoint", specifier = ">=0.11" },
     { name = "orbax-checkpoint", marker = "extra == 'ebm'", specifier = ">=0.11.17" },
     { name = "prody", marker = "extra == 'laser'", specifier = ">=2.6.1" },
     { name = "proxide", specifier = ">=0.3.0", index = "https://pypi.org/simple" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "scipy", marker = "extra == 'ebm'", specifier = ">=1.12.0" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["eda"], marker = "extra == 'eda'", specifier = "==0.4.1b9" },
-    { name = "xtrax", extras = ["io", "pack", "export"], specifier = "==0.4.1b9" },
-    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b9" },
-    { name = "zstandard", specifier = ">=0.21.0" },
+    { name = "xtrax", extras = ["eda"], marker = "extra == 'eda'", specifier = ">=0.4.1b11" },
+    { name = "xtrax", extras = ["io", "export", "pack"], specifier = ">=0.4.1b11" },
+    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = ">=0.4.1b11" },
+    { name = "zstandard", specifier = ">=0.23" },
 ]
 provides-extras = ["eda", "agent", "laser", "ebm", "onnx", "foldcomp", "cpu", "cuda12"]
 
@@ -4707,7 +4709,7 @@ wheels = [
 
 [[package]]
 name = "xtrax"
-version = "0.4.1b9"
+version = "0.4.1b11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jax", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
@@ -4715,9 +4717,9 @@ dependencies = [
     { name = "jaxtyping", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux' or (extra == 'extra-5-aminx-cpu' and extra == 'extra-5-aminx-cuda12')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/48/1c/94a77e42d1f0b3ca5dd11362fc0a5426de083af12dd56095721fe6cad3ca/xtrax-0.4.1b9.tar.gz", hash = "sha256:242d7401dbf78d277c25e8ae823451937836423c4f8c4062e003e46701daccc1", size = 4554599, upload-time = "2026-11-20T21:30:12.37Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/0d/859c7b91d4021e6c3e3feb6c25e77b8313f73d3badaa276834aa99ca0358/xtrax-0.4.1b11.tar.gz", hash = "sha256:f83c25a64776747cc87d86b58b28d4bd400507c7affd8ad425586b351062f5d9", size = 4705212, upload-time = "2026-11-24T23:23:35.352Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/63/e0/c69cb3f8b5eb8e7e48316260a9aac0ae8ef4131d25af4ddc8621ac3410e0/xtrax-0.4.1b9-py3-none-any.whl", hash = "sha256:67bcdbb5807f2bcc971e352da83b42573b4f63fdfac26f2fcdd76dd544e0049d", size = 984761, upload-time = "2026-11-20T21:30:10.669Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/ce/a4c7ffcbd4a7137e20ac6906ca4626c4147527c48dd375dd0cc64b4e06a0/xtrax-0.4.1b11-py3-none-any.whl", hash = "sha256:ec0c95c32fdaf5e2adbd05ee70cd8baa2a4d740a1c4578bfadfc3d3eab3948e2", size = 1049450, upload-time = "2026-11-24T23:23:33.641Z" },
 ]
 
 [package.optional-dependencies]
