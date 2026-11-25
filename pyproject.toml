@@ -250,6 +250,9 @@ markers = [
 [tool.port]
 target = "tests/port/targets/port_selftest.toml"
 
+[tool.bathos.parity]
+store = ".bth/parity"
+
 [tool.ty.environment]
 root = ["src/aminx"]
 

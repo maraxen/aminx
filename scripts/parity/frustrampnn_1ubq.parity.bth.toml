@@ -1,0 +1,164 @@
+# Ring 0 Parity Record Declaration: aminx FrustraMPNN (WP36a / #6841)
+# Reference: Spec 261123 §9.3.5 Example 1, §12.2 WP36a, §12.4.1.
+
+[parity]
+schema_version = "1.0.0"
+record_id = "aminx-frustrampnn-score-v1"
+prong = "reimplementation"
+layer_under_test = "model"
+instrumentation = "instrumented"
+mode = "confirmatory"
+strictness = "inconclusive_blocks"
+prior_runs = [
+  "067db19b-4e47-4267-b1f3-003e79645e4e",
+  "29fae936-de0e-4ebf-89eb-72612e24a144",
+  "3041fddd-8241-4503-a155-829aacddbd4a",
+  "671a186d-b3f0-4a31-ac10-b93ca3a97720",
+  "6be07654-5313-454d-8e38-5544a2ddc8a9",
+  "a7979816-ae10-413d-9ed7-c7c358247ef6",
+  "b728b709-fd1c-4aa5-a647-5d444314c37e",
+  "c5fed673-9186-49db-a867-d67f7fa83606",
+  "ff8e60e1-9aa9-495e-a849-83453a3e9c05",
+]
+control = false
+badge_min_tier = "toy"
+
+[implementation]
+name = "aminx"
+repo = "https://github.com/maraxen/Aminx.git"
+licence = "MIT"
+third_party = false
+
+[implementation.weights]
+artifact_path = "data/weights/frustrampnn/megascale_default_la-true_esm-False_split1.eqx.zst"
+artifact_sha256 = "c615c554a77fd0ea569ce342ca5d2679896f8b5cf603ad7997c6bedeed8582eb"
+manifest_path = "data/weights/frustrampnn/megascale_default_la-true_esm-False_split1.manifest.json"
+hf_repo = "maraxen/aminx"
+hf_revision = "3070f2dd4ec9e495ec225f09930996b7fef2f714"
+attested_source_checkpoint = "megascale_default_la-true_esm-False_split1.ckpt"
+attested_source_checkpoint_sha256 = "eb54019295c8000a1006d7955ab43100e67687daa4cef18e1b3541c5cb881cfa"
+source_checkpoint_status = "attested_only_source_deleted"
+provenance_note = "attested by conversion manifest only (not re-derived; original .ckpt resided on deleted worktree aminx/worktrees/261105-frustrampnn/ and no longer exists locally)"
+conversion_script = "src/aminx/families/frustra_mpnn/convert.py"
+conversion_script_sha256 = "591f85db479809485f2548fd0c25c6fcf6bc508ad03a87ced17459acd6cea170"
+conversion_command = "aminx.families.frustra_mpnn.convert.load_frustra_mpnn_checkpoint(checkpoint_path='megascale_default_la-true_esm-False_split1.ckpt', trunk_checkpoint_path='v_48_020.pt', subtract_mut=False, dtype='float32') -> eqx.tree_serialise_leaves + zstandard"
+
+[[reference]]
+id = "frustrampnn-1ubq"
+role = "comparator"
+kind = "sealed_dump"
+identity = { dump_sha256 = "ded4dbb6f47229d54d9bf1d65239c56069f68bdcdf37e1cd55b6d85cc69f34dc", producer_run_id = "6be07654-5313-454d-8e38-5544a2ddc8a9", upstream_commit = "3a03cdc300bfe24c4bb70e60207118532bc73b3b" }
+licence = "BSD-3-Clause"
+
+[registry]
+registry_id = "7a601aecbcb0e8268230e8a7bbfee43d20af38a66f9c09b78b89d0e2519225a9"
+drift_status_max_age_days = 30
+
+[[use]]
+id = "score-frustration"
+purpose = "Reproduce FrustraMPNN per-residue x amino-acid frustration scores on 1ubq within declared numerical bands"
+output_type = "scores"
+quantity = "Per-residue local energetic frustration tensors (frustration_scores and both_out logits) on 1ubq.pdb"
+parity_kind = "within_tolerance"
+metric = { id = "max_abs_diff", impl = "bathos.parity.metrics:compare_within_tolerance@builtin" }
+negative_control = { kind = "mutant", impl = "scripts/parity/frustrampnn_parity_v2.py::apply_mutant:subtract_mut_inverted", expect = "fail" }
+judgement_id = "jdg_wp36a_frustrampnn_score"
+
+[[tolerance]]
+id = "f32-owner"
+dtype = "float32"
+applies_to = ["model"]
+atol = 1e-4
+rtol = 1e-4
+basis = "owner_stated"
+judgement_id = "jdg_wp36a_tol_f32"
+
+[[tolerance]]
+id = "f64-owner"
+dtype = "float64"
+applies_to = ["model"]
+atol = 1e-7
+rtol = 1e-7
+basis = "owner_stated"
+judgement_id = "jdg_wp36a_tol_f64"
+
+[[cell_plan]]
+use_id = "score-frustration"
+component_id = "model"
+knob_setting = { subtract_mut = false, dtype = "float32" }
+axis_value = { target = "1ubq", output = "frustration_scores" }
+data_tier = "toy"
+pairing = "fixture"
+pooling_rule = "all_runs"
+tolerance_id = "f32-owner"
+reference_members = { frustration_scores = "frustration_scores" }
+
+[[cell_plan]]
+use_id = "score-frustration"
+component_id = "model"
+knob_setting = { subtract_mut = false, dtype = "float32" }
+axis_value = { target = "1ubq", output = "both_out" }
+data_tier = "toy"
+pairing = "fixture"
+pooling_rule = "all_runs"
+tolerance_id = "f32-owner"
+reference_members = { both_out = "both_out" }
+
+[[cell_plan]]
+use_id = "score-frustration"
+component_id = "model"
+knob_setting = { subtract_mut = false, dtype = "float64" }
+axis_value = { target = "1ubq", output = "frustration_scores" }
+data_tier = "toy"
+pairing = "fixture"
+pooling_rule = "all_runs"
+tolerance_id = "f64-owner"
+reference_members = { frustration_scores = "f64_frustration_scores" }
+
+[[cell_plan]]
+use_id = "score-frustration"
+component_id = "model"
+knob_setting = { subtract_mut = false, dtype = "float64" }
+axis_value = { target = "1ubq", output = "both_out" }
+data_tier = "toy"
+pairing = "fixture"
+pooling_rule = "all_runs"
+tolerance_id = "f64-owner"
+reference_members = { both_out = "f64_both_out" }
+
+[[waiver]]
+cell_selector = "knob:frustra_cli__checkpoint"
+reason_code = "out_of_scope"
+reason_text = "WP36a Ring 0 covers canonical checkpoint megascale_default_la-true_esm-False_split1 only; alternate checkpoints out of scope for Ring 0"
+judgement_id = "jdg_wp36a_waive_checkpoint"
+
+[[waiver]]
+cell_selector = "knob:frustra_cli__chains"
+reason_code = "out_of_scope"
+reason_text = "WP36a Ring 0 covers single-chain 1ubq fixture only; multi-chain subsetting out of scope for Ring 0"
+judgement_id = "jdg_wp36a_waive_chains"
+
+[[waiver]]
+cell_selector = "knob:frustra_cli__positions"
+reason_code = "out_of_scope"
+reason_text = "WP36a Ring 0 scores all positions on 1ubq; position subsetting out of scope for Ring 0"
+judgement_id = "jdg_wp36a_waive_positions"
+
+[environment]
+pool_critical = [
+  "x64_enabled",
+  "xla_flags",
+  "device_kind",
+  "platform",
+  "git_sha",
+  "torch_deterministic_algorithms",
+  "torch_tf32",
+  "python_version",
+  "jax_version",
+  "jaxlib_version",
+  "torch_version",
+  "cuda_version",
+  "cudnn_version",
+  "driver_version",
+]
+frameworks = { ours = ["jax", "equinox"], reference = ["torch"] }

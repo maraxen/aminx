@@ -147,3 +147,7 @@ node_modules/
 # Stray git worktree checkouts and git bundles made while moving work between machines.
 worktrees/
 *.bundle
+
+# Durable bathos parity store and large converted Equinox weights (tracked via manifest + declaration)
+.bth/parity/
+data/weights/**/*.eqx.zst
