@@ -66,6 +66,7 @@ from aminx.families.frustra_mpnn.model import (
   FrustraStageOutputs,
   LightAttention1D,
 )
+from aminx.io.weights import HF_REPO_ID, HF_REVISION
 
 log = logging.getLogger("frustrampnn_parity")
 
@@ -491,7 +492,22 @@ def _verify_weights_provenance(parity_record: Path, eqx_weights: Path | None) ->
       msg = f"{parity_record}: [implementation.weights].{field} must be a non-empty string"
       raise RuntimeError(msg)
 
+  declared_hf_rev = weights_cfg.get("hf_revision")
+  if declared_hf_rev is not None and declared_hf_rev != HF_REVISION:
+    msg = (
+      f"Declared hf_revision {declared_hf_rev} != aminx.io.weights.HF_REVISION {HF_REVISION} "
+      "(weights pin drift)"
+    )
+    raise RuntimeError(msg)
+
   resolved_eqx = eqx_weights if eqx_weights is not None else (_REPO_ROOT / weights_cfg["artifact_path"])
+  if not resolved_eqx.is_file() and eqx_weights is None:
+    from huggingface_hub import hf_hub_download
+
+    hf_repo = str(weights_cfg.get("hf_repo") or HF_REPO_ID)
+    hf_rev = str(declared_hf_rev or HF_REVISION)
+    resolved_eqx = Path(hf_hub_download(hf_repo, f"{CANONICAL_CKPT}.eqx.zst", revision=hf_rev))
+    hf_hub_download(hf_repo, f"{CANONICAL_CKPT}.manifest.json", revision=hf_rev)
   if not resolved_eqx.is_file():
     msg = f"Converted weights archive not found: {resolved_eqx}"
     raise RuntimeError(msg)
