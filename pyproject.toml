@@ -15,16 +15,18 @@ dependencies = [
     "psutil>=5.9",
     "numpy>=1.26",
     "optax>=0.2",
+    # Imported directly by training/trainer.py and ebm/training.py; xtrax >= 0.4.1b11 no longer pulls it in.
+    "orbax-checkpoint>=0.11",
     "h5py>=3.11",
     "grain>=0.2",
     "array-record>=0.8.1",
     "equinox>=0.13.2",
-    "zstandard>=0.21.0",
+    "zstandard>=0.23",
     "msgpack-numpy>=0.4.8",
-    "proxide>=0.2.1",
+    "proxide>=0.3.0",
     "typer>=0.12.0",
     "huggingface-hub>=0.23.0",
-    "xtrax[io,pack,export]==0.4.1b9",
+    "xtrax[io,export,pack]>=0.4.1b11",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -47,7 +49,7 @@ documentation = "https://aminx.readthedocs.io"
 # Plan EDA (src/aminx/host/plan_eda.py): matplotlib, pandas, pyarrow, seaborn and vl-convert.
 # Optional so the headless sampling install does not carry a plotting stack.
 eda = [
-    "xtrax[eda]==0.4.1b9",
+    "xtrax[eda]>=0.4.1b11",
 ]
 agent = [
     "cisternal>=0.1.6,<0.2",
@@ -67,7 +69,7 @@ ebm = [
 # tests/parity/test_layer_b_ort_*.py, test_onnx_audit.py, test_p07_sample_export.py) skip with a message
 # when it is absent, and CI installs it so they RUN there (aminx debt #2392).
 onnx = [
-    "xtrax[onnx]==0.4.1b9",
+    "xtrax[onnx]>=0.4.1b11",
 ]
 foldcomp = [
     "foldcomp",

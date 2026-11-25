@@ -227,7 +227,10 @@ class TestRepositorySoundnessInvariants(unittest.TestCase):
         self.assertIn("tests/host/test_family_driver_seam.py", laser_res.implicated_tests)
         self.assertNotIn("tests/potts/test_runner_smoke.py", laser_res.implicated_tests)
         self.assertNotIn("tests/ebm/test_model.py", laser_res.implicated_tests)
-        self.assertLess(len(laser_res.selected_tests), 60)
+        # 261124 (#3565): 60 -> 64. The LASEr PDB sink adds one legitimately selected file
+        # (tests/families/laser_mpnn/test_pdb_sink.py), taking the count to exactly 60. The
+        # isolation claim is the Potts/EBM exclusions above; this is a size ceiling.
+        self.assertLess(len(laser_res.selected_tests), 64)
 
         # 3. EBM model change selects EBM tests and excludes Potts / LASEr tests
         ebm_res = selector.select_tests(
