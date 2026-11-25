@@ -66,7 +66,7 @@ from aminx.families.frustra_mpnn.model import (
   FrustraStageOutputs,
   LightAttention1D,
 )
-from aminx.io.weights import HF_REPO_ID, HF_REVISION
+from aminx.io.weights import HF_REPO_ID
 
 log = logging.getLogger("frustrampnn_parity")
 
@@ -86,6 +86,7 @@ MUTANTS = (
 
 MUTANT_MIN_POWER = 1e-2
 CANONICAL_CKPT = "megascale_default_la-true_esm-False_split1"
+FRUSTRAMPNN_HF_REVISION = "3070f2dd4ec9e495ec225f09930996b7fef2f714"
 ORACLE_STEM = "frustrampnn_1ubq_oracle"
 
 
@@ -493,10 +494,10 @@ def _verify_weights_provenance(parity_record: Path, eqx_weights: Path | None) ->
       raise RuntimeError(msg)
 
   declared_hf_rev = weights_cfg.get("hf_revision")
-  if declared_hf_rev is not None and declared_hf_rev != HF_REVISION:
+  if declared_hf_rev is not None and declared_hf_rev != FRUSTRAMPNN_HF_REVISION:
     msg = (
-      f"Declared hf_revision {declared_hf_rev} != aminx.io.weights.HF_REVISION {HF_REVISION} "
-      "(weights pin drift)"
+      f"Declared hf_revision {declared_hf_rev} != pinned FRUSTRAMPNN_HF_REVISION "
+      f"{FRUSTRAMPNN_HF_REVISION} (weights pin drift)"
     )
     raise RuntimeError(msg)
 
@@ -505,7 +506,7 @@ def _verify_weights_provenance(parity_record: Path, eqx_weights: Path | None) ->
     from huggingface_hub import hf_hub_download
 
     hf_repo = str(weights_cfg.get("hf_repo") or HF_REPO_ID)
-    hf_rev = str(declared_hf_rev or HF_REVISION)
+    hf_rev = str(declared_hf_rev or FRUSTRAMPNN_HF_REVISION)
     resolved_eqx = Path(hf_hub_download(hf_repo, f"{CANONICAL_CKPT}.eqx.zst", revision=hf_rev))
     hf_hub_download(hf_repo, f"{CANONICAL_CKPT}.manifest.json", revision=hf_rev)
   if not resolved_eqx.is_file():

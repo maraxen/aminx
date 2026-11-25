@@ -48,10 +48,12 @@ HF_REPO_ID = "maraxen/aminx"
 # (antibmpnn_v_48_{000,010,020,030}.eqx.zst), 8 Caliby checkpoints + manifests,
 # 3 FAMPNN checkpoints + manifests, and 7 ThermoMPNN manifests.
 #
-# 3070f2dd (2026-11-11) only ADDED files: ``megascale_default_la-true_esm-False_split1.eqx.zst``
-# and ``megascale_default_la-true_esm-False_split1.manifest.json``, plus updated
-# NOTICE-weights.md and README.md. All prior checkpoints remain byte-identical to 5ff5cf16.
-HF_REVISION = "3070f2dd4ec9e495ec225f09930996b7fef2f714"
+# DELIBERATELY NOT MOVED for 0.5.2 (2026-11-11): the Hub default branch has since gained
+# ``megascale_default_la-true_esm-False_split1.eqx.zst``, which this pin omits. 0.5.2 is a bug-fix
+# release and does not change which weights load; the file is listed in
+# ``DELIBERATELY_NOT_PINNED`` in tests/io/test_pinned_revision_coverage.py. Re-pin when a release
+# is meant to carry it.
+HF_REVISION = "5ff5cf1643842ed8eb2d511d0281a5a0db14170e"
 
 #: Env var naming a directory that is AUTHORITATIVE for weights when set. A missing file there
 #: raises instead of silently falling through to the Hub -- the silent fallback is the defect
