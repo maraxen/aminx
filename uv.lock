@@ -91,10 +91,11 @@ dependencies = [
     { name = "msgpack-numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "optax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "orbax-checkpoint", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "proxide", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "psutil", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "typer", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "xtrax", extra = ["export", "io"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+    { name = "xtrax", extra = ["export", "io", "pack"], marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
@@ -216,6 +217,7 @@ requires-dist = [
     { name = "myst-parser", marker = "extra == 'docs'" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "optax", specifier = ">=0.2" },
+    { name = "orbax-checkpoint", specifier = ">=0.11" },
     { name = "prody", marker = "extra == 'benchmark'", specifier = ">=2.6.1" },
     { name = "prody", marker = "extra == 'laser'", specifier = ">=2.6.1" },
     { name = "proxide", specifier = ">=0.1.0a17", index = "https://pypi.org/simple" },
@@ -246,9 +248,9 @@ requires-dist = [
     { name = "ty", marker = "extra == 'dev'" },
     { name = "ty", marker = "extra == 'tests'" },
     { name = "typer", specifier = ">=0.12.0" },
-    { name = "xtrax", extras = ["io", "export"], specifier = "==0.4.1b5" },
-    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = "==0.4.1b5" },
-    { name = "zstandard", specifier = ">=0.21.0" },
+    { name = "xtrax", extras = ["io", "export", "pack"], specifier = ">=0.4.1b11" },
+    { name = "xtrax", extras = ["onnx"], marker = "extra == 'onnx'", specifier = ">=0.4.1b11" },
+    { name = "zstandard", specifier = ">=0.23" },
 ]
 provides-extras = ["agent", "laser", "benchmark", "docs", "tests", "onnx", "dev", "foldcomp", "cpu", "cuda12"]
 
@@ -4906,19 +4908,17 @@ wheels = [
 
 [[package]]
 name = "xtrax"
-version = "0.4.1b5"
+version = "0.4.1b11"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "jaxlib", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "jaxtyping", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "optax", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
-    { name = "orbax-checkpoint", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/43/193dfe6932ec4f3d1c60fb8fc4a34eec5d6ee634dc05e179252f727f8fb1/xtrax-0.4.1b5.tar.gz", hash = "sha256:617686c3a49143224e6ce297fc5caa88e500643c940e97057144fb2e217f31b7", size = 3566929, upload-time = "2026-10-26T21:35:51.787Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/0d/859c7b91d4021e6c3e3feb6c25e77b8313f73d3badaa276834aa99ca0358/xtrax-0.4.1b11.tar.gz", hash = "sha256:f83c25a64776747cc87d86b58b28d4bd400507c7affd8ad425586b351062f5d9", size = 4705212, upload-time = "2026-11-24T23:23:35.352Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/e4/9b5ecf70d09846c3880419cc11278b4cd7a040cf468903c21f615f74b1fb/xtrax-0.4.1b5-py3-none-any.whl", hash = "sha256:8c8875e162d2ad76825794e1664b1ff3befe2555d80415013dc78acd12ba7918", size = 742890, upload-time = "2026-10-26T21:35:49.85Z" },
+    { url = "https://files.pythonhosted.org/packages/c4/ce/a4c7ffcbd4a7137e20ac6906ca4626c4147527c48dd375dd0cc64b4e06a0/xtrax-0.4.1b11-py3-none-any.whl", hash = "sha256:ec0c95c32fdaf5e2adbd05ee70cd8baa2a4d740a1c4578bfadfc3d3eab3948e2", size = 1049450, upload-time = "2026-11-24T23:23:33.641Z" },
 ]
 
 [package.optional-dependencies]
@@ -4935,6 +4935,9 @@ onnx = [
     { name = "jax2onnx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "onnx", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
+]
+pack = [
+    { name = "zstandard", marker = "sys_platform == 'darwin' or sys_platform == 'linux'" },
 ]
 
 [[package]]

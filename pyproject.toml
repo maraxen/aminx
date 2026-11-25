@@ -14,6 +14,8 @@ dependencies = [
     "psutil>=5.9",
     "numpy>=1.26",
     "optax>=0.2",
+    # Imported directly by training/trainer.py and ebm/training.py; xtrax >= 0.4.1b11 no longer pulls it in.
+    "orbax-checkpoint>=0.11",
     "h5py>=3.11",
     "grain>=0.2",
     "array-record>=0.8.1",
@@ -23,7 +25,7 @@ dependencies = [
     "proxide>=0.1.0a17",
     "typer>=0.12.0",
     "huggingface-hub>=0.23.0",
-    "xtrax[io,export,pack]>=0.4.1b7",
+    "xtrax[io,export,pack]>=0.4.1b11",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -86,7 +88,7 @@ tests = [
 # tests/parity/test_layer_b_ort_*.py, test_onnx_audit.py, test_p07_sample_export.py) skip with a message
 # when it is absent, and CI installs it so they RUN there (aminx debt #2392).
 onnx = [
-    "xtrax[onnx]>=0.4.1b7",
+    "xtrax[onnx]>=0.4.1b11",
 ]
 dev = [
   "ruff",
