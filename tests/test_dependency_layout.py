@@ -47,13 +47,24 @@ def test_no_group_in_optional_dependencies() -> None:
 
 
 def test_ebm_only_packages() -> None:
-  """Assert EBM-only runtime dependencies (orbax-checkpoint, einops) live only in 'ebm'."""
+  """Assert EBM-only dependencies (einops) live only in 'ebm'; orbax-checkpoint is runtime.
+
+  orbax-checkpoint became a runtime dependency in #310: aminx.training.trainer
+  imports it at module level and xtrax >= 0.4.1b11 no longer pulls it in. The
+  ebm extra keeps its tighter >=0.11.17 floor.
+  """
   data = load_pyproject()
   runtime_deps = data.get("project", {}).get("dependencies", [])
   extras = data.get("project", {}).get("optional-dependencies", {})
 
   ebm_deps = extras.get("ebm", [])
-  for pkg in ("orbax-checkpoint", "einops"):
+  assert any(dep.startswith("orbax-checkpoint") for dep in runtime_deps), (
+    "orbax-checkpoint must be a runtime dependency (training/trainer.py imports it)"
+  )
+  assert any(dep.startswith("orbax-checkpoint") for dep in ebm_deps), (
+    "orbax-checkpoint must stay in the ebm extra"
+  )
+  for pkg in ("einops",):
     assert any(dep.startswith(pkg) for dep in ebm_deps), f"{pkg} must be in ebm extra"
     for dep in runtime_deps:
       assert not dep.startswith(pkg), f"{pkg} must not be in runtime dependencies: {dep}"
@@ -88,7 +99,7 @@ def test_jax_pins_bound() -> None:
 
 
 def test_cpu_cuda12_conflict_and_xtrax_pin() -> None:
-  """Assert uv declares cpu vs cuda12 conflict and xtrax remains pinned at 0.4.1b9."""
+  """Assert uv declares cpu vs cuda12 conflict and xtrax stays at >=0.4.1b11 (#310)."""
   data = load_pyproject()
   conflicts = data.get("tool", {}).get("uv", {}).get("conflicts", [])
   expected_pair = [{"extra": "cpu"}, {"extra": "cuda12"}]
@@ -97,4 +108,4 @@ def test_cpu_cuda12_conflict_and_xtrax_pin() -> None:
   ), f"Missing cpu vs cuda12 conflict declaration in [tool.uv].conflicts: {conflicts}"
 
   runtime_deps = data.get("project", {}).get("dependencies", [])
-  assert "xtrax[io,pack,export]==0.4.1b9" in runtime_deps
+  assert "xtrax[io,export,pack]>=0.4.1b11" in runtime_deps
